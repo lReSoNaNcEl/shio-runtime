@@ -13,7 +13,7 @@ export function proxyFromEnv(): AxiosProxyConfig | false {
     return {
       host: u.hostname,
       port: Number(u.port) || (u.protocol === 'https:' ? 443 : 80),
-      protocol: u.protocol.replace(':', '')
+      protocol: u.protocol.replace(':', ''),
     }
   } catch {
     return false

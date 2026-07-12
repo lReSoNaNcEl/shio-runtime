@@ -1,6 +1,14 @@
-import type { RuntimeEventInput } from '../shared/runtime/events'
 import type { FetchModelsResult, LlmConfig, ProviderProfile } from '../shared/llmProviders'
+import type { RuntimeEventInput } from '../shared/runtime/events'
+import type { SpeechServiceErrorCode } from '../shared/speech/speechErrors'
 import type { BacklogSelectionResult, BufferedUtterance } from './continuousListening/types'
+
+export interface SpeechHealthCapabilities {
+  serviceReachable: boolean
+  recognition: boolean
+  synthesis: boolean
+  streaming: boolean
+}
 
 export interface PersistedSettings {
   llm: LlmConfig
@@ -33,11 +41,24 @@ export interface PersistedSettings {
 
 export interface VtuberApi {
   health: {
-    check: () => Promise<{ ok: boolean; data?: unknown; error?: string }>
+    check: () => Promise<{
+      ok: boolean
+      data?: unknown
+      capabilities?: SpeechHealthCapabilities
+      error?: string
+      errorCode?: SpeechServiceErrorCode
+    }>
   }
-  asr: { recognize: (buf: ArrayBuffer) => Promise<{ ok: boolean; text?: string; error?: string }> }
+  asr: {
+    recognize: (
+      buf: ArrayBuffer,
+    ) => Promise<{ ok: boolean; text?: string; error?: string; errorCode?: SpeechServiceErrorCode }>
+  }
   llm: {
-    reply: (turnId: string, text: string) => Promise<{ ok: boolean; replyText?: string; emotionKey?: string; error?: string }>
+    reply: (
+      turnId: string,
+      text: string,
+    ) => Promise<{ ok: boolean; replyText?: string; emotionKey?: string; error?: string }>
     cancelReply: (turnId: string) => Promise<{ ok: boolean }>
     arbitrateBacklog: (payload: {
       items: readonly BufferedUtterance[]
@@ -52,7 +73,7 @@ export interface VtuberApi {
     synthesizeReply: (
       turnId: string,
       replyText: string,
-      emotionKey: string
+      emotionKey: string,
     ) => Promise<{
       ok: boolean
       audioBuffer?: ArrayBuffer
@@ -64,6 +85,7 @@ export interface VtuberApi {
       generatedLatencyMs?: string
       cache?: string
       error?: string
+      errorCode?: SpeechServiceErrorCode
     }>
     cancelSynthesis: (turnId: string) => Promise<{ ok: boolean }>
   }
@@ -101,7 +123,9 @@ export interface VtuberApi {
     onPublished: (cb: (event: RuntimeEventInput) => void) => () => void
   }
   debug: {
-    writeTransitionRecording: (payload: unknown) => Promise<{ ok: boolean; filePath?: string; error?: string }>
+    writeTransitionRecording: (
+      payload: unknown,
+    ) => Promise<{ ok: boolean; filePath?: string; error?: string }>
   }
 }
 

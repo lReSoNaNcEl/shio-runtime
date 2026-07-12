@@ -1,7 +1,13 @@
-import { VrmModel } from '../three/VrmModel'
+import type { VrmModel } from '../three/VrmModel'
 import type { AvatarMode } from './AvatarStateMachine'
 
-type IdleBehaviorKind = 'none' | 'glance-left' | 'glance-right' | 'glance-down' | 'soft-blink' | 'posture-shift'
+type IdleBehaviorKind =
+  | 'none'
+  | 'glance-left'
+  | 'glance-right'
+  | 'glance-down'
+  | 'soft-blink'
+  | 'posture-shift'
 
 interface IdleBehaviorDebugState {
   activeBehavior: IdleBehaviorKind
@@ -34,7 +40,9 @@ export class AvatarIdleBehaviorController {
     if (this.nextBehaviorIn > 0) return
 
     this.playNextBehavior()
-    this.nextBehaviorIn = this.passiveCompanionMode ? this.randomBetween(3.0, 6.5) : this.randomBetween(7.0, 14.0)
+    this.nextBehaviorIn = this.passiveCompanionMode
+      ? this.randomBetween(3.0, 6.5)
+      : this.randomBetween(7.0, 14.0)
   }
 
   setPassiveCompanionMode(enabled: boolean): void {
@@ -46,14 +54,16 @@ export class AvatarIdleBehaviorController {
   reset(): void {
     this.activeBehavior = 'none'
     this.activeFor = 0
-    this.nextBehaviorIn = this.passiveCompanionMode ? this.randomBetween(1.5, 3.5) : this.randomBetween(4.0, 8.0)
+    this.nextBehaviorIn = this.passiveCompanionMode
+      ? this.randomBetween(1.5, 3.5)
+      : this.randomBetween(4.0, 8.0)
   }
 
   getDebugState(): IdleBehaviorDebugState & { passiveCompanionMode: boolean } {
     return {
       activeBehavior: this.activeBehavior,
       nextBehaviorIn: Number(Math.max(0, this.nextBehaviorIn).toFixed(1)),
-      passiveCompanionMode: this.passiveCompanionMode
+      passiveCompanionMode: this.passiveCompanionMode,
     }
   }
 
@@ -88,7 +98,7 @@ export class AvatarIdleBehaviorController {
       this.vrmModel.nudgeMicroMotion({
         headX: this.randomBetween(-0.015, 0.015),
         headY: this.randomBetween(-0.025, 0.025),
-        duration: 2.2
+        duration: 2.2,
       })
       return
     }
@@ -104,7 +114,7 @@ export class AvatarIdleBehaviorController {
     this.vrmModel.nudgeMicroMotion({
       headY: 0.028 * direction,
       eyeX: 0.04 * direction,
-      duration: 1.6
+      duration: 1.6,
     })
   }
 

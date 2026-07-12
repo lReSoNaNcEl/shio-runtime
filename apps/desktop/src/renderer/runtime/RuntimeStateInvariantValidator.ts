@@ -133,13 +133,19 @@ export class RuntimeStateInvariantValidator {
       evaluate: (i) => {
         // Proxy: while speaking with active audio, the mouth must show movement
         // within the grace window; a flat-zero mouth implies LipSync is not fed.
-        if (!i.isSpeaking || !i.playbackActive) return { ok: true, detail: 'not speaking / no audio' }
+        if (!i.isSpeaking || !i.playbackActive)
+          return { ok: true, detail: 'not speaking / no audio' }
         if (this.speakingSince === null) return { ok: true, detail: 'speaking just started' }
         const elapsed = i.now - this.speakingSince
         if (elapsed < 800) return { ok: true, detail: `warming up ${Math.round(elapsed)}ms` }
         const moved = this.speakingMouthMax > 0.02
-        return { ok: moved, detail: moved ? `mouth peak ${this.speakingMouthMax.toFixed(2)}` : `mouth flat 0 for ${Math.round(elapsed)}ms (LipSync not attached?)` }
-      }
+        return {
+          ok: moved,
+          detail: moved
+            ? `mouth peak ${this.speakingMouthMax.toFixed(2)}`
+            : `mouth flat 0 for ${Math.round(elapsed)}ms (LipSync not attached?)`,
+        }
+      },
     },
     {
       id: 'INV-02-noplayback-not-speaking',
@@ -147,8 +153,11 @@ export class RuntimeStateInvariantValidator {
       suspectedOwner: 'ConversationRuntime terminal cleanup / AudioPlayer active playback',
       evaluate: (i) => {
         if (!i.isSpeaking) return { ok: true, detail: 'not speaking' }
-        return { ok: i.playbackActive, detail: i.playbackActive ? 'audio active' : 'speaking but AudioPlayer idle' }
-      }
+        return {
+          ok: i.playbackActive,
+          detail: i.playbackActive ? 'audio active' : 'speaking but AudioPlayer idle',
+        }
+      },
     },
     {
       id: 'INV-03-playing-one-id',
@@ -156,10 +165,16 @@ export class RuntimeStateInvariantValidator {
       suspectedOwner: 'AudioPlayer',
       evaluate: (i) => {
         if (!i.playbackActive) {
-          return { ok: i.activePlaybackId === 0, detail: i.activePlaybackId === 0 ? 'idle' : `idle but id=${i.activePlaybackId}` }
+          return {
+            ok: i.activePlaybackId === 0,
+            detail: i.activePlaybackId === 0 ? 'idle' : `idle but id=${i.activePlaybackId}`,
+          }
         }
-        return { ok: i.activePlaybackId > 0, detail: i.activePlaybackId > 0 ? `id=${i.activePlaybackId}` : 'playing but no valid id' }
-      }
+        return {
+          ok: i.activePlaybackId > 0,
+          detail: i.activePlaybackId > 0 ? `id=${i.activePlaybackId}` : 'playing but no valid id',
+        }
+      },
     },
     {
       id: 'INV-04-single-skeleton-owner',
@@ -168,8 +183,13 @@ export class RuntimeStateInvariantValidator {
       evaluate: (i) => {
         if (i.bodyTransitionRemaining > 0) return { ok: true, detail: 'cross-fade in progress' }
         const ok = i.bodyWeightedActionCount <= 1
-        return { ok, detail: ok ? `${i.bodyWeightedActionCount} weighted` : `${i.bodyWeightedActionCount} weighted actions, no transition` }
-      }
+        return {
+          ok,
+          detail: ok
+            ? `${i.bodyWeightedActionCount} weighted`
+            : `${i.bodyWeightedActionCount} weighted actions, no transition`,
+        }
+      },
     },
     {
       id: 'INV-05-idle-no-speaking-anim',
@@ -178,17 +198,24 @@ export class RuntimeStateInvariantValidator {
       evaluate: (i) => {
         if (i.characterMode !== 'idle') return { ok: true, detail: `mode=${i.characterMode}` }
         const ok = i.avatarMode !== 'speaking'
-        return { ok, detail: ok ? `avatar=${i.avatarMode}` : 'character idle but avatar still speaking' }
-      }
+        return {
+          ok,
+          detail: ok ? `avatar=${i.avatarMode}` : 'character idle but avatar still speaking',
+        }
+      },
     },
     {
       id: 'INV-06-phase-speaking-playback',
       label: 'conversation phase speaking → playback exists',
       suspectedOwner: 'ConversationRuntime',
       evaluate: (i) => {
-        if (i.conversationResponsePhase !== 'speaking') return { ok: true, detail: `phase=${i.conversationResponsePhase}` }
-        return { ok: i.playbackActive, detail: i.playbackActive ? 'audio active' : 'phase speaking but no playback' }
-      }
+        if (i.conversationResponsePhase !== 'speaking')
+          return { ok: true, detail: `phase=${i.conversationResponsePhase}` }
+        return {
+          ok: i.playbackActive,
+          detail: i.playbackActive ? 'audio active' : 'phase speaking but no playback',
+        }
+      },
     },
     {
       id: 'INV-07-lookat-disabled-no-updates',
@@ -196,28 +223,48 @@ export class RuntimeStateInvariantValidator {
       suspectedOwner: 'LookAtRuntime',
       evaluate: (i) => {
         if (i.lookAtTarget !== 'none') return { ok: true, detail: `target=${i.lookAtTarget}` }
-        const still = Math.abs(i.lookAtEyeYaw) <= EPS_ANGLE && Math.abs(i.lookAtEyePitch) <= EPS_ANGLE
-        return { ok: still, detail: still ? 'eyes still' : `eyes moving yaw=${i.lookAtEyeYaw.toFixed(3)} pitch=${i.lookAtEyePitch.toFixed(3)} while disabled` }
-      }
+        const still =
+          Math.abs(i.lookAtEyeYaw) <= EPS_ANGLE && Math.abs(i.lookAtEyePitch) <= EPS_ANGLE
+        return {
+          ok: still,
+          detail: still
+            ? 'eyes still'
+            : `eyes moving yaw=${i.lookAtEyeYaw.toFixed(3)} pitch=${i.lookAtEyePitch.toFixed(3)} while disabled`,
+        }
+      },
     },
     {
       id: 'INV-08-headmotion-disabled-no-updates',
       label: 'Head Motion disabled → no procedural updates',
       suspectedOwner: 'HeadMotionRuntime',
       evaluate: (i) => {
-        if (i.headMotionActiveGenerators.length > 0) return { ok: true, detail: `${i.headMotionActiveGenerators.length} generators active` }
+        if (i.headMotionActiveGenerators.length > 0)
+          return { ok: true, detail: `${i.headMotionActiveGenerators.length} generators active` }
         const still = i.headMotionEnergy <= 0.01
-        return { ok: still, detail: still ? 'no motion' : `energy ${i.headMotionEnergy.toFixed(3)} with no active generators` }
-      }
+        return {
+          ok: still,
+          detail: still
+            ? 'no motion'
+            : `energy ${i.headMotionEnergy.toFixed(3)} with no active generators`,
+        }
+      },
     },
     {
       id: 'INV-09-mixer-only-facial-writer',
       label: 'Expression Mixer is the only facial writer',
       suspectedOwner: 'AvatarExpressionMixer',
       evaluate: (i) => {
-        const foreign = [...new Set([...i.facialActiveSources, ...i.facialEntrySources])].filter((s) => !KNOWN_FACIAL_SOURCES.has(s))
-        return { ok: foreign.length === 0, detail: foreign.length === 0 ? 'all writes via mixer domains' : `foreign facial source(s): ${foreign.join(', ')}` }
-      }
+        const foreign = [...new Set([...i.facialActiveSources, ...i.facialEntrySources])].filter(
+          (s) => !KNOWN_FACIAL_SOURCES.has(s),
+        )
+        return {
+          ok: foreign.length === 0,
+          detail:
+            foreign.length === 0
+              ? 'all writes via mixer domains'
+              : `foreign facial source(s): ${foreign.join(', ')}`,
+        }
+      },
     },
     {
       id: 'INV-10-transition-ownership',
@@ -226,18 +273,29 @@ export class RuntimeStateInvariantValidator {
       evaluate: (i) => {
         if (i.bodyActiveActionCount === 0) return { ok: null, detail: 'no body action loaded yet' }
         const ok = i.bodyWeightedActionCount > 0
-        return { ok, detail: ok ? `${i.bodyWeightedActionCount} weighted action(s)` : `zero weighted actions during ${i.currentBodyAnimation}` }
-      }
+        return {
+          ok,
+          detail: ok
+            ? `${i.bodyWeightedActionCount} weighted action(s)`
+            : `zero weighted actions during ${i.currentBodyAnimation}`,
+        }
+      },
     },
     {
       id: 'INV-11-mouth-release',
       label: 'mouth releases after speech',
       suspectedOwner: 'LipSync release envelope / AvatarExpressionMixer',
       evaluate: (i) => {
-        if (i.isSpeaking || i.playbackActive) return { ok: true, detail: 'speaking / playback active' }
+        if (i.isSpeaking || i.playbackActive)
+          return { ok: true, detail: 'speaking / playback active' }
         const ok = i.mouthMax <= 0.4
-        return { ok, detail: ok ? `mouth ${i.mouthMax.toFixed(2)}` : `mouth high ${i.mouthMax.toFixed(2)} after speech` }
-      }
+        return {
+          ok,
+          detail: ok
+            ? `mouth ${i.mouthMax.toFixed(2)}`
+            : `mouth high ${i.mouthMax.toFixed(2)} after speech`,
+        }
+      },
     },
     {
       id: 'INV-12-supported-viseme-fallback',
@@ -246,10 +304,17 @@ export class RuntimeStateInvariantValidator {
       evaluate: (i) => {
         const required = ['aa', 'ih', 'ou']
         const missingCore = required.filter((name) => !i.facialSupportedVisemes.includes(name))
-        if (missingCore.length > 0) return { ok: false, detail: `missing core viseme(s): ${missingCore.join(', ')}` }
+        if (missingCore.length > 0)
+          return { ok: false, detail: `missing core viseme(s): ${missingCore.join(', ')}` }
         const optional = ['ee', 'oh'].filter((name) => !i.facialSupportedVisemes.includes(name))
-        return { ok: true, detail: optional.length > 0 ? `optional fallback: ${optional.join(', ')}` : 'all five visemes supported' }
-      }
+        return {
+          ok: true,
+          detail:
+            optional.length > 0
+              ? `optional fallback: ${optional.join(', ')}`
+              : 'all five visemes supported',
+        }
+      },
     },
     {
       id: 'INV-13-unknown-expression-detection',
@@ -258,11 +323,12 @@ export class RuntimeStateInvariantValidator {
       evaluate: (i) => {
         return {
           ok: true,
-          detail: i.facialUnsupportedExpressionRequests.length > 0
-            ? `detected unsupported: ${i.facialUnsupportedExpressionRequests.join(', ')}`
-            : 'no unsupported expression requests'
+          detail:
+            i.facialUnsupportedExpressionRequests.length > 0
+              ? `detected unsupported: ${i.facialUnsupportedExpressionRequests.join(', ')}`
+              : 'no unsupported expression requests',
         }
-      }
+      },
     },
     {
       id: 'INV-14-valid-facial-profile',
@@ -270,18 +336,23 @@ export class RuntimeStateInvariantValidator {
       suspectedOwner: 'FacialProfile resolver',
       evaluate: (i) => {
         const ok = Boolean(i.currentFacialProfile && i.currentFacialProfile !== 'unknown')
-        return { ok, detail: ok ? `profile=${i.currentFacialProfile}` : 'invalid / missing facial profile' }
-      }
+        return {
+          ok,
+          detail: ok ? `profile=${i.currentFacialProfile}` : 'invalid / missing facial profile',
+        }
+      },
     },
     {
       id: 'INV-15-profile-release-timeout',
       label: 'facial profile release does not get stuck',
       suspectedOwner: 'ExpressionController / AvatarExpressionMixer release lifecycle',
       evaluate: (i) => {
-        const releaseWarning = i.facialStuckWarnings.find((warning) => /emotion|mouth|blink/i.test(warning))
+        const releaseWarning = i.facialStuckWarnings.find((warning) =>
+          /emotion|mouth|blink/i.test(warning),
+        )
         return { ok: !releaseWarning, detail: releaseWarning ?? 'no facial release warnings' }
-      }
-    }
+      },
+    },
   ]
 
   setEnabled(enabled: boolean): void {
@@ -338,7 +409,13 @@ export class RuntimeStateInvariantValidator {
         this.reported.delete(def.id)
       }
 
-      results.push({ id: def.id, label: def.label, status, detail, suspectedOwner: def.suspectedOwner })
+      results.push({
+        id: def.id,
+        label: def.label,
+        status,
+        detail,
+        suspectedOwner: def.suspectedOwner,
+      })
     }
 
     this.lastHealth = this.buildHealth(input, results)
@@ -356,7 +433,7 @@ export class RuntimeStateInvariantValidator {
       at: Date.now(),
       frame: input.frame,
       detail,
-      suspectedOwner: def.suspectedOwner
+      suspectedOwner: def.suspectedOwner,
     }
     const snapshot = {
       speech: input.speechStatus,
@@ -369,10 +446,10 @@ export class RuntimeStateInvariantValidator {
       bodyWeighted: input.bodyWeightedActionCount,
       bodyOwnershipGaps: input.bodyOwnershipGapCount,
       lookAt: input.lookAtTarget,
-      headGen: input.headMotionActiveGenerators.length
+      headGen: input.headMotionActiveGenerators.length,
     }
     console.warn(
-      `[RUNTIME-INV] ${def.id} VIOLATION frame=${input.frame} t=${Math.round(input.now)}ms owner="${def.suspectedOwner}" detail="${detail}" state=${JSON.stringify(snapshot)}`
+      `[RUNTIME-INV] ${def.id} VIOLATION frame=${input.frame} t=${Math.round(input.now)}ms owner="${def.suspectedOwner}" detail="${detail}" state=${JSON.stringify(snapshot)}`,
     )
   }
 
@@ -400,8 +477,8 @@ export class RuntimeStateInvariantValidator {
         facial: input.facialActiveSources.join(',') || 'none',
         facialProfile: input.currentFacialProfile,
         visemes: input.facialSupportedVisemes.join(',') || 'none',
-        unsupportedExpressions: input.facialUnsupportedExpressionRequests.join(',') || 'none'
-      }
+        unsupportedExpressions: input.facialUnsupportedExpressionRequests.join(',') || 'none',
+      },
     }
   }
 }

@@ -83,7 +83,7 @@ const DEFAULT_PROFILE: EffectiveBlinkProfile = {
   sequenceGapMinMs: 90,
   sequenceGapMaxMs: 170,
   secondBlinkDurationScale: 0.82,
-  secondBlinkWeightScale: 0.88
+  secondBlinkWeightScale: 0.88,
 }
 
 export class BlinkController {
@@ -166,7 +166,10 @@ export class BlinkController {
    * scheduling while idle; if a blink / sequence is in flight the new profile is
    * only used for the next independent event (the active blink keeps its snapshot).
    */
-  setEffectiveProfile(profile: EffectiveBlinkProfile, context?: { proceduralMode?: string; emotion?: string }): void {
+  setEffectiveProfile(
+    profile: EffectiveBlinkProfile,
+    context?: { proceduralMode?: string; emotion?: string },
+  ): void {
     if (context?.proceduralMode !== undefined) this.proceduralModeLabel = context.proceduralMode
     if (context?.emotion !== undefined) this.emotionLabel = context.emotion
     const changed = profile.profileId !== this.configuredProfile.profileId
@@ -178,7 +181,9 @@ export class BlinkController {
       this.weightCeiling = profile.blinkMax
       this.clampScheduleToProfile()
       if (changed) {
-        console.log(`[FACETRACE] source=Blink event=PROFILE profile=${profile.profileId} mode=${this.proceduralModeLabel} emotion=${this.emotionLabel} t=${Math.round(performance.now())}ms`)
+        console.log(
+          `[FACETRACE] source=Blink event=PROFILE profile=${profile.profileId} mode=${this.proceduralModeLabel} emotion=${this.emotionLabel} t=${Math.round(performance.now())}ms`,
+        )
       }
     }
   }
@@ -216,7 +221,8 @@ export class BlinkController {
   force(duration = 1.2, sequence = false): void {
     this.activeSnapshot = this.configuredProfile
     this.weightCeiling = this.activeSnapshot.blinkMax
-    const total = this.activeSnapshot.closingMs + this.activeSnapshot.closedMs + this.activeSnapshot.openingMs
+    const total =
+      this.activeSnapshot.closingMs + this.activeSnapshot.closedMs + this.activeSnapshot.openingMs
     const requestedMs = Math.max(120, duration * 1000)
     const durationScale = Math.max(0.3, Math.min(2, requestedMs / Math.max(1, total)))
     this.beginBlinkPhases(durationScale, 1, 'forced')
@@ -264,7 +270,7 @@ export class BlinkController {
       nextBlinkIn: Math.max(0, this.nextBlinkInMs - this.timerMs) / 1000,
       cooldownRemaining: this.cooldownRemainingMs / 1000,
       cooldown: this.configuredProfile.cooldownMs / 1000,
-      source: 'AutoBlink'
+      source: 'AutoBlink',
     }
   }
 
@@ -282,12 +288,16 @@ export class BlinkController {
     this.beginBlinkPhases(
       this.activeSnapshot.secondBlinkDurationScale,
       this.activeSnapshot.secondBlinkWeightScale,
-      'sequence'
+      'sequence',
     )
     this.doubleBlinkCount += 1
   }
 
-  private beginBlinkPhases(durationScale: number, weightScale: number, reason: BlinkTriggerReason): void {
+  private beginBlinkPhases(
+    durationScale: number,
+    weightScale: number,
+    reason: BlinkTriggerReason,
+  ): void {
     const p = this.activeSnapshot
     this.closingMs = p.closingMs * durationScale
     this.closedMs = p.closedMs * durationScale
@@ -305,7 +315,9 @@ export class BlinkController {
     this.phaseTimeMs += deltaMs
 
     if (this.phase === 'closing') {
-      this.setWeight(this.blinkTargetWeight * this.easeOut(Math.min(1, this.phaseTimeMs / this.closingMs)))
+      this.setWeight(
+        this.blinkTargetWeight * this.easeOut(Math.min(1, this.phaseTimeMs / this.closingMs)),
+      )
       if (this.phaseTimeMs >= this.closingMs) this.nextPhase('closed')
       return
     }
@@ -317,7 +329,10 @@ export class BlinkController {
     }
 
     if (this.phase === 'opening') {
-      this.setWeight(this.blinkTargetWeight * (1 - this.easeInOut(Math.min(1, this.phaseTimeMs / this.openingMs))))
+      this.setWeight(
+        this.blinkTargetWeight *
+          (1 - this.easeInOut(Math.min(1, this.phaseTimeMs / this.openingMs))),
+      )
       if (this.phaseTimeMs >= this.openingMs) {
         this.setWeight(0)
         this.phase = 'idle'
@@ -333,7 +348,10 @@ export class BlinkController {
       // pair is one event.
       this.pendingSecondBlink = false
       this.sequenceState = 'waiting-second-blink'
-      const gapSpan = Math.max(0, this.activeSnapshot.sequenceGapMaxMs - this.activeSnapshot.sequenceGapMinMs)
+      const gapSpan = Math.max(
+        0,
+        this.activeSnapshot.sequenceGapMaxMs - this.activeSnapshot.sequenceGapMinMs,
+      )
       this.sequenceGapRemainingMs = this.activeSnapshot.sequenceGapMinMs + this.rng() * gapSpan
       return
     }
@@ -370,10 +388,10 @@ export class BlinkController {
   }
 
   private easeOut(t: number): number {
-    return 1 - Math.pow(1 - t, 3)
+    return 1 - (1 - t) ** 3
   }
 
   private easeInOut(t: number): number {
-    return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2
+    return t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2
   }
 }

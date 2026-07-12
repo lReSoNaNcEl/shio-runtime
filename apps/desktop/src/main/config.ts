@@ -1,9 +1,11 @@
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+
 import { app } from 'electron'
-import { join } from 'path'
-import { readFileSync, writeFileSync, existsSync } from 'fs'
-import { defaultLlmConfig, isLlmProviderId, normalizeLlmConfig } from './llm'
-import type { LlmConfig } from '../shared/llmProviders'
+
 import { DEFAULT_SPEECH_URL } from '../shared/config'
+import type { LlmConfig } from '../shared/llmProviders'
+import { defaultLlmConfig, isLlmProviderId, normalizeLlmConfig } from './llm'
 
 const CONFIG_PATH = join(app.getPath('userData'), 'config.json')
 
@@ -60,7 +62,7 @@ const stringDefaults: Record<StringConfigKey, string> = {
   continuousListeningMode: 'silent',
   continuousListeningReplyCooldownMs: '15000',
   continuousListeningFollowUpWindowMs: '20000',
-  continuousListeningCuriosityChance: '0.03'
+  continuousListeningCuriosityChance: '0.03',
 }
 
 function freshDefaults(): AppConfig {
@@ -83,7 +85,9 @@ interface LegacyPersistedConfig {
   groqModel?: string
 }
 
-function pickKnownStrings(saved: Record<string, unknown>): Partial<Record<StringConfigKey, string>> {
+function pickKnownStrings(
+  saved: Record<string, unknown>,
+): Partial<Record<StringConfigKey, string>> {
   const result: Partial<Record<StringConfigKey, string>> = {}
   for (const key of Object.keys(stringDefaults) as StringConfigKey[]) {
     const value = saved[key]
@@ -139,7 +143,8 @@ function resolveLlmConfig(saved: Record<string, unknown> & LegacyPersistedConfig
 export function loadConfig(): AppConfig {
   try {
     if (existsSync(CONFIG_PATH)) {
-      const saved = JSON.parse(readFileSync(CONFIG_PATH, 'utf-8')) as Record<string, unknown> & LegacyPersistedConfig
+      const saved = JSON.parse(readFileSync(CONFIG_PATH, 'utf-8')) as Record<string, unknown> &
+        LegacyPersistedConfig
       const known = pickKnownStrings(saved)
       const { llm, migrated } = resolveLlmConfig(saved)
       _config = { ...freshDefaults(), ...known, llm }

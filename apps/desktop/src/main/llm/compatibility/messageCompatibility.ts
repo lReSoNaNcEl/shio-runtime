@@ -18,6 +18,9 @@ export function prepareMessages(messages: ChatMessage[], caps: LlmCapabilities):
   const firstUserIdx = rest.findIndex((m) => m.role === 'user')
   if (firstUserIdx === -1) return [{ role: 'user', content: systemText }, ...rest]
   const merged = [...rest]
-  merged[firstUserIdx] = { role: 'user', content: `${systemText}\n\n${merged[firstUserIdx].content}` }
+  merged[firstUserIdx] = {
+    role: 'user',
+    content: `${systemText}\n\n${merged[firstUserIdx].content}`,
+  }
   return merged
 }

@@ -1,7 +1,7 @@
+import type { LlmProviderId } from '../../../shared/llmProviders'
 import { ChatCompletionSchema } from '../../schemas'
 import { normalizeFinishReason, type RuntimeFinishReason } from '../compatibility/index'
-import { PROVIDER_DISPLAY_NAMES, LlmResponseError } from '../errors/index'
-import type { LlmProviderId } from '../../../shared/llmProviders'
+import { LlmResponseError, PROVIDER_DISPLAY_NAMES } from '../errors/index'
 
 export interface ParsedCompletion {
   content: string
@@ -61,7 +61,7 @@ export function parseChatCompletion(provider: LlmProviderId, raw: unknown): Pars
     throw new LlmResponseError({
       provider,
       message: `${name}: \u043d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u0440\u0430\u0437\u043e\u0431\u0440\u0430\u0442\u044c \u043e\u0442\u0432\u0435\u0442 \u043c\u043e\u0434\u0435\u043b\u0438.`,
-      rawResponse: raw
+      rawResponse: raw,
     })
   }
 
@@ -70,7 +70,7 @@ export function parseChatCompletion(provider: LlmProviderId, raw: unknown): Pars
     throw new LlmResponseError({
       provider,
       message: `${name}: API \u0432\u0435\u0440\u043d\u0443\u043b \u043e\u0448\u0438\u0431\u043a\u0443: ${shortPreview(parsed.data.error)}`,
-      rawResponse: raw
+      rawResponse: raw,
     })
   }
 
@@ -79,12 +79,13 @@ export function parseChatCompletion(provider: LlmProviderId, raw: unknown): Pars
   const finishReason = normalizeFinishReason(choice?.finish_reason)
   const reasoning = message?.reasoning ?? message?.reasoning_content
   const extracted = extractMessageContent(message?.content)
-  const hadReasoning = (typeof reasoning === 'string' && reasoning.length > 0) || extracted.hadReasoning
+  const hadReasoning =
+    (typeof reasoning === 'string' && reasoning.length > 0) || extracted.hadReasoning
   const usage = parsed.data.usage
     ? {
         promptTokens: parsed.data.usage.prompt_tokens,
         completionTokens: parsed.data.usage.completion_tokens,
-        totalTokens: parsed.data.usage.total_tokens
+        totalTokens: parsed.data.usage.total_tokens,
       }
     : undefined
 
@@ -96,20 +97,20 @@ export function parseChatCompletion(provider: LlmProviderId, raw: unknown): Pars
         message:
           `${name}: \u0440\u0430\u0441\u0441\u0443\u0436\u0434\u0435\u043d\u0438\u0435 \u0437\u0430\u0432\u0435\u0440\u0448\u0435\u043d\u043e, \u043d\u043e \u043b\u0438\u043c\u0438\u0442 \u0433\u0435\u043d\u0435\u0440\u0430\u0446\u0438\u0438 \u0431\u044b\u043b \u0438\u0441\u0447\u0435\u0440\u043f\u0430\u043d \u0434\u043e \u0444\u0438\u043d\u0430\u043b\u044c\u043d\u043e\u0433\u043e \u043e\u0442\u0432\u0435\u0442\u0430. ` +
           '\u0423\u0432\u0435\u043b\u0438\u0447\u044c\u0442\u0435 \u043b\u0438\u043c\u0438\u0442 \u0442\u043e\u043a\u0435\u043d\u043e\u0432 \u0438\u043b\u0438 \u0432\u044b\u0431\u0435\u0440\u0438\u0442\u0435 \u043c\u043e\u0434\u0435\u043b\u044c \u0431\u0435\u0437 reasoning.',
-        rawResponse: raw
+        rawResponse: raw,
       })
     }
     if (finishReason === 'content_filter') {
       throw new LlmResponseError({
         provider,
         message: `${name}: \u043e\u0442\u0432\u0435\u0442 \u0437\u0430\u0431\u043b\u043e\u043a\u0438\u0440\u043e\u0432\u0430\u043d \u0444\u0438\u043b\u044c\u0442\u0440\u043e\u043c \u043a\u043e\u043d\u0442\u0435\u043d\u0442\u0430.`,
-        rawResponse: raw
+        rawResponse: raw,
       })
     }
     throw new LlmResponseError({
       provider,
       message: `${name}: \u043c\u043e\u0434\u0435\u043b\u044c \u0432\u0435\u0440\u043d\u0443\u043b\u0430 \u043f\u0443\u0441\u0442\u043e\u0439 \u043e\u0442\u0432\u0435\u0442 (\u043d\u0435\u0442 choices[0].message.content).`,
-      rawResponse: raw
+      rawResponse: raw,
     })
   }
 

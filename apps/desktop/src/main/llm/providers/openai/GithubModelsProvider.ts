@@ -1,4 +1,5 @@
 import axios from 'axios'
+
 import { GithubModelsResponseSchema } from '../../../schemas'
 import { ModelFetchError } from '../../errors/index'
 import type { ModelInfo } from '../catalogTypes'
@@ -9,7 +10,7 @@ export class GithubModelsProvider extends BaseOpenAIProvider {
     super(apiKey, model, {
       providerId: 'github',
       baseURL: 'https://models.github.ai',
-      chatPath: '/inference/chat/completions'
+      chatPath: '/inference/chat/completions',
     })
   }
 
@@ -20,7 +21,7 @@ export class GithubModelsProvider extends BaseOpenAIProvider {
     }
     try {
       const res = await this.http.get('/catalog/models', {
-        headers: { Authorization: `Bearer ${key}`, Accept: 'application/vnd.github+json' }
+        headers: { Authorization: `Bearer ${key}`, Accept: 'application/vnd.github+json' },
       })
       const parsed = GithubModelsResponseSchema.parse(res.data)
       return parsed.map((m) => ({ id: m.id, displayName: m.name }))

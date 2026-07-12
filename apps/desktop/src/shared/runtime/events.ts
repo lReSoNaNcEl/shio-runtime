@@ -1,4 +1,10 @@
-export type RuntimeEventCategory = 'speech' | 'character' | 'avatar' | 'action' | 'experience' | 'system'
+export type RuntimeEventCategory =
+  | 'speech'
+  | 'character'
+  | 'avatar'
+  | 'action'
+  | 'experience'
+  | 'system'
 
 export type RuntimeEventType =
   | 'RuntimeInitialized'
@@ -18,6 +24,9 @@ export type RuntimeEventType =
   | 'ToolRequested'
   | 'ToolCompleted'
   | 'ToolFailed'
+  | 'SpeechServiceUnavailable'
+  | 'SpeechServiceRecovered'
+  | 'SpeechCapabilityChanged'
   | 'RuntimeDebugEvent'
 
 export interface RuntimeEvent {

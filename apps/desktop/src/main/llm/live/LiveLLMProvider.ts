@@ -1,6 +1,6 @@
-import { createLLMProvider } from '../registry/index'
 import type { LlmProviderId } from '../../../shared/llmProviders'
 import type { ChatMessage, LLMProvider } from '../public/chatTypes'
+import { createLLMProvider } from '../registry/index'
 
 export interface LiveLLMSettings {
   provider: LlmProviderId

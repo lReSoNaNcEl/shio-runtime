@@ -1,7 +1,7 @@
+import type { OverlayViewMode } from '../three/avatarTuning'
+import type { MouthWeights } from '../three/LipSync'
 import type { SceneManager } from '../three/SceneManager'
 import type { AvatarMode } from './AvatarRuntime'
-import type { MouthWeights } from '../three/LipSync'
-import type { OverlayViewMode } from '../three/avatarTuning'
 
 export interface SyncedAvatarState {
   mode: AvatarMode
@@ -28,7 +28,8 @@ export interface OverlayRemoteHandlers {
 }
 
 export class OverlayRuntime {
-  private readonly overlayWindow = new URLSearchParams(window.location.search).get('overlay') === '1'
+  private readonly overlayWindow =
+    new URLSearchParams(window.location.search).get('overlay') === '1'
   private mouthPublishTimer = 0
   private lastMouthPublishSpeaking = false
   private lastMirrorLipSyncLogAt = 0
@@ -64,17 +65,20 @@ export class OverlayRuntime {
     scene.setOverlayCameraPreset(mode, Number.isFinite(scale) ? scale : 1)
   }
 
-  async loadInitialRemoteState(): Promise<{ avatarState: SyncedAvatarState | null; mouthWeights: MouthWeights | null }> {
+  async loadInitialRemoteState(): Promise<{
+    avatarState: SyncedAvatarState | null
+    mouthWeights: MouthWeights | null
+  }> {
     if (!this.overlayWindow) return { avatarState: null, mouthWeights: null }
 
     const [avatarState, mouthWeights] = await Promise.all([
       window.api.avatarState.get(),
-      window.api.avatarMouth.get()
+      window.api.avatarMouth.get(),
     ])
 
     return {
       avatarState: this.parseAvatarState(avatarState),
-      mouthWeights: this.parseMouthWeights(mouthWeights)
+      mouthWeights: this.parseMouthWeights(mouthWeights),
     }
   }
 
@@ -137,7 +141,7 @@ export class OverlayRuntime {
     return {
       mode: value.mode,
       emotionKey: typeof value.emotionKey === 'string' ? value.emotionKey : undefined,
-      vrmEmotion: typeof value.vrmEmotion === 'string' ? value.vrmEmotion : undefined
+      vrmEmotion: typeof value.vrmEmotion === 'string' ? value.vrmEmotion : undefined,
     }
   }
 
@@ -149,7 +153,7 @@ export class OverlayRuntime {
       ih: this.clampWeight(value.ih),
       ou: this.clampWeight(value.ou),
       ee: this.clampWeight(value.ee),
-      oh: this.clampWeight(value.oh)
+      oh: this.clampWeight(value.oh),
     }
   }
 
@@ -173,7 +177,7 @@ export class OverlayRuntime {
     console.log(
       `[MIRROR-LIPSYNC] model=${model} phase=${phase} ` +
         `aa=${weights.aa.toFixed(3)} ih=${weights.ih.toFixed(3)} ou=${weights.ou.toFixed(3)} ` +
-        `ee=${weights.ee.toFixed(3)} oh=${weights.oh.toFixed(3)} max=${max.toFixed(3)}`
+        `ee=${weights.ee.toFixed(3)} oh=${weights.oh.toFixed(3)} max=${max.toFixed(3)}`,
     )
   }
 }

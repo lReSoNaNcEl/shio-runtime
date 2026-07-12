@@ -1,4 +1,4 @@
-export { parseChatCompletion } from './chatCompletionResponse'
 export type { ParsedCompletion } from './chatCompletionResponse'
-export { runChatCompletion, runChatCompletionDetailed } from './chatCompletionRunner'
+export { parseChatCompletion } from './chatCompletionResponse'
 export type { ChatRunConfig } from './chatCompletionRunner'
+export { runChatCompletion, runChatCompletionDetailed } from './chatCompletionRunner'

@@ -1,6 +1,6 @@
 import type { LlmProviderId } from '../../../shared/llmProviders'
-import type { RuntimeFinishReason } from '../compatibility/finishReason'
 import { mainLog } from '../../logging/safeLogger'
+import type { RuntimeFinishReason } from '../compatibility/finishReason'
 
 export interface LlmDebugRecord {
   provider: LlmProviderId

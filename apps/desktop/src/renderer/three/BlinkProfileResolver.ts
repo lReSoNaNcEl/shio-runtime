@@ -16,8 +16,9 @@
  * It never mutates the source tuning objects; it returns a fresh, normalized
  * {@link EffectiveBlinkProfile}.
  */
-import { getFacialProfile } from './FacialProfile'
+
 import { facialTuning } from './avatarTuning'
+import { getFacialProfile } from './FacialProfile'
 import type { VrmProceduralMode } from './VrmModel'
 
 export interface EffectiveBlinkProfile {
@@ -52,7 +53,7 @@ const positive = (value: number, fallback = 1): number =>
  */
 export function resolveEffectiveBlinkProfile(
   proceduralMode: VrmProceduralMode,
-  emotion: string
+  emotion: string,
 ): EffectiveBlinkProfile {
   const base = getFacialProfile(emotion).blinkProfile
   const modeKey = facialTuning.blink.profileByMode[proceduralMode]
@@ -93,6 +94,6 @@ export function resolveEffectiveBlinkProfile(
     sequenceGapMinMs: Math.max(0, sequence.gapMinMs),
     sequenceGapMaxMs: Math.max(sequence.gapMinMs, sequence.gapMaxMs),
     secondBlinkDurationScale: positive(sequence.secondBlinkDurationScale),
-    secondBlinkWeightScale: positive(sequence.secondBlinkWeightScale)
+    secondBlinkWeightScale: positive(sequence.secondBlinkWeightScale),
   }
 }

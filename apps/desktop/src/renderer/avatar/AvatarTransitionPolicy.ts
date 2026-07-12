@@ -27,7 +27,7 @@ export interface AvatarTransitionDecision {
 const DEFAULT_DECISION: AvatarTransitionDecision = {
   policyId: 'default',
   blendDuration: 0.35,
-  restartRequired: false
+  restartRequired: false,
 }
 
 export class AvatarTransitionPolicy {
@@ -36,7 +36,8 @@ export class AvatarTransitionPolicy {
       return { policyId: 'default', blendDuration: 0, restartRequired: false }
     }
 
-    if (!context.fromAnimationId) return { policyId: 'initial', blendDuration: 0.3, restartRequired: false }
+    if (!context.fromAnimationId)
+      return { policyId: 'initial', blendDuration: 0.3, restartRequired: false }
 
     if (context.fromMode === 'idle' && context.toMode === 'idle') {
       // Slow, soft crossfade between calm resting poses.

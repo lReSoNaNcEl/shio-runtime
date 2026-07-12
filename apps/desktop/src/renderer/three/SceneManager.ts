@@ -1,7 +1,7 @@
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
-import type { VrmModel } from './VrmModel'
-import { avatarStartupTuning, overlayCameraPresets, type OverlayViewMode } from './avatarTuning'
+
+import { avatarStartupTuning, type OverlayViewMode, overlayCameraPresets } from './avatarTuning'
 
 export class SceneManager {
   renderer: THREE.WebGLRenderer
@@ -19,7 +19,11 @@ export class SceneManager {
   constructor(canvas: HTMLCanvasElement) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true })
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
-    this.renderer.setSize(canvas.clientWidth || window.innerWidth, canvas.clientHeight || window.innerHeight, false)
+    this.renderer.setSize(
+      canvas.clientWidth || window.innerWidth,
+      canvas.clientHeight || window.innerHeight,
+      false,
+    )
     this.renderer.setClearColor(0x1a1a2e, 0)
     this.renderer.shadowMap.enabled = true
 
@@ -42,7 +46,7 @@ export class SceneManager {
       avatarStartupTuning.camera.fov,
       canvas.clientWidth / canvas.clientHeight,
       avatarStartupTuning.camera.near,
-      avatarStartupTuning.camera.far
+      avatarStartupTuning.camera.far,
     )
     this.applyCameraView(avatarStartupTuning.camera.position, avatarStartupTuning.camera.target)
 
@@ -51,7 +55,7 @@ export class SceneManager {
     this.controls.target.set(
       avatarStartupTuning.camera.target.x,
       avatarStartupTuning.camera.target.y,
-      avatarStartupTuning.camera.target.z
+      avatarStartupTuning.camera.target.z,
     )
     this.controls.enableDamping = true
     this.controls.dampingFactor = 0.08
@@ -108,7 +112,7 @@ export class SceneManager {
     box.getCenter(center)
     const height = size.y || 1.6
     const vFov = THREE.MathUtils.degToRad(this.camera.fov)
-    const distance = (height / Math.max(0.2, fillRatio)) / (2 * Math.tan(vFov / 2))
+    const distance = height / Math.max(0.2, fillRatio) / (2 * Math.tan(vFov / 2))
     this.framedTarget = { x: 0, y: center.y, z: 0 }
     this.framedPosition = { x: 0, y: center.y, z: -distance }
     this.applyCameraView(this.framedPosition, this.framedTarget)
@@ -118,24 +122,21 @@ export class SceneManager {
 
   setOverlayCameraPreset(mode: OverlayViewMode, scale = 1): void {
     const preset = overlayCameraPresets[mode] ?? overlayCameraPresets.front
-    const clampedScale = Math.max(
-      preset.scaleMin,
-      Math.min(preset.scaleMax, scale)
-    )
+    const clampedScale = Math.max(preset.scaleMin, Math.min(preset.scaleMax, scale))
     const target = preset.target
     const offset = {
       x: preset.position.x - target.x,
       y: preset.position.y - target.y,
-      z: preset.position.z - target.z
+      z: preset.position.z - target.z,
     }
     this.applyCameraView(
       {
         x: target.x + offset.x / clampedScale,
         y: target.y + offset.y / clampedScale,
-        z: target.z + offset.z / clampedScale
+        z: target.z + offset.z / clampedScale,
       },
       target,
-      preset.fov
+      preset.fov,
     )
     this.controls.target.set(target.x, target.y, target.z)
     this.controls.update()
@@ -196,7 +197,7 @@ export class SceneManager {
   private applyCameraView(
     position: { x: number; y: number; z: number },
     target: { x: number; y: number; z: number },
-    fov = avatarStartupTuning.camera.fov
+    fov = avatarStartupTuning.camera.fov,
   ): void {
     if (this.camera.fov !== fov) {
       this.camera.fov = fov

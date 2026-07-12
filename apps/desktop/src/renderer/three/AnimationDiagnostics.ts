@@ -1,6 +1,11 @@
 import * as THREE from 'three'
+
 import { facialTuning } from './avatarTuning'
-import type { VrmAnimationLoadContext, VrmBodyActionDebugEntry, VrmTransitionFrameTraceEntry } from './VrmModel'
+import type {
+  VrmAnimationLoadContext,
+  VrmBodyActionDebugEntry,
+  VrmTransitionFrameTraceEntry,
+} from './VrmModel'
 
 interface BodyActionTrace {
   label: string
@@ -21,7 +26,10 @@ export interface AnimationDiagnosticsState {
   vrm: VRMProbe | null
   mixer: THREE.AnimationMixer | null
   bodyActions: Set<THREE.AnimationAction>
-  fadingOutActions: Map<THREE.AnimationAction, { clip: THREE.AnimationClip; startAt?: number; endAt: number }>
+  fadingOutActions: Map<
+    THREE.AnimationAction,
+    { clip: THREE.AnimationClip; startAt?: number; endAt: number }
+  >
   bodyActionNames: WeakMap<THREE.AnimationAction, string>
   currentBodyAction: THREE.AnimationAction | null
   previousBodyAction: THREE.AnimationAction | null
@@ -86,7 +94,8 @@ export class AnimationDiagnostics {
 
   recordFrameTrace(label: string): void {
     const state = this.getState()
-    const actionCount = (state.mixer as unknown as { _actions?: unknown[] } | null)?._actions?.length ?? 0
+    const actionCount =
+      (state.mixer as unknown as { _actions?: unknown[] } | null)?._actions?.length ?? 0
     const actions = this.getBodyActionDebugEntries()
     const mixerActions = this.getMixerActionDebugEntries()
     const totalEffectiveWeight = mixerActions.reduce((sum, action) => sum + action.weight, 0)
@@ -96,17 +105,26 @@ export class AnimationDiagnostics {
     const probe = this.actionInfluenceProbe
     const firstBoneChangeAfterPlayFrame = probe?.firstBoneChangeFrame ?? null
     const framesSincePlayWithoutBoneChange =
-      probe && probe.firstBoneChangeFrame === null ? Math.max(0, state.bodyFrame - probe.startedFrame) : null
+      probe && probe.firstBoneChangeFrame === null
+        ? Math.max(0, state.bodyFrame - probe.startedFrame)
+        : null
     const hasWeightGap = mixerActions.length > 0 && totalEffectiveWeight < this.weightGapThreshold
     const hasZeroWeightedActions = mixerActions.length > 0 && weightedActionCount === 0
     const currentActionInfluential = Boolean(
       state.currentBodyAction &&
         currentWeight > 0.01 &&
-        (!probe || probe.action !== state.currentBodyAction || probe.firstBoneChangeFrame !== null)
+        (!probe || probe.action !== state.currentBodyAction || probe.firstBoneChangeFrame !== null),
     )
-    if (hasZeroWeightedActions || hasWeightGap || (state.currentBodyAction && currentWeight > 0.01 && framesSincePlayWithoutBoneChange !== null && framesSincePlayWithoutBoneChange > 1)) {
+    if (
+      hasZeroWeightedActions ||
+      hasWeightGap ||
+      (state.currentBodyAction &&
+        currentWeight > 0.01 &&
+        framesSincePlayWithoutBoneChange !== null &&
+        framesSincePlayWithoutBoneChange > 1)
+    ) {
       console.warn(
-        `[ANIMLIFE] anomaly label="${label}" frame=${state.bodyFrame} animation=${state.lastLoadContext?.animationId ?? 'none'} mixerActions=${actionCount} bodyActions=${state.bodyActions.size} weighted=${weightedActionCount} totalWeight=${totalEffectiveWeight.toFixed(3)} currentWeight=${currentWeight.toFixed(3)} framesSincePlayWithoutBoneChange=${framesSincePlayWithoutBoneChange ?? 'n/a'} rootQ=${pose.localRootQuaternion} hipsQ=${pose.hipsQuaternion} mixer=${JSON.stringify(mixerActions)} body=${JSON.stringify(actions)}`
+        `[ANIMLIFE] anomaly label="${label}" frame=${state.bodyFrame} animation=${state.lastLoadContext?.animationId ?? 'none'} mixerActions=${actionCount} bodyActions=${state.bodyActions.size} weighted=${weightedActionCount} totalWeight=${totalEffectiveWeight.toFixed(3)} currentWeight=${currentWeight.toFixed(3)} framesSincePlayWithoutBoneChange=${framesSincePlayWithoutBoneChange ?? 'n/a'} rootQ=${pose.localRootQuaternion} hipsQ=${pose.hipsQuaternion} mixer=${JSON.stringify(mixerActions)} body=${JSON.stringify(actions)}`,
       )
     }
     this.frameTrace = [
@@ -126,7 +144,9 @@ export class AnimationDiagnostics {
         currentActionInfluential,
         currentWeight: Number(currentWeight.toFixed(3)),
         previousWeight: Number((state.previousBodyAction?.getEffectiveWeight() ?? 0).toFixed(3)),
-        transitionRemaining: Number(Math.max(0, state.transitionEndTime - state.bodyClockTime).toFixed(3)),
+        transitionRemaining: Number(
+          Math.max(0, state.transitionEndTime - state.bodyClockTime).toFixed(3),
+        ),
         cleanupState: `fading=${state.fadingOutActions.size};graceUntil=${state.cleanupAllowedAfterFrame}`,
         localRootQuaternion: pose.localRootQuaternion,
         hipsQuaternion: pose.hipsQuaternion,
@@ -135,8 +155,8 @@ export class AnimationDiagnostics {
         hipsDeltaY: Number(state.hipsDeltaY.toFixed(4)),
         rootDeltaY: Number(state.rootDeltaY.toFixed(4)),
         mixerActions,
-        actions
-      }
+        actions,
+      },
     ].slice(-140)
   }
 
@@ -155,16 +175,21 @@ export class AnimationDiagnostics {
       running: action.isRunning(),
       fadingOut: state.fadingOutActions.has(action),
       current: action === state.currentBodyAction,
-      previous: action === state.previousBodyAction
+      previous: action === state.previousBodyAction,
     }
   }
 
   logAnimationTransition(label: string, context?: Partial<VrmAnimationLoadContext>): void {
     const state = this.getState()
-    const actionCount = (state.mixer as unknown as { _actions?: unknown[] } | null)?._actions?.length ?? 0
+    const actionCount =
+      (state.mixer as unknown as { _actions?: unknown[] } | null)?._actions?.length ?? 0
     const actions = [...state.bodyActions].map((action) => this.traceAction(action, label))
-    const previous = state.previousBodyAction ? this.traceAction(state.previousBodyAction, `${label}:previous`) : null
-    const current = state.currentBodyAction ? this.traceAction(state.currentBodyAction, `${label}:current`) : null
+    const previous = state.previousBodyAction
+      ? this.traceAction(state.previousBodyAction, `${label}:previous`)
+      : null
+    const current = state.currentBodyAction
+      ? this.traceAction(state.currentBodyAction, `${label}:current`)
+      : null
     const oldWeight = state.previousBodyAction?.getEffectiveWeight() ?? 0
     const newWeight = state.currentBodyAction?.getEffectiveWeight() ?? 0
     const signature = [
@@ -175,7 +200,7 @@ export class AnimationDiagnostics {
       state.bodyActions.size,
       oldWeight.toFixed(2),
       newWeight.toFixed(2),
-      state.fadingOutActions.size
+      state.fadingOutActions.size,
     ].join('|')
     const eventDriven =
       facialTuning.animation.verboseTransitionLogs ||
@@ -185,7 +210,7 @@ export class AnimationDiagnostics {
     this.lastTraceSignature = signature
     this.lastTransitionEvent = `${label} ${context?.animationId ?? state.lastLoadContext?.animationId ?? 'none'}`
     console.log(
-      `[ANIMDBG] transition ${label} frame=${context?.frame ?? state.bodyFrame} animation=${context?.animationId ?? state.lastLoadContext?.animationId ?? 'none'} prev=${context?.previousAnimationId ?? state.lastLoadContext?.previousAnimationId ?? 'none'} mixerActions=${actionCount} bodyActions=${state.bodyActions.size} oldWeight=${oldWeight.toFixed(3)} newWeight=${newWeight.toFixed(3)} transitionRemaining=${Math.max(0, state.transitionEndTime - state.bodyClockTime).toFixed(3)} current=${current ? JSON.stringify(current) : 'none'} previous=${previous ? JSON.stringify(previous) : 'none'} actions=${JSON.stringify(actions)}`
+      `[ANIMDBG] transition ${label} frame=${context?.frame ?? state.bodyFrame} animation=${context?.animationId ?? state.lastLoadContext?.animationId ?? 'none'} prev=${context?.previousAnimationId ?? state.lastLoadContext?.previousAnimationId ?? 'none'} mixerActions=${actionCount} bodyActions=${state.bodyActions.size} oldWeight=${oldWeight.toFixed(3)} newWeight=${newWeight.toFixed(3)} transitionRemaining=${Math.max(0, state.transitionEndTime - state.bodyClockTime).toFixed(3)} current=${current ? JSON.stringify(current) : 'none'} previous=${previous ? JSON.stringify(previous) : 'none'} actions=${JSON.stringify(actions)}`,
     )
   }
 
@@ -203,7 +228,7 @@ export class AnimationDiagnostics {
     if (!probe.loggedFirstChange) {
       probe.loggedFirstChange = true
       console.log(
-        `[ANIMLIFE] first bone change label="${label}" frame=${state.bodyFrame} framesSincePlay=${state.bodyFrame - probe.startedFrame} animation=${probe.animationId} file=${probe.file} rootAngle=${rootAngle.toFixed(6)} hipsAngle=${hipsAngle.toFixed(6)} rootQ=${this.formatQuaternion(pose.root)} hipsQ=${this.formatQuaternion(pose.hips)}`
+        `[ANIMLIFE] first bone change label="${label}" frame=${state.bodyFrame} framesSincePlay=${state.bodyFrame - probe.startedFrame} animation=${probe.animationId} file=${probe.file} rootAngle=${rootAngle.toFixed(6)} hipsAngle=${hipsAngle.toFixed(6)} rootQ=${this.formatQuaternion(pose.root)} hipsQ=${this.formatQuaternion(pose.hips)}`,
       )
     }
   }
@@ -219,10 +244,10 @@ export class AnimationDiagnostics {
       firstBoneChangeFrame: null,
       rootQuaternionAtPlay: pose.root,
       hipsQuaternionAtPlay: pose.hips,
-      loggedFirstChange: false
+      loggedFirstChange: false,
     }
     console.log(
-      `[ANIMLIFE] play probe start frame=${state.bodyFrame} animation=${context.animationId} file=${context.file} actionId=${this.bodyActionIds.get(action) ?? 'pending'} rootQ=${this.formatQuaternion(pose.root)} hipsQ=${this.formatQuaternion(pose.hips)}`
+      `[ANIMLIFE] play probe start frame=${state.bodyFrame} animation=${context.animationId} file=${context.file} actionId=${this.bodyActionIds.get(action) ?? 'pending'} rootQ=${this.formatQuaternion(pose.root)} hipsQ=${this.formatQuaternion(pose.hips)}`,
     )
   }
 
@@ -242,14 +267,15 @@ export class AnimationDiagnostics {
         running: action.isRunning(),
         fadingOut: state.fadingOutActions.has(action),
         current: action === state.currentBodyAction,
-        previous: action === state.previousBodyAction
+        previous: action === state.previousBodyAction,
       }
     })
   }
 
   getMixerActionDebugEntries(): VrmBodyActionDebugEntry[] {
     const state = this.getState()
-    const mixerActions = ((state.mixer as unknown as { _actions?: THREE.AnimationAction[] } | null)?._actions ?? [])
+    const mixerActions =
+      (state.mixer as unknown as { _actions?: THREE.AnimationAction[] } | null)?._actions ?? []
     return mixerActions.map((action) => {
       const clip = action.getClip()
       return {
@@ -263,7 +289,7 @@ export class AnimationDiagnostics {
         running: action.isRunning(),
         fadingOut: state.fadingOutActions.has(action),
         current: action === state.currentBodyAction,
-        previous: action === state.previousBodyAction
+        previous: action === state.previousBodyAction,
       }
     })
   }
@@ -274,7 +300,7 @@ export class AnimationDiagnostics {
     const hipsQuaternion = state.vrm?.humanoid?.getRawBoneNode('hips')?.quaternion
     return {
       localRootQuaternion: rootQuaternion ? this.formatQuaternion(rootQuaternion) : 'none',
-      hipsQuaternion: hipsQuaternion ? this.formatQuaternion(hipsQuaternion) : 'none'
+      hipsQuaternion: hipsQuaternion ? this.formatQuaternion(hipsQuaternion) : 'none',
     }
   }
 
@@ -298,7 +324,8 @@ export class AnimationDiagnostics {
     const state = this.getState()
     return {
       root: state.vrm?.scene.quaternion.clone() ?? new THREE.Quaternion(),
-      hips: state.vrm?.humanoid?.getRawBoneNode('hips')?.quaternion.clone() ?? new THREE.Quaternion()
+      hips:
+        state.vrm?.humanoid?.getRawBoneNode('hips')?.quaternion.clone() ?? new THREE.Quaternion(),
     }
   }
 }

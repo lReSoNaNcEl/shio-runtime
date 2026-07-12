@@ -1,2 +1,2 @@
-export { GROQ_DEFAULT_MODEL, defaultLlmConfig, emptyCredentials } from './defaults'
+export { defaultLlmConfig, emptyCredentials, GROQ_DEFAULT_MODEL } from './defaults'
 export { normalizeLlmConfig } from './normalizeConfig'

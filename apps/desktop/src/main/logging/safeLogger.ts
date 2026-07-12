@@ -9,7 +9,7 @@ const originalConsole: Record<ConsoleMethod, (...args: unknown[]) => void> = {
   error: console.error.bind(console),
   info: console.info.bind(console),
   log: console.log.bind(console),
-  warn: console.warn.bind(console)
+  warn: console.warn.bind(console),
 }
 
 function isIgnoredWriteError(error: unknown): boolean {
@@ -52,5 +52,5 @@ export const mainLog = {
   error: (...args: unknown[]) => write('error', args),
   info: (...args: unknown[]) => write('info', args),
   log: (...args: unknown[]) => write('log', args),
-  warn: (...args: unknown[]) => write('warn', args)
+  warn: (...args: unknown[]) => write('warn', args),
 }

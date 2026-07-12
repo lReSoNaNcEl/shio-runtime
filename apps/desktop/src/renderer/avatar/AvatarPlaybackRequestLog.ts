@@ -43,11 +43,13 @@ export class AvatarPlaybackRequestLog {
 
   record(input: Omit<AvatarPlaybackRequestLogEntry, 'id'>): AvatarPlaybackRequestLogEntry {
     const entry = { ...input, id: ++this.seq }
-    if (entry.accepted && entry.currentAnimationId === entry.requestedAnimationId) this.replayCount += 1
-    if (!entry.accepted && entry.rejectionReason === 'already active') this.ignoredDuplicateRequests += 1
+    if (entry.accepted && entry.currentAnimationId === entry.requestedAnimationId)
+      this.replayCount += 1
+    if (!entry.accepted && entry.rejectionReason === 'already active')
+      this.ignoredDuplicateRequests += 1
     this.entries = [...this.entries, entry].slice(-40)
     console.log(
-      `[PLAYBACKREQ] frame=${entry.frame} animation=${entry.animationId} behavior=${entry.behaviorId} source=${entry.source} accepted=${entry.accepted} decision=${entry.decision} reason="${entry.reason}" reject="${entry.rejectionReason ?? 'none'}"`
+      `[PLAYBACKREQ] frame=${entry.frame} animation=${entry.animationId} behavior=${entry.behaviorId} source=${entry.source} accepted=${entry.accepted} decision=${entry.decision} reason="${entry.reason}" reject="${entry.rejectionReason ?? 'none'}"`,
     )
     return entry
   }
@@ -62,7 +64,7 @@ export class AvatarPlaybackRequestLog {
       ...input,
       replayCount: this.replayCount,
       ignoredDuplicateRequests: this.ignoredDuplicateRequests,
-      requests: [...this.entries]
+      requests: [...this.entries],
     }
   }
 }

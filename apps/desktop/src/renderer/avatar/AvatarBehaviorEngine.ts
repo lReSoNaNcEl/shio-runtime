@@ -1,7 +1,7 @@
+import { emotionRegistry } from '../../shared/emotions'
 import type { CharacterState } from '../../shared/runtime/characterState'
 import type { AvatarBehaviorId } from './AvatarBehaviorResolver'
 import type { AvatarStateEffect } from './AvatarStateMachine'
-import { emotionRegistry } from '../../shared/emotions'
 import { getAnimationsByBehaviorTagForState } from './animationManifest'
 
 export interface AvatarBehaviorEngineDecision {
@@ -19,7 +19,7 @@ export class AvatarBehaviorEngine {
       `speech:${state?.speechState.status ?? 'unknown'}`,
       `activity:${state?.activity ?? 'unknown'}`,
       `attention:${state?.attention.focus ?? 'unknown'}`,
-      `emotion:${state?.emotion ?? effect.emotionKey}`
+      `emotion:${state?.emotion ?? effect.emotionKey}`,
     ]
 
     const replyType = this.replyTypeFor(effect, state)
@@ -31,11 +31,14 @@ export class AvatarBehaviorEngine {
       replyType,
       contextSummary: pipeline.join(', '),
       candidateBehaviors,
-      pipeline: [...pipeline, `replyType:${replyType}`, `intent:${intent}`]
+      pipeline: [...pipeline, `replyType:${replyType}`, `intent:${intent}`],
     }
   }
 
-  private candidateBehaviorsFor(effect: AvatarStateEffect, state?: CharacterState): AvatarBehaviorId[] {
+  private candidateBehaviorsFor(
+    effect: AvatarStateEffect,
+    state?: CharacterState,
+  ): AvatarBehaviorId[] {
     if (effect.behaviorId === 'greeting') return ['greeting']
 
     const mode = state?.mode ?? effect.mode
@@ -48,11 +51,21 @@ export class AvatarBehaviorEngine {
       return ['listening', 'thinking', 'neutral']
     }
 
-    if (mode === 'thinking' || mode === 'awaitingSpeech' || speech === 'generating' || speech === 'synthesizing') {
+    if (
+      mode === 'thinking' ||
+      mode === 'awaitingSpeech' ||
+      speech === 'generating' ||
+      speech === 'synthesizing'
+    ) {
       return ['thinking', 'listening', 'neutral']
     }
 
-    if (mode === 'speaking' || speech === 'speaking' || activity === 'speaking' || activity === 'answering') {
+    if (
+      mode === 'speaking' ||
+      speech === 'speaking' ||
+      activity === 'speaking' ||
+      activity === 'answering'
+    ) {
       return [emotion, this.replyFallbackFor(emotion), 'neutral']
     }
 
@@ -63,17 +76,23 @@ export class AvatarBehaviorEngine {
   private replyTypeFor(effect: AvatarStateEffect, state?: CharacterState): string {
     if (effect.behaviorId === 'greeting') return 'greeting'
     const speech = state?.speechState.status
-    if (speech === 'speaking' || state?.activity === 'answering') return `reply:${state?.emotion || effect.emotionKey}`
+    if (speech === 'speaking' || state?.activity === 'answering')
+      return `reply:${state?.emotion || effect.emotionKey}`
     if (speech === 'listening' || state?.activity === 'listening') return 'input:listening'
     if (speech === 'generating' || speech === 'synthesizing') return 'reply:preparing'
     return effect.mode
   }
 
-  private firstManifestBackedBehavior(behaviors: AvatarBehaviorId[], mode: string): AvatarBehaviorId | null {
+  private firstManifestBackedBehavior(
+    behaviors: AvatarBehaviorId[],
+    mode: string,
+  ): AvatarBehaviorId | null {
     const state = mode === 'awaitingSpeech' ? 'thinking' : mode
-    return behaviors.find((behavior) => {
-      return getAnimationsByBehaviorTagForState(`behavior:${behavior}`, state).length > 0
-    }) ?? null
+    return (
+      behaviors.find((behavior) => {
+        return getAnimationsByBehaviorTagForState(`behavior:${behavior}`, state).length > 0
+      }) ?? null
+    )
   }
 
   private replyFallbackFor(behavior: AvatarBehaviorId): AvatarBehaviorId {

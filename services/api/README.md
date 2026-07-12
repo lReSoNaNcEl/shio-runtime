@@ -42,17 +42,23 @@ The backend removes the tag from spoken text and resolves the speech emotion thr
 - `POST /recognize` - ASR for uploaded audio.
 - `WS /ws` - streaming ASR.
 
-## Install Notes
+## Local setup
 
-Install CUDA torch first, then project dependencies:
-
-```powershell
-.\venv\Scripts\pip.exe install torch torchaudio --index-url https://download.pytorch.org/whl/cu128
-.\venv\Scripts\pip.exe install -r requirements.txt
-```
-
-## Run
+The canonical Python environment is `services/api/.venv`. From the repository root:
 
 ```powershell
-.\venv\Scripts\uvicorn.exe app.main:app --host 0.0.0.0 --port 8000
+npm run api:install:dev
+npm run api:doctor
+npm run api:dev
 ```
+
+For the default Windows CUDA mode, install matching wheels explicitly after creating
+the environment:
+
+```powershell
+services\api\.venv\Scripts\python.exe -m pip install --force-reinstall --no-deps "torch==2.11.0+cu128" "torchaudio==2.11.0+cu128" --index-url https://download.pytorch.org/whl/cu128
+```
+
+Open `http://localhost:8000` or `http://localhost:8000/docs`.
+`127.0.0.1` is the local bind address; `0.0.0.0` means “listen on all interfaces”
+and is not a browser URL.

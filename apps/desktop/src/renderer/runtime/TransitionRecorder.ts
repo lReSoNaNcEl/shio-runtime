@@ -25,12 +25,16 @@ export class TransitionRecorder {
   private lastViolationCount = 0
   private lastWriteAt = 0
 
-  observe(frame: number, avatar: AvatarRuntimeDebugState, runtimeHealth: RuntimeHealth | null): void {
+  observe(
+    frame: number,
+    avatar: AvatarRuntimeDebugState,
+    runtimeHealth: RuntimeHealth | null,
+  ): void {
     const snapshot: RecorderFrame = {
       at: Date.now(),
       frame,
       avatar,
-      runtimeHealth
+      runtimeHealth,
     }
     this.history = [...this.history, snapshot].slice(-60)
 
@@ -43,10 +47,14 @@ export class TransitionRecorder {
     if (this.pending.remainingFutureFrames <= 0) void this.flush()
   }
 
-  private detectReason(avatar: AvatarRuntimeDebugState, runtimeHealth: RuntimeHealth | null): string | null {
+  private detectReason(
+    avatar: AvatarRuntimeDebugState,
+    runtimeHealth: RuntimeHealth | null,
+  ): string | null {
     const body = avatar.bodyActions
     const hipsJump = Math.abs(body.hipsDeltaY) > 0.1
-    if (hipsJump) return `hips jump ${body.hipsDeltaY.toFixed(3)} during ${body.lastLoadAnimationId ?? 'none'}`
+    if (hipsJump)
+      return `hips jump ${body.hipsDeltaY.toFixed(3)} during ${body.lastLoadAnimationId ?? 'none'}`
 
     if (body.ownershipGapCount > this.lastOwnershipGapCount) {
       this.lastOwnershipGapCount = body.ownershipGapCount
@@ -72,7 +80,7 @@ export class TransitionRecorder {
       reason,
       startedAtFrame: snapshot.frame,
       remainingFutureFrames: 60,
-      frames: [...this.history, { ...snapshot, reason }]
+      frames: [...this.history, { ...snapshot, reason }],
     }
   }
 
@@ -87,12 +95,14 @@ export class TransitionRecorder {
       reason: capture.reason,
       startedAtFrame: capture.startedAtFrame,
       savedAt: new Date().toISOString(),
-      frames: capture.frames
+      frames: capture.frames,
     }
     try {
       const result = await window.api.debug.writeTransitionRecording(payload)
       if (result.ok) {
-        console.log(`[TRANSITIONREC] saved reason="${capture.reason}" file=${result.filePath ?? 'unknown'}`)
+        console.log(
+          `[TRANSITIONREC] saved reason="${capture.reason}" file=${result.filePath ?? 'unknown'}`,
+        )
       }
     } catch (error) {
       console.warn('[TRANSITIONREC] failed to save transition recording', error)

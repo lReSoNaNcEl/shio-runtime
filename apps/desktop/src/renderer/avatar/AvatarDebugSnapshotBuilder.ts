@@ -1,21 +1,35 @@
-import type { MouthWeights } from '../three/LipSync'
 import type { FacialDebugState } from '../three/AvatarExpressionMixer'
-import type { HeadMotionDebugState } from '../three/HeadMotionRuntime'
 import type { EarBehaviorDebugState } from '../three/EarBehaviorRuntime'
+import type { HeadMotionDebugState } from '../three/HeadMotionRuntime'
+import type { MouthWeights } from '../three/LipSync'
 import type { LookAtDebugState } from '../three/LookAtRuntime'
-import type { VrmBodyActionDebugState, VrmPerformanceDebugState, VrmModel } from '../three/VrmModel'
-import type { AnimationControllerDebugState, AnimationPlaybackStatus, AvatarAnimationController } from './AvatarAnimationController'
+import type { VrmBodyActionDebugState, VrmModel, VrmPerformanceDebugState } from '../three/VrmModel'
+import type {
+  AnimationControllerDebugState,
+  AnimationPlaybackStatus,
+  AvatarAnimationController,
+} from './AvatarAnimationController'
 import type { AnimationCooldownState } from './AvatarAnimationCooldownManager'
 import type { AvatarAnimationQueue, AvatarAnimationQueueDebugState } from './AvatarAnimationQueue'
-import type { AvatarBehaviorEngine, AvatarBehaviorEngineDecision } from './AvatarBehaviorEngine'
-import type { AvatarBehaviorCandidate, AvatarBehaviorResolution } from './AvatarBehaviorResolver'
-import type { AvatarBehaviorResolver } from './AvatarBehaviorResolver'
+import type { AvatarBehaviorEngineDecision } from './AvatarBehaviorEngine'
+import type {
+  AvatarBehaviorCandidate,
+  AvatarBehaviorResolution,
+  AvatarBehaviorResolver,
+} from './AvatarBehaviorResolver'
 import type { AvatarGestureScheduler } from './AvatarGestureScheduler'
 import type { AvatarIdleBehaviorController } from './AvatarIdleBehaviorController'
 import type { AvatarIdleOrchestrator, IdleOrchestratorDebugState } from './AvatarIdleOrchestrator'
-import type { AvatarPlaybackRequestDebugState, AvatarPlaybackRequestLog, AvatarPlaybackRequestSource } from './AvatarPlaybackRequestLog'
-import type { AvatarSpeakingGestureScheduler, SpeakingGestureSchedulerDebugState } from './AvatarSpeakingGestureScheduler'
-import type { AvatarStateMachine, AvatarMode } from './AvatarStateMachine'
+import type {
+  AvatarPlaybackRequestDebugState,
+  AvatarPlaybackRequestLog,
+  AvatarPlaybackRequestSource,
+} from './AvatarPlaybackRequestLog'
+import type {
+  AvatarSpeakingGestureScheduler,
+  SpeakingGestureSchedulerDebugState,
+} from './AvatarSpeakingGestureScheduler'
+import type { AvatarMode, AvatarStateMachine } from './AvatarStateMachine'
 import type { AvatarTransitionDecision } from './AvatarTransitionPolicy'
 
 export interface AvatarBehaviorTransitionLogEntry {
@@ -114,7 +128,9 @@ export class AvatarDebugSnapshotBuilder {
       behaviorSelectionReason: input.lastBehaviorResolution?.selectionReason ?? 'none',
       activeAnimationCooldowns: input.behaviorResolver.getActiveCooldowns(),
       selectedBehaviorAnimation: input.lastBehaviorResolution?.animationId ?? 'none',
-      currentGesture: speakingGesture.active ? speakingGesture.currentGesture : gesture.currentGesture,
+      currentGesture: speakingGesture.active
+        ? speakingGesture.currentGesture
+        : gesture.currentGesture,
       scheduledAnimationKey: animation.requestedAnimationId ?? 'none',
       idleBehavior: idle.activeBehavior,
       nextIdleBehaviorIn: idle.nextBehaviorIn,
@@ -130,10 +146,10 @@ export class AvatarDebugSnapshotBuilder {
         currentAnimation: animation.activeAnimationId,
         requestedAnimation: animation.requestedAnimationId,
         currentTransition: input.lastTransitionDecision?.policyId ?? 'none',
-        transitionPending: animation.bodyActions.transitionRemaining > 0
+        transitionPending: animation.bodyActions.transitionRemaining > 0,
       }),
       behaviorTimeline: [...input.behaviorTimeline],
-      animationFailures: animation.failedAnimationIds
+      animationFailures: animation.failedAnimationIds,
     }
   }
 }

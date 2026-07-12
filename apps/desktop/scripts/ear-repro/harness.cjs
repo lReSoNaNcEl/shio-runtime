@@ -10843,7 +10843,9 @@ var EarBehaviorRuntime = class _EarBehaviorRuntime {
       console.log("[EARDBG] no ear bones found \u2014 Ear Behavior Runtime disabled for this model");
     } else {
       const axes = this.ears.map((ear) => `${ear.boneName}:${ear.detectedAxis}`).join(" ");
-      console.log(`[EARDBG] Ear Behavior Runtime attached bones=${this.boneStatus} calibration=[${axes}]`);
+      console.log(
+        `[EARDBG] Ear Behavior Runtime attached bones=${this.boneStatus} calibration=[${axes}]`
+      );
     }
   }
   detach() {
@@ -10920,14 +10922,17 @@ var EarBehaviorRuntime = class _EarBehaviorRuntime {
       this.scratchQuatPrimary.setFromAxisAngle(primaryAxis, liftRad * ear.primarySign);
       ear.node.quaternion.copy(ear.restQuat).multiply(this.scratchQuatPrimary);
       if (this.axisOverride === "auto") {
-        this.scratchQuatSecondary.setFromAxisAngle(ear.secondaryAxis, spreadOutward * ear.spreadSign);
+        this.scratchQuatSecondary.setFromAxisAngle(
+          ear.secondaryAxis,
+          spreadOutward * ear.spreadSign
+        );
         ear.node.quaternion.multiply(this.scratchQuatSecondary);
       }
     }
   }
   getDebugState() {
     const left = this.ears.find((ear) => ear.side === "left") ?? this.ears[0] ?? null;
-    const right = this.ears.find((ear) => ear.side === "right") ?? (this.ears[1] ?? null);
+    const right = this.ears.find((ear) => ear.side === "right") ?? this.ears[1] ?? null;
     return {
       enabled: this.ears.length > 0,
       boneStatus: this.boneStatus,
@@ -11155,7 +11160,11 @@ var EarBehaviorRuntime = class _EarBehaviorRuntime {
     return emotion === "surprised" || emotion === "gasp";
   }
   clamp(value) {
-    return MathUtils.clamp(value, -earBehaviorTuning.maxRotation, earBehaviorTuning.maxRotation);
+    return MathUtils.clamp(
+      value,
+      -earBehaviorTuning.maxRotation,
+      earBehaviorTuning.maxRotation
+    );
   }
   randomRange(min, max) {
     return min + this.nextRandom() * Math.max(0, max - min);
@@ -11188,8 +11197,8 @@ head.add(makeEar("J_Sec_L_Ear01", -0.08, 0.25));
 head.add(makeEar("J_Sec_R_Ear01", 0.08, -0.25));
 scene.add(head);
 scene.updateMatrixWorld(true);
-var leftTip = tips["J_Sec_L_Ear01"];
-var rightTip = tips["J_Sec_R_Ear01"];
+var leftTip = tips.J_Sec_L_Ear01;
+var rightTip = tips.J_Sec_R_Ear01;
 var wpL = new Vector3();
 var wpR = new Vector3();
 function tipGapX() {
@@ -11223,7 +11232,8 @@ function run(profile, emotion, seconds) {
       maxR = Math.max(maxR, Math.abs(d.right.currentRotationRad));
       posesR.add(d.right.pose);
     }
-    if (d.left && d.right && Math.abs(d.left.currentLift - d.right.currentLift) > 0.05) divergedFrames++;
+    if (d.left && d.right && Math.abs(d.left.currentLift - d.right.currentLift) > 0.05)
+      divergedFrames++;
     minGap = Math.min(minGap, tipGapX());
     frames++;
   }
@@ -11258,7 +11268,9 @@ var idleState = runtime.getDebugState();
 var twistRejected = idleState.left?.detectedAxis?.startsWith("Y") === false;
 console.log(`
 assert twist-axis(Y) rejected as primary: ${twistRejected ? "PASS" : "FAIL"}`);
-console.log(`update tick count = ${idleState.updateTickCount}, last delta = ${idleState.lastDeltaMs.toFixed(2)}ms`);
+console.log(
+  `update tick count = ${idleState.updateTickCount}, last delta = ${idleState.lastDeltaMs.toFixed(2)}ms`
+);
 console.log(`assert update loop ticked: ${idleState.updateTickCount > 1e3 ? "PASS" : "FAIL"}`);
 var mainRt = new EarBehaviorRuntime();
 var mirrorRt = new EarBehaviorRuntime();

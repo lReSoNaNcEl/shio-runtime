@@ -18,15 +18,12 @@ const OVERLAY_ANIMATION_POLICY = {
   alwaysExcluded: ['neutral2', 'afk_swing_02'],
   idleExcluded: [],
   speakingExcluded: [],
-  reactionExcluded: []
+  reactionExcluded: [],
 } as const satisfies OverlayAnimationPolicyConfig
 
 export class OverlayAnimationPolicy {
   getExcludedAnimationIds(effect: AvatarStateEffect): AnimationId[] {
-    return [
-      ...OVERLAY_ANIMATION_POLICY.alwaysExcluded,
-      ...this.getModeExcludedAnimationIds(effect)
-    ]
+    return [...OVERLAY_ANIMATION_POLICY.alwaysExcluded, ...this.getModeExcludedAnimationIds(effect)]
   }
 
   allows(animationId: string, effect: AvatarStateEffect): boolean {

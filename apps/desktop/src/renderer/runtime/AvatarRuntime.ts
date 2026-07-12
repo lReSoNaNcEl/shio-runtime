@@ -1,24 +1,28 @@
 import type * as THREE from 'three'
-import { AvatarController, type AvatarBehaviorTransitionLogEntry } from '../avatar/AvatarController'
-import type { AvatarMode } from '../avatar/AvatarController'
-import type { DebugAvatarMode } from '../avatar/avatarAnimations'
-import type { AnimationControllerDebugState, AnimationPlaybackStatus } from '../avatar/AvatarAnimationController'
+
+import type { CharacterAvatarState, CharacterState } from '../../shared/runtime/characterState'
+import type { EventBus, RuntimeEventCategory, RuntimeEventType } from '../../shared/runtime/events'
+import type {
+  AnimationControllerDebugState,
+  AnimationPlaybackStatus,
+} from '../avatar/AvatarAnimationController'
 import type { AnimationCooldownState } from '../avatar/AvatarAnimationCooldownManager'
 import type { AvatarAnimationQueueDebugState } from '../avatar/AvatarAnimationQueue'
 import type { AvatarBehaviorEngineDecision } from '../avatar/AvatarBehaviorEngine'
 import type { AvatarBehaviorCandidate } from '../avatar/AvatarBehaviorResolver'
+import type { AvatarMode } from '../avatar/AvatarController'
+import { type AvatarBehaviorTransitionLogEntry, AvatarController } from '../avatar/AvatarController'
 import type { IdleOrchestratorDebugState } from '../avatar/AvatarIdleOrchestrator'
 import type { AvatarPlaybackRequestDebugState } from '../avatar/AvatarPlaybackRequestLog'
 import type { SpeakingGestureSchedulerDebugState } from '../avatar/AvatarSpeakingGestureScheduler'
+import type { DebugAvatarMode } from '../avatar/avatarAnimations'
 import type { FacialDebugState } from '../three/AvatarExpressionMixer'
-import type { VrmBodyActionDebugState, VrmPerformanceDebugState } from '../three/VrmModel'
-import type { LookAtDebugState } from '../three/LookAtRuntime'
-import type { HeadMotionDebugState } from '../three/HeadMotionRuntime'
-import type { EarBehaviorDebugState, EarAxisOverride } from '../three/EarBehaviorRuntime'
-import type { CharacterAvatarState, CharacterState } from '../../shared/runtime/characterState'
-import type { EventBus, RuntimeEventCategory, RuntimeEventType } from '../../shared/runtime/events'
-import type { LipSyncSession, MouthWeights } from '../three/LipSync'
 import type { OverlayViewMode } from '../three/avatarTuning'
+import type { EarAxisOverride, EarBehaviorDebugState } from '../three/EarBehaviorRuntime'
+import type { HeadMotionDebugState } from '../three/HeadMotionRuntime'
+import type { LipSyncSession, MouthWeights } from '../three/LipSync'
+import type { LookAtDebugState } from '../three/LookAtRuntime'
+import type { VrmBodyActionDebugState, VrmPerformanceDebugState } from '../three/VrmModel'
 
 export type { AvatarMode }
 
@@ -59,12 +63,17 @@ export interface AvatarRuntimeDebugState {
   animationFailures: string[]
 }
 
-export type AvatarRuntimeMirrorState = Partial<Omit<CharacterAvatarState, 'mode' | 'expression' | 'vrmExpression'>>
+export type AvatarRuntimeMirrorState = Partial<
+  Omit<CharacterAvatarState, 'mode' | 'expression' | 'vrmExpression'>
+>
 
 export class AvatarRuntime {
   private controller: AvatarController
 
-  constructor(private readonly events: EventBus, options: { overlayMode?: boolean } = {}) {
+  constructor(
+    private readonly events: EventBus,
+    options: { overlayMode?: boolean } = {},
+  ) {
     this.controller = new AvatarController(options)
   }
 
@@ -79,19 +88,24 @@ export class AvatarRuntime {
 
   async loadAnimation(buffer: ArrayBuffer, loop = true): Promise<void> {
     await this.controller.loadAnimation(buffer, loop)
-    this.publishAvatarEvent('RuntimeDebugEvent', loop ? 'Animation Loaded: loop' : 'Animation Loaded')
+    this.publishAvatarEvent(
+      'RuntimeDebugEvent',
+      loop ? 'Animation Loaded: loop' : 'Animation Loaded',
+    )
   }
 
   stopAnimation(): void {
     const previous = this.controller.getDebugState()
     this.controller.stopAnimation()
-    if (previous.currentGesture !== 'none') this.publishAvatarEvent('GestureFinished', previous.currentGesture)
-    if (previous.currentBodyAnimation !== 'none') this.publishAvatarEvent('AnimationFinished', previous.currentBodyAnimation)
+    if (previous.currentGesture !== 'none')
+      this.publishAvatarEvent('GestureFinished', previous.currentGesture)
+    if (previous.currentBodyAnimation !== 'none')
+      this.publishAvatarEvent('AnimationFinished', previous.currentBodyAnimation)
   }
 
   applyCharacterState(
     state: CharacterState,
-    options: { lipSyncSession?: LipSyncSession; stopLipSyncTurnId?: string } = {}
+    options: { lipSyncSession?: LipSyncSession; stopLipSyncTurnId?: string } = {},
   ): void {
     const previous = this.controller.getDebugState()
     this.controller.applyCharacterState(state, options)
@@ -101,7 +115,7 @@ export class AvatarRuntime {
   getMirrorState(): AvatarRuntimeMirrorState {
     return {
       loaded: this.controller.isLoaded(),
-      lipsync: this.controller.getMouthWeights()
+      lipsync: this.controller.getMouthWeights(),
     }
   }
 
@@ -165,10 +179,20 @@ export class AvatarRuntime {
 
   setIdleOrchestratorPaused(paused: boolean): void {
     this.controller.setIdleOrchestratorPaused(paused)
-    this.publishAvatarEvent('RuntimeDebugEvent', paused ? 'Idle Orchestrator Paused' : 'Idle Orchestrator Resumed')
+    this.publishAvatarEvent(
+      'RuntimeDebugEvent',
+      paused ? 'Idle Orchestrator Paused' : 'Idle Orchestrator Resumed',
+    )
   }
 
-  testTransition(kind: 'idle-to-idle' | 'idle-to-speaking' | 'speaking-to-idle' | 'thinking-to-idle' | 'greeting-to-idle'): void {
+  testTransition(
+    kind:
+      | 'idle-to-idle'
+      | 'idle-to-speaking'
+      | 'speaking-to-idle'
+      | 'thinking-to-idle'
+      | 'greeting-to-idle',
+  ): void {
     const previous = this.controller.getDebugState()
     this.controller.testTransition(kind)
     this.publishAvatarChanges(previous)
@@ -201,7 +225,10 @@ export class AvatarRuntime {
 
   setPassiveCompanionMode(enabled: boolean): void {
     this.controller.setPassiveCompanionMode(enabled)
-    this.publishAvatarEvent('RuntimeDebugEvent', enabled ? 'Passive Companion Mode: on' : 'Passive Companion Mode: off')
+    this.publishAvatarEvent(
+      'RuntimeDebugEvent',
+      enabled ? 'Passive Companion Mode: on' : 'Passive Companion Mode: off',
+    )
   }
 
   private publishAvatarChanges(previous: AvatarRuntimeDebugState): void {
@@ -209,7 +236,10 @@ export class AvatarRuntime {
     if (current.currentGesture !== previous.currentGesture && current.currentGesture !== 'none') {
       this.publishAvatarEvent('GestureStarted', current.currentGesture)
     }
-    if (current.currentBodyAnimation !== previous.currentBodyAnimation && current.currentBodyAnimation !== 'none') {
+    if (
+      current.currentBodyAnimation !== previous.currentBodyAnimation &&
+      current.currentBodyAnimation !== 'none'
+    ) {
       this.publishAvatarEvent('AnimationStarted', current.currentBodyAnimation)
     }
   }
@@ -219,7 +249,7 @@ export class AvatarRuntime {
       type,
       category: this.categoryFor(type),
       source: 'renderer.avatarRuntime',
-      detail
+      detail,
     })
   }
 

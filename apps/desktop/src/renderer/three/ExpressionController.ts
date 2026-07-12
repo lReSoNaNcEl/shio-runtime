@@ -1,6 +1,7 @@
 import type { VRM } from '@pixiv/three-vrm'
-import { releaseValue, type FacialEasingId } from './facialEasing'
-import { getFacialProfile, type FacialProfile } from './FacialProfile'
+
+import { type FacialProfile, getFacialProfile } from './FacialProfile'
+import { type FacialEasingId, releaseValue } from './facialEasing'
 
 /**
  * ExpressionController — Emotion source.
@@ -59,7 +60,7 @@ export class ExpressionController {
     this.profile = getFacialProfile(emotionKey)
     const preset = {
       ...this.profile.expressionWeights,
-      ...(this.parseVrmEmotion(vrmEmotion) ?? {})
+      ...(this.parseVrmEmotion(vrmEmotion) ?? {}),
     }
     for (const [name, weight] of Object.entries(preset)) {
       // Mouth is owned by the LipSync domain — never contributed by emotion.
@@ -67,7 +68,7 @@ export class ExpressionController {
       this.targets.set(name, this.clamp(weight))
     }
     console.log(
-      `[FACETRACE] source=Emotion event=APPLY emotion=${emotionKey} profile=${this.profile.id} targets=[${[...this.targets].map(([n, w]) => `${n}:${w.toFixed(2)}`).join(',')}] frame=${this.frame} t=${Math.round(performance.now())}ms`
+      `[FACETRACE] source=Emotion event=APPLY emotion=${emotionKey} profile=${this.profile.id} targets=[${[...this.targets].map(([n, w]) => `${n}:${w.toFixed(2)}`).join(',')}] frame=${this.frame} t=${Math.round(performance.now())}ms`,
     )
   }
 
@@ -131,7 +132,7 @@ export class ExpressionController {
 
   private logLifecycle(state: 'release' | 'inactive', expression: string, progress: number): void {
     console.log(
-      `[FACELIFE] source=Emotion state=${state} expression=${expression} frame=${this.frame} t=${Math.round(performance.now())}ms release=${progress.toFixed(2)}`
+      `[FACELIFE] source=Emotion state=${state} expression=${expression} frame=${this.frame} t=${Math.round(performance.now())}ms release=${progress.toFixed(2)}`,
     )
   }
 

@@ -14,6 +14,7 @@
  * Only the VRM wrapper is faked; all pose/calibration logic is the production class.
  */
 import * as THREE from 'three'
+
 import { EarBehaviorRuntime } from '../../src/renderer/three/EarBehaviorRuntime'
 import type { VrmProceduralMode } from '../../src/renderer/three/VrmModel'
 
@@ -41,8 +42,8 @@ head.add(makeEar('J_Sec_R_Ear01', 0.08, -0.25))
 scene.add(head)
 scene.updateMatrixWorld(true)
 
-const leftTip = tips['J_Sec_L_Ear01']
-const rightTip = tips['J_Sec_R_Ear01']
+const leftTip = tips.J_Sec_L_Ear01
+const rightTip = tips.J_Sec_R_Ear01
 const wpL = new THREE.Vector3()
 const wpR = new THREE.Vector3()
 function tipGapX(): number {
@@ -78,7 +79,8 @@ function run(profile: VrmProceduralMode, emotion: string, seconds: number) {
       maxR = Math.max(maxR, Math.abs(d.right.currentRotationRad))
       posesR.add(d.right.pose)
     }
-    if (d.left && d.right && Math.abs(d.left.currentLift - d.right.currentLift) > 0.05) divergedFrames++
+    if (d.left && d.right && Math.abs(d.left.currentLift - d.right.currentLift) > 0.05)
+      divergedFrames++
     minGap = Math.min(minGap, tipGapX())
     frames++
   }
@@ -87,7 +89,7 @@ function run(profile: VrmProceduralMode, emotion: string, seconds: number) {
   console.log(
     `${profile.padEnd(10)} +${emotion.padEnd(10)} maxL=${deg(maxL)}deg maxR=${deg(maxR)}deg ` +
       `posesL=${[...posesL].join('/')} posesR=${[...posesR].join('/')} ` +
-      `independent=${((divergedFrames / frames) * 100).toFixed(0)}% minTipGap=${gapPct}%rest`
+      `independent=${((divergedFrames / frames) * 100).toFixed(0)}% minTipGap=${gapPct}%rest`,
   )
   return minGap
 }
@@ -120,7 +122,9 @@ const idleState = runtime.getDebugState()
 const twistRejected = idleState.left?.detectedAxis?.startsWith('Y') === false
 console.log(`\nassert twist-axis(Y) rejected as primary: ${twistRejected ? 'PASS' : 'FAIL'}`)
 // Update tick diagnostics must advance (proves the per-instance update loop ran).
-console.log(`update tick count = ${idleState.updateTickCount}, last delta = ${idleState.lastDeltaMs.toFixed(2)}ms`)
+console.log(
+  `update tick count = ${idleState.updateTickCount}, last delta = ${idleState.lastDeltaMs.toFixed(2)}ms`,
+)
 console.log(`assert update loop ticked: ${idleState.updateTickCount > 1000 ? 'PASS' : 'FAIL'}`)
 
 // Two independent runtimes (mimicking main + mirror) driven by identical state
@@ -143,11 +147,12 @@ for (let t = 0; t < 40; t += dt) {
     if (Math.abs(a.currentRotationRad - b.currentRotationRad) < 1e-4) identical++
   }
 }
-const bothTicked = mainRt.getDebugState().updateTickCount > 1000 && mirrorRt.getDebugState().updateTickCount > 1000
+const bothTicked =
+  mainRt.getDebugState().updateTickCount > 1000 && mirrorRt.getDebugState().updateTickCount > 1000
 const notSynced = identical / both < 0.9
 console.log(
   `\nmain+mirror independent instances: bothTicked=${bothTicked ? 'PASS' : 'FAIL'} ` +
-    `notFrameIdentical=${notSynced ? 'PASS' : 'FAIL'} (identical ${((identical / both) * 100).toFixed(0)}% of frames)`
+    `notFrameIdentical=${notSynced ? 'PASS' : 'FAIL'} (identical ${((identical / both) * 100).toFixed(0)}% of frames)`,
 )
 // No convergence during speaking: tips must never cross (gap > 0) and must stay
 // close to the rest gap (ears do not fold toward each other).

@@ -1,14 +1,16 @@
-import { app, BrowserWindow, Menu, ipcMain, protocol, screen } from 'electron'
-import { join } from 'path'
-import { readFileSync } from 'fs'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+
 import * as dotenv from 'dotenv'
-import { initializeSafeLogging, mainLog } from './logging/safeLogger'
-import { loadConfig, getConfig } from './config'
-import { LiveLLMProvider } from './llm'
-import { createMemoryStore } from './memory'
-import { SpeechClient } from './speech/speechClient'
-import { Orchestrator } from './orchestrator'
+import { app, BrowserWindow, ipcMain, Menu, protocol, screen } from 'electron'
+
+import { getConfig, loadConfig } from './config'
 import { registerIpcHandlers } from './ipc'
+import { LiveLLMProvider } from './llm'
+import { initializeSafeLogging, mainLog } from './logging/safeLogger'
+import { createMemoryStore } from './memory'
+import { Orchestrator } from './orchestrator'
+import { SpeechClient } from './speech/speechClient'
 
 initializeSafeLogging()
 dotenv.config()
@@ -30,8 +32,8 @@ function buildOrchestrator(): Orchestrator {
     const creds = providers[activeProvider]
     return {
       provider: activeProvider,
-      apiKey: creds.apiKey || (activeProvider === 'groq' ? process.env.GROQ_API_KEY ?? '' : ''),
-      model: creds.model
+      apiKey: creds.apiKey || (activeProvider === 'groq' ? (process.env.GROQ_API_KEY ?? '') : ''),
+      model: creds.model,
     }
   })
   const memory = createMemoryStore()
@@ -44,11 +46,19 @@ function loadRenderer(target: BrowserWindow, overlay = false): void {
   if (process.env.NODE_ENV === 'development') {
     target.loadURL(`http://localhost:5173${overlay ? '?overlay=1' : ''}`)
   } else {
-    target.loadFile(join(__dirname, '../renderer/index.html'), overlay ? { query: { overlay: '1' } } : undefined)
+    target.loadFile(
+      join(__dirname, '../renderer/index.html'),
+      overlay ? { query: { overlay: '1' } } : undefined,
+    )
   }
 }
 
-function numericSetting(value: string | undefined, fallback: number, min: number, max: number): number {
+function numericSetting(
+  value: string | undefined,
+  fallback: number,
+  min: number,
+  max: number,
+): number {
   const parsed = Number(value)
   if (!Number.isFinite(parsed)) return fallback
   return Math.max(min, Math.min(max, parsed))
@@ -61,14 +71,12 @@ function overlayBounds(): { width: number; height: number; x: number; y: number 
   const height = numericSetting(cfg.overlayHeight, 560, 220, 1200)
   const margin = numericSetting(cfg.overlayMargin, 24, 0, 200)
   const corner = cfg.overlayCorner ?? 'bottom-right'
-  const x =
-    corner.endsWith('left')
-      ? Math.round(display.workArea.x + margin)
-      : Math.round(display.workArea.x + display.workArea.width - width - margin)
-  const y =
-    corner.startsWith('top')
-      ? Math.round(display.workArea.y + margin)
-      : Math.round(display.workArea.y + display.workArea.height - height - margin)
+  const x = corner.endsWith('left')
+    ? Math.round(display.workArea.x + margin)
+    : Math.round(display.workArea.x + display.workArea.width - width - margin)
+  const y = corner.startsWith('top')
+    ? Math.round(display.workArea.y + margin)
+    : Math.round(display.workArea.y + display.workArea.height - height - margin)
   return { width, height, x, y }
 }
 
@@ -100,8 +108,8 @@ function createWindow(): void {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
-      webSecurity: false
-    }
+      webSecurity: false,
+    },
   })
   win.setMenu(null)
 
@@ -116,7 +124,7 @@ function createWindow(): void {
       if (!speechClient) speechClient = new SpeechClient(getConfig().pythonSpeechUrl)
       return speechClient
     },
-    win
+    win,
   )
 
   win.webContents.on('did-finish-load', () => {
@@ -134,7 +142,7 @@ function createWindow(): void {
     try {
       const data = readFileSync(filePath)
       return new Response(data, {
-        headers: { 'Content-Type': 'model/gltf-binary' }
+        headers: { 'Content-Type': 'model/gltf-binary' },
       })
     } catch {
       return new Response('Not found', { status: 404 })
@@ -204,8 +212,8 @@ function createOverlayWindow(): BrowserWindow {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
-      webSecurity: false
-    }
+      webSecurity: false,
+    },
   })
 
   applyOverlaySettings()
@@ -232,7 +240,9 @@ function toggleOverlayWindow(): { visible: boolean } {
 
 app.whenReady().then(() => {
   ipcMain.handle('overlay:toggle', () => toggleOverlayWindow())
-  ipcMain.handle('overlay:is-visible', () => ({ visible: Boolean(overlayWin && !overlayWin.isDestroyed()) }))
+  ipcMain.handle('overlay:is-visible', () => ({
+    visible: Boolean(overlayWin && !overlayWin.isDestroyed()),
+  }))
   ipcMain.handle('overlay:apply-settings', () => applyOverlaySettings())
   ipcMain.handle('overlay:reload-avatar', () => refreshOverlayAvatar())
   ipcMain.handle('avatar-state:get', () => lastAvatarState)

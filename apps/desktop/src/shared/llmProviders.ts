@@ -7,7 +7,13 @@
 
 export type LlmProviderId = 'groq' | 'cerebras' | 'github' | 'openrouter' | 'mistral'
 
-export const LLM_PROVIDER_IDS: readonly LlmProviderId[] = ['groq', 'cerebras', 'github', 'openrouter', 'mistral']
+export const LLM_PROVIDER_IDS: readonly LlmProviderId[] = [
+  'groq',
+  'cerebras',
+  'github',
+  'openrouter',
+  'mistral',
+]
 
 export interface ModelInfo {
   id: string

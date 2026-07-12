@@ -1,11 +1,12 @@
 import axios, { type AxiosInstance } from 'axios'
+
 import type { LlmProviderId } from '../../../shared/llmProviders'
-import type { ChatMessage } from '../public/chatTypes'
 import type { LlmCapabilities } from '../compatibility/index'
 import { prepareMessages } from '../compatibility/index'
-import { LlmResponseError, normalizeHttpErrorMessage, networkErrorMessage } from '../errors/index'
 import { llmDebug } from '../diagnostics/index'
-import { parseChatCompletion, type ParsedCompletion } from './chatCompletionResponse'
+import { LlmResponseError, networkErrorMessage, normalizeHttpErrorMessage } from '../errors/index'
+import type { ChatMessage } from '../public/chatTypes'
+import { type ParsedCompletion, parseChatCompletion } from './chatCompletionResponse'
 
 export interface ChatRunConfig {
   provider: LlmProviderId
@@ -41,13 +42,14 @@ export async function runChatCompletionDetailed(cfg: ChatRunConfig): Promise<Par
     model: cfg.model,
     messages: prepareMessages(cfg.messages, cfg.capabilities),
     max_tokens: cfg.maxTokensOverride ?? cfg.capabilities.recommendedMaxTokens,
-    stream: false
+    stream: false,
   }
-  if (cfg.capabilities.supportsTemperature) body.temperature = cfg.temperature ?? DEFAULT_TEMPERATURE
+  if (cfg.capabilities.supportsTemperature)
+    body.temperature = cfg.temperature ?? DEFAULT_TEMPERATURE
 
   try {
     const res = await cfg.http.post(cfg.chatPath, body, {
-      headers: { Authorization: `Bearer ${cfg.apiKey}`, ...cfg.extraHeaders }
+      headers: { Authorization: `Bearer ${cfg.apiKey}`, ...cfg.extraHeaders },
     })
     const parsed = parseChatCompletion(cfg.provider, res.data)
     llmDebug({
@@ -57,7 +59,7 @@ export async function runChatCompletionDetailed(cfg: ChatRunConfig): Promise<Par
       latencyMs: Date.now() - started,
       hadReasoning: parsed.hadReasoning,
       contentEmpty: false,
-      usage: parsed.usage
+      usage: parsed.usage,
     })
     return parsed
   } catch (e) {
@@ -69,7 +71,7 @@ export async function runChatCompletionDetailed(cfg: ChatRunConfig): Promise<Par
         latencyMs: Date.now() - started,
         hadReasoning: false,
         contentEmpty: true,
-        error: e.message
+        error: e.message,
       })
       throw e
     }
@@ -83,7 +85,7 @@ export async function runChatCompletionDetailed(cfg: ChatRunConfig): Promise<Par
         hadReasoning: false,
         contentEmpty: true,
         status: e.response.status,
-        error: message
+        error: message,
       })
       throw new LlmResponseError({ provider: cfg.provider, message, rawResponse: e.response.data })
     }
@@ -95,7 +97,7 @@ export async function runChatCompletionDetailed(cfg: ChatRunConfig): Promise<Par
       latencyMs: Date.now() - started,
       hadReasoning: false,
       contentEmpty: true,
-      error: message
+      error: message,
     })
     throw new LlmResponseError({ provider: cfg.provider, message })
   }

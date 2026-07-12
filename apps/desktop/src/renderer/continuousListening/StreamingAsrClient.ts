@@ -1,10 +1,36 @@
-export type StreamingAsrState = 'idle' | 'connecting' | 'ready' | 'listening' | 'reconnecting' | 'stopping' | 'error'
+export type StreamingAsrState =
+  | 'idle'
+  | 'connecting'
+  | 'ready'
+  | 'listening'
+  | 'reconnecting'
+  | 'stopping'
+  | 'error'
 
 export type AsrStreamEvent =
   | { type: 'ready'; protocolVersion: 1; sessionId: string; acceptedSampleRate: number }
   | { type: 'speech_started'; sessionId: string; segmentId: string; timestampMs: number }
-  | { type: 'partial'; sessionId: string; segmentId: string; revision: number; text: string; startMs: number; endMs: number; confidence?: number }
-  | { type: 'final'; sessionId: string; segmentId: string; revision: number; text: string; startMs: number; endMs: number; confidence?: number; reason: 'vad_silence' | 'flush' | 'max_duration' | 'disconnect' }
+  | {
+      type: 'partial'
+      sessionId: string
+      segmentId: string
+      revision: number
+      text: string
+      startMs: number
+      endMs: number
+      confidence?: number
+    }
+  | {
+      type: 'final'
+      sessionId: string
+      segmentId: string
+      revision: number
+      text: string
+      startMs: number
+      endMs: number
+      confidence?: number
+      reason: 'vad_silence' | 'flush' | 'max_duration' | 'disconnect'
+    }
   | { type: 'speech_ended'; sessionId: string; segmentId: string; timestampMs: number }
   | { type: 'warning'; sessionId: string; code: string; message: string }
   | { type: 'error'; sessionId?: string; code: string; message: string; recoverable: boolean }
@@ -83,22 +109,28 @@ export class StreamingAsrClient {
     socket.binaryType = 'arraybuffer'
     this.socket = socket
     await new Promise<void>((resolve, reject) => {
-      const timeout = window.setTimeout(() => reject(new Error('ASR WebSocket ready timeout')), 15_000)
+      const timeout = window.setTimeout(
+        () => reject(new Error('ASR WebSocket ready timeout')),
+        15_000,
+      )
       const fail = (message: string): void => {
         window.clearTimeout(timeout)
         reject(new Error(message))
       }
       socket.onerror = () => fail('ASR WebSocket connection failed')
       socket.onclose = () => fail('ASR WebSocket closed before ready')
-      socket.onopen = () => socket.send(JSON.stringify({
-        type: 'start',
-        protocolVersion: 1,
-        sessionId,
-        sampleRate: 16_000,
-        channels: 1,
-        format: 'pcm_s16le',
-        language: this.language
-      }))
+      socket.onopen = () =>
+        socket.send(
+          JSON.stringify({
+            type: 'start',
+            protocolVersion: 1,
+            sessionId,
+            sampleRate: 16_000,
+            channels: 1,
+            format: 'pcm_s16le',
+            language: this.language,
+          }),
+        )
       socket.onmessage = (message) => {
         const event = JSON.parse(String(message.data)) as AsrStreamEvent
         if ('sessionId' in event && event.sessionId && event.sessionId !== this.sessionId) return

@@ -1,8 +1,4 @@
-import {
-  DEFAULT_ANIMATION_COOLDOWN_MS,
-  getAnimation,
-  type AnimationId
-} from './animationManifest'
+import { type AnimationId, DEFAULT_ANIMATION_COOLDOWN_MS, getAnimation } from './animationManifest'
 
 export interface AnimationCooldownState {
   animationId: AnimationId
@@ -27,7 +23,7 @@ export class AvatarAnimationCooldownManager {
       animationId,
       cooldownMs,
       lastPlayedAt,
-      remainingMs
+      remainingMs,
     }
   }
 

@@ -1,16 +1,20 @@
-import { backlogTuning } from './tuning'
 import type { BacklogSelector, BacklogSelectorLlmConfig } from './BacklogSelector'
+import { backlogTuning } from './tuning'
 import type {
   ActiveConversationExecution,
   AdmittedConversationTurn,
   BufferedUtterance,
   ConversationCompletionResult,
   ConversationExecutionPhase,
-  ConversationInput
+  ConversationInput,
 } from './types'
 import type { UtteranceBacklog } from './UtteranceBacklog'
 
-export type ConversationAdmissionOutcome = 'started' | 'queued_backlog' | 'queued_explicit' | 'ignored_busy'
+export type ConversationAdmissionOutcome =
+  | 'started'
+  | 'queued_backlog'
+  | 'queued_explicit'
+  | 'ignored_busy'
 
 let admissionCycleSequence = 0
 const createCycleId = (): string => `admission-${Date.now()}-${++admissionCycleSequence}`
@@ -23,20 +27,26 @@ export class ConversationAdmissionCoordinator {
   private continuousEnabled = false
   private pendingExplicit: ConversationInput | null = null
   private llmConfig: BacklogSelectorLlmConfig = {
-    enabled: false, providerId: '', model: '', timeoutMs: 2_000, minimumConfidence: 0.72
+    enabled: false,
+    providerId: '',
+    model: '',
+    timeoutMs: 2_000,
+    minimumConfidence: 0.72,
   }
 
   constructor(
     private readonly runConversation: (
       turn: AdmittedConversationTurn,
-      reportPhase: (phase: ConversationExecutionPhase) => void
+      reportPhase: (phase: ConversationExecutionPhase) => void,
     ) => Promise<ConversationCompletionResult>,
     private readonly backlog: UtteranceBacklog,
     private readonly selector: BacklogSelector,
-    private readonly onError: (error: unknown, turn: ConversationInput) => void = () => undefined
+    private readonly onError: (error: unknown, turn: ConversationInput) => void = () => undefined,
   ) {}
 
-  isBusy(): boolean { return Boolean(this.activeExecution || this.drainPromise) }
+  isBusy(): boolean {
+    return Boolean(this.activeExecution || this.drainPromise)
+  }
   getActiveExecution(): Readonly<ActiveConversationExecution> | undefined {
     return this.activeExecution ? { ...this.activeExecution } : undefined
   }
@@ -63,11 +73,16 @@ export class ConversationAdmissionCoordinator {
   enqueueStreaming(item: BufferedUtterance): ConversationAdmissionOutcome {
     if (!this.continuousEnabled) return 'ignored_busy'
     const outcome = this.backlog.enqueue(item) ? 'queued_backlog' : 'ignored_busy'
-    console.debug(`[admission] turnId=${item.id} source=continuous_listening outcome=${outcome} activeTurnId=${this.activeExecution?.turnId ?? 'none'}`)
+    console.debug(
+      `[admission] turnId=${item.id} source=continuous_listening outcome=${outcome} activeTurnId=${this.activeExecution?.turnId ?? 'none'}`,
+    )
     return outcome
   }
 
-  async admit(input: ConversationInput, buffered?: BufferedUtterance): Promise<ConversationAdmissionOutcome> {
+  async admit(
+    input: ConversationInput,
+    buffered?: BufferedUtterance,
+  ): Promise<ConversationAdmissionOutcome> {
     if (this.activeExecution || this.drainPromise) return this.handleBusyInput(input, buffered)
 
     const cycleId = createCycleId()
@@ -75,7 +90,9 @@ export class ConversationAdmissionCoordinator {
     this.activeCycleId = cycleId
     const currentPromise = this.executeCycle(initialTurn, cycleId)
     this.drainPromise = currentPromise
-    console.debug(`[admission] turnId=${input.turnId} source=${input.source} cycleId=${cycleId} outcome=accepted activeTurnId=none`)
+    console.debug(
+      `[admission] turnId=${input.turnId} source=${input.source} cycleId=${cycleId} outcome=accepted activeTurnId=none`,
+    )
     try {
       await currentPromise
     } finally {
@@ -87,20 +104,30 @@ export class ConversationAdmissionCoordinator {
     return 'started'
   }
 
-  private handleBusyInput(input: ConversationInput, buffered?: BufferedUtterance): ConversationAdmissionOutcome {
+  private handleBusyInput(
+    input: ConversationInput,
+    buffered?: BufferedUtterance,
+  ): ConversationAdmissionOutcome {
     if (input.source === 'continuous_listening' && buffered) return this.enqueueStreaming(buffered)
     if (input.source === 'text_chat' || input.source === 'push_to_talk') {
       this.selector.cancel()
       if (input.source === 'text_chat') this.backlog.discardWeak()
       this.pendingExplicit = input
-      console.debug(`[admission] turnId=${input.turnId} source=${input.source} outcome=buffered activeTurnId=${this.activeExecution?.turnId ?? 'none'}`)
+      console.debug(
+        `[admission] turnId=${input.turnId} source=${input.source} outcome=buffered activeTurnId=${this.activeExecution?.turnId ?? 'none'}`,
+      )
       return 'queued_explicit'
     }
-    console.debug(`[admission] turnId=${input.turnId} source=${input.source} outcome=discarded activeTurnId=${this.activeExecution?.turnId ?? 'none'}`)
+    console.debug(
+      `[admission] turnId=${input.turnId} source=${input.source} outcome=discarded activeTurnId=${this.activeExecution?.turnId ?? 'none'}`,
+    )
     return 'ignored_busy'
   }
 
-  private async executeCycle(initialTurn: AdmittedConversationTurn, cycleId: string): Promise<void> {
+  private async executeCycle(
+    initialTurn: AdmittedConversationTurn,
+    cycleId: string,
+  ): Promise<void> {
     await this.executeTurn(initialTurn)
     if (initialTurn.source === 'text_chat') this.backlog.discardWeak()
     await this.drainPendingExplicit(cycleId)
@@ -115,13 +142,15 @@ export class ConversationAdmissionCoordinator {
 
   private async executeTurn(turn: AdmittedConversationTurn): Promise<void> {
     if (this.activeExecution) {
-      throw new Error(`Conversation execution overlap: activeTurnId=${this.activeExecution.turnId} requestedTurnId=${turn.turnId}`)
+      throw new Error(
+        `Conversation execution overlap: activeTurnId=${this.activeExecution.turnId} requestedTurnId=${turn.turnId}`,
+      )
     }
     this.activeExecution = {
       turnId: turn.turnId,
       admissionCycleId: turn.admissionCycleId,
       phase: turn.source === 'debug' ? 'synthesizing' : 'generating',
-      startedAt: Date.now()
+      startedAt: Date.now(),
     }
     const reportPhase = (phase: ConversationExecutionPhase): void => {
       if (this.activeExecution?.turnId !== turn.turnId) {
@@ -129,7 +158,9 @@ export class ConversationAdmissionCoordinator {
         return
       }
       this.activeExecution = { ...this.activeExecution, phase }
-      console.debug(`[conversation] turnId=${turn.turnId} cycleId=${turn.admissionCycleId} phase=${phase}`)
+      console.debug(
+        `[conversation] turnId=${turn.turnId} cycleId=${turn.admissionCycleId} phase=${phase}`,
+      )
     }
     try {
       const result = await this.runConversation(turn, reportPhase)
@@ -145,13 +176,20 @@ export class ConversationAdmissionCoordinator {
     for (let budget = 0; budget < backlogTuning.maxSelectedTurnsPerDrain; budget += 1) {
       const selectionPromise = this.selector.select(this.backlog, {
         continuousEnabled: this.continuousEnabled,
-        llm: this.llmConfig
+        llm: this.llmConfig,
       })
       this.arbitrationPromise = selectionPromise
       const selection = await selectionPromise.finally(() => {
         if (this.arbitrationPromise === selectionPromise) this.arbitrationPromise = undefined
       })
-      if (this.activeCycleId !== cycleId || this.pendingExplicit || !this.continuousEnabled || selection.action === 'discard_all' || !selection.text) return
+      if (
+        this.activeCycleId !== cycleId ||
+        this.pendingExplicit ||
+        !this.continuousEnabled ||
+        selection.action === 'discard_all' ||
+        !selection.text
+      )
+        return
       if (!this.backlog.consume(selection.selectedIds, selection.backlogVersion)) return
       await this.executeTurn({
         turnId: `backlog-${Date.now()}-${selection.selectedIds.join('-')}`,
@@ -159,7 +197,7 @@ export class ConversationAdmissionCoordinator {
         source: 'backlog_selected',
         createdAt: Date.now(),
         utteranceIds: selection.selectedIds,
-        admissionCycleId: cycleId
+        admissionCycleId: cycleId,
       })
     }
   }

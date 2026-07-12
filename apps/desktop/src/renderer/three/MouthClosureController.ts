@@ -65,7 +65,13 @@ export class MouthClosureController {
     this.wasAntiStallActive = false
   }
 
-  update(delta: number, speaking: boolean, speechEnergy: number, mouthOpenness: number, antiStallActive: boolean): void {
+  update(
+    delta: number,
+    speaking: boolean,
+    speechEnergy: number,
+    mouthOpenness: number,
+    antiStallActive: boolean,
+  ): void {
     const tuning = facialTuning.mouthClosure
     const dtMs = Math.max(0, delta) * 1000
     const smooth = 1 - Math.exp(-Math.max(0, delta) * Math.max(0.1, tuning.interpolationSpeed))
@@ -90,8 +96,10 @@ export class MouthClosureController {
     }
 
     if (this.graceRemainingMs > 0) this.graceRemainingMs = Math.max(0, this.graceRemainingMs - dtMs)
-    if (this.recoveryCooldownMs > 0) this.recoveryCooldownMs = Math.max(0, this.recoveryCooldownMs - dtMs)
-    if (this.wasAntiStallActive && !antiStallActive) this.recoveryCooldownMs = tuning.recoveryCooldownMs
+    if (this.recoveryCooldownMs > 0)
+      this.recoveryCooldownMs = Math.max(0, this.recoveryCooldownMs - dtMs)
+    if (this.wasAntiStallActive && !antiStallActive)
+      this.recoveryCooldownMs = tuning.recoveryCooldownMs
     this.wasAntiStallActive = antiStallActive
     const inGrace = this.graceRemainingMs > 0
 
@@ -114,8 +122,14 @@ export class MouthClosureController {
         this.sinceLastClosureMs = 0
         this.currentMinIntervalMs = this.randomInterval()
       }
-    } else if (!inGrace && !antiStallActive && this.recoveryCooldownMs <= 0 &&
-      mouthOpenness >= tuning.minVisibleOpenness && voicing && this.sinceLastClosureMs >= this.currentMinIntervalMs) {
+    } else if (
+      !inGrace &&
+      !antiStallActive &&
+      this.recoveryCooldownMs <= 0 &&
+      mouthOpenness >= tuning.minVisibleOpenness &&
+      voicing &&
+      this.sinceLastClosureMs >= this.currentMinIntervalMs
+    ) {
       // Opportunity window elapsed: roll for a closure, then re-space regardless
       // so closures stay well separated even when the roll fails.
       if (Math.random() < tuning.probability) {
@@ -129,11 +143,14 @@ export class MouthClosureController {
     // Envelope: sine ramp in/out over the closure duration, smoothed toward zero
     // when inactive so the lips never snap.
     const target = this.closureActive
-      ? Math.sin(Math.PI * Math.min(1, this.closureElapsedMs / Math.max(1, this.closureDurationMs))) * tuning.closureStrength
+      ? Math.sin(
+          Math.PI * Math.min(1, this.closureElapsedMs / Math.max(1, this.closureDurationMs)),
+        ) * tuning.closureStrength
       : 0
     this.strength = this.strength + (target - this.strength) * smooth
     if (this.strength < 0.001) this.strength = 0
-    if (this.strength > 0 && mouthOpenness * (1 - this.strength) < tuning.minVisibleOpenness) this.suppressedFrames += 1
+    if (this.strength > 0 && mouthOpenness * (1 - this.strength) < tuning.minVisibleOpenness)
+      this.suppressedFrames += 1
   }
 
   getStrength(): number {
@@ -146,12 +163,14 @@ export class MouthClosureController {
       active: this.closureActive,
       strength: this.strength,
       sinceLastClosureMs: this.sinceLastClosureMs,
-      nextClosureInMs: this.closureActive ? 0 : Math.max(0, this.currentMinIntervalMs - this.sinceLastClosureMs),
+      nextClosureInMs: this.closureActive
+        ? 0
+        : Math.max(0, this.currentMinIntervalMs - this.sinceLastClosureMs),
       boundary: this.boundary,
-      graceRemainingMs: this.graceRemainingMs
-      ,mouthClosureFactor: 1 - this.strength
-      ,suppressedFrames: this.suppressedFrames
-      ,recoveryCooldownMs: this.recoveryCooldownMs
+      graceRemainingMs: this.graceRemainingMs,
+      mouthClosureFactor: 1 - this.strength,
+      suppressedFrames: this.suppressedFrames,
+      recoveryCooldownMs: this.recoveryCooldownMs,
     }
   }
 

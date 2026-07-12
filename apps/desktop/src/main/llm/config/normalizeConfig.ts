@@ -1,4 +1,9 @@
-import { LLM_PROVIDER_IDS, type LlmConfig, type LlmProviderId, type ProviderCredentials } from '../../../shared/llmProviders'
+import {
+  LLM_PROVIDER_IDS,
+  type LlmConfig,
+  type LlmProviderId,
+  type ProviderCredentials,
+} from '../../../shared/llmProviders'
 import { isLlmProviderId } from '../registry/index'
 import { defaultLlmConfig, emptyCredentials } from './defaults'
 
@@ -45,7 +50,10 @@ export function normalizeLlmConfig(value: unknown): LlmConfig {
         result.roles.backlogSelector.timeoutMs = Math.max(250, Math.min(10_000, value.timeoutMs))
       }
       if (typeof value.minimumConfidence === 'number' && Number.isFinite(value.minimumConfidence)) {
-        result.roles.backlogSelector.minimumConfidence = Math.max(0, Math.min(1, value.minimumConfidence))
+        result.roles.backlogSelector.minimumConfidence = Math.max(
+          0,
+          Math.min(1, value.minimumConfidence),
+        )
       }
     }
   }

@@ -28,6 +28,23 @@ Electron, React, TypeScript, Three.js, VRM and VRMA.
 - `npx tsc --noEmit` — typecheck
 - `npm run build` — required before the final report
 
+## Code quality (Biome)
+
+Desktop formatting, linting, React checks, and import ordering are owned by
+[Biome](https://biomejs.dev). The configuration and the `@biomejs/biome`
+dependency live in this project (`apps/desktop/biome.jsonc`); there is no root
+`node_modules`. Biome runs with `apps/desktop` as its working directory and checks
+`.`. Run the local scripts here, or delegate from the repo root:
+
+- `npm run check` (root: `npm run desktop:check`) — formatter + linter + import sorting
+- `npm run check:fix` (root: `npm run desktop:check:fix`) — apply the safe fixes
+- `npm run lint` / `npm run format` / `npm run imports:check`
+
+Tooling ownership: Desktop → Biome, API (Python) → Ruff, TypeScript types → `tsc`.
+Do not add ESLint or Prettier alongside Biome. Prefer a justified single-line
+`// biome-ignore lint/<rule>: <reason>` (or `/* … */` in CSS) over disabling a
+rule; never add blanket suppressions.
+
 ## Electron client changes
 
 If `renderer`, `main`, or `preload` changed, you must rebuild, restart Electron, and

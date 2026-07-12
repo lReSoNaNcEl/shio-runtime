@@ -1,7 +1,9 @@
 // src/renderer/audio/audioPlayer.ts
 var ParallelPlaybackError = class extends Error {
   constructor(activeTurnId, requestedTurnId) {
-    super(`Parallel playback rejected: activeTurnId=${activeTurnId} requestedTurnId=${requestedTurnId}`);
+    super(
+      `Parallel playback rejected: activeTurnId=${activeTurnId} requestedTurnId=${requestedTurnId}`
+    );
     this.activeTurnId = activeTurnId;
     this.requestedTurnId = requestedTurnId;
     this.name = "ParallelPlaybackError";
@@ -25,7 +27,9 @@ var AudioPlayer = class {
   async play(wavBuffer, options) {
     if (wavBuffer.byteLength < 44) throw new Error("Speech audio response is empty or invalid");
     if (this.activePlayback) {
-      console.warn(`[audio] guard activeTurnId=${this.activePlayback.turnId} requestedTurnId=${options.turnId}`);
+      console.warn(
+        `[audio] guard activeTurnId=${this.activePlayback.turnId} requestedTurnId=${options.turnId}`
+      );
       throw new ParallelPlaybackError(this.activePlayback.turnId, options.turnId);
     }
     const sequence = ++this.playbackSeq;
@@ -59,7 +63,9 @@ var AudioPlayer = class {
       });
       source.onended = () => {
         if (this.activePlayback !== active || active.source !== source) {
-          console.debug(`[audio] playbackId=${playbackId} turnId=${options.turnId} stale-ended ignored`);
+          console.debug(
+            `[audio] playbackId=${playbackId} turnId=${options.turnId} stale-ended ignored`
+          );
           return;
         }
         console.log(`[audio] playbackId=${playbackId} turnId=${options.turnId} ended`);
@@ -109,6 +115,10 @@ var AudioPlayer = class {
     }
     active.settle?.();
   }
+  stopCurrent(turnId, _reason) {
+    if (this.activePlayback?.turnId !== turnId) return;
+    this.stop();
+  }
   isPlaying() {
     return this.activePlayback?.source !== null && Boolean(this.activePlayback);
   }
@@ -124,7 +134,8 @@ var AudioPlayer = class {
     };
   }
   assertOwner(active) {
-    if (this.activePlayback !== active) throw new Error(`Playback ownership lost for turnId=${active.turnId}`);
+    if (this.activePlayback !== active)
+      throw new Error(`Playback ownership lost for turnId=${active.turnId}`);
   }
   disposeSource(source, playbackId) {
     if (!source) return;
@@ -333,7 +344,8 @@ var ScenarioRun = class {
     for (const info of this.playbacks.values()) {
       if (info.finishFrames.length > 1) double++;
       for (const f of info.finishFrames) {
-        if (info.naturalEndFrame === null) spurious++;
+        if (info.naturalEndFrame === null)
+          spurious++;
         else if (f < info.naturalEndFrame - 1) premature++;
       }
     }
@@ -417,11 +429,15 @@ function summarize(label, runs) {
   for (const [name, run] of Object.entries(runs)) {
     const m = run.metrics();
     const bad = m.premature || m.spurious || m.double;
-    console.log(`
-[${name}] ${bad ? "\u2717" : "\u2713"} prematureFinish=${m.premature} spuriousFinish=${m.spurious} doubleFinish=${m.double}`);
+    console.log(
+      `
+[${name}] ${bad ? "\u2717" : "\u2713"} prematureFinish=${m.premature} spuriousFinish=${m.spurious} doubleFinish=${m.double}`
+    );
     for (const e of run.events) {
       if (e.type.startsWith("---")) continue;
-      console.log(`   t=${String(e.t).padStart(3)} frame=${String(e.frame).padStart(3)}  ${e.type}${e.detail ? "  " + e.detail : ""}`);
+      console.log(
+        `   t=${String(e.t).padStart(3)} frame=${String(e.frame).padStart(3)}  ${e.type}${e.detail ? `  ${e.detail}` : ""}`
+      );
     }
   }
 }
@@ -454,7 +470,11 @@ async function main() {
     const m = r.metrics();
     return `premature=${m.premature} spurious=${m.spurious} double=${m.double}`;
   };
-  console.log(`ORIGINAL / INTERRUPTED : ${fmt(original.INTERRUPTED)}  \u2192 stale source#1 ended fires finishSpeech#2 early (frame 21) while #2 is still audible`);
-  console.log(`FIXED    / INTERRUPTED : ${fmt(fixed.INTERRUPTED)}  \u2192 only #2 finishes, at its real buffer end`);
+  console.log(
+    `ORIGINAL / INTERRUPTED : ${fmt(original.INTERRUPTED)}  \u2192 stale source#1 ended fires finishSpeech#2 early (frame 21) while #2 is still audible`
+  );
+  console.log(
+    `FIXED    / INTERRUPTED : ${fmt(fixed.INTERRUPTED)}  \u2192 only #2 finishes, at its real buffer end`
+  );
 }
 void main();

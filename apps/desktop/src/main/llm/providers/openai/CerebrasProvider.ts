@@ -1,4 +1,5 @@
 import axios from 'axios'
+
 import { CerebrasModelsResponseSchema } from '../../../schemas'
 import { ModelFetchError } from '../../errors'
 import type { ModelInfo } from '../catalogTypes'
@@ -9,7 +10,7 @@ export class CerebrasProvider extends BaseOpenAIProvider {
     super(apiKey, model, {
       providerId: 'cerebras',
       baseURL: 'https://api.cerebras.ai',
-      chatPath: '/v1/chat/completions'
+      chatPath: '/v1/chat/completions',
     })
   }
 
@@ -21,7 +22,10 @@ export class CerebrasProvider extends BaseOpenAIProvider {
     } catch (e) {
       if (axios.isAxiosError(e)) {
         if (e.response) {
-          throw new ModelFetchError('invalid_response', `Cerebras models error ${e.response.status}`)
+          throw new ModelFetchError(
+            'invalid_response',
+            `Cerebras models error ${e.response.status}`,
+          )
         }
         throw new ModelFetchError('network', 'Не удалось загрузить список моделей Cerebras.')
       }

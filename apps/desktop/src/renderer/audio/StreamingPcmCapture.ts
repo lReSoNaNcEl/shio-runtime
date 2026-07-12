@@ -21,7 +21,7 @@ export class StreamingPcmCapture {
   async start(
     deviceId: string | undefined,
     onFrame: (frame: ArrayBuffer) => void,
-    onDeviceLost?: () => void
+    onDeviceLost?: () => void,
   ): Promise<void> {
     if (this.audioContext) return
     if (this.startTask) return this.startTask
@@ -36,18 +36,19 @@ export class StreamingPcmCapture {
   private async startInternal(
     deviceId: string | undefined,
     onFrame: (frame: ArrayBuffer) => void,
-    onDeviceLost?: () => void
+    onDeviceLost?: () => void,
   ): Promise<void> {
-    const deviceConstraint = deviceId && deviceId !== 'default' ? { deviceId: { exact: deviceId } } : {}
+    const deviceConstraint =
+      deviceId && deviceId !== 'default' ? { deviceId: { exact: deviceId } } : {}
     const stream = await navigator.mediaDevices.getUserMedia({
       audio: {
         ...deviceConstraint,
         channelCount: 1,
         echoCancellation: true,
         noiseSuppression: true,
-        autoGainControl: true
+        autoGainControl: true,
       },
-      video: false
+      video: false,
     })
     const audioContext = new AudioContext()
     try {
@@ -70,12 +71,15 @@ export class StreamingPcmCapture {
       stream.getAudioTracks().forEach((track) => {
         track.addEventListener('ended', this.handleTrackEnded)
       })
-      worklet.port.onmessage = (event: MessageEvent<Float32Array>) => this.handleNativeFrame(event.data)
+      worklet.port.onmessage = (event: MessageEvent<Float32Array>) =>
+        this.handleNativeFrame(event.data)
       source.connect(worklet)
       worklet.connect(silentGain)
       silentGain.connect(audioContext.destination)
     } catch (error) {
-      stream.getTracks().forEach((track) => track.stop())
+      stream.getTracks().forEach((track) => {
+        track.stop()
+      })
       await audioContext.close().catch(() => undefined)
       throw error
     }
@@ -99,8 +103,12 @@ export class StreamingPcmCapture {
     this.source = null
     this.silentGain?.disconnect()
     this.silentGain = null
-    this.stream?.getAudioTracks().forEach((track) => track.removeEventListener('ended', this.handleTrackEnded))
-    this.stream?.getTracks().forEach((track) => track.stop())
+    this.stream?.getAudioTracks().forEach((track) => {
+      track.removeEventListener('ended', this.handleTrackEnded)
+    })
+    this.stream?.getTracks().forEach((track) => {
+      track.stop()
+    })
     this.stream = null
     if (this.audioContext) await this.audioContext.close()
     this.audioContext = null
@@ -111,8 +119,8 @@ export class StreamingPcmCapture {
   isAlive(): boolean {
     return Boolean(
       this.audioContext &&
-      this.audioContext.state !== 'closed' &&
-      this.stream?.getAudioTracks().some((track) => track.readyState === 'live')
+        this.audioContext.state !== 'closed' &&
+        this.stream?.getAudioTracks().some((track) => track.readyState === 'live'),
     )
   }
 

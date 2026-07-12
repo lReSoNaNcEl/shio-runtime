@@ -33,7 +33,14 @@ export type CharacterActivityState =
   | 'reacting'
   | 'error'
 
-export type CharacterAttentionFocus = 'none' | 'user' | 'speechService' | 'llm' | 'tts' | 'avatar' | 'environment'
+export type CharacterAttentionFocus =
+  | 'none'
+  | 'user'
+  | 'speechService'
+  | 'llm'
+  | 'tts'
+  | 'avatar'
+  | 'environment'
 
 export interface CharacterAttentionState {
   focus: CharacterAttentionFocus
@@ -159,22 +166,22 @@ export const INITIAL_CHARACTER_STATE: CharacterState = {
     isSpeaking: false,
     ttsGeneration: 'idle',
     currentSentence: '',
-    playbackProgress: 0
+    playbackProgress: 0,
   },
   animation: {
     behavior: 'idle',
     animationId: 'none',
-    queueLength: 0
+    queueLength: 0,
   },
   voice: {
     voiceId: DEFAULT_CHARACTER_VOICE_ID,
-    dataset: 'AnimeVox'
+    dataset: 'AnimeVox',
   },
   posture: 'relaxed',
   conversation: {
     replyType: 'none',
     lastUserIntent: 'none',
-    conversationPhase: 'none'
+    conversationPhase: 'none',
   },
   conversationPresence: {
     engagement: 'normal',
@@ -184,15 +191,15 @@ export const INITIAL_CHARACTER_STATE: CharacterState = {
     pauseHint: 'none',
     replyLength: 'veryShort',
     responsePhase: 'waiting',
-    lastUpdate: 0
+    lastUpdate: 0,
   },
   avatar: {
     mode: 'idle',
     expression: emotionRegistry.defaultEmotion,
     lipsync: { aa: 0, ih: 0, ou: 0, ee: 0, oh: 0 },
-    loaded: false
+    loaded: false,
   },
-  updatedAt: 0
+  updatedAt: 0,
 }
 
 export function cloneCharacterState(state: CharacterState): CharacterState {
@@ -206,8 +213,8 @@ export function cloneCharacterState(state: CharacterState): CharacterState {
     conversationPresence: { ...state.conversationPresence },
     avatar: {
       ...state.avatar,
-      lipsync: { ...state.avatar.lipsync }
-    }
+      lipsync: { ...state.avatar.lipsync },
+    },
   }
 }
 
@@ -216,11 +223,11 @@ export function normalizeCharacterState(state: CharacterState): CharacterState {
     ...state,
     speechState: {
       ...state.speechState,
-      isSpeaking: state.speechState.status === 'speaking'
+      isSpeaking: state.speechState.status === 'speaking',
     },
     avatar: {
       ...state.avatar,
-      mode: state.mode
-    }
+      mode: state.mode,
+    },
   }
 }

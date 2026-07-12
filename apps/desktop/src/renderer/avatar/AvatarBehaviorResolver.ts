@@ -1,17 +1,17 @@
+import type { OverlayViewMode } from '../three/avatarTuning'
+import {
+  type AnimationCooldownState,
+  AvatarAnimationCooldownManager,
+} from './AvatarAnimationCooldownManager'
 import type { AvatarStateEffect } from './AvatarStateMachine'
 import {
-  AvatarAnimationCooldownManager,
-  type AnimationCooldownState
-} from './AvatarAnimationCooldownManager'
-import {
+  type AnimationId,
   getAnimation,
   getAnimationsByBehaviorTagForState,
   isAnimationCameraCompatible,
   isAutomaticSelectionEnabled,
   isConversationSpeechAnimation,
-  type AnimationId
 } from './animationManifest'
-import type { OverlayViewMode } from '../three/avatarTuning'
 
 export type AvatarBehaviorId =
   | 'idle'
@@ -71,7 +71,10 @@ export class AvatarBehaviorResolver {
     this.cameraMode = cameraMode
   }
 
-  resolve(effect: AvatarStateEffect, excludedAnimationIds: readonly string[] = []): AvatarBehaviorResolution {
+  resolve(
+    effect: AvatarStateEffect,
+    excludedAnimationIds: readonly string[] = [],
+  ): AvatarBehaviorResolution {
     const now = Date.now()
     const behaviorId = this.normalizeBehavior(effect.behaviorId)
     const manifestState = this.toManifestState(effect.mode)
@@ -88,7 +91,7 @@ export class AvatarBehaviorResolver {
       loop: effect.loop,
       fallbackAnimationId: this.getFallbackAnimationId(manifestState, excludedIds),
       activeCooldowns: this.cooldowns.getActiveCooldowns(now),
-      selectionReason: `${behaviorId}: ${selection.reason}`
+      selectionReason: `${behaviorId}: ${selection.reason}`,
     }
   }
 
@@ -96,7 +99,7 @@ export class AvatarBehaviorResolver {
     effect: AvatarStateEffect,
     tag: string,
     behaviorId: AvatarBehaviorId,
-    excludedAnimationIds: readonly string[] = []
+    excludedAnimationIds: readonly string[] = [],
   ): AvatarBehaviorResolution {
     const now = Date.now()
     const manifestState = this.toManifestState(effect.mode)
@@ -114,7 +117,7 @@ export class AvatarBehaviorResolver {
       loop: entry?.loop ?? effect.loop,
       fallbackAnimationId: this.getFallbackAnimationId(manifestState, excludedIds),
       activeCooldowns: this.cooldowns.getActiveCooldowns(now),
-      selectionReason: `${tag}: ${selection.reason}`
+      selectionReason: `${tag}: ${selection.reason}`,
     }
   }
 
@@ -132,16 +135,22 @@ export class AvatarBehaviorResolver {
     return 'neutral'
   }
 
-  private getCandidates(behaviorId: AvatarBehaviorId, mode: string, now: number): AvatarBehaviorCandidate[] {
-    const animationIds = getAnimationsByBehaviorTagForState(`behavior:${behaviorId}`, mode)
-      .map((entry) => entry.id as AnimationId)
+  private getCandidates(
+    behaviorId: AvatarBehaviorId,
+    mode: string,
+    now: number,
+  ): AvatarBehaviorCandidate[] {
+    const animationIds = getAnimationsByBehaviorTagForState(`behavior:${behaviorId}`, mode).map(
+      (entry) => entry.id as AnimationId,
+    )
 
     return this.buildCandidates(animationIds, now)
   }
 
   private getCandidatesForTag(tag: string, mode: string, now: number): AvatarBehaviorCandidate[] {
-    const animationIds = getAnimationsByBehaviorTagForState(tag, mode)
-      .map((entry) => entry.id as AnimationId)
+    const animationIds = getAnimationsByBehaviorTagForState(tag, mode).map(
+      (entry) => entry.id as AnimationId,
+    )
 
     return this.buildCandidates(animationIds, now)
   }
@@ -164,7 +173,7 @@ export class AvatarBehaviorResolver {
           excludedByAutomaticSelection: !isAutomaticSelectionEnabled(entry),
           lastPlayedAt: cooldown.lastPlayedAt,
           selected: false,
-          selectionShare: 0
+          selectionShare: 0,
         }
       })
       .filter((candidate): candidate is AvatarBehaviorCandidate => candidate !== null)
@@ -189,7 +198,7 @@ export class AvatarBehaviorResolver {
       'sigh',
       'groan',
       'whisper',
-      'greeting'
+      'greeting',
     ].includes(behaviorId)
   }
 
@@ -200,7 +209,7 @@ export class AvatarBehaviorResolver {
   private selectAnimation(
     candidates: AvatarBehaviorCandidate[],
     excludedAnimationIds = new Set<string>(),
-    mode = 'idle'
+    mode = 'idle',
   ): { animationId: AnimationId; reason: string } {
     this.applyUsageFilter(candidates, mode)
     const available = candidates.filter((candidate) => {
@@ -214,10 +223,14 @@ export class AvatarBehaviorResolver {
       )
     })
     const excludedCount = candidates.filter((candidate) => candidate.excludedByCooldown).length
-    const policyExcludedCount = candidates.filter((candidate) => excludedAnimationIds.has(candidate.animationId)).length
+    const policyExcludedCount = candidates.filter((candidate) =>
+      excludedAnimationIds.has(candidate.animationId),
+    ).length
     const usageExcludedCount = candidates.filter((candidate) => candidate.excludedByUsage).length
     const cameraExcludedCount = candidates.filter((candidate) => candidate.excludedByCamera).length
-    const automaticSelectionExcludedCount = candidates.filter((candidate) => candidate.excludedByAutomaticSelection).length
+    const automaticSelectionExcludedCount = candidates.filter(
+      (candidate) => candidate.excludedByAutomaticSelection,
+    ).length
 
     if (available.length > 0) {
       const animationId = this.selectWeighted(available)
@@ -226,14 +239,22 @@ export class AvatarBehaviorResolver {
         policyExcludedCount > 0 ? `${policyExcludedCount} excluded by repeat policy` : '',
         usageExcludedCount > 0 ? `${usageExcludedCount} excluded by conversation usage policy` : '',
         cameraExcludedCount > 0 ? `${cameraExcludedCount} excluded: incompatible camera mode` : '',
-        automaticSelectionExcludedCount > 0 ? `${automaticSelectionExcludedCount} excluded: automatic selection disabled` : ''
+        automaticSelectionExcludedCount > 0
+          ? `${automaticSelectionExcludedCount} excluded: automatic selection disabled`
+          : '',
       ].filter(Boolean)
       const suffix = suffixParts.length > 0 ? `, ${suffixParts.join(', ')}` : ''
       return { animationId, reason: `weighted pick from ${available.length} eligible${suffix}` }
     }
 
     const weighted = candidates.filter((candidate) => {
-      return candidate.weight > 0 && !candidate.excludedByUsage && !candidate.excludedByCamera && !candidate.excludedByAutomaticSelection && !excludedAnimationIds.has(candidate.animationId)
+      return (
+        candidate.weight > 0 &&
+        !candidate.excludedByUsage &&
+        !candidate.excludedByCamera &&
+        !candidate.excludedByAutomaticSelection &&
+        !excludedAnimationIds.has(candidate.animationId)
+      )
     })
     if (weighted.length === 0) {
       const fallback = this.getFallbackAnimationId(mode, excludedAnimationIds)
@@ -244,15 +265,16 @@ export class AvatarBehaviorResolver {
       .slice()
       .sort((a, b) => (a.lastPlayedAt ?? 0) - (b.lastPlayedAt ?? 0))[0]
     return {
-      animationId: leastRecent?.animationId ?? this.getFallbackAnimationId(mode, excludedAnimationIds),
-      reason: `all ${weighted.length} on cooldown -> least-recently-played`
+      animationId:
+        leastRecent?.animationId ?? this.getFallbackAnimationId(mode, excludedAnimationIds),
+      reason: `all ${weighted.length} on cooldown -> least-recently-played`,
     }
   }
 
   private annotateCandidates(
     candidates: AvatarBehaviorCandidate[],
     selectedId: AnimationId,
-    excludedAnimationIds = new Set<string>()
+    excludedAnimationIds = new Set<string>(),
   ): void {
     const eligible = candidates.filter((candidate) => {
       return (
@@ -290,11 +312,17 @@ export class AvatarBehaviorResolver {
     }
   }
 
-  private getFallbackAnimationId(mode: string, excludedAnimationIds = new Set<string>()): AnimationId {
+  private getFallbackAnimationId(
+    mode: string,
+    excludedAnimationIds = new Set<string>(),
+  ): AnimationId {
     const preferred = mode === 'speaking' ? SPEAKING_FALLBACK_ANIMATION_ID : FALLBACK_ANIMATION_ID
     const allowed = (id: AnimationId): boolean => {
       const entry = getAnimation(id)
-      return !excludedAnimationIds.has(id) && Boolean(entry && isAnimationCameraCompatible(entry, this.cameraMode))
+      return (
+        !excludedAnimationIds.has(id) &&
+        Boolean(entry && isAnimationCameraCompatible(entry, this.cameraMode))
+      )
     }
     if (allowed(preferred)) return preferred
     if (allowed(FALLBACK_ANIMATION_ID)) return FALLBACK_ANIMATION_ID

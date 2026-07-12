@@ -1,18 +1,25 @@
+import { type EmotionTextSegment, parseEmotionalReply } from '../../shared/emotionSegments'
+import { stripAssistantMarkup } from '../../shared/emotions'
 import type {
   CharacterActivityState,
   CharacterConversationPresenceState,
   CharacterRuntimeMode,
   CharacterSpeechState,
-  CharacterState
+  CharacterState,
 } from '../../shared/runtime/characterState'
-import { stripAssistantMarkup } from '../../shared/emotions'
-import { hasSpeakableContent } from '../../shared/speakableContent'
-import { parseEmotionalReply, type EmotionTextSegment } from '../../shared/emotionSegments'
 import type { EventBus, RuntimeEventType } from '../../shared/runtime/events'
+import { hasSpeakableContent } from '../../shared/speakableContent'
 import type { MouthWeights } from '../three/LipSync'
 import type { CharacterStateStore } from './ShioRuntime'
+import { speechErrorFromResponse } from './speechCapabilities'
 
-export type SpeechRuntimeStatus = 'idle' | 'listening' | 'recognizing' | 'thinking' | 'synthesizing' | 'speaking'
+export type SpeechRuntimeStatus =
+  | 'idle'
+  | 'listening'
+  | 'recognizing'
+  | 'thinking'
+  | 'synthesizing'
+  | 'speaking'
 type SpeechReply = Awaited<ReturnType<Window['api']['tts']['synthesizeReply']>>
 type SuccessfulSpeechReply = SpeechReply & { ok: true; audioBuffer: ArrayBuffer }
 
@@ -72,7 +79,7 @@ export class SpeechRuntime {
 
   constructor(
     private readonly characterState: CharacterStateStore,
-    private readonly events: EventBus
+    private readonly events: EventBus,
   ) {}
 
   transitionSpeechState(transition: SpeechStateTransition): CharacterState {
@@ -91,12 +98,14 @@ export class SpeechRuntime {
           voiceId: transition.voiceId ?? current.voice.voiceId,
           isSpeaking: nextSpeech === 'speaking',
           ttsGeneration: this.toTtsGeneration(transition.status),
-          currentSentence: transition.currentSentence ?? (nextSpeech === 'silent' ? '' : current.speechState.currentSentence),
-          playbackProgress: nextSpeech === 'speaking' ? current.speechState.playbackProgress : 0
+          currentSentence:
+            transition.currentSentence ??
+            (nextSpeech === 'silent' ? '' : current.speechState.currentSentence),
+          playbackProgress: nextSpeech === 'speaking' ? current.speechState.playbackProgress : 0,
         },
         voice: {
           ...current.voice,
-          voiceId: transition.voiceId ?? current.voice.voiceId
+          voiceId: transition.voiceId ?? current.voice.voiceId,
         },
         conversationPresence: transition.conversationPresence ?? current.conversationPresence,
         activity: this.toActivity(transition.status),
@@ -104,9 +113,9 @@ export class SpeechRuntime {
           ...current.avatar,
           mode: transition.mode,
           expression: emotion,
-          vrmExpression: transition.vrmEmotion
+          vrmExpression: transition.vrmEmotion,
         },
-        updatedAt: Date.now()
+        updatedAt: Date.now(),
       }
     })
     if (previous.mode !== next.mode) {
@@ -115,7 +124,12 @@ export class SpeechRuntime {
     if (previous.emotion !== next.emotion) {
       this.publishCharacterEvent('EmotionChanged', next.emotion)
     }
-    this.recordSpeechTimeline(previous.speechState.status, nextSpeech, transition.mode, next.emotion)
+    this.recordSpeechTimeline(
+      previous.speechState.status,
+      nextSpeech,
+      transition.mode,
+      next.emotion,
+    )
     return next
   }
 
@@ -125,17 +139,19 @@ export class SpeechRuntime {
       avatar: {
         ...current.avatar,
         loaded: mirror.loaded ?? current.avatar.loaded,
-        lipsync: mirror.lipsync ?? current.avatar.lipsync
+        lipsync: mirror.lipsync ?? current.avatar.lipsync,
       },
-      updatedAt: Date.now()
+      updatedAt: Date.now(),
     }))
   }
 
-  updateConversationPresence(conversationPresence: CharacterConversationPresenceState): CharacterState {
+  updateConversationPresence(
+    conversationPresence: CharacterConversationPresenceState,
+  ): CharacterState {
     return this.characterState.update((current) => ({
       ...current,
       conversationPresence,
-      updatedAt: Date.now()
+      updatedAt: Date.now(),
     }))
   }
 
@@ -145,9 +161,9 @@ export class SpeechRuntime {
       ...current,
       speechState: {
         ...current.speechState,
-        playbackProgress
+        playbackProgress,
       },
-      updatedAt: Date.now()
+      updatedAt: Date.now(),
     }))
   }
 
@@ -168,14 +184,21 @@ export class SpeechRuntime {
     const parsed = parseEmotionalReply(reply.replyText)
     const emotionKey = parsed.primaryEmotion
     const displayText = parsed.visibleText
-    const segments = parsed.segments.map((segment) => ({ ...segment, text: this.speechText(segment.text) }))
+    const segments = parsed.segments.map((segment) => ({
+      ...segment,
+      text: this.speechText(segment.text),
+    }))
     const speechText = segments.map((segment) => segment.text).join(' ')
     return { replyText: reply.replyText, displayText, speechText, emotionKey, segments }
   }
 
-  async synthesizeAssistantReply(turnId: string, draft: AssistantReplyDraft): Promise<AssistantSpeechTurn> {
+  async synthesizeAssistantReply(
+    turnId: string,
+    draft: AssistantReplyDraft,
+  ): Promise<AssistantSpeechTurn> {
     const speech = await window.api.tts.synthesizeReply(turnId, draft.speechText, draft.emotionKey)
     if (!speech.ok || !speech.audioBuffer) {
+      if (speech.errorCode) throw speechErrorFromResponse('synthesis', speech)
       throw new Error(speech.error ?? 'Нет аудио')
     }
     const successfulSpeech = speech as SuccessfulSpeechReply
@@ -183,13 +206,19 @@ export class SpeechRuntime {
     return {
       ...draft,
       speech: successfulSpeech,
-      ttsLatencyText: this.formatTtsLatency(successfulSpeech)
+      ttsLatencyText: this.formatTtsLatency(successfulSpeech),
     }
   }
 
-  async synthesizeSegment(turnId: string, segment: EmotionTextSegment): Promise<SuccessfulSpeechReply> {
+  async synthesizeSegment(
+    turnId: string,
+    segment: EmotionTextSegment,
+  ): Promise<SuccessfulSpeechReply> {
     const speech = await window.api.tts.synthesizeReply(turnId, segment.text, segment.emotion)
-    if (!speech.ok || !speech.audioBuffer) throw new Error(speech.error ?? 'No audio')
+    if (!speech.ok || !speech.audioBuffer) {
+      if (speech.errorCode) throw speechErrorFromResponse('synthesis', speech)
+      throw new Error(speech.error ?? 'No audio')
+    }
     return speech as SuccessfulSpeechReply
   }
 
@@ -201,6 +230,7 @@ export class SpeechRuntime {
     const text = `[${emotionKey}] Тестирую полный цикл Shio.`
     const speech = await window.api.tts.synthesizeReply(turnId, text, emotionKey)
     if (!speech.ok || !speech.audioBuffer) {
+      if (speech.errorCode) throw speechErrorFromResponse('synthesis', speech)
       throw new Error(speech.error ?? 'нет аудио')
     }
     const successfulSpeech = speech as SuccessfulSpeechReply
@@ -209,13 +239,14 @@ export class SpeechRuntime {
       text,
       emotionKey,
       speech: successfulSpeech,
-      ttsLatencyText: this.formatTtsLatency(successfulSpeech)
+      ttsLatencyText: this.formatTtsLatency(successfulSpeech),
     }
   }
 
   async recognizeSpeech(wavBuffer: ArrayBuffer): Promise<RecognizedSpeech> {
     const res = await window.api.asr.recognize(wavBuffer)
     if (!res.ok || !res.text) {
+      if (res.errorCode) throw speechErrorFromResponse('recognition', res)
       throw new Error(res.error ?? 'No text')
     }
 
@@ -234,7 +265,6 @@ export class SpeechRuntime {
         return 'synthesizing'
       case 'speaking':
         return 'speaking'
-      case 'idle':
       default:
         return 'silent'
     }
@@ -251,7 +281,6 @@ export class SpeechRuntime {
         return 'preparingSpeech'
       case 'speaking':
         return 'speaking'
-      case 'idle':
       default:
         return 'waiting'
     }
@@ -269,13 +298,14 @@ export class SpeechRuntime {
         return { focus: 'tts', confidence: 0.8 }
       case 'speaking':
         return { focus: 'avatar', confidence: 0.9 }
-      case 'idle':
       default:
         return { focus: 'none', confidence: 0 }
     }
   }
 
-  private toTtsGeneration(status: SpeechRuntimeStatus): CharacterState['speechState']['ttsGeneration'] {
+  private toTtsGeneration(
+    status: SpeechRuntimeStatus,
+  ): CharacterState['speechState']['ttsGeneration'] {
     switch (status) {
       case 'synthesizing':
         return 'generating'
@@ -286,10 +316,6 @@ export class SpeechRuntime {
       default:
         return 'requested'
     }
-  }
-
-  private displayText(text: string): string {
-    return stripAssistantMarkup(text)
   }
 
   private speechText(text: string): string {
@@ -303,7 +329,10 @@ export class SpeechRuntime {
     const cacheState = (speech.cache ?? '').toUpperCase()
     if (cacheState === 'HIT') {
       const generated = Number(speech.generatedLatencyMs)
-      const generatedText = Number.isFinite(generated) && generated > 0 ? `, генерация была ${Math.round(generated)} мс` : ''
+      const generatedText =
+        Number.isFinite(generated) && generated > 0
+          ? `, генерация была ${Math.round(generated)} мс`
+          : ''
       return `TTS: ${Math.round(value)} мс (кэш${generatedText})`
     }
     if (cacheState === 'MISS') return `TTS: ${Math.round(value)} мс (miss)`
@@ -316,7 +345,7 @@ export class SpeechRuntime {
       type,
       category: 'character',
       source: 'renderer.speechRuntime',
-      detail
+      detail,
     })
   }
 
@@ -324,7 +353,7 @@ export class SpeechRuntime {
     from: CharacterSpeechState,
     to: CharacterSpeechState,
     mode: CharacterRuntimeMode,
-    emotion: string
+    emotion: string,
   ): void {
     if (from === to) return
     const at = Date.now()
@@ -334,12 +363,12 @@ export class SpeechRuntime {
       to,
       mode,
       durationMs: this.lastSpeechTransitionAt === null ? null : at - this.lastSpeechTransitionAt,
-      emotion
+      emotion,
     }
     this.lastSpeechTransitionAt = at
     this.speechTimeline = [...this.speechTimeline, entry].slice(-40)
     console.log(
-      `[SPEECHSTATE] ${from}->${to} mode=${mode} emotion=${emotion} durationMs=${entry.durationMs ?? 'n/a'}`
+      `[SPEECHSTATE] ${from}->${to} mode=${mode} emotion=${emotion} durationMs=${entry.durationMs ?? 'n/a'}`,
     )
   }
 }

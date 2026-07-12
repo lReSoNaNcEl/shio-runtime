@@ -10,9 +10,13 @@ export interface ActionResult<TResult = unknown> {
   action: string
   result?: TResult
   error?: string
+  /** Stable, normalized domain error code when the thrown error carried one. */
+  errorCode?: string
 }
 
-export type ActionHandler<TPayload = unknown, TResult = unknown> = (payload: TPayload) => Promise<TResult> | TResult
+export type ActionHandler<TPayload = unknown, TResult = unknown> = (
+  payload: TPayload,
+) => Promise<TResult> | TResult
 
 export interface ToolDefinition<TPayload = unknown, TResult = unknown> {
   name: string

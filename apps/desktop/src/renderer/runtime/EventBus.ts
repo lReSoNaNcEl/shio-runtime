@@ -12,7 +12,7 @@ export class PassiveEventBus implements EventBus {
       ...input,
       id: `evt-${++this.sequence}`,
       occurredAt: Date.now(),
-      metadata: input.metadata ? Object.freeze({ ...input.metadata }) : undefined
+      metadata: input.metadata ? Object.freeze({ ...input.metadata }) : undefined,
     })
 
     this.history = [...this.history, event].slice(-MAX_EVENT_HISTORY)

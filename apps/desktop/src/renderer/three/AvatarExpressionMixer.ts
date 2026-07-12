@@ -1,17 +1,18 @@
 import type { VRM } from '@pixiv/three-vrm'
+
 import { facialTuning } from './avatarTuning'
-import type { SpeakingEyeDebug } from './SpeakingEyeController'
-import type { MouthClosureDebug } from './MouthClosureController'
 import type { BlinkDebugState } from './BlinkController'
 import { resolveEffectiveBlinkProfile } from './BlinkProfileResolver'
 import {
   completeMouthWeights,
-  getFacialProfile,
-  VISEME_NAMES,
   type FacialProfile,
+  getFacialProfile,
   type MouthWeights,
-  type VisemeName
+  VISEME_NAMES,
+  type VisemeName,
 } from './FacialProfile'
+import type { MouthClosureDebug } from './MouthClosureController'
+import type { SpeakingEyeDebug } from './SpeakingEyeController'
 
 /**
  * AvatarExpressionMixer — the single authority over VRM facial expressions.
@@ -153,7 +154,12 @@ export interface FacialDebugState {
   blinkTuning: BlinkTuningDebug
   blinkExpressions: string[]
   vrmaFacialTracksDisabled: number
-  speakingEye: SpeakingEyeDebug & { leftExpression: string; rightExpression: string; finalLeft: number; finalRight: number }
+  speakingEye: SpeakingEyeDebug & {
+    leftExpression: string
+    rightExpression: string
+    finalLeft: number
+    finalRight: number
+  }
   mouthClosure: MouthClosureDebug & { rawMouthMax: number; finalMouthMax: number }
 }
 
@@ -161,8 +167,6 @@ export class AvatarExpressionMixer {
   private vrm: VRM | null = null
   private blinkNames: string[] = []
   private blinkNameSet = new Set<string>()
-  /** Every expression the mixer authoritatively owns (all except lookAt). */
-  private managedNames: string[] = []
   private supportedNames = new Set<string>()
   private currentProfile: FacialProfile = getFacialProfile('neutral')
   private unsupportedExpressionRequests = new Set<string>()
@@ -208,8 +212,13 @@ export class AvatarExpressionMixer {
     clamped: completeMouthWeights({}),
     final: completeMouthWeights({}),
     speechEnergy: 0,
-    playbackItemId: '', analyserAttached: false, lipSyncActive: false,
-    currentRawRms: 0, currentNormalizedEnergy: 0, currentMouthOpenness: 0, antiStallActive: false,
+    playbackItemId: '',
+    analyserAttached: false,
+    lipSyncActive: false,
+    currentRawRms: 0,
+    currentNormalizedEnergy: 0,
+    currentMouthOpenness: 0,
+    antiStallActive: false,
     activeVisemes: [],
     visemeBlend: completeMouthWeights({}),
     releaseStage: 'closed',
@@ -230,9 +239,12 @@ export class AvatarExpressionMixer {
       percentClosed: 0,
       longestOpenMs: 0,
       releaseAfterDetachMs: null,
-      saturatedSignal: false
-      ,nonZeroEnergyFrames: 0, audibleDeadMouthMs: 0, audibleDeadMouthFrames: 0, antiStallActivationCount: 0
-    }
+      saturatedSignal: false,
+      nonZeroEnergyFrames: 0,
+      audibleDeadMouthMs: 0,
+      audibleDeadMouthFrames: 0,
+      antiStallActivationCount: 0,
+    },
   }
   private blinkTuning: BlinkTuningDebug = {
     weight: 0,
@@ -258,7 +270,7 @@ export class AvatarExpressionMixer {
     nextBlinkIn: 0,
     cooldownRemaining: 0,
     cooldown: 0,
-    source: 'AutoBlink'
+    source: 'AutoBlink',
   }
 
   attach(vrm: VRM): void {
@@ -271,7 +283,6 @@ export class AvatarExpressionMixer {
     this.blinkNames = this.resolveBlinkNames(allNames)
     this.blinkNameSet = new Set(this.blinkNames)
     this.resolveSquintNames(allNames)
-    this.managedNames = allNames.filter((name) => !LOOKAT_NAMES.has(name))
     this.unsupportedExpressionRequests = new Set()
     this.writtenNames = new Set()
     this.resetLifecycle()
@@ -279,14 +290,15 @@ export class AvatarExpressionMixer {
     this.allowBlinkOverExpressions()
 
     // TEMP WI12.1 DIAGNOSTIC: model's expression set.
-    console.log(`[ANIMDBG] mixer attach expressions=[${allNames.join(',')}] blink=[${this.blinkNames.join(',')}]`)
+    console.log(
+      `[ANIMDBG] mixer attach expressions=[${allNames.join(',')}] blink=[${this.blinkNames.join(',')}]`,
+    )
   }
 
   detach(): void {
     this.vrm = null
     this.blinkNames = []
     this.blinkNameSet = new Set()
-    this.managedNames = []
     this.supportedNames = new Set()
     this.blinkWeight = 0
     this.mouth = completeMouthWeights({})
@@ -328,21 +340,26 @@ export class AvatarExpressionMixer {
       ...this.blinkTuning,
       rawWeight: raw,
       finalWeight: this.blinkWeight,
-      weight: this.blinkWeight
+      weight: this.blinkWeight,
     }
     this.markSource('autoBlink', { blink: raw })
   }
 
   setMouth(weights: Partial<MouthWeights>): void {
-    this.mouth = completeMouthWeights(Object.fromEntries(
-      MOUTH_NAMES.map((name) => [name, this.clamp(weights[name] ?? 0)])
-    ) as Partial<MouthWeights>)
+    this.mouth = completeMouthWeights(
+      Object.fromEntries(
+        MOUTH_NAMES.map((name) => [name, this.clamp(weights[name] ?? 0)]),
+      ) as Partial<MouthWeights>,
+    )
     this.markSource('lipSync', this.mouth)
   }
 
   setEmotion(values: Map<string, number>): void {
     this.emotion = new Map(values)
-    this.markSource('emotion', Object.fromEntries([...this.emotion].map(([name, value]) => [name, this.clamp(value)])))
+    this.markSource(
+      'emotion',
+      Object.fromEntries([...this.emotion].map(([name, value]) => [name, this.clamp(value)])),
+    )
   }
 
   setLookAtActive(active: boolean): void {
@@ -397,7 +414,11 @@ export class AvatarExpressionMixer {
 
     // Emotion domain first — but never touching mouth, blink or lookAt names.
     for (const [name, value] of this.emotion) {
-      if (this.blinkNameSet.has(name) || MOUTH_NAMES.includes(name as VisemeName) || LOOKAT_NAMES.has(name)) {
+      if (
+        this.blinkNameSet.has(name) ||
+        MOUTH_NAMES.includes(name as VisemeName) ||
+        LOOKAT_NAMES.has(name)
+      ) {
         continue
       }
       if (!this.isSupportedExpression(name)) continue
@@ -423,7 +444,11 @@ export class AvatarExpressionMixer {
     if (this.blinkWeight > 0.001) {
       for (const name of this.blinkNames) {
         if (!this.isSupportedExpression(name)) continue
-        eyeValues.set(name, { expression: name, value: this.clamp(this.blinkWeight), source: 'autoBlink' })
+        eyeValues.set(name, {
+          expression: name,
+          value: this.clamp(this.blinkWeight),
+          source: 'autoBlink',
+        })
       }
     }
     // Speaking Eye squint composes WITHIN the headroom left by the emotion's own
@@ -431,7 +456,10 @@ export class AvatarExpressionMixer {
     // an extra squint on top and turn the eyes into slits. Blink is untouched and
     // still wins full closure below.
     const emotionEyeSquint = this.computeEmotionEyeSquint()
-    this.squintHeadroom = Math.max(0, facialTuning.facialComposition.maxSpeakingSquint - emotionEyeSquint)
+    this.squintHeadroom = Math.max(
+      0,
+      facialTuning.facialComposition.maxSpeakingSquint - emotionEyeSquint,
+    )
     this.appliedSquintLeft = Math.min(this.speakingEyeLeft, this.squintHeadroom)
     this.appliedSquintRight = Math.min(this.speakingEyeRight, this.squintHeadroom)
     this.mergeSquint(eyeValues, this.squintLeftName, this.appliedSquintLeft)
@@ -454,7 +482,9 @@ export class AvatarExpressionMixer {
     this.writtenNames = new Set(final.keys())
 
     this.lastFinal = final
-    this.lastFinalValues = Object.fromEntries([...final.values()].map((entry) => [entry.expression, Number(entry.value.toFixed(3))]))
+    this.lastFinalValues = Object.fromEntries(
+      [...final.values()].map((entry) => [entry.expression, Number(entry.value.toFixed(3))]),
+    )
     this.updateSourceFinals(final)
     this.updateStuckWarnings()
     this.logLifecycleTransitions()
@@ -490,19 +520,22 @@ export class AvatarExpressionMixer {
         ih: Number(this.mouth.ih.toFixed(2)),
         ou: Number(this.mouth.ou.toFixed(2)),
         ee: Number(this.mouth.ee.toFixed(2)),
-        oh: Number(this.mouth.oh.toFixed(2))
+        oh: Number(this.mouth.oh.toFixed(2)),
       },
       emotion,
       finalValues: { ...this.lastFinalValues },
       sourceLifecycle: [...this.sourceLifecycle.entries()].map(([source, state]) => ({
         source,
         active: state.active,
-        lastUpdateMs: state.lastUpdateMs === null ? null : Math.max(0, Math.round(this.clockMs - state.lastUpdateMs)),
+        lastUpdateMs:
+          state.lastUpdateMs === null
+            ? null
+            : Math.max(0, Math.round(this.clockMs - state.lastUpdateMs)),
         raw: this.roundValues(state.raw),
         final: this.roundValues(state.final),
         status: state.status,
         maxObservedValue: Number(state.maxObservedValue.toFixed(2)),
-        stuckWarning: state.stuckWarning
+        stuckWarning: state.stuckWarning,
       })),
       stuckWarnings: [...this.sourceLifecycle.values()]
         .map((state) => state.stuckWarning)
@@ -529,8 +562,8 @@ export class AvatarExpressionMixer {
           ih: Number(this.mouthTuning.clamps.ih.toFixed(2)),
           ou: Number(this.mouthTuning.clamps.ou.toFixed(2)),
           ee: Number(this.mouthTuning.clamps.ee.toFixed(2)),
-          oh: Number(this.mouthTuning.clamps.oh.toFixed(2))
-        }
+          oh: Number(this.mouthTuning.clamps.oh.toFixed(2)),
+        },
       },
       blinkTuning: {
         ...this.blinkTuning,
@@ -546,7 +579,7 @@ export class AvatarExpressionMixer {
         blinkMax: Number(this.blinkTuning.blinkMax.toFixed(2)),
         nextBlinkIn: Number(this.blinkTuning.nextBlinkIn.toFixed(2)),
         cooldownRemaining: Number(this.blinkTuning.cooldownRemaining.toFixed(2)),
-        cooldown: Number(this.blinkTuning.cooldown.toFixed(2))
+        cooldown: Number(this.blinkTuning.cooldown.toFixed(2)),
       },
       blinkExpressions: this.blinkNames.slice(),
       vrmaFacialTracksDisabled: this.vrmaFacialTracksDisabled,
@@ -564,7 +597,7 @@ export class AvatarExpressionMixer {
         leftExpression: this.squintLeftName ?? 'none',
         rightExpression: this.squintRightName ?? 'none',
         finalLeft: Number(this.appliedSquintLeft.toFixed(3)),
-        finalRight: Number(this.appliedSquintRight.toFixed(3))
+        finalRight: Number(this.appliedSquintRight.toFixed(3)),
       },
       mouthClosure: {
         enabled: this.mouthClosureDebug?.enabled ?? false,
@@ -575,8 +608,8 @@ export class AvatarExpressionMixer {
         boundary: this.mouthClosureDebug?.boundary ?? false,
         graceRemainingMs: Math.round(this.mouthClosureDebug?.graceRemainingMs ?? 0),
         rawMouthMax: Number(this.maxValue(this.mouth).toFixed(3)),
-        finalMouthMax: Number((this.maxValue(this.mouth) * (1 - this.mouthClosure)).toFixed(3))
-      }
+        finalMouthMax: Number((this.maxValue(this.mouth) * (1 - this.mouthClosure)).toFixed(3)),
+      },
     }
   }
 
@@ -592,7 +625,7 @@ export class AvatarExpressionMixer {
         status: 'inactive',
         loggedStatus: null,
         maxObservedValue: 0,
-        stuckWarning: null
+        stuckWarning: null,
       })
     }
   }
@@ -628,7 +661,7 @@ export class AvatarExpressionMixer {
       ih: this.approachZero(this.mouth.ih, decay),
       ou: this.approachZero(this.mouth.ou, decay),
       ee: this.approachZero(this.mouth.ee, decay),
-      oh: this.approachZero(this.mouth.oh, decay)
+      oh: this.approachZero(this.mouth.oh, decay),
     }
     state.active = this.maxValue(this.mouth) > 0.001
     state.raw = completeMouthWeights({})
@@ -652,8 +685,11 @@ export class AvatarExpressionMixer {
 
   private markSource(source: ExpressionSource, raw: Record<string, number>): void {
     const state = this.getSourceState(source)
-    const roundedRaw = Object.fromEntries(Object.entries(raw).map(([name, value]) => [name, this.clamp(Number(value) || 0)]))
-    state.active = this.maxValue(roundedRaw) > 0.001 || (source === 'lookAt' && Boolean(roundedRaw.active))
+    const roundedRaw = Object.fromEntries(
+      Object.entries(raw).map(([name, value]) => [name, this.clamp(Number(value) || 0)]),
+    )
+    state.active =
+      this.maxValue(roundedRaw) > 0.001 || (source === 'lookAt' && Boolean(roundedRaw.active))
     state.lastUpdateFrame = this.frame
     state.lastUpdateMs = this.clockMs
     state.raw = roundedRaw
@@ -673,13 +709,15 @@ export class AvatarExpressionMixer {
   private updateStuckWarnings(): void {
     const blinkState = this.getSourceState('autoBlink')
     this.blinkHighMs = this.blinkWeight > 0.8 ? this.blinkHighMs + this.lastDeltaMs : 0
-    blinkState.stuckWarning = this.blinkHighMs > 300 ? `blink > 0.8 for ${Math.round(this.blinkHighMs)}ms` : null
+    blinkState.stuckWarning =
+      this.blinkHighMs > 300 ? `blink > 0.8 for ${Math.round(this.blinkHighMs)}ms` : null
 
     const lipSyncState = this.getSourceState('lipSync')
     const mouthMax = this.maxValue(this.mouth)
     const rawMax = this.maxValue(lipSyncState.raw)
     const staleOrSilent = lipSyncState.status !== 'active' || rawMax < 0.05
-    this.staleMouthHighMs = mouthMax > 0.4 && staleOrSilent ? this.staleMouthHighMs + this.lastDeltaMs : 0
+    this.staleMouthHighMs =
+      mouthMax > 0.4 && staleOrSilent ? this.staleMouthHighMs + this.lastDeltaMs : 0
     lipSyncState.stuckWarning =
       this.staleMouthHighMs > 500 ? `mouth > 0.4 while LipSync is ${lipSyncState.status}` : null
   }
@@ -696,15 +734,16 @@ export class AvatarExpressionMixer {
       lipSync: 'LipSync',
       emotion: 'Emotion',
       lookAt: 'LookAt',
-      speakingEye: 'SpeakingEye'
+      speakingEye: 'SpeakingEye',
     }
     for (const [source, state] of this.sourceLifecycle) {
       if (state.status === state.loggedStatus) continue
-      const releaseProgress = state.status === 'decaying' || state.status === 'reset'
-        ? 1 - Math.min(1, this.maxValue(state.final))
-        : 0
+      const releaseProgress =
+        state.status === 'decaying' || state.status === 'reset'
+          ? 1 - Math.min(1, this.maxValue(state.final))
+          : 0
       console.log(
-        `[FACELIFE] source=${labels[source]} state=${state.status} frame=${this.frame} t=${Math.round(this.clockMs)}ms max=${this.maxValue(state.raw).toFixed(2)} release=${releaseProgress.toFixed(2)}`
+        `[FACELIFE] source=${labels[source]} state=${state.status} frame=${this.frame} t=${Math.round(this.clockMs)}ms max=${this.maxValue(state.raw).toFixed(2)} release=${releaseProgress.toFixed(2)}`,
       )
       state.loggedStatus = state.status
     }
@@ -713,7 +752,8 @@ export class AvatarExpressionMixer {
   private logFacialFrame(): void {
     if (!facialTuning.debug.verboseFacialFrameLogs) return
     const mouthMax = this.maxValue(this.mouth)
-    const shouldLog = mouthMax > 0.001 || this.blinkWeight > 0.001 || this.getSourceState('lipSync').active
+    const shouldLog =
+      mouthMax > 0.001 || this.blinkWeight > 0.001 || this.getSourceState('lipSync').active
     if (!shouldLog) return
 
     const final = (name: string): string => (this.lastFinalValues[name] ?? 0).toFixed(2)
@@ -724,7 +764,7 @@ export class AvatarExpressionMixer {
     const blink = this.getSourceState('autoBlink')
     const emotion = this.getSourceState('emotion')
     console.log(
-      `[FACEDBG] final blink=${final('blink')} blinkLeft=${final('blinkLeft')} blinkRight=${final('blinkRight')} aa=${final('aa')} ih=${final('ih')} ou=${final('ou')} ee=${final('ee')} oh=${final('oh')} ${emotionFinal} | sources AutoBlink=${this.maxValue(blink.raw).toFixed(2)}(${blink.status}) LipSync=aa:${(lip.raw.aa ?? 0).toFixed(2)}/ih:${(lip.raw.ih ?? 0).toFixed(2)}/ou:${(lip.raw.ou ?? 0).toFixed(2)}/ee:${(lip.raw.ee ?? 0).toFixed(2)}/oh:${(lip.raw.oh ?? 0).toFixed(2)}(${lip.status}) Emotion=${this.maxValue(emotion.raw).toFixed(2)}(${emotion.status})`
+      `[FACEDBG] final blink=${final('blink')} blinkLeft=${final('blinkLeft')} blinkRight=${final('blinkRight')} aa=${final('aa')} ih=${final('ih')} ou=${final('ou')} ee=${final('ee')} oh=${final('oh')} ${emotionFinal} | sources AutoBlink=${this.maxValue(blink.raw).toFixed(2)}(${blink.status}) LipSync=aa:${(lip.raw.aa ?? 0).toFixed(2)}/ih:${(lip.raw.ih ?? 0).toFixed(2)}/ou:${(lip.raw.ou ?? 0).toFixed(2)}/ee:${(lip.raw.ee ?? 0).toFixed(2)}/oh:${(lip.raw.oh ?? 0).toFixed(2)}(${lip.status}) Emotion=${this.maxValue(emotion.raw).toFixed(2)}(${emotion.status})`,
     )
   }
 
@@ -732,13 +772,17 @@ export class AvatarExpressionMixer {
     const state = this.sourceLifecycle.get(source)
     if (!state) {
       this.resetLifecycle()
-      return this.sourceLifecycle.get(source)!
+      const rebuilt = this.sourceLifecycle.get(source)
+      if (!rebuilt) throw new Error(`Lifecycle state missing after reset for source: ${source}`)
+      return rebuilt
     }
     return state
   }
 
   private roundValues(values: Record<string, number>): Record<string, number> {
-    return Object.fromEntries(Object.entries(values).map(([name, value]) => [name, Number(value.toFixed(2))]))
+    return Object.fromEntries(
+      Object.entries(values).map(([name, value]) => [name, Number(value.toFixed(2))]),
+    )
   }
 
   private roundMouthWeights(values: MouthWeights): MouthWeights {
@@ -747,7 +791,7 @@ export class AvatarExpressionMixer {
       ih: Number(values.ih.toFixed(2)),
       ou: Number(values.ou.toFixed(2)),
       ee: Number(values.ee.toFixed(2)),
-      oh: Number(values.oh.toFixed(2))
+      oh: Number(values.oh.toFixed(2)),
     }
   }
 
@@ -763,12 +807,16 @@ export class AvatarExpressionMixer {
   }
 
   private maxValue(values: Record<string, number>): number {
-    return Object.values(values).reduce((max, value) => Math.max(max, this.clamp(Number(value) || 0)), 0)
+    return Object.values(values).reduce(
+      (max, value) => Math.max(max, this.clamp(Number(value) || 0)),
+      0,
+    )
   }
 
   private resolveBlinkNames(available: string[]): string[] {
     if (available.includes('blink')) return ['blink']
-    if (available.includes('blinkLeft') && available.includes('blinkRight')) return ['blinkLeft', 'blinkRight']
+    if (available.includes('blinkLeft') && available.includes('blinkRight'))
+      return ['blinkLeft', 'blinkRight']
     return available.filter((name) => /blink|wink/i.test(name))
   }
 
@@ -809,7 +857,11 @@ export class AvatarExpressionMixer {
     return sum
   }
 
-  private mergeSquint(eyeValues: Map<string, FacialExpressionEntry>, name: string | null, value: number): void {
+  private mergeSquint(
+    eyeValues: Map<string, FacialExpressionEntry>,
+    name: string | null,
+    value: number,
+  ): void {
     if (!name || value <= 0.001) return
     if (!this.isSupportedExpression(name)) return
     const squint = this.clamp(value)
@@ -834,7 +886,11 @@ export class AvatarExpressionMixer {
     manager.blinkExpressionNames = this.blinkNames.slice()
   }
 
-  private setValueSafe(manager: NonNullable<VRM['expressionManager']>, name: string, value: number): void {
+  private setValueSafe(
+    manager: NonNullable<VRM['expressionManager']>,
+    name: string,
+    value: number,
+  ): void {
     try {
       manager.setValue(name, value)
     } catch {

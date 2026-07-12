@@ -1,4 +1,5 @@
 import axios from 'axios'
+
 import { MistralModelsResponseSchema } from '../../../schemas'
 import { ModelFetchError } from '../../errors'
 import type { ModelInfo } from '../catalogTypes'
@@ -9,7 +10,7 @@ export class MistralProvider extends BaseOpenAIProvider {
     super(apiKey, model, {
       providerId: 'mistral',
       baseURL: 'https://api.mistral.ai/v1',
-      chatPath: '/chat/completions'
+      chatPath: '/chat/completions',
     })
   }
 
@@ -20,7 +21,7 @@ export class MistralProvider extends BaseOpenAIProvider {
     }
     try {
       const res = await this.http.get('/models', {
-        headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' }
+        headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
       })
       const parsed = MistralModelsResponseSchema.parse(res.data)
       return parsed.data.map((m) => ({ id: m.id, displayName: m.name }))

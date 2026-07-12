@@ -1,5 +1,6 @@
-import * as THREE from 'three'
 import type { VRM } from '@pixiv/three-vrm'
+import * as THREE from 'three'
+
 import type { VrmRootMotionPolicy } from './VrmModel'
 
 export class RootMotionController {
@@ -9,7 +10,10 @@ export class RootMotionController {
     this.rootAnchorPosition.copy(vrm.scene.position)
   }
 
-  applyRootMotionCompensation(vrm: VRM | null, rootMotionPolicy: VrmRootMotionPolicy | null | undefined): void {
+  applyRootMotionCompensation(
+    vrm: VRM | null,
+    rootMotionPolicy: VrmRootMotionPolicy | null | undefined,
+  ): void {
     if (!vrm || !rootMotionPolicy) return
 
     switch (rootMotionPolicy) {
@@ -23,14 +27,15 @@ export class RootMotionController {
         vrm.scene.position.x = this.rootAnchorPosition.x
         vrm.scene.position.z = this.rootAnchorPosition.z
         return
-      case 'allow':
       default:
         this.rootAnchorPosition.copy(vrm.scene.position)
     }
   }
 
   hasSceneRootPositionTrack(clip: THREE.AnimationClip): boolean {
-    return clip.tracks.some((track) => /\.position$/.test(track.name) && this.isSceneRootTrackName(track.name))
+    return clip.tracks.some(
+      (track) => /\.position$/.test(track.name) && this.isSceneRootTrackName(track.name),
+    )
   }
 
   isSceneRootTrackName(name: string): boolean {

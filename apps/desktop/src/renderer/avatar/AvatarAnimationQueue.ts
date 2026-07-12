@@ -30,11 +30,13 @@ export class AvatarAnimationQueue {
   private items: AvatarAnimationQueueItem[] = []
   private seq = 0
 
-  request(input: Omit<AvatarAnimationQueueItem, 'id' | 'enqueueTime'>): AvatarAnimationQueueDecision {
+  request(
+    input: Omit<AvatarAnimationQueueItem, 'id' | 'enqueueTime'>,
+  ): AvatarAnimationQueueDecision {
     const item: AvatarAnimationQueueItem = {
       ...input,
       id: ++this.seq,
-      enqueueTime: Date.now()
+      enqueueTime: Date.now(),
     }
 
     this.removeObsoleteEntries(item.mode)
@@ -62,7 +64,12 @@ export class AvatarAnimationQueue {
       return { action: 'queue', item, interruptedItem: null, reason: 'queued idle item' }
     }
 
-    return { action: 'discard', item, interruptedItem: null, reason: 'not interruptible or queueable' }
+    return {
+      action: 'discard',
+      item,
+      interruptedItem: null,
+      reason: 'not interruptible or queueable',
+    }
   }
 
   completeCurrent(): AvatarAnimationQueueItem | null {
@@ -86,7 +93,7 @@ export class AvatarAnimationQueue {
     this.current = {
       ...input,
       id: input.id || ++this.seq,
-      enqueueTime: input.enqueueTime || Date.now()
+      enqueueTime: input.enqueueTime || Date.now(),
     }
   }
 
@@ -99,21 +106,30 @@ export class AvatarAnimationQueue {
       current: this.current,
       next: this.items[0] ?? null,
       items: [...this.items],
-      length: this.items.length
+      length: this.items.length,
     }
   }
 
-  private shouldInterrupt(current: AvatarAnimationQueueItem, next: AvatarAnimationQueueItem): boolean {
+  private shouldInterrupt(
+    current: AvatarAnimationQueueItem,
+    next: AvatarAnimationQueueItem,
+  ): boolean {
     if (current.mode === 'speaking' && next.mode === 'idle') return true
     if (!current.interruptible) return false
     if (next.behaviorId === 'greeting' && current.mode === 'idle') return true
-    if (next.mode === 'speaking' && (current.mode === 'idle' || current.behaviorId === 'greeting')) return true
+    if (next.mode === 'speaking' && (current.mode === 'idle' || current.behaviorId === 'greeting'))
+      return true
     if (next.mode === 'listening' || next.mode === 'thinking') return current.mode === 'idle'
     return next.mode === 'idle' && current.mode === 'idle'
   }
 
   private isDuplicate(a: AvatarAnimationQueueItem, b: AvatarAnimationQueueItem): boolean {
-    return a.animationId === b.animationId && a.behaviorId === b.behaviorId && a.mode === b.mode && a.loop === b.loop
+    return (
+      a.animationId === b.animationId &&
+      a.behaviorId === b.behaviorId &&
+      a.mode === b.mode &&
+      a.loop === b.loop
+    )
   }
 
   private shouldQueue(item: AvatarAnimationQueueItem): boolean {

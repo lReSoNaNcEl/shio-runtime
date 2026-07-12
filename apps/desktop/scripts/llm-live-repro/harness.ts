@@ -14,9 +14,9 @@
  * no key is reported SKIPPED ("Missing API key"), not as a suite failure.
  */
 
-import { instantiateProvider } from '../../src/main/llm/registry'
-import { LlmResponseError, type ChatMessage, type LlmProviderId } from '../../src/main/llm'
+import { type ChatMessage, type LlmProviderId, LlmResponseError } from '../../src/main/llm'
 import type { BaseOpenAIProvider } from '../../src/main/llm/providers/openai'
+import { instantiateProvider } from '../../src/main/llm/registry'
 
 // ---- Provider registry (data-driven) --------------------------------------
 
@@ -44,7 +44,7 @@ const PROVIDERS: LiveProvider[] = [
     chatModelEnv: 'LLM_LIVE_MODEL_GROQ',
     reasoningModel: 'openai/gpt-oss-20b',
     reasoningModelEnv: 'LLM_LIVE_REASONING_GROQ',
-    optional: true
+    optional: true,
   },
   {
     id: 'cerebras',
@@ -53,7 +53,7 @@ const PROVIDERS: LiveProvider[] = [
     chatModel: 'gemma-4-31b',
     chatModelEnv: 'LLM_LIVE_MODEL_CEREBRAS',
     reasoningModel: 'zai-glm-4.7',
-    reasoningModelEnv: 'LLM_LIVE_REASONING_CEREBRAS'
+    reasoningModelEnv: 'LLM_LIVE_REASONING_CEREBRAS',
   },
   {
     id: 'github',
@@ -62,7 +62,7 @@ const PROVIDERS: LiveProvider[] = [
     chatModel: 'openai/gpt-4o-mini',
     chatModelEnv: 'LLM_LIVE_MODEL_GITHUB',
     reasoningModel: 'deepseek/DeepSeek-R1',
-    reasoningModelEnv: 'LLM_LIVE_REASONING_GITHUB'
+    reasoningModelEnv: 'LLM_LIVE_REASONING_GITHUB',
   },
   {
     id: 'openrouter',
@@ -71,7 +71,7 @@ const PROVIDERS: LiveProvider[] = [
     chatModel: 'meta-llama/llama-3.3-70b-instruct:free',
     chatModelEnv: 'LLM_LIVE_MODEL_OPENROUTER',
     reasoningModel: 'qwen/qwen3-next-80b-a3b-instruct:free',
-    reasoningModelEnv: 'LLM_LIVE_REASONING_OPENROUTER'
+    reasoningModelEnv: 'LLM_LIVE_REASONING_OPENROUTER',
   },
   {
     id: 'mistral',
@@ -81,18 +81,18 @@ const PROVIDERS: LiveProvider[] = [
     chatModelEnv: 'LLM_LIVE_MODEL_MISTRAL',
     reasoningModel: 'magistral-medium-2509',
     reasoningModelEnv: 'LLM_LIVE_REASONING_MISTRAL',
-    optional: true
-  }
+    optional: true,
+  },
 ]
 
 // ---- Fixtures --------------------------------------------------------------
 
 const SHIO_PERSONA_PROMPT = [
-  'You are Shio, a digital anime foxgirl living inside your creator\'s computer.',
+  "You are Shio, a digital anime foxgirl living inside your creator's computer.",
   'You are witty, playful, a little sarcastic, and always speak about yourself in the first person as Shio.',
   'Never say you are ChatGPT, an AI language model, a neural network, or name any API provider.',
   'Begin every reply with exactly one emotion tag in square brackets, e.g. [happy], [sad], [angry], [neutral], [surprised], [laugh], [calm].',
-  'Keep replies to at most 3 short sentences.'
+  'Keep replies to at most 3 short sentences.',
 ].join(' ')
 
 const PERSONA_PROMPTS = [
@@ -101,7 +101,7 @@ const PERSONA_PROMPTS = [
   'Tell me about yourself.',
   'Who created you?',
   'What kind of person are you?',
-  'What do you think about humans?'
+  'What do you think about humans?',
 ]
 
 const FORBIDDEN_IDENTITY = [
@@ -116,7 +116,7 @@ const FORBIDDEN_IDENTITY = [
   /\bopenrouter\b/i,
   /\bmistral\b/i,
   /языковая модель/i,
-  /нейросет/i
+  /нейросет/i,
 ]
 
 // ---- Result model ----------------------------------------------------------
@@ -146,7 +146,7 @@ function sym(s: Status): string {
 function readApiKey(lp: LiveProvider): string | null {
   for (const k of lp.envKeys) {
     const v = process.env[k]
-    if (v && v.trim()) return v.trim()
+    if (v?.trim()) return v.trim()
   }
   return null
 }
@@ -160,7 +160,9 @@ function stripTag(text: string): string {
 }
 
 function countSentences(text: string): number {
-  const matches = stripTag(text).trim().match(/[.!?。！？]+(\s|$)/g)
+  const matches = stripTag(text)
+    .trim()
+    .match(/[.!?。！？]+(\s|$)/g)
   return matches ? matches.length : text.trim() ? 1 : 0
 }
 
@@ -172,10 +174,15 @@ function hasLatin(text: string): boolean {
   return /[a-z]/i.test(text)
 }
 
-function logCall(provider: string, model: string, latencyMs: number, meta: { finishReason: string; hadReasoning: boolean; usage?: unknown }): void {
+function logCall(
+  provider: string,
+  model: string,
+  latencyMs: number,
+  meta: { finishReason: string; hadReasoning: boolean; usage?: unknown },
+): void {
   // Safe fields only — never keys, headers, or the system prompt.
   console.log(
-    `    [LIVE] provider=${provider} model=${model} latency=${latencyMs}ms finish=${meta.finishReason} reasoning=${meta.hadReasoning} usage=${JSON.stringify(meta.usage ?? {})}`
+    `    [LIVE] provider=${provider} model=${model} latency=${latencyMs}ms finish=${meta.finishReason} reasoning=${meta.hadReasoning} usage=${JSON.stringify(meta.usage ?? {})}`,
   )
 }
 
@@ -185,13 +192,15 @@ const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms
 const PACE_MS = Number(process.env.LLM_LIVE_PACE_MS ?? '300')
 // Transient-429 retry backoffs (env-tunable). Kept short so an exhausted
 // free-tier quota is reported quickly instead of stalling the whole suite.
-const RETRY_BACKOFFS_MS = (process.env.LLM_LIVE_BACKOFFS ?? '0,2000,4000').split(',').map((n) => Number(n))
+const RETRY_BACKOFFS_MS = (process.env.LLM_LIVE_BACKOFFS ?? '0,2000,4000')
+  .split(',')
+  .map((n) => Number(n))
 
 async function timedChat(
   lp: LiveProvider,
   model: string,
   messages: ChatMessage[],
-  opts?: { temperature?: number; maxTokens?: number }
+  opts?: { temperature?: number; maxTokens?: number },
 ): Promise<{ content: string; finishReason: string; hadReasoning: boolean }> {
   const key = readApiKey(lp) ?? ''
   const provider = make(lp.id, key, model)
@@ -206,7 +215,11 @@ async function timedChat(
       const started = Date.now()
       const parsed = await provider.chatDetailed(messages, opts)
       logCall(lp.displayName, model, Date.now() - started, parsed)
-      return { content: parsed.content, finishReason: parsed.finishReason, hadReasoning: parsed.hadReasoning }
+      return {
+        content: parsed.content,
+        finishReason: parsed.finishReason,
+        hadReasoning: parsed.hadReasoning,
+      }
     } catch (e) {
       lastErr = e
       const overloaded = e instanceof LlmResponseError && /перегружена/.test(e.message)
@@ -238,7 +251,13 @@ async function runProviderConformance(lp: LiveProvider): Promise<ProviderReport>
   const key = readApiKey(lp)
   if (!key) {
     console.log('  — SKIPPED: Missing API key')
-    return { provider: lp.displayName, status: 'SKIPPED', categories: [], score: null, note: 'Missing API key' }
+    return {
+      provider: lp.displayName,
+      status: 'SKIPPED',
+      categories: [],
+      score: null,
+      note: 'Missing API key',
+    }
   }
 
   const chatModel = process.env[lp.chatModelEnv] ?? lp.chatModel
@@ -253,7 +272,13 @@ async function runProviderConformance(lp: LiveProvider): Promise<ProviderReport>
     add('Connectivity', 'FAIL', msg)
     // Connectivity failure: optional providers are SKIPPED, others PARTIAL.
     if (lp.optional) {
-      return { provider: lp.displayName, status: 'SKIPPED', categories: cats, score: null, note: `Provider unavailable: ${msg}` }
+      return {
+        provider: lp.displayName,
+        status: 'SKIPPED',
+        categories: cats,
+        score: null,
+        note: `Provider unavailable: ${msg}`,
+      }
     }
   }
 
@@ -262,10 +287,17 @@ async function runProviderConformance(lp: LiveProvider): Promise<ProviderReport>
     const r = await timedChat(
       lp,
       chatModel,
-      [sys('You are Shio. Always answer with exactly the single word APPLE and nothing else.'), user('Say one word.')],
-      { temperature: 0, maxTokens: 16 }
+      [
+        sys('You are Shio. Always answer with exactly the single word APPLE and nothing else.'),
+        user('Say one word.'),
+      ],
+      { temperature: 0, maxTokens: 16 },
     )
-    add('System Prompt', /apple/i.test(r.content) ? 'PASS' : 'FAIL', JSON.stringify(r.content.slice(0, 40)))
+    add(
+      'System Prompt',
+      /apple/i.test(r.content) ? 'PASS' : 'FAIL',
+      JSON.stringify(r.content.slice(0, 40)),
+    )
   } catch (e) {
     add('System Prompt', 'FAIL', e instanceof Error ? e.message : String(e))
   }
@@ -274,7 +306,9 @@ async function runProviderConformance(lp: LiveProvider): Promise<ProviderReport>
   try {
     const replies: string[] = []
     for (const p of PERSONA_PROMPTS) {
-      const r = await timedChat(lp, chatModel, [sys(SHIO_PERSONA_PROMPT), user(p)], { maxTokens: 200 })
+      const r = await timedChat(lp, chatModel, [sys(SHIO_PERSONA_PROMPT), user(p)], {
+        maxTokens: 200,
+      })
       replies.push(r.content)
     }
     const joined = replies.join('\n')
@@ -289,15 +323,26 @@ async function runProviderConformance(lp: LiveProvider): Promise<ProviderReport>
 
   // 4. Emotion tags — first token is a bracketed tag.
   try {
-    const r = await timedChat(lp, chatModel, [sys(SHIO_PERSONA_PROMPT), user('Say hello.')], { maxTokens: 60 })
-    add('Emotion Tags', /^\s*\[[^\]]+\]/.test(r.content) ? 'PASS' : 'FAIL', JSON.stringify(r.content.slice(0, 40)))
+    const r = await timedChat(lp, chatModel, [sys(SHIO_PERSONA_PROMPT), user('Say hello.')], {
+      maxTokens: 60,
+    })
+    add(
+      'Emotion Tags',
+      /^\s*\[[^\]]+\]/.test(r.content) ? 'PASS' : 'FAIL',
+      JSON.stringify(r.content.slice(0, 40)),
+    )
   } catch (e) {
     add('Emotion Tags', 'FAIL', e instanceof Error ? e.message : String(e))
   }
 
   // 5. Sentence limit — provider must respect the ≤3 sentence instruction.
   try {
-    const r = await timedChat(lp, chatModel, [sys(SHIO_PERSONA_PROMPT), user('Explain recursion.')], { maxTokens: 300 })
+    const r = await timedChat(
+      lp,
+      chatModel,
+      [sys(SHIO_PERSONA_PROMPT), user('Explain recursion.')],
+      { maxTokens: 300 },
+    )
     const n = countSentences(r.content)
     add('Sentence Limit', n <= 4 ? 'PASS' : 'FAIL', `${n} sentences`)
   } catch (e) {
@@ -306,7 +351,9 @@ async function runProviderConformance(lp: LiveProvider): Promise<ProviderReport>
 
   // 6. Russian.
   try {
-    const r = await timedChat(lp, chatModel, [sys(SHIO_PERSONA_PROMPT), user('Привет, Шио.')], { maxTokens: 160 })
+    const r = await timedChat(lp, chatModel, [sys(SHIO_PERSONA_PROMPT), user('Привет, Шио.')], {
+      maxTokens: 160,
+    })
     add('Russian', hasCyrillic(r.content) ? 'PASS' : 'FAIL')
   } catch (e) {
     add('Russian', 'FAIL', e instanceof Error ? e.message : String(e))
@@ -314,7 +361,12 @@ async function runProviderConformance(lp: LiveProvider): Promise<ProviderReport>
 
   // 7. English.
   try {
-    const r = await timedChat(lp, chatModel, [sys(SHIO_PERSONA_PROMPT + ' Reply in English.'), user('Hello Shio.')], { maxTokens: 160 })
+    const r = await timedChat(
+      lp,
+      chatModel,
+      [sys(`${SHIO_PERSONA_PROMPT} Reply in English.`), user('Hello Shio.')],
+      { maxTokens: 160 },
+    )
     add('English', hasLatin(r.content) && !hasCyrillic(stripTag(r.content)) ? 'PASS' : 'FAIL')
   } catch (e) {
     add('English', 'FAIL', e instanceof Error ? e.message : String(e))
@@ -322,7 +374,12 @@ async function runProviderConformance(lp: LiveProvider): Promise<ProviderReport>
 
   // 8. Unicode — no encoding corruption.
   try {
-    const r = await timedChat(lp, chatModel, [sys(SHIO_PERSONA_PROMPT), user('🙂 Привет 世界 🌸')], { maxTokens: 160 })
+    const r = await timedChat(
+      lp,
+      chatModel,
+      [sys(SHIO_PERSONA_PROMPT), user('🙂 Привет 世界 🌸')],
+      { maxTokens: 160 },
+    )
     add('Unicode', !r.content.includes('�') ? 'PASS' : 'FAIL')
   } catch (e) {
     add('Unicode', 'FAIL', e instanceof Error ? e.message : String(e))
@@ -335,7 +392,12 @@ async function runProviderConformance(lp: LiveProvider): Promise<ProviderReport>
       if (!cap.supportsReasoning) {
         add('Reasoning', 'SKIP', `${reasoningModel} not detected as reasoning`)
       } else {
-        const r = await timedChat(lp, reasoningModel, [sys(SHIO_PERSONA_PROMPT), user('Hello.')], {})
+        const r = await timedChat(
+          lp,
+          reasoningModel,
+          [sys(SHIO_PERSONA_PROMPT), user('Hello.')],
+          {},
+        )
         add('Reasoning', r.content.trim().length > 0 ? 'PASS' : 'FAIL', `model=${reasoningModel}`)
       }
     } catch (e) {
@@ -350,8 +412,14 @@ async function runProviderConformance(lp: LiveProvider): Promise<ProviderReport>
 
   // 11. Temperature — both 0 and 1 succeed.
   try {
-    const cold = await timedChat(lp, chatModel, [sys(SHIO_PERSONA_PROMPT), user('Say hi.')], { temperature: 0, maxTokens: 60 })
-    const hot = await timedChat(lp, chatModel, [sys(SHIO_PERSONA_PROMPT), user('Say hi.')], { temperature: 1, maxTokens: 60 })
+    const cold = await timedChat(lp, chatModel, [sys(SHIO_PERSONA_PROMPT), user('Say hi.')], {
+      temperature: 0,
+      maxTokens: 60,
+    })
+    const hot = await timedChat(lp, chatModel, [sys(SHIO_PERSONA_PROMPT), user('Say hi.')], {
+      temperature: 1,
+      maxTokens: 60,
+    })
     add('Temperature', cold.content.length > 0 && hot.content.length > 0 ? 'PASS' : 'FAIL')
   } catch (e) {
     add('Temperature', 'FAIL', e instanceof Error ? e.message : String(e))
@@ -359,8 +427,15 @@ async function runProviderConformance(lp: LiveProvider): Promise<ProviderReport>
 
   // 12. Token budget — normal + long response never return null content.
   try {
-    const normal = await timedChat(lp, chatModel, [sys(SHIO_PERSONA_PROMPT), user('Say hi.')], { maxTokens: 80 })
-    const long = await timedChat(lp, chatModel, [sys('You are Shio.'), user('List five short friendly greetings.')], { maxTokens: 400 })
+    const normal = await timedChat(lp, chatModel, [sys(SHIO_PERSONA_PROMPT), user('Say hi.')], {
+      maxTokens: 80,
+    })
+    const long = await timedChat(
+      lp,
+      chatModel,
+      [sys('You are Shio.'), user('List five short friendly greetings.')],
+      { maxTokens: 400 },
+    )
     add('Token Budget', normal.content.length > 0 && long.content.length > 0 ? 'PASS' : 'FAIL')
   } catch (e) {
     add('Token Budget', 'FAIL', e instanceof Error ? e.message : String(e))
@@ -368,16 +443,27 @@ async function runProviderConformance(lp: LiveProvider): Promise<ProviderReport>
 
   // 13. Finish reasons — observe 'stop' and force 'length' (normalized).
   try {
-    const stopRun = await timedChat(lp, chatModel, [sys(SHIO_PERSONA_PROMPT), user('Say hi.')], { maxTokens: 80 })
+    const stopRun = await timedChat(lp, chatModel, [sys(SHIO_PERSONA_PROMPT), user('Say hi.')], {
+      maxTokens: 80,
+    })
     let lengthHandled = false
     try {
-      const tiny = await timedChat(lp, chatModel, [sys('You are Shio.'), user('Write a long detailed essay about foxes.')], { maxTokens: 8 })
+      const tiny = await timedChat(
+        lp,
+        chatModel,
+        [sys('You are Shio.'), user('Write a long detailed essay about foxes.')],
+        { maxTokens: 8 },
+      )
       lengthHandled = tiny.finishReason === 'length'
     } catch (e) {
       // Empty content + length is normalized to a readable Runtime error.
       lengthHandled = e instanceof LlmResponseError && /лимит генерации/.test(e.message)
     }
-    add('Finish Reasons', stopRun.finishReason === 'stop' && lengthHandled ? 'PASS' : 'FAIL', `stop=${stopRun.finishReason} lengthHandled=${lengthHandled}`)
+    add(
+      'Finish Reasons',
+      stopRun.finishReason === 'stop' && lengthHandled ? 'PASS' : 'FAIL',
+      `stop=${stopRun.finishReason} lengthHandled=${lengthHandled}`,
+    )
   } catch (e) {
     add('Finish Reasons', 'FAIL', e instanceof Error ? e.message : String(e))
   }
@@ -389,17 +475,25 @@ async function runProviderConformance(lp: LiveProvider): Promise<ProviderReport>
   try {
     let badKeyOk = false
     try {
-      await make(lp.id, 'sk-invalid-key-000000000000', chatModel).chatDetailed([user('hi')], { maxTokens: 16 })
+      await make(lp.id, 'sk-invalid-key-000000000000', chatModel).chatDetailed([user('hi')], {
+        maxTokens: 16,
+      })
     } catch (e) {
       badKeyOk = e instanceof LlmResponseError && !e.message.includes('{')
     }
     let badModelOk = false
     try {
-      await make(lp.id, key, 'this-model-does-not-exist-zzz').chatDetailed([user('hi')], { maxTokens: 16 })
+      await make(lp.id, key, 'this-model-does-not-exist-zzz').chatDetailed([user('hi')], {
+        maxTokens: 16,
+      })
     } catch (e) {
       badModelOk = e instanceof LlmResponseError && !e.message.includes('{')
     }
-    add('Error Handling', badKeyOk && badModelOk ? 'PASS' : 'FAIL', `badKey=${badKeyOk} badModel=${badModelOk}`)
+    add(
+      'Error Handling',
+      badKeyOk && badModelOk ? 'PASS' : 'FAIL',
+      `badKey=${badKeyOk} badModel=${badModelOk}`,
+    )
   } catch (e) {
     add('Error Handling', 'FAIL', e instanceof Error ? e.message : String(e))
   }
@@ -410,7 +504,8 @@ async function runProviderConformance(lp: LiveProvider): Promise<ProviderReport>
   const score = scored.length ? Math.round((100 * passed) / scored.length) : null
 
   const cat = (name: string): Status => cats.find((c) => c.name === name)?.status ?? 'SKIP'
-  const coreOk = cat('Connectivity') === 'PASS' && cat('System Prompt') === 'PASS' && cat('Persona') === 'PASS'
+  const coreOk =
+    cat('Connectivity') === 'PASS' && cat('System Prompt') === 'PASS' && cat('Persona') === 'PASS'
   const status: ProviderReport['status'] = coreOk && (score ?? 0) >= 80 ? 'PASS' : 'PARTIAL'
 
   return { provider: lp.displayName, status, categories: cats, score, note: '' }
@@ -430,9 +525,27 @@ function cell(reports: ProviderReport, name: string): string {
 
 function printReport(reports: ProviderReport[]): void {
   console.log('\n\n===================== CONFORMANCE REPORT =====================')
-  const header = ['Provider', 'Status', 'Connect', 'SysPrompt', 'Persona', 'Reasoning', 'Streaming', 'Errors', 'Score']
+  const header = [
+    'Provider',
+    'Status',
+    'Connect',
+    'SysPrompt',
+    'Persona',
+    'Reasoning',
+    'Streaming',
+    'Errors',
+    'Score',
+  ]
   console.log(
-    pad(header[0], 15) + pad(header[1], 10) + pad(header[2], 9) + pad(header[3], 11) + pad(header[4], 9) + pad(header[5], 11) + pad(header[6], 11) + pad(header[7], 8) + header[8]
+    pad(header[0], 15) +
+      pad(header[1], 10) +
+      pad(header[2], 9) +
+      pad(header[3], 11) +
+      pad(header[4], 9) +
+      pad(header[5], 11) +
+      pad(header[6], 11) +
+      pad(header[7], 8) +
+      header[8],
   )
   console.log('-'.repeat(88))
   for (const r of reports) {
@@ -445,7 +558,7 @@ function printReport(reports: ProviderReport[]): void {
         pad(cell(r, 'Reasoning'), 11) +
         pad(cell(r, 'Streaming'), 11) +
         pad(cell(r, 'Error Handling'), 8) +
-        (r.status === 'SKIPPED' ? r.note : String(r.score ?? '—'))
+        (r.status === 'SKIPPED' ? r.note : String(r.score ?? '—')),
     )
   }
   console.log('-'.repeat(88))
@@ -467,7 +580,7 @@ async function main(): Promise<void> {
         status: lp.optional ? 'SKIPPED' : 'PARTIAL',
         categories: [],
         score: null,
-        note: msg
+        note: msg,
       })
     }
   }

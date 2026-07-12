@@ -1,16 +1,19 @@
 import type { VrmModel } from '../three/VrmModel'
-import { AvatarAnimationController } from './AvatarAnimationController'
+import type { AvatarAnimationController } from './AvatarAnimationController'
 import {
   AvatarAnimationQueue,
+  type AvatarAnimationQueueDecision,
   type AvatarAnimationQueueItem,
-  type AvatarAnimationQueueDecision
 } from './AvatarAnimationQueue'
 import type { AvatarBehaviorResolution } from './AvatarBehaviorResolver'
-import { AvatarPlaybackRequestLog, type AvatarPlaybackRequestSource } from './AvatarPlaybackRequestLog'
-import type { AvatarStateEffect, AvatarMode } from './AvatarStateMachine'
-import { AvatarTransitionPolicy, type AvatarTransitionDecision } from './AvatarTransitionPolicy'
-import type { AnimationId } from './animationManifest'
 import type { AvatarBehaviorTransitionLogEntry } from './AvatarDebugSnapshotBuilder'
+import {
+  AvatarPlaybackRequestLog,
+  type AvatarPlaybackRequestSource,
+} from './AvatarPlaybackRequestLog'
+import type { AvatarMode, AvatarStateEffect } from './AvatarStateMachine'
+import { type AvatarTransitionDecision, AvatarTransitionPolicy } from './AvatarTransitionPolicy'
+import type { AnimationId } from './animationManifest'
 
 interface PlaybackContext {
   animationId: string
@@ -48,7 +51,7 @@ export class AvatarPlaybackCoordinator {
 
   constructor(
     private readonly animations: AvatarAnimationController,
-    private readonly vrmModel: VrmModel
+    private readonly vrmModel: VrmModel,
   ) {}
 
   reset(): void {
@@ -80,7 +83,10 @@ export class AvatarPlaybackCoordinator {
     return this.behaviorTimeline
   }
 
-  shouldHoldSpeakingBehavior(effect: AvatarStateEffect, resolved: AvatarBehaviorResolution): boolean {
+  shouldHoldSpeakingBehavior(
+    effect: AvatarStateEffect,
+    resolved: AvatarBehaviorResolution,
+  ): boolean {
     return (
       effect.mode === 'speaking' &&
       this.currentPlaybackContext?.mode === 'speaking' &&
@@ -96,7 +102,14 @@ export class AvatarPlaybackCoordinator {
     frame: number
     rejectionReason: string
   }): void {
-    this.recordBehaviorTransition(input.effect, input.resolved, input.source, input.reason, input.frame, false)
+    this.recordBehaviorTransition(
+      input.effect,
+      input.resolved,
+      input.source,
+      input.reason,
+      input.frame,
+      false,
+    )
     this.recordPlaybackRequest({
       frame: input.frame,
       animationId: input.resolved.animationId,
@@ -105,7 +118,7 @@ export class AvatarPlaybackCoordinator {
       reason: input.reason,
       accepted: false,
       decision: 'ignored',
-      rejectionReason: input.rejectionReason
+      rejectionReason: input.rejectionReason,
     })
   }
 
@@ -128,7 +141,7 @@ export class AvatarPlaybackCoordinator {
       behaviorId: input.resolved.behaviorId,
       mode: input.effect.mode,
       loop: input.resolved.loop,
-      interruptible: input.interruptible
+      interruptible: input.interruptible,
     })
     const requestReason = `${input.reason}; ${input.resolved.selectionReason}; queue: ${decision.reason}`
     this.recordPlaybackRequest({
@@ -139,7 +152,12 @@ export class AvatarPlaybackCoordinator {
       reason: requestReason,
       accepted: decision.action === 'play' || decision.action === 'queue',
       decision: decision.action,
-      rejectionReason: decision.action === 'ignored' ? 'already active' : decision.action === 'discard' ? decision.reason : null
+      rejectionReason:
+        decision.action === 'ignored'
+          ? 'already active'
+          : decision.action === 'discard'
+            ? decision.reason
+            : null,
     })
     this.recordBehaviorTransition(
       input.effect,
@@ -147,7 +165,7 @@ export class AvatarPlaybackCoordinator {
       input.source,
       requestReason,
       input.frame,
-      decision.action === 'play' || decision.action === 'queue'
+      decision.action === 'play' || decision.action === 'queue',
     )
     if (decision.action === 'play') {
       this.playQueuedItem({
@@ -156,7 +174,7 @@ export class AvatarPlaybackCoordinator {
         source: input.source,
         reason: input.reason,
         frame: input.frame,
-        forceReplay: input.forceReplay
+        forceReplay: input.forceReplay,
       })
     }
     return decision
@@ -180,9 +198,16 @@ export class AvatarPlaybackCoordinator {
       reason: input.reason,
       accepted: true,
       decision: 'play',
-      rejectionReason: null
+      rejectionReason: null,
     })
-    this.recordBehaviorTransition(input.effect, input.resolved, input.source, input.reason, input.frame, true)
+    this.recordBehaviorTransition(
+      input.effect,
+      input.resolved,
+      input.source,
+      input.reason,
+      input.frame,
+      true,
+    )
     this.animationQueue.replaceCurrent(input.item)
     this.playQueuedItem({
       item: input.item,
@@ -191,7 +216,7 @@ export class AvatarPlaybackCoordinator {
       reason: input.reason,
       frame: input.frame,
       forceReplay: input.forceReplay,
-      blendDurationOverride: input.blendDurationOverride
+      blendDurationOverride: input.blendDurationOverride,
     })
   }
 
@@ -210,9 +235,16 @@ export class AvatarPlaybackCoordinator {
       reason: input.reason,
       accepted: false,
       decision: 'ignored',
-      rejectionReason: 'already active'
+      rejectionReason: 'already active',
     })
-    this.recordBehaviorTransition(input.effect, input.resolved, input.source, input.reason, input.frame, false)
+    this.recordBehaviorTransition(
+      input.effect,
+      input.resolved,
+      input.source,
+      input.reason,
+      input.frame,
+      false,
+    )
   }
 
   advanceQueue(frame: number): void {
@@ -228,7 +260,7 @@ export class AvatarPlaybackCoordinator {
         item: next,
         source: 'queue',
         reason: 'previous one-shot completed',
-        frame
+        frame,
       })
     }
   }
@@ -245,7 +277,7 @@ export class AvatarPlaybackCoordinator {
       fromMode: this.currentPlaybackContext?.mode ?? null,
       toMode: input.mode,
       fromBehaviorId: this.currentPlaybackContext?.behaviorId ?? null,
-      toBehaviorId: 'debug-preview'
+      toBehaviorId: 'debug-preview',
     })
     this.lastTransitionDecision = decision
     void this.animations.playManifest(input.animationId, input.loop, {
@@ -255,7 +287,7 @@ export class AvatarPlaybackCoordinator {
       requestReason: 'manual debug preview',
       behaviorId: 'debug-preview',
       frame: input.frame,
-      previousAnimationId: this.currentPlaybackContext?.animationId ?? null
+      previousAnimationId: this.currentPlaybackContext?.animationId ?? null,
     })
   }
 
@@ -266,13 +298,19 @@ export class AvatarPlaybackCoordinator {
       fromMode: this.currentPlaybackContext?.mode ?? null,
       toMode: input.item.mode,
       fromBehaviorId: this.currentPlaybackContext?.behaviorId ?? null,
-      toBehaviorId: input.item.behaviorId
+      toBehaviorId: input.item.behaviorId,
     })
-    const effectiveTransition = input.blendDurationOverride === undefined
-      ? transition
-      : { ...transition, blendDuration: Math.max(transition.blendDuration, input.blendDurationOverride) }
+    const effectiveTransition =
+      input.blendDurationOverride === undefined
+        ? transition
+        : {
+            ...transition,
+            blendDuration: Math.max(transition.blendDuration, input.blendDurationOverride),
+          }
     this.lastTransitionDecision = effectiveTransition
-    const alreadyActive = this.currentPlaybackContext?.animationId === input.item.animationId && this.animations.getDebugState().isPlaybackActive
+    const alreadyActive =
+      this.currentPlaybackContext?.animationId === input.item.animationId &&
+      this.animations.getDebugState().isPlaybackActive
     if (alreadyActive && !input.forceReplay && !effectiveTransition.restartRequired) {
       this.recordPlaybackRequest({
         frame: input.frame,
@@ -282,7 +320,7 @@ export class AvatarPlaybackCoordinator {
         reason: `${input.reason}; transition: ${effectiveTransition.policyId}`,
         accepted: false,
         decision: 'ignored',
-        rejectionReason: 'already active'
+        rejectionReason: 'already active',
       })
       return
     }
@@ -290,7 +328,7 @@ export class AvatarPlaybackCoordinator {
     this.currentPlaybackContext = {
       animationId: input.item.animationId,
       mode: input.item.mode,
-      behaviorId: input.item.behaviorId
+      behaviorId: input.item.behaviorId,
     }
     void this.animations.playManifest(input.item.animationId, input.item.loop, {
       fallbackId: input.fallbackAnimationId,
@@ -300,7 +338,7 @@ export class AvatarPlaybackCoordinator {
       requestReason: `${input.reason}; transition: ${effectiveTransition.policyId}`,
       behaviorId: input.item.behaviorId,
       frame: input.frame,
-      previousAnimationId
+      previousAnimationId,
     })
   }
 
@@ -319,7 +357,7 @@ export class AvatarPlaybackCoordinator {
       currentAnimationId: this.currentPlaybackContext?.animationId ?? null,
       requestedAnimationId: input.animationId === 'none' ? null : input.animationId,
       transitionPolicy: this.lastTransitionDecision?.policyId ?? 'none',
-      transitionPending: this.vrmModel.getBodyActionDebugState().transitionRemaining > 0
+      transitionPending: this.vrmModel.getBodyActionDebugState().transitionRemaining > 0,
     })
   }
 
@@ -329,7 +367,7 @@ export class AvatarPlaybackCoordinator {
     source: AvatarPlaybackRequestSource,
     reason: string,
     frame: number,
-    accepted: boolean
+    accepted: boolean,
   ): void {
     const entry: AvatarBehaviorTransitionLogEntry = {
       at: Date.now(),
@@ -341,11 +379,11 @@ export class AvatarPlaybackCoordinator {
       mode: effect.mode,
       source,
       reason,
-      accepted
+      accepted,
     }
     this.behaviorTimeline = [...this.behaviorTimeline, entry].slice(-40)
     console.log(
-      `[BEHAVIORTRANS] frame=${entry.frame} ${entry.fromBehaviorId}->${entry.toBehaviorId} animation=${entry.fromAnimationId ?? 'none'}->${entry.toAnimationId} mode=${entry.mode} source=${source} accepted=${accepted} reason="${reason}"`
+      `[BEHAVIORTRANS] frame=${entry.frame} ${entry.fromBehaviorId}->${entry.toBehaviorId} animation=${entry.fromAnimationId ?? 'none'}->${entry.toAnimationId} mode=${entry.mode} source=${source} accepted=${accepted} reason="${reason}"`,
     )
   }
 }

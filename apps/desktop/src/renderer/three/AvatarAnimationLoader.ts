@@ -1,11 +1,12 @@
-import * as THREE from 'three'
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import type { VRM } from '@pixiv/three-vrm'
 import {
-  VRMAnimationLoaderPlugin,
   createVRMAnimationClip,
-  type VRMAnimation
+  type VRMAnimation,
+  VRMAnimationLoaderPlugin,
 } from '@pixiv/three-vrm-animation'
+import type * as THREE from 'three'
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
+
 import type { VrmAnimationLoadContext } from './VrmModel'
 
 export interface LoadedAnimationClip {
@@ -25,7 +26,7 @@ export class AvatarAnimationLoader {
     blobUrl: string,
     vrm: VRM,
     context: VrmAnimationLoadContext,
-    isCurrent?: () => boolean
+    isCurrent?: () => boolean,
   ): Promise<LoadedAnimationClip | null> {
     const parseStarted = performance.now()
     const loader = new GLTFLoader()
@@ -42,18 +43,23 @@ export class AvatarAnimationLoader {
     const bindDuration = performance.now() - bindStarted
     this.parses += 1
     console.log(
-      `[ANIMDBG] parse animation=${context.animationId} file=${context.file} parseMs=${Math.round(performance.now() - parseStarted)} bindMs=${Math.round(bindDuration)} parses=${this.parses}`
+      `[ANIMDBG] parse animation=${context.animationId} file=${context.file} parseMs=${Math.round(performance.now() - parseStarted)} bindMs=${Math.round(bindDuration)} parses=${this.parses}`,
     )
 
     const hasSceneRootTrack = this.hasSceneRootPositionTrack(clip)
     this.logAnimationTrackHierarchy(clip, context)
 
-    const facialTrackCount = clip.tracks.filter((track) => this.isForbiddenFacialTrack(track.name)).length
+    const facialTrackCount = clip.tracks.filter((track) =>
+      this.isForbiddenFacialTrack(track.name),
+    ).length
     const facialTrackNames = clip.tracks
       .filter((track) => this.isForbiddenFacialBoneTrack(track.name))
       .map((track) => track.name)
     if (facialTrackCount > 0 || facialTrackNames.length > 0) {
-      clip.tracks = clip.tracks.filter((track) => !this.isForbiddenFacialTrack(track.name) && !this.isForbiddenFacialBoneTrack(track.name))
+      clip.tracks = clip.tracks.filter(
+        (track) =>
+          !this.isForbiddenFacialTrack(track.name) && !this.isForbiddenFacialBoneTrack(track.name),
+      )
     }
 
     return {
@@ -61,22 +67,29 @@ export class AvatarAnimationLoader {
       facialTracksRemoved: facialTrackCount,
       facialTrackNames,
       bindDuration,
-      hasSceneRootTrack
+      hasSceneRootTrack,
     }
   }
 
   private isForbiddenFacialTrack(trackName: string): boolean {
     return (
       /\.weight$/i.test(trackName) ||
-      /(^|[./])(blink|lookAt|look_at|gaze|eyeTarget|eye_target|expression|blendShape|blendshape|morph)([./]|$)/i.test(trackName)
+      /(^|[./])(blink|lookAt|look_at|gaze|eyeTarget|eye_target|expression|blendShape|blendshape|morph)([./]|$)/i.test(
+        trackName,
+      )
     )
   }
 
   private isForbiddenFacialBoneTrack(trackName: string): boolean {
-    return /(^|[./])(jaw|leftEye|rightEye|tongue|eyelid|leftEyelid|rightEyelid)([./]|$)/i.test(trackName)
+    return /(^|[./])(jaw|leftEye|rightEye|tongue|eyelid|leftEyelid|rightEyelid)([./]|$)/i.test(
+      trackName,
+    )
   }
 
-  private logAnimationTrackHierarchy(clip: THREE.AnimationClip, context: VrmAnimationLoadContext): void {
+  private logAnimationTrackHierarchy(
+    clip: THREE.AnimationClip,
+    context: VrmAnimationLoadContext,
+  ): void {
     const interestingTracks = clip.tracks
       .map((track) => track.name)
       .filter((name) => /\.(position|quaternion|rotation)$/.test(name))
@@ -85,8 +98,8 @@ export class AvatarAnimationLoader {
     console.log(
       [
         `[ANIMDBG] Animation Track Hierarchy animation=${context.animationId} file=${context.file}`,
-        ...interestingTracks.map((name) => `  ${name}`)
-      ].join('\n')
+        ...interestingTracks.map((name) => `  ${name}`),
+      ].join('\n'),
     )
   }
 }

@@ -29,14 +29,14 @@ const REASONING_MODEL_PATTERNS: readonly RegExp[] = [
   /magistral/i,
   /(^|[-_/:])o1([-_/:]|$)/i,
   /(^|[-_/:])o3([-_/:]|$)/i,
-  /(^|[-_/:])o4-?mini/i
+  /(^|[-_/:])o4-?mini/i,
 ]
 
 // Models that reject an explicit `temperature` parameter (OpenAI o-series).
 const NO_TEMPERATURE_PATTERNS: readonly RegExp[] = [
   /(^|[-_/:])o1([-_/:]|$)/i,
   /(^|[-_/:])o3([-_/:]|$)/i,
-  /(^|[-_/:])o4-?mini/i
+  /(^|[-_/:])o4-?mini/i,
 ]
 
 export function isReasoningModel(modelId: string): boolean {
@@ -48,7 +48,7 @@ const NON_REASONING_BUDGET: Record<LlmProviderId, number> = {
   cerebras: 1024,
   github: 1024,
   openrouter: 1024,
-  mistral: 1024
+  mistral: 1024,
 }
 
 const REASONING_BUDGET = 4096
@@ -62,6 +62,6 @@ export function resolveCapabilities(providerId: LlmProviderId, modelId: string):
     supportsStreaming: true,
     supportsTemperature,
     supportsSystemPrompt: true,
-    recommendedMaxTokens: reasoning ? REASONING_BUDGET : NON_REASONING_BUDGET[providerId]
+    recommendedMaxTokens: reasoning ? REASONING_BUDGET : NON_REASONING_BUDGET[providerId],
   }
 }

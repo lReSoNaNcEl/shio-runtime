@@ -4,7 +4,7 @@ export const chunkBuilderTuning = {
   pauseCompletionMs: 900,
   hardTimeoutMs: 12_000,
   maxCharacters: 500,
-  minimumCharacters: 2
+  minimumCharacters: 2,
 } as const
 
 export const attentionTuning = {
@@ -12,7 +12,7 @@ export const attentionTuning = {
     silent: Number.POSITIVE_INFINITY,
     passive: 70,
     active: 45,
-    streamer: 28
+    streamer: 28,
   } satisfies Record<AttentionMode, number>,
   score: {
     directNameMention: 80,
@@ -25,8 +25,8 @@ export const attentionTuning = {
     likelySelfTalk: -35,
     tooShort: -45,
     replyCooldown: -60,
-    speakingNonDirect: -15
-  }
+    speakingNonDirect: -15,
+  },
 } as const
 
 export const defaultContinuousListeningSettings: ContinuousListeningSettings = {
@@ -34,7 +34,7 @@ export const defaultContinuousListeningSettings: ContinuousListeningSettings = {
   mode: 'silent',
   replyCooldownMs: 15_000,
   followUpWindowMs: 20_000,
-  curiosityChance: 0.03
+  curiosityChance: 0.03,
 }
 
 export const backlogTuning = {
@@ -43,14 +43,19 @@ export const backlogTuning = {
   maxSelectedTurnsPerDrain: 1,
   mergeWindowMs: 6_000,
   maxMergedCharacters: 600,
-  recentIdLimit: 128
+  recentIdLimit: 128,
 } as const
 
 export function parseAttentionMode(value: string | undefined): AttentionMode {
   return value === 'silent' || value === 'active' || value === 'streamer' ? value : 'passive'
 }
 
-export function parseTunedNumber(value: string | undefined, fallback: number, min: number, max: number): number {
+export function parseTunedNumber(
+  value: string | undefined,
+  fallback: number,
+  min: number,
+  max: number,
+): number {
   const parsed = Number(value)
   return Math.min(max, Math.max(min, Number.isFinite(parsed) ? parsed : fallback))
 }

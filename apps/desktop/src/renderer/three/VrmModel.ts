@@ -1,16 +1,17 @@
+import { type VRM, VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm'
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
-import { VRMLoaderPlugin, VRMUtils, type VRM } from '@pixiv/three-vrm'
-import type { FacialDebugState } from './AvatarExpressionMixer'
-import type { LookAtDebugState, LookAtMode } from './LookAtRuntime'
-import type { HeadMotionDebugState, HeadMotionProfile } from './HeadMotionRuntime'
-import type { EarBehaviorDebugState, EarAxisOverride } from './EarBehaviorRuntime'
-import { avatarStartupTuning, facialTuning } from './avatarTuning'
-import type { MouthWeights } from './FacialProfile'
+
 import { AnimationDiagnostics } from './AnimationDiagnostics'
 import { AvatarAnimationLoader } from './AvatarAnimationLoader'
+import type { FacialDebugState } from './AvatarExpressionMixer'
 import { AvatarFacialRuntime } from './AvatarFacialRuntime'
 import { AvatarPerformanceMonitor } from './AvatarPerformanceMonitor'
+import { avatarStartupTuning, facialTuning } from './avatarTuning'
+import type { EarAxisOverride, EarBehaviorDebugState } from './EarBehaviorRuntime'
+import type { MouthWeights } from './FacialProfile'
+import type { HeadMotionDebugState, HeadMotionProfile } from './HeadMotionRuntime'
+import type { LookAtDebugState, LookAtMode } from './LookAtRuntime'
 import { RootMotionController } from './RootMotionController'
 
 export type VrmProceduralMode = 'idle' | 'listening' | 'thinking' | 'speaking'
@@ -111,9 +112,11 @@ export class VrmModel {
   private currentBodyAction: THREE.AnimationAction | null = null
   private previousBodyAction: THREE.AnimationAction | null = null
   private currentBodyClip: THREE.AnimationClip | null = null
-  private previousBodyClip: THREE.AnimationClip | null = null
   private bodyActions = new Set<THREE.AnimationAction>()
-  private fadingOutActions = new Map<THREE.AnimationAction, { clip: THREE.AnimationClip; startAt: number; endAt: number }>()
+  private fadingOutActions = new Map<
+    THREE.AnimationAction,
+    { clip: THREE.AnimationClip; startAt: number; endAt: number }
+  >()
   private bodyActionNames = new WeakMap<THREE.AnimationAction, string>()
   private bodyClockTime = 0
   private transitionEndTime = 0
@@ -123,7 +126,9 @@ export class VrmModel {
   private facialRuntime = new AvatarFacialRuntime()
   private performanceMonitor = new AvatarPerformanceMonitor()
   private rootMotionController = new RootMotionController()
-  private animationLoader = new AvatarAnimationLoader((clip) => this.rootMotionController.hasSceneRootPositionTrack(clip))
+  private animationLoader = new AvatarAnimationLoader((clip) =>
+    this.rootMotionController.hasSceneRootPositionTrack(clip),
+  )
   private diagnostics = new AnimationDiagnostics(() => ({
     vrm: this.vrm,
     mixer: this.mixer,
@@ -138,11 +143,8 @@ export class VrmModel {
     transitionEndTime: this.transitionEndTime,
     cleanupAllowedAfterFrame: this.cleanupAllowedAfterFrame,
     hipsDeltaY: this._dbgHipsDeltaY,
-    rootDeltaY: this._dbgRootDeltaY
+    rootDeltaY: this._dbgRootDeltaY,
   }))
-  private _dbgTimer = 0
-  private _dbgHipsMin = Infinity
-  private _dbgHipsMax = -Infinity
   private _dbgHipsWorld = new THREE.Vector3()
   private _dbgRootWorld = new THREE.Vector3()
   private _dbgLastHipsY = 0
@@ -164,7 +166,7 @@ export class VrmModel {
     reuses: 0,
     hits: 0,
     misses: 0,
-    parses: 0
+    parses: 0,
   }
   private lastFacialControlTracksDisabled = 0
   private lastFacialControlTrackNames: string[] = []
@@ -198,7 +200,7 @@ export class VrmModel {
       this.mixer = new THREE.AnimationMixer(vrm.scene)
       this.facialRuntime.attach(vrm)
       console.log(
-        `[ANIMDBG] avatar startup transform position=${this.formatVector(vrm.scene.position)} rotation=${this.diagnostics.formatEuler(vrm.scene.rotation)}`
+        `[ANIMDBG] avatar startup transform position=${this.formatVector(vrm.scene.position)} rotation=${this.diagnostics.formatEuler(vrm.scene.rotation)}`,
       )
     } finally {
       URL.revokeObjectURL(blobUrl)
@@ -218,8 +220,8 @@ export class VrmModel {
       reason: 'external load',
       previousAnimationId: null,
       forceReplay: false,
-      rootMotionPolicy: 'allow'
-    }
+      rootMotionPolicy: 'allow',
+    },
   ): Promise<void> {
     if (!this.vrm || !this.mixer) {
       throw new Error('Сначала загрузите VRM-модель')
@@ -250,15 +252,20 @@ export class VrmModel {
       } else {
         if (loadSeq !== this.animationLoadSeq) {
           console.log(
-            `[ANIMDBG] discard stale animation load animation=${context.animationId} file=${context.file} source=${context.source} frame=${context.frame ?? 'n/a'} seq=${loadSeq}->${this.animationLoadSeq}`
+            `[ANIMDBG] discard stale animation load animation=${context.animationId} file=${context.file} source=${context.source} frame=${context.frame ?? 'n/a'} seq=${loadSeq}->${this.animationLoadSeq}`,
           )
           return
         }
 
-        const loaded = await this.animationLoader.load(blobUrl, this.vrm, context, () => loadSeq === this.animationLoadSeq)
+        const loaded = await this.animationLoader.load(
+          blobUrl,
+          this.vrm,
+          context,
+          () => loadSeq === this.animationLoadSeq,
+        )
         if (!loaded) {
           console.log(
-            `[ANIMDBG] discard stale animation load animation=${context.animationId} file=${context.file} source=${context.source} frame=${context.frame ?? 'n/a'} seq=${loadSeq}->${this.animationLoadSeq}`
+            `[ANIMDBG] discard stale animation load animation=${context.animationId} file=${context.file} source=${context.source} frame=${context.frame ?? 'n/a'} seq=${loadSeq}->${this.animationLoadSeq}`,
           )
           return
         }
@@ -269,7 +276,8 @@ export class VrmModel {
         hasSceneRootPositionTrack = loaded.hasSceneRootTrack
         this.clipCacheStats.parses = this.animationLoader.parses
       }
-      if (cachedClip) hasSceneRootPositionTrack = this.rootMotionController.hasSceneRootPositionTrack(clip)
+      if (cachedClip)
+        hasSceneRootPositionTrack = this.rootMotionController.hasSceneRootPositionTrack(clip)
 
       this.facialRuntime.notifyVrmaFacialTracksDisabled(facialTrackCount)
       if (this.lastLoadContext?.animationId === context.animationId) this.restartCount += 1
@@ -292,7 +300,11 @@ export class VrmModel {
       action.enabled = true
       action.paused = false
       action.setEffectiveTimeScale(1)
-      action.setEffectiveWeight(previousAction && safeBlendDuration > 0 ? facialTuning.animation.minimumTransitionWeight : 1)
+      action.setEffectiveWeight(
+        previousAction && safeBlendDuration > 0
+          ? facialTuning.animation.minimumTransitionWeight
+          : 1,
+      )
       this.diagnostics.recordFrameTrace('after action enabled before play')
       action.play()
       this.diagnostics.startActionInfluenceProbe(action, context)
@@ -305,14 +317,16 @@ export class VrmModel {
         action.setEffectiveWeight(facialTuning.animation.minimumTransitionWeight)
         this.diagnostics.recordFrameTrace('after normalized crossfade weights initialized')
         this.previousBodyAction = previousAction
-        this.previousBodyClip = previousClip
         this.transitionStartTime = this.bodyClockTime
         this.fadingOutActions.set(previousAction, {
           clip: previousClip,
           startAt: this.bodyClockTime,
-          endAt: this.bodyClockTime + safeBlendDuration
+          endAt: this.bodyClockTime + safeBlendDuration,
         })
-        this.transitionEndTime = Math.max(this.transitionEndTime, this.bodyClockTime + safeBlendDuration)
+        this.transitionEndTime = Math.max(
+          this.transitionEndTime,
+          this.bodyClockTime + safeBlendDuration,
+        )
         this.cleanupAllowedAfterFrame = this.bodyFrame + facialTuning.animation.cleanupGraceFrames
         this.transitionSettledLogged = false
       } else {
@@ -321,7 +335,6 @@ export class VrmModel {
         action.setEffectiveWeight(1)
         this.diagnostics.recordFrameTrace('after stop previous before ownership swap')
         this.previousBodyAction = null
-        this.previousBodyClip = null
         this.transitionStartTime = this.bodyClockTime
         this.transitionEndTime = this.bodyClockTime
         this.cleanupAllowedAfterFrame = this.bodyFrame
@@ -338,7 +351,7 @@ export class VrmModel {
       const actionCount = (this.mixer as unknown as { _actions?: unknown[] })._actions?.length ?? -1
       this._dbgLastLoad = `${context.animationId}/${context.file}/dur${clip.duration.toFixed(1)}/t+0/source=${context.source}/policy=${context.rootMotionPolicy}`
       console.log(
-        `[ANIMDBG] load animation=${context.animationId} file=${context.file} behavior=${context.behaviorId} source=${context.source} reason="${context.reason}" prev=${context.previousAnimationId ?? 'none'} forceReplay=${context.forceReplay} frame=${context.frame ?? 'n/a'} loop=${loop} dur=${clip.duration.toFixed(2)} tracks=${clip.tracks.length} facialStripped=${facialTrackCount} facialBoneStripped=${facialControlTrackNames.length} facialBoneTracks=[${facialControlTrackNames.join(',') || 'none'}] rootPolicy=${context.rootMotionPolicy} sceneRootPositionTrack=${hasSceneRootPositionTrack} rootCompensation=${context.rootMotionPolicy !== 'allow'} blend=${blendDuration} actions=${actionCount} restartCount=${this.restartCount} cache=${cacheHit ? 'hit' : 'miss'} clipLoads=${this.clipCacheStats.loads} clipReuses=${this.clipCacheStats.reuses} parses=${this.clipCacheStats.parses} bindMs=${Math.round(bindDurationMs)}`
+        `[ANIMDBG] load animation=${context.animationId} file=${context.file} behavior=${context.behaviorId} source=${context.source} reason="${context.reason}" prev=${context.previousAnimationId ?? 'none'} forceReplay=${context.forceReplay} frame=${context.frame ?? 'n/a'} loop=${loop} dur=${clip.duration.toFixed(2)} tracks=${clip.tracks.length} facialStripped=${facialTrackCount} facialBoneStripped=${facialControlTrackNames.length} facialBoneTracks=[${facialControlTrackNames.join(',') || 'none'}] rootPolicy=${context.rootMotionPolicy} sceneRootPositionTrack=${hasSceneRootPositionTrack} rootCompensation=${context.rootMotionPolicy !== 'allow'} blend=${blendDuration} actions=${actionCount} restartCount=${this.restartCount} cache=${cacheHit ? 'hit' : 'miss'} clipLoads=${this.clipCacheStats.loads} clipReuses=${this.clipCacheStats.reuses} parses=${this.clipCacheStats.parses} bindMs=${Math.round(bindDurationMs)}`,
       )
       this.diagnostics.logAnimationTransition('after loadAnimation', context)
     } finally {
@@ -348,17 +361,18 @@ export class VrmModel {
 
   stopAnimation(): void {
     this.diagnostics.logAnimationTransition('before stopAnimation')
-    console.log(`[ANIMDBG] stopAnimation had=${Boolean(this.currentBodyAction)} remaining=${this.animationRemaining}`)
+    console.log(
+      `[ANIMDBG] stopAnimation had=${Boolean(this.currentBodyAction)} remaining=${this.animationRemaining}`,
+    )
     if (this.currentBodyAction && this.currentBodyClip) {
       const action = this.currentBodyAction
       const clip = this.currentBodyClip
       const fadeDuration = 0.3
       action.fadeOut(fadeDuration)
       this.previousBodyAction = action
-      this.previousBodyClip = clip
       this.fadingOutActions.set(action, {
         clip,
-        endAt: this.bodyClockTime + fadeDuration
+        endAt: this.bodyClockTime + fadeDuration,
       })
       this.transitionEndTime = Math.max(this.transitionEndTime, this.bodyClockTime + fadeDuration)
       this.currentBodyAction = null
@@ -384,7 +398,10 @@ export class VrmModel {
     if (this.mixer) this.mixer.update(delta)
     this.diagnostics.updateActionInfluenceProbe('after mixer.update')
     this.enforceBodyOwnership('after mixer.update')
-    this.rootMotionController.applyRootMotionCompensation(this.vrm, this.lastLoadContext?.rootMotionPolicy)
+    this.rootMotionController.applyRootMotionCompensation(
+      this.vrm,
+      this.lastLoadContext?.rootMotionPolicy,
+    )
     this.cleanupExpiredActions()
     this.diagnostics.recordFrameTrace('after cleanup')
     if (this.animationRemaining !== null) {
@@ -410,7 +427,7 @@ export class VrmModel {
       if (this._dbgLastHipsY !== 0 && Math.abs(dy) > 0.1) {
         const actions = (this.mixer as unknown as { _actions?: unknown[] })._actions ?? []
         console.log(
-          `[ANIMDBG] HIPS JUMP dy=${dy.toFixed(3)} y=${y.toFixed(3)} curWeight=${this.currentBodyAction?.getEffectiveWeight().toFixed(2) ?? 'none'} actions=${actions.length} lastLoad=${this._dbgLastLoad}`
+          `[ANIMDBG] HIPS JUMP dy=${dy.toFixed(3)} y=${y.toFixed(3)} curWeight=${this.currentBodyAction?.getEffectiveWeight().toFixed(2) ?? 'none'} actions=${actions.length} lastLoad=${this._dbgLastLoad}`,
         )
         this.diagnostics.recordFrameTrace('hips jump')
       }
@@ -427,7 +444,6 @@ export class VrmModel {
     // mouth contribution separately via setMouthWeights(). ---
     this.facialRuntime.update(delta)
 
-
     // Single expressionManager.update() for the frame happens inside vrm.update(),
     // which also drives lookAt (eye direction) and spring bones.
     this.vrm.update(delta)
@@ -437,7 +453,13 @@ export class VrmModel {
     this.facialRuntime.forceBlink(duration)
   }
 
-  nudgeMicroMotion(options: { headX?: number; headY?: number; eyeX?: number; eyeY?: number; duration?: number }): void {
+  nudgeMicroMotion(options: {
+    headX?: number
+    headY?: number
+    eyeX?: number
+    eyeY?: number
+    duration?: number
+  }): void {
     this.facialRuntime.nudgeMicroMotion(options)
   }
 
@@ -528,7 +550,11 @@ export class VrmModel {
     return {
       activeActionCount: actions.length,
       weightedActionCount: actions.filter((action) => action.weight > 0.01).length,
-      currentClipName: this.currentBodyAction ? (this.bodyActionNames.get(this.currentBodyAction) ?? this.currentBodyClip?.name ?? 'unnamed') : null,
+      currentClipName: this.currentBodyAction
+        ? (this.bodyActionNames.get(this.currentBodyAction) ??
+          this.currentBodyClip?.name ??
+          'unnamed')
+        : null,
       currentClipDuration: this.currentBodyClip?.duration ?? null,
       currentClipTime: this.currentBodyAction?.time ?? null,
       transitionRemaining: Math.max(0, this.transitionEndTime - this.bodyClockTime),
@@ -548,7 +574,7 @@ export class VrmModel {
       facialControlTracksDisabled: this.lastFacialControlTracksDisabled,
       facialControlTrackNames: [...this.lastFacialControlTrackNames],
       frameTrace: [...this.diagnostics.getFrameTrace()],
-      actions
+      actions,
     }
   }
 
@@ -556,12 +582,12 @@ export class VrmModel {
     root.position.set(
       avatarStartupTuning.rootPosition.x,
       avatarStartupTuning.rootPosition.y,
-      avatarStartupTuning.rootPosition.z
+      avatarStartupTuning.rootPosition.z,
     )
     root.rotation.set(
       avatarStartupTuning.rootRotation.x,
       avatarStartupTuning.rootRotation.y,
-      avatarStartupTuning.rootRotation.z
+      avatarStartupTuning.rootRotation.z,
     )
     root.updateMatrixWorld(true)
   }
@@ -574,7 +600,8 @@ export class VrmModel {
     if (!this.mixer) return
 
     this.applyNormalizedCrossfadeWeights()
-    const transitionSettled = this.currentBodyAction && (force || this.bodyClockTime >= this.transitionEndTime)
+    const transitionSettled =
+      this.currentBodyAction && (force || this.bodyClockTime >= this.transitionEndTime)
     if (transitionSettled) {
       this.currentBodyAction.enabled = true
       this.currentBodyAction.paused = false
@@ -589,7 +616,6 @@ export class VrmModel {
       this.fadingOutActions.delete(action)
       if (this.previousBodyAction === action) {
         this.previousBodyAction = null
-        this.previousBodyClip = null
       }
       if (this.fadingOutActions.size === 0) {
         this.transitionStartTime = this.bodyClockTime
@@ -626,10 +652,14 @@ export class VrmModel {
   }
 
   private applyNormalizedCrossfadeWeights(): void {
-    if (!this.currentBodyAction || !this.previousBodyAction || this.fadingOutActions.size === 0) return
+    if (!this.currentBodyAction || !this.previousBodyAction || this.fadingOutActions.size === 0)
+      return
 
     const duration = Math.max(0.0001, this.transitionEndTime - this.transitionStartTime)
-    const progress = Math.min(1, Math.max(0, (this.bodyClockTime - this.transitionStartTime) / duration))
+    const progress = Math.min(
+      1,
+      Math.max(0, (this.bodyClockTime - this.transitionStartTime) / duration),
+    )
     const newWeight = Math.max(facialTuning.animation.minimumTransitionWeight, progress)
     const oldWeight = Math.max(0, 1 - newWeight)
 
@@ -643,7 +673,10 @@ export class VrmModel {
     this.previousBodyAction.setEffectiveWeight(oldWeight)
   }
 
-  private stopAndUncacheAction(action: THREE.AnimationAction | null, clip: THREE.AnimationClip | null): void {
+  private stopAndUncacheAction(
+    action: THREE.AnimationAction | null,
+    clip: THREE.AnimationClip | null,
+  ): void {
     if (!action || !clip || !this.mixer) return
     this.diagnostics.recordFrameTrace('before stopAndUncacheAction')
     action.stop()
@@ -661,7 +694,6 @@ export class VrmModel {
     this.currentBodyAction = null
     this.previousBodyAction = null
     this.currentBodyClip = null
-    this.previousBodyClip = null
     this.bodyActions.clear()
     this.fadingOutActions.clear()
     this.bodyClockTime = 0
@@ -678,7 +710,7 @@ export class VrmModel {
       reuses: 0,
       hits: 0,
       misses: 0,
-      parses: 0
+      parses: 0,
     }
   }
 }

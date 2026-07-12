@@ -1,13 +1,21 @@
 import type { CharacterRuntimeMode, CharacterState } from '../../shared/runtime/characterState'
 import type { EventBus, RuntimeEventType } from '../../shared/runtime/events'
+import type { SerializedSpeechError } from '../../shared/speech/speechErrors'
 import { MicCapture } from '../audio/micCapture'
 import { StreamingPcmCapture } from '../audio/StreamingPcmCapture'
-import { StreamingAsrClient, type AsrStreamEvent } from '../continuousListening/StreamingAsrClient'
+import { type AsrStreamEvent, StreamingAsrClient } from '../continuousListening/StreamingAsrClient'
 import type { AvatarMode, AvatarRuntime } from './AvatarRuntime'
 import type { OverlayRuntime, SyncedAvatarState } from './OverlayRuntime'
 import type { RecognizedSpeech, SpeechRuntime } from './SpeechRuntime'
+import { isSpeechServiceError } from './speechCapabilities'
 
-export type SpeechInputStatus = 'idle' | 'listening' | 'recognizing' | 'thinking' | 'synthesizing' | 'speaking'
+export type SpeechInputStatus =
+  | 'idle'
+  | 'listening'
+  | 'recognizing'
+  | 'thinking'
+  | 'synthesizing'
+  | 'speaking'
 type SpeechInputMessageRole = 'user' | 'assistant' | 'error' | 'meta'
 
 export interface ContinuousRecognizedSpeech extends RecognizedSpeech {
@@ -25,6 +33,8 @@ export interface SpeechInputRuntimeDeps {
   setStatus: (status: SpeechInputStatus) => void
   pushMessage: (role: SpeechInputMessageRole, text: string) => void
   recordRuntimeEvent: (label: string, detail?: string) => void
+  /** Report a normalized Speech Adapter failure to the capabilities health component. */
+  reportSpeechServiceError: (error: SerializedSpeechError) => void
   updateCharacterState: (patch: {
     status: SpeechInputStatus
     mode: CharacterRuntimeMode
@@ -46,16 +56,30 @@ export class SpeechInputRuntime {
   private pushMessage: SpeechInputRuntimeDeps['pushMessage']
   private recordRuntimeEvent: SpeechInputRuntimeDeps['recordRuntimeEvent']
   private updateCharacterState: SpeechInputRuntimeDeps['updateCharacterState']
+  private reportSpeechServiceError: SpeechInputRuntimeDeps['reportSpeechServiceError']
   private continuousEnabled = false
-  private continuousSessionId = 0
-  private onContinuousFinal: ((recognized: ContinuousRecognizedSpeech) => void | Promise<void>) | null = null
+  private onStreamingServiceLost: ((error: SerializedSpeechError) => void) | null = null
+  private onContinuousFinal:
+    | ((recognized: ContinuousRecognizedSpeech) => void | Promise<void>)
+    | null = null
   private onContinuousPartial: ((text: string) => void) | null = null
   private onContinuousDeviceLost: (() => void) | null = null
   private playbackCapturedSegments = new Set<string>()
   private streamingClient = new StreamingAsrClient({
     onEvent: (event) => this.handleStreamingEvent(event),
-    onState: (state) => this.recordRuntimeEvent('Continuous ASR State', state)
+    onState: (state) => this.handleStreamingState(state),
   })
+  // If the streaming transport stays in reconnect longer than this, we treat the
+  // Speech API as lost, tear the session down, and stop retrying forever.
+  private reconnectWatchdog: ReturnType<typeof setTimeout> | null = null
+  private static readonly RECONNECT_LOST_MS = 12_000
+  // Monotonic streaming-session generation. Bumped whenever a streaming session
+  // starts or ends so a stale reconnect watchdog can never tear down a session
+  // that was already recovered, disabled, or replaced.
+  private streamingGeneration = 0
+  // Last transport state reported by the streaming client. Used to keep the
+  // watchdog invariant explicit: it may only fire while still reconnecting.
+  private streamingState = 'idle'
 
   constructor(deps: SpeechInputRuntimeDeps) {
     this.speechRuntime = deps.speechRuntime
@@ -66,6 +90,12 @@ export class SpeechInputRuntime {
     this.pushMessage = deps.pushMessage
     this.recordRuntimeEvent = deps.recordRuntimeEvent
     this.updateCharacterState = deps.updateCharacterState
+    this.reportSpeechServiceError = deps.reportSpeechServiceError
+  }
+
+  /** Register the owner's handler for irrecoverable streaming-transport loss. */
+  setStreamingServiceLostHandler(handler: (error: SerializedSpeechError) => void): void {
+    this.onStreamingServiceLost = handler
   }
 
   setMicrophone(deviceId: string, persist = true): void {
@@ -81,15 +111,16 @@ export class SpeechInputRuntime {
     enabled: boolean,
     onFinal?: (recognized: ContinuousRecognizedSpeech) => void | Promise<void>,
     onPartial?: (text: string) => void,
-    onDeviceLost?: () => void
+    onDeviceLost?: () => void,
   ): Promise<void> {
     this.onContinuousFinal = onFinal ?? this.onContinuousFinal
     this.onContinuousPartial = onPartial ?? this.onContinuousPartial
     this.onContinuousDeviceLost = onDeviceLost ?? this.onContinuousDeviceLost
     if (enabled === this.continuousEnabled) return
-    this.continuousSessionId += 1
     this.continuousEnabled = enabled
     if (!enabled) {
+      this.streamingGeneration += 1
+      this.clearReconnectWatchdog()
       this.playbackCapturedSegments.clear()
       await this.streamingCapture.stop()
       await this.streamingClient.stop()
@@ -97,9 +128,13 @@ export class SpeechInputRuntime {
       this.recordRuntimeEvent('Continuous Listening Disabled')
       return
     }
+    let connected = false
     try {
       const config = await window.api.config.get()
       await this.streamingClient.connect(config.pythonSpeechUrl, config.ttsLanguage || 'ru')
+      connected = true
+      // A fresh working session: invalidate any watchdog from a previous session.
+      this.streamingGeneration += 1
       if (!this.continuousEnabled) {
         await this.streamingClient.stop()
         return
@@ -107,17 +142,94 @@ export class SpeechInputRuntime {
       await this.streamingCapture.start(
         this.micDeviceId,
         (frame) => this.streamingClient.sendPcm(frame),
-        () => this.handleContinuousDeviceLost()
+        () => this.handleContinuousDeviceLost(),
       )
       this.publishSpeechEvent('ListeningStarted', 'continuous')
       this.recordRuntimeEvent('Continuous Listening Enabled')
     } catch (error) {
       this.continuousEnabled = false
+      this.clearReconnectWatchdog()
       await this.streamingCapture.stop()
       await this.streamingClient.stop()
       this.recordRuntimeEvent('Continuous Listening Error', String(error))
+      // A failure before the transport connected is a Speech API reachability
+      // problem (streaming capability), not a microphone/device problem.
+      if (!connected) {
+        this.reportSpeechServiceError({
+          code: 'SERVICE_UNAVAILABLE',
+          operation: 'streaming',
+          recoverable: true,
+          technicalMessage: 'streaming transport connect failed',
+        })
+      }
       throw error
     }
+  }
+
+  private handleStreamingState(state: string): void {
+    this.streamingState = state
+    this.recordRuntimeEvent('Continuous ASR State', state)
+    if (!this.continuousEnabled) {
+      this.clearReconnectWatchdog()
+      return
+    }
+    if (state === 'reconnecting') {
+      // Only a confirmed transport reconnect arms the watchdog. A normal speech
+      // pause or a long ASR processing stretch keeps the state ready/listening,
+      // so neither is ever mistaken for a lost service.
+      if (this.reconnectWatchdog === null) {
+        const generation = this.streamingGeneration
+        this.reconnectWatchdog = setTimeout(() => {
+          this.reconnectWatchdog = null
+          // Stale-guard: a session that recovered, was disabled, or replaced has
+          // a different generation; and the transport must still be reconnecting.
+          // Never tear down a session that is already healthy again.
+          if (
+            generation !== this.streamingGeneration ||
+            !this.continuousEnabled ||
+            this.streamingState !== 'reconnecting'
+          ) {
+            return
+          }
+          this.declareStreamingServiceLost('reconnect timeout')
+        }, SpeechInputRuntime.RECONNECT_LOST_MS)
+      }
+    } else if (state === 'ready' || state === 'listening' || state === 'idle') {
+      // The transport is healthy again: cancel any pending loss watchdog.
+      this.clearReconnectWatchdog()
+    }
+  }
+
+  private clearReconnectWatchdog(): void {
+    if (this.reconnectWatchdog !== null) {
+      clearTimeout(this.reconnectWatchdog)
+      this.reconnectWatchdog = null
+    }
+  }
+
+  /**
+   * The streaming Speech API was lost mid-session. Release microphone/stream
+   * resources, drop any in-flight partial (it is not a completed turn), leave
+   * the runtime in a stable state, and notify the owner. Never auto-reconnects
+   * forever.
+   */
+  private declareStreamingServiceLost(reason: string): void {
+    this.clearReconnectWatchdog()
+    if (!this.continuousEnabled) return
+    this.streamingGeneration += 1
+    this.continuousEnabled = false
+    void this.streamingCapture.stop()
+    void this.streamingClient.stop()
+    this.publishSpeechEvent('ListeningFinished', 'continuous')
+    this.recordRuntimeEvent('Streaming Service Lost', reason)
+    const error: SerializedSpeechError = {
+      code: 'SERVICE_UNAVAILABLE',
+      operation: 'streaming',
+      recoverable: true,
+      technicalMessage: `streaming transport lost (${reason})`,
+    }
+    this.reportSpeechServiceError(error)
+    this.onStreamingServiceLost?.(error)
   }
 
   isContinuousListening(): boolean {
@@ -179,6 +291,9 @@ export class SpeechInputRuntime {
     }
     if (event.type === 'warning' || event.type === 'error') {
       this.recordRuntimeEvent(`Continuous ASR ${event.type}`, `${event.code}: ${event.message}`)
+      if (event.type === 'error' && !event.recoverable) {
+        this.declareStreamingServiceLost(`asr error ${event.code}`)
+      }
       return
     }
     if (event.type === 'partial') {
@@ -191,13 +306,15 @@ export class SpeechInputRuntime {
     const capturedDuringPlayback = this.playbackCapturedSegments.delete(stableId)
     this.publishSpeechEvent('RecognitionCompleted', `continuous final ${event.reason}`)
     this.recordRuntimeEvent('Continuous ASR Final', `${event.segmentId}:${event.reason}`)
-    void Promise.resolve(this.onContinuousFinal?.({
-      text: event.text,
-      streamingSessionId: event.sessionId,
-      segmentId: event.segmentId,
-      confidence: event.confidence,
-      capturedDuringPlayback
-    })).catch((error) => {
+    void Promise.resolve(
+      this.onContinuousFinal?.({
+        text: event.text,
+        streamingSessionId: event.sessionId,
+        segmentId: event.segmentId,
+        confidence: event.confidence,
+        capturedDuringPlayback,
+      }),
+    ).catch((error) => {
       this.recordRuntimeEvent('Continuous Decision Error', String(error))
     })
   }
@@ -230,8 +347,12 @@ export class SpeechInputRuntime {
         this.returnToIdle()
         return null
       }
+      // Infrastructure/ASR failures never become chat messages (ТЗ §2). A
+      // normalized Speech Adapter error flips the recognition capability so the
+      // banner/mic state and background recovery take over; other unexpected
+      // errors are recorded for diagnostics only.
       this.recordRuntimeEvent('ASR Error', String(e))
-      this.pushMessage('error', `Ошибка распознавания: ${String(e)}`)
+      if (isSpeechServiceError(e)) this.reportSpeechServiceError(e.toSerialized())
       this.returnToIdle()
       return null
     }
@@ -241,7 +362,11 @@ export class SpeechInputRuntime {
     return error instanceof Error && error.message.trim().toLowerCase() === 'no text'
   }
 
-  private enterAvatarMode(mode: Exclude<AvatarMode, 'speaking' | 'awaitingSpeech'>, emotionKey: string, status: SpeechInputStatus): void {
+  private enterAvatarMode(
+    mode: Exclude<AvatarMode, 'speaking' | 'awaitingSpeech'>,
+    emotionKey: string,
+    status: SpeechInputStatus,
+  ): void {
     this.updateCharacterState({ status, mode, emotion: emotionKey })
     this.applyAvatarCharacterState()
     this.publishAvatarState({ mode, emotionKey })
@@ -266,7 +391,7 @@ export class SpeechInputRuntime {
       type,
       category: 'speech',
       source: 'renderer.speechInputRuntime',
-      detail
+      detail,
     })
   }
 }

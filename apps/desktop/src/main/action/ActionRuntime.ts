@@ -1,5 +1,5 @@
-import type { ActionRequest, ActionResult, ToolDefinition } from './types'
 import type { RuntimeEventInput } from '../../shared/runtime/events'
+import type { ActionRequest, ActionResult, ToolDefinition } from './types'
 
 export type ActionRuntimeEventListener = (event: RuntimeEventInput) => void
 
@@ -16,7 +16,9 @@ export class ActionRuntime {
     return [...this.tools.keys()]
   }
 
-  async execute<TPayload, TResult>(request: ActionRequest<TPayload>): Promise<ActionResult<TResult>> {
+  async execute<TPayload, TResult>(
+    request: ActionRequest<TPayload>,
+  ): Promise<ActionResult<TResult>> {
     this.publishActionEvent('ToolRequested', request.name)
     const tool = this.tools.get(request.name)
     if (!tool) {
@@ -25,7 +27,7 @@ export class ActionRuntime {
       return {
         status: 'failure',
         action: request.name,
-        error
+        error,
       }
     }
 
@@ -35,25 +37,41 @@ export class ActionRuntime {
       return {
         status: 'success',
         action: request.name,
-        result
+        result,
       }
     } catch (e) {
-      this.publishActionEvent('ToolFailed', request.name, String(e))
+      // Duck-type a normalized domain error (e.g. Speech Adapter's
+      // SpeechServiceError) without coupling the generic Action Runtime to any
+      // domain: carry its stable code and sanitized message through unchanged.
+      const normalized =
+        e &&
+        typeof e === 'object' &&
+        typeof (e as { code?: unknown }).code === 'string' &&
+        typeof (e as { recoverable?: unknown }).recoverable === 'boolean'
+          ? (e as { code: string; technicalMessage?: string })
+          : null
+      const error = normalized?.technicalMessage ?? String(e)
+      this.publishActionEvent('ToolFailed', request.name, error)
       return {
         status: 'failure',
         action: request.name,
-        error: String(e)
+        error,
+        errorCode: normalized?.code,
       }
     }
   }
 
-  private publishActionEvent(type: RuntimeEventInput['type'], action: string, detail?: string): void {
+  private publishActionEvent(
+    type: RuntimeEventInput['type'],
+    action: string,
+    detail?: string,
+  ): void {
     this.onEvent?.({
       type,
       category: 'action',
       source: 'main.actionRuntime',
       detail: detail ?? action,
-      metadata: { action }
+      metadata: { action },
     })
   }
 }

@@ -1,8 +1,18 @@
+import {
+  Button,
+  ButtonGroup,
+  Content,
+  Dialog,
+  DialogContainer,
+  Divider,
+  Heading,
+  Switch,
+} from '@react-spectrum/s2'
 import { useEffect, useState } from 'react'
-import { Button, ButtonGroup, Content, Dialog, DialogContainer, Divider, Heading, Switch } from '@react-spectrum/s2'
+
 import { DEBUG_AVATAR_MODE_LABELS, DEBUG_AVATAR_MODES } from '../avatar/avatarAnimations'
-import { controller, STATUS_LABELS } from '../Controller'
 import type { RuntimeDebugSnapshot } from '../Controller'
+import { controller, STATUS_LABELS } from '../Controller'
 
 interface Props {
   isOpen: boolean
@@ -16,7 +26,7 @@ const OVERLAY_ANIMATION_HUD = 'Показывать текущую анимац�
 const DEBUG_TABS = [
   { id: 'overview', label: 'Обзор' },
   { id: 'eventBus', label: 'Event Bus' },
-  { id: 'timeline', label: 'Timeline' }
+  { id: 'timeline', label: 'Timeline' },
 ] as const
 
 type DebugTabId = (typeof DEBUG_TABS)[number]['id']
@@ -26,14 +36,14 @@ const FACIAL_SOURCE_LABELS: Record<string, string> = {
   lipSync: 'LipSync',
   emotion: 'Emotion Runtime',
   lookAt: 'LookAt',
-  speakingEye: 'Speaking Eye'
+  speakingEye: 'Speaking Eye',
 }
 
 function formatTime(value: number): string {
   return new Date(value).toLocaleTimeString('ru-RU', {
     hour: '2-digit',
     minute: '2-digit',
-    second: '2-digit'
+    second: '2-digit',
   })
 }
 
@@ -71,7 +81,7 @@ function getCurrentLipSyncWeight(snapshot: RuntimeDebugSnapshot): number {
     snapshot.lipsyncWeights.ih,
     snapshot.lipsyncWeights.ou,
     snapshot.lipsyncWeights.ee,
-    snapshot.lipsyncWeights.oh
+    snapshot.lipsyncWeights.oh,
   )
 }
 
@@ -107,9 +117,11 @@ export function AvatarDebugDialog({ isOpen, onClose }: Props): React.JSX.Element
 
   const updateOverlayAnimationHud = (enabled: boolean): void => {
     setOverlayAnimationHudEnabled(enabled)
-    void window.api.config.save({ overlayShowCurrentAnimation: enabled ? 'true' : 'false' }).then(() => {
-      void window.api.overlay.applySettings()
-    })
+    void window.api.config
+      .save({ overlayShowCurrentAnimation: enabled ? 'true' : 'false' })
+      .then(() => {
+        void window.api.overlay.applySettings()
+      })
   }
 
   return (
@@ -142,45 +154,133 @@ export function AvatarDebugDialog({ isOpen, onClose }: Props): React.JSX.Element
                     <div className="debug-stat-grid">
                       <DebugStat label="status" value={STATUS_LABELS[snapshot.appStatus]} />
                       <DebugStat label="character mode" value={snapshot.characterState.mode} />
-                      <DebugStat label="character speech" value={snapshot.characterState.speechState.status} />
-                      <DebugStat label="character activity" value={snapshot.characterState.activity} />
-                      <DebugStat label="character attention" value={snapshot.characterState.attention.focus} />
+                      <DebugStat
+                        label="character speech"
+                        value={snapshot.characterState.speechState.status}
+                      />
+                      <DebugStat
+                        label="character activity"
+                        value={snapshot.characterState.activity}
+                      />
+                      <DebugStat
+                        label="character attention"
+                        value={snapshot.characterState.attention.focus}
+                      />
                       <DebugStat label="avatar mode" value={snapshot.avatarMode} />
                       <DebugStat label="emotionKey" value={snapshot.emotionKey} />
                       <DebugStat label="vrmEmotion" value={snapshot.vrmEmotion} />
                       <DebugStat label="body animation" value={snapshot.currentBodyAnimation} />
-                      <DebugStat label="previous animation" value={snapshot.previousBodyAnimation} />
-                      <DebugStat label="body animation file" value={snapshot.currentBodyAnimationFile} />
-                      <DebugStat label="animation loops" value={snapshot.currentBodyAnimationLoop ? 'yes' : 'no'} />
-                      <DebugStat label="playback status" value={snapshot.currentBodyAnimationStatus} />
-                      <DebugStat label="transition policy" value={snapshot.activeTransitionPolicy} />
-                      <DebugStat label="blend duration" value={`${snapshot.activeBlendDuration}s`} />
-                      <DebugStat label="body actions" value={String(snapshot.bodyActions.activeActionCount)} />
-                      <DebugStat label="weighted actions" value={String(snapshot.bodyActions.weightedActionCount)} />
-                      <DebugStat label="transition remaining" value={`${snapshot.bodyActions.transitionRemaining.toFixed(2)}s`} />
-                      <DebugStat label="root motion" value={snapshot.bodyActions.rootMotionPolicy} />
-                      <DebugStat label="restart count" value={String(snapshot.bodyActions.restartCount)} />
-                      <DebugStat label="ownership gaps" value={String(snapshot.bodyActions.ownershipGapCount)} />
-                      <DebugStat label="queue length" value={String(snapshot.animationQueue.length)} />
-                      <DebugStat label="next queued" value={snapshot.animationQueue.next?.animationId ?? 'none'} />
-                      <DebugStat label="behavior intent" value={snapshot.behaviorEngine?.intent ?? 'none'} />
-                      <DebugStat label="reply type" value={snapshot.behaviorEngine?.replyType ?? 'none'} />
+                      <DebugStat
+                        label="previous animation"
+                        value={snapshot.previousBodyAnimation}
+                      />
+                      <DebugStat
+                        label="body animation file"
+                        value={snapshot.currentBodyAnimationFile}
+                      />
+                      <DebugStat
+                        label="animation loops"
+                        value={snapshot.currentBodyAnimationLoop ? 'yes' : 'no'}
+                      />
+                      <DebugStat
+                        label="playback status"
+                        value={snapshot.currentBodyAnimationStatus}
+                      />
+                      <DebugStat
+                        label="transition policy"
+                        value={snapshot.activeTransitionPolicy}
+                      />
+                      <DebugStat
+                        label="blend duration"
+                        value={`${snapshot.activeBlendDuration}s`}
+                      />
+                      <DebugStat
+                        label="body actions"
+                        value={String(snapshot.bodyActions.activeActionCount)}
+                      />
+                      <DebugStat
+                        label="weighted actions"
+                        value={String(snapshot.bodyActions.weightedActionCount)}
+                      />
+                      <DebugStat
+                        label="transition remaining"
+                        value={`${snapshot.bodyActions.transitionRemaining.toFixed(2)}s`}
+                      />
+                      <DebugStat
+                        label="root motion"
+                        value={snapshot.bodyActions.rootMotionPolicy}
+                      />
+                      <DebugStat
+                        label="restart count"
+                        value={String(snapshot.bodyActions.restartCount)}
+                      />
+                      <DebugStat
+                        label="ownership gaps"
+                        value={String(snapshot.bodyActions.ownershipGapCount)}
+                      />
+                      <DebugStat
+                        label="queue length"
+                        value={String(snapshot.animationQueue.length)}
+                      />
+                      <DebugStat
+                        label="next queued"
+                        value={snapshot.animationQueue.next?.animationId ?? 'none'}
+                      />
+                      <DebugStat
+                        label="behavior intent"
+                        value={snapshot.behaviorEngine?.intent ?? 'none'}
+                      />
+                      <DebugStat
+                        label="reply type"
+                        value={snapshot.behaviorEngine?.replyType ?? 'none'}
+                      />
                       <DebugStat label="behavior" value={snapshot.currentBehaviorId} />
-                      <DebugStat label="selected animation" value={snapshot.selectedBehaviorAnimation} />
-                      <DebugStat label="idle orchestrator" value={snapshot.idleOrchestrator.paused ? 'paused' : 'running'} />
+                      <DebugStat
+                        label="selected animation"
+                        value={snapshot.selectedBehaviorAnimation}
+                      />
+                      <DebugStat
+                        label="idle orchestrator"
+                        value={snapshot.idleOrchestrator.paused ? 'paused' : 'running'}
+                      />
                       <DebugStat label="idle stage" value={snapshot.idleOrchestrator.idleStage} />
-                      <DebugStat label="idle state" value={snapshot.idleOrchestrator.currentIdleState} />
-                      <DebugStat label="next idle" value={snapshot.idleOrchestrator.nextScheduledIdleAnimation} />
-                      <DebugStat label="next idle in" value={`${snapshot.idleOrchestrator.nextTransitionIn}s`} />
-                      <DebugStat label="idle presence duration" value={`${snapshot.idleOrchestrator.extendedIdleDuration}s`} />
-                      <DebugStat label="current idle presence" value={snapshot.idleOrchestrator.currentExtendedIdleAnimation} />
-                      <DebugStat label="next idle presence" value={snapshot.idleOrchestrator.nextExtendedIdleCandidate} />
+                      <DebugStat
+                        label="idle state"
+                        value={snapshot.idleOrchestrator.currentIdleState}
+                      />
+                      <DebugStat
+                        label="next idle"
+                        value={snapshot.idleOrchestrator.nextScheduledIdleAnimation}
+                      />
+                      <DebugStat
+                        label="next idle in"
+                        value={`${snapshot.idleOrchestrator.nextTransitionIn}s`}
+                      />
+                      <DebugStat
+                        label="idle presence duration"
+                        value={`${snapshot.idleOrchestrator.extendedIdleDuration}s`}
+                      />
+                      <DebugStat
+                        label="current idle presence"
+                        value={snapshot.idleOrchestrator.currentExtendedIdleAnimation}
+                      />
+                      <DebugStat
+                        label="next idle presence"
+                        value={snapshot.idleOrchestrator.nextExtendedIdleCandidate}
+                      />
                       <DebugStat label="gesture" value={snapshot.currentGesture} />
                       <DebugStat
                         label="speaking session"
-                        value={snapshot.speakingGestureScheduler.active ? `#${snapshot.speakingGestureScheduler.sessionId}` : 'inactive'}
+                        value={
+                          snapshot.speakingGestureScheduler.active
+                            ? `#${snapshot.speakingGestureScheduler.sessionId}`
+                            : 'inactive'
+                        }
                       />
-                      <DebugStat label="speaking gesture phase" value={snapshot.speakingGestureScheduler.phase} />
+                      <DebugStat
+                        label="speaking gesture phase"
+                        value={snapshot.speakingGestureScheduler.phase}
+                      />
                       <DebugStat label="TTS latency" value={snapshot.ttsLatencyMs} />
                       <DebugStat label="TTS cache" value={snapshot.ttsCache} />
                       <DebugStat label="overlay" value={snapshot.overlayState} />
@@ -190,31 +290,67 @@ export function AvatarDebugDialog({ isOpen, onClose }: Props): React.JSX.Element
                   <section className="debug-section">
                     <div className="debug-section-title">Avatar Polish Summary</div>
                     <div className="debug-stat-grid">
-                      <DebugStat label="FPS Avatar" value={String(snapshot.performance.avatarFps)} />
-                      <DebugStat label="Current Emotion Weight" value={formatWeight(getCurrentEmotionWeight(snapshot))} />
+                      <DebugStat
+                        label="FPS Avatar"
+                        value={String(snapshot.performance.avatarFps)}
+                      />
+                      <DebugStat
+                        label="Current Emotion Weight"
+                        value={formatWeight(getCurrentEmotionWeight(snapshot))}
+                      />
                       <DebugStat label="Current LookAt Target" value={snapshot.lookAt.target} />
                       <DebugStat
                         label="Current Blink State"
                         value={`${snapshot.facial.blinkTuning.profileId} В· ${snapshot.facial.blinkTuning.phase} В· ${formatWeight(snapshot.facial.blinkTuning.weight)}`}
                       />
-                      <DebugStat label="Current Facial Profile" value={snapshot.facial.currentProfile} />
-                      <DebugStat label="Current LipSync Weight" value={formatWeight(getCurrentLipSyncWeight(snapshot))} />
-                      <DebugStat label="Idle" value={`${snapshot.idleOrchestrator.idleStage} В· ${snapshot.idleOrchestrator.currentIdleState}`} />
+                      <DebugStat
+                        label="Current Facial Profile"
+                        value={snapshot.facial.currentProfile}
+                      />
+                      <DebugStat
+                        label="Current LipSync Weight"
+                        value={formatWeight(getCurrentLipSyncWeight(snapshot))}
+                      />
+                      <DebugStat
+                        label="Idle"
+                        value={`${snapshot.idleOrchestrator.idleStage} В· ${snapshot.idleOrchestrator.currentIdleState}`}
+                      />
                       <DebugStat label="Queue" value={`${snapshot.animationQueue.length} queued`} />
-                      <DebugStat label="Cooldowns" value={String(snapshot.activeAnimationCooldowns.length)} />
-                      <DebugStat label="Animation" value={`${snapshot.currentBodyAnimation} В· ${snapshot.currentBodyAnimationStatus}`} />
+                      <DebugStat
+                        label="Cooldowns"
+                        value={String(snapshot.activeAnimationCooldowns.length)}
+                      />
+                      <DebugStat
+                        label="Animation"
+                        value={`${snapshot.currentBodyAnimation} В· ${snapshot.currentBodyAnimationStatus}`}
+                      />
                     </div>
                   </section>
 
                   <section className="debug-section">
                     <div className="debug-section-title">Speaking Gesture Scheduler</div>
                     <div className="debug-stat-grid">
-                      <DebugStat label="active" value={snapshot.speakingGestureScheduler.active ? 'yes' : 'no'} />
-                      <DebugStat label="session id" value={String(snapshot.speakingGestureScheduler.sessionId)} />
-                      <DebugStat label="elapsed" value={`${(snapshot.speakingGestureScheduler.elapsedMs / 1000).toFixed(1)}s`} />
+                      <DebugStat
+                        label="active"
+                        value={snapshot.speakingGestureScheduler.active ? 'yes' : 'no'}
+                      />
+                      <DebugStat
+                        label="session id"
+                        value={String(snapshot.speakingGestureScheduler.sessionId)}
+                      />
+                      <DebugStat
+                        label="elapsed"
+                        value={`${(snapshot.speakingGestureScheduler.elapsedMs / 1000).toFixed(1)}s`}
+                      />
                       <DebugStat label="phase" value={snapshot.speakingGestureScheduler.phase} />
-                      <DebugStat label="current gesture" value={snapshot.speakingGestureScheduler.currentGesture} />
-                      <DebugStat label="next behavior" value={snapshot.speakingGestureScheduler.nextBehavior} />
+                      <DebugStat
+                        label="current gesture"
+                        value={snapshot.speakingGestureScheduler.currentGesture}
+                      />
+                      <DebugStat
+                        label="next behavior"
+                        value={snapshot.speakingGestureScheduler.nextBehavior}
+                      />
                       <DebugStat
                         label="next gesture in"
                         value={
@@ -223,7 +359,10 @@ export function AvatarDebugDialog({ isOpen, onClose }: Props): React.JSX.Element
                             : 'none'
                         }
                       />
-                      <DebugStat label="last animation" value={snapshot.speakingGestureScheduler.lastScheduledAnimation} />
+                      <DebugStat
+                        label="last animation"
+                        value={snapshot.speakingGestureScheduler.lastScheduledAnimation}
+                      />
                       <DebugStat
                         label="skipped candidates"
                         value={
@@ -232,24 +371,35 @@ export function AvatarDebugDialog({ isOpen, onClose }: Props): React.JSX.Element
                             : 'none'
                         }
                       />
-                      <DebugStat label="selection reason" value={snapshot.speakingGestureScheduler.selectionReason} />
-                      <DebugStat label="decision" value={snapshot.speakingGestureScheduler.schedulerDecision} />
+                      <DebugStat
+                        label="selection reason"
+                        value={snapshot.speakingGestureScheduler.selectionReason}
+                      />
+                      <DebugStat
+                        label="decision"
+                        value={snapshot.speakingGestureScheduler.schedulerDecision}
+                      />
                     </div>
                   </section>
 
                   {snapshot.runtimeHealth && (
                     <section className="debug-section">
                       <div className="debug-section-title">
-                        Runtime Health{' '}
-                        {snapshot.runtimeHealth.failCount > 0 ? '✗ FAIL' : '✓ OK'}
+                        Runtime Health {snapshot.runtimeHealth.failCount > 0 ? '✗ FAIL' : '✓ OK'}
                       </div>
                       <div className="debug-stat-grid">
-                        <DebugStat label="enabled" value={snapshot.runtimeHealth.enabled ? 'yes' : 'no'} />
+                        <DebugStat
+                          label="enabled"
+                          value={snapshot.runtimeHealth.enabled ? 'yes' : 'no'}
+                        />
                         <DebugStat label="frame" value={String(snapshot.runtimeHealth.frame)} />
                         <DebugStat label="pass" value={String(snapshot.runtimeHealth.passCount)} />
                         <DebugStat label="fail" value={String(snapshot.runtimeHealth.failCount)} />
                         <DebugStat label="skip" value={String(snapshot.runtimeHealth.skipCount)} />
-                        <DebugStat label="total violations" value={String(snapshot.runtimeHealth.totalViolations)} />
+                        <DebugStat
+                          label="total violations"
+                          value={String(snapshot.runtimeHealth.totalViolations)}
+                        />
                         <DebugStat
                           label="last violation"
                           value={
@@ -286,28 +436,72 @@ export function AvatarDebugDialog({ isOpen, onClose }: Props): React.JSX.Element
                         label="attention"
                         value={`${snapshot.characterState.attention.focus} (${snapshot.characterState.attention.confidence})`}
                       />
-                      <DebugStat label="speech.status" value={snapshot.characterState.speechState.status} />
-                      <DebugStat label="speech.voiceId" value={snapshot.characterState.speechState.voiceId} />
-                      <DebugStat label="speech.ttsGeneration" value={snapshot.characterState.speechState.ttsGeneration} />
-                      <DebugStat label="animation.behavior" value={snapshot.characterState.animation.behavior} />
-                      <DebugStat label="animation.id" value={snapshot.characterState.animation.animationId} />
-                      <DebugStat label="voice.voiceId" value={snapshot.characterState.voice.voiceId} />
+                      <DebugStat
+                        label="speech.status"
+                        value={snapshot.characterState.speechState.status}
+                      />
+                      <DebugStat
+                        label="speech.voiceId"
+                        value={snapshot.characterState.speechState.voiceId}
+                      />
+                      <DebugStat
+                        label="speech.ttsGeneration"
+                        value={snapshot.characterState.speechState.ttsGeneration}
+                      />
+                      <DebugStat
+                        label="animation.behavior"
+                        value={snapshot.characterState.animation.behavior}
+                      />
+                      <DebugStat
+                        label="animation.id"
+                        value={snapshot.characterState.animation.animationId}
+                      />
+                      <DebugStat
+                        label="voice.voiceId"
+                        value={snapshot.characterState.voice.voiceId}
+                      />
                       <DebugStat label="posture" value={snapshot.characterState.posture} />
-                      <DebugStat label="conversation.phase" value={snapshot.characterState.conversation.conversationPhase} />
+                      <DebugStat
+                        label="conversation.phase"
+                        value={snapshot.characterState.conversation.conversationPhase}
+                      />
                     </div>
-                    <pre className="debug-json">{JSON.stringify(snapshot.characterState, null, 2)}</pre>
+                    <pre className="debug-json">
+                      {JSON.stringify(snapshot.characterState, null, 2)}
+                    </pre>
                   </section>
 
                   <section className="debug-section">
                     <div className="debug-section-title">Conversation Presence</div>
                     <div className="debug-stat-grid">
-                      <DebugStat label="phase" value={snapshot.characterState.conversationPresence.responsePhase} />
-                      <DebugStat label="reply length" value={snapshot.characterState.conversationPresence.replyLength} />
-                      <DebugStat label="engagement" value={snapshot.characterState.conversationPresence.engagement} />
-                      <DebugStat label="hesitation" value={snapshot.characterState.conversationPresence.hesitation} />
-                      <DebugStat label="reaction" value={snapshot.characterState.conversationPresence.reaction} />
-                      <DebugStat label="emphasis" value={snapshot.characterState.conversationPresence.emphasis} />
-                      <DebugStat label="pause hint" value={snapshot.characterState.conversationPresence.pauseHint} />
+                      <DebugStat
+                        label="phase"
+                        value={snapshot.characterState.conversationPresence.responsePhase}
+                      />
+                      <DebugStat
+                        label="reply length"
+                        value={snapshot.characterState.conversationPresence.replyLength}
+                      />
+                      <DebugStat
+                        label="engagement"
+                        value={snapshot.characterState.conversationPresence.engagement}
+                      />
+                      <DebugStat
+                        label="hesitation"
+                        value={snapshot.characterState.conversationPresence.hesitation}
+                      />
+                      <DebugStat
+                        label="reaction"
+                        value={snapshot.characterState.conversationPresence.reaction}
+                      />
+                      <DebugStat
+                        label="emphasis"
+                        value={snapshot.characterState.conversationPresence.emphasis}
+                      />
+                      <DebugStat
+                        label="pause hint"
+                        value={snapshot.characterState.conversationPresence.pauseHint}
+                      />
                       <DebugStat
                         label="last update"
                         value={
@@ -322,11 +516,26 @@ export function AvatarDebugDialog({ isOpen, onClose }: Props): React.JSX.Element
                   <section className="debug-section">
                     <div className="debug-section-title">Playback Requests</div>
                     <div className="debug-controller-grid">
-                      <DebugStat label="current animation" value={snapshot.playbackRequests.currentAnimation ?? 'none'} />
-                      <DebugStat label="requested animation" value={snapshot.playbackRequests.requestedAnimation ?? 'none'} />
-                      <DebugStat label="current transition" value={snapshot.playbackRequests.currentTransition} />
-                      <DebugStat label="transition pending" value={snapshot.playbackRequests.transitionPending ? 'yes' : 'no'} />
-                      <DebugStat label="replay count" value={String(snapshot.playbackRequests.replayCount)} />
+                      <DebugStat
+                        label="current animation"
+                        value={snapshot.playbackRequests.currentAnimation ?? 'none'}
+                      />
+                      <DebugStat
+                        label="requested animation"
+                        value={snapshot.playbackRequests.requestedAnimation ?? 'none'}
+                      />
+                      <DebugStat
+                        label="current transition"
+                        value={snapshot.playbackRequests.currentTransition}
+                      />
+                      <DebugStat
+                        label="transition pending"
+                        value={snapshot.playbackRequests.transitionPending ? 'yes' : 'no'}
+                      />
+                      <DebugStat
+                        label="replay count"
+                        value={String(snapshot.playbackRequests.replayCount)}
+                      />
                       <DebugStat
                         label="ignored duplicates"
                         value={String(snapshot.playbackRequests.ignoredDuplicateRequests)}
@@ -346,7 +555,8 @@ export function AvatarDebugDialog({ isOpen, onClose }: Props): React.JSX.Element
                               {request.accepted ? 'accepted' : 'ignored'} {request.animationId}
                             </span>
                             <span className="debug-timeline-detail">
-                              {request.source} В· {request.behaviorId} В· {request.rejectionReason ?? request.reason}
+                              {request.source} В· {request.behaviorId} В·{' '}
+                              {request.rejectionReason ?? request.reason}
                             </span>
                           </div>
                         ))}
@@ -356,25 +566,77 @@ export function AvatarDebugDialog({ isOpen, onClose }: Props): React.JSX.Element
                   <section className="debug-section">
                     <div className="debug-section-title">Animation</div>
                     <div className="debug-controller-grid">
-                      <DebugStat label="active action count" value={String(snapshot.bodyActions.activeActionCount)} />
-                      <DebugStat label="weighted action count" value={String(snapshot.bodyActions.weightedActionCount)} />
-                      <DebugStat label="current clip" value={snapshot.bodyActions.currentClipName ?? 'none'} />
-                      <DebugStat label="last load animation" value={snapshot.bodyActions.lastLoadAnimationId ?? 'none'} />
-                      <DebugStat label="last load file" value={snapshot.bodyActions.lastLoadFile ?? 'none'} />
-                      <DebugStat label="last load source" value={snapshot.bodyActions.lastLoadSource} />
-                      <DebugStat label="last load reason" value={snapshot.bodyActions.lastLoadReason} />
-                      <DebugStat label="root motion policy" value={snapshot.bodyActions.rootMotionPolicy} />
-                      <DebugStat label="hips delta Y" value={snapshot.bodyActions.hipsDeltaY.toFixed(3)} />
-                      <DebugStat label="root delta Y" value={snapshot.bodyActions.rootDeltaY.toFixed(3)} />
-                      <DebugStat label="max hips delta Y" value={snapshot.bodyActions.maxHipsDeltaY.toFixed(3)} />
-                      <DebugStat label="max root delta Y" value={snapshot.bodyActions.maxRootDeltaY.toFixed(3)} />
-                      <DebugStat label="restart count" value={String(snapshot.bodyActions.restartCount)} />
-                      <DebugStat label="ownership gap count" value={String(snapshot.bodyActions.ownershipGapCount)} />
-                      <DebugStat label="last transition event" value={snapshot.bodyActions.lastTransitionEvent} />
-                      <DebugStat label="facial bone tracks stripped" value={String(snapshot.bodyActions.facialControlTracksDisabled)} />
+                      <DebugStat
+                        label="active action count"
+                        value={String(snapshot.bodyActions.activeActionCount)}
+                      />
+                      <DebugStat
+                        label="weighted action count"
+                        value={String(snapshot.bodyActions.weightedActionCount)}
+                      />
+                      <DebugStat
+                        label="current clip"
+                        value={snapshot.bodyActions.currentClipName ?? 'none'}
+                      />
+                      <DebugStat
+                        label="last load animation"
+                        value={snapshot.bodyActions.lastLoadAnimationId ?? 'none'}
+                      />
+                      <DebugStat
+                        label="last load file"
+                        value={snapshot.bodyActions.lastLoadFile ?? 'none'}
+                      />
+                      <DebugStat
+                        label="last load source"
+                        value={snapshot.bodyActions.lastLoadSource}
+                      />
+                      <DebugStat
+                        label="last load reason"
+                        value={snapshot.bodyActions.lastLoadReason}
+                      />
+                      <DebugStat
+                        label="root motion policy"
+                        value={snapshot.bodyActions.rootMotionPolicy}
+                      />
+                      <DebugStat
+                        label="hips delta Y"
+                        value={snapshot.bodyActions.hipsDeltaY.toFixed(3)}
+                      />
+                      <DebugStat
+                        label="root delta Y"
+                        value={snapshot.bodyActions.rootDeltaY.toFixed(3)}
+                      />
+                      <DebugStat
+                        label="max hips delta Y"
+                        value={snapshot.bodyActions.maxHipsDeltaY.toFixed(3)}
+                      />
+                      <DebugStat
+                        label="max root delta Y"
+                        value={snapshot.bodyActions.maxRootDeltaY.toFixed(3)}
+                      />
+                      <DebugStat
+                        label="restart count"
+                        value={String(snapshot.bodyActions.restartCount)}
+                      />
+                      <DebugStat
+                        label="ownership gap count"
+                        value={String(snapshot.bodyActions.ownershipGapCount)}
+                      />
+                      <DebugStat
+                        label="last transition event"
+                        value={snapshot.bodyActions.lastTransitionEvent}
+                      />
+                      <DebugStat
+                        label="facial bone tracks stripped"
+                        value={String(snapshot.bodyActions.facialControlTracksDisabled)}
+                      />
                       <DebugStat
                         label="facial bone track names"
-                        value={snapshot.bodyActions.facialControlTrackNames.length > 0 ? snapshot.bodyActions.facialControlTrackNames.join(', ') : 'none'}
+                        value={
+                          snapshot.bodyActions.facialControlTrackNames.length > 0
+                            ? snapshot.bodyActions.facialControlTrackNames.join(', ')
+                            : 'none'
+                        }
                       />
                       <DebugStat
                         label="asset cache"
@@ -387,13 +649,19 @@ export function AvatarDebugDialog({ isOpen, onClose }: Props): React.JSX.Element
                       <DebugStat
                         label="current clip time"
                         value={
-                          snapshot.bodyActions.currentClipTime === null || snapshot.bodyActions.currentClipDuration === null
+                          snapshot.bodyActions.currentClipTime === null ||
+                          snapshot.bodyActions.currentClipDuration === null
                             ? 'none'
                             : `${snapshot.bodyActions.currentClipTime.toFixed(2)} / ${snapshot.bodyActions.currentClipDuration.toFixed(2)}s`
                         }
                       />
-                      <DebugStat label="transition remaining" value={`${snapshot.bodyActions.transitionRemaining.toFixed(2)}s`} />
-                      {snapshot.bodyActions.actions.length === 0 && <DebugStat label="actions" value="none" />}
+                      <DebugStat
+                        label="transition remaining"
+                        value={`${snapshot.bodyActions.transitionRemaining.toFixed(2)}s`}
+                      />
+                      {snapshot.bodyActions.actions.length === 0 && (
+                        <DebugStat label="actions" value="none" />
+                      )}
                       {snapshot.bodyActions.actions.map((action) => (
                         <DebugStat
                           key={`${action.name}-${action.time}-${action.current ? 'current' : action.previous ? 'previous' : 'old'}`}
@@ -407,17 +675,39 @@ export function AvatarDebugDialog({ isOpen, onClose }: Props): React.JSX.Element
                   <section className="debug-section">
                     <div className="debug-section-title">Speech Presence</div>
                     <div className="debug-controller-grid">
-                      <DebugStat label="speechEnergy" value={formatWeight(snapshot.facial.mouthTuning.speechEnergy)} />
+                      <DebugStat
+                        label="speechEnergy"
+                        value={formatWeight(snapshot.facial.mouthTuning.speechEnergy)}
+                      />
                       <DebugStat
                         label="active visemes"
-                        value={snapshot.facial.mouthTuning.activeVisemes.length > 0 ? snapshot.facial.mouthTuning.activeVisemes.join(', ') : 'none'}
+                        value={
+                          snapshot.facial.mouthTuning.activeVisemes.length > 0
+                            ? snapshot.facial.mouthTuning.activeVisemes.join(', ')
+                            : 'none'
+                        }
                       />
-                      <DebugStat label="viseme blend" value={formatRecord(snapshot.facial.mouthTuning.visemeBlend)} />
-                      <DebugStat label="mouth openness" value={formatWeight(snapshot.facial.mouthTuning.openness)} />
-                      <DebugStat label="release stage" value={snapshot.facial.mouthTuning.releaseStage} />
-                      <DebugStat label="lookAt state" value={`${snapshot.lookAt.mode} / ${snapshot.lookAt.target}`} />
+                      <DebugStat
+                        label="viseme blend"
+                        value={formatRecord(snapshot.facial.mouthTuning.visemeBlend)}
+                      />
+                      <DebugStat
+                        label="mouth openness"
+                        value={formatWeight(snapshot.facial.mouthTuning.openness)}
+                      />
+                      <DebugStat
+                        label="release stage"
+                        value={snapshot.facial.mouthTuning.releaseStage}
+                      />
+                      <DebugStat
+                        label="lookAt state"
+                        value={`${snapshot.lookAt.mode} / ${snapshot.lookAt.target}`}
+                      />
                       <DebugStat label="focus hold" value={formatMs(snapshot.lookAt.focusHoldMs)} />
-                      <DebugStat label="current facial profile" value={snapshot.facial.currentProfile} />
+                      <DebugStat
+                        label="current facial profile"
+                        value={snapshot.facial.currentProfile}
+                      />
                     </div>
                   </section>
 
@@ -439,9 +729,18 @@ export function AvatarDebugDialog({ isOpen, onClose }: Props): React.JSX.Element
                       <DebugStat label="target" value={snapshot.lookAt.target} />
                       <DebugStat label="eye yaw" value={formatDeg(snapshot.lookAt.eyeYaw)} />
                       <DebugStat label="eye pitch" value={formatDeg(snapshot.lookAt.eyePitch)} />
-                      <DebugStat label="next saccade" value={formatMs(snapshot.lookAt.nextSaccadeMs)} />
-                      <DebugStat label="thinking timer" value={formatMs(snapshot.lookAt.thinkingTimerMs)} />
-                      <DebugStat label="return progress" value={formatWeight(snapshot.lookAt.returnProgress)} />
+                      <DebugStat
+                        label="next saccade"
+                        value={formatMs(snapshot.lookAt.nextSaccadeMs)}
+                      />
+                      <DebugStat
+                        label="thinking timer"
+                        value={formatMs(snapshot.lookAt.thinkingTimerMs)}
+                      />
+                      <DebugStat
+                        label="return progress"
+                        value={formatWeight(snapshot.lookAt.returnProgress)}
+                      />
                       <DebugStat label="focus hold" value={formatMs(snapshot.lookAt.focusHoldMs)} />
                       <DebugStat label="overshoot" value={formatMs(snapshot.lookAt.overshootMs)} />
                       <DebugStat
@@ -455,10 +754,24 @@ export function AvatarDebugDialog({ isOpen, onClose }: Props): React.JSX.Element
                   <section className="debug-section">
                     <div className="debug-section-title">Performance</div>
                     <div className="debug-controller-grid">
-                      <DebugStat label="FPS Avatar" value={String(snapshot.performance.avatarFps)} />
-                      <DebugStat label="body actions" value={String(snapshot.bodyActions.activeActionCount)} />
-                      <DebugStat label="weighted actions" value={String(snapshot.bodyActions.weightedActionCount)} />
-                      <DebugStat label="runtime frame" value={snapshot.runtimeHealth ? String(snapshot.runtimeHealth.frame) : 'n/a'} />
+                      <DebugStat
+                        label="FPS Avatar"
+                        value={String(snapshot.performance.avatarFps)}
+                      />
+                      <DebugStat
+                        label="body actions"
+                        value={String(snapshot.bodyActions.activeActionCount)}
+                      />
+                      <DebugStat
+                        label="weighted actions"
+                        value={String(snapshot.bodyActions.weightedActionCount)}
+                      />
+                      <DebugStat
+                        label="runtime frame"
+                        value={
+                          snapshot.runtimeHealth ? String(snapshot.runtimeHealth.frame) : 'n/a'
+                        }
+                      />
                     </div>
                   </section>
 
@@ -470,13 +783,31 @@ export function AvatarDebugDialog({ isOpen, onClose }: Props): React.JSX.Element
                         label="active generators"
                         value={snapshot.headMotion.activeGenerators.join(', ') || 'none'}
                       />
-                      <DebugStat label="yaw offset" value={formatDeg(snapshot.headMotion.yawOffset)} />
-                      <DebugStat label="pitch offset" value={formatDeg(snapshot.headMotion.pitchOffset)} />
-                      <DebugStat label="roll offset" value={formatDeg(snapshot.headMotion.rollOffset)} />
-                      <DebugStat label="motion energy" value={snapshot.headMotion.motionEnergy.toFixed(3)} />
-                      <DebugStat label="current blend" value={formatWeight(snapshot.headMotion.currentBlend)} />
+                      <DebugStat
+                        label="yaw offset"
+                        value={formatDeg(snapshot.headMotion.yawOffset)}
+                      />
+                      <DebugStat
+                        label="pitch offset"
+                        value={formatDeg(snapshot.headMotion.pitchOffset)}
+                      />
+                      <DebugStat
+                        label="roll offset"
+                        value={formatDeg(snapshot.headMotion.rollOffset)}
+                      />
+                      <DebugStat
+                        label="motion energy"
+                        value={snapshot.headMotion.motionEnergy.toFixed(3)}
+                      />
+                      <DebugStat
+                        label="current blend"
+                        value={formatWeight(snapshot.headMotion.currentBlend)}
+                      />
                       <DebugStat label="smoothing" value={String(snapshot.headMotion.smoothing)} />
-                      <DebugStat label="next event" value={formatMs(snapshot.headMotion.nextProceduralEventMs)} />
+                      <DebugStat
+                        label="next event"
+                        value={formatMs(snapshot.headMotion.nextProceduralEventMs)}
+                      />
                       <DebugStat
                         label="generator weights"
                         value={Object.entries(snapshot.headMotion.generatorWeights)
@@ -489,44 +820,117 @@ export function AvatarDebugDialog({ isOpen, onClose }: Props): React.JSX.Element
                   <section className="debug-section">
                     <div className="debug-section-title">Ear Runtime</div>
                     <div className="debug-controller-grid">
-                      <DebugStat label="enabled" value={snapshot.earBehavior.enabled ? 'yes' : 'no'} />
+                      <DebugStat
+                        label="enabled"
+                        value={snapshot.earBehavior.enabled ? 'yes' : 'no'}
+                      />
                       <DebugStat label="bone status" value={snapshot.earBehavior.boneStatus} />
                       <DebugStat label="current profile" value={snapshot.earBehavior.profile} />
                       <DebugStat label="current emotion" value={snapshot.earBehavior.emotion} />
                       <DebugStat label="axis override" value={snapshot.earBehavior.axisOverride} />
-                      <DebugStat label="amplitude scale" value={snapshot.earBehavior.amplitudeScale.toFixed(2)} />
-                      <DebugStat label="update tick count" value={String(snapshot.earBehavior.updateTickCount)} />
-                      <DebugStat label="last delta" value={`${snapshot.earBehavior.lastDeltaMs.toFixed(1)}ms`} />
-                      <DebugStat label="idle timer" value={`${(snapshot.earBehavior.idleMs / 1000).toFixed(1)}s`} />
-                      <DebugStat label="ear bone (L)" value={snapshot.earBehavior.left?.boneName ?? '—'} />
-                      <DebugStat label="detected axis (L)" value={snapshot.earBehavior.left?.detectedAxis ?? '—'} />
-                      <DebugStat label="current pose (L)" value={snapshot.earBehavior.left?.pose ?? '—'} />
-                      <DebugStat label="rest pose (L)" value={snapshot.earBehavior.left?.restPose ?? '—'} />
-                      <DebugStat label="base pose (L)" value={formatPose(snapshot.earBehavior.left?.basePose)} />
-                      <DebugStat label="speaking modifier (L)" value={formatPose(snapshot.earBehavior.left?.speakingModifier)} />
-                      <DebugStat label="final pose (L)" value={formatPose(snapshot.earBehavior.left?.finalPose)} />
+                      <DebugStat
+                        label="amplitude scale"
+                        value={snapshot.earBehavior.amplitudeScale.toFixed(2)}
+                      />
+                      <DebugStat
+                        label="update tick count"
+                        value={String(snapshot.earBehavior.updateTickCount)}
+                      />
+                      <DebugStat
+                        label="last delta"
+                        value={`${snapshot.earBehavior.lastDeltaMs.toFixed(1)}ms`}
+                      />
+                      <DebugStat
+                        label="idle timer"
+                        value={`${(snapshot.earBehavior.idleMs / 1000).toFixed(1)}s`}
+                      />
+                      <DebugStat
+                        label="ear bone (L)"
+                        value={snapshot.earBehavior.left?.boneName ?? '—'}
+                      />
+                      <DebugStat
+                        label="detected axis (L)"
+                        value={snapshot.earBehavior.left?.detectedAxis ?? '—'}
+                      />
+                      <DebugStat
+                        label="current pose (L)"
+                        value={snapshot.earBehavior.left?.pose ?? '—'}
+                      />
+                      <DebugStat
+                        label="rest pose (L)"
+                        value={snapshot.earBehavior.left?.restPose ?? '—'}
+                      />
+                      <DebugStat
+                        label="base pose (L)"
+                        value={formatPose(snapshot.earBehavior.left?.basePose)}
+                      />
+                      <DebugStat
+                        label="speaking modifier (L)"
+                        value={formatPose(snapshot.earBehavior.left?.speakingModifier)}
+                      />
+                      <DebugStat
+                        label="final pose (L)"
+                        value={formatPose(snapshot.earBehavior.left?.finalPose)}
+                      />
                       <DebugStat
                         label="current rotation (L)"
-                        value={snapshot.earBehavior.left ? formatDeg(snapshot.earBehavior.left.currentRotationRad) : '—'}
+                        value={
+                          snapshot.earBehavior.left
+                            ? formatDeg(snapshot.earBehavior.left.currentRotationRad)
+                            : '—'
+                        }
                       />
                       <DebugStat
                         label="target rotation (L)"
-                        value={snapshot.earBehavior.left ? formatDeg(snapshot.earBehavior.left.targetRotationRad) : '—'}
+                        value={
+                          snapshot.earBehavior.left
+                            ? formatDeg(snapshot.earBehavior.left.targetRotationRad)
+                            : '—'
+                        }
                       />
-                      <DebugStat label="ear bone (R)" value={snapshot.earBehavior.right?.boneName ?? '—'} />
-                      <DebugStat label="detected axis (R)" value={snapshot.earBehavior.right?.detectedAxis ?? '—'} />
-                      <DebugStat label="current pose (R)" value={snapshot.earBehavior.right?.pose ?? '—'} />
-                      <DebugStat label="rest pose (R)" value={snapshot.earBehavior.right?.restPose ?? '—'} />
-                      <DebugStat label="base pose (R)" value={formatPose(snapshot.earBehavior.right?.basePose)} />
-                      <DebugStat label="speaking modifier (R)" value={formatPose(snapshot.earBehavior.right?.speakingModifier)} />
-                      <DebugStat label="final pose (R)" value={formatPose(snapshot.earBehavior.right?.finalPose)} />
+                      <DebugStat
+                        label="ear bone (R)"
+                        value={snapshot.earBehavior.right?.boneName ?? '—'}
+                      />
+                      <DebugStat
+                        label="detected axis (R)"
+                        value={snapshot.earBehavior.right?.detectedAxis ?? '—'}
+                      />
+                      <DebugStat
+                        label="current pose (R)"
+                        value={snapshot.earBehavior.right?.pose ?? '—'}
+                      />
+                      <DebugStat
+                        label="rest pose (R)"
+                        value={snapshot.earBehavior.right?.restPose ?? '—'}
+                      />
+                      <DebugStat
+                        label="base pose (R)"
+                        value={formatPose(snapshot.earBehavior.right?.basePose)}
+                      />
+                      <DebugStat
+                        label="speaking modifier (R)"
+                        value={formatPose(snapshot.earBehavior.right?.speakingModifier)}
+                      />
+                      <DebugStat
+                        label="final pose (R)"
+                        value={formatPose(snapshot.earBehavior.right?.finalPose)}
+                      />
                       <DebugStat
                         label="current rotation (R)"
-                        value={snapshot.earBehavior.right ? formatDeg(snapshot.earBehavior.right.currentRotationRad) : '—'}
+                        value={
+                          snapshot.earBehavior.right
+                            ? formatDeg(snapshot.earBehavior.right.currentRotationRad)
+                            : '—'
+                        }
                       />
                       <DebugStat
                         label="target rotation (R)"
-                        value={snapshot.earBehavior.right ? formatDeg(snapshot.earBehavior.right.targetRotationRad) : '—'}
+                        value={
+                          snapshot.earBehavior.right
+                            ? formatDeg(snapshot.earBehavior.right.targetRotationRad)
+                            : '—'
+                        }
                       />
                       <DebugStat
                         label="random timer"
@@ -534,38 +938,63 @@ export function AvatarDebugDialog({ isOpen, onClose }: Props): React.JSX.Element
                       />
                     </div>
                     <div className="settings-button-grid">
-                      <Button variant="secondary" onPress={() => controller.setEarAxisOverride('auto')}>
+                      <Button
+                        variant="secondary"
+                        onPress={() => controller.setEarAxisOverride('auto')}
+                      >
                         Axis Auto
                       </Button>
-                      <Button variant="secondary" onPress={() => controller.setEarAxisOverride('x')}>
+                      <Button
+                        variant="secondary"
+                        onPress={() => controller.setEarAxisOverride('x')}
+                      >
                         Rotate X
                       </Button>
-                      <Button variant="secondary" onPress={() => controller.setEarAxisOverride('y')}>
+                      <Button
+                        variant="secondary"
+                        onPress={() => controller.setEarAxisOverride('y')}
+                      >
                         Rotate Y
                       </Button>
-                      <Button variant="secondary" onPress={() => controller.setEarAxisOverride('z')}>
+                      <Button
+                        variant="secondary"
+                        onPress={() => controller.setEarAxisOverride('z')}
+                      >
                         Rotate Z
                       </Button>
                       <Button
                         variant="secondary"
-                        onPress={() => controller.setEarAmplitudeScale(Math.max(0, snapshot.earBehavior.amplitudeScale - 0.25))}
+                        onPress={() =>
+                          controller.setEarAmplitudeScale(
+                            Math.max(0, snapshot.earBehavior.amplitudeScale - 0.25),
+                          )
+                        }
                       >
                         Amplitude −
                       </Button>
                       <Button
                         variant="secondary"
-                        onPress={() => controller.setEarAmplitudeScale(snapshot.earBehavior.amplitudeScale + 0.25)}
+                        onPress={() =>
+                          controller.setEarAmplitudeScale(
+                            snapshot.earBehavior.amplitudeScale + 0.25,
+                          )
+                        }
                       >
                         Amplitude +
                       </Button>
-                      <Button variant="secondary" onPress={() => controller.setEarAmplitudeScale(1)}>
+                      <Button
+                        variant="secondary"
+                        onPress={() => controller.setEarAmplitudeScale(1)}
+                      >
                         Amplitude Reset
                       </Button>
                     </div>
                   </section>
 
                   <section className="debug-section">
-                    <div className="debug-section-title">Current Facial State (Expression Mixer)</div>
+                    <div className="debug-section-title">
+                      Current Facial State (Expression Mixer)
+                    </div>
                     <div className="debug-controller-grid">
                       <DebugStat
                         label="active sources"
@@ -576,11 +1005,18 @@ export function AvatarDebugDialog({ isOpen, onClose }: Props): React.JSX.Element
                         }
                       />
                       <DebugStat label="facial profile" value={snapshot.facial.currentProfile} />
-                      <DebugStat label="expression blend" value={formatRecord(snapshot.facial.expressionBlend)} />
+                      <DebugStat
+                        label="expression blend"
+                        value={formatRecord(snapshot.facial.expressionBlend)}
+                      />
                       <DebugStat label="release curve" value={snapshot.facial.releaseCurve} />
                       <DebugStat
                         label="supported visemes"
-                        value={snapshot.facial.supportedVisemes.length > 0 ? snapshot.facial.supportedVisemes.join(', ') : 'none'}
+                        value={
+                          snapshot.facial.supportedVisemes.length > 0
+                            ? snapshot.facial.supportedVisemes.join(', ')
+                            : 'none'
+                        }
                       />
                       <DebugStat
                         label="supported expressions"
@@ -598,7 +1034,10 @@ export function AvatarDebugDialog({ isOpen, onClose }: Props): React.JSX.Element
                             : 'none'
                         }
                       />
-                      <DebugStat label="blink" value={`${formatWeight(snapshot.facial.blink)} · Auto Blink`} />
+                      <DebugStat
+                        label="blink"
+                        value={`${formatWeight(snapshot.facial.blink)} · Auto Blink`}
+                      />
                       <DebugStat
                         label="mouth (LipSync)"
                         value={`aa ${formatWeight(snapshot.facial.mouth.aa)} · ih ${formatWeight(snapshot.facial.mouth.ih)} · ou ${formatWeight(snapshot.facial.mouth.ou)} · ee ${formatWeight(snapshot.facial.mouth.ee)} · oh ${formatWeight(snapshot.facial.mouth.oh)}`}
@@ -611,14 +1050,30 @@ export function AvatarDebugDialog({ isOpen, onClose }: Props): React.JSX.Element
                         label="mouth profile"
                         value={`gain ${formatWeight(snapshot.facial.mouthProfile.gainScale)} · open ${formatWeight(snapshot.facial.mouthProfile.opennessScale)} · softness ${formatWeight(snapshot.facial.mouthProfile.softness)} · bias ${formatWeight(snapshot.facial.mouthProfile.closedMouthBias)}`}
                       />
-                      <DebugStat label="mouth openness" value={formatWeight(snapshot.facial.mouthTuning.openness)} />
-                      <DebugStat label="speech energy" value={formatWeight(snapshot.facial.mouthTuning.speechEnergy)} />
+                      <DebugStat
+                        label="mouth openness"
+                        value={formatWeight(snapshot.facial.mouthTuning.openness)}
+                      />
+                      <DebugStat
+                        label="speech energy"
+                        value={formatWeight(snapshot.facial.mouthTuning.speechEnergy)}
+                      />
                       <DebugStat
                         label="active visemes"
-                        value={snapshot.facial.mouthTuning.activeVisemes.length > 0 ? snapshot.facial.mouthTuning.activeVisemes.join(', ') : 'none'}
+                        value={
+                          snapshot.facial.mouthTuning.activeVisemes.length > 0
+                            ? snapshot.facial.mouthTuning.activeVisemes.join(', ')
+                            : 'none'
+                        }
                       />
-                      <DebugStat label="viseme blend" value={formatRecord(snapshot.facial.mouthTuning.visemeBlend)} />
-                      <DebugStat label="release stage" value={snapshot.facial.mouthTuning.releaseStage} />
+                      <DebugStat
+                        label="viseme blend"
+                        value={formatRecord(snapshot.facial.mouthTuning.visemeBlend)}
+                      />
+                      <DebugStat
+                        label="release stage"
+                        value={snapshot.facial.mouthTuning.releaseStage}
+                      />
                       <DebugStat
                         label="mouth runtime"
                         value={`${snapshot.facial.mouthTuning.attached ? 'attached' : 'detached'} В· envelope ${snapshot.facial.mouthTuning.envelope.toFixed(3)} В· weight ${formatWeight(snapshot.facial.mouthTuning.openness)}`}
@@ -693,7 +1148,11 @@ export function AvatarDebugDialog({ isOpen, onClose }: Props): React.JSX.Element
                       />
                       <DebugStat
                         label="stuck warnings"
-                        value={snapshot.facial.stuckWarnings.length > 0 ? snapshot.facial.stuckWarnings.join(' | ') : 'none'}
+                        value={
+                          snapshot.facial.stuckWarnings.length > 0
+                            ? snapshot.facial.stuckWarnings.join(' | ')
+                            : 'none'
+                        }
                       />
                     </div>
                     <div className="debug-section-title">Speaking Micro-Expressions</div>
@@ -707,19 +1166,19 @@ export function AvatarDebugDialog({ isOpen, onClose }: Props): React.JSX.Element
                       <DebugStat
                         label="Eye Target Openness"
                         value={`L ${formatWeight(snapshot.facial.speakingEye.targetLeft)} · R ${formatWeight(
-                          snapshot.facial.speakingEye.targetRight
+                          snapshot.facial.speakingEye.targetRight,
                         )}`}
                       />
                       <DebugStat
                         label="Eye Current Openness"
                         value={`L ${formatWeight(snapshot.facial.speakingEye.currentLeft)} · R ${formatWeight(
-                          snapshot.facial.speakingEye.currentRight
+                          snapshot.facial.speakingEye.currentRight,
                         )}`}
                       />
                       <DebugStat
                         label="Left / Right Eye Offset"
                         value={`${formatWeight(snapshot.facial.speakingEye.leftOffset)} / ${formatWeight(
-                          snapshot.facial.speakingEye.rightOffset
+                          snapshot.facial.speakingEye.rightOffset,
                         )} · ${snapshot.facial.speakingEye.leftExpression}/${snapshot.facial.speakingEye.rightExpression}`}
                       />
                       <DebugStat
@@ -747,7 +1206,7 @@ export function AvatarDebugDialog({ isOpen, onClose }: Props): React.JSX.Element
                       <DebugStat
                         label="Mouth Raw / Final Value"
                         value={`${formatWeight(snapshot.facial.mouthClosure.rawMouthMax)} → ${formatWeight(
-                          snapshot.facial.mouthClosure.finalMouthMax
+                          snapshot.facial.mouthClosure.finalMouthMax,
                         )}`}
                       />
                     </div>
@@ -759,7 +1218,7 @@ export function AvatarDebugDialog({ isOpen, onClose }: Props): React.JSX.Element
                           value={`${source.status}${source.active ? ' active' : ' inactive'} · last ${
                             source.lastUpdateMs === null ? 'never' : `${source.lastUpdateMs}ms`
                           } · raw ${formatRecord(source.raw)} · final ${formatRecord(source.final)} · max ${formatWeight(
-                            source.maxObservedValue
+                            source.maxObservedValue,
                           )}${source.stuckWarning ? ` · WARN ${source.stuckWarning}` : ''}`}
                         />
                       ))}
@@ -781,7 +1240,9 @@ export function AvatarDebugDialog({ isOpen, onClose }: Props): React.JSX.Element
                   <section className="debug-section">
                     <div className="debug-section-title">speech timeline</div>
                     <div className="debug-controller-grid">
-                      {snapshot.speechTimeline.length === 0 && <DebugStat label="speech states" value="none" />}
+                      {snapshot.speechTimeline.length === 0 && (
+                        <DebugStat label="speech states" value="none" />
+                      )}
                       {snapshot.speechTimeline.slice(-8).map((entry) => (
                         <DebugStat
                           key={`${entry.at}-${entry.from}-${entry.to}`}
@@ -795,7 +1256,9 @@ export function AvatarDebugDialog({ isOpen, onClose }: Props): React.JSX.Element
                   <section className="debug-section">
                     <div className="debug-section-title">behavior timeline</div>
                     <div className="debug-controller-grid">
-                      {snapshot.behaviorTimeline.length === 0 && <DebugStat label="behavior transitions" value="none" />}
+                      {snapshot.behaviorTimeline.length === 0 && (
+                        <DebugStat label="behavior transitions" value="none" />
+                      )}
                       {snapshot.behaviorTimeline.slice(-8).map((entry) => (
                         <DebugStat
                           key={`${entry.at}-${entry.frame}-${entry.toAnimationId}`}
@@ -818,7 +1281,9 @@ export function AvatarDebugDialog({ isOpen, onClose }: Props): React.JSX.Element
                   <section className="debug-section debug-tab-panel debug-tab-timeline-panel">
                     <div className="debug-section-title">timeline</div>
                     <div className="debug-timeline">
-                      {snapshot.timeline.length === 0 && <div className="debug-empty">No runtime events yet</div>}
+                      {snapshot.timeline.length === 0 && (
+                        <div className="debug-empty">No runtime events yet</div>
+                      )}
                       {snapshot.timeline
                         .slice()
                         .reverse()
@@ -826,7 +1291,9 @@ export function AvatarDebugDialog({ isOpen, onClose }: Props): React.JSX.Element
                           <div key={event.id} className="debug-timeline-item">
                             <span className="debug-timeline-time">{formatTime(event.at)}</span>
                             <span className="debug-timeline-label">{event.label}</span>
-                            {event.detail && <span className="debug-timeline-detail">{event.detail}</span>}
+                            {event.detail && (
+                              <span className="debug-timeline-detail">{event.detail}</span>
+                            )}
                           </div>
                         ))}
                     </div>
@@ -835,16 +1302,22 @@ export function AvatarDebugDialog({ isOpen, onClose }: Props): React.JSX.Element
                   <section className="debug-section debug-tab-panel debug-tab-eventBus-panel">
                     <div className="debug-section-title">event bus</div>
                     <div className="debug-timeline">
-                      {snapshot.eventHistory.length === 0 && <div className="debug-empty">No runtime events yet</div>}
+                      {snapshot.eventHistory.length === 0 && (
+                        <div className="debug-empty">No runtime events yet</div>
+                      )}
                       {snapshot.eventHistory
                         .slice()
                         .reverse()
                         .map((event) => (
                           <div key={event.id} className="debug-timeline-item">
-                            <span className="debug-timeline-time">{formatTime(event.occurredAt)}</span>
+                            <span className="debug-timeline-time">
+                              {formatTime(event.occurredAt)}
+                            </span>
                             <span className="debug-timeline-label">{event.type}</span>
                             <span className="debug-timeline-detail">{event.category}</span>
-                            {event.detail && <span className="debug-timeline-detail">{event.detail}</span>}
+                            {event.detail && (
+                              <span className="debug-timeline-detail">{event.detail}</span>
+                            )}
                           </div>
                         ))}
                     </div>
@@ -854,14 +1327,20 @@ export function AvatarDebugDialog({ isOpen, onClose }: Props): React.JSX.Element
 
               <section className="debug-section">
                 <div className="debug-section-title">Overlay</div>
-                <Switch isSelected={overlayAnimationHudEnabled} onChange={updateOverlayAnimationHud}>
+                <Switch
+                  isSelected={overlayAnimationHudEnabled}
+                  onChange={updateOverlayAnimationHud}
+                >
                   {OVERLAY_ANIMATION_HUD}
                 </Switch>
               </section>
 
               <section className="debug-section">
                 <div className="debug-section-title">Полный тест</div>
-                <Button variant="accent" onPress={() => controller.runDebugFullRuntimeTest('happy')}>
+                <Button
+                  variant="accent"
+                  onPress={() => controller.runDebugFullRuntimeTest('happy')}
+                >
                   {FULL_TEST}
                 </Button>
               </section>
@@ -870,7 +1349,11 @@ export function AvatarDebugDialog({ isOpen, onClose }: Props): React.JSX.Element
                 <div className="debug-section-title">Тест режимов аватара</div>
                 <div className="settings-button-grid">
                   {DEBUG_AVATAR_MODES.map((mode) => (
-                    <Button key={mode} variant="secondary" onPress={() => controller.previewAvatarMode(mode)}>
+                    <Button
+                      key={mode}
+                      variant="secondary"
+                      onPress={() => controller.previewAvatarMode(mode)}
+                    >
                       {mode} ({DEBUG_AVATAR_MODE_LABELS[mode]})
                     </Button>
                   ))}
@@ -883,10 +1366,16 @@ export function AvatarDebugDialog({ isOpen, onClose }: Props): React.JSX.Element
                   <Button variant="secondary" onPress={() => controller.rerollAvatarAnimation()}>
                     Re-roll Animation
                   </Button>
-                  <Button variant="secondary" onPress={() => controller.clearAvatarAnimationCooldowns()}>
+                  <Button
+                    variant="secondary"
+                    onPress={() => controller.clearAvatarAnimationCooldowns()}
+                  >
                     Clear Cooldowns
                   </Button>
-                  <Button variant="secondary" onPress={() => controller.clearAvatarAnimationQueue()}>
+                  <Button
+                    variant="secondary"
+                    onPress={() => controller.clearAvatarAnimationQueue()}
+                  >
                     Clear Queue
                   </Button>
                   <Button variant="secondary" onPress={() => controller.queueAvatarTestSequence()}>
@@ -894,9 +1383,13 @@ export function AvatarDebugDialog({ isOpen, onClose }: Props): React.JSX.Element
                   </Button>
                   <Button
                     variant="secondary"
-                    onPress={() => controller.setIdleOrchestratorPaused(!snapshot?.idleOrchestrator.paused)}
+                    onPress={() =>
+                      controller.setIdleOrchestratorPaused(!snapshot?.idleOrchestrator.paused)
+                    }
                   >
-                    {snapshot?.idleOrchestrator.paused ? 'Resume Idle Orchestrator' : 'Pause Idle Orchestrator'}
+                    {snapshot?.idleOrchestrator.paused
+                      ? 'Resume Idle Orchestrator'
+                      : 'Pause Idle Orchestrator'}
                   </Button>
                 </div>
               </section>
@@ -924,19 +1417,31 @@ export function AvatarDebugDialog({ isOpen, onClose }: Props): React.JSX.Element
                   <div className="debug-section-title">behavior decision</div>
                   <div className="debug-controller-grid">
                     <DebugStat label="intent" value={snapshot.behaviorEngine?.intent ?? 'none'} />
-                    <DebugStat label="context" value={snapshot.behaviorEngine?.contextSummary ?? 'none'} />
+                    <DebugStat
+                      label="context"
+                      value={snapshot.behaviorEngine?.contextSummary ?? 'none'}
+                    />
                     <DebugStat
                       label="candidate behaviors"
                       value={snapshot.behaviorEngine?.candidateBehaviors.join(', ') ?? 'none'}
                     />
                     <DebugStat label="selected behavior" value={snapshot.currentBehaviorId} />
-                    <DebugStat label="selected animation" value={snapshot.selectedBehaviorAnimation} />
-                    <DebugStat label="why this animation" value={snapshot.behaviorSelectionReason} />
+                    <DebugStat
+                      label="selected animation"
+                      value={snapshot.selectedBehaviorAnimation}
+                    />
+                    <DebugStat
+                      label="why this animation"
+                      value={snapshot.behaviorSelectionReason}
+                    />
                   </div>
                   <div className="debug-timeline">
                     {snapshot.behaviorEngine?.pipeline.map((step, index) => (
+                      // biome-ignore lint/suspicious/noArrayIndexKey: ordered read-only debug trace whose step labels may repeat; positional identity is the intended key and the list is never reordered.
                       <div key={`${index}-${step}`} className="debug-timeline-item">
-                        <span className="debug-timeline-time">{String(index + 1).padStart(2, '0')}</span>
+                        <span className="debug-timeline-time">
+                          {String(index + 1).padStart(2, '0')}
+                        </span>
                         <span className="debug-timeline-label">{step}</span>
                       </div>
                     )) ?? <div className="debug-empty">No behavior decision yet</div>}
@@ -947,19 +1452,34 @@ export function AvatarDebugDialog({ isOpen, onClose }: Props): React.JSX.Element
               <section className="debug-section">
                 <div className="debug-section-title">transition tests</div>
                 <div className="settings-button-grid">
-                  <Button variant="secondary" onPress={() => controller.testAvatarTransition('idle-to-idle')}>
+                  <Button
+                    variant="secondary"
+                    onPress={() => controller.testAvatarTransition('idle-to-idle')}
+                  >
                     Idle to Idle
                   </Button>
-                  <Button variant="secondary" onPress={() => controller.testAvatarTransition('idle-to-speaking')}>
+                  <Button
+                    variant="secondary"
+                    onPress={() => controller.testAvatarTransition('idle-to-speaking')}
+                  >
                     Idle to Speaking
                   </Button>
-                  <Button variant="secondary" onPress={() => controller.testAvatarTransition('speaking-to-idle')}>
+                  <Button
+                    variant="secondary"
+                    onPress={() => controller.testAvatarTransition('speaking-to-idle')}
+                  >
                     Speaking to Idle
                   </Button>
-                  <Button variant="secondary" onPress={() => controller.testAvatarTransition('thinking-to-idle')}>
+                  <Button
+                    variant="secondary"
+                    onPress={() => controller.testAvatarTransition('thinking-to-idle')}
+                  >
                     Thinking to Idle
                   </Button>
-                  <Button variant="secondary" onPress={() => controller.testAvatarTransition('greeting-to-idle')}>
+                  <Button
+                    variant="secondary"
+                    onPress={() => controller.testAvatarTransition('greeting-to-idle')}
+                  >
                     Greeting to Idle
                   </Button>
                 </div>
@@ -989,11 +1509,22 @@ export function AvatarDebugDialog({ isOpen, onClose }: Props): React.JSX.Element
                   <div className="debug-controller-grid">
                     <DebugStat
                       label="currently playing"
-                      value={snapshot.animationQueue.current?.animationId ?? snapshot.currentBodyAnimation}
+                      value={
+                        snapshot.animationQueue.current?.animationId ??
+                        snapshot.currentBodyAnimation
+                      }
                     />
-                    <DebugStat label="next queued" value={snapshot.animationQueue.next?.animationId ?? 'none'} />
-                    <DebugStat label="queue length" value={String(snapshot.animationQueue.length)} />
-                    {snapshot.animationQueue.items.length === 0 && <DebugStat label="queued items" value="none" />}
+                    <DebugStat
+                      label="next queued"
+                      value={snapshot.animationQueue.next?.animationId ?? 'none'}
+                    />
+                    <DebugStat
+                      label="queue length"
+                      value={String(snapshot.animationQueue.length)}
+                    />
+                    {snapshot.animationQueue.items.length === 0 && (
+                      <DebugStat label="queued items" value="none" />
+                    )}
                     {snapshot.animationQueue.items.map((item) => (
                       <DebugStat
                         key={item.id}

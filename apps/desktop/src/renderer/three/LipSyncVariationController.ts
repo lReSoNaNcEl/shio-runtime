@@ -10,7 +10,7 @@ export interface LipSyncVariationProfile {
 const NEUTRAL_PROFILE: LipSyncVariationProfile = {
   opennessGain: 1,
   widthBias: 0,
-  roundnessBias: 0
+  roundnessBias: 0,
 }
 
 let nextInstanceSeed = 0x6d2b79f5
@@ -78,9 +78,10 @@ export class LipSyncVariationController {
     const deltaMs = Math.max(0, delta) * 1000
     this.speechElapsedMs += deltaMs
     this.transitionElapsedMs += deltaMs
-    const progress = this.transitionDurationMs > 0
-      ? Math.min(1, this.transitionElapsedMs / this.transitionDurationMs)
-      : 1
+    const progress =
+      this.transitionDurationMs > 0
+        ? Math.min(1, this.transitionElapsedMs / this.transitionDurationMs)
+        : 1
     const eased = progress * progress * (3 - 2 * progress)
     this.current = this.lerpProfile(this.transitionFrom, this.target, eased)
 
@@ -104,7 +105,7 @@ export class LipSyncVariationController {
       ih: weights.ih * openness * width,
       ou: weights.ou * openness * roundness,
       ee: weights.ee * openness * width,
-      oh: weights.oh * openness * roundness
+      oh: weights.oh * openness * roundness,
     }
   }
 
@@ -123,28 +124,36 @@ export class LipSyncVariationController {
 
   private createProfile(): LipSyncVariationProfile {
     const cfg = facialTuning.lipSync.microVariation
-    const emotionScale = cfg.emotionScale[this.emotion as keyof typeof cfg.emotionScale] ?? cfg.emotionScale.neutral
-    const emotionBias = cfg.emotionBias[this.emotion as keyof typeof cfg.emotionBias] ?? cfg.emotionBias.neutral
+    const emotionScale =
+      cfg.emotionScale[this.emotion as keyof typeof cfg.emotionScale] ?? cfg.emotionScale.neutral
+    const emotionBias =
+      cfg.emotionBias[this.emotion as keyof typeof cfg.emotionBias] ?? cfg.emotionBias.neutral
     return {
-      opennessGain: 1 + (this.randomRange(cfg.opennessGain.min, cfg.opennessGain.max) - 1) * emotionScale,
+      opennessGain:
+        1 + (this.randomRange(cfg.opennessGain.min, cfg.opennessGain.max) - 1) * emotionScale,
       widthBias: this.clamp(
         this.randomRange(cfg.widthBias.min, cfg.widthBias.max) * emotionScale + emotionBias.width,
         cfg.widthBias.min,
-        cfg.widthBias.max
+        cfg.widthBias.max,
       ),
       roundnessBias: this.clamp(
-        this.randomRange(cfg.roundnessBias.min, cfg.roundnessBias.max) * emotionScale + emotionBias.roundness,
+        this.randomRange(cfg.roundnessBias.min, cfg.roundnessBias.max) * emotionScale +
+          emotionBias.roundness,
         cfg.roundnessBias.min,
-        cfg.roundnessBias.max
-      )
+        cfg.roundnessBias.max,
+      ),
     }
   }
 
-  private lerpProfile(a: LipSyncVariationProfile, b: LipSyncVariationProfile, t: number): LipSyncVariationProfile {
+  private lerpProfile(
+    a: LipSyncVariationProfile,
+    b: LipSyncVariationProfile,
+    t: number,
+  ): LipSyncVariationProfile {
     return {
       opennessGain: this.lerp(a.opennessGain, b.opennessGain, t),
       widthBias: this.lerp(a.widthBias, b.widthBias, t),
-      roundnessBias: this.lerp(a.roundnessBias, b.roundnessBias, t)
+      roundnessBias: this.lerp(a.roundnessBias, b.roundnessBias, t),
     }
   }
 

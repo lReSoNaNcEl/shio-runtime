@@ -2,7 +2,13 @@
  * Common Runtime finish-reason semantics. Provider-specific finish reasons are
  * normalized here so no raw provider value leaks outside the adapter.
  */
-export type RuntimeFinishReason = 'stop' | 'length' | 'tool_calls' | 'content_filter' | 'error' | 'unknown'
+export type RuntimeFinishReason =
+  | 'stop'
+  | 'length'
+  | 'tool_calls'
+  | 'content_filter'
+  | 'error'
+  | 'unknown'
 
 export function normalizeFinishReason(raw: string | null | undefined): RuntimeFinishReason {
   switch ((raw ?? '').toLowerCase()) {

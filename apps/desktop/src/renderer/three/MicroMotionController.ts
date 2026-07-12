@@ -58,7 +58,13 @@ export class MicroMotionController {
     if (active) this.removeEyeOffsets()
   }
 
-  nudge(options: { headX?: number; headY?: number; eyeX?: number; eyeY?: number; duration?: number }): void {
+  nudge(options: {
+    headX?: number
+    headY?: number
+    eyeX?: number
+    eyeY?: number
+    duration?: number
+  }): void {
     this.impulseHeadX = options.headX ?? 0
     this.impulseHeadY = options.headY ?? 0
     this.impulseEyeX = options.eyeX ?? 0
@@ -111,7 +117,8 @@ export class MicroMotionController {
 
     this.headPhase += delta * this.headSpeed
     const impulse = this.getImpulseEnvelope()
-    const targetX = Math.sin(this.headPhase * 0.7) * 0.012 * this.headWeight + this.impulseHeadX * impulse
+    const targetX =
+      Math.sin(this.headPhase * 0.7) * 0.012 * this.headWeight + this.impulseHeadX * impulse
     const targetY = Math.sin(this.headPhase) * 0.018 * this.headWeight + this.impulseHeadY * impulse
     const nextX = this.lerp(this.headOffsetX, targetX, Math.min(1, delta * 2.4))
     const nextY = this.lerp(this.headOffsetY, targetY, Math.min(1, delta * 2.4))
@@ -135,8 +142,10 @@ export class MicroMotionController {
 
     this.eyePhase += delta * 0.45
     const impulse = this.getImpulseEnvelope()
-    const targetX = Math.sin(this.eyePhase * 1.4) * 0.015 * this.eyeWeight + this.impulseEyeX * impulse
-    const targetY = Math.sin(this.eyePhase * 0.9) * 0.025 * this.eyeWeight + this.impulseEyeY * impulse
+    const targetX =
+      Math.sin(this.eyePhase * 1.4) * 0.015 * this.eyeWeight + this.impulseEyeX * impulse
+    const targetY =
+      Math.sin(this.eyePhase * 0.9) * 0.025 * this.eyeWeight + this.impulseEyeY * impulse
     const nextX = this.lerp(this.leftEyeOffsetX, targetX, Math.min(1, delta * 2))
     const nextY = this.lerp(this.leftEyeOffsetY, targetY, Math.min(1, delta * 2))
     const leftEye = this.vrm.humanoid.getNormalizedBoneNode('leftEye')

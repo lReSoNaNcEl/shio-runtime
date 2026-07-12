@@ -57,17 +57,23 @@ export class AvatarIdleOrchestrator {
   }
 
   shouldUseExtendedIdle(): boolean {
-    return !this.returnToNormalIdlePending && this.extendedIdleDuration >= this.extendedIdleThreshold
+    return (
+      !this.returnToNormalIdlePending && this.extendedIdleDuration >= this.extendedIdleThreshold
+    )
   }
 
   getLastExtendedIdleAnimation(): string | null {
     return this.lastExtendedIdleAnimation
   }
 
-  recordTransition(resolution: AvatarBehaviorResolution, stage: 'normal-idle' | 'extended-idle' = 'normal-idle'): void {
+  recordTransition(
+    resolution: AvatarBehaviorResolution,
+    stage: 'normal-idle' | 'extended-idle' = 'normal-idle',
+  ): void {
     this.currentIdleState = resolution.animationId
     this.idleStage = stage
-    this.nextTransitionIn = stage === 'extended-idle' ? this.randomExtendedIdleDwell() : this.randomDwell()
+    this.nextTransitionIn =
+      stage === 'extended-idle' ? this.randomExtendedIdleDwell() : this.randomDwell()
     this.nextScheduledIdleAnimation = this.pickLikelyNextCandidate(resolution)
     this.nextExtendedIdleCandidate = this.pickLikelyNextCandidate(resolution)
 
@@ -88,8 +94,8 @@ export class AvatarIdleOrchestrator {
       {
         id: ++this.eventSeq,
         at: Date.now(),
-        animationId: resolution.animationId
-      }
+        animationId: resolution.animationId,
+      },
     ].slice(-12)
   }
 
@@ -127,7 +133,7 @@ export class AvatarIdleOrchestrator {
       extendedIdleDuration: Number(this.extendedIdleDuration.toFixed(1)),
       currentExtendedIdleAnimation: this.currentExtendedIdleAnimation,
       nextExtendedIdleCandidate: this.nextExtendedIdleCandidate,
-      timeline: this.timeline
+      timeline: this.timeline,
     }
   }
 

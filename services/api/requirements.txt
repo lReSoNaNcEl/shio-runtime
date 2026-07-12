@@ -16,6 +16,7 @@ silero-vad
 # TTS: F5-TTS.
 # Install torch/torchaudio separately for your GPU, e.g. Blackwell RTX 50xx:
 #   pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu128
+setuptools<82  # torch 2.11 CUDA wheels require this upper bound
 f5-tts
 ruaccent
 transformers>=5.2

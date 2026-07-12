@@ -1,8 +1,15 @@
 import { backlogTuning } from './tuning'
 import type { BufferedUtterance } from './types'
 
-const priorityRank: Record<BufferedUtterance['priorityClass'], number> = { P0: 0, P1: 1, P2: 2, P3: 3, P4: 4 }
-const normalized = (text: string): string => text.trim().replace(/\s+/g, ' ').toLocaleLowerCase('ru-RU')
+const priorityRank: Record<BufferedUtterance['priorityClass'], number> = {
+  P0: 0,
+  P1: 1,
+  P2: 2,
+  P3: 3,
+  P4: 4,
+}
+const normalized = (text: string): string =>
+  text.trim().replace(/\s+/g, ' ').toLocaleLowerCase('ru-RU')
 
 export class UtteranceBacklog {
   private items: BufferedUtterance[] = []
@@ -11,17 +18,29 @@ export class UtteranceBacklog {
   private recentIds: string[] = []
   private version = 0
 
-  getVersion(): number { return this.version }
-  size(): number { return this.items.length }
-  snapshot(): readonly BufferedUtterance[] { return this.items.map((item) => ({ ...item })) }
-  has(id: string): boolean { return this.items.some((item) => item.id === id) }
+  getVersion(): number {
+    return this.version
+  }
+  size(): number {
+    return this.items.length
+  }
+  snapshot(): readonly BufferedUtterance[] {
+    return this.items.map((item) => ({ ...item }))
+  }
+  has(id: string): boolean {
+    return this.items.some((item) => item.id === id)
+  }
 
   enqueue(item: BufferedUtterance, now = Date.now()): boolean {
-    if (this.seenIds.has(item.id) || this.consumedIds.has(item.id) || item.likelySelfEcho) return false
+    if (this.seenIds.has(item.id) || this.consumedIds.has(item.id) || item.likelySelfEcho)
+      return false
     this.rememberId(item.id, this.seenIds)
     this.purge(now)
-    if ((item.priorityClass === 'P3' || item.priorityClass === 'P4') &&
-      this.items.some((entry) => entry.priorityClass === 'P0' || entry.priorityClass === 'P1')) return false
+    if (
+      (item.priorityClass === 'P3' || item.priorityClass === 'P4') &&
+      this.items.some((entry) => entry.priorityClass === 'P0' || entry.priorityClass === 'P1')
+    )
+      return false
     const duplicate = this.items.find((entry) => normalized(entry.text) === normalized(item.text))
     if (duplicate) {
       if (item.createdAt > duplicate.createdAt) this.replace(duplicate.id, item)
@@ -42,7 +61,8 @@ export class UtteranceBacklog {
   }
 
   consume(ids: readonly string[], expectedVersion: number): boolean {
-    if (expectedVersion !== this.version || ids.length === 0 || ids.some((id) => !this.has(id))) return false
+    if (expectedVersion !== this.version || ids.length === 0 || ids.some((id) => !this.has(id)))
+      return false
     const selected = new Set(ids)
     this.items = this.items.filter((item) => !selected.has(item.id))
     for (const id of ids) this.rememberId(id, this.consumedIds)
@@ -51,7 +71,10 @@ export class UtteranceBacklog {
   }
 
   discardWeak(now = Date.now()): void {
-    const next = this.items.filter((item) => item.expiresAt > now && (item.priorityClass === 'P0' || item.priorityClass === 'P1'))
+    const next = this.items.filter(
+      (item) =>
+        item.expiresAt > now && (item.priorityClass === 'P0' || item.priorityClass === 'P1'),
+    )
     if (next.length !== this.items.length) {
       this.items = next
       this.bump()
@@ -65,7 +88,7 @@ export class UtteranceBacklog {
   }
 
   private replace(id: string, item: BufferedUtterance): void {
-    this.items = this.items.map((entry) => entry.id === id ? { ...item } : entry)
+    this.items = this.items.map((entry) => (entry.id === id ? { ...item } : entry))
     this.bump()
   }
 
@@ -75,8 +98,12 @@ export class UtteranceBacklog {
       for (let index = 1; index < this.items.length; index += 1) {
         const candidate = this.items[index]
         const current = this.items[worst]
-        if (priorityRank[candidate.priorityClass] > priorityRank[current.priorityClass] ||
-          (candidate.priorityClass === current.priorityClass && candidate.createdAt < current.createdAt)) worst = index
+        if (
+          priorityRank[candidate.priorityClass] > priorityRank[current.priorityClass] ||
+          (candidate.priorityClass === current.priorityClass &&
+            candidate.createdAt < current.createdAt)
+        )
+          worst = index
       }
       this.items.splice(worst, 1)
       this.bump()
@@ -95,5 +122,7 @@ export class UtteranceBacklog {
     }
   }
 
-  private bump(): void { this.version += 1 }
+  private bump(): void {
+    this.version += 1
+  }
 }

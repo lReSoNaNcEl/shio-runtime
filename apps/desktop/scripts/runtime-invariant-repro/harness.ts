@@ -8,8 +8,8 @@
  */
 
 import {
+  type RuntimeInvariantInput,
   RuntimeStateInvariantValidator,
-  type RuntimeInvariantInput
 } from '../../src/renderer/runtime/RuntimeStateInvariantValidator'
 
 const HEALTHY: RuntimeInvariantInput = {
@@ -39,15 +39,22 @@ const HEALTHY: RuntimeInvariantInput = {
   lookAtEyeYaw: 0.05,
   lookAtEyePitch: 0.02,
   headMotionActiveGenerators: ['speakingNod'],
-  headMotionEnergy: 0.3
+  headMotionEnergy: 0.3,
 }
 
-function withOverrides(base: RuntimeInvariantInput, o: Partial<RuntimeInvariantInput>): RuntimeInvariantInput {
+function withOverrides(
+  base: RuntimeInvariantInput,
+  o: Partial<RuntimeInvariantInput>,
+): RuntimeInvariantInput {
   return { ...base, ...o }
 }
 
 /** Hold a state for >HOLD_MS across several evaluations and return final health. */
-function holdState(v: RuntimeStateInvariantValidator, input: Omit<RuntimeInvariantInput, 'now' | 'frame'>, startNow = 1000) {
+function holdState(
+  v: RuntimeStateInvariantValidator,
+  input: Omit<RuntimeInvariantInput, 'now' | 'frame'>,
+  startNow = 1000,
+) {
   let health = v.evaluate({ ...input, now: startNow, frame: 1 } as RuntimeInvariantInput)
   health = v.evaluate({ ...input, now: startNow + 200, frame: 2 } as RuntimeInvariantInput)
   health = v.evaluate({ ...input, now: startNow + 500, frame: 3 } as RuntimeInvariantInput) // > HOLD_MS(450)
@@ -67,47 +74,69 @@ const cases: Case[] = [
   {
     name: 'INV-02 speaking but no playback',
     expectId: 'INV-02-noplayback-not-speaking',
-    input: withOverrides(HEALTHY, { playbackActive: false, activePlaybackId: 0 })
+    input: withOverrides(HEALTHY, { playbackActive: false, activePlaybackId: 0 }),
   },
   {
     name: 'INV-03 playing but no id',
     expectId: 'INV-03-playing-one-id',
-    input: withOverrides(HEALTHY, { playbackActive: true, activePlaybackId: 0 })
+    input: withOverrides(HEALTHY, { playbackActive: true, activePlaybackId: 0 }),
   },
   {
     name: 'INV-04 two skeleton owners, no transition',
     expectId: 'INV-04-single-skeleton-owner',
-    input: withOverrides(HEALTHY, { bodyWeightedActionCount: 2, bodyTransitionRemaining: 0 })
+    input: withOverrides(HEALTHY, { bodyWeightedActionCount: 2, bodyTransitionRemaining: 0 }),
   },
   {
     name: 'INV-05 character idle but avatar speaking',
     expectId: 'INV-05-idle-no-speaking-anim',
-    input: withOverrides(HEALTHY, { characterMode: 'idle', avatarMode: 'speaking', speechStatus: 'silent', isSpeaking: false, playbackActive: false, activePlaybackId: 0, conversationResponsePhase: 'waiting' })
+    input: withOverrides(HEALTHY, {
+      characterMode: 'idle',
+      avatarMode: 'speaking',
+      speechStatus: 'silent',
+      isSpeaking: false,
+      playbackActive: false,
+      activePlaybackId: 0,
+      conversationResponsePhase: 'waiting',
+    }),
   },
   {
     name: 'INV-06 phase speaking but no playback',
     expectId: 'INV-06-phase-speaking-playback',
-    input: withOverrides(HEALTHY, { isSpeaking: false, speechStatus: 'synthesizing', playbackActive: false, activePlaybackId: 0, conversationResponsePhase: 'speaking' })
+    input: withOverrides(HEALTHY, {
+      isSpeaking: false,
+      speechStatus: 'synthesizing',
+      playbackActive: false,
+      activePlaybackId: 0,
+      conversationResponsePhase: 'speaking',
+    }),
   },
   {
     name: 'INV-07 LookAt disabled but eyes moving',
     expectId: 'INV-07-lookat-disabled-no-updates',
-    input: withOverrides(HEALTHY, { lookAtTarget: 'none', lookAtEyeYaw: 0.12, lookAtEyePitch: 0.03 })
+    input: withOverrides(HEALTHY, {
+      lookAtTarget: 'none',
+      lookAtEyeYaw: 0.12,
+      lookAtEyePitch: 0.03,
+    }),
   },
   {
     name: 'INV-08 Head Motion disabled but energy',
     expectId: 'INV-08-headmotion-disabled-no-updates',
-    input: withOverrides(HEALTHY, { headMotionActiveGenerators: [], headMotionEnergy: 0.25 })
+    input: withOverrides(HEALTHY, { headMotionActiveGenerators: [], headMotionEnergy: 0.25 }),
   },
   {
     name: 'INV-09 foreign facial writer',
     expectId: 'INV-09-mixer-only-facial-writer',
-    input: withOverrides(HEALTHY, { facialEntrySources: ['lipSync', 'rogueWriter'] })
+    input: withOverrides(HEALTHY, { facialEntrySources: ['lipSync', 'rogueWriter'] }),
   },
   {
     name: 'INV-10 transition ownership gap',
     expectId: 'INV-10-transition-ownership',
-    input: withOverrides(HEALTHY, { bodyActiveActionCount: 1, bodyWeightedActionCount: 0, bodyTransitionRemaining: 0.2 })
+    input: withOverrides(HEALTHY, {
+      bodyActiveActionCount: 1,
+      bodyWeightedActionCount: 0,
+      bodyTransitionRemaining: 0.2,
+    }),
   },
   {
     name: 'INV-11 mouth high after speech',
@@ -120,24 +149,24 @@ const cases: Case[] = [
       conversationResponsePhase: 'waiting',
       playbackActive: false,
       activePlaybackId: 0,
-      mouthMax: 0.55
-    })
+      mouthMax: 0.55,
+    }),
   },
   {
     name: 'INV-12 missing core viseme',
     expectId: 'INV-12-supported-viseme-fallback',
-    input: withOverrides(HEALTHY, { facialSupportedVisemes: ['aa', 'ou', 'ee', 'oh'] })
+    input: withOverrides(HEALTHY, { facialSupportedVisemes: ['aa', 'ou', 'ee', 'oh'] }),
   },
   {
     name: 'INV-14 invalid facial profile',
     expectId: 'INV-14-valid-facial-profile',
-    input: withOverrides(HEALTHY, { currentFacialProfile: 'unknown' })
+    input: withOverrides(HEALTHY, { currentFacialProfile: 'unknown' }),
   },
   {
     name: 'INV-15 profile release timeout',
     expectId: 'INV-15-profile-release-timeout',
-    input: withOverrides(HEALTHY, { facialStuckWarnings: ['mouth > 0.4 while LipSync is reset'] })
-  }
+    input: withOverrides(HEALTHY, { facialStuckWarnings: ['mouth > 0.4 while LipSync is reset'] }),
+  },
 ]
 
 // INV-01 needs the speaking window primed then flat-zero mouth past the warmup.
@@ -149,9 +178,13 @@ function testInv01(): boolean {
   for (let i = 0; i < 20; i++) {
     health = v.evaluate({ ...flat, now: 1000 + i * 120, frame: i + 1 })
   }
-  const inv01 = health!.invariants.find((r) => r.id === 'INV-01-speaking-lipsync')!
-  const ok = inv01.status === 'fail' && (health!.lastViolation?.id === 'INV-01-speaking-lipsync')
-  console.log(`\n[INV-01 speaking→LipSync attached]  ${ok ? '✓ detected' : '✗ MISSED'}  status=${inv01.status} detail="${inv01.detail}"`)
+  if (!health) throw new Error('health snapshot missing')
+  const inv01 = health.invariants.find((r) => r.id === 'INV-01-speaking-lipsync')
+  if (!inv01) throw new Error('INV-01 invariant not found in health snapshot')
+  const ok = inv01.status === 'fail' && health.lastViolation?.id === 'INV-01-speaking-lipsync'
+  console.log(
+    `\n[INV-01 speaking→LipSync attached]  ${ok ? '✓ detected' : '✗ MISSED'}  status=${inv01.status} detail="${inv01.detail}"`,
+  )
   return ok
 }
 
@@ -160,7 +193,10 @@ function main() {
   let failed = 0
   const warnLog: string[] = []
   const realWarn = console.warn.bind(console)
-  console.warn = (...a: unknown[]) => { warnLog.push(String(a[0])); realWarn(...a) }
+  console.warn = (...a: unknown[]) => {
+    warnLog.push(String(a[0]))
+    realWarn(...a)
+  }
 
   console.log('===== Runtime State Invariant Validator — self-test =====')
   for (const c of cases) {
@@ -169,12 +205,16 @@ function main() {
     const failedIds = health.invariants.filter((r) => r.status === 'fail').map((r) => r.id)
     if (c.expectId === null) {
       const ok = failedIds.length === 0
-      console.log(`\n[${c.name}]  ${ok ? '✓ no violations' : '✗ unexpected: ' + failedIds.join(',')}`)
+      console.log(
+        `\n[${c.name}]  ${ok ? '✓ no violations' : `✗ unexpected: ${failedIds.join(',')}`}`,
+      )
       ok ? passed++ : failed++
     } else {
       const detected = failedIds.includes(c.expectId as never)
       const owner = health.invariants.find((r) => r.id === c.expectId)?.suspectedOwner
-      console.log(`\n[${c.name}]  ${detected ? '✓ detected' : '✗ MISSED'}  expect=${c.expectId} failing=[${failedIds.join(',')}]${detected ? ` owner="${owner}"` : ''}`)
+      console.log(
+        `\n[${c.name}]  ${detected ? '✓ detected' : '✗ MISSED'}  expect=${c.expectId} failing=[${failedIds.join(',')}]${detected ? ` owner="${owner}"` : ''}`,
+      )
       detected ? passed++ : failed++
     }
   }
@@ -185,7 +225,11 @@ function main() {
   console.log(`\n===== SUMMARY =====`)
   console.log(`cases passed: ${passed}, failed: ${failed}`)
   console.log(`[RUNTIME-INV] warnings emitted: ${warnLog.length}`)
-  console.log(warnLog.length === passed - 1 || warnLog.length >= 9 ? 'warnings emitted for each seeded violation ✓' : `warnings=${warnLog.length}`)
+  console.log(
+    warnLog.length === passed - 1 || warnLog.length >= 9
+      ? 'warnings emitted for each seeded violation ✓'
+      : `warnings=${warnLog.length}`,
+  )
 }
 
 main()

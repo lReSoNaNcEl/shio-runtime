@@ -1,5 +1,6 @@
-import * as THREE from 'three'
 import type { VRM } from '@pixiv/three-vrm'
+import * as THREE from 'three'
+
 import { earBehaviorTuning } from './avatarTuning'
 import type { VrmProceduralMode } from './VrmModel'
 
@@ -21,7 +22,14 @@ import type { VrmProceduralMode } from './VrmModel'
  */
 export type EarBehaviorProfile = VrmProceduralMode | 'afk'
 export type EarSide = 'left' | 'right' | 'center'
-export type EarGestureId = 'relaxed' | 'perk' | 'curious' | 'tilt' | 'flatten' | 'emphasis' | 'droop'
+export type EarGestureId =
+  | 'relaxed'
+  | 'perk'
+  | 'curious'
+  | 'tilt'
+  | 'flatten'
+  | 'emphasis'
+  | 'droop'
 export type EarAxisOverride = 'auto' | 'x' | 'y' | 'z'
 
 export interface EarPose {
@@ -94,7 +102,7 @@ const AXIS_BY_ID: Record<'x' | 'y' | 'z', THREE.Vector3> = { x: X_AXIS, y: Y_AXI
 const AXIS_LABELS: Array<{ id: 'x' | 'y' | 'z'; axis: THREE.Vector3; label: string }> = [
   { id: 'x', axis: X_AXIS, label: 'X' },
   { id: 'y', axis: Y_AXIS, label: 'Y' },
-  { id: 'z', axis: Z_AXIS, label: 'Z' }
+  { id: 'z', axis: Z_AXIS, label: 'Z' },
 ]
 
 export class EarBehaviorRuntime {
@@ -102,7 +110,12 @@ export class EarBehaviorRuntime {
 
   private static nextSeed(): number {
     const entropy = typeof performance !== 'undefined' ? performance.now() : Date.now()
-    return (earBehaviorTuning.randomSeed + Math.floor(entropy) + EarBehaviorRuntime.seedCounter++ * 0x9e3779b1) >>> 0
+    return (
+      (earBehaviorTuning.randomSeed +
+        Math.floor(entropy) +
+        EarBehaviorRuntime.seedCounter++ * 0x9e3779b1) >>>
+      0
+    )
   }
 
   private vrm: VRM | null = null
@@ -144,7 +157,9 @@ export class EarBehaviorRuntime {
       console.log('[EARDBG] no ear bones found — Ear Behavior Runtime disabled for this model')
     } else {
       const axes = this.ears.map((ear) => `${ear.boneName}:${ear.detectedAxis}`).join(' ')
-      console.log(`[EARDBG] Ear Behavior Runtime attached bones=${this.boneStatus} calibration=[${axes}]`)
+      console.log(
+        `[EARDBG] Ear Behavior Runtime attached bones=${this.boneStatus} calibration=[${axes}]`,
+      )
     }
   }
 
@@ -240,7 +255,7 @@ export class EarBehaviorRuntime {
       const spreadOutward = THREE.MathUtils.clamp(
         ear.currentSpread * tuning.spreadAmplitude * amplitudeScale,
         -earBehaviorTuning.maxInwardSpread,
-        earBehaviorTuning.maxRotation
+        earBehaviorTuning.maxRotation,
       )
 
       // Always start from the calibrated rest pose; apply motion as a local offset.
@@ -248,7 +263,10 @@ export class EarBehaviorRuntime {
       this.scratchQuatPrimary.setFromAxisAngle(primaryAxis, liftRad * ear.primarySign)
       ear.node.quaternion.copy(ear.restQuat).multiply(this.scratchQuatPrimary)
       if (this.axisOverride === 'auto') {
-        this.scratchQuatSecondary.setFromAxisAngle(ear.secondaryAxis, spreadOutward * ear.spreadSign)
+        this.scratchQuatSecondary.setFromAxisAngle(
+          ear.secondaryAxis,
+          spreadOutward * ear.spreadSign,
+        )
         ear.node.quaternion.multiply(this.scratchQuatSecondary)
       }
     }
@@ -256,7 +274,7 @@ export class EarBehaviorRuntime {
 
   getDebugState(): EarBehaviorDebugState {
     const left = this.ears.find((ear) => ear.side === 'left') ?? this.ears[0] ?? null
-    const right = this.ears.find((ear) => ear.side === 'right') ?? (this.ears[1] ?? null)
+    const right = this.ears.find((ear) => ear.side === 'right') ?? this.ears[1] ?? null
     return {
       enabled: this.ears.length > 0,
       boneStatus: this.boneStatus,
@@ -268,7 +286,7 @@ export class EarBehaviorRuntime {
       updateTickCount: this.updateTickCount,
       lastDeltaMs: this.lastDeltaMs,
       left: this.earDebug(left),
-      right: this.earDebug(right === left ? null : right)
+      right: this.earDebug(right === left ? null : right),
     }
   }
 
@@ -290,16 +308,18 @@ export class EarBehaviorRuntime {
       currentSpread: ear.currentSpread,
       targetLift: ear.targetLift,
       targetSpread: ear.targetSpread,
-      currentRotationRad: this.clamp(ear.currentLift * tuning.amplitude * amplitudeScale) * ear.primarySign,
-      targetRotationRad: this.clamp(ear.targetLift * tuning.amplitude * amplitudeScale) * ear.primarySign,
-      nextEventMs: Math.max(0, ear.nextEventMs)
+      currentRotationRad:
+        this.clamp(ear.currentLift * tuning.amplitude * amplitudeScale) * ear.primarySign,
+      targetRotationRad:
+        this.clamp(ear.targetLift * tuning.amplitude * amplitudeScale) * ear.primarySign,
+      nextEventMs: Math.max(0, ear.nextEventMs),
     }
   }
 
   private scheduleEvent(
     ear: EarState,
     profile: EarBehaviorProfile,
-    tuning: (typeof earBehaviorTuning.profiles)[EarBehaviorProfile]
+    tuning: (typeof earBehaviorTuning.profiles)[EarBehaviorProfile],
   ): void {
     this.pickGesture(ear, tuning)
     ear.nextEventMs = this.randomRange(tuning.holdMs.min, tuning.holdMs.max)
@@ -317,7 +337,10 @@ export class EarBehaviorRuntime {
     void profile
   }
 
-  private pickGesture(ear: EarState, tuning: (typeof earBehaviorTuning.profiles)[EarBehaviorProfile]): void {
+  private pickGesture(
+    ear: EarState,
+    tuning: (typeof earBehaviorTuning.profiles)[EarBehaviorProfile],
+  ): void {
     if (this.nextRandom() < tuning.curiosityChance) {
       const pool = tuning.activeGestures
       ear.gesture = pool[Math.floor(this.nextRandom() * pool.length)] ?? 'relaxed'
@@ -395,8 +418,8 @@ export class EarBehaviorRuntime {
         smoothing: 4,
         nextEventMs: this.randomRange(
           earBehaviorTuning.asymmetry.minOffsetMs,
-          earBehaviorTuning.asymmetry.maxOffsetMs
-        )
+          earBehaviorTuning.asymmetry.maxOffsetMs,
+        ),
       }
     })
   }
@@ -452,25 +475,35 @@ export class EarBehaviorRuntime {
         secondaryAxis: secondary.clone(),
         primarySign: 1,
         spreadSign: outwardSign,
-        label: `${earBehaviorTuning.calibration.fallbackAxis.toUpperCase()}? (no tip)`
+        label: `${earBehaviorTuning.calibration.fallbackAxis.toUpperCase()}? (no tip)`,
       }
     }
 
     // Ear length direction expressed in the bone's local frame.
-    this.calibEarDir.copy(this.calibTip).sub(this.calibWorldPos).applyQuaternion(this.calibInvQuat).normalize()
+    this.calibEarDir
+      .copy(this.calibTip)
+      .sub(this.calibWorldPos)
+      .applyQuaternion(this.calibInvQuat)
+      .normalize()
 
     // Two most-perpendicular axes are usable; the third (twist) is rejected.
     const ranked = AXIS_LABELS.map((entry) => ({
       ...entry,
-      perpendicularity: 1 - Math.abs(entry.axis.dot(this.calibEarDir))
+      perpendicularity: 1 - Math.abs(entry.axis.dot(this.calibEarDir)),
     })).sort((a, b) => b.perpendicularity - a.perpendicularity)
     const candidateA = ranked[0]
     const candidateB = ranked[1]
 
     // World-space tip velocity for a +rotation about each candidate axis.
-    this.calibCross.copy(candidateA.axis).cross(this.calibEarDir).applyQuaternion(this.calibWorldQuat)
+    this.calibCross
+      .copy(candidateA.axis)
+      .cross(this.calibEarDir)
+      .applyQuaternion(this.calibWorldQuat)
     const aVel = { x: this.calibCross.x, y: this.calibCross.y }
-    this.calibCross.copy(candidateB.axis).cross(this.calibEarDir).applyQuaternion(this.calibWorldQuat)
+    this.calibCross
+      .copy(candidateB.axis)
+      .cross(this.calibEarDir)
+      .applyQuaternion(this.calibWorldQuat)
     const bVel = { x: this.calibCross.x, y: this.calibCross.y }
 
     // Primary lift = the axis that swings the tip least sideways (most vertical/
@@ -490,7 +523,7 @@ export class EarBehaviorRuntime {
       secondaryAxis: secondary.axis.clone(),
       primarySign,
       spreadSign,
-      label: `${primary.label}${primarySign > 0 ? '+' : '-'} / ${secondary.label}${spreadSign > 0 ? '+' : '-'}(out)`
+      label: `${primary.label}${primarySign > 0 ? '+' : '-'} / ${secondary.label}${spreadSign > 0 ? '+' : '-'}(out)`,
     }
   }
 
@@ -536,7 +569,11 @@ export class EarBehaviorRuntime {
   }
 
   private clamp(value: number): number {
-    return THREE.MathUtils.clamp(value, -earBehaviorTuning.maxRotation, earBehaviorTuning.maxRotation)
+    return THREE.MathUtils.clamp(
+      value,
+      -earBehaviorTuning.maxRotation,
+      earBehaviorTuning.maxRotation,
+    )
   }
 
   private randomRange(min: number, max: number): number {

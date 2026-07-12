@@ -12,11 +12,16 @@
  */
 
 import axios, { type AxiosInstance } from 'axios'
-import { runChatCompletion } from '../../src/main/llm/protocol'
-import { normalizeFinishReason, resolveCapabilities } from '../../src/main/llm/compatibility'
-import { LlmResponseError, ModelFetchError, normalizeHttpErrorMessage } from '../../src/main/llm/errors'
-import { MistralProvider } from '../../src/main/llm/providers/openai'
+
 import type { ChatMessage, LlmProviderId } from '../../src/main/llm'
+import { normalizeFinishReason, resolveCapabilities } from '../../src/main/llm/compatibility'
+import {
+  LlmResponseError,
+  ModelFetchError,
+  normalizeHttpErrorMessage,
+} from '../../src/main/llm/errors'
+import { runChatCompletion } from '../../src/main/llm/protocol'
+import { MistralProvider } from '../../src/main/llm/providers/openai'
 
 let passed = 0
 let failed = 0
@@ -43,7 +48,7 @@ function fakeHttp(handler: (path: string, body: Record<string, unknown>) => unkn
       const r = handler(path, body)
       if (r instanceof Error) throw r
       return { data: r }
-    }
+    },
   } as unknown as AxiosInstance
   return { http, lastBody: () => captured }
 }
@@ -54,7 +59,13 @@ function axiosErr(status: number): Error {
     'ERR_BAD_RESPONSE',
     undefined,
     {},
-    { status, data: { error: { message: 'raw provider json', code: status } }, statusText: '', headers: {}, config: {} as never }
+    {
+      status,
+      data: { error: { message: 'raw provider json', code: status } },
+      statusText: '',
+      headers: {},
+      config: {} as never,
+    },
   )
 }
 
@@ -66,11 +77,36 @@ interface ProviderCase {
 }
 
 const PROVIDERS: ProviderCase[] = [
-  { id: 'groq', reasoningModel: 'openai/gpt-oss-20b', plainModel: 'llama-3.3-70b-versatile', expectedPlainBudget: 512 },
-  { id: 'cerebras', reasoningModel: 'zai-glm-4.7', plainModel: 'llama-3.3-70b', expectedPlainBudget: 1024 },
-  { id: 'github', reasoningModel: 'deepseek/DeepSeek-R1', plainModel: 'openai/gpt-4.1', expectedPlainBudget: 1024 },
-  { id: 'openrouter', reasoningModel: 'deepseek/deepseek-r1:free', plainModel: 'meta-llama/llama-3.3-70b-instruct:free', expectedPlainBudget: 1024 },
-  { id: 'mistral', reasoningModel: 'magistral-medium-2509', plainModel: 'mistral-small-latest', expectedPlainBudget: 1024 }
+  {
+    id: 'groq',
+    reasoningModel: 'openai/gpt-oss-20b',
+    plainModel: 'llama-3.3-70b-versatile',
+    expectedPlainBudget: 512,
+  },
+  {
+    id: 'cerebras',
+    reasoningModel: 'zai-glm-4.7',
+    plainModel: 'llama-3.3-70b',
+    expectedPlainBudget: 1024,
+  },
+  {
+    id: 'github',
+    reasoningModel: 'deepseek/DeepSeek-R1',
+    plainModel: 'openai/gpt-4.1',
+    expectedPlainBudget: 1024,
+  },
+  {
+    id: 'openrouter',
+    reasoningModel: 'deepseek/deepseek-r1:free',
+    plainModel: 'meta-llama/llama-3.3-70b-instruct:free',
+    expectedPlainBudget: 1024,
+  },
+  {
+    id: 'mistral',
+    reasoningModel: 'magistral-medium-2509',
+    plainModel: 'mistral-small-latest',
+    expectedPlainBudget: 1024,
+  },
 ]
 
 const SYSTEM_PROMPT = 'You are Shio, a witty anime foxgirl. Max 3 sentences.'
@@ -80,14 +116,14 @@ function baseMessages(userText: string): ChatMessage[] {
   return [
     { role: 'system', content: SYSTEM_PROMPT },
     { role: 'system', content: EMOTION_CONTRACT },
-    { role: 'user', content: userText }
+    { role: 'user', content: userText },
   ]
 }
 
 function okResponse(content: string, finishReason = 'stop'): unknown {
   return {
     choices: [{ finish_reason: finishReason, message: { role: 'assistant', content } }],
-    usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 }
+    usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
   }
 }
 
@@ -106,7 +142,7 @@ async function runProviderBattery(pc: ProviderCase): Promise<void> {
       apiKey: 'test-key',
       model: pc.plainModel,
       capabilities: caps,
-      messages: baseMessages('Hello Shio')
+      messages: baseMessages('Hello Shio'),
     })
     const sent = lastBody().messages as ChatMessage[]
     const systemCount = sent.filter((m) => m.role === 'system').length
@@ -123,9 +159,19 @@ async function runProviderBattery(pc: ProviderCase): Promise<void> {
     const { http, lastBody } = fakeHttp(() => okResponse('[neutral] ok'))
     const caps = resolveCapabilities(pc.id, pc.plainModel)
     await runChatCompletion({
-      provider: pc.id, http, chatPath: '/c', apiKey: 'k', model: pc.plainModel, capabilities: caps, messages: baseMessages('hi')
+      provider: pc.id,
+      http,
+      chatPath: '/c',
+      apiKey: 'k',
+      model: pc.plainModel,
+      capabilities: caps,
+      messages: baseMessages('hi'),
     })
-    check(`non-reasoning budget = ${pc.expectedPlainBudget}`, lastBody().max_tokens === pc.expectedPlainBudget, `got ${lastBody().max_tokens}`)
+    check(
+      `non-reasoning budget = ${pc.expectedPlainBudget}`,
+      lastBody().max_tokens === pc.expectedPlainBudget,
+      `got ${lastBody().max_tokens}`,
+    )
     check('temperature sent for standard model', lastBody().temperature === 0.7)
     check('non-reasoning model flagged correctly', caps.supportsReasoning === false)
     check('supportsSystemPrompt true', caps.supportsSystemPrompt === true)
@@ -136,25 +182,33 @@ async function runProviderBattery(pc: ProviderCase): Promise<void> {
     const { http, lastBody } = fakeHttp(() => okResponse('[calm] думаю'))
     const caps = resolveCapabilities(pc.id, pc.reasoningModel)
     await runChatCompletion({
-      provider: pc.id, http, chatPath: '/c', apiKey: 'k', model: pc.reasoningModel, capabilities: caps, messages: baseMessages('hi')
+      provider: pc.id,
+      http,
+      chatPath: '/c',
+      apiKey: 'k',
+      model: pc.reasoningModel,
+      capabilities: caps,
+      messages: baseMessages('hi'),
     })
     check('reasoning model detected', caps.supportsReasoning === true, pc.reasoningModel)
     check('reasoning budget = 4096', lastBody().max_tokens === 4096, `got ${lastBody().max_tokens}`)
   }
-
-  // 4. Unicode / Russian / English content round-trips unchanged.
-  {
-    for (const [label, text] of [
-      ['russian', '[happy] Привет! Как дела, кожаный мешок?'],
-      ['english', '[neutral] Hey there, what do you need?'],
-      ['unicode', '[laugh] Ха! 🦊✨ +1 Strength / -1 Intelligence']
-    ] as const) {
-      const { http } = fakeHttp(() => okResponse(text))
-      const out = await runChatCompletion({
-        provider: pc.id, http, chatPath: '/c', apiKey: 'k', model: pc.plainModel, capabilities: resolveCapabilities(pc.id, pc.plainModel), messages: baseMessages('x')
-      })
-      check(`${label} content preserved`, out === text)
-    }
+  for (const [label, text] of [
+    ['russian', '[happy] Привет! Как дела, кожаный мешок?'],
+    ['english', '[neutral] Hey there, what do you need?'],
+    ['unicode', '[laugh] Ха! 🦊✨ +1 Strength / -1 Intelligence'],
+  ] as const) {
+    const { http } = fakeHttp(() => okResponse(text))
+    const out = await runChatCompletion({
+      provider: pc.id,
+      http,
+      chatPath: '/c',
+      apiKey: 'k',
+      model: pc.plainModel,
+      capabilities: resolveCapabilities(pc.id, pc.plainModel),
+      messages: baseMessages('x'),
+    })
+    check(`${label} content preserved`, out === text)
   }
 
   // 5. Max-sentence-length reply passes through unchanged (no adapter truncation).
@@ -162,19 +216,35 @@ async function runProviderBattery(pc: ProviderCase): Promise<void> {
     const three = '[happy] Раз. Два. Три.'
     const { http } = fakeHttp(() => okResponse(three))
     const out = await runChatCompletion({
-      provider: pc.id, http, chatPath: '/c', apiKey: 'k', model: pc.plainModel, capabilities: resolveCapabilities(pc.id, pc.plainModel), messages: baseMessages('x')
+      provider: pc.id,
+      http,
+      chatPath: '/c',
+      apiKey: 'k',
+      model: pc.plainModel,
+      capabilities: resolveCapabilities(pc.id, pc.plainModel),
+      messages: baseMessages('x'),
     })
     check('multi-sentence reply not truncated by adapter', out === three)
   }
 
   // 6. Empty reasoning content + finish_reason length -> readable Runtime error.
   {
-    const raw = { choices: [{ finish_reason: 'length', message: { reasoning: 'long thinking...', content: null } }] }
+    const raw = {
+      choices: [
+        { finish_reason: 'length', message: { reasoning: 'long thinking...', content: null } },
+      ],
+    }
     const { http } = fakeHttp(() => raw)
     let err: unknown
     try {
       await runChatCompletion({
-        provider: pc.id, http, chatPath: '/c', apiKey: 'k', model: pc.reasoningModel, capabilities: resolveCapabilities(pc.id, pc.reasoningModel), messages: baseMessages('x')
+        provider: pc.id,
+        http,
+        chatPath: '/c',
+        apiKey: 'k',
+        model: pc.reasoningModel,
+        capabilities: resolveCapabilities(pc.id, pc.reasoningModel),
+        messages: baseMessages('x'),
       })
     } catch (e) {
       err = e
@@ -193,38 +263,55 @@ async function runProviderBattery(pc: ProviderCase): Promise<void> {
     let err: unknown
     try {
       await runChatCompletion({
-        provider: pc.id, http, chatPath: '/c', apiKey: 'k', model: pc.plainModel, capabilities: resolveCapabilities(pc.id, pc.plainModel), messages: baseMessages('x')
+        provider: pc.id,
+        http,
+        chatPath: '/c',
+        apiKey: 'k',
+        model: pc.plainModel,
+        capabilities: resolveCapabilities(pc.id, pc.plainModel),
+        messages: baseMessages('x'),
       })
     } catch (e) {
       err = e
     }
     check('empty content throws LlmResponseError', err instanceof LlmResponseError)
-    check('empty content message readable', err instanceof Error && /пустой ответ/.test(err.message))
+    check(
+      'empty content message readable',
+      err instanceof Error && /пустой ответ/.test(err.message),
+    )
   }
-
-  // 8. HTTP error normalization: no raw JSON, readable per-status message.
-  {
-    for (const status of [401, 403, 429, 500]) {
-      const { http } = fakeHttp(() => axiosErr(status))
-      let err: unknown
-      try {
-        await runChatCompletion({
-          provider: pc.id, http, chatPath: '/c', apiKey: 'k', model: pc.plainModel, capabilities: resolveCapabilities(pc.id, pc.plainModel), messages: baseMessages('x')
-        })
-      } catch (e) {
-        err = e
-      }
-      const msg = err instanceof Error ? err.message : ''
-      check(`HTTP ${status} normalized`, err instanceof LlmResponseError && msg === normalizeHttpErrorMessage(pc.id, status))
-      check(`HTTP ${status} hides raw provider JSON`, !msg.includes('raw provider json') && !msg.includes('{'))
+  for (const status of [401, 403, 429, 500]) {
+    const { http } = fakeHttp(() => axiosErr(status))
+    let err: unknown
+    try {
+      await runChatCompletion({
+        provider: pc.id,
+        http,
+        chatPath: '/c',
+        apiKey: 'k',
+        model: pc.plainModel,
+        capabilities: resolveCapabilities(pc.id, pc.plainModel),
+        messages: baseMessages('x'),
+      })
+    } catch (e) {
+      err = e
     }
+    const msg = err instanceof Error ? err.message : ''
+    check(
+      `HTTP ${status} normalized`,
+      err instanceof LlmResponseError && msg === normalizeHttpErrorMessage(pc.id, status),
+    )
+    check(
+      `HTTP ${status} hides raw provider JSON`,
+      !msg.includes('raw provider json') && !msg.includes('{'),
+    )
   }
 }
 
 /** Mistral models API: fake `http.get` to exercise success/error/malformed paths. */
 async function withMockedMistralGet<T>(
   handler: (path: string) => unknown,
-  fn: (p: MistralProvider) => Promise<T>
+  fn: (p: MistralProvider) => Promise<T>,
 ): Promise<T> {
   const provider = new MistralProvider('test-key', 'mistral-small-latest')
   ;(provider as unknown as { http: { get: (path: string) => Promise<unknown> } }).http = {
@@ -232,7 +319,7 @@ async function withMockedMistralGet<T>(
       const r = handler(path)
       if (r instanceof Error) throw r
       return { data: r }
-    }
+    },
   }
   return fn(provider)
 }
@@ -247,12 +334,15 @@ async function testMistralModelsApi(): Promise<void> {
         object: 'list',
         data: [
           { id: 'mistral-small-latest', name: 'Mistral Small' },
-          { id: 'mistral-large-latest' }
-        ]
+          { id: 'mistral-large-latest' },
+        ],
       }),
-      (p) => p.fetchModels('test-key')
+      (p) => p.fetchModels('test-key'),
     )
-    check('models API success returns parsed ids', models.length === 2 && models[0].id === 'mistral-small-latest')
+    check(
+      'models API success returns parsed ids',
+      models.length === 2 && models[0].id === 'mistral-small-latest',
+    )
     check('models API preserves optional displayName', models[0].displayName === 'Mistral Small')
   }
 
@@ -260,46 +350,67 @@ async function testMistralModelsApi(): Promise<void> {
   {
     let err: unknown
     try {
-      await withMockedMistralGet(() => axiosErr(401), (p) => p.fetchModels('bad-key'))
+      await withMockedMistralGet(
+        () => axiosErr(401),
+        (p) => p.fetchModels('bad-key'),
+      )
     } catch (e) {
       err = e
     }
-    check('models API 401 -> ModelFetchError(auth)', err instanceof ModelFetchError && err.kind === 'auth')
+    check(
+      'models API 401 -> ModelFetchError(auth)',
+      err instanceof ModelFetchError && err.kind === 'auth',
+    )
   }
 
   // Invalid request.
   {
     let err: unknown
     try {
-      await withMockedMistralGet(() => axiosErr(400), (p) => p.fetchModels('test-key'))
+      await withMockedMistralGet(
+        () => axiosErr(400),
+        (p) => p.fetchModels('test-key'),
+      )
     } catch (e) {
       err = e
     }
-    check('models API 400 -> ModelFetchError(invalid_response)', err instanceof ModelFetchError && err.kind === 'invalid_response')
+    check(
+      'models API 400 -> ModelFetchError(invalid_response)',
+      err instanceof ModelFetchError && err.kind === 'invalid_response',
+    )
   }
 
   // Rate limited.
   {
     let err: unknown
     try {
-      await withMockedMistralGet(() => axiosErr(429), (p) => p.fetchModels('test-key'))
+      await withMockedMistralGet(
+        () => axiosErr(429),
+        (p) => p.fetchModels('test-key'),
+      )
     } catch (e) {
       err = e
     }
-    check('models API 429 -> ModelFetchError(invalid_response)', err instanceof ModelFetchError && err.kind === 'invalid_response')
+    check(
+      'models API 429 -> ModelFetchError(invalid_response)',
+      err instanceof ModelFetchError && err.kind === 'invalid_response',
+    )
   }
 
   // Malformed response (fails Zod shape validation).
   {
     let err: unknown
     try {
-      await withMockedMistralGet(() => ({ data: [{ notAnId: true }] }), (p) => p.fetchModels('test-key'))
+      await withMockedMistralGet(
+        () => ({ data: [{ notAnId: true }] }),
+        (p) => p.fetchModels('test-key'),
+      )
     } catch (e) {
       err = e
     }
     check(
       'malformed models response -> ModelFetchError(invalid_response)',
-      err instanceof ModelFetchError && err.kind === 'invalid_response'
+      err instanceof ModelFetchError && err.kind === 'invalid_response',
     )
   }
 
@@ -307,11 +418,17 @@ async function testMistralModelsApi(): Promise<void> {
   {
     let err: unknown
     try {
-      await withMockedMistralGet(() => ({ data: [] }), (p) => p.fetchModels(''))
+      await withMockedMistralGet(
+        () => ({ data: [] }),
+        (p) => p.fetchModels(''),
+      )
     } catch (e) {
       err = e
     }
-    check('missing key -> ModelFetchError(auth) without request', err instanceof ModelFetchError && err.kind === 'auth')
+    check(
+      'missing key -> ModelFetchError(auth) without request',
+      err instanceof ModelFetchError && err.kind === 'auth',
+    )
   }
 }
 
@@ -326,7 +443,7 @@ function testFinishReasonNormalization(): void {
     ['function_call', 'tool_calls'],
     ['content_filter', 'content_filter'],
     ['error', 'error'],
-    ['something_weird', 'unknown']
+    ['something_weird', 'unknown'],
   ]
   for (const [raw, expected] of map) {
     check(`${raw} -> ${expected}`, normalizeFinishReason(raw) === expected)

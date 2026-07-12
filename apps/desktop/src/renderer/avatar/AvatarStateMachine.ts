@@ -1,5 +1,5 @@
-import type { AvatarBehaviorId } from './AvatarBehaviorResolver'
 import { emotionRegistry } from '../../shared/emotions'
+import type { AvatarBehaviorId } from './AvatarBehaviorResolver'
 
 export type AvatarMode = 'idle' | 'listening' | 'thinking' | 'speaking' | 'awaitingSpeech'
 
@@ -14,26 +14,29 @@ export interface AvatarStateEffect {
   detachLipSync?: boolean
 }
 
-const MODE_EFFECTS: Record<Exclude<AvatarMode, 'speaking' | 'awaitingSpeech'>, Omit<AvatarStateEffect, 'mode'>> = {
+const MODE_EFFECTS: Record<
+  Exclude<AvatarMode, 'speaking' | 'awaitingSpeech'>,
+  Omit<AvatarStateEffect, 'mode'>
+> = {
   idle: {
     proceduralMode: 'idle',
     emotionKey: 'neutral',
     behaviorId: 'idle',
     loop: true,
-    detachLipSync: true
+    detachLipSync: true,
   },
   listening: {
     proceduralMode: 'listening',
     emotionKey: 'calm',
     behaviorId: 'listening',
-    loop: true
+    loop: true,
   },
   thinking: {
     proceduralMode: 'thinking',
     emotionKey: 'calm',
     behaviorId: 'thinking',
-    loop: true
-  }
+    loop: true,
+  },
 }
 
 export class AvatarStateMachine {
@@ -62,7 +65,7 @@ export class AvatarStateMachine {
         emotionKey: this.emotionKey,
         behaviorId: 'thinking',
         loop: true,
-        resetMouth: true
+        resetMouth: true,
       }
     }
 
@@ -73,7 +76,7 @@ export class AvatarStateMachine {
         emotionKey: this.emotionKey,
         behaviorId: this.toBehaviorId(this.emotionKey),
         loop: true,
-        attachLipSync: true
+        attachLipSync: true,
       }
     }
 
@@ -92,7 +95,7 @@ export class AvatarStateMachine {
       emotionKey: this.emotionKey,
       behaviorId: this.toBehaviorId(this.emotionKey),
       loop: true,
-      attachLipSync: true
+      attachLipSync: true,
     }
   }
 
@@ -105,7 +108,7 @@ export class AvatarStateMachine {
       emotionKey: this.emotionKey,
       behaviorId: 'thinking',
       loop: true,
-      resetMouth: true
+      resetMouth: true,
     }
   }
 
@@ -118,7 +121,7 @@ export class AvatarStateMachine {
       emotionKey: this.emotionKey,
       behaviorId: this.toBehaviorId(this.emotionKey),
       loop: true,
-      attachLipSync: true
+      attachLipSync: true,
     }
   }
 
@@ -136,7 +139,7 @@ export class AvatarStateMachine {
       proceduralMode: 'speaking',
       emotionKey: this.emotionKey,
       behaviorId: 'greeting',
-      loop: false
+      loop: false,
     }
   }
 

@@ -12,7 +12,6 @@ export function toAvatarMode(mode: CharacterState['mode']): AvatarMode {
     case 'speaking':
     case 'idle':
       return mode
-    case 'acting':
     default:
       return 'idle'
   }
@@ -46,10 +45,6 @@ export function toProceduralMode(mode: CharacterState['mode']): VrmProceduralMod
       return 'thinking'
     case 'speaking':
       return 'speaking'
-    case 'idle':
-    case 'acting':
-    case 'interrupted':
-    case 'sleeping':
     default:
       return 'idle'
   }

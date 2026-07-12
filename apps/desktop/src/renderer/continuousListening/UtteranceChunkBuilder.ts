@@ -40,14 +40,18 @@ export class UtteranceChunkBuilder {
     this.lastUpdatedAt = now
     // ASR partials are snapshots, not append-only fragments.
     this.partial = normalized.slice(0, this.options.maxCharacters)
-    if (normalized.length >= this.options.maxCharacters) return this.complete('max_length', undefined, now)
+    if (normalized.length >= this.options.maxCharacters)
+      return this.complete('max_length', undefined, now)
     return null
   }
 
   pushFinal(
     text: string,
     confidence?: number,
-    metadata: Pick<UtteranceChunk, 'streamingSessionId' | 'segmentId' | 'capturedDuringPlayback'> = {}
+    metadata: Pick<
+      UtteranceChunk,
+      'streamingSessionId' | 'segmentId' | 'capturedDuringPlayback'
+    > = {},
   ): UtteranceChunk | null {
     const normalized = normalizeText(text)
     if (!normalized) {
@@ -58,7 +62,12 @@ export class UtteranceChunkBuilder {
     this.startedAt ??= now
     this.lastUpdatedAt = now
     this.partial = normalized.slice(0, this.options.maxCharacters)
-    return this.complete(normalized.length >= this.options.maxCharacters ? 'max_length' : 'asr_final', confidence, now, metadata)
+    return this.complete(
+      normalized.length >= this.options.maxCharacters ? 'max_length' : 'asr_final',
+      confidence,
+      now,
+      metadata,
+    )
   }
 
   speechEnded(): UtteranceChunk | null {
@@ -68,8 +77,10 @@ export class UtteranceChunkBuilder {
   poll(): UtteranceChunk | null {
     if (!this.partial || this.lastUpdatedAt === null || this.startedAt === null) return null
     const now = this.now()
-    if (now - this.startedAt >= this.options.hardTimeoutMs) return this.complete('timeout', undefined, now)
-    if (now - this.lastUpdatedAt >= this.options.pauseCompletionMs) return this.complete('vad_pause', undefined, now)
+    if (now - this.startedAt >= this.options.hardTimeoutMs)
+      return this.complete('timeout', undefined, now)
+    if (now - this.lastUpdatedAt >= this.options.pauseCompletionMs)
+      return this.complete('vad_pause', undefined, now)
     return null
   }
 
@@ -77,29 +88,39 @@ export class UtteranceChunkBuilder {
     reason: ChunkCompletionReason,
     confidence?: number,
     completedAt = this.now(),
-    metadata: Pick<UtteranceChunk, 'streamingSessionId' | 'segmentId' | 'capturedDuringPlayback'> = {}
+    metadata: Pick<
+      UtteranceChunk,
+      'streamingSessionId' | 'segmentId' | 'capturedDuringPlayback'
+    > = {},
   ): UtteranceChunk | null {
     const text = normalizeText(this.partial)
     const startedAt = this.startedAt ?? completedAt
     this.reset()
     if (text.length < this.options.minimumCharacters) return null
-    const key = metadata.streamingSessionId && metadata.segmentId
-      ? `${metadata.streamingSessionId}:${metadata.segmentId}`
-      : duplicateKey(text)
+    const key =
+      metadata.streamingSessionId && metadata.segmentId
+        ? `${metadata.streamingSessionId}:${metadata.segmentId}`
+        : duplicateKey(text)
     const duplicateWindowMs = 5_000
-    if (this.completedKeys.some((entry) => entry.key === key && completedAt - entry.completedAt <= duplicateWindowMs)) return null
+    if (
+      this.completedKeys.some(
+        (entry) => entry.key === key && completedAt - entry.completedAt <= duplicateWindowMs,
+      )
+    )
+      return null
     this.completedKeys.push({ key, completedAt })
     if (this.completedKeys.length > 32) this.completedKeys.shift()
     return {
-      id: metadata.streamingSessionId && metadata.segmentId
-        ? `${metadata.streamingSessionId}:${metadata.segmentId}`
-        : `utterance-${completedAt}-${++this.sequence}`,
+      id:
+        metadata.streamingSessionId && metadata.segmentId
+          ? `${metadata.streamingSessionId}:${metadata.segmentId}`
+          : `utterance-${completedAt}-${++this.sequence}`,
       text,
       startedAt,
       completedAt,
       completionReason: reason,
       confidence,
-      ...metadata
+      ...metadata,
     }
   }
 

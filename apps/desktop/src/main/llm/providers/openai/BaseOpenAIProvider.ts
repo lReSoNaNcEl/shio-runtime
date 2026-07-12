@@ -1,10 +1,16 @@
 import axios, { type AxiosInstance, type AxiosProxyConfig } from 'axios'
+
 import type { LlmProviderId } from '../../../../shared/llmProviders'
+import { type LlmCapabilities, resolveCapabilities } from '../../compatibility/index'
+import { PROVIDER_DISPLAY_NAMES } from '../../errors/index'
+import {
+  type ChatRunConfig,
+  type ParsedCompletion,
+  runChatCompletion,
+  runChatCompletionDetailed,
+} from '../../protocol/index'
 import type { ChatMessage, LLMProvider } from '../../public/chatTypes'
 import type { ModelCatalogProvider, ModelInfo } from '../catalogTypes'
-import { resolveCapabilities, type LlmCapabilities } from '../../compatibility/index'
-import { PROVIDER_DISPLAY_NAMES } from '../../errors/index'
-import { runChatCompletion, runChatCompletionDetailed, type ChatRunConfig, type ParsedCompletion } from '../../protocol/index'
 
 export interface ChatOptions {
   temperature?: number
@@ -39,7 +45,7 @@ export abstract class BaseOpenAIProvider implements LLMProvider, ModelCatalogPro
     this.http = axios.create({
       baseURL: config.baseURL,
       timeout: 60_000,
-      proxy: config.proxy
+      proxy: config.proxy,
     })
   }
 
@@ -50,7 +56,7 @@ export abstract class BaseOpenAIProvider implements LLMProvider, ModelCatalogPro
   private buildRunConfig(messages: ChatMessage[], opts?: ChatOptions): ChatRunConfig {
     if (!this.apiKey) {
       throw new Error(
-        `${PROVIDER_DISPLAY_NAMES[this.config.providerId]}: API ключ не задан. Откройте Настройки и введите ключ.`
+        `${PROVIDER_DISPLAY_NAMES[this.config.providerId]}: API ключ не задан. Откройте Настройки и введите ключ.`,
       )
     }
     return {
@@ -63,7 +69,7 @@ export abstract class BaseOpenAIProvider implements LLMProvider, ModelCatalogPro
       messages,
       extraHeaders: this.config.chatHeaders,
       temperature: opts?.temperature,
-      maxTokensOverride: opts?.maxTokens
+      maxTokensOverride: opts?.maxTokens,
     }
   }
 

@@ -29,8 +29,12 @@ const stopEndedQueue: FakeSource[] = [] // sources whose stop() will deliver end
 class FakeAnalyser {
   fftSize = 256
   connections = 0
-  connect() { this.connections++ }
-  disconnect() { this.connections = Math.max(0, this.connections - 1) }
+  connect() {
+    this.connections++
+  }
+  disconnect() {
+    this.connections = Math.max(0, this.connections - 1)
+  }
 }
 
 class FakeSource {
@@ -40,10 +44,18 @@ class FakeSource {
   stopped = false
   connectedTo = 0
   readonly label: string
-  constructor(label: string) { this.label = label }
-  connect() { this.connectedTo++ }
-  disconnect() { this.connectedTo = 0 }
-  start() { this.started = true }
+  constructor(label: string) {
+    this.label = label
+  }
+  connect() {
+    this.connectedTo++
+  }
+  disconnect() {
+    this.connectedTo = 0
+  }
+  start() {
+    this.started = true
+  }
   stop() {
     if (this.stopped) return
     this.stopped = true
@@ -64,8 +76,12 @@ class FakeAudioContext {
   state = 'running'
   currentTime = 0
   destination = { kind: 'destination' }
-  async resume() { this.state = 'running' }
-  createAnalyser() { return new FakeAnalyser() as unknown as AnalyserNode }
+  async resume() {
+    this.state = 'running'
+  }
+  createAnalyser() {
+    return new FakeAnalyser() as unknown as AnalyserNode
+  }
   createBufferSource() {
     const s = new FakeSource(`src${createdSources.length + 1}`)
     createdSources.push(s)
@@ -78,14 +94,19 @@ class FakeAudioContext {
 }
 
 // Install globals BEFORE instantiating any player.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const g = globalThis as any
+const g = globalThis as unknown as Record<string, unknown>
 g.AudioContext = FakeAudioContext
 const timers = new Set<number>()
 let timerSeq = 1
 g.window = {
-  setInterval: () => { const id = timerSeq++; timers.add(id); return id },
-  clearInterval: (id: number) => { timers.delete(id) }
+  setInterval: () => {
+    const id = timerSeq++
+    timers.add(id)
+    return id
+  },
+  clearInterval: (id: number) => {
+    timers.delete(id)
+  },
 }
 
 const drainStopEnded = () => {
@@ -106,7 +127,11 @@ class OriginalAudioPlayer {
   private onEndCallback: (() => void) | null = null
   private duration = 0
 
-  async play(_wav: ArrayBuffer, onEnd?: () => void, onProgress?: (p: number) => void): Promise<void> {
+  async play(
+    _wav: ArrayBuffer,
+    onEnd?: () => void,
+    onProgress?: (p: number) => void,
+  ): Promise<void> {
     if (this.source) {
       this.source.stop()
       this.source = null
@@ -133,14 +158,21 @@ class OriginalAudioPlayer {
     }
   }
 
-  isPlaying() { return this.source !== null }
+  isPlaying() {
+    return this.source !== null
+  }
 }
 
 // ---------------------------------------------------------------------------
 // Scenario driver + LipSync attach/detach modelling
 // ---------------------------------------------------------------------------
 
-interface Ev { t: number; frame: number; type: string; detail: string }
+interface Ev {
+  t: number
+  frame: number
+  type: string
+  detail: string
+}
 
 interface PlayerLike {
   play(w: ArrayBuffer, onEnd?: () => void, onProgress?: (p: number) => void): Promise<void>
@@ -156,13 +188,17 @@ class FixedPlayerAdapter implements PlayerLike {
     await this.player.play(w, {
       turnId: `playback-repro-${++this.sequence}`,
       onReady: () => undefined,
-      onProgress
+      onProgress,
     })
     onEnd?.()
   }
 
-  stop(): void { this.player.stop() }
-  isPlaying(): boolean { return this.player.isPlaying() }
+  stop(): void {
+    this.player.stop()
+  }
+  isPlaying(): boolean {
+    return this.player.isPlaying()
+  }
 }
 
 interface PlaybackInfo {
@@ -186,10 +222,16 @@ class ScenarioRun {
     this.events.push({ t: clock, frame: this.frame, type, detail })
   }
 
-  attach(pb: number) { this.attaches++; this.emit('LIPSYNC attach', `playback#${pb}`) }
+  attach(pb: number) {
+    this.attaches++
+    this.emit('LIPSYNC attach', `playback#${pb}`)
+  }
   detach(pb: number) {
     this.detaches++
-    const other = this.activeAudible !== null && this.activeAudible !== pb ? ` (while #${this.activeAudible} audible)` : ''
+    const other =
+      this.activeAudible !== null && this.activeAudible !== pb
+        ? ` (while #${this.activeAudible} audible)`
+        : ''
     this.emit('LIPSYNC detach', `playback#${pb}${other}`)
   }
   finish(pb: number) {
@@ -206,7 +248,8 @@ class ScenarioRun {
     for (const info of this.playbacks.values()) {
       if (info.finishFrames.length > 1) double++
       for (const f of info.finishFrames) {
-        if (info.naturalEndFrame === null) spurious++ // interrupted playback should never finish
+        if (info.naturalEndFrame === null)
+          spurious++ // interrupted playback should never finish
         else if (f < info.naturalEndFrame - 1) premature++ // finished before its audio ended
       }
     }
@@ -222,8 +265,11 @@ function speak(run: ScenarioRun, player: PlayerLike, pb: number): Promise<void> 
   run.emit('SPEECHSTATE ->speaking', `playback#${pb}`)
   return player.play(
     new ArrayBuffer(44),
-    () => { run.finish(pb); run.detach(pb) },
-    () => {}
+    () => {
+      run.finish(pb)
+      run.detach(pb)
+    },
+    () => {},
   )
 }
 
@@ -235,7 +281,11 @@ function endNaturally(run: ScenarioRun, src: FakeSource | undefined, pb: number)
   run.activeAudible = null
 }
 
-async function runScenario(name: string, make: () => PlayerLike, body: (run: ScenarioRun, p: PlayerLike, getSrc: (i: number) => FakeSource) => Promise<void>): Promise<ScenarioRun> {
+async function runScenario(
+  name: string,
+  make: () => PlayerLike,
+  body: (run: ScenarioRun, p: PlayerLike, getSrc: (i: number) => FakeSource) => Promise<void>,
+): Promise<ScenarioRun> {
   createdSources.length = 0
   stopEndedQueue.length = 0
   const run = new ScenarioRun()
@@ -306,10 +356,14 @@ function summarize(label: string, runs: Record<string, ScenarioRun>) {
   for (const [name, run] of Object.entries(runs)) {
     const m = run.metrics()
     const bad = m.premature || m.spurious || m.double
-    console.log(`\n[${name}] ${bad ? '✗' : '✓'} prematureFinish=${m.premature} spuriousFinish=${m.spurious} doubleFinish=${m.double}`)
+    console.log(
+      `\n[${name}] ${bad ? '✗' : '✓'} prematureFinish=${m.premature} spuriousFinish=${m.spurious} doubleFinish=${m.double}`,
+    )
     for (const e of run.events) {
       if (e.type.startsWith('---')) continue
-      console.log(`   t=${String(e.t).padStart(3)} frame=${String(e.frame).padStart(3)}  ${e.type}${e.detail ? '  ' + e.detail : ''}`)
+      console.log(
+        `   t=${String(e.t).padStart(3)} frame=${String(e.frame).padStart(3)}  ${e.type}${e.detail ? `  ${e.detail}` : ''}`,
+      )
     }
   }
 }
@@ -331,22 +385,29 @@ async function main() {
     NORMAL: await scenarioNormal(origMake),
     INTERRUPTED: await scenarioInterrupted(origMake),
     MANUAL_STOP: await scenarioManualStop(origMake),
-    CONSECUTIVE: await scenarioConsecutive(origMake)
+    CONSECUTIVE: await scenarioConsecutive(origMake),
   }
   const fixed = {
     NORMAL: await scenarioNormal(fixedMake),
     INTERRUPTED: await scenarioInterrupted(fixedMake),
     MANUAL_STOP: await scenarioManualStop(fixedMake),
-    CONSECUTIVE: await scenarioConsecutive(fixedMake)
+    CONSECUTIVE: await scenarioConsecutive(fixedMake),
   }
 
   summarize('ORIGINAL (pre-fix)', original)
   summarize('FIXED (current AudioPlayer)', fixed)
 
   console.log('\n===== VERDICT =====')
-  const fmt = (r: ScenarioRun) => { const m = r.metrics(); return `premature=${m.premature} spurious=${m.spurious} double=${m.double}` }
-  console.log(`ORIGINAL / INTERRUPTED : ${fmt(original.INTERRUPTED)}  → stale source#1 ended fires finishSpeech#2 early (frame 21) while #2 is still audible`)
-  console.log(`FIXED    / INTERRUPTED : ${fmt(fixed.INTERRUPTED)}  → only #2 finishes, at its real buffer end`)
+  const fmt = (r: ScenarioRun) => {
+    const m = r.metrics()
+    return `premature=${m.premature} spurious=${m.spurious} double=${m.double}`
+  }
+  console.log(
+    `ORIGINAL / INTERRUPTED : ${fmt(original.INTERRUPTED)}  → stale source#1 ended fires finishSpeech#2 early (frame 21) while #2 is still audible`,
+  )
+  console.log(
+    `FIXED    / INTERRUPTED : ${fmt(fixed.INTERRUPTED)}  → only #2 finishes, at its real buffer end`,
+  )
 }
 
 void main()

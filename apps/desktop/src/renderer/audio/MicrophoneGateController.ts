@@ -1,4 +1,8 @@
-import { MicrophoneDeviceService, StaleValidationError, type MicrophoneFailure } from './MicrophoneDeviceService'
+import {
+  type MicrophoneDeviceService,
+  type MicrophoneFailure,
+  StaleValidationError,
+} from './MicrophoneDeviceService'
 import {
   CLOSED_GATE,
   isDefaultMicrophone,
@@ -7,7 +11,7 @@ import {
   type MicrophoneGateOpenReason,
   type MicrophoneGateResult,
   type MicrophoneGateState,
-  type MicrophoneIntent
+  type MicrophoneIntent,
 } from './microphoneGateTypes'
 
 export interface MicrophoneGateControllerDeps {
@@ -58,7 +62,7 @@ export class MicrophoneGateController {
     lastFailureReason: null,
     lastNativeErrorName: null,
     lastConstraint: null,
-    lastValidationSucceeded: null
+    lastValidationSucceeded: null,
   }
 
   constructor(deps: MicrophoneGateControllerDeps) {
@@ -92,7 +96,7 @@ export class MicrophoneGateController {
   request(
     intent: MicrophoneIntent,
     reason: MicrophoneGateOpenReason,
-    initialError?: MicrophoneFailureReason
+    initialError?: MicrophoneFailureReason,
   ): Promise<MicrophoneGateResult> {
     if (this.disposed) return Promise.resolve({ status: 'cancelled', intent })
     if (this.pending) {
@@ -130,7 +134,7 @@ export class MicrophoneGateController {
       reason: this.state.reason,
       devices: this.state.devices,
       selectedDeviceId: deviceId,
-      error: null
+      error: null,
     })
   }
 
@@ -141,8 +145,18 @@ export class MicrophoneGateController {
     const previousError = this.state.status === 'selecting' ? this.state.error : null
     const devices = await this.service.listInputs()
     if (this.state.status !== 'selecting' && this.state.status !== 'validating') return
-    const selectedDeviceId = previousSelected && devices.some((d) => d.deviceId === previousSelected) ? previousSelected : null
-    this.setState({ status: 'selecting', intent, reason, devices, selectedDeviceId, error: previousError })
+    const selectedDeviceId =
+      previousSelected && devices.some((d) => d.deviceId === previousSelected)
+        ? previousSelected
+        : null
+    this.setState({
+      status: 'selecting',
+      intent,
+      reason,
+      devices,
+      selectedDeviceId,
+      error: previousError,
+    })
   }
 
   /** Validate the selected device and, on success, confirm the intent. */
@@ -152,7 +166,9 @@ export class MicrophoneGateController {
     const operationId = ++this.operationId
     this.setState({ status: 'validating', intent, reason, devices, selectedDeviceId })
     try {
-      await this.service.validate(selectedDeviceId, operationId, (id) => this.isOperationCurrent(id))
+      await this.service.validate(selectedDeviceId, operationId, (id) =>
+        this.isOperationCurrent(id),
+      )
       this.recordValidationSuccess(selectedDeviceId)
       this.confirm(intent, selectedDeviceId)
     } catch (error) {
@@ -166,7 +182,7 @@ export class MicrophoneGateController {
         reason,
         devices,
         selectedDeviceId,
-        error: failure.reason
+        error: failure.reason,
       })
     }
   }
@@ -204,7 +220,11 @@ export class MicrophoneGateController {
     const present = await this.service.hasDevice(saved)
     if (!this.isOperationCurrent(operationId) || this.pending?.intent !== intent) return
     if (!present) {
-      await this.openGate(intent, isDefaultMicrophone(saved) ? 'not-configured' : 'saved-device-missing', null)
+      await this.openGate(
+        intent,
+        isDefaultMicrophone(saved) ? 'not-configured' : 'saved-device-missing',
+        null,
+      )
       return
     }
     try {
@@ -216,7 +236,9 @@ export class MicrophoneGateController {
       const failure = this.service.normalizeFailure(error)
       this.recordValidationFailure(failure)
       if (!this.isOperationCurrent(operationId)) return
-      const reason: MicrophoneGateOpenReason = isDefaultMicrophone(saved) ? 'not-configured' : 'saved-device-invalid'
+      const reason: MicrophoneGateOpenReason = isDefaultMicrophone(saved)
+        ? 'not-configured'
+        : 'saved-device-invalid'
       await this.openGate(intent, reason, failure.reason)
     }
   }
@@ -224,21 +246,22 @@ export class MicrophoneGateController {
   private async openGate(
     intent: MicrophoneIntent,
     reason: MicrophoneGateOpenReason,
-    initialError: MicrophoneFailureReason | null
+    initialError: MicrophoneFailureReason | null,
   ): Promise<void> {
     if (this.pending?.intent !== intent) return
     this.setState({ status: 'loading-devices', intent, reason })
     const devices = await this.service.listInputs()
     if (this.pending?.intent !== intent || this.state.status !== 'loading-devices') return
     const saved = this.getSavedDeviceId()
-    const selectedDeviceId = !isDefaultMicrophone(saved) && devices.some((d) => d.deviceId === saved) ? saved : null
+    const selectedDeviceId =
+      !isDefaultMicrophone(saved) && devices.some((d) => d.deviceId === saved) ? saved : null
     this.setState({
       status: 'selecting',
       intent,
       reason,
       devices,
       selectedDeviceId,
-      error: initialError
+      error: initialError,
     })
     this.recordEvent?.('Microphone Gate Opened', `${describeIntent(intent)}:${reason}`)
   }
@@ -268,7 +291,7 @@ export class MicrophoneGateController {
       gateStatus: next.status,
       pendingIntent: this.pending?.intent ?? null,
       openReason: next.status === 'closed' ? null : next.reason,
-      selectedDeviceLabel: this.selectedLabel(next)
+      selectedDeviceLabel: this.selectedLabel(next),
     }
     if (!this.disposed) this.onStateChange(next)
   }
@@ -286,9 +309,12 @@ export class MicrophoneGateController {
       lastValidationSucceeded: true,
       lastFailureReason: null,
       lastNativeErrorName: null,
-      lastConstraint: null
+      lastConstraint: null,
     }
-    this.recordEvent?.('Microphone Validation Succeeded', isDefaultMicrophone(deviceId) ? 'default' : 'device')
+    this.recordEvent?.(
+      'Microphone Validation Succeeded',
+      isDefaultMicrophone(deviceId) ? 'default' : 'device',
+    )
   }
 
   private recordValidationFailure(failure: MicrophoneFailure): void {
@@ -297,7 +323,7 @@ export class MicrophoneGateController {
       lastValidationSucceeded: false,
       lastFailureReason: failure.reason,
       lastNativeErrorName: failure.nativeName,
-      lastConstraint: failure.constraint
+      lastConstraint: failure.constraint,
     }
     this.recordEvent?.('Microphone Validation Failed', failure.reason)
   }
@@ -310,5 +336,7 @@ function sameIntent(a: MicrophoneIntent, b: MicrophoneIntent): boolean {
 }
 
 function describeIntent(intent: MicrophoneIntent): string {
-  return intent.type === 'start-streaming' ? `start-streaming:${intent.modeId}` : 'start-voice-input'
+  return intent.type === 'start-streaming'
+    ? `start-streaming:${intent.modeId}`
+    : 'start-voice-input'
 }

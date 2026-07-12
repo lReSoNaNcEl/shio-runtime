@@ -1,7 +1,7 @@
-import type { VrmProceduralMode } from './VrmModel'
-import type { LookAtMode } from './LookAtRuntime'
-import type { HeadMotionGeneratorId, HeadMotionProfile } from './HeadMotionRuntime'
 import type { EarBehaviorProfile, EarGestureId, EarPose } from './EarBehaviorRuntime'
+import type { HeadMotionGeneratorId, HeadMotionProfile } from './HeadMotionRuntime'
+import type { LookAtMode } from './LookAtRuntime'
+import type { VrmProceduralMode } from './VrmModel'
 
 export type OverlayViewMode = 'front' | 'bust' | 'face' | 'portrait'
 
@@ -17,7 +17,7 @@ export const avatarStartupTuning = {
     // of the model, matching the convention already used by `overlayCameraPresets`.
     position: { x: 0, y: 1.4, z: -2.5 },
     target: { x: 0, y: 1.0, z: 0 },
-  }
+  },
 } as const
 
 export const overlayCameraPresets = {
@@ -27,7 +27,7 @@ export const overlayCameraPresets = {
     target: { x: 0, y: 1.12, z: 0 },
     fov: 32,
     scaleMin: 0.65,
-    scaleMax: 1.8
+    scaleMax: 1.8,
   },
   bust: {
     label: 'Bust',
@@ -35,7 +35,7 @@ export const overlayCameraPresets = {
     target: { x: 0, y: 1.28, z: 0 },
     fov: 30,
     scaleMin: 0.75,
-    scaleMax: 2
+    scaleMax: 2,
   },
   face: {
     label: 'Face',
@@ -43,7 +43,7 @@ export const overlayCameraPresets = {
     target: { x: 0, y: 1.43, z: 0 },
     fov: 28,
     scaleMin: 0.75,
-    scaleMax: 2.2
+    scaleMax: 2.2,
   },
   portrait: {
     label: 'Portrait',
@@ -51,20 +51,23 @@ export const overlayCameraPresets = {
     target: { x: 0, y: 1.5, z: 0 },
     fov: 26,
     scaleMin: 0.8,
-    scaleMax: 2.4
+    scaleMax: 2.4,
+  },
+} satisfies Record<
+  OverlayViewMode,
+  {
+    label: string
+    position: { x: number; y: number; z: number }
+    target: { x: number; y: number; z: number }
+    fov: number
+    scaleMin: number
+    scaleMax: number
   }
-} satisfies Record<OverlayViewMode, {
-  label: string
-  position: { x: number; y: number; z: number }
-  target: { x: number; y: number; z: number }
-  fov: number
-  scaleMin: number
-  scaleMax: number
-}>
+>
 
 export const facialTuning = {
   debug: {
-    verboseFacialFrameLogs: false
+    verboseFacialFrameLogs: false,
   },
   expression: {
     // Emotion domain release (fade-out) lifecycle. Rising toward a new emotion
@@ -72,7 +75,7 @@ export const facialTuning = {
     // duration-based eased release so expressions fade instead of snapping.
     attackPerSecond: 6,
     releaseDurationMs: 480,
-    releaseEasing: 'easeInOutCubic'
+    releaseEasing: 'easeInOutCubic',
   },
   lipSync: {
     gain: 2.4,
@@ -115,7 +118,7 @@ export const facialTuning = {
       // Peak openness of the procedural fallback (small).
       amplitude: 0.07,
       // Oscillation speed of the fallback mouth motion (rad/s).
-      speed: 8
+      speed: 8,
     },
     statsHighThreshold: 0.7,
     statsOpenThreshold: 0.4,
@@ -125,14 +128,14 @@ export const facialTuning = {
       ih: 0.27,
       ou: 0.29,
       ee: 0.25,
-      oh: 0.28
+      oh: 0.28,
     },
     emotionProfiles: {
       whisper: { gainScale: 0.45, openBias: 0, roundBias: 0.03 },
       laugh: { gainScale: 1.12, openBias: 0.14, roundBias: 0.02 },
       gasp: { gainScale: 1.16, openBias: 0.18, roundBias: 0.03 },
       groan: { gainScale: 1.0, openBias: 0.09, roundBias: 0.12 },
-      sigh: { gainScale: 0.72, openBias: 0.03, roundBias: 0.08 }
+      sigh: { gainScale: 0.72, openBias: 0.03, roundBias: 0.08 },
     },
     // One profile is selected at speech playback start. Long continuous
     // playback gets a slow timed refresh; only the profile transition is
@@ -154,7 +157,7 @@ export const facialTuning = {
         sad: 0.7,
         surprised: 0.55,
         embarrassed: 0.8,
-        thinking: 0.7
+        thinking: 0.7,
       },
       emotionBias: {
         happy: { width: 0.012, roundness: 0 },
@@ -165,15 +168,15 @@ export const facialTuning = {
         surprised: { width: 0, roundness: 0 },
         embarrassed: { width: -0.004, roundness: 0.006 },
         thinking: { width: -0.004, roundness: 0.006 },
-        neutral: { width: 0, roundness: 0 }
-      }
-    }
+        neutral: { width: 0, roundness: 0 },
+      },
+    },
   },
   animation: {
     verboseTransitionLogs: false,
     minimumTransitionWeight: 0.015,
     cleanupGraceFrames: 1,
-    ownershipGapWeight: 0.01
+    ownershipGapWeight: 0.01,
   },
   blink: {
     // Global eyelid ceiling used as a fallback when an emotion profile omits its
@@ -186,13 +189,16 @@ export const facialTuning = {
     // (resolveEffectiveBlinkProfile) and never depends on event order.
     modeModifiers: {
       idle: { intervalScale: 1, durationScale: 1, weightScale: 1 },
-      speaking: { intervalScale: 0.75, durationScale: 0.92, weightScale: 0.92 }
-    } satisfies Record<'idle' | 'speaking', { intervalScale: number; durationScale: number; weightScale: number }>,
+      speaking: { intervalScale: 0.75, durationScale: 0.92, weightScale: 0.92 },
+    } satisfies Record<
+      'idle' | 'speaking',
+      { intervalScale: number; durationScale: number; weightScale: number }
+    >,
     profileByMode: {
       idle: 'idle',
       listening: 'idle',
       thinking: 'idle',
-      speaking: 'speaking'
+      speaking: 'speaking',
     } satisfies Record<VrmProceduralMode, 'idle' | 'speaking'>,
     // Double-blink is a single sequence: blink -> short internal gap -> weaker,
     // shorter second blink -> normal cooldown. The internal gap is NOT gated by
@@ -201,9 +207,9 @@ export const facialTuning = {
       gapMinMs: 90,
       gapMaxMs: 170,
       secondBlinkDurationScale: 0.82,
-      secondBlinkWeightScale: 0.88
+      secondBlinkWeightScale: 0.88,
     },
-    forceDuration: 0.46
+    forceDuration: 0.46,
   },
   // Speaking Eye Micro-Expression — a subtle, slowly varying partial eye-narrow
   // layered ONLY while speaking. It never fully closes the eyes (Blink owns that)
@@ -245,8 +251,8 @@ export const facialTuning = {
       sad: { squintScale: 1.1, variationScale: 0.8 },
       angry: { squintScale: 1.3, variationScale: 1.1 },
       surprised: { squintScale: 0.3, variationScale: 0.6 },
-      thinking: { squintScale: 1.05, variationScale: 0.7 }
-    } as Record<string, { squintScale: number; variationScale: number }>
+      thinking: { squintScale: 1.05, variationScale: 0.7 },
+    } as Record<string, { squintScale: number; variationScale: number }>,
   },
   // Mouth Closure Envelope — brief, constrained procedural lip closures layered
   // OVER the tuned LipSync output so the mouth is not permanently ajar during
@@ -277,7 +283,7 @@ export const facialTuning = {
     minVisibleOpenness: 0.12,
     recoveryCooldownMs: 300,
     // Envelope smoothing so closures ease in/out rather than snapping.
-    interpolationSpeed: 26
+    interpolationSpeed: 26,
   },
   // Emotion-safe composition between layers. The emotion *expression* morph
   // itself already narrows the eyes (happy/angry/sad) and shapes the mouth; the
@@ -300,7 +306,7 @@ export const facialTuning = {
       angry: 0.3,
       sad: 0.2,
       surprised: 0,
-      neutral: 0
+      neutral: 0,
     } as Record<string, number>,
     // Per-emotion gain on the LipSync mouth signal so emotions whose profile
     // scales articulation down (sad/thinking/embarrassed/confusion/approval)
@@ -323,10 +329,10 @@ export const facialTuning = {
         confusion: 1.12,
         thinking: 1.18,
         sad: 1.22,
-        embarrassed: 1.24
-      } as Record<string, number>
-    }
-  }
+        embarrassed: 1.24,
+      } as Record<string, number>,
+    },
+  },
 } as const
 
 export const speakingGestureTuning = {
@@ -335,7 +341,7 @@ export const speakingGestureTuning = {
   endingProgress: 0.82,
   longReplyEarlyWindowMs: 2800,
   emotionalPeakBehaviors: ['happy', 'laugh', 'angry', 'surprised', 'gasp'] as const,
-  calmBehaviors: ['neutral', 'calm', 'warm'] as const
+  calmBehaviors: ['neutral', 'calm', 'warm'] as const,
 } as const
 
 export const avatarLookAtTuning = {
@@ -347,11 +353,11 @@ export const avatarLookAtTuning = {
   headLag: {
     defaultSmoothing: 8.5,
     speakingSmoothing: 10.5,
-    maxDebugMs: 220
+    maxDebugMs: 220,
   },
   targets: {
     idleOffset: { yaw: 0.16, pitch: 0.04 },
-    thinkingOffset: { yaw: -0.24, pitch: 0.16 }
+    thinkingOffset: { yaw: -0.24, pitch: 0.16 },
   },
   modes: {
     idle: {
@@ -360,7 +366,7 @@ export const avatarLookAtTuning = {
       focusHoldMs: { min: 1100, max: 2100 },
       eyeContactBias: 0.72,
       glanceAwayChance: 0.1,
-      glanceAwayDurationMs: 850
+      glanceAwayDurationMs: 850,
     },
     speaking: {
       saccadeIntervalMs: { min: 620, max: 1260 },
@@ -368,7 +374,7 @@ export const avatarLookAtTuning = {
       focusHoldMs: { min: 1000, max: 1900 },
       eyeContactBias: 0.82,
       glanceAwayChance: 0.07,
-      glanceAwayDurationMs: 620
+      glanceAwayDurationMs: 620,
     },
     listening: {
       saccadeIntervalMs: { min: 760, max: 1500 },
@@ -376,7 +382,7 @@ export const avatarLookAtTuning = {
       focusHoldMs: { min: 1200, max: 2200 },
       eyeContactBias: 0.76,
       glanceAwayChance: 0.05,
-      glanceAwayDurationMs: 720
+      glanceAwayDurationMs: 720,
     },
     thinking: {
       saccadeIntervalMs: { min: 820, max: 1600 },
@@ -384,7 +390,7 @@ export const avatarLookAtTuning = {
       focusHoldMs: { min: 900, max: 1500 },
       eyeContactBias: 0.24,
       glanceAwayChance: 0,
-      glanceAwayDurationMs: 0
+      glanceAwayDurationMs: 0,
     },
     userFocus: {
       saccadeIntervalMs: { min: 720, max: 1420 },
@@ -392,20 +398,23 @@ export const avatarLookAtTuning = {
       focusHoldMs: { min: 1150, max: 2100 },
       eyeContactBias: 0.9,
       glanceAwayChance: 0.03,
-      glanceAwayDurationMs: 520
+      glanceAwayDurationMs: 520,
+    },
+  } satisfies Record<
+    LookAtMode,
+    {
+      saccadeIntervalMs: { min: number; max: number }
+      saccadeAmplitude: { yaw: number; pitch: number }
+      focusHoldMs: { min: number; max: number }
+      eyeContactBias: number
+      glanceAwayChance: number
+      glanceAwayDurationMs: number
     }
-  } satisfies Record<LookAtMode, {
-    saccadeIntervalMs: { min: number; max: number }
-    saccadeAmplitude: { yaw: number; pitch: number }
-    focusHoldMs: { min: number; max: number }
-    eyeContactBias: number
-    glanceAwayChance: number
-    glanceAwayDurationMs: number
-  }>
+  >,
 } as const
 
 const generatorWeights = (
-  weights: Record<HeadMotionGeneratorId, number>
+  weights: Record<HeadMotionGeneratorId, number>,
 ): Record<HeadMotionGeneratorId, number> => weights
 
 export const headMotionTuning = {
@@ -424,8 +433,8 @@ export const headMotionTuning = {
         slowYaw: 0.42,
         speakingNod: 0,
         listeningTilt: 0,
-        thinkingDrift: 0
-      })
+        thinkingDrift: 0,
+      }),
     },
     listening: {
       generatorWeights: generatorWeights({
@@ -434,8 +443,8 @@ export const headMotionTuning = {
         slowYaw: 0.16,
         speakingNod: 0,
         listeningTilt: 1,
-        thinkingDrift: 0
-      })
+        thinkingDrift: 0,
+      }),
     },
     thinking: {
       generatorWeights: generatorWeights({
@@ -444,8 +453,8 @@ export const headMotionTuning = {
         slowYaw: 0.12,
         speakingNod: 0,
         listeningTilt: 0,
-        thinkingDrift: 1
-      })
+        thinkingDrift: 1,
+      }),
     },
     speaking: {
       generatorWeights: generatorWeights({
@@ -454,8 +463,8 @@ export const headMotionTuning = {
         slowYaw: 0.25,
         speakingNod: 1,
         listeningTilt: 0,
-        thinkingDrift: 0
-      })
+        thinkingDrift: 0,
+      }),
     },
     userFocus: {
       generatorWeights: generatorWeights({
@@ -464,17 +473,20 @@ export const headMotionTuning = {
         slowYaw: 0.12,
         speakingNod: 0,
         listeningTilt: 0.42,
-        thinkingDrift: 0
-      })
-    }
-  } satisfies Record<HeadMotionProfile, { generatorWeights: Record<HeadMotionGeneratorId, number> }>,
+        thinkingDrift: 0,
+      }),
+    },
+  } satisfies Record<
+    HeadMotionProfile,
+    { generatorWeights: Record<HeadMotionGeneratorId, number> }
+  >,
   generators: {
     idleDrift: {
       yawAmplitude: 0.026,
       pitchAmplitude: 0.015,
       rollAmplitude: 0.018,
       intervalMs: { min: 1600, max: 3600 },
-      smoothing: 1.8
+      smoothing: 1.8,
     },
     microTilt: {
       yawAmplitude: 0.012,
@@ -482,30 +494,30 @@ export const headMotionTuning = {
       rollAmplitude: 0.022,
       intervalMs: { min: 2400, max: 5200 },
       durationMs: { min: 420, max: 780 },
-      releaseSmoothing: 5.2
+      releaseSmoothing: 5.2,
     },
     slowYaw: {
       amplitude: 0.02,
       intervalMs: { min: 2800, max: 6200 },
-      smoothing: 1.25
+      smoothing: 1.25,
     },
     speakingNod: {
       pitchAmplitude: 0.026,
       intervalMs: { min: 900, max: 1700 },
       durationMs: { min: 260, max: 460 },
-      releaseSmoothing: 8
+      releaseSmoothing: 8,
     },
     listeningTilt: {
       pose: { yaw: 0.005, pitch: 0.018, roll: 0.026 },
       smoothing: 3.8,
-      nextEventMs: 0
+      nextEventMs: 0,
     },
     thinkingDrift: {
       pose: { yaw: -0.012, pitch: -0.006, roll: -0.034 },
       smoothing: 2.9,
-      nextEventMs: 0
-    }
-  }
+      nextEventMs: 0,
+    },
+  },
 } as const
 
 /**
@@ -539,7 +551,7 @@ export const earBehaviorTuning = {
   // so positive spread always fans the ear OUTWARD.
   calibration: {
     tipMinLength: 0.015,
-    fallbackAxis: 'y' as 'x' | 'y' | 'z'
+    fallbackAxis: 'y' as 'x' | 'y' | 'z',
   },
   // Randomized initial per-ear phase so the two ears never share a timeline.
   asymmetry: { minOffsetMs: 200, maxOffsetMs: 2400 },
@@ -556,7 +568,7 @@ export const earBehaviorTuning = {
     afk: { lift: -0.18, spread: -0.03 },
     listening: { lift: 0.62, spread: 0.12 },
     thinking: { lift: 0.28, spread: 0.16 },
-    speaking: { lift: 0.08, spread: 0.02 }
+    speaking: { lift: 0.08, spread: 0.02 },
   } satisfies Record<EarBehaviorProfile, EarPose>,
   profiles: {
     idle: {
@@ -565,7 +577,7 @@ export const earBehaviorTuning = {
       holdMs: { min: 1400, max: 4200 },
       transitionMs: { min: 420, max: 900 },
       curiosityChance: 0.5,
-      activeGestures: ['curious', 'perk', 'tilt', 'emphasis']
+      activeGestures: ['curious', 'perk', 'tilt', 'emphasis'],
     },
     afk: {
       amplitude: 0.26,
@@ -573,7 +585,7 @@ export const earBehaviorTuning = {
       holdMs: { min: 5200, max: 11000 },
       transitionMs: { min: 1100, max: 2200 },
       curiosityChance: 0.22,
-      activeGestures: ['perk', 'droop', 'tilt']
+      activeGestures: ['perk', 'droop', 'tilt'],
     },
     listening: {
       amplitude: 0.46,
@@ -581,7 +593,7 @@ export const earBehaviorTuning = {
       holdMs: { min: 700, max: 1700 },
       transitionMs: { min: 240, max: 520 },
       curiosityChance: 0.72,
-      activeGestures: ['perk', 'curious', 'tilt', 'emphasis']
+      activeGestures: ['perk', 'curious', 'tilt', 'emphasis'],
     },
     thinking: {
       amplitude: 0.52,
@@ -589,7 +601,7 @@ export const earBehaviorTuning = {
       holdMs: { min: 620, max: 1500 },
       transitionMs: { min: 280, max: 620 },
       curiosityChance: 0.85,
-      activeGestures: ['curious', 'tilt', 'perk', 'flatten', 'emphasis']
+      activeGestures: ['curious', 'tilt', 'perk', 'flatten', 'emphasis'],
     },
     speaking: {
       amplitude: 0.26,
@@ -597,16 +609,19 @@ export const earBehaviorTuning = {
       holdMs: { min: 1400, max: 3000 },
       transitionMs: { min: 380, max: 760 },
       curiosityChance: 0.3,
-      activeGestures: ['emphasis', 'perk']
+      activeGestures: ['emphasis', 'perk'],
+    },
+  } satisfies Record<
+    EarBehaviorProfile,
+    {
+      amplitude: number
+      spreadAmplitude: number
+      holdMs: { min: number; max: number }
+      transitionMs: { min: number; max: number }
+      curiosityChance: number
+      activeGestures: readonly EarGestureId[]
     }
-  } satisfies Record<EarBehaviorProfile, {
-    amplitude: number
-    spreadAmplitude: number
-    holdMs: { min: number; max: number }
-    transitionMs: { min: number; max: number }
-    curiosityChance: number
-    activeGestures: readonly EarGestureId[]
-  }>,
+  >,
   // Normalized pose library. `relaxed` is the neutral return pose picked when a
   // scheduled event is not a curiosity moment.
   gestures: {
@@ -616,7 +631,7 @@ export const earBehaviorTuning = {
     tilt: { lift: 0.22, spread: 0.42 },
     flatten: { lift: -0.5, spread: -0.06 },
     emphasis: { lift: 0.32, spread: 0.1 },
-    droop: { lift: -0.3, spread: -0.1 }
+    droop: { lift: -0.3, spread: -0.1 },
   } satisfies Record<EarGestureId, EarPose>,
   // Emotion modifiers are ADDED to the base pose (they shift it, not replace it).
   // Keyed by canonical emotion ids from emotion_manifest.json; unlisted emotions
@@ -632,6 +647,6 @@ export const earBehaviorTuning = {
     sad: { lift: -0.45, spread: -0.12, amplitudeScale: 0.85 },
     crying: { lift: -0.5, spread: -0.14, amplitudeScale: 0.8 },
     fear: { lift: -0.35, spread: -0.05, amplitudeScale: 0.9 },
-    embarrassed: { lift: -0.4, spread: -0.08, amplitudeScale: 0.85 }
-  } as Record<string, { lift: number; spread: number; amplitudeScale: number }>
+    embarrassed: { lift: -0.4, spread: -0.08, amplitudeScale: 0.85 },
+  } as Record<string, { lift: number; spread: number; amplitudeScale: number }>,
 } as const

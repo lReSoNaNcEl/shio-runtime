@@ -6,7 +6,7 @@ import type {
   ConversationPresencePauseHint,
   ConversationPresencePhase,
   ConversationPresenceReaction,
-  ConversationPresenceReplyLength
+  ConversationPresenceReplyLength,
 } from '../../shared/runtime/characterState'
 
 export interface ConversationPresenceInput {
@@ -25,7 +25,7 @@ export class ConversationPresenceRuntime {
     pauseHint: 'none',
     replyLength: 'veryShort',
     responsePhase: 'waiting',
-    lastUpdate: 0
+    lastUpdate: 0,
   }
 
   update(input: ConversationPresenceInput): CharacterConversationPresenceState {
@@ -42,7 +42,7 @@ export class ConversationPresenceRuntime {
       pauseHint: this.classifyPauseHint(input.phase, emphasis, reaction),
       replyLength,
       responsePhase: input.phase,
-      lastUpdate: Date.now()
+      lastUpdate: Date.now(),
     }
     this.state = next
     return { ...next }
@@ -64,7 +64,7 @@ export class ConversationPresenceRuntime {
   private classifyEngagement(
     replyLength: ConversationPresenceReplyLength,
     phase: ConversationPresencePhase,
-    userText: string
+    userText: string,
   ): ConversationPresenceEngagement {
     if (phase === 'listening' || phase === 'speaking') return 'high'
     if (replyLength === 'long' || replyLength === 'veryLong') return 'high'
@@ -75,9 +75,10 @@ export class ConversationPresenceRuntime {
   private classifyHesitation(
     phase: ConversationPresencePhase,
     text: string,
-    emotionKey?: string
+    emotionKey?: string,
   ): ConversationPresenceHesitation {
-    if (phase !== 'startingSpeech' && phase !== 'preparingReply' && phase !== 'thinking') return 'none'
+    if (phase !== 'startingSpeech' && phase !== 'preparingReply' && phase !== 'thinking')
+      return 'none'
     if (emotionKey === 'surprised' || emotionKey === 'gasp') return 'surprised'
     if (text.includes('?') || emotionKey === 'fear') return 'thinking'
     if (this.words(text) > 35) return 'brief'
@@ -87,21 +88,31 @@ export class ConversationPresenceRuntime {
   private classifyEmphasis(text: string, emotionKey?: string): ConversationPresenceEmphasis {
     const lower = text.toLowerCase()
     if (text.trim().endsWith('?')) return 'question'
-    if (emotionKey === 'happy' || emotionKey === 'laugh' || emotionKey === 'chuckle') return 'joking'
+    if (emotionKey === 'happy' || emotionKey === 'laugh' || emotionKey === 'chuckle')
+      return 'joking'
     if (emotionKey === 'surprised' || emotionKey === 'gasp') return 'confused'
-    if (emotionKey === 'angry' || lower.includes('важно') || lower.includes('опас')) return 'warning'
-    if (lower.includes('потому') || lower.includes('например') || lower.includes('значит')) return 'explaining'
-    if (lower.includes('соглас') || lower.includes('верно') || lower.includes('точно')) return 'agreement'
+    if (emotionKey === 'angry' || lower.includes('важно') || lower.includes('опас'))
+      return 'warning'
+    if (lower.includes('потому') || lower.includes('например') || lower.includes('значит'))
+      return 'explaining'
+    if (lower.includes('соглас') || lower.includes('верно') || lower.includes('точно'))
+      return 'agreement'
     if (lower.includes('не соглас') || lower.includes('наоборот')) return 'disagreement'
-    if (lower.includes('отлично') || lower.includes('круто') || lower.includes('ура')) return 'celebrating'
+    if (lower.includes('отлично') || lower.includes('круто') || lower.includes('ура'))
+      return 'celebrating'
     return 'none'
   }
 
-  private classifyReaction(text: string, userText: string, emotionKey?: string): ConversationPresenceReaction {
+  private classifyReaction(
+    text: string,
+    userText: string,
+    emotionKey?: string,
+  ): ConversationPresenceReaction {
     const lower = `${text} ${userText}`.toLowerCase()
     if (emotionKey === 'laugh' || emotionKey === 'chuckle' || lower.includes('ха')) return 'amused'
     if (emotionKey === 'warm' || emotionKey === 'happy') return 'playful'
-    if (emotionKey === 'sad' || emotionKey === 'crying' || lower.includes('проблем')) return 'concerned'
+    if (emotionKey === 'sad' || emotionKey === 'crying' || lower.includes('проблем'))
+      return 'concerned'
     if (emotionKey === 'surprised' || emotionKey === 'gasp') return 'impressed'
     if (lower.includes('?')) return 'curious'
     if (lower.includes('можно') || lower.includes('давай')) return 'confident'
@@ -112,7 +123,7 @@ export class ConversationPresenceRuntime {
   private classifyPauseHint(
     phase: ConversationPresencePhase,
     emphasis: ConversationPresenceEmphasis,
-    reaction: ConversationPresenceReaction
+    reaction: ConversationPresenceReaction,
   ): ConversationPresencePauseHint {
     if (phase === 'startingSpeech') return 'beforeSpeech'
     if (emphasis === 'explaining') return 'beforeExplanation'

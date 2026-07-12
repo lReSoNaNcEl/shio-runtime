@@ -1,4 +1,9 @@
-import { LLM_PROVIDER_IDS, type LlmConfig, type LlmProviderId, type ProviderCredentials } from '../../../shared/llmProviders'
+import {
+  LLM_PROVIDER_IDS,
+  type LlmConfig,
+  type LlmProviderId,
+  type ProviderCredentials,
+} from '../../../shared/llmProviders'
 
 export const GROQ_DEFAULT_MODEL = 'qwen/qwen3.6-27b'
 
@@ -14,7 +19,13 @@ export function defaultLlmConfig(): LlmConfig {
     activeProvider: 'groq',
     providers,
     roles: {
-      backlogSelector: { enabled: false, providerId: '', model: '', timeoutMs: 2_000, minimumConfidence: 0.72 }
-    }
+      backlogSelector: {
+        enabled: false,
+        providerId: '',
+        model: '',
+        timeoutMs: 2_000,
+        minimumConfidence: 0.72,
+      },
+    },
   }
 }

@@ -1,4 +1,8 @@
-export { ModelFetchError } from './modelFetchError'
 export type { ModelFetchErrorKind } from './modelFetchError'
+export { ModelFetchError } from './modelFetchError'
+export {
+  networkErrorMessage,
+  normalizeHttpErrorMessage,
+  PROVIDER_DISPLAY_NAMES,
+} from './providerMessages'
 export { LlmResponseError } from './responseError'
-export { PROVIDER_DISPLAY_NAMES, normalizeHttpErrorMessage, networkErrorMessage } from './providerMessages'

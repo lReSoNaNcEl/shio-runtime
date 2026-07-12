@@ -25,8 +25,13 @@ interface ActivePlayback extends PlaybackSession {
 }
 
 export class ParallelPlaybackError extends Error {
-  constructor(readonly activeTurnId: string, readonly requestedTurnId: string) {
-    super(`Parallel playback rejected: activeTurnId=${activeTurnId} requestedTurnId=${requestedTurnId}`)
+  constructor(
+    readonly activeTurnId: string,
+    readonly requestedTurnId: string,
+  ) {
+    super(
+      `Parallel playback rejected: activeTurnId=${activeTurnId} requestedTurnId=${requestedTurnId}`,
+    )
     this.name = 'ParallelPlaybackError'
   }
 }
@@ -49,7 +54,9 @@ export class AudioPlayer {
   async play(wavBuffer: ArrayBuffer, options: AudioPlayOptions): Promise<PlaybackCompletion> {
     if (wavBuffer.byteLength < 44) throw new Error('Speech audio response is empty or invalid')
     if (this.activePlayback) {
-      console.warn(`[audio] guard activeTurnId=${this.activePlayback.turnId} requestedTurnId=${options.turnId}`)
+      console.warn(
+        `[audio] guard activeTurnId=${this.activePlayback.turnId} requestedTurnId=${options.turnId}`,
+      )
       throw new ParallelPlaybackError(this.activePlayback.turnId, options.turnId)
     }
 
@@ -64,7 +71,7 @@ export class AudioPlayer {
       normalizationReference: 0.12,
       sequence,
       source: null,
-      settle: null
+      settle: null,
     }
     // Reserve ownership synchronously, before decode or the first await.
     this.activePlayback = active
@@ -82,10 +89,14 @@ export class AudioPlayer {
       source.connect(this.analyser)
       this.duration = audioBuffer.duration
 
-      const ended = new Promise<void>((resolve) => { active.settle = resolve })
+      const ended = new Promise<void>((resolve) => {
+        active.settle = resolve
+      })
       source.onended = () => {
         if (this.activePlayback !== active || active.source !== source) {
-          console.debug(`[audio] playbackId=${playbackId} turnId=${options.turnId} stale-ended ignored`)
+          console.debug(
+            `[audio] playbackId=${playbackId} turnId=${options.turnId} stale-ended ignored`,
+          )
           return
         }
         console.log(`[audio] playbackId=${playbackId} turnId=${options.turnId} ended`)
@@ -101,7 +112,7 @@ export class AudioPlayer {
         turnId: options.turnId,
         analyser: this.analyser,
         startedAt: active.startedAt,
-        normalizationReference: active.normalizationReference
+        normalizationReference: active.normalizationReference,
       })
       this.assertOwner(active)
       const startedAt = this.audioCtx.currentTime
@@ -132,7 +143,11 @@ export class AudioPlayer {
     const source = active.source
     if (source) {
       source.onended = null
-      try { source.stop() } catch { /* already stopped */ }
+      try {
+        source.stop()
+      } catch {
+        /* already stopped */
+      }
     }
     active.settle?.()
   }
@@ -142,26 +157,40 @@ export class AudioPlayer {
     this.stop()
   }
 
-  isPlaying(): boolean { return this.activePlayback?.source !== null && Boolean(this.activePlayback) }
-  isBusy(): boolean { return this.activePlayback !== null }
+  isPlaying(): boolean {
+    return this.activePlayback?.source !== null && Boolean(this.activePlayback)
+  }
+  isBusy(): boolean {
+    return this.activePlayback !== null
+  }
 
-  getPlaybackDebug(): { playing: boolean; activePlaybackId: number; playbackId: string; turnId: string } {
+  getPlaybackDebug(): {
+    playing: boolean
+    activePlaybackId: number
+    playbackId: string
+    turnId: string
+  } {
     return {
       playing: this.isPlaying(),
       activePlaybackId: this.activePlayback?.sequence ?? 0,
       playbackId: this.activePlayback?.playbackId ?? '',
-      turnId: this.activePlayback?.turnId ?? ''
+      turnId: this.activePlayback?.turnId ?? '',
     }
   }
 
   private assertOwner(active: ActivePlayback): void {
-    if (this.activePlayback !== active) throw new Error(`Playback ownership lost for turnId=${active.turnId}`)
+    if (this.activePlayback !== active)
+      throw new Error(`Playback ownership lost for turnId=${active.turnId}`)
   }
 
   private disposeSource(source: AudioBufferSourceNode | null, playbackId: string): void {
     if (!source) return
     source.onended = null
-    try { source.disconnect() } catch { /* not connected */ }
+    try {
+      source.disconnect()
+    } catch {
+      /* not connected */
+    }
     console.debug(`[audio] playbackId=${playbackId} disposed`)
   }
 

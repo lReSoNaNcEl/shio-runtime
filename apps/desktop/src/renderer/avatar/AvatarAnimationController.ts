@@ -1,5 +1,10 @@
-import { VrmModel, type VrmBodyActionDebugState } from '../three/VrmModel'
-import { getAnimation, getAnimationUrl, getRootMotionPolicy, type AnimationId } from './animationManifest'
+import type { VrmBodyActionDebugState, VrmModel } from '../three/VrmModel'
+import {
+  type AnimationId,
+  getAnimation,
+  getAnimationUrl,
+  getRootMotionPolicy,
+} from './animationManifest'
 
 export type AnimationPlaybackStatus = 'idle' | 'loading' | 'playing' | 'failed'
 
@@ -48,7 +53,7 @@ export class AvatarAnimationController {
   private assetCacheStats = {
     fetches: 0,
     hits: 0,
-    misses: 0
+    misses: 0,
   }
   private failedIds = new Set<string>()
   private requestId = 0
@@ -85,13 +90,18 @@ export class AvatarAnimationController {
    * Play a specific manifest animation directly by id (debug/preview path).
    * Bypasses the semantic pools and plays exactly the requested clip.
    */
-  async playManifest(id: string, loop: boolean, fallbackId?: AnimationId, blendDuration = 0.3): Promise<void>
+  async playManifest(
+    id: string,
+    loop: boolean,
+    fallbackId?: AnimationId,
+    blendDuration = 0.3,
+  ): Promise<void>
   async playManifest(id: string, loop: boolean, options?: PlayManifestOptions): Promise<void>
   async playManifest(
     id: string,
     loop: boolean,
     fallbackOrOptions?: AnimationId | PlayManifestOptions,
-    legacyBlendDuration = 0.3
+    legacyBlendDuration = 0.3,
   ): Promise<void> {
     const options: PlayManifestOptions =
       typeof fallbackOrOptions === 'object' && fallbackOrOptions !== null
@@ -111,22 +121,32 @@ export class AvatarAnimationController {
     // would reset the action to t=0 and crossfade, producing a visible jerk / hip
     // pop ("falls from the ceiling"). Keep the already-playing loop as-is. This is
     // exactly what happens when the idle orchestrator re-picks the current pose.
-    if (!forceReplay && loop && this.activeAnimationId === id && this.vrmModel.isAnimationPlaying()) {
+    if (
+      !forceReplay &&
+      loop &&
+      this.activeAnimationId === id &&
+      this.vrmModel.isAnimationPlaying()
+    ) {
       this.playbackStatus = 'playing'
-      console.log(`[PLAYBACKREQ] final guard ignored already-active loop "${id}" source=${options.requestSource ?? 'unknown'}`)
+      console.log(
+        `[PLAYBACKREQ] final guard ignored already-active loop "${id}" source=${options.requestSource ?? 'unknown'}`,
+      )
       return
     }
 
     if (!this.vrmModel.isLoaded() || !entry || !url) {
       if (entry && !url) this.failedIds.add(id)
       this.playbackStatus = entry && !url ? 'failed' : this.playbackStatus
-      if (fallbackId && fallbackId !== id) void this.playManifest(fallbackId, true, undefined, blendDuration)
+      if (fallbackId && fallbackId !== id)
+        void this.playManifest(fallbackId, true, undefined, blendDuration)
       return
     }
 
     const requestId = ++this.requestId
     this.playbackStatus = 'loading'
-    console.log(`[ANIMDBG] playManifest id=${id} loop=${loop} blend=${blendDuration} source=${options.requestSource ?? 'unknown'} forceReplay=${forceReplay} (was ${this.activeAnimationId})`)
+    console.log(
+      `[ANIMDBG] playManifest id=${id} loop=${loop} blend=${blendDuration} source=${options.requestSource ?? 'unknown'} forceReplay=${forceReplay} (was ${this.activeAnimationId})`,
+    )
 
     try {
       const buffer = await this.loadBuffer(url)
@@ -144,7 +164,7 @@ export class AvatarAnimationController {
         previousAnimationId: options.previousAnimationId ?? this.previousAnimationId,
         forceReplay,
         frame: options.frame,
-        rootMotionPolicy: getRootMotionPolicy(entry)
+        rootMotionPolicy: getRootMotionPolicy(entry),
       })
     } catch (e) {
       if (requestId !== this.requestId) return
@@ -153,7 +173,8 @@ export class AvatarAnimationController {
       this.activeAnimationId = null
       this.activeFileName = null
       this.playbackStatus = 'failed'
-      if (fallbackId && fallbackId !== id) void this.playManifest(fallbackId, true, undefined, blendDuration)
+      if (fallbackId && fallbackId !== id)
+        void this.playManifest(fallbackId, true, undefined, blendDuration)
     }
   }
 
@@ -174,7 +195,7 @@ export class AvatarAnimationController {
       isPlaybackActive: this.vrmModel.isAnimationPlaying(),
       bodyActions: this.vrmModel.getBodyActionDebugState(),
       assetCache: { ...this.assetCacheStats },
-      failedAnimationIds: [...this.failedIds]
+      failedAnimationIds: [...this.failedIds],
     }
   }
 

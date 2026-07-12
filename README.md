@@ -62,22 +62,37 @@ npm run desktop:install
 
 ### 2. Create the API virtual environment
 
+Run from the repository root. This creates `services/api/.venv` (using a system
+Python 3.12) and installs runtime + dev dependencies into it:
+
 ```powershell
-cd services\api
-
-python -m venv venv
-.\venv\Scripts\Activate.ps1
-
-pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu128
-pip install -r requirements.txt
-
-Copy-Item .env.example .env
-
-cd ..\..
+npm run api:install:dev
 ```
 
-The `api:*` npm commands use the active `python` executable from `PATH`. Keep the
-virtual environment activated in the terminal where API commands are executed.
+Then create the local environment file and install matching PyTorch wheels for your
+platform. On Windows with an NVIDIA GPU:
+
+```powershell
+Copy-Item services\api\.env.example services\api\.env
+
+services\api\.venv\Scripts\python.exe -m pip install --force-reinstall --no-deps "torch==2.11.0+cu128" "torchaudio==2.11.0+cu128" --index-url https://download.pytorch.org/whl/cu128
+```
+
+On macOS (CPU/MPS wheel, no CUDA index URL):
+
+```bash
+cp services/api/.env.example services/api/.env
+services/api/.venv/bin/python -m pip install torch torchaudio
+```
+
+The `api:*` npm commands automatically use the local virtual environment
+(`services/api/.venv`, or an existing legacy `services/api/venv`). No manual
+`activate` is required. To point the commands at a different interpreter, set
+`SHIO_API_PYTHON`. Run `npm run api:doctor` to see which interpreter is selected.
+
+> **PyTorch stays platform-specific.** The launcher does not install a CUDA wheel
+> automatically. Install it explicitly after `npm run api:install:dev` when CUDA is
+> the intended runtime mode.
 
 ### 3. Download voice references
 
@@ -85,7 +100,7 @@ Voice reference files are not stored in Git. After a fresh clone the voices are
 missing — `/voices` lists them as `available:false`, and voice-dependent synthesis
 is unavailable (the default voice has no reference files either) until you fetch them.
 
-With the API virtual environment active, run from the repository root:
+Run from the repository root:
 
 ```powershell
 npm run api:voices:sync
@@ -109,14 +124,11 @@ Use two terminals.
 **Terminal 1 — API**
 
 ```powershell
-cd services\api
-.\venv\Scripts\Activate.ps1
-cd ..\..
-
 npm run api:dev
 ```
 
-The API starts at `http://localhost:8000`.
+The API starts at `http://localhost:8000`. Stop it with `Ctrl+C`; the launcher
+forwards the signal so uvicorn shuts down and port 8000 is released.
 
 > **First run may be slow.** On the first `api:dev` the F5-TTS model (`F5_MODEL_ID`,
 > default `Misha24-10/F5-TTS_RUSSIAN`) and the ASR model are downloaded into the
@@ -140,21 +152,87 @@ npm run desktop:build
 npm run desktop:preview
 npm run desktop:start
 npm run desktop:typecheck
+npm run desktop:check
+npm run desktop:check:fix
+npm run desktop:lint
+npm run desktop:format
+npm run desktop:format:check
+npm run desktop:imports:check
 ```
+
+Desktop code quality is owned by [Biome](https://biomejs.dev)
+(`apps/desktop/biome.jsonc`): it handles JS/TS/JSX formatting,
+linting, React checks, and import ordering. `npm run desktop:check` runs
+formatter, linter, and import sorting together; `desktop:check:fix` applies the
+safe fixes. Tooling ownership across the monorepo:
+
+- Desktop (`apps/desktop`) → Biome
+- API (`services/api`, Python) → Ruff
+- TypeScript types → `tsc` (`npm run desktop:typecheck`)
 
 ### API
 
-The API virtual environment must be active.
+No manual virtualenv activation is required — every command resolves the local
+interpreter automatically.
 
 ```text
 npm run api:install
+npm run api:install:dev
+npm run api:voices:sync
+npm run api:dev
+npm run api:lint
+npm run api:lint:fix
+npm run api:format
+npm run api:format:check
+npm run api:test
+npm run api:doctor
+```
+
+On macOS the same commands apply, e.g.:
+
+```bash
+npm run api:install:dev
 npm run api:voices:sync
 npm run api:dev
 ```
 
-### Repository checks
+Optional manual activation (only for working with Python directly) still works:
+
+```bash
+source services/api/.venv/bin/activate
+```
+
+```powershell
+services\api\.venv\Scripts\Activate.ps1
+```
+
+### Repository (aggregated)
+
+These root commands fan out across both applications:
 
 ```text
+npm run check         # lint + format:check + typecheck + test (no autofix)
+npm run lint          # desktop:lint + api:lint
+npm run lint:fix      # desktop:lint:fix + api:lint:fix
+npm run format        # desktop:format + api:format
+npm run format:check  # desktop:format:check + api:format:check
+npm run typecheck     # desktop:typecheck
+npm run test          # api:test
+npm run build         # desktop:build (kept separate from check; heavier)
+```
+
+`npm run check` is the safe static gate (no autofixes); run `npm run build`
+separately when a production Desktop build is needed.
+
+### Repository checks (per application)
+
+```text
+npm run desktop:check
+npm run desktop:format:check
+npm run desktop:imports:check
+npm run api:lint
+npm run api:format:check
+npm run api:test
 npm run typecheck
 npm run build
 ```
@@ -177,7 +255,17 @@ points to the service located in `services/api`.
 
 ### API host and port
 
-Configured through `HOST` / `PORT` in `services/api/.env` (default `0.0.0.0:8000`).
+The launcher uses `SHIO_API_HOST` / `SHIO_API_PORT` and defaults to
+`127.0.0.1:8000`. `http://localhost:8000` is the browser URL. Use
+`SHIO_API_HOST=0.0.0.0` only for an intentional LAN, Docker, or VM bind:
+
+```powershell
+$env:SHIO_API_HOST = "0.0.0.0"
+npm run api:dev
+```
+
+`127.0.0.1` is the local bind address; `0.0.0.0` means “listen on all interfaces”
+and is not a browser URL.
 
 ### Manifests (single source of truth)
 
@@ -236,11 +324,11 @@ WS   /ws
 
 ## API checks
 
-Run from `services/api` with its virtual environment active:
+Run from the repository root (no activation required):
 
 ```powershell
-ruff check .
-python -m pytest tests
+npm run api:lint
+npm run api:test
 ```
 
 Then verify the read-only endpoints respond: `/health`, `/voices`, `/emotions`.

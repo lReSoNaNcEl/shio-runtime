@@ -19,12 +19,16 @@ var RuntimeStateInvariantValidator = class {
       label: "speaking \u2192 LipSync attached",
       suspectedOwner: "LipSync / AvatarController.applyStateEffect(attachLipSync)",
       evaluate: (i) => {
-        if (!i.isSpeaking || !i.playbackActive) return { ok: true, detail: "not speaking / no audio" };
+        if (!i.isSpeaking || !i.playbackActive)
+          return { ok: true, detail: "not speaking / no audio" };
         if (this.speakingSince === null) return { ok: true, detail: "speaking just started" };
         const elapsed = i.now - this.speakingSince;
         if (elapsed < 800) return { ok: true, detail: `warming up ${Math.round(elapsed)}ms` };
         const moved = this.speakingMouthMax > 0.02;
-        return { ok: moved, detail: moved ? `mouth peak ${this.speakingMouthMax.toFixed(2)}` : `mouth flat 0 for ${Math.round(elapsed)}ms (LipSync not attached?)` };
+        return {
+          ok: moved,
+          detail: moved ? `mouth peak ${this.speakingMouthMax.toFixed(2)}` : `mouth flat 0 for ${Math.round(elapsed)}ms (LipSync not attached?)`
+        };
       }
     },
     {
@@ -33,7 +37,10 @@ var RuntimeStateInvariantValidator = class {
       suspectedOwner: "ConversationRuntime terminal cleanup / AudioPlayer active playback",
       evaluate: (i) => {
         if (!i.isSpeaking) return { ok: true, detail: "not speaking" };
-        return { ok: i.playbackActive, detail: i.playbackActive ? "audio active" : "speaking but AudioPlayer idle" };
+        return {
+          ok: i.playbackActive,
+          detail: i.playbackActive ? "audio active" : "speaking but AudioPlayer idle"
+        };
       }
     },
     {
@@ -42,9 +49,15 @@ var RuntimeStateInvariantValidator = class {
       suspectedOwner: "AudioPlayer",
       evaluate: (i) => {
         if (!i.playbackActive) {
-          return { ok: i.activePlaybackId === 0, detail: i.activePlaybackId === 0 ? "idle" : `idle but id=${i.activePlaybackId}` };
+          return {
+            ok: i.activePlaybackId === 0,
+            detail: i.activePlaybackId === 0 ? "idle" : `idle but id=${i.activePlaybackId}`
+          };
         }
-        return { ok: i.activePlaybackId > 0, detail: i.activePlaybackId > 0 ? `id=${i.activePlaybackId}` : "playing but no valid id" };
+        return {
+          ok: i.activePlaybackId > 0,
+          detail: i.activePlaybackId > 0 ? `id=${i.activePlaybackId}` : "playing but no valid id"
+        };
       }
     },
     {
@@ -54,7 +67,10 @@ var RuntimeStateInvariantValidator = class {
       evaluate: (i) => {
         if (i.bodyTransitionRemaining > 0) return { ok: true, detail: "cross-fade in progress" };
         const ok = i.bodyWeightedActionCount <= 1;
-        return { ok, detail: ok ? `${i.bodyWeightedActionCount} weighted` : `${i.bodyWeightedActionCount} weighted actions, no transition` };
+        return {
+          ok,
+          detail: ok ? `${i.bodyWeightedActionCount} weighted` : `${i.bodyWeightedActionCount} weighted actions, no transition`
+        };
       }
     },
     {
@@ -64,7 +80,10 @@ var RuntimeStateInvariantValidator = class {
       evaluate: (i) => {
         if (i.characterMode !== "idle") return { ok: true, detail: `mode=${i.characterMode}` };
         const ok = i.avatarMode !== "speaking";
-        return { ok, detail: ok ? `avatar=${i.avatarMode}` : "character idle but avatar still speaking" };
+        return {
+          ok,
+          detail: ok ? `avatar=${i.avatarMode}` : "character idle but avatar still speaking"
+        };
       }
     },
     {
@@ -72,8 +91,12 @@ var RuntimeStateInvariantValidator = class {
       label: "conversation phase speaking \u2192 playback exists",
       suspectedOwner: "ConversationRuntime",
       evaluate: (i) => {
-        if (i.conversationResponsePhase !== "speaking") return { ok: true, detail: `phase=${i.conversationResponsePhase}` };
-        return { ok: i.playbackActive, detail: i.playbackActive ? "audio active" : "phase speaking but no playback" };
+        if (i.conversationResponsePhase !== "speaking")
+          return { ok: true, detail: `phase=${i.conversationResponsePhase}` };
+        return {
+          ok: i.playbackActive,
+          detail: i.playbackActive ? "audio active" : "phase speaking but no playback"
+        };
       }
     },
     {
@@ -83,7 +106,10 @@ var RuntimeStateInvariantValidator = class {
       evaluate: (i) => {
         if (i.lookAtTarget !== "none") return { ok: true, detail: `target=${i.lookAtTarget}` };
         const still = Math.abs(i.lookAtEyeYaw) <= EPS_ANGLE && Math.abs(i.lookAtEyePitch) <= EPS_ANGLE;
-        return { ok: still, detail: still ? "eyes still" : `eyes moving yaw=${i.lookAtEyeYaw.toFixed(3)} pitch=${i.lookAtEyePitch.toFixed(3)} while disabled` };
+        return {
+          ok: still,
+          detail: still ? "eyes still" : `eyes moving yaw=${i.lookAtEyeYaw.toFixed(3)} pitch=${i.lookAtEyePitch.toFixed(3)} while disabled`
+        };
       }
     },
     {
@@ -91,9 +117,13 @@ var RuntimeStateInvariantValidator = class {
       label: "Head Motion disabled \u2192 no procedural updates",
       suspectedOwner: "HeadMotionRuntime",
       evaluate: (i) => {
-        if (i.headMotionActiveGenerators.length > 0) return { ok: true, detail: `${i.headMotionActiveGenerators.length} generators active` };
+        if (i.headMotionActiveGenerators.length > 0)
+          return { ok: true, detail: `${i.headMotionActiveGenerators.length} generators active` };
         const still = i.headMotionEnergy <= 0.01;
-        return { ok: still, detail: still ? "no motion" : `energy ${i.headMotionEnergy.toFixed(3)} with no active generators` };
+        return {
+          ok: still,
+          detail: still ? "no motion" : `energy ${i.headMotionEnergy.toFixed(3)} with no active generators`
+        };
       }
     },
     {
@@ -101,8 +131,13 @@ var RuntimeStateInvariantValidator = class {
       label: "Expression Mixer is the only facial writer",
       suspectedOwner: "AvatarExpressionMixer",
       evaluate: (i) => {
-        const foreign = [.../* @__PURE__ */ new Set([...i.facialActiveSources, ...i.facialEntrySources])].filter((s) => !KNOWN_FACIAL_SOURCES.has(s));
-        return { ok: foreign.length === 0, detail: foreign.length === 0 ? "all writes via mixer domains" : `foreign facial source(s): ${foreign.join(", ")}` };
+        const foreign = [.../* @__PURE__ */ new Set([...i.facialActiveSources, ...i.facialEntrySources])].filter(
+          (s) => !KNOWN_FACIAL_SOURCES.has(s)
+        );
+        return {
+          ok: foreign.length === 0,
+          detail: foreign.length === 0 ? "all writes via mixer domains" : `foreign facial source(s): ${foreign.join(", ")}`
+        };
       }
     },
     {
@@ -112,7 +147,10 @@ var RuntimeStateInvariantValidator = class {
       evaluate: (i) => {
         if (i.bodyActiveActionCount === 0) return { ok: null, detail: "no body action loaded yet" };
         const ok = i.bodyWeightedActionCount > 0;
-        return { ok, detail: ok ? `${i.bodyWeightedActionCount} weighted action(s)` : `zero weighted actions during ${i.currentBodyAnimation}` };
+        return {
+          ok,
+          detail: ok ? `${i.bodyWeightedActionCount} weighted action(s)` : `zero weighted actions during ${i.currentBodyAnimation}`
+        };
       }
     },
     {
@@ -120,9 +158,13 @@ var RuntimeStateInvariantValidator = class {
       label: "mouth releases after speech",
       suspectedOwner: "LipSync release envelope / AvatarExpressionMixer",
       evaluate: (i) => {
-        if (i.isSpeaking || i.playbackActive) return { ok: true, detail: "speaking / playback active" };
+        if (i.isSpeaking || i.playbackActive)
+          return { ok: true, detail: "speaking / playback active" };
         const ok = i.mouthMax <= 0.4;
-        return { ok, detail: ok ? `mouth ${i.mouthMax.toFixed(2)}` : `mouth high ${i.mouthMax.toFixed(2)} after speech` };
+        return {
+          ok,
+          detail: ok ? `mouth ${i.mouthMax.toFixed(2)}` : `mouth high ${i.mouthMax.toFixed(2)} after speech`
+        };
       }
     },
     {
@@ -132,9 +174,13 @@ var RuntimeStateInvariantValidator = class {
       evaluate: (i) => {
         const required = ["aa", "ih", "ou"];
         const missingCore = required.filter((name) => !i.facialSupportedVisemes.includes(name));
-        if (missingCore.length > 0) return { ok: false, detail: `missing core viseme(s): ${missingCore.join(", ")}` };
+        if (missingCore.length > 0)
+          return { ok: false, detail: `missing core viseme(s): ${missingCore.join(", ")}` };
         const optional = ["ee", "oh"].filter((name) => !i.facialSupportedVisemes.includes(name));
-        return { ok: true, detail: optional.length > 0 ? `optional fallback: ${optional.join(", ")}` : "all five visemes supported" };
+        return {
+          ok: true,
+          detail: optional.length > 0 ? `optional fallback: ${optional.join(", ")}` : "all five visemes supported"
+        };
       }
     },
     {
@@ -154,7 +200,10 @@ var RuntimeStateInvariantValidator = class {
       suspectedOwner: "FacialProfile resolver",
       evaluate: (i) => {
         const ok = Boolean(i.currentFacialProfile && i.currentFacialProfile !== "unknown");
-        return { ok, detail: ok ? `profile=${i.currentFacialProfile}` : "invalid / missing facial profile" };
+        return {
+          ok,
+          detail: ok ? `profile=${i.currentFacialProfile}` : "invalid / missing facial profile"
+        };
       }
     },
     {
@@ -162,7 +211,9 @@ var RuntimeStateInvariantValidator = class {
       label: "facial profile release does not get stuck",
       suspectedOwner: "ExpressionController / AvatarExpressionMixer release lifecycle",
       evaluate: (i) => {
-        const releaseWarning = i.facialStuckWarnings.find((warning) => /emotion|mouth|blink/i.test(warning));
+        const releaseWarning = i.facialStuckWarnings.find(
+          (warning) => /emotion|mouth|blink/i.test(warning)
+        );
         return { ok: !releaseWarning, detail: releaseWarning ?? "no facial release warnings" };
       }
     }
@@ -213,7 +264,13 @@ var RuntimeStateInvariantValidator = class {
         this.failingSince.delete(def.id);
         this.reported.delete(def.id);
       }
-      results.push({ id: def.id, label: def.label, status, detail, suspectedOwner: def.suspectedOwner });
+      results.push({
+        id: def.id,
+        label: def.label,
+        status,
+        detail,
+        suspectedOwner: def.suspectedOwner
+      });
     }
     this.lastHealth = this.buildHealth(input, results);
     return this.lastHealth;
@@ -337,17 +394,35 @@ var cases = [
   {
     name: "INV-05 character idle but avatar speaking",
     expectId: "INV-05-idle-no-speaking-anim",
-    input: withOverrides(HEALTHY, { characterMode: "idle", avatarMode: "speaking", speechStatus: "silent", isSpeaking: false, playbackActive: false, activePlaybackId: 0, conversationResponsePhase: "waiting" })
+    input: withOverrides(HEALTHY, {
+      characterMode: "idle",
+      avatarMode: "speaking",
+      speechStatus: "silent",
+      isSpeaking: false,
+      playbackActive: false,
+      activePlaybackId: 0,
+      conversationResponsePhase: "waiting"
+    })
   },
   {
     name: "INV-06 phase speaking but no playback",
     expectId: "INV-06-phase-speaking-playback",
-    input: withOverrides(HEALTHY, { isSpeaking: false, speechStatus: "synthesizing", playbackActive: false, activePlaybackId: 0, conversationResponsePhase: "speaking" })
+    input: withOverrides(HEALTHY, {
+      isSpeaking: false,
+      speechStatus: "synthesizing",
+      playbackActive: false,
+      activePlaybackId: 0,
+      conversationResponsePhase: "speaking"
+    })
   },
   {
     name: "INV-07 LookAt disabled but eyes moving",
     expectId: "INV-07-lookat-disabled-no-updates",
-    input: withOverrides(HEALTHY, { lookAtTarget: "none", lookAtEyeYaw: 0.12, lookAtEyePitch: 0.03 })
+    input: withOverrides(HEALTHY, {
+      lookAtTarget: "none",
+      lookAtEyeYaw: 0.12,
+      lookAtEyePitch: 0.03
+    })
   },
   {
     name: "INV-08 Head Motion disabled but energy",
@@ -362,7 +437,11 @@ var cases = [
   {
     name: "INV-10 transition ownership gap",
     expectId: "INV-10-transition-ownership",
-    input: withOverrides(HEALTHY, { bodyActiveActionCount: 1, bodyWeightedActionCount: 0, bodyTransitionRemaining: 0.2 })
+    input: withOverrides(HEALTHY, {
+      bodyActiveActionCount: 1,
+      bodyWeightedActionCount: 0,
+      bodyTransitionRemaining: 0.2
+    })
   },
   {
     name: "INV-11 mouth high after speech",
@@ -401,10 +480,14 @@ function testInv01() {
   for (let i = 0; i < 20; i++) {
     health = v.evaluate({ ...flat, now: 1e3 + i * 120, frame: i + 1 });
   }
+  if (!health) throw new Error("health snapshot missing");
   const inv01 = health.invariants.find((r) => r.id === "INV-01-speaking-lipsync");
+  if (!inv01) throw new Error("INV-01 invariant not found in health snapshot");
   const ok = inv01.status === "fail" && health.lastViolation?.id === "INV-01-speaking-lipsync";
-  console.log(`
-[INV-01 speaking\u2192LipSync attached]  ${ok ? "\u2713 detected" : "\u2717 MISSED"}  status=${inv01.status} detail="${inv01.detail}"`);
+  console.log(
+    `
+[INV-01 speaking\u2192LipSync attached]  ${ok ? "\u2713 detected" : "\u2717 MISSED"}  status=${inv01.status} detail="${inv01.detail}"`
+  );
   return ok;
 }
 function main() {
@@ -423,14 +506,18 @@ function main() {
     const failedIds = health.invariants.filter((r) => r.status === "fail").map((r) => r.id);
     if (c.expectId === null) {
       const ok = failedIds.length === 0;
-      console.log(`
-[${c.name}]  ${ok ? "\u2713 no violations" : "\u2717 unexpected: " + failedIds.join(",")}`);
+      console.log(
+        `
+[${c.name}]  ${ok ? "\u2713 no violations" : `\u2717 unexpected: ${failedIds.join(",")}`}`
+      );
       ok ? passed++ : failed++;
     } else {
       const detected = failedIds.includes(c.expectId);
       const owner = health.invariants.find((r) => r.id === c.expectId)?.suspectedOwner;
-      console.log(`
-[${c.name}]  ${detected ? "\u2713 detected" : "\u2717 MISSED"}  expect=${c.expectId} failing=[${failedIds.join(",")}]${detected ? ` owner="${owner}"` : ""}`);
+      console.log(
+        `
+[${c.name}]  ${detected ? "\u2713 detected" : "\u2717 MISSED"}  expect=${c.expectId} failing=[${failedIds.join(",")}]${detected ? ` owner="${owner}"` : ""}`
+      );
       detected ? passed++ : failed++;
     }
   }
@@ -440,6 +527,8 @@ function main() {
 ===== SUMMARY =====`);
   console.log(`cases passed: ${passed}, failed: ${failed}`);
   console.log(`[RUNTIME-INV] warnings emitted: ${warnLog.length}`);
-  console.log(warnLog.length === passed - 1 || warnLog.length >= 9 ? "warnings emitted for each seeded violation \u2713" : `warnings=${warnLog.length}`);
+  console.log(
+    warnLog.length === passed - 1 || warnLog.length >= 9 ? "warnings emitted for each seeded violation \u2713" : `warnings=${warnLog.length}`
+  );
 }
 main();

@@ -11,7 +11,7 @@ export const PROVIDER_PROFILES: readonly ProviderProfile[] = [
   { id: 'cerebras', displayName: 'Cerebras', requiresApiKey: true, modelsRequireApiKey: false },
   { id: 'github', displayName: 'GitHub Models', requiresApiKey: true, modelsRequireApiKey: true },
   { id: 'openrouter', displayName: 'OpenRouter', requiresApiKey: true, modelsRequireApiKey: false },
-  { id: 'mistral', displayName: 'Mistral', requiresApiKey: true, modelsRequireApiKey: true }
+  { id: 'mistral', displayName: 'Mistral', requiresApiKey: true, modelsRequireApiKey: true },
 ]
 
 export function isLlmProviderId(value: string): value is LlmProviderId {

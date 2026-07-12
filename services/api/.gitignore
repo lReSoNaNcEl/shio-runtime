@@ -1,67 +1,8 @@
-# Env
-.env
-.env.local
-.env.*.local
-
-# Python
-__pycache__/
-.pytest_cache/
-.ruff_cache/
-.venv/
-*.py[cod]
-*$py.class
-*.so
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-venv/
-ENV/
-env/
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Models & data
-models/
+# Downloaded voice reference assets
 voices/*/*/reference.wav
 voices/*/*/reference.txt
 voices/*/*/.voice_cache.json
 voice_repository_status.json
-*.pth
-*.pt
-*.onnx
-*.weights
-
-# Logs
-*.log
-logs/
-_server.out.log
-_server.err.log
-
-# Temp
-tmp/
-*.tmp
 
 # Voice sync single-flight lock
 .voice_sync.lock

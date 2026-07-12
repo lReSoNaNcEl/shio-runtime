@@ -62,10 +62,29 @@ character state.
 
 ## 7. Validation
 
-Run the checks for the affected application (defined in its local `CLAUDE.md`).
+Run the checks for the affected application (defined in its local `CLAUDE.md`). All
+commands run from the repository root and need no manual virtualenv activation:
 
-- Desktop changes → the desktop build, typecheck, and applicable repro / smoke tests.
-- API changes → import/startup check plus the applicable endpoint checks.
+```text
+npm run desktop:check
+npm run desktop:format:check
+npm run desktop:imports:check
+npm run api:lint
+npm run api:format:check
+npm run api:test
+npm run api:dev
+npm run typecheck
+npm run build
+```
+
+Desktop lint/format/import ordering is owned by Biome (`apps/desktop/biome.jsonc`,
+installed only in `apps/desktop`); the Python API uses Ruff; TypeScript types use
+`tsc`. Do not add Biome to `services/api`, and do not run Biome over Python.
+
+- Desktop changes → `npm run desktop:check`, the desktop build, typecheck, and
+  applicable repro / smoke tests.
+- API changes → `npm run api:lint`, `npm run api:test`, plus the applicable endpoint
+  checks.
 - Cross-boundary changes → validate both applications and run an integration smoke
   test.
 

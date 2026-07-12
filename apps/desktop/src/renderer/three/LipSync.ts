@@ -1,6 +1,12 @@
-import type { VrmModel } from './VrmModel'
 import { facialTuning } from './avatarTuning'
-import { completeMouthWeights, getFacialProfile, type FacialProfile, type MouthWeights, type VisemeName } from './FacialProfile'
+import {
+  completeMouthWeights,
+  type FacialProfile,
+  getFacialProfile,
+  type MouthWeights,
+  type VisemeName,
+} from './FacialProfile'
+import type { VrmModel } from './VrmModel'
 
 export type { MouthWeights } from './FacialProfile'
 
@@ -45,7 +51,7 @@ const VISEME_PROFILES: Record<VisemeName, VisemeProfile> = {
   ih: { amplitude: 0.72, attack: 1.38, release: 1.12, hold: 0.02, overlap: 0.18 },
   ou: { amplitude: 0.78, attack: 0.82, release: 0.74, hold: 0.12, overlap: 0.34 },
   ee: { amplitude: 0.68, attack: 0.96, release: 1.04, hold: 0.04, overlap: 0.2 },
-  oh: { amplitude: 0.86, attack: 0.92, release: 0.7, hold: 0.16, overlap: 0.32 }
+  oh: { amplitude: 0.86, attack: 0.92, release: 0.7, hold: 0.16, overlap: 0.32 },
 }
 
 type MouthReleaseStage = 'speaking' | 'open' | 'half' | 'closed'
@@ -116,8 +122,8 @@ export class LipSync {
       if (this.activeSession.turnId !== session.turnId) {
         throw new Error(
           `LipSync session overlap: activeTurnId=${this.activeSession.turnId} ` +
-          `activePlaybackId=${this.activeSession.playbackId} requestedTurnId=${session.turnId} ` +
-          `requestedPlaybackId=${session.playbackId}`
+            `activePlaybackId=${this.activeSession.playbackId} requestedTurnId=${session.turnId} ` +
+            `requestedPlaybackId=${session.playbackId}`,
         )
       }
 
@@ -136,7 +142,9 @@ export class LipSync {
       this.releaseStage = 'speaking'
       this.graceRemainingMs = facialTuning.lipSync.startupGraceMs
       this.activityLogged = false
-      console.log(`[lipsync] turnId=${session.turnId} playbackId=${session.playbackId} analyser=reattached session=continued`)
+      console.log(
+        `[lipsync] turnId=${session.turnId} playbackId=${session.playbackId} analyser=reattached session=continued`,
+      )
       return
     }
     this.playbackSeq += 1
@@ -163,7 +171,9 @@ export class LipSync {
     this.activityLogged = false
     this.recoveryMs = 0
     this.currentRawRms = 0
-    console.log(`[lipsync] turnId=${session.turnId} playbackId=${session.playbackId} analyser=attached session=started`)
+    console.log(
+      `[lipsync] turnId=${session.turnId} playbackId=${session.playbackId} analyser=attached session=started`,
+    )
   }
 
   detach(turnId?: string, immediate = false): boolean {
@@ -172,7 +182,9 @@ export class LipSync {
       return false
     }
     if (turnId && this.activeSession && this.activeSession.turnId !== turnId) {
-      console.debug(`[lipsync] turnId=${turnId} activeTurnId=${this.activeSession.turnId} stale-stop=ignored`)
+      console.debug(
+        `[lipsync] turnId=${turnId} activeTurnId=${this.activeSession.turnId} stale-stop=ignored`,
+      )
       return false
     }
     const stopped = this.activeSession
@@ -203,7 +215,9 @@ export class LipSync {
       this.vrmModel.setMouthWeights(this.smoothed)
     }
     this.publishDebug()
-    console.log(`[lipsync] turnId=${stopped?.turnId ?? turnId ?? 'none'} playbackId=${stopped?.playbackId ?? 'none'} session=stopped reset=${immediate ? 'immediate' : 'release'}`)
+    console.log(
+      `[lipsync] turnId=${stopped?.turnId ?? turnId ?? 'none'} playbackId=${stopped?.playbackId ?? 'none'} session=stopped reset=${immediate ? 'immediate' : 'release'}`,
+    )
     return true
   }
 
@@ -224,7 +238,12 @@ export class LipSync {
       this.blendedTarget = this.getDetachedReleaseTarget()
       this.afterSilenceTarget = { ...this.blendedTarget }
       this.clampedTarget = this.clampWeights(this.blendedTarget)
-      this.afterAttackRelease = this.smoothWeights(this.smoothed, this.clampedTarget, _delta, 'detached')
+      this.afterAttackRelease = this.smoothWeights(
+        this.smoothed,
+        this.clampedTarget,
+        _delta,
+        'detached',
+      )
       this.afterClosedBias = this.applyClosedBias(this.afterAttackRelease)
       this.smoothed = this.afterClosedBias
       this.updateAntiStall(_delta, 0)
@@ -254,12 +273,22 @@ export class LipSync {
     // The per-buffer 80th-percentile reference maps to a readable mid-level
     // envelope; gain remains a bounded artistic tuning rather than compensating
     // for arbitrary file loudness.
-    const rawEnergy = Math.min(1, (rms / reference) * 0.23 * facialTuning.lipSync.gain * this.profile.mouthProfile.gainScale)
+    const rawEnergy = Math.min(
+      1,
+      (rms / reference) * 0.23 * facialTuning.lipSync.gain * this.profile.mouthProfile.gainScale,
+    )
     if (!this.activityLogged && rawEnergy > facialTuning.lipSync.antiStall.minEnergy) {
       this.activityLogged = true
-      console.debug(`[lipsync] turnId=${this.activeSession?.turnId ?? 'none'} playbackId=${this.activeSession?.playbackId ?? 'none'} sample=active`)
+      console.debug(
+        `[lipsync] turnId=${this.activeSession?.turnId ?? 'none'} playbackId=${this.activeSession?.playbackId ?? 'none'} sample=active`,
+      )
     }
-    this.speechEnergy = this.smoothScalar(this.speechEnergy, rawEnergy, _delta, rawEnergy > this.speechEnergy ? 7.5 : 3.6)
+    this.speechEnergy = this.smoothScalar(
+      this.speechEnergy,
+      rawEnergy,
+      _delta,
+      rawEnergy > this.speechEnergy ? 7.5 : 3.6,
+    )
     this.lastEnvelope = rawEnergy
     const silent = rawEnergy < facialTuning.lipSync.silenceThreshold
     this.silenceMs = silent ? this.silenceMs + _delta * 1000 : 0
@@ -270,12 +299,18 @@ export class LipSync {
     this.profiledTarget = this.applyVisemeProfiles(target.raw)
     this.blendedTarget = this.blendVisemes(this.profiledTarget, _delta, silent)
     this.afterSilenceTarget = silent ? this.getShortPauseTarget() : this.blendedTarget
-    this.clampedTarget = this.clampWeights(this.applyProceduralNoise(this.afterSilenceTarget, _delta, this.speechEnergy, silent))
+    this.clampedTarget = this.clampWeights(
+      this.applyProceduralNoise(this.afterSilenceTarget, _delta, this.speechEnergy, silent),
+    )
     this.afterAttackRelease = this.smoothWeights(
       this.smoothed,
       this.clampedTarget,
       _delta,
-      silent ? (this.silenceMs >= facialTuning.lipSync.shortPauseAfterMs ? 'short-pause' : 'silent') : 'voiced'
+      silent
+        ? this.silenceMs >= facialTuning.lipSync.shortPauseAfterMs
+          ? 'short-pause'
+          : 'silent'
+        : 'voiced',
     )
     this.afterClosedBias = this.applyClosedBias(this.afterAttackRelease)
     this.smoothed = this.afterClosedBias
@@ -293,24 +328,44 @@ export class LipSync {
       ih: weights.ih * VISEME_PROFILES.ih.amplitude,
       ou: weights.ou * VISEME_PROFILES.ou.amplitude,
       ee: weights.ee * VISEME_PROFILES.ee.amplitude,
-      oh: weights.oh * VISEME_PROFILES.oh.amplitude
+      oh: weights.oh * VISEME_PROFILES.oh.amplitude,
     }
   }
 
   private blendVisemes(target: MouthWeights, delta: number, silent: boolean): MouthWeights {
     if (silent) {
-      this.previousBlendTarget = this.smoothWeights(this.previousBlendTarget, completeMouthWeights({}), delta, 'short-pause')
+      this.previousBlendTarget = this.smoothWeights(
+        this.previousBlendTarget,
+        completeMouthWeights({}),
+        delta,
+        'short-pause',
+      )
       return { ...this.previousBlendTarget }
     }
 
     const blended: MouthWeights = {
-      aa: target.aa * (1 - VISEME_PROFILES.aa.overlap) + this.previousBlendTarget.aa * VISEME_PROFILES.aa.overlap,
-      ih: target.ih * (1 - VISEME_PROFILES.ih.overlap) + this.previousBlendTarget.ih * VISEME_PROFILES.ih.overlap,
-      ou: target.ou * (1 - VISEME_PROFILES.ou.overlap) + this.previousBlendTarget.ou * VISEME_PROFILES.ou.overlap,
-      ee: target.ee * (1 - VISEME_PROFILES.ee.overlap) + this.previousBlendTarget.ee * VISEME_PROFILES.ee.overlap,
-      oh: target.oh * (1 - VISEME_PROFILES.oh.overlap) + this.previousBlendTarget.oh * VISEME_PROFILES.oh.overlap
+      aa:
+        target.aa * (1 - VISEME_PROFILES.aa.overlap) +
+        this.previousBlendTarget.aa * VISEME_PROFILES.aa.overlap,
+      ih:
+        target.ih * (1 - VISEME_PROFILES.ih.overlap) +
+        this.previousBlendTarget.ih * VISEME_PROFILES.ih.overlap,
+      ou:
+        target.ou * (1 - VISEME_PROFILES.ou.overlap) +
+        this.previousBlendTarget.ou * VISEME_PROFILES.ou.overlap,
+      ee:
+        target.ee * (1 - VISEME_PROFILES.ee.overlap) +
+        this.previousBlendTarget.ee * VISEME_PROFILES.ee.overlap,
+      oh:
+        target.oh * (1 - VISEME_PROFILES.oh.overlap) +
+        this.previousBlendTarget.oh * VISEME_PROFILES.oh.overlap,
     }
-    this.previousBlendTarget = this.smoothWeights(this.previousBlendTarget, blended, delta, 'voiced')
+    this.previousBlendTarget = this.smoothWeights(
+      this.previousBlendTarget,
+      blended,
+      delta,
+      'voiced',
+    )
     return blended
   }
 
@@ -319,7 +374,9 @@ export class LipSync {
     if (this.silenceMs < facialTuning.lipSync.shortPauseAfterMs) {
       return this.scaleWeights(this.smoothed, 0.42)
     }
-    return this.maxWeight(this.smoothed) > half ? this.scaleWeights(this.smoothed, 0.22) : completeMouthWeights({})
+    return this.maxWeight(this.smoothed) > half
+      ? this.scaleWeights(this.smoothed, 0.22)
+      : completeMouthWeights({})
   }
 
   private getDetachedReleaseTarget(): MouthWeights {
@@ -340,7 +397,10 @@ export class LipSync {
     return completeMouthWeights({})
   }
 
-  private toMouthWeights(energy: number, bands: { low: number; mid: number; high: number }): { raw: MouthWeights; clamped: MouthWeights } {
+  private toMouthWeights(
+    energy: number,
+    bands: { low: number; mid: number; high: number },
+  ): { raw: MouthWeights; clamped: MouthWeights } {
     if (energy <= 0) {
       const closed = completeMouthWeights({})
       return { raw: closed, clamped: closed }
@@ -360,19 +420,19 @@ export class LipSync {
       ih: this.profile.visemeScale.ih ?? 1,
       ou: this.profile.visemeScale.ou ?? 1,
       ee: this.profile.visemeScale.ee ?? 1,
-      oh: this.profile.visemeScale.oh ?? 1
+      oh: this.profile.visemeScale.oh ?? 1,
     })
     const raw = {
       aa: (open * (0.58 + mid * 0.32 + low * 0.16) + bias.aa) * scale.aa,
       ih: (open * (0.14 + high * 0.95 + mid * 0.25) + bias.ih) * scale.ih,
       ou: (open * (0.22 + low * 0.9) + bias.ou) * scale.ou,
       ee: (open * (0.12 + high * 0.7 + mid * 0.45) + bias.ee) * scale.ee,
-      oh: (open * (0.18 + low * 0.55 + mid * 0.18) + bias.oh) * scale.oh
+      oh: (open * (0.18 + low * 0.55 + mid * 0.18) + bias.oh) * scale.oh,
     }
 
     return {
       raw,
-      clamped: this.clampWeights(raw)
+      clamped: this.clampWeights(raw),
     }
   }
 
@@ -383,11 +443,16 @@ export class LipSync {
       ih: Math.min(facialTuning.lipSync.clamps.ih, limited.ih),
       ou: Math.min(facialTuning.lipSync.clamps.ou, limited.ou),
       ee: Math.min(facialTuning.lipSync.clamps.ee, limited.ee),
-      oh: Math.min(facialTuning.lipSync.clamps.oh, limited.oh)
+      oh: Math.min(facialTuning.lipSync.clamps.oh, limited.oh),
     }
   }
 
-  private applyProceduralNoise(weights: MouthWeights, delta: number, energy: number, silent: boolean): MouthWeights {
+  private applyProceduralNoise(
+    weights: MouthWeights,
+    delta: number,
+    energy: number,
+    silent: boolean,
+  ): MouthWeights {
     if (silent || energy <= facialTuning.lipSync.silenceThreshold) return weights
     this.noisePhase += Math.max(0, delta) * facialTuning.lipSync.proceduralNoiseSpeed
     const amount = facialTuning.lipSync.proceduralNoiseAmplitude * Math.min(1, energy * 2)
@@ -397,7 +462,7 @@ export class LipSync {
       ih: weights.ih * noise(1.7),
       ou: weights.ou * noise(3.1),
       ee: weights.ee * noise(4.4),
-      oh: weights.oh * noise(5.6)
+      oh: weights.oh * noise(5.6),
     }
   }
 
@@ -411,7 +476,7 @@ export class LipSync {
       ih: weights.ih * scale,
       ou: weights.ou * scale,
       ee: weights.ee * scale,
-      oh: weights.oh * scale
+      oh: weights.oh * scale,
     }
   }
 
@@ -430,7 +495,7 @@ export class LipSync {
     return {
       low: this.averageBand(data, 1, lowEnd),
       mid: this.averageBand(data, lowEnd, midEnd),
-      high: this.averageBand(data, midEnd, data.length)
+      high: this.averageBand(data, midEnd, data.length),
     }
   }
 
@@ -445,14 +510,14 @@ export class LipSync {
     a: MouthWeights,
     b: MouthWeights,
     delta: number,
-    releaseMode: 'voiced' | 'silent' | 'short-pause' | 'detached'
+    releaseMode: 'voiced' | 'silent' | 'short-pause' | 'detached',
   ): MouthWeights {
     return {
       aa: this.smoothShape('aa', a.aa, b.aa, delta, releaseMode),
       ih: this.smoothShape('ih', a.ih, b.ih, delta, releaseMode),
       ou: this.smoothShape('ou', a.ou, b.ou, delta, releaseMode),
       ee: this.smoothShape('ee', a.ee, b.ee, delta, releaseMode),
-      oh: this.smoothShape('oh', a.oh, b.oh, delta, releaseMode)
+      oh: this.smoothShape('oh', a.oh, b.oh, delta, releaseMode),
     }
   }
 
@@ -461,34 +526,44 @@ export class LipSync {
     current: number,
     target: number,
     delta: number,
-    releaseMode: 'voiced' | 'silent' | 'short-pause' | 'detached'
+    releaseMode: 'voiced' | 'silent' | 'short-pause' | 'detached',
   ): number {
     const visemeProfile = VISEME_PROFILES[viseme]
-    const holdBias = target < current ? visemeProfile.hold * Math.min(1, this.speechEnergy * 1.6) : 0
+    const holdBias =
+      target < current ? visemeProfile.hold * Math.min(1, this.speechEnergy * 1.6) : 0
     const heldTarget = holdBias > 0 ? Math.max(target, current * holdBias) : target
     const speed =
       heldTarget > current
-        ? (facialTuning.lipSync.attackPerSecond * visemeProfile.attack) / this.profile.mouthProfile.softness
+        ? (facialTuning.lipSync.attackPerSecond * visemeProfile.attack) /
+          this.profile.mouthProfile.softness
         : releaseMode === 'detached'
-          ? (facialTuning.lipSync.detachedReleasePerSecond * visemeProfile.release) / this.profile.mouthProfile.releaseScale
+          ? (facialTuning.lipSync.detachedReleasePerSecond * visemeProfile.release) /
+            this.profile.mouthProfile.releaseScale
           : releaseMode === 'short-pause'
-            ? (facialTuning.lipSync.shortPauseReleasePerSecond * visemeProfile.release) / this.profile.mouthProfile.releaseScale
+            ? (facialTuning.lipSync.shortPauseReleasePerSecond * visemeProfile.release) /
+              this.profile.mouthProfile.releaseScale
             : releaseMode === 'silent'
-              ? (facialTuning.lipSync.silentReleasePerSecond * visemeProfile.release) / this.profile.mouthProfile.releaseScale
-              : (facialTuning.lipSync.releasePerSecond * visemeProfile.release) / this.profile.mouthProfile.releaseScale
+              ? (facialTuning.lipSync.silentReleasePerSecond * visemeProfile.release) /
+                this.profile.mouthProfile.releaseScale
+              : (facialTuning.lipSync.releasePerSecond * visemeProfile.release) /
+                this.profile.mouthProfile.releaseScale
     const t = 1 - Math.exp(-Math.max(0, delta) * speed)
     const next = this.lerp(current, heldTarget, t)
     return next < 0.001 ? 0 : next
   }
 
   private applyClosedBias(weights: MouthWeights): MouthWeights {
-    const steadyBias = Math.max(facialTuning.lipSync.mouthClosedBias, this.profile.mouthProfile.closedMouthBias)
+    const steadyBias = Math.max(
+      facialTuning.lipSync.mouthClosedBias,
+      this.profile.mouthProfile.closedMouthBias,
+    )
     // During the startup grace window relax the closed-mouth bias so a soft
     // phrase onset follows the raw LipSync signal instead of being zeroed into a
     // "dead mouth". Steady-state bias is unchanged once the window elapses.
-    const bias = this.graceRemainingMs > 0
-      ? Math.min(facialTuning.lipSync.startupGraceClosedBias, steadyBias)
-      : steadyBias
+    const bias =
+      this.graceRemainingMs > 0
+        ? Math.min(facialTuning.lipSync.startupGraceClosedBias, steadyBias)
+        : steadyBias
     const openness = this.sumWeights(weights)
     const closeThreshold = bias
     const openThreshold = bias * 1.35
@@ -545,7 +620,7 @@ export class LipSync {
     this.smoothed = {
       ...this.smoothed,
       aa: Math.min(clamps.aa, Math.max(this.smoothed.aa, open)),
-      ih: Math.min(clamps.ih, Math.max(this.smoothed.ih, open * 0.4))
+      ih: Math.min(clamps.ih, Math.max(this.smoothed.ih, open * 0.4)),
     }
   }
 
@@ -560,7 +635,10 @@ export class LipSync {
     else if (openness < 0.3) this.stats.opennessBuckets[1] += 1
     else if (openness < 0.45) this.stats.opennessBuckets[2] += 1
     else this.stats.opennessBuckets[3] += 1
-    this.stats.currentOpenMs = openness > facialTuning.lipSync.statsOpenThreshold ? this.stats.currentOpenMs + delta * 1000 : 0
+    this.stats.currentOpenMs =
+      openness > facialTuning.lipSync.statsOpenThreshold
+        ? this.stats.currentOpenMs + delta * 1000
+        : 0
     this.stats.longestOpenMs = Math.max(this.stats.longestOpenMs, this.stats.currentOpenMs)
     if (analyserActive && rawEnergy > 0.92) this.stats.saturatedFrames += 1
     if (analyserActive && rawEnergy > facialTuning.lipSync.antiStall.minEnergy) {
@@ -589,7 +667,7 @@ export class LipSync {
       audibleDeadMouthMs: 0,
       audibleDeadMouthFrames: 0,
       antiStallActivationCount: 0,
-      opennessBuckets: [0, 0, 0, 0]
+      opennessBuckets: [0, 0, 0, 0],
     }
   }
 
@@ -614,7 +692,7 @@ export class LipSync {
       ih: weights.ih * scale,
       ou: weights.ou * scale,
       ee: weights.ee * scale,
-      oh: weights.oh * scale
+      oh: weights.oh * scale,
     }
   }
 
@@ -657,7 +735,10 @@ export class LipSync {
       activeVisemes: this.getActiveVisemes(this.smoothed),
       visemeBlend: { ...this.blendedTarget },
       releaseStage: this.releaseStage,
-      mouthClosedBias: Math.max(facialTuning.lipSync.mouthClosedBias, this.profile.mouthProfile.closedMouthBias),
+      mouthClosedBias: Math.max(
+        facialTuning.lipSync.mouthClosedBias,
+        this.profile.mouthProfile.closedMouthBias,
+      ),
       signalWarning: this.signalWarning,
       attackPerSecond: facialTuning.lipSync.attackPerSecond,
       releasePerSecond: facialTuning.lipSync.releasePerSecond,
@@ -668,18 +749,22 @@ export class LipSync {
       stats: {
         playbackSeq: this.stats.playbackSeq,
         frameCount: this.stats.frameCount,
-        averageOpenness: this.stats.frameCount > 0 ? this.stats.sumOpenness / this.stats.frameCount : 0,
+        averageOpenness:
+          this.stats.frameCount > 0 ? this.stats.sumOpenness / this.stats.frameCount : 0,
         peakOpenness: this.stats.peakOpenness,
-        percentHighOpen: this.stats.frameCount > 0 ? (this.stats.highOpenFrames / this.stats.frameCount) * 100 : 0,
-        percentClosed: this.stats.frameCount > 0 ? (this.stats.closedFrames / this.stats.frameCount) * 100 : 0,
+        percentHighOpen:
+          this.stats.frameCount > 0 ? (this.stats.highOpenFrames / this.stats.frameCount) * 100 : 0,
+        percentClosed:
+          this.stats.frameCount > 0 ? (this.stats.closedFrames / this.stats.frameCount) * 100 : 0,
         longestOpenMs: this.stats.longestOpenMs,
         releaseAfterDetachMs: this.stats.releaseAfterDetachMs,
-        saturatedSignal: this.stats.frameCount > 0 && this.stats.saturatedFrames / this.stats.frameCount > 0.75
-        ,nonZeroEnergyFrames: this.stats.nonZeroEnergyFrames
-        ,audibleDeadMouthMs: this.stats.audibleDeadMouthMs
-        ,audibleDeadMouthFrames: this.stats.audibleDeadMouthFrames
-        ,antiStallActivationCount: this.stats.antiStallActivationCount
-      }
+        saturatedSignal:
+          this.stats.frameCount > 0 && this.stats.saturatedFrames / this.stats.frameCount > 0.75,
+        nonZeroEnergyFrames: this.stats.nonZeroEnergyFrames,
+        audibleDeadMouthMs: this.stats.audibleDeadMouthMs,
+        audibleDeadMouthFrames: this.stats.audibleDeadMouthFrames,
+        antiStallActivationCount: this.stats.antiStallActivationCount,
+      },
     })
   }
 
@@ -700,7 +785,7 @@ export class LipSync {
         `open>70=${percentHighOpen.toFixed(1)}% closed<15=${percentClosed.toFixed(1)}% ` +
         `longestOpen>40=${Math.round(this.stats.longestOpenMs)}ms ` +
         `release=${this.stats.releaseAfterDetachMs !== null ? `${Math.round(this.stats.releaseAfterDetachMs)}ms` : 'pending'} ` +
-        `saturated=${percentSaturated.toFixed(1)}%`
+        `saturated=${percentSaturated.toFixed(1)}%`,
     )
   }
 

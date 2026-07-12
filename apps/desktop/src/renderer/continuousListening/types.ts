@@ -31,7 +31,12 @@ export interface ActiveConversationExecution {
 
 export type ConversationCompletionResult =
   | { status: 'completed'; turnId: string; playbackCompleted: boolean; cleanupCompleted: true }
-  | { status: 'failed'; turnId: string; phase: 'generation' | 'synthesis' | 'playback' | 'cleanup'; error: string }
+  | {
+      status: 'failed'
+      turnId: string
+      phase: 'generation' | 'synthesis' | 'playback' | 'cleanup'
+      error: string
+    }
   | { status: 'cancelled'; turnId: string }
 
 export type ChunkCompletionReason = 'asr_final' | 'vad_pause' | 'timeout' | 'max_length'

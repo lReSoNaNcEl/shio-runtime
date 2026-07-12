@@ -1,57 +1,7 @@
-import { SceneManager } from './three/SceneManager'
-import type { OverlayViewMode } from './three/avatarTuning'
-import type { DebugAvatarMode } from './avatar/avatarAnimations'
-import type { AnimationPlaybackStatus } from './avatar/AvatarAnimationController'
-import type { AnimationCooldownState } from './avatar/AvatarAnimationCooldownManager'
-import type { AvatarAnimationQueueDebugState } from './avatar/AvatarAnimationQueue'
-import type { AvatarBehaviorEngineDecision } from './avatar/AvatarBehaviorEngine'
-import type { FacialDebugState } from './three/AvatarExpressionMixer'
-import type { VrmBodyActionDebugState } from './three/VrmModel'
-import type { LookAtDebugState } from './three/LookAtRuntime'
-import type { HeadMotionDebugState } from './three/HeadMotionRuntime'
-import type { EarBehaviorDebugState, EarAxisOverride } from './three/EarBehaviorRuntime'
-import { AudioPlayer } from './audio/audioPlayer'
 import type { CharacterRuntimeMode, CharacterState } from '../shared/runtime/characterState'
 import type { RuntimeEvent, RuntimeEventCategory, RuntimeEventType } from '../shared/runtime/events'
-import { ShioRuntime } from './runtime/ShioRuntime'
-import { SpeechRuntime, type SpeechStateTimelineEntry } from './runtime/SpeechRuntime'
-import { AvatarRuntime, type AvatarMode } from './runtime/AvatarRuntime'
-import type { AvatarBehaviorTransitionLogEntry } from './avatar/AvatarController'
-import type { AvatarBehaviorCandidate } from './avatar/AvatarBehaviorResolver'
-import type { IdleOrchestratorDebugState } from './avatar/AvatarIdleOrchestrator'
-import type { AvatarPlaybackRequestDebugState } from './avatar/AvatarPlaybackRequestLog'
-import type { SpeakingGestureSchedulerDebugState } from './avatar/AvatarSpeakingGestureScheduler'
-import { OverlayRuntime, type SyncedAvatarState, type OverlaySettingsView } from './runtime/OverlayRuntime'
-import { ConversationRuntime } from './runtime/ConversationRuntime'
-import { SpeechInputRuntime } from './runtime/SpeechInputRuntime'
-import { ConversationPresenceRuntime } from './runtime/ConversationPresenceRuntime'
-import { RuntimeStateInvariantValidator, type RuntimeHealth } from './runtime/RuntimeStateInvariantValidator'
-import { TransitionRecorder } from './runtime/TransitionRecorder'
-import type { MouthWeights } from './three/LipSync'
-import { UtteranceChunkBuilder } from './continuousListening/UtteranceChunkBuilder'
-import { AttentionEngine } from './continuousListening/AttentionEngine'
-import { RuleGate } from './continuousListening/RuleGate'
-import { UtteranceBacklog } from './continuousListening/UtteranceBacklog'
-import { BacklogSelector } from './continuousListening/BacklogSelector'
-import {
-  defaultContinuousListeningSettings,
-  backlogTuning,
-  parseAttentionMode,
-  parseTunedNumber
-} from './continuousListening/tuning'
-import type {
-  AdmittedConversationTurn,
-  BufferedUtterance,
-  ContinuousListeningSettings,
-  ConversationCompletionResult,
-  ConversationExecutionPhase,
-  ConversationInput,
-  UtteranceChunk
-} from './continuousListening/types'
-import {
-  ConversationAdmissionCoordinator
-} from './continuousListening/ConversationAdmissionCoordinator'
-import type { ContinuousRecognizedSpeech } from './runtime/SpeechInputRuntime'
+import type { SerializedSpeechError } from '../shared/speech/speechErrors'
+import { AudioPlayer } from './audio/audioPlayer'
 import { MicrophoneDeviceService } from './audio/MicrophoneDeviceService'
 import { MicrophoneGateController } from './audio/MicrophoneGateController'
 import {
@@ -60,10 +10,77 @@ import {
   type MicrophoneGateDebugState,
   type MicrophoneGateState,
   type MicrophoneIntent,
-  type StreamingModeId
+  type StreamingModeId,
 } from './audio/microphoneGateTypes'
+import type { AnimationPlaybackStatus } from './avatar/AvatarAnimationController'
+import type { AnimationCooldownState } from './avatar/AvatarAnimationCooldownManager'
+import type { AvatarAnimationQueueDebugState } from './avatar/AvatarAnimationQueue'
+import type { AvatarBehaviorEngineDecision } from './avatar/AvatarBehaviorEngine'
+import type { AvatarBehaviorCandidate } from './avatar/AvatarBehaviorResolver'
+import type { AvatarBehaviorTransitionLogEntry } from './avatar/AvatarController'
+import type { IdleOrchestratorDebugState } from './avatar/AvatarIdleOrchestrator'
+import type { AvatarPlaybackRequestDebugState } from './avatar/AvatarPlaybackRequestLog'
+import type { SpeakingGestureSchedulerDebugState } from './avatar/AvatarSpeakingGestureScheduler'
+import type { DebugAvatarMode } from './avatar/avatarAnimations'
+import { AttentionEngine } from './continuousListening/AttentionEngine'
+import { BacklogSelector } from './continuousListening/BacklogSelector'
+import { ConversationAdmissionCoordinator } from './continuousListening/ConversationAdmissionCoordinator'
+import { RuleGate } from './continuousListening/RuleGate'
+import {
+  backlogTuning,
+  defaultContinuousListeningSettings,
+  parseAttentionMode,
+  parseTunedNumber,
+} from './continuousListening/tuning'
+import type {
+  AdmittedConversationTurn,
+  BufferedUtterance,
+  ContinuousListeningSettings,
+  ConversationCompletionResult,
+  ConversationExecutionPhase,
+  ConversationInput,
+  UtteranceChunk,
+} from './continuousListening/types'
+import { UtteranceBacklog } from './continuousListening/UtteranceBacklog'
+import { UtteranceChunkBuilder } from './continuousListening/UtteranceChunkBuilder'
+import { type AvatarMode, AvatarRuntime } from './runtime/AvatarRuntime'
+import { ConversationPresenceRuntime } from './runtime/ConversationPresenceRuntime'
+import { ConversationRuntime } from './runtime/ConversationRuntime'
+import {
+  OverlayRuntime,
+  type OverlaySettingsView,
+  type SyncedAvatarState,
+} from './runtime/OverlayRuntime'
+import {
+  type RuntimeHealth,
+  RuntimeStateInvariantValidator,
+} from './runtime/RuntimeStateInvariantValidator'
+import { ShioRuntime } from './runtime/ShioRuntime'
+import { SpeechCapabilitiesRuntime } from './runtime/SpeechCapabilitiesRuntime'
+import type { ContinuousRecognizedSpeech } from './runtime/SpeechInputRuntime'
+import { SpeechInputRuntime } from './runtime/SpeechInputRuntime'
+import { SpeechRuntime, type SpeechStateTimelineEntry } from './runtime/SpeechRuntime'
+import {
+  INITIAL_SPEECH_CAPABILITIES,
+  type SpeechCapabilitiesState,
+} from './runtime/speechCapabilities'
+import { TransitionRecorder } from './runtime/TransitionRecorder'
+import type { FacialDebugState } from './three/AvatarExpressionMixer'
+import type { OverlayViewMode } from './three/avatarTuning'
+import type { EarAxisOverride, EarBehaviorDebugState } from './three/EarBehaviorRuntime'
+import type { HeadMotionDebugState } from './three/HeadMotionRuntime'
+import type { MouthWeights } from './three/LipSync'
+import type { LookAtDebugState } from './three/LookAtRuntime'
+import { SceneManager } from './three/SceneManager'
+import type { VrmBodyActionDebugState } from './three/VrmModel'
 
-export type AppStatus = 'idle' | 'listening' | 'recognizing' | 'thinking' | 'synthesizing' | 'speaking'
+export type AppStatus =
+  | 'idle'
+  | 'listening'
+  | 'recognizing'
+  | 'thinking'
+  | 'synthesizing'
+  | 'speaking'
 
 export const STATUS_LABELS: Record<AppStatus, string> = {
   idle: 'Ожидание',
@@ -71,7 +88,7 @@ export const STATUS_LABELS: Record<AppStatus, string> = {
   recognizing: 'Распознаю...',
   thinking: 'Думаю...',
   synthesizing: 'Генерирую голос...',
-  speaking: 'Говорю...'
+  speaking: 'Говорю...',
 }
 
 export interface ChatMsg {
@@ -88,6 +105,8 @@ export interface ControllerState {
   responseInterruptionPending: boolean
   messages: ChatMsg[]
   health: { state: HealthState; text: string }
+  /** Read-only projection of Speech API capability availability (ASR/TTS/streaming). */
+  speechCapabilities: SpeechCapabilitiesState
   llmHealth: { state: 'unknown' | 'checking' | 'ok' | 'error'; detail: string }
   vrmLoaded: boolean
   faceTrackingEnabled: boolean
@@ -161,11 +180,18 @@ type Listener = (state: ControllerState) => void
 
 let idSeq = 0
 const nextId = (): string => `m${++idSeq}`
-const QUESTION_PATTERN = /\?|(?:^|\s)(?:кто|что|где|когда|зачем|почему|как|можешь|скажешь|думаешь)(?:$|[\s,.!?])/iu
-const CORRECTION_PATTERN = /(?:^|\s)(?:нет|стоп|подожди|погоди|поправка|я имел[а]? в виду)(?:$|[\s,.!?])/iu
-const normalizeWords = (text: string): Set<string> => new Set(
-  text.toLocaleLowerCase('ru-RU').replace(/[^\p{L}\p{N}\s]/gu, ' ').split(/\s+/).filter((word) => word.length > 2)
-)
+const QUESTION_PATTERN =
+  /\?|(?:^|\s)(?:кто|что|где|когда|зачем|почему|как|можешь|скажешь|думаешь)(?:$|[\s,.!?])/iu
+const CORRECTION_PATTERN =
+  /(?:^|\s)(?:нет|стоп|подожди|погоди|поправка|я имел[а]? в виду)(?:$|[\s,.!?])/iu
+const normalizeWords = (text: string): Set<string> =>
+  new Set(
+    text
+      .toLocaleLowerCase('ru-RU')
+      .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+      .split(/\s+/)
+      .filter((word) => word.length > 2),
+  )
 const textSimilarity = (left: string, right: string): number => {
   const a = normalizeWords(left)
   const b = normalizeWords(right)
@@ -183,10 +209,20 @@ export class Controller {
   // down or replaced, and silently abort instead of touching a disposed SceneManager.
   private previewSceneVersion = 0
   private overlayRuntime = new OverlayRuntime()
-  private avatarRuntime = new AvatarRuntime(this.shioRuntime.events, { overlayMode: this.overlayRuntime.isOverlayWindow() })
+  private avatarRuntime = new AvatarRuntime(this.shioRuntime.events, {
+    overlayMode: this.overlayRuntime.isOverlayWindow(),
+  })
   private player = new AudioPlayer()
-  private speechRuntime = new SpeechRuntime(this.shioRuntime.characterState, this.shioRuntime.events)
+  private speechRuntime = new SpeechRuntime(
+    this.shioRuntime.characterState,
+    this.shioRuntime.events,
+  )
   private conversationPresenceRuntime = new ConversationPresenceRuntime()
+  private speechCapabilitiesRuntime = new SpeechCapabilitiesRuntime({
+    events: this.shioRuntime.events,
+    onChange: (capabilities) => this.handleSpeechCapabilitiesChange(capabilities),
+    recordRuntimeEvent: (label, detail) => this.recordRuntimeEvent(label, detail),
+  })
   private conversationRuntime = new ConversationRuntime({
     speechRuntime: this.speechRuntime,
     conversationPresenceRuntime: this.conversationPresenceRuntime,
@@ -199,10 +235,11 @@ export class Controller {
     markAssistantMessageInterrupted: () => this.markAssistantMessageInterrupted(),
     setResponseInterruptionPending: (pending) => this.set({ responseInterruptionPending: pending }),
     recordRuntimeEvent: (label, detail) => this.recordRuntimeEvent(label, detail),
+    reportSpeechServiceError: (error) => this.reportSpeechServiceError(error),
     updateCharacterState: (patch) => this.updateCharacterState(patch),
     rememberSpeechMetadata: (speech) => this.rememberSpeechMetadata(speech),
     updateSpeechPlaybackProgress: (progress) => this.updateSpeechPlaybackProgress(progress),
-    isContinuousCaptureAlive: () => this.speechInputRuntime.isContinuousCaptureAlive()
+    isContinuousCaptureAlive: () => this.speechInputRuntime.isContinuousCaptureAlive(),
   })
   private speechInputRuntime = new SpeechInputRuntime({
     speechRuntime: this.speechRuntime,
@@ -212,19 +249,22 @@ export class Controller {
     setStatus: (status) => this.set({ status }),
     pushMessage: (role, text) => this.pushMessage(role, text),
     recordRuntimeEvent: (label, detail) => this.recordRuntimeEvent(label, detail),
-    updateCharacterState: (patch) => this.updateCharacterState(patch)
+    reportSpeechServiceError: (error) => this.reportSpeechServiceError(error),
+    updateCharacterState: (patch) => this.updateCharacterState(patch),
   })
   private microphoneDeviceService = new MicrophoneDeviceService()
   private microphoneGate = new MicrophoneGateController({
     service: this.microphoneDeviceService,
     getSavedDeviceId: () => this.speechInputRuntime.getMicrophoneId(),
     onStateChange: (microphoneGate) => this.set({ microphoneGate }),
-    recordEvent: (label, detail) => this.recordRuntimeEvent(label, detail)
+    recordEvent: (label, detail) => this.recordRuntimeEvent(label, detail),
   })
   private chunkBuilder = new UtteranceChunkBuilder()
   private attentionEngine = new AttentionEngine()
   private ruleGate = new RuleGate()
-  private continuousSettings: ContinuousListeningSettings = { ...defaultContinuousListeningSettings }
+  private continuousSettings: ContinuousListeningSettings = {
+    ...defaultContinuousListeningSettings,
+  }
   private handledUtteranceIds = new Set<string>()
   private lastContinuousReplyAt: number | null = null
   private streamingSessionId: string | null = null
@@ -234,16 +274,18 @@ export class Controller {
       items,
       backlogVersion,
       providerId: config.providerId,
-      model: config.model
+      model: config.model,
     })
-    if (!response.ok || !response.result) throw new Error(response.error ?? 'Backlog arbitration failed')
+    if (!response.ok || !response.result)
+      throw new Error(response.error ?? 'Backlog arbitration failed')
     return response.result
   })
   private conversationAdmission = new ConversationAdmissionCoordinator(
     (attempt, reportPhase) => this.runConversationAttempt(attempt, reportPhase),
     this.utteranceBacklog,
     this.backlogSelector,
-    (error, attempt) => this.recordRuntimeEvent('Conversation Admission Error', `${attempt.turnId}:${String(error)}`)
+    (error, attempt) =>
+      this.recordRuntimeEvent('Conversation Admission Error', `${attempt.turnId}:${String(error)}`),
   )
 
   private state: ControllerState = {
@@ -251,6 +293,7 @@ export class Controller {
     responseInterruptionPending: false,
     messages: [],
     health: { state: 'checking', text: 'Проверка...' },
+    speechCapabilities: INITIAL_SPEECH_CAPABILITIES,
     llmHealth: { state: 'unknown', detail: 'Проверяется при первом запросе' },
     vrmLoaded: false,
     faceTrackingEnabled: false,
@@ -265,7 +308,7 @@ export class Controller {
     speechProgress: 0,
     overlayAnimationHudEnabled: false,
     overlayAnimationFile: '',
-    microphoneGate: CLOSED_GATE
+    microphoneGate: CLOSED_GATE,
   }
   private overlayCommand: Promise<void> = Promise.resolve()
   private overlayDesired: boolean | null = null
@@ -276,6 +319,11 @@ export class Controller {
   private lastVrmEmotion = 'none'
   private lastTtsLatencyMs = 'none'
   private lastTtsCache = 'none'
+  // Dedup for the one-per-incident "показан текстом" note while TTS is down.
+  private lastSynthesisNoticeIncidentId = 0
+  // The user's intended streaming preference, independent of the effective state.
+  // A Speech API loss disables streaming without clearing this intent.
+  private desiredContinuousListening = false
   private invariantValidator = new RuntimeStateInvariantValidator()
   private transitionRecorder = new TransitionRecorder()
   private frameCounter = 0
@@ -287,11 +335,79 @@ export class Controller {
   constructor() {
     this.shioRuntime.registry.register('speech', this.speechRuntime)
     this.shioRuntime.registry.register('speechInput', this.speechInputRuntime)
+    this.shioRuntime.registry.register('speechCapabilities', this.speechCapabilitiesRuntime)
     this.shioRuntime.registry.register('conversation', this.conversationRuntime)
     this.shioRuntime.registry.register('conversationPresence', this.conversationPresenceRuntime)
     this.shioRuntime.registry.register('avatar', this.avatarRuntime)
     this.shioRuntime.registry.register('overlay', this.overlayRuntime)
     this.shioRuntime.registry.register('action', this.actionRuntimeBoundary)
+    this.speechInputRuntime.setStreamingServiceLostHandler((error) =>
+      this.handleStreamingServiceLost(error),
+    )
+  }
+
+  // ---- Speech API capabilities (read-only health component) ----------------
+  /**
+   * Single funnel from runtime paths (ASR/TTS/streaming) into the capabilities
+   * health component. For a Speech-output failure it also appends the "показан
+   * текстом" note once per incident, so history is not spammed while TTS is down.
+   */
+  private reportSpeechServiceError(error: SerializedSpeechError): void {
+    this.speechCapabilitiesRuntime.reportError(error)
+    if (error.operation === 'synthesis') {
+      const incidentId = this.speechCapabilitiesRuntime.getState().incidentId
+      if (incidentId !== this.lastSynthesisNoticeIncidentId) {
+        this.lastSynthesisNoticeIncidentId = incidentId
+        this.pushMessage('meta', 'Озвучивание недоступно. Ответ показан текстом.')
+      }
+    }
+  }
+
+  private handleSpeechCapabilitiesChange(capabilities: SpeechCapabilitiesState): void {
+    this.set({ speechCapabilities: capabilities, health: this.toLegacyHealth(capabilities) })
+  }
+
+  private toLegacyHealth(capabilities: SpeechCapabilitiesState): {
+    state: HealthState
+    text: string
+  } {
+    switch (capabilities.service) {
+      case 'available':
+        return { state: 'ok', text: 'ASR / TTS OK' }
+      case 'degraded':
+        return { state: 'warn', text: 'Speech API частично доступен' }
+      case 'unavailable':
+        return { state: 'err', text: 'Speech API недоступен' }
+      default:
+        return { state: 'checking', text: 'Проверка...' }
+    }
+  }
+
+  /** Manual recheck ("Повторить подключение" / "Проверить снова"). */
+  recheckSpeechService(): void {
+    this.speechCapabilitiesRuntime.recheck()
+  }
+
+  /**
+   * The streaming Speech API was lost mid-session. Speech Input Runtime already
+   * released capture/transport and reported the streaming capability failure.
+   * Here we drop any buffered partial and settle the streaming UI state WITHOUT
+   * overwriting the user's saved streaming preference (desiredContinuousListening
+   * stays true), so nothing auto-restarts and no config write flips `enabled`.
+   */
+  private handleStreamingServiceLost(_error: SerializedSpeechError): void {
+    this.continuousSettings.enabled = false
+    this.conversationAdmission.setContinuousEnabled(false)
+    this.chunkBuilder = new UtteranceChunkBuilder()
+    this.set({
+      continuousListeningEnabled: false,
+      continuousListeningState: 'off',
+      continuousListeningError: '',
+    })
+    this.recordRuntimeEvent(
+      'Streaming Service Lost Teardown',
+      `desired=${this.desiredContinuousListening}`,
+    )
   }
 
   // ---- observable plumbing -------------------------------------------------
@@ -333,17 +449,21 @@ export class Controller {
         id: nextId(),
         at: Date.now(),
         label,
-        detail
-      }
+        detail,
+      },
     ].slice(-80)
   }
 
-  private publishControllerRuntimeEvent(type: RuntimeEventType, category: RuntimeEventCategory, detail?: string): void {
+  private publishControllerRuntimeEvent(
+    type: RuntimeEventType,
+    category: RuntimeEventCategory,
+    detail?: string,
+  ): void {
     this.shioRuntime.events.publish({
       type,
       category,
       source: 'renderer.controller',
-      detail
+      detail,
     })
   }
 
@@ -411,14 +531,18 @@ export class Controller {
         lastLoadAnimation: avatar.bodyActions.lastLoadAnimationId ?? 'none',
         restartCount: String(avatar.bodyActions.restartCount),
         queueLength: String(avatar.animationQueue.length),
-        speakingGestureSession: avatar.speakingGestureScheduler.active ? `#${avatar.speakingGestureScheduler.sessionId}` : 'inactive',
+        speakingGestureSession: avatar.speakingGestureScheduler.active
+          ? `#${avatar.speakingGestureScheduler.sessionId}`
+          : 'inactive',
         speakingGesturePhase: avatar.speakingGestureScheduler.phase,
         animationFile: avatar.currentBodyAnimationFile,
         idleOrchestrator: avatar.idleOrchestrator.paused ? 'paused' : 'running',
         idleBehavior: avatar.idleBehavior,
         nextIdleBehaviorIn: `${avatar.nextIdleBehaviorIn}s`,
         passiveCompanion: avatar.passiveCompanionMode ? 'on' : 'off',
-        animationFailures: avatar.animationFailures.length ? avatar.animationFailures.join(', ') : 'none',
+        animationFailures: avatar.animationFailures.length
+          ? avatar.animationFailures.join(', ')
+          : 'none',
         audio: this.player.isPlaying() ? 'playing' : 'idle',
         microphone: this.state.status === 'listening' ? 'recording' : 'idle',
         faceTracking: this.state.faceTrackingEnabled ? 'on' : 'off',
@@ -430,14 +554,17 @@ export class Controller {
           : 'none',
         micGateOpenReason: micGate.openReason ?? 'none',
         micGateSelectedDevice: micGate.selectedDeviceLabel ?? 'none',
-        micGateLastValidation: micGate.lastValidationSucceeded === null
-          ? 'none'
-          : micGate.lastValidationSucceeded ? 'ok' : (micGate.lastFailureReason ?? 'failed'),
+        micGateLastValidation:
+          micGate.lastValidationSucceeded === null
+            ? 'none'
+            : micGate.lastValidationSucceeded
+              ? 'ok'
+              : (micGate.lastFailureReason ?? 'failed'),
         micGateLastErrorName: micGate.lastNativeErrorName ?? 'none',
-        micGateLastConstraint: micGate.lastConstraint ?? 'none'
+        micGateLastConstraint: micGate.lastConstraint ?? 'none',
       },
       timeline: this.timeline,
-      runtimeHealth: this.invariantValidator.getHealth()
+      runtimeHealth: this.invariantValidator.getHealth(),
     }
   }
 
@@ -480,26 +607,44 @@ export class Controller {
       {
         enabled: false,
         mode: parseAttentionMode(cfg.continuousListeningMode),
-        replyCooldownMs: parseTunedNumber(cfg.continuousListeningReplyCooldownMs, defaultContinuousListeningSettings.replyCooldownMs, 0, 120_000),
-        followUpWindowMs: parseTunedNumber(cfg.continuousListeningFollowUpWindowMs, defaultContinuousListeningSettings.followUpWindowMs, 0, 120_000),
-        curiosityChance: parseTunedNumber(cfg.continuousListeningCuriosityChance, defaultContinuousListeningSettings.curiosityChance, 0, 1)
+        replyCooldownMs: parseTunedNumber(
+          cfg.continuousListeningReplyCooldownMs,
+          defaultContinuousListeningSettings.replyCooldownMs,
+          0,
+          120_000,
+        ),
+        followUpWindowMs: parseTunedNumber(
+          cfg.continuousListeningFollowUpWindowMs,
+          defaultContinuousListeningSettings.followUpWindowMs,
+          0,
+          120_000,
+        ),
+        curiosityChance: parseTunedNumber(
+          cfg.continuousListeningCuriosityChance,
+          defaultContinuousListeningSettings.curiosityChance,
+          0,
+          1,
+        ),
       },
-      false
+      false,
     )
     this.startAvatarTickLoop()
   }
 
   async toggleOverlay(): Promise<void> {
-    const actual = this.state.overlayState === 'error'
-      ? Boolean((await window.api.overlay.isVisible()).visible)
-      : this.state.overlayState === 'on'
+    const actual =
+      this.state.overlayState === 'error'
+        ? Boolean((await window.api.overlay.isVisible()).visible)
+        : this.state.overlayState === 'on'
     const desired = this.overlayDesired ?? !actual
     await this.setOverlayVisible(desired)
   }
 
   async setOverlayVisible(visible: boolean): Promise<void> {
     this.overlayDesired = visible
-    this.overlayCommand = this.overlayCommand.catch(() => undefined).then(() => this.reconcileOverlayVisibility())
+    this.overlayCommand = this.overlayCommand
+      .catch(() => undefined)
+      .then(() => this.reconcileOverlayVisibility())
     await this.overlayCommand
   }
 
@@ -518,15 +663,22 @@ export class Controller {
       this.applyOverlayConfigProjection({ overlayViewMode: mode })
       await window.api.overlay.applySettings()
     } catch (error) {
-      this.set({ overlayCameraMode: previous, overlayError: `Не удалось применить режим ${mode}`, overlayState: 'error' })
+      this.set({
+        overlayCameraMode: previous,
+        overlayError: `Не удалось применить режим ${mode}`,
+        overlayState: 'error',
+      })
       throw error
     }
   }
 
   private applyOverlayConfigProjection(cfg: OverlaySettingsView): void {
-    const overlayCameraMode = cfg.overlayViewMode === 'bust' || cfg.overlayViewMode === 'face' || cfg.overlayViewMode === 'portrait'
-      ? cfg.overlayViewMode
-      : 'front'
+    const overlayCameraMode =
+      cfg.overlayViewMode === 'bust' ||
+      cfg.overlayViewMode === 'face' ||
+      cfg.overlayViewMode === 'portrait'
+        ? cfg.overlayViewMode
+        : 'front'
     this.set({ overlayCameraMode })
   }
 
@@ -553,7 +705,7 @@ export class Controller {
         this.overlayDesired = null
         this.set({
           overlayState: 'error',
-          overlayError: desired ? 'Не удалось открыть камеру' : 'Не удалось закрыть камеру'
+          overlayError: desired ? 'Не удалось открыть камеру' : 'Не удалось закрыть камеру',
         })
         if (Boolean(verified.visible) !== desired) throw error
         return
@@ -561,7 +713,10 @@ export class Controller {
     }
   }
 
-  async attachCanvas(canvas: HTMLCanvasElement, options: { loadModel?: boolean } = {}): Promise<void> {
+  async attachCanvas(
+    canvas: HTMLCanvasElement,
+    options: { loadModel?: boolean } = {},
+  ): Promise<void> {
     await this.bootstrap()
     if (this.scene) return
     const scene = new SceneManager(canvas)
@@ -571,7 +726,8 @@ export class Controller {
 
     const cfg = await window.api.config.get()
     this.applyOverlaySettings(cfg)
-    if (options.loadModel !== false && cfg.vrmPath) await this.loadVrmFromPath(cfg.vrmPath, scene, version)
+    if (options.loadModel !== false && cfg.vrmPath)
+      await this.loadVrmFromPath(cfg.vrmPath, scene, version)
   }
 
   detachCanvas(): void {
@@ -597,12 +753,16 @@ export class Controller {
       this.frameCounter += 1
       this.avatarRuntime.update(delta, this.speechRuntime.getCharacterState())
       this.updateOverlayAnimationHudFile()
-      this.overlayRuntime.publishMouthWeightsFrame(delta, this.state.status === 'speaking', this.avatarRuntime.getMouthWeights())
+      this.overlayRuntime.publishMouthWeightsFrame(
+        delta,
+        this.state.status === 'speaking',
+        this.avatarRuntime.getMouthWeights(),
+      )
       this.runRuntimeInvariantValidation()
       this.transitionRecorder.observe(
         this.frameCounter,
         this.avatarRuntime.getDebugState(),
-        this.invariantValidator.getHealth()
+        this.invariantValidator.getHealth(),
       )
     }
     loop()
@@ -611,9 +771,12 @@ export class Controller {
   applyOverlaySettings(cfg: OverlaySettingsView): void {
     this.overlayRuntime.applySettings(this.scene, cfg)
     if (this.overlayRuntime.isOverlayWindow()) {
-      const mode = cfg.overlayViewMode === 'bust' || cfg.overlayViewMode === 'face' || cfg.overlayViewMode === 'portrait'
-        ? cfg.overlayViewMode
-        : 'front'
+      const mode =
+        cfg.overlayViewMode === 'bust' ||
+        cfg.overlayViewMode === 'face' ||
+        cfg.overlayViewMode === 'portrait'
+          ? cfg.overlayViewMode
+          : 'front'
       this.avatarRuntime.setCameraMode(mode)
     }
     this.set({ overlayAnimationHudEnabled: cfg.overlayShowCurrentAnimation === 'true' })
@@ -624,7 +787,7 @@ export class Controller {
     this.overlayRuntime.subscribeToRemoteUpdates({
       avatarState: (state) => this.applyRemoteAvatarState(state),
       mouthWeights: (weights) => this.applyRemoteMouthWeights(weights),
-      settings: (cfg) => this.applyOverlaySettings(cfg)
+      settings: (cfg) => this.applyOverlaySettings(cfg),
     })
   }
 
@@ -640,7 +803,7 @@ export class Controller {
       status,
       mode: avatarState.mode,
       emotion: avatarState.emotionKey ?? 'neutral',
-      vrmEmotion: avatarState.vrmEmotion
+      vrmEmotion: avatarState.vrmEmotion,
     })
     this.applyAvatarCharacterState()
     this.updateOverlayAnimationHudFile()
@@ -653,8 +816,10 @@ export class Controller {
   private updateOverlayAnimationHudFile(): void {
     if (!this.overlayRuntime.isOverlayWindow()) return
     const avatar = this.avatarRuntime.getDebugState()
-    const activeFileName = avatar.currentBodyAnimationFile === 'none' ? '' : avatar.currentBodyAnimationFile
-    if (activeFileName !== this.state.overlayAnimationFile) this.set({ overlayAnimationFile: activeFileName })
+    const activeFileName =
+      avatar.currentBodyAnimationFile === 'none' ? '' : avatar.currentBodyAnimationFile
+    if (activeFileName !== this.state.overlayAnimationFile)
+      this.set({ overlayAnimationFile: activeFileName })
   }
 
   private updateCharacterState(patch: {
@@ -670,14 +835,15 @@ export class Controller {
       mode: patch.mode,
       emotion: patch.emotion,
       vrmEmotion: patch.vrmEmotion,
-      currentSentence: patch.status === 'speaking' ? this.state.messages.at(-1)?.text ?? '' : undefined,
-      conversationPresence: patch.conversationPresence
+      currentSentence:
+        patch.status === 'speaking' ? (this.state.messages.at(-1)?.text ?? '') : undefined,
+      conversationPresence: patch.conversationPresence,
     })
     const avatarMirror = this.avatarRuntime.getMirrorState()
     return this.speechRuntime.mirrorAvatarState({
       ...avatarMirror,
       ...patch.avatar,
-      loaded: patch.avatar?.loaded ?? avatarMirror.loaded ?? characterState.avatar.loaded
+      loaded: patch.avatar?.loaded ?? avatarMirror.loaded ?? characterState.avatar.loaded,
     })
   }
 
@@ -723,7 +889,13 @@ export class Controller {
       bodyOwnershipGapCount: avatar.bodyActions.ownershipGapCount,
       currentBodyAnimation: avatar.currentBodyAnimation,
       currentBehaviorId: avatar.currentBehaviorId,
-      mouthMax: Math.max(facial.mouth.aa, facial.mouth.ih, facial.mouth.ou, facial.mouth.ee, facial.mouth.oh),
+      mouthMax: Math.max(
+        facial.mouth.aa,
+        facial.mouth.ih,
+        facial.mouth.ou,
+        facial.mouth.ee,
+        facial.mouth.oh,
+      ),
       facialActiveSources: facial.activeSources,
       facialEntrySources: facial.entries.map((entry) => entry.source),
       facialSupportedVisemes: facial.supportedVisemes,
@@ -734,20 +906,8 @@ export class Controller {
       lookAtEyeYaw: avatar.lookAt.eyeYaw,
       lookAtEyePitch: avatar.lookAt.eyePitch,
       headMotionActiveGenerators: avatar.headMotion.activeGenerators,
-      headMotionEnergy: avatar.headMotion.motionEnergy
+      headMotionEnergy: avatar.headMotion.motionEnergy,
     })
-  }
-
-  private enterAvatarMode(mode: Exclude<AvatarMode, 'speaking' | 'awaitingSpeech'>, emotionKey: string, status: AppStatus): void {
-    this.updateCharacterState({ status, mode, emotion: emotionKey })
-    this.applyAvatarCharacterState()
-    this.publishAvatarState({ mode, emotionKey })
-    this.set({ status })
-  }
-
-  private returnToIdle(): void {
-    this.enterAvatarMode('idle', 'neutral', 'idle')
-    this.recordRuntimeEvent('Idle')
   }
 
   private rememberSpeechMetadata(speech: SpeechReply): void {
@@ -766,7 +926,6 @@ export class Controller {
         return 'synthesizing'
       case 'speaking':
         return 'speaking'
-      case 'idle':
       default:
         return 'idle'
     }
@@ -781,27 +940,37 @@ export class Controller {
       ...characterState,
       speechState: {
         ...characterState.speechState,
-        isSpeaking: speech === 'speaking'
+        isSpeaking: speech === 'speaking',
       },
       animation: {
         behavior: avatar.currentBehaviorId,
         animationId: avatar.currentBodyAnimation,
-        queueLength: avatar.animationQueue.length
+        queueLength: avatar.animationQueue.length,
       },
-      posture: mode === 'thinking' || mode === 'awaitingSpeech' ? 'thinking' : mode === 'idle' ? 'relaxed' : characterState.posture,
+      posture:
+        mode === 'thinking' || mode === 'awaitingSpeech'
+          ? 'thinking'
+          : mode === 'idle'
+            ? 'relaxed'
+            : characterState.posture,
       conversation: {
         ...characterState.conversation,
         replyType: avatar.behaviorEngine?.replyType ?? characterState.conversation.replyType,
-        conversationPhase: speech === 'speaking' ? 'replying' : mode === 'thinking' || mode === 'awaitingSpeech' ? 'thinking' : characterState.conversation.conversationPhase
+        conversationPhase:
+          speech === 'speaking'
+            ? 'replying'
+            : mode === 'thinking' || mode === 'awaitingSpeech'
+              ? 'thinking'
+              : characterState.conversation.conversationPhase,
       },
       avatar: {
         ...characterState.avatar,
         mode,
         expression: characterState.emotion,
         lipsync: avatar.lipsyncWeights,
-        loaded: this.avatarRuntime.isLoaded()
+        loaded: this.avatarRuntime.isLoaded(),
       },
-      updatedAt: Date.now()
+      updatedAt: Date.now(),
     }
   }
 
@@ -809,7 +978,9 @@ export class Controller {
   async listMicrophones(): Promise<Array<{ deviceId: string; label: string }>> {
     // Labels are only populated once mic permission has been granted.
     const devices = await navigator.mediaDevices.enumerateDevices()
-    return devices.filter((d) => d.kind === 'audioinput').map((d) => ({ deviceId: d.deviceId, label: d.label || 'Микрофон' }))
+    return devices
+      .filter((d) => d.kind === 'audioinput')
+      .map((d) => ({ deviceId: d.deviceId, label: d.label || 'Микрофон' }))
   }
 
   setMicrophone(deviceId: string): void {
@@ -825,19 +996,22 @@ export class Controller {
     const trimmed = text.trim()
     if (!trimmed) return
     await this.conversationAdmission.admit({
-      turnId: `text-${nextId()}`, text: trimmed, source: 'text_chat', createdAt: Date.now()
+      turnId: `text-${nextId()}`,
+      text: trimmed,
+      source: 'text_chat',
+      createdAt: Date.now(),
     })
   }
-
 
   async runDebugFullRuntimeTest(emotionKey = 'happy'): Promise<void> {
     const outcome = await this.conversationAdmission.admit({
       turnId: `debug-${nextId()}`,
       text: emotionKey,
       source: 'debug',
-      createdAt: Date.now()
+      createdAt: Date.now(),
     })
-    if (outcome === 'ignored_busy') this.recordRuntimeEvent('Test Full Runtime Blocked', this.state.status)
+    if (outcome === 'ignored_busy')
+      this.recordRuntimeEvent('Test Full Runtime Blocked', this.state.status)
   }
 
   // ---- microphone ----------------------------------------------------------
@@ -851,35 +1025,59 @@ export class Controller {
         turnId: `manual-speech-${nextId()}`,
         text: recognized.text,
         source: 'push_to_talk',
-        createdAt: Date.now()
+        createdAt: Date.now(),
       })
       return
     }
     if (this.state.status !== 'idle') return
     // Starting voice input runs the same blocking microphone guard as streaming;
     // only the intent (and gate copy) differ.
-    const result = await this.microphoneGate.request({ type: 'start-voice-input' }, 'not-configured')
-    if (result.status === 'confirmed') await this.executeMicrophoneIntent(result.intent, result.deviceId)
+    const result = await this.microphoneGate.request(
+      { type: 'start-voice-input' },
+      'not-configured',
+    )
+    if (result.status === 'confirmed')
+      await this.executeMicrophoneIntent(result.intent, result.deviceId)
   }
 
-  async applyContinuousListeningSettings(settings: ContinuousListeningSettings, persist = true): Promise<void> {
+  async applyContinuousListeningSettings(
+    settings: ContinuousListeningSettings,
+    persist = true,
+  ): Promise<void> {
+    // A persisted change reflects explicit user intent for streaming.
+    if (persist) this.desiredContinuousListening = settings.enabled
     this.continuousSettings = { ...settings }
     this.conversationAdmission.setContinuousEnabled(settings.enabled)
     const config = await window.api.config.get()
     this.conversationAdmission.configureSelector(config.llm.roles.backlogSelector)
-    this.set({ continuousListeningMode: settings.mode, continuousListeningState: settings.enabled ? 'starting' : 'off', continuousListeningError: '' })
+    this.set({
+      continuousListeningMode: settings.mode,
+      continuousListeningState: settings.enabled ? 'starting' : 'off',
+      continuousListeningError: '',
+    })
     try {
       await this.speechInputRuntime.setContinuousListening(
         settings.enabled,
         (recognized) => this.handleContinuousFinal(recognized),
-        (text) => { this.chunkBuilder.pushPartial(text) },
-        () => { void this.handleContinuousDeviceLost() }
+        (text) => {
+          this.chunkBuilder.pushPartial(text)
+        },
+        () => {
+          void this.handleContinuousDeviceLost()
+        },
       )
-      this.set({ continuousListeningEnabled: settings.enabled, continuousListeningState: settings.enabled ? 'on' : 'off' })
+      this.set({
+        continuousListeningEnabled: settings.enabled,
+        continuousListeningState: settings.enabled ? 'on' : 'off',
+      })
     } catch (error) {
       this.continuousSettings.enabled = false
       this.conversationAdmission.setContinuousEnabled(false)
-      this.set({ continuousListeningEnabled: false, continuousListeningState: 'error', continuousListeningError: 'Не удалось получить доступ к микрофону.' })
+      this.set({
+        continuousListeningEnabled: false,
+        continuousListeningState: 'error',
+        continuousListeningError: 'Не удалось получить доступ к микрофону.',
+      })
       throw error
     }
     if (persist) {
@@ -887,7 +1085,7 @@ export class Controller {
         continuousListeningMode: settings.mode,
         continuousListeningReplyCooldownMs: String(settings.replyCooldownMs),
         continuousListeningFollowUpWindowMs: String(settings.followUpWindowMs),
-        continuousListeningCuriosityChance: String(settings.curiosityChance)
+        continuousListeningCuriosityChance: String(settings.curiosityChance),
       })
     }
   }
@@ -937,7 +1135,11 @@ export class Controller {
    */
   private async startStreaming(modeId: StreamingModeId): Promise<void> {
     try {
-      await this.applyContinuousListeningSettings({ ...this.continuousSettings, enabled: true, mode: modeId })
+      await this.applyContinuousListeningSettings({
+        ...this.continuousSettings,
+        enabled: true,
+        mode: modeId,
+      })
     } catch (error) {
       const failure = this.microphoneDeviceService.normalizeFailure(error)
       this.recordRuntimeEvent('Streaming Runtime Start Failed', failure.reason)
@@ -948,9 +1150,10 @@ export class Controller {
       const result = await this.microphoneGate.request(
         { type: 'start-streaming', modeId },
         'runtime-start-failed',
-        failure.reason
+        failure.reason,
       )
-      if (result.status === 'confirmed') await this.executeMicrophoneIntent(result.intent, result.deviceId)
+      if (result.status === 'confirmed')
+        await this.executeMicrophoneIntent(result.intent, result.deviceId)
     }
   }
 
@@ -970,8 +1173,12 @@ export class Controller {
     this.recordRuntimeEvent('Streaming Microphone Lost', modeId)
     await this.applyContinuousListeningSettings({ ...this.continuousSettings, enabled: false })
     this.set({ continuousListeningState: 'off', continuousListeningError: '' })
-    const result = await this.microphoneGate.request({ type: 'start-streaming', modeId }, 'active-device-lost')
-    if (result.status === 'confirmed') await this.executeMicrophoneIntent(result.intent, result.deviceId)
+    const result = await this.microphoneGate.request(
+      { type: 'start-streaming', modeId },
+      'active-device-lost',
+    )
+    if (result.status === 'confirmed')
+      await this.executeMicrophoneIntent(result.intent, result.deviceId)
   }
 
   // ---- microphone gate overlay actions -------------------------------------
@@ -995,9 +1202,10 @@ export class Controller {
     return this.microphoneGate.getDebugState()
   }
 
-  /** Tear down Controller-owned listeners (microphone gate). */
+  /** Tear down Controller-owned listeners (microphone gate, capability probing). */
   dispose(): void {
     this.microphoneGate.dispose()
+    this.speechCapabilitiesRuntime.dispose()
   }
 
   async setContinuousListeningMode(mode: ContinuousListeningSettings['mode']): Promise<void> {
@@ -1018,7 +1226,10 @@ export class Controller {
 
   private async processContinuousChunk(chunk: UtteranceChunk): Promise<void> {
     const now = Date.now()
-    const sinceReply = this.lastContinuousReplyAt === null ? Number.POSITIVE_INFINITY : now - this.lastContinuousReplyAt
+    const sinceReply =
+      this.lastContinuousReplyAt === null
+        ? Number.POSITIVE_INFINITY
+        : now - this.lastContinuousReplyAt
     const cooldownActive = sinceReply < this.continuousSettings.replyCooldownMs
     const followUpWindow = sinceReply < this.continuousSettings.followUpWindowMs
     const isSpeaking = this.state.status === 'speaking'
@@ -1029,17 +1240,17 @@ export class Controller {
       cooldownActive,
       recentConversation: followUpWindow,
       followUpWindow,
-      curiosityChance: this.continuousSettings.curiosityChance
+      curiosityChance: this.continuousSettings.curiosityChance,
     })
     this.recordRuntimeEvent(
       attention.shouldAttend ? 'Attention Accepted' : 'Attention Rejected',
-      `${attention.score}/${Number.isFinite(attention.threshold) ? attention.threshold : '∞'} ${attention.reasons.join(',')}`
+      `${attention.score}/${Number.isFinite(attention.threshold) ? attention.threshold : '∞'} ${attention.reasons.join(',')}`,
     )
     const decision = this.ruleGate.decide(chunk, attention, {
       isSpeaking,
       conversationBusy,
       cooldownActive,
-      alreadyHandled: this.handledUtteranceIds.has(chunk.id)
+      alreadyHandled: this.handledUtteranceIds.has(chunk.id),
     })
     this.recordRuntimeEvent('Rule Gate Decision', `${decision.type}:${decision.reason}`)
 
@@ -1054,9 +1265,14 @@ export class Controller {
       source: 'continuous_listening',
       createdAt: chunk.completedAt,
       streamingSessionId: chunk.streamingSessionId,
-      utteranceIds: [chunk.id]
+      utteranceIds: [chunk.id],
     }
-    const buffered = this.createBufferedUtterance(chunk, attention, conversationBusy, followUpWindow)
+    const buffered = this.createBufferedUtterance(
+      chunk,
+      attention,
+      conversationBusy,
+      followUpWindow,
+    )
     if (buffered.likelySelfEcho) {
       this.rememberHandledUtterance(chunk.id)
       this.recordRuntimeEvent('Continuous Self Echo Suppressed', chunk.id)
@@ -1070,20 +1286,32 @@ export class Controller {
     chunk: UtteranceChunk,
     attention: ReturnType<AttentionEngine['evaluate']>,
     conversationBusy: boolean,
-    followUpWindow: boolean
+    followUpWindow: boolean,
   ): BufferedUtterance {
     const text = chunk.text.trim()
     const question = QUESTION_PATTERN.test(text)
     const correctionHint = CORRECTION_PATTERN.test(text)
-    const currentReply = [...this.state.messages].reverse().find((message) => message.role === 'assistant')?.text ?? ''
-    const likelySelfEcho = Boolean(chunk.capturedDuringPlayback && !correctionHint && textSimilarity(text, currentReply) >= 0.72)
-    const priorityClass: BufferedUtterance['priorityClass'] = correctionHint ? 'P0'
-      : attention.directAddress && question ? 'P1'
-        : attention.directAddress || followUpWindow ? 'P2'
-          : attention.mode === 'active' || attention.mode === 'streamer' ? 'P3' : 'P4'
-    const ttl = correctionHint ? backlogTuning.ttlMs.correction
-      : attention.directAddress ? backlogTuning.ttlMs.direct
-        : followUpWindow ? backlogTuning.ttlMs.followUp : backlogTuning.ttlMs.nonDirect
+    const currentReply =
+      [...this.state.messages].reverse().find((message) => message.role === 'assistant')?.text ?? ''
+    const likelySelfEcho = Boolean(
+      chunk.capturedDuringPlayback && !correctionHint && textSimilarity(text, currentReply) >= 0.72,
+    )
+    const priorityClass: BufferedUtterance['priorityClass'] = correctionHint
+      ? 'P0'
+      : attention.directAddress && question
+        ? 'P1'
+        : attention.directAddress || followUpWindow
+          ? 'P2'
+          : attention.mode === 'active' || attention.mode === 'streamer'
+            ? 'P3'
+            : 'P4'
+    const ttl = correctionHint
+      ? backlogTuning.ttlMs.correction
+      : attention.directAddress
+        ? backlogTuning.ttlMs.direct
+        : followUpWindow
+          ? backlogTuning.ttlMs.followUp
+          : backlogTuning.ttlMs.nonDirect
     return {
       id: chunk.id,
       text,
@@ -1100,13 +1328,13 @@ export class Controller {
       capturedWhileShioBusy: conversationBusy,
       capturedDuringPlayback: Boolean(chunk.capturedDuringPlayback),
       likelySelfEcho,
-      priorityClass
+      priorityClass,
     }
   }
 
   private async runConversationAttempt(
     attempt: AdmittedConversationTurn,
-    reportPhase: (phase: ConversationExecutionPhase) => void
+    reportPhase: (phase: ConversationExecutionPhase) => void,
   ): Promise<ConversationCompletionResult> {
     if (attempt.source === 'continuous_listening' || attempt.source === 'backlog_selected') {
       if (!this.continuousSettings.enabled || this.handledUtteranceIds.has(attempt.turnId)) {
@@ -1118,7 +1346,8 @@ export class Controller {
     if (attempt.source !== 'debug') this.pushMessage('user', attempt.text)
     try {
       const result = await this.conversationRuntime.execute(attempt, reportPhase)
-      if (attempt.source === 'continuous_listening' || attempt.source === 'backlog_selected') this.lastContinuousReplyAt = Date.now()
+      if (attempt.source === 'continuous_listening' || attempt.source === 'backlog_selected')
+        this.lastContinuousReplyAt = Date.now()
       return result
     } finally {
       this.recordRuntimeEvent('Conversation Settled', attempt.turnId)
@@ -1133,7 +1362,11 @@ export class Controller {
   }
 
   // ---- VRM / animation -----------------------------------------------------
-  async loadVrmFromPath(filePath: string, scene: SceneManager | null = this.scene, version: number = this.previewSceneVersion): Promise<void> {
+  async loadVrmFromPath(
+    filePath: string,
+    scene: SceneManager | null = this.scene,
+    version: number = this.previewSceneVersion,
+  ): Promise<void> {
     if (!scene) return
     // True when the preview scene this load started with is still the current one.
     // If Preview was detached or replaced during an await, the load is stale and
@@ -1146,14 +1379,16 @@ export class Controller {
       await this.avatarRuntime.loadVrm(scene.scene, res.buffer)
       if (!isCurrent()) return
       const lookAtRequested = this.state.faceTrackingEnabled
-      const ok = this.avatarRuntime.setLookAtTarget(lookAtRequested ? scene.getLookAtTarget() : null)
+      const ok = this.avatarRuntime.setLookAtTarget(
+        lookAtRequested ? scene.getLookAtTarget() : null,
+      )
       this.set({ faceTrackingEnabled: lookAtRequested && ok })
       this.updateCharacterState({
         status: this.state.status,
         mode: this.speechRuntime.getCharacterState().mode,
         emotion: this.speechRuntime.getCharacterState().emotion,
         vrmEmotion: this.speechRuntime.getCharacterState().avatar.vrmExpression,
-        avatar: { loaded: true }
+        avatar: { loaded: true },
       })
       this.set({ vrmLoaded: true })
       // Frame the model to a sensible full-body size in the local Avatar Preview.
@@ -1235,7 +1470,14 @@ export class Controller {
     this.avatarRuntime.setIdleOrchestratorPaused(paused)
   }
 
-  testAvatarTransition(kind: 'idle-to-idle' | 'idle-to-speaking' | 'speaking-to-idle' | 'thinking-to-idle' | 'greeting-to-idle'): void {
+  testAvatarTransition(
+    kind:
+      | 'idle-to-idle'
+      | 'idle-to-speaking'
+      | 'speaking-to-idle'
+      | 'thinking-to-idle'
+      | 'greeting-to-idle',
+  ): void {
     this.avatarRuntime.testTransition(kind)
     this.updateOverlayAnimationHudFile()
   }
@@ -1269,7 +1511,8 @@ export class Controller {
   setPassiveCompanionMode(enabled: boolean, persist = true): void {
     this.avatarRuntime.setPassiveCompanionMode(enabled)
     this.set({ passiveCompanionEnabled: enabled })
-    if (persist) void window.api.config.save({ passiveCompanionEnabled: enabled ? 'true' : 'false' })
+    if (persist)
+      void window.api.config.save({ passiveCompanionEnabled: enabled ? 'true' : 'false' })
     if (persist && !this.overlayRuntime.isOverlayWindow()) void window.api.overlay.reloadAvatar()
     this.recordRuntimeEvent('Passive Companion Mode', enabled ? 'on' : 'off')
   }
@@ -1288,23 +1531,11 @@ export class Controller {
     this.pushMessage('assistant', 'История очищена. Приветствую снова, путник.')
   }
 
+  // Health probing is owned exclusively by the Speech capabilities health
+  // component (single owner, no parallel probes). This delegates and lets the
+  // onChange projection update both `speechCapabilities` and the legacy status dot.
   async checkHealth(): Promise<void> {
-    try {
-      const res = await window.api.health.check()
-      if (res.ok) {
-        const data = res.data as { status?: string; engines?: { f5?: { status?: string; mode?: string } } }
-        const ttsStatus = data?.engines?.f5?.status ?? data?.status
-        if (!ttsStatus || ttsStatus === 'ok' || ttsStatus === 'ready') {
-          this.set({ health: { state: 'ok', text: 'ASR / TTS OK' } })
-        } else {
-          this.set({ health: { state: 'warn', text: `ASR / TTS: ${ttsStatus}` } })
-        }
-      } else {
-        this.set({ health: { state: 'err', text: 'ASR / TTS недоступен' } })
-      }
-    } catch {
-      this.set({ health: { state: 'err', text: 'ASR / TTS недоступен' } })
-    }
+    this.speechCapabilitiesRuntime.recheck()
   }
 
   // Side-effect-free LLM probe: verifies the active provider is reachable and the
@@ -1329,9 +1560,11 @@ export class Controller {
         return
       }
       if (res.kind === 'auth') {
-        this.set(apiKey.trim()
-          ? { llmHealth: { state: 'error', detail: 'Ошибка аутентификации' } }
-          : { llmHealth: { state: 'unknown', detail: 'Не указан API-ключ' } })
+        this.set(
+          apiKey.trim()
+            ? { llmHealth: { state: 'error', detail: 'Ошибка аутентификации' } }
+            : { llmHealth: { state: 'unknown', detail: 'Не указан API-ключ' } },
+        )
         return
       }
       this.set({ llmHealth: { state: 'error', detail: 'Провайдер недоступен' } })

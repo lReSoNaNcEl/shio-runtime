@@ -1,16 +1,20 @@
-import type { LLMProvider } from '../public/chatTypes'
-import type { LlmProviderId } from './providerProfiles'
 import type { ModelCatalogProvider } from '../providers/catalogTypes'
 import {
-  BaseOpenAIProvider,
+  type BaseOpenAIProvider,
   CerebrasProvider,
   GithubModelsProvider,
   GroqProvider,
   MistralProvider,
-  OpenRouterProvider
+  OpenRouterProvider,
 } from '../providers/openai'
+import type { LLMProvider } from '../public/chatTypes'
+import type { LlmProviderId } from './providerProfiles'
 
-export function instantiateProvider(id: LlmProviderId, apiKey: string, model: string): BaseOpenAIProvider {
+export function instantiateProvider(
+  id: LlmProviderId,
+  apiKey: string,
+  model: string,
+): BaseOpenAIProvider {
   switch (id) {
     case 'groq':
       return new GroqProvider(apiKey, model)
@@ -25,7 +29,11 @@ export function instantiateProvider(id: LlmProviderId, apiKey: string, model: st
   }
 }
 
-export function createLLMProvider(config: { provider: LlmProviderId; apiKey: string; model: string }): LLMProvider {
+export function createLLMProvider(config: {
+  provider: LlmProviderId
+  apiKey: string
+  model: string
+}): LLMProvider {
   return instantiateProvider(config.provider, config.apiKey, config.model)
 }
 

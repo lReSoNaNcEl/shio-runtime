@@ -1,9 +1,15 @@
-import * as THREE from 'three'
 import type { VRM } from '@pixiv/three-vrm'
+import * as THREE from 'three'
+
 import { avatarLookAtTuning } from './avatarTuning'
 
 export type LookAtMode = 'idle' | 'speaking' | 'listening' | 'thinking' | 'userFocus'
-export type LookAtTargetKind = 'none' | 'camera' | 'idleOffset' | 'thinkingOffset' | 'conversationFocus'
+export type LookAtTargetKind =
+  | 'none'
+  | 'camera'
+  | 'idleOffset'
+  | 'thinkingOffset'
+  | 'conversationFocus'
 
 export interface LookAtDebugState {
   mode: LookAtMode
@@ -48,7 +54,14 @@ export class LookTargetResolver {
     modeTuning: LookAtModeTuning
     baseTarget: THREE.Object3D | null
     target: THREE.Object3D
-  }): { targetKind: LookAtTargetKind; eyeYaw: number; eyePitch: number; returnProgress: number; thinkingTimerMs: number; nextSaccadeMs: number } {
+  }): {
+    targetKind: LookAtTargetKind
+    eyeYaw: number
+    eyePitch: number
+    returnProgress: number
+    thinkingTimerMs: number
+    nextSaccadeMs: number
+  } {
     const { deltaMs, mode, modeTuning, baseTarget, target } = input
     if (!baseTarget) {
       this.resetMode(mode)
@@ -72,7 +85,8 @@ export class LookTargetResolver {
       const duration = avatarLookAtTuning.thinkingLookAwayDurationMs
       const hold = Math.min(1, this.thinkingTimerMs / Math.max(1, duration))
       const returnStart = avatarLookAtTuning.thinkingReturnStart
-      const returning = hold > returnStart ? (hold - returnStart) / Math.max(0.001, 1 - returnStart) : 0
+      const returning =
+        hold > returnStart ? (hold - returnStart) / Math.max(0.001, 1 - returnStart) : 0
       const strength = 1 - this.easeInOut(returning)
       yaw += avatarLookAtTuning.targets.thinkingOffset.yaw * strength
       pitch += avatarLookAtTuning.targets.thinkingOffset.pitch * strength
@@ -123,8 +137,15 @@ export class LookTargetResolver {
     targetKind: LookAtTargetKind,
     yaw: number,
     pitch: number,
+    returnProgress: number,
+  ): {
+    targetKind: LookAtTargetKind
+    eyeYaw: number
+    eyePitch: number
     returnProgress: number
-  ): { targetKind: LookAtTargetKind; eyeYaw: number; eyePitch: number; returnProgress: number; thinkingTimerMs: number; nextSaccadeMs: number } {
+    thinkingTimerMs: number
+    nextSaccadeMs: number
+  } {
     if (baseTarget) {
       const base = new THREE.Vector3()
       const right = new THREE.Vector3(1, 0, 0).applyQuaternion(baseTarget.quaternion)
@@ -140,7 +161,7 @@ export class LookTargetResolver {
       eyePitch: pitch,
       returnProgress,
       thinkingTimerMs: this.thinkingTimerMs,
-      nextSaccadeMs: this.nextSaccadeMs
+      nextSaccadeMs: this.nextSaccadeMs,
     }
   }
 
@@ -180,7 +201,10 @@ export class LookTargetResolver {
     this.saccadeElapsedMs = 0
     this.saccadeYaw = this.randomSigned(modeTuning.saccadeAmplitude.yaw)
     this.saccadePitch = this.randomSigned(modeTuning.saccadeAmplitude.pitch)
-    this.nextSaccadeMs = this.randomRange(modeTuning.saccadeIntervalMs.min, modeTuning.saccadeIntervalMs.max)
+    this.nextSaccadeMs = this.randomRange(
+      modeTuning.saccadeIntervalMs.min,
+      modeTuning.saccadeIntervalMs.max,
+    )
   }
 
   private updateGlance(deltaMs: number, mode: LookAtMode, modeTuning: LookAtModeTuning): void {
@@ -192,7 +216,10 @@ export class LookTargetResolver {
     if (Math.random() < chance) {
       this.glanceAwayMs = modeTuning.glanceAwayDurationMs
       this.focusHoldMs = this.randomRange(modeTuning.focusHoldMs.min, modeTuning.focusHoldMs.max)
-      this.startOvershoot(avatarLookAtTuning.targets.idleOffset.yaw, avatarLookAtTuning.targets.idleOffset.pitch)
+      this.startOvershoot(
+        avatarLookAtTuning.targets.idleOffset.yaw,
+        avatarLookAtTuning.targets.idleOffset.pitch,
+      )
     }
   }
 
@@ -212,7 +239,8 @@ export class LookTargetResolver {
 
   private getOvershootEnvelope(): number {
     if (this.overshootElapsedMs <= 0) return 0
-    const progress = 1 - this.overshootElapsedMs / Math.max(1, avatarLookAtTuning.overshootDurationMs)
+    const progress =
+      1 - this.overshootElapsedMs / Math.max(1, avatarLookAtTuning.overshootDurationMs)
     return Math.sin(Math.PI * Math.max(0, Math.min(1, progress)))
   }
 
@@ -286,14 +314,13 @@ export class LookAtRuntime {
       mode: this.mode,
       modeTuning: tuning,
       baseTarget: this.baseTarget,
-      target: this.resolvedTarget
+      target: this.resolvedTarget,
     })
     this.applyHeadLag(delta)
     this.targetKind = resolved.targetKind
     this.eyeYaw = resolved.eyeYaw
     this.eyePitch = resolved.eyePitch
     this.returnProgress = resolved.returnProgress
-
   }
 
   getDebugState(): LookAtDebugState {
@@ -308,7 +335,7 @@ export class LookAtRuntime {
       focusHoldMs: this.resolver.getFocusHoldMs(),
       overshootMs: this.resolver.getOvershootMs(),
       microSaccade: this.resolver.getMicroSaccade(),
-      headLagMs: this.headLagMs
+      headLagMs: this.headLagMs,
     }
   }
 
@@ -322,20 +349,31 @@ export class LookAtRuntime {
     }
 
     const distance = this.target.position.distanceTo(this.resolvedTarget.position)
-    const speed = this.mode === 'speaking' ? avatarLookAtTuning.headLag.speakingSmoothing : avatarLookAtTuning.headLag.defaultSmoothing
+    const speed =
+      this.mode === 'speaking'
+        ? avatarLookAtTuning.headLag.speakingSmoothing
+        : avatarLookAtTuning.headLag.defaultSmoothing
     const t = 1 - Math.exp(-Math.max(0, delta) * speed)
     this.target.position.lerp(this.resolvedTarget.position, t)
     this.target.quaternion.copy(this.resolvedTarget.quaternion)
     this.target.updateMatrixWorld(true)
-    this.headLagMs = distance > 0.001 ? Math.min(avatarLookAtTuning.headLag.maxDebugMs, (distance / Math.max(0.001, speed)) * 1000) : 0
+    this.headLagMs =
+      distance > 0.001
+        ? Math.min(
+            avatarLookAtTuning.headLag.maxDebugMs,
+            (distance / Math.max(0.001, speed)) * 1000,
+          )
+        : 0
   }
 
   private applyVrmLookAtTarget(): boolean {
-    const lookAt = this.vrm?.lookAt as {
-      target?: THREE.Object3D | null
-      autoUpdate?: boolean
-      reset?: () => void
-    } | undefined
+    const lookAt = this.vrm?.lookAt as
+      | {
+          target?: THREE.Object3D | null
+          autoUpdate?: boolean
+          reset?: () => void
+        }
+      | undefined
     if (!lookAt) {
       if (this.baseTarget) console.warn('[vrm] lookAt is not available on this model')
       return false
@@ -347,11 +385,13 @@ export class LookAtRuntime {
   }
 
   private clearVrmLookAtTarget(): void {
-    const lookAt = this.vrm?.lookAt as {
-      target?: THREE.Object3D | null
-      autoUpdate?: boolean
-      reset?: () => void
-    } | undefined
+    const lookAt = this.vrm?.lookAt as
+      | {
+          target?: THREE.Object3D | null
+          autoUpdate?: boolean
+          reset?: () => void
+        }
+      | undefined
     if (!lookAt) return
     lookAt.target = null
     // three-vrm keeps the last applied yaw/pitch when target becomes null.
@@ -359,5 +399,4 @@ export class LookAtRuntime {
     // leaving the eyes frozen at their last camera/glance direction.
     lookAt.reset?.()
   }
-
 }

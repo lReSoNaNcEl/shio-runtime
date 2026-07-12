@@ -1,11 +1,46 @@
 import axios, { type AxiosInstance } from 'axios'
-import { HealthSchema, RecognizeSchema, type Health, type Recognize } from '../schemas'
-import { emotionRegistry, type EmotionContract } from '../../shared/emotions'
+
+import { type EmotionContract, emotionRegistry } from '../../shared/emotions'
 import { mainLog } from '../logging/safeLogger'
+import { type Health, HealthSchema, type Recognize, RecognizeSchema } from '../schemas'
+import { normalizeSpeechError, SpeechServiceError } from './speechErrors'
 
 export type { Health, Recognize }
 
 const DEFAULT_TTS_VOICE_ID = 'animevox_makima'
+
+/**
+ * Per-capability projection derived from a successful `/health` response. A
+ * reachable service does not imply every engine is up: ASR, F5 (TTS), and the
+ * streaming transport are reported independently so the renderer can render
+ * partial availability.
+ */
+export interface SpeechCapabilitiesProbe {
+  serviceReachable: boolean
+  recognition: boolean
+  synthesis: boolean
+  streaming: boolean
+}
+
+function isEngineOk(status: string | undefined): boolean {
+  if (!status) return true // absent = not reported as failed; treat as available
+  const s = status.toLowerCase()
+  return s === 'ok' || s === 'ready' || s === 'available' || s === 'up'
+}
+
+/** Derive per-capability availability from a parsed `/health` payload. */
+export function deriveCapabilities(health: Health): SpeechCapabilitiesProbe {
+  const asrStatus = health.asr?.status
+  const f5Status = health.engines?.f5?.status
+  return {
+    serviceReachable: true,
+    recognition: isEngineOk(asrStatus),
+    synthesis: isEngineOk(f5Status),
+    // The streaming transport rides on the same service; if the service is
+    // reachable and ASR is up, streaming is considered available.
+    streaming: isEngineOk(asrStatus),
+  }
+}
 
 export interface SynthesizeResult {
   audioBuffer: ArrayBuffer
@@ -31,13 +66,17 @@ export class SpeechClient {
       baseURL: ipv4Url,
       timeout: 120_000,
       // The local speech backend should never be routed through a proxy.
-      proxy: false
+      proxy: false,
     })
   }
 
   async health(): Promise<Health> {
-    const res = await this.http.get('/health')
-    return HealthSchema.parse(res.data)
+    try {
+      const res = await this.http.get('/health')
+      return HealthSchema.parse(res.data)
+    } catch (error) {
+      throw normalizeSpeechError(error, 'health')
+    }
   }
 
   async emotions(): Promise<EmotionContract> {
@@ -45,7 +84,7 @@ export class SpeechClient {
     return {
       schemaVersion: Number(res.data?.schemaVersion),
       defaultEmotion: String(res.data?.defaultEmotion ?? ''),
-      supported: Array.isArray(res.data?.supported) ? res.data.supported.map(String) : []
+      supported: Array.isArray(res.data?.supported) ? res.data.supported.map(String) : [],
     }
   }
 
@@ -55,7 +94,7 @@ export class SpeechClient {
       if (emotionRegistry.hasDrift(remote)) {
         mainLog.warn('[emotion] Architecture drift between Shio Runtime and speech backend', {
           local: emotionRegistry.contract(),
-          remote
+          remote,
         })
       }
     } catch (error) {
@@ -64,13 +103,33 @@ export class SpeechClient {
   }
 
   async recognize(wavBuffer: ArrayBuffer): Promise<Recognize> {
-    const form = new FormData()
-    form.append('file', new Blob([wavBuffer], { type: 'audio/wav' }), 'audio.wav')
-    const res = await this.http.post('/recognize', form)
-    return RecognizeSchema.parse(res.data)
+    try {
+      const form = new FormData()
+      form.append('file', new Blob([wavBuffer], { type: 'audio/wav' }), 'audio.wav')
+      const res = await this.http.post('/recognize', form)
+      return RecognizeSchema.parse(res.data)
+    } catch (error) {
+      throw normalizeSpeechError(error, 'recognition')
+    }
   }
 
   async synthesize(params: {
+    text: string
+    language?: string
+    emotion?: string
+    voiceId?: string
+    speed?: number
+    pitch?: number
+    engine?: string
+  }): Promise<SynthesizeResult> {
+    try {
+      return await this.synthesizeInternal(params)
+    } catch (error) {
+      throw normalizeSpeechError(error, 'synthesis')
+    }
+  }
+
+  private async synthesizeInternal(params: {
     text: string
     language?: string
     emotion?: string
@@ -88,15 +147,20 @@ export class SpeechClient {
         voiceId: params.voiceId ?? DEFAULT_TTS_VOICE_ID,
         speed: params.speed ?? 1.0,
         pitch: params.pitch ?? 0,
-        engine: params.engine ?? 'f5'
+        engine: params.engine ?? 'f5',
       },
-      { responseType: 'arraybuffer' }
+      { responseType: 'arraybuffer' },
     )
     const data = res.data as ArrayBuffer | Buffer
     const contentType = String(res.headers['content-type'] ?? '').toLowerCase()
     const byteLength = Buffer.isBuffer(data) ? data.byteLength : data.byteLength
     if (!contentType.startsWith('audio/') || byteLength < 44) {
-      throw new Error(`Speech service returned invalid audio (content-type=${contentType || 'missing'}, bytes=${byteLength})`)
+      throw new SpeechServiceError({
+        code: 'INVALID_RESPONSE',
+        operation: 'synthesis',
+        recoverable: false,
+        technicalMessage: `invalid audio (content-type=${contentType || 'missing'}, bytes=${byteLength})`,
+      })
     }
     // axios may return a Node Buffer; normalize to a standalone ArrayBuffer
     if (Buffer.isBuffer(data)) {
@@ -112,7 +176,7 @@ export class SpeechClient {
         generatedLatencyMs: res.headers['x-generated-latency-ms'],
         cache: res.headers['x-cache'],
         rtf: res.headers['x-rtf'],
-        durationSec: res.headers['x-duration-sec']
+        durationSec: res.headers['x-duration-sec'],
       }
     }
     return {
@@ -125,7 +189,7 @@ export class SpeechClient {
       generatedLatencyMs: res.headers['x-generated-latency-ms'],
       cache: res.headers['x-cache'],
       rtf: res.headers['x-rtf'],
-      durationSec: res.headers['x-duration-sec']
+      durationSec: res.headers['x-duration-sec'],
     }
   }
 }

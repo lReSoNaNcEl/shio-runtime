@@ -33,7 +33,6 @@ export class AvatarSpeakingGestureScheduler {
   private nextGestureInMs = 0
   private currentGesture = 'none'
   private lastScheduledAnimation = 'none'
-  private lastBehavior: AvatarBehaviorId | 'none' = 'none'
   private phase: SpeakingGesturePhase = 'idle'
   private lastRequestedPhase: SpeakingGesturePhase = 'idle'
   private nextBehavior: AvatarBehaviorId | 'none' = 'none'
@@ -48,7 +47,6 @@ export class AvatarSpeakingGestureScheduler {
     this.nextGestureInMs = 0
     this.currentGesture = 'none'
     this.lastScheduledAnimation = 'none'
-    this.lastBehavior = 'none'
     this.phase = 'beginning'
     this.lastRequestedPhase = 'beginning'
     this.skippedCandidates = []
@@ -60,11 +58,15 @@ export class AvatarSpeakingGestureScheduler {
       shouldRequest: true,
       behaviorId,
       phase: this.phase,
-      reason: this.schedulerDecision
+      reason: this.schedulerDecision,
     }
   }
 
-  update(delta: number, effect: AvatarStateEffect, state?: CharacterState): SpeakingGestureDecision | null {
+  update(
+    delta: number,
+    effect: AvatarStateEffect,
+    state?: CharacterState,
+  ): SpeakingGestureDecision | null {
     if (!this.active) return null
 
     this.elapsedMs += Math.max(0, delta * 1000)
@@ -73,7 +75,8 @@ export class AvatarSpeakingGestureScheduler {
     const behaviorId = this.resolveBehavior(effect, state, this.phase)
     this.nextBehavior = behaviorId
     const urgentPhaseChange =
-      this.phase !== this.lastRequestedPhase && (this.phase === 'ending' || this.phase === 'emotional-peak')
+      this.phase !== this.lastRequestedPhase &&
+      (this.phase === 'ending' || this.phase === 'emotional-peak')
 
     if (this.nextGestureInMs > 0 && !urgentPhaseChange) {
       this.schedulerDecision = `waiting ${Math.round(this.nextGestureInMs)}ms`
@@ -87,7 +90,7 @@ export class AvatarSpeakingGestureScheduler {
       shouldRequest: true,
       behaviorId,
       phase: this.phase,
-      reason: this.schedulerDecision
+      reason: this.schedulerDecision,
     }
   }
 
@@ -100,7 +103,6 @@ export class AvatarSpeakingGestureScheduler {
   }): void {
     this.currentGesture = `${input.behaviorId}:${input.animationId}`
     this.lastScheduledAnimation = input.animationId
-    this.lastBehavior = input.behaviorId as AvatarBehaviorId
     this.skippedCandidates = [...input.skippedCandidates]
     this.selectionReason = input.selectionReason
     this.lastRequestedPhase = input.phase
@@ -125,7 +127,6 @@ export class AvatarSpeakingGestureScheduler {
     this.nextGestureInMs = 0
     this.currentGesture = 'none'
     this.lastScheduledAnimation = 'none'
-    this.lastBehavior = 'none'
     this.phase = 'idle'
     this.lastRequestedPhase = 'idle'
     this.nextBehavior = 'none'
@@ -150,26 +151,39 @@ export class AvatarSpeakingGestureScheduler {
       nextBehavior: this.nextBehavior,
       skippedCandidates: [...this.skippedCandidates],
       selectionReason: this.selectionReason,
-      schedulerDecision: this.schedulerDecision
+      schedulerDecision: this.schedulerDecision,
     }
   }
 
   private resolvePhase(state?: CharacterState): SpeakingGesturePhase {
     const progress = state?.speechState.playbackProgress ?? 0
     const presence = state?.conversationPresence
-    if (progress >= speakingGestureTuning.endingProgress || presence?.responsePhase === 'finishingSpeech') return 'ending'
+    if (
+      progress >= speakingGestureTuning.endingProgress ||
+      presence?.responsePhase === 'finishingSpeech'
+    )
+      return 'ending'
     if (this.isEmotionalPeak(state)) return 'emotional-peak'
     return this.elapsedMs <= speakingGestureTuning.longReplyEarlyWindowMs ? 'beginning' : 'middle'
   }
 
-  private resolveBehavior(effect: AvatarStateEffect, state: CharacterState | undefined, phase: SpeakingGesturePhase): AvatarBehaviorId {
+  private resolveBehavior(
+    effect: AvatarStateEffect,
+    state: CharacterState | undefined,
+    phase: SpeakingGesturePhase,
+  ): AvatarBehaviorId {
     const emotionBehavior = effect.behaviorId
     if (phase === 'ending') return 'neutral'
     if (phase === 'emotional-peak') return emotionBehavior
     if (phase === 'beginning') return emotionBehavior === 'neutral' ? 'happy' : emotionBehavior
 
     const presence = state?.conversationPresence
-    if (presence?.emphasis === 'joking' || presence?.reaction === 'playful' || presence?.reaction === 'amused') return 'happy'
+    if (
+      presence?.emphasis === 'joking' ||
+      presence?.reaction === 'playful' ||
+      presence?.reaction === 'amused'
+    )
+      return 'happy'
     if (presence?.emphasis === 'warning' || presence?.emphasis === 'disagreement') return 'angry'
     if (presence?.emphasis === 'confused' || presence?.reaction === 'curious') return 'surprised'
     if (presence?.engagement === 'high') return emotionBehavior
@@ -181,7 +195,8 @@ export class AvatarSpeakingGestureScheduler {
 
   private isEmotionalPeak(state?: CharacterState): boolean {
     const emotion = state?.emotion ?? ''
-    if ((speakingGestureTuning.emotionalPeakBehaviors as readonly string[]).includes(emotion)) return true
+    if ((speakingGestureTuning.emotionalPeakBehaviors as readonly string[]).includes(emotion))
+      return true
     const presence = state?.conversationPresence
     return (
       presence?.engagement === 'high' &&

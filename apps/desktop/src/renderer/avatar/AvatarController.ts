@@ -1,37 +1,35 @@
 import type * as THREE from 'three'
+
+import type { CharacterState } from '../../shared/runtime/characterState'
+import type { OverlayViewMode } from '../three/avatarTuning'
+import { speakingGestureTuning } from '../three/avatarTuning'
+import type { EarAxisOverride } from '../three/EarBehaviorRuntime'
 import { LipSync, type LipSyncSession, type MouthWeights } from '../three/LipSync'
 import { VrmModel } from '../three/VrmModel'
 import { AvatarAnimationController } from './AvatarAnimationController'
-import { AvatarBehaviorEngine, type AvatarBehaviorEngineDecision } from './AvatarBehaviorEngine'
-import {
-  AvatarBehaviorResolver,
-  type AvatarBehaviorResolution
-} from './AvatarBehaviorResolver'
 import type { AvatarAnimationQueueItem } from './AvatarAnimationQueue'
-import { AvatarGestureScheduler } from './AvatarGestureScheduler'
+import { AvatarBehaviorEngine, type AvatarBehaviorEngineDecision } from './AvatarBehaviorEngine'
+import { type AvatarBehaviorResolution, AvatarBehaviorResolver } from './AvatarBehaviorResolver'
 import {
-  AvatarSpeakingGestureScheduler,
-  type SpeakingGestureDecision
-} from './AvatarSpeakingGestureScheduler'
+  type AvatarBehaviorTransitionLogEntry,
+  type AvatarControllerDebugState,
+  AvatarDebugSnapshotBuilder,
+} from './AvatarDebugSnapshotBuilder'
+import { AvatarGestureScheduler } from './AvatarGestureScheduler'
 import { AvatarIdleBehaviorController } from './AvatarIdleBehaviorController'
 import { AvatarIdleOrchestrator, type IdleOrchestratorDebugState } from './AvatarIdleOrchestrator'
-import { AvatarStateMachine, type AvatarMode, type AvatarStateEffect } from './AvatarStateMachine'
-import type { AvatarPlaybackRequestSource } from './AvatarPlaybackRequestLog'
 import { AvatarPlaybackCoordinator } from './AvatarPlaybackCoordinator'
-import {
-  AvatarDebugSnapshotBuilder,
-  type AvatarBehaviorTransitionLogEntry,
-  type AvatarControllerDebugState
-} from './AvatarDebugSnapshotBuilder'
-import { AvatarStateEffectApplier } from './AvatarStateEffectApplier'
+import type { AvatarPlaybackRequestSource } from './AvatarPlaybackRequestLog'
 import { toAvatarMode, toProceduralMode } from './AvatarRuntimeMappers'
-import type { DebugAvatarMode } from './avatarAnimations'
+import {
+  AvatarSpeakingGestureScheduler,
+  type SpeakingGestureDecision,
+} from './AvatarSpeakingGestureScheduler'
+import { AvatarStateEffectApplier } from './AvatarStateEffectApplier'
+import { type AvatarMode, type AvatarStateEffect, AvatarStateMachine } from './AvatarStateMachine'
 import { getAnimation } from './animationManifest'
-import type { CharacterState } from '../../shared/runtime/characterState'
-import { speakingGestureTuning } from '../three/avatarTuning'
-import type { OverlayViewMode } from '../three/avatarTuning'
+import type { DebugAvatarMode } from './avatarAnimations'
 import { OverlayAnimationPolicy } from './OverlayAnimationPolicy'
-import type { EarAxisOverride } from '../three/EarBehaviorRuntime'
 
 export type { AvatarMode } from './AvatarStateMachine'
 export type { AvatarBehaviorTransitionLogEntry }
@@ -79,9 +77,19 @@ export class AvatarController {
           idleEffect,
           'idle-presence',
           'idle',
-          [...(lastExtendedIdle ? [lastExtendedIdle] : []), ...this.getOverlayExcludedAnimationIds(idleEffect)]
+          [
+            ...(lastExtendedIdle ? [lastExtendedIdle] : []),
+            ...this.getOverlayExcludedAnimationIds(idleEffect),
+          ],
         )
-        this.playResolvedBehavior(idleEffect, 'idle-orchestrator', 'idle presence tick', false, resolved, 'extended-idle')
+        this.playResolvedBehavior(
+          idleEffect,
+          'idle-orchestrator',
+          'idle presence tick',
+          false,
+          resolved,
+          'extended-idle',
+        )
       } else {
         this.playResolvedBehavior(idleEffect, 'idle-orchestrator', 'idle orchestrator tick')
       }
@@ -93,7 +101,9 @@ export class AvatarController {
     // discrete applyCharacterState events. Ear-only — facial profiles stay
     // event-driven.
     const earMode = toProceduralMode(state?.mode ?? mode)
-    const earEmotion = state ? state.emotion || state.avatar.expression || 'neutral' : this.stateMachine.getEmotion()
+    const earEmotion = state
+      ? state.emotion || state.avatar.expression || 'neutral'
+      : this.stateMachine.getEmotion()
     this.vrmModel.syncEarState(earMode, earEmotion)
 
     if (this.externalMouthWeights) this.vrmModel.setMouthWeights(this.externalMouthWeights)
@@ -127,7 +137,10 @@ export class AvatarController {
     this.applyStateEffect(this.stateMachine.setMode(mode))
   }
 
-  applyCharacterState(state: CharacterState, options: { lipSyncSession?: LipSyncSession; stopLipSyncTurnId?: string } = {}): void {
+  applyCharacterState(
+    state: CharacterState,
+    options: { lipSyncSession?: LipSyncSession; stopLipSyncTurnId?: string } = {},
+  ): void {
     const mode = toAvatarMode(state.mode)
     const emotionKey = state.emotion || state.avatar.expression || 'neutral'
     const vrmEmotion = state.avatar.vrmExpression
@@ -143,7 +156,7 @@ export class AvatarController {
         accepted: false,
         decision: 'ignored',
         rejectionReason: 'semantic state unchanged',
-        frame: this.frame
+        frame: this.frame,
       })
       return
     }
@@ -151,7 +164,8 @@ export class AvatarController {
     this.lastCharacterStateKey = semanticKey
 
     if (mode === 'speaking') {
-      if (options.lipSyncSession) this.startSpeaking(options.lipSyncSession, emotionKey, vrmEmotion, state)
+      if (options.lipSyncSession)
+        this.startSpeaking(options.lipSyncSession, emotionKey, vrmEmotion, state)
       else this.showSpeaking(emotionKey, vrmEmotion, state)
       return
     }
@@ -162,8 +176,13 @@ export class AvatarController {
     }
 
     this.applyStateEffect(
-      this.stateMachine.setMode(mode), vrmEmotion, undefined, state,
-      'character-state', 'CharacterState mode/emotion changed', options.stopLipSyncTurnId
+      this.stateMachine.setMode(mode),
+      vrmEmotion,
+      undefined,
+      state,
+      'character-state',
+      'CharacterState mode/emotion changed',
+      options.stopLipSyncTurnId,
     )
     if (emotionKey || vrmEmotion) this.setEmotion(emotionKey, vrmEmotion)
   }
@@ -176,10 +195,22 @@ export class AvatarController {
 
   prepareSpeaking(emotionKey?: string, vrmEmotion?: string, state?: CharacterState): void {
     const effect = this.stateMachine.prepareSpeaking(emotionKey)
-    this.applyStateEffect(effect, vrmEmotion, undefined, state, 'character-state', 'prepare speaking')
+    this.applyStateEffect(
+      effect,
+      vrmEmotion,
+      undefined,
+      state,
+      'character-state',
+      'prepare speaking',
+    )
   }
 
-  startSpeaking(session: LipSyncSession, emotionKey?: string, vrmEmotion?: string, state?: CharacterState): void {
+  startSpeaking(
+    session: LipSyncSession,
+    emotionKey?: string,
+    vrmEmotion?: string,
+    state?: CharacterState,
+  ): void {
     const effect = this.stateMachine.startSpeaking(emotionKey)
     this.applyStateEffect(effect, vrmEmotion, session, state, 'character-state', 'start speaking')
   }
@@ -200,13 +231,20 @@ export class AvatarController {
       ih: weights.ih ?? 0,
       ou: weights.ou ?? 0,
       ee: weights.ee ?? 0,
-      oh: weights.oh ?? 0
+      oh: weights.oh ?? 0,
     }
     this.vrmModel.setMouthWeights(this.externalMouthWeights)
   }
 
   stopSpeaking(): void {
-    this.applyStateEffect(this.stateMachine.stopSpeaking(), undefined, undefined, undefined, 'character-state', 'stop speaking')
+    this.applyStateEffect(
+      this.stateMachine.stopSpeaking(),
+      undefined,
+      undefined,
+      undefined,
+      'character-state',
+      'stop speaking',
+    )
   }
 
   stopLipSync(turnId: string): boolean {
@@ -237,7 +275,7 @@ export class AvatarController {
       playbackRequests: this.playback.getPlaybackRequests(),
       vrmModel: this.vrmModel,
       mouthWeights: this.getMouthWeights(),
-      behaviorTimeline: this.playback.getBehaviorTimeline()
+      behaviorTimeline: this.playback.getBehaviorTimeline(),
     })
   }
 
@@ -252,7 +290,7 @@ export class AvatarController {
       animationId: id,
       loop,
       mode: this.lastEffect?.mode ?? 'idle',
-      frame: this.frame
+      frame: this.frame,
     })
   }
 
@@ -266,7 +304,7 @@ export class AvatarController {
     if (!this.lastBehaviorResolution) return
     this.lastBehaviorResolution = {
       ...this.lastBehaviorResolution,
-      activeCooldowns: []
+      activeCooldowns: [],
     }
   }
 
@@ -290,11 +328,23 @@ export class AvatarController {
     this.vrmModel.forceBlink()
   }
 
-  testTransition(kind: 'idle-to-idle' | 'idle-to-speaking' | 'speaking-to-idle' | 'thinking-to-idle' | 'greeting-to-idle'): void {
+  testTransition(
+    kind:
+      | 'idle-to-idle'
+      | 'idle-to-speaking'
+      | 'speaking-to-idle'
+      | 'thinking-to-idle'
+      | 'greeting-to-idle',
+  ): void {
     switch (kind) {
       case 'idle-to-idle':
         this.applyStateEffect(this.stateMachine.setMode('idle'))
-        this.playResolvedBehavior(this.stateMachine.getIdleEffect(), 'idle-orchestrator', 'debug transition idle-to-idle', true)
+        this.playResolvedBehavior(
+          this.stateMachine.getIdleEffect(),
+          'idle-orchestrator',
+          'debug transition idle-to-idle',
+          true,
+        )
         return
       case 'idle-to-speaking':
         this.applyStateEffect(this.stateMachine.setMode('idle'))
@@ -320,8 +370,16 @@ export class AvatarController {
     this.applyStateEffect(this.stateMachine.previewGreeting())
     const behaviorDecision = this.behaviorEngine.decide(idleEffect)
     this.lastBehaviorEngineDecision = behaviorDecision
-    this.playResolvedBehavior({ ...idleEffect, behaviorId: behaviorDecision.intent }, 'idle-orchestrator', 'queue test sequence')
-    this.playResolvedBehavior({ ...idleEffect, behaviorId: behaviorDecision.intent }, 'idle-orchestrator', 'queue test sequence duplicate')
+    this.playResolvedBehavior(
+      { ...idleEffect, behaviorId: behaviorDecision.intent },
+      'idle-orchestrator',
+      'queue test sequence',
+    )
+    this.playResolvedBehavior(
+      { ...idleEffect, behaviorId: behaviorDecision.intent },
+      'idle-orchestrator',
+      'queue test sequence duplicate',
+    )
   }
 
   setLookAtTarget(target: THREE.Object3D | null): boolean {
@@ -343,13 +401,18 @@ export class AvatarController {
     state?: CharacterState,
     source: AvatarPlaybackRequestSource = 'state-effect',
     reason = 'state effect',
-    stopLipSyncTurnId?: string
+    stopLipSyncTurnId?: string,
   ): void {
     this.stateEffects.apply({ effect, vrmEmotion, lipSyncSession, stopLipSyncTurnId, state })
 
     if (effect.mode === 'speaking') {
       const decision = this.speakingGestures.begin(effect, state)
-      this.playSpeakingGestureDecision({ ...effect, behaviorId: decision.behaviorId }, state, decision, 'speech start')
+      this.playSpeakingGestureDecision(
+        { ...effect, behaviorId: decision.behaviorId },
+        state,
+        decision,
+        'speech start',
+      )
       return
     }
 
@@ -366,10 +429,12 @@ export class AvatarController {
     reason: string,
     forceReplay = false,
     preResolved?: AvatarBehaviorResolution,
-    idleStage: IdleOrchestratorDebugState['idleStage'] = 'normal-idle'
+    idleStage: IdleOrchestratorDebugState['idleStage'] = 'normal-idle',
   ): void {
     this.lastEffect = effect
-    const resolved = preResolved ?? this.behaviorResolver.resolve(effect, this.getOverlayExcludedAnimationIds(effect))
+    const resolved =
+      preResolved ??
+      this.behaviorResolver.resolve(effect, this.getOverlayExcludedAnimationIds(effect))
     this.lastBehaviorResolution = resolved
     if (this.playback.shouldHoldSpeakingBehavior(effect, resolved)) {
       this.playback.recordRejectedResolvedBehavior({
@@ -378,7 +443,7 @@ export class AvatarController {
         source,
         reason: `${reason}; held during active speech`,
         frame: this.frame,
-        rejectionReason: 'speaking semantic behavior unchanged'
+        rejectionReason: 'speaking semantic behavior unchanged',
       })
       return
     }
@@ -394,7 +459,7 @@ export class AvatarController {
       reason,
       frame: this.frame,
       forceReplay,
-      interruptible: this.isInterruptible(effect, resolved)
+      interruptible: this.isInterruptible(effect, resolved),
     })
     if (source !== 'idle-orchestrator' && effect.mode === 'idle') this.idleOrchestrator.enterIdle()
   }
@@ -403,24 +468,37 @@ export class AvatarController {
     if (this.stateMachine.getMode() !== 'speaking' || this.lastEffect?.mode !== 'speaking') return
     const decision = this.speakingGestures.update(delta, this.lastEffect, state)
     if (!decision?.shouldRequest) return
-    this.playSpeakingGestureDecision({ ...this.lastEffect, behaviorId: decision.behaviorId }, state, decision, 'scheduled speaking gesture')
+    this.playSpeakingGestureDecision(
+      { ...this.lastEffect, behaviorId: decision.behaviorId },
+      state,
+      decision,
+      'scheduled speaking gesture',
+    )
   }
 
   private playSpeakingGestureDecision(
     effect: AvatarStateEffect,
     state: CharacterState | undefined,
     decision: SpeakingGestureDecision,
-    reason: string
+    reason: string,
   ): void {
-    const excluded = [...this.speakingGestures.getExcludedAnimationIds(), ...this.getOverlayExcludedAnimationIds(effect)]
+    const excluded = [
+      ...this.speakingGestures.getExcludedAnimationIds(),
+      ...this.getOverlayExcludedAnimationIds(effect),
+    ]
     const resolved = this.behaviorResolver.resolveBehaviorTag(
       effect,
       `behavior:${decision.behaviorId}`,
       decision.behaviorId,
-      excluded
+      excluded,
     )
     const skippedCandidates = resolved.candidates
-      .filter((candidate) => candidate.excludedByCooldown || candidate.excludedByUsage || excluded.includes(candidate.animationId))
+      .filter(
+        (candidate) =>
+          candidate.excludedByCooldown ||
+          candidate.excludedByUsage ||
+          excluded.includes(candidate.animationId),
+      )
       .map((candidate) => {
         const why = this.getOverlayExcludedAnimationIds(effect).includes(candidate.animationId)
           ? 'overlay-policy'
@@ -445,7 +523,7 @@ export class AvatarController {
         resolved,
         source: 'speaking-gesture-scheduler',
         reason: requestReason,
-        frame: this.frame
+        frame: this.frame,
       })
       return
     }
@@ -457,7 +535,7 @@ export class AvatarController {
       mode: effect.mode,
       loop: resolved.loop,
       enqueueTime: Date.now(),
-      interruptible: false
+      interruptible: false,
     }
     const requestReason = `${reason}; ${decision.reason}; phase:${decision.phase}; ${resolved.selectionReason}`
     this.playback.playResolvedImmediately({
@@ -467,14 +545,14 @@ export class AvatarController {
       source: 'speaking-gesture-scheduler',
       reason: requestReason,
       frame: this.frame,
-      blendDurationOverride: speakingGestureTuning.blendDuration
+      blendDurationOverride: speakingGestureTuning.blendDuration,
     })
     this.speakingGestures.recordSelection({
       animationId: resolved.animationId,
       behaviorId: resolved.behaviorId,
       skippedCandidates,
       selectionReason: resolved.selectionReason,
-      phase: decision.phase
+      phase: decision.phase,
     })
   }
 

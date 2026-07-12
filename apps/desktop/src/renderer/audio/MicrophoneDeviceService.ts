@@ -1,7 +1,7 @@
 import {
   isDefaultMicrophone,
   type MicrophoneFailureReason,
-  type MicrophoneOption
+  type MicrophoneOption,
 } from './microphoneGateTypes'
 
 /**
@@ -37,7 +37,7 @@ export class MicrophoneDeviceService {
         const label = device.label.trim()
         return {
           deviceId: device.deviceId,
-          label: label || `Микрофон ${++fallbackIndex}`
+          label: label || `Микрофон ${++fallbackIndex}`,
         }
       })
   }
@@ -68,7 +68,7 @@ export class MicrophoneDeviceService {
   async validate(
     deviceId: string,
     operationId: number,
-    isOperationCurrent: (operationId: number) => boolean
+    isOperationCurrent: (operationId: number) => boolean,
   ): Promise<void> {
     const audio: MediaTrackConstraints = isDefaultMicrophone(deviceId)
       ? {}
@@ -76,7 +76,9 @@ export class MicrophoneDeviceService {
     const stream = await navigator.mediaDevices.getUserMedia({ audio, video: false })
     // A probe stream must never outlive the probe — regardless of whether the
     // operation is still current — so it cannot race the real working stream.
-    stream.getTracks().forEach((track) => track.stop())
+    stream.getTracks().forEach((track) => {
+      track.stop()
+    })
     if (!isOperationCurrent(operationId)) {
       throw new StaleValidationError()
     }
@@ -118,7 +120,7 @@ export class MicrophoneDeviceService {
     console.error('[MicrophoneGate] Failed to validate microphone', {
       name,
       message,
-      constraint
+      constraint,
     })
 
     return { reason, nativeName: name, constraint }

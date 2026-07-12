@@ -1,33 +1,42 @@
-import * as THREE from 'three'
 import type { VRM } from '@pixiv/three-vrm'
+import type * as THREE from 'three'
+
+import { AvatarExpressionMixer, type FacialDebugState } from './AvatarExpressionMixer'
+import { facialTuning } from './avatarTuning'
 import { BlinkController } from './BlinkController'
 import { resolveEffectiveBlinkProfile } from './BlinkProfileResolver'
 import { BreathController, type BreathProfile } from './BreathController'
+import {
+  type EarAxisOverride,
+  type EarBehaviorDebugState,
+  EarBehaviorRuntime,
+} from './EarBehaviorRuntime'
 import { ExpressionController } from './ExpressionController'
-import { AvatarExpressionMixer, type FacialDebugState } from './AvatarExpressionMixer'
-import { MicroMotionController, type MicroMotionProfile } from './MicroMotionController'
-import { LookAtRuntime, type LookAtDebugState, type LookAtMode } from './LookAtRuntime'
-import { HeadMotionRuntime, type HeadMotionDebugState, type HeadMotionProfile } from './HeadMotionRuntime'
-import { EarBehaviorRuntime, type EarBehaviorDebugState, type EarAxisOverride } from './EarBehaviorRuntime'
-import { SpeakingEyeController } from './SpeakingEyeController'
-import { MouthClosureController } from './MouthClosureController'
-import { LipSyncVariationController } from './LipSyncVariationController'
-import { facialTuning } from './avatarTuning'
 import { completeMouthWeights, type MouthWeights } from './FacialProfile'
+import {
+  type HeadMotionDebugState,
+  type HeadMotionProfile,
+  HeadMotionRuntime,
+} from './HeadMotionRuntime'
+import { LipSyncVariationController } from './LipSyncVariationController'
+import { type LookAtDebugState, type LookAtMode, LookAtRuntime } from './LookAtRuntime'
+import { MicroMotionController, type MicroMotionProfile } from './MicroMotionController'
+import { MouthClosureController } from './MouthClosureController'
+import { SpeakingEyeController } from './SpeakingEyeController'
 import type { VrmProceduralMode } from './VrmModel'
 
 const BREATH_PROFILES: Record<VrmProceduralMode, BreathProfile> = {
   idle: { speed: 0.38, intensity: 0.01, weight: 1, smoothing: 2.8 },
   listening: { speed: 0.4, intensity: 0.009, weight: 0.95, smoothing: 3 },
   thinking: { speed: 0.32, intensity: 0.008, weight: 0.82, smoothing: 2.6 },
-  speaking: { speed: 0.5, intensity: 0.009, weight: 1.05, smoothing: 3.2 }
+  speaking: { speed: 0.5, intensity: 0.009, weight: 1.05, smoothing: 3.2 },
 }
 
 const MICRO_MOTION_PROFILES: Record<VrmProceduralMode, MicroMotionProfile> = {
   idle: { swayWeight: 0.7, eyeWeight: 0, headWeight: 0.08, headSpeed: 0.55 },
   listening: { swayWeight: 0.82, eyeWeight: 0, headWeight: 0.06, headSpeed: 0.5 },
   thinking: { swayWeight: 0.5, eyeWeight: 0, headWeight: 0.07, headSpeed: 0.42 },
-  speaking: { swayWeight: 0.72, eyeWeight: 0, headWeight: 0.05, headSpeed: 1.05 }
+  speaking: { swayWeight: 0.72, eyeWeight: 0, headWeight: 0.05, headSpeed: 1.05 },
 }
 
 export class AvatarFacialRuntime {
@@ -94,14 +103,23 @@ export class AvatarFacialRuntime {
     // Speaking Eye Micro-Expression — small drifting squint layered under Blink.
     const speaking = this.proceduralMode === 'speaking'
     this.speakingEyeController.update(delta, speaking, this.currentEmotionKey)
-    this.expressionMixer.setSpeakingEye(this.speakingEyeController.getLeft(), this.speakingEyeController.getRight())
+    this.expressionMixer.setSpeakingEye(
+      this.speakingEyeController.getLeft(),
+      this.speakingEyeController.getRight(),
+    )
     this.expressionMixer.setSpeakingEyeDebug(this.speakingEyeController.getDebugState())
 
     // Mouth Closure Envelope — brief procedural lip closures over LipSync.
     this.lipSyncVariationController.update(delta)
     this.expressionMixer.setMouth(this.lipSyncVariationController.apply(this.mouthWeights))
     const mouthOpenness = Math.max(...Object.values(this.mouthWeights))
-    this.mouthClosureController.update(delta, speaking, this.speechEnergy, mouthOpenness, this.antiStallActive)
+    this.mouthClosureController.update(
+      delta,
+      speaking,
+      this.speechEnergy,
+      mouthOpenness,
+      this.antiStallActive,
+    )
     this.expressionMixer.setMouthClosure(this.mouthClosureController.getStrength())
     this.expressionMixer.setMouthClosureDebug(this.mouthClosureController.getDebugState())
 
@@ -131,7 +149,13 @@ export class AvatarFacialRuntime {
     this.blinkController.force(duration === 1.2 ? facialTuning.blink.forceDuration : duration)
   }
 
-  nudgeMicroMotion(options: { headX?: number; headY?: number; eyeX?: number; eyeY?: number; duration?: number }): void {
+  nudgeMicroMotion(options: {
+    headX?: number
+    headY?: number
+    eyeX?: number
+    eyeY?: number
+    duration?: number
+  }): void {
     this.microMotionController.nudge(options)
   }
 
@@ -181,7 +205,7 @@ export class AvatarFacialRuntime {
     const profile = resolveEffectiveBlinkProfile(this.proceduralMode, this.currentEmotionKey)
     this.blinkController.setEffectiveProfile(profile, {
       proceduralMode: this.proceduralMode,
-      emotion: this.currentEmotionKey
+      emotion: this.currentEmotionKey,
     })
   }
 

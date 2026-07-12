@@ -27,7 +27,9 @@ var import_strict = __toESM(require("node:assert/strict"));
 // src/renderer/audio/audioPlayer.ts
 var ParallelPlaybackError = class extends Error {
   constructor(activeTurnId, requestedTurnId) {
-    super(`Parallel playback rejected: activeTurnId=${activeTurnId} requestedTurnId=${requestedTurnId}`);
+    super(
+      `Parallel playback rejected: activeTurnId=${activeTurnId} requestedTurnId=${requestedTurnId}`
+    );
     this.activeTurnId = activeTurnId;
     this.requestedTurnId = requestedTurnId;
     this.name = "ParallelPlaybackError";
@@ -49,8 +51,11 @@ var AudioPlayer = class {
     this.analyser.connect(this.audioCtx.destination);
   }
   async play(wavBuffer, options) {
+    if (wavBuffer.byteLength < 44) throw new Error("Speech audio response is empty or invalid");
     if (this.activePlayback) {
-      console.warn(`[audio] guard activeTurnId=${this.activePlayback.turnId} requestedTurnId=${options.turnId}`);
+      console.warn(
+        `[audio] guard activeTurnId=${this.activePlayback.turnId} requestedTurnId=${options.turnId}`
+      );
       throw new ParallelPlaybackError(this.activePlayback.turnId, options.turnId);
     }
     const sequence = ++this.playbackSeq;
@@ -84,7 +89,9 @@ var AudioPlayer = class {
       });
       source.onended = () => {
         if (this.activePlayback !== active || active.source !== source) {
-          console.debug(`[audio] playbackId=${playbackId} turnId=${options.turnId} stale-ended ignored`);
+          console.debug(
+            `[audio] playbackId=${playbackId} turnId=${options.turnId} stale-ended ignored`
+          );
           return;
         }
         console.log(`[audio] playbackId=${playbackId} turnId=${options.turnId} ended`);
@@ -134,6 +141,10 @@ var AudioPlayer = class {
     }
     active.settle?.();
   }
+  stopCurrent(turnId, _reason) {
+    if (this.activePlayback?.turnId !== turnId) return;
+    this.stop();
+  }
   isPlaying() {
     return this.activePlayback?.source !== null && Boolean(this.activePlayback);
   }
@@ -149,7 +160,8 @@ var AudioPlayer = class {
     };
   }
   assertOwner(active) {
-    if (this.activePlayback !== active) throw new Error(`Playback ownership lost for turnId=${active.turnId}`);
+    if (this.activePlayback !== active)
+      throw new Error(`Playback ownership lost for turnId=${active.turnId}`);
   }
   disposeSource(source, playbackId) {
     if (!source) return;
@@ -227,8 +239,64 @@ var backlogTuning = {
   recentIdLimit: 128
 };
 
+// src/renderer/continuousListening/AttentionEngine.ts
+var NAME_PATTERN = /(?:^|[^\p{L}\p{N}_])(?:shio|шио)(?=$|[^\p{L}\p{N}_])/iu;
+var SECOND_PERSON_PATTERN = /(?:^|[^\p{L}\p{N}_])(?:ты|тебя|тебе|твой|твоя|твоё|твои)(?=$|[^\p{L}\p{N}_])/iu;
+var QUESTION_PATTERN = /\?|(?:^|[^\p{L}\p{N}_])(?:кто|что|где|когда|зачем|почему|как|можешь|скажешь|думаешь)(?=$|[^\p{L}\p{N}_])/iu;
+var EMOTIONAL_PATTERN = /!{1,}|(?:^|[^\p{L}\p{N}_])(?:ужасн[\p{L}\p{M}]*|крут[\p{L}\p{M}]*|кошмар[\p{L}\p{M}]*|бесит|обожаю|ненавижу)(?=$|[^\p{L}\p{N}_])/iu;
+var AttentionEngine = class {
+  evaluate(chunk, context) {
+    const text = chunk.text.trim();
+    const directAddress = NAME_PATTERN.test(text);
+    const question = QUESTION_PATTERN.test(text);
+    const secondPerson = SECOND_PERSON_PATTERN.test(text);
+    const emotional = EMOTIONAL_PATTERN.test(text);
+    const reasons = [];
+    let score = 0;
+    const add = (value, reason) => {
+      score += value;
+      reasons.push(`${reason}:${value >= 0 ? "+" : ""}${value}`);
+    };
+    if (directAddress) add(attentionTuning.score.directNameMention, "direct_name");
+    if (question) add(attentionTuning.score.question, "question");
+    if (secondPerson) add(attentionTuning.score.secondPersonAddress, "second_person");
+    if (context.recentConversation)
+      add(attentionTuning.score.recentConversation, "recent_conversation");
+    if (context.followUpWindow) add(attentionTuning.score.followUpWindow, "follow_up");
+    if (context.mode === "streamer" && (emotional || question))
+      add(attentionTuning.score.streamerRelevance, "streamer_relevance");
+    if (emotional) add(attentionTuning.score.emotionalExpression, "emotional_expression");
+    if (text.length < 4) add(attentionTuning.score.tooShort, "too_short");
+    if (context.mode === "passive" && !directAddress)
+      add(attentionTuning.score.likelySelfTalk, "passive_self_talk");
+    if (context.cooldownActive && !directAddress)
+      add(attentionTuning.score.replyCooldown, "reply_cooldown");
+    if (context.isSpeaking && !directAddress)
+      add(attentionTuning.score.speakingNonDirect, "speaking_non_direct");
+    const threshold = attentionTuning.thresholds[context.mode];
+    let shouldAttend = score >= threshold;
+    if (!shouldAttend && (context.mode === "active" || context.mode === "streamer") && !context.cooldownActive) {
+      const curiosityHit = (context.rng ?? Math.random)() < context.curiosityChance;
+      if (curiosityHit) {
+        score = Math.max(score, threshold);
+        reasons.push("curiosity:accepted");
+        shouldAttend = true;
+      }
+    }
+    if (context.mode === "silent") shouldAttend = false;
+    if (reasons.length === 0) reasons.push("no_attention_signal");
+    return { shouldAttend, score, threshold, reasons, mode: context.mode, directAddress };
+  }
+};
+
 // src/renderer/continuousListening/BacklogSelector.ts
-var priorityRank = { P0: 0, P1: 1, P2: 2, P3: 3, P4: 4 };
+var priorityRank = {
+  P0: 0,
+  P1: 1,
+  P2: 2,
+  P3: 3,
+  P4: 4
+};
 var correctionPattern = /(?:^|\s)(?:нет|стоп|подожди|погоди|я имел[а]? в виду|поправка)(?:$|[\s,.!?])/iu;
 var continuationPattern = /(?:^|\s)(?:и ещё|ещё|точнее|то есть|лучше|в смысле)(?:$|[\s,.!?])/iu;
 var BacklogSelector = class {
@@ -248,22 +316,25 @@ var BacklogSelector = class {
     backlog.purge();
     const version = backlog.getVersion();
     const items = backlog.snapshot();
-    if (!context.continuousEnabled || items.length === 0) return this.discard(version, "streaming_disabled_or_empty");
+    if (!context.continuousEnabled || items.length === 0)
+      return this.discard(version, "streaming_disabled_or_empty");
     const clearWinner = this.unambiguousHighPriorityWinner(items);
-    if (clearWinner) return this.withSimpleMerge(clearWinner, items, version, "deterministic_high_priority");
+    if (clearWinner)
+      return this.withSimpleMerge(clearWinner, items, version, "deterministic_high_priority");
     const llmConfig = {
       ...context.llm,
       providerId: context.llm.providerId.trim(),
       model: context.llm.model.trim()
     };
-    const llmEligible = llmConfig.enabled && Boolean(llmConfig.providerId && llmConfig.model) && llmConfig.timeoutMs > 0 && llmConfig.minimumConfidence >= 0 && llmConfig.minimumConfidence <= 1 && items.length >= 2 && this.selectionIsAmbiguous(items) && !this.arbitrationInFlight && Boolean(this.arbitrate);
-    if (llmEligible) {
+    const arbitrate = this.arbitrate;
+    const llmEligible = llmConfig.enabled && Boolean(llmConfig.providerId && llmConfig.model) && llmConfig.timeoutMs > 0 && llmConfig.minimumConfidence >= 0 && llmConfig.minimumConfidence <= 1 && items.length >= 2 && this.selectionIsAmbiguous(items) && !this.arbitrationInFlight && Boolean(arbitrate);
+    if (llmEligible && arbitrate) {
       const generation = ++this.generation;
       const arbitrationId = ++this.arbitrationId;
       this.arbitrationInFlight = true;
       try {
         const result = await this.withTimeout(
-          Promise.resolve().then(() => this.arbitrate(items, version, llmConfig)),
+          Promise.resolve().then(() => arbitrate(items, version, llmConfig)),
           llmConfig.timeoutMs
         );
         if (backlog.getVersion() !== version || result.backlogVersion !== version || generation !== this.generation) {
@@ -272,7 +343,8 @@ var BacklogSelector = class {
         const snapshotIds = new Set(items.map((item2) => item2.id));
         const validIds = result.selectedIds.every((id) => snapshotIds.has(id) && backlog.has(id));
         const validAction = result.action === "discard_all" ? result.selectedIds.length === 0 : Boolean(result.text?.trim()) && (result.action === "select" ? result.selectedIds.length === 1 : result.selectedIds.length >= 2);
-        if (result.confidence >= llmConfig.minimumConfidence && validIds && validAction) return result;
+        if (result.confidence >= llmConfig.minimumConfidence && validIds && validAction)
+          return result;
         return this.deterministic(items, version, "low_confidence_or_schema_fallback");
       } catch {
         return this.deterministic(backlog.snapshot(), backlog.getVersion(), "llm_error_fallback");
@@ -301,7 +373,9 @@ var BacklogSelector = class {
     return priorityRank[sorted[0].priorityClass] === priorityRank[sorted[1].priorityClass] && Math.abs(sorted[0].attentionScore - sorted[1].attentionScore) < 15;
   }
   withSimpleMerge(winner, items, version, reason) {
-    const related = items.filter((item2) => item2.streamingSessionId === winner.streamingSessionId && Math.abs(item2.createdAt - winner.createdAt) <= backlogTuning.mergeWindowMs && (item2.id === winner.id || item2.followUpHint || item2.correctionHint || correctionPattern.test(item2.text) || continuationPattern.test(item2.text))).sort((a, b) => a.createdAt - b.createdAt);
+    const related = items.filter(
+      (item2) => item2.streamingSessionId === winner.streamingSessionId && Math.abs(item2.createdAt - winner.createdAt) <= backlogTuning.mergeWindowMs && (item2.id === winner.id || item2.followUpHint || item2.correctionHint || correctionPattern.test(item2.text) || continuationPattern.test(item2.text))
+    ).sort((a, b) => a.createdAt - b.createdAt);
     const mergedText = related.map((item2) => item2.text.trim()).join(" ");
     const selected = related.length > 1 && mergedText.length <= backlogTuning.maxMergedCharacters ? related : [winner];
     return {
@@ -314,7 +388,13 @@ var BacklogSelector = class {
     };
   }
   discard(version, reason) {
-    return { action: "discard_all", selectedIds: [], reason, confidence: 1, backlogVersion: version };
+    return {
+      action: "discard_all",
+      selectedIds: [],
+      reason,
+      confidence: 1,
+      backlogVersion: version
+    };
   }
   compareItems(a, b) {
     return priorityRank[a.priorityClass] - priorityRank[b.priorityClass] || b.attentionScore - a.attentionScore || b.createdAt - a.createdAt || a.id.localeCompare(b.id);
@@ -322,13 +402,16 @@ var BacklogSelector = class {
   withTimeout(promise, timeoutMs) {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error("Backlog arbitration timeout")), timeoutMs);
-      promise.then((value) => {
-        clearTimeout(timer);
-        resolve(value);
-      }, (error) => {
-        clearTimeout(timer);
-        reject(error);
-      });
+      promise.then(
+        (value) => {
+          clearTimeout(timer);
+          resolve(value);
+        },
+        (error) => {
+          clearTimeout(timer);
+          reject(error);
+        }
+      );
     });
   }
 };
@@ -385,7 +468,9 @@ var ConversationAdmissionCoordinator = class {
   enqueueStreaming(item2) {
     if (!this.continuousEnabled) return "ignored_busy";
     const outcome = this.backlog.enqueue(item2) ? "queued_backlog" : "ignored_busy";
-    console.debug(`[admission] turnId=${item2.id} source=continuous_listening outcome=${outcome} activeTurnId=${this.activeExecution?.turnId ?? "none"}`);
+    console.debug(
+      `[admission] turnId=${item2.id} source=continuous_listening outcome=${outcome} activeTurnId=${this.activeExecution?.turnId ?? "none"}`
+    );
     return outcome;
   }
   async admit(input2, buffered) {
@@ -395,7 +480,9 @@ var ConversationAdmissionCoordinator = class {
     this.activeCycleId = cycleId;
     const currentPromise = this.executeCycle(initialTurn, cycleId);
     this.drainPromise = currentPromise;
-    console.debug(`[admission] turnId=${input2.turnId} source=${input2.source} cycleId=${cycleId} outcome=accepted activeTurnId=none`);
+    console.debug(
+      `[admission] turnId=${input2.turnId} source=${input2.source} cycleId=${cycleId} outcome=accepted activeTurnId=none`
+    );
     try {
       await currentPromise;
     } finally {
@@ -412,10 +499,14 @@ var ConversationAdmissionCoordinator = class {
       this.selector.cancel();
       if (input2.source === "text_chat") this.backlog.discardWeak();
       this.pendingExplicit = input2;
-      console.debug(`[admission] turnId=${input2.turnId} source=${input2.source} outcome=buffered activeTurnId=${this.activeExecution?.turnId ?? "none"}`);
+      console.debug(
+        `[admission] turnId=${input2.turnId} source=${input2.source} outcome=buffered activeTurnId=${this.activeExecution?.turnId ?? "none"}`
+      );
       return "queued_explicit";
     }
-    console.debug(`[admission] turnId=${input2.turnId} source=${input2.source} outcome=discarded activeTurnId=${this.activeExecution?.turnId ?? "none"}`);
+    console.debug(
+      `[admission] turnId=${input2.turnId} source=${input2.source} outcome=discarded activeTurnId=${this.activeExecution?.turnId ?? "none"}`
+    );
     return "ignored_busy";
   }
   async executeCycle(initialTurn, cycleId) {
@@ -432,7 +523,9 @@ var ConversationAdmissionCoordinator = class {
   }
   async executeTurn(turn) {
     if (this.activeExecution) {
-      throw new Error(`Conversation execution overlap: activeTurnId=${this.activeExecution.turnId} requestedTurnId=${turn.turnId}`);
+      throw new Error(
+        `Conversation execution overlap: activeTurnId=${this.activeExecution.turnId} requestedTurnId=${turn.turnId}`
+      );
     }
     this.activeExecution = {
       turnId: turn.turnId,
@@ -446,7 +539,9 @@ var ConversationAdmissionCoordinator = class {
         return;
       }
       this.activeExecution = { ...this.activeExecution, phase };
-      console.debug(`[conversation] turnId=${turn.turnId} cycleId=${turn.admissionCycleId} phase=${phase}`);
+      console.debug(
+        `[conversation] turnId=${turn.turnId} cycleId=${turn.admissionCycleId} phase=${phase}`
+      );
     };
     try {
       const result = await this.runConversation(turn, reportPhase);
@@ -467,7 +562,8 @@ var ConversationAdmissionCoordinator = class {
       const selection = await selectionPromise.finally(() => {
         if (this.arbitrationPromise === selectionPromise) this.arbitrationPromise = void 0;
       });
-      if (this.activeCycleId !== cycleId || this.pendingExplicit || !this.continuousEnabled || selection.action === "discard_all" || !selection.text) return;
+      if (this.activeCycleId !== cycleId || this.pendingExplicit || !this.continuousEnabled || selection.action === "discard_all" || !selection.text)
+        return;
       if (!this.backlog.consume(selection.selectedIds, selection.backlogVersion)) return;
       await this.executeTurn({
         turnId: `backlog-${Date.now()}-${selection.selectedIds.join("-")}`,
@@ -488,51 +584,6 @@ var ConversationAdmissionCoordinator = class {
   }
 };
 
-// src/renderer/continuousListening/AttentionEngine.ts
-var NAME_PATTERN = /(?:^|[^\p{L}\p{N}_])(?:shio|шио)(?=$|[^\p{L}\p{N}_])/iu;
-var SECOND_PERSON_PATTERN = /(?:^|[^\p{L}\p{N}_])(?:ты|тебя|тебе|твой|твоя|твоё|твои)(?=$|[^\p{L}\p{N}_])/iu;
-var QUESTION_PATTERN = /\?|(?:^|[^\p{L}\p{N}_])(?:кто|что|где|когда|зачем|почему|как|можешь|скажешь|думаешь)(?=$|[^\p{L}\p{N}_])/iu;
-var EMOTIONAL_PATTERN = /!{1,}|(?:^|[^\p{L}\p{N}_])(?:ужасн[\p{L}\p{M}]*|крут[\p{L}\p{M}]*|кошмар[\p{L}\p{M}]*|бесит|обожаю|ненавижу)(?=$|[^\p{L}\p{N}_])/iu;
-var AttentionEngine = class {
-  evaluate(chunk, context) {
-    const text = chunk.text.trim();
-    const directAddress = NAME_PATTERN.test(text);
-    const question = QUESTION_PATTERN.test(text);
-    const secondPerson = SECOND_PERSON_PATTERN.test(text);
-    const emotional = EMOTIONAL_PATTERN.test(text);
-    const reasons = [];
-    let score = 0;
-    const add = (value, reason) => {
-      score += value;
-      reasons.push(`${reason}:${value >= 0 ? "+" : ""}${value}`);
-    };
-    if (directAddress) add(attentionTuning.score.directNameMention, "direct_name");
-    if (question) add(attentionTuning.score.question, "question");
-    if (secondPerson) add(attentionTuning.score.secondPersonAddress, "second_person");
-    if (context.recentConversation) add(attentionTuning.score.recentConversation, "recent_conversation");
-    if (context.followUpWindow) add(attentionTuning.score.followUpWindow, "follow_up");
-    if (context.mode === "streamer" && (emotional || question)) add(attentionTuning.score.streamerRelevance, "streamer_relevance");
-    if (emotional) add(attentionTuning.score.emotionalExpression, "emotional_expression");
-    if (text.length < 4) add(attentionTuning.score.tooShort, "too_short");
-    if (context.mode === "passive" && !directAddress) add(attentionTuning.score.likelySelfTalk, "passive_self_talk");
-    if (context.cooldownActive && !directAddress) add(attentionTuning.score.replyCooldown, "reply_cooldown");
-    if (context.isSpeaking && !directAddress) add(attentionTuning.score.speakingNonDirect, "speaking_non_direct");
-    const threshold = attentionTuning.thresholds[context.mode];
-    let shouldAttend = score >= threshold;
-    if (!shouldAttend && (context.mode === "active" || context.mode === "streamer") && !context.cooldownActive) {
-      const curiosityHit = (context.rng ?? Math.random)() < context.curiosityChance;
-      if (curiosityHit) {
-        score = Math.max(score, threshold);
-        reasons.push("curiosity:accepted");
-        shouldAttend = true;
-      }
-    }
-    if (context.mode === "silent") shouldAttend = false;
-    if (reasons.length === 0) reasons.push("no_attention_signal");
-    return { shouldAttend, score, threshold, reasons, mode: context.mode, directAddress };
-  }
-};
-
 // src/renderer/continuousListening/RuleGate.ts
 var RuleGate = class {
   decide(chunk, attention, context) {
@@ -545,13 +596,24 @@ var RuleGate = class {
     if (context.isSpeaking || context.conversationBusy) {
       return { type: "backlog", userText: chunk.text, reason: "attended_utterance_while_busy" };
     }
-    if (context.cooldownActive && !attention.directAddress) return { type: "ignore", reason: "reply_cooldown" };
-    return { type: "llm", userText: chunk.text, reason: attention.directAddress ? "direct_address" : "attended_utterance" };
+    if (context.cooldownActive && !attention.directAddress)
+      return { type: "ignore", reason: "reply_cooldown" };
+    return {
+      type: "llm",
+      userText: chunk.text,
+      reason: attention.directAddress ? "direct_address" : "attended_utterance"
+    };
   }
 };
 
 // src/renderer/continuousListening/UtteranceBacklog.ts
-var priorityRank2 = { P0: 0, P1: 1, P2: 2, P3: 3, P4: 4 };
+var priorityRank2 = {
+  P0: 0,
+  P1: 1,
+  P2: 2,
+  P3: 3,
+  P4: 4
+};
 var normalized = (text) => text.trim().replace(/\s+/g, " ").toLocaleLowerCase("ru-RU");
 var UtteranceBacklog = class {
   items = [];
@@ -572,10 +634,12 @@ var UtteranceBacklog = class {
     return this.items.some((item2) => item2.id === id);
   }
   enqueue(item2, now2 = Date.now()) {
-    if (this.seenIds.has(item2.id) || this.consumedIds.has(item2.id) || item2.likelySelfEcho) return false;
+    if (this.seenIds.has(item2.id) || this.consumedIds.has(item2.id) || item2.likelySelfEcho)
+      return false;
     this.rememberId(item2.id, this.seenIds);
     this.purge(now2);
-    if ((item2.priorityClass === "P3" || item2.priorityClass === "P4") && this.items.some((entry) => entry.priorityClass === "P0" || entry.priorityClass === "P1")) return false;
+    if ((item2.priorityClass === "P3" || item2.priorityClass === "P4") && this.items.some((entry) => entry.priorityClass === "P0" || entry.priorityClass === "P1"))
+      return false;
     const duplicate = this.items.find((entry) => normalized(entry.text) === normalized(item2.text));
     if (duplicate) {
       if (item2.createdAt > duplicate.createdAt) this.replace(duplicate.id, item2);
@@ -594,7 +658,8 @@ var UtteranceBacklog = class {
     }
   }
   consume(ids, expectedVersion) {
-    if (expectedVersion !== this.version || ids.length === 0 || ids.some((id) => !this.has(id))) return false;
+    if (expectedVersion !== this.version || ids.length === 0 || ids.some((id) => !this.has(id)))
+      return false;
     const selected = new Set(ids);
     this.items = this.items.filter((item2) => !selected.has(item2.id));
     for (const id of ids) this.rememberId(id, this.consumedIds);
@@ -602,7 +667,9 @@ var UtteranceBacklog = class {
     return true;
   }
   discardWeak(now2 = Date.now()) {
-    const next = this.items.filter((item2) => item2.expiresAt > now2 && (item2.priorityClass === "P0" || item2.priorityClass === "P1"));
+    const next = this.items.filter(
+      (item2) => item2.expiresAt > now2 && (item2.priorityClass === "P0" || item2.priorityClass === "P1")
+    );
     if (next.length !== this.items.length) {
       this.items = next;
       this.bump();
@@ -623,7 +690,8 @@ var UtteranceBacklog = class {
       for (let index = 1; index < this.items.length; index += 1) {
         const candidate = this.items[index];
         const current = this.items[worst];
-        if (priorityRank2[candidate.priorityClass] > priorityRank2[current.priorityClass] || candidate.priorityClass === current.priorityClass && candidate.createdAt < current.createdAt) worst = index;
+        if (priorityRank2[candidate.priorityClass] > priorityRank2[current.priorityClass] || candidate.priorityClass === current.priorityClass && candidate.createdAt < current.createdAt)
+          worst = index;
       }
       this.items.splice(worst, 1);
       this.bump();
@@ -672,7 +740,8 @@ var UtteranceChunkBuilder = class {
     this.startedAt ??= now2;
     this.lastUpdatedAt = now2;
     this.partial = normalized2.slice(0, this.options.maxCharacters);
-    if (normalized2.length >= this.options.maxCharacters) return this.complete("max_length", void 0, now2);
+    if (normalized2.length >= this.options.maxCharacters)
+      return this.complete("max_length", void 0, now2);
     return null;
   }
   pushFinal(text, confidence, metadata = {}) {
@@ -685,7 +754,12 @@ var UtteranceChunkBuilder = class {
     this.startedAt ??= now2;
     this.lastUpdatedAt = now2;
     this.partial = normalized2.slice(0, this.options.maxCharacters);
-    return this.complete(normalized2.length >= this.options.maxCharacters ? "max_length" : "asr_final", confidence, now2, metadata);
+    return this.complete(
+      normalized2.length >= this.options.maxCharacters ? "max_length" : "asr_final",
+      confidence,
+      now2,
+      metadata
+    );
   }
   speechEnded() {
     return this.complete("vad_pause");
@@ -693,8 +767,10 @@ var UtteranceChunkBuilder = class {
   poll() {
     if (!this.partial || this.lastUpdatedAt === null || this.startedAt === null) return null;
     const now2 = this.now();
-    if (now2 - this.startedAt >= this.options.hardTimeoutMs) return this.complete("timeout", void 0, now2);
-    if (now2 - this.lastUpdatedAt >= this.options.pauseCompletionMs) return this.complete("vad_pause", void 0, now2);
+    if (now2 - this.startedAt >= this.options.hardTimeoutMs)
+      return this.complete("timeout", void 0, now2);
+    if (now2 - this.lastUpdatedAt >= this.options.pauseCompletionMs)
+      return this.complete("vad_pause", void 0, now2);
     return null;
   }
   complete(reason, confidence, completedAt = this.now(), metadata = {}) {
@@ -704,7 +780,10 @@ var UtteranceChunkBuilder = class {
     if (text.length < this.options.minimumCharacters) return null;
     const key = metadata.streamingSessionId && metadata.segmentId ? `${metadata.streamingSessionId}:${metadata.segmentId}` : duplicateKey(text);
     const duplicateWindowMs = 5e3;
-    if (this.completedKeys.some((entry) => entry.key === key && completedAt - entry.completedAt <= duplicateWindowMs)) return null;
+    if (this.completedKeys.some(
+      (entry) => entry.key === key && completedAt - entry.completedAt <= duplicateWindowMs
+    ))
+      return null;
     this.completedKeys.push({ key, completedAt });
     if (this.completedKeys.length > 32) this.completedKeys.shift();
     return {
@@ -729,9 +808,12 @@ var now = Date.now();
 var flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 var deferred = () => {
   let resolve;
-  return { promise: new Promise((done) => {
-    resolve = done;
-  }), resolve };
+  return {
+    promise: new Promise((done) => {
+      resolve = done;
+    }),
+    resolve
+  };
 };
 var input = (id, source = "continuous_listening") => ({
   turnId: id,
@@ -764,8 +846,20 @@ var item = (id, priorityClass, score = 50) => ({
   likelySelfEcho: false,
   priorityClass
 });
-var disabledLlm = { enabled: false, providerId: "", model: "", timeoutMs: 2e3, minimumConfidence: 0.72 };
-var enabledLlm = { enabled: true, providerId: "groq", model: "cheap", timeoutMs: 2e3, minimumConfidence: 0.72 };
+var disabledLlm = {
+  enabled: false,
+  providerId: "",
+  model: "",
+  timeoutMs: 2e3,
+  minimumConfidence: 0.72
+};
+var enabledLlm = {
+  enabled: true,
+  providerId: "groq",
+  model: "cheap",
+  timeoutMs: 2e3,
+  minimumConfidence: 0.72
+};
 async function main() {
   const builder = new UtteranceChunkBuilder({ now: () => now });
   const first = builder.pushFinal("\u0428\u0438\u043E, \u0442\u044B \u0442\u0443\u0442?", 0.9, {
@@ -774,11 +868,15 @@ async function main() {
     capturedDuringPlayback: false
   });
   import_strict.default.equal(first?.id, "session:segment");
-  import_strict.default.equal(builder.pushFinal("\u0428\u0438\u043E, \u0442\u044B \u0442\u0443\u0442?", 0.9, {
-    streamingSessionId: "session",
-    segmentId: "segment",
-    capturedDuringPlayback: false
-  }), null);
+  import_strict.default.ok(first);
+  import_strict.default.equal(
+    builder.pushFinal("\u0428\u0438\u043E, \u0442\u044B \u0442\u0443\u0442?", 0.9, {
+      streamingSessionId: "session",
+      segmentId: "segment",
+      capturedDuringPlayback: false
+    }),
+    null
+  );
   const engine = new AttentionEngine();
   const gate = new RuleGate();
   const attention = engine.evaluate(first, {
@@ -790,12 +888,15 @@ async function main() {
     curiosityChance: 0
   });
   import_strict.default.equal(attention.shouldAttend, true);
-  import_strict.default.equal(gate.decide(first, attention, {
-    isSpeaking: true,
-    conversationBusy: true,
-    cooldownActive: false,
-    alreadyHandled: false
-  }).type, "backlog");
+  import_strict.default.equal(
+    gate.decide(first, attention, {
+      isSpeaking: true,
+      conversationBusy: true,
+      cooldownActive: false,
+      alreadyHandled: false
+    }).type,
+    "backlog"
+  );
   const bounded = new UtteranceBacklog();
   import_strict.default.equal(bounded.enqueue(item("same", "P1")), true);
   import_strict.default.equal(bounded.enqueue(item("same", "P1")), false);
@@ -811,10 +912,14 @@ async function main() {
       throw new Error("must not run");
     });
     const starts = [];
-    const coordinator = new ConversationAdmissionCoordinator(async (value) => {
-      starts.push(value.source);
-      return completed(value.turnId);
-    }, backlog, selector);
+    const coordinator = new ConversationAdmissionCoordinator(
+      async (value) => {
+        starts.push(value.source);
+        return completed(value.turnId);
+      },
+      backlog,
+      selector
+    );
     coordinator.configureSelector(enabledLlm);
     coordinator.setContinuousEnabled(false);
     await coordinator.admit(input("chat", "text_chat"));
@@ -828,14 +933,18 @@ async function main() {
     let maxActive = 0;
     const backlog = new UtteranceBacklog();
     const selector = new BacklogSelector();
-    const coordinator = new ConversationAdmissionCoordinator(async (value) => {
-      starts.push(value.text);
-      active += 1;
-      maxActive = Math.max(maxActive, active);
-      if (value.text === "initial") await release.promise;
-      active -= 1;
-      return completed(value.turnId);
-    }, backlog, selector);
+    const coordinator = new ConversationAdmissionCoordinator(
+      async (value) => {
+        starts.push(value.text);
+        active += 1;
+        maxActive = Math.max(maxActive, active);
+        if (value.text === "initial") await release.promise;
+        active -= 1;
+        return completed(value.turnId);
+      },
+      backlog,
+      selector
+    );
     coordinator.configureSelector(disabledLlm);
     coordinator.setContinuousEnabled(true);
     const running = coordinator.admit(input("initial"));
@@ -857,7 +966,14 @@ async function main() {
     const selector = new BacklogSelector(() => result.promise);
     const pending = selector.select(backlog, { continuousEnabled: true, llm: enabledLlm });
     backlog.enqueue(item("c", "P2", 90));
-    result.resolve({ action: "select", selectedIds: ["a"], text: "a", reason: "late", confidence: 1, backlogVersion: version });
+    result.resolve({
+      action: "select",
+      selectedIds: ["a"],
+      text: "a",
+      reason: "late",
+      confidence: 1,
+      backlogVersion: version
+    });
     const selection = await pending;
     import_strict.default.notEqual(selection.reason, "late");
     import_strict.default.equal(selection.backlogVersion, backlog.getVersion());
@@ -891,14 +1007,26 @@ async function main() {
       });
     });
     const shortTimeout = { ...enabledLlm, timeoutMs: 5 };
-    import_strict.default.equal((await selector.select(backlog, { continuousEnabled: true, llm: shortTimeout })).reason, "llm_error_fallback");
-    import_strict.default.equal((await selector.select(backlog, { continuousEnabled: true, llm: shortTimeout })).reason, "second_arbitration");
+    import_strict.default.equal(
+      (await selector.select(backlog, { continuousEnabled: true, llm: shortTimeout })).reason,
+      "llm_error_fallback"
+    );
+    import_strict.default.equal(
+      (await selector.select(backlog, { continuousEnabled: true, llm: shortTimeout })).reason,
+      "second_arbitration"
+    );
     import_strict.default.equal(calls, 2);
     const throwingSelector = new BacklogSelector(() => {
       throw new Error("sync");
     });
-    import_strict.default.equal((await throwingSelector.select(backlog, { continuousEnabled: true, llm: enabledLlm })).reason, "llm_error_fallback");
-    import_strict.default.equal((await throwingSelector.select(backlog, { continuousEnabled: true, llm: enabledLlm })).reason, "llm_error_fallback");
+    import_strict.default.equal(
+      (await throwingSelector.select(backlog, { continuousEnabled: true, llm: enabledLlm })).reason,
+      "llm_error_fallback"
+    );
+    import_strict.default.equal(
+      (await throwingSelector.select(backlog, { continuousEnabled: true, llm: enabledLlm })).reason,
+      "llm_error_fallback"
+    );
   }
   {
     const backlog = new UtteranceBacklog();
@@ -927,11 +1055,15 @@ async function main() {
     const release = deferred();
     const starts = [];
     const backlog = new UtteranceBacklog();
-    const coordinator = new ConversationAdmissionCoordinator(async (value) => {
-      starts.push(value.text);
-      await release.promise;
-      return completed(value.turnId);
-    }, backlog, new BacklogSelector());
+    const coordinator = new ConversationAdmissionCoordinator(
+      async (value) => {
+        starts.push(value.text);
+        await release.promise;
+        return completed(value.turnId);
+      },
+      backlog,
+      new BacklogSelector()
+    );
     coordinator.setContinuousEnabled(true);
     const running = coordinator.admit(input("initial"));
     await flush();
@@ -964,7 +1096,8 @@ async function main() {
         return { fftSize: 0, connect: () => void 0 };
       }
       createBufferSource() {
-        return this.source = new FakeSource();
+        this.source = new FakeSource();
+        return this.source;
       }
       async decodeAudioData() {
         return { duration: 1 };
@@ -978,7 +1111,10 @@ async function main() {
         return context;
       }
     };
-    globalThis.window = { setInterval: () => 1, clearInterval: () => void 0 };
+    globalThis.window = {
+      setInterval: () => 1,
+      clearInterval: () => void 0
+    };
     const player = new AudioPlayer();
     const playback = player.play(new ArrayBuffer(8), { turnId: "turn-a", onReady: () => void 0 });
     await flush();

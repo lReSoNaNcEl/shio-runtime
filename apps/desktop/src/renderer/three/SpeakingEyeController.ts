@@ -109,7 +109,7 @@ export class SpeakingEyeController {
       leftOffset: this.currentLeft - this.currentRight,
       rightOffset: this.currentRight - this.currentLeft,
       nextVariationMs: Math.max(0, this.nextVariationMs - this.timerMs),
-      emotion: this.emotionKey
+      emotion: this.emotionKey,
     }
   }
 

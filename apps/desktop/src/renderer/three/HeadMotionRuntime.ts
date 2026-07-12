@@ -1,5 +1,6 @@
-import * as THREE from 'three'
 import type { VRM } from '@pixiv/three-vrm'
+import * as THREE from 'three'
+
 import { headMotionTuning } from './avatarTuning'
 
 export type HeadMotionProfile = 'idle' | 'listening' | 'thinking' | 'speaking' | 'userFocus'
@@ -63,13 +64,18 @@ class IdleDriftGenerator implements HeadMotionGenerator {
       this.target = {
         yaw: randomSigned(context.random, tuning.yawAmplitude),
         pitch: randomSigned(context.random, tuning.pitchAmplitude),
-        roll: randomSigned(context.random, tuning.rollAmplitude)
+        roll: randomSigned(context.random, tuning.rollAmplitude),
       }
       this.nextEventMs = randomRange(context.random, tuning.intervalMs.min, tuning.intervalMs.max)
     }
 
     this.current = smoothPose(this.current, this.target, context.delta, tuning.smoothing)
-    return contribution(this.id, this.current, headMotionTuning.profiles[context.profile].generatorWeights.idleDrift, this.nextEventMs)
+    return contribution(
+      this.id,
+      this.current,
+      headMotionTuning.profiles[context.profile].generatorWeights.idleDrift,
+      this.nextEventMs,
+    )
   }
 }
 
@@ -88,7 +94,7 @@ class MicroTiltGenerator implements HeadMotionGenerator {
       this.impulse = {
         yaw: randomSigned(context.random, tuning.yawAmplitude),
         pitch: randomSigned(context.random, tuning.pitchAmplitude),
-        roll: randomSigned(context.random, tuning.rollAmplitude)
+        roll: randomSigned(context.random, tuning.rollAmplitude),
       }
       this.durationMs = randomRange(context.random, tuning.durationMs.min, tuning.durationMs.max)
       this.elapsedMs = this.durationMs
@@ -104,7 +110,12 @@ class MicroTiltGenerator implements HeadMotionGenerator {
       this.pose = smoothPose(this.pose, zeroPose(), context.delta, tuning.releaseSmoothing)
     }
 
-    return contribution(this.id, this.pose, headMotionTuning.profiles[context.profile].generatorWeights.microTilt, this.nextEventMs)
+    return contribution(
+      this.id,
+      this.pose,
+      headMotionTuning.profiles[context.profile].generatorWeights.microTilt,
+      this.nextEventMs,
+    )
   }
 }
 
@@ -122,7 +133,12 @@ class SlowYawGenerator implements HeadMotionGenerator {
       this.nextEventMs = randomRange(context.random, tuning.intervalMs.min, tuning.intervalMs.max)
     }
     this.current = smoothPose(this.current, this.target, context.delta, tuning.smoothing)
-    return contribution(this.id, this.current, headMotionTuning.profiles[context.profile].generatorWeights.slowYaw, this.nextEventMs)
+    return contribution(
+      this.id,
+      this.current,
+      headMotionTuning.profiles[context.profile].generatorWeights.slowYaw,
+      this.nextEventMs,
+    )
   }
 }
 
@@ -166,7 +182,12 @@ class ListeningTiltGenerator implements HeadMotionGenerator {
     const tuning = headMotionTuning.generators.listeningTilt
     const target = context.profile === 'listening' ? tuning.pose : zeroPose()
     this.pose = smoothPose(this.pose, target, context.delta, tuning.smoothing)
-    return contribution(this.id, this.pose, headMotionTuning.profiles[context.profile].generatorWeights.listeningTilt, tuning.nextEventMs)
+    return contribution(
+      this.id,
+      this.pose,
+      headMotionTuning.profiles[context.profile].generatorWeights.listeningTilt,
+      tuning.nextEventMs,
+    )
   }
 }
 
@@ -178,7 +199,12 @@ class ThinkingDriftGenerator implements HeadMotionGenerator {
     const tuning = headMotionTuning.generators.thinkingDrift
     const target = context.profile === 'thinking' ? tuning.pose : zeroPose()
     this.pose = smoothPose(this.pose, target, context.delta, tuning.smoothing)
-    return contribution(this.id, this.pose, headMotionTuning.profiles[context.profile].generatorWeights.thinkingDrift, tuning.nextEventMs)
+    return contribution(
+      this.id,
+      this.pose,
+      headMotionTuning.profiles[context.profile].generatorWeights.thinkingDrift,
+      tuning.nextEventMs,
+    )
   }
 }
 
@@ -189,7 +215,7 @@ class HeadMotionResolver {
     new SlowYawGenerator(),
     new SpeakingNodGenerator(),
     new ListeningTiltGenerator(),
-    new ThinkingDriftGenerator()
+    new ThinkingDriftGenerator(),
   ]
 
   resolve(context: HeadMotionGeneratorContext): {
@@ -206,7 +232,8 @@ class HeadMotionResolver {
     for (const generator of this.generators) {
       const result = generator.update(context)
       generatorWeights[result.id] = result.weight
-      if (result.weight > 0.001 && poseEnergy(result.pose) > 0.0001) activeGenerators.push(result.id)
+      if (result.weight > 0.001 && poseEnergy(result.pose) > 0.0001)
+        activeGenerators.push(result.id)
       pose = addPose(pose, scalePose(result.pose, result.weight))
       if (result.weight > 0.001) nextEventMs = Math.min(nextEventMs, result.nextEventMs)
     }
@@ -215,7 +242,7 @@ class HeadMotionResolver {
       pose: clampPose(pose),
       activeGenerators,
       generatorWeights,
-      nextEventMs: Number.isFinite(nextEventMs) ? Math.max(0, nextEventMs) : 0
+      nextEventMs: Number.isFinite(nextEventMs) ? Math.max(0, nextEventMs) : 0,
     }
   }
 }
@@ -239,7 +266,7 @@ export class HeadMotionRuntime {
     currentBlend: 0,
     generatorWeights: zeroGeneratorWeights(),
     smoothing: headMotionTuning.smoothing,
-    nextProceduralEventMs: 0
+    nextProceduralEventMs: 0,
   }
 
   attach(vrm: VRM): void {
@@ -271,17 +298,22 @@ export class HeadMotionRuntime {
       deltaMs: delta * 1000,
       profile: this.profile,
       elapsedMs: this.elapsedMs,
-      random: () => this.nextRandom()
+      random: () => this.nextRandom(),
     })
     const blend = 1 - Math.exp(-headMotionTuning.smoothing * delta)
-    this.currentPose = smoothPose(this.currentPose, resolved.pose, delta, headMotionTuning.smoothing)
+    this.currentPose = smoothPose(
+      this.currentPose,
+      resolved.pose,
+      delta,
+      headMotionTuning.smoothing,
+    )
     this.currentPose = clampPose(this.currentPose)
 
     const neckPose = scalePose(this.currentPose, headMotionTuning.neckShare)
     const headPose = scalePose(this.currentPose, headMotionTuning.headShare)
     this.applyToBones(
       addPose(headPose, scalePose(this.appliedHeadPose, -1)),
-      addPose(neckPose, scalePose(this.appliedNeckPose, -1))
+      addPose(neckPose, scalePose(this.appliedNeckPose, -1)),
     )
     this.appliedHeadPose = headPose
     this.appliedNeckPose = neckPose
@@ -296,7 +328,7 @@ export class HeadMotionRuntime {
       currentBlend: blend,
       generatorWeights: resolved.generatorWeights,
       smoothing: headMotionTuning.smoothing,
-      nextProceduralEventMs: resolved.nextEventMs
+      nextProceduralEventMs: resolved.nextEventMs,
     }
   }
 
@@ -304,7 +336,7 @@ export class HeadMotionRuntime {
     return {
       ...this.debug,
       generatorWeights: { ...this.debug.generatorWeights },
-      activeGenerators: [...this.debug.activeGenerators]
+      activeGenerators: [...this.debug.activeGenerators],
     }
   }
 
@@ -333,7 +365,7 @@ function contribution(
   id: HeadMotionGeneratorId,
   pose: HeadMotionPose,
   weight: number,
-  nextEventMs: number
+  nextEventMs: number,
 ): HeadMotionGeneratorContribution {
   return { id, pose, weight, nextEventMs }
 }
@@ -349,7 +381,7 @@ function zeroGeneratorWeights(): Record<HeadMotionGeneratorId, number> {
     slowYaw: 0,
     speakingNod: 0,
     listeningTilt: 0,
-    thinkingDrift: 0
+    thinkingDrift: 0,
   }
 }
 
@@ -357,7 +389,7 @@ function addPose(a: HeadMotionPose, b: HeadMotionPose): HeadMotionPose {
   return {
     yaw: a.yaw + b.yaw,
     pitch: a.pitch + b.pitch,
-    roll: a.roll + b.roll
+    roll: a.roll + b.roll,
   }
 }
 
@@ -365,24 +397,33 @@ function scalePose(pose: HeadMotionPose, scale: number): HeadMotionPose {
   return {
     yaw: pose.yaw * scale,
     pitch: pose.pitch * scale,
-    roll: pose.roll * scale
+    roll: pose.roll * scale,
   }
 }
 
-function smoothPose(current: HeadMotionPose, target: HeadMotionPose, delta: number, smoothing: number): HeadMotionPose {
+function smoothPose(
+  current: HeadMotionPose,
+  target: HeadMotionPose,
+  delta: number,
+  smoothing: number,
+): HeadMotionPose {
   const blend = 1 - Math.exp(-smoothing * delta)
   return {
     yaw: THREE.MathUtils.lerp(current.yaw, target.yaw, blend),
     pitch: THREE.MathUtils.lerp(current.pitch, target.pitch, blend),
-    roll: THREE.MathUtils.lerp(current.roll, target.roll, blend)
+    roll: THREE.MathUtils.lerp(current.roll, target.roll, blend),
   }
 }
 
 function clampPose(pose: HeadMotionPose): HeadMotionPose {
   return {
     yaw: THREE.MathUtils.clamp(pose.yaw, -headMotionTuning.yawLimit, headMotionTuning.yawLimit),
-    pitch: THREE.MathUtils.clamp(pose.pitch, -headMotionTuning.pitchLimit, headMotionTuning.pitchLimit),
-    roll: THREE.MathUtils.clamp(pose.roll, -headMotionTuning.rollLimit, headMotionTuning.rollLimit)
+    pitch: THREE.MathUtils.clamp(
+      pose.pitch,
+      -headMotionTuning.pitchLimit,
+      headMotionTuning.pitchLimit,
+    ),
+    roll: THREE.MathUtils.clamp(pose.roll, -headMotionTuning.rollLimit, headMotionTuning.rollLimit),
   }
 }
 

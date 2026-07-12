@@ -87,7 +87,7 @@ export class MicCapture {
       deviceId && deviceId !== 'default' ? { deviceId: { exact: deviceId } } : {}
     this.stream = await navigator.mediaDevices.getUserMedia({
       audio: audioConstraints,
-      video: false
+      video: false,
     })
 
     this.audioCtx = new AudioContext()
@@ -103,9 +103,9 @@ export class MicCapture {
     this.recording = true
 
     this.processor.onaudioprocess = (e) => {
-      if (!this.recording) return
+      if (!this.recording || !this.audioCtx) return
       const input = e.inputBuffer.getChannelData(0)
-      const ds = downsampleFloat32(input, this.audioCtx!.sampleRate, ASR_SAMPLE_RATE)
+      const ds = downsampleFloat32(input, this.audioCtx.sampleRate, ASR_SAMPLE_RATE)
       this.chunks.push(floatToInt16(ds))
     }
 
@@ -126,7 +126,9 @@ export class MicCapture {
       this.source = null
     }
     if (this.stream) {
-      this.stream.getTracks().forEach((t) => t.stop())
+      this.stream.getTracks().forEach((t) => {
+        t.stop()
+      })
       this.stream = null
     }
     if (this.audioCtx) {

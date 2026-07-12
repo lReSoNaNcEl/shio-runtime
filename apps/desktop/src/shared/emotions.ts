@@ -28,7 +28,10 @@ export interface EmotionContract {
 }
 
 function normalizeKey(value: string): string {
-  return value.toLowerCase().trim().replace(/[\s-]+/g, '_')
+  return value
+    .toLowerCase()
+    .trim()
+    .replace(/[\s-]+/g, '_')
 }
 
 function escapeRegExp(value: string): string {
@@ -57,7 +60,8 @@ export class EmotionRegistry {
     const raw = normalizeKey(tag || this.defaultEmotion)
     const resolved = this.aliases.get(raw)
     if (resolved) return resolved
-    if (raw !== this.defaultEmotion) console.warn(`[emotion] Unknown emotion tag "${raw}", using ${this.defaultEmotion}`)
+    if (raw !== this.defaultEmotion)
+      console.warn(`[emotion] Unknown emotion tag "${raw}", using ${this.defaultEmotion}`)
     return this.defaultEmotion
   }
 
@@ -86,14 +90,16 @@ export class EmotionRegistry {
   }
 
   promptList(): string {
-    return this.supported().map((emotion) => `[${emotion}]`).join(', ')
+    return this.supported()
+      .map((emotion) => `[${emotion}]`)
+      .join(', ')
   }
 
   contract(): EmotionContract {
     return {
       schemaVersion: this.schemaVersion,
       defaultEmotion: this.defaultEmotion,
-      supported: this.supported()
+      supported: this.supported(),
     }
   }
 
@@ -114,15 +120,22 @@ export class EmotionRegistry {
       this.aliases.set(id, id)
       for (const alias of raw.aliases ?? []) this.aliases.set(normalizeKey(alias), id)
       for (const marker of raw.markers ?? []) {
-        this.markerPatterns.push({ pattern: new RegExp(`\\s*${escapeRegExp(marker)}\\s*`, 'gi'), emotion: id })
+        this.markerPatterns.push({
+          pattern: new RegExp(`\\s*${escapeRegExp(marker)}\\s*`, 'gi'),
+          emotion: id,
+        })
       }
     }
 
-    if (!this.entries.has(this.defaultEmotion)) throw new Error(`defaultEmotion is missing: ${this.defaultEmotion}`)
+    if (!this.entries.has(this.defaultEmotion))
+      throw new Error(`defaultEmotion is missing: ${this.defaultEmotion}`)
 
     const known = Array.from(this.aliases.keys()).sort((a, b) => b.length - a.length)
     const dynamic = known.map((key) => escapeRegExp(key).replace(/_/g, '[_ -]?')).join('|')
-    this.markerPatterns.push({ pattern: new RegExp(`\\s*[\\[(](${dynamic})[\\])]\\s*`, 'gi'), emotion: null })
+    this.markerPatterns.push({
+      pattern: new RegExp(`\\s*[\\[(](${dynamic})[\\])]\\s*`, 'gi'),
+      emotion: null,
+    })
   }
 }
 
@@ -143,7 +156,10 @@ export function stripEmotionTags(text: string): string {
 }
 
 export function stripStageDirections(text: string): string {
-  return text.replace(/\s*(?:\[[^\]]+\]|\((?:пауза|pause|вздох|sigh)\))\.{0,3}\s*/gi, ' ').replace(/\s+/g, ' ').trim()
+  return text
+    .replace(/\s*(?:\[[^\]]+\]|\((?:пауза|pause|вздох|sigh)\))\.{0,3}\s*/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
 }
 
 export function stripAssistantMarkup(text: string): string {

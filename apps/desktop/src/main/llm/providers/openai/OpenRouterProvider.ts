@@ -1,5 +1,6 @@
 import axios from 'axios'
-import { OpenRouterModelsResponseSchema, type OpenRouterModel } from '../../../schemas'
+
+import { type OpenRouterModel, OpenRouterModelsResponseSchema } from '../../../schemas'
 import { ModelFetchError } from '../../errors/index'
 import type { ModelInfo } from '../catalogTypes'
 import { BaseOpenAIProvider } from './BaseOpenAIProvider'
@@ -20,7 +21,7 @@ export class OpenRouterProvider extends BaseOpenAIProvider {
       providerId: 'openrouter',
       baseURL: 'https://openrouter.ai/api/v1',
       chatPath: '/chat/completions',
-      chatHeaders: { 'HTTP-Referer': 'Shio Runtime', 'X-Title': 'Shio Runtime' }
+      chatHeaders: { 'HTTP-Referer': 'Shio Runtime', 'X-Title': 'Shio Runtime' },
     })
   }
 
@@ -35,7 +36,10 @@ export class OpenRouterProvider extends BaseOpenAIProvider {
           throw new ModelFetchError('auth', 'OpenRouter: недействительный API ключ.')
         }
         if (e.response) {
-          throw new ModelFetchError('invalid_response', `OpenRouter models error ${e.response.status}`)
+          throw new ModelFetchError(
+            'invalid_response',
+            `OpenRouter models error ${e.response.status}`,
+          )
         }
         throw new ModelFetchError('network', 'Не удалось загрузить список моделей OpenRouter.')
       }

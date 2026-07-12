@@ -10,15 +10,23 @@ manual is `../../AGENTS.md`; global and Claude-specific rules are in `../../CLAU
   `apps/desktop`.
 - Preserve the existing HTTP API unless the task explicitly changes the contract.
 - Resolve service assets relative to the service root (`Path(__file__)` /
-  `services/api`), not the monorepo cwd. The service must run correctly whether
-  launched from `services/api` or from the repo root via `npm run api:dev`.
+  `services/api`), not the monorepo cwd. The `api:*` launcher always runs with
+  `cwd=services/api`, but the service must still resolve assets from its own root.
 - Never commit model caches, secrets, generated audio, or the local virtualenv.
 
 ## Commands
 
-- Create and use the local virtualenv in `services/api` (do not reuse an old venv).
-- `python -m uvicorn app.main:app --host 0.0.0.0 --port 8000` (or `npm run api:dev`
-  from the repo root).
+Run everything from the repository root. The `api:*` commands resolve the local
+interpreter automatically (`services/api/.venv`, or a legacy `services/api/venv`),
+so no manual `activate` and no `cd services/api` is needed. Override the interpreter
+with `SHIO_API_PYTHON` if required; inspect the selection with `npm run api:doctor`.
+
+- `npm run api:install:dev` — create `.venv` and install runtime + dev deps.
+- `npm run api:dev` — start uvicorn on `:8000` (`Ctrl+C` releases the port).
+- `npm run api:lint`, `npm run api:format:check`, `npm run api:test` — checks.
+
+Extra arguments pass through after `--`, e.g. `npm run api:dev -- --reload` or
+`npm run api:test -- -k streaming`.
 
 ## API checks
 

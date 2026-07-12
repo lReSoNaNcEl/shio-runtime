@@ -146,7 +146,14 @@
       "id": "surprised",
       "displayName": "Surprised",
       "aliases": ["surprise", "surprize"],
-      "markers": ["[surprised]", "[surprise]", "(surprised)", "(surprise)", "(удивленно)", "(удивлённо)"],
+      "markers": [
+        "[surprised]",
+        "[surprise]",
+        "(surprised)",
+        "(surprise)",
+        "(удивленно)",
+        "(удивлённо)"
+      ],
       "avatar": {
         "behavior": "surprised",
         "expression": "surprised",

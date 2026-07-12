@@ -6,11 +6,11 @@ export const HealthSchema = z.object({
   asr: z.object({ status: z.string() }).partial().passthrough().optional(),
   engines: z
     .object({
-      f5: z.object({ status: z.string(), mode: z.string() }).partial().passthrough().optional()
+      f5: z.object({ status: z.string(), mode: z.string() }).partial().passthrough().optional(),
     })
     .partial()
     .passthrough()
-    .optional()
+    .optional(),
 })
 export type Health = z.infer<typeof HealthSchema>
 
@@ -22,12 +22,12 @@ export const RecognizeSchema = z.object({
         text: z.string(),
         start: z.number(),
         end: z.number(),
-        duration: z.number().optional()
-      })
+        duration: z.number().optional(),
+      }),
     )
     .optional(),
   language: z.string().optional(),
-  language_probability: z.number().optional()
+  language_probability: z.number().optional(),
 })
 export type Recognize = z.infer<typeof RecognizeSchema>
 
@@ -44,7 +44,7 @@ export type Recognize = z.infer<typeof RecognizeSchema>
 const ContentPartSchema = z
   .object({
     type: z.string().optional(),
-    text: z.string().optional()
+    text: z.string().optional(),
   })
   .passthrough()
 
@@ -61,23 +61,23 @@ export const ChatCompletionSchema = z
                 content: z.union([z.string(), z.array(ContentPartSchema)]).nullish(),
                 // Reasoning models expose their chain-of-thought separately.
                 reasoning: z.string().nullish(),
-                reasoning_content: z.string().nullish()
+                reasoning_content: z.string().nullish(),
               })
               .passthrough()
-              .optional()
+              .optional(),
           })
-          .passthrough()
+          .passthrough(),
       )
       .optional(),
     usage: z
       .object({
         prompt_tokens: z.number().optional(),
         completion_tokens: z.number().optional(),
-        total_tokens: z.number().optional()
+        total_tokens: z.number().optional(),
       })
       .passthrough()
       .nullish(),
-    error: z.unknown().optional()
+    error: z.unknown().optional(),
   })
   .passthrough()
 export type ChatCompletion = z.infer<typeof ChatCompletionSchema>
@@ -85,13 +85,13 @@ export type ChatCompletion = z.infer<typeof ChatCompletionSchema>
 // ---- LLM model catalogs -----------------------------------------------------
 // Groq exposes an OpenAI-compatible `/models` endpoint: { data: [{ id, ... }] }
 export const GroqModelsResponseSchema = z.object({
-  data: z.array(z.object({ id: z.string() }).passthrough())
+  data: z.array(z.object({ id: z.string() }).passthrough()),
 })
 export type GroqModelsResponse = z.infer<typeof GroqModelsResponseSchema>
 
 // Cerebras: GET https://api.cerebras.ai/public/v1/models -> { data: [{ id, ... }] }
 export const CerebrasModelsResponseSchema = z.object({
-  data: z.array(z.object({ id: z.string() }).passthrough())
+  data: z.array(z.object({ id: z.string() }).passthrough()),
 })
 export type CerebrasModelsResponse = z.infer<typeof CerebrasModelsResponseSchema>
 
@@ -101,9 +101,9 @@ export const GithubModelsResponseSchema = z.array(
   z
     .object({
       id: z.string(),
-      name: z.string().optional()
+      name: z.string().optional(),
     })
-    .passthrough()
+    .passthrough(),
 )
 export type GithubModelsResponse = z.infer<typeof GithubModelsResponseSchema>
 
@@ -119,16 +119,16 @@ export const OpenRouterModelSchema = z
         prompt: z.string().optional(),
         completion: z.string().optional(),
         image: z.string().optional(),
-        request: z.string().optional()
+        request: z.string().optional(),
       })
       .passthrough()
-      .optional()
+      .optional(),
   })
   .passthrough()
 export type OpenRouterModel = z.infer<typeof OpenRouterModelSchema>
 
 export const OpenRouterModelsResponseSchema = z.object({
-  data: z.array(OpenRouterModelSchema)
+  data: z.array(OpenRouterModelSchema),
 })
 export type OpenRouterModelsResponse = z.infer<typeof OpenRouterModelsResponseSchema>
 
@@ -140,7 +140,7 @@ export const MistralModelSchema = z
     created: z.number().optional(),
     owned_by: z.string().optional(),
     name: z.string().optional(),
-    description: z.string().optional()
+    description: z.string().optional(),
   })
   .passthrough()
 export type MistralModel = z.infer<typeof MistralModelSchema>
@@ -148,7 +148,7 @@ export type MistralModel = z.infer<typeof MistralModelSchema>
 export const MistralModelsResponseSchema = z
   .object({
     object: z.string().optional(),
-    data: z.array(MistralModelSchema)
+    data: z.array(MistralModelSchema),
   })
   .passthrough()
 export type MistralModelsResponse = z.infer<typeof MistralModelsResponseSchema>

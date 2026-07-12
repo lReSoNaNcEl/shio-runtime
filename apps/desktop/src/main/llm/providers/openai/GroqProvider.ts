@@ -1,4 +1,5 @@
 import axios from 'axios'
+
 import { GroqModelsResponseSchema } from '../../../schemas'
 import { ModelFetchError } from '../../errors/index'
 import type { ModelInfo } from '../catalogTypes'
@@ -9,7 +10,7 @@ const GROQ_FALLBACK_MODELS: ModelInfo[] = [
   { id: 'qwen/qwen3.6-27b', displayName: 'Qwen 3.6 27B' },
   { id: 'llama-3.3-70b-versatile', displayName: 'Llama 3.3 70B Versatile' },
   { id: 'llama-3.1-8b-instant', displayName: 'Llama 3.1 8B Instant' },
-  { id: 'openai/gpt-oss-20b', displayName: 'GPT-OSS 20B' }
+  { id: 'openai/gpt-oss-20b', displayName: 'GPT-OSS 20B' },
 ]
 
 export class GroqProvider extends BaseOpenAIProvider {
@@ -18,7 +19,7 @@ export class GroqProvider extends BaseOpenAIProvider {
       providerId: 'groq',
       baseURL: 'https://api.groq.com/openai/v1',
       chatPath: '/chat/completions',
-      proxy: proxyFromEnv()
+      proxy: proxyFromEnv(),
     })
   }
 
