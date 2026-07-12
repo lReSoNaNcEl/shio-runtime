@@ -1,28 +1,51 @@
-# CLAUDE.md
+# Desktop application
 
-Before making any code changes in this repository, read and follow:
+Electron + React + TypeScript + Three.js client. Local rules for `apps/desktop`.
+The canonical cross-repo manual is `../../AGENTS.md`; global and Claude-specific rules
+are in `../../CLAUDE.md`. Reread `../../ARCHITECTURE.md` before touching runtime
+boundaries.
 
-- `AGENTS.md`
-- `ARCHITECTURE.md` when the task touches architecture, Runtime boundaries,
-  Avatar Runtime, Speech Runtime, Character State, Event Bus, Overlay Runtime,
-  or related systems.
+## Stack
 
-`AGENTS.md` is the canonical developer operating manual for this project.
+Electron, React, TypeScript, Three.js, VRM and VRMA.
 
-All Claude Code work must follow its rules, including:
+## Architecture ownership
 
-- Architecture First
-- Runtime Boundaries
-- Behavior Preserving refactoring
-- Single Source of Truth
-- required `npm run build`
-- required Runtime smoke tests when applicable
-- RCA for bug fixes
-- final report format
+- Controller coordinates existing runtimes but does not absorb their ownership.
+- AudioPlayer is the sole audio playback owner.
+- AvatarExpressionMixer is the sole final facial-expression writer. Do not write to
+  VRM facial expressions outside the mixer.
+- Overlay is a presentation consumer, not an application runtime.
+- Character State is the single source of truth for character state.
 
-If `CLAUDE.md` and `AGENTS.md` ever conflict, `AGENTS.md` wins.
+## Change policy
 
-## Language
+- Preserve existing runtime behavior unless the task explicitly changes it.
+- Do not silently change the HTTP API contract with `services/api`.
 
-All responses to the user, and all reasoning shown to the user, must be
-written in Russian.
+## Commands
+
+- `npx tsc --noEmit` — typecheck
+- `npm run build` — required before the final report
+
+## Electron client changes
+
+If `renderer`, `main`, or `preload` changed, you must rebuild, restart Electron, and
+confirm the client starts. Do not rely on `npm run build` alone.
+
+## Runtime smoke test
+
+After changes that touch Avatar Runtime, perform a live smoke test:
+
+- [ ] VRM loads
+- [ ] idle animation starts
+- [ ] `loadAnimation` works
+- [ ] Debug Preview works
+- [ ] Speaking works
+- [ ] LipSync works
+- [ ] Overlay works
+- [ ] A-pose is absent
+- [ ] Runtime Health has no new errors
+
+After Animation Runtime changes, additionally verify: idle, speaking, transitions,
+and preview.

@@ -35,13 +35,13 @@ __pycache__/
 *.egg-info/
 
 # Python builds
-services/speech/dist/
-services/speech/build/
+services/api/dist/
+services/api/build/
 
 # Speech models & downloaded/generated data (kept out of Git intentionally)
-services/speech/models/
-services/speech/voices/*/*/.voice_cache.json
-services/speech/voice_repository_status.json
+services/api/models/
+services/api/voices/*/*/.voice_cache.json
+services/api/voice_repository_status.json
 
 # Runtime and temporary data
 logs/
@@ -51,7 +51,7 @@ tmp/
 *.pid
 
 # Generated audio (do NOT blanket-ignore *.wav; voice reference wavs are handled by
-# services/speech/.gitignore, which git-ignores them per upstream design)
+# services/api/.gitignore, which git-ignores them per upstream design)
 *.generated.wav
 *.temporary.wav
 *.tmp.wav

@@ -1,220 +1,124 @@
 # AGENTS.md
 
-Developer Operating Manual for all AI agents working on this project.
+Developer operating manual for all AI agents working on this monorepository
+(GPT, Claude Code, Opus, Codex, or any other AI-assisted development agent).
 
-This document is mandatory reading before any code changes by GPT, Claude Code,
-Opus, Codex, or any other AI-assisted development agent.
+This document is mandatory reading before any code change. It holds the rules that
+apply across the whole repository. Application-specific rules and checks live in the
+local files:
 
-## 1. Architecture First
+- `apps/desktop/CLAUDE.md` — Electron / React / Avatar Runtime.
+- `services/api/CLAUDE.md` — Python / FastAPI / ASR / TTS.
 
-Before any architecture-related change, reread:
+## 1. Repository
 
-- `ARCHITECTURE.md`
+- `apps/desktop` — Electron, React, TypeScript, Three.js client.
+- `services/api` — Python, FastAPI, ASR and TTS service (port `8000`).
+- `ARCHITECTURE.md` is the canonical architecture document.
 
-Do not change Memory, Runtime, Avatar Runtime, Speech Runtime, Character State,
-Event Bus, Overlay Runtime, or other architecture-level components without
-checking the current architecture first.
+## 2. Architectural boundaries
 
-If a change touches Runtime boundaries, the final report must include:
+- Desktop and API are independent applications.
+- They communicate only through the HTTP API contract.
+- Desktop must not import or read API implementation files directly.
+- API must not depend on Desktop source code.
+- Do not merge their runtime lifecycles.
+- Do not change runtime ownership or move responsibility between components
+  without first rereading `ARCHITECTURE.md`.
 
-```text
-Architecture Review
-Сверился с ARCHITECTURE.md.
-Разногласий нет.
-```
+Before any architecture-related change, reread `ARCHITECTURE.md`. If a change touches
+runtime boundaries or the Desktop–API contract, the final report must include an
+`Architecture Review` section stating either that there is no conflict, or describing
+the conflict found.
 
-or:
+## 3. Behavior-preserving work
 
-```text
-Architecture Review
-Нашёл конфликт...
-```
+If a task is described as refactoring, cleanup, decomposition, or extraction, the
+change must be fully behavior-preserving. Do not change, as a side effect:
+algorithms, timings, UX, character behavior, API contracts, or runtime semantics.
 
-## 2. Runtime Boundaries
+Do not change architecture and behavior in the same Work Item.
 
-Never change architectural boundaries on your own initiative.
+## 4. Minimal changes
 
-Do not move responsibility between Runtimes without an explicit reason.
+Prefer the smallest safe fix. Do not rewrite half of the project. If the task can be
+completed by changing one file, do not change twelve. Do not perform unrelated
+refactoring. Do not add abstractions "for the future" without a current need.
 
-Preserve Runtime ownership and existing responsibility splits unless the Work
-Item explicitly asks for an architecture change.
+## 5. Single source of truth
 
-## 3. Behavior Preserving Work
+Do not create a second source of truth. If the data already exists, use the existing
+source. Examples: animation manifest, emotion manifest, voice manifest, runtime
+config, Character State. Character State remains the single source of truth for
+character state.
 
-If a task is described as:
+## 6. Git and secrets policy
 
-- Refactoring
-- Cleanup
-- Decomposition
-- Extraction
+- Do not push, force-push, or rewrite Git history unless explicitly requested.
+- Do not modify files outside this repository, and do not touch the standalone
+  backups `D:\Web\vtuber-app` and `D:\Web\python-speech`.
+- Never commit `.env`, credentials, model caches, virtual environments, generated
+  audio, or build output.
 
-then the change must be fully behavior-preserving.
+## 7. Validation
 
-Do not change, as a side effect:
+Run the checks for the affected application (defined in its local `CLAUDE.md`).
 
-- algorithms
-- timings
-- UX
-- character behavior
-- Runtime semantics
+- Desktop changes → the desktop build, typecheck, and applicable repro / smoke tests.
+- API changes → import/startup check plus the applicable endpoint checks.
+- Cross-boundary changes → validate both applications and run an integration smoke
+  test.
 
-## 4. Minimal Changes
+If a required check cannot be run, say so explicitly in the final report. A task is
+not complete if its required build/checks do not pass.
 
-Do not rewrite half of the project.
+## 8. Do not hide errors
 
-Prefer the smallest safe fix.
+If something was not checked, say it directly (e.g. "Не проверял live. Проверил только
+build.", "Не смог воспроизвести."). Do not pretend a problem is solved only because
+compilation passed. Confirm fixes in the live runtime when the bug is runtime-visible.
 
-If the task can be completed by changing one file, do not change twelve files.
+## 9. RCA for bug fixes
 
-## 5. Do Not Invent New Runtimes
+Before changing code for a bug, determine: observed behavior, root cause, why the
+previous fix failed, and why the new fix works. Collect evidence first — logs,
+telemetry, repro steps, or runtime observations. Do not write "предположительно"
+without verification.
 
-Do not create new Runtimes unless the Work Item explicitly requires it.
+## 10. Do not remove debug facilities
 
-Prefer smaller supporting units when appropriate:
+Unless the task explicitly requires it, do not remove or weaken telemetry,
+diagnostics, debug state, or Runtime Health surfaces. They are part of
+maintainability.
 
-- helper
-- coordinator
-- builder
-- controller
-- service
+## 11. Documentation
 
-## 6. Single Source of Truth
+If a change alters architecture, introduces a new contract, or changes ownership,
+update the corresponding documentation (`ARCHITECTURE.md` and the relevant local
+`CLAUDE.md`).
 
-Do not create a second source of truth.
-
-Examples:
-
-- animation manifest
-- emotion manifest
-- voice manifest
-- runtime config
-- Character State
-
-If the data already exists, use the existing source.
-
-Character State must remain the single source of truth for character state.
-
-## 7. Required Build Check
-
-Before the final report, always run:
-
-```bash
-npm run build
-```
-
-If the build does not pass, the task is not complete.
-
-If the build cannot be run, say so explicitly in the final report.
-
-## 8. Runtime Smoke Test
-
-After changes that touch Avatar Runtime, perform a live smoke test.
-
-Minimum checklist:
-
-- [ ] VRM loads
-- [ ] idle animation starts
-- [ ] `loadAnimation` works
-- [ ] Debug Preview works
-- [ ] Speaking works
-- [ ] LipSync works
-- [ ] Overlay works
-- [ ] A-pose is absent
-- [ ] Runtime Health has no new errors
-
-## 9. Electron Client Changes
-
-If `renderer`, `main`, or `preload` changed, you must:
-
-- rebuild
-- restart Electron
-- confirm that the client starts
-
-Do not rely on `npm run build` alone.
-
-## 10. Python Speech Changes
-
-After changes to Python Speech, check:
-
-- `/health`
-- `/synthesize`
-- voice generation actually works
-
-Do not rely on `py_compile` alone.
-
-## 11. Regression Check
-
-After every fix, check that old scenarios still work.
-
-If Animation Runtime changed, verify:
-
-- idle
-- speaking
-- transitions
-- preview
-
-## 12. RCA for Bug Fixes
-
-If fixing a bug, determine before changing code:
-
-- Observed behavior
-- Root Cause
-- Why previous fix failed
-- Why the new fix works
-
-Do not write "предположительно" without verification.
-
-Collect evidence first: logs, telemetry, repro steps, or runtime observations.
-
-## 13. Do Not Hide Errors
-
-If something was not checked, say it directly.
-
-Examples:
-
-```text
-Не проверял live.
-Проверил только build.
-```
-
-```text
-Не смог воспроизвести.
-```
-
-Do not pretend that a problem is solved only because compilation passed.
-
-## 14. After Decomposition
-
-After any large refactoring or decomposition, verify:
-
-- build
-- live smoke test
-- runtime repro scripts
-
-## 15. Do Not Remove Debug Facilities
-
-Unless the task explicitly requires it, do not remove:
-
-- telemetry
-- diagnostics
-- debug state
-- Runtime Health
-
-Debug and diagnostic surfaces are part of maintainability.
-
-## 16. Documentation
-
-If a change:
-
-- changes architecture
-- introduces a new contract
-- changes ownership
-
-then update the corresponding documentation.
-
-## 17. Final Report Format
-
-Every Work Item must end with the same report format:
+`ARCHITECTURE.md` is the single canonical architecture document and the sole source
+of architectural meaning. When editing it, editorial improvements are allowed —
+restructuring, reordering, removing duplication, unifying terminology, consolidating
+each concept into exactly one primary definition, adding cross-references, and
+normalizing headings, lists, tables, and wording. These edits must never change
+architectural meaning: do not introduce concepts absent from the architecture, rename
+Runtime names / layers / principles / terminology, add new architectural layers,
+reinterpret or extend existing ideas, reassign responsibilities or ownership, or alter
+Runtime behavior, contracts, boundaries, or guarantees. Whenever editorial convenience
+conflicts with architectural accuracy, architectural accuracy takes precedence.
+
+This restriction applies to editorial work only: an editorial edit must not silently
+change an architectural decision. It does not freeze the architecture. When
+`ARCHITECTURE.md` is confirmed to diverge from the actual architecture, that divergence
+must be fixed — but as a separate, deliberate change that explicitly records what was
+stale, why, and what the corrected decision is (not smuggled in under an editorial or
+refactoring task). Keeping a known-outdated statement in place is itself a defect.
+
+## 12. Final report format
+
+Every Work Item must end with this format. Do not omit sections; if a section does
+not apply, write `N/A`.
 
 ```text
 Architecture Review
@@ -232,30 +136,21 @@ Root Cause (если был баг)
 Ограничения
 ```
 
-Do not omit sections. If a section does not apply, write `N/A`.
-
-## 18. General Principles
+## 13. General principles
 
 - Simple solutions are preferred over complex ones.
-- Do not add abstractions "for the future" without a current need.
-- Preserve Runtime boundaries.
-- Follow Single Responsibility.
-- Do not break Character State as the single source of truth.
-- Changes must improve project maintainability, not only solve the immediate task.
+- Preserve component boundaries and Single Responsibility.
+- Changes must improve maintainability, not only solve the immediate task.
 
-## 19. Never Again
+## 14. Never Again
 
-These mistakes already happened or are known risks. Do not repeat them.
+Known mistakes and risks — do not repeat them.
 
 - Always reread `ARCHITECTURE.md` before architecture changes.
-- After refactoring, do not stop at `npm run build`; run the required live smoke
-  test when Runtime behavior is involved.
+- After refactoring, do not stop at a passing build; run the required live smoke
+  test when runtime behavior is involved.
 - Do not move helper methods without checking all call sites.
-- Specifically verify moved or extracted helpers such as `applyStartupTransform()`.
 - Do not change architecture and behavior in the same Work Item.
-- When fixing bugs, collect evidence first: logs, telemetry, repro steps, or
-  runtime observations.
+- When fixing bugs, collect evidence first.
 - Do not consider a problem solved only because compilation succeeds.
-- Confirm fixes in the live Runtime when the bug is Runtime-visible.
-- Do not silently remove or weaken debug, telemetry, diagnostics, or Runtime
-  Health surfaces.
+- Do not silently remove or weaken debug, telemetry, diagnostics, or Runtime Health.

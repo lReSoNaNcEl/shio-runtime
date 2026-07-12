@@ -1,0 +1,5 @@
+# Development-only tooling. Not required at runtime.
+-r requirements.txt
+
+ruff
+pytest

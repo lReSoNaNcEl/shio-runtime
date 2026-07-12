@@ -1,125 +1,268 @@
-# shio-runtime
+# Shio Runtime
 
-Monorepo that organizes two independent applications and their shared documentation.
-The root exists **only** to hold canonical docs and to orchestrate the existing
-per-project commands — it does not merge the two apps into a monolith.
+Desktop AI character runtime with a local ASR/TTS service.
 
-> **Architecture invariant:** `apps/desktop` and `services/speech` are independent
-> applications connected **only** by an HTTP API contract. Desktop never imports
-> Speech code (or vice versa), never reads Speech's internal files directly, and the
-> two do not share a runtime lifecycle. See [ARCHITECTURE.md](./ARCHITECTURE.md) and
-> [AGENTS.md](./AGENTS.md).
+The repository contains two independent applications:
 
-## Structure
+- `apps/desktop` — Electron desktop client;
+- `services/api` — local FastAPI service for speech recognition and synthesis.
 
-```
-apps/desktop     — Electron + React + Three.js client (VRM avatar, LLM orchestration)
-services/speech  — local FastAPI ASR/TTS service (faster-whisper + Silero VAD + F5-TTS)
-docs/            — cross-cutting documentation
-scripts/         — cross-cutting scripts
-ARCHITECTURE.md  — single canonical architecture document
-AGENTS.md        — single canonical agent guidance
+They communicate only through an HTTP API. Neither application imports or directly
+reads the implementation files of the other. See [ARCHITECTURE.md](./ARCHITECTURE.md)
+and [AGENTS.md](./AGENTS.md).
+
+## Repository layout
+
+```text
+shio-runtime/
+├─ apps/
+│  └─ desktop/          Electron + React + Three.js client
+├─ services/
+│  └─ api/              FastAPI ASR/TTS service (faster-whisper + Silero VAD + F5-TTS)
+├─ scripts/             Repository-level scripts
+├─ ARCHITECTURE.md      Canonical architecture document
+├─ AGENTS.md            Instructions for coding agents
+└─ package.json         Root command orchestration
 ```
 
 ## Requirements
 
-- **Node.js** 24.x (developed with v24.10.0), **npm** 11.x (11.6.1)
-- **Python** 3.12 (3.12.10)
-- **GPU / CUDA** recommended for Speech. F5-TTS and faster-whisper default to `cuda`
-  (`DEVICE=cuda`, `ASR_PROVIDER=cuda`). Install a CUDA build of `torch`/`torchaudio`
-  first (e.g. RTX 50xx / Blackwell: `--index-url https://download.pytorch.org/whl/cu128`).
-  CPU is possible by setting `DEVICE=cpu` and `ASR_PROVIDER=cpu` but is slow.
-- **System deps:** `soundfile` requires libsndfile (bundled in the wheel on Windows).
-- **Assets not in Git:** F5-TTS model weights and any Hugging Face model cache are
-  downloaded on first run into the HF cache / `services/speech/models/` — not committed.
-- **Voice reference assets not in Git:** per-voice reference files
-  (`services/speech/voices/<dataset>/<voice>/reference.wav` and `reference.txt`) are
-  **intentionally git-ignored** by `services/speech/.gitignore` (inherited from the
-  upstream `python-speech` project). They are required runtime inputs for voice cloning
-  and are present on disk in this working copy, but are not committed. Re-fetch them into
-  a fresh checkout with `POST /voices/sync` (imports AnimeVox references into
-  `voices/<dataset>/<voice>/`), or copy them in manually.
+- Node.js 24.x
+- npm 11.x
+- Python 3.12
+- CUDA-capable GPU recommended (F5-TTS and faster-whisper default to CUDA)
+- PowerShell examples below assume Windows
 
-## Install
+Developed with:
 
-### Desktop
+```text
+Node.js 24.10.0
+npm 11.6.1
+Python 3.12.10
+PyTorch CUDA 12.8
+```
+
+CPU mode is supported through the API configuration, but ASR and TTS will be
+significantly slower. To use it, set in `services/api/.env`:
+
+```text
+DEVICE=cpu
+ASR_PROVIDER=cpu
+```
+
+## Quick start
+
+### 1. Install Desktop dependencies
+
+Run from the repository root:
 
 ```powershell
 npm run desktop:install
 ```
 
-### Speech
-
-Create and activate a virtual environment **inside `services/speech`** (do not reuse an
-old venv), install a CUDA torch build, then the project requirements:
+### 2. Create the API virtual environment
 
 ```powershell
-cd services\speech
+cd services\api
+
 python -m venv venv
 .\venv\Scripts\Activate.ps1
+
 pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu128
 pip install -r requirements.txt
+
+Copy-Item .env.example .env
+
+cd ..\..
 ```
 
-Copy `.env.example` to `.env` in `services/speech` and set `HF_TOKEN` if you use gated
-remote voice repositories.
+The `api:*` npm commands use the active `python` executable from `PATH`. Keep the
+virtual environment activated in the terminal where API commands are executed.
 
-## Run
+### 3. Download voice references
 
-Use two terminals. Start Speech first, then Desktop.
+Voice reference files are not stored in Git. After a fresh clone the voices are
+missing — `/voices` lists them as `available:false`, and voice-dependent synthesis
+is unavailable (the default voice has no reference files either) until you fetch them.
 
-Terminal 1 — Speech (from repo root, uses the active venv's Python on PATH, or call the
-venv uvicorn directly):
+With the API virtual environment active, run from the repository root:
 
 ```powershell
-npm run speech:dev
-# equivalent to: cd services\speech && python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+npm run api:voices:sync
 ```
 
-Terminal 2 — Desktop:
+The command downloads the configured AnimeVox voice references from Hugging Face into:
+
+```text
+services/api/voices/<dataset>/<voice>/
+├─ reference.wav
+└─ reference.txt
+```
+
+Set `HF_TOKEN` in `services/api/.env` when authentication or higher Hugging Face
+rate limits are required.
+
+### 4. Start the applications
+
+Use two terminals.
+
+**Terminal 1 — API**
+
+```powershell
+cd services\api
+.\venv\Scripts\Activate.ps1
+cd ..\..
+
+npm run api:dev
+```
+
+The API starts at `http://localhost:8000`.
+
+> **First run may be slow.** On the first `api:dev` the F5-TTS model (`F5_MODEL_ID`,
+> default `Misha24-10/F5-TTS_RUSSIAN`) and the ASR model are downloaded into the
+> Hugging Face cache / `services/api/models/`. These weights are not stored in Git,
+> so the first startup can take a while before the service becomes ready.
+
+**Terminal 2 — Desktop**
 
 ```powershell
 npm run desktop:dev
 ```
 
-Desktop reaches Speech over HTTP. The base URL defaults to `http://localhost:8000`
-(`apps/desktop/src/shared/config.ts`) and is overridable via `PYTHON_SPEECH_URL` in
-`apps/desktop/.env`.
+## Root commands
 
-## Checks
+### Desktop
 
-```powershell
-npm run typecheck   # tsc --noEmit in apps/desktop
-npm run build       # electron-vite build in apps/desktop
+```text
+npm run desktop:install
+npm run desktop:dev
+npm run desktop:build
+npm run desktop:preview
+npm run desktop:start
+npm run desktop:typecheck
 ```
 
-Desktop repro harnesses (run from `apps/desktop`, or via root wrappers):
+### API
 
-```powershell
-npm run desktop:repro:facial
-npm run desktop:repro:conversation-single-flight
+The API virtual environment must be active.
+
+```text
+npm run api:install
+npm run api:voices:sync
+npm run api:dev
 ```
 
-Speech tests / repro (from `services/speech`, venv active):
+### Repository checks
 
-```powershell
-python -m pytest tests
-python scripts\f5_long_playback_audit.py
+```text
+npm run typecheck
+npm run build
 ```
 
 ## Configuration
 
-- `.env.example` lives in each app: `apps/desktop/.env.example`, `services/speech/.env.example`.
-  Copy to `.env` locally; `.env` is git-ignored.
-- **Desktop → Speech URL:** `PYTHON_SPEECH_URL` (default `http://localhost:8000`).
-- **Speech host/port:** `HOST` / `PORT` in `services/speech/.env` (default `0.0.0.0:8000`).
-- **Voice manifest:** `services/speech/voice_manifest.json` (path via `VOICE_MANIFEST_PATH`,
-  resolved relative to the Speech working directory).
-- **Not in Git:** `.env` files, F5 model weights, HF cache, `services/speech/models/`,
-  generated/temporary audio, build output, `node_modules`, virtualenvs. Download models
-  on first Speech run; obtain the F5 model from `F5_MODEL_ID` in `.env.example`.
+Each application has its own local environment file, created from the included
+examples. Local `.env` files are ignored by Git.
 
-## Speech API contract (unchanged)
+```text
+apps/desktop/.env       (from apps/desktop/.env.example)
+services/api/.env       (from services/api/.env.example)
+```
 
-`GET /health`, `GET /voices`, `GET /emotions`, `GET /voices/status`,
-`POST /voices/sync`, `POST /synthesize`, `POST /recognize`, `WS /ws`.
+### Desktop → API URL
+
+The Desktop client connects to `http://localhost:8000`. The URL can be overridden
+with the environment variable `PYTHON_SPEECH_URL`. Despite its legacy name, it now
+points to the service located in `services/api`.
+
+### API host and port
+
+Configured through `HOST` / `PORT` in `services/api/.env` (default `0.0.0.0:8000`).
+
+### Manifests (single source of truth)
+
+- `VOICE_MANIFEST_PATH` — path to the voice manifest
+  (`services/api/voice_manifest.json`).
+- `EMOTION_MANIFEST_PATH` — path to the emotion manifest
+  (`services/api/emotion_manifest.json`).
+
+Both paths are resolved relative to the API working directory.
+
+### Voice dataset revision
+
+Voice synchronization uses the Hugging Face dataset revision `VOICE_DATASET_REVISION`.
+
+```text
+VOICE_DATASET_REVISION currently defaults to main.
+Set it to a dataset commit SHA for reproducible installations.
+```
+
+### F5-TTS model
+
+The TTS engine loads the F5 model from `F5_MODEL_ID`
+(default `Misha24-10/F5-TTS_RUSSIAN`). The weights are downloaded on the first API
+run and are not committed (see below).
+
+## Files not stored in Git
+
+```text
+.env files
+API virtual environments
+node_modules
+build output
+F5 model weights and Hugging Face model caches (services/api/models/)
+voice reference assets (services/api/voices/**/reference.wav|.txt)
+generated and temporary audio
+runtime logs
+```
+
+After a fresh clone, voice entries may be listed as unavailable until
+`npm run api:voices:sync` completes.
+
+## API contract
+
+The Desktop application uses the following API contract:
+
+```text
+GET  /health
+GET  /voices
+GET  /emotions
+GET  /voices/status
+POST /voices/sync
+POST /synthesize
+POST /recognize
+WS   /ws
+```
+
+## API checks
+
+Run from `services/api` with its virtual environment active:
+
+```powershell
+ruff check .
+python -m pytest tests
+```
+
+Then verify the read-only endpoints respond: `/health`, `/voices`, `/emotions`.
+Run a short `/synthesize` smoke test only after backend changes (F5 engine, audio
+encoding, or synthesis lifecycle).
+
+## Architecture
+
+`apps/desktop` and `services/api` are independently runnable applications. Their
+boundary is the HTTP API contract:
+
+```text
+Desktop
+   │
+   │ HTTP / WebSocket
+   ▼
+API service
+```
+
+Desktop must not import API source code or read its internal files. The API must not
+depend on Desktop source code or control avatar playback, LipSync or UI state.
+
+See [ARCHITECTURE.md](./ARCHITECTURE.md) and [AGENTS.md](./AGENTS.md).
+</content>
+</invoke>

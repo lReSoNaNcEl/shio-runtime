@@ -10,10 +10,14 @@
     "desktop:preview": "npm --prefix apps/desktop run preview",
     "desktop:start": "npm --prefix apps/desktop run start",
     "desktop:typecheck": "cd apps/desktop && npx tsc --noEmit",
-    "desktop:repro:facial": "npm --prefix apps/desktop run repro:facial",
-    "desktop:repro:conversation-single-flight": "npm --prefix apps/desktop run repro:conversation-single-flight",
-    "speech:install": "python -m pip install -r services/speech/requirements.txt",
-    "speech:dev": "cd services/speech && python -m uvicorn app.main:app --host 0.0.0.0 --port 8000",
+    "api:install": "python -m pip install -r services/api/requirements.txt",
+    "api:install:dev": "python -m pip install -r services/api/requirements-dev.txt",
+    "api:voices:sync": "cd services/api && python scripts/sync_voices.py",
+    "api:dev": "cd services/api && python -m uvicorn app.main:app --host 0.0.0.0 --port 8000",
+    "api:lint": "cd services/api && python -m ruff check .",
+    "api:lint:fix": "cd services/api && python -m ruff check . --fix",
+    "api:format": "cd services/api && python -m ruff format .",
+    "api:format:check": "cd services/api && python -m ruff format --check .",
     "build": "npm run desktop:build",
     "typecheck": "npm run desktop:typecheck"
   }

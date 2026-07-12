@@ -1,0 +1,42 @@
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+extend-exclude = ["venv", ".venv", "voices", "web"]
+
+[tool.ruff.lint]
+# A pragmatic starter rule set. Expand once the baseline is clean.
+select = [
+    "E",   # pycodestyle errors
+    "F",   # pyflakes
+    "W",   # pycodestyle warnings
+    "I",   # isort (import ordering)
+    "UP",  # pyupgrade
+    "B",   # flake8-bugbear
+]
+ignore = [
+    # Line length is enforced on code by the formatter. The remaining long lines are
+    # unbreakable string literals (log/error messages, field descriptions, response
+    # header docs) that must not be split mechanically.
+    "E501",
+    # str+Enum -> StrEnum changes the string representation of config enums, which is a
+    # behavior change (serialization). Deferred to a deliberate, separate change.
+    "UP042",
+]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI dependency helpers are intended to be called in argument defaults.
+# Treat them as immutable so B008 does not fire on them; genuine B008 on other
+# callables (e.g. dataclass/model constructors) stays visible.
+extend-immutable-calls = [
+    "fastapi.Body",
+    "fastapi.Cookie",
+    "fastapi.Depends",
+    "fastapi.File",
+    "fastapi.Form",
+    "fastapi.Header",
+    "fastapi.Path",
+    "fastapi.Query",
+]
+
+[tool.ruff.format]
+quote-style = "double"
