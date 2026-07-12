@@ -1,0 +1,264 @@
+import { app, BrowserWindow, Menu, ipcMain, protocol, screen } from 'electron'
+import { join } from 'path'
+import { readFileSync } from 'fs'
+import * as dotenv from 'dotenv'
+import { initializeSafeLogging, mainLog } from './logging/safeLogger'
+import { loadConfig, getConfig } from './config'
+import { LiveLLMProvider } from './llm'
+import { createMemoryStore } from './memory'
+import { SpeechClient } from './speech/speechClient'
+import { Orchestrator } from './orchestrator'
+import { registerIpcHandlers } from './ipc'
+
+initializeSafeLogging()
+dotenv.config()
+
+let win: BrowserWindow | null = null
+let overlayWin: BrowserWindow | null = null
+let orchestrator: Orchestrator | null = null
+let speechClient: SpeechClient | null = null
+let lastAvatarState: unknown = null
+let lastAvatarMouth: unknown = null
+
+function buildOrchestrator(): Orchestrator {
+  const cfg = getConfig()
+  // LiveLLMProvider re-reads settings on every chat() call, so switching
+  // provider / model / apiKey in Settings applies to the next request
+  // without rebuilding the Orchestrator or restarting the app.
+  const llm = new LiveLLMProvider(() => {
+    const { activeProvider, providers } = getConfig().llm
+    const creds = providers[activeProvider]
+    return {
+      provider: activeProvider,
+      apiKey: creds.apiKey || (activeProvider === 'groq' ? process.env.GROQ_API_KEY ?? '' : ''),
+      model: creds.model
+    }
+  })
+  const memory = createMemoryStore()
+  speechClient = new SpeechClient(cfg.pythonSpeechUrl)
+  void speechClient.warnIfEmotionContractDrift()
+  return new Orchestrator(llm, memory, speechClient, getConfig)
+}
+
+function loadRenderer(target: BrowserWindow, overlay = false): void {
+  if (process.env.NODE_ENV === 'development') {
+    target.loadURL(`http://localhost:5173${overlay ? '?overlay=1' : ''}`)
+  } else {
+    target.loadFile(join(__dirname, '../renderer/index.html'), overlay ? { query: { overlay: '1' } } : undefined)
+  }
+}
+
+function numericSetting(value: string | undefined, fallback: number, min: number, max: number): number {
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed)) return fallback
+  return Math.max(min, Math.min(max, parsed))
+}
+
+function overlayBounds(): { width: number; height: number; x: number; y: number } {
+  const cfg = getConfig()
+  const display = screen.getPrimaryDisplay()
+  const width = numericSetting(cfg.overlayWidth, 360, 160, 1200)
+  const height = numericSetting(cfg.overlayHeight, 560, 220, 1200)
+  const margin = numericSetting(cfg.overlayMargin, 24, 0, 200)
+  const corner = cfg.overlayCorner ?? 'bottom-right'
+  const x =
+    corner.endsWith('left')
+      ? Math.round(display.workArea.x + margin)
+      : Math.round(display.workArea.x + display.workArea.width - width - margin)
+  const y =
+    corner.startsWith('top')
+      ? Math.round(display.workArea.y + margin)
+      : Math.round(display.workArea.y + display.workArea.height - height - margin)
+  return { width, height, x, y }
+}
+
+function applyOverlaySettings(): { ok: boolean; visible: boolean } {
+  if (!overlayWin || overlayWin.isDestroyed()) return { ok: true, visible: false }
+  const cfg = getConfig()
+  const bounds = overlayBounds()
+  const opacity = numericSetting(cfg.overlayOpacity, 1, 0.2, 1)
+  const clickThrough = cfg.overlayClickThrough !== 'false'
+
+  overlayWin.setBounds(bounds)
+  overlayWin.setOpacity(opacity)
+  overlayWin.setIgnoreMouseEvents(clickThrough, { forward: true })
+  overlayWin.setAlwaysOnTop(true, 'screen-saver')
+  overlayWin.webContents.send('overlay-settings:updated', getConfig())
+  return { ok: true, visible: true }
+}
+
+function createWindow(): void {
+  loadConfig()
+  Menu.setApplicationMenu(null)
+
+  win = new BrowserWindow({
+    width: 1200,
+    height: 800,
+    title: 'Shio Runtime',
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false,
+      webSecurity: false
+    }
+  })
+  win.setMenu(null)
+
+  orchestrator = buildOrchestrator()
+
+  registerIpcHandlers(
+    () => {
+      if (!orchestrator) orchestrator = buildOrchestrator()
+      return orchestrator
+    },
+    () => {
+      if (!speechClient) speechClient = new SpeechClient(getConfig().pythonSpeechUrl)
+      return speechClient
+    },
+    win
+  )
+
+  win.webContents.on('did-finish-load', () => {
+    orchestrator = buildOrchestrator()
+  })
+
+  // TEMP DIAGNOSTIC: forward renderer animation lifecycle logs to main stdout.
+  win.webContents.on('console-message', (_e, _level, message) => {
+    if (message.includes('[ANIMDBG]') || message.includes('[ANIMLIFE]')) mainLog.log(message)
+  })
+
+  protocol.handle('app', (request) => {
+    const url = new URL(request.url)
+    const filePath = decodeURIComponent(url.pathname)
+    try {
+      const data = readFileSync(filePath)
+      return new Response(data, {
+        headers: { 'Content-Type': 'model/gltf-binary' }
+      })
+    } catch {
+      return new Response('Not found', { status: 404 })
+    }
+  })
+
+  loadRenderer(win)
+  if (process.env.NODE_ENV === 'development') win.webContents.openDevTools()
+}
+
+// Single-instance guard for the mirror overlay window. `createOverlayWindow`
+// used to overwrite `overlayWin` unconditionally, so any caller that (re)created
+// the overlay — e.g. refreshing it after a VRM change — orphaned the previous
+// live window instead of closing it, leaving two overlays on screen. All overlay
+// creation now goes through `ensureOverlayWindow`, and a creation lock protects
+// against a concurrent toggle + VRM-change race producing a duplicate.
+let isCreatingOverlay = false
+
+function ensureOverlayWindow(): BrowserWindow {
+  if (overlayWin && !overlayWin.isDestroyed()) {
+    mainLog.log('MirrorOverlay: reuse existing')
+    return overlayWin
+  }
+  return createOverlayWindow()
+}
+
+function refreshOverlayAvatar(): { ok: boolean; visible: boolean } {
+  if (!overlayWin || overlayWin.isDestroyed()) return { ok: true, visible: false }
+  // Reuse the single existing overlay window and reload its renderer in place.
+  // On boot the overlay reads `cfg.vrmPath` (already persisted before this call),
+  // so an in-place reload adopts the new model without ever creating a second
+  // window.
+  mainLog.log('MirrorOverlay: reload avatar in existing window')
+  overlayWin.webContents.reload()
+  return { ok: true, visible: true }
+}
+
+function createOverlayWindow(): BrowserWindow {
+  if (overlayWin && !overlayWin.isDestroyed()) {
+    mainLog.log('MirrorOverlay: reuse existing')
+    return overlayWin
+  }
+  if (isCreatingOverlay) {
+    mainLog.log('MirrorOverlay: creation already in progress')
+    return overlayWin as BrowserWindow
+  }
+  isCreatingOverlay = true
+  mainLog.log('MirrorOverlay: create')
+
+  const { width, height, x, y } = overlayBounds()
+
+  overlayWin = new BrowserWindow({
+    width,
+    height,
+    x,
+    y,
+    title: 'Shio - \u041e\u0432\u0435\u0440\u043b\u0435\u0439',
+    frame: false,
+    transparent: true,
+    resizable: false,
+    movable: true,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    hasShadow: false,
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false,
+      webSecurity: false
+    }
+  })
+
+  applyOverlaySettings()
+  overlayWin.on('closed', () => {
+    mainLog.log('MirrorOverlay: destroyed')
+    overlayWin = null
+  })
+  loadRenderer(overlayWin, true)
+  isCreatingOverlay = false
+  return overlayWin
+}
+
+function toggleOverlayWindow(): { visible: boolean } {
+  if (overlayWin && !overlayWin.isDestroyed()) {
+    mainLog.log('MirrorOverlay: close on toggle')
+    overlayWin.close()
+    overlayWin = null
+    return { visible: false }
+  }
+
+  ensureOverlayWindow()
+  return { visible: true }
+}
+
+app.whenReady().then(() => {
+  ipcMain.handle('overlay:toggle', () => toggleOverlayWindow())
+  ipcMain.handle('overlay:is-visible', () => ({ visible: Boolean(overlayWin && !overlayWin.isDestroyed()) }))
+  ipcMain.handle('overlay:apply-settings', () => applyOverlaySettings())
+  ipcMain.handle('overlay:reload-avatar', () => refreshOverlayAvatar())
+  ipcMain.handle('avatar-state:get', () => lastAvatarState)
+  ipcMain.handle('avatar-state:publish', (_event, state: unknown) => {
+    lastAvatarState = state
+    if (overlayWin && !overlayWin.isDestroyed()) {
+      overlayWin.webContents.send('avatar-state:updated', state)
+    }
+    return { ok: true }
+  })
+  ipcMain.handle('avatar-mouth:get', () => lastAvatarMouth)
+  ipcMain.handle('avatar-mouth:publish', (_event, weights: unknown) => {
+    lastAvatarMouth = weights
+    if (overlayWin && !overlayWin.isDestroyed()) {
+      overlayWin.webContents.send('avatar-mouth:updated', weights)
+    }
+    return { ok: true }
+  })
+
+  createWindow()
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+  })
+})
+
+app.on('window-all-closed', () => {
+  overlayWin = null
+  if (process.platform !== 'darwin') app.quit()
+})

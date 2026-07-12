@@ -1,0 +1,282 @@
+import hashlib
+import logging
+import time
+from collections import OrderedDict
+from typing import Dict, Optional
+
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel, Field
+
+from app.audio import apply_pitch_shift, save_wav
+from app.config import settings
+from app.tts import EmotionRegistry, EmotionTranslator, F5LocalEngine, SynthesisResult
+from app.tts.voice_repository_manager import voice_repository_manager
+from app.tts.voices import default_voice_id, list_presets, voice_registry
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter(tags=["tts"])
+
+
+class SynthesizeRequest(BaseModel):
+    """Request for F5-TTS synthesis."""
+
+    text: str
+    language: str = Field(default="en", description="Language code: en or ru")
+    emotion: Optional[str] = Field(default=None, description="Emotion/tag preset, e.g. happy, sigh, gasp, angry")
+    voiceId: Optional[str] = Field(default=None, description="Logical voice ID from /voices")
+    voice: Optional[str] = Field(default=None, description="Deprecated alias for voiceId")
+    speed: float = Field(default=1.0, ge=0.5, le=2.0, description="F5 generation speed")
+    pitch: float = Field(default=0.0, ge=-12.0, le=12.0, description="Post-process pitch shift in semitones")
+    engine: Optional[str] = Field(default=None, description="Only f5 is supported")
+
+
+class VoiceSyncRequest(BaseModel):
+    """Remote voice repository sync request."""
+
+    dataset: Optional[str] = Field(default=None, description="Dataset/repository id, e.g. AnimeVox")
+    limit: Optional[int] = Field(default=None, ge=0, le=200, description="Max voices to import during this sync")
+    force: bool = Field(default=False, description="Rewrite local reference assets even if cache is valid")
+
+
+_f5_engine: Optional[F5LocalEngine] = None
+emotion_registry = EmotionRegistry(settings.EMOTION_MANIFEST_PATH)
+_emotion_translator: Optional[EmotionTranslator] = EmotionTranslator(emotion_registry)
+_tts_cache: "OrderedDict[str, tuple[bytes, Dict[str, str]]]" = OrderedDict()
+TTS_CACHE_MAX_ITEMS = 128
+TTS_CACHE_MAX_TEXT_LENGTH = 120
+TTS_CACHE_VERSION = "f5-v2"
+
+
+def _has_speakable_content(text: str) -> bool:
+    return any(character.isalnum() for character in text)
+
+
+def init_engines(f5_engine: Optional[F5LocalEngine]):
+    """Initialize the TTS engine."""
+    global _f5_engine, _emotion_translator
+    _f5_engine = f5_engine
+    emotion_registry.reload()
+    _emotion_translator = EmotionTranslator(emotion_registry)
+
+
+def _engine_by_name(name: str):
+    name = (name or "f5").lower()
+    if name != "f5":
+        raise HTTPException(status_code=400, detail=f"Unknown engine: {name}; only f5 is available")
+    if _f5_engine is None or not _f5_engine.is_available():
+        raise HTTPException(status_code=503, detail="f5 engine not available")
+    return _f5_engine
+
+
+def _resolve_emotion(text: str, emotion: Optional[str]):
+    emotion = emotion or emotion_registry.default_emotion
+    if _emotion_translator:
+        return _emotion_translator.process_text_and_emotion_debug(text, emotion)
+    cleaned_text, extracted_emotion = emotion_registry.extract_marker(text)
+    requested_emotion = emotion_registry.normalize(emotion)
+    resolved_emotion = requested_emotion if requested_emotion != emotion_registry.default_emotion else extracted_emotion
+    return cleaned_text, resolved_emotion, requested_emotion, extracted_emotion
+
+
+def _cache_key(request: SynthesizeRequest, text: str, emotion: str) -> str:
+    voice_id = request.voiceId or request.voice or default_voice_id()
+    raw = "|".join([
+        text.strip(),
+        request.language,
+        emotion,
+        voice_id,
+        str(request.speed),
+        str(request.pitch),
+        "f5",
+        TTS_CACHE_VERSION,
+    ])
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def _cache_enabled_for(text: str) -> bool:
+    return 0 < len(text.strip()) <= TTS_CACHE_MAX_TEXT_LENGTH
+
+
+def _cache_get(key: str) -> Optional[tuple[bytes, Dict[str, str]]]:
+    item = _tts_cache.get(key)
+    if item is None:
+        return None
+    _tts_cache.move_to_end(key)
+    return item
+
+
+def _cache_set(key: str, audio_bytes: bytes, headers: Dict[str, str]) -> None:
+    _tts_cache[key] = (audio_bytes, dict(headers))
+    _tts_cache.move_to_end(key)
+    while len(_tts_cache) > TTS_CACHE_MAX_ITEMS:
+        _tts_cache.popitem(last=False)
+
+
+def _synthesis_result_to_response(result: SynthesisResult) -> bytes:
+    return save_wav(result.audio, result.sample_rate)
+
+
+def _apply_pitch(result: SynthesisResult, semitones: float) -> SynthesisResult:
+    if semitones:
+        result.audio = apply_pitch_shift(result.audio, result.sample_rate, semitones)
+        result.duration_sec = len(result.audio) / result.sample_rate
+    return result
+
+
+def _request_voice_id(request: SynthesizeRequest) -> str:
+    requested = request.voiceId or request.voice or default_voice_id()
+    try:
+        entry = voice_registry.get(requested)
+        if entry.is_available():
+            return requested
+        logger.warning("Requested voiceId '%s' has no local reference assets; using default voice.", requested)
+    except KeyError:
+        logger.warning("Requested unknown voiceId '%s'; using default voice.", requested)
+    return default_voice_id()
+
+
+@router.get("/voices", summary="List F5 voices, available references and emotion contract")
+async def voices():
+    voice_repository_manager.reconcile_local_assets()
+    voice_registry.reload()
+    presets = list_presets()
+    for preset in presets:
+        preset["emotions"] = emotion_registry.supported()
+    repository_status = voice_repository_manager.status()
+    return {
+        "default": default_voice_id(),
+        "defaultVoiceId": default_voice_id(),
+        "presets": presets,
+        "voices": voice_registry.list_voices(),
+        "availableVoices": repository_status["availableVoices"],
+        "installedVoices": repository_status["installedVoices"],
+        "datasets": voice_registry.datasets,
+        "repositories": repository_status["repositories"],
+        "syncState": repository_status["syncState"],
+        "lastSync": repository_status["lastSync"],
+        "missingAssets": repository_status["missingAssets"],
+        "all_emotions": emotion_registry.supported(),
+        "emotions": emotion_registry.public_contract(),
+        "f5": {
+            "voice_manifest": str(voice_registry.manifest_path),
+            "requires_transcripts": True,
+            "nfe_step": settings.F5_NFE_STEP,
+            "cfg_strength": settings.F5_CFG_STRENGTH,
+        },
+    }
+
+
+@router.get("/emotions", summary="Shared emotion manifest contract")
+async def emotions():
+    emotion_registry.reload()
+    return emotion_registry.public_contract()
+
+
+@router.get("/voices/status", summary="Voice repository sync and local asset status")
+async def voices_status():
+    return voice_repository_manager.status()
+
+
+@router.post("/voices/sync", summary="Synchronize configured remote voice repositories")
+async def voices_sync(request: VoiceSyncRequest = VoiceSyncRequest()):
+    try:
+        result = voice_repository_manager.sync(
+            dataset=request.dataset,
+            limit=request.limit,
+            force=request.force,
+        )
+        voice_registry.reload()
+        return result
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@router.post(
+    "/synthesize",
+    summary="Synthesize speech with F5-TTS",
+    responses={200: {
+        "content": {"audio/wav": {}},
+        "description": "WAV audio + X-Engine, X-Language, X-Emotion, X-Latency-Ms, X-RTF, X-Duration-Sec",
+    }},
+)
+async def synthesize(request: SynthesizeRequest):
+    """
+    F5-TTS synthesis.
+
+    Emotion tags can be sent as a field (`emotion: "happy"`) or inline in text:
+    `[laugh]`, `[sigh]`, `[gasp]`, `[groan]`, `[angry]`, `[happy]`, `[crying]`,
+    `[fear]`, `[surprised]`, `[whisper]`.
+    """
+    if not _has_speakable_content(request.text.strip()):
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "no_speakable_text", "message": "Text contains no speakable content"},
+        )
+
+    engine = _engine_by_name(request.engine or settings.TTS_DEFAULT_ENGINE.value)
+    try:
+        text, emotion, requested_emotion, text_emotion = _resolve_emotion(request.text, request.emotion)
+        if not _has_speakable_content(text):
+            raise HTTPException(
+                status_code=422,
+                detail={"code": "no_speakable_text", "message": "Text contains no speakable content"},
+            )
+        cache_key = _cache_key(request, text, emotion)
+        cacheable = _cache_enabled_for(text)
+
+        from fastapi.responses import Response
+
+        if cacheable:
+            cached = _cache_get(cache_key)
+            if cached:
+                started = time.perf_counter()
+                audio_bytes, cached_headers = cached
+                headers = dict(cached_headers)
+                headers["X-Cache"] = "HIT"
+                headers["X-Generated-Latency-Ms"] = cached_headers.get("X-Generated-Latency-Ms", cached_headers.get("X-Latency-Ms", ""))
+                headers["X-Latency-Ms"] = str((time.perf_counter() - started) * 1000)
+                logger.info("TTS cache hit: text=%r emotion=%s voiceId=%s", text[:80], emotion, _request_voice_id(request))
+                return Response(content=audio_bytes, media_type="audio/wav", headers=headers)
+
+        voice_id = _request_voice_id(request)
+
+        result = engine.synthesize(
+            text=text,
+            language=request.language,
+            emotion=emotion,
+            voice=voice_id,
+            speed=request.speed,
+        )
+        result = _apply_pitch(result, request.pitch)
+        audio_bytes = _synthesis_result_to_response(result)
+        logger.info(
+            "Synthesis emotion metadata: requested=%s text=%s resolved=%s",
+            requested_emotion,
+            text_emotion,
+            emotion,
+        )
+        headers = {
+            "X-Engine": result.engine,
+            "X-Language": result.language,
+            "X-Emotion": result.emotion,
+            "X-Requested-Emotion": requested_emotion,
+            "X-Text-Emotion": text_emotion,
+            "X-Voice-Id": voice_id,
+            "X-Latency-Ms": str(result.latency_ms),
+            "X-Generated-Latency-Ms": str(result.latency_ms),
+            "X-RTF": str(result.rtf),
+            "X-Duration-Sec": str(result.duration_sec),
+            "X-Cache": "MISS" if cacheable else "SKIP",
+        }
+        if cacheable:
+            _cache_set(cache_key, audio_bytes, headers)
+
+        return Response(content=audio_bytes, media_type="audio/wav", headers=headers)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Synthesis error: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))

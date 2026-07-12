@@ -1,0 +1,50 @@
+{
+  "name": "vtuber-app",
+  "version": "1.0.0",
+  "description": "",
+  "main": "out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "start": "electron .",
+    "repro:facial": "esbuild scripts/facial-repro/harness.ts --bundle --platform=node --format=cjs --loader:.json=json --outfile=scripts/facial-repro/harness.cjs && node scripts/facial-repro/harness.cjs",
+    "repro:playback": "esbuild scripts/speech-playback-repro/harness.ts --bundle --platform=node --format=cjs --outfile=scripts/speech-playback-repro/harness.cjs && node scripts/speech-playback-repro/harness.cjs",
+    "repro:invariants": "esbuild scripts/runtime-invariant-repro/harness.ts --bundle --platform=node --format=cjs --outfile=scripts/runtime-invariant-repro/harness.cjs && node scripts/runtime-invariant-repro/harness.cjs",
+    "repro:ear": "esbuild scripts/ear-repro/harness.ts --bundle --platform=node --format=cjs --outfile=scripts/ear-repro/harness.cjs && node scripts/ear-repro/harness.cjs",
+    "repro:llm-compat": "esbuild scripts/llm-compat-repro/harness.ts --bundle --platform=node --format=cjs --outfile=scripts/llm-compat-repro/harness.cjs && node scripts/llm-compat-repro/harness.cjs",
+    "repro:llm-live": "esbuild scripts/llm-live-repro/harness.ts --bundle --platform=node --format=cjs --outfile=scripts/llm-live-repro/harness.cjs && node scripts/llm-live-repro/harness.cjs",
+    "repro:continuous-listening": "esbuild scripts/continuous-listening-repro/harness.ts --bundle --platform=node --format=cjs --outfile=scripts/continuous-listening-repro/harness.cjs && node scripts/continuous-listening-repro/harness.cjs",
+    "repro:conversation-single-flight": "esbuild scripts/conversation-single-flight-repro/harness.ts --bundle --platform=node --format=cjs --outfile=scripts/conversation-single-flight-repro/harness.cjs && node scripts/conversation-single-flight-repro/harness.cjs",
+    "test:llm-live": "npm run repro:llm-live"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "@types/node": "^26.0.1",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@types/three": "^0.185.0",
+    "@vitejs/plugin-react": "^5.2.0",
+    "electron": "^42.5.0",
+    "electron-vite": "^5.0.0",
+    "typescript": "^6.0.3",
+    "unplugin-parcel-macros": "^0.2.0",
+    "vite": "^7.3.6"
+  },
+  "dependencies": {
+    "@pixiv/three-vrm": "^3.5.4",
+    "@pixiv/three-vrm-animation": "^3.5.4",
+    "@react-spectrum/s2": "^1.5.1",
+    "axios": "^1.18.1",
+    "dotenv": "^17.4.2",
+    "electron-store": "^11.0.2",
+    "groq-sdk": "^1.3.0",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "three": "^0.185.0",
+    "zod": "^4.4.3"
+  }
+}

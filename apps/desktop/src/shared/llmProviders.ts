@@ -1,0 +1,60 @@
+/**
+ * Provider-agnostic LLM types shared between the main process (Adapter /
+ * Settings) and the renderer (Settings UI). Single source of truth for the
+ * shape of a "provider", a "model", and the persisted LLM configuration -
+ * neither side should redefine these.
+ */
+
+export type LlmProviderId = 'groq' | 'cerebras' | 'github' | 'openrouter' | 'mistral'
+
+export const LLM_PROVIDER_IDS: readonly LlmProviderId[] = ['groq', 'cerebras', 'github', 'openrouter', 'mistral']
+
+export interface ModelInfo {
+  id: string
+  displayName?: string
+}
+
+export interface ProviderProfile {
+  id: LlmProviderId
+  displayName: string
+  /** Whether a chat request needs an API key. */
+  requiresApiKey: boolean
+  /** Whether listing the model catalog needs an API key (independent of chat). */
+  modelsRequireApiKey: boolean
+}
+
+export type ModelFetchErrorKind = 'network' | 'auth' | 'invalid_response' | 'unknown'
+
+export interface FetchModelsResult {
+  ok: boolean
+  models?: ModelInfo[]
+  error?: string
+  kind?: ModelFetchErrorKind
+}
+
+/** Per-provider credentials: each provider keeps its own key and model. */
+export interface ProviderCredentials {
+  apiKey: string
+  model: string
+}
+
+export interface BacklogSelectorRoleConfig {
+  enabled: boolean
+  providerId: LlmProviderId | ''
+  model: string
+  timeoutMs: number
+  minimumConfidence: number
+}
+
+/**
+ * Persisted, provider-independent LLM configuration. `activeProvider` selects
+ * which entry of `providers` the Runtime uses. Switching provider never
+ * overwrites another provider's stored credentials.
+ */
+export interface LlmConfig {
+  activeProvider: LlmProviderId
+  providers: Record<LlmProviderId, ProviderCredentials>
+  roles: {
+    backlogSelector: BacklogSelectorRoleConfig
+  }
+}

@@ -1,0 +1,30 @@
+# FastAPI & Web
+fastapi
+uvicorn[standard]
+python-multipart
+websockets
+httpx
+
+# Configuration
+pydantic
+pydantic-settings
+
+# ASR
+faster-whisper
+silero-vad
+
+# TTS: F5-TTS.
+# Install torch/torchaudio separately for your GPU, e.g. Blackwell RTX 50xx:
+#   pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu128
+f5-tts
+ruaccent
+transformers>=5.2
+huggingface-hub>=1.21
+datasets>=4.0
+numpy>=1.26,<2
+scipy==1.17.1
+onnx
+ml_dtypes
+
+# Audio Processing
+soundfile

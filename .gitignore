@@ -1,0 +1,66 @@
+# Secrets
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.p12
+
+# Node
+node_modules/
+.vite/
+coverage/
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Desktop builds
+apps/desktop/dist/
+apps/desktop/build/
+apps/desktop/out/
+apps/desktop/release/
+
+# Desktop runtime debug output (cwd-relative, regenerated at runtime)
+apps/desktop/runtime-debug/
+
+# Python environments and cache
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+
+# Python builds
+services/speech/dist/
+services/speech/build/
+
+# Speech models & downloaded/generated data (kept out of Git intentionally)
+services/speech/models/
+services/speech/voices/*/*/.voice_cache.json
+services/speech/voice_repository_status.json
+
+# Runtime and temporary data
+logs/
+temp/
+tmp/
+*.log
+*.pid
+
+# Generated audio (do NOT blanket-ignore *.wav; voice reference wavs are handled by
+# services/speech/.gitignore, which git-ignores them per upstream design)
+*.generated.wav
+*.temporary.wav
+*.tmp.wav
+
+# IDE and OS
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.DS_Store
+Thumbs.db
+desktop.ini

@@ -1,0 +1,20 @@
+{
+  "name": "shio-runtime",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Monorepo root for the Shio runtime: Electron desktop client + local ASR/TTS speech service. Root only orchestrates existing per-project commands; the two apps stay independent and communicate solely over the HTTP API contract.",
+  "scripts": {
+    "desktop:install": "npm --prefix apps/desktop install",
+    "desktop:dev": "npm --prefix apps/desktop run dev",
+    "desktop:build": "npm --prefix apps/desktop run build",
+    "desktop:preview": "npm --prefix apps/desktop run preview",
+    "desktop:start": "npm --prefix apps/desktop run start",
+    "desktop:typecheck": "cd apps/desktop && npx tsc --noEmit",
+    "desktop:repro:facial": "npm --prefix apps/desktop run repro:facial",
+    "desktop:repro:conversation-single-flight": "npm --prefix apps/desktop run repro:conversation-single-flight",
+    "speech:install": "python -m pip install -r services/speech/requirements.txt",
+    "speech:dev": "cd services/speech && python -m uvicorn app.main:app --host 0.0.0.0 --port 8000",
+    "build": "npm run desktop:build",
+    "typecheck": "npm run desktop:typecheck"
+  }
+}

@@ -1,0 +1,265 @@
+{
+  "version": 1,
+  "defaultVoiceId": "animevox_makima",
+  "datasets": [
+    {
+      "id": "AnimeVox",
+      "label": "AnimeVox",
+      "source": "https://huggingface.co/datasets/taresh18/AnimeVox",
+      "provider": "huggingface",
+      "repoId": "taresh18/AnimeVox"
+    }
+  ],
+  "voices": [
+    {
+      "id": "animevox_frieren",
+      "label": "Frieren",
+      "displayName": "Frieren",
+      "dataset": "AnimeVox",
+      "referenceAudio": "voices/AnimeVox/Frieren/reference.wav",
+      "referenceText": "voices/AnimeVox/Frieren/reference.txt",
+      "language": "en",
+      "gender": "unknown",
+      "tags": [
+        "animevox",
+        "remote"
+      ],
+      "behaviorTags": [],
+      "futureEmotionProfiles": {},
+      "emotionProfiles": {},
+      "styles": {},
+      "supportedEmotions": [],
+      "remote": {
+        "provider": "huggingface",
+        "repoId": "taresh18/AnimeVox",
+        "source": "https://huggingface.co/datasets/taresh18/AnimeVox",
+        "textHash": "9cbeb17283aa7ebdb8434e4922bdbf196f95b26742b4acbadd25b696e870f5e5"
+      }
+    },
+    {
+      "id": "animevox_fern",
+      "label": "Fern",
+      "displayName": "Fern",
+      "dataset": "AnimeVox",
+      "referenceAudio": "voices/AnimeVox/Fern/reference.wav",
+      "referenceText": "voices/AnimeVox/Fern/reference.txt",
+      "language": "en",
+      "gender": "unknown",
+      "tags": [
+        "animevox",
+        "remote"
+      ],
+      "behaviorTags": [],
+      "futureEmotionProfiles": {},
+      "emotionProfiles": {},
+      "styles": {},
+      "supportedEmotions": [],
+      "remote": {
+        "provider": "huggingface",
+        "repoId": "taresh18/AnimeVox",
+        "source": "https://huggingface.co/datasets/taresh18/AnimeVox",
+        "textHash": "b7f4872d81b82058cf6efdb175676c7502e7df69ebf581afce057df66ed33edb"
+      }
+    },
+    {
+      "id": "animevox_power",
+      "label": "Power",
+      "displayName": "Power",
+      "dataset": "AnimeVox",
+      "referenceAudio": "voices/AnimeVox/Power/reference.wav",
+      "referenceText": "voices/AnimeVox/Power/reference.txt",
+      "language": "en",
+      "gender": "unknown",
+      "tags": [
+        "animevox",
+        "remote"
+      ],
+      "behaviorTags": [],
+      "futureEmotionProfiles": {},
+      "emotionProfiles": {},
+      "styles": {},
+      "supportedEmotions": [],
+      "remote": {
+        "provider": "huggingface",
+        "repoId": "taresh18/AnimeVox",
+        "source": "https://huggingface.co/datasets/taresh18/AnimeVox",
+        "textHash": "e0bfadea04130730411cbd9305a3dd4eab4423255cb79d1bf2b07477ace334d2"
+      }
+    },
+    {
+      "id": "animevox_marin_kitagawa",
+      "label": "Marin Kitagawa",
+      "displayName": "Marin Kitagawa",
+      "dataset": "AnimeVox",
+      "referenceAudio": "voices/AnimeVox/Marin_Kitagawa/reference.wav",
+      "referenceText": "voices/AnimeVox/Marin_Kitagawa/reference.txt",
+      "language": "en",
+      "gender": "unknown",
+      "tags": [
+        "animevox",
+        "remote"
+      ],
+      "behaviorTags": [],
+      "futureEmotionProfiles": {},
+      "emotionProfiles": {},
+      "styles": {},
+      "supportedEmotions": [],
+      "remote": {
+        "provider": "huggingface",
+        "repoId": "taresh18/AnimeVox",
+        "source": "https://huggingface.co/datasets/taresh18/AnimeVox",
+        "textHash": "f324b56f1dbf7bea5bc63ee2f9c1835ee51744a8561d0878c294eea57e26ddba"
+      }
+    },
+    {
+      "id": "animevox_saber",
+      "label": "Saber",
+      "displayName": "Saber",
+      "dataset": "AnimeVox",
+      "referenceAudio": "voices/AnimeVox/Saber/reference.wav",
+      "referenceText": "voices/AnimeVox/Saber/reference.txt",
+      "language": "en",
+      "gender": "unknown",
+      "tags": [
+        "animevox",
+        "remote"
+      ],
+      "behaviorTags": [],
+      "futureEmotionProfiles": {},
+      "emotionProfiles": {},
+      "styles": {},
+      "supportedEmotions": [],
+      "remote": {
+        "provider": "huggingface",
+        "repoId": "taresh18/AnimeVox",
+        "source": "https://huggingface.co/datasets/taresh18/AnimeVox",
+        "textHash": "098dd5200db20efede5537c4632c4cddc07c50b3eb7759642375125b8f3577aa"
+      }
+    },
+    {
+      "id": "animevox_homura_akemi",
+      "label": "Homura Akemi",
+      "displayName": "Homura Akemi",
+      "dataset": "AnimeVox",
+      "referenceAudio": "voices/AnimeVox/Homura_Akemi/reference.wav",
+      "referenceText": "voices/AnimeVox/Homura_Akemi/reference.txt",
+      "language": "en",
+      "gender": "unknown",
+      "tags": [
+        "animevox",
+        "remote"
+      ],
+      "behaviorTags": [],
+      "futureEmotionProfiles": {},
+      "emotionProfiles": {},
+      "styles": {},
+      "supportedEmotions": [],
+      "remote": {
+        "provider": "huggingface",
+        "repoId": "taresh18/AnimeVox",
+        "source": "https://huggingface.co/datasets/taresh18/AnimeVox",
+        "textHash": "424581a0ade8100648a75c32f2a02fe958f91ab51a66c50b9e1f0ab648dc9310"
+      }
+    },
+    {
+      "id": "animevox_makima",
+      "label": "Makima",
+      "displayName": "Makima",
+      "dataset": "AnimeVox",
+      "referenceAudio": "voices/AnimeVox/Makima/reference.wav",
+      "referenceText": "voices/AnimeVox/Makima/reference.txt",
+      "language": "en",
+      "gender": "unknown",
+      "tags": [
+        "animevox",
+        "remote"
+      ],
+      "behaviorTags": [],
+      "futureEmotionProfiles": {},
+      "emotionProfiles": {},
+      "styles": {},
+      "supportedEmotions": [],
+      "remote": {
+        "provider": "huggingface",
+        "repoId": "taresh18/AnimeVox",
+        "source": "https://huggingface.co/datasets/taresh18/AnimeVox",
+        "textHash": "3d413a424fb8826467c2750eec5aaa6bb32faf31551075d80ae5834ce79616ab"
+      }
+    },
+    {
+      "id": "animevox_rin_tohsaka",
+      "label": "Rin Tohsaka",
+      "displayName": "Rin Tohsaka",
+      "dataset": "AnimeVox",
+      "referenceAudio": "voices/AnimeVox/Rin_Tohsaka/reference.wav",
+      "referenceText": "voices/AnimeVox/Rin_Tohsaka/reference.txt",
+      "language": "en",
+      "gender": "unknown",
+      "tags": [
+        "animevox",
+        "remote"
+      ],
+      "behaviorTags": [],
+      "futureEmotionProfiles": {},
+      "emotionProfiles": {},
+      "styles": {},
+      "supportedEmotions": [],
+      "remote": {
+        "provider": "huggingface",
+        "repoId": "taresh18/AnimeVox",
+        "source": "https://huggingface.co/datasets/taresh18/AnimeVox",
+        "textHash": "8cbc6b09c180b33535055fdffe3dfe26cd3d777f2d4dd4c85ff8aad6c9dc43e7"
+      }
+    },
+    {
+      "id": "animevox_mai_sakurajima",
+      "label": "Mai Sakurajima",
+      "displayName": "Mai Sakurajima",
+      "dataset": "AnimeVox",
+      "referenceAudio": "voices/AnimeVox/Mai_Sakurajima/reference.wav",
+      "referenceText": "voices/AnimeVox/Mai_Sakurajima/reference.txt",
+      "language": "en",
+      "gender": "unknown",
+      "tags": [
+        "animevox",
+        "remote"
+      ],
+      "behaviorTags": [],
+      "futureEmotionProfiles": {},
+      "emotionProfiles": {},
+      "styles": {},
+      "supportedEmotions": [],
+      "remote": {
+        "provider": "huggingface",
+        "repoId": "taresh18/AnimeVox",
+        "source": "https://huggingface.co/datasets/taresh18/AnimeVox",
+        "textHash": "2f6e4440c4bd7d3999d168c1850a8d3140e1e7aa25b8d83ec8bac77a2949cbd1"
+      }
+    },
+    {
+      "id": "animevox_lucy",
+      "label": "Lucy",
+      "displayName": "Lucy",
+      "dataset": "AnimeVox",
+      "referenceAudio": "voices/AnimeVox/Lucy/reference.wav",
+      "referenceText": "voices/AnimeVox/Lucy/reference.txt",
+      "language": "en",
+      "gender": "unknown",
+      "tags": [
+        "animevox",
+        "remote"
+      ],
+      "behaviorTags": [],
+      "futureEmotionProfiles": {},
+      "emotionProfiles": {},
+      "styles": {},
+      "supportedEmotions": [],
+      "remote": {
+        "provider": "huggingface",
+        "repoId": "taresh18/AnimeVox",
+        "source": "https://huggingface.co/datasets/taresh18/AnimeVox",
+        "textHash": "69fdc62df7dc84cb1276d2f7736ce603fc55bd31c6f5c0ca4b5863413c21aee1"
+      }
+    }
+  ]
+}
