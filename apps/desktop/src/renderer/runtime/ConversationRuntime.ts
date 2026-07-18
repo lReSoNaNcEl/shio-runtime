@@ -6,6 +6,7 @@ import type {
 import type { EventBus, RuntimeEventCategory, RuntimeEventType } from '../../shared/runtime/events'
 import type { SerializedSpeechError } from '../../shared/speech/speechErrors'
 import type { AudioPlayer, PlaybackSession } from '../audio/audioPlayer'
+import { resolveEmotionEmbodimentProfile } from '../avatar/EmotionEmbodimentProfile'
 import type { ChatMsg } from '../Controller'
 import type {
   AdmittedConversationTurn,
@@ -446,7 +447,14 @@ export class ConversationRuntime {
   ): void {
     this.deps.updateCharacterState({ status, mode, emotion: emotionKey })
     this.applyAvatarCharacterState()
-    this.publishAvatarState({ mode, emotionKey })
+    const thinkingImpulse =
+      mode === 'thinking' && this.deps.avatarRuntime.triggerEarImpulse('thinking-entry')
+    this.publishAvatarState({
+      mode,
+      emotionKey,
+      earImpulse: thinkingImpulse ? 'thinking-entry' : undefined,
+      earImpulseId: thinkingImpulse ? `thinking:${Date.now()}` : undefined,
+    })
     this.deps.setStatus(status)
   }
 
@@ -478,6 +486,7 @@ export class ConversationRuntime {
       throw new Error(`Stale LipSync start turnId=${session.turnId}`)
     this.playbackStartedAt = session.startedAt
     const emotionKey = speech.emotionKey ?? fallbackEmotion
+    const embodiment = resolveEmotionEmbodimentProfile(emotionKey)
     const conversationPresence = this.deps.conversationPresenceRuntime.update({
       phase: 'speaking',
       replyText,
@@ -490,8 +499,24 @@ export class ConversationRuntime {
       vrmEmotion: speech.vrmEmotion,
       conversationPresence,
     })
-    this.applyAvatarCharacterState({ lipSyncSession: session })
-    this.publishAvatarState({ mode: 'speaking', emotionKey, vrmEmotion: speech.vrmEmotion })
+    this.applyAvatarCharacterState({
+      lipSyncStart: {
+        session,
+        text: replyText,
+        emotionKey,
+      },
+    })
+    const replyEmphasis =
+      (embodiment.id === 'happy' || embodiment.id === 'angry' || embodiment.id === 'surprised') &&
+      this.deps.avatarRuntime.triggerEarImpulse('reply-emphasis', session.playbackId)
+    if (embodiment.id === 'surprised') this.deps.avatarRuntime.triggerReactionGesture('surprise')
+    this.publishAvatarState({
+      mode: 'speaking',
+      emotionKey,
+      vrmEmotion: speech.vrmEmotion,
+      earImpulse: replyEmphasis ? 'reply-emphasis' : undefined,
+      earImpulseId: replyEmphasis ? session.playbackId : undefined,
+    })
     this.deps.setStatus('speaking')
     this.publishRuntimeEvent(
       'SpeechStarted',

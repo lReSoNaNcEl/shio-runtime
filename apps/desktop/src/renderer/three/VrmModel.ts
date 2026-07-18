@@ -16,7 +16,9 @@ import type {
   HeadMotionProfile,
 } from './HeadMotionRuntime'
 import type { LookAtDebugState, LookAtMode } from './LookAtRuntime'
+import type { SpeechPhrasePhase } from './PhraseEnvelopeController'
 import { RootMotionController } from './RootMotionController'
+import type { SpeechPhraseTimingPlan } from './SpeechPhraseTiming'
 
 export type VrmProceduralMode = 'idle' | 'listening' | 'thinking' | 'speaking'
 export type VrmRootMotionPolicy = 'allow' | 'lockY' | 'lockXZ' | 'lockAll'
@@ -499,9 +501,9 @@ export class VrmModel {
     this.facialRuntime.setMouthWeight(weight)
   }
 
-  setMouthWeights(weights: Partial<MouthWeights>): void {
+  setMouthWeights(weights: Partial<MouthWeights>, composed = false): void {
     // LipSync domain → Expression Mixer (applied on the next frame's mix).
-    this.facialRuntime.setMouthWeights(weights)
+    this.facialRuntime.setMouthWeights(weights, composed)
   }
 
   setMouthDebug(debug: FacialDebugState['mouthTuning']): void {
@@ -512,8 +514,32 @@ export class VrmModel {
     this.facialRuntime.setSpeechEnergy(energy)
   }
 
+  startSpeechPhrase(plan: SpeechPhraseTimingPlan): void {
+    this.facialRuntime.startSpeechPhrase(plan)
+  }
+
+  updateSpeechPhrase(delta: number, progress: number, speechEnergy: number): void {
+    this.facialRuntime.updateSpeechPhrase(delta, progress, speechEnergy)
+  }
+
+  finishSpeechPhrase(): void {
+    this.facialRuntime.finishSpeechPhrase()
+  }
+
+  interruptSpeechPhrase(): void {
+    this.facialRuntime.interruptSpeechPhrase()
+  }
+
+  getSpeechPhrasePhase(): SpeechPhrasePhase {
+    return this.facialRuntime.getSpeechPhrasePhase()
+  }
+
   getFacialDebugState(): FacialDebugState {
     return this.facialRuntime.getFacialDebugState()
+  }
+
+  getFinalMouthWeights(): MouthWeights {
+    return this.facialRuntime.getFinalMouthWeights()
   }
 
   getLookAtDebugState(): LookAtDebugState {
@@ -532,8 +558,12 @@ export class VrmModel {
     this.facialRuntime.syncEarState(mode, emotion)
   }
 
-  triggerEarImpulse(impulse: EarImpulse): boolean {
-    return this.facialRuntime.triggerEarImpulse(impulse)
+  triggerEarImpulse(impulse: EarImpulse, identity?: string): boolean {
+    return this.facialRuntime.triggerEarImpulse(impulse, identity)
+  }
+
+  getLastEarImpulseDecision(): ReturnType<AvatarFacialRuntime['getLastEarImpulseDecision']> {
+    return this.facialRuntime.getLastEarImpulseDecision()
   }
 
   setEarAxisOverride(axis: EarAxisOverride): void {

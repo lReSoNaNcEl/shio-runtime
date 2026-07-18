@@ -3,8 +3,9 @@ import type * as THREE from 'three'
 import type { CharacterState } from '../../shared/runtime/characterState'
 import type { OverlayViewMode } from '../three/avatarTuning'
 import { speakingGestureTuning } from '../three/avatarTuning'
-import type { EarAxisOverride } from '../three/EarBehaviorRuntime'
-import { LipSync, type LipSyncSession, type MouthWeights } from '../three/LipSync'
+import type { EarAxisOverride, EarImpulse } from '../three/EarBehaviorRuntime'
+import { LipSync, type LipSyncStartRequest, type MouthWeights } from '../three/LipSync'
+import type { SpeechPhrasePhase } from '../three/PhraseEnvelopeController'
 import { VrmModel } from '../three/VrmModel'
 import { AvatarAnimationController } from './AvatarAnimationController'
 import type { AvatarAnimationQueueItem } from './AvatarAnimationQueue'
@@ -24,15 +25,22 @@ import { toAvatarMode, toProceduralMode } from './AvatarRuntimeMappers'
 import {
   AvatarSpeakingGestureScheduler,
   type SpeakingGestureDecision,
+  type SpeakingGestureSchedulerDebugState,
 } from './AvatarSpeakingGestureScheduler'
 import { AvatarStateEffectApplier } from './AvatarStateEffectApplier'
 import { type AvatarMode, type AvatarStateEffect, AvatarStateMachine } from './AvatarStateMachine'
 import { getAnimation } from './animationManifest'
 import type { DebugAvatarMode } from './avatarAnimations'
+import { resolveEmotionEmbodimentProfile } from './EmotionEmbodimentProfile'
 import { OverlayAnimationPolicy } from './OverlayAnimationPolicy'
 
 export type { AvatarMode } from './AvatarStateMachine'
 export type { AvatarBehaviorTransitionLogEntry }
+export type ReactionGestureTrigger =
+  | 'direct-address'
+  | 'question'
+  | 'surprise'
+  | 'user-interruption'
 
 export class AvatarController {
   private vrmModel = new VrmModel()
@@ -139,12 +147,12 @@ export class AvatarController {
 
   applyCharacterState(
     state: CharacterState,
-    options: { lipSyncSession?: LipSyncSession; stopLipSyncTurnId?: string } = {},
+    options: { lipSyncStart?: LipSyncStartRequest; stopLipSyncTurnId?: string } = {},
   ): void {
     const mode = toAvatarMode(state.mode)
     const emotionKey = state.emotion || state.avatar.expression || 'neutral'
     const vrmEmotion = state.avatar.vrmExpression
-    const semanticKey = `${mode}|${emotionKey}|${vrmEmotion ?? ''}|${options.lipSyncSession?.playbackId ?? ''}`
+    const semanticKey = `${mode}|${emotionKey}|${vrmEmotion ?? ''}|${options.lipSyncStart?.session.playbackId ?? ''}`
 
     if (semanticKey === this.lastCharacterStateKey) {
       this.vrmModel.applyEmotion(emotionKey || 'neutral', vrmEmotion)
@@ -164,8 +172,8 @@ export class AvatarController {
     this.lastCharacterStateKey = semanticKey
 
     if (mode === 'speaking') {
-      if (options.lipSyncSession)
-        this.startSpeaking(options.lipSyncSession, emotionKey, vrmEmotion, state)
+      if (options.lipSyncStart)
+        this.startSpeaking(options.lipSyncStart, emotionKey, vrmEmotion, state)
       else this.showSpeaking(emotionKey, vrmEmotion, state)
       return
     }
@@ -206,13 +214,23 @@ export class AvatarController {
   }
 
   startSpeaking(
-    session: LipSyncSession,
+    request: LipSyncStartRequest,
     emotionKey?: string,
     vrmEmotion?: string,
     state?: CharacterState,
   ): void {
+    const continuingSpeech = this.lipSync.getActiveSession()?.turnId === request.session.turnId
     const effect = this.stateMachine.startSpeaking(emotionKey)
-    this.applyStateEffect(effect, vrmEmotion, session, state, 'character-state', 'start speaking')
+    this.applyStateEffect(
+      effect,
+      vrmEmotion,
+      request,
+      state,
+      'character-state',
+      'start speaking',
+      undefined,
+      continuingSpeech,
+    )
   }
 
   showSpeaking(emotionKey?: string, vrmEmotion?: string, state?: CharacterState): void {
@@ -222,7 +240,7 @@ export class AvatarController {
 
   getMouthWeights(): MouthWeights {
     if (this.externalMouthWeights) return { ...this.externalMouthWeights }
-    return this.lipSync.getMouthWeights()
+    return this.vrmModel.getFinalMouthWeights()
   }
 
   setMouthWeights(weights: Partial<MouthWeights>): void {
@@ -233,7 +251,7 @@ export class AvatarController {
       ee: weights.ee ?? 0,
       oh: weights.oh ?? 0,
     }
-    this.vrmModel.setMouthWeights(this.externalMouthWeights)
+    this.vrmModel.setMouthWeights(this.externalMouthWeights, true)
   }
 
   stopSpeaking(): void {
@@ -248,17 +266,72 @@ export class AvatarController {
   }
 
   stopLipSync(turnId: string): boolean {
-    return this.lipSync.detach(turnId, true)
-  }
-
-  interruptLipSync(turnId: string): boolean {
     return this.lipSync.detach(turnId)
   }
 
+  interruptLipSync(turnId: string): boolean {
+    return this.lipSync.detach(turnId, false, true)
+  }
+
   triggerUserInterruption(): boolean {
-    const earTriggered = this.vrmModel.triggerEarImpulse('user-interruption')
+    const earTriggered = this.triggerEarImpulse('user-interruption')
     const headTriggered = this.vrmModel.triggerHeadAttentionImpulse('user-interruption')
     return earTriggered || headTriggered
+  }
+
+  triggerEarImpulse(impulse: EarImpulse, identity?: string): boolean {
+    return this.vrmModel.triggerEarImpulse(impulse, identity)
+  }
+
+  triggerReactionGesture(trigger: ReactionGestureTrigger): string | null {
+    if (trigger === 'user-interruption' || !this.lastEffect) return null
+    const effect = { ...this.lastEffect, loop: false }
+    const behaviorId = trigger === 'surprise' ? 'surprised' : this.lastEffect.behaviorId
+    const resolved = this.behaviorResolver.resolveAnimationTags(
+      effect,
+      [`reaction:${trigger}`],
+      behaviorId,
+      'reaction',
+    )
+    if (!resolved || resolved.loop) return null
+
+    const returnEffect = this.lastEffect
+    const returnResolution = this.lastBehaviorResolution
+    const decision = this.playback.requestResolvedBehavior({
+      effect,
+      resolved,
+      source: 'state-effect',
+      reason: `semantic reaction:${trigger}`,
+      frame: this.frame,
+      interruptible: false,
+    })
+    if (decision.action !== 'play' && decision.action !== 'queue') return null
+    if (returnResolution) {
+      this.playback.requestResolvedBehavior({
+        effect: returnEffect,
+        resolved: returnResolution,
+        source: 'queue',
+        reason: `return after semantic reaction:${trigger}`,
+        frame: this.frame,
+        interruptible: this.isInterruptible(returnEffect, returnResolution),
+      })
+    }
+    return resolved.animationId
+  }
+
+  getLastEarImpulseDecision(): ReturnType<VrmModel['getLastEarImpulseDecision']> {
+    return this.vrmModel.getLastEarImpulseDecision()
+  }
+
+  getSpeechPhraseSnapshot(): { phase: SpeechPhrasePhase; turnId: string | null } {
+    return {
+      phase: this.vrmModel.getSpeechPhrasePhase(),
+      turnId: this.lipSync.getActiveSession()?.turnId ?? null,
+    }
+  }
+
+  getSpeakingGestureSnapshot(): SpeakingGestureSchedulerDebugState {
+    return this.speakingGestures.getDebugState()
   }
 
   isLoaded(): boolean {
@@ -407,15 +480,20 @@ export class AvatarController {
   private applyStateEffect(
     effect: AvatarStateEffect,
     vrmEmotion?: string,
-    lipSyncSession?: LipSyncSession,
+    lipSyncStart?: LipSyncStartRequest,
     state?: CharacterState,
     source: AvatarPlaybackRequestSource = 'state-effect',
     reason = 'state effect',
     stopLipSyncTurnId?: string,
+    continuingSpeech = false,
   ): void {
-    this.stateEffects.apply({ effect, vrmEmotion, lipSyncSession, stopLipSyncTurnId, state })
+    this.stateEffects.apply({ effect, vrmEmotion, lipSyncStart, stopLipSyncTurnId, state })
 
     if (effect.mode === 'speaking') {
+      if (continuingSpeech) {
+        this.speakingGestures.beginSegment(resolveEmotionEmbodimentProfile(effect.emotionKey).id)
+        return
+      }
       const decision = this.speakingGestures.begin(effect, state)
       this.playSpeakingGestureDecision(
         { ...effect, behaviorId: decision.behaviorId },
@@ -496,12 +574,36 @@ export class AvatarController {
       ...this.speakingGestures.getExcludedAnimationIds(),
       ...this.getOverlayExcludedAnimationIds(effect),
     ]
-    const resolved = this.behaviorResolver.resolveBehaviorTag(
-      effect,
-      `behavior:${decision.behaviorId}`,
-      decision.behaviorId,
-      excluded,
-    )
+    const embodiment = resolveEmotionEmbodimentProfile(effect.emotionKey)
+    const resolved =
+      this.behaviorResolver.resolveAnimationTags(
+        effect,
+        embodiment.animationTags,
+        decision.behaviorId,
+        decision.phase === 'emphasis' ? 'reaction' : 'speaking',
+        excluded,
+      ) ??
+      (decision.phase === 'emphasis'
+        ? null
+        : this.behaviorResolver.resolveBehaviorTag(
+            effect,
+            `behavior:${decision.behaviorId}`,
+            decision.behaviorId,
+            excluded,
+          ))
+    if (!resolved) {
+      this.playback.recordPlaybackOnly({
+        animationId: 'none',
+        behaviorId: decision.behaviorId,
+        source: 'speaking-gesture-scheduler',
+        reason: `${reason}; ${decision.reason}; no compatible reaction candidate`,
+        accepted: false,
+        decision: 'ignored',
+        rejectionReason: 'no compatible manifest reaction candidate',
+        frame: this.frame,
+      })
+      return
+    }
     const skippedCandidates = resolved.candidates
       .filter(
         (candidate) =>

@@ -121,6 +121,42 @@ export class AvatarBehaviorResolver {
     }
   }
 
+  resolveAnimationTags(
+    effect: AvatarStateEffect,
+    tags: readonly string[],
+    behaviorId: AvatarBehaviorId,
+    usage: 'speaking' | 'reaction',
+    excludedAnimationIds: readonly string[] = [],
+  ): AvatarBehaviorResolution | null {
+    const now = Date.now()
+    const manifestState = this.toManifestState(effect.mode)
+    const animationIds = [
+      ...new Set(
+        tags.flatMap((tag) =>
+          getAnimationsByBehaviorTagForState(tag, manifestState)
+            .filter((entry) => entry.usage?.[usage])
+            .map((entry) => entry.id as AnimationId),
+        ),
+      ),
+    ]
+    if (animationIds.length === 0) return null
+    const candidates = this.buildCandidates(animationIds, now)
+    const excludedIds = new Set(excludedAnimationIds)
+    const selection = this.selectAnimation(candidates, excludedIds, manifestState, usage)
+    this.annotateCandidates(candidates, selection.animationId, excludedIds)
+    this.cooldowns.markPlayed(selection.animationId, now)
+    const entry = getAnimation(selection.animationId)
+    return {
+      behaviorId,
+      candidates,
+      animationId: selection.animationId,
+      loop: entry?.loop ?? effect.loop,
+      fallbackAnimationId: this.getFallbackAnimationId(manifestState, excludedIds),
+      activeCooldowns: this.cooldowns.getActiveCooldowns(now),
+      selectionReason: `${tags.join('|')}: ${selection.reason}`,
+    }
+  }
+
   clearCooldowns(): void {
     this.cooldowns.clear()
   }
@@ -210,8 +246,9 @@ export class AvatarBehaviorResolver {
     candidates: AvatarBehaviorCandidate[],
     excludedAnimationIds = new Set<string>(),
     mode = 'idle',
+    usage: 'speaking' | 'reaction' = 'speaking',
   ): { animationId: AnimationId; reason: string } {
-    this.applyUsageFilter(candidates, mode)
+    this.applyUsageFilter(candidates, mode, usage)
     const available = candidates.filter((candidate) => {
       return (
         candidate.weight > 0 &&
@@ -301,8 +338,17 @@ export class AvatarBehaviorResolver {
     }
   }
 
-  private applyUsageFilter(candidates: AvatarBehaviorCandidate[], mode: string): void {
+  private applyUsageFilter(
+    candidates: AvatarBehaviorCandidate[],
+    mode: string,
+    usage: 'speaking' | 'reaction',
+  ): void {
     for (const candidate of candidates) {
+      if (usage === 'reaction') {
+        const entry = getAnimation(candidate.animationId)
+        candidate.excludedByUsage = !entry?.usage?.reaction
+        continue
+      }
       if (mode !== 'speaking') {
         candidate.excludedByUsage = false
         continue

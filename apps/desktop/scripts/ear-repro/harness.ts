@@ -18,6 +18,7 @@ import assert from 'node:assert/strict'
 
 import * as THREE from 'three'
 
+import { resolveEmotionEmbodimentProfile } from '../../src/renderer/avatar/EmotionEmbodimentProfile'
 import { EarBehaviorRuntime } from '../../src/renderer/three/EarBehaviorRuntime'
 import type { VrmProceduralMode } from '../../src/renderer/three/VrmModel'
 
@@ -63,7 +64,7 @@ runtime.attach({ scene } as unknown as Parameters<EarBehaviorRuntime['attach']>[
 const dt = 1 / 60
 function run(profile: VrmProceduralMode, emotion: string, seconds: number) {
   runtime.setProfile(profile)
-  runtime.applyEmotion(emotion)
+  runtime.applyEmotion(resolveEmotionEmbodimentProfile(emotion))
   let maxL = 0
   let maxR = 0
   const posesL = new Set<string>()
@@ -131,6 +132,24 @@ assert.equal(runtime.getDebugState().activeImpulse, null)
 assert.equal(runtime.getDebugState().profile, 'listening')
 assert.equal(runtime.triggerImpulse('user-interruption'), true)
 console.log('assert semantic impulse one-shot + listening settle: PASS')
+
+console.log('--- semantic impulse priority + per-type cooldown ---')
+for (let elapsed = 0; elapsed < 1.1; elapsed += dt) runtime.update(dt)
+assert.equal(runtime.triggerImpulse('thinking-entry'), true)
+assert.equal(runtime.triggerImpulse('reply-emphasis', 'segment-1'), true)
+assert.equal(runtime.triggerImpulse('question'), true)
+assert.equal(runtime.triggerImpulse('thinking-entry'), false)
+assert.equal(runtime.triggerImpulse('direct-address'), true)
+assert.equal(runtime.triggerImpulse('question'), false)
+assert.equal(runtime.triggerImpulse('user-interruption'), true)
+assert.equal(runtime.triggerImpulse('direct-address'), false)
+for (let elapsed = 0; elapsed < 1.1; elapsed += dt) runtime.update(dt)
+assert.equal(runtime.triggerImpulse('user-interruption'), true)
+assert.equal(runtime.triggerImpulse('reply-emphasis', 'segment-1'), false)
+assert.equal(runtime.triggerImpulse('reply-emphasis', 'segment-2'), false)
+for (let elapsed = 0; elapsed < 0.7; elapsed += dt) runtime.update(dt)
+assert.equal(runtime.triggerImpulse('reply-emphasis', 'segment-2'), true)
+console.log('assert strict priority + independent cooldown/segment dedup: PASS')
 
 // Basic assertions.
 const idleState = runtime.getDebugState()

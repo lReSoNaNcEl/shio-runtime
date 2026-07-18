@@ -1,6 +1,7 @@
 import type { VRM } from '@pixiv/three-vrm'
 import * as THREE from 'three'
 
+import type { EmotionEmbodimentProfile } from '../avatar/EmotionEmbodimentProfile'
 import { headMotionTuning } from './avatarTuning'
 
 export type HeadMotionProfile = 'idle' | 'listening' | 'thinking' | 'speaking' | 'userFocus'
@@ -260,6 +261,11 @@ export class HeadMotionRuntime {
   private appliedNeckPose: HeadMotionPose = zeroPose()
   private attentionImpulseMs = 0
   private attentionImpulseCooldownMs = 0
+  private emotionHeadProfile: EmotionEmbodimentProfile['head'] = {
+    energyScale: 1,
+    nodBias: 1,
+    tiltBias: 1,
+  }
   private debug: HeadMotionDebugState = {
     profile: 'idle',
     activeGenerators: [],
@@ -288,6 +294,10 @@ export class HeadMotionRuntime {
 
   setProfile(profile: HeadMotionProfile): void {
     this.profile = profile
+  }
+
+  applyEmotionProfile(profile: EmotionEmbodimentProfile): void {
+    this.emotionHeadProfile = { ...profile.head }
   }
 
   triggerAttentionImpulse(impulse: HeadAttentionImpulse): boolean {
@@ -324,8 +334,15 @@ export class HeadMotionRuntime {
       random: () => this.nextRandom(),
     })
     const blend = 1 - Math.exp(-headMotionTuning.smoothing * delta)
+    const emotionPose = {
+      yaw: resolved.pose.yaw * this.emotionHeadProfile.energyScale,
+      pitch:
+        resolved.pose.pitch * this.emotionHeadProfile.energyScale * this.emotionHeadProfile.nodBias,
+      roll:
+        resolved.pose.roll * this.emotionHeadProfile.energyScale * this.emotionHeadProfile.tiltBias,
+    }
     const targetPose = addPose(
-      resolved.pose,
+      emotionPose,
       scalePose(headMotionTuning.attentionImpulse.pose, this.attentionImpulseEnvelope()),
     )
     this.currentPose = smoothPose(this.currentPose, targetPose, delta, headMotionTuning.smoothing)

@@ -1,4 +1,5 @@
 import type { OverlayViewMode } from '../three/avatarTuning'
+import type { EarImpulse } from '../three/EarBehaviorRuntime'
 import type { MouthWeights } from '../three/LipSync'
 import type { SceneManager } from '../three/SceneManager'
 import type { AvatarMode } from './AvatarRuntime'
@@ -9,6 +10,8 @@ export interface SyncedAvatarState {
   vrmEmotion?: string
   reaction?: 'user-interruption'
   reactionId?: string
+  earImpulse?: EarImpulse
+  earImpulseId?: string
 }
 
 /**
@@ -148,6 +151,16 @@ export class OverlayRuntime {
       vrmEmotion: typeof value.vrmEmotion === 'string' ? value.vrmEmotion : undefined,
       reaction: value.reaction === 'user-interruption' ? value.reaction : undefined,
       reactionId: typeof value.reactionId === 'string' ? value.reactionId : undefined,
+      earImpulse:
+        value.earImpulse === 'user-interruption' ||
+        value.earImpulse === 'direct-address' ||
+        value.earImpulse === 'question' ||
+        value.earImpulse === 'thinking-entry' ||
+        value.earImpulse === 'reply-emphasis' ||
+        value.earImpulse === 'recognition-uncertain'
+          ? value.earImpulse
+          : undefined,
+      earImpulseId: typeof value.earImpulseId === 'string' ? value.earImpulseId : undefined,
     }
   }
 

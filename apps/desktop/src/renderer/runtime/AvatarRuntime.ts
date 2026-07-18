@@ -11,16 +11,25 @@ import type { AvatarAnimationQueueDebugState } from '../avatar/AvatarAnimationQu
 import type { AvatarBehaviorEngineDecision } from '../avatar/AvatarBehaviorEngine'
 import type { AvatarBehaviorCandidate } from '../avatar/AvatarBehaviorResolver'
 import type { AvatarMode } from '../avatar/AvatarController'
-import { type AvatarBehaviorTransitionLogEntry, AvatarController } from '../avatar/AvatarController'
+import {
+  type AvatarBehaviorTransitionLogEntry,
+  AvatarController,
+  type ReactionGestureTrigger,
+} from '../avatar/AvatarController'
 import type { IdleOrchestratorDebugState } from '../avatar/AvatarIdleOrchestrator'
 import type { AvatarPlaybackRequestDebugState } from '../avatar/AvatarPlaybackRequestLog'
 import type { SpeakingGestureSchedulerDebugState } from '../avatar/AvatarSpeakingGestureScheduler'
 import type { DebugAvatarMode } from '../avatar/avatarAnimations'
+import { resolveEmotionEmbodimentProfile } from '../avatar/EmotionEmbodimentProfile'
 import type { FacialDebugState } from '../three/AvatarExpressionMixer'
 import type { OverlayViewMode } from '../three/avatarTuning'
-import type { EarAxisOverride, EarBehaviorDebugState } from '../three/EarBehaviorRuntime'
+import type {
+  EarAxisOverride,
+  EarBehaviorDebugState,
+  EarImpulse,
+} from '../three/EarBehaviorRuntime'
 import type { HeadMotionDebugState } from '../three/HeadMotionRuntime'
-import type { LipSyncSession, MouthWeights } from '../three/LipSync'
+import type { LipSyncStartRequest, MouthWeights } from '../three/LipSync'
 import type { LookAtDebugState } from '../three/LookAtRuntime'
 import type { VrmBodyActionDebugState, VrmPerformanceDebugState } from '../three/VrmModel'
 
@@ -69,6 +78,10 @@ export type AvatarRuntimeMirrorState = Partial<
 
 export class AvatarRuntime {
   private controller: AvatarController
+  private lastPhrasePhase = 'idle'
+  private lastEmotionProfile = 'neutral'
+  private lastSpeakingGesturePhase = 'idle'
+  private lastSpeakingGesture = 'none'
 
   constructor(
     private readonly events: EventBus,
@@ -79,6 +92,27 @@ export class AvatarRuntime {
 
   update(delta: number, state?: CharacterState): void {
     this.controller.update(delta, state)
+    const phrase = this.controller.getSpeechPhraseSnapshot()
+    if (phrase.phase !== this.lastPhrasePhase) {
+      this.lastPhrasePhase = phrase.phase
+      this.publishAvatarEvent(
+        'SpeechPhrasePhaseChanged',
+        `turn=${phrase.turnId ?? 'none'} phase=${phrase.phase}`,
+      )
+    }
+    const scheduler = this.controller.getSpeakingGestureSnapshot()
+    if (scheduler.phase !== this.lastSpeakingGesturePhase) {
+      this.lastSpeakingGesturePhase = scheduler.phase
+      this.publishAvatarEvent(
+        'SpeakingGesturePhaseChanged',
+        `phase=${scheduler.phase} behavior=${scheduler.nextBehavior}`,
+      )
+    }
+    if (scheduler.currentGesture !== this.lastSpeakingGesture) {
+      this.lastSpeakingGesture = scheduler.currentGesture
+      if (scheduler.currentGesture !== 'none')
+        this.publishAvatarEvent('SpeakingGestureSwitched', `behavior=${scheduler.currentGesture}`)
+    }
   }
 
   async loadVrm(scene: THREE.Scene, buffer: ArrayBuffer): Promise<void> {
@@ -105,11 +139,16 @@ export class AvatarRuntime {
 
   applyCharacterState(
     state: CharacterState,
-    options: { lipSyncSession?: LipSyncSession; stopLipSyncTurnId?: string } = {},
+    options: { lipSyncStart?: LipSyncStartRequest; stopLipSyncTurnId?: string } = {},
   ): void {
     const previous = this.controller.getDebugState()
     this.controller.applyCharacterState(state, options)
     this.publishAvatarChanges(previous)
+    const emotionProfile = resolveEmotionEmbodimentProfile(state.emotion).id
+    if (emotionProfile !== this.lastEmotionProfile) {
+      this.lastEmotionProfile = emotionProfile
+      this.publishAvatarEvent('EmotionEmbodimentResolved', `emotion=${emotionProfile}`)
+    }
   }
 
   getMirrorState(): AvatarRuntimeMirrorState {
@@ -145,8 +184,32 @@ export class AvatarRuntime {
 
   triggerUserInterruption(): boolean {
     const triggered = this.controller.triggerUserInterruption()
+    const decision = this.controller.getLastEarImpulseDecision()
+    if (decision?.impulse === 'user-interruption') {
+      this.publishAvatarEvent(
+        decision.accepted ? 'EarImpulseTriggered' : 'EarImpulseRejected',
+        `impulse=user-interruption reason=${decision.reason}`,
+      )
+    }
     if (triggered) this.publishAvatarEvent('RuntimeDebugEvent', 'User Interruption Reaction')
     return triggered
+  }
+
+  triggerEarImpulse(impulse: EarImpulse, identity?: string): boolean {
+    const triggered = this.controller.triggerEarImpulse(impulse, identity)
+    const decision = this.controller.getLastEarImpulseDecision()
+    this.publishAvatarEvent(
+      triggered ? 'EarImpulseTriggered' : 'EarImpulseRejected',
+      `impulse=${impulse} reason=${decision?.reason ?? (triggered ? 'accepted' : 'rejected')}`,
+    )
+    return triggered
+  }
+
+  triggerReactionGesture(trigger: ReactionGestureTrigger): boolean {
+    const animationId = this.controller.triggerReactionGesture(trigger)
+    if (!animationId) return false
+    this.publishAvatarEvent('ReactionGestureSelected', `behavior=${animationId} reason=${trigger}`)
+    return true
   }
 
   isLoaded(): boolean {

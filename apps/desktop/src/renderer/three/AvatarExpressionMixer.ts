@@ -613,6 +613,14 @@ export class AvatarExpressionMixer {
     }
   }
 
+  getFinalMouthWeights(): MouthWeights {
+    return completeMouthWeights(
+      Object.fromEntries(
+        MOUTH_NAMES.map((name) => [name, this.lastFinal.get(name)?.value ?? 0]),
+      ) as Partial<MouthWeights>,
+    )
+  }
+
   private resetLifecycle(): void {
     this.sourceLifecycle = new Map()
     for (const source of ['autoBlink', 'lipSync', 'emotion', 'lookAt', 'speakingEye'] as const) {

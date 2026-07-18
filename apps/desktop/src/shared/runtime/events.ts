@@ -33,6 +33,13 @@ export type RuntimeEventType =
   | 'ResponseInterrupted'
   | 'BargeInUtteranceFinalized'
   | 'BargeInConversationAdmitted'
+  | 'SpeechPhrasePhaseChanged'
+  | 'EarImpulseTriggered'
+  | 'EarImpulseRejected'
+  | 'EmotionEmbodimentResolved'
+  | 'SpeakingGesturePhaseChanged'
+  | 'SpeakingGestureSwitched'
+  | 'ReactionGestureSelected'
   | 'RuntimeDebugEvent'
 
 export interface RuntimeEvent {

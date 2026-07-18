@@ -5,6 +5,33 @@ import type { VrmProceduralMode } from './VrmModel'
 
 export type OverlayViewMode = 'front' | 'bust' | 'face' | 'portrait'
 
+export const phraseLipSyncTuning = {
+  onsetMs: 100,
+  releaseMs: 140,
+  attackSmoothing: 24,
+  releaseSmoothing: 18,
+  visemeSwitchSmoothing: 20,
+  jawSmoothing: 12,
+  neutralEpsilon: 0.01,
+  jawScale: { min: 0.72, max: 1.15 },
+  softBoundary: {
+    closureStrength: 0.26,
+    durationMs: 70,
+  },
+  sentenceBoundary: {
+    closureStrength: 0.72,
+    durationMs: 120,
+  },
+  emotionProfiles: {
+    neutral: { articulationScale: 1, jawScale: 1, widthScale: 1, attackScale: 1 },
+    happy: { articulationScale: 1.07, jawScale: 1.03, widthScale: 1.06, attackScale: 1.08 },
+    sad: { articulationScale: 0.94, jawScale: 0.86, widthScale: 0.98, attackScale: 0.82 },
+    angry: { articulationScale: 1.03, jawScale: 1.08, widthScale: 1.01, attackScale: 1.14 },
+    surprised: { articulationScale: 1, jawScale: 1.08, widthScale: 1, attackScale: 1.12 },
+    calm: { articulationScale: 0.92, jawScale: 0.94, widthScale: 1, attackScale: 0.82 },
+  },
+} as const
+
 export const avatarStartupTuning = {
   rootPosition: { x: 0, y: 0, z: 0 },
   rootRotation: { x: 0, y: 0, z: 0 },
@@ -156,6 +183,7 @@ export const facialTuning = {
         angry: 0.85,
         sad: 0.7,
         surprised: 0.55,
+        calm: 0.75,
         embarrassed: 0.8,
         thinking: 0.7,
       },
@@ -166,6 +194,7 @@ export const facialTuning = {
         angry: { width: 0.006, roundness: -0.012 },
         sad: { width: -0.004, roundness: 0.004 },
         surprised: { width: 0, roundness: 0 },
+        calm: { width: -0.003, roundness: 0.003 },
         embarrassed: { width: -0.004, roundness: 0.006 },
         thinking: { width: -0.004, roundness: 0.006 },
         neutral: { width: 0, roundness: 0 },
@@ -336,12 +365,12 @@ export const facialTuning = {
 } as const
 
 export const speakingGestureTuning = {
-  intervalMs: { min: 3000, max: 6000 },
+  openingHoldMs: { min: 1500, max: 2500 },
+  longReplySwitchMs: { min: 6000, max: 10000 },
+  emphasisCooldownMs: 4000,
+  maxHoldingSwitches: 1,
   blendDuration: 0.65,
-  endingProgress: 0.82,
-  longReplyEarlyWindowMs: 2800,
   emotionalPeakBehaviors: ['happy', 'laugh', 'angry', 'surprised', 'gasp'] as const,
-  calmBehaviors: ['neutral', 'calm', 'warm'] as const,
 } as const
 
 export const avatarLookAtTuning = {
@@ -565,16 +594,6 @@ export const earBehaviorTuning = {
   // Surprise spike: a fast additive lift impulse (normalized) that recovers
   // smoothly, layered on top of whatever pose is currently held.
   surpriseImpulse: { lift: 0.85, attackMs: 130, durationMs: 950 },
-  userInterruptionImpulse: {
-    lift: 0.52,
-    spread: 0.06,
-    attackMs: 110,
-    holdMs: 140,
-    releaseMs: 340,
-    cooldownMs: 1_000,
-    leftScale: 1,
-    rightScale: 0.88,
-  },
   // Speaking is intentionally the SMALLEST modifier: a subtle additive lift +
   // gentle outward openness layered on top of the calm speaking base pose, so
   // the ears feel a little more alive without changing what pose is held.
@@ -650,20 +669,66 @@ export const earBehaviorTuning = {
     emphasis: { lift: 0.32, spread: 0.1 },
     droop: { lift: -0.3, spread: -0.1 },
   } satisfies Record<EarGestureId, EarPose>,
-  // Emotion modifiers are ADDED to the base pose (they shift it, not replace it).
-  // Keyed by canonical emotion ids from emotion_manifest.json; unlisted emotions
-  // fall back to neutral. amplitudeScale scales overall visible amplitude.
-  emotions: {
-    happy: { lift: 0.35, spread: 0.15, amplitudeScale: 1.15 },
-    laugh: { lift: 0.4, spread: 0.18, amplitudeScale: 1.2 },
-    chuckle: { lift: 0.28, spread: 0.12, amplitudeScale: 1.1 },
-    warm: { lift: 0.18, spread: 0.08, amplitudeScale: 1.05 },
-    surprised: { lift: 0.2, spread: 0.05, amplitudeScale: 1.2 },
-    gasp: { lift: 0.22, spread: 0.06, amplitudeScale: 1.2 },
-    angry: { lift: -0.6, spread: -0.1, amplitudeScale: 0.95 },
-    sad: { lift: -0.45, spread: -0.12, amplitudeScale: 0.85 },
-    crying: { lift: -0.5, spread: -0.14, amplitudeScale: 0.8 },
-    fear: { lift: -0.35, spread: -0.05, amplitudeScale: 0.9 },
-    embarrassed: { lift: -0.4, spread: -0.08, amplitudeScale: 0.85 },
-  } as Record<string, { lift: number; spread: number; amplitudeScale: number }>,
+} as const
+
+export const semanticEarTuning = {
+  recognitionUncertainThreshold: 0.72,
+  priority: {
+    'user-interruption': 60,
+    'direct-address': 50,
+    question: 40,
+    'recognition-uncertain': 30,
+    'reply-emphasis': 20,
+    'thinking-entry': 10,
+  },
+  impulses: {
+    'user-interruption': {
+      left: { lift: 0.52, spread: 0.06 },
+      right: { lift: 0.46, spread: 0.05 },
+      attackMs: 110,
+      holdMs: 140,
+      releaseMs: 340,
+      cooldownMs: 1_000,
+    },
+    'direct-address': {
+      left: { lift: 0.34, spread: 0.06 },
+      right: { lift: 0.32, spread: 0.055 },
+      attackMs: 90,
+      holdMs: 180,
+      releaseMs: 360,
+      cooldownMs: 1_500,
+    },
+    question: {
+      left: { lift: 0.28, spread: 0.08 },
+      right: { lift: 0.1, spread: 0.03 },
+      attackMs: 110,
+      holdMs: 180,
+      releaseMs: 340,
+      cooldownMs: 1_800,
+    },
+    'thinking-entry': {
+      left: { lift: 0.04, spread: 0.12 },
+      right: { lift: 0.22, spread: 0.02 },
+      attackMs: 140,
+      holdMs: 180,
+      releaseMs: 420,
+      cooldownMs: 0,
+    },
+    'reply-emphasis': {
+      left: { lift: 0.2, spread: 0.04 },
+      right: { lift: 0.16, spread: 0.03 },
+      attackMs: 70,
+      holdMs: 80,
+      releaseMs: 220,
+      cooldownMs: 0,
+    },
+    'recognition-uncertain': {
+      left: { lift: -0.06, spread: 0.04 },
+      right: { lift: 0.16, spread: 0.01 },
+      attackMs: 80,
+      holdMs: 90,
+      releaseMs: 280,
+      cooldownMs: 2_500,
+    },
+  },
 } as const

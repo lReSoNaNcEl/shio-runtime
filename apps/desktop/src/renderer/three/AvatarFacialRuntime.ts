@@ -1,8 +1,12 @@
 import type { VRM } from '@pixiv/three-vrm'
 import type * as THREE from 'three'
 
+import {
+  type EmotionEmbodimentProfile,
+  resolveEmotionEmbodimentProfile,
+} from '../avatar/EmotionEmbodimentProfile'
 import { AvatarExpressionMixer, type FacialDebugState } from './AvatarExpressionMixer'
-import { facialTuning } from './avatarTuning'
+import { facialTuning, phraseLipSyncTuning } from './avatarTuning'
 import { BlinkController } from './BlinkController'
 import { resolveEffectiveBlinkProfile } from './BlinkProfileResolver'
 import { BreathController, type BreathProfile } from './BreathController'
@@ -24,7 +28,9 @@ import { LipSyncVariationController } from './LipSyncVariationController'
 import { type LookAtDebugState, type LookAtMode, LookAtRuntime } from './LookAtRuntime'
 import { MicroMotionController, type MicroMotionProfile } from './MicroMotionController'
 import { MouthClosureController } from './MouthClosureController'
+import { PhraseEnvelopeController, type SpeechPhrasePhase } from './PhraseEnvelopeController'
 import { SpeakingEyeController } from './SpeakingEyeController'
+import type { SpeechPhraseTimingPlan } from './SpeechPhraseTiming'
 import type { VrmProceduralMode } from './VrmModel'
 
 const BREATH_PROFILES: Record<VrmProceduralMode, BreathProfile> = {
@@ -53,11 +59,15 @@ export class AvatarFacialRuntime {
   private speakingEyeController = new SpeakingEyeController()
   private mouthClosureController = new MouthClosureController()
   private lipSyncVariationController = new LipSyncVariationController()
+  private phraseEnvelopeController = new PhraseEnvelopeController()
   private proceduralMode: VrmProceduralMode = 'idle'
   private speechEnergy = 0
   private antiStallActive = false
   private currentEmotionKey = 'neutral'
+  private currentEmbodimentProfile: EmotionEmbodimentProfile =
+    resolveEmotionEmbodimentProfile('neutral')
   private mouthWeights = completeMouthWeights({})
+  private externalMouthComposed = false
 
   detach(): void {
     this.breathController.detach()
@@ -71,7 +81,9 @@ export class AvatarFacialRuntime {
     this.speakingEyeController.detach()
     this.mouthClosureController.detach()
     this.lipSyncVariationController.reset()
+    this.phraseEnvelopeController.reset()
     this.mouthWeights = completeMouthWeights({})
+    this.externalMouthComposed = false
   }
 
   attach(vrm: VRM): void {
@@ -86,7 +98,9 @@ export class AvatarFacialRuntime {
     this.speakingEyeController.attach()
     this.mouthClosureController.attach()
     this.lipSyncVariationController.reset()
-    this.lipSyncVariationController.setEmotion(this.currentEmotionKey)
+    this.phraseEnvelopeController.reset()
+    this.externalMouthComposed = false
+    this.lipSyncVariationController.setEmotion(this.currentEmbodimentProfile.lipSyncProfile)
     this.updateEffectiveBlinkProfile()
     this.earBehaviorRuntime.setProfile(this.proceduralMode)
     this.breathController.setProfile(BREATH_PROFILES[this.proceduralMode])
@@ -113,7 +127,7 @@ export class AvatarFacialRuntime {
 
     // Mouth Closure Envelope — brief procedural lip closures over LipSync.
     this.lipSyncVariationController.update(delta)
-    this.expressionMixer.setMouth(this.lipSyncVariationController.apply(this.mouthWeights))
+    const phrase = this.phraseEnvelopeController.getOutput()
     const mouthOpenness = Math.max(...Object.values(this.mouthWeights))
     this.mouthClosureController.update(
       delta,
@@ -122,7 +136,26 @@ export class AvatarFacialRuntime {
       mouthOpenness,
       this.antiStallActive,
     )
-    this.expressionMixer.setMouthClosure(this.mouthClosureController.getStrength())
+    if (this.externalMouthComposed) {
+      this.expressionMixer.setMouth(this.mouthWeights)
+      this.expressionMixer.setMouthClosure(0)
+    } else {
+      const variedMouth = this.lipSyncVariationController.apply(this.mouthWeights)
+      const emotionMouth =
+        phraseLipSyncTuning.emotionProfiles[this.currentEmbodimentProfile.lipSyncProfile]
+      const articulationScale = phrase.articulationScale
+      const jawScale = phrase.jawScale * emotionMouth.jawScale
+      this.expressionMixer.setMouth({
+        aa: variedMouth.aa * articulationScale * jawScale,
+        ih: variedMouth.ih * articulationScale,
+        ou: variedMouth.ou * articulationScale * jawScale,
+        ee: variedMouth.ee * articulationScale,
+        oh: variedMouth.oh * articulationScale * jawScale,
+      })
+      this.expressionMixer.setMouthClosure(
+        Math.max(this.mouthClosureController.getStrength(), phrase.closureStrength),
+      )
+    }
     this.expressionMixer.setMouthClosureDebug(this.mouthClosureController.getDebugState())
 
     this.expressionMixer.apply()
@@ -193,12 +226,15 @@ export class AvatarFacialRuntime {
 
   applyEmotion(emotionKey: string, vrmEmotion?: string): void {
     this.currentEmotionKey = emotionKey
-    this.lipSyncVariationController.setEmotion(emotionKey)
-    this.expressionController.applyEmotion(emotionKey, vrmEmotion)
+    const embodiment = resolveEmotionEmbodimentProfile(emotionKey)
+    this.currentEmbodimentProfile = embodiment
+    this.lipSyncVariationController.setEmotion(embodiment.lipSyncProfile)
+    this.expressionController.applyEmotion(embodiment.facialKey, vrmEmotion)
     const profile = this.expressionController.getProfile()
     this.expressionMixer.setFacialProfile(profile)
     this.updateEffectiveBlinkProfile()
-    this.earBehaviorRuntime.applyEmotion(emotionKey)
+    this.earBehaviorRuntime.applyEmotion(embodiment)
+    this.headMotionRuntime.applyEmotionProfile(embodiment)
   }
 
   /**
@@ -219,8 +255,9 @@ export class AvatarFacialRuntime {
     this.setMouthWeights({ aa: weight })
   }
 
-  setMouthWeights(weights: Partial<MouthWeights>): void {
+  setMouthWeights(weights: Partial<MouthWeights>, composed = false): void {
     this.mouthWeights = completeMouthWeights(weights)
+    this.externalMouthComposed = composed
   }
 
   setMouthDebug(debug: FacialDebugState['mouthTuning']): void {
@@ -232,8 +269,32 @@ export class AvatarFacialRuntime {
     this.speechEnergy = Math.max(0, Math.min(1, energy))
   }
 
+  startSpeechPhrase(plan: SpeechPhraseTimingPlan): void {
+    this.phraseEnvelopeController.start(plan)
+  }
+
+  updateSpeechPhrase(delta: number, progress: number, speechEnergy: number): void {
+    this.phraseEnvelopeController.update(delta, progress, speechEnergy)
+  }
+
+  finishSpeechPhrase(): void {
+    this.phraseEnvelopeController.finish()
+  }
+
+  interruptSpeechPhrase(): void {
+    this.phraseEnvelopeController.interrupt()
+  }
+
+  getSpeechPhrasePhase(): SpeechPhrasePhase {
+    return this.phraseEnvelopeController.getPhase()
+  }
+
   getFacialDebugState(): FacialDebugState {
     return this.expressionMixer.getDebugState()
+  }
+
+  getFinalMouthWeights(): MouthWeights {
+    return this.expressionMixer.getFinalMouthWeights()
   }
 
   getLookAtDebugState(): LookAtDebugState {
@@ -257,11 +318,19 @@ export class AvatarFacialRuntime {
    */
   syncEarState(mode: VrmProceduralMode, emotion: string): void {
     this.earBehaviorRuntime.setProfile(mode)
-    this.earBehaviorRuntime.applyEmotion(emotion)
+    if (emotion === this.currentEmotionKey) {
+      this.earBehaviorRuntime.applyEmotion(this.currentEmbodimentProfile)
+      return
+    }
+    this.earBehaviorRuntime.applyEmotion(resolveEmotionEmbodimentProfile(emotion))
   }
 
-  triggerEarImpulse(impulse: EarImpulse): boolean {
-    return this.earBehaviorRuntime.triggerImpulse(impulse)
+  triggerEarImpulse(impulse: EarImpulse, identity?: string): boolean {
+    return this.earBehaviorRuntime.triggerImpulse(impulse, identity)
+  }
+
+  getLastEarImpulseDecision(): ReturnType<EarBehaviorRuntime['getLastImpulseDecision']> {
+    return this.earBehaviorRuntime.getLastImpulseDecision()
   }
 
   setEarAxisOverride(axis: EarAxisOverride): void {

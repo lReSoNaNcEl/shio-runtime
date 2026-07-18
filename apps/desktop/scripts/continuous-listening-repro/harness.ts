@@ -206,6 +206,8 @@ async function main(): Promise<void> {
       avatarRuntime: {
         applyCharacterState: () => undefined,
         interruptLipSync: () => true,
+        triggerEarImpulse: () => false,
+        triggerReactionGesture: () => false,
         triggerUserInterruption: () => true,
       },
       overlayRuntime: {

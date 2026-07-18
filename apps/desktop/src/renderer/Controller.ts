@@ -76,7 +76,7 @@ import {
 } from './runtime/speechCapabilities'
 import { TransitionRecorder } from './runtime/TransitionRecorder'
 import type { FacialDebugState } from './three/AvatarExpressionMixer'
-import type { OverlayViewMode } from './three/avatarTuning'
+import { type OverlayViewMode, semanticEarTuning } from './three/avatarTuning'
 import type { EarAxisOverride, EarBehaviorDebugState } from './three/EarBehaviorRuntime'
 import type { HeadMotionDebugState } from './three/HeadMotionRuntime'
 import type { MouthWeights } from './three/LipSync'
@@ -804,6 +804,8 @@ export class Controller {
     this.applyAvatarCharacterState()
     if (allowReaction && avatarState.reaction === 'user-interruption')
       this.avatarRuntime.triggerUserInterruption()
+    if (allowReaction && avatarState.earImpulse)
+      this.avatarRuntime.triggerEarImpulse(avatarState.earImpulse, avatarState.earImpulseId)
     this.updateOverlayAnimationHudFile()
   }
 
@@ -998,6 +1000,11 @@ export class Controller {
       text: trimmed,
       source: 'text_chat',
       createdAt: Date.now(),
+      semanticCues: {
+        directAddress: false,
+        question: QUESTION_PATTERN.test(trimmed),
+        recognitionUncertain: false,
+      },
     })
   }
 
@@ -1024,6 +1031,11 @@ export class Controller {
         text: recognized.text,
         source: 'push_to_talk',
         createdAt: Date.now(),
+        semanticCues: {
+          directAddress: false,
+          question: QUESTION_PATTERN.test(recognized.text),
+          recognitionUncertain: false,
+        },
       })
       return
     }
@@ -1352,6 +1364,13 @@ export class Controller {
       streamingSessionId: chunk.streamingSessionId,
       utteranceIds: [chunk.id],
       triggeredBargeIn: Boolean(chunk.triggeredBargeIn),
+      semanticCues: {
+        directAddress: attention.directAddress,
+        question: QUESTION_PATTERN.test(decision.userText),
+        recognitionUncertain:
+          chunk.confidence !== undefined &&
+          chunk.confidence < semanticEarTuning.recognitionUncertainThreshold,
+      },
     }
     const buffered = this.createBufferedUtterance(
       chunk,
@@ -1437,6 +1456,31 @@ export class Controller {
       this.rememberHandledUtterance(attempt.turnId)
     }
     this.recordRuntimeEvent('Conversation Admitted', attempt.turnId)
+    for (const [impulse, enabled] of [
+      ['direct-address', attempt.semanticCues?.directAddress],
+      ['question', attempt.semanticCues?.question],
+      ['recognition-uncertain', attempt.semanticCues?.recognitionUncertain],
+    ] as const) {
+      if (!enabled) continue
+      const triggered = this.avatarRuntime.triggerEarImpulse(impulse, attempt.turnId)
+      if (triggered) {
+        const current = this.shioRuntime.characterState.get()
+        this.publishAvatarState({
+          mode:
+            current.mode === 'acting' ||
+            current.mode === 'interrupted' ||
+            current.mode === 'sleeping'
+              ? 'idle'
+              : current.mode,
+          emotionKey: current.emotion,
+          earImpulse: impulse,
+          earImpulseId: `${attempt.turnId}:${impulse}`,
+        })
+      }
+    }
+    if (attempt.semanticCues?.directAddress)
+      this.avatarRuntime.triggerReactionGesture('direct-address')
+    else if (attempt.semanticCues?.question) this.avatarRuntime.triggerReactionGesture('question')
     if (attempt.triggeredBargeIn) {
       this.recordRuntimeEvent('Barge In Conversation Admitted', `turn=${attempt.turnId}`)
       this.publishControllerRuntimeEvent(

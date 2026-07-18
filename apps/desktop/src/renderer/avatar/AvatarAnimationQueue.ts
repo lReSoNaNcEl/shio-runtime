@@ -133,7 +133,10 @@ export class AvatarAnimationQueue {
   }
 
   private shouldQueue(item: AvatarAnimationQueueItem): boolean {
-    return item.mode === 'idle'
+    return (
+      item.mode === 'idle' ||
+      Boolean(this.current && !this.current.loop && this.current.mode === item.mode)
+    )
   }
 
   private removeObsoleteEntries(nextMode: AvatarMode): void {

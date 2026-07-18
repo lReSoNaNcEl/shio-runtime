@@ -15,6 +15,11 @@ export interface ConversationInput {
   streamingSessionId?: string
   utteranceIds?: string[]
   triggeredBargeIn?: boolean
+  semanticCues?: {
+    directAddress: boolean
+    question: boolean
+    recognitionUncertain: boolean
+  }
 }
 
 export interface AdmittedConversationTurn extends ConversationInput {

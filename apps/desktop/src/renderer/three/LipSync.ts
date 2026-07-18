@@ -1,4 +1,4 @@
-import { facialTuning } from './avatarTuning'
+import { facialTuning, phraseLipSyncTuning } from './avatarTuning'
 import {
   completeMouthWeights,
   type FacialProfile,
@@ -6,6 +6,7 @@ import {
   type MouthWeights,
   type VisemeName,
 } from './FacialProfile'
+import { buildSpeechPhraseTimingPlan } from './SpeechPhraseTiming'
 import type { VrmModel } from './VrmModel'
 
 export type { MouthWeights } from './FacialProfile'
@@ -17,6 +18,13 @@ export interface LipSyncSession {
   startedAt: number
   playbackItemId: string
   normalizationReference: number
+  durationMs: number
+}
+
+export interface LipSyncStartRequest {
+  session: LipSyncSession
+  text: string
+  emotionKey: string
 }
 
 interface LipSyncStats {
@@ -94,6 +102,8 @@ export class LipSync {
   private currentRawRms = 0
   private activeSession: LipSyncSession | null = null
   private activityLogged = false
+  private phraseElapsedMs = 0
+  private phraseDurationMs = 1
 
   constructor(vrmModel: VrmModel) {
     this.vrmModel = vrmModel
@@ -117,7 +127,9 @@ export class LipSync {
     return Math.max(cfg.minimum, Math.min(cfg.maximum, gain))
   }
 
-  attach(session: LipSyncSession, emotionKey?: string): void {
+  attach(request: LipSyncStartRequest): void {
+    const { session, emotionKey, text } = request
+    const plan = buildSpeechPhraseTimingPlan(text)
     if (this.activeSession) {
       if (this.activeSession.turnId !== session.turnId) {
         throw new Error(
@@ -142,6 +154,9 @@ export class LipSync {
       this.releaseStage = 'speaking'
       this.graceRemainingMs = facialTuning.lipSync.startupGraceMs
       this.activityLogged = false
+      this.phraseElapsedMs = 0
+      this.phraseDurationMs = Math.max(1, session.durationMs)
+      this.vrmModel.startSpeechPhrase(plan)
       console.log(
         `[lipsync] turnId=${session.turnId} playbackId=${session.playbackId} analyser=reattached session=continued`,
       )
@@ -171,12 +186,15 @@ export class LipSync {
     this.activityLogged = false
     this.recoveryMs = 0
     this.currentRawRms = 0
+    this.phraseElapsedMs = 0
+    this.phraseDurationMs = Math.max(1, session.durationMs)
+    this.vrmModel.startSpeechPhrase(plan)
     console.log(
       `[lipsync] turnId=${session.turnId} playbackId=${session.playbackId} analyser=attached session=started`,
     )
   }
 
-  detach(turnId?: string, immediate = false): boolean {
+  detach(turnId?: string, immediate = false, interrupted = false): boolean {
     if (turnId && !this.activeSession) {
       console.debug(`[lipsync] turnId=${turnId} stale-stop=ignored reason=no-active-session`)
       return false
@@ -199,6 +217,8 @@ export class LipSync {
     this.clampedTarget = completeMouthWeights({})
     this.signalWarning = null
     this.releasing = true
+    if (interrupted) this.vrmModel.interruptSpeechPhrase()
+    else this.vrmModel.finishSpeechPhrase()
     this.releaseStage = 'open'
     this.releaseBase = { ...this.smoothed }
     this.silenceMs = 0
@@ -231,6 +251,16 @@ export class LipSync {
 
   update(_delta: number): void {
     this.graceRemainingMs = Math.max(0, this.graceRemainingMs - Math.max(0, _delta) * 1000)
+    if (this.activeSession) {
+      this.phraseElapsedMs += Math.max(0, _delta) * 1000
+      this.vrmModel.updateSpeechPhrase(
+        _delta,
+        Math.min(1, this.phraseElapsedMs / this.phraseDurationMs),
+        this.speechEnergy,
+      )
+    } else {
+      this.vrmModel.updateSpeechPhrase(_delta, 1, 0)
+    }
 
     if (!this.analyser || !this.timeData || !this.freqData) {
       this.rawTarget = completeMouthWeights({})
@@ -269,7 +299,7 @@ export class LipSync {
 
     const rms = this.getRms(this.timeData)
     this.currentRawRms = rms
-    const reference = Math.max(0.04, this.activeSession.normalizationReference)
+    const reference = Math.max(0.04, this.activeSession?.normalizationReference ?? 0.12)
     // The per-buffer 80th-percentile reference maps to a readable mid-level
     // envelope; gain remains a bounded artistic tuning rather than compensating
     // for arbitrary file loudness.
@@ -364,7 +394,7 @@ export class LipSync {
       this.previousBlendTarget,
       blended,
       delta,
-      'voiced',
+      'viseme-switch',
     )
     return blended
   }
@@ -510,7 +540,7 @@ export class LipSync {
     a: MouthWeights,
     b: MouthWeights,
     delta: number,
-    releaseMode: 'voiced' | 'silent' | 'short-pause' | 'detached',
+    releaseMode: 'voiced' | 'silent' | 'short-pause' | 'detached' | 'viseme-switch',
   ): MouthWeights {
     return {
       aa: this.smoothShape('aa', a.aa, b.aa, delta, releaseMode),
@@ -526,27 +556,41 @@ export class LipSync {
     current: number,
     target: number,
     delta: number,
-    releaseMode: 'voiced' | 'silent' | 'short-pause' | 'detached',
+    releaseMode: 'voiced' | 'silent' | 'short-pause' | 'detached' | 'viseme-switch',
   ): number {
     const visemeProfile = VISEME_PROFILES[viseme]
     const holdBias =
       target < current ? visemeProfile.hold * Math.min(1, this.speechEnergy * 1.6) : 0
     const heldTarget = holdBias > 0 ? Math.max(target, current * holdBias) : target
+    const profileId =
+      this.profile.id === 'happy' ||
+      this.profile.id === 'sad' ||
+      this.profile.id === 'angry' ||
+      this.profile.id === 'surprised'
+        ? this.profile.id
+        : this.profile.id === 'relaxed'
+          ? 'calm'
+          : 'neutral'
+    const phraseProfile = phraseLipSyncTuning.emotionProfiles[profileId]
     const speed =
-      heldTarget > current
-        ? (facialTuning.lipSync.attackPerSecond * visemeProfile.attack) /
-          this.profile.mouthProfile.softness
-        : releaseMode === 'detached'
-          ? (facialTuning.lipSync.detachedReleasePerSecond * visemeProfile.release) /
-            this.profile.mouthProfile.releaseScale
-          : releaseMode === 'short-pause'
-            ? (facialTuning.lipSync.shortPauseReleasePerSecond * visemeProfile.release) /
+      releaseMode === 'viseme-switch'
+        ? phraseLipSyncTuning.visemeSwitchSmoothing
+        : heldTarget > current
+          ? (facialTuning.lipSync.attackPerSecond *
+              visemeProfile.attack *
+              phraseProfile.attackScale) /
+            this.profile.mouthProfile.softness
+          : releaseMode === 'detached'
+            ? (facialTuning.lipSync.detachedReleasePerSecond * visemeProfile.release) /
               this.profile.mouthProfile.releaseScale
-            : releaseMode === 'silent'
-              ? (facialTuning.lipSync.silentReleasePerSecond * visemeProfile.release) /
+            : releaseMode === 'short-pause'
+              ? (facialTuning.lipSync.shortPauseReleasePerSecond * visemeProfile.release) /
                 this.profile.mouthProfile.releaseScale
-              : (facialTuning.lipSync.releasePerSecond * visemeProfile.release) /
-                this.profile.mouthProfile.releaseScale
+              : releaseMode === 'silent'
+                ? (facialTuning.lipSync.silentReleasePerSecond * visemeProfile.release) /
+                  this.profile.mouthProfile.releaseScale
+                : (facialTuning.lipSync.releasePerSecond * visemeProfile.release) /
+                  this.profile.mouthProfile.releaseScale
     const t = 1 - Math.exp(-Math.max(0, delta) * speed)
     const next = this.lerp(current, heldTarget, t)
     return next < 0.001 ? 0 : next

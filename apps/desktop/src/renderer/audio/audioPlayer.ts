@@ -5,6 +5,7 @@ export interface PlaybackSession {
   startedAt: number
   playbackItemId: string
   normalizationReference: number
+  durationMs: number
 }
 
 export interface AudioPlayOptions {
@@ -69,6 +70,7 @@ export class AudioPlayer {
       startedAt: performance.now(),
       playbackItemId: playbackId,
       normalizationReference: 0.12,
+      durationMs: 0,
       sequence,
       source: null,
       settle: null,
@@ -82,6 +84,7 @@ export class AudioPlayer {
       this.assertOwner(active)
       const audioBuffer = await this.audioCtx.decodeAudioData(wavBuffer.slice(0))
       active.normalizationReference = this.estimateNormalizationReference(audioBuffer)
+      active.durationMs = audioBuffer.duration * 1000
       this.assertOwner(active)
       const source = this.audioCtx.createBufferSource()
       active.source = source
@@ -111,8 +114,9 @@ export class AudioPlayer {
         playbackItemId: active.playbackItemId,
         turnId: options.turnId,
         analyser: this.analyser,
-        startedAt: active.startedAt,
+        startedAt: performance.now(),
         normalizationReference: active.normalizationReference,
+        durationMs: audioBuffer.duration * 1000,
       })
       this.assertOwner(active)
       const startedAt = this.audioCtx.currentTime

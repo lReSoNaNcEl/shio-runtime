@@ -1,4 +1,5 @@
-import { facialTuning } from './avatarTuning'
+import type { CanonicalEmbodimentEmotion } from '../avatar/EmotionEmbodimentProfile'
+import { facialTuning, phraseLipSyncTuning } from './avatarTuning'
 import type { MouthWeights } from './FacialProfile'
 
 export interface LipSyncVariationProfile {
@@ -27,7 +28,7 @@ export class LipSyncVariationController {
   private current: LipSyncVariationProfile = { ...NEUTRAL_PROFILE }
   private transitionFrom: LipSyncVariationProfile = { ...NEUTRAL_PROFILE }
   private target: LipSyncVariationProfile = { ...NEUTRAL_PROFILE }
-  private emotion = 'neutral'
+  private emotion: CanonicalEmbodimentEmotion = 'neutral'
   private speaking = false
   private speechElapsedMs = 0
   private transitionElapsedMs = 0
@@ -51,8 +52,8 @@ export class LipSyncVariationController {
     this.nextRefreshMs = Number.POSITIVE_INFINITY
   }
 
-  setEmotion(emotion: string): void {
-    const nextEmotion = emotion || 'neutral'
+  setEmotion(emotion: CanonicalEmbodimentEmotion): void {
+    const nextEmotion = emotion
     if (nextEmotion === this.emotion) return
     this.emotion = nextEmotion
     // Character State may change emotion on the same edge that starts speech.
@@ -97,15 +98,16 @@ export class LipSyncVariationController {
   apply(weights: MouthWeights): MouthWeights {
     if (!this.speaking || !facialTuning.lipSync.microVariation.enabled) return { ...weights }
 
+    const emotion = phraseLipSyncTuning.emotionProfiles[this.emotion]
     const openness = this.current.opennessGain
     const width = Math.max(0, 1 + this.current.widthBias)
     const roundness = Math.max(0, 1 + this.current.roundnessBias)
     return {
-      aa: weights.aa * openness,
-      ih: weights.ih * openness * width,
-      ou: weights.ou * openness * roundness,
-      ee: weights.ee * openness * width,
-      oh: weights.oh * openness * roundness,
+      aa: weights.aa * openness * emotion.articulationScale,
+      ih: weights.ih * openness * width * emotion.articulationScale * emotion.widthScale,
+      ou: weights.ou * openness * roundness * emotion.articulationScale,
+      ee: weights.ee * openness * width * emotion.articulationScale * emotion.widthScale,
+      oh: weights.oh * openness * roundness * emotion.articulationScale,
     }
   }
 
@@ -124,10 +126,8 @@ export class LipSyncVariationController {
 
   private createProfile(): LipSyncVariationProfile {
     const cfg = facialTuning.lipSync.microVariation
-    const emotionScale =
-      cfg.emotionScale[this.emotion as keyof typeof cfg.emotionScale] ?? cfg.emotionScale.neutral
-    const emotionBias =
-      cfg.emotionBias[this.emotion as keyof typeof cfg.emotionBias] ?? cfg.emotionBias.neutral
+    const emotionScale = cfg.emotionScale[this.emotion] ?? cfg.emotionScale.neutral
+    const emotionBias = cfg.emotionBias[this.emotion] ?? cfg.emotionBias.neutral
     return {
       opennessGain:
         1 + (this.randomRange(cfg.opennessGain.min, cfg.opennessGain.max) - 1) * emotionScale,
