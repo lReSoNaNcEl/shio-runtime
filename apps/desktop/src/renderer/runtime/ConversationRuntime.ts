@@ -15,6 +15,7 @@ import type {
 } from '../speech/continuous-listening/types'
 import type { AvatarMode, AvatarRuntime } from './AvatarRuntime'
 import type { ConversationPresenceRuntime } from './ConversationPresenceRuntime'
+import { EmotionSpeechPipeline, type PreparedEmotionSpeechSegment } from './EmotionSpeechPipeline'
 import type { OverlayRuntime, SyncedAvatarState } from './OverlayRuntime'
 import type { SpeechRuntime } from './SpeechRuntime'
 import { isSpeechServiceError } from './speechCapabilities'
@@ -76,6 +77,7 @@ export class ConversationRuntime {
   private generationTurnId: string | null = null
   private synthesisTurnId: string | null = null
   private playbackTurnId: string | null = null
+  private activeEmotionPipeline: EmotionSpeechPipeline | null = null
   private interruption: {
     turnId: string
     promise: Promise<never>
@@ -133,6 +135,7 @@ export class ConversationRuntime {
     const interruption = this.interruption
     if (!turnId || !interruption || interruption.turnId !== turnId) return false
     this.deps.setResponseInterruptionPending(true)
+    this.activeEmotionPipeline?.cancel()
     this.activeTurnId = null
     this.activePhase = null
     this.playbackStartedAt = null
@@ -235,17 +238,14 @@ export class ConversationRuntime {
 
       failurePhase = 'synthesis'
       reportPhase('synthesizing')
-      failurePhase = 'playback'
-      reportPhase('playing')
       this.playbackTurnId = turn.turnId
       this.deps.recordRuntimeEvent(
         'Emotion Segments Parsed',
         draft.segments.map((segment) => segment.emotion).join(' → '),
       )
-      for (const segment of draft.segments) {
-        if (!this.isCurrentTurn(turn.turnId)) return { status: 'cancelled', turnId: turn.turnId }
+      if (draft.segments.length === 1) {
+        const segment = draft.segments[0]
         failurePhase = 'synthesis'
-        reportPhase('synthesizing')
         const speech = await this.runSynthesis(turn.turnId, () =>
           this.deps.speechRuntime.synthesizeSegment(turn.turnId, segment),
         )
@@ -266,6 +266,66 @@ export class ConversationRuntime {
           }),
           this.interruptionFor(turn.turnId),
         ])
+      } else {
+        const segmentWeights = draft.segments.map((segment) =>
+          Math.max(1, segment.text.trim().length),
+        )
+        const totalWeight = segmentWeights.reduce((sum, weight) => sum + weight, 0)
+        let completedWeight = 0
+        let playbackPhaseStarted = false
+        let synthesisFailure: unknown = null
+        const pipeline = new EmotionSpeechPipeline({
+          turnId: turn.turnId,
+          segments: draft.segments,
+          synthesize: async (segment) => {
+            try {
+              return await this.runSynthesis(turn.turnId, () =>
+                this.deps.speechRuntime.synthesizeSegment(turn.turnId, segment),
+              )
+            } catch (error) {
+              synthesisFailure = error
+              throw error
+            }
+          },
+          prepareAudio: (audioBuffer) => this.deps.player.prepare(audioBuffer),
+          playPrepared: async (item, onStarted) => {
+            this.rememberSpeech(item.speech, null)
+            failurePhase = 'playback'
+            await this.playPreparedEmotionSegment(
+              turn.turnId,
+              item,
+              (session) => {
+                if (!playbackPhaseStarted) {
+                  playbackPhaseStarted = true
+                  reportPhase('playing')
+                }
+                this.startSpeech(session, item.speech, item.segment.emotion, item.segment.text)
+              },
+              (progress) => {
+                if (!this.isCurrentTurn(turn.turnId)) return
+                const currentWeight = segmentWeights[item.segment.index] ?? 1
+                this.deps.updateSpeechPlaybackProgress(
+                  (completedWeight + progress * currentWeight) / totalWeight,
+                )
+              },
+              onStarted,
+            )
+            completedWeight += segmentWeights[item.segment.index] ?? 1
+            if (this.isCurrentTurn(turn.turnId))
+              this.deps.updateSpeechPlaybackProgress(completedWeight / totalWeight)
+          },
+          isCurrentTurn: () => this.isCurrentTurn(turn.turnId),
+          recordEvent: (label, detail) => this.deps.recordRuntimeEvent(label, detail),
+        })
+        this.activeEmotionPipeline = pipeline
+        try {
+          await Promise.race([pipeline.execute(), this.interruptionFor(turn.turnId)])
+        } catch (error) {
+          if (error === synthesisFailure) failurePhase = 'synthesis'
+          throw error
+        } finally {
+          if (this.activeEmotionPipeline === pipeline) this.activeEmotionPipeline = null
+        }
       }
       if (this.playbackTurnId === turn.turnId) this.playbackTurnId = null
       if (!this.isCurrentTurn(turn.turnId)) return { status: 'cancelled', turnId: turn.turnId }
@@ -528,6 +588,24 @@ export class ConversationRuntime {
       'Audio Started',
       `turnId=${session.turnId} playbackId=${session.playbackId}`,
     )
+  }
+
+  private async playPreparedEmotionSegment(
+    turnId: string,
+    item: PreparedEmotionSpeechSegment,
+    onReady: Parameters<AudioPlayer['playPrepared']>[1]['onReady'],
+    onProgress: (progress: number) => void,
+    onStarted: () => void,
+  ): Promise<void> {
+    await this.deps.player.playPrepared(item.audio, {
+      turnId,
+      onReady: (session) => {
+        if (!this.isCurrentTurn(turnId)) throw new Error(`Stale playback ready turnId=${turnId}`)
+        return onReady(session)
+      },
+      onProgress,
+      onStarted,
+    })
   }
 
   private async finishSpeechCleanup(turnId: string, extraEvent?: string): Promise<void> {

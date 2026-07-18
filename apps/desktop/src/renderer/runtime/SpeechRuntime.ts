@@ -21,7 +21,7 @@ export type SpeechRuntimeStatus =
   | 'synthesizing'
   | 'speaking'
 type SpeechReply = Awaited<ReturnType<Window['api']['tts']['synthesizeReply']>>
-type SuccessfulSpeechReply = SpeechReply & { ok: true; audioBuffer: ArrayBuffer }
+export type SuccessfulSpeechReply = SpeechReply & { ok: true; audioBuffer: ArrayBuffer }
 
 interface SpeechStateTransition {
   status: SpeechRuntimeStatus

@@ -7,11 +7,21 @@ export const EMOTION_SEGMENTS_TUNING = {
   expressionBlendMs: 180,
 } as const
 
+export type EmotionSegmentBoundary = 'clause' | 'sentence' | 'expressive'
+
+export const EMOTION_BOUNDARY_GAPS: Readonly<Record<EmotionSegmentBoundary, number>> = {
+  clause: 80,
+  sentence: 180,
+  expressive: 300,
+}
+
 export interface EmotionTextSegment {
   id: string
   index: number
   emotion: EmotionKey
   text: string
+  boundaryAfter: EmotionSegmentBoundary
+  targetMaxGapMs: number
 }
 export interface ParsedEmotionalReply {
   primaryEmotion: EmotionKey
@@ -38,22 +48,29 @@ export function parseEmotionalReply(
       primaryEmotion,
       visibleText,
       segments: visibleText
-        ? [{ id: 'segment-0', index: 0, emotion: primaryEmotion, text: visibleText }]
+        ? [toSegment({ emotion: primaryEmotion, text: visibleText }, 0, resolveBoundaryAfter(text))]
         : [],
     }
   }
-  const rawSegments: Array<{ emotion: EmotionKey; text: string }> = []
+  const rawSegments: Array<{
+    emotion: EmotionKey
+    text: string
+    boundaryAfter: EmotionSegmentBoundary
+  }> = []
   let emotion = primaryEmotion
   let cursor = 0
   const append = (raw: string): void => {
     const cleaned = raw.trim()
     if (!cleaned) return
+    const boundaryAfter = resolveBoundaryAfter(raw)
     const last = rawSegments.at(-1)
     if (last?.emotion === emotion || rawSegments.length >= maxSegments) {
-      if (last) last.text += ` ${cleaned}`
-      else rawSegments.push({ emotion, text: cleaned })
+      if (last) {
+        last.text += ` ${cleaned}`
+        last.boundaryAfter = boundaryAfter
+      } else rawSegments.push({ emotion, text: cleaned, boundaryAfter })
     } else {
-      rawSegments.push({ emotion, text: cleaned })
+      rawSegments.push({ emotion, text: cleaned, boundaryAfter })
     }
   }
   for (const match of matches) {
@@ -63,16 +80,40 @@ export function parseEmotionalReply(
     cursor = start + match[0].length
   }
   append(text.slice(cursor))
-  const segments = rawSegments.map((segment, index) => ({
-    ...segment,
-    id: `segment-${index}`,
-    index,
-  }))
+  const segments = rawSegments.map((segment, index) => toSegment(segment, index))
   return {
     primaryEmotion,
     visibleText: segments.map((segment) => segment.text).join(' '),
     segments,
   }
+}
+
+function toSegment(
+  segment: {
+    emotion: EmotionKey
+    text: string
+    boundaryAfter?: EmotionSegmentBoundary
+  },
+  index: number,
+  boundaryOverride?: EmotionSegmentBoundary,
+): EmotionTextSegment {
+  const boundaryAfter =
+    boundaryOverride ?? segment.boundaryAfter ?? resolveBoundaryAfter(segment.text)
+  return {
+    ...segment,
+    id: `segment-${index}`,
+    index,
+    boundaryAfter,
+    targetMaxGapMs: EMOTION_BOUNDARY_GAPS[boundaryAfter],
+  }
+}
+
+function resolveBoundaryAfter(text: string): EmotionSegmentBoundary {
+  if (/\r?\n\s*\r?\n\s*$/u.test(text)) return 'expressive'
+  const trimmed = text.trimEnd()
+  if (/(?:\.\.\.|…)$/u.test(trimmed)) return 'expressive'
+  if (/(?:[!?][!?]?|\.)$/u.test(trimmed)) return 'sentence'
+  return 'clause'
 }
 
 function key(value: string): string {
