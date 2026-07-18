@@ -11,12 +11,19 @@ export interface PlaybackSession {
 export interface AudioPlayOptions {
   turnId: string
   onReady: (session: PlaybackSession) => void | Promise<void>
+  onStarted?: () => void
   onProgress?: (progress: number) => void
 }
 
 export interface PlaybackCompletion {
   playbackId: string
   turnId: string
+}
+
+export interface PreparedAudio {
+  audioBuffer: AudioBuffer
+  durationMs: number
+  normalizationReference: number
 }
 
 interface ActivePlayback extends PlaybackSession {
@@ -52,92 +59,49 @@ export class AudioPlayer {
     this.analyser.connect(this.audioCtx.destination)
   }
 
+  async prepare(wavBuffer: ArrayBuffer): Promise<PreparedAudio> {
+    this.assertValidWav(wavBuffer)
+    const audioBuffer = await this.audioCtx.decodeAudioData(wavBuffer.slice(0))
+    return {
+      audioBuffer,
+      durationMs: audioBuffer.duration * 1000,
+      normalizationReference: this.estimateNormalizationReference(audioBuffer),
+    }
+  }
+
   async play(wavBuffer: ArrayBuffer, options: AudioPlayOptions): Promise<PlaybackCompletion> {
-    if (wavBuffer.byteLength < 44) throw new Error('Speech audio response is empty or invalid')
-    if (this.activePlayback) {
-      console.warn(
-        `[audio] guard activeTurnId=${this.activePlayback.turnId} requestedTurnId=${options.turnId}`,
-      )
-      throw new ParallelPlaybackError(this.activePlayback.turnId, options.turnId)
-    }
-
-    const sequence = ++this.playbackSeq
-    const playbackId = `${options.turnId}:playback-${sequence}`
-    const active: ActivePlayback = {
-      playbackId,
-      turnId: options.turnId,
-      analyser: this.analyser,
-      startedAt: performance.now(),
-      playbackItemId: playbackId,
-      normalizationReference: 0.12,
-      durationMs: 0,
-      sequence,
-      source: null,
-      settle: null,
-    }
-    // Reserve ownership synchronously, before decode or the first await.
-    this.activePlayback = active
-    console.log(`[audio] playbackId=${playbackId} turnId=${options.turnId} reserved`)
-
+    this.assertValidWav(wavBuffer)
+    // Preserve the legacy synchronous reservation before decode and its first await.
+    const active = this.reserve(options.turnId)
     try {
       if (this.audioCtx.state === 'suspended') await this.audioCtx.resume()
       this.assertOwner(active)
       const audioBuffer = await this.audioCtx.decodeAudioData(wavBuffer.slice(0))
-      active.normalizationReference = this.estimateNormalizationReference(audioBuffer)
-      active.durationMs = audioBuffer.duration * 1000
-      this.assertOwner(active)
-      const source = this.audioCtx.createBufferSource()
-      active.source = source
-      source.buffer = audioBuffer
-      source.connect(this.analyser)
-      this.duration = audioBuffer.duration
-
-      const ended = new Promise<void>((resolve) => {
-        active.settle = resolve
-      })
-      source.onended = () => {
-        if (this.activePlayback !== active || active.source !== source) {
-          console.debug(
-            `[audio] playbackId=${playbackId} turnId=${options.turnId} stale-ended ignored`,
-          )
-          return
-        }
-        console.log(`[audio] playbackId=${playbackId} turnId=${options.turnId} ended`)
-        options.onProgress?.(1)
-        active.settle?.()
-      }
-
-      // The graph is now connected. LipSync attaches and speaking state becomes
-      // visible inside this awaited hook, immediately before source.start().
-      await options.onReady({
-        playbackId,
-        playbackItemId: active.playbackItemId,
-        turnId: options.turnId,
-        analyser: this.analyser,
-        startedAt: performance.now(),
-        normalizationReference: active.normalizationReference,
-        durationMs: audioBuffer.duration * 1000,
-      })
-      this.assertOwner(active)
-      const startedAt = this.audioCtx.currentTime
-      source.start()
-      console.log(`[audio] playbackId=${playbackId} turnId=${options.turnId} started`)
-      options.onProgress?.(0)
-      this.progressTimer = window.setInterval(() => {
-        if (this.activePlayback !== active || this.duration <= 0) return
-        options.onProgress?.(Math.min(1, (this.audioCtx.currentTime - startedAt) / this.duration))
-      }, 100)
-      await ended
-      return { playbackId, turnId: options.turnId }
+      return await this.playReserved(
+        active,
+        {
+          audioBuffer,
+          durationMs: audioBuffer.duration * 1000,
+          normalizationReference: this.estimateNormalizationReference(audioBuffer),
+        },
+        options,
+      )
     } finally {
-      if (this.activePlayback === active) {
-        this.clearProgressTimer()
-        this.disposeSource(active.source, playbackId)
-        active.source = null
-        active.settle = null
-        this.activePlayback = null
-        console.log(`[audio] playbackId=${playbackId} turnId=${options.turnId} released`)
-      }
+      this.release(active)
+    }
+  }
+
+  async playPrepared(
+    prepared: PreparedAudio,
+    options: AudioPlayOptions,
+  ): Promise<PlaybackCompletion> {
+    const active = this.reserve(options.turnId)
+    try {
+      if (this.audioCtx.state === 'suspended') await this.audioCtx.resume()
+      this.assertOwner(active)
+      return await this.playReserved(active, prepared, options)
+    } finally {
+      this.release(active)
     }
   }
 
@@ -194,6 +158,100 @@ export class AudioPlayer {
   private assertOwner(active: ActivePlayback): void {
     if (this.activePlayback !== active)
       throw new Error(`Playback ownership lost for turnId=${active.turnId}`)
+  }
+
+  private assertValidWav(wavBuffer: ArrayBuffer): void {
+    if (wavBuffer.byteLength < 44) throw new Error('Speech audio response is empty or invalid')
+  }
+
+  private reserve(turnId: string): ActivePlayback {
+    if (this.activePlayback) {
+      console.warn(
+        `[audio] guard activeTurnId=${this.activePlayback.turnId} requestedTurnId=${turnId}`,
+      )
+      throw new ParallelPlaybackError(this.activePlayback.turnId, turnId)
+    }
+    const sequence = ++this.playbackSeq
+    const playbackId = `${turnId}:playback-${sequence}`
+    const active: ActivePlayback = {
+      playbackId,
+      turnId,
+      analyser: this.analyser,
+      startedAt: performance.now(),
+      playbackItemId: playbackId,
+      normalizationReference: 0.12,
+      durationMs: 0,
+      sequence,
+      source: null,
+      settle: null,
+    }
+    this.activePlayback = active
+    console.log(`[audio] playbackId=${playbackId} turnId=${turnId} reserved`)
+    return active
+  }
+
+  private async playReserved(
+    active: ActivePlayback,
+    prepared: PreparedAudio,
+    options: AudioPlayOptions,
+  ): Promise<PlaybackCompletion> {
+    active.normalizationReference = prepared.normalizationReference
+    active.durationMs = prepared.durationMs
+    this.assertOwner(active)
+    const source = this.audioCtx.createBufferSource()
+    active.source = source
+    source.buffer = prepared.audioBuffer
+    source.connect(this.analyser)
+    this.duration = prepared.audioBuffer.duration
+
+    const ended = new Promise<void>((resolve) => {
+      active.settle = resolve
+    })
+    source.onended = () => {
+      if (this.activePlayback !== active || active.source !== source) {
+        console.debug(
+          `[audio] playbackId=${active.playbackId} turnId=${options.turnId} stale-ended ignored`,
+        )
+        return
+      }
+      console.log(`[audio] playbackId=${active.playbackId} turnId=${options.turnId} ended`)
+      options.onProgress?.(1)
+      active.settle?.()
+    }
+
+    // The graph is connected. LipSync and speaking state attach immediately
+    // before the prepared source starts.
+    await options.onReady({
+      playbackId: active.playbackId,
+      playbackItemId: active.playbackItemId,
+      turnId: options.turnId,
+      analyser: this.analyser,
+      startedAt: performance.now(),
+      normalizationReference: prepared.normalizationReference,
+      durationMs: prepared.durationMs,
+    })
+    this.assertOwner(active)
+    const startedAt = this.audioCtx.currentTime
+    source.start()
+    options.onStarted?.()
+    console.log(`[audio] playbackId=${active.playbackId} turnId=${options.turnId} started`)
+    options.onProgress?.(0)
+    this.progressTimer = window.setInterval(() => {
+      if (this.activePlayback !== active || this.duration <= 0) return
+      options.onProgress?.(Math.min(1, (this.audioCtx.currentTime - startedAt) / this.duration))
+    }, 100)
+    await ended
+    return { playbackId: active.playbackId, turnId: options.turnId }
+  }
+
+  private release(active: ActivePlayback): void {
+    if (this.activePlayback !== active) return
+    this.clearProgressTimer()
+    this.disposeSource(active.source, active.playbackId)
+    active.source = null
+    active.settle = null
+    this.activePlayback = null
+    console.log(`[audio] playbackId=${active.playbackId} turnId=${active.turnId} released`)
   }
 
   private disposeSource(source: AudioBufferSourceNode | null, playbackId: string): void {

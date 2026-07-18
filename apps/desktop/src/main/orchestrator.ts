@@ -95,10 +95,13 @@ function emotionContractPrompt(): string {
   }
   return [
     `Begin every response with exactly one emotion tag from: ${supportedEmotionPromptList()}.`,
-    'You may insert another emotion tag later only when the emotional delivery meaningfully changes.',
+    'Emotion tags describe meaningful changes in vocal delivery inside one response.',
+    'Use one leading emotion tag for the primary emotion.',
+    'Additional emotion tags are allowed only for a clearly noticeable emotional transition.',
+    'Do not place a new emotion tag before every sentence.',
     'Place an internal emotion tag only before a complete clause or sentence.',
-    'Use no more than 3 emotion segments in one response. Do not repeat the same emotion tag consecutively.',
-    'Do not switch emotion for individual words. Avoid segments shorter than 3 words unless the segment is a deliberate vocal reaction such as laugh, gasp, sigh or groan.',
+    'Avoid emotion segments shorter than four spoken words, except for standalone vocal reactions such as laughter, a gasp, a sigh, a groan, or a short exclamation.',
+    'Use no more than three emotional segments in one response. Do not repeat the same emotion tag consecutively.',
     'For short answers, use only the initial emotion tag. Internal emotion tags are optional.',
     'Examples: [happy]Привет! Я рада тебя видеть. [whisper]Но никому не говори, что я скучала.',
     '[sad]Сегодня тяжёлый день. [warm]Но я рядом.',

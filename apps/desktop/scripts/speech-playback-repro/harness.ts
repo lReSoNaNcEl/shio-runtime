@@ -17,7 +17,10 @@
  * `ended` detaches LipSync while a newer playback is still audible.
  */
 
-import { AudioPlayer } from '../../src/renderer/audio/audioPlayer'
+import { AudioPlayer, type PreparedAudio } from '../../src/renderer/audio/audioPlayer'
+import { EmotionSpeechPipeline } from '../../src/renderer/runtime/EmotionSpeechPipeline'
+import type { SuccessfulSpeechReply } from '../../src/renderer/runtime/SpeechRuntime'
+import { type EmotionTextSegment, parseEmotionalReply } from '../../src/shared/emotionSegments'
 
 // ---------------------------------------------------------------------------
 // WebAudio mocks
@@ -89,7 +92,15 @@ class FakeAudioContext {
   }
   async decodeAudioData(_buf: ArrayBuffer) {
     // Resolves on a microtask, like the real API.
-    return { duration: 1.5 } as unknown as AudioBuffer
+    const samples = new Float32Array(72_000)
+    samples.fill(0.1)
+    return {
+      duration: 1.5,
+      sampleRate: 48_000,
+      length: samples.length,
+      numberOfChannels: 1,
+      getChannelData: () => samples,
+    } as unknown as AudioBuffer
   }
 }
 
@@ -302,18 +313,27 @@ async function runScenario(
 
 async function scenarioNormal(make: () => PlayerLike) {
   return runScenario('NORMAL', make, async (run, p, getSrc) => {
-    await speak(run, p, 1)
+    const playback = speak(run, p, 1)
+    await Promise.resolve()
+    await Promise.resolve()
     run.frame += 90 // ~1.5s of speaking frames
     endNaturally(run, getSrc(0), 1)
+    await playback
   })
 }
 
 async function scenarioInterrupted(make: () => PlayerLike) {
   return runScenario('INTERRUPTED', make, async (run, p, getSrc) => {
-    await speak(run, p, 1)
+    const first = speak(run, p, 1)
+    await Promise.resolve()
+    await Promise.resolve()
     run.frame += 20
+    p.stop()
+    await first
     // New reply starts before #1 finishes → #1 is interrupted (never ends naturally).
-    await speak(run, p, 2)
+    const second = speak(run, p, 2)
+    await Promise.resolve()
+    await Promise.resolve()
     run.frame += 1
     // Audio thread now delivers the stop()-ended for the superseded source #1.
     drainStopEnded()
@@ -321,14 +341,18 @@ async function scenarioInterrupted(make: () => PlayerLike) {
     run.emit('CHECK isPlaying', `${p.isPlaying()} (expected true: #2 audible)`)
     run.frame += 70
     endNaturally(run, getSrc(1), 2) // #2 finishes naturally
+    await second
   })
 }
 
 async function scenarioManualStop(make: () => PlayerLike) {
   return runScenario('MANUAL_STOP', make, async (run, p) => {
-    await speak(run, p, 1)
+    const playback = speak(run, p, 1)
+    await Promise.resolve()
+    await Promise.resolve()
     run.frame += 15
     p.stop()
+    await playback
     run.activeAudible = null
     drainStopEnded()
     run.emit('CHECK isPlaying', `${p.isPlaying()} (expected false: stopped)`)
@@ -337,13 +361,19 @@ async function scenarioManualStop(make: () => PlayerLike) {
 
 async function scenarioConsecutive(make: () => PlayerLike) {
   return runScenario('CONSECUTIVE', make, async (run, p, getSrc) => {
-    await speak(run, p, 1)
+    const first = speak(run, p, 1)
+    await Promise.resolve()
+    await Promise.resolve()
     run.frame += 88
     endNaturally(run, getSrc(0), 1)
+    await first
     run.frame += 2
-    await speak(run, p, 2)
+    const second = speak(run, p, 2)
+    await Promise.resolve()
+    await Promise.resolve()
     run.frame += 88
     endNaturally(run, getSrc(1), 2)
+    await second
   })
 }
 
@@ -366,6 +396,219 @@ function summarize(label: string, runs: Record<string, ScenarioRun>) {
       )
     }
   }
+}
+
+interface PipelineTrace {
+  synthStart: number[]
+  synthEnd: number[]
+  prepared: number[]
+  playStart: number[]
+  playEnd: number[]
+  progress: number[]
+  maxSynthesis: number
+  maxPlayback: number
+  maxBufferedAhead: number
+  transitionGaps: number[]
+}
+
+const delay = (milliseconds: number) =>
+  new Promise<void>((resolve) => {
+    setTimeout(resolve, milliseconds)
+  })
+
+function check(condition: unknown, message: string): asserts condition {
+  if (!condition) throw new Error(`Emotion pipeline repro failed: ${message}`)
+}
+
+function emotionSegments(count: number): EmotionTextSegment[] {
+  const emotions = ['happy', 'sad', 'calm']
+  return Array.from({ length: count }, (_, index) => ({
+    id: `segment-${index}`,
+    index,
+    emotion: emotions[index],
+    text: `segment ${index + 1} spoken words`,
+    boundaryAfter: 'sentence',
+    targetMaxGapMs: 180,
+  }))
+}
+
+async function runPipeline(options: {
+  count: number
+  synthesisDelayMs: number[]
+  audioDurationMs: number[]
+  playbackDelayMs: number[]
+  failSynthesisIndex?: number
+  cancelDuringFirstPlayback?: boolean
+}): Promise<{ trace: PipelineTrace; result: 'completed' | 'cancelled' | 'failed' }> {
+  const trace: PipelineTrace = {
+    synthStart: [],
+    synthEnd: [],
+    prepared: [],
+    playStart: [],
+    playEnd: [],
+    progress: [],
+    maxSynthesis: 0,
+    maxPlayback: 0,
+    maxBufferedAhead: 0,
+    transitionGaps: [],
+  }
+  const buffers = new WeakMap<ArrayBuffer, number>()
+  const segments = emotionSegments(options.count)
+  const weights = segments.map((segment) => segment.text.length)
+  const totalWeight = weights.reduce((sum, weight) => sum + weight, 0)
+  let completedWeight = 0
+  let synthesisActive = 0
+  let playbackActive = 0
+  let pipeline!: EmotionSpeechPipeline
+  pipeline = new EmotionSpeechPipeline({
+    turnId: 'pipeline-repro',
+    segments,
+    synthesize: async (segment) => {
+      synthesisActive += 1
+      trace.maxSynthesis = Math.max(trace.maxSynthesis, synthesisActive)
+      trace.synthStart[segment.index] = performance.now()
+      await delay(options.synthesisDelayMs[segment.index] ?? 1)
+      synthesisActive -= 1
+      if (segment.index === options.failSynthesisIndex)
+        throw new Error(`synthetic synthesis failure index=${segment.index}`)
+      trace.synthEnd[segment.index] = performance.now()
+      const audioBuffer = new ArrayBuffer(44)
+      buffers.set(audioBuffer, segment.index)
+      return { ok: true, audioBuffer } as SuccessfulSpeechReply
+    },
+    prepareAudio: async (audioBuffer) => {
+      const index = buffers.get(audioBuffer)
+      check(index !== undefined, 'prepared buffer must retain its segment identity')
+      trace.prepared[index] = performance.now()
+      return {
+        audioBuffer: { duration: options.audioDurationMs[index] / 1000 } as AudioBuffer,
+        durationMs: options.audioDurationMs[index],
+        normalizationReference: 0.12,
+      } satisfies PreparedAudio
+    },
+    playPrepared: async (item, onStarted) => {
+      const index = item.segment.index
+      playbackActive += 1
+      trace.maxPlayback = Math.max(trace.maxPlayback, playbackActive)
+      trace.playStart[index] = performance.now()
+      onStarted()
+      const weight = weights[index]
+      for (const progress of [0, 0.5, 1])
+        trace.progress.push((completedWeight + progress * weight) / totalWeight)
+      if (index === 0 && options.cancelDuringFirstPlayback) setTimeout(() => pipeline.cancel(), 2)
+      await delay(options.playbackDelayMs[index] ?? 1)
+      trace.playEnd[index] = performance.now()
+      playbackActive -= 1
+      completedWeight += weight
+    },
+    isCurrentTurn: () => true,
+    recordEvent: (label, detail) => {
+      const buffered = /bufferedAhead=(\d+)/.exec(detail)
+      if (buffered) trace.maxBufferedAhead = Math.max(trace.maxBufferedAhead, Number(buffered[1]))
+      const transitionGap = /transitionGapMs=(\d+)/.exec(detail)
+      if (label === 'Emotion Speech Segment Started' && transitionGap)
+        trace.transitionGaps.push(Number(transitionGap[1]))
+    },
+  })
+  try {
+    await pipeline.execute()
+    return { trace, result: 'completed' }
+  } catch (error) {
+    if (options.cancelDuringFirstPlayback) return { trace, result: 'cancelled' }
+    if (options.failSynthesisIndex !== undefined) return { trace, result: 'failed' }
+    throw error
+  }
+}
+
+async function runEmotionPipelineRegression(): Promise<void> {
+  console.log('\n===== EMOTION SPEECH PIPELINE 2.0 =====')
+
+  const parsed = parseEmotionalReply('[happy]Первая часть, [sad]вторая часть. [calm]Пауза…')
+  check(parsed.segments[0].boundaryAfter === 'clause', 'comma produces clause boundary')
+  check(parsed.segments[1].boundaryAfter === 'sentence', 'period produces sentence boundary')
+  check(parsed.segments[2].boundaryAfter === 'expressive', 'ellipsis produces expressive boundary')
+  check(
+    parseEmotionalReply('[happy]Первая часть\n\n[sad]Вторая часть').segments[0].boundaryAfter ===
+      'expressive',
+    'double newline produces expressive boundary',
+  )
+  check(
+    parseEmotionalReply('[happy]Один. [sad]Два. [calm]Три. [angry]Четыре.').segments.length === 3,
+    'parser preserves the three-segment limit',
+  )
+
+  let ttsCount = 0
+  let playbackCount = 0
+  let cleanupCount = 0
+  if (emotionSegments(1).length === 1) {
+    ttsCount += 1
+    playbackCount += 1
+  }
+  cleanupCount += 1
+  check(ttsCount === 1 && playbackCount === 1 && cleanupCount === 1, 'single fast path')
+
+  const long = await runPipeline({
+    count: 2,
+    synthesisDelayMs: [2, 8],
+    audioDurationMs: [1800, 1600],
+    playbackDelayMs: [30, 10],
+  })
+  check(long.result === 'completed', 'two long segments complete')
+  check(long.trace.synthStart[1] < long.trace.playEnd[0], 'synthesis 2 overlaps playback 1')
+  check(long.trace.maxSynthesis === 1, 'TTS requests do not overlap')
+  check(long.trace.maxPlayback === 1, 'playbacks do not overlap')
+  check((long.trace.transitionGaps[1] ?? Infinity) <= 180, 'prepared transition gap stays bounded')
+
+  const short = await runPipeline({
+    count: 2,
+    synthesisDelayMs: [2, 12],
+    audioDurationMs: [350, 1200],
+    playbackDelayMs: [5, 5],
+  })
+  check(
+    short.trace.prepared[1] <= short.trace.playStart[0],
+    'short first segment waits for segment 2',
+  )
+
+  const three = await runPipeline({
+    count: 3,
+    synthesisDelayMs: [2, 4, 4],
+    audioDurationMs: [1800, 1000, 1000],
+    playbackDelayMs: [25, 15, 10],
+  })
+  check(three.result === 'completed', 'three segments complete')
+  check(three.trace.maxSynthesis === 1 && three.trace.maxPlayback === 1, 'single-flight limits')
+  check(three.trace.maxBufferedAhead <= 2, 'at most two prepared segments ahead')
+
+  const cancelled = await runPipeline({
+    count: 3,
+    synthesisDelayMs: [2, 25, 2],
+    audioDurationMs: [1800, 1000, 1000],
+    playbackDelayMs: [12, 5, 5],
+    cancelDuringFirstPlayback: true,
+  })
+  check(cancelled.result === 'cancelled', 'interruption cancels pipeline')
+  check(cancelled.trace.playStart[1] === undefined, 'cancelled segment 2 never starts')
+  check(cancelled.trace.synthStart[2] === undefined, 'cancelled segment 3 never synthesizes')
+
+  const failed = await runPipeline({
+    count: 3,
+    synthesisDelayMs: [2, 8, 2],
+    audioDurationMs: [1800, 1000, 1000],
+    playbackDelayMs: [20, 5, 5],
+    failSynthesisIndex: 1,
+  })
+  check(failed.result === 'failed', 'background synthesis failure reaches consumer')
+  check(failed.trace.playStart[1] === undefined, 'failed segment never plays')
+  check(failed.trace.synthStart[2] === undefined, 'production stops after synthesis failure')
+
+  const progress = three.trace.progress
+  check(
+    progress.every((value, index) => index === 0 || value >= progress[index - 1]),
+    'aggregate progress is monotonic',
+  )
+  check(progress.at(-1) === 1, 'aggregate progress reaches 1')
+  console.log('PASS: cases 1-7')
 }
 
 async function main() {
@@ -408,6 +651,7 @@ async function main() {
   console.log(
     `FIXED    / INTERRUPTED : ${fmt(fixed.INTERRUPTED)}  → only #2 finishes, at its real buffer end`,
   )
+  await runEmotionPipelineRegression()
 }
 
 void main()
