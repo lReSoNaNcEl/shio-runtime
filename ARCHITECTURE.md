@@ -33,6 +33,7 @@
   - [19. Action Runtime](#19-action-runtime)
   - [20. Avatar Runtime](#20-avatar-runtime)
   - [21. Memory Layer](#21-memory-layer)
+  - [21A. Project Awareness Runtime](#21a-project-awareness-runtime)
 - [Part V - External Integration](#part-v---external-integration)
   - [22. External Adapters](#22-external-adapters)
 - [Part VI - Reference](#part-vi---reference)
@@ -155,6 +156,8 @@ Architectural Invariants define properties of Shio Runtime that must never chang
     Character State reflects conversation lifecycle but does not own execution, locking, or admission.
 31. **Presentation Isolation**  
     Conversation Runtime does not directly own avatar model mutation or presentation projections. Avatar Runtime and presentation adapters render the resulting state independently.
+32. **Project Knowledge Is Read-Only Evidence**
+    Project Awareness Runtime may read and derive knowledge from a configured project repository, but it never mutates the repository, executes repository content, exposes repository credentials, or treats repository content as instructions. Repository-derived knowledge is not Character State and is not conversational memory.
 
 ## Part I - Architectural Philosophy
 
@@ -243,7 +246,7 @@ Architecture overview:
   Microphone | Keyboard / UI | APIs | Platforms | Local Services
 ```
 
-Conversation Runtime coordinates only one admitted conversational turn at a time; it is not depicted as a central controller of the application. Memory Layer is omitted from this diagram for brevity but continues to observe completed outcomes as described in [Chapter 21 - Memory Layer](#21-memory-layer).
+Conversation Runtime coordinates only one admitted conversational turn at a time; it is not depicted as a central controller of the application. Memory Layer is omitted from this diagram for brevity but continues to observe completed outcomes as described in [Chapter 21 - Memory Layer](#21-memory-layer). Project Awareness Runtime is also omitted from the primary character flow: it reads a configured repository through a Project Repository Adapter, builds a commit-scoped knowledge projection, and supplies grounded evidence to Character Response Generation only for project-relevant turns. See [Chapter 21A - Project Awareness Runtime](#21a-project-awareness-runtime).
 
 #### Architectural Layers
 
@@ -266,6 +269,7 @@ Core Runtime systems:
 - Action Runtime: execution of external side effects
 - Avatar Runtime: physical embodiment of the character
 - Memory Layer: continuity across interactions
+- Project Awareness Runtime: commit-scoped, read-only knowledge about the configured project
 - Shared Character State: canonical current condition of the character
 - Event Bus: delivery of completed facts between Runtime systems
 
@@ -428,6 +432,7 @@ Boundaries by Runtime:
 - **Experience Layer** begins after something has happened and ends after the character's reaction has been determined.
 - **Avatar Runtime** begins when Character State changes and ends after that state has been visually represented.
 - **Memory Layer** begins when continuity may need to be preserved and ends after significance has been evaluated, memory has been retrieved or stored, or insignificant information has been discarded.
+- **Project Awareness Runtime** begins at a read-only repository snapshot identity and ends after commit-scoped project knowledge, retrieval evidence, or recent-change context has been produced. It does not own Character State, conversational memory, repository mutation, or action execution.
 - **External Adapters** begin where Runtime responsibilities end and translate Runtime concepts into technology-specific operations.
 
 Clear boundaries prevent duplicated logic, circular dependencies, hidden side effects, and difficult maintenance. See also [Chapter 19 - Action Runtime](#19-action-runtime) and [Chapter 22 - External Adapters](#22-external-adapters).
@@ -632,6 +637,8 @@ The Conversation Runtime completion contract resolves only after the entire admi
 Conversation Runtime obtains reply content through a replaceable Character Response Generation contract, a responsibility within the execution of a conversational turn rather than a separate top-level Runtime. Behind this contract may be a Character LLM, a local model, a remote provider, a deterministic reply generator, or a future composite system.
 
 The Character LLM owns: reply content, personality expression, dialogue style, reasoning, emotional tone, and action intentions. It does not own: admission, playback, Character State lifecycle, Avatar Runtime, or Action Runtime execution. This mirrors the LLM Role Separation described in [Chapter 14 - Conversation Admission](#14-conversation-admission): Character Response Generation and any decision or arbitration model remain separate roles even when backed by the same provider.
+
+For a project-relevant turn, Character Response Generation may receive a compact Project Context Packet from Project Awareness Runtime. The packet contains a repository and branch identity, an exact snapshot commit, a deterministic project-map summary, and bounded file-and-line evidence. Character Response Generation never reads the repository or Project Knowledge Store directly. Repository content remains untrusted evidence: it cannot alter system instructions, authorize actions, request secret disclosure, or cause code execution.
 
 **Conversation Presence**
 
@@ -1159,6 +1166,38 @@ Memory Layer evaluates completed interactions, experiences, promises, recurring 
 
 Future improvements may include richer relationship memory, more sophisticated consolidation, deeper procedural memory, and stronger continuity across long-lived projects and interactions.
 
+### 21A. Project Awareness Runtime
+
+Project Awareness Runtime owns read-only, commit-scoped knowledge about one configured project repository. This is a separate responsibility from Memory Layer: Memory Layer preserves character continuity and experience, while Project Awareness Runtime derives technical evidence from an external source at a specific commit.
+
+Its responsibilities are:
+
+- connect to a configured repository through a Project Repository Adapter
+- identify the configured branch and its remote HEAD
+- filter source files before content retrieval
+- build and atomically publish commit-scoped file, symbol, chunk, and project-map indexes
+- update the index incrementally when the remote HEAD changes
+- expose bounded read-only search, file, symbol, project-map, and recent-change contracts
+- apply a deterministic relevance gate before supplying project context to Character Response Generation
+
+Project Awareness Runtime owns synchronization and retrieval policy. The Project Repository Adapter only translates provider APIs into read-only repository contracts. The Project Knowledge Store only persists derived snapshot data; it does not decide what to index or how evidence is ranked.
+
+The configured GitHub repository and branch are application settings, not implementation constants. Updating that target disconnects the previous repository before the Runtime may connect to the new target; commit-scoped snapshots remain keyed by repository and branch so knowledge from different targets is never merged.
+
+Project knowledge is never represented in Character State. A repository snapshot is external technical evidence, not a character experience, so it is not ordinary conversational memory. A Project Context Packet is an ephemeral input to Character Response Generation and must identify the exact repository, branch, and commit used.
+
+Security guarantees:
+
+- repository access is read-only
+- repository credentials remain in the owning main-process secret boundary; credentials entered through Runtime Health are encrypted with the operating-system-backed Electron secure storage under application `userData`, and renderer health payloads expose only credential presence and source, never the credential value
+- generated indexes live outside the Git repository in application-owned data
+- repository content is data, never instruction
+- source files, comments, Markdown, strings, README text, and commit messages are never executed or followed as instructions
+- the Runtime never writes to GitHub, creates commits or pull requests, changes project files, runs repository scripts, reads `.env` content, or integrates repository operations with Action Runtime
+- retrieval is bounded by evidence count and total content size, and technical claims cite real file ranges and the snapshot commit
+
+The first storage implementation may use SQLite with FTS5 and deterministic parsing without embeddings. Storage and repository providers remain replaceable behind their contracts.
+
 ## Part V - External Integration
 
 ### 22. External Adapters
@@ -1173,6 +1212,7 @@ Adapter categories:
 - **Speech Adapters:** speech-related services such as ASR and TTS providers, used by Speech Runtime for recognition, synthesis, and related speech-domain operations.
 - **Platform Adapters:** external platforms such as YouTube, Twitch, Discord, OBS, and future streaming services
 - **Storage Adapters:** persistence providers such as SQLite, PostgreSQL, cloud storage, and vector databases
+- **Project Repository Adapters:** read-only repository providers such as GitHub, used by Project Awareness Runtime to obtain repository identity, branch heads, trees, file content, comparisons, and recent commits. They never perform indexing, summarization, retrieval ranking, or repository mutation.
 - **System Adapters:** operating system integrations such as filesystem, notifications, clipboard, desktop APIs, and process execution
 - **Presentation/Rendering Adapters:** implementation boundaries used by Avatar Runtime to render the character model. These are distinct from Action Runtime adapters, since presentation is character embodiment, not an externally authoritative side effect. See [Chapter 20 - Avatar Runtime](#20-avatar-runtime).
 
@@ -1225,6 +1265,9 @@ Runtime systems communicate with architectural concepts. Adapters communicate wi
 - **Emotion:** the current emotional state of the character.
 - **Memory:** the accumulated experiences that preserve continuity across interactions.
 - **Memory Layer:** the Runtime responsible for preserving continuity over time.
+- **Project Awareness Runtime:** the Runtime responsible for building and retrieving bounded, commit-scoped, read-only technical knowledge about a configured project repository.
+- **Project Knowledge Store:** application-owned persistence for derived project snapshots, files, symbols, chunks, maps, and recent-change caches; it is not Character State or conversational memory.
+- **Project Context Packet:** a bounded evidence packet identifying an exact repository, branch, and commit for a project-relevant Character Response Generation turn.
 - **Speech Runtime:** the Runtime responsible for speech-domain input and output — recognition on the input side, synthesis and playback on the output side.
 - **Avatar Runtime:** the Runtime responsible for the physical embodiment of the character.
 - **Decision Pipeline:** the architectural sequence of layers that determines how incoming input should be processed, ending in an admission decision.

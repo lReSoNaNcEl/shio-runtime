@@ -5,12 +5,18 @@ import { app } from 'electron'
 
 import { DEFAULT_SPEECH_URL } from '../shared/config'
 import type { LlmConfig } from '../shared/llmProviders'
+import type { ProjectAwarenessPublicConfig } from '../shared/projectAwareness'
 import { defaultLlmConfig, isLlmProviderId, normalizeLlmConfig } from './llm'
 
 const CONFIG_PATH = join(app.getPath('userData'), 'config.json')
 
-interface AppConfig {
+export interface ProjectAwarenessConfig extends ProjectAwarenessPublicConfig {
+  maxFileSizeBytes: number
+}
+
+export interface AppConfig {
   llm: LlmConfig
+  projectAwareness: ProjectAwarenessConfig
   pythonSpeechUrl: string
   ttsVoice: string
   ttsLanguage: string
@@ -37,7 +43,7 @@ interface AppConfig {
 }
 
 // String-valued keys only; `llm` is handled separately because it is an object.
-type StringConfigKey = Exclude<keyof AppConfig, 'llm'>
+type StringConfigKey = Exclude<keyof AppConfig, 'llm' | 'projectAwareness'>
 
 const stringDefaults: Record<StringConfigKey, string> = {
   pythonSpeechUrl: process.env.PYTHON_SPEECH_URL ?? DEFAULT_SPEECH_URL,
@@ -66,7 +72,17 @@ const stringDefaults: Record<StringConfigKey, string> = {
 }
 
 function freshDefaults(): AppConfig {
-  return { llm: defaultLlmConfig(), ...stringDefaults }
+  return {
+    llm: defaultLlmConfig(),
+    projectAwareness: {
+      enabled: true,
+      provider: 'github',
+      repository: '',
+      branch: 'main',
+      maxFileSizeBytes: 256 * 1024,
+    },
+    ...stringDefaults,
+  }
 }
 
 let _config: AppConfig = freshDefaults()
@@ -140,6 +156,31 @@ function resolveLlmConfig(saved: Record<string, unknown> & LegacyPersistedConfig
   return { llm, migrated }
 }
 
+function resolveProjectAwarenessConfig(saved: Record<string, unknown>): ProjectAwarenessConfig {
+  const defaults = freshDefaults().projectAwareness
+  if (!saved.projectAwareness || typeof saved.projectAwareness !== 'object') return defaults
+  const project = saved.projectAwareness as Record<string, unknown>
+  return {
+    enabled: typeof project.enabled === 'boolean' ? project.enabled : defaults.enabled,
+    provider: 'github',
+    repository:
+      typeof project.repository === 'string' && project.repository
+        ? project.repository
+        : defaults.repository,
+    branch: typeof project.branch === 'string' && project.branch ? project.branch : defaults.branch,
+    maxFileSizeBytes:
+      typeof project.maxFileSizeBytes === 'number' &&
+      Number.isFinite(project.maxFileSizeBytes) &&
+      project.maxFileSizeBytes >= 16 * 1024
+        ? Math.min(project.maxFileSizeBytes, 2 * 1024 * 1024)
+        : defaults.maxFileSizeBytes,
+  }
+}
+
+function serializedConfig(config: AppConfig): string {
+  return JSON.stringify(config, null, 2)
+}
+
 export function loadConfig(): AppConfig {
   try {
     if (existsSync(CONFIG_PATH)) {
@@ -147,7 +188,12 @@ export function loadConfig(): AppConfig {
         LegacyPersistedConfig
       const known = pickKnownStrings(saved)
       const { llm, migrated } = resolveLlmConfig(saved)
-      _config = { ...freshDefaults(), ...known, llm }
+      const projectAwareness = resolveProjectAwarenessConfig(saved)
+      const hasLegacyProjectToken =
+        typeof saved.projectAwareness === 'object' &&
+        saved.projectAwareness !== null &&
+        typeof (saved.projectAwareness as Record<string, unknown>).token === 'string'
+      _config = { ...freshDefaults(), ...known, llm, projectAwareness }
 
       // One-time migration: pull the Groq key from env into userData config.
       let envMigrated = false
@@ -155,8 +201,8 @@ export function loadConfig(): AppConfig {
         _config.llm.providers.groq.apiKey = process.env.GROQ_API_KEY
         envMigrated = true
       }
-      if (migrated || envMigrated) {
-        writeFileSync(CONFIG_PATH, JSON.stringify(_config, null, 2), 'utf-8')
+      if (migrated || envMigrated || hasLegacyProjectToken) {
+        writeFileSync(CONFIG_PATH, serializedConfig(_config), 'utf-8')
       }
     }
   } catch {
@@ -169,9 +215,26 @@ export function getConfig(): AppConfig {
   return _config
 }
 
-export function saveConfig(partial: Partial<AppConfig>): void {
+export function getRendererConfig(): Omit<AppConfig, 'projectAwareness'> & {
+  projectAwareness: ProjectAwarenessPublicConfig
+} {
+  const { maxFileSizeBytes: _maxFileSizeBytes, ...projectAwareness } = _config.projectAwareness
+  return { ..._config, projectAwareness }
+}
+
+export function saveConfig(
+  partial: Partial<Omit<AppConfig, 'projectAwareness'>> & {
+    projectAwareness?: Partial<ProjectAwarenessPublicConfig>
+  },
+): void {
   // `llm`, when present, is replaced wholesale (the renderer always sends the
   // complete object), so a shallow merge preserves every provider's creds.
-  _config = { ..._config, ...partial }
-  writeFileSync(CONFIG_PATH, JSON.stringify(_config, null, 2), 'utf-8')
+  _config = {
+    ..._config,
+    ...partial,
+    projectAwareness: partial.projectAwareness
+      ? { ..._config.projectAwareness, ...partial.projectAwareness }
+      : _config.projectAwareness,
+  }
+  writeFileSync(CONFIG_PATH, serializedConfig(_config), 'utf-8')
 }

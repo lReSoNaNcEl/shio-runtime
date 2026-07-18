@@ -24,6 +24,7 @@
     "repro:llm-compat": "esbuild scripts/llm-compat-repro/harness.ts --bundle --platform=node --format=cjs --outfile=scripts/llm-compat-repro/harness.cjs && node scripts/llm-compat-repro/harness.cjs",
     "repro:llm-live": "esbuild scripts/llm-live-repro/harness.ts --bundle --platform=node --format=cjs --outfile=scripts/llm-live-repro/harness.cjs && node scripts/llm-live-repro/harness.cjs",
     "repro:continuous-listening": "esbuild scripts/continuous-listening-repro/harness.ts --bundle --platform=node --format=cjs --outfile=scripts/continuous-listening-repro/harness.cjs && node scripts/continuous-listening-repro/harness.cjs",
+    "repro:project-awareness": "esbuild scripts/project-awareness-repro/harness.ts --bundle --platform=node --format=cjs --outfile=out/project-awareness-repro.cjs && node out/project-awareness-repro.cjs",
     "test:llm-live": "npm run repro:llm-live"
   },
   "keywords": [],

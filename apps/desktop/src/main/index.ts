@@ -2,14 +2,19 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import * as dotenv from 'dotenv'
-import { app, BrowserWindow, ipcMain, Menu, protocol, screen } from 'electron'
+import { app, BrowserWindow, ipcMain, Menu, protocol, safeStorage, screen } from 'electron'
 
-import { getConfig, loadConfig } from './config'
+import { getConfig, getRendererConfig, loadConfig } from './config'
 import { registerIpcHandlers } from './ipc'
 import { LiveLLMProvider } from './llm'
 import { initializeSafeLogging, mainLog } from './logging/safeLogger'
 import { createMemoryStore } from './memory'
 import { Orchestrator } from './orchestrator'
+import {
+  ProjectAwarenessRuntime,
+  ProjectCredentialStore,
+  ProjectKnowledgeStore,
+} from './projectAwareness'
 import { SpeechClient } from './speech/speechClient'
 
 initializeSafeLogging()
@@ -20,6 +25,9 @@ let overlayWin: BrowserWindow | null = null
 let isQuitting = false
 let orchestrator: Orchestrator | null = null
 let speechClient: SpeechClient | null = null
+let projectAwareness: ProjectAwarenessRuntime | null = null
+let projectCredentialStore: ProjectCredentialStore | null = null
+let projectKnowledgeStore: ProjectKnowledgeStore | null = null
 let lastAvatarState: unknown = null
 let lastAvatarMouth: unknown = null
 
@@ -63,7 +71,31 @@ function buildOrchestrator(): Orchestrator {
   const memory = createMemoryStore()
   speechClient = new SpeechClient(cfg.pythonSpeechUrl)
   void speechClient.warnIfEmotionContractDrift()
-  return new Orchestrator(llm, memory, speechClient, getConfig)
+  return new Orchestrator(llm, memory, speechClient, getConfig, projectAwareness ?? undefined)
+}
+
+function buildProjectAwareness(): ProjectAwarenessRuntime {
+  const config = getConfig().projectAwareness
+  const projectAwarenessDirectory = join(app.getPath('userData'), 'project-awareness')
+  projectKnowledgeStore ??= new ProjectKnowledgeStore(
+    join(projectAwarenessDirectory, 'project-index.sqlite'),
+  )
+  projectCredentialStore ??= new ProjectCredentialStore(
+    join(projectAwarenessDirectory, 'github-credential.bin'),
+    {
+      isAvailable: () => safeStorage.isAsyncEncryptionAvailable(),
+      encrypt: (value) => safeStorage.encryptStringAsync(value),
+      decrypt: (value) => safeStorage.decryptStringAsync(value),
+    },
+  )
+  return new ProjectAwarenessRuntime(config, projectKnowledgeStore)
+}
+
+async function initializeProjectAwareness(runtime: ProjectAwarenessRuntime): Promise<void> {
+  if (!projectCredentialStore) throw new Error('Project credential store is unavailable')
+  const credential = await projectCredentialStore.load()
+  runtime.setCredential(credential.token, credential)
+  await runtime.initialize()
 }
 
 function loadRenderer(target: BrowserWindow, overlay = false): void {
@@ -115,7 +147,7 @@ function applyOverlaySettings(): { ok: boolean; visible: boolean } {
   overlayWin.setOpacity(opacity)
   overlayWin.setIgnoreMouseEvents(clickThrough, { forward: true })
   overlayWin.setAlwaysOnTop(true, 'screen-saver')
-  overlayWin.webContents.send('overlay-settings:updated', getConfig())
+  overlayWin.webContents.send('overlay-settings:updated', getRendererConfig())
   return { ok: true, visible: true }
 }
 
@@ -144,6 +176,7 @@ function createWindow(): void {
     }
   })
 
+  projectAwareness = buildProjectAwareness()
   orchestrator = buildOrchestrator()
 
   registerIpcHandlers(
@@ -152,11 +185,25 @@ function createWindow(): void {
       return orchestrator
     },
     () => {
+      projectAwareness ??= buildProjectAwareness()
+      return projectAwareness
+    },
+    () => {
+      if (!projectCredentialStore) buildProjectAwareness()
+      if (!projectCredentialStore) throw new Error('Project credential store is unavailable')
+      return projectCredentialStore
+    },
+    () => {
       if (!speechClient) speechClient = new SpeechClient(getConfig().pythonSpeechUrl)
       return speechClient
     },
     win,
   )
+  void initializeProjectAwareness(projectAwareness).catch((error) => {
+    mainLog.warn('[ProjectAwareness] initialization failed', {
+      error: error instanceof Error ? error.message : String(error),
+    })
+  })
 
   win.webContents.on('did-finish-load', () => {
     orchestrator = buildOrchestrator()
@@ -315,6 +362,8 @@ app.whenReady().then(() => {
 app.on('before-quit', () => {
   isQuitting = true
   destroyOverlayWindow()
+  projectKnowledgeStore?.close()
+  projectKnowledgeStore = null
 })
 
 app.on('window-all-closed', () => {

@@ -23,6 +23,24 @@ const api = {
   memory: {
     clear: () => ipcRenderer.invoke('memory:clear'),
   },
+  projectAwareness: {
+    getStatus: () => ipcRenderer.invoke('project-awareness:get-status'),
+    configure: (config: unknown) => ipcRenderer.invoke('project-awareness:configure', config),
+    saveCredential: (token: string) =>
+      ipcRenderer.invoke('project-awareness:save-credential', token),
+    forgetCredential: () => ipcRenderer.invoke('project-awareness:forget-credential'),
+    openTokenSettings: () => ipcRenderer.invoke('project-awareness:open-token-settings'),
+    connect: () => ipcRenderer.invoke('project-awareness:connect'),
+    disconnect: () => ipcRenderer.invoke('project-awareness:disconnect'),
+    sync: () => ipcRenderer.invoke('project-awareness:sync'),
+    rebuildIndex: () => ipcRenderer.invoke('project-awareness:rebuild-index'),
+    getProjectMap: () => ipcRenderer.invoke('project-awareness:get-project-map'),
+    search: (input: unknown) => ipcRenderer.invoke('project-awareness:search', input),
+    readFile: (input: unknown) => ipcRenderer.invoke('project-awareness:read-file', input),
+    readSymbol: (input: unknown) => ipcRenderer.invoke('project-awareness:read-symbol', input),
+    getRecentChanges: (input: unknown) =>
+      ipcRenderer.invoke('project-awareness:get-recent-changes', input),
+  },
   config: {
     get: () => ipcRenderer.invoke('config:get'),
     save: (partial: Record<string, unknown>) => ipcRenderer.invoke('config:save', partial),

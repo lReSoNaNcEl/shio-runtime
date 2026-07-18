@@ -1,4 +1,5 @@
 import type { FetchModelsResult, LlmConfig, ProviderProfile } from '../shared/llmProviders'
+import type { ProjectAwarenessApi, ProjectAwarenessPublicConfig } from '../shared/projectAwareness'
 import type { RuntimeEventInput } from '../shared/runtime/events'
 import type { SpeechServiceErrorCode } from '../shared/speech/speechErrors'
 import type { BacklogSelectionResult, BufferedUtterance } from './continuousListening/types'
@@ -12,6 +13,7 @@ export interface SpeechHealthCapabilities {
 
 export interface PersistedSettings {
   llm: LlmConfig
+  projectAwareness: ProjectAwarenessPublicConfig
   pythonSpeechUrl: string
   ttsVoice: string
   ttsLanguage: string
@@ -90,6 +92,7 @@ export interface VtuberApi {
     cancelSynthesis: (turnId: string) => Promise<{ ok: boolean }>
   }
   memory: { clear: () => Promise<unknown> }
+  projectAwareness: ProjectAwarenessApi
   config: {
     get: () => Promise<PersistedSettings>
     save: (p: Partial<PersistedSettings>) => Promise<unknown>

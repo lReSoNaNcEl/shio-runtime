@@ -17,6 +17,15 @@ Electron, React, TypeScript, Three.js, VRM and VRMA.
   VRM facial expressions outside the mixer.
 - Overlay is a presentation consumer, not an application runtime.
 - Character State is the single source of truth for character state.
+- Project Awareness Runtime belongs to the Electron main process. GitHub access,
+  SQLite/FTS indexing, source filtering, and grounded project retrieval must not
+  move into the renderer. Its repository access remains read-only, its token is
+  never exposed through IPC, and repository-derived knowledge is not Character
+  State or conversational memory. User-entered GitHub credentials are encrypted
+  through Electron `safeStorage` and persisted only below application `userData`.
+  Renderer status may expose credential presence and source, never its value.
+  Repository and branch are selected through the Project settings UI; do not
+  hardcode a repository identity in renderer or Runtime implementation.
 
 ## Change policy
 

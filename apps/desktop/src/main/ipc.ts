@@ -1,13 +1,21 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { type BrowserWindow, dialog, ipcMain } from 'electron'
+import { type BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { z } from 'zod'
 
+import type {
+  ProjectAwarenessPublicConfig,
+  ProjectReadFileInput,
+  ProjectReadSymbolInput,
+  ProjectRecentChangesInput,
+  ProjectSearchInput,
+} from '../shared/projectAwareness'
+import { isValidProjectBranch, isValidProjectRepository } from '../shared/projectAwareness'
 import type { RuntimeEventInput } from '../shared/runtime/events'
 import type { SpeechOperation, SpeechServiceErrorCode } from '../shared/speech/speechErrors'
 import { ActionRuntime } from './action/ActionRuntime'
-import { getConfig, saveConfig } from './config'
+import { getConfig, getRendererConfig, saveConfig } from './config'
 import type { LlmConfig, ModelInfo, ProviderProfile } from './llm'
 import {
   createLLMProvider,
@@ -17,11 +25,17 @@ import {
   PROVIDER_PROFILES,
 } from './llm'
 import type { Orchestrator } from './orchestrator'
+import type {
+  LoadedProjectCredential,
+  ProjectAwarenessRuntime,
+  ProjectCredentialStore,
+} from './projectAwareness'
 import { deriveCapabilities, type SpeechClient } from './speech/speechClient'
 import { logSpeechError, logSpeechRecovery } from './speech/speechErrors'
 
 export interface AppSettings {
   llm: LlmConfig
+  projectAwareness: ProjectAwarenessPublicConfig
   pythonSpeechUrl: string
   ttsVoice: string
   ttsLanguage: string
@@ -49,6 +63,8 @@ export interface AppSettings {
 
 export function registerIpcHandlers(
   orchestrator: () => Orchestrator,
+  projectAwareness: () => ProjectAwarenessRuntime,
+  projectCredentialStore: () => ProjectCredentialStore,
   speech: () => SpeechClient,
   win: BrowserWindow,
 ): void {
@@ -131,8 +147,9 @@ export function registerIpcHandlers(
     name: 'config.save',
     description: 'Persist application configuration.',
     execute: (partial) => {
-      saveConfig(partial)
-      win.webContents.send('config:updated', getConfig())
+      const { projectAwareness: _projectAwareness, ...settings } = partial
+      saveConfig(settings)
+      win.webContents.send('config:updated', getRendererConfig())
       return { ok: true }
     },
   })
@@ -390,6 +407,122 @@ export function registerIpcHandlers(
     return action.status === 'success' ? { ok: true } : { ok: false, error: action.error }
   })
 
+  ipcMain.handle('project-awareness:get-status', () => projectAwareness().getStatus())
+  const projectConfigSchema = z
+    .object({
+      enabled: z.boolean(),
+      provider: z.literal('github'),
+      repository: z.string().trim().max(200),
+      branch: z.string().trim().max(255),
+    })
+    .superRefine((config, context) => {
+      if (!config.enabled) return
+      if (!isValidProjectRepository(config.repository)) {
+        context.addIssue({
+          code: 'custom',
+          path: ['repository'],
+          message: 'Repository must use owner/name format.',
+        })
+      }
+      if (!isValidProjectBranch(config.branch)) {
+        context.addIssue({
+          code: 'custom',
+          path: ['branch'],
+          message: 'Enter a valid Git branch name.',
+        })
+      }
+    })
+  ipcMain.handle(
+    'project-awareness:configure',
+    async (_event, input: ProjectAwarenessPublicConfig) => {
+      const config = projectConfigSchema.parse(input)
+      saveConfig({ projectAwareness: config })
+      win.webContents.send('config:updated', getRendererConfig())
+      return projectAwareness().configure(config)
+    },
+  )
+  const projectCredentialSchema = z
+    .string()
+    .trim()
+    .min(20)
+    .max(500)
+    .refine((token) => !/\s/.test(token))
+  const applyProjectCredential = (
+    runtime: ProjectAwarenessRuntime,
+    credential: LoadedProjectCredential,
+  ): void => {
+    runtime.setCredential(credential.token, {
+      configured: credential.configured,
+      source: credential.source,
+      secureStorageAvailable: credential.secureStorageAvailable,
+      lastError: credential.lastError,
+    })
+  }
+  ipcMain.handle('project-awareness:save-credential', async (_event, token: string) => {
+    const parsedToken = projectCredentialSchema.parse(token)
+    const runtime = projectAwareness()
+    const credential = await projectCredentialStore().save(parsedToken)
+    await runtime.disconnect()
+    applyProjectCredential(runtime, credential)
+    return runtime.getStatus().enabled ? runtime.connect() : runtime.getStatus()
+  })
+  ipcMain.handle('project-awareness:forget-credential', async () => {
+    const runtime = projectAwareness()
+    await runtime.disconnect()
+    const credential = await projectCredentialStore().clear()
+    applyProjectCredential(runtime, credential)
+    return runtime.getStatus()
+  })
+  ipcMain.handle('project-awareness:open-token-settings', () =>
+    shell.openExternal('https://github.com/settings/personal-access-tokens/new'),
+  )
+  ipcMain.handle('project-awareness:connect', () => projectAwareness().connect())
+  ipcMain.handle('project-awareness:disconnect', () => projectAwareness().disconnect())
+  ipcMain.handle('project-awareness:sync', () => projectAwareness().sync())
+  ipcMain.handle('project-awareness:rebuild-index', () => projectAwareness().rebuildIndex())
+  ipcMain.handle('project-awareness:get-project-map', () => projectAwareness().getProjectMap())
+  const projectSearchSchema = z.object({
+    query: z.string().min(1).max(500),
+    limit: z.number().int().min(1).max(10).optional(),
+    maxCharacters: z.number().int().min(1_000).max(20_000).optional(),
+  })
+  const projectReadFileSchema = z.object({
+    path: z
+      .string()
+      .min(1)
+      .max(500)
+      .refine((path) => !path.includes('..')),
+    startLine: z.number().int().positive().optional(),
+    endLine: z.number().int().positive().optional(),
+  })
+  const projectReadSymbolSchema = z.object({
+    name: z.string().min(1).max(300),
+    path: z
+      .string()
+      .min(1)
+      .max(500)
+      .refine((path) => !path.includes('..'))
+      .optional(),
+  })
+  const projectRecentChangesSchema = z.object({
+    limit: z.number().int().min(1).max(10).optional(),
+    query: z.string().max(300).optional(),
+  })
+  ipcMain.handle('project-awareness:search', (_event, input: ProjectSearchInput) =>
+    projectAwareness().search(projectSearchSchema.parse(input)),
+  )
+  ipcMain.handle('project-awareness:read-file', (_event, input: ProjectReadFileInput) =>
+    projectAwareness().readFile(projectReadFileSchema.parse(input)),
+  )
+  ipcMain.handle('project-awareness:read-symbol', (_event, input: ProjectReadSymbolInput) =>
+    projectAwareness().readSymbol(projectReadSymbolSchema.parse(input)),
+  )
+  ipcMain.handle(
+    'project-awareness:get-recent-changes',
+    (_event, input: ProjectRecentChangesInput) =>
+      projectAwareness().getRecentChanges(projectRecentChangesSchema.parse(input)),
+  )
+
   ipcMain.handle('llm:providers', (): ProviderProfile[] => [...PROVIDER_PROFILES])
 
   ipcMain.handle('llm:fetch-models', async (_event, provider: string, apiKey: string) => {
@@ -404,6 +537,12 @@ export function registerIpcHandlers(
     const cfg = getConfig()
     return {
       llm: cfg.llm,
+      projectAwareness: {
+        enabled: cfg.projectAwareness.enabled,
+        provider: cfg.projectAwareness.provider,
+        repository: cfg.projectAwareness.repository,
+        branch: cfg.projectAwareness.branch,
+      },
       pythonSpeechUrl: cfg.pythonSpeechUrl,
       ttsVoice: cfg.ttsVoice,
       ttsLanguage: cfg.ttsLanguage,

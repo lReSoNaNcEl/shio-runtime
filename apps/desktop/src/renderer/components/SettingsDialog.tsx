@@ -44,6 +44,11 @@ import type {
   ProviderCredentials,
   ProviderProfile,
 } from '../../shared/llmProviders'
+import {
+  isValidProjectBranch,
+  isValidProjectRepository,
+  type ProjectAwarenessStatus,
+} from '../../shared/projectAwareness'
 import type { ControllerState } from '../Controller'
 import { controller } from '../Controller'
 import {
@@ -57,9 +62,17 @@ import { type OverlayViewMode, overlayCameraPresets } from '../three/avatarTunin
 
 const fullWidth = style({ width: 'full' })
 
-type SettingsSection = 'general' | 'speech' | 'listening' | 'llm' | 'avatar' | 'advanced'
+type SettingsSection =
+  | 'general'
+  | 'project'
+  | 'speech'
+  | 'listening'
+  | 'llm'
+  | 'avatar'
+  | 'advanced'
 const SETTINGS_SECTION_LABELS: Record<SettingsSection, string> = {
   general: 'Общие',
+  project: 'Project',
   speech: 'Речь',
   listening: 'Стриминг',
   llm: 'LLM',
@@ -68,6 +81,7 @@ const SETTINGS_SECTION_LABELS: Record<SettingsSection, string> = {
 }
 const SETTINGS_SECTION_ICONS: Record<SettingsSection, React.JSX.Element> = {
   general: <SettingsIcon />,
+  project: <DataIcon />,
   speech: <MicrophoneIcon />,
   listening: <AudioWaveIcon />,
   llm: <DataIcon />,
@@ -76,6 +90,7 @@ const SETTINGS_SECTION_ICONS: Record<SettingsSection, React.JSX.Element> = {
 }
 const SETTINGS_SECTIONS: SettingsSection[] = [
   'general',
+  'project',
   'speech',
   'listening',
   'llm',
@@ -397,6 +412,14 @@ export function SettingsDialog({
   const saveStatusTimer = useRef<number | null>(null)
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const [speechUrl, setSpeechUrl] = useState(DEFAULT_SPEECH_URL)
+  const [projectEnabled, setProjectEnabled] = useState(true)
+  const [projectRepository, setProjectRepository] = useState('')
+  const [projectBranch, setProjectBranch] = useState('main')
+  const [projectStatus, setProjectStatus] = useState<ProjectAwarenessStatus | null>(null)
+  const [projectApplyState, setProjectApplyState] = useState<
+    'idle' | 'applying' | 'applied' | 'error'
+  >('idle')
+  const [projectApplyError, setProjectApplyError] = useState('')
   const [lang, setLang] = useState('ru')
   const [vrmName, setVrmName] = useState('')
   const [mics, setMics] = useState<Array<{ deviceId: string; label: string }>>([])
@@ -471,6 +494,12 @@ export function SettingsDialog({
       // подставляет DEFAULT_SPEECH_URL при отсутствии), поэтому main-config
       // побеждает без второго fallback на стороне renderer.
       setSpeechUrl(cfg.pythonSpeechUrl)
+      setProjectEnabled(cfg.projectAwareness.enabled)
+      setProjectRepository(cfg.projectAwareness.repository)
+      setProjectBranch(cfg.projectAwareness.branch)
+      setProjectStatus(await window.api.projectAwareness.getStatus())
+      setProjectApplyState('idle')
+      setProjectApplyError('')
       setLang(cfg.ttsLanguage ?? 'ru')
       setCurrentTtsVoice(cfg.ttsVoice ?? 'animevox_makima')
       setReplyCooldownMs(
@@ -611,6 +640,32 @@ export function SettingsDialog({
     }, 1500)
   }
 
+  const projectSettingsValid =
+    !projectEnabled ||
+    (isValidProjectRepository(projectRepository) && isValidProjectBranch(projectBranch))
+
+  const applyProjectSettings = async (): Promise<void> => {
+    setProjectApplyState('applying')
+    setProjectApplyError('')
+    try {
+      const status = await window.api.projectAwareness.configure({
+        enabled: projectEnabled,
+        provider: 'github',
+        repository: projectRepository.trim(),
+        branch: projectBranch.trim(),
+      })
+      setProjectRepository(status.repository)
+      setProjectBranch(status.branch)
+      setProjectStatus(status)
+      setProjectApplyState('applied')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      setProjectApplyError(message.replace(/^Error invoking remote method '[^']+': Error: /, ''))
+      setProjectStatus(await window.api.projectAwareness.getStatus())
+      setProjectApplyState('error')
+    }
+  }
+
   const save = async (sequence = ++saveSequence.current): Promise<void> => {
     // Fold a pending key edit into the active provider's credentials, then
     // persist the whole per-provider map so no other provider's token is lost.
@@ -745,6 +800,11 @@ export function SettingsDialog({
         {activeSection === 'advanced' && (
           <p className="settings-description">Диагностика и необратимые действия.</p>
         )}
+        {activeSection === 'project' && (
+          <p className="settings-description">
+            Read-only GitHub repository used for Shio&apos;s project knowledge.
+          </p>
+        )}
         <Divider />
         <Content key={activeSection}>
           {activeSection === 'general' ? (
@@ -752,6 +812,80 @@ export function SettingsDialog({
               <p className="settings-hint">
                 Общие настройки приложения пока не требуют отдельной конфигурации.
               </p>
+            </div>
+          ) : activeSection === 'project' ? (
+            <div className="settings-grid">
+              <Switch
+                isSelected={projectEnabled}
+                onChange={(enabled) => {
+                  setProjectEnabled(enabled)
+                  setProjectApplyState('idle')
+                }}
+              >
+                Enable Project Awareness
+              </Switch>
+              <TextField
+                label="GitHub repository"
+                value={projectRepository}
+                onChange={(value) => {
+                  setProjectRepository(value)
+                  setProjectApplyState('idle')
+                }}
+                placeholder="owner/repository"
+                isDisabled={!projectEnabled}
+                isInvalid={projectEnabled && !isValidProjectRepository(projectRepository)}
+                errorMessage="Use owner/repository format."
+                styles={fullWidth}
+              />
+              <TextField
+                label="Branch"
+                value={projectBranch}
+                onChange={(value) => {
+                  setProjectBranch(value)
+                  setProjectApplyState('idle')
+                }}
+                placeholder="main"
+                isDisabled={!projectEnabled}
+                isInvalid={projectEnabled && !isValidProjectBranch(projectBranch)}
+                errorMessage="Enter a valid Git branch name."
+                styles={fullWidth}
+              />
+              <Text UNSAFE_className="settings-hint">
+                Changing the target disconnects the previous repository. Run Sync now in Runtime
+                Health to build or update its commit-scoped index.
+              </Text>
+              <div className="settings-row">
+                <ActionButton
+                  isDisabled={!projectSettingsValid || projectApplyState === 'applying'}
+                  onPress={() => void applyProjectSettings()}
+                >
+                  {projectApplyState === 'applying' ? 'Applying…' : 'Apply repository'}
+                </ActionButton>
+                {projectStatus && (
+                  <StatusLight
+                    variant={
+                      projectStatus.state === 'ready'
+                        ? 'positive'
+                        : projectStatus.state === 'error'
+                          ? 'negative'
+                          : 'neutral'
+                    }
+                  >
+                    {projectStatus.credential.configured
+                      ? `GitHub credential saved · ${projectStatus.state}`
+                      : 'GitHub credential not configured'}
+                  </StatusLight>
+                )}
+              </div>
+              {projectApplyState === 'applied' && (
+                <Text UNSAFE_className="settings-hint">Repository settings applied.</Text>
+              )}
+              {projectApplyError && (
+                <Text UNSAFE_className="project-awareness-error">{projectApplyError}</Text>
+              )}
+              <Text UNSAFE_className="settings-hint">
+                GitHub credentials are created, replaced, and removed in Runtime Health.
+              </Text>
             </div>
           ) : activeSection === 'speech' ? (
             <div className="settings-grid">
