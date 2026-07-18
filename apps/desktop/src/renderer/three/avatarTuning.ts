@@ -33,6 +33,7 @@ export const phraseLipSyncTuning = {
 } as const
 
 export const avatarStartupTuning = {
+  initialAnimationTimeoutMs: 5_000,
   rootPosition: { x: 0, y: 0, z: 0 },
   rootRotation: { x: 0, y: 0, z: 0 },
   camera: {

@@ -1,8 +1,11 @@
 import type * as THREE from 'three'
 
 import type { CharacterState } from '../../shared/runtime/characterState'
-import type { OverlayViewMode } from '../three/avatarTuning'
-import { speakingGestureTuning } from '../three/avatarTuning'
+import {
+  avatarStartupTuning,
+  type OverlayViewMode,
+  speakingGestureTuning,
+} from '../three/avatarTuning'
 import type { EarAxisOverride, EarImpulse } from '../three/EarBehaviorRuntime'
 import { LipSync, type LipSyncStartRequest, type MouthWeights } from '../three/LipSync'
 import type { SpeechPhrasePhase } from '../three/PhraseEnvelopeController'
@@ -131,8 +134,26 @@ export class AvatarController {
   }
 
   async loadVrm(scene: THREE.Scene, buffer: ArrayBuffer): Promise<void> {
+    // A replacement model must not inherit the previous skeleton's queue or
+    // active-animation identity; otherwise the initial idle may be rejected as
+    // a duplicate even though the new skeleton has no body action yet.
+    this.stopAnimation()
     await this.vrmModel.load(scene, buffer)
-    this.setMode('idle')
+    this.vrmModel.setSceneVisible(false)
+    try {
+      this.setMode('idle')
+      const animationReady = await this.animations.waitForLatestPlaybackRequest(
+        avatarStartupTuning.initialAnimationTimeoutMs,
+      )
+      if (!animationReady) {
+        console.warn('[ANIMDBG] initial animation bootstrap fell back to visible bind pose')
+      }
+    } finally {
+      // Bootstrap visibility is one-shot and failure-safe. Later animation
+      // loads never own scene visibility; stale/error startup falls back to the
+      // visible bind pose instead of leaving an empty overlay.
+      this.vrmModel.setSceneVisible(true)
+    }
   }
 
   async loadAnimation(buffer: ArrayBuffer, loop = true): Promise<void> {

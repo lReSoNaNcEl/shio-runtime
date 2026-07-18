@@ -57,6 +57,7 @@ export class AvatarAnimationController {
   }
   private failedIds = new Set<string>()
   private requestId = 0
+  private latestPlaybackRequest: Promise<void> = Promise.resolve()
 
   constructor(private vrmModel: VrmModel) {}
 
@@ -97,7 +98,7 @@ export class AvatarAnimationController {
     blendDuration = 0.3,
   ): Promise<void>
   async playManifest(id: string, loop: boolean, options?: PlayManifestOptions): Promise<void>
-  async playManifest(
+  playManifest(
     id: string,
     loop: boolean,
     fallbackOrOptions?: AnimationId | PlayManifestOptions,
@@ -107,6 +108,36 @@ export class AvatarAnimationController {
       typeof fallbackOrOptions === 'object' && fallbackOrOptions !== null
         ? fallbackOrOptions
         : { fallbackId: fallbackOrOptions, blendDuration: legacyBlendDuration }
+    const request = this.executeManifestRequest(id, loop, options)
+    this.latestPlaybackRequest = request
+    return request
+  }
+
+  async waitForLatestPlaybackRequest(timeoutMs: number): Promise<boolean> {
+    let timeoutId: ReturnType<typeof setTimeout> | null = null
+    const settled = (async (): Promise<boolean> => {
+      while (true) {
+        const request = this.latestPlaybackRequest
+        await request.catch(() => undefined)
+        if (request === this.latestPlaybackRequest) break
+      }
+      return this.playbackStatus === 'playing' && this.vrmModel.isAnimationPlaying()
+    })()
+    const timeout = new Promise<boolean>((resolve) => {
+      timeoutId = setTimeout(() => resolve(false), Math.max(0, timeoutMs))
+    })
+    try {
+      return await Promise.race([settled, timeout])
+    } finally {
+      if (timeoutId !== null) clearTimeout(timeoutId)
+    }
+  }
+
+  private async executeManifestRequest(
+    id: string,
+    loop: boolean,
+    options: PlayManifestOptions,
+  ): Promise<void> {
     const fallbackId = options.fallbackId
     const blendDuration = options.blendDuration ?? 0.3
     const forceReplay = options.forceReplay ?? false
@@ -138,7 +169,7 @@ export class AvatarAnimationController {
       if (entry && !url) this.failedIds.add(id)
       this.playbackStatus = entry && !url ? 'failed' : this.playbackStatus
       if (fallbackId && fallbackId !== id)
-        void this.playManifest(fallbackId, true, undefined, blendDuration)
+        await this.playManifest(fallbackId, true, undefined, blendDuration)
       return
     }
 
@@ -174,7 +205,7 @@ export class AvatarAnimationController {
       this.activeFileName = null
       this.playbackStatus = 'failed'
       if (fallbackId && fallbackId !== id)
-        void this.playManifest(fallbackId, true, undefined, blendDuration)
+        await this.playManifest(fallbackId, true, undefined, blendDuration)
     }
   }
 

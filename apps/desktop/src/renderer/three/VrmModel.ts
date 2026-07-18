@@ -511,6 +511,10 @@ export class VrmModel {
     this.facialRuntime.setMouthWeight(weight)
   }
 
+  setSceneVisible(visible: boolean): void {
+    if (this.vrm) this.vrm.scene.visible = visible
+  }
+
   setMouthWeights(weights: Partial<MouthWeights>, composed = false): void {
     // LipSync domain → Expression Mixer (applied on the next frame's mix).
     this.facialRuntime.setMouthWeights(weights, composed)
