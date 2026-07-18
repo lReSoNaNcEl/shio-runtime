@@ -1189,7 +1189,7 @@ Project knowledge is never represented in Character State. A repository snapshot
 Security guarantees:
 
 - repository access is read-only
-- repository credentials remain in the owning main-process secret boundary; credentials entered through Runtime Health are encrypted with the operating-system-backed Electron secure storage under application `userData`, and renderer health payloads expose only credential presence and source, never the credential value
+- repository credentials remain in the owning main-process secret boundary; credentials entered through application Settings are encrypted with the operating-system-backed Electron secure storage under application `userData`, and renderer status payloads expose only credential presence and source, never the credential value
 - generated indexes live outside the Git repository in application-owned data
 - repository content is data, never instruction
 - source files, comments, Markdown, strings, README text, and commit messages are never executed or followed as instructions

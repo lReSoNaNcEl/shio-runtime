@@ -394,6 +394,11 @@ function parseNumberSetting(
   return clampNumber(Number.isFinite(parsed) ? parsed : fallback, min, max)
 }
 
+function projectActionError(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error)
+  return message.replace(/^Error invoking remote method '[^']+': Error: /, '')
+}
+
 export function SettingsDialog({
   isOpen,
   continuousListeningMode,
@@ -420,6 +425,9 @@ export function SettingsDialog({
     'idle' | 'applying' | 'applied' | 'error'
   >('idle')
   const [projectApplyError, setProjectApplyError] = useState('')
+  const [projectCredentialInput, setProjectCredentialInput] = useState('')
+  const [projectActionBusy, setProjectActionBusy] = useState(false)
+  const [projectForgetConfirmation, setProjectForgetConfirmation] = useState(false)
   const [lang, setLang] = useState('ru')
   const [vrmName, setVrmName] = useState('')
   const [mics, setMics] = useState<Array<{ deviceId: string; label: string }>>([])
@@ -500,6 +508,9 @@ export function SettingsDialog({
       setProjectStatus(await window.api.projectAwareness.getStatus())
       setProjectApplyState('idle')
       setProjectApplyError('')
+      setProjectCredentialInput('')
+      setProjectActionBusy(false)
+      setProjectForgetConfirmation(false)
       setLang(cfg.ttsLanguage ?? 'ru')
       setCurrentTtsVoice(cfg.ttsVoice ?? 'animevox_makima')
       setReplyCooldownMs(
@@ -544,6 +555,22 @@ export function SettingsDialog({
       hydrated.current = true
     })()
   }, [isOpen])
+
+  useEffect(() => {
+    if (!isOpen || activeSection !== 'project') return
+    let active = true
+    const refresh = (): void => {
+      void window.api.projectAwareness.getStatus().then((status) => {
+        if (active) setProjectStatus(status)
+      })
+    }
+    refresh()
+    const intervalId = window.setInterval(refresh, 3_000)
+    return () => {
+      active = false
+      window.clearInterval(intervalId)
+    }
+  }, [activeSection, isOpen])
 
   const savedKey = providerCreds[activeProvider]?.apiKey ?? ''
   const selectedModel = providerCreds[activeProvider]?.model ?? ''
@@ -643,6 +670,19 @@ export function SettingsDialog({
   const projectSettingsValid =
     !projectEnabled ||
     (isValidProjectRepository(projectRepository) && isValidProjectBranch(projectBranch))
+  const projectTargetApplied =
+    projectStatus !== null &&
+    projectStatus.enabled === projectEnabled &&
+    projectStatus.repository === projectRepository.trim() &&
+    projectStatus.branch === projectBranch.trim()
+  const projectConnected =
+    projectStatus !== null &&
+    ['ready', 'syncing', 'indexing', 'stale'].includes(projectStatus.state)
+  const projectRuntimeBusy =
+    projectActionBusy ||
+    projectApplyState === 'applying' ||
+    (projectStatus !== null && ['connecting', 'syncing', 'indexing'].includes(projectStatus.state))
+  const projectHasIndex = Boolean(projectStatus?.indexedCommit)
 
   const applyProjectSettings = async (): Promise<void> => {
     setProjectApplyState('applying')
@@ -664,6 +704,41 @@ export function SettingsDialog({
       setProjectStatus(await window.api.projectAwareness.getStatus())
       setProjectApplyState('error')
     }
+  }
+
+  const runProjectAction = async (operation: () => Promise<unknown>): Promise<void> => {
+    setProjectApplyError('')
+    setProjectActionBusy(true)
+    try {
+      await operation()
+    } catch (error) {
+      setProjectApplyError(projectActionError(error))
+    } finally {
+      setProjectStatus(await window.api.projectAwareness.getStatus())
+      setProjectActionBusy(false)
+    }
+  }
+
+  const saveProjectCredential = async (): Promise<void> => {
+    await runProjectAction(async () => {
+      const status = await window.api.projectAwareness.saveCredential(projectCredentialInput)
+      setProjectStatus(status)
+      setProjectCredentialInput('')
+      setProjectForgetConfirmation(false)
+    })
+  }
+
+  const forgetProjectCredential = async (): Promise<void> => {
+    if (!projectForgetConfirmation) {
+      setProjectForgetConfirmation(true)
+      return
+    }
+    await runProjectAction(async () => {
+      const status = await window.api.projectAwareness.forgetCredential()
+      setProjectStatus(status)
+      setProjectCredentialInput('')
+      setProjectForgetConfirmation(false)
+    })
   }
 
   const save = async (sequence = ++saveSequence.current): Promise<void> => {
@@ -851,12 +926,12 @@ export function SettingsDialog({
                 styles={fullWidth}
               />
               <Text UNSAFE_className="settings-hint">
-                Changing the target disconnects the previous repository. Run Sync now in Runtime
-                Health to build or update its commit-scoped index.
+                Changing the target disconnects the previous repository. Apply it before using the
+                connection and index controls below.
               </Text>
               <div className="settings-row">
                 <ActionButton
-                  isDisabled={!projectSettingsValid || projectApplyState === 'applying'}
+                  isDisabled={!projectSettingsValid || projectRuntimeBusy}
                   onPress={() => void applyProjectSettings()}
                 >
                   {projectApplyState === 'applying' ? 'Applying…' : 'Apply repository'}
@@ -883,9 +958,124 @@ export function SettingsDialog({
               {projectApplyError && (
                 <Text UNSAFE_className="project-awareness-error">{projectApplyError}</Text>
               )}
-              <Text UNSAFE_className="settings-hint">
-                GitHub credentials are created, replaced, and removed in Runtime Health.
-              </Text>
+              <div className="project-credential-panel">
+                <div className="project-credential-copy">
+                  <strong>GitHub credential</strong>
+                  <span>
+                    Create a fine-grained token with read-only Metadata and Contents access. Shio
+                    encrypts it with operating-system storage and never displays the saved value.
+                  </span>
+                </div>
+                <TextField
+                  label={
+                    projectStatus?.credential.configured
+                      ? 'Replacement GitHub token'
+                      : 'GitHub personal access token'
+                  }
+                  value={projectCredentialInput}
+                  onChange={setProjectCredentialInput}
+                  type="password"
+                  placeholder="github_pat_…"
+                  isDisabled={projectRuntimeBusy}
+                  styles={fullWidth}
+                />
+                <div className="project-credential-actions">
+                  <ActionButton
+                    isDisabled={
+                      projectRuntimeBusy || !projectStatus?.credential.secureStorageAvailable
+                    }
+                    onPress={() => void window.api.projectAwareness.openTokenSettings()}
+                  >
+                    Create read-only token
+                  </ActionButton>
+                  <ActionButton
+                    isDisabled={
+                      projectRuntimeBusy ||
+                      !projectEnabled ||
+                      !projectTargetApplied ||
+                      !projectStatus?.credential.secureStorageAvailable ||
+                      projectCredentialInput.trim().length < 20
+                    }
+                    onPress={() => void saveProjectCredential()}
+                  >
+                    {projectStatus?.credential.configured ? 'Replace & connect' : 'Save & connect'}
+                  </ActionButton>
+                  {projectStatus?.credential.source === 'secure_store' && (
+                    <ActionButton
+                      isDisabled={projectRuntimeBusy}
+                      onPress={() => void forgetProjectCredential()}
+                    >
+                      {projectForgetConfirmation ? 'Confirm forget' : 'Forget credential'}
+                    </ActionButton>
+                  )}
+                </div>
+                {!projectStatus?.credential.secureStorageAvailable && (
+                  <Text UNSAFE_className="project-credential-warning">
+                    Protected credential storage is unavailable. Shio will not save the token as
+                    plain text.
+                  </Text>
+                )}
+                {projectStatus?.credential.lastError && (
+                  <Text UNSAFE_className="project-credential-warning">
+                    {projectStatus.credential.lastError}
+                  </Text>
+                )}
+              </div>
+              <div className="project-runtime-controls">
+                <div className="project-credential-copy">
+                  <strong>Project Awareness controls</strong>
+                  <span>
+                    Connect the configured target, update its commit-scoped index, or rebuild the
+                    index from scratch.
+                  </span>
+                </div>
+                <div className="project-awareness-actions">
+                  {projectConnected ? (
+                    <ActionButton
+                      isDisabled={projectRuntimeBusy || !projectTargetApplied}
+                      onPress={() =>
+                        void runProjectAction(() => window.api.projectAwareness.disconnect())
+                      }
+                    >
+                      Disconnect
+                    </ActionButton>
+                  ) : (
+                    <ActionButton
+                      isDisabled={
+                        projectRuntimeBusy ||
+                        !projectEnabled ||
+                        !projectTargetApplied ||
+                        !projectStatus?.credential.configured
+                      }
+                      onPress={() =>
+                        void runProjectAction(() => window.api.projectAwareness.connect())
+                      }
+                    >
+                      Connect
+                    </ActionButton>
+                  )}
+                  <ActionButton
+                    isDisabled={!projectConnected || projectRuntimeBusy || !projectTargetApplied}
+                    onPress={() => void runProjectAction(() => window.api.projectAwareness.sync())}
+                  >
+                    Sync now
+                  </ActionButton>
+                  <ActionButton
+                    isDisabled={
+                      !projectHasIndex ||
+                      projectRuntimeBusy ||
+                      !projectEnabled ||
+                      !projectTargetApplied ||
+                      !projectStatus?.credential.configured
+                    }
+                    onPress={() =>
+                      void runProjectAction(() => window.api.projectAwareness.rebuildIndex())
+                    }
+                  >
+                    Rebuild index
+                  </ActionButton>
+                </div>
+              </div>
             </div>
           ) : activeSection === 'speech' ? (
             <div className="settings-grid">

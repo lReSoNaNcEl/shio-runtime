@@ -6,7 +6,6 @@ import {
   ProgressCircle,
   StatusLight,
   Text,
-  TextField,
 } from '@react-spectrum/s2'
 import AudioWaveIcon from '@react-spectrum/s2/icons/AudioWave'
 import DataIcon from '@react-spectrum/s2/icons/Data'
@@ -65,75 +64,23 @@ function projectActionError(error: unknown): string {
   return message.replace(/^Error invoking remote method '[^']+': Error: /, '')
 }
 
-function ProjectAwarenessCard({
-  status,
-  setStatus,
-}: {
-  status: ProjectAwarenessStatus
-  setStatus: (status: ProjectAwarenessStatus) => void
-}): React.JSX.Element {
+function ProjectAwarenessCard({ status }: { status: ProjectAwarenessStatus }): React.JSX.Element {
   const [map, setMap] = useState<ProjectMap | null>(null)
   const [actionError, setActionError] = useState('')
-  const [actionBusy, setActionBusy] = useState(false)
-  const [credentialEditorOpen, setCredentialEditorOpen] = useState(false)
-  const [credentialInput, setCredentialInput] = useState('')
-  const [forgetConfirmation, setForgetConfirmation] = useState(false)
+  const [mapLoading, setMapLoading] = useState(false)
   const state = PROJECT_STATUS_LABEL[status.state]
-  const busy = actionBusy || ['connecting', 'syncing', 'indexing'].includes(status.state)
-  const connected = ['ready', 'syncing', 'indexing', 'stale'].includes(status.state)
+  const busy = mapLoading || ['connecting', 'syncing', 'indexing'].includes(status.state)
   const hasIndex = Boolean(status.indexedCommit)
-  const targetConfigured = Boolean(status.repository && status.branch)
-
-  const run = async (operation: () => Promise<unknown>): Promise<void> => {
-    setActionError('')
-    setActionBusy(true)
-    try {
-      await operation()
-    } catch (error) {
-      setActionError(projectActionError(error))
-    } finally {
-      setStatus(await window.api.projectAwareness.getStatus())
-      setActionBusy(false)
-    }
-  }
-
-  const saveCredential = async (): Promise<void> => {
-    setActionError('')
-    setActionBusy(true)
-    try {
-      const nextStatus = await window.api.projectAwareness.saveCredential(credentialInput)
-      setStatus(nextStatus)
-      setCredentialInput('')
-      setCredentialEditorOpen(false)
-      setForgetConfirmation(false)
-    } catch (error) {
-      setActionError(projectActionError(error))
-      setStatus(await window.api.projectAwareness.getStatus())
-    } finally {
-      setActionBusy(false)
-    }
-  }
-
-  const forgetCredential = async (): Promise<void> => {
-    if (!forgetConfirmation) {
-      setForgetConfirmation(true)
-      return
-    }
-    await run(async () => {
-      const nextStatus = await window.api.projectAwareness.forgetCredential()
-      setStatus(nextStatus)
-      setCredentialEditorOpen(false)
-      setCredentialInput('')
-      setForgetConfirmation(false)
-    })
-  }
 
   const openMap = async (): Promise<void> => {
     setActionError('')
+    setMapLoading(true)
     try {
       setMap((await window.api.projectAwareness.getProjectMap()) ?? null)
     } catch (error) {
       setActionError(projectActionError(error))
+    } finally {
+      setMapLoading(false)
     }
   }
 
@@ -208,131 +155,9 @@ function ProjectAwarenessCard({
       {(actionError || status.lastError) && (
         <span className="project-awareness-error">{actionError || status.lastError}</span>
       )}
-      {(credentialEditorOpen || !status.credential.configured) && (
-        <div className="project-credential-panel">
-          <div className="project-credential-copy">
-            <strong>Connect a GitHub account</strong>
-            {targetConfigured ? (
-              <span>
-                Create a fine-grained token for {status.repository} with read-only Metadata and
-                Contents access. Shio stores it with operating-system encryption and never shows it
-                again.
-              </span>
-            ) : (
-              <span>Choose a repository and branch in Settings before connecting GitHub.</span>
-            )}
-          </div>
-          {credentialEditorOpen && (
-            <>
-              <TextField
-                aria-label="GitHub personal access token"
-                value={credentialInput}
-                onChange={setCredentialInput}
-                type="password"
-                placeholder="github_pat_…"
-                isDisabled={busy}
-                UNSAFE_className="project-credential-input"
-              />
-              <div className="project-credential-actions">
-                <ActionButton
-                  isDisabled={busy || !status.credential.secureStorageAvailable}
-                  onPress={() => void window.api.projectAwareness.openTokenSettings()}
-                >
-                  Create read-only token
-                </ActionButton>
-                <ActionButton
-                  isDisabled={
-                    busy ||
-                    !status.enabled ||
-                    !targetConfigured ||
-                    !status.credential.secureStorageAvailable ||
-                    credentialInput.trim().length < 20
-                  }
-                  onPress={() => void saveCredential()}
-                >
-                  Save &amp; connect
-                </ActionButton>
-                <ActionButton
-                  isDisabled={busy}
-                  onPress={() => {
-                    setCredentialEditorOpen(false)
-                    setCredentialInput('')
-                  }}
-                >
-                  Cancel
-                </ActionButton>
-              </div>
-            </>
-          )}
-          {!status.credential.secureStorageAvailable && (
-            <span className="project-credential-warning">
-              Protected credential storage is unavailable. Shio will not save the token as plain
-              text.
-            </span>
-          )}
-          {status.credential.lastError && (
-            <span className="project-credential-warning">{status.credential.lastError}</span>
-          )}
-        </div>
-      )}
       <div className="project-awareness-actions">
-        {!status.credential.configured ? (
-          <ActionButton
-            isDisabled={
-              busy ||
-              !status.enabled ||
-              !targetConfigured ||
-              !status.credential.secureStorageAvailable
-            }
-            onPress={() => setCredentialEditorOpen(true)}
-          >
-            {targetConfigured ? 'Connect GitHub' : 'Configure in Settings'}
-          </ActionButton>
-        ) : connected ? (
-          <ActionButton
-            isDisabled={busy || !status.enabled || !targetConfigured}
-            onPress={() => run(() => window.api.projectAwareness.disconnect())}
-          >
-            Disconnect
-          </ActionButton>
-        ) : (
-          <ActionButton
-            isDisabled={busy || !status.enabled || !targetConfigured}
-            onPress={() => run(() => window.api.projectAwareness.connect())}
-          >
-            Connect
-          </ActionButton>
-        )}
-        {status.credential.configured && (
-          <ActionButton
-            isDisabled={busy}
-            onPress={() => {
-              setCredentialEditorOpen(true)
-              setForgetConfirmation(false)
-            }}
-          >
-            Replace credential
-          </ActionButton>
-        )}
-        {status.credential.source === 'secure_store' && (
-          <ActionButton isDisabled={busy} onPress={() => void forgetCredential()}>
-            {forgetConfirmation ? 'Confirm forget' : 'Forget credential'}
-          </ActionButton>
-        )}
-        <ActionButton
-          isDisabled={!connected || busy}
-          onPress={() => run(() => window.api.projectAwareness.sync())}
-        >
-          Sync now
-        </ActionButton>
-        <ActionButton
-          isDisabled={!hasIndex || busy}
-          onPress={() => run(() => window.api.projectAwareness.rebuildIndex())}
-        >
-          Rebuild index
-        </ActionButton>
         <ActionButton isDisabled={!hasIndex || busy} onPress={openMap}>
-          Open project map
+          {mapLoading ? 'Opening…' : 'Open project map'}
         </ActionButton>
       </div>
       {map && (
@@ -631,7 +456,7 @@ export function RuntimeHealthView({
 
       <div className="health-card-grid">
         <SpeechApiCard capabilities={state.speechCapabilities} />
-        <ProjectAwarenessCard status={projectStatus} setStatus={setProjectStatus} />
+        <ProjectAwarenessCard status={projectStatus} />
         {cards.map((card) => (
           <article className={`health-card health-card-${card.tone}`} key={card.id}>
             <div className="health-card-top">

@@ -2446,7 +2446,7 @@ body.overlay-window.overlay-solid-background #canvas {
   word-break: break-all;
 }
 
-/* Runtime Health — read-only Project Awareness */
+/* Project Awareness settings and Runtime Health status */
 .health-card-project-awareness {
   grid-column: span 2;
 }
@@ -2487,7 +2487,8 @@ body.overlay-window.overlay-solid-background #canvas {
   font-size: 0.78rem;
   word-break: break-word;
 }
-.project-credential-panel {
+.project-credential-panel,
+.project-runtime-controls {
   display: grid;
   gap: 10px;
   margin-top: 10px;
@@ -2504,9 +2505,6 @@ body.overlay-window.overlay-solid-background #canvas {
 .project-credential-copy span {
   color: var(--text-dim);
   line-height: 1.45;
-}
-.project-credential-input {
-  width: 100%;
 }
 .project-credential-actions {
   display: flex;
