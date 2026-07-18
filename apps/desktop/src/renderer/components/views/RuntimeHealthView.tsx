@@ -15,6 +15,8 @@ import { useEffect, useState } from 'react'
 
 import type { ProjectAwarenessStatus, ProjectMap } from '../../../shared/projectAwareness'
 import { type ControllerState, controller } from '../../Controller'
+import type { LocalizationContextValue } from '../../localization/LocalizationProvider'
+import { useTranslation } from '../../localization/useTranslation'
 import type {
   SpeechCapabilitiesState,
   SpeechCapabilityStatus,
@@ -38,25 +40,28 @@ const EMPTY_PROJECT_STATUS: ProjectAwarenessStatus = {
   },
 }
 
-const PROJECT_STATUS_LABEL: Record<
+const PROJECT_STATUS: Record<
   ProjectAwarenessStatus['state'],
-  { label: string; tone: CardTone }
+  { key: Parameters<LocalizationContextValue['t']>[0]; tone: CardTone }
 > = {
-  disconnected: { label: 'Отключено', tone: 'neutral' },
-  connecting: { label: 'Подключение…', tone: 'informative' },
-  ready: { label: 'Готово', tone: 'positive' },
-  syncing: { label: 'Синхронизация…', tone: 'informative' },
-  indexing: { label: 'Индексация…', tone: 'informative' },
-  stale: { label: 'Индекс устарел', tone: 'notice' },
-  error: { label: 'Ошибка', tone: 'negative' },
+  disconnected: { key: 'health.project.state.disconnected', tone: 'neutral' },
+  connecting: { key: 'health.project.state.connecting', tone: 'informative' },
+  ready: { key: 'health.project.state.ready', tone: 'positive' },
+  syncing: { key: 'health.project.state.syncing', tone: 'informative' },
+  indexing: { key: 'health.project.state.indexing', tone: 'informative' },
+  stale: { key: 'health.project.state.stale', tone: 'notice' },
+  error: { key: 'common.error', tone: 'negative' },
 }
 
-const INDEX_STATE_LABEL: Record<ProjectAwarenessStatus['indexState'], string> = {
-  not_built: 'Не построен',
-  current: 'Актуален',
-  stale: 'Устарел',
-  building: 'Строится',
-  error: 'Ошибка',
+const INDEX_STATE_KEY: Record<
+  ProjectAwarenessStatus['indexState'],
+  Parameters<LocalizationContextValue['t']>[0]
+> = {
+  not_built: 'health.project.index.notBuilt',
+  current: 'health.project.index.current',
+  stale: 'health.project.index.stale',
+  building: 'health.project.index.building',
+  error: 'common.error',
 }
 
 function projectActionError(error: unknown): string {
@@ -65,10 +70,12 @@ function projectActionError(error: unknown): string {
 }
 
 function ProjectAwarenessCard({ status }: { status: ProjectAwarenessStatus }): React.JSX.Element {
+  const { intlLocale, t } = useTranslation()
   const [map, setMap] = useState<ProjectMap | null>(null)
   const [actionError, setActionError] = useState('')
   const [mapLoading, setMapLoading] = useState(false)
-  const state = PROJECT_STATUS_LABEL[status.state]
+  const state = PROJECT_STATUS[status.state]
+  const stateLabel = t(state.key)
   const busy = mapLoading || ['connecting', 'syncing', 'indexing'].includes(status.state)
   const hasIndex = Boolean(status.indexedCommit)
 
@@ -95,7 +102,7 @@ function ProjectAwarenessCard({ status }: { status: ProjectAwarenessStatus }): R
           <ProgressCircle
             size="S"
             isIndeterminate
-            aria-label={state.label}
+            aria-label={stateLabel}
             UNSAFE_className="health-card-dot-busy"
           />
         ) : (
@@ -105,50 +112,54 @@ function ProjectAwarenessCard({ status }: { status: ProjectAwarenessStatus }): R
           />
         )}
       </div>
-      <span className="health-card-status">{state.label}</span>
+      <span className="health-card-status">{stateLabel}</span>
       <dl className="project-awareness-details">
         <div>
-          <dt>Provider</dt>
+          <dt>{t('common.provider')}</dt>
           <dd>GitHub</dd>
         </div>
         <div>
-          <dt>Enabled</dt>
-          <dd>{status.enabled ? 'Yes' : 'No'}</dd>
+          <dt>{t('common.enabled')}</dt>
+          <dd>{status.enabled ? t('common.yes') : t('common.no')}</dd>
         </div>
         <div>
-          <dt>Repository</dt>
+          <dt>{t('common.repository')}</dt>
           <dd>{status.repository}</dd>
         </div>
         <div>
-          <dt>Branch</dt>
+          <dt>{t('common.branch')}</dt>
           <dd>{status.branch}</dd>
         </div>
         <div>
-          <dt>Remote HEAD</dt>
-          <dd>{status.remoteHead?.slice(0, 7) ?? '—'}</dd>
+          <dt>{t('health.project.remoteHead')}</dt>
+          <dd>{status.remoteHead?.slice(0, 7) ?? t('common.none')}</dd>
         </div>
         <div>
-          <dt>Indexed commit</dt>
-          <dd>{status.indexedCommit?.slice(0, 7) ?? '—'}</dd>
+          <dt>{t('health.project.indexedCommit')}</dt>
+          <dd>{status.indexedCommit?.slice(0, 7) ?? t('common.none')}</dd>
         </div>
         <div>
-          <dt>Index state</dt>
-          <dd>{INDEX_STATE_LABEL[status.indexState]}</dd>
+          <dt>{t('health.project.indexState')}</dt>
+          <dd>{t(INDEX_STATE_KEY[status.indexState])}</dd>
         </div>
         <div>
-          <dt>Access</dt>
-          <dd>Read-only</dd>
+          <dt>{t('health.project.access')}</dt>
+          <dd>{t('common.readOnly')}</dd>
         </div>
         <div>
-          <dt>Credential</dt>
+          <dt>{t('health.project.credential')}</dt>
           <dd>
-            {status.credential.source === 'secure_store' ? 'Saved securely' : 'Not configured'}
+            {status.credential.source === 'secure_store'
+              ? t('health.project.credentialSaved')
+              : t('common.notConfigured')}
           </dd>
         </div>
         <div>
-          <dt>Last sync</dt>
+          <dt>{t('health.project.lastSync')}</dt>
           <dd>
-            {status.lastSyncAt ? new Date(status.lastSyncAt).toLocaleTimeString('ru-RU') : '—'}
+            {status.lastSyncAt
+              ? new Date(status.lastSyncAt).toLocaleTimeString(intlLocale)
+              : t('common.none')}
           </dd>
         </div>
       </dl>
@@ -157,17 +168,20 @@ function ProjectAwarenessCard({ status }: { status: ProjectAwarenessStatus }): R
       )}
       <div className="project-awareness-actions">
         <ActionButton isDisabled={!hasIndex || busy} onPress={openMap}>
-          {mapLoading ? 'Opening…' : 'Open project map'}
+          {mapLoading ? t('health.project.openingMap') : t('health.project.openMap')}
         </ActionButton>
       </div>
       {map && (
         <details className="project-map-details" open>
-          <summary>Project map · {map.snapshot.commitSha.slice(0, 7)}</summary>
+          <summary>
+            {t('health.project.mapSummary', { commit: map.snapshot.commitSha.slice(0, 7) })}
+          </summary>
           <p>{map.overview}</p>
           <ul>
             {map.architecture.map((section) => (
               <li key={section.name}>
-                <strong>{section.name}</strong> · {section.paths.length} key files
+                <strong>{section.name}</strong> ·{' '}
+                {t('health.project.keyFiles', { count: section.paths.length })}
               </li>
             ))}
           </ul>
@@ -177,25 +191,28 @@ function ProjectAwarenessCard({ status }: { status: ProjectAwarenessStatus }): R
   )
 }
 
-const SPEECH_SERVICE_LABEL: Record<
+const SPEECH_SERVICE: Record<
   SpeechCapabilitiesState['service'],
-  { label: string; tone: CardTone }
+  { key: Parameters<LocalizationContextValue['t']>[0]; tone: CardTone }
 > = {
-  unknown: { label: 'Проверка', tone: 'informative' },
-  checking: { label: 'Проверка', tone: 'informative' },
-  available: { label: 'Работает', tone: 'positive' },
-  degraded: { label: 'Частично доступен', tone: 'notice' },
-  unavailable: { label: 'Недоступен', tone: 'negative' },
+  unknown: { key: 'common.checking', tone: 'informative' },
+  checking: { key: 'common.checking', tone: 'informative' },
+  available: { key: 'health.speech.available', tone: 'positive' },
+  degraded: { key: 'health.speech.degraded', tone: 'notice' },
+  unavailable: { key: 'common.unavailable', tone: 'negative' },
 }
 
-function capabilityLabel(status: SpeechCapabilityStatus): { text: string; tone: CardTone } {
+function capabilityLabel(
+  status: SpeechCapabilityStatus,
+  t: LocalizationContextValue['t'],
+): { text: string; tone: CardTone } {
   switch (status) {
     case 'available':
-      return { text: 'Работает', tone: 'positive' }
+      return { text: t('health.speech.available'), tone: 'positive' }
     case 'unavailable':
-      return { text: 'Недоступен', tone: 'negative' }
+      return { text: t('common.unavailable'), tone: 'negative' }
     default:
-      return { text: '—', tone: 'neutral' }
+      return { text: t('common.none'), tone: 'neutral' }
   }
 }
 
@@ -209,15 +226,17 @@ function SpeechApiCard({
 }: {
   capabilities: SpeechCapabilitiesState
 }): React.JSX.Element {
-  const service = SPEECH_SERVICE_LABEL[capabilities.service]
+  const { intlLocale, t } = useTranslation()
+  const service = SPEECH_SERVICE[capabilities.service]
+  const serviceLabel = t(service.key)
   const rows: Array<{ id: string; label: string; status: SpeechCapabilityStatus }> = [
     { id: 'asr', label: 'ASR', status: capabilities.recognition },
     { id: 'tts', label: 'TTS', status: capabilities.synthesis },
     { id: 'streaming', label: 'Streaming', status: capabilities.streaming },
   ]
   const lastChecked = capabilities.lastCheckedAt
-    ? new Date(capabilities.lastCheckedAt).toLocaleTimeString('ru-RU')
-    : '—'
+    ? new Date(capabilities.lastCheckedAt).toLocaleTimeString(intlLocale)
+    : t('common.none')
   const hasProblem = capabilities.service === 'unavailable' || capabilities.service === 'degraded'
 
   return (
@@ -232,11 +251,11 @@ function SpeechApiCard({
           aria-hidden="true"
         />
       </div>
-      <span className="health-card-status">{service.label}</span>
+      <span className="health-card-status">{serviceLabel}</span>
 
       <dl className="speech-capability-list">
         {rows.map((row) => {
-          const value = capabilityLabel(row.status)
+          const value = capabilityLabel(row.status, t)
           return (
             <div className="speech-capability-row" key={row.id}>
               <dt>{row.label}</dt>
@@ -245,20 +264,22 @@ function SpeechApiCard({
           )
         })}
       </dl>
-      <span className="health-card-detail">Последняя проверка: {lastChecked}</span>
+      <span className="health-card-detail">
+        {t('health.speech.lastCheck', { time: lastChecked })}
+      </span>
       {hasProblem && (
-        <span className="health-card-detail">Не удалось подключиться к локальному сервису</span>
+        <span className="health-card-detail">{t('health.speech.connectionFailed')}</span>
       )}
 
       <div className="speech-card-actions">
         <ActionButton onPress={() => controller.recheckSpeechService()}>
-          Проверить снова
+          {t('health.speech.retry')}
         </ActionButton>
       </div>
 
       {capabilities.technicalMessage && (
         <details className="speech-technical-details">
-          <summary>Технические детали</summary>
+          <summary>{t('health.speech.technicalDetails')}</summary>
           <code>{capabilities.technicalMessage}</code>
         </details>
       )}
@@ -283,7 +304,7 @@ const MODE_LABEL: Record<ControllerState['continuousListeningMode'], string> = {
   streamer: 'Streamer',
 }
 
-function buildCards(state: ControllerState): HealthCard[] {
+function buildCards(state: ControllerState, t: LocalizationContextValue['t']): HealthCard[] {
   const cards: HealthCard[] = []
 
   // Speech API is rendered separately as a richer card (see SpeechApiCard) and is
@@ -298,7 +319,7 @@ function buildCards(state: ControllerState): HealthCard[] {
         icon: <DataIcon />,
         title: 'LLM',
         tone: 'informative',
-        status: 'Проверка…',
+        status: t('health.llm.checking'),
         detail: llm.detail,
         busy: true,
       })
@@ -309,7 +330,7 @@ function buildCards(state: ControllerState): HealthCard[] {
         icon: <DataIcon />,
         title: 'LLM',
         tone: 'positive',
-        status: 'Доступно',
+        status: t('common.available'),
         detail: llm.detail,
       })
       break
@@ -319,7 +340,7 @@ function buildCards(state: ControllerState): HealthCard[] {
         icon: <DataIcon />,
         title: 'LLM',
         tone: 'negative',
-        status: 'Ошибка',
+        status: t('common.error'),
         detail: llm.detail,
       })
       break
@@ -329,7 +350,7 @@ function buildCards(state: ControllerState): HealthCard[] {
         icon: <DataIcon />,
         title: 'LLM',
         tone: 'neutral',
-        status: 'Не проверено',
+        status: t('common.notChecked'),
         detail: llm.detail,
       })
   }
@@ -340,20 +361,22 @@ function buildCards(state: ControllerState): HealthCard[] {
       cards.push({
         id: 'streaming',
         icon: <MicrophoneIcon />,
-        title: 'Стриминг',
+        title: t('health.streaming.title'),
         tone: 'positive',
-        status: 'Запущено',
-        detail: `Режим: ${MODE_LABEL[state.continuousListeningMode]}`,
+        status: t('health.streaming.running'),
+        detail: t('health.streaming.mode', {
+          mode: MODE_LABEL[state.continuousListeningMode],
+        }),
       })
       break
     case 'starting':
       cards.push({
         id: 'streaming',
         icon: <MicrophoneIcon />,
-        title: 'Стриминг',
+        title: t('health.streaming.title'),
         tone: 'informative',
-        status: 'Запуск…',
-        detail: 'Открываем микрофон',
+        status: t('health.streaming.starting'),
+        detail: t('health.streaming.openingMicrophone'),
         busy: true,
       })
       break
@@ -361,20 +384,20 @@ function buildCards(state: ControllerState): HealthCard[] {
       cards.push({
         id: 'streaming',
         icon: <MicrophoneIcon />,
-        title: 'Стриминг',
+        title: t('health.streaming.title'),
         tone: 'negative',
-        status: 'Ошибка',
-        detail: state.continuousListeningError || 'Не удалось открыть микрофон',
+        status: t('common.error'),
+        detail: state.continuousListeningError || t('health.streaming.openFailed'),
       })
       break
     default:
       cards.push({
         id: 'streaming',
         icon: <MicrophoneIcon />,
-        title: 'Стриминг',
+        title: t('health.streaming.title'),
         tone: 'neutral',
-        status: 'Выключено',
-        detail: 'Режим не запущен',
+        status: t('health.streaming.off'),
+        detail: t('health.streaming.notRunning'),
       })
   }
 
@@ -388,6 +411,7 @@ export function RuntimeHealthView({
   state: ControllerState
   onRetry: () => void
 }): React.JSX.Element {
+  const { t } = useTranslation()
   const [projectStatus, setProjectStatus] = useState<ProjectAwarenessStatus>(EMPTY_PROJECT_STATUS)
   useEffect(() => {
     let active = true
@@ -403,7 +427,7 @@ export function RuntimeHealthView({
       window.clearInterval(intervalId)
     }
   }, [])
-  const cards = buildCards(state)
+  const cards = buildCards(state, t)
   const speechService = state.speechCapabilities.service
   const checking =
     speechService === 'checking' ||
@@ -420,21 +444,19 @@ export function RuntimeHealthView({
     projectStatus.state === 'stale'
 
   const overall: { variant: CardTone; label: string } = checking
-    ? { variant: 'informative', label: 'Проверка…' }
+    ? { variant: 'informative', label: t('common.checkingEllipsis') }
     : hasError
-      ? { variant: 'negative', label: 'Есть проблемы' }
+      ? { variant: 'negative', label: t('health.overall.problems') }
       : hasNotice
-        ? { variant: 'notice', label: 'Требует внимания' }
-        : { variant: 'positive', label: 'Всё работает' }
+        ? { variant: 'notice', label: t('health.overall.attention') }
+        : { variant: 'positive', label: t('health.overall.ok') }
 
   return (
     <section className="health-dashboard">
       <header className="health-dashboard-header">
         <div className="health-dashboard-title">
           <Heading>Runtime Health</Heading>
-          <Text UNSAFE_className="health-dashboard-subtitle">
-            Состояние сервисов и компонентов Shio Runtime
-          </Text>
+          <Text UNSAFE_className="health-dashboard-subtitle">{t('health.subtitle')}</Text>
         </div>
         <div className="health-dashboard-actions">
           <StatusLight role="status" variant={overall.variant} size="M">
@@ -443,10 +465,10 @@ export function RuntimeHealthView({
           <ActionButton
             onPress={onRetry}
             isDisabled={checking}
-            aria-label={checking ? 'Проверяем…' : 'Повторить проверку'}
+            aria-label={checking ? t('health.checkingNow') : t('health.retryCheck')}
           >
             {checking ? (
-              <ProgressCircle size="S" isIndeterminate aria-label="Проверяем" />
+              <ProgressCircle size="S" isIndeterminate aria-label={t('common.checking')} />
             ) : (
               <RefreshIcon />
             )}
@@ -468,7 +490,7 @@ export function RuntimeHealthView({
                 <ProgressCircle
                   size="S"
                   isIndeterminate
-                  aria-label="Проверяется"
+                  aria-label={t('health.cardChecking')}
                   UNSAFE_className="health-card-dot-busy"
                 />
               ) : (
@@ -486,8 +508,8 @@ export function RuntimeHealthView({
 
       {hasError && (
         <InlineAlert variant="negative" fillStyle="subtleFill">
-          <Heading>Некоторые компоненты требуют внимания</Heading>
-          <Content>Откройте карточку или Debug для подробностей.</Content>
+          <Heading>{t('health.alert.title')}</Heading>
+          <Content>{t('health.alert.description')}</Content>
         </InlineAlert>
       )}
     </section>

@@ -29,7 +29,7 @@
     "indentStyle": "space",
     "indentWidth": 2,
     "lineWidth": 100,
-    "lineEnding": "auto"
+    "lineEnding": "lf"
   },
 
   "javascript": {
@@ -67,5 +67,14 @@
         }
       }
     }
-  }
+  },
+
+  "overrides": [
+    {
+      "includes": ["src/renderer/components/App.tsx", "src/renderer/components/SettingsDialog.tsx"],
+      "formatter": {
+        "lineEnding": "crlf"
+      }
+    }
+  ]
 }

@@ -1,6 +1,7 @@
 import { Button } from '@react-spectrum/s2'
 import Close from '@react-spectrum/s2/icons/Close'
 
+import { useTranslation } from '../localization/useTranslation'
 import { bannerCopy, type SpeechCapabilitiesState } from '../runtime/speechCapabilities'
 
 /**
@@ -21,7 +22,8 @@ export function SpeechUnavailableBanner({
   onOpenHealth: () => void
   onDismiss: () => void
 }): React.JSX.Element | null {
-  const copy = bannerCopy(capabilities)
+  const { locale, t } = useTranslation()
+  const copy = bannerCopy(capabilities, locale)
   if (!copy) return null
 
   return (
@@ -36,16 +38,16 @@ export function SpeechUnavailableBanner({
       </div>
       <div className="speech-banner-actions">
         <Button variant="secondary" onPress={onRetry}>
-          Повторить подключение
+          {t('speech.banner.retryConnection')}
         </Button>
         <Button variant="secondary" onPress={onOpenHealth}>
-          Открыть Runtime Health
+          {t('speech.banner.openHealth')}
         </Button>
       </div>
       <button
         type="button"
         className="speech-banner-close"
-        aria-label="Скрыть уведомление"
+        aria-label={t('speech.banner.dismiss')}
         onClick={onDismiss}
       >
         <Close />

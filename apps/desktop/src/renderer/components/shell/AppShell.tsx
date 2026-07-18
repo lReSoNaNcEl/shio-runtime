@@ -7,19 +7,10 @@ import User from '@react-spectrum/s2/icons/User'
 import type { ReactNode } from 'react'
 
 import type { HealthState } from '../../Controller'
+import { useTranslation } from '../../localization/useTranslation'
 import { RuntimeStatusIndicator } from '../RuntimeStatusIndicator'
 
 export type AppSection = 'chat' | 'avatar' | 'health' | 'debug' | 'settings'
-
-const primary: Array<{ id: AppSection; label: string; icon: ReactNode }> = [
-  { id: 'chat', label: 'Чат', icon: <Chat /> },
-  { id: 'avatar', label: 'Аватар', icon: <User /> },
-  { id: 'health', label: 'Runtime Health', icon: <Heart /> },
-]
-const utility: Array<{ id: AppSection; label: string; icon: ReactNode }> = [
-  { id: 'debug', label: 'Отладка', icon: <Bug /> },
-  { id: 'settings', label: 'Настройки', icon: <Settings /> },
-]
 
 export function AppShell({
   section,
@@ -34,6 +25,16 @@ export function AppShell({
   children: ReactNode
   headerAction?: ReactNode
 }): React.JSX.Element {
+  const { t } = useTranslation()
+  const primary: Array<{ id: AppSection; label: string; icon: ReactNode }> = [
+    { id: 'chat', label: t('app.nav.chat'), icon: <Chat /> },
+    { id: 'avatar', label: t('app.nav.avatar'), icon: <User /> },
+    { id: 'health', label: t('app.nav.health'), icon: <Heart /> },
+  ]
+  const utility: Array<{ id: AppSection; label: string; icon: ReactNode }> = [
+    { id: 'debug', label: t('app.nav.debug'), icon: <Bug /> },
+    { id: 'settings', label: t('app.nav.settings'), icon: <Settings /> },
+  ]
   const renderItems = (items: typeof primary): React.JSX.Element[] =>
     items.map((item) => (
       <button
@@ -51,7 +52,7 @@ export function AppShell({
     ))
   return (
     <div className="app-shell">
-      <nav className="app-sidebar" aria-label="Разделы Shio">
+      <nav className="app-sidebar" aria-label={t('app.nav.label')}>
         <div className="sidebar-brand">Shio</div>
         <div className="sidebar-group">{renderItems(primary)}</div>
         <div className="sidebar-utility">{renderItems(utility)}</div>
@@ -85,9 +86,10 @@ export function SectionHeading({
 }
 
 export function OpenSettingsButton({ onPress }: { onPress: () => void }): React.JSX.Element {
+  const { t } = useTranslation()
   return (
     <Button variant="secondary" onPress={onPress}>
-      Открыть настройки Avatar
+      {t('app.openAvatarSettings')}
     </Button>
   )
 }

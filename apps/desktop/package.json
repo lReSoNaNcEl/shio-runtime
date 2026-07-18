@@ -25,6 +25,7 @@
     "repro:llm-live": "esbuild scripts/llm-live-repro/harness.ts --bundle --platform=node --format=cjs --outfile=scripts/llm-live-repro/harness.cjs && node scripts/llm-live-repro/harness.cjs",
     "repro:continuous-listening": "esbuild scripts/continuous-listening-repro/harness.ts --bundle --platform=node --format=cjs --outfile=scripts/continuous-listening-repro/harness.cjs && node scripts/continuous-listening-repro/harness.cjs",
     "repro:project-awareness": "esbuild scripts/project-awareness-repro/harness.ts --bundle --platform=node --format=cjs --outfile=out/project-awareness-repro.cjs && node out/project-awareness-repro.cjs",
+    "repro:localization": "esbuild scripts/localization-repro/harness.ts --bundle --platform=node --format=cjs --outfile=out/localization-repro.cjs && node out/localization-repro.cjs",
     "test:llm-live": "npm run repro:llm-live"
   },
   "keywords": [],
@@ -45,13 +46,14 @@
     "vite": "^7.3.6"
   },
   "dependencies": {
+    "@lezer/common": "^1.5.2",
+    "@lezer/python": "^1.1.19",
     "@pixiv/three-vrm": "^3.5.4",
     "@pixiv/three-vrm-animation": "^3.5.4",
     "@react-spectrum/s2": "^1.5.1",
     "axios": "^1.18.1",
     "dotenv": "^17.4.2",
     "electron-store": "^11.0.2",
-    "groq-sdk": "^1.3.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "three": "^0.185.0",

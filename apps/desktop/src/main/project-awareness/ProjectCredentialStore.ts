@@ -1,6 +1,8 @@
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 
+import { type Translator, translate } from '../../shared/localization/format'
+import { DEFAULT_UI_LOCALE } from '../../shared/localization/locale'
 import type { ProjectCredentialStatus } from '../../shared/projectAwareness'
 
 export interface ProjectCredentialProtector {
@@ -17,6 +19,7 @@ export class ProjectCredentialStore {
   constructor(
     private readonly filePath: string,
     private readonly protector: ProjectCredentialProtector,
+    private readonly t: Translator = (key, params) => translate(DEFAULT_UI_LOCALE, key, params),
   ) {}
 
   async load(): Promise<LoadedProjectCredential> {
@@ -39,7 +42,7 @@ export class ProjectCredentialStore {
         if (!isMissingFile(error)) {
           return this.emptyCredential(
             secureStorageAvailable,
-            'Stored GitHub credential could not be decrypted. Replace it to continue.',
+            this.t('main.error.project.decryptFailed'),
           )
         }
       }
@@ -50,9 +53,9 @@ export class ProjectCredentialStore {
 
   async save(value: string): Promise<LoadedProjectCredential> {
     const token = normalizeToken(value)
-    validateToken(token)
+    validateToken(token, this.t)
     if (!(await this.protector.isAvailable())) {
-      throw new Error('Protected credential storage is unavailable on this system.')
+      throw new Error(this.t('main.error.project.secureStorageUnavailable'))
     }
     await this.persist(token)
     return {
@@ -93,9 +96,9 @@ function normalizeToken(value: string): string {
   return value.trim()
 }
 
-function validateToken(token: string): void {
+function validateToken(token: string, t: Translator): void {
   if (token.length < 20 || token.length > 500 || /\s/.test(token)) {
-    throw new Error('Enter a valid GitHub personal access token.')
+    throw new Error(t('main.error.project.tokenInvalid'))
   }
 }
 

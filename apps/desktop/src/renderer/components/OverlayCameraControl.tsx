@@ -13,39 +13,38 @@ import OrientationPortrait from '@react-spectrum/s2/icons/OrientationPortrait'
 import User from '@react-spectrum/s2/icons/User'
 import UserAvatar from '@react-spectrum/s2/icons/UserAvatar'
 
+import type { LocalizationContextValue } from '../localization/LocalizationProvider'
+import { useTranslation } from '../localization/useTranslation'
 import type { OverlayViewMode } from '../three/avatarTuning'
 
-const CAMERA_MODES: Array<{
+const CAMERA_MODE_ICONS: Array<{
   id: OverlayViewMode
-  title: string
-  description: string
   Icon: typeof FullScreen
 }> = [
-  { id: 'front', title: 'Front', description: 'Полный вид спереди', Icon: FullScreen },
-  { id: 'bust', title: 'Bust', description: 'Кадр по пояс', Icon: User },
-  { id: 'face', title: 'Face', description: 'Крупный план лица', Icon: UserAvatar },
-  {
-    id: 'portrait',
-    title: 'Portrait',
-    description: 'Портретный кадр',
-    Icon: OrientationPortrait,
-  },
+  { id: 'front', Icon: FullScreen },
+  { id: 'bust', Icon: User },
+  { id: 'face', Icon: UserAvatar },
+  { id: 'portrait', Icon: OrientationPortrait },
 ]
 
 type OverlayState = 'off' | 'opening' | 'on' | 'closing' | 'error'
 
-function statusCopy(state: OverlayState, mode: OverlayViewMode): string {
+function statusCopy(
+  state: OverlayState,
+  mode: OverlayViewMode,
+  t: LocalizationContextValue['t'],
+): string {
   switch (state) {
     case 'on':
-      return `Камера включена. Режим: ${mode}. Нажмите, чтобы выключить.`
+      return t('camera.state.on', { mode })
     case 'opening':
-      return 'Открытие камеры…'
+      return t('camera.state.opening')
     case 'closing':
-      return 'Закрытие камеры…'
+      return t('camera.state.closing')
     case 'error':
-      return `Не удалось выполнить операцию с камерой. Режим: ${mode}. Нажмите, чтобы повторить.`
+      return t('camera.state.error', { mode })
     default:
-      return `Камера выключена. Режим: ${mode}. Нажмите, чтобы включить.`
+      return t('camera.state.off', { mode })
   }
 }
 
@@ -60,9 +59,15 @@ export function OverlayCameraControl({
   onToggle: () => Promise<void>
   onCameraModeChange: (mode: OverlayViewMode) => Promise<void>
 }): React.JSX.Element {
+  const { t } = useTranslation()
   const pending = overlayState === 'opening' || overlayState === 'closing'
-  const status = statusCopy(overlayState, cameraMode)
-  const selectedMode = CAMERA_MODES.find((item) => item.id === cameraMode) ?? CAMERA_MODES[0]
+  const cameraModes = CAMERA_MODE_ICONS.map((item) => ({
+    ...item,
+    title: t(`camera.mode.${item.id}.title`),
+    description: t(`camera.mode.${item.id}.description`),
+  }))
+  const status = statusCopy(overlayState, cameraMode, t)
+  const selectedMode = cameraModes.find((item) => item.id === cameraMode) ?? cameraModes[0]
   const SelectedModeIcon = selectedMode.Icon
   return (
     <div className={`camera-control camera-${overlayState}`}>
@@ -70,8 +75,8 @@ export function OverlayCameraControl({
         <ActionButton
           aria-label={
             overlayState === 'on'
-              ? `Выключить камеру, текущий режим ${cameraMode}`
-              : `Включить камеру, текущий режим ${cameraMode}`
+              ? t('camera.toggle.disable', { mode: cameraMode })
+              : t('camera.toggle.enable', { mode: cameraMode })
           }
           aria-pressed={overlayState === 'on'}
           isDisabled={pending}
@@ -86,14 +91,16 @@ export function OverlayCameraControl({
       </TooltipTrigger>
       <MenuTrigger>
         <ActionButton
-          aria-label={`Кадрирование аватара: ${cameraMode.charAt(0).toUpperCase() + cameraMode.slice(1)}. Открыть меню.`}
+          aria-label={t('camera.framing.open', {
+            mode: selectedMode.title,
+          })}
           isDisabled={pending}
           UNSAFE_className="camera-selector"
         >
           <ChevronDown />
         </ActionButton>
         <Menu
-          aria-label="Камера"
+          aria-label={t('camera.label')}
           selectionMode="single"
           disallowEmptySelection
           selectedKeys={[cameraMode]}
@@ -103,7 +110,7 @@ export function OverlayCameraControl({
             if (key) void onCameraModeChange(String(key) as OverlayViewMode)
           }}
         >
-          {CAMERA_MODES.map(({ Icon, ...item }) => (
+          {cameraModes.map(({ Icon, ...item }) => (
             <MenuItem key={item.id} id={item.id} textValue={item.title}>
               <Icon />
               <Text slot="label">{item.title}</Text>

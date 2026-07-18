@@ -23,6 +23,8 @@ export interface MicrophoneFailure {
  * owner of the real working audio stream.
  */
 export class MicrophoneDeviceService {
+  constructor(private readonly fallbackLabel: (index: number) => string) {}
+
   /**
    * Current audio input devices. Devices without a readable label (before the
    * first permission grant) still count as real devices and get a fallback
@@ -37,7 +39,7 @@ export class MicrophoneDeviceService {
         const label = device.label.trim()
         return {
           deviceId: device.deviceId,
-          label: label || `Микрофон ${++fallbackIndex}`,
+          label: label || this.fallbackLabel(++fallbackIndex),
         }
       })
   }

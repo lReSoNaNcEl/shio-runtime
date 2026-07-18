@@ -13,6 +13,7 @@ import {
 import RotateCCW from '@react-spectrum/s2/icons/RotateCCW'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
+import type { TranslationKey } from '../../../shared/localization/messages'
 import type { AnimationManifestEntry } from '../../avatar/animationManifest'
 import {
   getAnimationTitle,
@@ -20,6 +21,7 @@ import {
   isAnimationAutomaticallySelectable,
 } from '../../avatar/animationManifest'
 import { controller } from '../../Controller'
+import { useTranslation } from '../../localization/useTranslation'
 
 type Phase = 'closed' | 'loading' | 'ready' | 'error'
 
@@ -35,6 +37,7 @@ export function AvatarPreviewView({
 }: {
   onOpenSettings: () => void
 }): React.JSX.Element {
+  const { t } = useTranslation()
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const mountedRef = useRef(true)
   const [phase, setPhase] = useState<Phase>('loading')
@@ -99,14 +102,16 @@ export function AvatarPreviewView({
   }
 
   const ready = phase === 'ready'
+  const categoryLabel = (category: AnimationManifestEntry['category']): string =>
+    t(`avatarPreview.category.${category}` as TranslationKey)
 
   if (hasModel === false)
     return (
       <section className="empty-state">
-        <h2>Аватар ещё не настроен</h2>
-        <p>Выберите модель, чтобы открыть Avatar Preview.</p>
+        <h2>{t('avatarPreview.notConfigured.title')}</h2>
+        <p>{t('avatarPreview.notConfigured.description')}</p>
         <Button variant="accent" onPress={onOpenSettings}>
-          Открыть настройки Avatar
+          {t('avatarPreview.openSettings')}
         </Button>
       </section>
     )
@@ -117,15 +122,15 @@ export function AvatarPreviewView({
         <div className="preview-loader">
           {phase !== 'error' ? (
             <>
-              <ProgressCircle aria-label="Загрузка предпросмотра" isIndeterminate size="L" />
-              <p className="preview-loader-title">Загружаем предпросмотр</p>
-              <p className="preview-loader-hint">Готовим модель и библиотеку анимаций…</p>
+              <ProgressCircle aria-label={t('avatarPreview.loading')} isIndeterminate size="L" />
+              <p className="preview-loader-title">{t('avatarPreview.loadingTitle')}</p>
+              <p className="preview-loader-hint">{t('avatarPreview.loadingHint')}</p>
             </>
           ) : (
             <>
-              <p className="preview-loader-title">Не удалось загрузить модель</p>
+              <p className="preview-loader-title">{t('avatarPreview.loadFailed')}</p>
               <Button variant="secondary" onPress={() => void open()}>
-                Повторить
+                {t('common.retry')}
               </Button>
             </>
           )}
@@ -137,59 +142,54 @@ export function AvatarPreviewView({
           <aside className="animation-library">
             <div className="animation-library-header">
               <div className="animation-library-title">
-                <strong>Animation Library</strong>
-                <ContextualHelp variant="info" size="S" aria-label="Что означают теги анимаций">
-                  <Heading>Теги анимаций</Heading>
+                <strong>{t('avatarPreview.library')}</strong>
+                <ContextualHelp variant="info" size="S" aria-label={t('avatarPreview.tagsHelp')}>
+                  <Heading>{t('avatarPreview.tagsTitle')}</Heading>
                   <Content>
                     <dl className="animation-tags-help">
                       <div>
                         <dt>Loop</dt>
-                        <dd>
-                          Клип зациклен и играет непрерывно, пока не остановить или не сменить.
-                        </dd>
+                        <dd>{t('avatarPreview.tags.loop')}</dd>
                       </div>
                       <div>
                         <dt>One-shot</dt>
-                        <dd>Разовое проигрывание: клип отыгрывается один раз и завершается.</dd>
+                        <dd>{t('avatarPreview.tags.oneShot')}</dd>
                       </div>
                       <div>
                         <dt>Front / Bust / Face / Portrait</dt>
-                        <dd>Ракурсы камеры, для которых клип выглядит корректно.</dd>
+                        <dd>{t('avatarPreview.tags.camera')}</dd>
                       </div>
                       <div>
-                        <dt>Нет бейджа камеры</dt>
-                        <dd>Клип не имеет ограничений по ракурсу.</dd>
+                        <dt>{t('avatarPreview.tags.noCamera')}</dt>
+                        <dd>{t('avatarPreview.tags.noCameraDescription')}</dd>
                       </div>
                       <div>
                         <dt>Auto</dt>
-                        <dd>
-                          Runtime может автоматически выбрать клип в подходящем состоянии и
-                          контексте.
-                        </dd>
+                        <dd>{t('avatarPreview.tags.auto')}</dd>
                       </div>
                       <div>
                         <dt>Manual</dt>
-                        <dd>Клип доступен только для ручного запуска в Preview.</dd>
+                        <dd>{t('avatarPreview.tags.manual')}</dd>
                       </div>
                     </dl>
                   </Content>
                 </ContextualHelp>
               </div>
               <SearchField
-                aria-label="Поиск анимаций"
+                aria-label={t('avatarPreview.search')}
                 value={query}
                 onChange={setQuery}
-                placeholder="Имя, ID или файл…"
+                placeholder={t('avatarPreview.searchPlaceholder')}
                 size="S"
               />
             </div>
             <div className="animation-library-list">
               {filteredGroups.length === 0 && (
-                <p className="animation-library-empty">Ничего не найдено.</p>
+                <p className="animation-library-empty">{t('avatarPreview.empty')}</p>
               )}
               {filteredGroups.map((group) => (
                 <div key={group.category} className="animation-library-group">
-                  <div className="animation-library-category">{group.label}</div>
+                  <div className="animation-library-category">{categoryLabel(group.category)}</div>
                   {group.animations.map((animation) => (
                     <button
                       key={animation.id}
@@ -244,12 +244,12 @@ export function AvatarPreviewView({
                 </Button>
                 <TooltipTrigger delay={200}>
                   <ActionButton
-                    aria-label="Вернуть вид спереди"
+                    aria-label={t('avatarPreview.resetCamera')}
                     onPress={() => controller.resetPreviewCamera()}
                   >
                     <RotateCCW />
                   </ActionButton>
-                  <Tooltip>Вернуть вид спереди</Tooltip>
+                  <Tooltip>{t('avatarPreview.resetCamera')}</Tooltip>
                 </TooltipTrigger>
               </div>
             )}
@@ -265,16 +265,15 @@ export function AvatarPreviewView({
 
           {ready && (
             <div className="preview-playback">
-              <span className="settings-hint">Локальный preview: не публикуется в Overlay.</span>
+              <span className="settings-hint">{t('avatarPreview.localOnly')}</span>
               {selectedAnimation ? (
                 <p className="preview-animation-summary">
                   {getAnimationTitle(selectedAnimation)} ·{' '}
-                  {groups.find((group) => group.category === selectedAnimation.category)?.label ??
-                    selectedAnimation.category}{' '}
-                  · {selectedAnimation.loop ? 'Loop' : 'One-shot'} · {selectedAnimation.file}
+                  {categoryLabel(selectedAnimation.category)} ·{' '}
+                  {selectedAnimation.loop ? 'Loop' : 'One-shot'} · {selectedAnimation.file}
                 </p>
               ) : (
-                <p className="preview-animation-summary">Выберите анимацию из библиотеки слева.</p>
+                <p className="preview-animation-summary">{t('avatarPreview.selectAnimation')}</p>
               )}
               <div className="preview-actions">
                 <Button
@@ -282,64 +281,61 @@ export function AvatarPreviewView({
                   isDisabled={!animationId}
                   onPress={() => controller.previewAvatarAnimation(animationId)}
                 >
-                  Play
+                  {t('avatarPreview.play')}
                 </Button>
                 <Button
                   variant="secondary"
                   isDisabled={!animationId}
                   onPress={() => controller.previewAvatarAnimation(animationId)}
                 >
-                  Replay
+                  {t('avatarPreview.replay')}
                 </Button>
                 <Button variant="secondary" onPress={() => controller.stopAnimation()}>
-                  Stop
+                  {t('avatarPreview.stop')}
                 </Button>
                 <Button variant="secondary" onPress={() => controller.previewAvatarMode('idle')}>
-                  Вернуть в Idle
+                  {t('avatarPreview.returnIdle')}
                 </Button>
               </div>
               <div className="preview-actions preview-actions-secondary">
                 <Button variant="secondary" onPress={() => void open()}>
-                  Reload Model
+                  {t('avatarPreview.reloadModel')}
                 </Button>
               </div>
               {selectedAnimation && (
                 <details className="preview-animation-details">
-                  <summary>Подробности</summary>
+                  <summary>{t('avatarPreview.details')}</summary>
                   <dl className="preview-animation-meta">
                     <div>
                       <dt>ID</dt>
                       <dd>{selectedAnimation.id}</dd>
                     </div>
                     <div>
-                      <dt>Файл</dt>
+                      <dt>{t('avatarPreview.file')}</dt>
                       <dd>{selectedAnimation.file}</dd>
                     </div>
                     <div>
-                      <dt>Категория</dt>
-                      <dd>
-                        {groups.find((group) => group.category === selectedAnimation.category)
-                          ?.label ?? selectedAnimation.category}
-                      </dd>
+                      <dt>{t('avatarPreview.category')}</dt>
+                      <dd>{categoryLabel(selectedAnimation.category)}</dd>
                     </div>
                     <div>
                       <dt>Loop</dt>
-                      <dd>{selectedAnimation.loop ? 'Да' : 'Нет'}</dd>
+                      <dd>{selectedAnimation.loop ? t('common.yes') : t('common.no')}</dd>
                     </div>
                     <div>
-                      <dt>Camera</dt>
-                      <dd>{cameraLabel(selectedAnimation) ?? 'Без ограничений'}</dd>
+                      <dt>{t('avatarPreview.camera')}</dt>
+                      <dd>{cameraLabel(selectedAnimation) ?? t('avatarPreview.noCameraLimit')}</dd>
                     </div>
                     <div>
-                      <dt>Выбор</dt>
+                      <dt>{t('avatarPreview.selection')}</dt>
                       <dd>
                         {isAnimationAutomaticallySelectable(selectedAnimation)
-                          ? 'Автоматический'
-                          : 'Только вручную'}
+                          ? t('avatarPreview.automatic')
+                          : t('avatarPreview.manualOnly')}
                       </dd>
                     </div>
                     <div>
-                      <dt>Описание</dt>
+                      <dt>{t('avatarPreview.description')}</dt>
                       <dd>{selectedAnimation.description}</dd>
                     </div>
                   </dl>

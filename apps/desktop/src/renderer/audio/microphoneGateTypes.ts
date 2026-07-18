@@ -1,4 +1,4 @@
-import type { AttentionMode } from '../continuousListening/types'
+import type { AttentionMode } from '../speech/continuous-listening/types'
 
 /**
  * The set of attention modes whose runtime requires a working microphone.

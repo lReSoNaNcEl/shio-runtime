@@ -16,58 +16,46 @@ import Microphone from '@react-spectrum/s2/icons/Microphone'
 import MicrophoneOff from '@react-spectrum/s2/icons/MicrophoneOff'
 import VolumeOff from '@react-spectrum/s2/icons/VolumeOff'
 
-import type { ContinuousListeningSettings } from '../continuousListening/types'
+import type { LocalizationContextValue } from '../localization/LocalizationProvider'
+import { useTranslation } from '../localization/useTranslation'
+import type { ContinuousListeningSettings } from '../speech/continuous-listening/types'
 
 type AttentionMode = ContinuousListeningSettings['mode']
 type ListeningState = 'off' | 'starting' | 'on' | 'error'
 
-const MODES: Array<{
+const MODE_ICONS: Array<{
   id: AttentionMode
-  title: string
-  subtitle: string
   Icon: typeof MicrophoneOff
 }> = [
-  { id: 'silent', title: 'Silent', subtitle: 'Не реагировать самостоятельно', Icon: VolumeOff },
-  { id: 'passive', title: 'Passive', subtitle: 'Только на явное обращение', Icon: Bell },
-  { id: 'active', title: 'Active', subtitle: 'На подходящие реплики', Icon: BellRotated },
-  {
-    id: 'streamer',
-    title: 'Streamer',
-    subtitle: 'Чаще замечать интересные реплики',
-    Icon: AudioWave,
-  },
+  { id: 'silent', Icon: VolumeOff },
+  { id: 'passive', Icon: Bell },
+  { id: 'active', Icon: BellRotated },
+  { id: 'streamer', Icon: AudioWave },
 ]
 
-const MODE_LABEL: Record<AttentionMode, string> = {
-  silent: 'Silent',
-  passive: 'Passive',
-  active: 'Active',
-  streamer: 'Streamer',
-}
-
-function stateLabel(state: ListeningState): string {
+function stateLabel(state: ListeningState, t: LocalizationContextValue['t']): string {
   switch (state) {
     case 'on':
-      return 'Continuous Listening включён'
+      return t('streaming.state.on')
     case 'starting':
-      return 'Запуск Continuous Listening'
+      return t('streaming.state.starting')
     case 'error':
-      return 'Ошибка Continuous Listening'
+      return t('streaming.state.error')
     default:
-      return 'Continuous Listening выключен'
+      return t('streaming.state.off')
   }
 }
 
-function stateText(state: ListeningState): string {
+function stateText(state: ListeningState, t: LocalizationContextValue['t']): string {
   switch (state) {
     case 'on':
-      return 'Слушает'
+      return t('streaming.state.listening')
     case 'starting':
-      return 'Запуск…'
+      return t('streaming.state.startingShort')
     case 'error':
-      return 'Ошибка'
+      return t('common.error')
     default:
-      return 'Не слушает'
+      return t('streaming.state.notListening')
   }
 }
 
@@ -79,7 +67,7 @@ function ListeningStatusIcon({ state }: { state: ListeningState }): React.JSX.El
 }
 
 function ModeIcon({ mode, slot }: { mode: AttentionMode; slot?: string }): React.JSX.Element {
-  const { Icon } = MODES.find((item) => item.id === mode) ?? MODES[0]
+  const { Icon } = MODE_ICONS.find((item) => item.id === mode) ?? MODE_ICONS[0]
   return <Icon slot={slot} />
 }
 
@@ -99,15 +87,19 @@ export function StreamingModeControl({
   onToggle: () => void
   onModeChange: (mode: AttentionMode) => void
 }): React.JSX.Element {
-  const status = stateLabel(listeningState)
+  const { t } = useTranslation()
+  const status = stateLabel(listeningState, t)
+  const modes = MODE_ICONS.map((item) => ({
+    ...item,
+    title: t(`streaming.mode.${item.id}.title`),
+    subtitle: t(`streaming.mode.${item.id}.subtitle`),
+  }))
   return (
     <div className={`attention-control streaming-${listeningState}`}>
       <TooltipTrigger delay={200}>
         <ActionButton
           aria-label={
-            listeningState === 'on'
-              ? 'Continuous Listening включён. Выключить.'
-              : 'Continuous Listening выключен. Включить.'
+            listeningState === 'on' ? t('streaming.toggle.disable') : t('streaming.toggle.enable')
           }
           aria-pressed={listeningState === 'on'}
           isDisabled={listeningState === 'starting'}
@@ -115,13 +107,15 @@ export function StreamingModeControl({
           UNSAFE_className="listening-toggle"
         >
           <ListeningStatusIcon state={listeningState} />
-          <Text>{stateText(listeningState)}</Text>
+          <Text>{stateText(listeningState, t)}</Text>
         </ActionButton>
         <Tooltip>{status}</Tooltip>
       </TooltipTrigger>
       <MenuTrigger>
         <ActionButton
-          aria-label={`Режим внимания: ${MODE_LABEL[mode]}. Открыть выбор режима.`}
+          aria-label={t('streaming.mode.open', {
+            mode: t(`streaming.mode.${mode}.title`),
+          })}
           UNSAFE_className={`attention-selector attention-mode-${mode}`}
         >
           <span slot="icon" className="control-selector-icons">
@@ -130,7 +124,7 @@ export function StreamingModeControl({
           </span>
         </ActionButton>
         <Menu
-          aria-label="Режим внимания"
+          aria-label={t('streaming.mode.label')}
           selectionMode="single"
           disallowEmptySelection
           selectedKeys={[mode]}
@@ -140,7 +134,7 @@ export function StreamingModeControl({
             if (key) onModeChange(String(key) as AttentionMode)
           }}
         >
-          {MODES.map(({ Icon, ...item }) => (
+          {modes.map(({ Icon, ...item }) => (
             <MenuItem key={item.id} id={item.id} textValue={item.title}>
               <Icon />
               <Text slot="label">{item.title}</Text>

@@ -6,8 +6,8 @@ import type {
   ProjectMapSection,
   ProjectRuntimeSummary,
   ProjectSnapshotIdentity,
-} from '../../shared/projectAwareness'
-import type { StoredProjectFile, StoredProjectSymbol } from './ProjectKnowledgeStore'
+} from '../../../shared/projectAwareness'
+import type { StoredProjectFile, StoredProjectSymbol } from '../ProjectKnowledgeStore'
 
 function sectionName(path: string): string {
   const segments = path.split('/')
@@ -59,7 +59,7 @@ function buildFlows(files: StoredProjectFile[]): ProjectFlowSummary[] {
     {
       name: 'Conversation admission → response generation → speech',
       files: [
-        'apps/desktop/src/renderer/continuousListening/ConversationAdmissionCoordinator.ts',
+        'apps/desktop/src/renderer/speech/continuous-listening/ConversationAdmissionCoordinator.ts',
         'apps/desktop/src/renderer/runtime/ConversationRuntime.ts',
         'apps/desktop/src/main/orchestrator.ts',
         'apps/desktop/src/renderer/runtime/SpeechRuntime.ts',
@@ -68,9 +68,9 @@ function buildFlows(files: StoredProjectFile[]): ProjectFlowSummary[] {
     {
       name: 'Project repository → index → grounded context',
       files: [
-        'apps/desktop/src/main/projectAwareness/GitHubProjectAdapter.ts',
-        'apps/desktop/src/main/projectAwareness/ProjectAwarenessRuntime.ts',
-        'apps/desktop/src/main/projectAwareness/ProjectKnowledgeStore.ts',
+        'apps/desktop/src/main/project-awareness/adapters/GitHubProjectAdapter.ts',
+        'apps/desktop/src/main/project-awareness/ProjectAwarenessRuntime.ts',
+        'apps/desktop/src/main/project-awareness/ProjectKnowledgeStore.ts',
       ],
     },
   ]

@@ -3,6 +3,7 @@ import Bug from '@react-spectrum/s2/icons/Bug'
 import Settings from '@react-spectrum/s2/icons/Settings'
 
 import type { ControllerState } from '../Controller'
+import { useTranslation } from '../localization/useTranslation'
 
 const VARIANT: Record<
   ControllerState['health']['state'],
@@ -14,14 +15,6 @@ const VARIANT: Record<
   checking: 'neutral',
 }
 
-const LABELS = {
-  title: 'Shio',
-  avatarDebug:
-    '\u041e\u0442\u043b\u0430\u0434\u043a\u0430 \u0430\u0432\u0430\u0442\u0430\u0440\u0430',
-  debug: '\u041e\u0442\u043b\u0430\u0434\u043a\u0430',
-  settings: '\u041d\u0430\u0441\u0442\u0440\u043e\u0439\u043a\u0438',
-}
-
 interface Props {
   health: ControllerState['health']
   onOpenSettings: () => void
@@ -29,19 +22,20 @@ interface Props {
 }
 
 export function TopBar({ health, onOpenSettings, onOpenDebug }: Props): React.JSX.Element {
+  const { t } = useTranslation()
   return (
     <div id="top-bar">
-      <span className="app-title">{LABELS.title}</span>
+      <span className="app-title">Shio</span>
       <StatusLight variant={VARIANT[health.state]} size="S">
         {health.text}
       </StatusLight>
-      <ActionButton aria-label={LABELS.avatarDebug} onPress={onOpenDebug}>
+      <ActionButton aria-label={t('app.nav.debug')} onPress={onOpenDebug}>
         <Bug />
-        <Text>{LABELS.debug}</Text>
+        <Text>{t('app.nav.debug')}</Text>
       </ActionButton>
-      <ActionButton aria-label={LABELS.settings} onPress={onOpenSettings}>
+      <ActionButton aria-label={t('app.nav.settings')} onPress={onOpenSettings}>
         <Settings />
-        <Text>{LABELS.settings}</Text>
+        <Text>{t('app.nav.settings')}</Text>
       </ActionButton>
     </div>
   )

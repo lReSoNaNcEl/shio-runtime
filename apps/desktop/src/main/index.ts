@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import * as dotenv from 'dotenv'
 import { app, BrowserWindow, ipcMain, Menu, protocol, safeStorage, screen } from 'electron'
 
+import { translate } from '../shared/localization/format'
 import { getConfig, getRendererConfig, loadConfig } from './config'
 import { registerIpcHandlers } from './ipc'
 import { LiveLLMProvider } from './llm'
@@ -14,7 +15,8 @@ import {
   ProjectAwarenessRuntime,
   ProjectCredentialStore,
   ProjectKnowledgeStore,
-} from './projectAwareness'
+} from './project-awareness'
+import { GitHubProjectAdapter } from './project-awareness/adapters/GitHubProjectAdapter'
 import { SpeechClient } from './speech/speechClient'
 
 initializeSafeLogging()
@@ -79,6 +81,8 @@ function buildProjectAwareness(): ProjectAwarenessRuntime {
   const projectAwarenessDirectory = join(app.getPath('userData'), 'project-awareness')
   projectKnowledgeStore ??= new ProjectKnowledgeStore(
     join(projectAwarenessDirectory, 'project-index.sqlite'),
+    (key, params) => translate(getConfig().uiLocale, key, params),
+    (key, params) => translate(getConfig().uiLocale, key, params),
   )
   projectCredentialStore ??= new ProjectCredentialStore(
     join(projectAwarenessDirectory, 'github-credential.bin'),
@@ -87,12 +91,22 @@ function buildProjectAwareness(): ProjectAwarenessRuntime {
       encrypt: (value) => safeStorage.encryptStringAsync(value),
       decrypt: (value) => safeStorage.decryptStringAsync(value),
     },
+    (key, params) => translate(getConfig().uiLocale, key, params),
   )
-  return new ProjectAwarenessRuntime(config, projectKnowledgeStore)
+  return new ProjectAwarenessRuntime(
+    config,
+    projectKnowledgeStore,
+    (owner, name, token) =>
+      new GitHubProjectAdapter(owner, name, token, (key, params) =>
+        translate(getConfig().uiLocale, key, params),
+      ),
+    (key, params) => translate(getConfig().uiLocale, key, params),
+  )
 }
 
 async function initializeProjectAwareness(runtime: ProjectAwarenessRuntime): Promise<void> {
-  if (!projectCredentialStore) throw new Error('Project credential store is unavailable')
+  if (!projectCredentialStore)
+    throw new Error(translate(getConfig().uiLocale, 'main.error.project.storeUnavailable'))
   const credential = await projectCredentialStore.load()
   runtime.setCredential(credential.token, credential)
   await runtime.initialize()
@@ -190,7 +204,8 @@ function createWindow(): void {
     },
     () => {
       if (!projectCredentialStore) buildProjectAwareness()
-      if (!projectCredentialStore) throw new Error('Project credential store is unavailable')
+      if (!projectCredentialStore)
+        throw new Error(translate(getConfig().uiLocale, 'main.error.project.storeUnavailable'))
       return projectCredentialStore
     },
     () => {

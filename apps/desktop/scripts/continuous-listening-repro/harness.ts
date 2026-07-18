@@ -1,25 +1,25 @@
 import assert from 'node:assert/strict'
 
 import { AudioPlayer } from '../../src/renderer/audio/audioPlayer'
-import { AttentionEngine } from '../../src/renderer/continuousListening/AttentionEngine'
-import { BacklogSelector } from '../../src/renderer/continuousListening/BacklogSelector'
-import { BargeInPolicy } from '../../src/renderer/continuousListening/BargeInPolicy'
-import { ConversationAdmissionCoordinator } from '../../src/renderer/continuousListening/ConversationAdmissionCoordinator'
-import { RuleGate } from '../../src/renderer/continuousListening/RuleGate'
-import {
-  isExplicitBargeInPhrase,
-  textSimilarity,
-} from '../../src/renderer/continuousListening/textAnalysis'
-import type {
-  BufferedUtterance,
-  ConversationInput,
-} from '../../src/renderer/continuousListening/types'
-import { UtteranceBacklog } from '../../src/renderer/continuousListening/UtteranceBacklog'
-import { UtteranceChunkBuilder } from '../../src/renderer/continuousListening/UtteranceChunkBuilder'
 import {
   ConversationRuntime,
   type ConversationRuntimeDeps,
 } from '../../src/renderer/runtime/ConversationRuntime'
+import { AttentionEngine } from '../../src/renderer/speech/continuous-listening/AttentionEngine'
+import { BacklogSelector } from '../../src/renderer/speech/continuous-listening/BacklogSelector'
+import { BargeInPolicy } from '../../src/renderer/speech/continuous-listening/BargeInPolicy'
+import { ConversationAdmissionCoordinator } from '../../src/renderer/speech/continuous-listening/ConversationAdmissionCoordinator'
+import { RuleGate } from '../../src/renderer/speech/continuous-listening/RuleGate'
+import {
+  isExplicitBargeInPhrase,
+  textSimilarity,
+} from '../../src/renderer/speech/continuous-listening/textAnalysis'
+import type {
+  BufferedUtterance,
+  ConversationInput,
+} from '../../src/renderer/speech/continuous-listening/types'
+import { UtteranceBacklog } from '../../src/renderer/speech/continuous-listening/UtteranceBacklog'
+import { UtteranceChunkBuilder } from '../../src/renderer/speech/continuous-listening/UtteranceChunkBuilder'
 import { HeadMotionRuntime } from '../../src/renderer/three/HeadMotionRuntime'
 
 let now = Date.now()

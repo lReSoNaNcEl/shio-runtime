@@ -1,8 +1,9 @@
 import type { FetchModelsResult, LlmConfig, ProviderProfile } from '../shared/llmProviders'
+import type { UiLocale } from '../shared/localization/locale'
 import type { ProjectAwarenessApi, ProjectAwarenessPublicConfig } from '../shared/projectAwareness'
 import type { RuntimeEventInput } from '../shared/runtime/events'
 import type { SpeechServiceErrorCode } from '../shared/speech/speechErrors'
-import type { BacklogSelectionResult, BufferedUtterance } from './continuousListening/types'
+import type { BacklogSelectionResult, BufferedUtterance } from './speech/continuous-listening/types'
 
 export interface SpeechHealthCapabilities {
   serviceReachable: boolean
@@ -14,6 +15,7 @@ export interface SpeechHealthCapabilities {
 export interface PersistedSettings {
   llm: LlmConfig
   projectAwareness: ProjectAwarenessPublicConfig
+  uiLocale: UiLocale
   pythonSpeechUrl: string
   ttsVoice: string
   ttsLanguage: string

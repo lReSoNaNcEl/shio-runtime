@@ -1,20 +1,124 @@
 # AGENTS.md
 
-Developer operating manual for all AI agents working on this monorepository
-(GPT, Claude Code, Opus, Codex, or any other AI-assisted development agent).
+Developer operating manual for all AI agents working on this monorepository.
 
-This document is mandatory reading before any code change. It holds the rules that
-apply across the whole repository. Application-specific rules and checks live in the
-local files:
-
-- `apps/desktop/CLAUDE.md` — Electron / React / Avatar Runtime.
-- `services/api/CLAUDE.md` — Python / FastAPI / ASR / TTS.
+This document is mandatory reading before any code change. It is the single
+canonical agent manual and holds both repository-wide and application-specific
+rules.
 
 ## 1. Repository
 
 - `apps/desktop` — Electron, React, TypeScript, Three.js client.
 - `services/api` — Python, FastAPI, ASR and TTS service (port `8000`).
 - `ARCHITECTURE.md` is the canonical architecture document.
+
+## Desktop application rules
+
+`apps/desktop` is the Electron + React + TypeScript + Three.js client.
+
+Architecture and ownership:
+
+- Controller coordinates existing Runtimes but does not absorb their ownership.
+- AudioPlayer is the sole audio playback owner.
+- AvatarExpressionMixer is the sole final facial-expression writer. Do not write
+  to VRM facial expressions outside the mixer.
+- Overlay is a presentation consumer, not an application Runtime.
+- Character State is the single source of truth for character state.
+- Project Awareness Runtime belongs to the Electron main process. GitHub access,
+  SQLite/FTS indexing, source filtering, and grounded project retrieval must not
+  move into the renderer.
+- Project repository access remains read-only. Repository-derived knowledge is
+  neither Character State nor conversational memory.
+- GitHub credentials entered through Settings are encrypted through Electron
+  `safeStorage` and persisted only below application `userData`. Renderer status
+  may expose credential presence and source, never its value.
+- Repository and branch are selected through the Project settings UI. Do not
+  hardcode a repository identity in the renderer or Runtime implementation.
+- Preserve the existing HTTP contract with `services/api` unless the task
+  explicitly changes it.
+
+Desktop quality and validation:
+
+- Desktop formatting, linting, React checks, and import ordering are owned by
+  Biome through `apps/desktop/biome.jsonc` and the local `@biomejs/biome`
+  dependency.
+- Run `npm run desktop:check`, `npm run desktop:format:check`, and
+  `npm run desktop:imports:check` from the repository root as applicable.
+- TypeScript types are owned by `tsc`; run `npm run typecheck`.
+- Run `npm run build` before the final report for Desktop code changes.
+- Every new user-facing UI string must be added in both Russian and English.
+  A Work Item that leaves either locale missing is incomplete.
+- Do not add ESLint or Prettier alongside Biome.
+- Prefer a justified single-line `// biome-ignore lint/<rule>: <reason>` (or the
+  CSS block form) over disabling a rule. Never add blanket suppressions.
+- When live validation is explicitly requested for Electron main, preload, or
+  renderer changes, rebuild, restart Electron, and confirm the client starts.
+- When live validation is explicitly requested after Avatar Runtime changes,
+  verify VRM loading, idle animation, `loadAnimation`, Debug Preview, Speaking,
+  LipSync, Overlay, absence of A-pose, and Runtime Health. Animation Runtime
+  changes additionally require idle, speaking, transitions, and preview checks.
+
+## API service rules
+
+`services/api` is the FastAPI service that owns ASR and F5-TTS.
+
+Architecture and ownership:
+
+- The API service owns speech recognition and synthesis.
+- It does not own Electron playback, LipSync, or avatar state; those belong to
+  `apps/desktop`.
+- Preserve the existing HTTP API unless the task explicitly changes the contract.
+- Resolve service assets relative to the service root using `Path(__file__)` /
+  `services/api`, never from the monorepo working directory.
+- FastAPI runs on port `8000`. ASR uses faster-whisper with Silero VAD. TTS uses
+  one in-process `F5LocalEngine` wrapping `f5_tts.api.F5TTS`.
+- `/synthesize` returns WAV plus engine, language, emotion, VRM-emotion, latency,
+  RTF, and duration headers.
+- `/voices` exposes voice presets, available references, and VRM expression
+  mappings.
+
+API commands and validation:
+
+- Run API commands from the repository root. The `api:*` launcher resolves
+  `services/api/.venv` or the legacy `services/api/venv`; manual activation and
+  `cd services/api` are unnecessary.
+- Override the interpreter with `SHIO_API_PYTHON` when needed and inspect the
+  selected interpreter with `npm run api:doctor`.
+- `npm run api:install:dev` creates `.venv` and installs runtime and development
+  dependencies.
+- `npm run api:dev` starts uvicorn on port `8000`; extra arguments pass through
+  after `--`.
+- Run `npm run api:lint`, `npm run api:format:check`, and `npm run api:test`.
+- Do not rely on `py_compile` alone. Applicable endpoint validation covers
+  `/health`, `/voices`, `/emotions`, `/synthesize`, and `/recognize`; synthesis
+  validation must confirm that an actual WAV is produced.
+- `/health` must report `engines.f5.mode` as `real` for a real-engine endpoint
+  check.
+
+Voice registry and references:
+
+- LLM output should use a single leading normalized emotion tag where possible.
+  Supported tags are `neutral`, `calm`, `warm`, `happy`, `laugh`, `chuckle`,
+  `sad`, `crying`, `angry`, `fear`, `surprised`, `gasp`, `sigh`, `groan`, and
+  `whisper`.
+- `app/tts/emotion.py` removes normalized emotion tags and maps them to TTS
+  emotions and VRM expression weights.
+- `app/tts/voice_registry.py` is the voice-registry owner and resolves logical
+  voice IDs to F5 reference audio.
+- Reference assets use
+  `voices/<dataset>/<voice>/reference.wav` with an adjacent `reference.txt`.
+- A voice is available only when both reference files exist.
+- Reference assets are not committed. Fetch them with
+  `python scripts/sync_voices.py` or `npm run api:voices:sync`.
+- Both commands reuse `voice_repository_manager.sync()`, the same path as
+  `POST /voices/sync`.
+- Voice sync must remain single-flight, revision-pinnable, validated, and atomic;
+  interrupted downloads must not produce a partially available voice.
+- Confirm `voice_manifest.json` and reference assets resolve from `services/api`.
+- Server-side F5 knobs remain in `.env`: `F5_NFE_STEP`, `F5_CFG_STRENGTH`, and
+  `F5_USE_ACCENT`.
+- Never commit model caches, secrets, generated audio, or the local virtual
+  environment.
 
 ## 2. Architectural boundaries
 
@@ -64,8 +168,8 @@ character state.
 
 Do not automatically run the full validation suite after every edit. During
 uncommitted work, run only the focused checks that are useful for the change at
-hand. Run the full validation suite for the affected application (defined in its
-local `CLAUDE.md`) immediately before staging or creating a commit. All commands run
+hand. Run the full validation suite for the affected application (defined above)
+immediately before staging or creating a commit. All commands run
 from the repository root and need no manual virtualenv activation:
 
 ```text
@@ -123,8 +227,7 @@ maintainability.
 ## 11. Documentation
 
 If a change alters architecture, introduces a new contract, or changes ownership,
-update the corresponding documentation (`ARCHITECTURE.md` and the relevant local
-`CLAUDE.md`).
+update `ARCHITECTURE.md` and the corresponding rules in this manual when needed.
 
 `ARCHITECTURE.md` is the single canonical architecture document and the sole source
 of architectural meaning. When editing it, editorial improvements are allowed —
@@ -170,6 +273,8 @@ Root Cause (если был баг)
 - Simple solutions are preferred over complex ones.
 - Preserve component boundaries and Single Responsibility.
 - Changes must improve maintainability, not only solve the immediate task.
+- All responses to the user, and all reasoning shown to the user, must be written
+  in Russian.
 
 ## 14. Never Again
 

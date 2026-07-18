@@ -4,6 +4,8 @@ import { join } from 'node:path'
 import { type BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { z } from 'zod'
 
+import { translate } from '../shared/localization/format'
+import type { UiLocale } from '../shared/localization/locale'
 import type {
   ProjectAwarenessPublicConfig,
   ProjectReadFileInput,
@@ -29,13 +31,14 @@ import type {
   LoadedProjectCredential,
   ProjectAwarenessRuntime,
   ProjectCredentialStore,
-} from './projectAwareness'
+} from './project-awareness'
 import { deriveCapabilities, type SpeechClient } from './speech/speechClient'
 import { logSpeechError, logSpeechRecovery } from './speech/speechErrors'
 
 export interface AppSettings {
   llm: LlmConfig
   projectAwareness: ProjectAwarenessPublicConfig
+  uiLocale: UiLocale
   pythonSpeechUrl: string
   ttsVoice: string
   ttsLanguage: string
@@ -161,7 +164,11 @@ export function registerIpcHandlers(
     description: 'Load the available model catalog for an LLM provider.',
     execute: async ({ provider, apiKey }) => {
       if (!isLlmProviderId(provider)) {
-        return { ok: false, error: `Unknown provider: ${provider}`, kind: 'invalid_response' }
+        return {
+          ok: false,
+          error: translate(getConfig().uiLocale, 'main.error.unknownProvider', { provider }),
+          kind: 'invalid_response',
+        }
       }
       try {
         const catalog = createModelCatalog(provider)
@@ -181,9 +188,10 @@ export function registerIpcHandlers(
     description: 'Open a native file dialog for selecting a VRM model.',
     execute: async () => {
       const result = await dialog.showOpenDialog(win, {
-        title:
-          '\u0412\u044b\u0431\u0435\u0440\u0438\u0442\u0435 VRM-\u043c\u043e\u0434\u0435\u043b\u044c',
-        filters: [{ name: 'VRM Model', extensions: ['vrm'] }],
+        title: translate(getConfig().uiLocale, 'main.dialog.vrm.title'),
+        filters: [
+          { name: translate(getConfig().uiLocale, 'main.dialog.vrm.filter'), extensions: ['vrm'] },
+        ],
         properties: ['openFile'],
       })
       if (result.canceled || result.filePaths.length === 0) return { ok: false }
@@ -205,9 +213,13 @@ export function registerIpcHandlers(
     description: 'Open a native file dialog for selecting and reading a VRM animation.',
     execute: async () => {
       const result = await dialog.showOpenDialog(win, {
-        title:
-          '\u0412\u044b\u0431\u0435\u0440\u0438\u0442\u0435 VRM-\u0430\u043d\u0438\u043c\u0430\u0446\u0438\u044e',
-        filters: [{ name: 'VRM Animation', extensions: ['vrma'] }],
+        title: translate(getConfig().uiLocale, 'main.dialog.vrma.title'),
+        filters: [
+          {
+            name: translate(getConfig().uiLocale, 'main.dialog.vrma.filter'),
+            extensions: ['vrma'],
+          },
+        ],
         properties: ['openFile'],
       })
       if (result.canceled || result.filePaths.length === 0) return { ok: false }
@@ -323,23 +335,38 @@ export function registerIpcHandlers(
         !payload.model ||
         !Number.isInteger(payload.backlogVersion)
       ) {
-        return { ok: false, error: 'Invalid backlog arbitration request' }
+        return { ok: false, error: translate(getConfig().uiLocale, 'main.error.invalidBacklog') }
       }
       const config = getConfig()
       if (config.continuousListeningEnabled !== 'true')
-        return { ok: false, error: 'Streaming Mode is disabled' }
+        return {
+          ok: false,
+          error: translate(getConfig().uiLocale, 'main.error.streamingDisabled'),
+        }
       const role = config.llm.roles.backlogSelector
       if (!role.enabled || role.providerId !== payload.providerId || role.model !== payload.model) {
-        return { ok: false, error: 'Backlog Selector role is disabled or stale' }
+        return {
+          ok: false,
+          error: translate(getConfig().uiLocale, 'main.error.selectorDisabled'),
+        }
       }
       if (!role.providerId)
-        return { ok: false, error: 'Backlog Selector provider is not configured' }
+        return {
+          ok: false,
+          error: translate(getConfig().uiLocale, 'main.error.selectorProviderMissing'),
+        }
       const providerId = role.providerId
       const credentials = config.llm.providers[providerId]
       if (!credentials?.apiKey)
-        return { ok: false, error: 'Backlog Selector API key is not configured' }
+        return {
+          ok: false,
+          error: translate(getConfig().uiLocale, 'main.error.selectorKeyMissing'),
+        }
       if (backlogArbitrationInFlight)
-        return { ok: false, error: 'Backlog arbitration is already active' }
+        return {
+          ok: false,
+          error: translate(getConfig().uiLocale, 'main.error.arbitrationActive'),
+        }
       const prompt = [
         'You are a conversation backlog arbitration classifier.',
         'You inspect completed user utterances captured through continuous microphone listening while the assistant was busy.',
@@ -421,14 +448,14 @@ export function registerIpcHandlers(
         context.addIssue({
           code: 'custom',
           path: ['repository'],
-          message: 'Repository must use owner/name format.',
+          message: translate(getConfig().uiLocale, 'main.error.project.repositoryFormat'),
         })
       }
       if (!isValidProjectBranch(config.branch)) {
         context.addIssue({
           code: 'custom',
           path: ['branch'],
-          message: 'Enter a valid Git branch name.',
+          message: translate(getConfig().uiLocale, 'main.error.project.branchInvalid'),
         })
       }
     })
@@ -537,6 +564,7 @@ export function registerIpcHandlers(
     const cfg = getConfig()
     return {
       llm: cfg.llm,
+      uiLocale: cfg.uiLocale,
       projectAwareness: {
         enabled: cfg.projectAwareness.enabled,
         provider: cfg.projectAwareness.provider,

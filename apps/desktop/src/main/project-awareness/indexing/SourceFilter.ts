@@ -1,7 +1,7 @@
 import { extname, posix } from 'node:path'
 
-import type { ProjectLanguage } from '../../shared/projectAwareness'
-import type { ProjectTreeEntry } from './contracts'
+import type { ProjectLanguage } from '../../../shared/projectAwareness'
+import type { ProjectTreeEntry } from '../contracts'
 
 const LANGUAGE_BY_EXTENSION: Readonly<Record<string, ProjectLanguage>> = {
   '.ts': 'typescript',
@@ -46,7 +46,6 @@ const DENIED_EXTENSIONS = new Set([
 const CANONICAL_PRIORITY: Readonly<Record<string, number>> = {
   'ARCHITECTURE.md': 1000,
   'AGENTS.md': 950,
-  'CLAUDE.md': 900,
   'README.md': 850,
   'package.json': 800,
 }

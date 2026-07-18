@@ -44,6 +44,7 @@ import type {
   ProviderCredentials,
   ProviderProfile,
 } from '../../shared/llmProviders'
+import type { UiLocale } from '../../shared/localization/locale'
 import {
   isValidProjectBranch,
   isValidProjectRepository,
@@ -51,13 +52,14 @@ import {
 } from '../../shared/projectAwareness'
 import type { ControllerState } from '../Controller'
 import { controller } from '../Controller'
+import { useTranslation } from '../localization/useTranslation'
 import {
   defaultContinuousListeningSettings,
   isCuriosityControlEnabled,
   parseAttentionMode,
   parseTunedNumber,
-} from '../continuousListening/tuning'
-import type { AttentionMode } from '../continuousListening/types'
+} from '../speech/continuous-listening/tuning'
+import type { AttentionMode } from '../speech/continuous-listening/types'
 import { type OverlayViewMode, overlayCameraPresets } from '../three/avatarTuning'
 
 const fullWidth = style({ width: 'full' })
@@ -70,15 +72,6 @@ type SettingsSection =
   | 'llm'
   | 'avatar'
   | 'advanced'
-const SETTINGS_SECTION_LABELS: Record<SettingsSection, string> = {
-  general: 'Общие',
-  project: 'Project',
-  speech: 'Речь',
-  listening: 'Стриминг',
-  llm: 'LLM',
-  avatar: 'Аватар',
-  advanced: 'Дополнительно',
-}
 const SETTINGS_SECTION_ICONS: Record<SettingsSection, React.JSX.Element> = {
   general: <SettingsIcon />,
   project: <DataIcon />,
@@ -114,7 +107,7 @@ interface Props {
   onClose: () => void
 }
 
-const TEXT = {
+const DEFAULT_TEXT = {
   heading: '\u041d\u0430\u0441\u0442\u0440\u043e\u0439\u043a\u0438',
   tabsLabel:
     '\u0420\u0430\u0437\u0434\u0435\u043b\u044b \u043d\u0430\u0441\u0442\u0440\u043e\u0435\u043a',
@@ -246,14 +239,15 @@ function maskKey(key: string): string {
 }
 
 function LlmHealthStatus({ health }: { health: ControllerState['llmHealth'] }): React.JSX.Element {
+  const { t } = useTranslation()
   const status =
     health.state === 'ok'
-      ? { variant: 'positive' as const, label: 'Доступно' }
+      ? { variant: 'positive' as const, label: t('common.available') }
       : health.state === 'checking'
-        ? { variant: 'informative' as const, label: 'Проверка' }
+        ? { variant: 'informative' as const, label: t('common.checking') }
         : health.state === 'error'
-          ? { variant: 'negative' as const, label: 'Ошибка' }
-          : { variant: 'neutral' as const, label: 'Не настроено' }
+          ? { variant: 'negative' as const, label: t('common.error') }
+          : { variant: 'neutral' as const, label: t('common.notConfigured') }
 
   return (
     <div className="llm-health-status" title={health.detail}>
@@ -261,7 +255,7 @@ function LlmHealthStatus({ health }: { health: ControllerState['llmHealth'] }): 
         {status.label}
       </StatusLight>
       {health.state === 'checking' && (
-        <ProgressCircle aria-label="Проверяем доступность LLM" isIndeterminate size="S" />
+        <ProgressCircle aria-label={t('settings.llm.healthChecking')} isIndeterminate size="S" />
       )}
     </div>
   )
@@ -300,6 +294,7 @@ function ModelComboBox({
   isLoading,
   onSelect,
 }: ModelComboBoxProps): React.JSX.Element {
+  const { t } = useTranslation()
   const [searchText, setSearchText] = useState(selectedId)
   const [isOpen, setIsOpen] = useState(false)
   const normalizedSearch = isOpen ? searchText.trim().toLocaleLowerCase() : ''
@@ -313,7 +308,8 @@ function ModelComboBox({
     if (!isOpen) setSearchText(selectedId)
   }, [isOpen, selectedId])
 
-  const emptyText = models.length === 0 ? 'Модели не найдены' : 'Нет моделей по этому запросу'
+  const emptyText =
+    models.length === 0 ? t('common.modelsNotFound') : t('common.modelsNotFoundForQuery')
   return (
     <ComboBox
       label={label}
@@ -335,7 +331,7 @@ function ModelComboBox({
       }}
       isDisabled={isDisabled}
       loadingState={isLoading ? 'loading' : 'idle'}
-      placeholder="Найти модель…"
+      placeholder={t('common.searchModel')}
       styles={fullWidth}
     >
       {filteredModels.length > 0 ? (
@@ -410,6 +406,75 @@ export function SettingsDialog({
   onOverlayVisibleChange,
   onToggleOverlay,
 }: Props): React.JSX.Element | null {
+  const { t } = useTranslation()
+  const settingsSectionLabels: Record<SettingsSection, string> = {
+    general: t('settings.section.general'),
+    project: t('settings.section.project'),
+    speech: t('settings.section.speech'),
+    listening: t('settings.section.listening'),
+    llm: t('settings.section.llm'),
+    avatar: t('settings.section.avatar'),
+    advanced: t('settings.section.advanced'),
+  }
+  const TEXT = {
+    ...DEFAULT_TEXT,
+    tabsLabel: t('settings.tabsLabel'),
+    ttsLanguage: t('settings.speech.ttsLanguage'),
+    russian: t('settings.language.ru'),
+    microphone: t('settings.speech.microphone'),
+    attentionMode: t('streaming.mode.label'),
+    attentionModesHelp: t('settings.listening.help'),
+    replyCooldown: t('settings.listening.replyCooldown'),
+    followUpWindow: t('settings.listening.followUpWindow'),
+    curiosityChance: t('settings.listening.spontaneity'),
+    vrmModel: t('settings.avatar.model'),
+    chooseFile: t('settings.avatar.chooseFile'),
+    modelNotSelected: t('settings.avatar.notSelected'),
+    passiveTitle: t('settings.avatar.passiveTitle'),
+    passiveHint: t('settings.avatar.passiveHint'),
+    passiveOn: t('settings.avatar.passiveOn'),
+    passiveOff: t('settings.avatar.passiveOff'),
+    overlaySection: t('settings.avatar.overlaySection'),
+    modelSection: t('settings.avatar.modelSection'),
+    behaviorSection: t('settings.avatar.behaviorSection'),
+    displaySubSection: t('settings.avatar.displaySection'),
+    overlayDisabledNote: t('settings.avatar.overlayDisabled'),
+    cameraSection: t('settings.avatar.cameraSection'),
+    windowSection: t('settings.avatar.windowSection'),
+    interactionSection: t('settings.avatar.interactionSection'),
+    overlayEnabledModern: t('settings.avatar.overlayEnabled'),
+    overlayEnabledHint: t('settings.avatar.overlayEnabledHint'),
+    overlayWidth: t('settings.avatar.width'),
+    overlayHeight: t('settings.avatar.height'),
+    overlayCorner: t('settings.avatar.position'),
+    overlayScale: t('settings.avatar.scale'),
+    overlayViewMode: t('settings.avatar.cameraSection'),
+    overlayMargin: t('settings.avatar.margin'),
+    overlayOpacity: t('settings.avatar.opacity'),
+    overlayTransparentBackground: t('settings.avatar.transparent'),
+    topLeft: t('settings.avatar.topLeft'),
+    topRight: t('settings.avatar.topRight'),
+    bottomLeft: t('settings.avatar.bottomLeft'),
+    bottomRight: t('settings.avatar.bottomRight'),
+    overlayClickThrough: t('settings.avatar.clickThrough'),
+    resetOverlay: t('settings.avatar.reset'),
+    clickThroughDescription: t('settings.avatar.clickThroughDescription'),
+    transparentDescription: t('settings.avatar.transparentDescription'),
+    windowDescription: t('settings.avatar.windowDescription'),
+    cameraDescription: t('settings.avatar.cameraDescription'),
+    clearHistory: t('settings.danger.clear'),
+    llmApiKey: t('settings.llm.apiKey'),
+    llmModel: t('common.model'),
+    newKeyPlaceholder: t('settings.llm.newKey'),
+    copyKey: t('settings.llm.copyKey'),
+    editKey: t('settings.llm.editKey'),
+    loadModels: t('settings.llm.loadModels'),
+    modelsLoading: t('settings.llm.modelsLoading'),
+    modelsEmpty: t('settings.llm.modelsEmpty'),
+    modelsNetworkError: t('settings.llm.modelsNetworkError'),
+    modelsMissingKey: t('settings.llm.modelsMissingKey'),
+    modelsAuthError: t('settings.llm.modelsAuthError'),
+  }
   const [activeSection, setActiveSection] = useState<SettingsSection>('general')
   const [confirmClearHistory, setConfirmClearHistory] = useState(false)
   const hydrated = useRef(false)
@@ -429,6 +494,7 @@ export function SettingsDialog({
   const [projectActionBusy, setProjectActionBusy] = useState(false)
   const [projectForgetConfirmation, setProjectForgetConfirmation] = useState(false)
   const [lang, setLang] = useState('ru')
+  const [uiLocale, setUiLocale] = useState<UiLocale>('ru')
   const [vrmName, setVrmName] = useState('')
   const [mics, setMics] = useState<Array<{ deviceId: string; label: string }>>([])
   const [micId, setMicId] = useState('default')
@@ -512,6 +578,7 @@ export function SettingsDialog({
       setProjectActionBusy(false)
       setProjectForgetConfirmation(false)
       setLang(cfg.ttsLanguage ?? 'ru')
+      setUiLocale(cfg.uiLocale)
       setCurrentTtsVoice(cfg.ttsVoice ?? 'animevox_makima')
       setReplyCooldownMs(
         parseTunedNumber(cfg.continuousListeningReplyCooldownMs, 15_000, 0, 120_000),
@@ -756,6 +823,7 @@ export function SettingsDialog({
       pythonSpeechUrl: speechUrl,
       ttsVoice: currentTtsVoice,
       ttsLanguage: lang,
+      uiLocale,
       ttsEngine: 'f5',
       continuousListeningReplyCooldownMs: String(replyCooldownMs),
       continuousListeningFollowUpWindowMs: String(followUpWindowMs),
@@ -799,6 +867,7 @@ export function SettingsDialog({
   }, [
     speechUrl,
     lang,
+    uiLocale,
     currentTtsVoice,
     replyCooldownMs,
     followUpWindowMs,
@@ -852,41 +921,47 @@ export function SettingsDialog({
             onClick={() => selectSection(section)}
           >
             <span className="settings-nav-icon">{SETTINGS_SECTION_ICONS[section]}</span>
-            <span>{SETTINGS_SECTION_LABELS[section]}</span>
+            <span>{settingsSectionLabels[section]}</span>
           </button>
         ))}
       </aside>
       <div className="settings-content">
         <div className="settings-section-heading">
-          <Heading>{SETTINGS_SECTION_LABELS[activeSection]}</Heading>
+          <Heading>{settingsSectionLabels[activeSection]}</Heading>
           <span className="settings-save-indicator" role="status" aria-live="polite">
             {saveState === 'saving' && (
               <>
-                <ProgressCircle aria-label="Сохранение настроек" isIndeterminate size="S" />
-                <span>Сохраняем…</span>
+                <ProgressCircle aria-label={t('common.saving')} isIndeterminate size="S" />
+                <span>{t('common.saving')}</span>
               </>
             )}
-            {saveState === 'saved' && <StatusLight variant="positive">Сохранено</StatusLight>}
+            {saveState === 'saved' && (
+              <StatusLight variant="positive">{t('common.saved')}</StatusLight>
+            )}
             {saveState === 'error' && (
-              <StatusLight variant="negative">Не удалось сохранить настройки</StatusLight>
+              <StatusLight variant="negative">{t('settings.saveFailed')}</StatusLight>
             )}
           </span>
         </div>
         {activeSection === 'advanced' && (
-          <p className="settings-description">Диагностика и необратимые действия.</p>
+          <p className="settings-description">{t('settings.advanced.description')}</p>
         )}
         {activeSection === 'project' && (
-          <p className="settings-description">
-            Read-only GitHub repository used for Shio&apos;s project knowledge.
-          </p>
+          <p className="settings-description">{t('settings.project.description')}</p>
         )}
         <Divider />
         <Content key={activeSection}>
           {activeSection === 'general' ? (
             <div className="settings-grid">
-              <p className="settings-hint">
-                Общие настройки приложения пока не требуют отдельной конфигурации.
-              </p>
+              <Picker
+                label={t('settings.language')}
+                selectedKey={uiLocale}
+                onSelectionChange={(key) => setUiLocale(String(key) as UiLocale)}
+                styles={fullWidth}
+              >
+                <PickerItem id="ru">{t('settings.language.ru')}</PickerItem>
+                <PickerItem id="en">{t('settings.language.en')}</PickerItem>
+              </Picker>
             </div>
           ) : activeSection === 'project' ? (
             <div className="settings-grid">
@@ -897,10 +972,10 @@ export function SettingsDialog({
                   setProjectApplyState('idle')
                 }}
               >
-                Enable Project Awareness
+                {t('settings.project.enable')}
               </Switch>
               <TextField
-                label="GitHub repository"
+                label={t('settings.project.repository')}
                 value={projectRepository}
                 onChange={(value) => {
                   setProjectRepository(value)
@@ -909,11 +984,11 @@ export function SettingsDialog({
                 placeholder="owner/repository"
                 isDisabled={!projectEnabled}
                 isInvalid={projectEnabled && !isValidProjectRepository(projectRepository)}
-                errorMessage="Use owner/repository format."
+                errorMessage={t('main.error.project.repositoryFormat')}
                 styles={fullWidth}
               />
               <TextField
-                label="Branch"
+                label={t('settings.project.branch')}
                 value={projectBranch}
                 onChange={(value) => {
                   setProjectBranch(value)
@@ -922,19 +997,18 @@ export function SettingsDialog({
                 placeholder="main"
                 isDisabled={!projectEnabled}
                 isInvalid={projectEnabled && !isValidProjectBranch(projectBranch)}
-                errorMessage="Enter a valid Git branch name."
+                errorMessage={t('main.error.project.branchInvalid')}
                 styles={fullWidth}
               />
-              <Text UNSAFE_className="settings-hint">
-                Changing the target disconnects the previous repository. Apply it before using the
-                connection and index controls below.
-              </Text>
+              <Text UNSAFE_className="settings-hint">{t('settings.project.targetChange')}</Text>
               <div className="settings-row">
                 <ActionButton
                   isDisabled={!projectSettingsValid || projectRuntimeBusy}
                   onPress={() => void applyProjectSettings()}
                 >
-                  {projectApplyState === 'applying' ? 'Applying…' : 'Apply repository'}
+                  {projectApplyState === 'applying'
+                    ? t('settings.project.applying')
+                    : t('settings.project.apply')}
                 </ActionButton>
                 {projectStatus && (
                   <StatusLight
@@ -947,30 +1021,27 @@ export function SettingsDialog({
                     }
                   >
                     {projectStatus.credential.configured
-                      ? `GitHub credential saved · ${projectStatus.state}`
-                      : 'GitHub credential not configured'}
+                      ? t('settings.project.credentialSaved', { state: projectStatus.state })
+                      : t('settings.project.credentialMissing')}
                   </StatusLight>
                 )}
               </div>
               {projectApplyState === 'applied' && (
-                <Text UNSAFE_className="settings-hint">Repository settings applied.</Text>
+                <Text UNSAFE_className="settings-hint">{t('settings.project.applied')}</Text>
               )}
               {projectApplyError && (
                 <Text UNSAFE_className="project-awareness-error">{projectApplyError}</Text>
               )}
               <div className="project-credential-panel">
                 <div className="project-credential-copy">
-                  <strong>GitHub credential</strong>
-                  <span>
-                    Create a fine-grained token with read-only Metadata and Contents access. Shio
-                    encrypts it with operating-system storage and never displays the saved value.
-                  </span>
+                  <strong>{t('settings.project.credential.title')}</strong>
+                  <span>{t('settings.project.credential.description')}</span>
                 </div>
                 <TextField
                   label={
                     projectStatus?.credential.configured
-                      ? 'Replacement GitHub token'
-                      : 'GitHub personal access token'
+                      ? t('settings.project.credential.replace')
+                      : t('settings.project.credential.token')
                   }
                   value={projectCredentialInput}
                   onChange={setProjectCredentialInput}
@@ -986,7 +1057,7 @@ export function SettingsDialog({
                     }
                     onPress={() => void window.api.projectAwareness.openTokenSettings()}
                   >
-                    Create read-only token
+                    {t('settings.project.credential.create')}
                   </ActionButton>
                   <ActionButton
                     isDisabled={
@@ -998,21 +1069,24 @@ export function SettingsDialog({
                     }
                     onPress={() => void saveProjectCredential()}
                   >
-                    {projectStatus?.credential.configured ? 'Replace & connect' : 'Save & connect'}
+                    {projectStatus?.credential.configured
+                      ? t('settings.project.credential.replaceAndConnect')
+                      : t('settings.project.credential.saveAndConnect')}
                   </ActionButton>
                   {projectStatus?.credential.source === 'secure_store' && (
                     <ActionButton
                       isDisabled={projectRuntimeBusy}
                       onPress={() => void forgetProjectCredential()}
                     >
-                      {projectForgetConfirmation ? 'Confirm forget' : 'Forget credential'}
+                      {projectForgetConfirmation
+                        ? t('settings.project.credential.confirmForget')
+                        : t('settings.project.credential.forget')}
                     </ActionButton>
                   )}
                 </div>
                 {!projectStatus?.credential.secureStorageAvailable && (
                   <Text UNSAFE_className="project-credential-warning">
-                    Protected credential storage is unavailable. Shio will not save the token as
-                    plain text.
+                    {t('settings.project.credential.unavailable')}
                   </Text>
                 )}
                 {projectStatus?.credential.lastError && (
@@ -1023,11 +1097,8 @@ export function SettingsDialog({
               </div>
               <div className="project-runtime-controls">
                 <div className="project-credential-copy">
-                  <strong>Project Awareness controls</strong>
-                  <span>
-                    Connect the configured target, update its commit-scoped index, or rebuild the
-                    index from scratch.
-                  </span>
+                  <strong>{t('settings.project.controls.title')}</strong>
+                  <span>{t('settings.project.controls.description')}</span>
                 </div>
                 <div className="project-awareness-actions">
                   {projectConnected ? (
@@ -1037,7 +1108,7 @@ export function SettingsDialog({
                         void runProjectAction(() => window.api.projectAwareness.disconnect())
                       }
                     >
-                      Disconnect
+                      {t('common.disconnect')}
                     </ActionButton>
                   ) : (
                     <ActionButton
@@ -1051,14 +1122,14 @@ export function SettingsDialog({
                         void runProjectAction(() => window.api.projectAwareness.connect())
                       }
                     >
-                      Connect
+                      {t('common.connect')}
                     </ActionButton>
                   )}
                   <ActionButton
                     isDisabled={!projectConnected || projectRuntimeBusy || !projectTargetApplied}
                     onPress={() => void runProjectAction(() => window.api.projectAwareness.sync())}
                   >
-                    Sync now
+                    {t('settings.project.sync')}
                   </ActionButton>
                   <ActionButton
                     isDisabled={
@@ -1072,7 +1143,7 @@ export function SettingsDialog({
                       void runProjectAction(() => window.api.projectAwareness.rebuildIndex())
                     }
                   >
-                    Rebuild index
+                    {t('settings.project.rebuild')}
                   </ActionButton>
                 </div>
               </div>
@@ -1080,7 +1151,7 @@ export function SettingsDialog({
           ) : activeSection === 'speech' ? (
             <div className="settings-grid">
               <TextField
-                label="ASR / TTS URL"
+                label={t('settings.speech.url')}
                 value={speechUrl}
                 onChange={setSpeechUrl}
                 styles={fullWidth}
@@ -1093,7 +1164,7 @@ export function SettingsDialog({
                 styles={fullWidth}
               >
                 <PickerItem id="ru">{TEXT.russian}</PickerItem>
-                <PickerItem id="en">English</PickerItem>
+                <PickerItem id="en">{t('settings.language.en')}</PickerItem>
               </Picker>
 
               <Picker
@@ -1116,24 +1187,15 @@ export function SettingsDialog({
           ) : activeSection === 'listening' ? (
             <div className="settings-grid streaming-settings">
               <div className="streaming-field-heading">
-                <Heading level={3}>Режим внимания</Heading>
+                <Heading level={3}>{t('streaming.mode.label')}</Heading>
                 <ContextualHelp variant="info" aria-label={TEXT.attentionModesHelp}>
                   <Heading>{TEXT.attentionModesHelp}</Heading>
                   <Content>
                     <div className="attention-mode-help">
-                      <p>
-                        <strong>Silent.</strong> Shio не реагирует самостоятельно на фоновую речь.
-                      </p>
-                      <p>
-                        <strong>Пассивный.</strong> Shio реагирует преимущественно на прямые
-                        обращения.
-                      </p>
-                      <p>
-                        <strong>Активный.</strong> Shio чаще подключается к текущему разговору.
-                      </p>
-                      <p>
-                        <strong>Стример.</strong> Shio выбирает релевантные реплики из фоновой речи.
-                      </p>
+                      <p>{t('settings.listening.silent.help')}</p>
+                      <p>{t('settings.listening.passive.help')}</p>
+                      <p>{t('settings.listening.active.help')}</p>
+                      <p>{t('settings.listening.streamer.help')}</p>
                     </div>
                   </Content>
                 </ContextualHelp>
@@ -1156,16 +1218,16 @@ export function SettingsDialog({
               </SegmentedControl>
               <Text>
                 {continuousListeningMode === 'active'
-                  ? 'Активный — чаще подключается к текущему разговору.'
+                  ? t('settings.listening.active.summary')
                   : continuousListeningMode === 'streamer'
-                    ? 'Стример — выбирает релевантные реплики из фоновой речи.'
+                    ? t('settings.listening.streamer.summary')
                     : continuousListeningMode === 'passive'
-                      ? 'Пассивный — реагирует преимущественно на прямые обращения.'
-                      : 'Silent — Shio не реагирует самостоятельно на фоновую речь.'}
+                      ? t('settings.listening.passive.summary')
+                      : t('settings.listening.silent.summary')}
               </Text>
               <div className="streaming-slider">
                 <Slider
-                  label="Спонтанность реакций"
+                  label={t('settings.listening.spontaneity')}
                   value={curiosityChancePercent}
                   minValue={0}
                   maxValue={20}
@@ -1175,25 +1237,27 @@ export function SettingsDialog({
                 />
                 <span className="streaming-slider-value">{curiosityChancePercent}%</span>
                 <div className="streaming-slider-ends">
-                  <Text>Редко</Text>
-                  <Text>Часто</Text>
+                  <Text>{t('settings.listening.rare')}</Text>
+                  <Text>{t('settings.listening.often')}</Text>
                 </div>
               </div>
               <Disclosure isQuiet>
-                <DisclosureTitle>Дополнительные параметры</DisclosureTitle>
+                <DisclosureTitle>{t('settings.listening.advanced')}</DisclosureTitle>
                 <DisclosurePanel>
                   <div className="streaming-advanced-fields">
                     <NumberField
-                      label="Пауза между ответами"
+                      label={t('settings.listening.replyCooldown')}
                       value={replyCooldownMs / 1000}
                       minValue={0}
                       maxValue={120}
                       step={0.5}
                       onChange={(value) => setReplyCooldownMs(value * 1000)}
                     />
-                    <Text slot="description">Минимальное время до следующей реакции Shio.</Text>
+                    <Text slot="description">
+                      {t('settings.listening.replyCooldown.description')}
+                    </Text>
                     <NumberField
-                      label="Окно продолжения диалога"
+                      label={t('settings.listening.followUpWindow')}
                       value={followUpWindowMs / 1000}
                       minValue={0}
                       maxValue={120}
@@ -1201,7 +1265,7 @@ export function SettingsDialog({
                       onChange={(value) => setFollowUpWindowMs(value * 1000)}
                     />
                     <Text slot="description">
-                      Период, в котором следующая фраза считается продолжением текущего диалога.
+                      {t('settings.listening.followUpWindow.description')}
                     </Text>
                   </div>
                 </DisclosurePanel>
@@ -1262,12 +1326,12 @@ export function SettingsDialog({
               <section className="llm-settings-section" aria-labelledby="primary-llm-title">
                 <div className="llm-section-heading">
                   <Heading id="primary-llm-title" level={3}>
-                    Основная модель
+                    {t('settings.llm.primary')}
                   </Heading>
                   <LlmHealthStatus health={llmHealth} />
                 </div>
                 <Picker
-                  label="Провайдер"
+                  label={t('common.provider')}
                   selectedKey={activeProvider}
                   onSelectionChange={(k) => {
                     setActiveProvider(String(k) as LlmProviderId)
@@ -1325,7 +1389,7 @@ export function SettingsDialog({
                   </div>
                   {copied && (
                     <Text UNSAFE_className="settings-hint" role="status">
-                      Скопировано
+                      {t('settings.llm.copied')}
                     </Text>
                   )}
                 </div>
@@ -1363,36 +1427,29 @@ export function SettingsDialog({
               <section className="llm-settings-section" aria-labelledby="backlog-selector-title">
                 <div className="llm-selector-title-row">
                   <Heading id="backlog-selector-title" level={3}>
-                    Умный выбор следующей реплики
+                    {t('settings.llm.smart.title')}
                   </Heading>
                   <div className="llm-selector-actions">
                     <Switch
-                      aria-label="Включить умный выбор следующей реплики"
+                      aria-label={t('settings.llm.smart.enable')}
                       isSelected={backlogRole.enabled}
                       onChange={(enabled) => setBacklogRole((value) => ({ ...value, enabled }))}
                     />
                     <ContextualHelp
                       variant="info"
                       size="S"
-                      aria-label="Подробнее об умном выборе следующей реплики"
+                      aria-label={t('settings.llm.smart.more')}
                     >
-                      <Heading>Умный выбор следующей реплики</Heading>
-                      <Content>
-                        Обычный текстовый чат этот механизм не использует. Отдельная модель
-                        вызывается только при неоднозначном backlog во включённом стриминге — это
-                        дополнительный arbitration, а не основная Character LLM.
-                      </Content>
+                      <Heading>{t('settings.llm.smart.title')}</Heading>
+                      <Content>{t('settings.llm.smart.description')}</Content>
                     </ContextualHelp>
                   </div>
                 </div>
-                <Text UNSAFE_className="settings-hint">
-                  Использует отдельную модель только в неоднозначных случаях при включённом
-                  стриминге.
-                </Text>
+                <Text UNSAFE_className="settings-hint">{t('settings.llm.smart.hint')}</Text>
                 {backlogRole.enabled && (
                   <div className="llm-selector-fields">
                     <Picker
-                      label="Провайдер"
+                      label={t('common.provider')}
                       selectedKey={backlogRole.providerId || null}
                       onSelectionChange={(key) =>
                         setBacklogRole((value) => ({
@@ -1412,11 +1469,11 @@ export function SettingsDialog({
                         ))}
                     </Picker>
                     <ModelComboBox
-                      label="Модель"
+                      label={t('common.model')}
                       models={backlogModels}
                       selectedId={backlogRole.model}
                       isDisabled={!backlogRole.providerId || backlogModels.length === 0}
-                      placeholder="Найти модель…"
+                      placeholder={t('common.searchModel')}
                       onSelect={(id) => setBacklogRole((value) => ({ ...value, model: id }))}
                     />
                   </div>
@@ -1641,8 +1698,8 @@ export function SettingsDialog({
         </Content>
         {activeSection === 'advanced' && (
           <section className="danger-zone">
-            <h3>Опасная зона</h3>
-            <p>Удаление истории нельзя отменить.</p>
+            <h3>{t('settings.danger.title')}</h3>
+            <p>{t('settings.danger.description')}</p>
             <Button variant="negative" onPress={() => setConfirmClearHistory(true)}>
               {TEXT.clearHistory}
             </Button>
@@ -1657,11 +1714,11 @@ export function SettingsDialog({
           aria-labelledby="clear-history-title"
         >
           <div>
-            <h2 id="clear-history-title">Очистить историю диалогов?</h2>
-            <p>Это действие удалит сохранённую историю и не может быть отменено.</p>
+            <h2 id="clear-history-title">{t('settings.danger.confirmTitle')}</h2>
+            <p>{t('settings.danger.confirmDescription')}</p>
             <ButtonGroup>
               <Button variant="secondary" autoFocus onPress={() => setConfirmClearHistory(false)}>
-                Отмена
+                {t('common.cancel')}
               </Button>
               <Button
                 variant="negative"
@@ -1670,7 +1727,7 @@ export function SettingsDialog({
                   setConfirmClearHistory(false)
                 }}
               >
-                Очистить историю
+                {t('settings.danger.clear')}
               </Button>
             </ButtonGroup>
           </div>

@@ -1,3 +1,5 @@
+export { isAllowedProjectPath, isSafeTextContent } from './indexing/SourceFilter'
+export { extractSource } from './indexing/SymbolExtractor'
 export type { ProjectAwarenessRuntimeConfig } from './ProjectAwarenessRuntime'
 export { ProjectAwarenessRuntime } from './ProjectAwarenessRuntime'
 export {
@@ -7,5 +9,3 @@ export {
 } from './ProjectCredentialStore'
 export { ProjectKnowledgeStore } from './ProjectKnowledgeStore'
 export { isProjectRelevantRequest } from './ProjectRelevanceGate'
-export { isAllowedProjectPath, isSafeTextContent } from './SourceFilter'
-export { extractSource } from './SymbolExtractor'

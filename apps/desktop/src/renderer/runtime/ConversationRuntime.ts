@@ -12,7 +12,7 @@ import type {
   AdmittedConversationTurn,
   ConversationCompletionResult,
   ConversationExecutionPhase,
-} from '../continuousListening/types'
+} from '../speech/continuous-listening/types'
 import type { AvatarMode, AvatarRuntime } from './AvatarRuntime'
 import type { ConversationPresenceRuntime } from './ConversationPresenceRuntime'
 import type { OverlayRuntime, SyncedAvatarState } from './OverlayRuntime'
@@ -50,6 +50,7 @@ export interface ConversationRuntimeDeps {
   player: AudioPlayer
   setStatus: (status: ConversationStatus) => void
   pushMessage: (role: ChatMsg['role'], text: string) => void
+  formatUserError: (message: string) => string
   markAssistantMessageInterrupted: () => void
   setResponseInterruptionPending: (pending: boolean) => void
   recordRuntimeEvent: (label: string, detail?: string) => void
@@ -327,7 +328,7 @@ export class ConversationRuntime {
       // Internal concurrency diagnostics belong in Runtime Debug/Event Bus,
       // never in conversation history. Normal provider/user-facing failures
       // retain the existing inline error behavior.
-      if (!invariantViolation) this.deps.pushMessage('error', `Ошибка: ${message}`)
+      if (!invariantViolation) this.deps.pushMessage('error', this.deps.formatUserError(message))
       try {
         await this.recoverToIdle(turn.turnId)
       } catch (cleanupError) {

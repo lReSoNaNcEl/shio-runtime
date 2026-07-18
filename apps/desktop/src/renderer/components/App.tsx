@@ -2,6 +2,7 @@ import { Button, Provider } from '@react-spectrum/s2'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { controller } from '../Controller'
+import { useTranslation } from '../localization/useTranslation'
 import { AvatarDebugDialog } from './AvatarDebugDialog'
 import { ChatOverlay } from './ChatOverlay'
 import { MicrophoneGateOverlay } from './MicrophoneGateOverlay'
@@ -13,15 +14,8 @@ import { useControllerState } from './useController'
 import { AvatarPreviewView } from './views/AvatarPreviewView'
 import { RuntimeHealthView } from './views/RuntimeHealthView'
 
-const sectionCopy: Record<AppSection, { title: string; subtitle?: string }> = {
-  chat: { title: 'Чат' },
-  avatar: { title: 'Avatar Preview', subtitle: 'Предпросмотр модели и её текущего состояния' },
-  health: { title: 'Runtime Health', subtitle: 'Состояние подключений и presentation runtime' },
-  debug: { title: 'Отладка', subtitle: 'Диагностика и инструменты Runtime' },
-  settings: { title: 'Настройки', subtitle: 'Конфигурация приложения и персонажа' },
-}
-
 export function App(): React.JSX.Element {
+  const { intlLocale, t } = useTranslation()
   const overlayCanvasRef = useRef<HTMLCanvasElement>(null)
   const state = useControllerState()
   const [section, setSection] = useState<AppSection>('chat')
@@ -36,11 +30,11 @@ export function App(): React.JSX.Element {
     const prev = prevSpeechService.current
     prevSpeechService.current = speechService
     if ((prev === 'unavailable' || prev === 'degraded') && speechService === 'available') {
-      setSpeechToast('Распознавание речи снова доступно')
+      setSpeechToast(t('app.speechRecovered'))
       if (toastTimer.current) clearTimeout(toastTimer.current)
       toastTimer.current = setTimeout(() => setSpeechToast(null), 4000)
     }
-  }, [speechService])
+  }, [speechService, t])
 
   useEffect(
     () => () => {
@@ -64,11 +58,21 @@ export function App(): React.JSX.Element {
     }
   }, [isOverlay])
 
+  const sectionCopy: Record<AppSection, { title: string; subtitle?: string }> = {
+    chat: { title: t('app.nav.chat') },
+    avatar: {
+      title: t('app.section.avatar.title'),
+      subtitle: t('app.section.avatar.subtitle'),
+    },
+    health: { title: t('app.nav.health'), subtitle: t('app.section.health.subtitle') },
+    debug: { title: t('app.nav.debug'), subtitle: t('app.section.debug.subtitle') },
+    settings: { title: t('app.nav.settings'), subtitle: t('app.section.settings.subtitle') },
+  }
   const copy = sectionCopy[section]
 
   if (isOverlay)
     return (
-      <Provider colorScheme="dark" locale="ru-RU" UNSAFE_className="app-provider">
+      <Provider colorScheme="dark" locale={intlLocale} UNSAFE_className="app-provider">
         <canvas id="canvas" ref={overlayCanvasRef} />
         {state.overlayAnimationHudEnabled && state.overlayAnimationFile && (
           <div className="overlay-animation-hud">{state.overlayAnimationFile}</div>
@@ -77,7 +81,7 @@ export function App(): React.JSX.Element {
     )
 
   return (
-    <Provider colorScheme="dark" locale="ru-RU" UNSAFE_className="app-provider">
+    <Provider colorScheme="dark" locale={intlLocale} UNSAFE_className="app-provider">
       <AppShell
         section={section}
         onSectionChange={setSection}
@@ -134,12 +138,9 @@ export function App(): React.JSX.Element {
         )}
         {section === 'debug' && (
           <section className="debug-view">
-            <p>
-              Технические диагностические инструменты открываются отдельно от пользовательского
-              потока.
-            </p>
+            <p>{t('app.debug.description')}</p>
             <Button variant="secondary" onPress={() => setDebugOpen(true)}>
-              Открыть Debug tools
+              {t('app.debug.open')}
             </Button>
           </section>
         )}

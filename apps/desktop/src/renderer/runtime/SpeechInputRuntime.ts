@@ -3,7 +3,10 @@ import type { EventBus, RuntimeEventType } from '../../shared/runtime/events'
 import type { SerializedSpeechError } from '../../shared/speech/speechErrors'
 import { MicCapture } from '../audio/micCapture'
 import { StreamingPcmCapture } from '../audio/StreamingPcmCapture'
-import { type AsrStreamEvent, StreamingAsrClient } from '../continuousListening/StreamingAsrClient'
+import {
+  type AsrStreamEvent,
+  StreamingAsrClient,
+} from '../speech/continuous-listening/StreamingAsrClient'
 import type { AvatarMode, AvatarRuntime } from './AvatarRuntime'
 import type { OverlayRuntime, SyncedAvatarState } from './OverlayRuntime'
 import type { RecognizedSpeech, SpeechRuntime } from './SpeechRuntime'
@@ -42,6 +45,8 @@ export interface SpeechInputRuntimeDeps {
   events: EventBus
   setStatus: (status: SpeechInputStatus) => void
   pushMessage: (role: SpeechInputMessageRole, text: string) => void
+  formatMicrophoneUnavailable: (error: string) => string
+  emptyRecordingMessage: () => string
   recordRuntimeEvent: (label: string, detail?: string) => void
   /** Report a normalized Speech Adapter failure to the capabilities health component. */
   reportSpeechServiceError: (error: SerializedSpeechError) => void
@@ -64,6 +69,8 @@ export class SpeechInputRuntime {
   private events: EventBus
   private setStatus: SpeechInputRuntimeDeps['setStatus']
   private pushMessage: SpeechInputRuntimeDeps['pushMessage']
+  private formatMicrophoneUnavailable: SpeechInputRuntimeDeps['formatMicrophoneUnavailable']
+  private emptyRecordingMessage: SpeechInputRuntimeDeps['emptyRecordingMessage']
   private recordRuntimeEvent: SpeechInputRuntimeDeps['recordRuntimeEvent']
   private updateCharacterState: SpeechInputRuntimeDeps['updateCharacterState']
   private reportSpeechServiceError: SpeechInputRuntimeDeps['reportSpeechServiceError']
@@ -98,6 +105,8 @@ export class SpeechInputRuntime {
     this.events = deps.events
     this.setStatus = deps.setStatus
     this.pushMessage = deps.pushMessage
+    this.formatMicrophoneUnavailable = deps.formatMicrophoneUnavailable
+    this.emptyRecordingMessage = deps.emptyRecordingMessage
     this.recordRuntimeEvent = deps.recordRuntimeEvent
     this.updateCharacterState = deps.updateCharacterState
     this.reportSpeechServiceError = deps.reportSpeechServiceError
@@ -275,7 +284,7 @@ export class SpeechInputRuntime {
       this.recordRuntimeEvent('Listening')
     } catch (e) {
       this.recordRuntimeEvent('Microphone Error', String(e))
-      this.pushMessage('error', `Микрофон недоступен: ${String(e)}`)
+      this.pushMessage('error', this.formatMicrophoneUnavailable(String(e)))
     }
 
     return null
@@ -345,7 +354,7 @@ export class SpeechInputRuntime {
     // 44 bytes = empty WAV header only, so nothing was actually captured.
     if (wavBuf.byteLength <= 44) {
       this.recordRuntimeEvent('ASR Empty')
-      this.pushMessage('error', 'Запись пустая - проверьте микрофон и разрешения.')
+      this.pushMessage('error', this.emptyRecordingMessage())
       this.returnToIdle()
       return null
     }

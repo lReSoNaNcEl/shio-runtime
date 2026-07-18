@@ -2,6 +2,8 @@ import { mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 
+import { type Translator, translate } from '../../shared/localization/format'
+import { DEFAULT_UI_LOCALE } from '../../shared/localization/locale'
 import type {
   ProjectEvidence,
   ProjectMap,
@@ -19,6 +21,11 @@ interface SnapshotRow {
   owner: string
   name: string
   default_branch: string
+}
+
+interface SnapshotRetentionRow {
+  id: string
+  is_current: number
 }
 
 export interface StoredProjectFile {
@@ -83,7 +90,10 @@ function ftsQuery(query: string): string | null {
 export class ProjectKnowledgeStore {
   private readonly database: DatabaseSync
 
-  constructor(databasePath: string) {
+  constructor(
+    databasePath: string,
+    private readonly t: Translator = (key, params) => translate(DEFAULT_UI_LOCALE, key, params),
+  ) {
     mkdirSync(dirname(databasePath), { recursive: true })
     this.database = new DatabaseSync(databasePath)
     this.database.exec('PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;')
@@ -429,6 +439,42 @@ export class ProjectKnowledgeStore {
     }
   }
 
+  pruneSnapshots(repository: ProjectRepositoryIdentity, branch: string, keepCount: number): void {
+    this.database.exec('BEGIN IMMEDIATE')
+    try {
+      const snapshots = this.database
+        .prepare(
+          `SELECT id, is_current
+           FROM snapshots
+           WHERE repository_id = ? AND branch = ?
+           ORDER BY is_current DESC, created_at DESC, rowid DESC`,
+        )
+        .all(repositoryId(repository), branch) as unknown as SnapshotRetentionRow[]
+      const retainedIds = new Set(
+        snapshots.filter((snapshot) => snapshot.is_current === 1).map((snapshot) => snapshot.id),
+      )
+      const retentionLimit = Math.max(1, Math.floor(keepCount))
+      for (const snapshot of snapshots) {
+        if (retainedIds.size >= retentionLimit) break
+        retainedIds.add(snapshot.id)
+      }
+
+      const removeFts = this.database.prepare('DELETE FROM chunks_fts WHERE snapshot_id = ?')
+      const removeSnapshot = this.database.prepare(
+        'DELETE FROM snapshots WHERE id = ? AND is_current = 0',
+      )
+      for (const snapshot of snapshots) {
+        if (snapshot.is_current === 1 || retainedIds.has(snapshot.id)) continue
+        removeFts.run(snapshot.id)
+        removeSnapshot.run(snapshot.id)
+      }
+      this.database.exec('COMMIT')
+    } catch (error) {
+      this.database.exec('ROLLBACK')
+      throw error
+    }
+  }
+
   deleteDraftSnapshot(snapshotId: string): void {
     const chunkIds = this.database
       .prepare(
@@ -576,7 +622,7 @@ export class ProjectKnowledgeStore {
     const row = this.database
       .prepare('SELECT content FROM files WHERE snapshot_id = ? AND path = ?')
       .get(snapshotId, path) as { content: string } | undefined
-    if (!row) throw new Error(`Project file is not indexed: ${path}`)
+    if (!row) throw new Error(this.t('main.error.project.fileNotIndexed', { path }))
     const lines = row.content.split(/\r?\n/)
     const safeStart = Math.max(1, Math.min(lines.length || 1, Math.floor(startLine)))
     const safeEnd = Math.max(
@@ -612,7 +658,7 @@ export class ProjectKnowledgeStore {
           content: string
         }
       | undefined
-    if (!row) throw new Error(`Project symbol is not indexed: ${name}`)
+    if (!row) throw new Error(this.t('main.error.project.symbolNotIndexed', { name }))
     const lines = row.content.split(/\r?\n/)
     return {
       path: row.path,

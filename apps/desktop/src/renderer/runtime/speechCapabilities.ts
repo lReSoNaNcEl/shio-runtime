@@ -1,3 +1,6 @@
+import { translate } from '../../shared/localization/format'
+import { DEFAULT_UI_LOCALE, type UiLocale } from '../../shared/localization/locale'
+import type { TranslationKey } from '../../shared/localization/messages'
 import type { RuntimeEventType } from '../../shared/runtime/events'
 import type {
   SerializedSpeechError,
@@ -28,7 +31,11 @@ export class SpeechServiceError extends Error implements SerializedSpeechError {
   }
 
   get userMessage(): string {
-    return USER_MESSAGES[this.code]?.title ?? 'Речевой сервис недоступен'
+    return this.userMessageFor(DEFAULT_UI_LOCALE)
+  }
+
+  userMessageFor(locale: UiLocale): string {
+    return translate(locale, USER_MESSAGE_KEYS[this.code].title)
   }
 
   toSerialized(): SerializedSpeechError {
@@ -249,38 +256,37 @@ export function diffTransitions(
 
 // ---- user-facing copy (ТЗ §13) — no ECONNREFUSED / IP / port ---------------
 
-export const USER_MESSAGES: Record<
+const USER_MESSAGE_KEYS: Record<
   SpeechServiceErrorCode,
-  { title: string; description?: string }
+  { title: TranslationKey; description: TranslationKey }
 > = {
   SERVICE_UNAVAILABLE: {
-    title: 'Распознавание речи недоступно',
-    description:
-      'Не удалось подключиться к локальному Speech API. Текстовый чат продолжает работать.',
+    title: 'speech.error.serviceUnavailable.title',
+    description: 'speech.error.serviceUnavailable.description',
   },
   SERVICE_ERROR: {
-    title: 'Речевой сервис отвечает с ошибкой',
-    description: 'Локальный Speech API вернул ошибку. Текстовый чат продолжает работать.',
+    title: 'speech.error.serviceError.title',
+    description: 'speech.error.serviceError.description',
   },
   REQUEST_TIMEOUT: {
-    title: 'Сервис распознавания отвечает слишком долго',
-    description: 'Попробуйте ещё раз.',
+    title: 'speech.error.timeout.title',
+    description: 'speech.error.timeout.description',
   },
   REQUEST_REJECTED: {
-    title: 'Запрос к речевому сервису отклонён',
-    description: 'Текстовый чат продолжает работать.',
+    title: 'speech.error.rejected.title',
+    description: 'speech.error.rejected.description',
   },
   RECOGNITION_FAILED: {
-    title: 'Не удалось распознать речь',
-    description: 'Попробуйте ещё раз.',
+    title: 'speech.error.recognitionFailed.title',
+    description: 'speech.error.recognitionFailed.description',
   },
   INVALID_RESPONSE: {
-    title: 'Речевой сервис вернул некорректный ответ',
-    description: 'Текстовый чат продолжает работать.',
+    title: 'speech.error.invalidResponse.title',
+    description: 'speech.error.invalidResponse.description',
   },
   UNKNOWN: {
-    title: 'Речевой сервис недоступен',
-    description: 'Текстовый чат продолжает работать.',
+    title: 'speech.error.unknown.title',
+    description: 'speech.error.unknown.description',
   },
 }
 
@@ -289,29 +295,29 @@ export const USER_MESSAGES: Record<
  */
 export function bannerCopy(
   state: SpeechCapabilitiesState,
+  locale: UiLocale = DEFAULT_UI_LOCALE,
 ): { title: string; description: string } | null {
   const asrDown = state.recognition === 'unavailable'
   const ttsDown = state.synthesis === 'unavailable'
   // Full outage — the whole Speech API is unreachable (ТЗ §3, §13).
   if (state.service === 'unavailable' || (asrDown && ttsDown)) {
     return {
-      title: 'Распознавание речи недоступно',
-      description:
-        'Не удалось подключиться к локальному Speech API. Текстовый чат продолжает работать.',
+      title: translate(locale, 'speech.error.serviceUnavailable.title'),
+      description: translate(locale, 'speech.error.serviceUnavailable.description'),
     }
   }
   // Only recognition is down; synthesis still works (ТЗ §13).
   if (asrDown) {
     return {
-      title: 'Голосовой ввод недоступен',
-      description: 'Сервис распознавания речи временно не отвечает.',
+      title: translate(locale, 'speech.banner.voiceInputUnavailable.title'),
+      description: translate(locale, 'speech.banner.voiceInputUnavailable.description'),
     }
   }
   // Only synthesis is down; recognition still works (ТЗ §13).
   if (ttsDown) {
     return {
-      title: 'Озвучивание недоступно',
-      description: 'Ответ будет показан текстом.',
+      title: translate(locale, 'speech.banner.synthesisUnavailable.title'),
+      description: translate(locale, 'speech.banner.synthesisUnavailable.description'),
     }
   }
   return null

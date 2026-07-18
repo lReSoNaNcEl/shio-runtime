@@ -1,3 +1,6 @@
+import { type TranslationParams, translate } from '../shared/localization/format'
+import { DEFAULT_UI_LOCALE, normalizeUiLocale, type UiLocale } from '../shared/localization/locale'
+import type { TranslationKey } from '../shared/localization/messages'
 import type { CharacterRuntimeMode, CharacterState } from '../shared/runtime/characterState'
 import type { RuntimeEvent, RuntimeEventCategory, RuntimeEventType } from '../shared/runtime/events'
 import type { SerializedSpeechError } from '../shared/speech/speechErrors'
@@ -22,34 +25,6 @@ import type { IdleOrchestratorDebugState } from './avatar/AvatarIdleOrchestrator
 import type { AvatarPlaybackRequestDebugState } from './avatar/AvatarPlaybackRequestLog'
 import type { SpeakingGestureSchedulerDebugState } from './avatar/AvatarSpeakingGestureScheduler'
 import type { DebugAvatarMode } from './avatar/avatarAnimations'
-import { AttentionEngine } from './continuousListening/AttentionEngine'
-import { BacklogSelector } from './continuousListening/BacklogSelector'
-import { BargeInPolicy } from './continuousListening/BargeInPolicy'
-import { ConversationAdmissionCoordinator } from './continuousListening/ConversationAdmissionCoordinator'
-import { RuleGate } from './continuousListening/RuleGate'
-import {
-  CORRECTION_PATTERN,
-  isExplicitBargeInPhrase,
-  textSimilarity,
-} from './continuousListening/textAnalysis'
-import {
-  backlogTuning,
-  bargeInTuning,
-  defaultContinuousListeningSettings,
-  parseAttentionMode,
-  parseTunedNumber,
-} from './continuousListening/tuning'
-import type {
-  AdmittedConversationTurn,
-  BufferedUtterance,
-  ContinuousListeningSettings,
-  ConversationCompletionResult,
-  ConversationExecutionPhase,
-  ConversationInput,
-  UtteranceChunk,
-} from './continuousListening/types'
-import { UtteranceBacklog } from './continuousListening/UtteranceBacklog'
-import { UtteranceChunkBuilder } from './continuousListening/UtteranceChunkBuilder'
 import { type AvatarMode, AvatarRuntime } from './runtime/AvatarRuntime'
 import { ConversationPresenceRuntime } from './runtime/ConversationPresenceRuntime'
 import { ConversationRuntime } from './runtime/ConversationRuntime'
@@ -75,6 +50,34 @@ import {
   type SpeechCapabilitiesState,
 } from './runtime/speechCapabilities'
 import { TransitionRecorder } from './runtime/TransitionRecorder'
+import { AttentionEngine } from './speech/continuous-listening/AttentionEngine'
+import { BacklogSelector } from './speech/continuous-listening/BacklogSelector'
+import { BargeInPolicy } from './speech/continuous-listening/BargeInPolicy'
+import { ConversationAdmissionCoordinator } from './speech/continuous-listening/ConversationAdmissionCoordinator'
+import { RuleGate } from './speech/continuous-listening/RuleGate'
+import {
+  CORRECTION_PATTERN,
+  isExplicitBargeInPhrase,
+  textSimilarity,
+} from './speech/continuous-listening/textAnalysis'
+import {
+  backlogTuning,
+  bargeInTuning,
+  defaultContinuousListeningSettings,
+  parseAttentionMode,
+  parseTunedNumber,
+} from './speech/continuous-listening/tuning'
+import type {
+  AdmittedConversationTurn,
+  BufferedUtterance,
+  ContinuousListeningSettings,
+  ConversationCompletionResult,
+  ConversationExecutionPhase,
+  ConversationInput,
+  UtteranceChunk,
+} from './speech/continuous-listening/types'
+import { UtteranceBacklog } from './speech/continuous-listening/UtteranceBacklog'
+import { UtteranceChunkBuilder } from './speech/continuous-listening/UtteranceChunkBuilder'
 import type { FacialDebugState } from './three/AvatarExpressionMixer'
 import { type OverlayViewMode, semanticEarTuning } from './three/avatarTuning'
 import type { EarAxisOverride, EarBehaviorDebugState } from './three/EarBehaviorRuntime'
@@ -193,6 +196,7 @@ const nextId = (): string => `m${++idSeq}`
 const QUESTION_PATTERN =
   /\?|(?:^|\s)(?:кто|что|где|когда|зачем|почему|как|можешь|скажешь|думаешь)(?:$|[\s,.!?])/iu
 export class Controller {
+  private uiLocale: UiLocale = DEFAULT_UI_LOCALE
   private shioRuntime = new ShioRuntime()
   private scene: SceneManager | null = null
   // Monotonic token for the local Avatar Preview scene. Bumped on every attach and
@@ -223,6 +227,7 @@ export class Controller {
     player: this.player,
     setStatus: (status) => this.set({ status }),
     pushMessage: (role, text) => this.pushMessage(role, text),
+    formatUserError: (message) => this.t('conversation.userError', { message }),
     markAssistantMessageInterrupted: () => this.markAssistantMessageInterrupted(),
     setResponseInterruptionPending: (pending) => this.set({ responseInterruptionPending: pending }),
     recordRuntimeEvent: (label, detail) => this.recordRuntimeEvent(label, detail),
@@ -239,11 +244,15 @@ export class Controller {
     events: this.shioRuntime.events,
     setStatus: (status) => this.set({ status }),
     pushMessage: (role, text) => this.pushMessage(role, text),
+    formatMicrophoneUnavailable: (error) => this.t('speechInput.microphoneUnavailable', { error }),
+    emptyRecordingMessage: () => this.t('speechInput.emptyRecording'),
     recordRuntimeEvent: (label, detail) => this.recordRuntimeEvent(label, detail),
     reportSpeechServiceError: (error) => this.reportSpeechServiceError(error),
     updateCharacterState: (patch) => this.updateCharacterState(patch),
   })
-  private microphoneDeviceService = new MicrophoneDeviceService()
+  private microphoneDeviceService = new MicrophoneDeviceService((index) =>
+    this.t('microphone.fallback', { index }),
+  )
   private microphoneGate = new MicrophoneGateController({
     service: this.microphoneDeviceService,
     getSavedDeviceId: () => this.speechInputRuntime.getMicrophoneId(),
@@ -285,9 +294,9 @@ export class Controller {
     status: 'idle',
     responseInterruptionPending: false,
     messages: [],
-    health: { state: 'checking', text: 'Проверка...' },
+    health: { state: 'checking', text: translate(DEFAULT_UI_LOCALE, 'common.checkingEllipsis') },
     speechCapabilities: INITIAL_SPEECH_CAPABILITIES,
-    llmHealth: { state: 'unknown', detail: 'Проверяется при первом запросе' },
+    llmHealth: { state: 'unknown', detail: translate(DEFAULT_UI_LOCALE, 'common.notChecked') },
     vrmLoaded: false,
     faceTrackingEnabled: false,
     passiveCompanionEnabled: false,
@@ -324,6 +333,7 @@ export class Controller {
   private bootstrapped = false
   private avatarTickRafId: number | null = null
   private avatarTickLastTime = 0
+  private llmHealthDetailKey: TranslationKey | null = 'common.notChecked'
 
   constructor() {
     this.shioRuntime.registry.register('speech', this.speechRuntime)
@@ -339,6 +349,40 @@ export class Controller {
     )
   }
 
+  private t(key: TranslationKey, params?: TranslationParams): string {
+    return translate(this.uiLocale, key, params)
+  }
+
+  private applyUiLocale(locale: UiLocale): void {
+    this.uiLocale = locale
+    const patch: Partial<ControllerState> = {
+      health: this.toLegacyHealth(this.state.speechCapabilities),
+    }
+    if (this.llmHealthDetailKey) {
+      patch.llmHealth = {
+        ...this.state.llmHealth,
+        detail: this.t(this.llmHealthDetailKey),
+      }
+    }
+    if (this.state.continuousListeningState === 'error') {
+      patch.continuousListeningError = this.t('controller.microphoneAccessFailed')
+    }
+    this.set(patch)
+  }
+
+  private setLlmHealth(
+    state: ControllerState['llmHealth']['state'],
+    detail: TranslationKey | { raw: string },
+  ): void {
+    this.llmHealthDetailKey = typeof detail === 'string' ? detail : null
+    this.set({
+      llmHealth: {
+        state,
+        detail: typeof detail === 'string' ? this.t(detail) : detail.raw,
+      },
+    })
+  }
+
   // ---- Speech API capabilities (read-only health component) ----------------
   /**
    * Single funnel from runtime paths (ASR/TTS/streaming) into the capabilities
@@ -351,7 +395,7 @@ export class Controller {
       const incidentId = this.speechCapabilitiesRuntime.getState().incidentId
       if (incidentId !== this.lastSynthesisNoticeIncidentId) {
         this.lastSynthesisNoticeIncidentId = incidentId
-        this.pushMessage('meta', 'Озвучивание недоступно. Ответ показан текстом.')
+        this.pushMessage('meta', this.t('controller.synthesisTextFallback'))
       }
     }
   }
@@ -368,11 +412,11 @@ export class Controller {
       case 'available':
         return { state: 'ok', text: 'ASR / TTS OK' }
       case 'degraded':
-        return { state: 'warn', text: 'Speech API частично доступен' }
+        return { state: 'warn', text: this.t('controller.health.degraded') }
       case 'unavailable':
-        return { state: 'err', text: 'Speech API недоступен' }
+        return { state: 'err', text: this.t('controller.health.unavailable') }
       default:
-        return { state: 'checking', text: 'Проверка...' }
+        return { state: 'checking', text: this.t('common.checkingEllipsis') }
     }
   }
 
@@ -571,10 +615,10 @@ export class Controller {
     this.subscribeActionRuntimeEvents()
     this.publishControllerRuntimeEvent('RuntimeInitialized', 'system')
     this.recordRuntimeEvent(this.overlayRuntime.runtimeAttachedLabel())
+    const cfg = await window.api.config.get()
+    this.applyUiLocale(normalizeUiLocale(cfg.uiLocale))
     await this.checkHealth()
     void this.checkLlmHealth()
-
-    const cfg = await window.api.config.get()
     // The overlay renderer is a presentation projection, not a second
     // application runtime. It must never start microphone capture, admission,
     // generation, synthesis, or playback. It only consumes the main renderer's
@@ -589,7 +633,10 @@ export class Controller {
     this.applyOverlayConfigProjection(cfg)
     const overlay = await window.api.overlay.isVisible()
     this.set({ overlayState: overlay.visible ? 'on' : 'off' })
-    window.api.config.onUpdated((updated) => this.applyOverlayConfigProjection(updated))
+    window.api.config.onUpdated((updated) => {
+      this.applyOverlayConfigProjection(updated)
+      this.applyUiLocale(normalizeUiLocale(updated.uiLocale))
+    })
     this.speechInputRuntime.setMicrophone(cfg.micDeviceId ?? '', false)
     // Camera-follow gaze is the normal embodiment default; the persisted key is
     // retained for backward compatibility but no longer controls product UI.
@@ -661,7 +708,7 @@ export class Controller {
     } catch (error) {
       this.set({
         overlayCameraMode: previous,
-        overlayError: `Не удалось применить режим ${mode}`,
+        overlayError: this.t('controller.overlay.applyFailed', { mode }),
         overlayState: 'error',
       })
       throw error
@@ -701,7 +748,9 @@ export class Controller {
         this.overlayDesired = null
         this.set({
           overlayState: 'error',
-          overlayError: desired ? 'Не удалось открыть камеру' : 'Не удалось закрыть камеру',
+          overlayError: desired
+            ? this.t('controller.overlay.openFailed')
+            : this.t('controller.overlay.closeFailed'),
         })
         if (Boolean(verified.visible) !== desired) throw error
         return
@@ -980,7 +1029,7 @@ export class Controller {
     const devices = await navigator.mediaDevices.enumerateDevices()
     return devices
       .filter((d) => d.kind === 'audioinput')
-      .map((d) => ({ deviceId: d.deviceId, label: d.label || 'Микрофон' }))
+      .map((d) => ({ deviceId: d.deviceId, label: d.label || this.t('microphone.generic') }))
   }
 
   setMicrophone(deviceId: string): void {
@@ -1089,7 +1138,7 @@ export class Controller {
       this.set({
         continuousListeningEnabled: false,
         continuousListeningState: 'error',
-        continuousListeningError: 'Не удалось получить доступ к микрофону.',
+        continuousListeningError: this.t('controller.microphoneAccessFailed'),
       })
       throw error
     }
@@ -1521,7 +1570,7 @@ export class Controller {
     const isCurrent = (): boolean => version === this.previewSceneVersion && this.scene === scene
     try {
       const res = await window.api.vrm.read(filePath)
-      if (!res.ok || !res.buffer) throw new Error(res.error ?? 'Не удалось прочитать файл')
+      if (!res.ok || !res.buffer) throw new Error(res.error ?? this.t('controller.fileReadFailed'))
       if (!isCurrent()) return
       await this.avatarRuntime.loadVrm(scene.scene, res.buffer)
       if (!isCurrent()) return
@@ -1555,7 +1604,7 @@ export class Controller {
       if (!isCurrent()) return
       this.set({ vrmLoaded: false })
       this.recordRuntimeEvent('VRM Error', String(e))
-      this.pushMessage('error', `Не удалось загрузить VRM: ${String(e)}`)
+      this.pushMessage('error', this.t('controller.vrmLoadFailed', { error: String(e) }))
     }
   }
 
@@ -1675,7 +1724,7 @@ export class Controller {
   async clearHistory(): Promise<void> {
     await window.api.memory.clear()
     this.set({ messages: [] })
-    this.pushMessage('assistant', 'История очищена. Приветствую снова, путник.')
+    this.pushMessage('assistant', this.t('controller.historyCleared'))
   }
 
   // Health probing is owned exclusively by the Speech capabilities health
@@ -1690,7 +1739,7 @@ export class Controller {
   // call `llm.reply` (which would append to conversation memory and hold the
   // generation lock), so it never mutates conversation state.
   async checkLlmHealth(): Promise<void> {
-    this.set({ llmHealth: { state: 'checking', detail: 'Проверяем доступность модели' } })
+    this.setLlmHealth('checking', 'controller.llm.checking')
     try {
       const cfg = await window.api.config.get()
       const activeProvider = cfg.llm?.activeProvider
@@ -1698,25 +1747,24 @@ export class Controller {
       const apiKey = cred?.apiKey ?? ''
       const model = cred?.model ?? ''
       if (!activeProvider) {
-        this.set({ llmHealth: { state: 'unknown', detail: 'Провайдер не выбран' } })
+        this.setLlmHealth('unknown', 'controller.llm.providerMissing')
         return
       }
       const res = await window.api.llm.fetchModels(activeProvider, apiKey)
       if (res.ok) {
-        this.set({ llmHealth: { state: 'ok', detail: model || 'Провайдер доступен' } })
+        this.setLlmHealth('ok', model ? { raw: model } : 'controller.llm.providerAvailable')
         return
       }
       if (res.kind === 'auth') {
-        this.set(
-          apiKey.trim()
-            ? { llmHealth: { state: 'error', detail: 'Ошибка аутентификации' } }
-            : { llmHealth: { state: 'unknown', detail: 'Не указан API-ключ' } },
+        this.setLlmHealth(
+          apiKey.trim() ? 'error' : 'unknown',
+          apiKey.trim() ? 'controller.llm.authError' : 'controller.llm.keyMissing',
         )
         return
       }
-      this.set({ llmHealth: { state: 'error', detail: 'Провайдер недоступен' } })
+      this.setLlmHealth('error', 'controller.llm.unavailable')
     } catch {
-      this.set({ llmHealth: { state: 'error', detail: 'Не удалось проверить провайдера' } })
+      this.setLlmHealth('error', 'controller.llm.checkFailed')
     }
   }
 }

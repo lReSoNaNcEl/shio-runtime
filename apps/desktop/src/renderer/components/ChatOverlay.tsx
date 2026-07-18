@@ -16,6 +16,8 @@ import Stop from '@react-spectrum/s2/icons/StopProcessing'
 import { useEffect, useRef, useState } from 'react'
 
 import { type ControllerState, controller } from '../Controller'
+import type { LocalizationContextValue } from '../localization/LocalizationProvider'
+import { useTranslation } from '../localization/useTranslation'
 import { bannerCopy } from '../runtime/speechCapabilities'
 import { SpeechUnavailableBanner } from './SpeechUnavailableBanner'
 
@@ -27,45 +29,30 @@ interface Props {
   onOpenHealth?: () => void
 }
 
-const TEXT = {
-  you: 'Вы',
-  assistant: 'Shio',
-  synthesizing: 'Генерирую голос...',
-  message: 'Сообщение',
-  placeholder: 'Напишите Shio…',
-  stopRecording: 'Остановить запись',
-  voiceInput: 'Голосовой ввод',
-  recognitionUnavailable: 'Распознавание речи недоступно',
-  send: 'Отправить',
-  stopResponse: 'Остановить ответ Shio',
-  emptyTitle: 'Shio готова',
-}
-
-// Compact quick actions, shown only for an empty conversation. The label is the
-// message that gets sent through the existing chat submit flow.
-const QUICK_ACTIONS = ['Поздоровайся', 'Расскажи шутку', 'Что ты умеешь?']
-
 type StatusVariant = 'positive' | 'informative' | 'notice' | 'negative'
 
 /**
  * Human-readable composer status derived from the existing Character/Conversation
  * state — no new state machine is introduced.
  */
-function deriveChatStatus(state: ControllerState): { variant: StatusVariant; label: string } {
+function deriveChatStatus(
+  state: ControllerState,
+  t: LocalizationContextValue['t'],
+): { variant: StatusVariant; label: string } {
   if (state.continuousListeningState === 'error') {
-    return { variant: 'negative', label: 'Ошибка' }
+    return { variant: 'negative', label: t('chat.status.error') }
   }
   switch (state.status) {
     case 'listening':
-      return { variant: 'informative', label: 'Слушаю' }
+      return { variant: 'informative', label: t('chat.status.listening') }
     case 'recognizing':
     case 'thinking':
-      return { variant: 'notice', label: 'Думаю' }
+      return { variant: 'notice', label: t('chat.status.thinking') }
     case 'synthesizing':
     case 'speaking':
-      return { variant: 'informative', label: 'Говорю' }
+      return { variant: 'informative', label: t('chat.status.speaking') }
     default:
-      return { variant: 'positive', label: TEXT.emptyTitle }
+      return { variant: 'positive', label: t('chat.ready') }
   }
 }
 
@@ -74,16 +61,18 @@ function deriveChatStatus(state: ControllerState): { variant: StatusVariant; lab
  * fully functional, so the global status stays positive; only a suffix marks that
  * a voice capability is down. A degraded TTS never disables the microphone.
  */
-function voiceSuffix(state: ControllerState): string | null {
+function voiceSuffix(state: ControllerState, t: LocalizationContextValue['t']): string | null {
   const asrDown = state.speechCapabilities.recognition === 'unavailable'
   const ttsDown = state.speechCapabilities.synthesis === 'unavailable'
-  if (asrDown && ttsDown) return 'Голос недоступен'
-  if (asrDown) return 'Микрофон недоступен'
-  if (ttsDown) return 'Озвучивание недоступно'
+  if (asrDown && ttsDown) return t('chat.voice.none')
+  if (asrDown) return t('chat.voice.microphone')
+  if (ttsDown) return t('chat.voice.synthesis')
   return null
 }
 
 export function ChatOverlay({ state, gateOpen = false, onOpenHealth }: Props): React.JSX.Element {
+  const { locale, t } = useTranslation()
+  const quickActions = [t('chat.quick.greet'), t('chat.quick.joke'), t('chat.quick.capabilities')]
   const [text, setText] = useState('')
   const [interrupting, setInterrupting] = useState(false)
   // Presentation-only state: the banner dismissal is per incident, and a click on
@@ -98,8 +87,8 @@ export function ChatOverlay({ state, gateOpen = false, onOpenHealth }: Props): R
   const capabilities = state.speechCapabilities
   const recognitionUnavailable = capabilities.recognition === 'unavailable'
   const bannerVisible =
-    bannerCopy(capabilities) !== null && dismissedIncidentId !== capabilities.incidentId
-  const voiceStatusSuffix = voiceSuffix(state)
+    bannerCopy(capabilities, locale) !== null && dismissedIncidentId !== capabilities.incidentId
+  const voiceStatusSuffix = voiceSuffix(state, t)
 
   const pulseBanner = (): void => {
     // Ensure the banner is visible again if it was dismissed, then flash it.
@@ -117,7 +106,7 @@ export function ChatOverlay({ state, gateOpen = false, onOpenHealth }: Props): R
   )
   const showSpeechProgress = state.status === 'speaking' || state.status === 'synthesizing'
   const isEmpty = state.messages.length === 0
-  const chatStatus = deriveChatStatus(state)
+  const chatStatus = deriveChatStatus(state, t)
   const canInterrupt =
     ['thinking', 'synthesizing', 'speaking'].includes(state.status) &&
     !state.responseInterruptionPending
@@ -154,16 +143,16 @@ export function ChatOverlay({ state, gateOpen = false, onOpenHealth }: Props): R
           <div className="input-error" role="alert">
             <span>{state.continuousListeningError}</span>
             <Button variant="secondary" onPress={() => void controller.toggleContinuousListening()}>
-              Повторить
+              {t('common.retry')}
             </Button>
           </div>
         )}
         {isEmpty && (
           <div className="chat-empty">
             <Chat UNSAFE_className="chat-empty-icon" aria-hidden />
-            <Heading level={2}>{TEXT.emptyTitle}</Heading>
+            <Heading level={2}>{t('chat.ready')}</Heading>
             <ButtonGroup>
-              {QUICK_ACTIONS.map((action) => (
+              {quickActions.map((action) => (
                 <Button key={action} variant="secondary" onPress={() => submit(action)}>
                   {action}
                 </Button>
@@ -174,16 +163,18 @@ export function ChatOverlay({ state, gateOpen = false, onOpenHealth }: Props): R
         {state.messages.map((m) => (
           <div key={m.id} className={`message message-${m.role}`}>
             {m.role !== 'error' && m.role !== 'meta' && (
-              <span className="msg-name">{m.role === 'user' ? TEXT.you : TEXT.assistant}</span>
+              <span className="msg-name">
+                {m.role === 'user' ? t('chat.you') : t('chat.assistant')}
+              </span>
             )}
             <span className="msg-text">{m.text}</span>
-            {m.interrupted && <span className="msg-interrupted">Остановлено</span>}
+            {m.interrupted && <span className="msg-interrupted">{t('chat.interrupted')}</span>}
           </div>
         ))}
         {state.status === 'synthesizing' && (
           <div className="message message-assistant message-loading">
-            <span className="msg-name">{TEXT.assistant}</span>
-            <span className="msg-text">{TEXT.synthesizing}</span>
+            <span className="msg-name">{t('chat.assistant')}</span>
+            <span className="msg-text">{t('chat.synthesizing')}</span>
           </div>
         )}
       </div>
@@ -201,10 +192,10 @@ export function ChatOverlay({ state, gateOpen = false, onOpenHealth }: Props): R
         <div id="controls-status">
           <div
             className="status-row"
-            title={voiceStatusSuffix ? 'Текстовый чат работает. Speech API недоступен.' : undefined}
+            title={voiceStatusSuffix ? t('chat.voiceUnavailableTitle') : undefined}
           >
             <StatusLight variant={chatStatus.variant} size="S">
-              {voiceStatusSuffix && chatStatus.label === TEXT.emptyTitle
+              {voiceStatusSuffix && chatStatus.label === t('chat.ready')
                 ? `${chatStatus.label} · ${voiceStatusSuffix}`
                 : chatStatus.label}
             </StatusLight>
@@ -224,11 +215,11 @@ export function ChatOverlay({ state, gateOpen = false, onOpenHealth }: Props): R
 
         <div id="controls-input">
           <TextField
-            aria-label={TEXT.message}
+            aria-label={t('chat.message')}
             size="XL"
             value={text}
             onChange={setText}
-            placeholder={TEXT.placeholder}
+            placeholder={t('chat.placeholder')}
             onKeyDown={(e) => {
               // Enter sends; Shift+Enter is left to the field's default handling.
               if (e.key === 'Enter' && !e.shiftKey) {
@@ -242,7 +233,7 @@ export function ChatOverlay({ state, gateOpen = false, onOpenHealth }: Props): R
             <TooltipTrigger>
               <ActionButton
                 isQuiet
-                aria-label={TEXT.stopResponse}
+                aria-label={t('chat.stopResponse')}
                 isDisabled={interrupting || state.responseInterruptionPending}
                 onPress={() => {
                   setInterrupting(true)
@@ -250,12 +241,12 @@ export function ChatOverlay({ state, gateOpen = false, onOpenHealth }: Props): R
                 }}
               >
                 {interrupting || state.responseInterruptionPending ? (
-                  <ProgressCircle aria-label={TEXT.stopResponse} isIndeterminate size="S" />
+                  <ProgressCircle aria-label={t('chat.stopResponse')} isIndeterminate size="S" />
                 ) : (
                   <Stop />
                 )}
               </ActionButton>
-              <Tooltip>{TEXT.stopResponse}</Tooltip>
+              <Tooltip>{t('chat.stopResponse')}</Tooltip>
             </TooltipTrigger>
           ) : (
             <TooltipTrigger>
@@ -263,10 +254,10 @@ export function ChatOverlay({ state, gateOpen = false, onOpenHealth }: Props): R
                 isQuiet
                 aria-label={
                   recognitionUnavailable
-                    ? TEXT.recognitionUnavailable
+                    ? t('chat.recognitionUnavailable')
                     : listening
-                      ? TEXT.stopRecording
-                      : TEXT.voiceInput
+                      ? t('chat.stopRecording')
+                      : t('chat.voiceInput')
                 }
                 // The button stays visible when recognition is unavailable, but is
                 // not disabled: a press must not silently fail — it pulses the
@@ -294,10 +285,10 @@ export function ChatOverlay({ state, gateOpen = false, onOpenHealth }: Props): R
               </ActionButton>
               <Tooltip>
                 {recognitionUnavailable
-                  ? TEXT.recognitionUnavailable
+                  ? t('chat.recognitionUnavailable')
                   : listening
-                    ? TEXT.stopRecording
-                    : TEXT.voiceInput}
+                    ? t('chat.stopRecording')
+                    : t('chat.voiceInput')}
               </Tooltip>
             </TooltipTrigger>
           )}
@@ -306,11 +297,11 @@ export function ChatOverlay({ state, gateOpen = false, onOpenHealth }: Props): R
               variant="accent"
               isDisabled={!text.trim()}
               onPress={() => submit(text)}
-              aria-label={TEXT.send}
+              aria-label={t('chat.send')}
             >
               <Send />
             </Button>
-            <Tooltip>{TEXT.send}</Tooltip>
+            <Tooltip>{t('chat.send')}</Tooltip>
           </TooltipTrigger>
         </div>
       </div>

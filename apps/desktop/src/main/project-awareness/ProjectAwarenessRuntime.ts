@@ -1,5 +1,7 @@
 import { createHash } from 'node:crypto'
 
+import { type Translator, translate } from '../../shared/localization/format'
+import { DEFAULT_UI_LOCALE } from '../../shared/localization/locale'
 import type {
   ProjectAwarenessStatus,
   ProjectChangeSummary,
@@ -17,23 +19,23 @@ import type {
   ProjectSyncResult,
 } from '../../shared/projectAwareness'
 import { isValidProjectBranch, isValidProjectRepository } from '../../shared/projectAwareness'
+import { GitHubProjectAdapter } from './adapters/GitHubProjectAdapter'
 import type {
   PreparedProjectFile,
   ProjectChangedFile,
   ProjectRepositoryAdapter,
   ProjectTreeEntry,
 } from './contracts'
-import { GitHubProjectAdapter } from './GitHubProjectAdapter'
-import type { ProjectKnowledgeStore } from './ProjectKnowledgeStore'
-import { buildProjectMap, summarizeProjectMap } from './ProjectMapBuilder'
-import { isProjectRelevantRequest } from './ProjectRelevanceGate'
+import { buildProjectMap, summarizeProjectMap } from './indexing/ProjectMapBuilder'
 import {
   isAllowedProjectPath,
   isSafeTextContent,
   projectLanguageForPath,
   sourcePriority,
-} from './SourceFilter'
-import { extractSource } from './SymbolExtractor'
+} from './indexing/SourceFilter'
+import { extractSource } from './indexing/SymbolExtractor'
+import type { ProjectKnowledgeStore } from './ProjectKnowledgeStore'
+import { isProjectRelevantRequest } from './ProjectRelevanceGate'
 
 export interface ProjectAwarenessRuntimeConfig {
   enabled: boolean
@@ -45,12 +47,12 @@ export interface ProjectAwarenessRuntimeConfig {
 
 type AdapterFactory = (owner: string, name: string, token: string) => ProjectRepositoryAdapter
 
-function parseRepository(value: string): { owner: string; name: string } {
+function parseRepository(value: string, t: Translator): { owner: string; name: string } {
   if (!isValidProjectRepository(value)) {
-    throw new Error('Project repository must use owner/name format')
+    throw new Error(t('main.error.project.repositoryFormat'))
   }
   const match = value.trim().match(/^([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)$/)
-  if (!match) throw new Error('Project repository must use owner/name format')
+  if (!match) throw new Error(t('main.error.project.repositoryFormat'))
   return { owner: match[1], name: match[2] }
 }
 
@@ -84,6 +86,7 @@ export class ProjectAwarenessRuntime {
     private readonly store: ProjectKnowledgeStore,
     private readonly adapterFactory: AdapterFactory = (owner, name, token) =>
       new GitHubProjectAdapter(owner, name, token),
+    private readonly t: Translator = (key, params) => translate(DEFAULT_UI_LOCALE, key, params),
   ) {
     this.credentialToken = ''
     this.credential = {
@@ -110,7 +113,7 @@ export class ProjectAwarenessRuntime {
       config.enabled &&
       (!isValidProjectRepository(config.repository) || !isValidProjectBranch(config.branch))
     ) {
-      throw new Error('Enter a valid GitHub owner/repository and branch.')
+      throw new Error(this.t('main.error.project.targetInvalid'))
     }
     const next = {
       ...this.config,
@@ -143,17 +146,15 @@ export class ProjectAwarenessRuntime {
     this.lastError = undefined
     try {
       if (!this.config.enabled) {
-        throw new Error('Project Awareness is disabled in Settings.')
+        throw new Error(this.t('main.error.project.disabled'))
       }
       if (!isValidProjectBranch(this.config.branch)) {
-        throw new Error('Project branch is invalid. Update it in Settings.')
+        throw new Error(this.t('main.error.project.branchSettings'))
       }
       if (!this.credentialToken) {
-        throw new Error(
-          'GitHub credential is not configured. Use Connect GitHub to save a read-only token.',
-        )
+        throw new Error(this.t('main.error.project.credentialMissing'))
       }
-      const { owner, name } = parseRepository(this.config.repository)
+      const { owner, name } = parseRepository(this.config.repository, this.t)
       this.adapter = this.adapterFactory(owner, name, this.credentialToken)
       this.repository = await this.adapter.getRepository()
       this.remoteHead = await this.adapter.getBranchHead(this.config.branch)
@@ -229,7 +230,9 @@ export class ProjectAwarenessRuntime {
 
   private async performSync(forceRebuild: boolean): Promise<ProjectSyncResult> {
     if (!this.adapter || !this.repository) await this.connect()
-    if (!this.adapter || !this.repository) throw new Error('Project repository is disconnected')
+    if (!this.adapter || !this.repository) {
+      throw new Error(this.t('main.error.project.disconnected'))
+    }
 
     const adapter = this.adapter
     const repository = this.repository
@@ -318,6 +321,8 @@ export class ProjectAwarenessRuntime {
       )
       this.store.saveProjectMap(draft.id, map)
       this.store.publishSnapshot(repository, this.config.branch, draft.id)
+      draftId = undefined
+      this.store.pruneSnapshots(repository, this.config.branch, 2)
       this.store.finishSync(runId, 'completed', changeCount)
       this.lastSyncAt = Date.now()
       this.state = 'ready'
@@ -398,7 +403,9 @@ export class ProjectAwarenessRuntime {
 
   async getRecentChanges(input: ProjectRecentChangesInput): Promise<ProjectChangeSummary> {
     if (!this.adapter || !this.repository) await this.connect()
-    if (!this.adapter || !this.repository) throw new Error('Project repository is disconnected')
+    if (!this.adapter || !this.repository) {
+      throw new Error(this.t('main.error.project.disconnected'))
+    }
     const limit = Math.max(1, Math.min(10, input.limit ?? 5))
     const commits = await this.adapter.listRecentCommits(this.config.branch, limit)
     const current = this.store.getCurrentSnapshot(this.repository, this.config.branch)
@@ -486,9 +493,9 @@ export class ProjectAwarenessRuntime {
       : never
     fileCount: number
   } {
-    if (!this.repository) throw new Error('Project repository is disconnected')
+    if (!this.repository) throw new Error(this.t('main.error.project.disconnected'))
     const current = this.store.getCurrentSnapshot(this.repository, this.config.branch)
-    if (!current) throw new Error('Project index has not been built')
+    if (!current) throw new Error(this.t('main.error.project.indexMissing'))
     return current
   }
 }

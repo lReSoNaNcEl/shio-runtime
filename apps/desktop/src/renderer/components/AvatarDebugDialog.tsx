@@ -13,21 +13,14 @@ import { useEffect, useState } from 'react'
 import { DEBUG_AVATAR_MODE_LABELS, DEBUG_AVATAR_MODES } from '../avatar/avatarAnimations'
 import type { RuntimeDebugSnapshot } from '../Controller'
 import { controller, STATUS_LABELS } from '../Controller'
+import { useTranslation } from '../localization/useTranslation'
 
 interface Props {
   isOpen: boolean
   onClose: () => void
 }
 
-const DEBUG_TITLE = 'Отладка рантайма'
-const FULL_TEST = 'Тест всего цикла'
-const CLOSE = 'Закрыть'
-const OVERLAY_ANIMATION_HUD = 'Показывать текущую анимацию Overlay'
-const DEBUG_TABS = [
-  { id: 'overview', label: 'Обзор' },
-  { id: 'eventBus', label: 'Event Bus' },
-  { id: 'timeline', label: 'Timeline' },
-] as const
+const DEBUG_TABS = [{ id: 'overview' }, { id: 'eventBus' }, { id: 'timeline' }] as const
 
 type DebugTabId = (typeof DEBUG_TABS)[number]['id']
 
@@ -86,6 +79,7 @@ function getCurrentLipSyncWeight(snapshot: RuntimeDebugSnapshot): number {
 }
 
 export function AvatarDebugDialog({ isOpen, onClose }: Props): React.JSX.Element {
+  const { t } = useTranslation()
   const [snapshot, setSnapshot] = useState<RuntimeDebugSnapshot | null>(null)
   const [activeTab, setActiveTab] = useState<DebugTabId>('overview')
   const [overlayAnimationHudEnabled, setOverlayAnimationHudEnabled] = useState(false)
@@ -128,10 +122,10 @@ export function AvatarDebugDialog({ isOpen, onClose }: Props): React.JSX.Element
     <DialogContainer onDismiss={onClose}>
       {isOpen && (
         <Dialog size="L">
-          <Heading>{DEBUG_TITLE}</Heading>
+          <Heading>{t('debug.title')}</Heading>
           <Divider />
           <Content>
-            <div className="debug-tabs" role="tablist" aria-label="Разделы отладки">
+            <div className="debug-tabs" role="tablist" aria-label={t('debug.tabs')}>
               {DEBUG_TABS.map((tab) => (
                 <button
                   key={tab.id}
@@ -141,7 +135,11 @@ export function AvatarDebugDialog({ isOpen, onClose }: Props): React.JSX.Element
                   className={activeTab === tab.id ? 'settings-tab active' : 'settings-tab'}
                   onClick={() => setActiveTab(tab.id)}
                 >
-                  {tab.label}
+                  {tab.id === 'overview'
+                    ? t('debug.overview')
+                    : tab.id === 'eventBus'
+                      ? 'Event Bus'
+                      : 'Timeline'}
                 </button>
               ))}
             </div>
@@ -150,7 +148,7 @@ export function AvatarDebugDialog({ isOpen, onClose }: Props): React.JSX.Element
               {snapshot && (
                 <>
                   <section className="debug-section">
-                    <div className="debug-section-title">Снимок runtime</div>
+                    <div className="debug-section-title">{t('debug.runtimeSnapshot')}</div>
                     <div className="debug-stat-grid">
                       <DebugStat label="status" value={STATUS_LABELS[snapshot.appStatus]} />
                       <DebugStat label="character mode" value={snapshot.characterState.mode} />
@@ -1331,22 +1329,22 @@ export function AvatarDebugDialog({ isOpen, onClose }: Props): React.JSX.Element
                   isSelected={overlayAnimationHudEnabled}
                   onChange={updateOverlayAnimationHud}
                 >
-                  {OVERLAY_ANIMATION_HUD}
+                  {t('debug.overlayAnimationHud')}
                 </Switch>
               </section>
 
               <section className="debug-section">
-                <div className="debug-section-title">Полный тест</div>
+                <div className="debug-section-title">{t('debug.fullTest')}</div>
                 <Button
                   variant="accent"
                   onPress={() => controller.runDebugFullRuntimeTest('happy')}
                 >
-                  {FULL_TEST}
+                  {t('debug.fullTest')}
                 </Button>
               </section>
 
               <section className="debug-section">
-                <div className="debug-section-title">Тест режимов аватара</div>
+                <div className="debug-section-title">{t('debug.avatarModesTest')}</div>
                 <div className="settings-button-grid">
                   {DEBUG_AVATAR_MODES.map((mode) => (
                     <Button
@@ -1559,7 +1557,7 @@ export function AvatarDebugDialog({ isOpen, onClose }: Props): React.JSX.Element
           </Content>
           <ButtonGroup>
             <Button variant="secondary" onPress={onClose}>
-              {CLOSE}
+              {t('common.close')}
             </Button>
           </ButtonGroup>
         </Dialog>

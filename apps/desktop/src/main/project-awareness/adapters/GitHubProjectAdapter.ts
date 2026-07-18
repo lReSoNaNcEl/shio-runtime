@@ -1,13 +1,15 @@
 import axios, { type AxiosInstance } from 'axios'
 
-import type { ProjectRepositoryIdentity, ProjectSourceFile } from '../../shared/projectAwareness'
+import { type Translator, translate } from '../../../shared/localization/format'
+import { DEFAULT_UI_LOCALE } from '../../../shared/localization/locale'
+import type { ProjectRepositoryIdentity, ProjectSourceFile } from '../../../shared/projectAwareness'
 import type {
   ProjectChangedFile,
   ProjectCommit,
   ProjectRepositoryAdapter,
   ProjectTreeEntry,
-} from './contracts'
-import { projectLanguageForPath } from './SourceFilter'
+} from '../contracts'
+import { projectLanguageForPath } from '../indexing/SourceFilter'
 
 interface GitHubRepositoryResponse {
   default_branch?: string
@@ -47,6 +49,7 @@ export function normalizeGitHubProjectError(
   error: unknown,
   repository: string,
   hasToken: boolean,
+  t: Translator = (key, params) => translate(DEFAULT_UI_LOCALE, key, params),
 ): Error {
   if (!axios.isAxiosError(error)) {
     return error instanceof Error ? error : new Error(String(error))
@@ -55,26 +58,20 @@ export function normalizeGitHubProjectError(
   if (status === 404) {
     return new Error(
       hasToken
-        ? `GitHub token cannot access private repository ${repository}. Grant it read-only Metadata and Contents access.`
-        : `GitHub repository ${repository} is private. Use Connect GitHub and grant read-only Metadata and Contents access.`,
+        ? t('main.error.github.privateToken', { repository })
+        : t('main.error.github.privateAnonymous', { repository }),
     )
   }
   if (status === 401) {
-    return new Error(
-      'GitHub rejected the Project Awareness token. Replace the expired or invalid token.',
-    )
+    return new Error(t('main.error.github.unauthorized'))
   }
   if (status === 403) {
     return new Error(
-      hasToken
-        ? 'GitHub denied Project Awareness access. Check token permissions and API rate limits.'
-        : 'GitHub denied anonymous Project Awareness access. Use Connect GitHub.',
+      hasToken ? t('main.error.github.forbiddenToken') : t('main.error.github.forbiddenAnonymous'),
     )
   }
   return new Error(
-    status
-      ? `GitHub Project Awareness request failed with HTTP ${status}.`
-      : 'GitHub Project Awareness request failed before receiving a response.',
+    status ? t('main.error.github.http', { status }) : t('main.error.github.network'),
   )
 }
 
@@ -105,10 +102,11 @@ export class GitHubProjectAdapter implements ProjectRepositoryAdapter {
     private readonly owner: string,
     private readonly name: string,
     token: string,
+    private readonly t: Translator = (key, params) => translate(DEFAULT_UI_LOCALE, key, params),
   ) {
     const repository = `${owner}/${name}`
     const normalizeRejectedRequest = (error: unknown): Promise<never> =>
-      Promise.reject(normalizeGitHubProjectError(error, repository, Boolean(token)))
+      Promise.reject(normalizeGitHubProjectError(error, repository, Boolean(token), this.t))
     this.http = axios.create({
       baseURL: 'https://api.github.com',
       timeout: 20_000,
@@ -135,7 +133,7 @@ export class GitHubProjectAdapter implements ProjectRepositoryAdapter {
       `/repos/${encodeURIComponent(this.owner)}/${encodeURIComponent(this.name)}`,
     )
     if (!response.data.default_branch) {
-      throw new Error('GitHub repository response did not include a default branch')
+      throw new Error(this.t('main.error.github.defaultBranchMissing'))
     }
     return {
       provider: 'github',
@@ -149,7 +147,7 @@ export class GitHubProjectAdapter implements ProjectRepositoryAdapter {
     const response = await this.http.get<GitHubCommitResponse>(
       `/repos/${encodeURIComponent(this.owner)}/${encodeURIComponent(this.name)}/commits/${encodeURIComponent(branch)}`,
     )
-    if (!response.data.sha) throw new Error('GitHub branch response did not include a commit SHA')
+    if (!response.data.sha) throw new Error(this.t('main.error.github.commitMissing'))
     return response.data.sha
   }
 
@@ -159,7 +157,7 @@ export class GitHubProjectAdapter implements ProjectRepositoryAdapter {
       { params: { recursive: '1' } },
     )
     if (response.data.truncated) {
-      throw new Error('GitHub repository tree is truncated; refusing to build an incomplete index')
+      throw new Error(this.t('main.error.github.treeTruncated'))
     }
     const tree = (response.data.tree ?? []).flatMap((entry) => {
       if (
@@ -187,7 +185,7 @@ export class GitHubProjectAdapter implements ProjectRepositoryAdapter {
 
   async readFile(path: string, commitSha: string): Promise<ProjectSourceFile> {
     const language = projectLanguageForPath(path)
-    if (!language) throw new Error(`Unsupported project source language for ${path}`)
+    if (!language) throw new Error(this.t('main.error.github.unsupportedLanguage', { path }))
     const treeBlob = this.treeBlobs.get(path)
     try {
       const response = await this.rawHttp.get<string>(
@@ -218,7 +216,7 @@ export class GitHubProjectAdapter implements ProjectRepositoryAdapter {
       data.encoding !== 'base64' ||
       typeof data.content !== 'string'
     ) {
-      throw new Error(`GitHub returned an unsupported content response for ${path}`)
+      throw new Error(this.t('main.error.github.unsupportedContent', { path }))
     }
     return {
       path,

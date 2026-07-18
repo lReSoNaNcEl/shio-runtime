@@ -5,6 +5,12 @@ import { app } from 'electron'
 
 import { DEFAULT_SPEECH_URL } from '../shared/config'
 import type { LlmConfig } from '../shared/llmProviders'
+import {
+  DEFAULT_UI_LOCALE,
+  isUiLocale,
+  normalizeUiLocale,
+  type UiLocale,
+} from '../shared/localization/locale'
 import type { ProjectAwarenessPublicConfig } from '../shared/projectAwareness'
 import { defaultLlmConfig, isLlmProviderId, normalizeLlmConfig } from './llm'
 
@@ -17,6 +23,7 @@ export interface ProjectAwarenessConfig extends ProjectAwarenessPublicConfig {
 export interface AppConfig {
   llm: LlmConfig
   projectAwareness: ProjectAwarenessConfig
+  uiLocale: UiLocale
   pythonSpeechUrl: string
   ttsVoice: string
   ttsLanguage: string
@@ -43,7 +50,7 @@ export interface AppConfig {
 }
 
 // String-valued keys only; `llm` is handled separately because it is an object.
-type StringConfigKey = Exclude<keyof AppConfig, 'llm' | 'projectAwareness'>
+type StringConfigKey = Exclude<keyof AppConfig, 'llm' | 'projectAwareness' | 'uiLocale'>
 
 const stringDefaults: Record<StringConfigKey, string> = {
   pythonSpeechUrl: process.env.PYTHON_SPEECH_URL ?? DEFAULT_SPEECH_URL,
@@ -81,6 +88,7 @@ function freshDefaults(): AppConfig {
       branch: 'main',
       maxFileSizeBytes: 256 * 1024,
     },
+    uiLocale: DEFAULT_UI_LOCALE,
     ...stringDefaults,
   }
 }
@@ -193,7 +201,13 @@ export function loadConfig(): AppConfig {
         typeof saved.projectAwareness === 'object' &&
         saved.projectAwareness !== null &&
         typeof (saved.projectAwareness as Record<string, unknown>).token === 'string'
-      _config = { ...freshDefaults(), ...known, llm, projectAwareness }
+      _config = {
+        ...freshDefaults(),
+        ...known,
+        llm,
+        projectAwareness,
+        uiLocale: normalizeUiLocale(saved.uiLocale),
+      }
 
       // One-time migration: pull the Groq key from env into userData config.
       let envMigrated = false
@@ -232,6 +246,12 @@ export function saveConfig(
   _config = {
     ..._config,
     ...partial,
+    uiLocale:
+      partial.uiLocale === undefined
+        ? _config.uiLocale
+        : isUiLocale(partial.uiLocale)
+          ? partial.uiLocale
+          : _config.uiLocale,
     projectAwareness: partial.projectAwareness
       ? { ..._config.projectAwareness, ...partial.projectAwareness }
       : _config.projectAwareness,

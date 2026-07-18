@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
 
 import {
   extractSource,
@@ -11,14 +12,16 @@ import {
   ProjectAwarenessRuntime,
   ProjectCredentialStore,
   ProjectKnowledgeStore,
-} from '../../src/main/projectAwareness'
+} from '../../src/main/project-awareness'
+import { normalizeGitHubProjectError } from '../../src/main/project-awareness/adapters/GitHubProjectAdapter'
 import type {
   ProjectChangedFile,
   ProjectCommit,
   ProjectRepositoryAdapter,
   ProjectTreeEntry,
-} from '../../src/main/projectAwareness/contracts'
-import { normalizeGitHubProjectError } from '../../src/main/projectAwareness/GitHubProjectAdapter'
+} from '../../src/main/project-awareness/contracts'
+import { sourcePriority } from '../../src/main/project-awareness/indexing/SourceFilter'
+import { type Translator, translate } from '../../src/shared/localization/format'
 import {
   isValidProjectBranch,
   isValidProjectRepository,
@@ -36,7 +39,14 @@ const sourceV1 = [
   '}',
 ].join('\n')
 
+const translateEnglish: Translator = (key, params) => translate('en', key, params)
+
 const sourceV2 = sourceV1.replaceAll('ProjectRuntime', 'ProjectRuntimeV2')
+const sourceV3 = sourceV1.replaceAll('ProjectRuntime', 'ProjectRuntimeV3')
+const stableSource = [
+  'export const stableProjectValue = 42',
+  'export type StableProjectValue = number',
+].join('\n')
 
 class MockRepositoryAdapter implements ProjectRepositoryAdapter {
   head = '1111111111111111111111111111111111111111'
@@ -67,16 +77,26 @@ class MockRepositoryAdapter implements ProjectRepositoryAdapter {
         size: Buffer.byteLength(this.content),
         type: 'blob',
       },
+      {
+        path: 'src/stable.ts',
+        sha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        size: Buffer.byteLength(stableSource),
+        type: 'blob',
+      },
     ]
   }
 
   async readFile(path: string): Promise<ProjectSourceFile> {
+    const content = path === 'src/stable.ts' ? stableSource : this.content
     return {
       path,
-      sha: this.head.slice(0, 40),
-      size: Buffer.byteLength(this.content),
+      sha:
+        path === 'src/stable.ts'
+          ? 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+          : this.head.slice(0, 40),
+      size: Buffer.byteLength(content),
       language: 'typescript',
-      content: this.content,
+      content,
     }
   }
 
@@ -113,24 +133,106 @@ async function main(): Promise<void> {
   assert.equal(isValidProjectRepository('repository-only'), false)
   assert.equal(isValidProjectBranch('feature/project-awareness'), true)
   assert.equal(isValidProjectBranch('feature branch'), false)
+  assert.equal(sourcePriority('AGENTS.md'), 950)
+  assert.equal(sourcePriority('CLAUDE.md'), 100)
 
   const extracted = extractSource('src/ProjectRuntime.ts', 'typescript', sourceV1)
   assert(extracted.imports.includes('./value'))
   assert(extracted.symbols.some((symbol) => symbol.name === 'RuntimeContract'))
   assert(extracted.symbols.some((symbol) => symbol.name === 'ProjectRuntime.sync'))
   assert(extracted.chunks.some((chunk) => chunk.symbolName === 'ProjectRuntime'))
+
+  const pythonSource = [
+    '"""def NotAFunction(): pass"""',
+    '# class NotAClass:',
+    'from ..package.tools import helper',
+    'import asyncio, package.client as client',
+    '',
+    'PUBLIC_LIMIT: Final[int] = 3',
+    '',
+    '@register',
+    'class Worker(Base):',
+    '    @trace',
+    '    async def run(',
+    '        self,',
+    '        value: int = 1,',
+    '    ) -> str:',
+    '        def nested():',
+    '            return "nested"',
+    '        return str(value)',
+    '',
+    '    def _private(self):',
+    '        return None',
+    '',
+    '@decorator',
+    'def top_level(first, second=2):',
+    '    return first + second',
+    '',
+    'if TYPE_CHECKING:',
+    '    def conditional_only():',
+    '        pass',
+  ].join('\n')
+  const pythonExtracted = extractSource('app/runtime.py', 'python', pythonSource)
+  assert.deepEqual(pythonExtracted.imports, ['..package.tools', 'asyncio', 'package.client'])
+  assert.deepEqual(
+    pythonExtracted.symbols.map((symbol) => symbol.name),
+    ['PUBLIC_LIMIT', 'Worker', 'Worker.run', 'Worker._private', 'top_level'],
+  )
+  const pythonRun = pythonExtracted.symbols.find((symbol) => symbol.name === 'Worker.run')
+  assert.equal(pythonRun?.startLine, 10)
+  assert.equal(pythonRun?.endLine, 17)
+  assert.match(pythonRun?.signature ?? '', /^async def run\(/)
+  assert.match(pythonRun?.signature ?? '', /\) -> str$/)
+  assert.equal(
+    pythonExtracted.symbols.some((symbol) => symbol.name.includes('NotA')),
+    false,
+  )
+  assert.equal(
+    pythonExtracted.symbols.some((symbol) => symbol.name.includes('nested')),
+    false,
+  )
+  assert.equal(
+    pythonExtracted.symbols.some((symbol) => symbol.name.includes('conditional_only')),
+    false,
+  )
+  assert(
+    pythonExtracted.chunks.some(
+      (chunk) => chunk.symbolName === 'Worker' && chunk.content.includes('async def run'),
+    ),
+  )
+
+  const longPythonClass = [
+    'class LargeRuntime:',
+    ...['first', 'second', 'third'].flatMap((name) => [
+      `    def ${name}(self):`,
+      ...Array.from({ length: 90 }, (_, index) => `        value_${index} = ${index}`),
+      `        return "${name}"`,
+    ]),
+  ].join('\n')
+  const longPythonExtracted = extractSource('app/large_runtime.py', 'python', longPythonClass)
+  const longPythonMethods = longPythonExtracted.symbols.filter((symbol) => symbol.kind === 'method')
+  assert.equal(longPythonMethods.length, 3)
+  for (const method of longPythonMethods) {
+    const overlappingChunks = longPythonExtracted.chunks.filter(
+      (chunk) => chunk.startLine <= method.endLine && chunk.endLine >= method.startLine,
+    )
+    assert.equal(overlappingChunks.length, 1, `${method.name} must stay in one AST chunk`)
+  }
+  assert(longPythonExtracted.chunks.every((chunk) => chunk.endLine - chunk.startLine + 1 <= 220))
   assert.equal(isProjectRelevantRequest('Как работает ProjectRuntime?'), true)
   assert.equal(isProjectRelevantRequest('Расскажи короткую шутку'), false)
   const privateRepositoryError = normalizeGitHubProjectError(
     { isAxiosError: true, response: { status: 404 } },
     'owner/repository',
     false,
+    translateEnglish,
   )
-  assert.match(privateRepositoryError.message, /Connect GitHub/)
+  assert.match(privateRepositoryError.message, /Save a token/)
   const inaccessibleRepositoryError = normalizeGitHubProjectError(
     { isAxiosError: true, response: { status: 404 } },
     'owner/repository',
     true,
+    translateEnglish,
   )
   assert.match(inaccessibleRepositoryError.message, /cannot access private repository/)
 
@@ -151,7 +253,11 @@ async function main(): Promise<void> {
       }
     },
   }
-  const credentialStore = new ProjectCredentialStore(credentialPath, credentialProtector)
+  const credentialStore = new ProjectCredentialStore(
+    credentialPath,
+    credentialProtector,
+    translateEnglish,
+  )
   const savedCredential = await credentialStore.save('test-token-value-that-is-long-enough')
   assert.equal(savedCredential.source, 'secure_store')
   assert.equal(readFileSync(credentialPath).includes('test-token-value-that-is-long-enough'), false)
@@ -166,7 +272,8 @@ async function main(): Promise<void> {
   assert.equal(brokenCredential.configured, false)
   assert.match(brokenCredential.lastError ?? '', /could not be decrypted/)
 
-  const store = new ProjectKnowledgeStore(join(directory, 'project-index.sqlite'))
+  const databasePath = join(directory, 'project-index.sqlite')
+  const store = new ProjectKnowledgeStore(databasePath, translateEnglish)
   const adapter = new MockRepositoryAdapter()
   let receivedToken = ''
   let receivedOwner = ''
@@ -188,6 +295,7 @@ async function main(): Promise<void> {
       adapter.name = name
       return adapter
     },
+    translateEnglish,
   )
   runtime.setCredential('secret-token-that-is-long-enough', {
     configured: true,
@@ -202,7 +310,7 @@ async function main(): Promise<void> {
     assert.equal(receivedToken, 'secret-token-that-is-long-enough')
     assert.equal(JSON.stringify(runtime.getStatus()).includes('secret-token'), false)
     assert.equal(runtime.getStatus().credential.source, 'secure_store')
-    assert.equal(runtime.getStatus().indexedFileCount, 1)
+    assert.equal(runtime.getStatus().indexedFileCount, 2)
     assert(runtime.getProjectMap())
     assert.equal(runtime.search({ query: 'ProjectRuntime' })[0]?.symbol, 'ProjectRuntime')
     assert.equal(runtime.readSymbol({ name: 'ProjectRuntime' }).startLine, 5)
@@ -214,7 +322,48 @@ async function main(): Promise<void> {
     assert.equal(second.changedFiles, 1)
     assert.equal(runtime.readSymbol({ name: 'ProjectRuntimeV2' }).commitSha, adapter.head)
 
-    const context = runtime.buildContextPacket('Почему ProjectRuntimeV2 синхронизирует проект?')
+    adapter.head = '3333333333333333333333333333333333333333'
+    adapter.content = sourceV3
+    const third = await runtime.sync()
+    assert.equal(third.status, 'indexed')
+    assert.equal(third.changedFiles, 1)
+    assert.equal(runtime.getStatus().indexedCommit, adapter.head)
+    assert.equal(runtime.search({ query: 'ProjectRuntimeV3' })[0]?.symbol, 'ProjectRuntimeV3')
+    assert.equal(runtime.readFile({ path: 'src/stable.ts' }).content, stableSource)
+
+    const inspection = new DatabaseSync(databasePath)
+    try {
+      const snapshotCount = inspection
+        .prepare(
+          `SELECT COUNT(*) AS count
+           FROM snapshots
+           WHERE repository_id = ? AND branch = ?`,
+        )
+        .get('github:owner/repository', 'main') as { count: number }
+      assert(snapshotCount.count <= 2)
+      const retainedSnapshots = inspection
+        .prepare(
+          `SELECT commit_sha
+           FROM snapshots
+           WHERE repository_id = ? AND branch = ?
+           ORDER BY commit_sha`,
+        )
+        .all('github:owner/repository', 'main') as unknown as Array<{ commit_sha: string }>
+      assert.deepEqual(
+        retainedSnapshots.map((snapshot) => snapshot.commit_sha),
+        ['2222222222222222222222222222222222222222', '3333333333333333333333333333333333333333'],
+      )
+      const prunedFtsCount = inspection
+        .prepare('SELECT COUNT(*) AS count FROM chunks_fts WHERE snapshot_id = ?')
+        .get('github:owner/repository:main:1111111111111111111111111111111111111111') as {
+        count: number
+      }
+      assert.equal(prunedFtsCount.count, 0)
+    } finally {
+      inspection.close()
+    }
+
+    const context = runtime.buildContextPacket('Почему ProjectRuntimeV3 синхронизирует проект?')
     assert(context)
     assert.equal(context.snapshotSha, adapter.head)
     assert(context.evidence.length > 0)

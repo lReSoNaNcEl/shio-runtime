@@ -8,7 +8,7 @@ import type { AppSettings } from './ipc'
 import type { LLMProvider } from './llm'
 import { mainLog } from './logging/safeLogger'
 import type { MemoryStore } from './memory'
-import type { ProjectAwarenessRuntime } from './projectAwareness'
+import type { ProjectAwarenessRuntime } from './project-awareness'
 import type { SpeechClient } from './speech/speechClient'
 
 const SESSION_ID = 'default'
