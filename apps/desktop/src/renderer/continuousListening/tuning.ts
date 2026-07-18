@@ -57,7 +57,15 @@ export const backlogTuning = {
 } as const
 
 export function parseAttentionMode(value: string | undefined): AttentionMode {
-  return value === 'silent' || value === 'active' || value === 'streamer' ? value : 'passive'
+  switch (value) {
+    case 'silent':
+    case 'passive':
+    case 'active':
+    case 'streamer':
+      return value
+    default:
+      return 'silent'
+  }
 }
 
 export function parseTunedNumber(

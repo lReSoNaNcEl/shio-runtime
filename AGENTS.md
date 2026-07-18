@@ -62,8 +62,11 @@ character state.
 
 ## 7. Validation
 
-Run the checks for the affected application (defined in its local `CLAUDE.md`). All
-commands run from the repository root and need no manual virtualenv activation:
+Do not automatically run the full validation suite after every edit. During
+uncommitted work, run only the focused checks that are useful for the change at
+hand. Run the full validation suite for the affected application (defined in its
+local `CLAUDE.md`) immediately before staging or creating a commit. All commands run
+from the repository root and need no manual virtualenv activation:
 
 ```text
 npm run desktop:check
@@ -81,15 +84,15 @@ Desktop lint/format/import ordering is owned by Biome (`apps/desktop/biome.jsonc
 installed only in `apps/desktop`); the Python API uses Ruff; TypeScript types use
 `tsc`. Do not add Biome to `services/api`, and do not run Biome over Python.
 
-- Desktop changes → `npm run desktop:check`, the desktop build, typecheck, and
-  applicable repro / smoke tests.
-- API changes → `npm run api:lint`, `npm run api:test`, plus the applicable endpoint
-  checks.
-- Cross-boundary changes → validate both applications and run an integration smoke
-  test.
+- Before committing Desktop changes → `npm run desktop:check`, the desktop build,
+  typecheck, and applicable repro / smoke tests.
+- Before committing API changes → `npm run api:lint`, `npm run api:test`, plus the
+  applicable endpoint checks.
+- Before committing cross-boundary changes → validate both applications and run an
+  integration smoke test.
 
-If a required check cannot be run, say so explicitly in the final report. A task is
-not complete if its required build/checks do not pass.
+If a check run for the current work cannot be completed, say so explicitly in the
+final report. A commit must not be created if its required validation has not passed.
 
 ## 8. Do not hide errors
 

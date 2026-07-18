@@ -798,6 +798,9 @@ export function SettingsDialog({
                   <Content>
                     <div className="attention-mode-help">
                       <p>
+                        <strong>Silent.</strong> Shio не реагирует самостоятельно на фоновую речь.
+                      </p>
+                      <p>
                         <strong>Пассивный.</strong> Shio реагирует преимущественно на прямые
                         обращения.
                       </p>
@@ -820,11 +823,12 @@ export function SettingsDialog({
                 }}
                 isJustified
                 styles={fullWidth}
+                UNSAFE_className="settings-attention-modes"
               >
                 <SegmentedControlItem id="silent">Silent</SegmentedControlItem>
-                <SegmentedControlItem id="passive">Пассивный</SegmentedControlItem>
-                <SegmentedControlItem id="active">Активный</SegmentedControlItem>
-                <SegmentedControlItem id="streamer">Стример</SegmentedControlItem>
+                <SegmentedControlItem id="passive">Passive</SegmentedControlItem>
+                <SegmentedControlItem id="active">Active</SegmentedControlItem>
+                <SegmentedControlItem id="streamer">Streamer</SegmentedControlItem>
               </SegmentedControl>
               <Text>
                 {continuousListeningMode === 'active'
