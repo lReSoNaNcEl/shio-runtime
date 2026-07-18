@@ -15,8 +15,8 @@
  */
 
 import { type ChatMessage, type LlmProviderId, LlmResponseError } from '../../src/main/llm'
-import type { BaseOpenAIProvider } from '../../src/main/llm/providers/openai'
-import { instantiateProvider } from '../../src/main/llm/registry'
+import { OpenAICompatibleClient } from '../../src/main/llm/openai-compatible/OpenAICompatibleClient'
+import { getProviderDefinition } from '../../src/main/llm/registry'
 
 // ---- Provider registry (data-driven) --------------------------------------
 
@@ -151,8 +151,12 @@ function readApiKey(lp: LiveProvider): string | null {
   return null
 }
 
-function make(id: LlmProviderId, key: string, model: string): BaseOpenAIProvider {
-  return instantiateProvider(id, key, model)
+function make(id: LlmProviderId, key: string, model: string): OpenAICompatibleClient {
+  return new OpenAICompatibleClient({
+    definition: getProviderDefinition(id),
+    apiKey: key,
+    model,
+  })
 }
 
 function stripTag(text: string): string {

@@ -10,15 +10,18 @@ import {
   TooltipTrigger,
 } from '@react-spectrum/s2'
 import Chat from '@react-spectrum/s2/icons/Chat'
+import ImageAdd from '@react-spectrum/s2/icons/ImageAdd'
 import Microphone from '@react-spectrum/s2/icons/Microphone'
 import Send from '@react-spectrum/s2/icons/Send'
 import Stop from '@react-spectrum/s2/icons/StopProcessing'
 import { useEffect, useRef, useState } from 'react'
 
+import type { ScreenContextCaptureDescriptor } from '../../shared/screenContext'
 import { type ControllerState, controller } from '../Controller'
 import type { LocalizationContextValue } from '../localization/LocalizationProvider'
 import { useTranslation } from '../localization/useTranslation'
 import { bannerCopy } from '../runtime/speechCapabilities'
+import { ScreenContextPicker } from './ScreenContextPicker'
 import { SpeechUnavailableBanner } from './SpeechUnavailableBanner'
 
 interface Props {
@@ -75,6 +78,11 @@ export function ChatOverlay({ state, gateOpen = false, onOpenHealth }: Props): R
   const quickActions = [t('chat.quick.greet'), t('chat.quick.joke'), t('chat.quick.capabilities')]
   const [text, setText] = useState('')
   const [interrupting, setInterrupting] = useState(false)
+  const [screenPickerOpen, setScreenPickerOpen] = useState(false)
+  const [pendingScreenContext, setPendingScreenContext] =
+    useState<ScreenContextCaptureDescriptor | null>(null)
+  const [screenContextSubmitError, setScreenContextSubmitError] = useState<string | null>(null)
+  const pendingScreenContextRef = useRef<ScreenContextCaptureDescriptor | null>(null)
   // Presentation-only state: the banner dismissal is per incident, and a click on
   // the unavailable microphone pulses the banner. Neither belongs to the runtime.
   const [dismissedIncidentId, setDismissedIncidentId] = useState<number | null>(null)
@@ -101,6 +109,8 @@ export function ChatOverlay({ state, gateOpen = false, onOpenHealth }: Props): R
   useEffect(
     () => () => {
       if (highlightTimer.current) clearTimeout(highlightTimer.current)
+      const pending = pendingScreenContextRef.current
+      if (pending) void window.api.screenContext.release(pending.captureId)
     },
     [],
   )
@@ -130,10 +140,43 @@ export function ChatOverlay({ state, gateOpen = false, onOpenHealth }: Props): R
   // Single submit path, reused by the composer and the quick actions.
   const submit = (raw: string): void => {
     if (gateOpen) return
-    const t = raw.trim()
-    if (!t) return
-    setText('')
-    void controller.sendText(t)
+    const userText = raw.trim()
+    if (!userText) return
+    void (async () => {
+      const captureId = pendingScreenContext?.captureId
+      if (captureId) {
+        try {
+          const capabilities = await window.api.llm.getActiveCapabilities()
+          if (!capabilities.supportsVision) {
+            setScreenContextSubmitError(t('screenContext.error.visionUnsupported'))
+            return
+          }
+        } catch {
+          setScreenContextSubmitError(t('screenContext.error.unknown'))
+          return
+        }
+        if (pendingScreenContextRef.current?.captureId !== captureId) return
+      }
+      setScreenContextSubmitError(null)
+      setText('')
+      pendingScreenContextRef.current = null
+      setPendingScreenContext(null)
+      void controller.sendText(userText, captureId)
+    })()
+  }
+
+  const releasePendingScreenContext = async (): Promise<void> => {
+    const pending = pendingScreenContextRef.current
+    pendingScreenContextRef.current = null
+    setPendingScreenContext(null)
+    setScreenContextSubmitError(null)
+    if (pending) await window.api.screenContext.release(pending.captureId)
+  }
+
+  const attachScreenContext = (capture: ScreenContextCaptureDescriptor): void => {
+    pendingScreenContextRef.current = capture
+    setPendingScreenContext(capture)
+    setScreenContextSubmitError(null)
   }
 
   return (
@@ -213,7 +256,45 @@ export function ChatOverlay({ state, gateOpen = false, onOpenHealth }: Props): R
           </div>
         </div>
 
+        {pendingScreenContext && (
+          <div className="screen-context-attachment">
+            <img src={pendingScreenContext.previewDataUrl} alt="" />
+            <div className="screen-context-attachment-copy">
+              <strong title={pendingScreenContext.sourceName}>
+                {pendingScreenContext.sourceName}
+              </strong>
+              <span>
+                {pendingScreenContext.width} × {pendingScreenContext.height}
+              </span>
+              <small>{t('screenContext.privacy')}</small>
+            </div>
+            <ButtonGroup size="S">
+              <Button variant="secondary" onPress={() => setScreenPickerOpen(true)}>
+                {t('screenContext.replace')}
+              </Button>
+              <Button variant="secondary" onPress={() => void releasePendingScreenContext()}>
+                {t('screenContext.remove')}
+              </Button>
+            </ButtonGroup>
+            {screenContextSubmitError && (
+              <span className="screen-context-attachment-error" role="alert">
+                {screenContextSubmitError}
+              </span>
+            )}
+          </div>
+        )}
         <div id="controls-input">
+          <TooltipTrigger>
+            <ActionButton
+              isQuiet
+              aria-label={t('screenContext.attach.action')}
+              isDisabled={gateOpen || busy}
+              onPress={() => setScreenPickerOpen(true)}
+            >
+              <ImageAdd />
+            </ActionButton>
+            <Tooltip>{t('screenContext.attach.action')}</Tooltip>
+          </TooltipTrigger>
           <TextField
             aria-label={t('chat.message')}
             size="XL"
@@ -305,6 +386,12 @@ export function ChatOverlay({ state, gateOpen = false, onOpenHealth }: Props): R
           </TooltipTrigger>
         </div>
       </div>
+      <ScreenContextPicker
+        isOpen={screenPickerOpen}
+        onDismiss={() => setScreenPickerOpen(false)}
+        onBeforeCapture={releasePendingScreenContext}
+        onAttach={attachScreenContext}
+      />
     </section>
   )
 }

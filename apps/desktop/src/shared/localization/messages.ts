@@ -103,6 +103,33 @@ export const ruMessages = {
   'chat.voice.microphone': 'Микрофон недоступен',
   'chat.voice.synthesis': 'Озвучивание недоступно',
   'chat.voiceUnavailableTitle': 'Текстовый чат работает. Speech API недоступен.',
+  'screenContext.attach.action': 'Добавить снимок экрана',
+  'screenContext.picker.title': 'Добавить экран',
+  'screenContext.picker.checking': 'Проверяю поддержку изображений…',
+  'screenContext.picker.loading': 'Ищу доступные окна и мониторы…',
+  'screenContext.picker.capturing': 'Подготавливаю снимок…',
+  'screenContext.picker.refresh': 'Обновить',
+  'screenContext.picker.attach': 'Прикрепить',
+  'screenContext.unsupported.title': 'Изображения не поддерживаются',
+  'screenContext.unsupported.description':
+    'Выбранная модель не поддерживает изображения. Выберите vision-capable модель в Настройках.',
+  'screenContext.source.screen': 'Монитор',
+  'screenContext.source.window': 'Окно',
+  'screenContext.replace': 'Заменить',
+  'screenContext.remove': 'Удалить',
+  'screenContext.privacy':
+    'Снимок не сохраняется на диск и не добавляется в историю Shio Runtime. Он временно передаётся выбранному LLM-провайдеру для обработки.',
+  'screenContext.error.visionUnsupported': 'Выбранная модель не поддерживает изображения.',
+  'screenContext.error.permissionDenied': 'Нет разрешения на захват экрана.',
+  'screenContext.error.noSources': 'Не удалось найти доступные окна или мониторы.',
+  'screenContext.error.sourceNotFound': 'Выбранное окно больше недоступно.',
+  'screenContext.error.captureEmpty': 'Не удалось получить изображение выбранного источника.',
+  'screenContext.error.captureTooLarge': 'Не удалось подготовить снимок допустимого размера.',
+  'screenContext.error.captureExpired': 'Снимок устарел. Сделайте новый.',
+  'screenContext.error.captureNotOwned': 'Снимок больше недоступен. Сделайте новый.',
+  'screenContext.error.providerRejected':
+    'Провайдер отклонил изображение. Проверьте поддержку vision выбранной моделью.',
+  'screenContext.error.unknown': 'Не удалось подготовить снимок экрана.',
 
   'speech.error.serviceUnavailable.title': 'Распознавание речи недоступно',
   'speech.error.serviceUnavailable.description':
@@ -620,6 +647,35 @@ export const enMessages: Record<TranslationKey, string> = {
   'chat.voice.microphone': 'Microphone unavailable',
   'chat.voice.synthesis': 'Speech output unavailable',
   'chat.voiceUnavailableTitle': 'Text chat is working. Speech API is unavailable.',
+  'screenContext.attach.action': 'Add screen capture',
+  'screenContext.picker.title': 'Add screen',
+  'screenContext.picker.checking': 'Checking image support…',
+  'screenContext.picker.loading': 'Looking for available windows and monitors…',
+  'screenContext.picker.capturing': 'Preparing screenshot…',
+  'screenContext.picker.refresh': 'Refresh',
+  'screenContext.picker.attach': 'Attach',
+  'screenContext.unsupported.title': 'Images are not supported',
+  'screenContext.unsupported.description':
+    'The selected model does not support images. Choose a vision-capable model in Settings.',
+  'screenContext.source.screen': 'Screen',
+  'screenContext.source.window': 'Window',
+  'screenContext.replace': 'Replace',
+  'screenContext.remove': 'Remove',
+  'screenContext.privacy':
+    'The screenshot is not saved to disk or added to Shio Runtime history. It is temporarily sent to the selected LLM provider for processing.',
+  'screenContext.error.visionUnsupported': 'The selected model does not support images.',
+  'screenContext.error.permissionDenied': 'Screen capture permission was denied.',
+  'screenContext.error.noSources': 'No available windows or monitors were found.',
+  'screenContext.error.sourceNotFound': 'The selected window is no longer available.',
+  'screenContext.error.captureEmpty': 'The selected source did not produce an image.',
+  'screenContext.error.captureTooLarge':
+    'The screenshot could not be prepared within the allowed size.',
+  'screenContext.error.captureExpired': 'The screenshot has expired. Capture a new one.',
+  'screenContext.error.captureNotOwned':
+    'The screenshot is no longer available. Capture a new one.',
+  'screenContext.error.providerRejected':
+    'The provider rejected the image. Check vision support for the selected model.',
+  'screenContext.error.unknown': 'The screenshot could not be prepared.',
 
   'speech.error.serviceUnavailable.title': 'Speech recognition is unavailable',
   'speech.error.serviceUnavailable.description':

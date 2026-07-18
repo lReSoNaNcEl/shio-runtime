@@ -175,9 +175,14 @@ export class SpeechRuntime {
     return [...this.speechTimeline]
   }
 
-  async createAssistantReply(turnId: string, userText: string): Promise<AssistantReplyDraft> {
-    const reply = await window.api.llm.reply(turnId, userText)
+  async createAssistantReply(
+    turnId: string,
+    userText: string,
+    screenContextId?: string,
+  ): Promise<AssistantReplyDraft> {
+    const reply = await window.api.llm.reply(turnId, userText, screenContextId)
     if (!reply.ok || !reply.replyText) {
+      if (reply.errorCode) throw new Error(`SCREEN_CONTEXT_ERROR:${reply.errorCode}`)
       throw new Error(reply.error ?? 'Нет ответа')
     }
 

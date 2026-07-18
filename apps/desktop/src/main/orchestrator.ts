@@ -5,7 +5,7 @@ import {
   supportedEmotionPromptList,
 } from '../shared/emotions'
 import type { AppSettings } from './ipc'
-import type { LLMProvider } from './llm'
+import type { LLMProvider, LlmRequestOptions } from './llm'
 import { mainLog } from './logging/safeLogger'
 import type { MemoryStore } from './memory'
 import type { ProjectAwarenessRuntime } from './project-awareness'
@@ -14,6 +14,15 @@ import type { SpeechClient } from './speech/speechClient'
 const SESSION_ID = 'default'
 const TTS_VOICE_ID = 'animevox_makima'
 const TTS_ENGINE = 'f5'
+
+export interface CharacterReplyInput {
+  userText: string
+  screenContext?: {
+    mimeType: 'image/jpeg'
+    bytes: Uint8Array
+    sourceName: string
+  }
+}
 
 const PERSONA_PROMPT_SECTIONS = {
   identity: [
@@ -150,10 +159,14 @@ export class Orchestrator {
     private projectAwareness?: ProjectAwarenessRuntime,
   ) {}
 
-  async createReply(userText: string): Promise<{
+  async createReply(
+    input: CharacterReplyInput,
+    options: LlmRequestOptions = {},
+  ): Promise<{
     replyText: string
     emotionKey: string
   }> {
+    const { userText, screenContext } = input
     const history = await this.memory.getHistory(SESSION_ID)
     await this.memory.append(SESSION_ID, { role: 'user', content: userText })
 
@@ -165,10 +178,22 @@ export class Orchestrator {
         ? [{ role: 'system' as const, content: projectContextPrompt(projectContext) }]
         : []),
       ...history,
-      { role: 'user' as const, content: userText },
+      {
+        role: 'user' as const,
+        content: screenContext
+          ? [
+              { type: 'text' as const, text: userText },
+              {
+                type: 'image' as const,
+                mimeType: screenContext.mimeType,
+                bytes: screenContext.bytes,
+              },
+            ]
+          : userText,
+      },
     ]
 
-    const replyText = await this.llm.chat(messages)
+    const replyText = await this.llm.chat(messages, options)
     await this.memory.append(SESSION_ID, {
       role: 'assistant',
       content: parseEmotionalReply(replyText).visibleText,
@@ -230,7 +255,7 @@ export class Orchestrator {
     generatedLatencyMs?: string
     cache?: string
   }> {
-    const { replyText, emotionKey } = await this.createReply(userText)
+    const { replyText, emotionKey } = await this.createReply({ userText })
     const speechResult = await this.synthesizeReply(replyText, emotionKey)
 
     return {

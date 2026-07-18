@@ -11,6 +11,8 @@ export interface ConversationInput {
   turnId: string
   text: string
   source: ConversationInputSource
+  /** Allowed only for text_chat; all speech, backlog, and debug paths omit it. */
+  screenContextId?: string
   createdAt: number
   streamingSessionId?: string
   utteranceIds?: string[]

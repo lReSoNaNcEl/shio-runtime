@@ -15,10 +15,11 @@ import type {
 } from '../shared/projectAwareness'
 import { isValidProjectBranch, isValidProjectRepository } from '../shared/projectAwareness'
 import type { RuntimeEventInput } from '../shared/runtime/events'
+import type { ScreenContextErrorCode, ScreenContextResult } from '../shared/screenContext'
 import type { SpeechOperation, SpeechServiceErrorCode } from '../shared/speech/speechErrors'
 import { ActionRuntime } from './action/ActionRuntime'
 import { getConfig, getRendererConfig, saveConfig } from './config'
-import type { LlmConfig, ModelInfo, ProviderProfile } from './llm'
+import type { LlmConfig, LlmGateway, ModelInfo, ProviderProfile } from './llm'
 import {
   createLLMProvider,
   createModelCatalog,
@@ -26,12 +27,14 @@ import {
   ModelFetchError,
   PROVIDER_PROFILES,
 } from './llm'
-import type { Orchestrator } from './orchestrator'
+import { mainLog } from './logging/safeLogger'
+import type { CharacterReplyInput, Orchestrator } from './orchestrator'
 import type {
   LoadedProjectCredential,
   ProjectAwarenessRuntime,
   ProjectCredentialStore,
 } from './project-awareness'
+import { ScreenContextError, type ScreenContextService } from './screen-context'
 import { deriveCapabilities, type SpeechClient } from './speech/speechClient'
 import { logSpeechError, logSpeechRecovery } from './speech/speechErrors'
 
@@ -67,9 +70,11 @@ export interface AppSettings {
 
 export function registerIpcHandlers(
   orchestrator: () => Orchestrator,
+  llm: () => LlmGateway,
   projectAwareness: () => ProjectAwarenessRuntime,
   projectCredentialStore: () => ProjectCredentialStore,
   speech: () => SpeechClient,
+  screenContext: ScreenContextService,
   win: BrowserWindow,
 ): void {
   const sendActionEvent = (event: RuntimeEventInput): void => {
@@ -81,6 +86,9 @@ export function registerIpcHandlers(
   let activeCharacterGenerationTurnId: string | null = null
   let activeSynthesisTurnId: string | null = null
   const cancelledTurns = new Set<string>()
+  const replyAbortControllers = new Map<string, AbortController>()
+  const replySettlements = new Map<string, Promise<void>>()
+  const visionTurns = new Set<string>()
 
   actions.register({
     name: 'speech.health',
@@ -96,12 +104,19 @@ export function registerIpcHandlers(
     },
   })
   actions.register<
-    { turnId: string; userText: string },
+    {
+      turnId: string
+      input: CharacterReplyInput
+      signal: AbortSignal
+    },
     Awaited<ReturnType<Orchestrator['createReply']>>
   >({
     name: 'speech.createReply',
     description: 'Create a character reply through the current LLM orchestration.',
-    execute: async ({ turnId, userText }) => {
+    execute: async ({ turnId, input, signal }) => {
+      if (cancelledTurns.has(turnId)) {
+        throw new Error(`Conversation interrupted turnId=${turnId}`)
+      }
       if (activeCharacterGenerationTurnId) {
         throw new Error(
           `Character generation overlap: activeTurnId=${activeCharacterGenerationTurnId} requestedTurnId=${turnId}`,
@@ -109,7 +124,7 @@ export function registerIpcHandlers(
       }
       activeCharacterGenerationTurnId = turnId
       try {
-        const result = await orchestrator().createReply(userText)
+        const result = await orchestrator().createReply(input, { signal })
         if (cancelledTurns.has(turnId)) throw new Error(`Conversation interrupted turnId=${turnId}`)
         return result
       } finally {
@@ -272,24 +287,144 @@ export function registerIpcHandlers(
     return { ok: false, error: action.error, errorCode: action.errorCode }
   })
 
-  ipcMain.handle('llm:reply', async (_event, turnId: string, userText: string) => {
-    cancelledTurns.delete(turnId)
-    const action = await actions.execute<
-      { turnId: string; userText: string },
-      Awaited<ReturnType<Orchestrator['createReply']>>
-    >({
-      name: 'speech.createReply',
-      payload: { turnId, userText },
-    })
-    if (action.status === 'success' && action.result) {
-      const { replyText, emotionKey } = action.result
-      return { ok: true, replyText, emotionKey }
-    }
-    return { ok: false, error: action.error }
+  const screenContextFailure = <T>(code: ScreenContextErrorCode): ScreenContextResult<T> => ({
+    ok: false,
+    error: { code },
   })
-  ipcMain.handle('llm:cancel-reply', (_event, turnId: string) => {
+  const screenContextErrorCode = (error: unknown): ScreenContextErrorCode =>
+    error instanceof ScreenContextError ? error.code : 'UNKNOWN'
+
+  ipcMain.handle('llm:get-active-capabilities', () => llm().getActiveCapabilities())
+  ipcMain.handle('screen-context:list-sources', async (event) => {
+    try {
+      return {
+        ok: true,
+        value: await screenContext.listSources(event.sender.id),
+      } satisfies ScreenContextResult<Awaited<ReturnType<ScreenContextService['listSources']>>>
+    } catch (error) {
+      return screenContextFailure(screenContextErrorCode(error))
+    }
+  })
+  ipcMain.handle('screen-context:capture', async (event, sourceId: unknown) => {
+    const parsedSourceId = z.string().trim().min(1).max(500).safeParse(sourceId)
+    if (!parsedSourceId.success) return screenContextFailure('SOURCE_NOT_FOUND')
+    try {
+      return {
+        ok: true,
+        value: await screenContext.capture(event.sender.id, parsedSourceId.data),
+      } satisfies ScreenContextResult<Awaited<ReturnType<ScreenContextService['capture']>>>
+    } catch (error) {
+      return screenContextFailure(screenContextErrorCode(error))
+    }
+  })
+  ipcMain.handle('screen-context:release', (event, captureId: unknown) => {
+    const parsedCaptureId = z.string().trim().min(1).max(100).safeParse(captureId)
+    if (!parsedCaptureId.success) return screenContextFailure('CAPTURE_NOT_OWNED')
+    return {
+      ok: true,
+      value: screenContext.release(event.sender.id, parsedCaptureId.data),
+    } satisfies ScreenContextResult<boolean>
+  })
+
+  const replyPayloadSchema = z.object({
+    turnId: z.string().trim().min(1).max(100),
+    userText: z.string().trim().min(1).max(20_000),
+    screenContextId: z.string().trim().min(1).max(100).optional(),
+  })
+  ipcMain.handle('llm:reply', async (event, payload: unknown) => {
+    const parsed = replyPayloadSchema.safeParse(payload)
+    if (!parsed.success) return { ok: false, error: 'Invalid LLM reply request' }
+    const { turnId, userText, screenContextId } = parsed.data
+    cancelledTurns.delete(turnId)
+
+    let pendingCapture: ReturnType<ScreenContextService['consume']> | undefined
+    if (screenContextId) {
+      const capabilities = llm().getActiveCapabilities()
+      if (!capabilities.supportsVision) {
+        return {
+          ok: false,
+          errorCode: 'VISION_UNSUPPORTED' as const,
+        }
+      }
+      try {
+        pendingCapture = screenContext.consume(event.sender.id, screenContextId)
+      } catch (error) {
+        return {
+          ok: false,
+          errorCode: screenContextErrorCode(error),
+        }
+      }
+    }
+
+    const abortController = new AbortController()
+    replyAbortControllers.set(turnId, abortController)
+    let settleReply!: () => void
+    replySettlements.set(
+      turnId,
+      new Promise<void>((resolve) => {
+        settleReply = resolve
+      }),
+    )
+    if (pendingCapture) {
+      visionTurns.add(turnId)
+      mainLog.info('Vision Request Started', { turnId })
+    }
+    try {
+      const action = await actions.execute<
+        {
+          turnId: string
+          input: CharacterReplyInput
+          signal: AbortSignal
+        },
+        Awaited<ReturnType<Orchestrator['createReply']>>
+      >({
+        name: 'speech.createReply',
+        payload: {
+          turnId,
+          input: {
+            userText,
+            screenContext: pendingCapture
+              ? {
+                  mimeType: pendingCapture.mimeType,
+                  bytes: pendingCapture.bytes,
+                  sourceName: pendingCapture.sourceName,
+                }
+              : undefined,
+          },
+          signal: abortController.signal,
+        },
+      })
+      if (action.status === 'success' && action.result) {
+        if (pendingCapture) mainLog.info('Vision Request Completed', { turnId })
+        const { replyText, emotionKey } = action.result
+        return { ok: true, replyText, emotionKey }
+      }
+      if (pendingCapture && action.error === 'VISION_UNSUPPORTED') {
+        return { ok: false, errorCode: 'VISION_UNSUPPORTED' as const }
+      }
+      if (
+        pendingCapture &&
+        /некорректный запрос|запрос слишком большой|изображен|vision/i.test(action.error ?? '')
+      ) {
+        return { ok: false, error: 'SCREEN_CONTEXT_PROVIDER_REJECTED' }
+      }
+      return { ok: false, error: action.error }
+    } finally {
+      replyAbortControllers.delete(turnId)
+      cancelledTurns.delete(turnId)
+      visionTurns.delete(turnId)
+      pendingCapture = undefined
+      settleReply()
+      replySettlements.delete(turnId)
+    }
+  })
+  ipcMain.handle('llm:cancel-reply', async (_event, turnId: string) => {
+    const abortController = replyAbortControllers.get(turnId)
+    if (!abortController) return { ok: true }
     cancelledTurns.add(turnId)
-    if (activeCharacterGenerationTurnId === turnId) activeCharacterGenerationTurnId = null
+    abortController.abort()
+    if (visionTurns.has(turnId)) mainLog.info('Vision Request Cancelled', { turnId })
+    await replySettlements.get(turnId)
     return { ok: true }
   })
 

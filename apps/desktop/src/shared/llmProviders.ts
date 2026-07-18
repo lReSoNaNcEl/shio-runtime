@@ -5,15 +5,9 @@
  * neither side should redefine these.
  */
 
-export type LlmProviderId = 'groq' | 'cerebras' | 'github' | 'openrouter' | 'mistral'
+export const LLM_PROVIDER_IDS = ['groq', 'cerebras', 'github', 'openrouter', 'mistral'] as const
 
-export const LLM_PROVIDER_IDS: readonly LlmProviderId[] = [
-  'groq',
-  'cerebras',
-  'github',
-  'openrouter',
-  'mistral',
-]
+export type LlmProviderId = (typeof LLM_PROVIDER_IDS)[number]
 
 export interface ModelInfo {
   id: string

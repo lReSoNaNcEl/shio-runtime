@@ -209,7 +209,7 @@ export class ConversationRuntime {
       this.deps.recordRuntimeEvent('Thinking', `turnId=${turn.turnId}`)
       reportPhase('generating')
       const draft = await this.runGeneration(turn.turnId, () =>
-        this.deps.speechRuntime.createAssistantReply(turn.turnId, turn.text),
+        this.deps.speechRuntime.createAssistantReply(turn.turnId, turn.text, turn.screenContextId),
       )
       if (!this.isCurrentTurn(turn.turnId)) return { status: 'cancelled', turnId: turn.turnId }
 

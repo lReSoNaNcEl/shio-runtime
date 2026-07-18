@@ -1,6 +1,6 @@
-import type { LlmProviderId } from '../../../shared/llmProviders'
-import { mainLog } from '../../logging/safeLogger'
-import type { RuntimeFinishReason } from '../compatibility/finishReason'
+import type { LlmProviderId } from '../../shared/llmProviders'
+import { mainLog } from '../logging/safeLogger'
+import type { RuntimeFinishReason } from './openai-compatible/response'
 
 export interface LlmDebugRecord {
   provider: LlmProviderId
@@ -19,10 +19,6 @@ export function llmDebugEnabled(): boolean {
   return flag === '1' || flag.toLowerCase() === 'true' || Boolean(process.env.DEBUG)
 }
 
-/**
- * Structured LLM diagnostics, gated behind LLM_DEBUG. Records only safe fields:
- * never API keys and never the system prompt / message contents.
- */
 export function llmDebug(record: LlmDebugRecord): void {
   if (!llmDebugEnabled()) return
   mainLog.info('[LLMDBG]', JSON.stringify(record))

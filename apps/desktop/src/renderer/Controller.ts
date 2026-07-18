@@ -154,7 +154,7 @@ export class Controller {
     player: this.player,
     setStatus: (status) => this.set({ status }),
     pushMessage: (role, text) => this.pushMessage(role, text),
-    formatUserError: (message) => this.t('conversation.userError', { message }),
+    formatUserError: (message) => this.formatConversationUserError(message),
     markAssistantMessageInterrupted: () => this.markAssistantMessageInterrupted(),
     setResponseInterruptionPending: (pending) => this.set({ responseInterruptionPending: pending }),
     recordRuntimeEvent: (label, detail) => this.recordRuntimeEvent(label, detail),
@@ -217,6 +217,32 @@ export class Controller {
 
   private t(key: TranslationKey, params?: TranslationParams): string {
     return translate(this.uiLocale, key, params)
+  }
+
+  private formatConversationUserError(message: string): string {
+    const screenContextErrors: Record<string, TranslationKey> = {
+      VISION_UNSUPPORTED: 'screenContext.error.visionUnsupported',
+      PERMISSION_DENIED: 'screenContext.error.permissionDenied',
+      NO_SOURCES: 'screenContext.error.noSources',
+      SOURCE_NOT_FOUND: 'screenContext.error.sourceNotFound',
+      CAPTURE_EMPTY: 'screenContext.error.captureEmpty',
+      CAPTURE_TOO_LARGE: 'screenContext.error.captureTooLarge',
+      CAPTURE_EXPIRED: 'screenContext.error.captureExpired',
+      CAPTURE_NOT_OWNED: 'screenContext.error.captureNotOwned',
+      UNKNOWN: 'screenContext.error.unknown',
+    }
+    if (message === 'SCREEN_CONTEXT_PROVIDER_REJECTED') {
+      return this.t('conversation.userError', {
+        message: this.t('screenContext.error.providerRejected'),
+      })
+    }
+    const code = message.startsWith('SCREEN_CONTEXT_ERROR:')
+      ? message.slice('SCREEN_CONTEXT_ERROR:'.length)
+      : ''
+    const key = screenContextErrors[code]
+    return this.t('conversation.userError', {
+      message: key ? this.t(key) : message,
+    })
   }
 
   private applyUiLocale(locale: UiLocale): void {
@@ -725,8 +751,8 @@ export class Controller {
   }
 
   // ---- chat cycle ----------------------------------------------------------
-  async sendText(text: string): Promise<void> {
-    await this.conversationInput.admitText(text)
+  async sendText(text: string, screenContextId?: string): Promise<void> {
+    await this.conversationInput.admitText(text, screenContextId)
   }
 
   async runDebugFullRuntimeTest(emotionKey = 'happy'): Promise<void> {

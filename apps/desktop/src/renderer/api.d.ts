@@ -1,7 +1,13 @@
+import type { LlmCapabilities } from '../main/llm/types'
 import type { FetchModelsResult, LlmConfig, ProviderProfile } from '../shared/llmProviders'
 import type { UiLocale } from '../shared/localization/locale'
 import type { ProjectAwarenessApi, ProjectAwarenessPublicConfig } from '../shared/projectAwareness'
 import type { RuntimeEventInput } from '../shared/runtime/events'
+import type {
+  ScreenContextCaptureDescriptor,
+  ScreenContextResult,
+  ScreenContextSource,
+} from '../shared/screenContext'
 import type { SpeechServiceErrorCode } from '../shared/speech/speechErrors'
 import type { BacklogSelectionResult, BufferedUtterance } from './speech/continuous-listening/types'
 
@@ -63,8 +69,16 @@ export interface VtuberApi {
     reply: (
       turnId: string,
       text: string,
-    ) => Promise<{ ok: boolean; replyText?: string; emotionKey?: string; error?: string }>
+      screenContextId?: string,
+    ) => Promise<{
+      ok: boolean
+      replyText?: string
+      emotionKey?: string
+      error?: string
+      errorCode?: import('../shared/screenContext').ScreenContextErrorCode
+    }>
     cancelReply: (turnId: string) => Promise<{ ok: boolean }>
+    getActiveCapabilities: () => Promise<LlmCapabilities>
     arbitrateBacklog: (payload: {
       items: readonly BufferedUtterance[]
       backlogVersion: number
@@ -73,6 +87,11 @@ export interface VtuberApi {
     }) => Promise<{ ok: boolean; result?: BacklogSelectionResult; error?: string }>
     providers: () => Promise<ProviderProfile[]>
     fetchModels: (provider: string, apiKey: string) => Promise<FetchModelsResult>
+  }
+  screenContext: {
+    listSources: () => Promise<ScreenContextResult<ScreenContextSource[]>>
+    capture: (sourceId: string) => Promise<ScreenContextResult<ScreenContextCaptureDescriptor>>
+    release: (captureId: string) => Promise<ScreenContextResult<boolean>>
   }
   tts: {
     synthesizeReply: (
@@ -99,7 +118,7 @@ export interface VtuberApi {
   config: {
     get: () => Promise<PersistedSettings>
     save: (p: Partial<PersistedSettings>) => Promise<unknown>
-    onUpdated: (cb: (cfg: PersistedSettings) => void) => void
+    onUpdated: (cb: (cfg: PersistedSettings) => void) => () => void
   }
   vrm: {
     pick: () => Promise<{ ok: boolean; vrmPath?: string }>

@@ -9,11 +9,11 @@ export function proxyFromEnv(): AxiosProxyConfig | false {
     ''
   if (!url) return false
   try {
-    const u = new URL(url)
+    const parsed = new URL(url)
     return {
-      host: u.hostname,
-      port: Number(u.port) || (u.protocol === 'https:' ? 443 : 80),
-      protocol: u.protocol.replace(':', ''),
+      host: parsed.hostname,
+      port: Number(parsed.port) || (parsed.protocol === 'https:' ? 443 : 80),
+      protocol: parsed.protocol.replace(':', ''),
     }
   } catch {
     return false

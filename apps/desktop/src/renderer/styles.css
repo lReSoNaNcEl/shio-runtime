@@ -436,6 +436,162 @@ body.overlay-window.overlay-solid-background #canvas {
   min-width: 0;
 }
 
+.screen-context-attachment {
+  display: grid;
+  grid-template-columns: 112px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 8px;
+  border: 1px solid rgba(139, 92, 246, 0.42);
+  border-radius: 10px;
+  background: rgba(76, 29, 149, 0.16);
+}
+
+.screen-context-attachment > img {
+  width: 112px;
+  height: 63px;
+  object-fit: cover;
+  border-radius: 7px;
+  background: rgba(15, 23, 42, 0.8);
+}
+
+.screen-context-attachment-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.screen-context-attachment-copy strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.82rem;
+}
+
+.screen-context-attachment-copy span,
+.screen-context-attachment-copy small {
+  color: var(--text-dim);
+  font-size: 0.72rem;
+}
+
+.screen-context-attachment-copy small {
+  line-height: 1.3;
+}
+
+.screen-context-attachment-error {
+  grid-column: 1 / -1;
+  color: #fca5a5;
+  font-size: 0.76rem;
+}
+
+.screen-context-picker {
+  min-height: 280px;
+  max-height: min(64vh, 680px);
+  overflow: auto;
+  padding: 4px;
+}
+
+.screen-context-picker-state {
+  min-height: 260px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  text-align: center;
+}
+
+.screen-context-picker-state p {
+  max-width: 560px;
+  margin: 0;
+  color: var(--text-dim);
+}
+
+.screen-context-picker-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  width: 100%;
+}
+
+.screen-context-source-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.screen-context-source {
+  min-width: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 2px solid transparent;
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.72);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 0.16s ease,
+    transform 0.16s ease,
+    background 0.16s ease;
+}
+
+.screen-context-source:hover {
+  transform: translateY(-1px);
+  background: rgba(30, 41, 59, 0.9);
+}
+
+.screen-context-source:focus-visible {
+  outline: 2px solid #a78bfa;
+  outline-offset: 2px;
+}
+
+.screen-context-source.selected {
+  border-color: #a78bfa;
+  background: rgba(91, 33, 182, 0.28);
+}
+
+.screen-context-source > img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  background: #020617;
+}
+
+.screen-context-source-info {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 9px 10px 10px;
+}
+
+.screen-context-source-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.8rem;
+}
+
+@media (max-width: 720px) {
+  .screen-context-attachment {
+    grid-template-columns: 88px minmax(0, 1fr);
+  }
+
+  .screen-context-attachment > img {
+    width: 88px;
+    height: 50px;
+  }
+
+  .screen-context-attachment > :last-child {
+    grid-column: 1 / -1;
+  }
+}
+
 .mic-recording {
   animation: pulse-btn 1s infinite;
 }

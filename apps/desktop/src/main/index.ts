@@ -7,7 +7,7 @@ import { app, BrowserWindow, ipcMain, Menu, protocol, safeStorage, screen } from
 import { translate } from '../shared/localization/format'
 import { getConfig, getRendererConfig, loadConfig } from './config'
 import { registerIpcHandlers } from './ipc'
-import { LiveLLMProvider } from './llm'
+import { LlmGateway } from './llm'
 import { initializeSafeLogging, mainLog } from './logging/safeLogger'
 import { createMemoryStore } from './memory'
 import { Orchestrator } from './orchestrator'
@@ -17,6 +17,7 @@ import {
   ProjectKnowledgeStore,
 } from './project-awareness'
 import { GitHubProjectAdapter } from './project-awareness/adapters/GitHubProjectAdapter'
+import { ScreenCaptureAdapter, ScreenContextService } from './screen-context'
 import { SpeechClient } from './speech/speechClient'
 
 initializeSafeLogging()
@@ -26,12 +27,15 @@ let win: BrowserWindow | null = null
 let overlayWin: BrowserWindow | null = null
 let isQuitting = false
 let orchestrator: Orchestrator | null = null
+let llmGateway: LlmGateway | null = null
 let speechClient: SpeechClient | null = null
 let projectAwareness: ProjectAwarenessRuntime | null = null
 let projectCredentialStore: ProjectCredentialStore | null = null
 let projectKnowledgeStore: ProjectKnowledgeStore | null = null
 let lastAvatarState: unknown = null
 let lastAvatarMouth: unknown = null
+const screenCaptureAdapter = new ScreenCaptureAdapter()
+const screenContextService = new ScreenContextService(screenCaptureAdapter)
 
 function destroyOverlayWindow(): void {
   const target = overlayWin
@@ -58,10 +62,10 @@ function shutdownApplication(): void {
 
 function buildOrchestrator(): Orchestrator {
   const cfg = getConfig()
-  // LiveLLMProvider re-reads settings on every chat() call, so switching
+  // LlmGateway re-reads settings on every chat() call, so switching
   // provider / model / apiKey in Settings applies to the next request
   // without rebuilding the Orchestrator or restarting the app.
-  const llm = new LiveLLMProvider(() => {
+  llmGateway = new LlmGateway(() => {
     const { activeProvider, providers } = getConfig().llm
     const creds = providers[activeProvider]
     return {
@@ -73,7 +77,13 @@ function buildOrchestrator(): Orchestrator {
   const memory = createMemoryStore()
   speechClient = new SpeechClient(cfg.pythonSpeechUrl)
   void speechClient.warnIfEmotionContractDrift()
-  return new Orchestrator(llm, memory, speechClient, getConfig, projectAwareness ?? undefined)
+  return new Orchestrator(
+    llmGateway,
+    memory,
+    speechClient,
+    getConfig,
+    projectAwareness ?? undefined,
+  )
 }
 
 function buildProjectAwareness(): ProjectAwarenessRuntime {
@@ -189,6 +199,10 @@ function createWindow(): void {
       shutdownApplication()
     }
   })
+  const rendererId = win.webContents.id
+  win.webContents.once('destroyed', () => {
+    screenContextService.disposeRenderer(rendererId)
+  })
 
   projectAwareness = buildProjectAwareness()
   orchestrator = buildOrchestrator()
@@ -197,6 +211,11 @@ function createWindow(): void {
     () => {
       if (!orchestrator) orchestrator = buildOrchestrator()
       return orchestrator
+    },
+    () => {
+      if (!llmGateway) orchestrator = buildOrchestrator()
+      if (!llmGateway) throw new Error('LLM gateway is unavailable')
+      return llmGateway
     },
     () => {
       projectAwareness ??= buildProjectAwareness()
@@ -212,6 +231,7 @@ function createWindow(): void {
       if (!speechClient) speechClient = new SpeechClient(getConfig().pythonSpeechUrl)
       return speechClient
     },
+    screenContextService,
     win,
   )
   void initializeProjectAwareness(projectAwareness).catch((error) => {
@@ -377,6 +397,7 @@ app.whenReady().then(() => {
 app.on('before-quit', () => {
   isQuitting = true
   destroyOverlayWindow()
+  screenContextService.dispose()
   projectKnowledgeStore?.close()
   projectKnowledgeStore = null
 })

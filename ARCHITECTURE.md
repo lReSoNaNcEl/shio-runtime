@@ -640,6 +640,10 @@ The Character LLM owns: reply content, personality expression, dialogue style, r
 
 For a project-relevant turn, Character Response Generation may receive a compact Project Context Packet from Project Awareness Runtime. The packet contains a repository and branch identity, an exact snapshot commit, a deterministic project-map summary, and bounded file-and-line evidence. Character Response Generation never reads the repository or Project Knowledge Store directly. Repository content remains untrusted evidence: it cannot alter system instructions, authorize actions, request secret disclosure, or cause code execution.
 
+An explicit text-chat turn may also carry one user-selected, request-scoped Screen Context image. Screen Context is acquired through a read-only System Adapter and a short-lived main-process application service; it is not a Runtime, Tool Action, Character State field, conversational-memory entry, or Project Awareness input. The renderer may hold only a bounded preview and opaque capture identity. The full image remains in the main process until one-shot consumption by Character Response Generation, expiration, explicit release, renderer disposal, or application shutdown. Text remains the only durable conversation and memory representation.
+
+AI provider selection and OpenAI-compatible transport remain External Adapter concerns behind the Character Response Generation contract. Provider/model credentials and capabilities are resolved for each request, while persona composition, conversation memory, Project Context injection, and optional Screen Context composition remain owned by orchestration. Image support does not create a separate vision Runtime or provider-specific vision client.
+
 **Conversation Presence**
 
 An implementation may maintain a presence projection that mirrors the currently active conversation phase — for example values resembling thinking, preparing reply, starting speech, speaking, or finishing speech — for observers such as the UI or Avatar Runtime. A presence projection may mirror the active conversation phase, but it does not own turn execution or admission; it is a read-only projection of Conversation Runtime's internal lifecycle, not a second orchestration responsibility, regardless of what a concrete implementation names the component that provides it.
@@ -1214,6 +1218,7 @@ Adapter categories:
 - **Storage Adapters:** persistence providers such as SQLite, PostgreSQL, cloud storage, and vector databases
 - **Project Repository Adapters:** read-only repository providers such as GitHub, used by Project Awareness Runtime to obtain repository identity, branch heads, trees, file content, comparisons, and recent commits. They never perform indexing, summarization, retrieval ranking, or repository mutation.
 - **System Adapters:** operating system integrations such as filesystem, notifications, clipboard, desktop APIs, and process execution
+- **Screen Capture Adapters:** read-only operating-system integrations that enumerate user-visible windows and monitors and encode a single explicitly selected image. They expose no streaming or background-observation contract and do not persist captures.
 - **Presentation/Rendering Adapters:** implementation boundaries used by Avatar Runtime to render the character model. These are distinct from Action Runtime adapters, since presentation is character embodiment, not an externally authoritative side effect. See [Chapter 20 - Avatar Runtime](#20-avatar-runtime).
 
 Adapter responsibilities:

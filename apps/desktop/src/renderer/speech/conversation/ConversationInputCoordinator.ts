@@ -116,13 +116,14 @@ export class ConversationInputCoordinator {
     )
   }
 
-  async admitText(text: string): Promise<void> {
+  async admitText(text: string, screenContextId?: string): Promise<void> {
     const trimmed = text.trim()
     if (!trimmed) return
     await this.conversationAdmission.admit({
       turnId: this.dependencies.createTurnId('text'),
       text: trimmed,
       source: 'text_chat',
+      screenContextId,
       createdAt: Date.now(),
       semanticCues: {
         directAddress: false,
@@ -539,6 +540,14 @@ export class ConversationInputCoordinator {
     attempt: AdmittedConversationTurn,
     reportPhase: (phase: ConversationExecutionPhase) => void,
   ): Promise<ConversationCompletionResult> {
+    if (attempt.screenContextId && attempt.source !== 'text_chat') {
+      return {
+        status: 'failed',
+        turnId: attempt.turnId,
+        phase: 'generation',
+        error: 'Screen context is only allowed for text chat',
+      }
+    }
     if (attempt.source === 'continuous_listening' || attempt.source === 'backlog_selected') {
       if (!this.continuousSettings.enabled || this.handledUtteranceIds.has(attempt.turnId)) {
         return { status: 'cancelled', turnId: attempt.turnId }

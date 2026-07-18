@@ -8,28 +8,30 @@ export type {
   ProviderProfile,
 } from '../../shared/llmProviders'
 export { LLM_PROVIDER_IDS } from '../../shared/llmProviders'
-export type { LlmCapabilities, RuntimeFinishReason } from './compatibility/index'
-export { isReasoningModel, normalizeFinishReason, resolveCapabilities } from './compatibility/index'
-export { defaultLlmConfig, normalizeLlmConfig } from './config/index'
+export { defaultLlmConfig, normalizeLlmConfig } from './config'
 export {
+  LlmCapabilityError,
   LlmResponseError,
   ModelFetchError,
   normalizeHttpErrorMessage,
-  PROVIDER_DISPLAY_NAMES,
-} from './errors/index'
-export type { LiveLLMSettings } from './live/index'
-export { LiveLLMProvider } from './live/index'
-export type { ParsedCompletion } from './protocol/index'
-export { parseChatCompletion } from './protocol/index'
-export type { ModelCatalogProvider } from './providers/catalogTypes'
-export type {
-  ChatMessage,
-  LLMProvider,
-} from './public/chatTypes'
+} from './errors'
+export { LlmGateway } from './LlmGateway'
 export {
   createLLMProvider,
   createModelCatalog,
   getProviderProfile,
   isLlmProviderId,
   PROVIDER_PROFILES,
-} from './registry/index'
+  resolveModelCapabilities,
+} from './registry'
+export type {
+  ChatMessage,
+  LLMProvider,
+  LlmCapabilities,
+  LlmContentPart,
+  LlmImageContentPart,
+  LlmMessageContent,
+  LlmRequestOptions,
+  LlmTextContentPart,
+  ModelCatalogProvider,
+} from './types'

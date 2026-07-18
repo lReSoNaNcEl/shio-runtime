@@ -8,12 +8,19 @@ const api = {
     recognize: (wavBuffer: ArrayBuffer) => ipcRenderer.invoke('asr:recognize', wavBuffer),
   },
   llm: {
-    reply: (turnId: string, userText: string) => ipcRenderer.invoke('llm:reply', turnId, userText),
+    reply: (turnId: string, userText: string, screenContextId?: string) =>
+      ipcRenderer.invoke('llm:reply', { turnId, userText, screenContextId }),
     cancelReply: (turnId: string) => ipcRenderer.invoke('llm:cancel-reply', turnId),
+    getActiveCapabilities: () => ipcRenderer.invoke('llm:get-active-capabilities'),
     arbitrateBacklog: (payload: unknown) => ipcRenderer.invoke('llm:arbitrate-backlog', payload),
     providers: () => ipcRenderer.invoke('llm:providers'),
     fetchModels: (provider: string, apiKey: string) =>
       ipcRenderer.invoke('llm:fetch-models', provider, apiKey),
+  },
+  screenContext: {
+    listSources: () => ipcRenderer.invoke('screen-context:list-sources'),
+    capture: (sourceId: string) => ipcRenderer.invoke('screen-context:capture', sourceId),
+    release: (captureId: string) => ipcRenderer.invoke('screen-context:release', captureId),
   },
   tts: {
     synthesizeReply: (turnId: string, replyText: string, emotionKey: string) =>
@@ -45,7 +52,10 @@ const api = {
     get: () => ipcRenderer.invoke('config:get'),
     save: (partial: Record<string, unknown>) => ipcRenderer.invoke('config:save', partial),
     onUpdated: (cb: (cfg: Record<string, string>) => void) => {
-      ipcRenderer.on('config:updated', (_e, cfg) => cb(cfg))
+      const listener = (_event: Electron.IpcRendererEvent, cfg: Record<string, string>): void =>
+        cb(cfg)
+      ipcRenderer.on('config:updated', listener)
+      return () => ipcRenderer.removeListener('config:updated', listener)
     },
   },
   vrm: {

@@ -14,14 +14,19 @@
 import axios, { type AxiosInstance } from 'axios'
 
 import type { ChatMessage, LlmProviderId } from '../../src/main/llm'
-import { normalizeFinishReason, resolveCapabilities } from '../../src/main/llm/compatibility'
 import {
   LlmResponseError,
   ModelFetchError,
   normalizeHttpErrorMessage,
 } from '../../src/main/llm/errors'
-import { runChatCompletion } from '../../src/main/llm/protocol'
-import { MistralProvider } from '../../src/main/llm/providers/openai'
+import { OpenAICompatibleClient } from '../../src/main/llm/openai-compatible/OpenAICompatibleClient'
+import { runChatCompletion } from '../../src/main/llm/openai-compatible/request'
+import { normalizeFinishReason } from '../../src/main/llm/openai-compatible/response'
+import {
+  getProviderDefinition,
+  getProviderProfile,
+  resolveModelCapabilities as resolveCapabilities,
+} from '../../src/main/llm/registry'
 
 let passed = 0
 let failed = 0
@@ -129,6 +134,7 @@ function okResponse(content: string, finishReason = 'stop'): unknown {
 
 async function runProviderBattery(pc: ProviderCase): Promise<void> {
   console.log(`\n=== ${pc.id} ===`)
+  const displayName = getProviderProfile(pc.id).displayName
 
   // 1. System prompt delivered exactly once, not dropped/duplicated/converted.
   {
@@ -137,6 +143,7 @@ async function runProviderBattery(pc: ProviderCase): Promise<void> {
     const caps = resolveCapabilities(pc.id, pc.plainModel)
     const out = await runChatCompletion({
       provider: pc.id,
+      displayName,
       http,
       chatPath: '/chat/completions',
       apiKey: 'test-key',
@@ -160,6 +167,7 @@ async function runProviderBattery(pc: ProviderCase): Promise<void> {
     const caps = resolveCapabilities(pc.id, pc.plainModel)
     await runChatCompletion({
       provider: pc.id,
+      displayName,
       http,
       chatPath: '/c',
       apiKey: 'k',
@@ -183,6 +191,7 @@ async function runProviderBattery(pc: ProviderCase): Promise<void> {
     const caps = resolveCapabilities(pc.id, pc.reasoningModel)
     await runChatCompletion({
       provider: pc.id,
+      displayName,
       http,
       chatPath: '/c',
       apiKey: 'k',
@@ -201,6 +210,7 @@ async function runProviderBattery(pc: ProviderCase): Promise<void> {
     const { http } = fakeHttp(() => okResponse(text))
     const out = await runChatCompletion({
       provider: pc.id,
+      displayName,
       http,
       chatPath: '/c',
       apiKey: 'k',
@@ -217,6 +227,7 @@ async function runProviderBattery(pc: ProviderCase): Promise<void> {
     const { http } = fakeHttp(() => okResponse(three))
     const out = await runChatCompletion({
       provider: pc.id,
+      displayName,
       http,
       chatPath: '/c',
       apiKey: 'k',
@@ -239,6 +250,7 @@ async function runProviderBattery(pc: ProviderCase): Promise<void> {
     try {
       await runChatCompletion({
         provider: pc.id,
+        displayName,
         http,
         chatPath: '/c',
         apiKey: 'k',
@@ -264,6 +276,7 @@ async function runProviderBattery(pc: ProviderCase): Promise<void> {
     try {
       await runChatCompletion({
         provider: pc.id,
+        displayName,
         http,
         chatPath: '/c',
         apiKey: 'k',
@@ -286,6 +299,7 @@ async function runProviderBattery(pc: ProviderCase): Promise<void> {
     try {
       await runChatCompletion({
         provider: pc.id,
+        displayName,
         http,
         chatPath: '/c',
         apiKey: 'k',
@@ -299,7 +313,8 @@ async function runProviderBattery(pc: ProviderCase): Promise<void> {
     const msg = err instanceof Error ? err.message : ''
     check(
       `HTTP ${status} normalized`,
-      err instanceof LlmResponseError && msg === normalizeHttpErrorMessage(pc.id, status),
+      err instanceof LlmResponseError &&
+        msg === normalizeHttpErrorMessage(getProviderProfile(pc.id).displayName, status),
     )
     check(
       `HTTP ${status} hides raw provider JSON`,
@@ -311,9 +326,13 @@ async function runProviderBattery(pc: ProviderCase): Promise<void> {
 /** Mistral models API: fake `http.get` to exercise success/error/malformed paths. */
 async function withMockedMistralGet<T>(
   handler: (path: string) => unknown,
-  fn: (p: MistralProvider) => Promise<T>,
+  fn: (p: OpenAICompatibleClient) => Promise<T>,
 ): Promise<T> {
-  const provider = new MistralProvider('test-key', 'mistral-small-latest')
+  const provider = new OpenAICompatibleClient({
+    definition: getProviderDefinition('mistral'),
+    apiKey: 'test-key',
+    model: 'mistral-small-latest',
+  })
   ;(provider as unknown as { http: { get: (path: string) => Promise<unknown> } }).http = {
     get: async (path: string) => {
       const r = handler(path)
