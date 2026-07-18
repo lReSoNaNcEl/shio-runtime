@@ -17,10 +17,34 @@ dotenv.config()
 
 let win: BrowserWindow | null = null
 let overlayWin: BrowserWindow | null = null
+let isQuitting = false
 let orchestrator: Orchestrator | null = null
 let speechClient: SpeechClient | null = null
 let lastAvatarState: unknown = null
 let lastAvatarMouth: unknown = null
+
+function destroyOverlayWindow(): void {
+  const target = overlayWin
+  overlayWin = null
+
+  if (!target || target.isDestroyed()) return
+
+  target.destroy()
+}
+
+function shutdownApplication(): void {
+  if (isQuitting) return
+  isQuitting = true
+
+  destroyOverlayWindow()
+
+  if (win && !win.isDestroyed()) {
+    win.destroy()
+  }
+  win = null
+
+  app.quit()
+}
 
 function buildOrchestrator(): Orchestrator {
   const cfg = getConfig()
@@ -112,6 +136,13 @@ function createWindow(): void {
     },
   })
   win.setMenu(null)
+  win.on('closed', () => {
+    win = null
+
+    if (!isQuitting) {
+      shutdownApplication()
+    }
+  })
 
   orchestrator = buildOrchestrator()
 
@@ -162,6 +193,9 @@ function createWindow(): void {
 let isCreatingOverlay = false
 
 function ensureOverlayWindow(): BrowserWindow {
+  if (isQuitting) {
+    throw new Error('Cannot create Mirror Overlay during application shutdown')
+  }
   if (overlayWin && !overlayWin.isDestroyed()) {
     mainLog.log('MirrorOverlay: reuse existing')
     return overlayWin
@@ -181,6 +215,9 @@ function refreshOverlayAvatar(): { ok: boolean; visible: boolean } {
 }
 
 function createOverlayWindow(): BrowserWindow {
+  if (isQuitting) {
+    throw new Error('Cannot create Mirror Overlay during application shutdown')
+  }
   if (overlayWin && !overlayWin.isDestroyed()) {
     mainLog.log('MirrorOverlay: reuse existing')
     return overlayWin
@@ -190,40 +227,46 @@ function createOverlayWindow(): BrowserWindow {
     return overlayWin as BrowserWindow
   }
   isCreatingOverlay = true
-  mainLog.log('MirrorOverlay: create')
+  try {
+    mainLog.log('MirrorOverlay: create')
 
-  const { width, height, x, y } = overlayBounds()
+    const { width, height, x, y } = overlayBounds()
 
-  overlayWin = new BrowserWindow({
-    width,
-    height,
-    x,
-    y,
-    title: 'Shio - \u041e\u0432\u0435\u0440\u043b\u0435\u0439',
-    frame: false,
-    transparent: true,
-    resizable: false,
-    movable: true,
-    alwaysOnTop: true,
-    skipTaskbar: true,
-    hasShadow: false,
-    webPreferences: {
-      preload: join(__dirname, '../preload/index.js'),
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: false,
-      webSecurity: false,
-    },
-  })
+    overlayWin = new BrowserWindow({
+      width,
+      height,
+      x,
+      y,
+      title: 'Shio - \u041e\u0432\u0435\u0440\u043b\u0435\u0439',
+      frame: false,
+      transparent: true,
+      resizable: false,
+      movable: true,
+      alwaysOnTop: true,
+      skipTaskbar: true,
+      hasShadow: false,
+      webPreferences: {
+        preload: join(__dirname, '../preload/index.js'),
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: false,
+        webSecurity: false,
+      },
+    })
 
-  applyOverlaySettings()
-  overlayWin.on('closed', () => {
-    mainLog.log('MirrorOverlay: destroyed')
-    overlayWin = null
-  })
-  loadRenderer(overlayWin, true)
-  isCreatingOverlay = false
-  return overlayWin
+    const createdWindow = overlayWin
+    applyOverlaySettings()
+    createdWindow.on('closed', () => {
+      mainLog.log('MirrorOverlay: destroyed')
+      if (overlayWin === createdWindow) {
+        overlayWin = null
+      }
+    })
+    loadRenderer(createdWindow, true)
+    return createdWindow
+  } finally {
+    isCreatingOverlay = false
+  }
 }
 
 function toggleOverlayWindow(): { visible: boolean } {
@@ -264,11 +307,18 @@ app.whenReady().then(() => {
 
   createWindow()
   app.on('activate', () => {
+    if (isQuitting) return
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
 })
 
+app.on('before-quit', () => {
+  isQuitting = true
+  destroyOverlayWindow()
+})
+
 app.on('window-all-closed', () => {
-  overlayWin = null
-  if (process.platform !== 'darwin') app.quit()
+  if (process.platform !== 'darwin' && !isQuitting) {
+    shutdownApplication()
+  }
 })
