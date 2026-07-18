@@ -14,6 +14,7 @@ export interface ConversationInput {
   createdAt: number
   streamingSessionId?: string
   utteranceIds?: string[]
+  triggeredBargeIn?: boolean
 }
 
 export interface AdmittedConversationTurn extends ConversationInput {
@@ -51,6 +52,7 @@ export interface UtteranceChunk {
   streamingSessionId?: string
   segmentId?: string
   capturedDuringPlayback?: boolean
+  triggeredBargeIn?: boolean
 }
 
 export type BacklogPriorityClass = 'P0' | 'P1' | 'P2' | 'P3' | 'P4'
@@ -71,6 +73,7 @@ export interface BufferedUtterance {
   capturedWhileShioBusy: boolean
   capturedDuringPlayback: boolean
   likelySelfEcho: boolean
+  triggeredBargeIn: boolean
   priorityClass: BacklogPriorityClass
 }
 

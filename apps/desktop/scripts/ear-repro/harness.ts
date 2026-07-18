@@ -13,6 +13,9 @@
  *
  * Only the VRM wrapper is faked; all pose/calibration logic is the production class.
  */
+
+import assert from 'node:assert/strict'
+
 import * as THREE from 'three'
 
 import { EarBehaviorRuntime } from '../../src/renderer/three/EarBehaviorRuntime'
@@ -116,6 +119,18 @@ runtime.setAmplitudeScale(2)
 run('thinking', 'neutral', 4)
 runtime.setAxisOverride('auto')
 runtime.setAmplitudeScale(1)
+
+console.log('--- user interruption impulse ---')
+runtime.setProfile('listening')
+assert.equal(runtime.triggerImpulse('user-interruption'), true)
+assert.equal(runtime.triggerImpulse('user-interruption'), false)
+runtime.update(dt)
+assert.equal(runtime.getDebugState().activeImpulse, 'user-interruption')
+for (let elapsed = 0; elapsed < 1.1; elapsed += dt) runtime.update(dt)
+assert.equal(runtime.getDebugState().activeImpulse, null)
+assert.equal(runtime.getDebugState().profile, 'listening')
+assert.equal(runtime.triggerImpulse('user-interruption'), true)
+console.log('assert semantic impulse one-shot + listening settle: PASS')
 
 // Basic assertions.
 const idleState = runtime.getDebugState()

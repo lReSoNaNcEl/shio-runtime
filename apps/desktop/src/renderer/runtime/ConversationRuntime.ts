@@ -57,6 +57,8 @@ export interface ConversationRuntimeDeps {
 
 export class ConversationRuntime {
   private activeTurnId: string | null = null
+  private activePhase: ConversationExecutionPhase | null = null
+  private playbackStartedAt: number | null = null
   private generationTurnId: string | null = null
   private synthesisTurnId: string | null = null
   private playbackTurnId: string | null = null
@@ -81,6 +83,12 @@ export class ConversationRuntime {
       }
     }
     this.activeTurnId = turn.turnId
+    this.activePhase = turn.source === 'debug' ? 'synthesizing' : 'generating'
+    this.playbackStartedAt = null
+    const trackPhase = (phase: ConversationExecutionPhase): void => {
+      if (this.activeTurnId === turn.turnId) this.activePhase = phase
+      reportPhase(phase)
+    }
     let reject!: (error: Error) => void
     const promise = new Promise<never>((_, fail) => {
       reject = fail
@@ -91,10 +99,14 @@ export class ConversationRuntime {
     )
     try {
       return turn.source === 'debug'
-        ? await this.executeDebug(turn, reportPhase)
-        : await this.executeConversation(turn, reportPhase)
+        ? await this.executeDebug(turn, trackPhase)
+        : await this.executeConversation(turn, trackPhase)
     } finally {
       if (this.activeTurnId === turn.turnId) this.activeTurnId = null
+      if (this.activeTurnId === null) {
+        this.activePhase = null
+        this.playbackStartedAt = null
+      }
       if (this.interruption?.turnId === turn.turnId) {
         this.interruption = null
         this.deps.setResponseInterruptionPending(false)
@@ -108,13 +120,11 @@ export class ConversationRuntime {
     if (!turnId || !interruption || interruption.turnId !== turnId) return false
     this.deps.setResponseInterruptionPending(true)
     this.activeTurnId = null
+    this.activePhase = null
+    this.playbackStartedAt = null
     this.deps.player.stopCurrent(turnId, 'conversation-interrupted')
-    this.deps.avatarRuntime.stopLipSync(turnId)
+    this.deps.avatarRuntime.interruptLipSync(turnId)
     this.deps.markAssistantMessageInterrupted()
-    await Promise.allSettled([
-      window.api.llm.cancelReply(turnId),
-      window.api.tts.cancelSynthesis(turnId),
-    ])
     const listening = this.deps.isContinuousCaptureAlive()
     const status: ConversationStatus = listening ? 'listening' : 'idle'
     const mode: CharacterRuntimeMode = listening ? 'listening' : 'idle'
@@ -127,12 +137,42 @@ export class ConversationRuntime {
       conversationPresence: waiting,
     })
     this.applyAvatarCharacterState({ stopLipSyncTurnId: turnId })
-    this.publishAvatarState({ mode, emotionKey: 'neutral' })
+    if (source === 'voice-barge-in') {
+      try {
+        this.deps.avatarRuntime.triggerUserInterruption()
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        this.deps.recordRuntimeEvent('User Interruption Reaction Failed', message)
+      }
+    }
+    this.publishAvatarState({
+      mode,
+      emotionKey: 'neutral',
+      reaction: source === 'voice-barge-in' ? 'user-interruption' : undefined,
+      reactionId: source === 'voice-barge-in' ? `${turnId}:${Date.now()}` : undefined,
+    })
     this.deps.updateSpeechPlaybackProgress(0)
     this.deps.setStatus(status)
     this.deps.recordRuntimeEvent('Conversation Interrupted', `turnId=${turnId} source=${source}`)
+    this.publishRuntimeEvent('ResponseInterrupted', 'speech', `turnId=${turnId} source=${source}`)
+    await Promise.allSettled([
+      window.api.llm.cancelReply(turnId),
+      window.api.tts.cancelSynthesis(turnId),
+    ])
     interruption.reject(new Error(`Conversation interrupted turnId=${turnId}`))
     return true
+  }
+
+  getActiveResponseSnapshot(): {
+    turnId: string | null
+    phase: ConversationExecutionPhase | null
+    playbackStartedAt: number | null
+  } {
+    return {
+      turnId: this.activeTurnId,
+      phase: this.activePhase,
+      playbackStartedAt: this.playbackStartedAt,
+    }
   }
 
   private async executeConversation(
@@ -416,6 +456,7 @@ export class ConversationRuntime {
   ): void {
     if (!this.isCurrentTurn(session.turnId))
       throw new Error(`Stale LipSync start turnId=${session.turnId}`)
+    this.playbackStartedAt = session.startedAt
     const emotionKey = speech.emotionKey ?? fallbackEmotion
     const conversationPresence = this.deps.conversationPresenceRuntime.update({
       phase: 'speaking',

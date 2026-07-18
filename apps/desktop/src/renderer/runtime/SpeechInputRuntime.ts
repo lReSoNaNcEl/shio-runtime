@@ -25,6 +25,16 @@ export interface ContinuousRecognizedSpeech extends RecognizedSpeech {
   capturedDuringPlayback: boolean
 }
 
+export interface ContinuousPartialSpeech {
+  text: string
+  streamingSessionId: string
+  segmentId: string
+  revision: number
+  speechDurationMs: number
+  confidence?: number
+  capturedDuringPlayback: boolean
+}
+
 export interface SpeechInputRuntimeDeps {
   speechRuntime: SpeechRuntime
   avatarRuntime: AvatarRuntime
@@ -62,7 +72,7 @@ export class SpeechInputRuntime {
   private onContinuousFinal:
     | ((recognized: ContinuousRecognizedSpeech) => void | Promise<void>)
     | null = null
-  private onContinuousPartial: ((text: string) => void) | null = null
+  private onContinuousPartial: ((partial: ContinuousPartialSpeech) => void) | null = null
   private onContinuousDeviceLost: (() => void) | null = null
   private playbackCapturedSegments = new Set<string>()
   private streamingClient = new StreamingAsrClient({
@@ -110,7 +120,7 @@ export class SpeechInputRuntime {
   async setContinuousListening(
     enabled: boolean,
     onFinal?: (recognized: ContinuousRecognizedSpeech) => void | Promise<void>,
-    onPartial?: (text: string) => void,
+    onPartial?: (partial: ContinuousPartialSpeech) => void,
     onDeviceLost?: () => void,
   ): Promise<void> {
     this.onContinuousFinal = onFinal ?? this.onContinuousFinal
@@ -297,7 +307,16 @@ export class SpeechInputRuntime {
       return
     }
     if (event.type === 'partial') {
-      this.onContinuousPartial?.(event.text)
+      const stableId = `${event.sessionId}:${event.segmentId}`
+      this.onContinuousPartial?.({
+        text: event.text,
+        streamingSessionId: event.sessionId,
+        segmentId: event.segmentId,
+        revision: event.revision,
+        speechDurationMs: Math.max(0, event.endMs - event.startMs),
+        confidence: event.confidence,
+        capturedDuringPlayback: this.playbackCapturedSegments.has(stableId),
+      })
       this.recordRuntimeEvent('Continuous ASR Partial', `${event.segmentId}:r${event.revision}`)
       return
     }

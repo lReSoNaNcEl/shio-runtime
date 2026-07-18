@@ -425,6 +425,13 @@ export const headMotionTuning = {
   smoothing: 5.6,
   neckShare: 0.34,
   headShare: 0.66,
+  attentionImpulse: {
+    pose: { yaw: 0.018, pitch: -0.022, roll: 0.012 },
+    attackMs: 100,
+    holdMs: 120,
+    releaseMs: 320,
+    cooldownMs: 1_000,
+  },
   profiles: {
     idle: {
       generatorWeights: generatorWeights({
@@ -558,6 +565,16 @@ export const earBehaviorTuning = {
   // Surprise spike: a fast additive lift impulse (normalized) that recovers
   // smoothly, layered on top of whatever pose is currently held.
   surpriseImpulse: { lift: 0.85, attackMs: 130, durationMs: 950 },
+  userInterruptionImpulse: {
+    lift: 0.52,
+    spread: 0.06,
+    attackMs: 110,
+    holdMs: 140,
+    releaseMs: 340,
+    cooldownMs: 1_000,
+    leftScale: 1,
+    rightScale: 0.88,
+  },
   // Speaking is intentionally the SMALLEST modifier: a subtle additive lift +
   // gentle outward openness layered on top of the calm speaking base pose, so
   // the ears feel a little more alive without changing what pose is held.

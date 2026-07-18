@@ -8,9 +8,13 @@ import type { FacialDebugState } from './AvatarExpressionMixer'
 import { AvatarFacialRuntime } from './AvatarFacialRuntime'
 import { AvatarPerformanceMonitor } from './AvatarPerformanceMonitor'
 import { avatarStartupTuning, facialTuning } from './avatarTuning'
-import type { EarAxisOverride, EarBehaviorDebugState } from './EarBehaviorRuntime'
+import type { EarAxisOverride, EarBehaviorDebugState, EarImpulse } from './EarBehaviorRuntime'
 import type { MouthWeights } from './FacialProfile'
-import type { HeadMotionDebugState, HeadMotionProfile } from './HeadMotionRuntime'
+import type {
+  HeadAttentionImpulse,
+  HeadMotionDebugState,
+  HeadMotionProfile,
+} from './HeadMotionRuntime'
 import type { LookAtDebugState, LookAtMode } from './LookAtRuntime'
 import { RootMotionController } from './RootMotionController'
 
@@ -475,6 +479,10 @@ export class VrmModel {
     this.facialRuntime.setHeadMotionProfile(profile)
   }
 
+  triggerHeadAttentionImpulse(impulse: HeadAttentionImpulse): boolean {
+    return this.facialRuntime.triggerHeadAttentionImpulse(impulse)
+  }
+
   setProceduralMode(mode: VrmProceduralMode): void {
     this.facialRuntime.setProceduralMode(mode)
   }
@@ -522,6 +530,10 @@ export class VrmModel {
 
   syncEarState(mode: VrmProceduralMode, emotion: string): void {
     this.facialRuntime.syncEarState(mode, emotion)
+  }
+
+  triggerEarImpulse(impulse: EarImpulse): boolean {
+    return this.facialRuntime.triggerEarImpulse(impulse)
   }
 
   setEarAxisOverride(axis: EarAxisOverride): void {

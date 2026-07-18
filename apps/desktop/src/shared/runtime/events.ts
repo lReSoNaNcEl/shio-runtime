@@ -27,6 +27,12 @@ export type RuntimeEventType =
   | 'SpeechServiceUnavailable'
   | 'SpeechServiceRecovered'
   | 'SpeechCapabilityChanged'
+  | 'BargeInCandidate'
+  | 'BargeInRejected'
+  | 'BargeInAccepted'
+  | 'ResponseInterrupted'
+  | 'BargeInUtteranceFinalized'
+  | 'BargeInConversationAdmitted'
   | 'RuntimeDebugEvent'
 
 export interface RuntimeEvent {

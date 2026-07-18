@@ -139,6 +139,16 @@ export class AvatarRuntime {
     return this.controller.stopLipSync(turnId)
   }
 
+  interruptLipSync(turnId: string): boolean {
+    return this.controller.interruptLipSync(turnId)
+  }
+
+  triggerUserInterruption(): boolean {
+    const triggered = this.controller.triggerUserInterruption()
+    if (triggered) this.publishAvatarEvent('RuntimeDebugEvent', 'User Interruption Reaction')
+    return triggered
+  }
+
   isLoaded(): boolean {
     return this.controller.isLoaded()
   }

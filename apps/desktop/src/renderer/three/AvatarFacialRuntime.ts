@@ -10,10 +10,12 @@ import {
   type EarAxisOverride,
   type EarBehaviorDebugState,
   EarBehaviorRuntime,
+  type EarImpulse,
 } from './EarBehaviorRuntime'
 import { ExpressionController } from './ExpressionController'
 import { completeMouthWeights, type MouthWeights } from './FacialProfile'
 import {
+  type HeadAttentionImpulse,
   type HeadMotionDebugState,
   type HeadMotionProfile,
   HeadMotionRuntime,
@@ -173,6 +175,10 @@ export class AvatarFacialRuntime {
     this.headMotionRuntime.setProfile(profile)
   }
 
+  triggerHeadAttentionImpulse(impulse: HeadAttentionImpulse): boolean {
+    return this.headMotionRuntime.triggerAttentionImpulse(impulse)
+  }
+
   setProceduralMode(mode: VrmProceduralMode): void {
     const wasSpeaking = this.proceduralMode === 'speaking'
     const isSpeaking = mode === 'speaking'
@@ -252,6 +258,10 @@ export class AvatarFacialRuntime {
   syncEarState(mode: VrmProceduralMode, emotion: string): void {
     this.earBehaviorRuntime.setProfile(mode)
     this.earBehaviorRuntime.applyEmotion(emotion)
+  }
+
+  triggerEarImpulse(impulse: EarImpulse): boolean {
+    return this.earBehaviorRuntime.triggerImpulse(impulse)
   }
 
   setEarAxisOverride(axis: EarAxisOverride): void {

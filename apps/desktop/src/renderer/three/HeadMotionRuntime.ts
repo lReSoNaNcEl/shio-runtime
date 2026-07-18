@@ -4,6 +4,7 @@ import * as THREE from 'three'
 import { headMotionTuning } from './avatarTuning'
 
 export type HeadMotionProfile = 'idle' | 'listening' | 'thinking' | 'speaking' | 'userFocus'
+export type HeadAttentionImpulse = 'user-interruption'
 export type HeadMotionGeneratorId =
   | 'idleDrift'
   | 'microTilt'
@@ -29,6 +30,7 @@ export interface HeadMotionDebugState {
   generatorWeights: Record<HeadMotionGeneratorId, number>
   smoothing: number
   nextProceduralEventMs: number
+  attentionImpulseActive: boolean
 }
 
 interface HeadMotionGeneratorContribution {
@@ -256,6 +258,8 @@ export class HeadMotionRuntime {
   private currentPose: HeadMotionPose = zeroPose()
   private appliedHeadPose: HeadMotionPose = zeroPose()
   private appliedNeckPose: HeadMotionPose = zeroPose()
+  private attentionImpulseMs = 0
+  private attentionImpulseCooldownMs = 0
   private debug: HeadMotionDebugState = {
     profile: 'idle',
     activeGenerators: [],
@@ -267,6 +271,7 @@ export class HeadMotionRuntime {
     generatorWeights: zeroGeneratorWeights(),
     smoothing: headMotionTuning.smoothing,
     nextProceduralEventMs: 0,
+    attentionImpulseActive: false,
   }
 
   attach(vrm: VRM): void {
@@ -277,10 +282,21 @@ export class HeadMotionRuntime {
   detach(): void {
     this.remove()
     this.vrm = null
+    this.attentionImpulseMs = 0
+    this.attentionImpulseCooldownMs = 0
   }
 
   setProfile(profile: HeadMotionProfile): void {
     this.profile = profile
+  }
+
+  triggerAttentionImpulse(impulse: HeadAttentionImpulse): boolean {
+    if (impulse !== 'user-interruption' || this.attentionImpulseCooldownMs > 0) return false
+    const tuning = headMotionTuning.attentionImpulse
+    this.attentionImpulseMs = tuning.attackMs + tuning.holdMs + tuning.releaseMs
+    this.attentionImpulseCooldownMs = tuning.cooldownMs
+    this.debug = { ...this.debug, attentionImpulseActive: true }
+    return true
   }
 
   remove(): void {
@@ -290,9 +306,16 @@ export class HeadMotionRuntime {
   }
 
   update(delta: number): void {
-    if (!this.vrm?.humanoid) return
-
     this.elapsedMs += delta * 1000
+    this.attentionImpulseMs = Math.max(0, this.attentionImpulseMs - delta * 1000)
+    this.attentionImpulseCooldownMs = Math.max(0, this.attentionImpulseCooldownMs - delta * 1000)
+    if (!this.vrm?.humanoid) {
+      this.debug = {
+        ...this.debug,
+        attentionImpulseActive: this.attentionImpulseMs > 0,
+      }
+      return
+    }
     const resolved = this.resolver.resolve({
       delta,
       deltaMs: delta * 1000,
@@ -301,12 +324,11 @@ export class HeadMotionRuntime {
       random: () => this.nextRandom(),
     })
     const blend = 1 - Math.exp(-headMotionTuning.smoothing * delta)
-    this.currentPose = smoothPose(
-      this.currentPose,
+    const targetPose = addPose(
       resolved.pose,
-      delta,
-      headMotionTuning.smoothing,
+      scalePose(headMotionTuning.attentionImpulse.pose, this.attentionImpulseEnvelope()),
     )
+    this.currentPose = smoothPose(this.currentPose, targetPose, delta, headMotionTuning.smoothing)
     this.currentPose = clampPose(this.currentPose)
 
     const neckPose = scalePose(this.currentPose, headMotionTuning.neckShare)
@@ -329,6 +351,7 @@ export class HeadMotionRuntime {
       generatorWeights: resolved.generatorWeights,
       smoothing: headMotionTuning.smoothing,
       nextProceduralEventMs: resolved.nextEventMs,
+      attentionImpulseActive: this.attentionImpulseMs > 0,
     }
   }
 
@@ -358,6 +381,16 @@ export class HeadMotionRuntime {
   private nextRandom(): number {
     this.randomState = (1664525 * this.randomState + 1013904223) >>> 0
     return this.randomState / 4294967296
+  }
+
+  private attentionImpulseEnvelope(): number {
+    if (this.attentionImpulseMs <= 0) return 0
+    const { attackMs, holdMs, releaseMs } = headMotionTuning.attentionImpulse
+    const durationMs = attackMs + holdMs + releaseMs
+    const elapsed = durationMs - this.attentionImpulseMs
+    if (elapsed < attackMs) return elapsed / Math.max(1, attackMs)
+    if (elapsed < attackMs + holdMs) return 1
+    return Math.max(0, this.attentionImpulseMs / Math.max(1, releaseMs))
   }
 }
 

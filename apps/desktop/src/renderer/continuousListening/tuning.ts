@@ -37,6 +37,16 @@ export const defaultContinuousListeningSettings: ContinuousListeningSettings = {
   curiosityChance: 0.03,
 }
 
+export const bargeInTuning = {
+  enabled: true,
+  minimumSpeechMs: 320,
+  playbackGraceMs: 250,
+  minimumConfidence: 0.45,
+  minimumTextLength: 2,
+  retriggerCooldownMs: 1_000,
+  selfEchoSimilarityThreshold: 0.68,
+} as const
+
 export const backlogTuning = {
   maxItems: 10,
   ttlMs: { correction: 30_000, direct: 25_000, followUp: 18_000, nonDirect: 8_000 },

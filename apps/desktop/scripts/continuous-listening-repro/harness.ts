@@ -3,14 +3,20 @@ import assert from 'node:assert/strict'
 import { AudioPlayer } from '../../src/renderer/audio/audioPlayer'
 import { AttentionEngine } from '../../src/renderer/continuousListening/AttentionEngine'
 import { BacklogSelector } from '../../src/renderer/continuousListening/BacklogSelector'
+import { BargeInPolicy } from '../../src/renderer/continuousListening/BargeInPolicy'
 import { ConversationAdmissionCoordinator } from '../../src/renderer/continuousListening/ConversationAdmissionCoordinator'
 import { RuleGate } from '../../src/renderer/continuousListening/RuleGate'
+import {
+  isExplicitBargeInPhrase,
+  textSimilarity,
+} from '../../src/renderer/continuousListening/textAnalysis'
 import type {
   BufferedUtterance,
   ConversationInput,
 } from '../../src/renderer/continuousListening/types'
 import { UtteranceBacklog } from '../../src/renderer/continuousListening/UtteranceBacklog'
 import { UtteranceChunkBuilder } from '../../src/renderer/continuousListening/UtteranceChunkBuilder'
+import { HeadMotionRuntime } from '../../src/renderer/three/HeadMotionRuntime'
 
 let now = Date.now()
 const flush = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0))
@@ -59,6 +65,7 @@ const item = (
   capturedWhileShioBusy: true,
   capturedDuringPlayback: false,
   likelySelfEcho: false,
+  triggeredBargeIn: false,
   priorityClass,
 })
 const disabledLlm = {
@@ -77,20 +84,99 @@ const enabledLlm = {
 }
 
 async function main(): Promise<void> {
+  const bargeInBase = {
+    now: 1_000,
+    activeResponseId: 'response-1',
+    responsePhase: 'playing' as const,
+    partialText: 'Шио, подожди',
+    speechDurationMs: 340,
+    confidence: 0.71,
+    capturedDuringPlayback: true,
+    playbackStartedAt: 500,
+    responseInterruptionPending: false,
+    likelySelfEcho: false,
+  }
+
+  // Barge-in policy accepts sustained meaningful user speech exactly once and
+  // rejects the principal false-positive/race scenarios.
+  {
+    const policy = new BargeInPolicy()
+    const reason = (decision: ReturnType<BargeInPolicy['evaluate']>): string =>
+      decision.type === 'ignore' ? decision.reason : decision.type
+    assert.equal(
+      reason(policy.evaluate({ ...bargeInBase, responsePhase: 'generating' })),
+      'not-speaking',
+    )
+    assert.equal(reason(policy.evaluate({ ...bargeInBase, speechDurationMs: 100 })), 'too-short')
+    assert.equal(
+      reason(policy.evaluate({ ...bargeInBase, now: 700, playbackStartedAt: 500 })),
+      'grace-period',
+    )
+    assert.equal(reason(policy.evaluate({ ...bargeInBase, likelySelfEcho: true })), 'self-echo')
+    assert.equal(reason(policy.evaluate({ ...bargeInBase, confidence: 0.2 })), 'low-confidence')
+    assert.equal(
+      reason(policy.evaluate({ ...bargeInBase, responseInterruptionPending: true })),
+      'interruption-pending',
+    )
+    const accepted = policy.evaluate(bargeInBase)
+    assert.equal(accepted.type, 'interrupt')
+    if (accepted.type === 'interrupt') policy.markTriggered(accepted.responseId, bargeInBase.now)
+    assert.equal(reason(policy.evaluate({ ...bargeInBase, now: 1_100 })), 'already-triggered')
+    policy.settleResponse('response-1')
+    assert.equal(
+      reason(
+        policy.evaluate({
+          ...bargeInBase,
+          now: 1_200,
+          activeResponseId: 'response-2',
+        }),
+      ),
+      'retrigger-cooldown',
+    )
+    assert.equal(
+      policy.evaluate({
+        ...bargeInBase,
+        now: 2_100,
+        activeResponseId: 'response-2',
+        responsePhase: 'synthesizing',
+        capturedDuringPlayback: false,
+        playbackStartedAt: null,
+        partialText: 'Нет, я имел в виду другое',
+      }).type,
+      'interrupt',
+    )
+  }
+  assert.ok(textSimilarity('сегодня хорошая погода', 'Да, сегодня хорошая погода в Москве') >= 0.68)
+  assert.equal(isExplicitBargeInPhrase('Нет, я имел в виду другое'), true)
+  assert.equal(isExplicitBargeInPhrase('Шио, подожди'), true)
+
+  // The semantic head reaction is one-shot and cooldown guarded.
+  {
+    const head = new HeadMotionRuntime()
+    assert.equal(head.triggerAttentionImpulse('user-interruption'), true)
+    assert.equal(head.triggerAttentionImpulse('user-interruption'), false)
+    assert.equal(head.getDebugState().attentionImpulseActive, true)
+    head.update(1)
+    assert.equal(head.getDebugState().attentionImpulseActive, false)
+  }
+
   // Stable session + segment identity filters replayed ASR finals before attention.
   const builder = new UtteranceChunkBuilder({ now: () => now })
   const first = builder.pushFinal('Шио, ты тут?', 0.9, {
     streamingSessionId: 'session',
     segmentId: 'segment',
     capturedDuringPlayback: false,
+    triggeredBargeIn: true,
   })
   assert.equal(first?.id, 'session:segment')
+  assert.equal(first?.triggeredBargeIn, true)
   assert.ok(first)
   assert.equal(
     builder.pushFinal('Шио, ты тут?', 0.9, {
       streamingSessionId: 'session',
       segmentId: 'segment',
       capturedDuringPlayback: false,
+      triggeredBargeIn: true,
     }),
     null,
   )
@@ -356,14 +442,59 @@ async function main(): Promise<void> {
       clearInterval: () => undefined,
     }
     const player = new AudioPlayer()
-    const playback = player.play(new ArrayBuffer(8), { turnId: 'turn-a', onReady: () => undefined })
+    const playback = player.play(new ArrayBuffer(44), {
+      turnId: 'turn-a',
+      onReady: () => undefined,
+    })
     await flush()
     await assert.rejects(
-      player.play(new ArrayBuffer(8), { turnId: 'turn-b', onReady: () => undefined }),
+      player.play(new ArrayBuffer(44), { turnId: 'turn-b', onReady: () => undefined }),
       /activeTurnId=turn-a requestedTurnId=turn-b/,
     )
     context.source?.onended?.()
     await playback
+    assert.equal(player.isBusy(), false)
+  }
+
+  // Stopping while audio decode is pending invalidates playback ownership:
+  // the late decode result cannot create/start a stale audio source.
+  {
+    const decode = deferred<{ duration: number }>()
+    let createdSources = 0
+    class PendingDecodeContext {
+      state = 'running'
+      currentTime = 0
+      destination = {}
+      createAnalyser(): { fftSize: number; connect: () => void } {
+        return { fftSize: 0, connect: () => undefined }
+      }
+      createBufferSource(): never {
+        createdSources += 1
+        throw new Error('stale source must not be created')
+      }
+      decodeAudioData(): Promise<{ duration: number }> {
+        return decode.promise
+      }
+      async resume(): Promise<void> {}
+    }
+    const context = new PendingDecodeContext()
+    ;(globalThis as unknown as { AudioContext: new () => PendingDecodeContext }).AudioContext =
+      class {
+        constructor() {
+          // biome-ignore lint/correctness/noConstructorReturn: test fake — shared context exposes the pending decode gate.
+          return context
+        }
+      } as unknown as new () => PendingDecodeContext
+    const player = new AudioPlayer()
+    const playback = player.play(new ArrayBuffer(44), {
+      turnId: 'turn-pending-decode',
+      onReady: () => undefined,
+    })
+    await flush()
+    player.stopCurrent('turn-pending-decode', 'conversation-interrupted')
+    decode.resolve({ duration: 1 })
+    await assert.rejects(playback, /Playback ownership lost/)
+    assert.equal(createdSources, 0)
     assert.equal(player.isBusy(), false)
   }
 

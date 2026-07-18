@@ -31,6 +31,7 @@ export type EarGestureId =
   | 'emphasis'
   | 'droop'
 export type EarAxisOverride = 'auto' | 'x' | 'y' | 'z'
+export type EarImpulse = 'user-interruption'
 
 export interface EarPose {
   lift: number
@@ -64,6 +65,7 @@ export interface EarBehaviorDebugState {
   idleMs: number
   updateTickCount: number
   lastDeltaMs: number
+  activeImpulse: EarImpulse | null
   left: EarDebugState | null
   right: EarDebugState | null
 }
@@ -125,6 +127,8 @@ export class EarBehaviorRuntime {
   private emotion = 'neutral'
   private idleMs = 0
   private surpriseMs = 0
+  private userInterruptionMs = 0
+  private userInterruptionCooldownMs = 0
   // Per-instance random stream. Seeded with construction-time entropy + an
   // instance counter so independent instances (e.g. the main avatar and the
   // Mirror Overlay) never share a timeline and are not frame-for-frame identical.
@@ -170,6 +174,8 @@ export class EarBehaviorRuntime {
     this.boneStatus = 'not-initialized'
     this.idleMs = 0
     this.surpriseMs = 0
+    this.userInterruptionMs = 0
+    this.userInterruptionCooldownMs = 0
   }
 
   /** Restore ear bones to their rest pose (used on detach / model swap). */
@@ -203,15 +209,25 @@ export class EarBehaviorRuntime {
     this.amplitudeScale = THREE.MathUtils.clamp(scale, 0, 4)
   }
 
+  triggerImpulse(impulse: EarImpulse): boolean {
+    if (impulse !== 'user-interruption' || this.userInterruptionCooldownMs > 0) return false
+    const tuning = earBehaviorTuning.userInterruptionImpulse
+    this.userInterruptionMs = tuning.attackMs + tuning.holdMs + tuning.releaseMs
+    this.userInterruptionCooldownMs = tuning.cooldownMs
+    return true
+  }
+
   update(delta: number): void {
     // Count ticks BEFORE any early return so the debug panel can distinguish
     // "runtime is not being updated at all" from "updated but no ear bones".
     this.updateTickCount += 1
     this.lastDeltaMs = delta * 1000
+    const deltaMs = delta * 1000
+    this.userInterruptionMs = Math.max(0, this.userInterruptionMs - deltaMs)
+    this.userInterruptionCooldownMs = Math.max(0, this.userInterruptionCooldownMs - deltaMs)
 
     if (!this.vrm || this.ears.length === 0) return
 
-    const deltaMs = delta * 1000
     if (this.baseProfile === 'idle') this.idleMs += deltaMs
     if (this.surpriseMs > 0) this.surpriseMs = Math.max(0, this.surpriseMs - deltaMs)
 
@@ -221,6 +237,8 @@ export class EarBehaviorRuntime {
     const emo = earBehaviorTuning.emotions[this.emotion as keyof typeof earBehaviorTuning.emotions]
     const amplitudeScale = (emo?.amplitudeScale ?? 1) * this.amplitudeScale
     const impulse = this.surpriseImpulseValue()
+    const interruptionEnvelope = this.userInterruptionImpulseValue()
+    const interruptionTuning = earBehaviorTuning.userInterruptionImpulse
     // Speaking is an ADDITIVE modifier layered on top of the held pose, not a
     // replacement, so the ears keep whatever pose they had and just feel slightly
     // more alive while talking.
@@ -248,12 +266,21 @@ export class EarBehaviorRuntime {
       ear.currentSpread = THREE.MathUtils.lerp(ear.currentSpread, ear.targetSpread, blend)
 
       // Lift swings the tip vertically/forward (calibrated) — it never converges.
-      const liftNorm = ear.currentLift + impulse
+      const sideScale =
+        ear.side === 'right'
+          ? interruptionTuning.rightScale
+          : ear.side === 'left'
+            ? interruptionTuning.leftScale
+            : (interruptionTuning.leftScale + interruptionTuning.rightScale) / 2
+      const liftNorm =
+        ear.currentLift + impulse + interruptionEnvelope * interruptionTuning.lift * sideScale
       const liftRad = this.clamp(liftNorm * tuning.amplitude * amplitudeScale)
       // Spread is positive-outward; inward folding is hard-limited so the ears
       // can never cross toward each other.
       const spreadOutward = THREE.MathUtils.clamp(
-        ear.currentSpread * tuning.spreadAmplitude * amplitudeScale,
+        (ear.currentSpread + interruptionEnvelope * interruptionTuning.spread * sideScale) *
+          tuning.spreadAmplitude *
+          amplitudeScale,
         -earBehaviorTuning.maxInwardSpread,
         earBehaviorTuning.maxRotation,
       )
@@ -285,6 +312,7 @@ export class EarBehaviorRuntime {
       idleMs: this.idleMs,
       updateTickCount: this.updateTickCount,
       lastDeltaMs: this.lastDeltaMs,
+      activeImpulse: this.userInterruptionMs > 0 ? 'user-interruption' : null,
       left: this.earDebug(left),
       right: this.earDebug(right === left ? null : right),
     }
@@ -364,6 +392,16 @@ export class EarBehaviorRuntime {
         ? elapsed / Math.max(1, attackMs)
         : Math.max(0, this.surpriseMs / Math.max(1, durationMs - attackMs))
     return lift * envelope
+  }
+
+  private userInterruptionImpulseValue(): number {
+    if (this.userInterruptionMs <= 0) return 0
+    const { attackMs, holdMs, releaseMs } = earBehaviorTuning.userInterruptionImpulse
+    const durationMs = attackMs + holdMs + releaseMs
+    const elapsed = durationMs - this.userInterruptionMs
+    if (elapsed < attackMs) return elapsed / Math.max(1, attackMs)
+    if (elapsed < attackMs + holdMs) return 1
+    return Math.max(0, this.userInterruptionMs / Math.max(1, releaseMs))
   }
 
   private effectiveProfile(): EarBehaviorProfile {

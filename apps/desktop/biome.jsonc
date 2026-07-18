@@ -4,6 +4,7 @@
   "vcs": {
     "enabled": true,
     "clientKind": "git",
+    "root": "../..",
     "useIgnoreFile": true
   },
 
@@ -66,5 +67,14 @@
         }
       }
     }
-  }
+  },
+
+  "overrides": [
+    {
+      "includes": ["src/renderer/components/App.tsx", "src/renderer/components/SettingsDialog.tsx"],
+      "formatter": {
+        "lineEnding": "crlf"
+      }
+    }
+  ]
 }

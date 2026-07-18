@@ -251,6 +251,16 @@ export class AvatarController {
     return this.lipSync.detach(turnId, true)
   }
 
+  interruptLipSync(turnId: string): boolean {
+    return this.lipSync.detach(turnId)
+  }
+
+  triggerUserInterruption(): boolean {
+    const earTriggered = this.vrmModel.triggerEarImpulse('user-interruption')
+    const headTriggered = this.vrmModel.triggerHeadAttentionImpulse('user-interruption')
+    return earTriggered || headTriggered
+  }
+
   isLoaded(): boolean {
     return this.vrmModel.isLoaded()
   }

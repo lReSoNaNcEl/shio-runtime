@@ -7,6 +7,8 @@ export interface SyncedAvatarState {
   mode: AvatarMode
   emotionKey?: string
   vrmEmotion?: string
+  reaction?: 'user-interruption'
+  reactionId?: string
 }
 
 /**
@@ -112,7 +114,9 @@ export class OverlayRuntime {
     if (this.mouthPublishTimer < 1 / 30) return
     this.mouthPublishTimer = 0
 
-    if (!speaking) {
+    const releaseActive =
+      !speaking && Math.max(weights.aa, weights.ih, weights.ou, weights.ee, weights.oh) > 0.001
+    if (!speaking && !releaseActive) {
       if (!this.lastMouthPublishSpeaking) return
       this.lastMouthPublishSpeaking = false
       const closed = { aa: 0, ih: 0, ou: 0, ee: 0, oh: 0 }
@@ -122,7 +126,7 @@ export class OverlayRuntime {
     }
 
     this.lastMouthPublishSpeaking = true
-    this.logMirrorLipSync('main', weights, 'ipc-publish')
+    this.logMirrorLipSync('main', weights, releaseActive ? 'ipc-publish-release' : 'ipc-publish')
     void window.api.avatarMouth.publish(weights)
   }
 
@@ -142,6 +146,8 @@ export class OverlayRuntime {
       mode: value.mode,
       emotionKey: typeof value.emotionKey === 'string' ? value.emotionKey : undefined,
       vrmEmotion: typeof value.vrmEmotion === 'string' ? value.vrmEmotion : undefined,
+      reaction: value.reaction === 'user-interruption' ? value.reaction : undefined,
+      reactionId: typeof value.reactionId === 'string' ? value.reactionId : undefined,
     }
   }
 

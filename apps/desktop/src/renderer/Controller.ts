@@ -24,10 +24,17 @@ import type { SpeakingGestureSchedulerDebugState } from './avatar/AvatarSpeaking
 import type { DebugAvatarMode } from './avatar/avatarAnimations'
 import { AttentionEngine } from './continuousListening/AttentionEngine'
 import { BacklogSelector } from './continuousListening/BacklogSelector'
+import { BargeInPolicy } from './continuousListening/BargeInPolicy'
 import { ConversationAdmissionCoordinator } from './continuousListening/ConversationAdmissionCoordinator'
 import { RuleGate } from './continuousListening/RuleGate'
 import {
+  CORRECTION_PATTERN,
+  isExplicitBargeInPhrase,
+  textSimilarity,
+} from './continuousListening/textAnalysis'
+import {
   backlogTuning,
+  bargeInTuning,
   defaultContinuousListeningSettings,
   parseAttentionMode,
   parseTunedNumber,
@@ -57,7 +64,10 @@ import {
 } from './runtime/RuntimeStateInvariantValidator'
 import { ShioRuntime } from './runtime/ShioRuntime'
 import { SpeechCapabilitiesRuntime } from './runtime/SpeechCapabilitiesRuntime'
-import type { ContinuousRecognizedSpeech } from './runtime/SpeechInputRuntime'
+import type {
+  ContinuousPartialSpeech,
+  ContinuousRecognizedSpeech,
+} from './runtime/SpeechInputRuntime'
 import { SpeechInputRuntime } from './runtime/SpeechInputRuntime'
 import { SpeechRuntime, type SpeechStateTimelineEntry } from './runtime/SpeechRuntime'
 import {
@@ -182,25 +192,6 @@ let idSeq = 0
 const nextId = (): string => `m${++idSeq}`
 const QUESTION_PATTERN =
   /\?|(?:^|\s)(?:кто|что|где|когда|зачем|почему|как|можешь|скажешь|думаешь)(?:$|[\s,.!?])/iu
-const CORRECTION_PATTERN =
-  /(?:^|\s)(?:нет|стоп|подожди|погоди|поправка|я имел[а]? в виду)(?:$|[\s,.!?])/iu
-const normalizeWords = (text: string): Set<string> =>
-  new Set(
-    text
-      .toLocaleLowerCase('ru-RU')
-      .replace(/[^\p{L}\p{N}\s]/gu, ' ')
-      .split(/\s+/)
-      .filter((word) => word.length > 2),
-  )
-const textSimilarity = (left: string, right: string): number => {
-  const a = normalizeWords(left)
-  const b = normalizeWords(right)
-  if (a.size === 0 || b.size === 0) return 0
-  let overlap = 0
-  for (const word of a) if (b.has(word)) overlap += 1
-  return (2 * overlap) / (a.size + b.size)
-}
-
 export class Controller {
   private shioRuntime = new ShioRuntime()
   private scene: SceneManager | null = null
@@ -260,6 +251,8 @@ export class Controller {
     recordEvent: (label, detail) => this.recordRuntimeEvent(label, detail),
   })
   private chunkBuilder = new UtteranceChunkBuilder()
+  private bargeInPolicy = new BargeInPolicy()
+  private bargeInSegments = new Set<string>()
   private attentionEngine = new AttentionEngine()
   private ruleGate = new RuleGate()
   private continuousSettings: ContinuousListeningSettings = {
@@ -399,6 +392,9 @@ export class Controller {
     this.continuousSettings.enabled = false
     this.conversationAdmission.setContinuousEnabled(false)
     this.chunkBuilder = new UtteranceChunkBuilder()
+    this.bargeInPolicy.reset()
+    this.bargeInSegments.clear()
+    this.streamingSessionId = null
     this.set({
       continuousListeningEnabled: false,
       continuousListeningState: 'off',
@@ -585,7 +581,7 @@ export class Controller {
     // avatar/mouth projections and maintains its own visual tick.
     if (this.overlayRuntime.isOverlayWindow()) {
       const remote = await this.overlayRuntime.loadInitialRemoteState()
-      if (remote.avatarState) this.applyRemoteAvatarState(remote.avatarState)
+      if (remote.avatarState) this.applyRemoteAvatarState(remote.avatarState, false)
       if (remote.mouthWeights) this.applyRemoteMouthWeights(remote.mouthWeights)
       this.startAvatarTickLoop()
       return
@@ -785,7 +781,7 @@ export class Controller {
 
   subscribeOverlayUpdates(): void {
     this.overlayRuntime.subscribeToRemoteUpdates({
-      avatarState: (state) => this.applyRemoteAvatarState(state),
+      avatarState: (state) => this.applyRemoteAvatarState(state, true),
       mouthWeights: (weights) => this.applyRemoteMouthWeights(weights),
       settings: (cfg) => this.applyOverlaySettings(cfg),
     })
@@ -796,7 +792,7 @@ export class Controller {
     this.avatarRuntime.setMouthWeights(weights)
   }
 
-  applyRemoteAvatarState(avatarState: SyncedAvatarState): void {
+  applyRemoteAvatarState(avatarState: SyncedAvatarState, allowReaction = false): void {
     if (!this.overlayRuntime.isOverlayWindow()) return
     const status = this.toAppStatus(avatarState.mode)
     this.updateCharacterState({
@@ -806,6 +802,8 @@ export class Controller {
       vrmEmotion: avatarState.vrmEmotion,
     })
     this.applyAvatarCharacterState()
+    if (allowReaction && avatarState.reaction === 'user-interruption')
+      this.avatarRuntime.triggerUserInterruption()
     this.updateOverlayAnimationHudFile()
   }
 
@@ -1047,6 +1045,11 @@ export class Controller {
     // A persisted change reflects explicit user intent for streaming.
     if (persist) this.desiredContinuousListening = settings.enabled
     this.continuousSettings = { ...settings }
+    if (!settings.enabled) {
+      this.bargeInPolicy.reset()
+      this.bargeInSegments.clear()
+      this.streamingSessionId = null
+    }
     this.conversationAdmission.setContinuousEnabled(settings.enabled)
     const config = await window.api.config.get()
     this.conversationAdmission.configureSelector(config.llm.roles.backlogSelector)
@@ -1059,9 +1062,7 @@ export class Controller {
       await this.speechInputRuntime.setContinuousListening(
         settings.enabled,
         (recognized) => this.handleContinuousFinal(recognized),
-        (text) => {
-          this.chunkBuilder.pushPartial(text)
-        },
+        (partial) => this.handleContinuousPartial(partial),
         () => {
           void this.handleContinuousDeviceLost()
         },
@@ -1217,14 +1218,93 @@ export class Controller {
   }
 
   private async handleContinuousFinal(recognized: ContinuousRecognizedSpeech): Promise<void> {
-    if (this.streamingSessionId && this.streamingSessionId !== recognized.streamingSessionId) {
-      this.conversationAdmission.resetStreamingSession()
-    }
-    this.streamingSessionId = recognized.streamingSessionId
-    const chunk = this.chunkBuilder.pushFinal(recognized.text, recognized.confidence, recognized)
+    this.ensureStreamingSession(recognized.streamingSessionId)
+    const segmentKey = `${recognized.streamingSessionId}:${recognized.segmentId}`
+    const triggeredBargeIn = this.bargeInSegments.delete(segmentKey)
+    const chunk = this.chunkBuilder.pushFinal(recognized.text, recognized.confidence, {
+      streamingSessionId: recognized.streamingSessionId,
+      segmentId: recognized.segmentId,
+      capturedDuringPlayback: recognized.capturedDuringPlayback,
+      triggeredBargeIn,
+    })
     if (!chunk) return
     this.recordRuntimeEvent('Utterance Completed', chunk.completionReason)
+    if (triggeredBargeIn) {
+      this.recordRuntimeEvent('Barge In Utterance Finalized', `utterance=${chunk.id}`)
+      this.publishControllerRuntimeEvent(
+        'BargeInUtteranceFinalized',
+        'speech',
+        `utterance=${chunk.id}`,
+      )
+    }
     await this.processContinuousChunk(chunk)
+  }
+
+  private handleContinuousPartial(partial: ContinuousPartialSpeech): void {
+    this.ensureStreamingSession(partial.streamingSessionId)
+    this.chunkBuilder.pushPartial(partial.text)
+    const response = this.conversationRuntime.getActiveResponseSnapshot()
+    if (!response.turnId || (response.phase !== 'synthesizing' && response.phase !== 'playing')) {
+      return
+    }
+
+    const now = performance.now()
+    const currentReply =
+      [...this.state.messages].reverse().find((message) => message.role === 'assistant')?.text ?? ''
+    const similarity = textSimilarity(partial.text, currentReply)
+    const likelySelfEcho =
+      partial.capturedDuringPlayback &&
+      !isExplicitBargeInPhrase(partial.text) &&
+      similarity >= bargeInTuning.selfEchoSimilarityThreshold
+    const detail =
+      `duration=${Math.round(partial.speechDurationMs)}ms ` +
+      `confidence=${partial.confidence?.toFixed(2) ?? 'n/a'} turn=${response.turnId}`
+    this.recordRuntimeEvent('Barge In Candidate', detail)
+    this.publishControllerRuntimeEvent('BargeInCandidate', 'speech', detail)
+
+    const decision = this.bargeInPolicy.evaluate({
+      now,
+      activeResponseId: response.turnId,
+      responsePhase: response.phase,
+      partialText: partial.text,
+      speechDurationMs: partial.speechDurationMs,
+      confidence: partial.confidence,
+      capturedDuringPlayback: partial.capturedDuringPlayback,
+      playbackStartedAt: response.playbackStartedAt,
+      responseInterruptionPending: this.state.responseInterruptionPending,
+      likelySelfEcho,
+    })
+    if (decision.type === 'ignore') {
+      const rejectedDetail =
+        decision.reason === 'self-echo'
+          ? `reason=self-echo similarity=${similarity.toFixed(2)} turn=${response.turnId}`
+          : `reason=${decision.reason} turn=${response.turnId}`
+      this.recordRuntimeEvent('Barge In Rejected', rejectedDetail)
+      this.publishControllerRuntimeEvent('BargeInRejected', 'speech', rejectedDetail)
+      return
+    }
+
+    this.bargeInPolicy.markTriggered(decision.responseId, now)
+    const segmentKey = `${partial.streamingSessionId}:${partial.segmentId}`
+    this.bargeInSegments.add(segmentKey)
+    if (this.bargeInSegments.size > 64) {
+      const oldest = this.bargeInSegments.values().next().value
+      if (oldest) this.bargeInSegments.delete(oldest)
+    }
+    const acceptedDetail = `turn=${decision.responseId} segment=${partial.segmentId}`
+    this.recordRuntimeEvent('Barge In Accepted', acceptedDetail)
+    this.publishControllerRuntimeEvent('BargeInAccepted', 'speech', acceptedDetail)
+    void this.interruptCurrentResponse('voice-barge-in').then((interrupted) => {
+      if (!interrupted) this.bargeInSegments.delete(segmentKey)
+    })
+  }
+
+  private ensureStreamingSession(streamingSessionId: string): void {
+    if (this.streamingSessionId === streamingSessionId) return
+    if (this.streamingSessionId) this.conversationAdmission.resetStreamingSession()
+    this.streamingSessionId = streamingSessionId
+    this.bargeInPolicy.reset()
+    this.bargeInSegments.clear()
   }
 
   private async processContinuousChunk(chunk: UtteranceChunk): Promise<void> {
@@ -1249,12 +1329,14 @@ export class Controller {
       attention.shouldAttend ? 'Attention Accepted' : 'Attention Rejected',
       `${attention.score}/${Number.isFinite(attention.threshold) ? attention.threshold : '∞'} ${attention.reasons.join(',')}`,
     )
-    const decision = this.ruleGate.decide(chunk, attention, {
-      isSpeaking,
-      conversationBusy,
-      cooldownActive,
-      alreadyHandled: this.handledUtteranceIds.has(chunk.id),
-    })
+    const decision = chunk.triggeredBargeIn
+      ? { type: 'llm' as const, userText: chunk.text, reason: 'voice_barge_in' }
+      : this.ruleGate.decide(chunk, attention, {
+          isSpeaking,
+          conversationBusy,
+          cooldownActive,
+          alreadyHandled: this.handledUtteranceIds.has(chunk.id),
+        })
     this.recordRuntimeEvent('Rule Gate Decision', `${decision.type}:${decision.reason}`)
 
     if (decision.type === 'ignore') {
@@ -1269,6 +1351,7 @@ export class Controller {
       createdAt: chunk.completedAt,
       streamingSessionId: chunk.streamingSessionId,
       utteranceIds: [chunk.id],
+      triggeredBargeIn: Boolean(chunk.triggeredBargeIn),
     }
     const buffered = this.createBufferedUtterance(
       chunk,
@@ -1297,24 +1380,31 @@ export class Controller {
     const currentReply =
       [...this.state.messages].reverse().find((message) => message.role === 'assistant')?.text ?? ''
     const likelySelfEcho = Boolean(
-      chunk.capturedDuringPlayback && !correctionHint && textSimilarity(text, currentReply) >= 0.72,
+      !chunk.triggeredBargeIn &&
+        chunk.capturedDuringPlayback &&
+        !correctionHint &&
+        textSimilarity(text, currentReply) >= bargeInTuning.selfEchoSimilarityThreshold,
     )
-    const priorityClass: BufferedUtterance['priorityClass'] = correctionHint
+    const priorityClass: BufferedUtterance['priorityClass'] = chunk.triggeredBargeIn
       ? 'P0'
-      : attention.directAddress && question
-        ? 'P1'
-        : attention.directAddress || followUpWindow
-          ? 'P2'
-          : attention.mode === 'active' || attention.mode === 'streamer'
-            ? 'P3'
-            : 'P4'
-    const ttl = correctionHint
+      : correctionHint
+        ? 'P0'
+        : attention.directAddress && question
+          ? 'P1'
+          : attention.directAddress || followUpWindow
+            ? 'P2'
+            : attention.mode === 'active' || attention.mode === 'streamer'
+              ? 'P3'
+              : 'P4'
+    const ttl = chunk.triggeredBargeIn
       ? backlogTuning.ttlMs.correction
-      : attention.directAddress
-        ? backlogTuning.ttlMs.direct
-        : followUpWindow
-          ? backlogTuning.ttlMs.followUp
-          : backlogTuning.ttlMs.nonDirect
+      : correctionHint
+        ? backlogTuning.ttlMs.correction
+        : attention.directAddress
+          ? backlogTuning.ttlMs.direct
+          : followUpWindow
+            ? backlogTuning.ttlMs.followUp
+            : backlogTuning.ttlMs.nonDirect
     return {
       id: chunk.id,
       text,
@@ -1331,6 +1421,7 @@ export class Controller {
       capturedWhileShioBusy: conversationBusy,
       capturedDuringPlayback: Boolean(chunk.capturedDuringPlayback),
       likelySelfEcho,
+      triggeredBargeIn: Boolean(chunk.triggeredBargeIn),
       priorityClass,
     }
   }
@@ -1346,6 +1437,14 @@ export class Controller {
       this.rememberHandledUtterance(attempt.turnId)
     }
     this.recordRuntimeEvent('Conversation Admitted', attempt.turnId)
+    if (attempt.triggeredBargeIn) {
+      this.recordRuntimeEvent('Barge In Conversation Admitted', `turn=${attempt.turnId}`)
+      this.publishControllerRuntimeEvent(
+        'BargeInConversationAdmitted',
+        'speech',
+        `turn=${attempt.turnId}`,
+      )
+    }
     if (attempt.source !== 'debug') this.pushMessage('user', attempt.text)
     try {
       const result = await this.conversationRuntime.execute(attempt, reportPhase)
@@ -1353,6 +1452,7 @@ export class Controller {
         this.lastContinuousReplyAt = Date.now()
       return result
     } finally {
+      this.bargeInPolicy.settleResponse(attempt.turnId)
       this.recordRuntimeEvent('Conversation Settled', attempt.turnId)
     }
   }

@@ -50,7 +50,7 @@ export class UtteranceChunkBuilder {
     confidence?: number,
     metadata: Pick<
       UtteranceChunk,
-      'streamingSessionId' | 'segmentId' | 'capturedDuringPlayback'
+      'streamingSessionId' | 'segmentId' | 'capturedDuringPlayback' | 'triggeredBargeIn'
     > = {},
   ): UtteranceChunk | null {
     const normalized = normalizeText(text)
@@ -90,7 +90,7 @@ export class UtteranceChunkBuilder {
     completedAt = this.now(),
     metadata: Pick<
       UtteranceChunk,
-      'streamingSessionId' | 'segmentId' | 'capturedDuringPlayback'
+      'streamingSessionId' | 'segmentId' | 'capturedDuringPlayback' | 'triggeredBargeIn'
     > = {},
   ): UtteranceChunk | null {
     const text = normalizeText(this.partial)

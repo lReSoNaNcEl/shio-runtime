@@ -140,6 +140,12 @@ export class AudioPlayer {
   stop(): void {
     const active = this.activePlayback
     if (!active) return
+    // Invalidate ownership synchronously, including while decode/onReady is
+    // still pending. Every later async continuation fails assertOwner and can
+    // never create or start a stale source after interruption.
+    this.activePlayback = null
+    this.clearProgressTimer()
+    this.duration = 0
     const source = active.source
     if (source) {
       source.onended = null
@@ -148,8 +154,11 @@ export class AudioPlayer {
       } catch {
         /* already stopped */
       }
+      this.disposeSource(source, active.playbackId)
     }
+    active.source = null
     active.settle?.()
+    active.settle = null
   }
 
   stopCurrent(turnId: string, _reason: 'conversation-interrupted'): void {
