@@ -394,7 +394,13 @@ export class VrmModel {
   }
 
   update(delta: number): void {
-    if (!this.vrm) return
+    if (!this.vrm) {
+      // LipSync belongs to the application-level Avatar Runtime and must keep
+      // composing mouth-domain output even when the local Avatar preview is not
+      // mounted. The Mirror Overlay consumes that projection independently.
+      this.facialRuntime.update(delta)
+      return
+    }
     this.performanceMonitor.updatePerformanceDebug(delta)
 
     this.facialRuntime.removeProceduralMotion()

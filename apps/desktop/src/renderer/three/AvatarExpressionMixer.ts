@@ -614,9 +614,10 @@ export class AvatarExpressionMixer {
   }
 
   getFinalMouthWeights(): MouthWeights {
+    const closureGain = 1 - this.mouthClosure
     return completeMouthWeights(
       Object.fromEntries(
-        MOUTH_NAMES.map((name) => [name, this.lastFinal.get(name)?.value ?? 0]),
+        MOUTH_NAMES.map((name) => [name, this.clamp(this.mouth[name] * closureGain)]),
       ) as Partial<MouthWeights>,
     )
   }

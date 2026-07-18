@@ -5,6 +5,7 @@ import type { AvatarStateEffect } from '../../src/renderer/avatar/AvatarStateMac
 import { resolveEmotionEmbodimentProfile } from '../../src/renderer/avatar/EmotionEmbodimentProfile'
 import { PhraseEnvelopeController } from '../../src/renderer/three/PhraseEnvelopeController'
 import { buildSpeechPhraseTimingPlan } from '../../src/renderer/three/SpeechPhraseTiming'
+import { VrmModel } from '../../src/renderer/three/VrmModel'
 import {
   type CharacterState,
   cloneCharacterState,
@@ -62,6 +63,16 @@ comma.start(buildSpeechPhraseTimingPlan('Новый сегмент'))
 assert.equal(comma.getPhase(), 'onset')
 assert.equal(comma.getOutput().closureStrength, 0)
 console.log('PhraseEnvelopeController: PASS')
+
+const headlessFacial = new VrmModel()
+headlessFacial.setProceduralMode('speaking')
+headlessFacial.startSpeechPhrase(buildSpeechPhraseTimingPlan('Headless Mirror LipSync'))
+headlessFacial.setSpeechEnergy(0.5)
+headlessFacial.setMouthWeights({ aa: 0.32, ih: 0.18, ou: 0.12, ee: 0.1, oh: 0.14 })
+headlessFacial.updateSpeechPhrase(0.12, 0.2, 0.5)
+headlessFacial.update(0.016)
+assert.ok(Math.max(...Object.values(headlessFacial.getFinalMouthWeights())) > 0.1)
+console.log('Headless facial composition: PASS')
 
 for (const alias of ['joy', 'cheerful', 'happy'])
   assert.equal(resolveEmotionEmbodimentProfile(alias).id, 'happy')
