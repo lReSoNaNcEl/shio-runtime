@@ -43,7 +43,12 @@ const VISION_MODEL_PATTERNS: readonly RegExp[] = [
   /(?:^|[-_/:])gemini(?:$|[-_/:])/i,
   /(?:^|[-_/:])claude(?:$|[-_/:])/i,
   /(?:^|[-_/:])llama-4[^/:]*(?:scout|maverick)(?:$|[-_/:])/i,
-  /(?:^|[/])mistral-small-2506(?:$|[:/])/i,
+  /(?:^|[/])qwen\/qwen3\.6-[^/:]+(?:$|[:/])/i,
+  /(?:^|[/])mistral-small-(?:2503|2506|latest)(?:$|[:/])/i,
+  /(?:^|[/])mistral-medium-(?:2505|2508|latest)(?:$|[:/])/i,
+  /(?:^|[/])mistral-large-(?:2512|latest)(?:$|[:/])/i,
+  /(?:^|[/])ministral-(?:3b|8b|14b)-2512(?:$|[:/])/i,
+  /(?:^|[/])magistral-(?:small|medium)-(?:2509|latest)(?:$|[:/])/i,
 ]
 
 export function isReasoningModel(modelId: string): boolean {
@@ -67,5 +72,25 @@ export function resolveBaseCapabilities(
     supportsSystemPrompt: true,
     supportsVision: isVisionModel(model),
     recommendedMaxTokens: reasoning ? REASONING_BUDGET : NON_REASONING_BUDGET[providerId],
+  }
+}
+
+export function applyCatalogCapabilityHints(
+  providerId: LlmProviderId,
+  capabilities: LlmCapabilities,
+  hints:
+    | {
+        supportsVision?: boolean
+        supportsReasoning?: boolean
+      }
+    | undefined,
+): LlmCapabilities {
+  if (!hints) return capabilities
+  const supportsReasoning = hints.supportsReasoning ?? capabilities.supportsReasoning
+  return {
+    ...capabilities,
+    supportsReasoning,
+    supportsVision: hints.supportsVision ?? capabilities.supportsVision,
+    recommendedMaxTokens: supportsReasoning ? REASONING_BUDGET : NON_REASONING_BUDGET[providerId],
   }
 }

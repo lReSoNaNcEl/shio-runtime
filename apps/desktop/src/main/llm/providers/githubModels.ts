@@ -26,7 +26,15 @@ export const githubModelsProvider: ProviderDefinition = {
         headers: { Authorization: `Bearer ${key}`, Accept: 'application/vnd.github+json' },
       })
       const parsed = GithubModelsResponseSchema.parse(response.data)
-      return parsed.map((model) => ({ id: model.id, displayName: model.name }))
+      return parsed.map((model) => ({
+        id: model.id,
+        displayName: model.name,
+        capabilities: {
+          supportsVision: model.supported_input_modalities?.includes('image'),
+          supportsReasoning:
+            model.capabilities?.includes('reasoning') || model.tags?.includes('reasoning'),
+        },
+      }))
     } catch (error) {
       if (axios.isAxiosError(error)) {
         if (error.response?.status === 401 || error.response?.status === 403) {

@@ -31,9 +31,16 @@ export const openRouterProvider: ProviderDefinition = {
     try {
       const response = await http.get('/models')
       const parsed = OpenRouterModelsResponseSchema.parse(response.data)
-      return parsed.data
-        .filter(isFreeModel)
-        .map((model) => ({ id: model.id, displayName: model.name }))
+      return parsed.data.filter(isFreeModel).map((model) => ({
+        id: model.id,
+        displayName: model.name,
+        capabilities: {
+          supportsVision: model.architecture?.input_modalities?.includes('image'),
+          supportsReasoning:
+            model.supported_parameters?.includes('reasoning') ||
+            model.supported_parameters?.includes('include_reasoning'),
+        },
+      }))
     } catch (error) {
       if (axios.isAxiosError(error)) {
         if (error.response?.status === 401 || error.response?.status === 403) {

@@ -30,6 +30,8 @@ interface Props {
   gateOpen?: boolean
   /** Navigate to the Runtime Health section (from the degradation banner). */
   onOpenHealth?: () => void
+  /** Navigate to the primary LLM settings from Screen Context. */
+  onOpenLlmSettings?: () => void
 }
 
 type StatusVariant = 'positive' | 'informative' | 'notice' | 'negative'
@@ -73,7 +75,12 @@ function voiceSuffix(state: ControllerState, t: LocalizationContextValue['t']): 
   return null
 }
 
-export function ChatOverlay({ state, gateOpen = false, onOpenHealth }: Props): React.JSX.Element {
+export function ChatOverlay({
+  state,
+  gateOpen = false,
+  onOpenHealth,
+  onOpenLlmSettings,
+}: Props): React.JSX.Element {
   const { locale, t } = useTranslation()
   const quickActions = [t('chat.quick.greet'), t('chat.quick.joke'), t('chat.quick.capabilities')]
   const [text, setText] = useState('')
@@ -389,6 +396,10 @@ export function ChatOverlay({ state, gateOpen = false, onOpenHealth }: Props): R
       <ScreenContextPicker
         isOpen={screenPickerOpen}
         onDismiss={() => setScreenPickerOpen(false)}
+        onChangeModel={() => {
+          setScreenPickerOpen(false)
+          onOpenLlmSettings?.()
+        }}
         onBeforeCapture={releasePendingScreenContext}
         onAttach={attachScreenContext}
       />

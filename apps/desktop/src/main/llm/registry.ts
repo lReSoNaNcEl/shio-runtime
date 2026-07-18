@@ -1,5 +1,8 @@
-import { LLM_PROVIDER_IDS, type LlmProviderId } from '../../shared/llmProviders'
-import { resolveBaseCapabilities } from './openai-compatible/capabilities'
+import { LLM_PROVIDER_IDS, type LlmProviderId, type ModelInfo } from '../../shared/llmProviders'
+import {
+  applyCatalogCapabilityHints,
+  resolveBaseCapabilities,
+} from './openai-compatible/capabilities'
 import { OpenAICompatibleClient } from './openai-compatible/OpenAICompatibleClient'
 import { cerebrasProvider } from './providers/cerebras'
 import { githubModelsProvider } from './providers/githubModels'
@@ -9,6 +12,7 @@ import { openRouterProvider } from './providers/openRouter'
 import type {
   LLMProvider,
   LlmCapabilities,
+  ModelCatalogEntry,
   ModelCatalogProvider,
   ProviderDefinition,
 } from './types'
@@ -19,6 +23,13 @@ const PROVIDER_DEFINITIONS: Record<LlmProviderId, ProviderDefinition> = {
   github: githubModelsProvider,
   openrouter: openRouterProvider,
   mistral: mistralProvider,
+}
+
+const catalogCapabilityHints = new Map<string, ModelCatalogEntry['capabilities']>()
+const loadedModelCatalogs = new Set<LlmProviderId>()
+
+function modelCapabilityKey(providerId: LlmProviderId, modelId: string): string {
+  return `${providerId}:${modelId.trim().toLowerCase()}`
 }
 
 export const PROVIDER_PROFILES = Object.values(PROVIDER_DEFINITIONS).map(
@@ -46,6 +57,7 @@ export function createLLMProvider(config: {
     definition: getProviderDefinition(config.provider),
     apiKey: config.apiKey,
     model: config.model,
+    capabilities: resolveModelCapabilities(config.provider, config.model),
   })
 }
 
@@ -63,5 +75,40 @@ export function resolveModelCapabilities(
 ): LlmCapabilities {
   const definition = getProviderDefinition(providerId)
   const base = resolveBaseCapabilities(providerId, modelId)
-  return definition.resolveCapabilities?.(modelId, base) ?? base
+  const resolved = definition.resolveCapabilities?.(modelId, base) ?? base
+  return applyCatalogCapabilityHints(
+    providerId,
+    resolved,
+    catalogCapabilityHints.get(modelCapabilityKey(providerId, modelId)),
+  )
+}
+
+export function hasLoadedModelCatalog(providerId: LlmProviderId): boolean {
+  return loadedModelCatalogs.has(providerId)
+}
+
+export function enrichModelCatalog(
+  providerId: LlmProviderId,
+  models: readonly ModelCatalogEntry[],
+): ModelInfo[] {
+  loadedModelCatalogs.add(providerId)
+  return models.map((model) => {
+    const key = modelCapabilityKey(providerId, model.id)
+    if (
+      model.capabilities?.supportsVision !== undefined ||
+      model.capabilities?.supportsReasoning !== undefined
+    ) {
+      catalogCapabilityHints.set(key, model.capabilities)
+    } else {
+      catalogCapabilityHints.delete(key)
+    }
+    const capabilities = resolveModelCapabilities(providerId, model.id)
+    return {
+      ...model,
+      capabilities: {
+        supportsVision: capabilities.supportsVision,
+        supportsReasoning: capabilities.supportsReasoning,
+      },
+    }
+  })
 }

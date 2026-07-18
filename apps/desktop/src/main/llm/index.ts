@@ -19,7 +19,9 @@ export { LlmGateway } from './LlmGateway'
 export {
   createLLMProvider,
   createModelCatalog,
+  enrichModelCatalog,
   getProviderProfile,
+  hasLoadedModelCatalog,
   isLlmProviderId,
   PROVIDER_PROFILES,
   resolveModelCapabilities,
@@ -33,5 +35,6 @@ export type {
   LlmMessageContent,
   LlmRequestOptions,
   LlmTextContentPart,
+  ModelCatalogEntry,
   ModelCatalogProvider,
 } from './types'

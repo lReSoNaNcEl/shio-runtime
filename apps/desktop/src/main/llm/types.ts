@@ -1,6 +1,6 @@
 import type { AxiosInstance } from 'axios'
 
-import type { LlmProviderId, ModelInfo, ProviderProfile } from '../../shared/llmProviders'
+import type { LlmProviderId, ProviderProfile } from '../../shared/llmProviders'
 
 export interface LlmTextContentPart {
   type: 'text'
@@ -30,8 +30,17 @@ export interface LLMProvider {
   chat(messages: readonly ChatMessage[], options?: LlmRequestOptions): Promise<string>
 }
 
+export interface ModelCatalogEntry {
+  id: string
+  displayName?: string
+  capabilities?: {
+    supportsVision?: boolean
+    supportsReasoning?: boolean
+  }
+}
+
 export interface ModelCatalogProvider {
-  fetchModels(apiKey: string): Promise<ModelInfo[]>
+  fetchModels(apiKey: string): Promise<ModelCatalogEntry[]>
 }
 
 export interface LlmCapabilities {
@@ -52,7 +61,7 @@ export interface ProviderDefinition {
     headers?: Record<string, string>
     useEnvironmentProxy?: boolean
   }
-  fetchModels(http: AxiosInstance, apiKey: string): Promise<ModelInfo[]>
+  fetchModels(http: AxiosInstance, apiKey: string): Promise<ModelCatalogEntry[]>
   resolveCapabilities?(modelId: string, base: LlmCapabilities): LlmCapabilities
 }
 

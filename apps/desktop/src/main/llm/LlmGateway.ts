@@ -1,5 +1,11 @@
 import { LlmCapabilityError } from './errors'
-import { createLLMProvider, resolveModelCapabilities } from './registry'
+import {
+  createLLMProvider,
+  createModelCatalog,
+  enrichModelCatalog,
+  hasLoadedModelCatalog,
+  resolveModelCapabilities,
+} from './registry'
 import type {
   ChatMessage,
   LLMProvider,
@@ -14,6 +20,15 @@ export class LlmGateway implements LLMProvider {
   getActiveCapabilities(): LlmCapabilities {
     const { provider, model } = this.getSettings()
     return resolveModelCapabilities(provider, model)
+  }
+
+  async refreshActiveCapabilities(): Promise<LlmCapabilities> {
+    const { provider, apiKey } = this.getSettings()
+    if (!hasLoadedModelCatalog(provider)) {
+      const catalog = createModelCatalog(provider)
+      enrichModelCatalog(provider, await catalog.fetchModels(apiKey))
+    }
+    return this.getActiveCapabilities()
   }
 
   async chat(messages: readonly ChatMessage[], options: LlmRequestOptions = {}): Promise<string> {

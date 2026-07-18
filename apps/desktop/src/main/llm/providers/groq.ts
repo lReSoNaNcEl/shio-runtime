@@ -1,24 +1,16 @@
 import axios from 'axios'
 
-import type { ModelInfo } from '../../../shared/llmProviders'
 import { GROQ_DEFAULT_MODEL } from '../config'
 import { ModelFetchError } from '../errors'
 import { GroqModelsResponseSchema } from '../openai-compatible/schemas'
 import type { ProviderDefinition } from '../types'
-
-const GROQ_FALLBACK_MODELS: ModelInfo[] = [
-  { id: 'qwen/qwen3.6-27b', displayName: 'Qwen 3.6 27B' },
-  { id: 'llama-3.3-70b-versatile', displayName: 'Llama 3.3 70B Versatile' },
-  { id: 'llama-3.1-8b-instant', displayName: 'Llama 3.1 8B Instant' },
-  { id: 'openai/gpt-oss-20b', displayName: 'GPT-OSS 20B' },
-]
 
 export const groqProvider: ProviderDefinition = {
   profile: {
     id: 'groq',
     displayName: 'Groq',
     requiresApiKey: true,
-    modelsRequireApiKey: false,
+    modelsRequireApiKey: true,
   },
   defaultModel: GROQ_DEFAULT_MODEL,
   chat: {
@@ -28,14 +20,24 @@ export const groqProvider: ProviderDefinition = {
   },
   fetchModels: async (http, apiKey) => {
     const key = apiKey.trim()
-    if (!key) return GROQ_FALLBACK_MODELS
+    if (!key) {
+      throw new ModelFetchError('auth', 'Введите API ключ для загрузки списка моделей Groq.')
+    }
     try {
       const response = await http.get('/models', {
         headers: { Authorization: `Bearer ${key}` },
       })
       const parsed = GroqModelsResponseSchema.parse(response.data)
-      if (parsed.data.length === 0) return GROQ_FALLBACK_MODELS
-      return parsed.data.map((model) => ({ id: model.id }))
+      return parsed.data.map((model) => ({
+        id: model.id,
+        capabilities: {
+          supportsVision:
+            model.capabilities?.vision ??
+            model.architecture?.input_modalities?.includes('image') ??
+            model.architecture?.modality?.toLowerCase().includes('image'),
+          supportsReasoning: model.capabilities?.reasoning,
+        },
+      }))
     } catch (error) {
       if (
         axios.isAxiosError(error) &&
@@ -43,7 +45,16 @@ export const groqProvider: ProviderDefinition = {
       ) {
         throw new ModelFetchError('auth', 'Groq: недействительный API ключ.')
       }
-      return GROQ_FALLBACK_MODELS
+      if (axios.isAxiosError(error)) {
+        if (error.response) {
+          throw new ModelFetchError(
+            'invalid_response',
+            `Groq models error ${error.response.status}`,
+          )
+        }
+        throw new ModelFetchError('network', 'Не удалось загрузить список моделей Groq.')
+      }
+      throw new ModelFetchError('invalid_response', 'Некорректный ответ Groq models API.')
     }
   },
 }

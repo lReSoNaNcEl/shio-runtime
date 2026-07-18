@@ -17,6 +17,7 @@ export interface OpenAICompatibleClientConfig {
   definition: ProviderDefinition
   apiKey: string
   model: string
+  capabilities?: LlmCapabilities
 }
 
 export interface ChatOptions {
@@ -29,11 +30,13 @@ export class OpenAICompatibleClient implements LLMProvider, ModelCatalogProvider
   private readonly model: string
   private readonly http: AxiosInstance
   private readonly definition: ProviderDefinition
+  private readonly resolvedCapabilities?: LlmCapabilities
 
   constructor(config: OpenAICompatibleClientConfig) {
     this.definition = config.definition
     this.apiKey = config.apiKey.trim()
     this.model = config.model.trim()
+    this.resolvedCapabilities = config.capabilities
     this.http = axios.create({
       baseURL: config.definition.chat.baseUrl,
       timeout: 60_000,
@@ -42,6 +45,7 @@ export class OpenAICompatibleClient implements LLMProvider, ModelCatalogProvider
   }
 
   capabilities(): LlmCapabilities {
+    if (this.resolvedCapabilities) return this.resolvedCapabilities
     const base = resolveBaseCapabilities(this.definition.profile.id, this.model)
     return this.definition.resolveCapabilities?.(this.model, base) ?? base
   }
@@ -92,7 +96,7 @@ export class OpenAICompatibleClient implements LLMProvider, ModelCatalogProvider
     })
   }
 
-  fetchModels(apiKey: string): Promise<import('../../../shared/llmProviders').ModelInfo[]> {
+  fetchModels(apiKey: string): Promise<import('../types').ModelCatalogEntry[]> {
     return this.definition.fetchModels(this.http, apiKey)
   }
 }

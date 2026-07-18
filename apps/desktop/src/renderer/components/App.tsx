@@ -19,6 +19,7 @@ export function App(): React.JSX.Element {
   const overlayCanvasRef = useRef<HTMLCanvasElement>(null)
   const state = useControllerState()
   const [section, setSection] = useState<AppSection>('chat')
+  const [settingsInitialSection, setSettingsInitialSection] = useState<'general' | 'llm'>('general')
   const [developerModeEnabled, setDeveloperModeEnabled] = useState(false)
   const [speechToast, setSpeechToast] = useState<string | null>(null)
   const prevSpeechService = useRef(state.speechCapabilities.service)
@@ -100,7 +101,10 @@ export function App(): React.JSX.Element {
     <Provider colorScheme="dark" locale={intlLocale} UNSAFE_className="app-provider">
       <AppShell
         section={section}
-        onSectionChange={setSection}
+        onSectionChange={(nextSection) => {
+          if (nextSection === 'settings') setSettingsInitialSection('general')
+          setSection(nextSection)
+        }}
         health={state.health}
         developerModeEnabled={developerModeEnabled}
         headerAction={
@@ -131,6 +135,10 @@ export function App(): React.JSX.Element {
               state={state}
               gateOpen={state.microphoneGate.status !== 'closed'}
               onOpenHealth={() => setSection('health')}
+              onOpenLlmSettings={() => {
+                setSettingsInitialSection('llm')
+                setSection('settings')
+              }}
             />
             <MicrophoneGateOverlay
               state={state.microphoneGate}
@@ -142,7 +150,12 @@ export function App(): React.JSX.Element {
           </>
         )}
         {section === 'avatar' && (
-          <AvatarPreviewView onOpenSettings={() => setSection('settings')} />
+          <AvatarPreviewView
+            onOpenSettings={() => {
+              setSettingsInitialSection('general')
+              setSection('settings')
+            }}
+          />
         )}
         {section === 'health' && (
           <RuntimeHealthView
@@ -157,6 +170,7 @@ export function App(): React.JSX.Element {
         {section === 'settings' && (
           <SettingsDialog
             isOpen
+            initialSection={settingsInitialSection}
             continuousListeningMode={state.continuousListeningMode}
             vrmLoaded={state.vrmLoaded}
             faceTrackingEnabled={state.faceTrackingEnabled}

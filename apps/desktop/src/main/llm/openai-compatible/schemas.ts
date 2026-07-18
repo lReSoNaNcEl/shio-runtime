@@ -40,11 +40,45 @@ export const ChatCompletionSchema = z
   .passthrough()
 
 export const GroqModelsResponseSchema = z.object({
-  data: z.array(z.object({ id: z.string() }).passthrough()),
+  data: z.array(
+    z
+      .object({
+        id: z.string(),
+        capabilities: z
+          .object({
+            vision: z.boolean().optional(),
+            reasoning: z.boolean().optional(),
+          })
+          .passthrough()
+          .optional(),
+        architecture: z
+          .object({
+            input_modalities: z.array(z.string()).optional(),
+            modality: z.string().optional(),
+          })
+          .passthrough()
+          .optional(),
+      })
+      .passthrough(),
+  ),
 })
 
 export const CerebrasModelsResponseSchema = z.object({
-  data: z.array(z.object({ id: z.string() }).passthrough()),
+  data: z.array(
+    z
+      .object({
+        id: z.string(),
+        name: z.string().optional(),
+        capabilities: z
+          .object({
+            vision: z.boolean().optional(),
+            reasoning: z.boolean().optional(),
+          })
+          .passthrough()
+          .optional(),
+      })
+      .passthrough(),
+  ),
 })
 
 export const GithubModelsResponseSchema = z.array(
@@ -52,6 +86,9 @@ export const GithubModelsResponseSchema = z.array(
     .object({
       id: z.string(),
       name: z.string().optional(),
+      capabilities: z.array(z.string()).optional(),
+      supported_input_modalities: z.array(z.string()).optional(),
+      tags: z.array(z.string()).optional(),
     })
     .passthrough(),
 )
@@ -62,6 +99,14 @@ export const OpenRouterModelSchema = z
     name: z.string().optional(),
     description: z.string().optional(),
     context_length: z.number().optional(),
+    architecture: z
+      .object({
+        input_modalities: z.array(z.string()).optional(),
+        output_modalities: z.array(z.string()).optional(),
+      })
+      .passthrough()
+      .optional(),
+    supported_parameters: z.array(z.string()).optional(),
     pricing: z
       .object({
         prompt: z.string().optional(),
@@ -87,6 +132,20 @@ export const MistralModelSchema = z
     owned_by: z.string().optional(),
     name: z.string().optional(),
     description: z.string().optional(),
+    capabilities: z
+      .object({
+        vision: z.boolean().optional(),
+        reasoning: z.boolean().optional(),
+      })
+      .passthrough()
+      .optional(),
+    architecture: z
+      .object({
+        input_modalities: z.array(z.string()).optional(),
+        modality: z.string().optional(),
+      })
+      .passthrough()
+      .optional(),
   })
   .passthrough()
 

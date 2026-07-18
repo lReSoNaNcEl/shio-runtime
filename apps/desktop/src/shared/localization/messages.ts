@@ -111,6 +111,7 @@ export const ruMessages = {
   'screenContext.picker.refresh': 'Обновить',
   'screenContext.picker.attach': 'Прикрепить',
   'screenContext.unsupported.title': 'Изображения не поддерживаются',
+  'screenContext.unsupported.changeModel': 'Изменить модель',
   'screenContext.unsupported.description':
     'Выбранная модель не поддерживает изображения. Выберите vision-capable модель в Настройках.',
   'screenContext.source.screen': 'Монитор',
@@ -365,6 +366,16 @@ export const ruMessages = {
   'settings.llm.modelsNetworkError': 'Не удалось загрузить модели.',
   'settings.llm.modelsMissingKey': 'Введите API-ключ, чтобы загрузить модели.',
   'settings.llm.modelsAuthError': 'Ошибка аутентификации.',
+  'settings.llm.capabilities.vision': 'Vision',
+  'settings.llm.capabilities.reasoning': 'Reasoning',
+  'settings.llm.capabilities.onlyVision': 'Только модели с изображениями',
+  'settings.llm.capabilities.visionSupported': 'Изображения поддерживаются',
+  'settings.llm.capabilities.visionSupportedHint':
+    'Эту модель можно использовать со снимками экрана.',
+  'settings.llm.capabilities.visionUnconfirmed': 'Поддержка изображений не подтверждена',
+  'settings.llm.capabilities.visionUnconfirmedHint':
+    'Для снимков экрана выберите модель с отметкой Vision.',
+  'settings.llm.capabilities.noVisionModels': 'Нет моделей с подтверждённой поддержкой изображений',
   'settings.llm.healthChecking': 'Проверяем доступность LLM',
   'settings.llm.smart.title': 'Умный выбор следующей реплики',
   'settings.llm.smart.enable': 'Включить умный выбор следующей реплики',
@@ -655,6 +666,7 @@ export const enMessages: Record<TranslationKey, string> = {
   'screenContext.picker.refresh': 'Refresh',
   'screenContext.picker.attach': 'Attach',
   'screenContext.unsupported.title': 'Images are not supported',
+  'screenContext.unsupported.changeModel': 'Change model',
   'screenContext.unsupported.description':
     'The selected model does not support images. Choose a vision-capable model in Settings.',
   'screenContext.source.screen': 'Screen',
@@ -909,6 +921,15 @@ export const enMessages: Record<TranslationKey, string> = {
   'settings.llm.modelsNetworkError': 'Could not load models.',
   'settings.llm.modelsMissingKey': 'Enter an API key to load models.',
   'settings.llm.modelsAuthError': 'Authentication error.',
+  'settings.llm.capabilities.vision': 'Vision',
+  'settings.llm.capabilities.reasoning': 'Reasoning',
+  'settings.llm.capabilities.onlyVision': 'Only models with image support',
+  'settings.llm.capabilities.visionSupported': 'Images are supported',
+  'settings.llm.capabilities.visionSupportedHint': 'This model can be used with screen captures.',
+  'settings.llm.capabilities.visionUnconfirmed': 'Image support is not confirmed',
+  'settings.llm.capabilities.visionUnconfirmedHint':
+    'Choose a model with the Vision badge for screen captures.',
+  'settings.llm.capabilities.noVisionModels': 'No models with confirmed image support',
   'settings.llm.healthChecking': 'Checking LLM availability',
   'settings.llm.smart.title': 'Smart next-reply selection',
   'settings.llm.smart.enable': 'Enable smart next-reply selection',

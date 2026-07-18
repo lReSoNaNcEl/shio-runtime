@@ -23,6 +23,8 @@ import { OpenAICompatibleClient } from '../../src/main/llm/openai-compatible/Ope
 import { runChatCompletion } from '../../src/main/llm/openai-compatible/request'
 import { normalizeFinishReason } from '../../src/main/llm/openai-compatible/response'
 import {
+  createLLMProvider,
+  enrichModelCatalog,
   getProviderDefinition,
   getProviderProfile,
   resolveModelCapabilities as resolveCapabilities,
@@ -352,7 +354,11 @@ async function testMistralModelsApi(): Promise<void> {
       () => ({
         object: 'list',
         data: [
-          { id: 'mistral-small-latest', name: 'Mistral Small' },
+          {
+            id: 'mistral-small-latest',
+            name: 'Mistral Small',
+            capabilities: { vision: true },
+          },
           { id: 'mistral-large-latest' },
         ],
       }),
@@ -363,6 +369,10 @@ async function testMistralModelsApi(): Promise<void> {
       models.length === 2 && models[0].id === 'mistral-small-latest',
     )
     check('models API preserves optional displayName', models[0].displayName === 'Mistral Small')
+    check(
+      'models API preserves authoritative Vision metadata',
+      models[0].capabilities?.supportsVision === true,
+    )
   }
 
   // Auth failure.
@@ -451,6 +461,145 @@ async function testMistralModelsApi(): Promise<void> {
   }
 }
 
+async function testCatalogCapabilityMetadata(): Promise<void> {
+  console.log('\n=== provider catalog capability metadata ===')
+  const fetch = (
+    provider: LlmProviderId,
+    response: unknown,
+  ): Promise<import('../../src/main/llm').ModelCatalogEntry[]> =>
+    getProviderDefinition(provider).fetchModels(
+      {
+        get: async () => ({ data: response }),
+      } as AxiosInstance,
+      'test-key',
+    )
+
+  const [openRouter] = await fetch('openrouter', {
+    data: [
+      {
+        id: 'publisher/openrouter-opaque:free',
+        name: 'OpenRouter Opaque',
+        architecture: { input_modalities: ['text', 'image'] },
+        supported_parameters: ['reasoning'],
+        pricing: { prompt: '0', completion: '0' },
+      },
+    ],
+  })
+  check(
+    'OpenRouter architecture metadata maps Vision and Reasoning',
+    openRouter.capabilities?.supportsVision === true &&
+      openRouter.capabilities.supportsReasoning === true,
+  )
+
+  const [github] = await fetch('github', [
+    {
+      id: 'publisher/github-opaque',
+      name: 'GitHub Opaque',
+      supported_input_modalities: ['text', 'image'],
+      tags: ['reasoning'],
+    },
+  ])
+  check(
+    'GitHub modality metadata maps Vision and Reasoning',
+    github.capabilities?.supportsVision === true && github.capabilities.supportsReasoning === true,
+  )
+
+  const [cerebras] = await fetch('cerebras', {
+    data: [
+      {
+        id: 'cerebras-opaque',
+        name: 'Cerebras Opaque',
+        capabilities: { vision: true, reasoning: false },
+      },
+    ],
+  })
+  check(
+    'Cerebras capability flags map without guessing',
+    cerebras.capabilities?.supportsVision === true &&
+      cerebras.capabilities.supportsReasoning === false,
+  )
+
+  const [groq] = await fetch('groq', {
+    data: [
+      {
+        id: 'groq/opaque-multimodal',
+        architecture: { input_modalities: ['text', 'image'] },
+      },
+    ],
+  })
+  check('Groq modality metadata maps Vision', groq.capabilities?.supportsVision === true)
+
+  let groqMissingKeyError: unknown
+  try {
+    await getProviderDefinition('groq').fetchModels(
+      { get: async () => ({ data: { data: [] } }) } as AxiosInstance,
+      '',
+    )
+  } catch (error) {
+    groqMissingKeyError = error
+  }
+  check(
+    'Groq catalog requires an API key instead of returning a fallback list',
+    groqMissingKeyError instanceof ModelFetchError && groqMissingKeyError.kind === 'auth',
+  )
+}
+
+function testEnrichedModelCatalog(): void {
+  console.log('\n=== enriched model catalog ===')
+  const models = enrichModelCatalog('mistral', [
+    { id: 'mistral-small-2506', displayName: 'Mistral Small 3.1' },
+    { id: 'magistral-small', displayName: 'Magistral Small' },
+    { id: 'open-mistral-nemo', displayName: 'Mistral Nemo' },
+  ])
+
+  check(
+    'catalog includes Vision capability summary',
+    models[0].capabilities.supportsVision && !models[0].capabilities.supportsReasoning,
+  )
+  check(
+    'catalog includes Reasoning capability summary',
+    !models[1].capabilities.supportsVision && models[1].capabilities.supportsReasoning,
+  )
+  check(
+    'unconfirmed capabilities stay false',
+    !models[2].capabilities.supportsVision && !models[2].capabilities.supportsReasoning,
+  )
+  check('catalog preserves display name', models[0].displayName === 'Mistral Small 3.1')
+
+  check(
+    'Mistral Medium 2508 fallback is Vision-capable',
+    resolveCapabilities('mistral', 'mistral-medium-2508').supportsVision,
+  )
+  check(
+    'Groq Qwen 3.6 fallback is Vision-capable',
+    resolveCapabilities('groq', 'qwen/qwen3.6-27b').supportsVision,
+  )
+
+  const metadataModelId = 'publisher/model-with-opaque-name'
+  const [metadataModel] = enrichModelCatalog('github', [
+    {
+      id: metadataModelId,
+      capabilities: { supportsVision: true, supportsReasoning: true },
+    },
+  ])
+  check(
+    'authoritative catalog metadata overrides conservative fallback',
+    metadataModel.capabilities.supportsVision &&
+      metadataModel.capabilities.supportsReasoning &&
+      resolveCapabilities('github', metadataModelId).supportsVision,
+  )
+
+  const provider = createLLMProvider({
+    provider: 'github',
+    apiKey: 'test-key',
+    model: metadataModelId,
+  }) as OpenAICompatibleClient
+  check(
+    'chat provider reuses catalog capability resolution',
+    provider.capabilities().supportsVision && provider.capabilities().supportsReasoning,
+  )
+}
+
 function testFinishReasonNormalization(): void {
   console.log('\n=== finish_reason normalization (shared) ===')
   const map: [string, string][] = [
@@ -475,6 +624,8 @@ async function main(): Promise<void> {
     await runProviderBattery(pc)
   }
   await testMistralModelsApi()
+  await testCatalogCapabilityMetadata()
+  testEnrichedModelCatalog()
   testFinishReasonNormalization()
 
   console.log(`\n===== SUMMARY =====`)

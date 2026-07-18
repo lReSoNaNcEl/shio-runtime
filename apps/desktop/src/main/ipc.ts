@@ -19,13 +19,17 @@ import type { ScreenContextErrorCode, ScreenContextResult } from '../shared/scre
 import type { SpeechOperation, SpeechServiceErrorCode } from '../shared/speech/speechErrors'
 import { ActionRuntime } from './action/ActionRuntime'
 import { getConfig, getRendererConfig, saveConfig } from './config'
-import type { LlmConfig, LlmGateway, ModelInfo, ProviderProfile } from './llm'
 import {
   createLLMProvider,
   createModelCatalog,
+  enrichModelCatalog,
   isLlmProviderId,
+  type LlmConfig,
+  type LlmGateway,
   ModelFetchError,
+  type ModelInfo,
   PROVIDER_PROFILES,
+  type ProviderProfile,
 } from './llm'
 import { mainLog } from './logging/safeLogger'
 import type { CharacterReplyInput, Orchestrator } from './orchestrator'
@@ -188,7 +192,7 @@ export function registerIpcHandlers(
       }
       try {
         const catalog = createModelCatalog(provider)
-        const models = await catalog.fetchModels(apiKey)
+        const models = enrichModelCatalog(provider, await catalog.fetchModels(apiKey))
         return { ok: true, models }
       } catch (e) {
         if (e instanceof ModelFetchError) {
@@ -294,7 +298,16 @@ export function registerIpcHandlers(
   const screenContextErrorCode = (error: unknown): ScreenContextErrorCode =>
     error instanceof ScreenContextError ? error.code : 'UNKNOWN'
 
-  ipcMain.handle('llm:get-active-capabilities', () => llm().getActiveCapabilities())
+  ipcMain.handle('llm:get-active-capabilities', async () => {
+    try {
+      return await llm().refreshActiveCapabilities()
+    } catch (error) {
+      mainLog.warn('LLM capability catalog refresh failed; using fallback resolution', {
+        error: error instanceof Error ? error.message : String(error),
+      })
+      return llm().getActiveCapabilities()
+    }
+  })
   ipcMain.handle('screen-context:list-sources', async (event) => {
     try {
       return {

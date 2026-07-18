@@ -9,9 +9,15 @@ export const LLM_PROVIDER_IDS = ['groq', 'cerebras', 'github', 'openrouter', 'mi
 
 export type LlmProviderId = (typeof LLM_PROVIDER_IDS)[number]
 
+export interface ModelCapabilitySummary {
+  supportsVision: boolean
+  supportsReasoning: boolean
+}
+
 export interface ModelInfo {
   id: string
   displayName?: string
+  capabilities: ModelCapabilitySummary
 }
 
 export interface ProviderProfile {

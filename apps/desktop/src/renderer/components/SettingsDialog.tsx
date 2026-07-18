@@ -30,6 +30,8 @@ import CodeIcon from '@react-spectrum/s2/icons/Code'
 import CopyIcon from '@react-spectrum/s2/icons/Copy'
 import DataIcon from '@react-spectrum/s2/icons/Data'
 import EditIcon from '@react-spectrum/s2/icons/Edit'
+import ImageIcon from '@react-spectrum/s2/icons/Image'
+import LightbulbIcon from '@react-spectrum/s2/icons/Lightbulb'
 import MicrophoneIcon from '@react-spectrum/s2/icons/Microphone'
 import SettingsIcon from '@react-spectrum/s2/icons/Settings'
 import UserAvatarIcon from '@react-spectrum/s2/icons/UserAvatar'
@@ -93,6 +95,7 @@ const SETTINGS_SECTIONS: SettingsSection[] = [
 
 interface Props {
   isOpen: boolean
+  initialSection?: SettingsSection
   continuousListeningMode: AttentionMode
   vrmLoaded: boolean
   faceTrackingEnabled: boolean
@@ -283,6 +286,7 @@ interface ModelComboBoxProps {
   isDisabled?: boolean
   isLoading?: boolean
   placeholder?: string
+  showCapabilities?: boolean
   onSelect: (id: string) => void
 }
 
@@ -292,69 +296,131 @@ function ModelComboBox({
   selectedId,
   isDisabled,
   isLoading,
+  showCapabilities = false,
   onSelect,
 }: ModelComboBoxProps): React.JSX.Element {
   const { t } = useTranslation()
   const [searchText, setSearchText] = useState(selectedId)
   const [isOpen, setIsOpen] = useState(false)
+  const [onlyVision, setOnlyVision] = useState(false)
   const normalizedSearch = isOpen ? searchText.trim().toLocaleLowerCase() : ''
+  const capabilityFilteredModels =
+    showCapabilities && onlyVision
+      ? models.filter((model) => model.capabilities.supportsVision)
+      : models
   const filteredModels = normalizedSearch
-    ? models.filter((model) =>
+    ? capabilityFilteredModels.filter((model) =>
         `${model.id} ${model.displayName ?? ''}`.toLocaleLowerCase().includes(normalizedSearch),
       )
-    : models
+    : capabilityFilteredModels
+  const selectedModel = models.find((model) => model.id === selectedId)
 
   useEffect(() => {
     if (!isOpen) setSearchText(selectedId)
   }, [isOpen, selectedId])
 
-  const emptyText =
-    models.length === 0 ? t('common.modelsNotFound') : t('common.modelsNotFoundForQuery')
+  const emptyText = onlyVision
+    ? t('settings.llm.capabilities.noVisionModels')
+    : models.length === 0
+      ? t('common.modelsNotFound')
+      : t('common.modelsNotFoundForQuery')
   return (
-    <ComboBox
-      label={label}
-      selectedKey={models.some((model) => model.id === selectedId) ? selectedId : null}
-      inputValue={searchText}
-      onInputChange={setSearchText}
-      onOpenChange={(open) => {
-        setIsOpen(open)
-        setSearchText(open ? '' : selectedId)
-      }}
-      onSelectionChange={(key) => {
-        const id = String(key ?? '')
-        if (models.some((model) => model.id === id)) {
-          onSelect(id)
-          setSearchText(id)
-        } else {
-          setSearchText(selectedId)
-        }
-      }}
-      isDisabled={isDisabled}
-      loadingState={isLoading ? 'loading' : 'idle'}
-      placeholder={t('common.searchModel')}
-      styles={fullWidth}
-    >
-      {filteredModels.length > 0 ? (
-        filteredModels.map((model) => {
-          const description =
-            model.displayName?.trim() && model.displayName !== model.id ? model.displayName : ''
-          return (
-            <ComboBoxItem
-              key={model.id}
-              id={model.id}
-              textValue={`${model.id} ${model.displayName ?? ''}`}
-            >
-              <Text slot="label">{model.id}</Text>
-              {description && <Text slot="description">{description}</Text>}
-            </ComboBoxItem>
-          )
-        })
-      ) : (
-        <ComboBoxItem id="__empty__" textValue={emptyText} isDisabled>
-          <Text slot="label">{emptyText}</Text>
-        </ComboBoxItem>
+    <div className="model-combobox">
+      <ComboBox
+        label={label}
+        selectedKey={filteredModels.some((model) => model.id === selectedId) ? selectedId : null}
+        inputValue={searchText}
+        onInputChange={setSearchText}
+        onOpenChange={(open) => {
+          setIsOpen(open)
+          setSearchText(open ? '' : selectedId)
+        }}
+        onSelectionChange={(key) => {
+          const id = String(key ?? '')
+          if (models.some((model) => model.id === id)) {
+            onSelect(id)
+            setSearchText(id)
+          } else {
+            setSearchText(selectedId)
+          }
+        }}
+        isDisabled={isDisabled}
+        loadingState={isLoading ? 'loading' : 'idle'}
+        placeholder={t('common.searchModel')}
+        styles={fullWidth}
+      >
+        {filteredModels.length > 0 ? (
+          filteredModels.map((model) => {
+            const description =
+              model.displayName?.trim() && model.displayName !== model.id ? model.displayName : ''
+            return (
+              <ComboBoxItem
+                key={model.id}
+                id={model.id}
+                textValue={`${model.id} ${model.displayName ?? ''}`}
+              >
+                <Text slot="label">
+                  <span className="model-option-label">
+                    <span className="model-option-id">{model.id}</span>
+                    {showCapabilities && (
+                      <span className="model-capability-badges">
+                        {model.capabilities.supportsVision && (
+                          <span className="model-capability-badge model-capability-vision">
+                            <ImageIcon />
+                            {t('settings.llm.capabilities.vision')}
+                          </span>
+                        )}
+                        {model.capabilities.supportsReasoning && (
+                          <span className="model-capability-badge">
+                            <LightbulbIcon />
+                            {t('settings.llm.capabilities.reasoning')}
+                          </span>
+                        )}
+                      </span>
+                    )}
+                  </span>
+                </Text>
+                {description && <Text slot="description">{description}</Text>}
+              </ComboBoxItem>
+            )
+          })
+        ) : (
+          <ComboBoxItem id="__empty__" textValue={emptyText} isDisabled>
+            <Text slot="label">{emptyText}</Text>
+          </ComboBoxItem>
+        )}
+      </ComboBox>
+      {showCapabilities && (
+        <Switch isSelected={onlyVision} onChange={setOnlyVision}>
+          {t('settings.llm.capabilities.onlyVision')}
+        </Switch>
       )}
-    </ComboBox>
+      {showCapabilities && selectedModel && (
+        <div
+          className={`model-capability-status ${
+            selectedModel.capabilities.supportsVision
+              ? 'model-capability-status-positive'
+              : 'model-capability-status-neutral'
+          }`}
+        >
+          <span aria-hidden="true">
+            {selectedModel.capabilities.supportsVision ? '\u25cf' : '\u25cb'}
+          </span>
+          <span>
+            <strong>
+              {selectedModel.capabilities.supportsVision
+                ? t('settings.llm.capabilities.visionSupported')
+                : t('settings.llm.capabilities.visionUnconfirmed')}
+            </strong>
+            <small>
+              {selectedModel.capabilities.supportsVision
+                ? t('settings.llm.capabilities.visionSupportedHint')
+                : t('settings.llm.capabilities.visionUnconfirmedHint')}
+            </small>
+          </span>
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -397,6 +463,7 @@ function projectActionError(error: unknown): string {
 
 export function SettingsDialog({
   isOpen,
+  initialSection = 'general',
   continuousListeningMode,
   passiveCompanionEnabled,
   onPassiveCompanionChange,
@@ -475,7 +542,7 @@ export function SettingsDialog({
     modelsMissingKey: t('settings.llm.modelsMissingKey'),
     modelsAuthError: t('settings.llm.modelsAuthError'),
   }
-  const [activeSection, setActiveSection] = useState<SettingsSection>('general')
+  const [activeSection, setActiveSection] = useState<SettingsSection>(initialSection)
   const [confirmClearHistory, setConfirmClearHistory] = useState(false)
   const hydrated = useRef(false)
   const saveSequence = useRef(0)
@@ -564,7 +631,7 @@ export function SettingsDialog({
     if (!isOpen) return
     void (async () => {
       const cfg = await window.api.config.get()
-      setActiveSection('general')
+      setActiveSection(initialSection)
       // config.get() всегда возвращает нормализованный pythonSpeechUrl (main
       // подставляет DEFAULT_SPEECH_URL при отсутствии), поэтому main-config
       // побеждает без второго fallback на стороне renderer.
@@ -623,7 +690,7 @@ export function SettingsDialog({
       setMicId(controller.getMicrophoneId() || 'default')
       hydrated.current = true
     })()
-  }, [isOpen])
+  }, [initialSection, isOpen])
 
   useEffect(() => {
     if (!isOpen || activeSection !== 'project') return
@@ -1412,6 +1479,7 @@ export function SettingsDialog({
                     selectedId={selectedModel}
                     isDisabled={modelsState !== 'ready'}
                     isLoading={modelsState === 'loading'}
+                    showCapabilities
                     onSelect={(id) => updateCred(activeProvider, { model: id })}
                   />
                   <span className="settings-hint">

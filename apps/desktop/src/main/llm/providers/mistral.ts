@@ -26,7 +26,17 @@ export const mistralProvider: ProviderDefinition = {
         headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
       })
       const parsed = MistralModelsResponseSchema.parse(response.data)
-      return parsed.data.map((model) => ({ id: model.id, displayName: model.name }))
+      return parsed.data.map((model) => ({
+        id: model.id,
+        displayName: model.name,
+        capabilities: {
+          supportsVision:
+            model.capabilities?.vision ??
+            model.architecture?.input_modalities?.includes('image') ??
+            model.architecture?.modality?.toLowerCase().includes('image'),
+          supportsReasoning: model.capabilities?.reasoning,
+        },
+      }))
     } catch (error) {
       if (axios.isAxiosError(error)) {
         if (error.response?.status === 401 || error.response?.status === 403) {

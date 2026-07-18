@@ -20,7 +20,14 @@ export const cerebrasProvider: ProviderDefinition = {
     try {
       const response = await http.get('/public/v1/models')
       const parsed = CerebrasModelsResponseSchema.parse(response.data)
-      return parsed.data.map((model) => ({ id: model.id }))
+      return parsed.data.map((model) => ({
+        id: model.id,
+        displayName: model.name,
+        capabilities: {
+          supportsVision: model.capabilities?.vision,
+          supportsReasoning: model.capabilities?.reasoning,
+        },
+      }))
     } catch (error) {
       if (axios.isAxiosError(error)) {
         if (error.response) {

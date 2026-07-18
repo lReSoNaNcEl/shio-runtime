@@ -28,6 +28,7 @@ type PickerState =
 interface Props {
   isOpen: boolean
   onDismiss: () => void
+  onChangeModel: () => void
   onBeforeCapture: () => Promise<void>
   onAttach: (capture: ScreenContextCaptureDescriptor) => void
 }
@@ -35,6 +36,7 @@ interface Props {
 export function ScreenContextPicker({
   isOpen,
   onDismiss,
+  onChangeModel,
   onBeforeCapture,
   onAttach,
 }: Props): React.JSX.Element {
@@ -163,6 +165,9 @@ export function ScreenContextPicker({
                 <div className="screen-context-picker-state" role="status">
                   <Heading level={3}>{t('screenContext.unsupported.title')}</Heading>
                   <p>{t('screenContext.unsupported.description')}</p>
+                  <Button variant="accent" onPress={onChangeModel}>
+                    {t('screenContext.unsupported.changeModel')}
+                  </Button>
                 </div>
               )}
               {state === 'error' && errorCode && (
@@ -217,13 +222,11 @@ export function ScreenContextPicker({
               <Button variant="secondary" onPress={onDismiss}>
                 {t('common.cancel')}
               </Button>
-              <Button
-                variant="accent"
-                isDisabled={state !== 'source-list' || !selectedId}
-                onPress={() => void attach()}
-              >
-                {t('screenContext.picker.attach')}
-              </Button>
+              {state === 'source-list' && (
+                <Button variant="accent" isDisabled={!selectedId} onPress={() => void attach()}>
+                  {t('screenContext.picker.attach')}
+                </Button>
+              )}
             </div>
           </Footer>
         </Dialog>
