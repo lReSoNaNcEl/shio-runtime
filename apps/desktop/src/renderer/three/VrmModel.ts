@@ -200,6 +200,9 @@ export class VrmModel {
       const vrm = gltf.userData.vrm as VRM
       VRMUtils.removeUnnecessaryJoints(vrm.scene)
       this.applyStartupTransform(vrm.scene)
+      // Do not expose the raw bind pose while the initial manifest animation is
+      // still loading. The first active body action reveals the model below.
+      vrm.scene.visible = false
       scene.add(vrm.scene)
       this.vrm = vrm
       this.rootMotionController.setAnchorFromVrm(vrm)
@@ -352,6 +355,7 @@ export class VrmModel {
       this.currentBodyClip = clip
       this.animationPlaying = true
       this.animationRemaining = loop ? null : clip.duration
+      this.vrm.scene.visible = true
       this.diagnostics.recordFrameTrace('after ownership assigned')
 
       const actionCount = (this.mixer as unknown as { _actions?: unknown[] })._actions?.length ?? -1

@@ -114,9 +114,20 @@ export class AvatarController {
       : this.stateMachine.getEmotion()
     this.vrmModel.syncEarState(earMode, earEmotion)
 
-    if (this.externalMouthWeights) this.vrmModel.setMouthWeights(this.externalMouthWeights)
+    // Mirror weights are already the main avatar's final mixer output. Preserve
+    // that composition marker on every frame; otherwise the overlay falls back
+    // into its local idle PhraseEnvelope (articulationScale=0) and mutes the
+    // externally supplied mouth immediately after the first synced frame.
+    if (this.externalMouthWeights) {
+      this.vrmModel.setMouthWeights(this.externalMouthWeights, true)
+    } else {
+      // Resolve the current analyser frame before the facial mixer writes the
+      // frame. The previous order mixed yesterday's mouth state and only then
+      // sampled the current audio, adding a permanent frame of latency to every
+      // viseme and phrase-envelope transition.
+      this.lipSync.update(delta)
+    }
     this.vrmModel.update(delta)
-    if (!this.externalMouthWeights) this.lipSync.update(delta)
   }
 
   async loadVrm(scene: THREE.Scene, buffer: ArrayBuffer): Promise<void> {
