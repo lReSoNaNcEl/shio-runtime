@@ -159,7 +159,7 @@ character state.
 ## 6. Git and secrets policy
 
 - Do not push, force-push, or rewrite Git history unless explicitly requested.
-- After merging any `dev` branch into `main`, delete that branch from the remote.
+- After merging any non-main working branch into `main`, delete that branch from the remote.
 - Do not modify files outside this repository, and do not touch the standalone
   backups `D:\Web\vtuber-app` and `D:\Web\python-speech`.
 - Never commit `.env`, credentials, model caches, virtual environments, generated
