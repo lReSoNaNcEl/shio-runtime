@@ -146,6 +146,7 @@ export function App(): React.JSX.Element {
         {section === 'settings' && (
           <SettingsDialog
             isOpen
+            continuousListeningMode={state.continuousListeningMode}
             vrmLoaded={state.vrmLoaded}
             faceTrackingEnabled={state.faceTrackingEnabled}
             passiveCompanionEnabled={state.passiveCompanionEnabled}

@@ -1208,9 +1208,12 @@ export class Controller {
     this.speechCapabilitiesRuntime.dispose()
   }
 
-  async setContinuousListeningMode(mode: ContinuousListeningSettings['mode']): Promise<void> {
-    if (this.state.microphoneGate.status !== 'closed') return
+  async setContinuousListeningMode(
+    mode: ContinuousListeningSettings['mode'],
+  ): Promise<'applied' | 'blocked'> {
+    if (this.state.microphoneGate.status !== 'closed') return 'blocked'
     await this.applyContinuousListeningSettings({ ...this.continuousSettings, mode })
+    return 'applied'
   }
 
   private async handleContinuousFinal(recognized: ContinuousRecognizedSpeech): Promise<void> {

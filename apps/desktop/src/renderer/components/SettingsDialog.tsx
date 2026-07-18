@@ -85,6 +85,7 @@ const SETTINGS_SECTIONS: SettingsSection[] = [
 
 interface Props {
   isOpen: boolean
+  continuousListeningMode: AttentionMode
   vrmLoaded: boolean
   faceTrackingEnabled: boolean
   passiveCompanionEnabled: boolean
@@ -380,6 +381,7 @@ function parseNumberSetting(
 
 export function SettingsDialog({
   isOpen,
+  continuousListeningMode,
   passiveCompanionEnabled,
   onPassiveCompanionChange,
   overlayVisible,
@@ -399,7 +401,6 @@ export function SettingsDialog({
   const [vrmName, setVrmName] = useState('')
   const [mics, setMics] = useState<Array<{ deviceId: string; label: string }>>([])
   const [micId, setMicId] = useState('default')
-  const [continuousMode, setContinuousMode] = useState<AttentionMode>('silent')
   const [replyCooldownMs, setReplyCooldownMs] = useState(
     defaultContinuousListeningSettings.replyCooldownMs,
   )
@@ -444,7 +445,7 @@ export function SettingsDialog({
     minimumConfidence: 0.72,
   })
   const [backlogModels, setBacklogModels] = useState<ModelInfo[]>([])
-  const curiosityEnabled = isCuriosityControlEnabled(true, continuousMode)
+  const curiosityEnabled = isCuriosityControlEnabled(true, continuousListeningMode)
 
   useEffect(
     () => () => {
@@ -472,7 +473,6 @@ export function SettingsDialog({
       setSpeechUrl(cfg.pythonSpeechUrl)
       setLang(cfg.ttsLanguage ?? 'ru')
       setCurrentTtsVoice(cfg.ttsVoice ?? 'animevox_makima')
-      setContinuousMode(parseAttentionMode(cfg.continuousListeningMode))
       setReplyCooldownMs(
         parseTunedNumber(cfg.continuousListeningReplyCooldownMs, 15_000, 0, 120_000),
       )
@@ -627,7 +627,6 @@ export function SettingsDialog({
       ttsVoice: currentTtsVoice,
       ttsLanguage: lang,
       ttsEngine: 'f5',
-      continuousListeningMode: continuousMode,
       continuousListeningReplyCooldownMs: String(replyCooldownMs),
       continuousListeningFollowUpWindowMs: String(followUpWindowMs),
       continuousListeningCuriosityChance: String(curiosityChance),
@@ -671,7 +670,6 @@ export function SettingsDialog({
     speechUrl,
     lang,
     currentTtsVoice,
-    continuousMode,
     replyCooldownMs,
     followUpWindowMs,
     curiosityChancePercent,
@@ -815,10 +813,9 @@ export function SettingsDialog({
               </div>
               <SegmentedControl
                 aria-label={TEXT.attentionMode}
-                selectedKey={continuousMode}
+                selectedKey={continuousListeningMode}
                 onSelectionChange={(key) => {
                   const mode = parseAttentionMode(String(key))
-                  setContinuousMode(mode)
                   void controller.setContinuousListeningMode(mode)
                 }}
                 isJustified
@@ -830,11 +827,11 @@ export function SettingsDialog({
                 <SegmentedControlItem id="streamer">Стример</SegmentedControlItem>
               </SegmentedControl>
               <Text>
-                {continuousMode === 'active'
+                {continuousListeningMode === 'active'
                   ? 'Активный — чаще подключается к текущему разговору.'
-                  : continuousMode === 'streamer'
+                  : continuousListeningMode === 'streamer'
                     ? 'Стример — выбирает релевантные реплики из фоновой речи.'
-                    : continuousMode === 'passive'
+                    : continuousListeningMode === 'passive'
                       ? 'Пассивный — реагирует преимущественно на прямые обращения.'
                       : 'Silent — Shio не реагирует самостоятельно на фоновую речь.'}
               </Text>
@@ -894,8 +891,8 @@ export function SettingsDialog({
                       </Content>
                     </ContextualHelp>
                   }
-                  selectedKey={continuousMode}
-                  onSelectionChange={(key) => setContinuousMode(parseAttentionMode(String(key)))}
+                  selectedKey={continuousListeningMode}
+                  onSelectionChange={(key) => void controller.setContinuousListeningMode(parseAttentionMode(String(key)))}
                   isDisabled
                   styles={fullWidth}
                 >
