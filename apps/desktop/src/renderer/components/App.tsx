@@ -1,9 +1,8 @@
-import { Button, Provider } from '@react-spectrum/s2'
+import { Provider } from '@react-spectrum/s2'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { controller } from '../Controller'
 import { useTranslation } from '../localization/useTranslation'
-import { AvatarDebugDialog } from './AvatarDebugDialog'
 import { ChatOverlay } from './ChatOverlay'
 import { MicrophoneGateOverlay } from './MicrophoneGateOverlay'
 import { OverlayCameraControl } from './OverlayCameraControl'
@@ -12,6 +11,7 @@ import { StreamingModeControl } from './StreamingModeControl'
 import { type AppSection, AppShell, SectionHeading } from './shell/AppShell'
 import { useControllerState } from './useController'
 import { AvatarPreviewView } from './views/AvatarPreviewView'
+import { DiagnosticsView } from './views/DiagnosticsView'
 import { RuntimeHealthView } from './views/RuntimeHealthView'
 
 export function App(): React.JSX.Element {
@@ -19,7 +19,7 @@ export function App(): React.JSX.Element {
   const overlayCanvasRef = useRef<HTMLCanvasElement>(null)
   const state = useControllerState()
   const [section, setSection] = useState<AppSection>('chat')
-  const [debugOpen, setDebugOpen] = useState(false)
+  const [developerModeEnabled, setDeveloperModeEnabled] = useState(false)
   const [speechToast, setSpeechToast] = useState<string | null>(null)
   const prevSpeechService = useRef(state.speechCapabilities.service)
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -42,6 +42,19 @@ export function App(): React.JSX.Element {
     },
     [],
   )
+
+  useEffect(() => {
+    void window.api.config.get().then((config) => {
+      setDeveloperModeEnabled(config.developerModeEnabled === 'true')
+    })
+    window.api.config.onUpdated((config) => {
+      setDeveloperModeEnabled(config.developerModeEnabled === 'true')
+    })
+  }, [])
+
+  useEffect(() => {
+    if (!developerModeEnabled && section === 'debug') setSection('health')
+  }, [developerModeEnabled, section])
   const isOverlay = useMemo(
     () => new URLSearchParams(window.location.search).get('overlay') === '1',
     [],
@@ -65,7 +78,10 @@ export function App(): React.JSX.Element {
       subtitle: t('app.section.avatar.subtitle'),
     },
     health: { title: t('app.nav.health'), subtitle: t('app.section.health.subtitle') },
-    debug: { title: t('app.nav.debug'), subtitle: t('app.section.debug.subtitle') },
+    debug: {
+      title: t('app.section.diagnostics.title'),
+      subtitle: t('app.section.diagnostics.subtitle'),
+    },
     settings: { title: t('app.nav.settings'), subtitle: t('app.section.settings.subtitle') },
   }
   const copy = sectionCopy[section]
@@ -86,6 +102,7 @@ export function App(): React.JSX.Element {
         section={section}
         onSectionChange={setSection}
         health={state.health}
+        developerModeEnabled={developerModeEnabled}
         headerAction={
           section === 'chat' ? (
             <div className="chat-header-controls">
@@ -136,14 +153,7 @@ export function App(): React.JSX.Element {
             }}
           />
         )}
-        {section === 'debug' && (
-          <section className="debug-view">
-            <p>{t('app.debug.description')}</p>
-            <Button variant="secondary" onPress={() => setDebugOpen(true)}>
-              {t('app.debug.open')}
-            </Button>
-          </section>
-        )}
+        {section === 'debug' && developerModeEnabled && <DiagnosticsView />}
         {section === 'settings' && (
           <SettingsDialog
             isOpen
@@ -167,7 +177,6 @@ export function App(): React.JSX.Element {
           {speechToast}
         </div>
       )}
-      <AvatarDebugDialog isOpen={debugOpen} onClose={() => setDebugOpen(false)} />
     </Provider>
   )
 }

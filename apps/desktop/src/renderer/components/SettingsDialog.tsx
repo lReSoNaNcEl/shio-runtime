@@ -495,6 +495,7 @@ export function SettingsDialog({
   const [projectForgetConfirmation, setProjectForgetConfirmation] = useState(false)
   const [lang, setLang] = useState('ru')
   const [uiLocale, setUiLocale] = useState<UiLocale>('ru')
+  const [developerModeEnabled, setDeveloperModeEnabled] = useState(false)
   const [vrmName, setVrmName] = useState('')
   const [mics, setMics] = useState<Array<{ deviceId: string; label: string }>>([])
   const [micId, setMicId] = useState('default')
@@ -579,6 +580,7 @@ export function SettingsDialog({
       setProjectForgetConfirmation(false)
       setLang(cfg.ttsLanguage ?? 'ru')
       setUiLocale(cfg.uiLocale)
+      setDeveloperModeEnabled(cfg.developerModeEnabled === 'true')
       setCurrentTtsVoice(cfg.ttsVoice ?? 'animevox_makima')
       setReplyCooldownMs(
         parseTunedNumber(cfg.continuousListeningReplyCooldownMs, 15_000, 0, 120_000),
@@ -824,6 +826,7 @@ export function SettingsDialog({
       ttsVoice: currentTtsVoice,
       ttsLanguage: lang,
       uiLocale,
+      developerModeEnabled: developerModeEnabled ? 'true' : 'false',
       ttsEngine: 'f5',
       continuousListeningReplyCooldownMs: String(replyCooldownMs),
       continuousListeningFollowUpWindowMs: String(followUpWindowMs),
@@ -868,6 +871,7 @@ export function SettingsDialog({
     speechUrl,
     lang,
     uiLocale,
+    developerModeEnabled,
     currentTtsVoice,
     replyCooldownMs,
     followUpWindowMs,
@@ -962,6 +966,12 @@ export function SettingsDialog({
                 <PickerItem id="ru">{t('settings.language.ru')}</PickerItem>
                 <PickerItem id="en">{t('settings.language.en')}</PickerItem>
               </Picker>
+              <div className="settings-switch-with-description">
+                <Switch isSelected={developerModeEnabled} onChange={setDeveloperModeEnabled}>
+                  {t('settings.developerMode.title')}
+                </Switch>
+                <span className="settings-hint">{t('settings.developerMode.description')}</span>
+              </div>
             </div>
           ) : activeSection === 'project' ? (
             <div className="settings-grid">

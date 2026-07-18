@@ -40,6 +40,7 @@ export interface AppConfig {
   overlayScale: string
   overlayViewMode: string
   overlayShowCurrentAnimation: string
+  developerModeEnabled: string
   passiveCompanionEnabled: string
   lookAtEnabled: string
   continuousListeningEnabled: string
@@ -69,6 +70,7 @@ const stringDefaults: Record<StringConfigKey, string> = {
   overlayScale: process.env.OVERLAY_SCALE ?? '1',
   overlayViewMode: 'front',
   overlayShowCurrentAnimation: 'false',
+  developerModeEnabled: 'false',
   passiveCompanionEnabled: process.env.PASSIVE_COMPANION_ENABLED ?? 'false',
   lookAtEnabled: 'true',
   continuousListeningEnabled: 'false',
@@ -118,6 +120,10 @@ function pickKnownStrings(
     if (typeof value === 'string') result[key] = value
   }
   return result
+}
+
+function normalizeDeveloperMode(value: unknown): string {
+  return value === 'true' ? 'true' : 'false'
 }
 
 /**
@@ -204,6 +210,7 @@ export function loadConfig(): AppConfig {
       _config = {
         ...freshDefaults(),
         ...known,
+        developerModeEnabled: normalizeDeveloperMode(known.developerModeEnabled),
         llm,
         projectAwareness,
         uiLocale: normalizeUiLocale(saved.uiLocale),
@@ -246,6 +253,10 @@ export function saveConfig(
   _config = {
     ..._config,
     ...partial,
+    developerModeEnabled:
+      partial.developerModeEnabled === undefined
+        ? _config.developerModeEnabled
+        : normalizeDeveloperMode(partial.developerModeEnabled),
     uiLocale:
       partial.uiLocale === undefined
         ? _config.uiLocale

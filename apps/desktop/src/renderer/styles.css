@@ -756,151 +756,235 @@ body.overlay-window.overlay-solid-background #canvas {
   opacity: 0.7;
 }
 
-.debug-tabs {
+.diagnostics-view {
+  display: grid;
+  gap: 16px;
+  width: min(100%, 1120px);
+  margin: 0 auto;
+}
+
+.diagnostics-tabs {
   display: inline-grid;
-  grid-template-columns: repeat(3, minmax(100px, 1fr));
-  gap: 2px;
-  width: min(100%, 560px);
-  margin-bottom: 16px;
+  grid-template-columns: repeat(2, minmax(140px, 1fr));
+  width: min(100%, 420px);
   padding: 4px;
   border: 1px solid rgba(139, 92, 246, 0.34);
   border-radius: 10px;
   background: rgba(10, 10, 18, 0.46);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.025);
 }
 
-.debug-panel {
-  display: grid;
-  gap: 16px;
-  max-height: 66vh;
-  overflow: auto;
-  padding-right: 4px;
-}
-
-.debug-panel.debug-tab-overview > .debug-tab-panel,
-.debug-panel.debug-tab-eventBus > .debug-section:not(.debug-tab-eventBus-panel),
-.debug-panel.debug-tab-timeline > .debug-section:not(.debug-tab-timeline-panel) {
-  display: none;
-}
-
-.debug-section {
-  display: grid;
-  gap: 10px;
-}
-
-.debug-section-title {
+.diagnostics-tabs button,
+.diagnostics-snapshot-heading {
+  min-height: 36px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
   color: var(--text-dim);
-  font-size: 0.84rem;
-  font-weight: 700;
-  letter-spacing: 0;
+  cursor: pointer;
+  font: inherit;
 }
 
-.debug-stat-grid,
-.debug-controller-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
+.diagnostics-tabs button.active {
+  background: rgba(139, 92, 246, 0.28);
+  color: var(--text);
 }
 
-.debug-stat {
+.diagnostics-events,
+.diagnostics-snapshot {
   display: grid;
-  gap: 4px;
+  gap: 12px;
   min-width: 0;
-  padding: 8px 10px;
-  border: 1px solid color-mix(in srgb, var(--purple-2) 42%, transparent);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--panel-2) 82%, black);
 }
 
-.debug-stat span {
+.diagnostics-toolbar {
+  position: sticky;
+  z-index: 2;
+  top: -24px;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid rgba(139, 92, 246, 0.22);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--bg) 94%, var(--accent));
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+}
+
+.diagnostics-toolbar-filters,
+.diagnostics-toolbar-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+}
+
+.diagnostics-toolbar-filters {
+  flex: 1 1 520px;
+}
+
+.diagnostics-toolbar-actions {
+  flex: 0 0 auto;
+}
+
+.diagnostics-search {
+  flex: 1 1 320px;
+  min-width: 180px;
+}
+
+.diagnostics-domain-trigger {
+  flex: 0 0 168px;
+  width: 168px;
+  min-width: 168px;
+  max-width: 168px;
+}
+
+.diagnostics-domain-trigger [data-slot="text"] {
   overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.diagnostics-toolbar-action {
+  min-width: max-content;
+}
+
+.diagnostics-toolbar-action-active {
+  color: #ddd6fe;
+  background: rgba(139, 92, 246, 0.22);
+  box-shadow: inset 0 0 0 1px rgba(167, 139, 250, 0.42);
+}
+
+.diagnostics-event-table {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.16);
+}
+
+.diagnostics-event-header,
+.diagnostics-event-row {
+  display: grid;
+  grid-template-columns: 82px minmax(90px, 0.55fr) minmax(180px, 1fr) minmax(180px, 1.4fr);
+  gap: 10px;
+  align-items: center;
+  min-width: 0;
+  padding: 8px 12px;
+}
+
+.diagnostics-event-header {
   color: var(--text-dim);
   font-size: 0.72rem;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  font-weight: 700;
+  text-transform: uppercase;
 }
 
-.debug-stat strong {
-  overflow: hidden;
+.diagnostics-event {
+  min-width: 0;
+  border-top: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.diagnostics-event-row {
+  width: 100%;
+  border: 0;
+  background: transparent;
   color: var(--text);
-  font-size: 0.86rem;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.diagnostics-event-row:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.diagnostics-event-row span,
+.diagnostics-event-row strong {
+  overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.debug-json {
-  max-height: 260px;
+.diagnostics-event-row span {
+  color: var(--text-dim);
+  font-size: 0.78rem;
+}
+
+.diagnostics-event-row strong {
+  font-size: 0.82rem;
+}
+
+.diagnostics-json {
+  max-width: 100%;
   margin: 0;
-  overflow: auto;
-  padding: 10px;
-  border: 1px solid color-mix(in srgb, var(--purple-2) 42%, transparent);
-  border-radius: 8px;
+  overflow-x: auto;
+  padding: 12px;
+  border-top: 1px solid rgba(148, 163, 184, 0.12);
   background: color-mix(in srgb, var(--panel-2) 82%, black);
   color: var(--text);
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.78rem;
   line-height: 1.45;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
 }
 
-.debug-weight-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.debug-weight-row span {
-  min-width: 86px;
-  padding: 8px 10px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.08);
-  color: var(--text);
-  font-size: 0.82rem;
-  font-weight: 700;
+.diagnostics-empty {
+  margin: 0;
+  padding: 32px;
+  color: var(--text-dim);
   text-align: center;
 }
 
-.debug-timeline {
-  display: grid;
-  gap: 6px;
-  max-height: 190px;
-  overflow: auto;
-  padding: 4px;
-  border: 1px solid color-mix(in srgb, var(--purple-2) 36%, transparent);
-  border-radius: 8px;
+.diagnostics-snapshot-section {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 10px;
   background: rgba(0, 0, 0, 0.16);
 }
 
-.debug-timeline-item {
-  display: grid;
-  grid-template-columns: 74px minmax(120px, 1fr) minmax(0, 1.2fr);
-  gap: 8px;
+.diagnostics-snapshot-heading {
+  display: flex;
   align-items: center;
-  min-height: 28px;
-  padding: 5px 8px;
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.04);
+  justify-content: space-between;
+  width: 100%;
+  padding: 10px 12px;
+  color: var(--text);
+  text-align: left;
 }
 
-.debug-timeline-time,
-.debug-timeline-detail,
-.debug-empty {
+.diagnostics-snapshot-heading span {
   color: var(--text-dim);
   font-size: 0.76rem;
 }
 
-.debug-timeline-label {
-  overflow: hidden;
-  color: var(--text);
-  font-size: 0.8rem;
-  font-weight: 700;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.diagnostics-snapshot-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  padding: 0 12px 12px;
 }
 
-.debug-timeline-detail {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.diagnostics-snapshot-field {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  align-content: start;
+  padding: 10px;
+  border: 1px solid rgba(139, 92, 246, 0.22);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--panel-2) 82%, black);
+}
+
+.diagnostics-snapshot-field > span:first-child {
+  color: var(--text-dim);
+  font-size: 0.72rem;
+}
+
+.diagnostics-snapshot-field > span:last-child {
+  overflow-wrap: anywhere;
 }
 .attention-mode-help {
   display: grid;
@@ -1464,8 +1548,7 @@ body.overlay-window.overlay-solid-background #canvas {
 }
 .empty-state,
 .streamer-view,
-.health-view,
-.debug-view {
+.health-view {
   display: grid;
   gap: 16px;
   max-width: 840px;
@@ -1475,6 +1558,43 @@ body.overlay-window.overlay-solid-background #canvas {
   border-radius: 12px;
   background: rgba(255, 255, 255, 0.025);
   align-content: center;
+}
+
+.settings-switch-with-description {
+  display: grid;
+  gap: 4px;
+}
+
+@media (max-width: 760px) {
+  .diagnostics-toolbar {
+    top: -16px;
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .diagnostics-toolbar-filters,
+  .diagnostics-toolbar-actions {
+    flex: 1 1 auto;
+    width: 100%;
+  }
+
+  .diagnostics-domain-trigger,
+  .diagnostics-toolbar-action {
+    flex: 1 1 auto;
+  }
+
+  .diagnostics-event-table {
+    overflow-x: auto;
+  }
+
+  .diagnostics-event-header,
+  .diagnostics-event-row {
+    min-width: 720px;
+  }
+
+  .diagnostics-snapshot-fields {
+    grid-template-columns: 1fr;
+  }
 }
 .empty-state h2,
 .streamer-view h2 {

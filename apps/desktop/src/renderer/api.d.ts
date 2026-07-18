@@ -32,6 +32,7 @@ export interface PersistedSettings {
   overlayScale: string
   overlayViewMode: string
   overlayShowCurrentAnimation: string
+  developerModeEnabled: string
   // Persisted but not returned by config:get; kept optional so callers that
   // save it (Controller) type-check without forcing it into the get payload.
   passiveCompanionEnabled?: string

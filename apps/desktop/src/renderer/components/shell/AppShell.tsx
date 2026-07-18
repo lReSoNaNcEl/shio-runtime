@@ -16,12 +16,14 @@ export function AppShell({
   section,
   onSectionChange,
   health,
+  developerModeEnabled,
   children,
   headerAction,
 }: {
   section: AppSection
   onSectionChange: (section: AppSection) => void
   health: { state: HealthState; text: string }
+  developerModeEnabled: boolean
   children: ReactNode
   headerAction?: ReactNode
 }): React.JSX.Element {
@@ -32,7 +34,9 @@ export function AppShell({
     { id: 'health', label: t('app.nav.health'), icon: <Heart /> },
   ]
   const utility: Array<{ id: AppSection; label: string; icon: ReactNode }> = [
-    { id: 'debug', label: t('app.nav.debug'), icon: <Bug /> },
+    ...(developerModeEnabled
+      ? [{ id: 'debug' as const, label: t('app.nav.diagnostics'), icon: <Bug /> }]
+      : []),
     { id: 'settings', label: t('app.nav.settings'), icon: <Settings /> },
   ]
   const renderItems = (items: typeof primary): React.JSX.Element[] =>

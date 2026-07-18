@@ -55,6 +55,7 @@ export interface AppSettings {
   overlayScale: string
   overlayViewMode: string
   overlayShowCurrentAnimation: string
+  developerModeEnabled: string
   passiveCompanionEnabled?: string
   lookAtEnabled: string
   continuousListeningEnabled: string
@@ -587,6 +588,7 @@ export function registerIpcHandlers(
       overlayScale: cfg.overlayScale,
       overlayViewMode: cfg.overlayViewMode,
       overlayShowCurrentAnimation: cfg.overlayShowCurrentAnimation,
+      developerModeEnabled: cfg.developerModeEnabled,
       passiveCompanionEnabled: cfg.passiveCompanionEnabled,
       lookAtEnabled: cfg.lookAtEnabled,
       continuousListeningEnabled: cfg.continuousListeningEnabled,
