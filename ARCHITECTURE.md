@@ -471,7 +471,7 @@ Decision Pipeline owns the transition from a recognized utterance to an admissio
 - **Utterance Assembly:** accepts partial recognition snapshots, assembles a completed utterance, never invokes the Character LLM on a partial snapshot, yields exactly one completed semantic input per speech segment, and guards against duplicate final or completion events.
 - **Attention Evaluation:** evaluates relevance, directness, and context, optionally depending on a configured attention mode. It never generates a response, never triggers an external effect, and never bypasses Conversation Admission.
 - **Rule Evaluation:** applies deterministic rules to accept or reject an utterance. It may consult an external classifier only in explicitly allowed ambiguous cases, and it never invokes Conversation Runtime directly.
-- **Backlog Selection:** while the current response flow is busy, accumulates candidates into the Bounded Utterance Backlog — storing, deduplicating, expiring, and updating them — without selecting among them. Only after the current flow reaches terminal completion does selection choose, under Conversation Admission ownership, at most one next candidate. A barge-in speech-onset decision may cancel the active response, but it does not select or start a successor; the completed final transcript still returns through Conversation Admission after the interrupted flow settles. See [Chapter 14 - Conversation Admission](#14-conversation-admission).
+- **Backlog Selection:** while the current response flow is busy, accumulates candidates into the Bounded Utterance Backlog — storing, deduplicating, expiring, and updating them — without selecting among them. Only after the current flow reaches terminal completion does selection choose, under Conversation Admission ownership, at most one next candidate. Selection does not run in the middle of an active flow unless a future barge-in capability explicitly allows it. See [Chapter 14 - Conversation Admission](#14-conversation-admission).
 - **Optional Arbitration Adapter:** an optional, replaceable semantic classifier consulted only when deterministic selection cannot produce a sufficiently clear result. See [Chapter 14 - Conversation Admission](#14-conversation-admission).
 
 The outcome of Decision Pipeline is always an admission decision, never a direct invocation of Conversation Runtime. See [Chapter 14 - Conversation Admission](#14-conversation-admission).
@@ -557,7 +557,7 @@ Continuous input may capture the character's own speech output. Decision Pipelin
 
 **Future Evolution**
 
-The optional arbitration contract described above — the adapter boundary, structured decision, role isolation, deterministic fallback, and stale-result rejection — is part of the current architecture. More capable semantic arbitration strategies, such as richer semantic ranking, advanced merge quality, or speaker-aware arbitration, remain future evolution.
+The optional arbitration contract described above — the adapter boundary, structured decision, role isolation, deterministic fallback, and stale-result rejection — is part of the current architecture. More capable semantic arbitration strategies, such as richer semantic ranking, advanced merge quality, or speaker-aware arbitration, remain future evolution. Barge-in and interruptible speech output are also described in [Chapter 24 - Future Evolution](#24-future-evolution) as planned capabilities, not current guarantees.
 
 ## Part IV - Runtime Systems
 
@@ -655,9 +655,9 @@ Conversation Runtime may publish lifecycle events such as conversation started, 
 - a presentation or overlay failure cannot fail the conversation flow
 - Character Response Generation remains replaceable without changing Conversation Runtime's ownership boundary
 
-**Voice Barge-In**
+**Future Evolution**
 
-During continuous capture, a sustained user speech onset may interrupt an active synthesizing or playing response through Conversation Runtime's existing interruption contract. Speech onset is only a cancellation signal: it never becomes a turn and never bypasses Conversation Admission. The final transcript is marked as the barge-in utterance, receives high admission priority, and may execute only after the interrupted flow reaches its terminal result. Single-Flight therefore remains unchanged: cancellation settles the old execution before Conversation Admission starts the successor.
+True barge-in may later allow a higher-priority admitted turn to interrupt an in-progress Conversation Runtime flow under explicit arbitration; until then, the Single-Flight invariant applies without exception. See [Chapter 24 - Future Evolution](#24-future-evolution).
 
 ### 16. Speech Runtime
 
@@ -765,7 +765,7 @@ Speech Runtime contributes to Runtime Mode, Speech State, Activity, and Attentio
 
 **Future Evolution**
 
-Potential improvements include multilingual recognition, multiple simultaneous microphones, streaming translation, emotion-aware speech generation, passive listening mode, contextual interruption recovery, speaker-aware input, and native streaming recognition adapters. The responsibility remains communication only. See [Chapter 24 - Future Evolution](#24-future-evolution).
+Potential improvements include multilingual recognition, multiple simultaneous microphones, streaming translation, emotion-aware speech generation, passive listening mode, contextual interruption recovery, true barge-in, speaker-aware input, and native streaming recognition adapters. The responsibility remains communication only. See [Chapter 24 - Future Evolution](#24-future-evolution).
 
 ### 17. Experience Layer
 
@@ -1295,6 +1295,7 @@ Future character improvements may include richer emotional continuity, deeper re
 
 Planned capabilities for continuous input and admission, not current guarantees:
 
+- **True barge-in and interruptible speech output.** Barge-in may later allow selected user input to interrupt active speech output. Until then, backlog selection occurs only after the current response flow completes, in accordance with the Single-Flight invariant.
 - **Speaker-aware input.** Distinguishing between speakers may refine self-echo rejection and attention evaluation without changing the Conversation Admission boundary.
 - **Semantic backlog arbitration.** A more capable Optional Semantic Arbitration Adapter may improve selection quality; it remains optional and degrades to deterministic selection on failure.
 - **Native streaming recognition adapters.** Recognition engines may be replaced by native streaming implementations without changing the speech event contract.

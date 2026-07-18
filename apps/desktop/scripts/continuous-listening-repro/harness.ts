@@ -16,6 +16,10 @@ import type {
 } from '../../src/renderer/continuousListening/types'
 import { UtteranceBacklog } from '../../src/renderer/continuousListening/UtteranceBacklog'
 import { UtteranceChunkBuilder } from '../../src/renderer/continuousListening/UtteranceChunkBuilder'
+import {
+  ConversationRuntime,
+  type ConversationRuntimeDeps,
+} from '../../src/renderer/runtime/ConversationRuntime'
 import { HeadMotionRuntime } from '../../src/renderer/three/HeadMotionRuntime'
 
 let now = Date.now()
@@ -147,8 +151,127 @@ async function main(): Promise<void> {
     )
   }
   assert.ok(textSimilarity('сегодня хорошая погода', 'Да, сегодня хорошая погода в Москве') >= 0.68)
+  assert.ok(
+    textSimilarity(
+      'я думаю что',
+      'Да, я думаю что этот вариант подойдёт лучше, если учитывать весь длинный ответ целиком',
+    ) >= 0.8,
+  )
   assert.equal(isExplicitBargeInPhrase('Нет, я имел в виду другое'), true)
   assert.equal(isExplicitBargeInPhrase('Шио, подожди'), true)
+
+  // Local interruption must win before adapter cancellation can reject the
+  // active generation operation with AbortError.
+  {
+    let rejectGeneration!: (error: Error) => void
+    const generation = new Promise<never>((_, reject) => {
+      rejectGeneration = reject
+    })
+    const pendingStates: boolean[] = []
+    const errorMessages: string[] = []
+    let interruptedMessages = 0
+    let cancelReplyCalled = false
+    let rejectSynthesis: ((error: Error) => void) | null = null
+    let cancelSynthesisCalls = 0
+    ;(globalThis as unknown as { window: unknown }).window = {
+      api: {
+        llm: {
+          cancelReply: async () => {
+            cancelReplyCalled = true
+            rejectGeneration(new DOMException('Request aborted', 'AbortError'))
+          },
+        },
+        tts: {
+          cancelSynthesis: async () => {
+            cancelSynthesisCalls += 1
+            rejectSynthesis?.(new DOMException('Synthesis aborted', 'AbortError'))
+            rejectSynthesis = null
+          },
+        },
+      },
+    }
+    const runtime = new ConversationRuntime({
+      speechRuntime: {
+        getCharacterState: () => ({}),
+        updateConversationPresence: () => undefined,
+        createAssistantReply: () => generation,
+        createDebugSpeechTurn: () =>
+          new Promise<never>((_, reject) => {
+            rejectSynthesis = reject
+          }),
+      },
+      conversationPresenceRuntime: {
+        update: (patch: object) => patch,
+      },
+      avatarRuntime: {
+        applyCharacterState: () => undefined,
+        interruptLipSync: () => true,
+        triggerUserInterruption: () => true,
+      },
+      overlayRuntime: {
+        publishAvatarState: () => undefined,
+      },
+      events: {
+        publish: () => undefined,
+      },
+      player: {
+        stopCurrent: () => undefined,
+      },
+      setStatus: () => undefined,
+      pushMessage: (role: string, text: string) => {
+        if (role === 'error') errorMessages.push(text)
+      },
+      markAssistantMessageInterrupted: () => {
+        interruptedMessages += 1
+      },
+      setResponseInterruptionPending: (pending: boolean) => pendingStates.push(pending),
+      recordRuntimeEvent: () => undefined,
+      reportSpeechServiceError: () => undefined,
+      updateCharacterState: () => ({}),
+      rememberSpeechMetadata: () => undefined,
+      updateSpeechPlaybackProgress: () => undefined,
+      isContinuousCaptureAlive: () => true,
+    } as unknown as ConversationRuntimeDeps)
+    const execution = runtime.execute(
+      {
+        turnId: 'turn-cancel-race',
+        text: 'long answer',
+        source: 'continuous_listening',
+        createdAt: now,
+        admissionCycleId: 'cycle-cancel-race',
+      },
+      () => undefined,
+    )
+    await flush()
+    const interruption = runtime.interruptCurrentResponse('voice-barge-in')
+    const result = await execution
+    assert.equal(await interruption, true)
+    assert.equal(result.status, 'cancelled')
+    assert.equal(cancelReplyCalled, true)
+    assert.equal(interruptedMessages, 1)
+    assert.deepEqual(pendingStates, [true, false])
+    assert.deepEqual(errorMessages, [])
+
+    const synthesisExecution = runtime.execute(
+      {
+        turnId: 'turn-synthesis-cancel-race',
+        text: 'happy',
+        source: 'debug',
+        createdAt: now,
+        admissionCycleId: 'cycle-synthesis-cancel-race',
+      },
+      () => undefined,
+    )
+    await flush()
+    const synthesisInterruption = runtime.interruptCurrentResponse('voice-barge-in')
+    const synthesisResult = await synthesisExecution
+    assert.equal(await synthesisInterruption, true)
+    assert.equal(synthesisResult.status, 'cancelled')
+    assert.equal(cancelSynthesisCalls, 2)
+    assert.equal(interruptedMessages, 2)
+    assert.deepEqual(pendingStates, [true, false, true, false])
+    assert.deepEqual(errorMessages, [])
+  }
 
   // The semantic head reaction is one-shot and cooldown guarded.
   {

@@ -25,6 +25,18 @@ export type ConversationStatus =
   | 'thinking'
   | 'synthesizing'
   | 'speaking'
+export type ResponseInterruptionReason = 'manual-stop' | 'voice-barge-in'
+
+export class ConversationInterruptedError extends Error {
+  constructor(
+    readonly turnId: string,
+    readonly source: ResponseInterruptionReason,
+  ) {
+    super(`Conversation interrupted turnId=${turnId}`)
+    this.name = 'ConversationInterruptedError'
+  }
+}
+
 type SpeechReply = Awaited<ReturnType<Window['api']['tts']['synthesizeReply']>>
 type SuccessfulSpeechReply = SpeechReply & { ok: true; audioBuffer: ArrayBuffer }
 
@@ -114,7 +126,7 @@ export class ConversationRuntime {
     }
   }
 
-  async interruptCurrentResponse(source: 'manual-stop' | 'voice-barge-in'): Promise<boolean> {
+  async interruptCurrentResponse(source: ResponseInterruptionReason): Promise<boolean> {
     const turnId = this.activeTurnId
     const interruption = this.interruption
     if (!turnId || !interruption || interruption.turnId !== turnId) return false
@@ -122,6 +134,9 @@ export class ConversationRuntime {
     this.activeTurnId = null
     this.activePhase = null
     this.playbackStartedAt = null
+    // Settle the local execution before asking external adapters to cancel.
+    // Adapter AbortErrors can therefore never win the local interruption race.
+    interruption.reject(new ConversationInterruptedError(turnId, source))
     this.deps.player.stopCurrent(turnId, 'conversation-interrupted')
     this.deps.avatarRuntime.interruptLipSync(turnId)
     this.deps.markAssistantMessageInterrupted()
@@ -159,7 +174,6 @@ export class ConversationRuntime {
       window.api.llm.cancelReply(turnId),
       window.api.tts.cancelSynthesis(turnId),
     ])
-    interruption.reject(new Error(`Conversation interrupted turnId=${turnId}`))
     return true
   }
 
@@ -267,7 +281,10 @@ export class ConversationRuntime {
     } catch (error) {
       if (this.playbackTurnId === turn.turnId) this.playbackTurnId = null
       const message = error instanceof Error ? error.message : String(error)
-      if (message.includes(`Conversation interrupted turnId=${turn.turnId}`)) {
+      if (
+        (error instanceof ConversationInterruptedError && error.turnId === turn.turnId) ||
+        !this.isCurrentTurn(turn.turnId)
+      ) {
         return { status: 'cancelled', turnId: turn.turnId }
       }
       // Speech output (TTS) is a secondary capability. If synthesis fails because
@@ -368,7 +385,10 @@ export class ConversationRuntime {
     } catch (error) {
       if (this.playbackTurnId === turn.turnId) this.playbackTurnId = null
       const message = error instanceof Error ? error.message : String(error)
-      if (message.includes(`Conversation interrupted turnId=${turn.turnId}`)) {
+      if (
+        (error instanceof ConversationInterruptedError && error.turnId === turn.turnId) ||
+        !this.isCurrentTurn(turn.turnId)
+      ) {
         return { status: 'cancelled', turnId: turn.turnId }
       }
       await this.recoverToIdle(turn.turnId)

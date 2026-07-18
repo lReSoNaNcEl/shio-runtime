@@ -1,6 +1,6 @@
 import { bargeInTuning } from './tuning'
 
-export type BargeInResponsePhase = 'generating' | 'synthesizing' | 'playing' | 'cleaning_up'
+export type BargeInResponsePhase = 'synthesizing' | 'playing'
 
 export interface BargeInObservation {
   now: number
