@@ -85,7 +85,7 @@ installed only in `apps/desktop`); the Python API uses Ruff; TypeScript types us
 `tsc`. Do not add Biome to `services/api`, and do not run Biome over Python.
 
 - Before committing Desktop changes → `npm run desktop:check`, the desktop build,
-  typecheck, and applicable repro / smoke tests.
+  typecheck, and applicable repro tests.
 - Before committing API changes → `npm run api:lint`, `npm run api:test`, plus the
   applicable endpoint checks.
 - Before committing cross-boundary changes → validate both applications and run an
@@ -94,11 +94,18 @@ installed only in `apps/desktop`); the Python API uses Ruff; TypeScript types us
 If a check run for the current work cannot be completed, say so explicitly in the
 final report. A commit must not be created if its required validation has not passed.
 
+Do not launch the application or run a live smoke test unless the user explicitly
+requests live validation for the current Work Item. Static checks, builds, typechecks,
+and focused automated repro tests remain required where applicable. When live validation
+was not requested, state this directly in the final report; its absence does not block
+a commit.
+
 ## 8. Do not hide errors
 
 If something was not checked, say it directly (e.g. "Не проверял live. Проверил только
 build.", "Не смог воспроизвести."). Do not pretend a problem is solved only because
-compilation passed. Confirm fixes in the live runtime when the bug is runtime-visible.
+compilation passed. Confirm fixes in the live runtime when the bug is runtime-visible
+and the user explicitly requested live validation.
 
 ## 9. RCA for bug fixes
 
@@ -169,8 +176,8 @@ Root Cause (если был баг)
 Known mistakes and risks — do not repeat them.
 
 - Always reread `ARCHITECTURE.md` before architecture changes.
-- After refactoring, do not stop at a passing build; run the required live smoke
-  test when runtime behavior is involved.
+- When the user explicitly requests live validation after refactoring, do not stop at
+  a passing build; run the required live smoke test when runtime behavior is involved.
 - Do not move helper methods without checking all call sites.
 - Do not change architecture and behavior in the same Work Item.
 - When fixing bugs, collect evidence first.
