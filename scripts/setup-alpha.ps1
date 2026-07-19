@@ -72,4 +72,5 @@ finally {
 Write-Host ""
 Write-Host "Alpha setup complete."
 Write-Host "Start API:     npm run api:dev"
-Write-Host "Start Desktop: extract Shio-Runtime-0.1.0-alpha.1-win-x64.zip and run Shio Runtime.exe"
+$manifest = Get-Content -Raw -Encoding UTF8 (Join-Path $repoRoot "launcher\release-manifest.json") | ConvertFrom-Json
+Write-Host "Start Desktop: extract Shio-Runtime-$($manifest.productVersion)-win-x64.zip and run Shio Runtime.exe"

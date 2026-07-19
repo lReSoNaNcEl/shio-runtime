@@ -1,4 +1,4 @@
-SHIO RUNTIME 0.1.0-alpha.1 — READ FIRST
+SHIO RUNTIME 0.1.0-alpha.2 — READ FIRST
 
 Requirements: Windows 11 x64, NVIDIA GPU/driver, Python 3.12 x64, internet access.
 This is an unsigned technical alpha.

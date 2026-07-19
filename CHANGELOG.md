@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.1.0-alpha.2] - 2026-07-19
+
+### Fixed
+
+- Fixed the Windows launcher incorrectly reporting that Python 3.12 x64 was missing when it was already installed.
+
+### Changed
+
+- Python discovery now checks the Python launcher, standard per-user and system installation directories, and `PATH`.
+- Launcher validation now executes the same Windows PowerShell-compatible Python architecture probe used by the release.
+
 ## [0.1.0-alpha.1] - 2026-07-19
 
 ### Added

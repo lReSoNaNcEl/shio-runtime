@@ -67,14 +67,20 @@ function Assert-Platform {
 }
 
 function Find-Python312 {
+    $probe = "import sys, struct; print(str(sys.version_info.major) + '.' + str(sys.version_info.minor) + ':' + str(struct.calcsize('P') * 8))"
     $candidates = @(
         @{ File = "py.exe"; Args = @("-3.12") },
+        @{ File = (Join-Path $env:LOCALAPPDATA "Programs\Python\Python312\python.exe"); Args = @() },
+        @{ File = (Join-Path $env:ProgramFiles "Python312\python.exe"); Args = @() },
         @{ File = "python.exe"; Args = @() }
     )
     foreach ($candidate in $candidates) {
         try {
-            $version = & $candidate.File @($candidate.Args) -c "import sys,struct; print(f'{sys.version_info.major}.{sys.version_info.minor}:{struct.calcsize(""P"")*8}')" 2>$null
-            if ($LASTEXITCODE -eq 0 -and $version.Trim() -eq "3.12:64") { return $candidate }
+            $version = & $candidate.File @($candidate.Args) -c $probe 2>$null
+            if ($LASTEXITCODE -eq 0 -and ([string]$version).Trim() -eq "3.12:64") {
+                Write-LauncherLog "Using Python 3.12 x64: $($candidate.File)"
+                return $candidate
+            }
         } catch { }
     }
     Fail "Python 3.12 x64 was not found. Install it from python.org and retry."

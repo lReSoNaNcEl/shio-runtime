@@ -24,8 +24,9 @@ Download the Actions artifact and qualify that artifact—not a local build—on
 After successful qualification and explicit release approval:
 
 ```powershell
-git tag -a v0.1.0-alpha.1 -m "Shio Runtime v0.1.0-alpha.1"
-git push origin v0.1.0-alpha.1
+$version = "0.1.0-alpha.2"
+git tag -a "v$version" -m "Shio Runtime v$version"
+git push origin "v$version"
 ```
 
 The tag workflow checks every version source, then creates or updates a GitHub prerelease and replaces its ZIP/checksum assets safely.
