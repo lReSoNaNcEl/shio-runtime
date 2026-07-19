@@ -29,15 +29,15 @@ export class ControllerStore {
     this.patch({ messages: [...this.state.messages, message] })
   }
 
+  replaceMessages(messages: ChatMsg[]): void {
+    this.patch({ messages })
+  }
+
   markLatestAssistantInterrupted(): void {
     const messages = [...this.state.messages]
     const index = messages.findLastIndex((message) => message.role === 'assistant')
     if (index < 0) return
     messages[index] = { ...messages[index], interrupted: true }
     this.patch({ messages })
-  }
-
-  clearMessages(): void {
-    this.patch({ messages: [] })
   }
 }

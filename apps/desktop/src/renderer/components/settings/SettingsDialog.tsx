@@ -1,13 +1,4 @@
-import {
-  Button,
-  ButtonGroup,
-  Content,
-  Divider,
-  Heading,
-  ProgressCircle,
-  StatusLight,
-} from '@react-spectrum/s2'
-import { useState } from 'react'
+import { Content, Divider, Heading, ProgressCircle, StatusLight } from '@react-spectrum/s2'
 
 import { useTranslation } from '../../localization/useTranslation'
 import { SettingsNavigation } from './SettingsNavigation'
@@ -34,7 +25,6 @@ export function SettingsDialog({
   onToggleOverlay,
 }: SettingsDialogProps) {
   const { t } = useTranslation()
-  const [confirmClearHistory, setConfirmClearHistory] = useState(false)
   const viewModel = useSettingsDialogState({
     isOpen,
     initialSection,
@@ -110,43 +100,7 @@ export function SettingsDialog({
         )}
         <Divider />
         <Content key={viewModel.activeSection}>{section}</Content>
-        {viewModel.activeSection === 'advanced' && (
-          <section className="danger-zone">
-            <h3>{t('settings.danger.title')}</h3>
-            <p>{t('settings.danger.description')}</p>
-            <Button variant="negative" onPress={() => setConfirmClearHistory(true)}>
-              {t('settings.danger.clear')}
-            </Button>
-          </section>
-        )}
       </div>
-      {confirmClearHistory && (
-        <div
-          className="danger-confirm"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="clear-history-title"
-        >
-          <div>
-            <h2 id="clear-history-title">{t('settings.danger.confirmTitle')}</h2>
-            <p>{t('settings.danger.confirmDescription')}</p>
-            <ButtonGroup>
-              <Button variant="secondary" autoFocus onPress={() => setConfirmClearHistory(false)}>
-                {t('common.cancel')}
-              </Button>
-              <Button
-                variant="negative"
-                onPress={() => {
-                  void viewModel.advanced.actions.clearHistory()
-                  setConfirmClearHistory(false)
-                }}
-              >
-                {t('settings.danger.clear')}
-              </Button>
-            </ButtonGroup>
-          </div>
-        </div>
-      )}
     </section>
   )
 }

@@ -95,6 +95,12 @@ export const ruMessages = {
   'chat.quick.joke': 'Расскажи шутку',
   'chat.quick.capabilities': 'Что ты умеешь?',
   'chat.interrupted': 'Остановлено',
+  'chat.newConversation.action': 'Новый диалог',
+  'chat.newConversation.title': 'Начать новый диалог?',
+  'chat.newConversation.description':
+    'Текущая переписка и контекст разговора будут очищены.\nНастройки и знания о проекте сохранятся.',
+  'chat.newConversation.confirm': 'Новый диалог',
+  'chat.newConversation.error': 'Не удалось начать новый диалог. Попробуйте ещё раз.',
   'chat.status.error': 'Ошибка',
   'chat.status.listening': 'Слушаю',
   'chat.status.thinking': 'Думаю',
@@ -427,13 +433,6 @@ export const ruMessages = {
   'settings.avatar.transparentDescription': 'Фон окна оверлея остаётся невидимым.',
   'settings.avatar.reset': 'Сбросить настройки оверлея',
 
-  'settings.danger.title': 'Опасная зона',
-  'settings.danger.description': 'Удаление истории нельзя отменить.',
-  'settings.danger.clear': 'Очистить историю',
-  'settings.danger.confirmTitle': 'Очистить историю диалогов?',
-  'settings.danger.confirmDescription':
-    'Это действие удалит сохранённую историю и не может быть отменено.',
-
   'avatarPreview.notConfigured.title': 'Аватар ещё не настроен',
   'avatarPreview.notConfigured.description': 'Выберите модель, чтобы открыть Avatar Preview.',
   'avatarPreview.openSettings': 'Открыть настройки Avatar',
@@ -497,7 +496,6 @@ export const ruMessages = {
   'controller.microphoneAccessFailed': 'Не удалось получить доступ к микрофону.',
   'controller.fileReadFailed': 'Не удалось прочитать файл',
   'controller.vrmLoadFailed': 'Не удалось загрузить VRM: {error}',
-  'controller.historyCleared': 'История очищена. Приветствую снова, путник.',
   'controller.llm.checking': 'Проверяем доступность модели',
   'controller.llm.providerMissing': 'Провайдер не выбран',
   'controller.llm.providerAvailable': 'Провайдер доступен',

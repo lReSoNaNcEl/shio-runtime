@@ -4,7 +4,9 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { controller } from '../Controller'
 import { useControllerState } from '../hooks/useControllerState'
 import { useTranslation } from '../localization/useTranslation'
-import { ChatOverlay } from './chat/ChatOverlay'
+import { ChatOverlay, type ChatOverlayHandle } from './chat/ChatOverlay'
+import { NewConversationButton } from './chat/NewConversationButton'
+import { NewConversationDialog } from './chat/NewConversationDialog'
 import { OverlayCameraControl } from './controls/OverlayCameraControl'
 import { StreamingModeControl } from './controls/StreamingModeControl'
 import { MicrophoneGateOverlay } from './overlays/MicrophoneGateOverlay'
@@ -22,6 +24,10 @@ export function App() {
   const [settingsInitialSection, setSettingsInitialSection] = useState<'general' | 'llm'>('general')
   const [developerModeEnabled, setDeveloperModeEnabled] = useState(false)
   const [speechToast, setSpeechToast] = useState<string | null>(null)
+  const [newConversationDialogOpen, setNewConversationDialogOpen] = useState(false)
+  const [newConversationPending, setNewConversationPending] = useState(false)
+  const [newConversationError, setNewConversationError] = useState<string | null>(null)
+  const chatOverlayRef = useRef<ChatOverlayHandle>(null)
   const prevSpeechService = useRef(state.speechCapabilities.service)
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -86,6 +92,38 @@ export function App() {
     settings: { title: t('app.nav.settings'), subtitle: t('app.section.settings.subtitle') },
   }
   const copy = sectionCopy[section]
+  const activeResponse = ['thinking', 'synthesizing', 'speaking'].includes(state.status)
+  const newConversationDisabled =
+    state.status === 'listening' ||
+    state.status === 'recognizing' ||
+    state.microphoneGate.status !== 'closed' ||
+    newConversationPending
+
+  const startNewConversation = async (): Promise<void> => {
+    if (newConversationPending) return
+    setNewConversationPending(true)
+    setNewConversationError(null)
+    try {
+      const chatOverlay = chatOverlayRef.current
+      if (!chatOverlay) throw new Error('Chat overlay is unavailable')
+      await chatOverlay.startNewConversation()
+      setNewConversationDialogOpen(false)
+    } catch {
+      setNewConversationError(t('chat.newConversation.error'))
+      setNewConversationDialogOpen(true)
+    } finally {
+      setNewConversationPending(false)
+    }
+  }
+
+  const requestNewConversation = (): void => {
+    if (state.messages.length > 0 || activeResponse) {
+      setNewConversationError(null)
+      setNewConversationDialogOpen(true)
+      return
+    }
+    void startNewConversation()
+  }
 
   if (isOverlay)
     return (
@@ -110,6 +148,10 @@ export function App() {
         headerAction={
           section === 'chat' ? (
             <div className="chat-header-controls">
+              <NewConversationButton
+                isDisabled={newConversationDisabled}
+                onPress={requestNewConversation}
+              />
               <StreamingModeControl
                 mode={state.continuousListeningMode}
                 listeningState={state.continuousListeningState}
@@ -132,6 +174,7 @@ export function App() {
         {section === 'chat' && (
           <>
             <ChatOverlay
+              ref={chatOverlayRef}
               state={state}
               gateOpen={state.microphoneGate.status !== 'closed'}
               onOpenHealth={() => setSection('health')}
@@ -191,6 +234,17 @@ export function App() {
           {speechToast}
         </div>
       )}
+      <NewConversationDialog
+        isOpen={newConversationDialogOpen}
+        isPending={newConversationPending}
+        error={newConversationError}
+        onConfirm={() => void startNewConversation()}
+        onDismiss={() => {
+          if (newConversationPending) return
+          setNewConversationDialogOpen(false)
+          setNewConversationError(null)
+        }}
+      />
     </Provider>
   )
 }

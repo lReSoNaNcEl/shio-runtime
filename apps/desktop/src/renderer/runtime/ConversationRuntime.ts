@@ -29,7 +29,7 @@ export type ConversationStatus =
   | 'thinking'
   | 'synthesizing'
   | 'speaking'
-export type ResponseInterruptionReason = 'manual-stop' | 'voice-barge-in'
+export type ResponseInterruptionReason = 'manual-stop' | 'voice-barge-in' | 'new-conversation'
 
 export class ConversationInterruptedError extends Error {
   constructor(

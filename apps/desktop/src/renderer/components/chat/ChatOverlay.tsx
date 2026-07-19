@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react'
 
 import { type ControllerState, controller } from '../../Controller'
 import { useTranslation } from '../../localization/useTranslation'
@@ -18,7 +18,14 @@ interface Props {
   onOpenLlmSettings?: () => void
 }
 
-export function ChatOverlay({ state, gateOpen = false, onOpenHealth, onOpenLlmSettings }: Props) {
+export interface ChatOverlayHandle {
+  startNewConversation(): Promise<void>
+}
+
+export const ChatOverlay = forwardRef<ChatOverlayHandle, Props>(function ChatOverlay(
+  { state, gateOpen = false, onOpenHealth, onOpenLlmSettings },
+  ref,
+) {
   const { locale, t } = useTranslation()
   const [text, setText] = useState('')
   const [interrupting, setInterrupting] = useState(false)
@@ -47,6 +54,15 @@ export function ChatOverlay({ state, gateOpen = false, onOpenHealth, onOpenLlmSe
   useEffect(() => {
     if (!state.responseInterruptionPending && !canInterrupt) setInterrupting(false)
   }, [canInterrupt, state.responseInterruptionPending])
+
+  useImperativeHandle(ref, () => ({
+    async startNewConversation(): Promise<void> {
+      await screenContext.release()
+      await controller.startNewConversation()
+      setText('')
+      setInterrupting(false)
+    },
+  }))
 
   useEffect(() => {
     if (panelRef.current) panelRef.current.inert = gateOpen
@@ -141,4 +157,4 @@ export function ChatOverlay({ state, gateOpen = false, onOpenHealth, onOpenLlmSe
       />
     </section>
   )
-}
+})

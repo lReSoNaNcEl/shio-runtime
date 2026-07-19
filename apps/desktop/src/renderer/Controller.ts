@@ -196,6 +196,7 @@ export class Controller {
 
   private overlayCommand: Promise<void> = Promise.resolve()
   private overlayDesired: boolean | null = null
+  private newConversationCommand: Promise<void> | null = null
   private unsubscribeActionEvents: (() => void) | null = null
   private actionRuntimeBoundary = { process: 'main', source: 'main.actionRuntime' }
   // Dedup for the one-per-incident "показан текстом" note while TTS is down.
@@ -358,7 +359,9 @@ export class Controller {
     this.store.markLatestAssistantInterrupted()
   }
 
-  interruptCurrentResponse(source: 'manual-stop' | 'voice-barge-in'): Promise<boolean> {
+  interruptCurrentResponse(
+    source: 'manual-stop' | 'voice-barge-in' | 'new-conversation',
+  ): Promise<boolean> {
     return this.conversationRuntime.interruptCurrentResponse(source)
   }
 
@@ -1018,10 +1021,44 @@ export class Controller {
   }
 
   // ---- misc ----------------------------------------------------------------
-  async clearHistory(): Promise<void> {
-    await window.api.memory.clear()
-    this.store.clearMessages()
-    this.pushMessage('assistant', this.t('controller.historyCleared'))
+  async startNewConversation(): Promise<void> {
+    if (this.newConversationCommand) return this.newConversationCommand
+    const command = this.performNewConversation()
+    this.newConversationCommand = command
+    try {
+      await command
+    } finally {
+      if (this.newConversationCommand === command) this.newConversationCommand = null
+    }
+  }
+
+  private async performNewConversation(): Promise<void> {
+    this.recordRuntimeEvent('New Conversation Started')
+    const shouldInterrupt = ['thinking', 'synthesizing', 'speaking'].includes(this.state.status)
+    const interruptionCommand = shouldInterrupt
+      ? this.interruptCurrentResponse('new-conversation')
+      : Promise.resolve(false)
+    this.conversationInput.resetConversationSession()
+    try {
+      const interrupted = await interruptionCommand
+      await window.api.memory.clear()
+      this.store.replaceMessages([])
+      this.set({
+        status: 'idle',
+        responseInterruptionPending: false,
+        speechProgress: 0,
+      })
+      this.recordRuntimeEvent('New Conversation Ready', `interrupted=${interrupted}`)
+    } catch (error) {
+      this.set({ status: 'idle', responseInterruptionPending: false, speechProgress: 0 })
+      this.recordRuntimeEvent(
+        'New Conversation Failed',
+        error instanceof Error ? error.name : 'unknown',
+      )
+      throw error
+    } finally {
+      this.conversationInput.completeConversationSessionReset()
+    }
   }
 
   // Health probing is owned exclusively by the Speech capabilities health

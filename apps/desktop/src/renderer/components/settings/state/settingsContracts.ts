@@ -188,7 +188,6 @@ export interface AdvancedSettingsState {
 export interface AdvancedSettingsActions {
   setDeveloperModeEnabled: (enabled: boolean) => Promise<void>
   setDeveloperOverlayAnimationHudEnabled: (enabled: boolean) => Promise<void>
-  clearHistory: () => Promise<void>
 }
 
 export interface SettingsDialogViewModel {

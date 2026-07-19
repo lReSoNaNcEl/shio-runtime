@@ -31,6 +31,7 @@ export function useScreenContextAttachment(): {
     pendingRef.current = null
     setPending(null)
     setSubmitError(null)
+    setPickerOpen(false)
     if (capture) await window.api.screenContext.release(capture.captureId)
   }
 

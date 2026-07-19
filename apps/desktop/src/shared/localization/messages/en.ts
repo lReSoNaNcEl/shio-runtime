@@ -97,6 +97,12 @@ export const enMessages: Record<TranslationKey, string> = {
   'chat.quick.joke': 'Tell me a joke',
   'chat.quick.capabilities': 'What can you do?',
   'chat.interrupted': 'Stopped',
+  'chat.newConversation.action': 'New conversation',
+  'chat.newConversation.title': 'Start a new conversation?',
+  'chat.newConversation.description':
+    'The current chat and conversation context will be cleared.\nSettings and project knowledge will be preserved.',
+  'chat.newConversation.confirm': 'New conversation',
+  'chat.newConversation.error': 'Could not start a new conversation. Please try again.',
   'chat.status.error': 'Error',
   'chat.status.listening': 'Listening',
   'chat.status.thinking': 'Thinking',
@@ -428,13 +434,6 @@ export const enMessages: Record<TranslationKey, string> = {
   'settings.avatar.transparentDescription': 'The overlay window background stays invisible.',
   'settings.avatar.reset': 'Reset overlay settings',
 
-  'settings.danger.title': 'Danger zone',
-  'settings.danger.description': 'Deleting conversation history cannot be undone.',
-  'settings.danger.clear': 'Clear history',
-  'settings.danger.confirmTitle': 'Clear conversation history?',
-  'settings.danger.confirmDescription':
-    'This action deletes the saved conversation history and cannot be undone.',
-
   'avatarPreview.notConfigured.title': 'Avatar is not configured yet',
   'avatarPreview.notConfigured.description': 'Choose a model to open Avatar Preview.',
   'avatarPreview.openSettings': 'Open Avatar settings',
@@ -499,7 +498,6 @@ export const enMessages: Record<TranslationKey, string> = {
   'controller.microphoneAccessFailed': 'Could not access the microphone.',
   'controller.fileReadFailed': 'Could not read the file',
   'controller.vrmLoadFailed': 'Could not load VRM: {error}',
-  'controller.historyCleared': 'History cleared. Welcome back, traveler.',
   'controller.llm.checking': 'Checking model availability',
   'controller.llm.providerMissing': 'No provider selected',
   'controller.llm.providerAvailable': 'Provider is available',

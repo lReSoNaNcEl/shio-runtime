@@ -97,6 +97,8 @@ export class ConversationInputCoordinator {
   private backlogSelector: BacklogSelector
   private conversationAdmission: ConversationAdmissionCoordinator
   private desiredContinuousListening = false
+  private conversationBoundaryAt = 0
+  private conversationSessionResetPending = false
 
   constructor(private readonly dependencies: ConversationInputCoordinatorDependencies) {
     this.backlogSelector = new BacklogSelector(async (items, backlogVersion, config) => {
@@ -130,7 +132,7 @@ export class ConversationInputCoordinator {
       text: trimmed,
       source: 'text_chat',
       screenContextId,
-      createdAt: Date.now(),
+      createdAt: this.nextConversationTimestamp(),
       semanticCues: {
         directAddress: false,
         question: QUESTION_PATTERN.test(trimmed),
@@ -144,7 +146,7 @@ export class ConversationInputCoordinator {
       turnId: this.dependencies.createTurnId('manual-speech'),
       text,
       source: 'push_to_talk',
-      createdAt: Date.now(),
+      createdAt: this.nextConversationTimestamp(),
       semanticCues: {
         directAddress: false,
         question: QUESTION_PATTERN.test(text),
@@ -158,8 +160,22 @@ export class ConversationInputCoordinator {
       turnId: this.dependencies.createTurnId('debug'),
       text: emotionKey,
       source: 'debug',
-      createdAt: Date.now(),
+      createdAt: this.nextConversationTimestamp(),
     })
+  }
+
+  resetConversationSession(): void {
+    this.conversationBoundaryAt = Date.now()
+    this.conversationSessionResetPending = true
+    this.chunkBuilder = new UtteranceChunkBuilder()
+    this.bargeInPolicy.reset()
+    this.bargeInSegments.clear()
+    this.lastContinuousReplyAt = null
+    this.conversationAdmission.resetStreamingSession()
+  }
+
+  completeConversationSessionReset(): void {
+    this.conversationSessionResetPending = false
   }
 
   async applyContinuousSettings(
@@ -546,6 +562,13 @@ export class ConversationInputCoordinator {
     attempt: AdmittedConversationTurn,
     reportPhase: (phase: ConversationExecutionPhase) => void,
   ): Promise<ConversationCompletionResult> {
+    if (this.conversationSessionResetPending || attempt.createdAt <= this.conversationBoundaryAt) {
+      this.dependencies.recordRuntimeEvent(
+        'Stale Conversation Turn Discarded',
+        `turnId=${attempt.turnId}`,
+      )
+      return { status: 'cancelled', turnId: attempt.turnId }
+    }
     if (attempt.screenContextId && attempt.source !== 'text_chat') {
       return {
         status: 'failed',
@@ -615,5 +638,9 @@ export class ConversationInputCoordinator {
     if (this.handledUtteranceIds.size <= 64) return
     const oldest = this.handledUtteranceIds.values().next().value
     if (oldest) this.handledUtteranceIds.delete(oldest)
+  }
+
+  private nextConversationTimestamp(): number {
+    return Math.max(Date.now(), this.conversationBoundaryAt + 1)
   }
 }

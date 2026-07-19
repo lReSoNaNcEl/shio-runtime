@@ -632,7 +632,6 @@ export function useSettingsDialogState({
       actions: {
         setDeveloperModeEnabled: applyDeveloperModeEnabled,
         setDeveloperOverlayAnimationHudEnabled,
-        clearHistory: () => controller.clearHistory(),
       },
     },
   }
