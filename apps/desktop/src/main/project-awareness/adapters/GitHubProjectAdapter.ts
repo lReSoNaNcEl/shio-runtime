@@ -2,7 +2,10 @@ import axios, { type AxiosInstance } from 'axios'
 
 import { type Translator, translate } from '../../../shared/localization/format'
 import { DEFAULT_UI_LOCALE } from '../../../shared/localization/locale'
-import type { ProjectRepositoryIdentity, ProjectSourceFile } from '../../../shared/projectAwareness'
+import type {
+  ProjectRepositoryIdentity,
+  ProjectSourceFile,
+} from '../../../shared/project-awareness'
 import type {
   ProjectChangedFile,
   ProjectCommit,

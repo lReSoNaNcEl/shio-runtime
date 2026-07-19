@@ -1,6 +1,6 @@
 import { extname, posix } from 'node:path'
 
-import type { ProjectLanguage } from '../../../shared/projectAwareness'
+import type { ProjectLanguage } from '../../../shared/project-awareness'
 import type { ProjectTreeEntry } from '../contracts'
 
 const LANGUAGE_BY_EXTENSION: Readonly<Record<string, ProjectLanguage>> = {

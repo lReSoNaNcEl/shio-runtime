@@ -20,7 +20,7 @@
 import { AudioPlayer, type PreparedAudio } from '../../src/renderer/audio/audioPlayer'
 import { EmotionSpeechPipeline } from '../../src/renderer/runtime/EmotionSpeechPipeline'
 import type { SuccessfulSpeechReply } from '../../src/renderer/runtime/SpeechRuntime'
-import { type EmotionTextSegment, parseEmotionalReply } from '../../src/shared/emotionSegments'
+import { type EmotionTextSegment, parseEmotionalReply } from '../../src/shared/emotion'
 
 // ---------------------------------------------------------------------------
 // WebAudio mocks

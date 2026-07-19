@@ -1,8 +1,8 @@
-import type { CharacterState } from '../../shared/runtime/characterState'
-import type { LipSync, LipSyncStartRequest } from '../three/LipSync'
-import type { VrmModel } from '../three/VrmModel'
+import type { CharacterState } from '../../shared/runtime/character-state'
 import { toHeadMotionProfile, toLookAtMode } from './AvatarRuntimeMappers'
 import type { AvatarStateEffect } from './AvatarStateMachine'
+import type { LipSync, LipSyncStartRequest } from './embodiment/speech/LipSync'
+import type { VrmModel } from './rendering/three/VrmModel'
 
 export class AvatarStateEffectApplier {
   constructor(

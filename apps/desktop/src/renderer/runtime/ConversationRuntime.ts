@@ -2,9 +2,9 @@ import type {
   CharacterConversationPresenceState,
   CharacterRuntimeMode,
   CharacterState,
-} from '../../shared/runtime/characterState'
+} from '../../shared/runtime/character-state'
 import type { EventBus, RuntimeEventCategory, RuntimeEventType } from '../../shared/runtime/events'
-import type { SerializedSpeechError } from '../../shared/speech/speechErrors'
+import type { SerializedSpeechError } from '../../shared/speech/errors'
 import type { AudioPlayer, PlaybackSession } from '../audio/audioPlayer'
 import { resolveEmotionEmbodimentProfile } from '../avatar/EmotionEmbodimentProfile'
 import type { ChatMsg } from '../Controller'

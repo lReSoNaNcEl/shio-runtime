@@ -27,7 +27,7 @@ import {
   isValidProjectRepository,
   type ProjectRepositoryIdentity,
   type ProjectSourceFile,
-} from '../../src/shared/projectAwareness'
+} from '../../src/shared/project-awareness'
 
 const sourceV1 = [
   "import { value } from './value'",

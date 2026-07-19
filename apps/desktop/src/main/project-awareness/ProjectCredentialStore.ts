@@ -3,7 +3,7 @@ import { dirname } from 'node:path'
 
 import { type Translator, translate } from '../../shared/localization/format'
 import { DEFAULT_UI_LOCALE } from '../../shared/localization/locale'
-import type { ProjectCredentialStatus } from '../../shared/projectAwareness'
+import type { ProjectCredentialStatus } from '../../shared/project-awareness'
 
 export interface ProjectCredentialProtector {
   isAvailable(): Promise<boolean>

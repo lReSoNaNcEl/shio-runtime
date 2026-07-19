@@ -16,7 +16,7 @@ import Send from '@react-spectrum/s2/icons/Send'
 import Stop from '@react-spectrum/s2/icons/StopProcessing'
 import { useEffect, useRef, useState } from 'react'
 
-import type { ScreenContextCaptureDescriptor } from '../../shared/screenContext'
+import type { ScreenContextCaptureDescriptor } from '../../shared/screen-context/contracts'
 import { type ControllerState, controller } from '../Controller'
 import type { LocalizationContextValue } from '../localization/LocalizationProvider'
 import { useTranslation } from '../localization/useTranslation'

@@ -14,7 +14,7 @@ import type {
   ScreenContextCaptureDescriptor,
   ScreenContextErrorCode,
   ScreenContextSource,
-} from '../../shared/screenContext'
+} from '../../shared/screen-context/contracts'
 import { useTranslation } from '../localization/useTranslation'
 
 type PickerState =

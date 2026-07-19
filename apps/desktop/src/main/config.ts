@@ -3,15 +3,15 @@ import { join } from 'node:path'
 
 import { app } from 'electron'
 
-import { DEFAULT_SPEECH_URL } from '../shared/config'
-import type { LlmConfig } from '../shared/llmProviders'
+import { DEFAULT_SPEECH_URL } from '../shared/config/appSettings'
+import type { LlmConfig } from '../shared/llm/providers'
 import {
   DEFAULT_UI_LOCALE,
   isUiLocale,
   normalizeUiLocale,
   type UiLocale,
 } from '../shared/localization/locale'
-import type { ProjectAwarenessPublicConfig } from '../shared/projectAwareness'
+import type { ProjectAwarenessPublicConfig } from '../shared/project-awareness'
 import { defaultLlmConfig, isLlmProviderId, normalizeLlmConfig } from './llm'
 
 const CONFIG_PATH = join(app.getPath('userData'), 'config.json')

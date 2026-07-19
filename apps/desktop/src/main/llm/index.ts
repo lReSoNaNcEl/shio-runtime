@@ -6,8 +6,8 @@ export type {
   ModelInfo,
   ProviderCredentials,
   ProviderProfile,
-} from '../../shared/llmProviders'
-export { LLM_PROVIDER_IDS } from '../../shared/llmProviders'
+} from '../../shared/llm/providers'
+export { LLM_PROVIDER_IDS } from '../../shared/llm/providers'
 export { defaultLlmConfig, normalizeLlmConfig } from './config'
 export {
   LlmCapabilityError,

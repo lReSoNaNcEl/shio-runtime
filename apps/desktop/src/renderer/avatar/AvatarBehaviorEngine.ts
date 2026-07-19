@@ -1,5 +1,5 @@
-import { emotionRegistry } from '../../shared/emotions'
-import type { CharacterState } from '../../shared/runtime/characterState'
+import { emotionRegistry } from '../../shared/emotion'
+import type { CharacterState } from '../../shared/runtime/character-state'
 import type { AvatarBehaviorId } from './AvatarBehaviorResolver'
 import type { AvatarStateEffect } from './AvatarStateMachine'
 import { getAnimationsByBehaviorTagForState } from './animationManifest'

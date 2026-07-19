@@ -833,4 +833,4 @@ export function getGroupedAnimations(): Array<{
   }))
 }
 
-import type { OverlayViewMode } from '../three/avatarTuning'
+import type { OverlayViewMode } from './tuning/cameraTuning'

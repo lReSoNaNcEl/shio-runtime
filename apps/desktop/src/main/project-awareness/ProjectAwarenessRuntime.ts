@@ -17,8 +17,8 @@ import type {
   ProjectSearchResult,
   ProjectSymbolExcerpt,
   ProjectSyncResult,
-} from '../../shared/projectAwareness'
-import { isValidProjectBranch, isValidProjectRepository } from '../../shared/projectAwareness'
+} from '../../shared/project-awareness'
+import { isValidProjectBranch, isValidProjectRepository } from '../../shared/project-awareness'
 import { GitHubProjectAdapter } from './adapters/GitHubProjectAdapter'
 import type {
   PreparedProjectFile,

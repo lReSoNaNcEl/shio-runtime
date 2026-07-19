@@ -1,4 +1,4 @@
-import type { LlmProviderId } from '../../shared/llmProviders'
+import type { LlmProviderId } from '../../shared/llm/providers'
 import { mainLog } from '../logging/safeLogger'
 import type { RuntimeFinishReason } from './openai-compatible/response'
 

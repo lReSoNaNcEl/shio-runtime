@@ -6,7 +6,7 @@ import type {
   ProjectMapSection,
   ProjectRuntimeSummary,
   ProjectSnapshotIdentity,
-} from '../../../shared/projectAwareness'
+} from '../../../shared/project-awareness'
 import type { StoredProjectFile, StoredProjectSymbol } from '../ProjectKnowledgeStore'
 
 function sectionName(path: string): string {

@@ -1,15 +1,15 @@
-import { type EmotionTextSegment, parseEmotionalReply } from '../../shared/emotionSegments'
-import { stripAssistantMarkup } from '../../shared/emotions'
+import { stripAssistantMarkup } from '../../shared/emotion'
+import { type EmotionTextSegment, parseEmotionalReply } from '../../shared/emotion/segments'
 import type {
   CharacterActivityState,
   CharacterConversationPresenceState,
   CharacterRuntimeMode,
   CharacterSpeechState,
   CharacterState,
-} from '../../shared/runtime/characterState'
+} from '../../shared/runtime/character-state'
 import type { EventBus, RuntimeEventType } from '../../shared/runtime/events'
-import { hasSpeakableContent } from '../../shared/speakableContent'
-import type { MouthWeights } from '../three/LipSync'
+import { hasSpeakableContent } from '../../shared/speech/speakable-content'
+import type { MouthWeights } from '../avatar/embodiment/speech/LipSync'
 import type { CharacterStateStore } from './ShioRuntime'
 import { speechErrorFromResponse } from './speechCapabilities'
 

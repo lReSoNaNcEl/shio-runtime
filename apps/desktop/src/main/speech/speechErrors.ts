@@ -5,7 +5,7 @@ import type {
   SerializedSpeechError,
   SpeechOperation,
   SpeechServiceErrorCode,
-} from '../../shared/speech/speechErrors'
+} from '../../shared/speech/errors'
 import { mainLog } from '../logging/safeLogger'
 
 /**

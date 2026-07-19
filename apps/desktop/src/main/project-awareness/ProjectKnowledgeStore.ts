@@ -10,7 +10,7 @@ import type {
   ProjectRepositoryIdentity,
   ProjectSnapshotIdentity,
   ProjectSymbolReference,
-} from '../../shared/projectAwareness'
+} from '../../shared/project-awareness'
 import type { PreparedProjectFile } from './contracts'
 
 interface SnapshotRow {

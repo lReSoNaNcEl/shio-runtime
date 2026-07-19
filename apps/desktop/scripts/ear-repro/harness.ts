@@ -19,8 +19,8 @@ import assert from 'node:assert/strict'
 import * as THREE from 'three'
 
 import { resolveEmotionEmbodimentProfile } from '../../src/renderer/avatar/EmotionEmbodimentProfile'
-import { EarBehaviorRuntime } from '../../src/renderer/three/EarBehaviorRuntime'
-import type { VrmProceduralMode } from '../../src/renderer/three/VrmModel'
+import { EarBehaviorRuntime } from '../../src/renderer/avatar/embodiment/secondary-motion/EarBehaviorRuntime'
+import type { AvatarProceduralMode } from '../../src/renderer/avatar/embodiment/types'
 
 const tips: Record<string, THREE.Object3D> = {}
 
@@ -62,7 +62,7 @@ const runtime = new EarBehaviorRuntime()
 runtime.attach({ scene } as unknown as Parameters<EarBehaviorRuntime['attach']>[0])
 
 const dt = 1 / 60
-function run(profile: VrmProceduralMode, emotion: string, seconds: number) {
+function run(profile: AvatarProceduralMode, emotion: string, seconds: number) {
   runtime.setProfile(profile)
   runtime.applyEmotion(resolveEmotionEmbodimentProfile(emotion))
   let maxL = 0

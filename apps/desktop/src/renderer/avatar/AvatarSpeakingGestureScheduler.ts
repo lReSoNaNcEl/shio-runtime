@@ -1,7 +1,7 @@
-import type { CharacterState } from '../../shared/runtime/characterState'
-import { speakingGestureTuning } from '../three/avatarTuning'
+import type { CharacterState } from '../../shared/runtime/character-state'
 import type { AvatarBehaviorId } from './AvatarBehaviorResolver'
 import type { AvatarStateEffect } from './AvatarStateMachine'
+import { speakingGestureTuning } from './tuning/speechTuning'
 
 export type SpeakingGesturePhase = 'opening' | 'holding' | 'emphasis' | 'closing'
 

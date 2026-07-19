@@ -4,19 +4,22 @@ import { join } from 'node:path'
 import { type BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { z } from 'zod'
 
+import type { AppSettings } from '../shared/config/appSettings'
 import { translate } from '../shared/localization/format'
-import type { UiLocale } from '../shared/localization/locale'
 import type {
   ProjectAwarenessPublicConfig,
   ProjectReadFileInput,
   ProjectReadSymbolInput,
   ProjectRecentChangesInput,
   ProjectSearchInput,
-} from '../shared/projectAwareness'
-import { isValidProjectBranch, isValidProjectRepository } from '../shared/projectAwareness'
+} from '../shared/project-awareness'
+import { isValidProjectBranch, isValidProjectRepository } from '../shared/project-awareness'
 import type { RuntimeEventInput } from '../shared/runtime/events'
-import type { ScreenContextErrorCode, ScreenContextResult } from '../shared/screenContext'
-import type { SpeechOperation, SpeechServiceErrorCode } from '../shared/speech/speechErrors'
+import type {
+  ScreenContextErrorCode,
+  ScreenContextResult,
+} from '../shared/screen-context/contracts'
+import type { SpeechOperation, SpeechServiceErrorCode } from '../shared/speech/errors'
 import { ActionRuntime } from './action/ActionRuntime'
 import { getConfig, getRendererConfig, saveConfig } from './config'
 import {
@@ -24,7 +27,6 @@ import {
   createModelCatalog,
   enrichModelCatalog,
   isLlmProviderId,
-  type LlmConfig,
   type LlmGateway,
   ModelFetchError,
   type ModelInfo,
@@ -41,36 +43,6 @@ import type {
 import { ScreenContextError, type ScreenContextService } from './screen-context'
 import { deriveCapabilities, type SpeechClient } from './speech/speechClient'
 import { logSpeechError, logSpeechRecovery } from './speech/speechErrors'
-
-export interface AppSettings {
-  llm: LlmConfig
-  projectAwareness: ProjectAwarenessPublicConfig
-  uiLocale: UiLocale
-  pythonSpeechUrl: string
-  ttsVoice: string
-  ttsLanguage: string
-  ttsEngine: string
-  vrmPath: string
-  micDeviceId: string
-  overlayWidth: string
-  overlayHeight: string
-  overlayMargin: string
-  overlayOpacity: string
-  overlayTransparentBackground: string
-  overlayClickThrough: string
-  overlayCorner: string
-  overlayScale: string
-  overlayViewMode: string
-  overlayShowCurrentAnimation: string
-  developerModeEnabled: string
-  passiveCompanionEnabled?: string
-  lookAtEnabled: string
-  continuousListeningEnabled: string
-  continuousListeningMode: string
-  continuousListeningReplyCooldownMs: string
-  continuousListeningFollowUpWindowMs: string
-  continuousListeningCuriosityChance: string
-}
 
 export function registerIpcHandlers(
   orchestrator: () => Orchestrator,

@@ -6,8 +6,8 @@ import type {
   SerializedSpeechError,
   SpeechOperation,
   SpeechServiceErrorCode,
-} from '../../shared/speech/speechErrors'
-import { isRecoverableSpeechErrorCode } from '../../shared/speech/speechErrors'
+} from '../../shared/speech/errors'
+import { isRecoverableSpeechErrorCode } from '../../shared/speech/errors'
 
 /**
  * Renderer-side Speech Adapter error. Built from the serialized IPC contract and

@@ -1,7 +1,7 @@
-import type { OverlayViewMode } from '../three/avatarTuning'
-import type { EarImpulse } from '../three/EarBehaviorRuntime'
-import type { MouthWeights } from '../three/LipSync'
-import type { SceneManager } from '../three/SceneManager'
+import type { EarImpulse } from '../avatar/embodiment/secondary-motion/EarBehaviorRuntime'
+import type { MouthWeights } from '../avatar/embodiment/speech/LipSync'
+import type { SceneManager } from '../avatar/rendering/three/SceneManager'
+import type { OverlayViewMode } from '../avatar/tuning/cameraTuning'
 import type { AvatarMode } from './AvatarRuntime'
 
 export interface SyncedAvatarState {

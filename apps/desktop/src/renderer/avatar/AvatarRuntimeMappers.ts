@@ -1,8 +1,8 @@
-import type { CharacterState } from '../../shared/runtime/characterState'
-import type { HeadMotionProfile } from '../three/HeadMotionRuntime'
-import type { LookAtMode } from '../three/LookAtRuntime'
-import type { VrmProceduralMode } from '../three/VrmModel'
+import type { CharacterState } from '../../shared/runtime/character-state'
 import type { AvatarMode, AvatarStateEffect } from './AvatarStateMachine'
+import type { HeadMotionProfile } from './embodiment/gaze/HeadMotionRuntime'
+import type { LookAtMode } from './embodiment/gaze/LookAtRuntime'
+import type { AvatarProceduralMode } from './embodiment/types'
 
 export function toAvatarMode(mode: CharacterState['mode']): AvatarMode {
   switch (mode) {
@@ -36,7 +36,7 @@ export function toHeadMotionProfile(mode: LookAtMode): HeadMotionProfile {
  * AFK procedural motion keeps progressing without depending on discrete state
  * change events (important for the Mirror Overlay).
  */
-export function toProceduralMode(mode: CharacterState['mode']): VrmProceduralMode {
+export function toProceduralMode(mode: CharacterState['mode']): AvatarProceduralMode {
   switch (mode) {
     case 'listening':
       return 'listening'

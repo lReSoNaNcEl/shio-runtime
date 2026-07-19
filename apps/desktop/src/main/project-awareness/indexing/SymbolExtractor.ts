@@ -2,7 +2,7 @@ import type { SyntaxNode } from '@lezer/common'
 import { parser as pythonParser } from '@lezer/python'
 import ts from 'typescript'
 
-import type { ProjectLanguage } from '../../../shared/projectAwareness'
+import type { ProjectLanguage } from '../../../shared/project-awareness'
 import type { ExtractedChunk, ExtractedSource, ExtractedSymbol } from '../contracts'
 
 const MAX_CHUNK_LINES = 220
