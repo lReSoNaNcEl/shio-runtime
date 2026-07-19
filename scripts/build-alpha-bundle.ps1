@@ -13,10 +13,11 @@ $zipPath = Join-Path $releaseRoot "$name.zip"
 try {
 if (Test-Path -LiteralPath $stageRoot) {
     $resolved = [IO.Path]::GetFullPath($stageRoot)
-    if (-not $resolved.StartsWith([IO.Path]::GetFullPath($releaseRoot))) { throw "Unsafe staging path." }
+    if (-not $resolved.StartsWith([IO.Path]::GetFullPath([IO.Path]::GetTempPath()))) { throw "Unsafe staging path." }
     Remove-Item -LiteralPath $stageRoot -Recurse -Force
 }
 New-Item -ItemType Directory -Force -Path $bundleRoot | Out-Null
+New-Item -ItemType Directory -Force -Path $releaseRoot | Out-Null
 
 Push-Location $repoRoot
 try {
