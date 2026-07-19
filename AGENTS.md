@@ -248,7 +248,109 @@ must be fixed — but as a separate, deliberate change that explicitly records w
 stale, why, and what the corrected decision is (not smuggled in under an editorial or
 refactoring task). Keeping a known-outdated statement in place is itself a defect.
 
-## 12. Final report format
+## 12. Release management
+
+Releases follow Semantic Versioning and advance through explicit maturity
+channels. A release version is immutable after its tag has been published.
+
+Release channels:
+
+- **Alpha:** `X.Y.Z-alpha.N`. Early technical prerelease for controlled testing.
+  Features and contracts may still change, but every known incompatibility and
+  limitation must be documented.
+- **Beta:** `X.Y.Z-beta.N`. Feature-complete candidate intended for broader
+  testing. New scope should normally wait for a later version; beta work focuses
+  on correctness, compatibility, packaging, migration, and usability.
+- **Release candidate:** `X.Y.Z-rc.N` when a final qualification stage is useful.
+  Only release-blocking fixes are expected.
+- **Stable:** `X.Y.Z`. Production release with no prerelease suffix.
+- **Stable patch:** increment `Z` (`X.Y.(Z+1)`) for backward-compatible bug,
+  security, packaging, or reliability fixes. Do not hide feature releases inside
+  a patch increment.
+
+Choose the next version from user-visible compatibility and release maturity, not
+from the number of commits. Moving from Alpha to Beta or from Beta/RC to Stable is
+a deliberate release decision and must not happen as a side effect of unrelated
+work.
+
+### Release sources of truth
+
+Before creating a tag, keep these version-bearing sources synchronized:
+
+- root `package.json`
+- `apps/desktop/package.json`
+- `launcher/release-manifest.json` (`productVersion` and Speech Pack version)
+- `CHANGELOG.md`
+- release notes for the selected channel
+
+Desktop artifact names must continue to derive from the Desktop package version.
+Do not hand-edit generated artifact names to compensate for mismatched versions.
+The channel's version-verification command must pass before staging a release
+commit.
+
+`CHANGELOG.md` is the factual history of Added, Changed, Fixed, Security, and
+Known Limitations for each version. Release notes are the concise user-facing
+summary, requirements, installation path, important limitations, and support
+instructions. Do not use release notes as a substitute for the changelog.
+
+### Required release flow
+
+1. Merge the intended release scope into `main`; the worktree must be clean and
+   `main` synchronized with `origin/main`.
+2. Select the next version and channel explicitly.
+3. Update every version source, `CHANGELOG.md`, and the channel release notes.
+   Update installation, troubleshooting, architecture, and requirements
+   documentation when the release changes those areas.
+4. Regenerate and commit lock files when direct dependencies changed.
+5. Run the full required validation for every affected application. For a
+   Desktop/API bundle, validate both applications and the launcher.
+6. Run the channel's manual build workflow first. Download and qualify the exact
+   workflow artifact that may become the release; do not substitute a local ZIP.
+7. Perform clean-machine qualification on the supported platform and hardware.
+   For the current Windows speech bundle this includes launcher first-run setup,
+   repair/doctor behavior, Desktop startup, API health, real ASR/TTS, microphone,
+   VRM loading, playback, shutdown, and ownership-safe API cleanup.
+8. After explicit publication approval, create an annotated tag matching the
+   synchronized version (`vX.Y.Z-alpha.N`, `vX.Y.Z-beta.N`, `vX.Y.Z-rc.N`, or
+   `vX.Y.Z`) and push only that tag.
+9. Monitor the tag workflow through completion. Verify the GitHub Release channel
+   (prerelease versus stable), title, notes, ZIP, checksum files, and downloadable
+   asset integrity.
+10. Report any qualification not performed. A green CI build does not prove live
+    CUDA, model inference, microphone, avatar, or end-to-end behavior.
+
+Tagging and publishing change external release state. Do them only when the user
+explicitly asks to release or publish; a request to prepare a release alone does
+not authorize pushing a tag.
+
+Never move, force-update, or reuse a published tag. If a release is defective,
+record the problem, fix it on `main`, increment the appropriate prerelease or
+patch version, qualify a new artifact, and publish a new tag. Removing a broken
+release page does not make its old tag/version reusable.
+
+### Current automation boundary
+
+The repository currently automates only Windows Alpha releases:
+
+- workflow: `.github/workflows/release-alpha.yml`
+- accepted tags: `v*.*.*-alpha.*`
+- release type: GitHub prerelease
+- operational guide: `docs/ALPHA-RELEASE.md`
+
+Do not claim that Beta, RC, or Stable publication is implemented today. Before
+the first release in one of those channels, create a separate Work Item that
+deliberately generalizes or adds:
+
+- tag validation and workflow triggers for the new channel
+- channel-appropriate artifact and documentation names
+- prerelease/stable GitHub Release behavior
+- version commands that are no longer Alpha-specific
+- clean-machine qualification criteria and rollback instructions
+
+The new channel must preserve the existing Desktop/API boundary and must be
+validated with a dry-run artifact before its first publication.
+
+## 13. Final report format
 
 Every Work Item must end with this format. Do not omit sections; if a section does
 not apply, write `N/A`.
@@ -269,7 +371,7 @@ Root Cause (если был баг)
 Ограничения
 ```
 
-## 13. General principles
+## 14. General principles
 
 - Simple solutions are preferred over complex ones.
 - Preserve component boundaries and Single Responsibility.
@@ -277,7 +379,7 @@ Root Cause (если был баг)
 - All responses to the user, and all reasoning shown to the user, must be written
   in Russian.
 
-## 14. Never Again
+## 15. Never Again
 
 Known mistakes and risks — do not repeat them.
 
