@@ -3,6 +3,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type { AppSettings } from '../shared/config'
 import type { ShioRuntimeApi } from '../shared/ipc'
 import type { RuntimeEventInput } from '../shared/runtime'
+import type { ScreenContextImportRequest } from '../shared/screen-context'
 
 const api = {
   health: {
@@ -24,6 +25,9 @@ const api = {
   screenContext: {
     listSources: () => ipcRenderer.invoke('screen-context:list-sources'),
     capture: (sourceId: string) => ipcRenderer.invoke('screen-context:capture', sourceId),
+    importImage: (request: ScreenContextImportRequest) =>
+      ipcRenderer.invoke('screen-context:import-image', request),
+    recapture: (captureId: string) => ipcRenderer.invoke('screen-context:recapture', captureId),
     release: (captureId: string) => ipcRenderer.invoke('screen-context:release', captureId),
   },
   tts: {

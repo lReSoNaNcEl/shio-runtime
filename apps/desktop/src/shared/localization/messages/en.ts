@@ -124,6 +124,17 @@ export const enMessages: Record<TranslationKey, string> = {
     'The selected model does not support images. Choose a vision-capable model in Settings.',
   'screenContext.source.screen': 'Screen',
   'screenContext.source.window': 'Window',
+  'screenContext.source.file': 'File',
+  'screenContext.source.clipboard': 'Clipboard',
+  'screenContext.source.clipboardName': 'Image from clipboard',
+  'screenContext.attachment.recapture': 'Capture again',
+  'screenContext.attachment.recapturing': 'Capturing…',
+  'screenContext.drop.title': 'Drop the image here',
+  'screenContext.drop.description': 'PNG, JPEG, and WebP are supported',
+  'screenContext.input.onlyOneImage': 'Only one image can be attached.',
+  'screenContext.input.unsupportedType': 'Only PNG, JPEG, and WebP images are supported.',
+  'screenContext.input.tooLarge': 'The image is too large. The maximum input size is 20 MiB.',
+  'screenContext.input.importing': 'Importing image…',
   'screenContext.replace': 'Replace',
   'screenContext.remove': 'Remove',
   'screenContext.privacy':
@@ -138,6 +149,8 @@ export const enMessages: Record<TranslationKey, string> = {
   'screenContext.error.captureExpired': 'The screenshot has expired. Capture a new one.',
   'screenContext.error.captureNotOwned':
     'The screenshot is no longer available. Capture a new one.',
+  'screenContext.error.imageDecodeFailed': 'The image could not be decoded.',
+  'screenContext.error.recaptureUnavailable': 'This image cannot be captured again.',
   'screenContext.error.providerRejected':
     'The provider rejected the image. Check vision support for the selected model.',
   'screenContext.error.unknown': 'The screenshot could not be prepared.',

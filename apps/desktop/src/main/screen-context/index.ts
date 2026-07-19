@@ -1,3 +1,7 @@
+export {
+  ImageNormalizer,
+  type NormalizedScreenContextImage,
+} from './ImageNormalizer'
 export { ScreenCaptureAdapter } from './ScreenCaptureAdapter'
 export {
   type PendingCapture,

@@ -16,6 +16,7 @@ import {
   type ScreenContextSource,
 } from '../../../shared/screen-context'
 import { useTranslation } from '../../localization/useTranslation'
+import { screenContextErrorMessage } from './screenContextErrorMessage'
 
 type PickerState =
   | 'checking-capability'
@@ -29,38 +30,16 @@ interface Props {
   isOpen: boolean
   onDismiss: () => void
   onChangeModel: () => void
-  onBeforeCapture: () => Promise<void>
   onAttach: (capture: ScreenContextCaptureDescriptor) => void
 }
 
-export function ScreenContextPicker({
-  isOpen,
-  onDismiss,
-  onChangeModel,
-  onBeforeCapture,
-  onAttach,
-}: Props) {
+export function ScreenContextPicker({ isOpen, onDismiss, onChangeModel, onAttach }: Props) {
   const { t } = useTranslation()
   const [state, setState] = useState<PickerState>('checking-capability')
   const [sources, setSources] = useState<ScreenContextSource[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [errorCode, setErrorCode] = useState<ScreenContextErrorCode | null>(null)
   const operationIdRef = useRef(0)
-
-  const errorMessage = (code: ScreenContextErrorCode): string => {
-    const keys: Record<ScreenContextErrorCode, Parameters<typeof t>[0]> = {
-      VISION_UNSUPPORTED: 'screenContext.error.visionUnsupported',
-      PERMISSION_DENIED: 'screenContext.error.permissionDenied',
-      NO_SOURCES: 'screenContext.error.noSources',
-      SOURCE_NOT_FOUND: 'screenContext.error.sourceNotFound',
-      CAPTURE_EMPTY: 'screenContext.error.captureEmpty',
-      CAPTURE_TOO_LARGE: 'screenContext.error.captureTooLarge',
-      CAPTURE_EXPIRED: 'screenContext.error.captureExpired',
-      CAPTURE_NOT_OWNED: 'screenContext.error.captureNotOwned',
-      UNKNOWN: 'screenContext.error.unknown',
-    }
-    return t(keys[code])
-  }
 
   const loadSources = useCallback(async (existingOperationId?: number): Promise<void> => {
     const operationId = existingOperationId ?? ++operationIdRef.current
@@ -123,9 +102,13 @@ export function ScreenContextPicker({
     if (!selectedId) return
     setState('capturing')
     setErrorCode(null)
+    const operationId = ++operationIdRef.current
     try {
-      await onBeforeCapture()
       const result = await window.api.screenContext.capture(selectedId)
+      if (operationId !== operationIdRef.current) {
+        if (result.ok) await window.api.screenContext.release(result.value.captureId)
+        return
+      }
       if (!result.ok) {
         setErrorCode(result.error.code)
         setState('error')
@@ -173,7 +156,7 @@ export function ScreenContextPicker({
               {state === 'error' && errorCode && (
                 <div className="screen-context-picker-state" role="alert">
                   <Heading level={3}>{t('common.error')}</Heading>
-                  <p>{errorMessage(errorCode)}</p>
+                  <p>{screenContextErrorMessage(errorCode, t)}</p>
                   <Button variant="secondary" onPress={() => void loadSources()}>
                     {t('common.retry')}
                   </Button>

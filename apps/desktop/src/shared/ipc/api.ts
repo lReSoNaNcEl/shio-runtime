@@ -7,6 +7,7 @@ import type { RuntimeEventInput } from '../runtime/events'
 import type {
   ScreenContextCaptureDescriptor,
   ScreenContextErrorCode,
+  ScreenContextImportRequest,
   ScreenContextResult,
   ScreenContextSource,
 } from '../screen-context/contracts'
@@ -60,6 +61,10 @@ export interface ShioRuntimeApi {
   screenContext: {
     listSources: () => Promise<ScreenContextResult<ScreenContextSource[]>>
     capture: (sourceId: string) => Promise<ScreenContextResult<ScreenContextCaptureDescriptor>>
+    importImage: (
+      request: ScreenContextImportRequest,
+    ) => Promise<ScreenContextResult<ScreenContextCaptureDescriptor>>
+    recapture: (captureId: string) => Promise<ScreenContextResult<ScreenContextCaptureDescriptor>>
     release: (captureId: string) => Promise<ScreenContextResult<boolean>>
   }
   tts: {

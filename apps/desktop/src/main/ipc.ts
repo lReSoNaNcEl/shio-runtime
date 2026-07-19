@@ -15,7 +15,12 @@ import type {
 } from '../shared/project-awareness'
 import { isValidProjectBranch, isValidProjectRepository } from '../shared/project-awareness'
 import type { RuntimeEventInput } from '../shared/runtime'
-import type { ScreenContextErrorCode, ScreenContextResult } from '../shared/screen-context'
+import {
+  SCREEN_CONTEXT_IMPORT_LIMITS,
+  type ScreenContextErrorCode,
+  type ScreenContextImportRequest,
+  type ScreenContextResult,
+} from '../shared/screen-context'
 import type { SpeechOperation, SpeechServiceErrorCode } from '../shared/speech'
 import { ActionRuntime } from './action/ActionRuntime'
 import { getConfig, getRendererConfig, saveConfig } from './config'
@@ -295,6 +300,64 @@ export function registerIpcHandlers(
         ok: true,
         value: await screenContext.capture(event.sender.id, parsedSourceId.data),
       } satisfies ScreenContextResult<Awaited<ReturnType<ScreenContextService['capture']>>>
+    } catch (error) {
+      return screenContextFailure(screenContextErrorCode(error))
+    }
+  })
+  const screenContextImportSchema = z.object({
+    bytes: z
+      .instanceof(ArrayBuffer)
+      .refine(
+        (bytes) =>
+          bytes.byteLength > 0 && bytes.byteLength <= SCREEN_CONTEXT_IMPORT_LIMITS.maxInputBytes,
+      ),
+    mimeType: z.enum(['image/jpeg', 'image/png', 'image/webp']),
+    sourceKind: z.enum(['clipboard', 'file']),
+    sourceName: z.string().max(255).optional(),
+  })
+  ipcMain.handle('screen-context:import-image', async (event, payload: unknown) => {
+    const parsed = screenContextImportSchema.safeParse(payload)
+    if (!parsed.success) {
+      if (typeof payload !== 'object' || payload === null) {
+        return screenContextFailure('UNKNOWN')
+      }
+      const rawMimeType = 'mimeType' in payload ? payload.mimeType : undefined
+      if (
+        rawMimeType !== 'image/jpeg' &&
+        rawMimeType !== 'image/png' &&
+        rawMimeType !== 'image/webp'
+      ) {
+        return screenContextFailure('UNSUPPORTED_IMAGE_TYPE')
+      }
+      const rawBytes = 'bytes' in payload ? payload.bytes : undefined
+      if (!(rawBytes instanceof ArrayBuffer) || rawBytes.byteLength === 0) {
+        return screenContextFailure('CAPTURE_EMPTY')
+      }
+      if (rawBytes.byteLength > SCREEN_CONTEXT_IMPORT_LIMITS.maxInputBytes) {
+        return screenContextFailure('CAPTURE_TOO_LARGE')
+      }
+      return screenContextFailure('UNKNOWN')
+    }
+    try {
+      return {
+        ok: true,
+        value: await screenContext.importImage(
+          event.sender.id,
+          parsed.data satisfies ScreenContextImportRequest,
+        ),
+      } satisfies ScreenContextResult<Awaited<ReturnType<ScreenContextService['importImage']>>>
+    } catch (error) {
+      return screenContextFailure(screenContextErrorCode(error))
+    }
+  })
+  ipcMain.handle('screen-context:recapture', async (event, captureId: unknown) => {
+    const parsedCaptureId = z.string().trim().min(1).max(100).safeParse(captureId)
+    if (!parsedCaptureId.success) return screenContextFailure('CAPTURE_NOT_OWNED')
+    try {
+      return {
+        ok: true,
+        value: await screenContext.recapture(event.sender.id, parsedCaptureId.data),
+      } satisfies ScreenContextResult<Awaited<ReturnType<ScreenContextService['recapture']>>>
     } catch (error) {
       return screenContextFailure(screenContextErrorCode(error))
     }

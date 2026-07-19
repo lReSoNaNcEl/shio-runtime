@@ -6,6 +6,7 @@ import {
   parseLeadingEmotionTag,
   supportedEmotionPromptList,
 } from '../shared/emotion'
+import type { ScreenContextImageMimeType } from '../shared/screen-context'
 import type { LLMProvider, LlmRequestOptions } from './llm'
 import { mainLog } from './logging/safeLogger'
 import type { MemoryStore } from './memory'
@@ -19,7 +20,7 @@ const TTS_ENGINE = 'f5'
 export interface CharacterReplyInput {
   userText: string
   screenContext?: {
-    mimeType: 'image/jpeg'
+    mimeType: ScreenContextImageMimeType
     bytes: Uint8Array
     sourceName: string
   }

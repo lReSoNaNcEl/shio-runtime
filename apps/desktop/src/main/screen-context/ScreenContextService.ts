@@ -1,12 +1,19 @@
 import { randomUUID } from 'node:crypto'
 
 import type {
+  ScreenContextAttachmentKind,
   ScreenContextCaptureDescriptor,
   ScreenContextErrorCode,
+  ScreenContextImageMimeType,
+  ScreenContextImportRequest,
   ScreenContextSource,
-  ScreenContextSourceKind,
 } from '../../shared/screen-context'
 import { mainLog } from '../logging/safeLogger'
+import {
+  ImageNormalizationError,
+  ImageNormalizer,
+  type NormalizedScreenContextImage,
+} from './ImageNormalizer'
 import { type ScreenCaptureAdapter, ScreenCaptureError } from './ScreenCaptureAdapter'
 
 export const SCREEN_CONTEXT_TUNING = {
@@ -19,9 +26,9 @@ export interface PendingCapture {
   captureId: string
   rendererId: number
   bytes: Uint8Array
-  mimeType: 'image/jpeg'
+  mimeType: ScreenContextImageMimeType
   sourceName: string
-  sourceKind: ScreenContextSourceKind
+  sourceKind: ScreenContextAttachmentKind
   width: number
   height: number
   expiresAt: number
@@ -36,6 +43,7 @@ export class ScreenContextError extends Error {
 
 interface StoredCapture extends PendingCapture {
   expirationTimer: ReturnType<typeof setTimeout>
+  recaptureSourceId?: string
 }
 
 export class ScreenContextService {
@@ -44,7 +52,10 @@ export class ScreenContextService {
   private readonly expiredCaptures = new Map<string, number>()
   private readonly expiredCleanupTimers = new Map<string, ReturnType<typeof setTimeout>>()
 
-  constructor(private readonly adapter: ScreenCaptureAdapter) {}
+  constructor(
+    private readonly adapter: ScreenCaptureAdapter,
+    private readonly normalizer = new ImageNormalizer(),
+  ) {}
 
   async listSources(rendererId: number): Promise<ScreenContextSource[]> {
     try {
@@ -57,48 +68,22 @@ export class ScreenContextService {
   }
 
   async capture(rendererId: number, sourceId: string): Promise<ScreenContextCaptureDescriptor> {
-    this.releaseRendererCapture(rendererId)
     try {
       const captured = await this.adapter.captureSource(sourceId)
-      if (captured.bytes.byteLength > SCREEN_CONTEXT_TUNING.maxBytes) {
-        throw new ScreenContextError('CAPTURE_TOO_LARGE')
-      }
-      const captureId = randomUUID()
-      const expiresAt = Date.now() + SCREEN_CONTEXT_TUNING.ttlMs
-      const expirationTimer = setTimeout(
-        () => this.expireCapture(captureId),
-        SCREEN_CONTEXT_TUNING.ttlMs,
-      )
-      const stored: StoredCapture = {
-        captureId,
-        rendererId,
-        bytes: captured.bytes,
-        mimeType: captured.mimeType,
+      const image = this.normalizer.normalizeDesktopCapture(captured.image)
+      const descriptor = this.storeCapture(rendererId, image, {
         sourceName: captured.sourceName,
         sourceKind: captured.sourceKind,
-        width: captured.width,
-        height: captured.height,
-        expiresAt,
-        expirationTimer,
-      }
-      this.captures.set(captureId, stored)
-      this.captureByRenderer.set(rendererId, captureId)
+        recaptureSourceId: sourceId,
+      })
       mainLog.info('Screen Context Captured', {
         rendererId,
         sourceKind: captured.sourceKind,
-        width: captured.width,
-        height: captured.height,
-        bytes: captured.bytes.byteLength,
+        width: image.width,
+        height: image.height,
+        bytes: image.bytes.byteLength,
       })
-      return {
-        captureId,
-        sourceName: captured.sourceName,
-        sourceKind: captured.sourceKind,
-        previewDataUrl: captured.previewDataUrl,
-        width: captured.width,
-        height: captured.height,
-        expiresAt,
-      }
+      return descriptor
     } catch (error) {
       const normalized = this.normalizeError(error)
       mainLog.warn('Screen Context Rejected', { rendererId, reason: normalized.code })
@@ -106,19 +91,73 @@ export class ScreenContextService {
     }
   }
 
-  consume(rendererId: number, captureId: string): PendingCapture {
-    const capture = this.captures.get(captureId)
-    if (!capture) {
-      if (this.expiredCaptures.get(captureId) === rendererId) {
-        throw new ScreenContextError('CAPTURE_EXPIRED')
+  async importImage(
+    rendererId: number,
+    request: ScreenContextImportRequest,
+  ): Promise<ScreenContextCaptureDescriptor> {
+    try {
+      const image = await this.normalizer.normalizeImport(request.bytes, request.mimeType)
+      const sourceName =
+        request.sourceKind === 'clipboard' ? '' : this.sanitizeSourceName(request.sourceName)
+      const descriptor = this.storeCapture(rendererId, image, {
+        sourceName,
+        sourceKind: request.sourceKind,
+      })
+      mainLog.info('Screen Context Imported', {
+        rendererId,
+        sourceKind: request.sourceKind,
+        mimeType: image.mimeType,
+        width: image.width,
+        height: image.height,
+        bytes: image.bytes.byteLength,
+      })
+      return descriptor
+    } catch (error) {
+      const normalized = this.normalizeError(error)
+      mainLog.warn('Screen Context Import Rejected', {
+        rendererId,
+        sourceKind: request.sourceKind,
+        mimeType: request.mimeType,
+        reason: normalized.code,
+      })
+      throw normalized
+    }
+  }
+
+  async recapture(rendererId: number, captureId: string): Promise<ScreenContextCaptureDescriptor> {
+    try {
+      const existing = this.getOwnedCapture(rendererId, captureId)
+      if (!existing.recaptureSourceId) {
+        throw new ScreenContextError('RECAPTURE_UNAVAILABLE')
       }
-      throw new ScreenContextError('CAPTURE_NOT_OWNED')
+      const captured = await this.adapter.captureSource(existing.recaptureSourceId)
+      const image = this.normalizer.normalizeDesktopCapture(captured.image)
+      const descriptor = this.storeCapture(rendererId, image, {
+        sourceName: captured.sourceName,
+        sourceKind: captured.sourceKind,
+        recaptureSourceId: existing.recaptureSourceId,
+      })
+      mainLog.info('Screen Context Recaptured', {
+        rendererId,
+        sourceKind: captured.sourceKind,
+        mimeType: image.mimeType,
+        width: image.width,
+        height: image.height,
+        bytes: image.bytes.byteLength,
+      })
+      return descriptor
+    } catch (error) {
+      const normalized = this.normalizeError(error)
+      mainLog.warn('Screen Context Recapture Rejected', {
+        rendererId,
+        reason: normalized.code,
+      })
+      throw normalized
     }
-    if (capture.rendererId !== rendererId) throw new ScreenContextError('CAPTURE_NOT_OWNED')
-    if (capture.expiresAt <= Date.now()) {
-      this.expireCapture(captureId)
-      throw new ScreenContextError('CAPTURE_EXPIRED')
-    }
+  }
+
+  consume(rendererId: number, captureId: string): PendingCapture {
+    const capture = this.getOwnedCapture(rendererId, captureId)
     this.removeCapture(captureId)
     mainLog.info('Screen Context Consumed', {
       rendererId,
@@ -127,7 +166,11 @@ export class ScreenContextService {
       height: capture.height,
       bytes: capture.bytes.byteLength,
     })
-    const { expirationTimer: _expirationTimer, ...pending } = capture
+    const {
+      expirationTimer: _expirationTimer,
+      recaptureSourceId: _recaptureSourceId,
+      ...pending
+    } = capture
     return pending
   }
 
@@ -155,6 +198,77 @@ export class ScreenContextService {
   dispose(): void {
     for (const captureId of [...this.captures.keys()]) this.removeCapture(captureId)
     for (const captureId of [...this.expiredCaptures.keys()]) this.clearExpiredMarker(captureId)
+  }
+
+  private storeCapture(
+    rendererId: number,
+    image: NormalizedScreenContextImage,
+    metadata: {
+      sourceName: string
+      sourceKind: ScreenContextAttachmentKind
+      recaptureSourceId?: string
+    },
+  ): ScreenContextCaptureDescriptor {
+    const previousCaptureId = this.captureByRenderer.get(rendererId)
+    const captureId = randomUUID()
+    const expiresAt = Date.now() + SCREEN_CONTEXT_TUNING.ttlMs
+    const expirationTimer = setTimeout(
+      () => this.expireCapture(captureId),
+      SCREEN_CONTEXT_TUNING.ttlMs,
+    )
+    const stored: StoredCapture = {
+      captureId,
+      rendererId,
+      bytes: image.bytes,
+      mimeType: image.mimeType,
+      sourceName: metadata.sourceName,
+      sourceKind: metadata.sourceKind,
+      width: image.width,
+      height: image.height,
+      expiresAt,
+      expirationTimer,
+      recaptureSourceId: metadata.recaptureSourceId,
+    }
+    this.captures.set(captureId, stored)
+    this.captureByRenderer.set(rendererId, captureId)
+    if (previousCaptureId && previousCaptureId !== captureId) {
+      this.removeCapture(previousCaptureId)
+    }
+    return {
+      captureId,
+      sourceName: metadata.sourceName,
+      sourceKind: metadata.sourceKind,
+      mimeType: image.mimeType,
+      previewDataUrl: image.previewDataUrl,
+      width: image.width,
+      height: image.height,
+      expiresAt,
+      canRecapture: metadata.recaptureSourceId !== undefined,
+    }
+  }
+
+  private getOwnedCapture(rendererId: number, captureId: string): StoredCapture {
+    const capture = this.captures.get(captureId)
+    if (!capture) {
+      if (this.expiredCaptures.get(captureId) === rendererId) {
+        throw new ScreenContextError('CAPTURE_EXPIRED')
+      }
+      throw new ScreenContextError('CAPTURE_NOT_OWNED')
+    }
+    if (capture.rendererId !== rendererId) throw new ScreenContextError('CAPTURE_NOT_OWNED')
+    if (capture.expiresAt <= Date.now()) {
+      this.expireCapture(captureId)
+      throw new ScreenContextError('CAPTURE_EXPIRED')
+    }
+    return capture
+  }
+
+  private sanitizeSourceName(sourceName?: string): string {
+    const basename = (sourceName ?? '')
+      .replace(/^.*[\\/]/u, '')
+      .replace(/[\\/]/gu, '')
+      .slice(0, 255)
+    return basename || 'image'
   }
 
   private releaseRendererCapture(rendererId: number): void {
@@ -200,7 +314,9 @@ export class ScreenContextService {
 
   private normalizeError(error: unknown): ScreenContextError {
     if (error instanceof ScreenContextError) return error
-    if (error instanceof ScreenCaptureError) return new ScreenContextError(error.code)
+    if (error instanceof ScreenCaptureError || error instanceof ImageNormalizationError) {
+      return new ScreenContextError(error.code)
+    }
     return new ScreenContextError('UNKNOWN')
   }
 }

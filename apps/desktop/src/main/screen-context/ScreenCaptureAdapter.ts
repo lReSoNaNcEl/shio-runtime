@@ -1,11 +1,12 @@
 import { type DesktopCapturerSource, desktopCapturer, type NativeImage } from 'electron'
 
-import type { ScreenContextSource, ScreenContextSourceKind } from '../../shared/screen-context'
+import type {
+  ScreenContextDesktopSourceKind,
+  ScreenContextSource,
+} from '../../shared/screen-context'
 
 const PREVIEW_SIZE = { width: 320, height: 180 } as const
 const CAPTURE_SIZE = { width: 2048, height: 2048 } as const
-const INITIAL_JPEG_QUALITY = 82
-const MAX_CAPTURE_BYTES = 5 * 1024 * 1024
 
 export class ScreenCaptureError extends Error {
   constructor(
@@ -22,7 +23,7 @@ export class ScreenCaptureError extends Error {
   }
 }
 
-function sourceKind(source: DesktopCapturerSource): ScreenContextSourceKind {
+function sourceKind(source: DesktopCapturerSource): ScreenContextDesktopSourceKind {
   return source.id.startsWith('screen:') ? 'screen' : 'window'
 }
 
@@ -50,31 +51,6 @@ async function getSources(
   }
 }
 
-function encodeWithinLimit(image: NativeImage): {
-  bytes: Uint8Array
-  image: NativeImage
-} {
-  let current = image
-  let quality = INITIAL_JPEG_QUALITY
-  for (let attempt = 0; attempt < 14; attempt += 1) {
-    const jpeg = current.toJPEG(quality)
-    if (jpeg.byteLength > 0 && jpeg.byteLength <= MAX_CAPTURE_BYTES) {
-      return { bytes: new Uint8Array(jpeg), image: current }
-    }
-    if (quality > 52) {
-      quality -= 10
-      continue
-    }
-    const size = current.getSize()
-    const width = Math.max(1, Math.floor(size.width * 0.8))
-    const height = Math.max(1, Math.floor(size.height * 0.8))
-    if (width === size.width && height === size.height) break
-    current = current.resize({ width, height, quality: 'good' })
-    quality = 72
-  }
-  throw new ScreenCaptureError('CAPTURE_TOO_LARGE')
-}
-
 export class ScreenCaptureAdapter {
   async listSources(): Promise<ScreenContextSource[]> {
     const sources = await getSources(PREVIEW_SIZE, true)
@@ -99,33 +75,19 @@ export class ScreenCaptureAdapter {
   }
 
   async captureSource(sourceId: string): Promise<{
-    bytes: Uint8Array
-    mimeType: 'image/jpeg'
+    image: NativeImage
     sourceName: string
-    sourceKind: ScreenContextSourceKind
-    width: number
-    height: number
-    previewDataUrl: string
+    sourceKind: ScreenContextDesktopSourceKind
   }> {
     const sources = await getSources(CAPTURE_SIZE, false)
     const source = sources.find((candidate) => candidate.id === sourceId)
     if (!source) throw new ScreenCaptureError('SOURCE_NOT_FOUND')
     if (source.thumbnail.isEmpty()) throw new ScreenCaptureError('CAPTURE_EMPTY')
 
-    const encoded = encodeWithinLimit(source.thumbnail)
-    const size = encoded.image.getSize()
-    const preview = encoded.image.resize({
-      width: PREVIEW_SIZE.width,
-      quality: 'good',
-    })
     return {
-      bytes: encoded.bytes,
-      mimeType: 'image/jpeg',
+      image: source.thumbnail,
       sourceName: source.name,
       sourceKind: sourceKind(source),
-      width: size.width,
-      height: size.height,
-      previewDataUrl: jpegDataUrl(preview, 72),
     }
   }
 }
