@@ -2,6 +2,18 @@
 
 Shio Runtime `0.1.0-alpha.1` is an unsigned technical prerelease for invited testers.
 
+## What Shio Runtime can do
+
+- Run an interactive VRM character with idle motion, expressions, lip sync, and a mirror overlay.
+- Chat through supported cloud LLM providers while keeping API keys in Windows-backed encrypted storage.
+- Accept text and microphone input, recognize speech locally, and answer through local F5-TTS playback.
+- Load a user-selected VRM avatar and provide a guided fallback when no model is configured.
+- Build a read-only searchable context from a selected GitHub repository and branch.
+- Expose Runtime Health, persistent logs, and safe support information for diagnostics.
+- Install, verify, start, monitor, and stop the optional Local Speech API together with Desktop through the Windows launcher.
+
+For the exact change history, see [`CHANGELOG.md`](../CHANGELOG.md). Detailed tester guidance is in [`ALPHA.md`](ALPHA.md).
+
 ## Requirements
 
 - Windows 11 x64

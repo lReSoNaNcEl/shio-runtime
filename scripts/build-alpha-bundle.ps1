@@ -25,9 +25,12 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "Desktop packaging failed." }
 } finally { Pop-Location }
 
-Copy-Item -LiteralPath (Join-Path $repoRoot "Start Shio Runtime.cmd") -Destination $bundleRoot
+Copy-Item -LiteralPath (Join-Path $repoRoot "launcher\Start Shio Runtime.cmd") -Destination $bundleRoot
 Copy-Item -LiteralPath (Join-Path $repoRoot "README-FIRST.txt") -Destination $bundleRoot
-Copy-Item -LiteralPath (Join-Path $repoRoot "launcher") -Destination $bundleRoot -Recurse
+$launcherTarget = Join-Path $bundleRoot "launcher"
+New-Item -ItemType Directory -Force -Path $launcherTarget | Out-Null
+Copy-Item -LiteralPath (Join-Path $repoRoot "launcher\ShioLauncher.ps1") -Destination $launcherTarget
+Copy-Item -LiteralPath (Join-Path $repoRoot "launcher\release-manifest.json") -Destination $launcherTarget
 Copy-Item -LiteralPath (Join-Path $repoRoot "apps\desktop\release\win-unpacked") `
     -Destination (Join-Path $bundleRoot "desktop") -Recurse
 

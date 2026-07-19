@@ -8,7 +8,6 @@
     "desktop:dev": "npm --prefix apps/desktop run dev",
     "desktop:build": "npm --prefix apps/desktop run build",
     "desktop:pack": "npm --prefix apps/desktop run pack",
-    "desktop:dist": "npm --prefix apps/desktop run dist",
     "desktop:preview": "npm --prefix apps/desktop run preview",
     "desktop:start": "npm --prefix apps/desktop run start",
     "desktop:typecheck": "npm --prefix apps/desktop run typecheck",
