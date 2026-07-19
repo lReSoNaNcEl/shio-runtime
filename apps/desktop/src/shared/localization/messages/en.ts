@@ -255,6 +255,13 @@ export const enMessages: Record<TranslationKey, string> = {
   'camera.toggle.enable': 'Turn on camera, current mode {mode}',
   'camera.framing.open': 'Avatar framing: {mode}. Open menu.',
   'camera.label': 'Camera',
+  'camera.missingVrm.title': 'Avatar model is not configured',
+  'camera.missingVrm.description':
+    'The camera overlay has nothing to display because no VRM model is loaded.',
+  'camera.missingVrm.hint': 'Choose a .vrm file in Avatar settings, then turn the camera on again.',
+  'camera.missingVrm.openSettings': 'Open Avatar settings',
+  'camera.missingVrm.triggerDescription':
+    'Camera unavailable: choose a VRM model in Avatar settings.',
 
   'health.project.state.disconnected': 'Disconnected',
   'health.project.state.connecting': 'Connecting…',

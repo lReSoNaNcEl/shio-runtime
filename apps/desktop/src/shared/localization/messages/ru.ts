@@ -252,6 +252,14 @@ export const ruMessages = {
   'camera.toggle.enable': 'Включить камеру, текущий режим {mode}',
   'camera.framing.open': 'Кадрирование аватара: {mode}. Открыть меню.',
   'camera.label': 'Камера',
+  'camera.missingVrm.title': 'Модель аватара не настроена',
+  'camera.missingVrm.description':
+    'Камере нечего отображать, потому что VRM-модель ещё не загружена.',
+  'camera.missingVrm.hint':
+    'Выберите файл .vrm в настройках аватара, а затем снова включите камеру.',
+  'camera.missingVrm.openSettings': 'Открыть настройки аватара',
+  'camera.missingVrm.triggerDescription':
+    'Камера недоступна: выберите VRM-модель в настройках аватара.',
 
   'health.project.state.disconnected': 'Отключено',
   'health.project.state.connecting': 'Подключение…',

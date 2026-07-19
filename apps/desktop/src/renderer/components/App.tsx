@@ -10,7 +10,9 @@ import { NewConversationDialog } from './chat/NewConversationDialog'
 import { OverlayCameraControl } from './controls/OverlayCameraControl'
 import { StreamingModeControl } from './controls/StreamingModeControl'
 import { MicrophoneGateOverlay } from './overlays/MicrophoneGateOverlay'
+import { MissingVrmDialog } from './overlays/MissingVrmDialog'
 import { SettingsDialog } from './settings/SettingsDialog'
+import { type SettingsSection } from './settings/state/settingsContracts'
 import { type AppSection, AppShell, SectionHeading } from './shell/AppShell'
 import { AvatarPreviewView } from './views/AvatarPreviewView'
 import { DiagnosticsView } from './views/DiagnosticsView'
@@ -21,12 +23,13 @@ export function App() {
   const overlayCanvasRef = useRef<HTMLCanvasElement>(null)
   const state = useControllerState()
   const [section, setSection] = useState<AppSection>('chat')
-  const [settingsInitialSection, setSettingsInitialSection] = useState<'general' | 'llm'>('general')
+  const [settingsInitialSection, setSettingsInitialSection] = useState<SettingsSection>('general')
   const [developerModeEnabled, setDeveloperModeEnabled] = useState(false)
   const [speechToast, setSpeechToast] = useState<string | null>(null)
   const [newConversationDialogOpen, setNewConversationDialogOpen] = useState(false)
   const [newConversationPending, setNewConversationPending] = useState(false)
   const [newConversationError, setNewConversationError] = useState<string | null>(null)
+  const [missingVrmDialogOpen, setMissingVrmDialogOpen] = useState(false)
   const chatOverlayRef = useRef<ChatOverlayHandle>(null)
   const prevSpeechService = useRef(state.speechCapabilities.service)
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -125,6 +128,14 @@ export function App() {
     void startNewConversation()
   }
 
+  const setOverlayVisible = async (visible: boolean): Promise<void> => {
+    if (visible && !state.vrmLoaded) {
+      setMissingVrmDialogOpen(true)
+      return
+    }
+    await controller.setOverlayVisible(visible)
+  }
+
   if (isOverlay)
     return (
       <Provider colorScheme="dark" locale={intlLocale} UNSAFE_className="app-provider">
@@ -161,7 +172,8 @@ export function App() {
               <OverlayCameraControl
                 overlayState={state.overlayState}
                 cameraMode={state.overlayCameraMode}
-                onToggle={() => controller.toggleOverlay()}
+                vrmLoaded={state.vrmLoaded}
+                onToggle={() => setOverlayVisible(state.overlayState !== 'on')}
                 onCameraModeChange={(mode) => controller.setOverlayViewMode(mode)}
               />
             </div>
@@ -195,7 +207,7 @@ export function App() {
         {section === 'avatar' && (
           <AvatarPreviewView
             onOpenSettings={() => {
-              setSettingsInitialSection('general')
+              setSettingsInitialSection('avatar')
               setSection('settings')
             }}
           />
@@ -224,7 +236,7 @@ export function App() {
             overlayViewModeProjection={state.overlayCameraMode}
             llmHealth={state.llmHealth}
             onOverlayVisibleChange={() => void controller.refreshOverlayVisibility()}
-            onToggleOverlay={(visible) => controller.setOverlayVisible(visible)}
+            onToggleOverlay={setOverlayVisible}
             onClose={() => setSection('chat')}
           />
         )}
@@ -243,6 +255,15 @@ export function App() {
           if (newConversationPending) return
           setNewConversationDialogOpen(false)
           setNewConversationError(null)
+        }}
+      />
+      <MissingVrmDialog
+        isOpen={missingVrmDialogOpen}
+        onDismiss={() => setMissingVrmDialogOpen(false)}
+        onOpenSettings={() => {
+          setMissingVrmDialogOpen(false)
+          setSettingsInitialSection('avatar')
+          setSection('settings')
         }}
       />
     </Provider>
