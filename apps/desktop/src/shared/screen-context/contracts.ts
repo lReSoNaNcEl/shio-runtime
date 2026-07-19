@@ -15,10 +15,21 @@ export interface ScreenContextSource {
 }
 
 export interface ScreenContextImportRequest {
+  operationId: string
   bytes: ArrayBuffer
   mimeType: ScreenContextImportMimeType
   sourceKind: 'clipboard' | 'file'
   sourceName?: string
+}
+
+export interface ScreenContextCaptureRequest {
+  operationId: string
+  sourceId: string
+}
+
+export interface ScreenContextRecaptureRequest {
+  operationId: string
+  captureId: string
 }
 
 export interface ScreenContextCaptureDescriptor {
@@ -49,6 +60,7 @@ export type ScreenContextErrorCode =
   | 'UNSUPPORTED_IMAGE_TYPE'
   | 'IMAGE_DECODE_FAILED'
   | 'RECAPTURE_UNAVAILABLE'
+  | 'OPERATION_STALE'
   | 'UNKNOWN'
 
 export interface ScreenContextErrorResult {

@@ -292,19 +292,29 @@ export function registerIpcHandlers(
       return screenContextFailure(screenContextErrorCode(error))
     }
   })
-  ipcMain.handle('screen-context:capture', async (event, sourceId: unknown) => {
-    const parsedSourceId = z.string().trim().min(1).max(500).safeParse(sourceId)
-    if (!parsedSourceId.success) return screenContextFailure('SOURCE_NOT_FOUND')
+  const screenContextOperationIdSchema = z.string().uuid()
+  const screenContextCaptureSchema = z.object({
+    operationId: screenContextOperationIdSchema,
+    sourceId: z.string().trim().min(1).max(500),
+  })
+  ipcMain.handle('screen-context:capture', async (event, payload: unknown) => {
+    const parsed = screenContextCaptureSchema.safeParse(payload)
+    if (!parsed.success) return screenContextFailure('SOURCE_NOT_FOUND')
     try {
       return {
         ok: true,
-        value: await screenContext.capture(event.sender.id, parsedSourceId.data),
+        value: await screenContext.capture(
+          event.sender.id,
+          parsed.data.operationId,
+          parsed.data.sourceId,
+        ),
       } satisfies ScreenContextResult<Awaited<ReturnType<ScreenContextService['capture']>>>
     } catch (error) {
       return screenContextFailure(screenContextErrorCode(error))
     }
   })
   const screenContextImportSchema = z.object({
+    operationId: screenContextOperationIdSchema,
     bytes: z
       .instanceof(ArrayBuffer)
       .refine(
@@ -350,17 +360,33 @@ export function registerIpcHandlers(
       return screenContextFailure(screenContextErrorCode(error))
     }
   })
-  ipcMain.handle('screen-context:recapture', async (event, captureId: unknown) => {
-    const parsedCaptureId = z.string().trim().min(1).max(100).safeParse(captureId)
-    if (!parsedCaptureId.success) return screenContextFailure('CAPTURE_NOT_OWNED')
+  const screenContextRecaptureSchema = z.object({
+    operationId: screenContextOperationIdSchema,
+    captureId: z.string().trim().min(1).max(100),
+  })
+  ipcMain.handle('screen-context:recapture', async (event, payload: unknown) => {
+    const parsed = screenContextRecaptureSchema.safeParse(payload)
+    if (!parsed.success) return screenContextFailure('CAPTURE_NOT_OWNED')
     try {
       return {
         ok: true,
-        value: await screenContext.recapture(event.sender.id, parsedCaptureId.data),
+        value: await screenContext.recapture(
+          event.sender.id,
+          parsed.data.operationId,
+          parsed.data.captureId,
+        ),
       } satisfies ScreenContextResult<Awaited<ReturnType<ScreenContextService['recapture']>>>
     } catch (error) {
       return screenContextFailure(screenContextErrorCode(error))
     }
+  })
+  ipcMain.handle('screen-context:cancel-operation', (event, operationId: unknown) => {
+    const parsedOperationId = screenContextOperationIdSchema.safeParse(operationId)
+    if (!parsedOperationId.success) return screenContextFailure('OPERATION_STALE')
+    return {
+      ok: true,
+      value: screenContext.cancelOperation(event.sender.id, parsedOperationId.data),
+    } satisfies ScreenContextResult<boolean>
   })
   ipcMain.handle('screen-context:release', (event, captureId: unknown) => {
     const parsedCaptureId = z.string().trim().min(1).max(100).safeParse(captureId)

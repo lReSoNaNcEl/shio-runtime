@@ -6,7 +6,7 @@ import {
 } from '../../../shared/screen-context'
 import { useTranslation } from '../../localization/useTranslation'
 import { screenContextErrorMessage } from './screenContextErrorMessage'
-import { isSupportedImageFile } from './screenContextImageInput'
+import { isSupportedImageFile, isSupportedImageMimeType } from './screenContextImageInput'
 
 export interface ScreenContextAttachmentController {
   pending: ScreenContextCaptureDescriptor | null
@@ -35,14 +35,20 @@ export function useScreenContextAttachment(): ScreenContextAttachmentController 
   const [recapturing, setRecapturing] = useState(false)
   const pendingRef = useRef<ScreenContextCaptureDescriptor | null>(null)
   const operationIdRef = useRef(0)
+  const mainOperationIdRef = useRef<string | null>(null)
   const operationActiveRef = useRef(false)
 
   useEffect(
     () => () => {
       operationIdRef.current += 1
       operationActiveRef.current = false
+      const mainOperationId = mainOperationIdRef.current
+      mainOperationIdRef.current = null
       const capture = pendingRef.current
       pendingRef.current = null
+      if (mainOperationId) {
+        void window.api.screenContext.cancelOperation(mainOperationId)
+      }
       if (capture) void window.api.screenContext.release(capture.captureId)
     },
     [],
@@ -55,6 +61,8 @@ export function useScreenContextAttachment(): ScreenContextAttachmentController 
   const release = async (): Promise<void> => {
     operationIdRef.current += 1
     operationActiveRef.current = false
+    const mainOperationId = mainOperationIdRef.current
+    mainOperationIdRef.current = null
     setImporting(false)
     setRecapturing(false)
     setDragActive(false)
@@ -63,6 +71,9 @@ export function useScreenContextAttachment(): ScreenContextAttachmentController 
     setPending(null)
     setError(null)
     setPickerOpen(false)
+    if (mainOperationId) {
+      await window.api.screenContext.cancelOperation(mainOperationId)
+    }
     if (capture) await window.api.screenContext.release(capture.captureId)
   }
 
@@ -78,7 +89,11 @@ export function useScreenContextAttachment(): ScreenContextAttachmentController 
 
   const importFile = async (file: File, sourceKind: 'clipboard' | 'file'): Promise<void> => {
     if (operationActiveRef.current) return
-    if (!isSupportedImageFile(file)) {
+    if (!isSupportedImageMimeType(file.type)) {
+      setError(t('screenContext.input.unsupportedType'))
+      return
+    }
+    if (sourceKind === 'file' && !isSupportedImageFile(file)) {
       setError(t('screenContext.input.unsupportedType'))
       return
     }
@@ -87,6 +102,8 @@ export function useScreenContextAttachment(): ScreenContextAttachmentController 
       return
     }
     const operationId = ++operationIdRef.current
+    const mainOperationId = crypto.randomUUID()
+    mainOperationIdRef.current = mainOperationId
     operationActiveRef.current = true
     setImporting(true)
     setError(null)
@@ -100,6 +117,7 @@ export function useScreenContextAttachment(): ScreenContextAttachmentController 
       const bytes = await file.arrayBuffer()
       if (operationId !== operationIdRef.current) return
       const result = await window.api.screenContext.importImage({
+        operationId: mainOperationId,
         bytes,
         mimeType: file.type,
         sourceKind,
@@ -122,6 +140,9 @@ export function useScreenContextAttachment(): ScreenContextAttachmentController 
       }
     } finally {
       if (operationId === operationIdRef.current) {
+        if (mainOperationIdRef.current === mainOperationId) {
+          mainOperationIdRef.current = null
+        }
         operationActiveRef.current = false
         setImporting(false)
       }
@@ -132,11 +153,16 @@ export function useScreenContextAttachment(): ScreenContextAttachmentController 
     const capture = pendingRef.current
     if (!capture?.canRecapture || operationActiveRef.current) return
     const operationId = ++operationIdRef.current
+    const mainOperationId = crypto.randomUUID()
+    mainOperationIdRef.current = mainOperationId
     operationActiveRef.current = true
     setRecapturing(true)
     setError(null)
     try {
-      const result = await window.api.screenContext.recapture(capture.captureId)
+      const result = await window.api.screenContext.recapture({
+        operationId: mainOperationId,
+        captureId: capture.captureId,
+      })
       if (operationId !== operationIdRef.current) {
         if (result.ok) await window.api.screenContext.release(result.value.captureId)
         return
@@ -153,6 +179,9 @@ export function useScreenContextAttachment(): ScreenContextAttachmentController 
       }
     } finally {
       if (operationId === operationIdRef.current) {
+        if (mainOperationIdRef.current === mainOperationId) {
+          mainOperationIdRef.current = null
+        }
         operationActiveRef.current = false
         setRecapturing(false)
       }

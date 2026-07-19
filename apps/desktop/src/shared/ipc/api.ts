@@ -6,8 +6,10 @@ import type { ProjectAwarenessApi } from '../project-awareness'
 import type { RuntimeEventInput } from '../runtime/events'
 import type {
   ScreenContextCaptureDescriptor,
+  ScreenContextCaptureRequest,
   ScreenContextErrorCode,
   ScreenContextImportRequest,
+  ScreenContextRecaptureRequest,
   ScreenContextResult,
   ScreenContextSource,
 } from '../screen-context/contracts'
@@ -60,11 +62,16 @@ export interface ShioRuntimeApi {
   }
   screenContext: {
     listSources: () => Promise<ScreenContextResult<ScreenContextSource[]>>
-    capture: (sourceId: string) => Promise<ScreenContextResult<ScreenContextCaptureDescriptor>>
+    capture: (
+      request: ScreenContextCaptureRequest,
+    ) => Promise<ScreenContextResult<ScreenContextCaptureDescriptor>>
     importImage: (
       request: ScreenContextImportRequest,
     ) => Promise<ScreenContextResult<ScreenContextCaptureDescriptor>>
-    recapture: (captureId: string) => Promise<ScreenContextResult<ScreenContextCaptureDescriptor>>
+    recapture: (
+      request: ScreenContextRecaptureRequest,
+    ) => Promise<ScreenContextResult<ScreenContextCaptureDescriptor>>
+    cancelOperation: (operationId: string) => Promise<ScreenContextResult<boolean>>
     release: (captureId: string) => Promise<ScreenContextResult<boolean>>
   }
   tts: {

@@ -49,6 +49,7 @@ interface StoredCapture extends PendingCapture {
 export class ScreenContextService {
   private readonly captures = new Map<string, StoredCapture>()
   private readonly captureByRenderer = new Map<number, string>()
+  private readonly operationByRenderer = new Map<number, string>()
   private readonly expiredCaptures = new Map<string, number>()
   private readonly expiredCleanupTimers = new Map<string, ReturnType<typeof setTimeout>>()
 
@@ -67,11 +68,16 @@ export class ScreenContextService {
     }
   }
 
-  async capture(rendererId: number, sourceId: string): Promise<ScreenContextCaptureDescriptor> {
+  async capture(
+    rendererId: number,
+    operationId: string,
+    sourceId: string,
+  ): Promise<ScreenContextCaptureDescriptor> {
+    this.beginOperation(rendererId, operationId)
     try {
       const captured = await this.adapter.captureSource(sourceId)
       const image = this.normalizer.normalizeDesktopCapture(captured.image)
-      const descriptor = this.storeCapture(rendererId, image, {
+      const descriptor = this.storeCapture(rendererId, operationId, image, {
         sourceName: captured.sourceName,
         sourceKind: captured.sourceKind,
         recaptureSourceId: sourceId,
@@ -85,6 +91,7 @@ export class ScreenContextService {
       })
       return descriptor
     } catch (error) {
+      this.cancelOperation(rendererId, operationId)
       const normalized = this.normalizeError(error)
       mainLog.warn('Screen Context Rejected', { rendererId, reason: normalized.code })
       throw normalized
@@ -95,11 +102,12 @@ export class ScreenContextService {
     rendererId: number,
     request: ScreenContextImportRequest,
   ): Promise<ScreenContextCaptureDescriptor> {
+    this.beginOperation(rendererId, request.operationId)
     try {
       const image = await this.normalizer.normalizeImport(request.bytes, request.mimeType)
       const sourceName =
         request.sourceKind === 'clipboard' ? '' : this.sanitizeSourceName(request.sourceName)
-      const descriptor = this.storeCapture(rendererId, image, {
+      const descriptor = this.storeCapture(rendererId, request.operationId, image, {
         sourceName,
         sourceKind: request.sourceKind,
       })
@@ -113,6 +121,7 @@ export class ScreenContextService {
       })
       return descriptor
     } catch (error) {
+      this.cancelOperation(rendererId, request.operationId)
       const normalized = this.normalizeError(error)
       mainLog.warn('Screen Context Import Rejected', {
         rendererId,
@@ -124,7 +133,12 @@ export class ScreenContextService {
     }
   }
 
-  async recapture(rendererId: number, captureId: string): Promise<ScreenContextCaptureDescriptor> {
+  async recapture(
+    rendererId: number,
+    operationId: string,
+    captureId: string,
+  ): Promise<ScreenContextCaptureDescriptor> {
+    this.beginOperation(rendererId, operationId)
     try {
       const existing = this.getOwnedCapture(rendererId, captureId)
       if (!existing.recaptureSourceId) {
@@ -132,7 +146,7 @@ export class ScreenContextService {
       }
       const captured = await this.adapter.captureSource(existing.recaptureSourceId)
       const image = this.normalizer.normalizeDesktopCapture(captured.image)
-      const descriptor = this.storeCapture(rendererId, image, {
+      const descriptor = this.storeCapture(rendererId, operationId, image, {
         sourceName: captured.sourceName,
         sourceKind: captured.sourceKind,
         recaptureSourceId: existing.recaptureSourceId,
@@ -147,6 +161,7 @@ export class ScreenContextService {
       })
       return descriptor
     } catch (error) {
+      this.cancelOperation(rendererId, operationId)
       const normalized = this.normalizeError(error)
       mainLog.warn('Screen Context Recapture Rejected', {
         rendererId,
@@ -188,7 +203,15 @@ export class ScreenContextService {
     return true
   }
 
+  cancelOperation(rendererId: number, operationId: string): boolean {
+    if (this.operationByRenderer.get(rendererId) !== operationId) return false
+    this.operationByRenderer.delete(rendererId)
+    mainLog.info('Screen Context Operation Cancelled', { rendererId })
+    return true
+  }
+
   disposeRenderer(rendererId: number): void {
+    this.operationByRenderer.delete(rendererId)
     this.releaseRendererCapture(rendererId)
     for (const [captureId, ownerId] of this.expiredCaptures) {
       if (ownerId === rendererId) this.clearExpiredMarker(captureId)
@@ -196,12 +219,14 @@ export class ScreenContextService {
   }
 
   dispose(): void {
+    this.operationByRenderer.clear()
     for (const captureId of [...this.captures.keys()]) this.removeCapture(captureId)
     for (const captureId of [...this.expiredCaptures.keys()]) this.clearExpiredMarker(captureId)
   }
 
   private storeCapture(
     rendererId: number,
+    operationId: string,
     image: NormalizedScreenContextImage,
     metadata: {
       sourceName: string
@@ -209,6 +234,10 @@ export class ScreenContextService {
       recaptureSourceId?: string
     },
   ): ScreenContextCaptureDescriptor {
+    if (this.operationByRenderer.get(rendererId) !== operationId) {
+      throw new ScreenContextError('OPERATION_STALE')
+    }
+    this.operationByRenderer.delete(rendererId)
     const previousCaptureId = this.captureByRenderer.get(rendererId)
     const captureId = randomUUID()
     const expiresAt = Date.now() + SCREEN_CONTEXT_TUNING.ttlMs
@@ -245,6 +274,10 @@ export class ScreenContextService {
       expiresAt,
       canRecapture: metadata.recaptureSourceId !== undefined,
     }
+  }
+
+  private beginOperation(rendererId: number, operationId: string): void {
+    this.operationByRenderer.set(rendererId, operationId)
   }
 
   private getOwnedCapture(rendererId: number, captureId: string): StoredCapture {

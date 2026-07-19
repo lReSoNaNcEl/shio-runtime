@@ -40,6 +40,7 @@ export function ScreenContextPicker({ isOpen, onDismiss, onChangeModel, onAttach
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [errorCode, setErrorCode] = useState<ScreenContextErrorCode | null>(null)
   const operationIdRef = useRef(0)
+  const mainOperationIdRef = useRef<string | null>(null)
 
   const loadSources = useCallback(async (existingOperationId?: number): Promise<void> => {
     const operationId = existingOperationId ?? ++operationIdRef.current
@@ -86,6 +87,11 @@ export function ScreenContextPicker({ isOpen, onDismiss, onChangeModel, onAttach
   useEffect(() => {
     if (!isOpen) {
       operationIdRef.current += 1
+      const mainOperationId = mainOperationIdRef.current
+      mainOperationIdRef.current = null
+      if (mainOperationId) {
+        void window.api.screenContext.cancelOperation(mainOperationId)
+      }
       return
     }
     void refreshCapabilities()
@@ -94,6 +100,11 @@ export function ScreenContextPicker({ isOpen, onDismiss, onChangeModel, onAttach
     })
     return () => {
       operationIdRef.current += 1
+      const mainOperationId = mainOperationIdRef.current
+      mainOperationIdRef.current = null
+      if (mainOperationId) {
+        void window.api.screenContext.cancelOperation(mainOperationId)
+      }
       unsubscribe()
     }
   }, [isOpen, refreshCapabilities])
@@ -103,12 +114,18 @@ export function ScreenContextPicker({ isOpen, onDismiss, onChangeModel, onAttach
     setState('capturing')
     setErrorCode(null)
     const operationId = ++operationIdRef.current
+    const mainOperationId = crypto.randomUUID()
+    mainOperationIdRef.current = mainOperationId
     try {
-      const result = await window.api.screenContext.capture(selectedId)
+      const result = await window.api.screenContext.capture({
+        operationId: mainOperationId,
+        sourceId: selectedId,
+      })
       if (operationId !== operationIdRef.current) {
         if (result.ok) await window.api.screenContext.release(result.value.captureId)
         return
       }
+      mainOperationIdRef.current = null
       if (!result.ok) {
         setErrorCode(result.error.code)
         setState('error')
@@ -117,6 +134,8 @@ export function ScreenContextPicker({ isOpen, onDismiss, onChangeModel, onAttach
       onAttach(result.value)
       onDismiss()
     } catch {
+      if (operationId !== operationIdRef.current) return
+      mainOperationIdRef.current = null
       setErrorCode('UNKNOWN')
       setState('error')
     }

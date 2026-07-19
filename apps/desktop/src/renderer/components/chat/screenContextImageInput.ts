@@ -11,6 +11,12 @@ export function isSupportedImageFile(
   return /\.(?:jpe?g|png|webp)$/iu.test(file.name)
 }
 
+function isSupportedClipboardImage(
+  file: File,
+): file is File & { type: ScreenContextImportMimeType } {
+  return isSupportedImageMimeType(file.type)
+}
+
 function filesFromItems(data: DataTransfer): File[] {
   return Array.from(data.items).flatMap((item): File[] => {
     if (item.kind !== 'file') return []
@@ -22,7 +28,7 @@ function filesFromItems(data: DataTransfer): File[] {
 }
 
 export function clipboardImageFiles(data: DataTransfer): File[] {
-  return filesFromItems(data).filter(isSupportedImageFile)
+  return filesFromItems(data).filter(isSupportedClipboardImage)
 }
 
 export function droppedImageFiles(data: DataTransfer): File[] {

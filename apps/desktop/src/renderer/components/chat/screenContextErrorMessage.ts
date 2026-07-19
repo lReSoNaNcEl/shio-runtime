@@ -13,6 +13,7 @@ const ERROR_KEYS: Record<ScreenContextErrorCode, TranslationKey> = {
   UNSUPPORTED_IMAGE_TYPE: 'screenContext.input.unsupportedType',
   IMAGE_DECODE_FAILED: 'screenContext.error.imageDecodeFailed',
   RECAPTURE_UNAVAILABLE: 'screenContext.error.recaptureUnavailable',
+  OPERATION_STALE: 'screenContext.error.unknown',
   UNKNOWN: 'screenContext.error.unknown',
 }
 
