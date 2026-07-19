@@ -10,10 +10,12 @@
 - Read-only GitHub Project Awareness with local SQLite/FTS indexing.
 - Russian and English interface localization.
 - Persistent redacted main-process logs and safe Runtime Health support copy actions.
+- Managed Windows launcher that installs, verifies, starts, and owns an optional local Speech API process.
+- Reproducible complete alpha bundle with Desktop, launcher, Speech Pack source, documentation, and checksums.
 
 ### Changed
 
-- Desktop alpha is distributed as a portable x64 ZIP and uses the separately installed Speech API.
+- Desktop and the independently maintained Local Speech API are delivered through one managed Windows ZIP.
 - Alpha setup, dependency locks, and voice synchronization are reproducible from repository commands.
 
 ### Security
@@ -25,7 +27,7 @@
 ### Known limitations
 
 - Windows 11 x64 only; the target speech configuration requires an NVIDIA CUDA-capable GPU.
-- Speech API setup and launch are separate from the desktop client.
+- The first launcher run installs the Speech Pack and downloads large dependencies and models.
 - The ZIP is unsigned, has no installer, automatic updates, or macOS/Linux build.
 - First Speech API launch downloads model data; testers provide their own LLM API key and a separate GitHub token for Project Awareness.
 - Screen Context 2.x, Memory Layer, and Action Runtime are not release-ready alpha features.

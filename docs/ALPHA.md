@@ -6,37 +6,22 @@ This is the first technical alpha for invited testers. It is an unsigned portabl
 
 - Windows 11 x64.
 - NVIDIA GPU with CUDA support is the target configuration for local ASR and TTS.
-- Node.js 24.x, npm 11.x, Python 3.12, and enough free disk space for Python packages and downloaded models are required for Speech API setup.
+- Python 3.12 x64 and enough free disk space for downloaded dependencies and models are required. Testers do not need Node.js or npm.
 - macOS and Linux are not supported in this alpha.
 
 ## ZIP contents
 
-The release ZIP contains the portable Electron desktop application and its runtime files. Extract the complete archive to a writable folder and start `Shio Runtime.exe`. Do not run the executable from inside the ZIP.
+The release ZIP contains the launcher, portable Electron desktop application, Local Speech Pack source, and documentation. Extract the complete archive to a writable folder and start `Start Shio Runtime.cmd`. Do not run files from inside the ZIP.
 
-The Speech API, Python, CUDA-compatible drivers and models are installed separately. The ZIP has no installer, code signing, automatic updater, or bundled Python environment. Windows SmartScreen may display a warning because the executable is unsigned; verify that the archive came from the project maintainer before continuing.
+Python and a compatible NVIDIA driver remain system prerequisites. The launcher installs the versioned Local Speech Pack and downloads models on first run; Python, CUDA toolkit, models, and `.venv` are not embedded in Desktop. The ZIP has no installer, code signing, or automatic updater.
 
-## Install and start the Speech API
+## Install and start
 
-From a fresh repository clone, open PowerShell in the repository root:
-
-```powershell
-npm run desktop:install
-npm run alpha:setup
-```
-
-`alpha:setup` checks the supported toolchain, creates the local Speech API environment, installs locked CUDA dependencies, and synchronizes pinned voice references. It does not start the service.
-
-Start the API in a separate terminal and keep it running while using the desktop:
-
-```powershell
-npm run api:dev
-```
-
-On first setup or first API use, model downloads can take time and require an internet connection. The API listens locally on port `8000`.
+Double-click `Start Shio Runtime.cmd`. The launcher checks the platform, Python and NVIDIA driver, installs or repairs the Local Speech Pack, waits for `/health`, and starts Desktop. When Desktop closes, it stops only the API process it started. A compatible externally managed API is reused and never stopped.
 
 ## First run
 
-1. Start the Speech API, then run `Shio Runtime.exe`.
+1. Run `Start Shio Runtime.cmd` and wait for Desktop.
 2. Open Settings and choose an LLM provider and model.
 3. Enter your own provider API key. Shio does not supply an LLM account or quota.
 4. Select a microphone and grant Windows microphone permission when prompted.
@@ -77,7 +62,7 @@ Do not include API keys, GitHub tokens, private source code, screen captures, or
 ## Known limitations
 
 - Windows 11 x64 only; NVIDIA/CUDA is the target hardware.
-- Speech API installation and launch are separate from the desktop.
+- First start requires internet access and downloads large Speech Pack dependencies and models.
 - The executable is unsigned, so SmartScreen can warn.
 - There is no installer, automatic update, telemetry, macOS build, or Linux build.
 - First Speech API launch can download large models.

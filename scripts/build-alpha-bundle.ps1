@@ -6,7 +6,7 @@ $manifest = Get-Content -Raw -Encoding UTF8 (Join-Path $repoRoot "launcher\relea
 $name = "Shio-Runtime-$($manifest.productVersion)-win-x64"
 $releaseRoot = Join-Path $repoRoot "release"
 $desktopReleaseRoot = Join-Path $repoRoot "apps\desktop\release"
-$stageRoot = Join-Path $releaseRoot "alpha-staging"
+$stageRoot = Join-Path ([IO.Path]::GetTempPath()) "shio-alpha-staging-$PID"
 $bundleRoot = Join-Path $stageRoot $name
 $zipPath = Join-Path $releaseRoot "$name.zip"
 
