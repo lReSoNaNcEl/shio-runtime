@@ -21,6 +21,7 @@ apps/desktop/build/*
 !apps/desktop/build/icon.ico
 apps/desktop/out/
 apps/desktop/release/
+/release/
 
 # Desktop runtime debug output (cwd-relative, regenerated at runtime)
 apps/desktop/runtime-debug/

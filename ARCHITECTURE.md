@@ -197,6 +197,10 @@ The architecture is driven by design philosophies rather than implementation pat
 
 Shio Runtime is composed of a small number of independent Runtime systems. No Runtime is considered the main controller of the application. Character behavior emerges from the cooperation of multiple Runtime systems rather than from a monolithic orchestrator.
 
+#### Alpha Launcher boundary
+
+The Windows Alpha Launcher is a release-infrastructure component, not a Runtime and not part of the character decision pipeline. It may install and repair a versioned Local Speech API package, coordinate a process that it started, wait for the existing Speech HTTP health contract, launch Desktop, and stop only the API process whose ownership identity it recorded. It never performs ASR or TTS, imports Desktop or API implementation code, changes the Speech HTTP contract, or terminates an externally managed process. Desktop and Local Speech API remain independently runnable applications; the launcher only coordinates the packaged alpha experience.
+
 Architecture overview:
 
 ```text

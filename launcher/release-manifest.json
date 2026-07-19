@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "productVersion": "0.1.0-alpha.1",
+  "platform": "win32",
+  "architecture": "x64",
+  "desktop": {
+    "relativeExecutablePath": "desktop/Shio Runtime.exe"
+  },
+  "speechPack": {
+    "version": "0.1.0-alpha.1",
+    "sourceRelativePath": "speech-pack",
+    "host": "127.0.0.1",
+    "port": 8000,
+    "healthPath": "/health",
+    "startupTimeoutSeconds": 180
+  },
+  "requirements": {
+    "windows": "11",
+    "python": "3.12",
+    "nvidiaGpu": true
+  }
+}
