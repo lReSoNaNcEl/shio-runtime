@@ -3,8 +3,8 @@ import { join } from 'node:path'
 
 import { app } from 'electron'
 
-import { DEFAULT_SPEECH_URL } from '../shared/config'
-import type { LlmConfig } from '../shared/llm'
+import { type AppSettings, DEFAULT_SPEECH_URL } from '../shared/config'
+import type { LlmPersistedConfig } from '../shared/llm'
 import {
   DEFAULT_UI_LOCALE,
   isUiLocale,
@@ -12,7 +12,9 @@ import {
   type UiLocale,
 } from '../shared/localization'
 import type { ProjectAwarenessPublicConfig } from '../shared/project-awareness'
-import { defaultLlmConfig, isLlmProviderId, normalizeLlmConfig } from './llm'
+import { defaultLlmConfig, type LlmCredentialStore, normalizeLlmConfig } from './llm'
+import { toPublicLlmConfig } from './llm/config'
+import { resolveLlmPersistence } from './llm/persistence'
 
 const CONFIG_PATH = join(app.getPath('userData'), 'config.json')
 
@@ -21,7 +23,7 @@ export interface ProjectAwarenessConfig extends ProjectAwarenessPublicConfig {
 }
 
 export interface AppConfig {
-  llm: LlmConfig
+  llm: LlmPersistedConfig
   projectAwareness: ProjectAwarenessConfig
   uiLocale: UiLocale
   pythonSpeechUrl: string
@@ -96,20 +98,7 @@ function freshDefaults(): AppConfig {
 }
 
 let _config: AppConfig = freshDefaults()
-
-/**
- * Legacy shapes persisted before the nested-LLM refactor. Read-only, used
- * exclusively for one-time migration. Never written back to disk verbatim.
- */
-interface LegacyPersistedConfig {
-  // v1 (flat multi-provider)
-  provider?: string
-  apiKey?: string
-  model?: string
-  // v0 (Groq-only)
-  groqApiKey?: string
-  groqModel?: string
-}
+let _llmCredentialStore: LlmCredentialStore | null = null
 
 function pickKnownStrings(
   saved: Record<string, unknown>,
@@ -124,50 +113,6 @@ function pickKnownStrings(
 
 function normalizeDeveloperMode(value: unknown): string {
   return value === 'true' ? 'true' : 'false'
-}
-
-/**
- * Build the LLM config from persisted data, migrating older shapes:
- * - v1: flat { provider, apiKey, model }
- * - v0: { groqApiKey, groqModel }
- * Returns { llm, migrated } where `migrated` signals we upgraded an old shape.
- */
-function resolveLlmConfig(saved: Record<string, unknown> & LegacyPersistedConfig): {
-  llm: LlmConfig
-  migrated: boolean
-} {
-  if (saved.llm && typeof saved.llm === 'object') {
-    return { llm: normalizeLlmConfig(saved.llm), migrated: false }
-  }
-
-  const llm = defaultLlmConfig()
-  let migrated = false
-
-  // v1 flat shape
-  if (typeof saved.provider === 'string' && isLlmProviderId(saved.provider)) {
-    llm.activeProvider = saved.provider
-    migrated = true
-  }
-  if (typeof saved.apiKey === 'string' && saved.apiKey) {
-    llm.providers[llm.activeProvider].apiKey = saved.apiKey
-    migrated = true
-  }
-  if (typeof saved.model === 'string' && saved.model) {
-    llm.providers[llm.activeProvider].model = saved.model
-    migrated = true
-  }
-
-  // v0 Groq-only shape
-  if (typeof saved.groqApiKey === 'string' && saved.groqApiKey && !llm.providers.groq.apiKey) {
-    llm.providers.groq.apiKey = saved.groqApiKey
-    migrated = true
-  }
-  if (typeof saved.groqModel === 'string' && saved.groqModel) {
-    llm.providers.groq.model = saved.groqModel
-    migrated = true
-  }
-
-  return { llm, migrated }
 }
 
 function resolveProjectAwarenessConfig(saved: Record<string, unknown>): ProjectAwarenessConfig {
@@ -195,13 +140,16 @@ function serializedConfig(config: AppConfig): string {
   return JSON.stringify(config, null, 2)
 }
 
-export function loadConfig(): AppConfig {
+export async function loadConfig(llmCredentialStore: LlmCredentialStore): Promise<AppConfig> {
+  _llmCredentialStore = llmCredentialStore
+  await llmCredentialStore.load()
   try {
     if (existsSync(CONFIG_PATH)) {
       const saved = JSON.parse(readFileSync(CONFIG_PATH, 'utf-8')) as Record<string, unknown> &
-        LegacyPersistedConfig
+        import('./llm/persistence').LegacyPersistedLlmConfig
       const known = pickKnownStrings(saved)
-      const { llm, migrated } = resolveLlmConfig(saved)
+      const { llm, plaintextCredentials, plaintextProviders, migrated } =
+        resolveLlmPersistence(saved)
       const projectAwareness = resolveProjectAwarenessConfig(saved)
       const hasLegacyProjectToken =
         typeof saved.projectAwareness === 'object' &&
@@ -218,13 +166,19 @@ export function loadConfig(): AppConfig {
         uiLocale: normalizeUiLocale(saved.uiLocale),
       }
 
-      // One-time migration: pull the Groq key from env into userData config.
-      let envMigrated = false
-      if (!_config.llm.providers.groq.apiKey && process.env.GROQ_API_KEY) {
-        _config.llm.providers.groq.apiKey = process.env.GROQ_API_KEY
-        envMigrated = true
+      let llmMigrationCompleted = !migrated
+      if (migrated) {
+        try {
+          await llmCredentialStore.importMissing(plaintextCredentials)
+          llmMigrationCompleted = true
+        } catch {
+          llmCredentialStore.recordMigrationError(
+            plaintextProviders,
+            'Plaintext LLM credential migration failed',
+          )
+        }
       }
-      if (migrated || envMigrated || hasLegacyProjectToken) {
+      if ((migrated && llmMigrationCompleted) || (!migrated && hasLegacyProjectToken)) {
         writeFileSync(CONFIG_PATH, serializedConfig(_config), 'utf-8')
       }
     }
@@ -238,31 +192,41 @@ export function getConfig(): AppConfig {
   return _config
 }
 
-export function getRendererConfig(): Omit<AppConfig, 'projectAwareness'> & {
-  projectAwareness: ProjectAwarenessPublicConfig
-} {
+export function getRendererConfig(): AppSettings {
   const { maxFileSizeBytes: _maxFileSizeBytes, ...projectAwareness } = _config.projectAwareness
-  return { ..._config, projectAwareness }
+  const llm = toPublicLlmConfig(_config.llm, (provider) =>
+    _llmCredentialStore
+      ? _llmCredentialStore.getStatus(provider)
+      : {
+          configured: false,
+          source: 'none',
+          secureStorageAvailable: false,
+        },
+  )
+  return { ..._config, llm, projectAwareness }
 }
 
 export function saveConfig(
-  partial: Partial<Omit<AppConfig, 'projectAwareness'>> & {
+  partial: Partial<Omit<AppConfig, 'projectAwareness' | 'llm'>> & {
+    llm?: unknown
     projectAwareness?: Partial<ProjectAwarenessPublicConfig>
   },
 ): void {
-  // `llm`, when present, is replaced wholesale (the renderer always sends the
-  // complete object), so a shallow merge preserves every provider's creds.
+  const input = partial as Record<string, unknown>
+  const knownStrings = pickKnownStrings(input)
+  const normalizedLlm = partial.llm === undefined ? _config.llm : normalizeLlmConfig(partial.llm)
   _config = {
     ..._config,
-    ...partial,
+    ...knownStrings,
+    llm: normalizedLlm,
     developerModeEnabled:
-      partial.developerModeEnabled === undefined
+      knownStrings.developerModeEnabled === undefined
         ? _config.developerModeEnabled
-        : normalizeDeveloperMode(partial.developerModeEnabled),
+        : normalizeDeveloperMode(knownStrings.developerModeEnabled),
     developerOverlayAnimationHudEnabled:
-      partial.developerOverlayAnimationHudEnabled === undefined
+      knownStrings.developerOverlayAnimationHudEnabled === undefined
         ? _config.developerOverlayAnimationHudEnabled
-        : partial.developerOverlayAnimationHudEnabled === 'false'
+        : knownStrings.developerOverlayAnimationHudEnabled === 'false'
           ? 'false'
           : 'true',
     uiLocale:

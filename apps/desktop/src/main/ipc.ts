@@ -29,7 +29,9 @@ import {
   createModelCatalog,
   enrichModelCatalog,
   isLlmProviderId,
+  type LlmCredentialStore,
   type LlmGateway,
+  type LlmProviderId,
   ModelFetchError,
   type ModelInfo,
   PROVIDER_PROFILES,
@@ -49,6 +51,7 @@ import { logSpeechError, logSpeechRecovery } from './speech/speechErrors'
 export function registerIpcHandlers(
   orchestrator: () => Orchestrator,
   llm: () => LlmGateway,
+  llmCredentialStore: () => LlmCredentialStore,
   projectAwareness: () => ProjectAwarenessRuntime,
   projectCredentialStore: () => ProjectCredentialStore,
   speech: () => SpeechClient,
@@ -151,12 +154,12 @@ export function registerIpcHandlers(
     },
   })
   actions.register<
-    { provider: string; apiKey: string },
+    { provider: string },
     { ok: boolean; models?: ModelInfo[]; error?: string; kind?: string }
   >({
     name: 'llm.fetchModels',
     description: 'Load the available model catalog for an LLM provider.',
-    execute: async ({ provider, apiKey }) => {
+    execute: async ({ provider }) => {
       if (!isLlmProviderId(provider)) {
         return {
           ok: false,
@@ -164,6 +167,7 @@ export function registerIpcHandlers(
           kind: 'invalid_response',
         }
       }
+      const { apiKey } = llmCredentialStore().resolve(provider)
       try {
         const catalog = createModelCatalog(provider)
         const models = enrichModelCatalog(provider, await catalog.fetchModels(apiKey))
@@ -563,8 +567,8 @@ export function registerIpcHandlers(
           error: translate(getConfig().uiLocale, 'main.error.selectorProviderMissing'),
         }
       const providerId = role.providerId
-      const credentials = config.llm.providers[providerId]
-      if (!credentials?.apiKey)
+      const credential = llmCredentialStore().resolve(providerId)
+      if (!credential.apiKey)
         return {
           ok: false,
           error: translate(getConfig().uiLocale, 'main.error.selectorKeyMissing'),
@@ -587,7 +591,7 @@ export function registerIpcHandlers(
         backlogArbitrationInFlight = true
         const provider = createLLMProvider({
           provider: providerId,
-          apiKey: credentials.apiKey,
+          apiKey: credential.apiKey,
           model: role.model,
         })
         const raw = await provider.chat([
@@ -759,51 +763,61 @@ export function registerIpcHandlers(
 
   ipcMain.handle('llm:providers', (): ProviderProfile[] => [...PROVIDER_PROFILES])
 
-  ipcMain.handle('llm:fetch-models', async (_event, provider: string, apiKey: string) => {
+  ipcMain.handle('llm:fetch-models', async (_event, provider: string) => {
     const action = await actions.execute<
-      { provider: string; apiKey: string },
+      { provider: string },
       { ok: boolean; models?: ModelInfo[]; error?: string; kind?: string }
-    >({ name: 'llm.fetchModels', payload: { provider, apiKey } })
+    >({ name: 'llm.fetchModels', payload: { provider } })
     return action.status === 'success' ? action.result : { ok: false, error: action.error }
   })
 
-  ipcMain.handle('config:get', () => {
-    const cfg = getConfig()
-    return {
-      llm: cfg.llm,
-      uiLocale: cfg.uiLocale,
-      projectAwareness: {
-        enabled: cfg.projectAwareness.enabled,
-        provider: cfg.projectAwareness.provider,
-        repository: cfg.projectAwareness.repository,
-        branch: cfg.projectAwareness.branch,
-      },
-      pythonSpeechUrl: cfg.pythonSpeechUrl,
-      ttsVoice: cfg.ttsVoice,
-      ttsLanguage: cfg.ttsLanguage,
-      ttsEngine: 'f5',
-      vrmPath: cfg.vrmPath,
-      micDeviceId: cfg.micDeviceId,
-      overlayWidth: cfg.overlayWidth,
-      overlayHeight: cfg.overlayHeight,
-      overlayMargin: cfg.overlayMargin,
-      overlayOpacity: cfg.overlayOpacity,
-      overlayTransparentBackground: cfg.overlayTransparentBackground,
-      overlayClickThrough: cfg.overlayClickThrough,
-      overlayCorner: cfg.overlayCorner,
-      overlayScale: cfg.overlayScale,
-      overlayViewMode: cfg.overlayViewMode,
-      developerOverlayAnimationHudEnabled: cfg.developerOverlayAnimationHudEnabled,
-      developerModeEnabled: cfg.developerModeEnabled,
-      passiveCompanionEnabled: cfg.passiveCompanionEnabled,
-      lookAtEnabled: cfg.lookAtEnabled,
-      continuousListeningEnabled: cfg.continuousListeningEnabled,
-      continuousListeningMode: cfg.continuousListeningMode,
-      continuousListeningReplyCooldownMs: cfg.continuousListeningReplyCooldownMs,
-      continuousListeningFollowUpWindowMs: cfg.continuousListeningFollowUpWindowMs,
-      continuousListeningCuriosityChance: cfg.continuousListeningCuriosityChance,
-    } satisfies AppSettings
+  const llmProviderSchema = z
+    .string()
+    .refine((provider): provider is LlmProviderId => isLlmProviderId(provider))
+  const llmCredentialSchema = z.object({
+    provider: llmProviderSchema,
+    apiKey: z
+      .string()
+      .trim()
+      .min(1)
+      .max(2_000)
+      .refine((value) => !/\s/.test(value)),
   })
+  ipcMain.handle('llm:save-credential', async (_event, payload: unknown) => {
+    const { provider, apiKey } = llmCredentialSchema.parse(payload)
+    const status = await llmCredentialStore().save(provider, apiKey)
+    win.webContents.send('config:updated', getRendererConfig())
+    return status
+  })
+  ipcMain.handle('llm:forget-credential', async (_event, provider: unknown) => {
+    const status = await llmCredentialStore().forget(llmProviderSchema.parse(provider))
+    win.webContents.send('config:updated', getRendererConfig())
+    return status
+  })
+  ipcMain.handle('llm:get-credential-status', (_event, provider: unknown) =>
+    llmCredentialStore().getStatus(llmProviderSchema.parse(provider)),
+  )
+  ipcMain.handle('llm:validate-credential', async (_event, payload: unknown) => {
+    const { provider, apiKey } = llmCredentialSchema.parse(payload)
+    try {
+      const catalog = createModelCatalog(provider)
+      return {
+        ok: true,
+        models: enrichModelCatalog(provider, await catalog.fetchModels(apiKey)),
+      }
+    } catch (error) {
+      if (error instanceof ModelFetchError) {
+        return { ok: false, error: error.message, kind: error.kind }
+      }
+      return {
+        ok: false,
+        error: translate(getConfig().uiLocale, 'main.error.llmCredentialValidation'),
+        kind: 'unknown',
+      }
+    }
+  })
+
+  ipcMain.handle('config:get', () => getRendererConfig())
 
   ipcMain.handle('config:save', (_event, partial: Partial<AppSettings>) => {
     return actions

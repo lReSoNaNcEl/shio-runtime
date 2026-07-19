@@ -38,10 +38,21 @@ export interface FetchModelsResult {
   kind?: ModelFetchErrorKind
 }
 
-/** Per-provider credentials: each provider keeps its own key and model. */
-export interface ProviderCredentials {
-  apiKey: string
+export type LlmCredentialSource = 'secure_store' | 'environment' | 'none'
+
+export interface LlmCredentialStatus {
+  configured: boolean
+  source: LlmCredentialSource
+  secureStorageAvailable: boolean
+  lastError?: string
+}
+
+export interface LlmProviderPersistedSettings {
   model: string
+}
+
+export interface LlmProviderPublicSettings extends LlmProviderPersistedSettings {
+  credential: LlmCredentialStatus
 }
 
 export interface BacklogSelectorRoleConfig {
@@ -57,9 +68,17 @@ export interface BacklogSelectorRoleConfig {
  * which entry of `providers` the Runtime uses. Switching provider never
  * overwrites another provider's stored credentials.
  */
-export interface LlmConfig {
+export interface LlmPersistedConfig {
   activeProvider: LlmProviderId
-  providers: Record<LlmProviderId, ProviderCredentials>
+  providers: Record<LlmProviderId, LlmProviderPersistedSettings>
+  roles: {
+    backlogSelector: BacklogSelectorRoleConfig
+  }
+}
+
+export interface LlmPublicConfig {
+  activeProvider: LlmProviderId
+  providers: Record<LlmProviderId, LlmProviderPublicSettings>
   roles: {
     backlogSelector: BacklogSelectorRoleConfig
   }

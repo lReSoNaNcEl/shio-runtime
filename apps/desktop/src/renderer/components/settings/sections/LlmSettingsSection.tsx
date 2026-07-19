@@ -10,11 +10,7 @@ import {
   Switch,
   Text,
   TextField,
-  Tooltip,
-  TooltipTrigger,
 } from '@react-spectrum/s2'
-import CopyIcon from '@react-spectrum/s2/icons/Copy'
-import EditIcon from '@react-spectrum/s2/icons/Edit'
 import { style } from '@react-spectrum/s2/style' with { type: 'macro' }
 
 import { type LlmProviderId } from '../../../../shared/llm'
@@ -22,7 +18,6 @@ import { useTranslation } from '../../../localization/useTranslation'
 import { LlmHealthStatus } from '../LlmHealthStatus'
 import { ModelComboBox } from '../ModelComboBox'
 import { type LlmSettingsActions, type LlmSettingsState } from '../state/settingsContracts'
-import { maskKey } from '../state/settingsParsers'
 
 const fullWidth = style({ width: 'full' })
 
@@ -34,7 +29,8 @@ export function LlmSettingsSection({
   actions: LlmSettingsActions
 }) {
   const { t } = useTranslation()
-  const activeApiKey = state.editingKey ? state.keyInput : state.savedKey
+  const credential = state.providerSettings[state.activeProvider]?.credential
+  const showCredentialInput = !credential?.configured || state.editingKey
   return (
     <div className="settings-grid llm-settings-grid">
       <section className="llm-settings-section" aria-labelledby="primary-llm-title">
@@ -63,7 +59,7 @@ export function LlmSettingsSection({
         <div className="settings-field">
           <span className="settings-label">{t('settings.llm.apiKey')}</span>
           <div className="settings-row">
-            {state.editingKey ? (
+            {showCredentialInput ? (
               <TextField
                 aria-label={t('settings.llm.apiKey')}
                 value={state.keyInput}
@@ -75,42 +71,42 @@ export function LlmSettingsSection({
             ) : (
               <TextField
                 aria-label={t('settings.llm.apiKey')}
-                value={state.savedKey ? maskKey(state.savedKey) : ''}
+                value="••••••••"
                 isReadOnly
-                placeholder="..."
                 UNSAFE_className="grow"
               />
             )}
-            <TooltipTrigger delay={200}>
+            {showCredentialInput ? (
               <ActionButton
-                aria-label={t('settings.llm.copyKey')}
-                onPress={() => void actions.copyKey()}
-                isDisabled={!state.savedKey}
+                onPress={() => void actions.saveCredential()}
+                isDisabled={!state.keyInput.trim() || credential?.secureStorageAvailable === false}
               >
-                <CopyIcon />
+                <Text>{t('settings.llm.saveKey')}</Text>
               </ActionButton>
-              <Tooltip>{t('settings.llm.copyKey')}</Tooltip>
-            </TooltipTrigger>
-            {!state.editingKey && (
-              <TooltipTrigger delay={200}>
-                <ActionButton
-                  aria-label={t('settings.llm.editKey')}
-                  onPress={() => actions.setEditingKey(true)}
-                >
-                  <EditIcon />
+            ) : (
+              <>
+                <ActionButton onPress={() => actions.setEditingKey(true)}>
+                  <Text>{t('settings.llm.replaceKey')}</Text>
                 </ActionButton>
-                <Tooltip>{t('settings.llm.editKey')}</Tooltip>
-              </TooltipTrigger>
+                <ActionButton onPress={() => void actions.forgetCredential()}>
+                  <Text>{t('settings.llm.deleteKey')}</Text>
+                </ActionButton>
+              </>
             )}
           </div>
-          {state.copied && (
+          {credential?.configured && !state.editingKey && (
             <span className="settings-hint" role="status">
-              {t('settings.llm.copied')}
+              {t('settings.llm.keyConfigured')}
             </span>
+          )}
+          {credential?.lastError && (
+            <span className="settings-hint">{t('settings.llm.secureStorageError')}</span>
+          )}
+          {credential?.secureStorageAvailable === false && (
+            <span className="settings-hint">{t('settings.llm.secureStorageUnavailable')}</span>
           )}
         </div>
         <div className="settings-field">
-          <span className="settings-label">{t('common.model')}</span>
           <ModelComboBox
             label={t('common.model')}
             models={state.models}
@@ -118,7 +114,7 @@ export function LlmSettingsSection({
             isDisabled={state.modelsState !== 'ready'}
             isLoading={state.modelsState === 'loading'}
             showCapabilities
-            onSelect={(id) => actions.updateCredential(state.activeProvider, { model: id })}
+            onSelect={(id) => actions.updateProviderSettings(state.activeProvider, id)}
           />
           <span className="settings-hint">
             {state.modelsState === 'loading' && (
@@ -137,9 +133,7 @@ export function LlmSettingsSection({
             {state.modelsState === 'network-error' && t('settings.llm.modelsNetworkError')}
           </span>
           {(state.modelsState === 'network-error' || state.modelsState === 'auth-error') && (
-            <ActionButton
-              onPress={() => void actions.loadModels(state.activeProvider, activeApiKey)}
-            >
+            <ActionButton onPress={() => void actions.loadModels(state.activeProvider)}>
               <Text>{t('settings.llm.loadModels')}</Text>
             </ActionButton>
           )}
@@ -179,7 +173,7 @@ export function LlmSettingsSection({
               styles={fullWidth}
             >
               {state.providers
-                .filter((provider) => Boolean(state.providerCredentials[provider.id]?.apiKey))
+                .filter((provider) => state.providerSettings[provider.id]?.credential.configured)
                 .map((provider) => (
                   <PickerItem key={provider.id} id={provider.id}>
                     {provider.displayName}

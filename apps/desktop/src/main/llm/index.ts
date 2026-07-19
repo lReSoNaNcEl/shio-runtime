@@ -1,10 +1,13 @@
 export type {
   BacklogSelectorRoleConfig,
-  LlmConfig,
+  LlmCredentialStatus,
+  LlmPersistedConfig,
   LlmProviderId,
+  LlmProviderPersistedSettings,
+  LlmProviderPublicSettings,
+  LlmPublicConfig,
   ModelFetchErrorKind,
   ModelInfo,
-  ProviderCredentials,
   ProviderProfile,
 } from '../../shared/llm'
 export { LLM_PROVIDER_IDS } from '../../shared/llm'
@@ -15,6 +18,12 @@ export {
   ModelFetchError,
   normalizeHttpErrorMessage,
 } from './errors'
+export {
+  type LlmCredentialMap,
+  type LlmCredentialProtector,
+  LlmCredentialStore,
+  type ResolvedLlmCredential,
+} from './LlmCredentialStore'
 export { LlmGateway } from './LlmGateway'
 export {
   createLLMProvider,

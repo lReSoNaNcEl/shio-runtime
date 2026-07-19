@@ -3,8 +3,8 @@ import type { Dispatch, SetStateAction } from 'react'
 import type {
   BacklogSelectorRoleConfig,
   LlmProviderId,
+  LlmProviderPublicSettings,
   ModelInfo,
-  ProviderCredentials,
   ProviderProfile,
 } from '../../../../shared/llm'
 import type { UiLocale } from '../../../../shared/localization'
@@ -125,27 +125,25 @@ export interface ListeningSettingsActions {
 export interface LlmSettingsState {
   providers: ProviderProfile[]
   activeProvider: LlmProviderId
-  providerCredentials: Record<string, ProviderCredentials>
+  providerSettings: Record<LlmProviderId, LlmProviderPublicSettings>
   models: ModelInfo[]
   modelsState: ModelsState
   editingKey: boolean
   keyInput: string
-  copied: boolean
   backlogRole: BacklogSelectorRoleConfig
   backlogModels: ModelInfo[]
-  savedKey: string
   selectedModel: string
   health: ControllerState['llmHealth']
 }
 
 export interface LlmSettingsActions {
   setActiveProvider: (provider: LlmProviderId) => void
-  setProviderCredentials: Dispatch<SetStateAction<Record<string, ProviderCredentials>>>
-  updateCredential: (id: string, patch: Partial<ProviderCredentials>) => void
+  updateProviderSettings: (id: LlmProviderId, model: string) => void
   setEditingKey: (editing: boolean) => void
   setKeyInput: (key: string) => void
-  copyKey: () => Promise<void>
-  loadModels: (providerId: string, apiKey: string) => Promise<void>
+  saveCredential: () => Promise<void>
+  forgetCredential: () => Promise<void>
+  loadModels: (providerId: LlmProviderId) => Promise<void>
   setBacklogRole: Dispatch<SetStateAction<BacklogSelectorRoleConfig>>
 }
 

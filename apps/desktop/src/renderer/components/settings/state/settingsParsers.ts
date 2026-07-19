@@ -26,11 +26,6 @@ export function projectActionError(error: unknown): string {
   return message.replace(/^Error invoking remote method '[^']+': Error: /, '')
 }
 
-export function maskKey(key: string): string {
-  if (!key || key.length < 8) return key
-  return key.slice(0, 4) + '*'.repeat(Math.min(key.length - 8, 20)) + key.slice(-4)
-}
-
 export function deduplicateModelsById(models: ModelInfo[]): ModelInfo[] {
   const result: ModelInfo[] = []
   const indexById = new Map<string, number>()

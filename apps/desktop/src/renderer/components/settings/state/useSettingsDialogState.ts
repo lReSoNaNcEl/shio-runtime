@@ -4,8 +4,8 @@ import { DEFAULT_SPEECH_URL } from '../../../../shared/config'
 import type {
   BacklogSelectorRoleConfig,
   LlmProviderId,
+  LlmProviderPublicSettings,
   ModelInfo,
-  ProviderCredentials,
   ProviderProfile,
 } from '../../../../shared/llm'
 import type { UiLocale } from '../../../../shared/localization'
@@ -72,7 +72,6 @@ export function useSettingsDialogState({
   const hydrated = useRef(false)
   const saveSequence = useRef(0)
   const saveStatusTimer = useRef<number | null>(null)
-  const copiedResetTimer = useRef<number | null>(null)
   const [saveState, setSaveState] = useState<SettingsSaveState>('idle')
   const [speechUrl, setSpeechUrl] = useState(DEFAULT_SPEECH_URL)
   const [projectEnabled, setProjectEnabled] = useState(defaultSettingsForm.projectEnabled)
@@ -114,10 +113,11 @@ export function useSettingsDialogState({
   const [currentTtsVoice, setCurrentTtsVoice] = useState(defaultSettingsForm.ttsVoice)
   const [editingKey, setEditingKey] = useState(false)
   const [keyInput, setKeyInput] = useState('')
-  const [copied, setCopied] = useState(false)
   const [providers, setProviders] = useState<ProviderProfile[]>([])
   const [activeProvider, setActiveProvider] = useState<LlmProviderId>('groq')
-  const [providerCreds, setProviderCreds] = useState<Record<string, ProviderCredentials>>({})
+  const [providerSettings, setProviderSettings] = useState<
+    Record<LlmProviderId, LlmProviderPublicSettings>
+  >({} as Record<LlmProviderId, LlmProviderPublicSettings>)
   const [modelOptions, setModelOptions] = useState<ModelInfo[]>([])
   const [modelsState, setModelsState] = useState<ModelsState>('idle')
   const [backlogRole, setBacklogRole] = useState<BacklogSelectorRoleConfig>(
@@ -131,7 +131,6 @@ export function useSettingsDialogState({
 
   useEffect(
     () => () => {
-      if (copiedResetTimer.current !== null) window.clearTimeout(copiedResetTimer.current)
       if (saveStatusTimer.current !== null) window.clearTimeout(saveStatusTimer.current)
     },
     [],
@@ -139,9 +138,6 @@ export function useSettingsDialogState({
 
   useEffect(() => {
     if (isOpen) return
-    if (copiedResetTimer.current !== null) window.clearTimeout(copiedResetTimer.current)
-    copiedResetTimer.current = null
-    setCopied(false)
     hydrated.current = false
   }, [isOpen])
 
@@ -179,7 +175,7 @@ export function useSettingsDialogState({
       setEditingKey(false)
       setKeyInput('')
       setActiveProvider(cfg.llm?.activeProvider ?? 'groq')
-      setProviderCreds(cfg.llm?.providers ?? {})
+      setProviderSettings(cfg.llm.providers)
       setBacklogRole(cfg.llm?.roles?.backlogSelector ?? defaultBacklogSelectorRole)
       setVrmName(cfg.vrmPath ? baseName(cfg.vrmPath) : '')
       setOverlayWidth(parseNumberSetting(cfg.overlayWidth, overlayDefaults.width, 250, 2000))
@@ -214,20 +210,23 @@ export function useSettingsDialogState({
     }
   }, [activeSection, isOpen])
 
-  const savedKey = providerCreds[activeProvider]?.apiKey ?? ''
-  const selectedModel = providerCreds[activeProvider]?.model ?? ''
-  const activeApiKey = editingKey ? keyInput : savedKey
+  const selectedModel = providerSettings[activeProvider]?.model ?? ''
+  const activeCredentialConfigured =
+    providerSettings[activeProvider]?.credential.configured ?? false
+  const backlogCredentialConfigured = backlogRole.providerId
+    ? (providerSettings[backlogRole.providerId]?.credential.configured ?? false)
+    : false
 
-  const updateCredential = (id: string, patch: Partial<ProviderCredentials>): void => {
-    setProviderCreds((previous) => {
-      const base = previous[id] ?? { apiKey: '', model: '' }
-      return { ...previous, [id]: { ...base, ...patch } }
+  const updateProviderSettings = (id: LlmProviderId, model: string): void => {
+    setProviderSettings((previous) => {
+      const base = previous[id]
+      return { ...previous, [id]: { ...base, model } }
     })
   }
 
-  const loadModels = async (providerId: string, apiKey: string): Promise<void> => {
+  const loadModels = async (providerId: LlmProviderId): Promise<void> => {
     setModelsState('loading')
-    const result = await window.api.llm.fetchModels(providerId, apiKey)
+    const result = await window.api.llm.fetchModels(providerId)
     if (result.ok) {
       const models = deduplicateModelsById(result.models ?? [])
       setModelOptions(models)
@@ -235,11 +234,12 @@ export function useSettingsDialogState({
         setModelsState('empty')
       } else {
         setModelsState('ready')
-        setProviderCreds((previous) => {
-          const base = previous[providerId] ?? { apiKey: '', model: '' }
+        setProviderSettings((previous) => {
+          const base = previous[providerId]
           const model = models.some((candidate) => candidate.id === base.model)
             ? base.model
             : models[0].id
+          if (model === base.model) return previous
           return { ...previous, [providerId]: { ...base, model } }
         })
       }
@@ -247,7 +247,11 @@ export function useSettingsDialogState({
     }
     setModelOptions([])
     setModelsState(
-      result.kind === 'auth' ? (apiKey.trim() ? 'auth-error' : 'missing-key') : 'network-error',
+      result.kind === 'auth'
+        ? providerSettings[providerId]?.credential.configured
+          ? 'auth-error'
+          : 'missing-key'
+        : 'network-error',
     )
   }
 
@@ -255,31 +259,30 @@ export function useSettingsDialogState({
   useEffect(() => {
     if (!isOpen) return
     const profile = providers.find((provider) => provider.id === activeProvider)
-    if (profile?.modelsRequireApiKey && !activeApiKey.trim()) {
+    if (profile?.modelsRequireApiKey && !activeCredentialConfigured) {
       setModelOptions([])
       setModelsState('missing-key')
       return
     }
     const timer = window.setTimeout(() => {
-      void loadModels(activeProvider, activeApiKey)
+      void loadModels(activeProvider)
     }, 400)
     return () => window.clearTimeout(timer)
-  }, [isOpen, activeProvider, activeApiKey, providers])
+  }, [isOpen, activeProvider, activeCredentialConfigured, providers])
 
   useEffect(() => {
     if (!isOpen || !backlogRole.enabled || !backlogRole.providerId) {
       setBacklogModels([])
       return
     }
-    const apiKey = providerCreds[backlogRole.providerId]?.apiKey ?? ''
     const profile = providers.find((provider) => provider.id === backlogRole.providerId)
-    if (profile?.modelsRequireApiKey && !apiKey) {
+    if (profile?.modelsRequireApiKey && !backlogCredentialConfigured) {
       setBacklogModels([])
       return
     }
     let current = true
     const timer = window.setTimeout(() => {
-      void window.api.llm.fetchModels(backlogRole.providerId, apiKey).then((result) => {
+      void window.api.llm.fetchModels(backlogRole.providerId as LlmProviderId).then((result) => {
         if (current) setBacklogModels(result.ok ? deduplicateModelsById(result.models ?? []) : [])
       })
     }, 400)
@@ -287,7 +290,7 @@ export function useSettingsDialogState({
       current = false
       window.clearTimeout(timer)
     }
-  }, [isOpen, backlogRole.enabled, backlogRole.providerId, providerCreds, providers])
+  }, [isOpen, backlogRole.enabled, backlogRole.providerId, backlogCredentialConfigured, providers])
 
   const pickVrm = async (): Promise<void> => {
     const result = await window.api.vrm.pick()
@@ -297,15 +300,29 @@ export function useSettingsDialogState({
     }
   }
 
-  const copyKey = async (): Promise<void> => {
-    if (!savedKey) return
-    await navigator.clipboard.writeText(savedKey)
-    if (copiedResetTimer.current !== null) window.clearTimeout(copiedResetTimer.current)
-    setCopied(true)
-    copiedResetTimer.current = window.setTimeout(() => {
-      copiedResetTimer.current = null
-      setCopied(false)
-    }, 1500)
+  const saveLlmCredential = async (): Promise<void> => {
+    const apiKey = keyInput.trim()
+    if (!apiKey) return
+    const credential = await window.api.llm.saveCredential(activeProvider, apiKey)
+    setProviderSettings((previous) => ({
+      ...previous,
+      [activeProvider]: { ...previous[activeProvider], credential },
+    }))
+    setKeyInput('')
+    setEditingKey(false)
+    await loadModels(activeProvider)
+  }
+
+  const forgetLlmCredential = async (): Promise<void> => {
+    const credential = await window.api.llm.forgetCredential(activeProvider)
+    setProviderSettings((previous) => ({
+      ...previous,
+      [activeProvider]: { ...previous[activeProvider], credential },
+    }))
+    setKeyInput('')
+    setEditingKey(false)
+    setModelOptions([])
+    setModelsState(credential.configured ? 'idle' : 'missing-key')
   }
 
   const projectSettingsValid =
@@ -380,12 +397,6 @@ export function useSettingsDialogState({
   }
 
   const save = async (sequence = ++saveSequence.current): Promise<void> => {
-    const credentials: Record<string, ProviderCredentials> = { ...providerCreds }
-    const current = credentials[activeProvider] ?? { apiKey: '', model: '' }
-    credentials[activeProvider] = {
-      apiKey: editingKey && keyInput.trim() ? keyInput.trim() : current.apiKey,
-      model: current.model,
-    }
     await window.api.config.save({
       pythonSpeechUrl: speechUrl,
       ttsVoice: currentTtsVoice,
@@ -408,7 +419,7 @@ export function useSettingsDialogState({
       overlayClickThrough: overlayClickThrough ? 'true' : 'false',
       llm: {
         activeProvider,
-        providers: credentials as Record<LlmProviderId, ProviderCredentials>,
+        providers: providerSettings,
         roles: { backlogSelector: backlogRole },
       },
     })
@@ -453,7 +464,7 @@ export function useSettingsDialogState({
     overlayScalePercent,
     overlayViewMode,
     activeProvider,
-    providerCreds,
+    providerSettings,
     backlogRole,
   ])
 
@@ -573,25 +584,23 @@ export function useSettingsDialogState({
       state: {
         providers,
         activeProvider,
-        providerCredentials: providerCreds,
+        providerSettings,
         models: modelOptions,
         modelsState,
         editingKey,
         keyInput,
-        copied,
         backlogRole,
         backlogModels,
-        savedKey,
         selectedModel,
         health: llmHealth,
       },
       actions: {
         setActiveProvider,
-        setProviderCredentials: setProviderCreds,
-        updateCredential,
+        updateProviderSettings,
         setEditingKey,
         setKeyInput,
-        copyKey,
+        saveCredential: saveLlmCredential,
+        forgetCredential: forgetLlmCredential,
         loadModels,
         setBacklogRole,
       },

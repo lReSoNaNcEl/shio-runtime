@@ -1,7 +1,12 @@
 import type { AppSettings } from '../config/appSettings'
 import type { BacklogSelectionResult, BufferedUtterance } from '../conversation/backlog'
 import type { LlmCapabilities } from '../llm/capabilities'
-import type { FetchModelsResult, ProviderProfile } from '../llm/providers'
+import type {
+  FetchModelsResult,
+  LlmCredentialStatus,
+  LlmProviderId,
+  ProviderProfile,
+} from '../llm/providers'
 import type { ProjectAwarenessApi } from '../project-awareness'
 import type { RuntimeEventInput } from '../runtime/events'
 import type {
@@ -58,7 +63,11 @@ export interface ShioRuntimeApi {
       model: string
     }) => Promise<{ ok: boolean; result?: BacklogSelectionResult; error?: string }>
     providers: () => Promise<ProviderProfile[]>
-    fetchModels: (provider: string, apiKey: string) => Promise<FetchModelsResult>
+    fetchModels: (provider: LlmProviderId) => Promise<FetchModelsResult>
+    validateCredential: (provider: LlmProviderId, apiKey: string) => Promise<FetchModelsResult>
+    saveCredential: (provider: LlmProviderId, apiKey: string) => Promise<LlmCredentialStatus>
+    forgetCredential: (provider: LlmProviderId) => Promise<LlmCredentialStatus>
+    getCredentialStatus: (provider: LlmProviderId) => Promise<LlmCredentialStatus>
   }
   screenContext: {
     listSources: () => Promise<ScreenContextResult<ScreenContextSource[]>>

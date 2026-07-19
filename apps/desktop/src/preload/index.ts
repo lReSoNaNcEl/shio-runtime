@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 
 import type { AppSettings } from '../shared/config'
 import type { ShioRuntimeApi } from '../shared/ipc'
+import type { LlmProviderId } from '../shared/llm'
 import type { RuntimeEventInput } from '../shared/runtime'
 import type {
   ScreenContextCaptureRequest,
@@ -23,8 +24,15 @@ const api = {
     getActiveCapabilities: () => ipcRenderer.invoke('llm:get-active-capabilities'),
     arbitrateBacklog: (payload: unknown) => ipcRenderer.invoke('llm:arbitrate-backlog', payload),
     providers: () => ipcRenderer.invoke('llm:providers'),
-    fetchModels: (provider: string, apiKey: string) =>
-      ipcRenderer.invoke('llm:fetch-models', provider, apiKey),
+    fetchModels: (provider: LlmProviderId) => ipcRenderer.invoke('llm:fetch-models', provider),
+    validateCredential: (provider: LlmProviderId, apiKey: string) =>
+      ipcRenderer.invoke('llm:validate-credential', { provider, apiKey }),
+    saveCredential: (provider: LlmProviderId, apiKey: string) =>
+      ipcRenderer.invoke('llm:save-credential', { provider, apiKey }),
+    forgetCredential: (provider: LlmProviderId) =>
+      ipcRenderer.invoke('llm:forget-credential', provider),
+    getCredentialStatus: (provider: LlmProviderId) =>
+      ipcRenderer.invoke('llm:get-credential-status', provider),
   },
   screenContext: {
     listSources: () => ipcRenderer.invoke('screen-context:list-sources'),

@@ -1069,7 +1069,7 @@ export class Controller {
   }
 
   // Side-effect-free LLM probe: verifies the active provider is reachable and the
-  // API key is accepted via the same `fetchModels` path Settings uses. It does NOT
+  // credential is resolved by main through the same `fetchModels` path Settings uses. It does NOT
   // call `llm.reply` (which would append to conversation memory and hold the
   // generation lock), so it never mutates conversation state.
   async checkLlmHealth(): Promise<void> {
@@ -1077,22 +1077,23 @@ export class Controller {
     try {
       const cfg = await window.api.config.get()
       const activeProvider = cfg.llm?.activeProvider
-      const cred = activeProvider ? cfg.llm?.providers?.[activeProvider] : undefined
-      const apiKey = cred?.apiKey ?? ''
-      const model = cred?.model ?? ''
+      const settings = activeProvider ? cfg.llm?.providers?.[activeProvider] : undefined
+      const model = settings?.model ?? ''
       if (!activeProvider) {
         this.setLlmHealth('unknown', 'controller.llm.providerMissing')
         return
       }
-      const res = await window.api.llm.fetchModels(activeProvider, apiKey)
+      const res = await window.api.llm.fetchModels(activeProvider)
       if (res.ok) {
         this.setLlmHealth('ok', model ? { raw: model } : 'controller.llm.providerAvailable')
         return
       }
       if (res.kind === 'auth') {
         this.setLlmHealth(
-          apiKey.trim() ? 'error' : 'unknown',
-          apiKey.trim() ? 'controller.llm.authError' : 'controller.llm.keyMissing',
+          settings?.credential.configured ? 'error' : 'unknown',
+          settings?.credential.configured
+            ? 'controller.llm.authError'
+            : 'controller.llm.keyMissing',
         )
         return
       }

@@ -1,11 +1,11 @@
-import type { LlmConfig } from '../llm/providers'
+import type { LlmPublicConfig } from '../llm/providers'
 import type { UiLocale } from '../localization/locale'
 import type { ProjectAwarenessPublicConfig } from '../project-awareness'
 
 export const DEFAULT_SPEECH_URL = 'http://localhost:8000'
 
 export interface AppSettings {
-  llm: LlmConfig
+  llm: LlmPublicConfig
   projectAwareness: ProjectAwarenessPublicConfig
   uiLocale: UiLocale
   pythonSpeechUrl: string

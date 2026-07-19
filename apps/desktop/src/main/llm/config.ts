@@ -1,21 +1,23 @@
 import {
   LLM_PROVIDER_IDS,
-  type LlmConfig,
+  type LlmCredentialStatus,
+  type LlmPersistedConfig,
   type LlmProviderId,
-  type ProviderCredentials,
+  type LlmProviderPersistedSettings,
+  type LlmPublicConfig,
 } from '../../shared/llm'
 
-export function emptyCredentials(): ProviderCredentials {
-  return { apiKey: '', model: '' }
+export function emptyProviderSettings(): LlmProviderPersistedSettings {
+  return { model: '' }
 }
 
 function isKnownProviderId(value: string): value is LlmProviderId {
   return LLM_PROVIDER_IDS.some((providerId) => providerId === value)
 }
 
-export function defaultLlmConfig(): LlmConfig {
-  const providers = {} as Record<LlmProviderId, ProviderCredentials>
-  for (const id of LLM_PROVIDER_IDS) providers[id] = emptyCredentials()
+export function defaultLlmConfig(): LlmPersistedConfig {
+  const providers = {} as Record<LlmProviderId, LlmProviderPersistedSettings>
+  for (const id of LLM_PROVIDER_IDS) providers[id] = emptyProviderSettings()
   return {
     activeProvider: 'groq',
     providers,
@@ -31,17 +33,16 @@ export function defaultLlmConfig(): LlmConfig {
   }
 }
 
-function toCredentials(value: unknown): ProviderCredentials {
-  const base = emptyCredentials()
+function toProviderSettings(value: unknown): LlmProviderPersistedSettings {
+  const base = emptyProviderSettings()
   if (value && typeof value === 'object') {
     const record = value as Record<string, unknown>
-    if (typeof record.apiKey === 'string') base.apiKey = record.apiKey
     if (typeof record.model === 'string' && record.model) base.model = record.model
   }
   return base
 }
 
-export function normalizeLlmConfig(value: unknown): LlmConfig {
+export function normalizeLlmConfig(value: unknown): LlmPersistedConfig {
   const result = defaultLlmConfig()
   if (!value || typeof value !== 'object') return result
 
@@ -53,7 +54,7 @@ export function normalizeLlmConfig(value: unknown): LlmConfig {
   if (providers && typeof providers === 'object') {
     const providerRecord = providers as Record<string, unknown>
     for (const id of LLM_PROVIDER_IDS) {
-      result.providers[id] = toCredentials(providerRecord[id])
+      result.providers[id] = toProviderSettings(providerRecord[id])
     }
   }
   const roles = record.roles
@@ -89,4 +90,22 @@ export function normalizeLlmConfig(value: unknown): LlmConfig {
     }
   }
   return result
+}
+
+export function toPublicLlmConfig(
+  config: LlmPersistedConfig,
+  getCredentialStatus: (provider: LlmProviderId) => LlmCredentialStatus,
+): LlmPublicConfig {
+  const providers = {} as LlmPublicConfig['providers']
+  for (const id of LLM_PROVIDER_IDS) {
+    providers[id] = {
+      model: config.providers[id].model,
+      credential: getCredentialStatus(id),
+    }
+  }
+  return {
+    activeProvider: config.activeProvider,
+    providers,
+    roles: config.roles,
+  }
 }

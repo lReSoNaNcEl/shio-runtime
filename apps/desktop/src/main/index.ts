@@ -7,7 +7,7 @@ import { app, BrowserWindow, ipcMain, Menu, protocol, safeStorage, screen } from
 import { translate } from '../shared/localization'
 import { getConfig, getRendererConfig, loadConfig } from './config'
 import { registerIpcHandlers } from './ipc'
-import { LlmGateway } from './llm'
+import { LlmCredentialStore, LlmGateway, type LlmProviderId } from './llm'
 import { initializeSafeLogging, mainLog } from './logging/safeLogger'
 import { createMemoryStore } from './memory'
 import { Orchestrator } from './orchestrator'
@@ -28,6 +28,7 @@ let overlayWin: BrowserWindow | null = null
 let isQuitting = false
 let orchestrator: Orchestrator | null = null
 let llmGateway: LlmGateway | null = null
+let llmCredentialStore: LlmCredentialStore | null = null
 let speechClient: SpeechClient | null = null
 let projectAwareness: ProjectAwarenessRuntime | null = null
 let projectCredentialStore: ProjectCredentialStore | null = null
@@ -62,16 +63,16 @@ function shutdownApplication(): void {
 
 function buildOrchestrator(): Orchestrator {
   const cfg = getConfig()
-  // LlmGateway re-reads settings on every chat() call, so switching
-  // provider / model / apiKey in Settings applies to the next request
+  // LlmGateway re-reads main-owned settings and credentials on every chat()
+  // call, so provider, model, and credential changes apply to the next request
   // without rebuilding the Orchestrator or restarting the app.
   llmGateway = new LlmGateway(() => {
     const { activeProvider, providers } = getConfig().llm
-    const creds = providers[activeProvider]
+    const credential = getLlmCredentialStore().resolve(activeProvider)
     return {
       provider: activeProvider,
-      apiKey: creds.apiKey || (activeProvider === 'groq' ? (process.env.GROQ_API_KEY ?? '') : ''),
-      model: creds.model,
+      apiKey: credential.apiKey,
+      model: providers[activeProvider].model,
     }
   })
   const memory = createMemoryStore()
@@ -81,9 +82,33 @@ function buildOrchestrator(): Orchestrator {
     llmGateway,
     memory,
     speechClient,
-    getConfig,
+    getRendererConfig,
     projectAwareness ?? undefined,
   )
+}
+
+function environmentCredential(provider: LlmProviderId): string | undefined {
+  const variables: Record<LlmProviderId, string[]> = {
+    groq: ['GROQ_API_KEY'],
+    cerebras: ['CEREBRAS_API_KEY'],
+    github: ['GITHUB_MODELS_API_KEY', 'GITHUB_TOKEN'],
+    openrouter: ['OPENROUTER_API_KEY'],
+    mistral: ['MISTRAL_API_KEY'],
+  }
+  return variables[provider].map((name) => process.env[name]).find(Boolean)
+}
+
+function getLlmCredentialStore(): LlmCredentialStore {
+  llmCredentialStore ??= new LlmCredentialStore(
+    join(app.getPath('userData'), 'credentials', 'llm-credentials.bin'),
+    {
+      isAvailable: () => safeStorage.isAsyncEncryptionAvailable(),
+      encrypt: (value) => safeStorage.encryptStringAsync(value),
+      decrypt: (value) => safeStorage.decryptStringAsync(value),
+    },
+    environmentCredential,
+  )
+  return llmCredentialStore
 }
 
 function buildProjectAwareness(): ProjectAwarenessRuntime {
@@ -174,8 +199,8 @@ function applyOverlaySettings(): { ok: boolean; visible: boolean } {
   return { ok: true, visible: true }
 }
 
-function createWindow(): void {
-  loadConfig()
+async function createWindow(): Promise<void> {
+  await loadConfig(getLlmCredentialStore())
   Menu.setApplicationMenu(null)
 
   win = new BrowserWindow({
@@ -216,6 +241,7 @@ function createWindow(): void {
       if (!llmGateway) throw new Error('LLM gateway is unavailable')
       return llmGateway
     },
+    getLlmCredentialStore,
     () => {
       projectAwareness ??= buildProjectAwareness()
       return projectAwareness
@@ -366,7 +392,7 @@ function toggleOverlayWindow(): { visible: boolean } {
   return { visible: true }
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   ipcMain.handle('overlay:toggle', () => toggleOverlayWindow())
   ipcMain.handle('overlay:is-visible', () => ({
     visible: Boolean(overlayWin && !overlayWin.isDestroyed()),
@@ -390,10 +416,10 @@ app.whenReady().then(() => {
     return { ok: true }
   })
 
-  createWindow()
+  await createWindow()
   app.on('activate', () => {
     if (isQuitting) return
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    if (BrowserWindow.getAllWindows().length === 0) void createWindow()
   })
 })
 
