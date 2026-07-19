@@ -8,7 +8,8 @@ from pydantic import BaseModel, Field
 
 from app.audio import apply_pitch_shift, save_wav
 from app.config import settings
-from app.tts import EmotionRegistry, EmotionTranslator, F5LocalEngine, SynthesisResult
+from app.tts import EmotionRegistry, EmotionTranslator, SynthesisResult
+from app.tts.f5_local import F5LocalEngine
 from app.tts.voice_repository_manager import voice_repository_manager
 from app.tts.voices import default_voice_id, list_presets, voice_registry
 

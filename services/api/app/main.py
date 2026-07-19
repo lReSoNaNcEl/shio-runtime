@@ -9,7 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from app.asr import SileroVAD, WhisperASR
 from app.config import settings
 from app.routes import health, recognize, synthesize, ws
-from app.tts import F5LocalEngine
+from app.tts.f5_local import F5LocalEngine
 
 logging.basicConfig(
     level=logging.INFO,
