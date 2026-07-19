@@ -209,7 +209,7 @@ async function createWindow(): Promise<void> {
     height: 800,
     title: 'Shio Runtime',
     webPreferences: {
-      preload: join(__dirname, '../preload/index.mjs'),
+      preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
@@ -362,7 +362,7 @@ function createOverlayWindow(): BrowserWindow {
       skipTaskbar: true,
       hasShadow: false,
       webPreferences: {
-        preload: join(__dirname, '../preload/index.mjs'),
+        preload: join(__dirname, '../preload/index.js'),
         contextIsolation: true,
         nodeIntegration: false,
         sandbox: false,

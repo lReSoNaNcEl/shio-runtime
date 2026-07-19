@@ -14,7 +14,7 @@ export default defineConfig({
           index: resolve(__dirname, 'src/main/index.ts'),
         },
         output: {
-          entryFileNames: '[name].mjs',
+          entryFileNames: '[name].js',
         },
       },
     },
@@ -28,7 +28,7 @@ export default defineConfig({
           index: resolve(__dirname, 'src/preload/index.ts'),
         },
         output: {
-          entryFileNames: '[name].mjs',
+          entryFileNames: '[name].js',
         },
       },
     },
