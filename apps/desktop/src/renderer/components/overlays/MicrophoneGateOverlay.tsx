@@ -11,6 +11,7 @@ import {
 import MicrophoneIcon from '@react-spectrum/s2/icons/Microphone'
 import MicrophoneOffIcon from '@react-spectrum/s2/icons/MicrophoneOff'
 import RefreshIcon from '@react-spectrum/s2/icons/Refresh'
+import type * as React from 'react'
 import { useEffect, useRef } from 'react'
 
 import type {
@@ -19,9 +20,9 @@ import type {
   MicrophoneGateState,
   MicrophoneIntent,
   MicrophoneOption,
-} from '../audio/microphoneGateTypes'
-import type { LocalizationContextValue } from '../localization/LocalizationProvider'
-import { useTranslation } from '../localization/useTranslation'
+} from '../../audio/microphoneGateTypes'
+import type { LocalizationContextValue } from '../../localization/LocalizationProvider'
+import { useTranslation } from '../../localization/useTranslation'
 
 interface Props {
   state: MicrophoneGateState

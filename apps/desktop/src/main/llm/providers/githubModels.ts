@@ -11,7 +11,6 @@ export const githubModelsProvider: ProviderDefinition = {
     requiresApiKey: true,
     modelsRequireApiKey: true,
   },
-  defaultModel: '',
   chat: {
     baseUrl: 'https://models.github.ai',
     path: '/inference/chat/completions',

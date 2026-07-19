@@ -1,8 +1,9 @@
 import { Button } from '@react-spectrum/s2'
 import Close from '@react-spectrum/s2/icons/Close'
+import type * as React from 'react'
 
-import { useTranslation } from '../localization/useTranslation'
-import { bannerCopy, type SpeechCapabilitiesState } from '../runtime/speechCapabilities'
+import { useTranslation } from '../../localization/useTranslation'
+import { bannerCopy, type SpeechCapabilitiesState } from '../../runtime/speechCapabilities'
 
 /**
  * Compact transient degradation banner shown directly above the composer (ТЗ §3).

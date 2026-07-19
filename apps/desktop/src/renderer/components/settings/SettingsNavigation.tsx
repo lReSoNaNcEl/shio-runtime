@@ -1,0 +1,58 @@
+import AudioWaveIcon from '@react-spectrum/s2/icons/AudioWave'
+import CodeIcon from '@react-spectrum/s2/icons/Code'
+import DataIcon from '@react-spectrum/s2/icons/Data'
+import MicrophoneIcon from '@react-spectrum/s2/icons/Microphone'
+import SettingsIcon from '@react-spectrum/s2/icons/Settings'
+import UserAvatarIcon from '@react-spectrum/s2/icons/UserAvatar'
+import type * as React from 'react'
+
+import type { SettingsSection } from './state/settingsContracts'
+
+const icons: Record<SettingsSection, React.JSX.Element> = {
+  general: <SettingsIcon />,
+  project: <DataIcon />,
+  speech: <MicrophoneIcon />,
+  listening: <AudioWaveIcon />,
+  llm: <DataIcon />,
+  avatar: <UserAvatarIcon />,
+  advanced: <CodeIcon />,
+}
+
+const sections: readonly SettingsSection[] = [
+  'general',
+  'project',
+  'speech',
+  'listening',
+  'llm',
+  'avatar',
+  'advanced',
+]
+
+export function SettingsNavigation({
+  activeSection,
+  labels,
+  onSelect,
+  ariaLabel,
+}: {
+  activeSection: SettingsSection
+  labels: Record<SettingsSection, string>
+  onSelect: (section: SettingsSection) => void
+  ariaLabel: string
+}): React.JSX.Element {
+  return (
+    <aside className="settings-nav" aria-label={ariaLabel}>
+      {sections.map((section) => (
+        <button
+          key={section}
+          type="button"
+          className={activeSection === section ? 'active' : undefined}
+          aria-current={activeSection === section ? 'page' : undefined}
+          onClick={() => onSelect(section)}
+        >
+          <span className="settings-nav-icon">{icons[section]}</span>
+          <span>{labels[section]}</span>
+        </button>
+      ))}
+    </aside>
+  )
+}

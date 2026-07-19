@@ -142,6 +142,62 @@ async function main(): Promise<void> {
   assert(extracted.symbols.some((symbol) => symbol.name === 'ProjectRuntime.sync'))
   assert(extracted.chunks.some((chunk) => chunk.symbolName === 'ProjectRuntime'))
 
+  const typescriptSyntaxFixture = [
+    "import type { RuntimeEvent } from './events'",
+    '',
+    'export const PROFILES = {',
+    "  default: { id: 'default' },",
+    '} as const satisfies Record<string, { id: string }>',
+    '',
+    'export type ProfileId = keyof typeof PROFILES',
+    '',
+    'export class SyntaxRuntime {',
+    '  private readonly entries = new Map<',
+    '    string,',
+    '    { event: RuntimeEvent; createdAt: number }',
+    '  >()',
+    '',
+    '  get(): RuntimeEvent | undefined {',
+    '    return this.entries.get("current")?.event',
+    '  }',
+    '',
+    '  set(event: RuntimeEvent): void {',
+    '    this.entries.set("current", { event, createdAt: Date.now() })',
+    '  }',
+    '',
+    '  snapshot(): Promise<{ event: RuntimeEvent | undefined }> {',
+    '    return Promise.resolve({ event: this.get() })',
+    '  }',
+    '}',
+    '',
+    'export function templateExpression(value: string): string {',
+    '  return `' + '$' + "{value.replace(/\"/g, 'x')}`",
+    '}',
+  ].join('\n')
+  const typescriptSyntaxExtracted = extractSource(
+    'src/SyntaxRuntime.ts',
+    'typescript',
+    typescriptSyntaxFixture,
+  )
+  assert.deepEqual(typescriptSyntaxExtracted.imports, ['./events'])
+  assert.deepEqual(
+    typescriptSyntaxExtracted.symbols.map((symbol) => symbol.name),
+    [
+      'PROFILES',
+      'ProfileId',
+      'SyntaxRuntime',
+      'SyntaxRuntime.get',
+      'SyntaxRuntime.set',
+      'SyntaxRuntime.snapshot',
+      'templateExpression',
+    ],
+  )
+  assert.equal(
+    typescriptSyntaxExtracted.symbols.find((symbol) => symbol.name === 'SyntaxRuntime.snapshot')
+      ?.endLine,
+    25,
+  )
+
   const pythonSource = [
     '"""def NotAFunction(): pass"""',
     '# class NotAClass:',

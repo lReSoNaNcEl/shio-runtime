@@ -3,13 +3,16 @@
     "composite": true,
     "module": "ESNext",
     "moduleResolution": "bundler",
+    "outDir": "out",
     "resolveJsonModule": true,
     "strict": true,
     "target": "ESNext",
-    "outDir": "out",
     "skipLibCheck": true,
+    "verbatimModuleSyntax": true,
+    "noUncheckedSideEffectImports": true,
+    "forceConsistentCasingInFileNames": true,
     "jsx": "react-jsx",
     "lib": ["ESNext", "DOM", "DOM.Iterable"]
   },
-  "include": ["src/renderer/**/*"]
+  "include": ["src/renderer/**/*", "src/shared/**/*", "emotion_manifest.json"]
 }

@@ -1,4 +1,4 @@
-import type { EmotionTextSegment } from '../../shared/emotion/segments'
+import type { EmotionTextSegment } from '../../shared/emotion'
 import type { PreparedAudio } from '../audio/audioPlayer'
 import type { SuccessfulSpeechReply } from './SpeechRuntime'
 

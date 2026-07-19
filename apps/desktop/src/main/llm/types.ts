@@ -1,9 +1,8 @@
 import type { AxiosInstance } from 'axios'
 
-import type { LlmCapabilities } from '../../shared/llm/capabilities'
-import type { LlmProviderId, ProviderProfile } from '../../shared/llm/providers'
+import type { LlmCapabilities, LlmProviderId, ProviderProfile } from '../../shared/llm'
 
-export type { LlmCapabilities } from '../../shared/llm/capabilities'
+export type { LlmCapabilities } from '../../shared/llm'
 
 export interface LlmTextContentPart {
   type: 'text'
@@ -48,7 +47,6 @@ export interface ModelCatalogProvider {
 
 export interface ProviderDefinition {
   profile: ProviderProfile
-  defaultModel: string
   chat: {
     baseUrl: string
     path: string

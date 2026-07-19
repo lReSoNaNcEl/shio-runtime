@@ -297,6 +297,10 @@ export const enMessages: Record<TranslationKey, string> = {
   'settings.developerMode.title': 'Developer Mode',
   'settings.developerMode.description':
     'Shows advanced Runtime diagnostics and the internal event stream.',
+  'settings.developerTools.title': 'Developer Tools',
+  'settings.developerAnimationHud.title': 'Show active animation name',
+  'settings.developerAnimationHud.description':
+    'Displays the current .vrma filename above the avatar in the Overlay window. Use Diagnostics for regular runtime inspection.',
   'settings.saveFailed': 'Could not save settings',
   'settings.general.empty': 'General application settings do not need further configuration.',
   'settings.advanced.description': 'Diagnostics and irreversible actions.',

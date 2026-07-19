@@ -95,7 +95,7 @@ export class AvatarAnimationController {
     id: string,
     loop: boolean,
     fallbackId?: AnimationId,
-    blendDuration = 0.3,
+    blendDuration?: number,
   ): Promise<void>
   async playManifest(id: string, loop: boolean, options?: PlayManifestOptions): Promise<void>
   playManifest(

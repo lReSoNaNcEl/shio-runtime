@@ -3,12 +3,10 @@ import {
   type LlmConfig,
   type LlmProviderId,
   type ProviderCredentials,
-} from '../../shared/llm/providers'
+} from '../../shared/llm'
 
-export const GROQ_DEFAULT_MODEL = 'qwen/qwen3.6-27b'
-
-export function emptyCredentials(providerId: LlmProviderId): ProviderCredentials {
-  return { apiKey: '', model: providerId === 'groq' ? GROQ_DEFAULT_MODEL : '' }
+export function emptyCredentials(): ProviderCredentials {
+  return { apiKey: '', model: '' }
 }
 
 function isKnownProviderId(value: string): value is LlmProviderId {
@@ -17,7 +15,7 @@ function isKnownProviderId(value: string): value is LlmProviderId {
 
 export function defaultLlmConfig(): LlmConfig {
   const providers = {} as Record<LlmProviderId, ProviderCredentials>
-  for (const id of LLM_PROVIDER_IDS) providers[id] = emptyCredentials(id)
+  for (const id of LLM_PROVIDER_IDS) providers[id] = emptyCredentials()
   return {
     activeProvider: 'groq',
     providers,
@@ -33,8 +31,8 @@ export function defaultLlmConfig(): LlmConfig {
   }
 }
 
-function toCredentials(value: unknown, providerId: LlmProviderId): ProviderCredentials {
-  const base = emptyCredentials(providerId)
+function toCredentials(value: unknown): ProviderCredentials {
+  const base = emptyCredentials()
   if (value && typeof value === 'object') {
     const record = value as Record<string, unknown>
     if (typeof record.apiKey === 'string') base.apiKey = record.apiKey
@@ -55,7 +53,7 @@ export function normalizeLlmConfig(value: unknown): LlmConfig {
   if (providers && typeof providers === 'object') {
     const providerRecord = providers as Record<string, unknown>
     for (const id of LLM_PROVIDER_IDS) {
-      result.providers[id] = toCredentials(providerRecord[id], id)
+      result.providers[id] = toCredentials(providerRecord[id])
     }
   }
   const roles = record.roles

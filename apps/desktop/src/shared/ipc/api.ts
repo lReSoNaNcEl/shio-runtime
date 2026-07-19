@@ -86,7 +86,7 @@ export interface ShioRuntimeApi {
   projectAwareness: ProjectAwarenessApi
   config: {
     get: () => Promise<AppSettings>
-    save: (settings: Partial<AppSettings>) => Promise<unknown>
+    save: (settings: Partial<AppSettings>) => Promise<{ ok: boolean; error?: string }>
     onUpdated: (callback: (settings: AppSettings) => void) => () => void
   }
   vrm: {

@@ -11,7 +11,6 @@ export const cerebrasProvider: ProviderDefinition = {
     requiresApiKey: true,
     modelsRequireApiKey: false,
   },
-  defaultModel: '',
   chat: {
     baseUrl: 'https://api.cerebras.ai',
     path: '/v1/chat/completions',

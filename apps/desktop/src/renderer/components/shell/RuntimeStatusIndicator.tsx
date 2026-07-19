@@ -1,6 +1,7 @@
 import { Tooltip, TooltipTrigger } from '@react-spectrum/s2'
+import type * as React from 'react'
 
-import type { HealthState } from '../Controller'
+import type { HealthState } from '../../Controller'
 
 const VARIANT: Record<HealthState, 'positive' | 'notice' | 'negative' | 'neutral'> = {
   ok: 'positive',

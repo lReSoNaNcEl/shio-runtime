@@ -8,14 +8,15 @@ import {
   Heading,
   ProgressCircle,
 } from '@react-spectrum/s2'
+import type * as React from 'react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import type {
   ScreenContextCaptureDescriptor,
   ScreenContextErrorCode,
   ScreenContextSource,
-} from '../../shared/screen-context/contracts'
-import { useTranslation } from '../localization/useTranslation'
+} from '../../../shared/screen-context/contracts'
+import { useTranslation } from '../../localization/useTranslation'
 
 type PickerState =
   | 'checking-capability'

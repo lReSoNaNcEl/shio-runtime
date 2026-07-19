@@ -11,6 +11,7 @@ import AudioWaveIcon from '@react-spectrum/s2/icons/AudioWave'
 import DataIcon from '@react-spectrum/s2/icons/Data'
 import MicrophoneIcon from '@react-spectrum/s2/icons/Microphone'
 import RefreshIcon from '@react-spectrum/s2/icons/Refresh'
+import type * as React from 'react'
 import { useEffect, useState } from 'react'
 
 import type { ProjectAwarenessStatus, ProjectMap } from '../../../shared/project-awareness'

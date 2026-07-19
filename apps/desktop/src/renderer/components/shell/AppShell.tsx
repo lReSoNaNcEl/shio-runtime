@@ -4,11 +4,12 @@ import Chat from '@react-spectrum/s2/icons/Chat'
 import Heart from '@react-spectrum/s2/icons/Heart'
 import Settings from '@react-spectrum/s2/icons/Settings'
 import User from '@react-spectrum/s2/icons/User'
+import type * as React from 'react'
 import type { ReactNode } from 'react'
 
 import type { HealthState } from '../../Controller'
 import { useTranslation } from '../../localization/useTranslation'
-import { RuntimeStatusIndicator } from '../RuntimeStatusIndicator'
+import { RuntimeStatusIndicator } from './RuntimeStatusIndicator'
 
 export type AppSection = 'chat' | 'avatar' | 'health' | 'debug' | 'settings'
 

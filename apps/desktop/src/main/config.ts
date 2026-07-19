@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { app } from 'electron'
 
 import { DEFAULT_SPEECH_URL } from '../shared/config/appSettings'
-import type { LlmConfig } from '../shared/llm/providers'
+import type { LlmConfig } from '../shared/llm'
 import {
   DEFAULT_UI_LOCALE,
   isUiLocale,
@@ -39,7 +39,7 @@ export interface AppConfig {
   overlayCorner: string
   overlayScale: string
   overlayViewMode: string
-  overlayShowCurrentAnimation: string
+  developerOverlayAnimationHudEnabled: string
   developerModeEnabled: string
   passiveCompanionEnabled: string
   lookAtEnabled: string
@@ -69,7 +69,7 @@ const stringDefaults: Record<StringConfigKey, string> = {
   overlayCorner: process.env.OVERLAY_CORNER ?? 'bottom-right',
   overlayScale: process.env.OVERLAY_SCALE ?? '1',
   overlayViewMode: 'front',
-  overlayShowCurrentAnimation: 'false',
+  developerOverlayAnimationHudEnabled: 'true',
   developerModeEnabled: 'false',
   passiveCompanionEnabled: process.env.PASSIVE_COMPANION_ENABLED ?? 'false',
   lookAtEnabled: 'true',
@@ -211,6 +211,8 @@ export function loadConfig(): AppConfig {
         ...freshDefaults(),
         ...known,
         developerModeEnabled: normalizeDeveloperMode(known.developerModeEnabled),
+        developerOverlayAnimationHudEnabled:
+          known.developerOverlayAnimationHudEnabled === 'false' ? 'false' : 'true',
         llm,
         projectAwareness,
         uiLocale: normalizeUiLocale(saved.uiLocale),
@@ -257,6 +259,12 @@ export function saveConfig(
       partial.developerModeEnabled === undefined
         ? _config.developerModeEnabled
         : normalizeDeveloperMode(partial.developerModeEnabled),
+    developerOverlayAnimationHudEnabled:
+      partial.developerOverlayAnimationHudEnabled === undefined
+        ? _config.developerOverlayAnimationHudEnabled
+        : partial.developerOverlayAnimationHudEnabled === 'false'
+          ? 'false'
+          : 'true',
     uiLocale:
       partial.uiLocale === undefined
         ? _config.uiLocale

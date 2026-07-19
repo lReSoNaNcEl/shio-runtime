@@ -5,7 +5,8 @@
     "enabled": true,
     "clientKind": "git",
     "root": "../..",
-    "useIgnoreFile": true
+    "useIgnoreFile": true,
+    "defaultBranch": "main"
   },
 
   "files": {
@@ -48,9 +49,54 @@
       "react": "recommended"
     },
     "rules": {
+      "preset": "recommended",
       "correctness": {
         "noUnusedImports": "error",
-        "noUnusedVariables": "error"
+        "noUnusedVariables": "error",
+        "noUndeclaredDependencies": "error"
+      },
+      "style": {
+        "noRestrictedImports": {
+          "level": "error",
+          "options": {
+            "patterns": [
+              {
+                "group": ["**/shared/emotion/*"],
+                "message": "Use the shared/emotion public entry point instead."
+              },
+              {
+                "group": ["**/shared/llm/*"],
+                "message": "Use the shared/llm public entry point instead."
+              },
+              {
+                "group": ["**/shared/localization/messages/*"],
+                "message": "Use the shared/localization/messages public entry point instead."
+              },
+              {
+                "group": ["**/shared/project-awareness/*"],
+                "message": "Use the shared/project-awareness public entry point instead."
+              },
+              {
+                "group": ["**/shared/runtime/character-state/*"],
+                "message": "Use the shared/runtime/character-state public entry point instead."
+              }
+            ]
+          }
+        },
+        "useImportType": {
+          "level": "error",
+          "options": {
+            "style": "auto"
+          }
+        }
+      },
+      "suspicious": {
+        "noImportCycles": {
+          "level": "error",
+          "options": {
+            "ignoreTypes": true
+          }
+        }
       }
     }
   },
@@ -71,9 +117,28 @@
 
   "overrides": [
     {
-      "includes": ["src/renderer/components/App.tsx", "src/renderer/components/SettingsDialog.tsx"],
-      "formatter": {
-        "lineEnding": "crlf"
+      "includes": ["src/renderer/**/*.tsx"],
+      "linter": {
+        "rules": {
+          "correctness": {
+            "noUndeclaredVariables": {
+              "level": "error",
+              "options": {
+                "checkTypes": true
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["src/renderer/components/**/*.{ts,tsx}", "src/renderer/hooks/**/*.{ts,tsx}"],
+      "linter": {
+        "rules": {
+          "performance": {
+            "noBarrelFile": "error"
+          }
+        }
       }
     }
   ]

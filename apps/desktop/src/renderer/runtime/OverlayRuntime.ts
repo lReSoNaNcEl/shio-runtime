@@ -23,7 +23,8 @@ export interface OverlaySettingsView {
   overlayTransparentBackground?: string
   overlayScale?: string
   overlayViewMode?: string
-  overlayShowCurrentAnimation?: string
+  developerModeEnabled?: string
+  developerOverlayAnimationHudEnabled?: string
 }
 
 export interface OverlayRemoteHandlers {

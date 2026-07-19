@@ -3,12 +3,21 @@
     "composite": true,
     "module": "ESNext",
     "moduleResolution": "bundler",
+    "outDir": "out",
     "resolveJsonModule": true,
     "strict": true,
     "target": "ESNext",
-    "outDir": "out",
     "skipLibCheck": true,
+    "verbatimModuleSyntax": true,
+    "noUncheckedSideEffectImports": true,
+    "forceConsistentCasingInFileNames": true,
     "types": ["node"]
   },
-  "include": ["src/main/**/*", "src/preload/**/*", "electron.vite.config.ts"]
+  "include": [
+    "src/main/**/*",
+    "src/preload/**/*",
+    "src/shared/**/*",
+    "electron.vite.config.ts",
+    "emotion_manifest.json"
+  ]
 }

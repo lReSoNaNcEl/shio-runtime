@@ -294,6 +294,10 @@ export const ruMessages = {
   'settings.developerMode.title': 'Режим разработчика',
   'settings.developerMode.description':
     'Показывает расширенную диагностику Runtime и поток внутренних событий.',
+  'settings.developerTools.title': 'Инструменты разработчика',
+  'settings.developerAnimationHud.title': 'Показывать имя активной анимации',
+  'settings.developerAnimationHud.description':
+    'Отображает имя текущего .vrma-файла над аватаром в окне Overlay. Для обычной диагностики используйте раздел Diagnostics.',
   'settings.saveFailed': 'Не удалось сохранить настройки',
   'settings.general.empty': 'Общие настройки приложения пока не требуют отдельной конфигурации.',
   'settings.advanced.description': 'Диагностика и необратимые действия.',

@@ -707,7 +707,7 @@ export function registerIpcHandlers(
       overlayCorner: cfg.overlayCorner,
       overlayScale: cfg.overlayScale,
       overlayViewMode: cfg.overlayViewMode,
-      overlayShowCurrentAnimation: cfg.overlayShowCurrentAnimation,
+      developerOverlayAnimationHudEnabled: cfg.developerOverlayAnimationHudEnabled,
       developerModeEnabled: cfg.developerModeEnabled,
       passiveCompanionEnabled: cfg.passiveCompanionEnabled,
       lookAtEnabled: cfg.lookAtEnabled,

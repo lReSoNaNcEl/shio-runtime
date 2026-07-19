@@ -4,6 +4,7 @@ import Erase from '@react-spectrum/s2/icons/Erase'
 import Filter from '@react-spectrum/s2/icons/Filter'
 import Pause from '@react-spectrum/s2/icons/Pause'
 import Play from '@react-spectrum/s2/icons/Play'
+import type * as React from 'react'
 import { useEffect, useMemo, useState } from 'react'
 
 import type { RuntimeDebugSnapshot, RuntimeTimelineEvent } from '../../Controller'

@@ -1,3 +1,4 @@
+import type * as React from 'react'
 import { createContext, useEffect, useMemo, useState } from 'react'
 
 import { type TranslationParams, translate } from '../../shared/localization/format'

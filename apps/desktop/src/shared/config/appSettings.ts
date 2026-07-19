@@ -23,7 +23,7 @@ export interface AppSettings {
   overlayCorner: string
   overlayScale: string
   overlayViewMode: string
-  overlayShowCurrentAnimation: string
+  developerOverlayAnimationHudEnabled: string
   developerModeEnabled: string
   passiveCompanionEnabled?: string
   lookAtEnabled: string

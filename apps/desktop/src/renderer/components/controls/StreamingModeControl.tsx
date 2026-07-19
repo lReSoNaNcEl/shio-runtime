@@ -15,10 +15,11 @@ import ChevronDown from '@react-spectrum/s2/icons/ChevronDown'
 import Microphone from '@react-spectrum/s2/icons/Microphone'
 import MicrophoneOff from '@react-spectrum/s2/icons/MicrophoneOff'
 import VolumeOff from '@react-spectrum/s2/icons/VolumeOff'
+import type * as React from 'react'
 
-import type { LocalizationContextValue } from '../localization/LocalizationProvider'
-import { useTranslation } from '../localization/useTranslation'
-import type { ContinuousListeningSettings } from '../speech/continuous-listening/types'
+import type { LocalizationContextValue } from '../../localization/LocalizationProvider'
+import { useTranslation } from '../../localization/useTranslation'
+import type { ContinuousListeningSettings } from '../../speech/continuous-listening/types'
 
 type AttentionMode = ContinuousListeningSettings['mode']
 type ListeningState = 'off' | 'starting' | 'on' | 'error'

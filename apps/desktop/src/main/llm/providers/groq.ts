@@ -1,6 +1,5 @@
 import axios from 'axios'
 
-import { GROQ_DEFAULT_MODEL } from '../config'
 import { ModelFetchError } from '../errors'
 import { GroqModelsResponseSchema } from '../openai-compatible/schemas'
 import type { ProviderDefinition } from '../types'
@@ -12,7 +11,6 @@ export const groqProvider: ProviderDefinition = {
     requiresApiKey: true,
     modelsRequireApiKey: true,
   },
-  defaultModel: GROQ_DEFAULT_MODEL,
   chat: {
     baseUrl: 'https://api.groq.com/openai/v1',
     path: '/chat/completions',

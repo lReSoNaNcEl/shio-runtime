@@ -1,165 +1,16 @@
 import type { SyntaxNode } from '@lezer/common'
 import { parser as pythonParser } from '@lezer/python'
-import ts from 'typescript'
 
 import type { ProjectLanguage } from '../../../shared/project-awareness'
 import type { ExtractedChunk, ExtractedSource, ExtractedSymbol } from '../contracts'
+import { extractTypeScriptStructure } from './TypeScriptSymbolExtractor'
 
 const MAX_CHUNK_LINES = 220
 const TARGET_CHUNK_LINES = 140
 const MAX_CHUNK_CHARACTERS = 8_000
 
-function scriptKind(language: ProjectLanguage): ts.ScriptKind {
-  switch (language) {
-    case 'typescriptreact':
-      return ts.ScriptKind.TSX
-    case 'javascriptreact':
-      return ts.ScriptKind.JSX
-    case 'javascript':
-      return ts.ScriptKind.JS
-    default:
-      return ts.ScriptKind.TS
-  }
-}
-
-function hasExportModifier(node: ts.Node): boolean {
-  return Boolean(
-    ts.canHaveModifiers(node) &&
-      ts
-        .getModifiers(node)
-        ?.some(
-          (modifier) =>
-            modifier.kind === ts.SyntaxKind.ExportKeyword ||
-            modifier.kind === ts.SyntaxKind.DefaultKeyword,
-        ),
-  )
-}
-
-function lineRange(source: ts.SourceFile, node: ts.Node): { startLine: number; endLine: number } {
-  return {
-    startLine: source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1,
-    endLine: source.getLineAndCharacterOfPosition(node.getEnd()).line + 1,
-  }
-}
-
 function compactSignature(text: string): string {
   return text.replace(/\s+/g, ' ').trim().slice(0, 500)
-}
-
-function declarationSignature(source: ts.SourceFile, node: ts.Node): string | null {
-  if (
-    ts.isFunctionDeclaration(node) ||
-    ts.isMethodDeclaration(node) ||
-    ts.isClassDeclaration(node) ||
-    ts.isInterfaceDeclaration(node) ||
-    ts.isTypeAliasDeclaration(node)
-  ) {
-    const bodyStart =
-      'body' in node && node.body && ts.isBlock(node.body)
-        ? node.body.getStart(source)
-        : node.getEnd()
-    return compactSignature(source.text.slice(node.getStart(source), bodyStart))
-  }
-  if (ts.isVariableDeclaration(node)) {
-    return compactSignature(source.text.slice(node.getStart(source), node.getEnd()))
-  }
-  return null
-}
-
-function extractTypeScript(
-  path: string,
-  content: string,
-  language: ProjectLanguage,
-): ExtractedSource {
-  const source = ts.createSourceFile(
-    path,
-    content,
-    ts.ScriptTarget.Latest,
-    true,
-    scriptKind(language),
-  )
-  const symbols: ExtractedSymbol[] = []
-  const imports: string[] = []
-
-  for (const statement of source.statements) {
-    if (ts.isImportDeclaration(statement) && ts.isStringLiteral(statement.moduleSpecifier)) {
-      imports.push(statement.moduleSpecifier.text)
-      continue
-    }
-
-    if (ts.isFunctionDeclaration(statement) && statement.name) {
-      symbols.push({
-        name: statement.name.text,
-        kind: 'function',
-        exported: hasExportModifier(statement),
-        ...lineRange(source, statement),
-        signature: declarationSignature(source, statement),
-      })
-      continue
-    }
-
-    if (ts.isClassDeclaration(statement) && statement.name) {
-      symbols.push({
-        name: statement.name.text,
-        kind: 'class',
-        exported: hasExportModifier(statement),
-        ...lineRange(source, statement),
-        signature: declarationSignature(source, statement),
-      })
-      for (const member of statement.members) {
-        if (!ts.isMethodDeclaration(member) || !member.name) continue
-        const name = member.name.getText(source)
-        symbols.push({
-          name: `${statement.name.text}.${name}`,
-          kind: 'method',
-          exported: hasExportModifier(statement),
-          ...lineRange(source, member),
-          signature: declarationSignature(source, member),
-        })
-      }
-      continue
-    }
-
-    if (ts.isInterfaceDeclaration(statement)) {
-      symbols.push({
-        name: statement.name.text,
-        kind: 'interface',
-        exported: hasExportModifier(statement),
-        ...lineRange(source, statement),
-        signature: declarationSignature(source, statement),
-      })
-      continue
-    }
-
-    if (ts.isTypeAliasDeclaration(statement)) {
-      symbols.push({
-        name: statement.name.text,
-        kind: 'type',
-        exported: hasExportModifier(statement),
-        ...lineRange(source, statement),
-        signature: declarationSignature(source, statement),
-      })
-      continue
-    }
-
-    if (ts.isVariableStatement(statement)) {
-      const exported = hasExportModifier(statement)
-      for (const declaration of statement.declarationList.declarations) {
-        if (!ts.isIdentifier(declaration.name)) continue
-        const important = exported || /^[A-Z][A-Z0-9_]+$/.test(declaration.name.text)
-        if (!important) continue
-        symbols.push({
-          name: declaration.name.text,
-          kind: 'const',
-          exported,
-          ...lineRange(source, statement),
-          signature: declarationSignature(source, declaration),
-        })
-      }
-    }
-  }
-
-  return { symbols, imports, chunks: buildChunks(content, symbols) }
 }
 
 function directChildren(node: SyntaxNode): SyntaxNode[] {
@@ -449,7 +300,7 @@ function buildChunks(content: string, symbols: ExtractedSymbol[]): ExtractedChun
 }
 
 export function extractSource(
-  path: string,
+  _path: string,
   language: ProjectLanguage,
   content: string,
 ): ExtractedSource {
@@ -459,7 +310,11 @@ export function extractSource(
     language === 'javascript' ||
     language === 'javascriptreact'
   ) {
-    return extractTypeScript(path, content, language)
+    const extracted = extractTypeScriptStructure(language, content)
+    return {
+      ...extracted,
+      chunks: buildChunks(content, extracted.symbols),
+    }
   }
   if (language === 'python') return extractPython(content)
   return { symbols: [], imports: [], chunks: buildChunks(content, []) }

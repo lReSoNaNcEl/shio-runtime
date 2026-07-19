@@ -21,7 +21,6 @@ export const openRouterProvider: ProviderDefinition = {
     requiresApiKey: true,
     modelsRequireApiKey: false,
   },
-  defaultModel: '',
   chat: {
     baseUrl: 'https://openrouter.ai/api/v1',
     path: '/chat/completions',

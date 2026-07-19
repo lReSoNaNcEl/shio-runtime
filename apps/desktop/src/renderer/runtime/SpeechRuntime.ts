@@ -1,5 +1,8 @@
-import { stripAssistantMarkup } from '../../shared/emotion'
-import { type EmotionTextSegment, parseEmotionalReply } from '../../shared/emotion/segments'
+import {
+  type EmotionTextSegment,
+  parseEmotionalReply,
+  stripAssistantMarkup,
+} from '../../shared/emotion'
 import type {
   CharacterActivityState,
   CharacterConversationPresenceState,

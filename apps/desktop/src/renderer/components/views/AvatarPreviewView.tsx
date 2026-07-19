@@ -11,6 +11,7 @@ import {
   TooltipTrigger,
 } from '@react-spectrum/s2'
 import RotateCCW from '@react-spectrum/s2/icons/RotateCCW'
+import type * as React from 'react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import type { TranslationKey } from '../../../shared/localization/messages'

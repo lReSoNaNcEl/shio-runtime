@@ -1,4 +1,4 @@
-import type { LlmProviderId } from '../../../shared/llm/providers'
+import type { LlmProviderId } from '../../../shared/llm'
 import { LlmResponseError } from '../errors'
 import { ChatCompletionSchema } from './schemas'
 

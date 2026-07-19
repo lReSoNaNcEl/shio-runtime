@@ -17,7 +17,10 @@ import type {
 import { AttentionEngine } from '../continuous-listening/AttentionEngine'
 import { BacklogSelector } from '../continuous-listening/BacklogSelector'
 import { BargeInPolicy } from '../continuous-listening/BargeInPolicy'
-import { ConversationAdmissionCoordinator } from '../continuous-listening/ConversationAdmissionCoordinator'
+import {
+  ConversationAdmissionCoordinator,
+  type ConversationAdmissionOutcome,
+} from '../continuous-listening/ConversationAdmissionCoordinator'
 import { RuleGate } from '../continuous-listening/RuleGate'
 import {
   CORRECTION_PATTERN,
@@ -147,7 +150,7 @@ export class ConversationInputCoordinator {
     })
   }
 
-  async admitDebug(emotionKey: string): Promise<'admitted' | 'ignored_busy'> {
+  async admitDebug(emotionKey: string): Promise<ConversationAdmissionOutcome> {
     return this.conversationAdmission.admit({
       turnId: this.dependencies.createTurnId('debug'),
       text: emotionKey,
@@ -257,7 +260,7 @@ export class ConversationInputCoordinator {
     this.dependencies.speechInputRuntime.setMicrophone(
       isDefaultMicrophone(result.deviceId) ? '' : result.deviceId,
     )
-    await this.startStreaming(result.intent.modeId)
+    await this.startStreaming(modeId)
   }
 
   private async startStreaming(modeId: StreamingModeId): Promise<void> {
@@ -283,7 +286,7 @@ export class ConversationInputCoordinator {
         this.dependencies.speechInputRuntime.setMicrophone(
           isDefaultMicrophone(result.deviceId) ? '' : result.deviceId,
         )
-        await this.startStreaming(result.intent.modeId)
+        await this.startStreaming(modeId)
       }
     }
   }
@@ -305,7 +308,7 @@ export class ConversationInputCoordinator {
       this.dependencies.speechInputRuntime.setMicrophone(
         isDefaultMicrophone(result.deviceId) ? '' : result.deviceId,
       )
-      await this.startStreaming(result.intent.modeId)
+      await this.startStreaming(modeId)
     }
   }
 

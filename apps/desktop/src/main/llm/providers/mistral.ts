@@ -11,7 +11,6 @@ export const mistralProvider: ProviderDefinition = {
     requiresApiKey: true,
     modelsRequireApiKey: true,
   },
-  defaultModel: '',
   chat: {
     baseUrl: 'https://api.mistral.ai/v1',
     path: '/chat/completions',

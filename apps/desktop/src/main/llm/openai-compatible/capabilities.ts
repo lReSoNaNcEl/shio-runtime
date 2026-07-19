@@ -1,4 +1,4 @@
-import type { LlmProviderId } from '../../../shared/llm/providers'
+import type { LlmProviderId } from '../../../shared/llm'
 import type { LlmCapabilities } from '../types'
 
 const REASONING_MODEL_PATTERNS: readonly RegExp[] = [

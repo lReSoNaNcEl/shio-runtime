@@ -92,7 +92,6 @@ function buildProjectAwareness(): ProjectAwarenessRuntime {
   projectKnowledgeStore ??= new ProjectKnowledgeStore(
     join(projectAwarenessDirectory, 'project-index.sqlite'),
     (key, params) => translate(getConfig().uiLocale, key, params),
-    (key, params) => translate(getConfig().uiLocale, key, params),
   )
   projectCredentialStore ??= new ProjectCredentialStore(
     join(projectAwarenessDirectory, 'github-credential.bin'),

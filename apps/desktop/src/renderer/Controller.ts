@@ -588,7 +588,12 @@ export class Controller {
           : 'front'
       this.avatarRuntime.setCameraMode(mode)
     }
-    this.set({ overlayAnimationHudEnabled: cfg.overlayShowCurrentAnimation === 'true' })
+    const overlayAnimationHudEnabled =
+      cfg.developerModeEnabled === 'true' && cfg.developerOverlayAnimationHudEnabled !== 'false'
+    this.set({
+      overlayAnimationHudEnabled,
+      overlayAnimationFile: overlayAnimationHudEnabled ? this.state.overlayAnimationFile : '',
+    })
     this.updateOverlayAnimationHudFile()
   }
 
@@ -627,7 +632,10 @@ export class Controller {
   }
 
   private updateOverlayAnimationHudFile(): void {
-    if (!this.overlayRuntime.isOverlayWindow()) return
+    if (!this.overlayRuntime.isOverlayWindow() || !this.state.overlayAnimationHudEnabled) {
+      if (this.state.overlayAnimationFile) this.set({ overlayAnimationFile: '' })
+      return
+    }
     const avatar = this.avatarRuntime.getDebugState()
     const activeFileName =
       avatar.currentBodyAnimationFile === 'none' ? '' : avatar.currentBodyAnimationFile

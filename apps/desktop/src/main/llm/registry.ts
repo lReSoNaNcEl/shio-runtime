@@ -1,4 +1,4 @@
-import { LLM_PROVIDER_IDS, type LlmProviderId, type ModelInfo } from '../../shared/llm/providers'
+import { LLM_PROVIDER_IDS, type LlmProviderId, type ModelInfo } from '../../shared/llm'
 import {
   applyCatalogCapabilityHints,
   resolveBaseCapabilities,
