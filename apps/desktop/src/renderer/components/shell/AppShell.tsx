@@ -4,10 +4,9 @@ import Chat from '@react-spectrum/s2/icons/Chat'
 import Heart from '@react-spectrum/s2/icons/Heart'
 import Settings from '@react-spectrum/s2/icons/Settings'
 import User from '@react-spectrum/s2/icons/User'
-import type * as React from 'react'
-import type { ReactNode } from 'react'
+import { type ReactNode } from 'react'
 
-import type { HealthState } from '../../Controller'
+import { type HealthState } from '../../Controller'
 import { useTranslation } from '../../localization/useTranslation'
 import { RuntimeStatusIndicator } from './RuntimeStatusIndicator'
 
@@ -27,7 +26,7 @@ export function AppShell({
   developerModeEnabled: boolean
   children: ReactNode
   headerAction?: ReactNode
-}): React.JSX.Element {
+}) {
   const { t } = useTranslation()
   const primary: Array<{ id: AppSection; label: string; icon: ReactNode }> = [
     { id: 'chat', label: t('app.nav.chat'), icon: <Chat /> },
@@ -40,7 +39,7 @@ export function AppShell({
       : []),
     { id: 'settings', label: t('app.nav.settings'), icon: <Settings /> },
   ]
-  const renderItems = (items: typeof primary): React.JSX.Element[] =>
+  const renderItems = (items: typeof primary) =>
     items.map((item) => (
       <button
         key={item.id}
@@ -75,13 +74,7 @@ export function AppShell({
   )
 }
 
-export function SectionHeading({
-  title,
-  subtitle,
-}: {
-  title: string
-  subtitle?: string
-}): React.JSX.Element {
+export function SectionHeading({ title, subtitle }: { title: string; subtitle?: string }) {
   return (
     <>
       <h1>{title}</h1>
@@ -90,7 +83,7 @@ export function SectionHeading({
   )
 }
 
-export function OpenSettingsButton({ onPress }: { onPress: () => void }): React.JSX.Element {
+export function OpenSettingsButton({ onPress }: { onPress: () => void }) {
   const { t } = useTranslation()
   return (
     <Button variant="secondary" onPress={onPress}>

@@ -1,9 +1,18 @@
-import { type TranslationParams, translate } from '../shared/localization/format'
-import { DEFAULT_UI_LOCALE, normalizeUiLocale, type UiLocale } from '../shared/localization/locale'
-import type { TranslationKey } from '../shared/localization/messages'
-import type { CharacterRuntimeMode, CharacterState } from '../shared/runtime/character-state'
-import type { RuntimeEventCategory, RuntimeEventType } from '../shared/runtime/events'
-import type { SerializedSpeechError } from '../shared/speech/errors'
+import type { TranslationKey } from '../shared/localization'
+import {
+  DEFAULT_UI_LOCALE,
+  normalizeUiLocale,
+  type TranslationParams,
+  translate,
+  type UiLocale,
+} from '../shared/localization'
+import type {
+  CharacterRuntimeMode,
+  CharacterState,
+  RuntimeEventCategory,
+  RuntimeEventType,
+} from '../shared/runtime'
+import type { SerializedSpeechError } from '../shared/speech'
 import { AudioPlayer } from './audio/audioPlayer'
 import { MicrophoneDeviceService } from './audio/MicrophoneDeviceService'
 import { MicrophoneGateController } from './audio/MicrophoneGateController'

@@ -1,8 +1,10 @@
 import { Switch } from '@react-spectrum/s2'
-import type * as React from 'react'
 
 import { useTranslation } from '../../../localization/useTranslation'
-import type { AdvancedSettingsActions, AdvancedSettingsState } from '../state/settingsContracts'
+import {
+  type AdvancedSettingsActions,
+  type AdvancedSettingsState,
+} from '../state/settingsContracts'
 
 export function AdvancedSettingsSection({
   state,
@@ -10,7 +12,7 @@ export function AdvancedSettingsSection({
 }: {
   state: AdvancedSettingsState
   actions: AdvancedSettingsActions
-}): React.JSX.Element {
+}) {
   const { t } = useTranslation()
   return (
     <div className="settings-grid">

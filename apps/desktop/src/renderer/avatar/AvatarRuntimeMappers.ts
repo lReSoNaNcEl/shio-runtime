@@ -1,4 +1,4 @@
-import type { CharacterState } from '../../shared/runtime/character-state'
+import type { CharacterState } from '../../shared/runtime'
 import type { AvatarMode, AvatarStateEffect } from './AvatarStateMachine'
 import type { HeadMotionProfile } from './embodiment/gaze/HeadMotionRuntime'
 import type { LookAtMode } from './embodiment/gaze/LookAtRuntime'

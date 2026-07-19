@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import * as dotenv from 'dotenv'
 import { app, BrowserWindow, ipcMain, Menu, protocol, safeStorage, screen } from 'electron'
 
-import { translate } from '../shared/localization/format'
+import { translate } from '../shared/localization'
 import { getConfig, getRendererConfig, loadConfig } from './config'
 import { registerIpcHandlers } from './ipc'
 import { LlmGateway } from './llm'
@@ -183,7 +183,7 @@ function createWindow(): void {
     height: 800,
     title: 'Shio Runtime',
     webPreferences: {
-      preload: join(__dirname, '../preload/index.js'),
+      preload: join(__dirname, '../preload/index.mjs'),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
@@ -327,7 +327,7 @@ function createOverlayWindow(): BrowserWindow {
       skipTaskbar: true,
       hasShadow: false,
       webPreferences: {
-        preload: join(__dirname, '../preload/index.js'),
+        preload: join(__dirname, '../preload/index.mjs'),
         contextIsolation: true,
         nodeIntegration: false,
         sandbox: false,

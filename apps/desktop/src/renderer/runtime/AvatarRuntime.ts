@@ -1,7 +1,12 @@
 import type * as THREE from 'three'
 
-import type { CharacterAvatarState, CharacterState } from '../../shared/runtime/character-state'
-import type { EventBus, RuntimeEventCategory, RuntimeEventType } from '../../shared/runtime/events'
+import type {
+  CharacterAvatarState,
+  CharacterState,
+  EventBus,
+  RuntimeEventCategory,
+  RuntimeEventType,
+} from '../../shared/runtime'
 import type {
   AnimationControllerDebugState,
   AnimationPlaybackStatus,

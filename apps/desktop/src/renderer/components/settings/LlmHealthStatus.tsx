@@ -1,14 +1,9 @@
 import { ProgressCircle, StatusLight } from '@react-spectrum/s2'
-import type * as React from 'react'
 
-import type { ControllerState } from '../../Controller'
+import { type ControllerState } from '../../Controller'
 import { useTranslation } from '../../localization/useTranslation'
 
-export function LlmHealthStatus({
-  health,
-}: {
-  health: ControllerState['llmHealth']
-}): React.JSX.Element {
+export function LlmHealthStatus({ health }: { health: ControllerState['llmHealth'] }) {
   const { t } = useTranslation()
   const status =
     health.state === 'ok'

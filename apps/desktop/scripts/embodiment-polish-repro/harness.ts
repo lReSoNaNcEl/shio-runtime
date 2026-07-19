@@ -10,7 +10,7 @@ import {
   type CharacterState,
   cloneCharacterState,
   INITIAL_CHARACTER_STATE,
-} from '../../src/shared/runtime/character-state'
+} from '../../src/shared/runtime'
 
 const empty = buildSpeechPhraseTimingPlan('')
 assert.deepEqual(empty, { boundaries: [], hasTerminalPunctuation: false })

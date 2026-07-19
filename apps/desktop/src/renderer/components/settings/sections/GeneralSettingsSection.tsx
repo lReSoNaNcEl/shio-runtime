@@ -1,9 +1,8 @@
 import { Picker, PickerItem } from '@react-spectrum/s2'
 import { style } from '@react-spectrum/s2/style' with { type: 'macro' }
-import type * as React from 'react'
 
 import { useTranslation } from '../../../localization/useTranslation'
-import type { GeneralSettingsActions, GeneralSettingsState } from '../state/settingsContracts'
+import { type GeneralSettingsActions, type GeneralSettingsState } from '../state/settingsContracts'
 
 const fullWidth = style({ width: 'full' })
 
@@ -13,7 +12,7 @@ export function GeneralSettingsSection({
 }: {
   state: GeneralSettingsState
   actions: GeneralSettingsActions
-}): React.JSX.Element {
+}) {
   const { t } = useTranslation()
   return (
     <div className="settings-grid">

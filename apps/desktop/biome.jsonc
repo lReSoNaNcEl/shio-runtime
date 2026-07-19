@@ -59,26 +59,16 @@
         "noRestrictedImports": {
           "level": "error",
           "options": {
+            "paths": {
+              "react": {
+                "importNames": ["*"],
+                "message": "Use named React type imports; component return types are inferred."
+              }
+            },
             "patterns": [
               {
-                "group": ["**/shared/emotion/*"],
-                "message": "Use the shared/emotion public entry point instead."
-              },
-              {
-                "group": ["**/shared/llm/*"],
-                "message": "Use the shared/llm public entry point instead."
-              },
-              {
-                "group": ["**/shared/localization/messages/*"],
-                "message": "Use the shared/localization/messages public entry point instead."
-              },
-              {
-                "group": ["**/shared/project-awareness/*"],
-                "message": "Use the shared/project-awareness public entry point instead."
-              },
-              {
-                "group": ["**/shared/runtime/character-state/*"],
-                "message": "Use the shared/runtime/character-state public entry point instead."
+                "group": ["**/shared/*/**"],
+                "message": "Import shared domains through their public entry point: shared/<domain>."
               }
             ]
           }
@@ -125,6 +115,14 @@
               "level": "error",
               "options": {
                 "checkTypes": true
+              }
+            }
+          },
+          "style": {
+            "useImportType": {
+              "level": "error",
+              "options": {
+                "style": "inlineType"
               }
             }
           }

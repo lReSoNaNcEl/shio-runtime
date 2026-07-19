@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict'
 
-import { messagePlaceholders, translate } from '../../src/shared/localization/format'
-import { enMessages, ruMessages, type TranslationKey } from '../../src/shared/localization/messages'
+import {
+  enMessages,
+  messagePlaceholders,
+  ruMessages,
+  type TranslationKey,
+  translate,
+} from '../../src/shared/localization'
 
 const ruKeys = Object.keys(ruMessages).sort()
 const enKeys = Object.keys(enMessages).sort()

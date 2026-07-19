@@ -4,11 +4,9 @@ import Erase from '@react-spectrum/s2/icons/Erase'
 import Filter from '@react-spectrum/s2/icons/Filter'
 import Pause from '@react-spectrum/s2/icons/Pause'
 import Play from '@react-spectrum/s2/icons/Play'
-import type * as React from 'react'
 import { useEffect, useMemo, useState } from 'react'
 
-import type { RuntimeDebugSnapshot, RuntimeTimelineEvent } from '../../Controller'
-import { controller } from '../../Controller'
+import { controller, type RuntimeDebugSnapshot, type RuntimeTimelineEvent } from '../../Controller'
 import { useTranslation } from '../../localization/useTranslation'
 
 type DiagnosticsTab = 'events' | 'snapshot'
@@ -114,7 +112,7 @@ function fieldsFor(snapshot: RuntimeDebugSnapshot, keys: readonly string[]): Sna
   return keys.map((key) => ({ label: humanizeFieldName(key), value: record[key] }))
 }
 
-function SnapshotValue({ value }: { value: unknown }): React.JSX.Element {
+function SnapshotValue({ value }: { value: unknown }) {
   const { t } = useTranslation()
   if (value === null || value === undefined) return <span>{t('common.none')}</span>
   if (typeof value === 'boolean') return <span>{value ? t('common.yes') : t('common.no')}</span>
@@ -123,7 +121,7 @@ function SnapshotValue({ value }: { value: unknown }): React.JSX.Element {
   return <span>{String(value)}</span>
 }
 
-export function DiagnosticsView(): React.JSX.Element {
+export function DiagnosticsView() {
   const { t } = useTranslation()
   const [snapshot, setSnapshot] = useState<RuntimeDebugSnapshot | null>(null)
   const [activeTab, setActiveTab] = useState<DiagnosticsTab>('events')

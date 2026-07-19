@@ -1,4 +1,4 @@
-import type { RuntimeEventInput } from '../../shared/runtime/events'
+import type { RuntimeEventInput } from '../../shared/runtime'
 import type { ActionRequest, ActionResult, ToolDefinition } from './types'
 
 export type ActionRuntimeEventListener = (event: RuntimeEventInput) => void

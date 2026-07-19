@@ -1,9 +1,8 @@
 import { Button, ButtonGroup, Heading } from '@react-spectrum/s2'
 import Chat from '@react-spectrum/s2/icons/Chat'
-import type * as React from 'react'
 import { useEffect, useRef } from 'react'
 
-import type { ControllerState } from '../../Controller'
+import { type ControllerState } from '../../Controller'
 import { useTranslation } from '../../localization/useTranslation'
 
 export interface ChatMessageListProps {
@@ -22,7 +21,7 @@ export function ChatMessageList({
   onQuickAction,
   continuousListeningError,
   onRetryContinuousListening,
-}: ChatMessageListProps): React.JSX.Element {
+}: ChatMessageListProps) {
   const { t } = useTranslation()
   const listRef = useRef<HTMLDivElement>(null)
 

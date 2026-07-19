@@ -11,16 +11,15 @@ import AudioWaveIcon from '@react-spectrum/s2/icons/AudioWave'
 import DataIcon from '@react-spectrum/s2/icons/Data'
 import MicrophoneIcon from '@react-spectrum/s2/icons/Microphone'
 import RefreshIcon from '@react-spectrum/s2/icons/Refresh'
-import type * as React from 'react'
-import { useEffect, useState } from 'react'
+import { type ReactElement, useEffect, useState } from 'react'
 
-import type { ProjectAwarenessStatus, ProjectMap } from '../../../shared/project-awareness'
+import { type ProjectAwarenessStatus, type ProjectMap } from '../../../shared/project-awareness'
 import { type ControllerState, controller } from '../../Controller'
-import type { LocalizationContextValue } from '../../localization/LocalizationProvider'
+import { type LocalizationContextValue } from '../../localization/LocalizationProvider'
 import { useTranslation } from '../../localization/useTranslation'
-import type {
-  SpeechCapabilitiesState,
-  SpeechCapabilityStatus,
+import {
+  type SpeechCapabilitiesState,
+  type SpeechCapabilityStatus,
 } from '../../runtime/speechCapabilities'
 
 type CardTone = 'positive' | 'informative' | 'neutral' | 'notice' | 'negative'
@@ -70,7 +69,7 @@ function projectActionError(error: unknown): string {
   return message.replace(/^Error invoking remote method '[^']+': Error: /, '')
 }
 
-function ProjectAwarenessCard({ status }: { status: ProjectAwarenessStatus }): React.JSX.Element {
+function ProjectAwarenessCard({ status }: { status: ProjectAwarenessStatus }) {
   const { intlLocale, t } = useTranslation()
   const [map, setMap] = useState<ProjectMap | null>(null)
   const [actionError, setActionError] = useState('')
@@ -222,11 +221,7 @@ function capabilityLabel(
  * ASR/TTS/Streaming detail, last-check time, a recheck button, and an expandable —
  * closed by default — technical-details block. No IP/port shown outside it.
  */
-function SpeechApiCard({
-  capabilities,
-}: {
-  capabilities: SpeechCapabilitiesState
-}): React.JSX.Element {
+function SpeechApiCard({ capabilities }: { capabilities: SpeechCapabilitiesState }) {
   const { intlLocale, t } = useTranslation()
   const service = SPEECH_SERVICE[capabilities.service]
   const serviceLabel = t(service.key)
@@ -290,7 +285,7 @@ function SpeechApiCard({
 
 interface HealthCard {
   id: string
-  icon: React.JSX.Element
+  icon: ReactElement
   title: string
   tone: CardTone
   status: string
@@ -411,7 +406,7 @@ export function RuntimeHealthView({
 }: {
   state: ControllerState
   onRetry: () => void
-}): React.JSX.Element {
+}) {
   const { t } = useTranslation()
   const [projectStatus, setProjectStatus] = useState<ProjectAwarenessStatus>(EMPTY_PROJECT_STATUS)
   useEffect(() => {

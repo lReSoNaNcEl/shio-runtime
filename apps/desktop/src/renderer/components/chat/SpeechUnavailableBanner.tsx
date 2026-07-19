@@ -1,6 +1,5 @@
 import { Button } from '@react-spectrum/s2'
 import Close from '@react-spectrum/s2/icons/Close'
-import type * as React from 'react'
 
 import { useTranslation } from '../../localization/useTranslation'
 import { bannerCopy, type SpeechCapabilitiesState } from '../../runtime/speechCapabilities'
@@ -22,7 +21,7 @@ export function SpeechUnavailableBanner({
   onRetry: () => void
   onOpenHealth: () => void
   onDismiss: () => void
-}): React.JSX.Element | null {
+}) {
   const { locale, t } = useTranslation()
   const copy = bannerCopy(capabilities, locale)
   if (!copy) return null

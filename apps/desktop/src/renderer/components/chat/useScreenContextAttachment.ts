@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 
-import type { ScreenContextCaptureDescriptor } from '../../../shared/screen-context/contracts'
+import type { ScreenContextCaptureDescriptor } from '../../../shared/screen-context'
 import { useTranslation } from '../../localization/useTranslation'
 
 export function useScreenContextAttachment(): {

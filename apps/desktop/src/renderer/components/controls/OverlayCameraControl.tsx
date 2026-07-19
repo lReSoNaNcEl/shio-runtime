@@ -12,10 +12,9 @@ import FullScreen from '@react-spectrum/s2/icons/FullScreen'
 import OrientationPortrait from '@react-spectrum/s2/icons/OrientationPortrait'
 import User from '@react-spectrum/s2/icons/User'
 import UserAvatar from '@react-spectrum/s2/icons/UserAvatar'
-import type * as React from 'react'
 
-import type { OverlayViewMode } from '../../avatar/tuning/cameraTuning'
-import type { LocalizationContextValue } from '../../localization/LocalizationProvider'
+import { type OverlayViewMode } from '../../avatar/tuning/cameraTuning'
+import { type LocalizationContextValue } from '../../localization/LocalizationProvider'
 import { useTranslation } from '../../localization/useTranslation'
 
 const CAMERA_MODE_ICONS: Array<{
@@ -59,7 +58,7 @@ export function OverlayCameraControl({
   cameraMode: OverlayViewMode
   onToggle: () => Promise<void>
   onCameraModeChange: (mode: OverlayViewMode) => Promise<void>
-}): React.JSX.Element {
+}) {
   const { t } = useTranslation()
   const pending = overlayState === 'opening' || overlayState === 'closing'
   const cameraModes = CAMERA_MODE_ICONS.map((item) => ({

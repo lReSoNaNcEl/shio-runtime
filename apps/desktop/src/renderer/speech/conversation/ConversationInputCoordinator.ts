@@ -1,6 +1,9 @@
-import type { CharacterState } from '../../../shared/runtime/character-state'
-import type { RuntimeEventCategory, RuntimeEventType } from '../../../shared/runtime/events'
-import type { SerializedSpeechError } from '../../../shared/speech/errors'
+import type {
+  CharacterState,
+  RuntimeEventCategory,
+  RuntimeEventType,
+} from '../../../shared/runtime'
+import type { SerializedSpeechError } from '../../../shared/speech'
 import type { MicrophoneDeviceService } from '../../audio/MicrophoneDeviceService'
 import type { MicrophoneGateController } from '../../audio/MicrophoneGateController'
 import { isDefaultMicrophone, type StreamingModeId } from '../../audio/microphoneGateTypes'

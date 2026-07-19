@@ -7,7 +7,7 @@ import type {
   ConversationPresencePhase,
   ConversationPresenceReaction,
   ConversationPresenceReplyLength,
-} from '../../shared/runtime/character-state'
+} from '../../shared/runtime'
 
 export interface ConversationPresenceInput {
   phase: ConversationPresencePhase

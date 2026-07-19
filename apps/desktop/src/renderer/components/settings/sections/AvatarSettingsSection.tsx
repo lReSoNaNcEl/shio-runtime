@@ -8,11 +8,10 @@ import {
   Switch,
 } from '@react-spectrum/s2'
 import { style } from '@react-spectrum/s2/style' with { type: 'macro' }
-import type * as React from 'react'
 
 import { overlayCameraPresets } from '../../../avatar/tuning/cameraTuning'
 import { useTranslation } from '../../../localization/useTranslation'
-import type { AvatarSettingsActions, AvatarSettingsState } from '../state/settingsContracts'
+import { type AvatarSettingsActions, type AvatarSettingsState } from '../state/settingsContracts'
 import { overlayViewModes } from '../state/settingsDefaults'
 import { parseOverlayViewMode } from '../state/settingsParsers'
 
@@ -24,7 +23,7 @@ export function AvatarSettingsSection({
 }: {
   state: AvatarSettingsState
   actions: AvatarSettingsActions
-}): React.JSX.Element {
+}) {
   const { t } = useTranslation()
   return (
     <div className="settings-grid avatar-panel">

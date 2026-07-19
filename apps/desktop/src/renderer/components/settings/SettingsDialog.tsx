@@ -7,7 +7,6 @@ import {
   ProgressCircle,
   StatusLight,
 } from '@react-spectrum/s2'
-import type * as React from 'react'
 import { useState } from 'react'
 
 import { useTranslation } from '../../localization/useTranslation'
@@ -19,7 +18,7 @@ import { ListeningSettingsSection } from './sections/ListeningSettingsSection'
 import { LlmSettingsSection } from './sections/LlmSettingsSection'
 import { ProjectSettingsSection } from './sections/ProjectSettingsSection'
 import { SpeechSettingsSection } from './sections/SpeechSettingsSection'
-import type { SettingsDialogProps, SettingsSection } from './state/settingsContracts'
+import { type SettingsDialogProps, type SettingsSection } from './state/settingsContracts'
 import { useSettingsDialogState } from './state/useSettingsDialogState'
 
 export function SettingsDialog({
@@ -33,7 +32,7 @@ export function SettingsDialog({
   llmHealth,
   onOverlayVisibleChange,
   onToggleOverlay,
-}: SettingsDialogProps): React.JSX.Element | null {
+}: SettingsDialogProps) {
   const { t } = useTranslation()
   const [confirmClearHistory, setConfirmClearHistory] = useState(false)
   const viewModel = useSettingsDialogState({

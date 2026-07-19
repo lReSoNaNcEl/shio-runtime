@@ -2,10 +2,9 @@ import { ComboBox, ComboBoxItem, Switch, Text } from '@react-spectrum/s2'
 import ImageIcon from '@react-spectrum/s2/icons/Image'
 import LightbulbIcon from '@react-spectrum/s2/icons/Lightbulb'
 import { style } from '@react-spectrum/s2/style' with { type: 'macro' }
-import type * as React from 'react'
 import { useEffect, useState } from 'react'
 
-import type { ModelInfo } from '../../../shared/llm'
+import { type ModelInfo } from '../../../shared/llm'
 import { useTranslation } from '../../localization/useTranslation'
 
 const fullWidth = style({ width: 'full' })
@@ -29,7 +28,7 @@ export function ModelComboBox({
   isLoading,
   showCapabilities = false,
   onSelect,
-}: ModelComboBoxProps): React.JSX.Element {
+}: ModelComboBoxProps) {
   const { t } = useTranslation()
   const [searchText, setSearchText] = useState(selectedId)
   const [isOpen, setIsOpen] = useState(false)

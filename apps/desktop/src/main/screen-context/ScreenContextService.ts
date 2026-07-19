@@ -5,7 +5,7 @@ import type {
   ScreenContextErrorCode,
   ScreenContextSource,
   ScreenContextSourceKind,
-} from '../../shared/screen-context/contracts'
+} from '../../shared/screen-context'
 import { mainLog } from '../logging/safeLogger'
 import { type ScreenCaptureAdapter, ScreenCaptureError } from './ScreenCaptureAdapter'
 

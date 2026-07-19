@@ -8,14 +8,13 @@ import {
   Heading,
   ProgressCircle,
 } from '@react-spectrum/s2'
-import type * as React from 'react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-import type {
-  ScreenContextCaptureDescriptor,
-  ScreenContextErrorCode,
-  ScreenContextSource,
-} from '../../../shared/screen-context/contracts'
+import {
+  type ScreenContextCaptureDescriptor,
+  type ScreenContextErrorCode,
+  type ScreenContextSource,
+} from '../../../shared/screen-context'
 import { useTranslation } from '../../localization/useTranslation'
 
 type PickerState =
@@ -40,7 +39,7 @@ export function ScreenContextPicker({
   onChangeModel,
   onBeforeCapture,
   onAttach,
-}: Props): React.JSX.Element {
+}: Props) {
   const { t } = useTranslation()
   const [state, setState] = useState<PickerState>('checking-capability')
   const [sources, setSources] = useState<ScreenContextSource[]>([])

@@ -11,12 +11,11 @@ import {
   TooltipTrigger,
 } from '@react-spectrum/s2'
 import RotateCCW from '@react-spectrum/s2/icons/RotateCCW'
-import type * as React from 'react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
-import type { TranslationKey } from '../../../shared/localization/messages'
-import type { AnimationManifestEntry } from '../../avatar/animationManifest'
+import { type TranslationKey } from '../../../shared/localization'
 import {
+  type AnimationManifestEntry,
   getAnimationTitle,
   getGroupedAnimations,
   isAnimationAutomaticallySelectable,
@@ -33,11 +32,7 @@ function cameraLabel(entry: AnimationManifestEntry): string | null {
     .join('/')
 }
 
-export function AvatarPreviewView({
-  onOpenSettings,
-}: {
-  onOpenSettings: () => void
-}): React.JSX.Element {
+export function AvatarPreviewView({ onOpenSettings }: { onOpenSettings: () => void }) {
   const { t } = useTranslation()
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const mountedRef = useRef(true)

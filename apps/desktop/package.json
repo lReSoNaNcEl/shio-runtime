@@ -2,7 +2,7 @@
   "name": "vtuber-app",
   "version": "1.0.0",
   "description": "",
-  "main": "out/main/index.js",
+  "main": "out/main/index.mjs",
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
@@ -35,31 +35,31 @@
   "license": "ISC",
   "type": "commonjs",
   "devDependencies": {
-    "@biomejs/biome": "2.5.3",
+    "@biomejs/biome": "2.5.4",
     "@types/node": "^26.0.1",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@types/three": "^0.185.0",
-    "@vitejs/plugin-react": "^5.2.0",
-    "electron": "^42.5.0",
+    "@vitejs/plugin-react": "6.0.3",
+    "electron": "43.1.1",
     "electron-vite": "^5.0.0",
     "typescript": "^7.0.2",
     "unplugin-parcel-macros": "^0.2.0",
-    "vite": "^7.3.6"
+    "vite": "8.1.5"
   },
   "dependencies": {
     "@babel/parser": "^7.29.7",
     "@lezer/common": "^1.5.2",
     "@lezer/python": "^1.1.19",
-    "@pixiv/three-vrm": "^3.5.4",
-    "@pixiv/three-vrm-animation": "^3.5.4",
+    "@pixiv/three-vrm": "3.5.5",
+    "@pixiv/three-vrm-animation": "3.5.5",
     "@react-spectrum/s2": "^1.5.1",
     "axios": "^1.18.1",
     "dotenv": "^17.4.2",
     "electron-store": "^11.0.2",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
-    "three": "^0.185.0",
+    "three": "0.185.1",
     "zod": "^4.4.3"
   }
 }

@@ -16,13 +16,12 @@ import {
 import CopyIcon from '@react-spectrum/s2/icons/Copy'
 import EditIcon from '@react-spectrum/s2/icons/Edit'
 import { style } from '@react-spectrum/s2/style' with { type: 'macro' }
-import type * as React from 'react'
 
-import type { LlmProviderId } from '../../../../shared/llm'
+import { type LlmProviderId } from '../../../../shared/llm'
 import { useTranslation } from '../../../localization/useTranslation'
 import { LlmHealthStatus } from '../LlmHealthStatus'
 import { ModelComboBox } from '../ModelComboBox'
-import type { LlmSettingsActions, LlmSettingsState } from '../state/settingsContracts'
+import { type LlmSettingsActions, type LlmSettingsState } from '../state/settingsContracts'
 import { maskKey } from '../state/settingsParsers'
 
 const fullWidth = style({ width: 'full' })
@@ -33,7 +32,7 @@ export function LlmSettingsSection({
 }: {
   state: LlmSettingsState
   actions: LlmSettingsActions
-}): React.JSX.Element {
+}) {
   const { t } = useTranslation()
   const activeApiKey = state.editingKey ? state.keyInput : state.savedKey
   return (

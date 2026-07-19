@@ -1,4 +1,4 @@
-import type { ShioRuntimeApi } from '../shared/ipc/api'
+import type { ShioRuntimeApi } from '../shared/ipc'
 
 declare global {
   interface Window {

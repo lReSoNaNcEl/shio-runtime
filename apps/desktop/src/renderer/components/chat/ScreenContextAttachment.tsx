@@ -1,7 +1,6 @@
 import { Button, ButtonGroup } from '@react-spectrum/s2'
-import type * as React from 'react'
 
-import type { ScreenContextCaptureDescriptor } from '../../../shared/screen-context/contracts'
+import { type ScreenContextCaptureDescriptor } from '../../../shared/screen-context'
 import { useTranslation } from '../../localization/useTranslation'
 
 export function ScreenContextAttachment({
@@ -14,7 +13,7 @@ export function ScreenContextAttachment({
   submitError: string | null
   onReplace: () => void
   onRemove: () => void
-}): React.JSX.Element {
+}) {
   const { t } = useTranslation()
   return (
     <div className="screen-context-attachment">

@@ -1,8 +1,8 @@
 import { contextBridge, ipcRenderer } from 'electron'
 
-import type { AppSettings } from '../shared/config/appSettings'
-import type { ShioRuntimeApi } from '../shared/ipc/api'
-import type { RuntimeEventInput } from '../shared/runtime/events'
+import type { AppSettings } from '../shared/config'
+import type { ShioRuntimeApi } from '../shared/ipc'
+import type { RuntimeEventInput } from '../shared/runtime'
 
 const api = {
   health: {

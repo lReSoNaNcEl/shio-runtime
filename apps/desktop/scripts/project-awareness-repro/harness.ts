@@ -21,7 +21,7 @@ import type {
   ProjectTreeEntry,
 } from '../../src/main/project-awareness/contracts'
 import { sourcePriority } from '../../src/main/project-awareness/indexing/SourceFilter'
-import { type Translator, translate } from '../../src/shared/localization/format'
+import { type Translator, translate } from '../../src/shared/localization'
 import {
   isValidProjectBranch,
   isValidProjectRepository,

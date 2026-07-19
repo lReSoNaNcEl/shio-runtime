@@ -11,17 +11,16 @@ import {
 import MicrophoneIcon from '@react-spectrum/s2/icons/Microphone'
 import MicrophoneOffIcon from '@react-spectrum/s2/icons/MicrophoneOff'
 import RefreshIcon from '@react-spectrum/s2/icons/Refresh'
-import type * as React from 'react'
 import { useEffect, useRef } from 'react'
 
-import type {
-  MicrophoneFailureReason,
-  MicrophoneGateOpenReason,
-  MicrophoneGateState,
-  MicrophoneIntent,
-  MicrophoneOption,
+import {
+  type MicrophoneFailureReason,
+  type MicrophoneGateOpenReason,
+  type MicrophoneGateState,
+  type MicrophoneIntent,
+  type MicrophoneOption,
 } from '../../audio/microphoneGateTypes'
-import type { LocalizationContextValue } from '../../localization/LocalizationProvider'
+import { type LocalizationContextValue } from '../../localization/LocalizationProvider'
 import { useTranslation } from '../../localization/useTranslation'
 
 interface Props {
@@ -96,7 +95,7 @@ function DeviceRow({
   selected: boolean
   validating: boolean
   onSelect: (deviceId: string) => void
-}): React.JSX.Element {
+}) {
   const { t } = useTranslation()
   const { primary, secondary } = splitLabel(device.label)
   return (
@@ -137,7 +136,7 @@ export function MicrophoneGateOverlay({
   onRefresh,
   onContinue,
   onCancel,
-}: Props): React.JSX.Element | null {
+}: Props) {
   const { t } = useTranslation()
   const cardRef = useRef<HTMLDivElement>(null)
 

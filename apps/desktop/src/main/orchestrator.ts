@@ -1,4 +1,4 @@
-import type { AppSettings } from '../shared/config/appSettings'
+import type { AppSettings } from '../shared/config'
 import {
   EMOTION_SEGMENTS_TUNING,
   normalizeEmotionTag,

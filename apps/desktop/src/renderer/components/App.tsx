@@ -1,5 +1,4 @@
 import { Provider } from '@react-spectrum/s2'
-import type * as React from 'react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { controller } from '../Controller'
@@ -15,7 +14,7 @@ import { AvatarPreviewView } from './views/AvatarPreviewView'
 import { DiagnosticsView } from './views/DiagnosticsView'
 import { RuntimeHealthView } from './views/RuntimeHealthView'
 
-export function App(): React.JSX.Element {
+export function App() {
   const { intlLocale, t } = useTranslation()
   const overlayCanvasRef = useRef<HTMLCanvasElement>(null)
   const state = useControllerState()

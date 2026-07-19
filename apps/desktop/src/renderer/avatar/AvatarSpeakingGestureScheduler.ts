@@ -1,4 +1,4 @@
-import type { CharacterState } from '../../shared/runtime/character-state'
+import type { CharacterState } from '../../shared/runtime'
 import type { AvatarBehaviorId } from './AvatarBehaviorResolver'
 import type { AvatarStateEffect } from './AvatarStateMachine'
 import { speakingGestureTuning } from './tuning/speechTuning'

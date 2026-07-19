@@ -9,9 +9,10 @@ import type {
   CharacterRuntimeMode,
   CharacterSpeechState,
   CharacterState,
-} from '../../shared/runtime/character-state'
-import type { EventBus, RuntimeEventType } from '../../shared/runtime/events'
-import { hasSpeakableContent } from '../../shared/speech/speakable-content'
+  EventBus,
+  RuntimeEventType,
+} from '../../shared/runtime'
+import { hasSpeakableContent } from '../../shared/speech'
 import type { MouthWeights } from '../avatar/embodiment/speech/LipSync'
 import type { CharacterStateStore } from './ShioRuntime'
 import { speechErrorFromResponse } from './speechCapabilities'

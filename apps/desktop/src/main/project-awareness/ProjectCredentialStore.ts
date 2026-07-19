@@ -1,8 +1,7 @@
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 
-import { type Translator, translate } from '../../shared/localization/format'
-import { DEFAULT_UI_LOCALE } from '../../shared/localization/locale'
+import { DEFAULT_UI_LOCALE, type Translator, translate } from '../../shared/localization'
 import type { ProjectCredentialStatus } from '../../shared/project-awareness'
 
 export interface ProjectCredentialProtector {

@@ -7,7 +7,7 @@ import type {
   ProviderCredentials,
   ProviderProfile,
 } from '../../../../shared/llm'
-import type { UiLocale } from '../../../../shared/localization/locale'
+import type { UiLocale } from '../../../../shared/localization'
 import type { ProjectAwarenessStatus } from '../../../../shared/project-awareness'
 import type { OverlayViewMode } from '../../../avatar/tuning/cameraTuning'
 import type { ControllerState } from '../../../Controller'

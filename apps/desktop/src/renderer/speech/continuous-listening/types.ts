@@ -3,9 +3,9 @@ export type {
   BacklogPriorityClass,
   BacklogSelectionResult,
   BufferedUtterance,
-} from '../../../shared/conversation/backlog'
+} from '../../../shared/conversation'
 
-import type { AttentionMode } from '../../../shared/conversation/backlog'
+import type { AttentionMode } from '../../../shared/conversation'
 
 export type ConversationInputSource =
   | 'text_chat'

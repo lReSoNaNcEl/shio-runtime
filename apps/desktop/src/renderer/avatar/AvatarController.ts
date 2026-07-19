@@ -1,6 +1,6 @@
 import type * as THREE from 'three'
 
-import type { CharacterState } from '../../shared/runtime/character-state'
+import type { CharacterState } from '../../shared/runtime'
 import { AvatarAnimationController } from './AvatarAnimationController'
 import type { AvatarAnimationQueueItem } from './AvatarAnimationQueue'
 import { AvatarBehaviorEngine, type AvatarBehaviorEngineDecision } from './AvatarBehaviorEngine'

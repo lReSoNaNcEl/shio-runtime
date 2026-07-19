@@ -4,8 +4,8 @@ import { join } from 'node:path'
 import { type BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { z } from 'zod'
 
-import type { AppSettings } from '../shared/config/appSettings'
-import { translate } from '../shared/localization/format'
+import type { AppSettings } from '../shared/config'
+import { translate } from '../shared/localization'
 import type {
   ProjectAwarenessPublicConfig,
   ProjectReadFileInput,
@@ -14,12 +14,9 @@ import type {
   ProjectSearchInput,
 } from '../shared/project-awareness'
 import { isValidProjectBranch, isValidProjectRepository } from '../shared/project-awareness'
-import type { RuntimeEventInput } from '../shared/runtime/events'
-import type {
-  ScreenContextErrorCode,
-  ScreenContextResult,
-} from '../shared/screen-context/contracts'
-import type { SpeechOperation, SpeechServiceErrorCode } from '../shared/speech/errors'
+import type { RuntimeEventInput } from '../shared/runtime'
+import type { ScreenContextErrorCode, ScreenContextResult } from '../shared/screen-context'
+import type { SpeechOperation, SpeechServiceErrorCode } from '../shared/speech'
 import { ActionRuntime } from './action/ActionRuntime'
 import { getConfig, getRendererConfig, saveConfig } from './config'
 import {

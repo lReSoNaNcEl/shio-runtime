@@ -1,4 +1,4 @@
-import type { CharacterState } from '../../shared/runtime/character-state'
+import type { CharacterState } from '../../shared/runtime'
 import { toHeadMotionProfile, toLookAtMode } from './AvatarRuntimeMappers'
 import type { AvatarStateEffect } from './AvatarStateMachine'
 import type { LipSync, LipSyncStartRequest } from './embodiment/speech/LipSync'

@@ -1,10 +1,9 @@
-import type { CharacterState } from '../../shared/runtime/character-state'
+import type { CharacterState, EventBus } from '../../shared/runtime'
 import {
   cloneCharacterState,
   INITIAL_CHARACTER_STATE,
   normalizeCharacterState,
-} from '../../shared/runtime/character-state'
-import type { EventBus } from '../../shared/runtime/events'
+} from '../../shared/runtime'
 import { PassiveEventBus } from './EventBus'
 
 export type RuntimeRegistryEntry = object

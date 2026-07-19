@@ -1,7 +1,6 @@
 import axios, { type AxiosInstance } from 'axios'
 
-import { type Translator, translate } from '../../../shared/localization/format'
-import { DEFAULT_UI_LOCALE } from '../../../shared/localization/locale'
+import { DEFAULT_UI_LOCALE, type Translator, translate } from '../../../shared/localization'
 import type {
   ProjectRepositoryIdentity,
   ProjectSourceFile,

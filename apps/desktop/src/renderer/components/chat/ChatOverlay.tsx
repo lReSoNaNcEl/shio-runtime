@@ -1,8 +1,6 @@
-import type * as React from 'react'
 import { useEffect, useRef, useState } from 'react'
 
-import type { ControllerState } from '../../Controller'
-import { controller } from '../../Controller'
+import { type ControllerState, controller } from '../../Controller'
 import { useTranslation } from '../../localization/useTranslation'
 import { bannerCopy } from '../../runtime/speechCapabilities'
 import { ChatComposer } from './ChatComposer'
@@ -20,12 +18,7 @@ interface Props {
   onOpenLlmSettings?: () => void
 }
 
-export function ChatOverlay({
-  state,
-  gateOpen = false,
-  onOpenHealth,
-  onOpenLlmSettings,
-}: Props): React.JSX.Element {
+export function ChatOverlay({ state, gateOpen = false, onOpenHealth, onOpenLlmSettings }: Props) {
   const { locale, t } = useTranslation()
   const [text, setText] = useState('')
   const [interrupting, setInterrupting] = useState(false)

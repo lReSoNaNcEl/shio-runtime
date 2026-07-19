@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 
-import { DEFAULT_SPEECH_URL } from '../../../../shared/config/appSettings'
+import { DEFAULT_SPEECH_URL } from '../../../../shared/config'
 import type {
   BacklogSelectorRoleConfig,
   LlmProviderId,
@@ -8,7 +8,7 @@ import type {
   ProviderCredentials,
   ProviderProfile,
 } from '../../../../shared/llm'
-import type { UiLocale } from '../../../../shared/localization/locale'
+import type { UiLocale } from '../../../../shared/localization'
 import {
   isValidProjectBranch,
   isValidProjectRepository,

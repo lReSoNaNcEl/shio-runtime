@@ -12,11 +12,13 @@ import {
   Text,
 } from '@react-spectrum/s2'
 import { style } from '@react-spectrum/s2/style' with { type: 'macro' }
-import type * as React from 'react'
 
 import { useTranslation } from '../../../localization/useTranslation'
 import { parseAttentionMode } from '../../../speech/continuous-listening/tuning'
-import type { ListeningSettingsActions, ListeningSettingsState } from '../state/settingsContracts'
+import {
+  type ListeningSettingsActions,
+  type ListeningSettingsState,
+} from '../state/settingsContracts'
 
 const fullWidth = style({ width: 'full' })
 
@@ -26,7 +28,7 @@ export function ListeningSettingsSection({
 }: {
   state: ListeningSettingsState
   actions: ListeningSettingsActions
-}): React.JSX.Element {
+}) {
   const { t } = useTranslation()
   return (
     <div className="settings-grid streaming-settings">

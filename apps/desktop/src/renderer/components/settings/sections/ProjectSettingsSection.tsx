@@ -1,13 +1,12 @@
 import { ActionButton, StatusLight, Switch, Text, TextField } from '@react-spectrum/s2'
 import { style } from '@react-spectrum/s2/style' with { type: 'macro' }
-import type * as React from 'react'
 
 import {
   isValidProjectBranch,
   isValidProjectRepository,
 } from '../../../../shared/project-awareness'
 import { useTranslation } from '../../../localization/useTranslation'
-import type { ProjectSettingsActions, ProjectSettingsState } from '../state/settingsContracts'
+import { type ProjectSettingsActions, type ProjectSettingsState } from '../state/settingsContracts'
 
 const fullWidth = style({ width: 'full' })
 
@@ -17,7 +16,7 @@ export function ProjectSettingsSection({
 }: {
   state: ProjectSettingsState
   actions: ProjectSettingsActions
-}): React.JSX.Element {
+}) {
   const { t } = useTranslation()
   return (
     <div className="settings-grid">

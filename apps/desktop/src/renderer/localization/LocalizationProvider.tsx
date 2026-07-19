@@ -1,14 +1,14 @@
-import type * as React from 'react'
-import { createContext, useEffect, useMemo, useState } from 'react'
+import { createContext, type ReactNode, useEffect, useMemo, useState } from 'react'
 
-import { type TranslationParams, translate } from '../../shared/localization/format'
 import {
   DEFAULT_UI_LOCALE,
   normalizeUiLocale,
+  type TranslationKey,
+  type TranslationParams,
   toIntlLocale,
+  translate,
   type UiLocale,
-} from '../../shared/localization/locale'
-import type { TranslationKey } from '../../shared/localization/messages'
+} from '../../shared/localization'
 
 export interface LocalizationContextValue {
   locale: UiLocale
@@ -18,11 +18,7 @@ export interface LocalizationContextValue {
 
 export const LocalizationContext = createContext<LocalizationContextValue | null>(null)
 
-export function LocalizationProvider({
-  children,
-}: {
-  children: React.ReactNode
-}): React.JSX.Element {
+export function LocalizationProvider({ children }: { children: ReactNode }) {
   const [locale, setLocale] = useState<UiLocale>(DEFAULT_UI_LOCALE)
 
   useEffect(() => {

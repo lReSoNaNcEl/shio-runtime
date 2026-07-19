@@ -1,5 +1,4 @@
-import type { CharacterState } from '../../shared/runtime/character-state'
-import type { RuntimeEvent } from '../../shared/runtime/events'
+import type { CharacterState, RuntimeEvent } from '../../shared/runtime'
 import type { MicrophoneGateState } from '../audio/microphoneGateTypes'
 import type { AnimationPlaybackStatus } from '../avatar/AvatarAnimationController'
 import type { AnimationCooldownState } from '../avatar/AvatarAnimationCooldownManager'

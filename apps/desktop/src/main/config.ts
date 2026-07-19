@@ -3,14 +3,14 @@ import { join } from 'node:path'
 
 import { app } from 'electron'
 
-import { DEFAULT_SPEECH_URL } from '../shared/config/appSettings'
+import { DEFAULT_SPEECH_URL } from '../shared/config'
 import type { LlmConfig } from '../shared/llm'
 import {
   DEFAULT_UI_LOCALE,
   isUiLocale,
   normalizeUiLocale,
   type UiLocale,
-} from '../shared/localization/locale'
+} from '../shared/localization'
 import type { ProjectAwarenessPublicConfig } from '../shared/project-awareness'
 import { defaultLlmConfig, isLlmProviderId, normalizeLlmConfig } from './llm'
 

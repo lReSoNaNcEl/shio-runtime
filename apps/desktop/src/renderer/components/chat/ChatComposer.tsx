@@ -10,7 +10,6 @@ import ImageAdd from '@react-spectrum/s2/icons/ImageAdd'
 import Microphone from '@react-spectrum/s2/icons/Microphone'
 import Send from '@react-spectrum/s2/icons/Send'
 import Stop from '@react-spectrum/s2/icons/StopProcessing'
-import type * as React from 'react'
 
 import { useTranslation } from '../../localization/useTranslation'
 
@@ -44,7 +43,7 @@ export function ChatComposer({
   onInterrupt,
   microphoneUnavailable = false,
   microphoneDisabled = false,
-}: ChatComposerProps): React.JSX.Element {
+}: ChatComposerProps) {
   const { t } = useTranslation()
   const showResponseControl = canInterrupt || interruptionPending
   const microphoneLabel = microphoneUnavailable

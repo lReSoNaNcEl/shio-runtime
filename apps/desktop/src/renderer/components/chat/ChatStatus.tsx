@@ -1,8 +1,7 @@
 import { ProgressCircle, StatusLight } from '@react-spectrum/s2'
-import type * as React from 'react'
 
-import type { ControllerState } from '../../Controller'
-import type { LocalizationContextValue } from '../../localization/LocalizationProvider'
+import { type ControllerState } from '../../Controller'
+import { type LocalizationContextValue } from '../../localization/LocalizationProvider'
 import { useTranslation } from '../../localization/useTranslation'
 
 type StatusVariant = 'positive' | 'informative' | 'notice' | 'negative'
@@ -37,7 +36,7 @@ function voiceSuffix(state: ControllerState, t: LocalizationContextValue['t']): 
   return null
 }
 
-export function ChatStatus({ state }: { state: ControllerState }): React.JSX.Element {
+export function ChatStatus({ state }: { state: ControllerState }) {
   const { t } = useTranslation()
   const busy = state.status !== 'idle'
   const chatStatus = deriveChatStatus(state, t)

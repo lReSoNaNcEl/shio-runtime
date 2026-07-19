@@ -15,11 +15,10 @@ import ChevronDown from '@react-spectrum/s2/icons/ChevronDown'
 import Microphone from '@react-spectrum/s2/icons/Microphone'
 import MicrophoneOff from '@react-spectrum/s2/icons/MicrophoneOff'
 import VolumeOff from '@react-spectrum/s2/icons/VolumeOff'
-import type * as React from 'react'
 
-import type { LocalizationContextValue } from '../../localization/LocalizationProvider'
+import { type LocalizationContextValue } from '../../localization/LocalizationProvider'
 import { useTranslation } from '../../localization/useTranslation'
-import type { ContinuousListeningSettings } from '../../speech/continuous-listening/types'
+import { type ContinuousListeningSettings } from '../../speech/continuous-listening/types'
 
 type AttentionMode = ContinuousListeningSettings['mode']
 type ListeningState = 'off' | 'starting' | 'on' | 'error'
@@ -60,14 +59,14 @@ function stateText(state: ListeningState, t: LocalizationContextValue['t']): str
   }
 }
 
-function ListeningStatusIcon({ state }: { state: ListeningState }): React.JSX.Element {
+function ListeningStatusIcon({ state }: { state: ListeningState }) {
   if (state === 'on') return <Microphone />
   if (state === 'error') return <AlertTriangle />
   if (state === 'starting') return <AudioWave />
   return <MicrophoneOff />
 }
 
-function ModeIcon({ mode, slot }: { mode: AttentionMode; slot?: string }): React.JSX.Element {
+function ModeIcon({ mode, slot }: { mode: AttentionMode; slot?: string }) {
   const { Icon } = MODE_ICONS.find((item) => item.id === mode) ?? MODE_ICONS[0]
   return <Icon slot={slot} />
 }
@@ -87,7 +86,7 @@ export function StreamingModeControl({
   listeningState: ListeningState
   onToggle: () => void
   onModeChange: (mode: AttentionMode) => void
-}): React.JSX.Element {
+}) {
   const { t } = useTranslation()
   const status = stateLabel(listeningState, t)
   const modes = MODE_ICONS.map((item) => ({

@@ -1,13 +1,12 @@
-import { translate } from '../../shared/localization/format'
-import { DEFAULT_UI_LOCALE, type UiLocale } from '../../shared/localization/locale'
-import type { TranslationKey } from '../../shared/localization/messages'
-import type { RuntimeEventType } from '../../shared/runtime/events'
+import type { TranslationKey } from '../../shared/localization'
+import { DEFAULT_UI_LOCALE, translate, type UiLocale } from '../../shared/localization'
+import type { RuntimeEventType } from '../../shared/runtime'
 import type {
   SerializedSpeechError,
   SpeechOperation,
   SpeechServiceErrorCode,
-} from '../../shared/speech/errors'
-import { isRecoverableSpeechErrorCode } from '../../shared/speech/errors'
+} from '../../shared/speech'
+import { isRecoverableSpeechErrorCode } from '../../shared/speech'
 
 /**
  * Renderer-side Speech Adapter error. Built from the serialized IPC contract and

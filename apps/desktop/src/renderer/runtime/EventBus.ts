@@ -1,4 +1,4 @@
-import type { EventBus, RuntimeEvent, RuntimeEventInput } from '../../shared/runtime/events'
+import type { EventBus, RuntimeEvent, RuntimeEventInput } from '../../shared/runtime'
 
 const MAX_EVENT_HISTORY = 200
 

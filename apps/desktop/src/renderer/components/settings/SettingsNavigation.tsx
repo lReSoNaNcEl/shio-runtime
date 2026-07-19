@@ -4,11 +4,11 @@ import DataIcon from '@react-spectrum/s2/icons/Data'
 import MicrophoneIcon from '@react-spectrum/s2/icons/Microphone'
 import SettingsIcon from '@react-spectrum/s2/icons/Settings'
 import UserAvatarIcon from '@react-spectrum/s2/icons/UserAvatar'
-import type * as React from 'react'
+import { type ReactElement } from 'react'
 
-import type { SettingsSection } from './state/settingsContracts'
+import { type SettingsSection } from './state/settingsContracts'
 
-const icons: Record<SettingsSection, React.JSX.Element> = {
+const icons: Record<SettingsSection, ReactElement> = {
   general: <SettingsIcon />,
   project: <DataIcon />,
   speech: <MicrophoneIcon />,
@@ -38,7 +38,7 @@ export function SettingsNavigation({
   labels: Record<SettingsSection, string>
   onSelect: (section: SettingsSection) => void
   ariaLabel: string
-}): React.JSX.Element {
+}) {
   return (
     <aside className="settings-nav" aria-label={ariaLabel}>
       {sections.map((section) => (

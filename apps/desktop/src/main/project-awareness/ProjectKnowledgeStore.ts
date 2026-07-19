@@ -2,8 +2,7 @@ import { mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 
-import { type Translator, translate } from '../../shared/localization/format'
-import { DEFAULT_UI_LOCALE } from '../../shared/localization/locale'
+import { DEFAULT_UI_LOCALE, type Translator, translate } from '../../shared/localization'
 import type {
   ProjectEvidence,
   ProjectMap,
