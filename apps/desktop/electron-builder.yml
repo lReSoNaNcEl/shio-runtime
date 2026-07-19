@@ -1,0 +1,20 @@
+appId: dev.resonance.shio.runtime
+productName: Shio Runtime
+directories:
+  output: release
+  buildResources: build
+asar: true
+files:
+  - out/**/*
+  - package.json
+asarUnpack:
+  - node_modules/sharp/**/*
+  - node_modules/@img/**/*
+win:
+  target:
+    - target: zip
+      arch:
+        - x64
+  icon: build/icon.ico
+artifactName: Shio-Runtime-${version}-win-${arch}.${ext}
+npmRebuild: true

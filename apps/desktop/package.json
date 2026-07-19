@@ -1,7 +1,7 @@
 {
-  "name": "vtuber-app",
-  "version": "1.0.0",
-  "description": "",
+  "name": "shio-runtime-desktop",
+  "version": "0.1.0-alpha.1",
+  "description": "Desktop AI character runtime with local speech integration.",
   "main": "out/main/index.mjs",
   "engines": {
     "node": ">=22.12.0"
@@ -9,6 +9,8 @@
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
+    "pack": "npm run build && electron-builder --dir --win --x64",
+    "dist": "npm run build && electron-builder --win zip --x64",
     "preview": "electron-vite preview",
     "start": "electron .",
     "typecheck": "npm run typecheck:node && npm run typecheck:web",
@@ -36,8 +38,8 @@
     "test:llm-live": "npm run repro:llm-live"
   },
   "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "author": "lReSoNaNcEl",
+  "license": "UNLICENSED",
   "type": "commonjs",
   "devDependencies": {
     "@biomejs/biome": "2.5.4",
@@ -47,6 +49,7 @@
     "@types/three": "^0.185.0",
     "@vitejs/plugin-react": "6.0.3",
     "electron": "43.1.1",
+    "electron-builder": "26.15.3",
     "electron-vite": "^5.0.0",
     "typescript": "^7.0.2",
     "unplugin-parcel-macros": "^0.2.0",

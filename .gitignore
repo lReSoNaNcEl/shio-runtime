@@ -17,7 +17,8 @@ pnpm-debug.log*
 
 # Desktop builds
 apps/desktop/dist/
-apps/desktop/build/
+apps/desktop/build/*
+!apps/desktop/build/icon.ico
 apps/desktop/out/
 apps/desktop/release/
 
