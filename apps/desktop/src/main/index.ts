@@ -244,8 +244,12 @@ function createWindow(): void {
   })
 
   // TEMP DIAGNOSTIC: forward renderer animation lifecycle logs to main stdout.
-  win.webContents.on('console-message', (_e, _level, message) => {
-    if (message.includes('[ANIMDBG]') || message.includes('[ANIMLIFE]')) mainLog.log(message)
+  win.webContents.on('console-message', (details) => {
+    const { message } = details
+
+    if (message.includes('[ANIMDBG]') || message.includes('[ANIMLIFE]')) {
+      mainLog.log(message)
+    }
   })
 
   protocol.handle('app', (request) => {

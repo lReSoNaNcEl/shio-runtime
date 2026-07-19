@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "description": "",
   "main": "out/main/index.mjs",
+  "engines": {
+    "node": ">=22.12.0"
+  },
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
