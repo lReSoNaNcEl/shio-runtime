@@ -95,8 +95,8 @@ DEFAULT_REPOSITORIES: list[dict[str, Any]] = [
         "repoId": "taresh18/AnimeVox",
         "repoType": "dataset",
         "language": "en",
-        # Reproducible sync: pin to a branch/tag/commit. Overridable via the manifest
-        # dataset entry or the VOICE_DATASET_REVISION setting.
+        # The repository-owned default belongs to voice_manifest.json. This fallback
+        # intentionally has no second revision value.
         "revision": None,
     }
 ]
@@ -254,6 +254,7 @@ class VoiceRepositoryManager:
             "syncState": cached.get("syncState") or "never_synced",
             "lastSync": cached.get("lastSync"),
             "lastError": cached.get("lastError"),
+            "resolvedRevision": cached.get("resolvedRevision"),
             "availableVoices": cached.get("availableVoices") or [],
             "installedVoices": voices,
             "missingAssets": missing_assets,
@@ -281,6 +282,7 @@ class VoiceRepositoryManager:
                 "source": repo.get("source"),
                 "provider": repo.get("provider"),
                 "repoId": repo.get("repoId"),
+                "revision": repo.get("revision"),
             }
             for voice_dir in dataset_dir.iterdir():
                 if not voice_dir.is_dir():
@@ -366,6 +368,7 @@ class VoiceRepositoryManager:
             "cached": [],
             "skipped": [],
             "errors": [],
+            "resolvedRevision": self._resolved_revision(selected),
         }
         self._save_status({**self.status(), **result, "lastSync": time.time()})
 
@@ -447,7 +450,7 @@ class VoiceRepositoryManager:
             ) from exc
 
         token = settings.HF_TOKEN or None
-        revision = repo.get("revision") or settings.VOICE_DATASET_REVISION or None
+        revision = self._resolved_revision(repo)
         logger.info("Syncing voices from %s (revision=%s)", repo["repoId"], revision or "default")
         stream = load_dataset(
             repo["repoId"],
@@ -568,6 +571,7 @@ class VoiceRepositoryManager:
             "source": repo.get("source"),
             "provider": repo.get("provider"),
             "repoId": repo.get("repoId"),
+            "revision": repo.get("revision"),
         }
         voices = {
             str(item.get("id")): item for item in manifest.get("voices") or [] if item.get("id")
@@ -622,6 +626,10 @@ class VoiceRepositoryManager:
             if repo.get("id") == dataset:
                 return repo
         raise ValueError(f"Unknown voice repository: {dataset}")
+
+    @staticmethod
+    def _resolved_revision(repo: dict[str, Any]) -> str | None:
+        return settings.VOICE_DATASET_REVISION.strip() or repo.get("revision") or None
 
     def _resolve(self, value: str) -> Path:
         path = Path(value)

@@ -47,17 +47,25 @@ The backend removes the tag from spoken text and resolves the speech emotion thr
 The canonical Python environment is `services/api/.venv`. From the repository root:
 
 ```powershell
-npm run api:install:dev
-npm run api:doctor
+npm run alpha:setup
 npm run api:dev
 ```
 
-For the default Windows CUDA mode, install matching wheels explicitly after creating
-the environment:
+The alpha setup requires Windows x64, Node.js 24.x, npm 11.x, Python 3.12 and an
+NVIDIA GPU supported by the pinned CUDA 12.8 PyTorch wheels. It installs from
+`requirements.lock.txt`, synchronizes the manifest-pinned AnimeVox revision and
+runs `api:doctor:strict`.
+
+For development-only tools:
 
 ```powershell
-services\api\.venv\Scripts\python.exe -m pip install --force-reinstall --no-deps "torch==2.11.0+cu128" "torchaudio==2.11.0+cu128" --index-url https://download.pytorch.org/whl/cu128
+npm run api:install:dev
+npm run api:doctor
 ```
+
+Regenerate lock files after changing direct requirements with `npm run api:lock`.
+`VOICE_DATASET_REVISION` is an optional override; when empty, voice sync uses the
+exact commit SHA stored in `voice_manifest.json`.
 
 Open `http://localhost:8000` or `http://localhost:8000/docs`.
 `127.0.0.1` is the local bind address; `0.0.0.0` means “listen on all interfaces”

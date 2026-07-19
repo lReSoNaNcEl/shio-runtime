@@ -7,7 +7,8 @@
       "label": "AnimeVox",
       "source": "https://huggingface.co/datasets/taresh18/AnimeVox",
       "provider": "huggingface",
-      "repoId": "taresh18/AnimeVox"
+      "repoId": "taresh18/AnimeVox",
+      "revision": "4f5ea88465616eede2b364a0369dcba0d8bebaee"
     }
   ],
   "voices": [

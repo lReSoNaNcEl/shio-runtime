@@ -23,6 +23,8 @@ const apiRoot = path.join(repoRoot, 'services', 'api')
 
 const isWindows = process.platform === 'win32'
 const REQUIRED_PY = [3, 12]
+const ALPHA_PIP_SPEC = 'pip>=25.3,<26'
+const ALPHA_TORCH_VERSION = '2.11.0+cu128'
 
 // --- Virtual environment discovery -----------------------------------------
 
@@ -215,7 +217,17 @@ async function runPython(python, args, extra) {
 // Ensure the target venv exists, creating it with a system Python 3.12 if needed.
 function ensureVenv() {
   const target = targetVenvForInstall()
-  if (existsSync(target.python)) return target.python
+  if (existsSync(target.python)) {
+    const version = checkPythonVersion({ executable: target.python, prefixArgs: [] })
+    if (version !== `${REQUIRED_PY[0]}.${REQUIRED_PY[1]}`) {
+      fail(
+        `The canonical environment must use Python ${REQUIRED_PY.join('.')}.\n` +
+          `Detected Python ${version ?? 'unknown'} at:\n  ${target.python}\n\n` +
+          'Remove services/api/.venv and rerun the install command.',
+      )
+    }
+    return target.python
+  }
 
   const sysPy = findSystemPython312()
   console.error(`Creating virtual environment: ${path.relative(repoRoot, target.dir)}`)
@@ -253,6 +265,25 @@ async function actionInstallDev(extra) {
   // install covers both runtime and dev dependencies.
   await pip(python, ['install', '-r', 'requirements-dev.txt', ...extra])
   process.exit(0)
+}
+
+async function actionInstallAlpha(extra) {
+  const python = ensureVenv()
+  await pip(python, ['install', '--upgrade', ALPHA_PIP_SPEC])
+  await pip(python, ['install', '-r', 'requirements-torch-cu128.txt'])
+  await pip(python, ['install', '-r', 'requirements.lock.txt', ...extra])
+  await pip(python, ['check'])
+  const verify = [
+    '-c',
+    [
+      'import torch, torchaudio',
+      `assert torch.__version__ == "${ALPHA_TORCH_VERSION}", torch.__version__`,
+      `assert torchaudio.__version__ == "${ALPHA_TORCH_VERSION}", torchaudio.__version__`,
+      'print(f"Verified torch={torch.__version__} torchaudio={torchaudio.__version__}")',
+    ].join(';'),
+  ]
+  const code = await run(python, verify)
+  process.exit(code)
 }
 
 // --- Doctor -----------------------------------------------------------------
@@ -303,6 +334,22 @@ function actionDoctor() {
   process.exit(0)
 }
 
+async function actionDoctorStrict() {
+  const target = targetVenvForInstall()
+  if (!existsSync(target.python)) {
+    fail('Canonical API environment is missing: services/api/.venv')
+  }
+  const version = checkPythonVersion({ executable: target.python, prefixArgs: [] })
+  if (version !== `${REQUIRED_PY[0]}.${REQUIRED_PY[1]}`) {
+    fail(`Strict doctor requires Python ${REQUIRED_PY.join('.')}. Detected: ${version}`)
+  }
+  apiServerConfig()
+  let code = await run(target.python, ['-m', 'pip', 'check'])
+  if (code !== 0) process.exit(code)
+  code = await run(target.python, ['scripts/doctor_strict.py'])
+  process.exit(code)
+}
+
 // --- Dispatch ---------------------------------------------------------------
 
 const RUN_ACTIONS = {
@@ -327,8 +374,12 @@ async function main() {
       return actionInstall(extra)
     case 'install-dev':
       return actionInstallDev(extra)
+    case 'install-alpha':
+      return actionInstallAlpha(extra)
     case 'doctor':
       return actionDoctor()
+    case 'doctor-strict':
+      return actionDoctorStrict()
     default: {
       const baseArgs = RUN_ACTIONS[action]
       if (!baseArgs) {

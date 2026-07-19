@@ -69,8 +69,8 @@ class Settings(BaseSettings):
         default="./voice_repository_status.json", description="Voice repository sync/cache status"
     )
     VOICE_DATASET_REVISION: str = Field(
-        default="main",
-        description="Pinned dataset revision (branch, tag, or commit SHA) for reproducible voice sync; prefer a commit SHA",
+        default="",
+        description="Optional dataset revision override; empty uses the pinned manifest revision",
     )
     HF_TOKEN: str = Field(
         default="", description="Optional Hugging Face token for remote voice repositories"

@@ -50,39 +50,47 @@ DEVICE=cpu
 ASR_PROVIDER=cpu
 ```
 
-## Quick start
+## Alpha setup
 
-### 1. Install Desktop dependencies
+Run on Windows x64 from a fresh clone:
 
-Run from the repository root:
-
-```powershell
+```text
+git clone https://github.com/lReSoNaNcEl/shio-runtime.git
+cd shio-runtime
 npm run desktop:install
+npm run alpha:setup
 ```
 
-### 2. Create the API virtual environment
+`alpha:setup` verifies Node.js 24.x, npm 11.x, Python 3.12 and Windows x64,
+creates `services/api/.env` only when missing, installs the locked CUDA 12.8 API
+environment, downloads the pinned voice dataset revision and runs the strict doctor.
+It does not install system software and does not start either application.
 
-Run from the repository root. This creates `services/api/.venv` (using a system
-Python 3.12) and installs runtime + dev dependencies into it:
+Start the API:
+
+```powershell
+npm run api:dev
+```
+
+Desktop alpha testers run `Shio Runtime.exe` from the portable
+`Shio-Runtime-0.1.0-alpha.1-win-x64.zip`; `desktop:dev` is not part of the tester
+workflow.
+
+## Developer setup
+
+The canonical Python environment is `services/api/.venv`. For development tooling:
 
 ```powershell
 npm run api:install:dev
+npm run api:doctor
 ```
 
-Then create the local environment file and install matching PyTorch wheels for your
-platform. On Windows with an NVIDIA GPU:
+The reproducible Windows alpha environment is installed separately:
 
 ```powershell
-Copy-Item services\api\.env.example services\api\.env
-
-services\api\.venv\Scripts\python.exe -m pip install --force-reinstall --no-deps "torch==2.11.0+cu128" "torchaudio==2.11.0+cu128" --index-url https://download.pytorch.org/whl/cu128
-```
-
-On macOS (CPU/MPS wheel, no CUDA index URL):
-
-```bash
-cp services/api/.env.example services/api/.env
-services/api/.venv/bin/python -m pip install torch torchaudio
+npm run api:install:alpha
+npm run api:voices:sync
+npm run api:doctor:strict
 ```
 
 The `api:*` npm commands automatically use the local virtual environment
@@ -90,9 +98,11 @@ The `api:*` npm commands automatically use the local virtual environment
 `activate` is required. To point the commands at a different interpreter, set
 `SHIO_API_PYTHON`. Run `npm run api:doctor` to see which interpreter is selected.
 
-> **PyTorch stays platform-specific.** The launcher does not install a CUDA wheel
-> automatically. Install it explicitly after `npm run api:install:dev` when CUDA is
-> the intended runtime mode.
+Regenerate dependency locks only when direct dependencies change:
+
+```powershell
+npm run api:lock
+```
 
 ### 3. Download voice references
 
@@ -178,6 +188,7 @@ interpreter automatically.
 ```text
 npm run api:install
 npm run api:install:dev
+npm run api:install:alpha
 npm run api:voices:sync
 npm run api:dev
 npm run api:lint
@@ -186,6 +197,9 @@ npm run api:format
 npm run api:format:check
 npm run api:test
 npm run api:doctor
+npm run api:doctor:strict
+npm run api:lock
+npm run alpha:setup
 ```
 
 On macOS the same commands apply, e.g.:
@@ -278,11 +292,12 @@ Both paths are resolved relative to the API working directory.
 
 ### Voice dataset revision
 
-Voice synchronization uses the Hugging Face dataset revision `VOICE_DATASET_REVISION`.
+The repository-owned AnimeVox revision is pinned to an exact commit in
+`services/api/voice_manifest.json`. `VOICE_DATASET_REVISION` is only an optional
+environment override.
 
 ```text
-VOICE_DATASET_REVISION currently defaults to main.
-Set it to a dataset commit SHA for reproducible installations.
+VOICE_DATASET_REVISION=
 ```
 
 ### F5-TTS model
