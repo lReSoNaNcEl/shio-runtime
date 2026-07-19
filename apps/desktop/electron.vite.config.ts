@@ -13,6 +13,9 @@ export default defineConfig({
         input: {
           index: resolve(__dirname, 'src/main/index.ts'),
         },
+        output: {
+          entryFileNames: '[name].mjs',
+        },
       },
     },
   },
@@ -23,6 +26,9 @@ export default defineConfig({
         external: ['electron'],
         input: {
           index: resolve(__dirname, 'src/preload/index.ts'),
+        },
+        output: {
+          entryFileNames: '[name].mjs',
         },
       },
     },
