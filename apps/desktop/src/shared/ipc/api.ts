@@ -19,6 +19,7 @@ import type {
   ScreenContextSource,
 } from '../screen-context/contracts'
 import type { SpeechServiceErrorCode } from '../speech/errors'
+import type { ReleaseInfo, RuntimeSupportBundle } from '../system'
 
 export interface SpeechHealthCapabilities {
   serviceReachable: boolean
@@ -28,6 +29,11 @@ export interface SpeechHealthCapabilities {
 }
 
 export interface ShioRuntimeApi {
+  system: {
+    getReleaseInfo: () => Promise<ReleaseInfo>
+    openLogsFolder: () => Promise<{ ok: boolean }>
+    getRuntimeSupportBundle: () => Promise<RuntimeSupportBundle>
+  }
   health: {
     check: () => Promise<{
       ok: boolean

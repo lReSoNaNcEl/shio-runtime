@@ -19,8 +19,9 @@ import {
 import { GitHubProjectAdapter } from './project-awareness/adapters/GitHubProjectAdapter'
 import { ScreenCaptureAdapter, ScreenContextService } from './screen-context'
 import { SpeechClient } from './speech/speechClient'
+import { registerReleaseSupportHandlers } from './system/releaseSupport'
 
-initializeSafeLogging()
+initializeSafeLogging(app.getPath('logs'), process.env.NODE_ENV === 'development')
 dotenv.config()
 
 let win: BrowserWindow | null = null
@@ -259,6 +260,19 @@ async function createWindow(): Promise<void> {
     screenContextService,
     win,
   )
+  registerReleaseSupportHandlers({
+    llmCredentials: getLlmCredentialStore,
+    projectAwareness: () => {
+      projectAwareness ??= buildProjectAwareness()
+      return projectAwareness
+    },
+    speech: () => {
+      speechClient ??= new SpeechClient(getConfig().pythonSpeechUrl)
+      return speechClient
+    },
+    isOverlayVisible: () => Boolean(overlayWin && !overlayWin.isDestroyed()),
+    isVrmLoaded: () => Boolean(lastAvatarState && getConfig().vrmPath),
+  })
   void initializeProjectAwareness(projectAwareness).catch((error) => {
     mainLog.warn('[ProjectAwareness] initialization failed', {
       error: error instanceof Error ? error.message : String(error),
@@ -267,15 +281,6 @@ async function createWindow(): Promise<void> {
 
   win.webContents.on('did-finish-load', () => {
     orchestrator = buildOrchestrator()
-  })
-
-  // TEMP DIAGNOSTIC: forward renderer animation lifecycle logs to main stdout.
-  win.webContents.on('console-message', (details) => {
-    const { message } = details
-
-    if (message.includes('[ANIMDBG]') || message.includes('[ANIMLIFE]')) {
-      mainLog.log(message)
-    }
   })
 
   protocol.handle('app', (request) => {

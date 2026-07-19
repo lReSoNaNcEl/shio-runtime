@@ -11,6 +11,11 @@ import type {
 } from '../shared/screen-context'
 
 const api = {
+  system: {
+    getReleaseInfo: () => ipcRenderer.invoke('system:get-release-info'),
+    openLogsFolder: () => ipcRenderer.invoke('system:open-logs-folder'),
+    getRuntimeSupportBundle: () => ipcRenderer.invoke('system:get-runtime-support-bundle'),
+  },
   health: {
     check: () => ipcRenderer.invoke('health:check'),
   },

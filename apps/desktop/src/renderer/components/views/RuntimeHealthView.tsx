@@ -409,6 +409,7 @@ export function RuntimeHealthView({
 }) {
   const { t } = useTranslation()
   const [projectStatus, setProjectStatus] = useState<ProjectAwarenessStatus>(EMPTY_PROJECT_STATUS)
+  const [supportStatus, setSupportStatus] = useState('')
   useEffect(() => {
     let active = true
     const refresh = (): void => {
@@ -447,6 +448,12 @@ export function RuntimeHealthView({
         ? { variant: 'notice', label: t('health.overall.attention') }
         : { variant: 'positive', label: t('health.overall.ok') }
 
+  const copyText = async (value: string): Promise<void> => {
+    await navigator.clipboard.writeText(value)
+    setSupportStatus(t('health.support.copied'))
+    window.setTimeout(() => setSupportStatus(''), 2_000)
+  }
+
   return (
     <section className="health-dashboard">
       <header className="health-dashboard-header">
@@ -455,6 +462,30 @@ export function RuntimeHealthView({
           <Text UNSAFE_className="health-dashboard-subtitle">{t('health.subtitle')}</Text>
         </div>
         <div className="health-dashboard-actions">
+          <ActionButton onPress={() => void window.api.system.openLogsFolder()}>
+            {t('health.support.openLogs')}
+          </ActionButton>
+          <ActionButton
+            onPress={() =>
+              void window.api.system.getReleaseInfo().then((info) => copyText(info.version))
+            }
+          >
+            {t('health.support.copyVersion')}
+          </ActionButton>
+          <ActionButton
+            onPress={() =>
+              void window.api.system
+                .getRuntimeSupportBundle()
+                .then((bundle) => copyText(JSON.stringify(bundle, null, 2)))
+            }
+          >
+            {t('health.support.copyRuntimeHealth')}
+          </ActionButton>
+          {supportStatus ? (
+            <span role="status">
+              <Text>{supportStatus}</Text>
+            </span>
+          ) : null}
           <StatusLight role="status" variant={overall.variant} size="M">
             {overall.label}
           </StatusLight>
