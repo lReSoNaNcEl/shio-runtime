@@ -1,9 +1,9 @@
 import { type TranslationParams, translate } from '../shared/localization/format'
 import { DEFAULT_UI_LOCALE, normalizeUiLocale, type UiLocale } from '../shared/localization/locale'
 import type { TranslationKey } from '../shared/localization/messages'
-import type { CharacterRuntimeMode, CharacterState } from '../shared/runtime/characterState'
+import type { CharacterRuntimeMode, CharacterState } from '../shared/runtime/character-state'
 import type { RuntimeEventCategory, RuntimeEventType } from '../shared/runtime/events'
-import type { SerializedSpeechError } from '../shared/speech/speechErrors'
+import type { SerializedSpeechError } from '../shared/speech/errors'
 import { AudioPlayer } from './audio/audioPlayer'
 import { MicrophoneDeviceService } from './audio/MicrophoneDeviceService'
 import { MicrophoneGateController } from './audio/MicrophoneGateController'
@@ -13,6 +13,10 @@ import {
   type MicrophoneGateDebugState,
 } from './audio/microphoneGateTypes'
 import type { DebugAvatarMode } from './avatar/avatarAnimations'
+import type { EarAxisOverride } from './avatar/embodiment/secondary-motion/EarBehaviorRuntime'
+import type { MouthWeights } from './avatar/embodiment/speech/LipSync'
+import { SceneManager } from './avatar/rendering/three/SceneManager'
+import type { OverlayViewMode } from './avatar/tuning/cameraTuning'
 import { type ControllerStateListener, ControllerStore } from './controller/ControllerStore'
 import type {
   AppStatus,
@@ -45,10 +49,6 @@ import {
 } from './speech/continuous-listening/tuning'
 import type { ContinuousListeningSettings } from './speech/continuous-listening/types'
 import { ConversationInputCoordinator } from './speech/conversation/ConversationInputCoordinator'
-import type { OverlayViewMode } from './three/avatarTuning'
-import type { EarAxisOverride } from './three/EarBehaviorRuntime'
-import type { MouthWeights } from './three/LipSync'
-import { SceneManager } from './three/SceneManager'
 
 export type {
   AppStatus,

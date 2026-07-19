@@ -1,9 +1,10 @@
-import type { CharacterState } from '../../../shared/runtime/characterState'
+import type { CharacterState } from '../../../shared/runtime/character-state'
 import type { RuntimeEventCategory, RuntimeEventType } from '../../../shared/runtime/events'
-import type { SerializedSpeechError } from '../../../shared/speech/speechErrors'
+import type { SerializedSpeechError } from '../../../shared/speech/errors'
 import type { MicrophoneDeviceService } from '../../audio/MicrophoneDeviceService'
 import type { MicrophoneGateController } from '../../audio/MicrophoneGateController'
 import { isDefaultMicrophone, type StreamingModeId } from '../../audio/microphoneGateTypes'
+import { semanticEarTuning } from '../../avatar/tuning/motionTuning'
 import type { ChatMsg, ControllerState } from '../../controller/contracts'
 import type { AvatarRuntime } from '../../runtime/AvatarRuntime'
 import type { ConversationRuntime } from '../../runtime/ConversationRuntime'
@@ -13,7 +14,6 @@ import type {
   ContinuousRecognizedSpeech,
   SpeechInputRuntime,
 } from '../../runtime/SpeechInputRuntime'
-import { semanticEarTuning } from '../../three/avatarTuning'
 import { AttentionEngine } from '../continuous-listening/AttentionEngine'
 import { BacklogSelector } from '../continuous-listening/BacklogSelector'
 import { BargeInPolicy } from '../continuous-listening/BargeInPolicy'

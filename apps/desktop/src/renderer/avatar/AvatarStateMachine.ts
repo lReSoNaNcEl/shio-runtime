@@ -1,4 +1,4 @@
-import { emotionRegistry } from '../../shared/emotions'
+import { emotionRegistry } from '../../shared/emotion'
 import type { AvatarBehaviorId } from './AvatarBehaviorResolver'
 
 export type AvatarMode = 'idle' | 'listening' | 'thinking' | 'speaking' | 'awaitingSpeech'

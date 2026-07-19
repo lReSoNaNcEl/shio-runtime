@@ -1,6 +1,9 @@
 import type { AxiosInstance } from 'axios'
 
-import type { LlmProviderId, ProviderProfile } from '../../shared/llmProviders'
+import type { LlmCapabilities } from '../../shared/llm/capabilities'
+import type { LlmProviderId, ProviderProfile } from '../../shared/llm/providers'
+
+export type { LlmCapabilities } from '../../shared/llm/capabilities'
 
 export interface LlmTextContentPart {
   type: 'text'
@@ -41,15 +44,6 @@ export interface ModelCatalogEntry {
 
 export interface ModelCatalogProvider {
   fetchModels(apiKey: string): Promise<ModelCatalogEntry[]>
-}
-
-export interface LlmCapabilities {
-  supportsReasoning: boolean
-  supportsStreaming: boolean
-  supportsTemperature: boolean
-  supportsSystemPrompt: boolean
-  supportsVision: boolean
-  recommendedMaxTokens: number
 }
 
 export interface ProviderDefinition {

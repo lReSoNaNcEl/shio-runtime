@@ -1,6 +1,6 @@
 import axios, { type AxiosInstance } from 'axios'
 
-import type { LlmProviderId } from '../../../shared/llmProviders'
+import type { LlmProviderId } from '../../../shared/llm/providers'
 import { llmDebug } from '../diagnostics'
 import { LlmResponseError, networkErrorMessage, normalizeHttpErrorMessage } from '../errors'
 import type { ChatMessage, LlmCapabilities, LlmRequestOptions } from '../types'

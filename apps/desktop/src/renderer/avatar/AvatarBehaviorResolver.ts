@@ -1,4 +1,3 @@
-import type { OverlayViewMode } from '../three/avatarTuning'
 import {
   type AnimationCooldownState,
   AvatarAnimationCooldownManager,
@@ -12,6 +11,7 @@ import {
   isAutomaticSelectionEnabled,
   isConversationSpeechAnimation,
 } from './animationManifest'
+import type { OverlayViewMode } from './tuning/cameraTuning'
 
 export type AvatarBehaviorId =
   | 'idle'

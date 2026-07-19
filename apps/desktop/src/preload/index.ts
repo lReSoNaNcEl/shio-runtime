@@ -1,5 +1,9 @@
 import { contextBridge, ipcRenderer } from 'electron'
 
+import type { AppSettings } from '../shared/config/appSettings'
+import type { ShioRuntimeApi } from '../shared/ipc/api'
+import type { RuntimeEventInput } from '../shared/runtime/events'
+
 const api = {
   health: {
     check: () => ipcRenderer.invoke('health:check'),
@@ -50,10 +54,9 @@ const api = {
   },
   config: {
     get: () => ipcRenderer.invoke('config:get'),
-    save: (partial: Record<string, unknown>) => ipcRenderer.invoke('config:save', partial),
-    onUpdated: (cb: (cfg: Record<string, string>) => void) => {
-      const listener = (_event: Electron.IpcRendererEvent, cfg: Record<string, string>): void =>
-        cb(cfg)
+    save: (partial: Partial<AppSettings>) => ipcRenderer.invoke('config:save', partial),
+    onUpdated: (cb: (cfg: AppSettings) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, cfg: AppSettings): void => cb(cfg)
       ipcRenderer.on('config:updated', listener)
       return () => ipcRenderer.removeListener('config:updated', listener)
     },
@@ -70,7 +73,7 @@ const api = {
     isVisible: () => ipcRenderer.invoke('overlay:is-visible'),
     applySettings: () => ipcRenderer.invoke('overlay:apply-settings'),
     reloadAvatar: () => ipcRenderer.invoke('overlay:reload-avatar'),
-    onSettingsUpdated: (cb: (cfg: Record<string, string>) => void) => {
+    onSettingsUpdated: (cb: (cfg: AppSettings) => void) => {
       ipcRenderer.on('overlay-settings:updated', (_e, cfg) => cb(cfg))
     },
   },
@@ -89,8 +92,8 @@ const api = {
     },
   },
   actionEvents: {
-    onPublished: (cb: (event: unknown) => void) => {
-      const listener = (_e: Electron.IpcRendererEvent, event: unknown): void => cb(event)
+    onPublished: (cb: (event: RuntimeEventInput) => void) => {
+      const listener = (_e: Electron.IpcRendererEvent, event: RuntimeEventInput): void => cb(event)
       ipcRenderer.on('action-runtime:event', listener)
       return () => ipcRenderer.off('action-runtime:event', listener)
     },
@@ -99,6 +102,6 @@ const api = {
     writeTransitionRecording: (payload: unknown) =>
       ipcRenderer.invoke('debug:write-transition-recording', payload),
   },
-}
+} satisfies ShioRuntimeApi
 
 contextBridge.exposeInMainWorld('api', api)

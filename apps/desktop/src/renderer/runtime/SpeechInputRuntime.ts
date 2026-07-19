@@ -1,6 +1,6 @@
-import type { CharacterRuntimeMode, CharacterState } from '../../shared/runtime/characterState'
+import type { CharacterRuntimeMode, CharacterState } from '../../shared/runtime/character-state'
 import type { EventBus, RuntimeEventType } from '../../shared/runtime/events'
-import type { SerializedSpeechError } from '../../shared/speech/speechErrors'
+import type { SerializedSpeechError } from '../../shared/speech/errors'
 import { MicCapture } from '../audio/micCapture'
 import { StreamingPcmCapture } from '../audio/StreamingPcmCapture'
 import {

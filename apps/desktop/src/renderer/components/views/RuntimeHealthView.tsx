@@ -13,7 +13,7 @@ import MicrophoneIcon from '@react-spectrum/s2/icons/Microphone'
 import RefreshIcon from '@react-spectrum/s2/icons/Refresh'
 import { useEffect, useState } from 'react'
 
-import type { ProjectAwarenessStatus, ProjectMap } from '../../../shared/projectAwareness'
+import type { ProjectAwarenessStatus, ProjectMap } from '../../../shared/project-awareness'
 import { type ControllerState, controller } from '../../Controller'
 import type { LocalizationContextValue } from '../../localization/LocalizationProvider'
 import { useTranslation } from '../../localization/useTranslation'

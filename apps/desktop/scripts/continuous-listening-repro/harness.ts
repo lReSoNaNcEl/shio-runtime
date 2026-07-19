@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 
 import { AudioPlayer } from '../../src/renderer/audio/audioPlayer'
+import { HeadMotionRuntime } from '../../src/renderer/avatar/embodiment/gaze/HeadMotionRuntime'
 import {
   ConversationRuntime,
   type ConversationRuntimeDeps,
@@ -20,7 +21,6 @@ import type {
 } from '../../src/renderer/speech/continuous-listening/types'
 import { UtteranceBacklog } from '../../src/renderer/speech/continuous-listening/UtteranceBacklog'
 import { UtteranceChunkBuilder } from '../../src/renderer/speech/continuous-listening/UtteranceChunkBuilder'
-import { HeadMotionRuntime } from '../../src/renderer/three/HeadMotionRuntime'
 
 let now = Date.now()
 const flush = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0))

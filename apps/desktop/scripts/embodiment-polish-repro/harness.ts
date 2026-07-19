@@ -3,14 +3,14 @@ import assert from 'node:assert/strict'
 import { AvatarSpeakingGestureScheduler } from '../../src/renderer/avatar/AvatarSpeakingGestureScheduler'
 import type { AvatarStateEffect } from '../../src/renderer/avatar/AvatarStateMachine'
 import { resolveEmotionEmbodimentProfile } from '../../src/renderer/avatar/EmotionEmbodimentProfile'
-import { PhraseEnvelopeController } from '../../src/renderer/three/PhraseEnvelopeController'
-import { buildSpeechPhraseTimingPlan } from '../../src/renderer/three/SpeechPhraseTiming'
-import { VrmModel } from '../../src/renderer/three/VrmModel'
+import { PhraseEnvelopeController } from '../../src/renderer/avatar/embodiment/speech/PhraseEnvelopeController'
+import { buildSpeechPhraseTimingPlan } from '../../src/renderer/avatar/embodiment/speech/SpeechPhraseTiming'
+import { VrmModel } from '../../src/renderer/avatar/rendering/three/VrmModel'
 import {
   type CharacterState,
   cloneCharacterState,
   INITIAL_CHARACTER_STATE,
-} from '../../src/shared/runtime/characterState'
+} from '../../src/shared/runtime/character-state'
 
 const empty = buildSpeechPhraseTimingPlan('')
 assert.deepEqual(empty, { boundaries: [], hasTerminalPunctuation: false })

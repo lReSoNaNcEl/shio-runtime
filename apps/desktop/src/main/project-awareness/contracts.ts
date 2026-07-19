@@ -1,4 +1,4 @@
-import type { ProjectRepositoryIdentity, ProjectSourceFile } from '../../shared/projectAwareness'
+import type { ProjectRepositoryIdentity, ProjectSourceFile } from '../../shared/project-awareness'
 
 export interface ProjectTreeEntry {
   path: string

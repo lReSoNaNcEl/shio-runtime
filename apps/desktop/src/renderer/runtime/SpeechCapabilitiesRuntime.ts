@@ -1,5 +1,5 @@
 import type { EventBus } from '../../shared/runtime/events'
-import type { SerializedSpeechError } from '../../shared/speech/speechErrors'
+import type { SerializedSpeechError } from '../../shared/speech/errors'
 import {
   applyHealthFailure,
   applyHealthProbe,

@@ -1,6 +1,6 @@
 import axios, { type AxiosInstance } from 'axios'
 
-import { type EmotionContract, emotionRegistry } from '../../shared/emotions'
+import { type EmotionContract, emotionRegistry } from '../../shared/emotion'
 import { mainLog } from '../logging/safeLogger'
 import { type Health, HealthSchema, type Recognize, RecognizeSchema } from '../schemas'
 import { normalizeSpeechError, SpeechServiceError } from './speechErrors'

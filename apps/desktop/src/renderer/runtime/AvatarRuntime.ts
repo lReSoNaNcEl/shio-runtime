@@ -1,6 +1,6 @@
 import type * as THREE from 'three'
 
-import type { CharacterAvatarState, CharacterState } from '../../shared/runtime/characterState'
+import type { CharacterAvatarState, CharacterState } from '../../shared/runtime/character-state'
 import type { EventBus, RuntimeEventCategory, RuntimeEventType } from '../../shared/runtime/events'
 import type {
   AnimationControllerDebugState,
@@ -21,17 +21,20 @@ import type { AvatarPlaybackRequestDebugState } from '../avatar/AvatarPlaybackRe
 import type { SpeakingGestureSchedulerDebugState } from '../avatar/AvatarSpeakingGestureScheduler'
 import type { DebugAvatarMode } from '../avatar/avatarAnimations'
 import { resolveEmotionEmbodimentProfile } from '../avatar/EmotionEmbodimentProfile'
-import type { FacialDebugState } from '../three/AvatarExpressionMixer'
-import type { OverlayViewMode } from '../three/avatarTuning'
+import type { FacialDebugState } from '../avatar/embodiment/facial/AvatarExpressionMixer'
+import type { HeadMotionDebugState } from '../avatar/embodiment/gaze/HeadMotionRuntime'
+import type { LookAtDebugState } from '../avatar/embodiment/gaze/LookAtRuntime'
 import type {
   EarAxisOverride,
   EarBehaviorDebugState,
   EarImpulse,
-} from '../three/EarBehaviorRuntime'
-import type { HeadMotionDebugState } from '../three/HeadMotionRuntime'
-import type { LipSyncStartRequest, MouthWeights } from '../three/LipSync'
-import type { LookAtDebugState } from '../three/LookAtRuntime'
-import type { VrmBodyActionDebugState, VrmPerformanceDebugState } from '../three/VrmModel'
+} from '../avatar/embodiment/secondary-motion/EarBehaviorRuntime'
+import type { LipSyncStartRequest, MouthWeights } from '../avatar/embodiment/speech/LipSync'
+import type {
+  VrmBodyActionDebugState,
+  VrmPerformanceDebugState,
+} from '../avatar/rendering/three/VrmModel'
+import type { OverlayViewMode } from '../avatar/tuning/cameraTuning'
 
 export type { AvatarMode }
 

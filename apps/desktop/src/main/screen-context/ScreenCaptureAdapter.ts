@@ -1,6 +1,9 @@
 import { type DesktopCapturerSource, desktopCapturer, type NativeImage } from 'electron'
 
-import type { ScreenContextSource, ScreenContextSourceKind } from '../../shared/screenContext'
+import type {
+  ScreenContextSource,
+  ScreenContextSourceKind,
+} from '../../shared/screen-context/contracts'
 
 const PREVIEW_SIZE = { width: 320, height: 180 } as const
 const CAPTURE_SIZE = { width: 2048, height: 2048 } as const

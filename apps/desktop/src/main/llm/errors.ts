@@ -1,4 +1,4 @@
-import type { LlmProviderId, ModelFetchErrorKind } from '../../shared/llmProviders'
+import type { LlmProviderId, ModelFetchErrorKind } from '../../shared/llm/providers'
 
 export type { ModelFetchErrorKind }
 

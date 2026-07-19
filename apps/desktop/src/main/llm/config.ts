@@ -3,7 +3,7 @@ import {
   type LlmConfig,
   type LlmProviderId,
   type ProviderCredentials,
-} from '../../shared/llmProviders'
+} from '../../shared/llm/providers'
 
 export const GROQ_DEFAULT_MODEL = 'qwen/qwen3.6-27b'
 

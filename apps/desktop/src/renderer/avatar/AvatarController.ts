@@ -1,15 +1,6 @@
 import type * as THREE from 'three'
 
-import type { CharacterState } from '../../shared/runtime/characterState'
-import {
-  avatarStartupTuning,
-  type OverlayViewMode,
-  speakingGestureTuning,
-} from '../three/avatarTuning'
-import type { EarAxisOverride, EarImpulse } from '../three/EarBehaviorRuntime'
-import { LipSync, type LipSyncStartRequest, type MouthWeights } from '../three/LipSync'
-import type { SpeechPhrasePhase } from '../three/PhraseEnvelopeController'
-import { VrmModel } from '../three/VrmModel'
+import type { CharacterState } from '../../shared/runtime/character-state'
 import { AvatarAnimationController } from './AvatarAnimationController'
 import type { AvatarAnimationQueueItem } from './AvatarAnimationQueue'
 import { AvatarBehaviorEngine, type AvatarBehaviorEngineDecision } from './AvatarBehaviorEngine'
@@ -35,7 +26,14 @@ import { type AvatarMode, type AvatarStateEffect, AvatarStateMachine } from './A
 import { getAnimation } from './animationManifest'
 import type { DebugAvatarMode } from './avatarAnimations'
 import { resolveEmotionEmbodimentProfile } from './EmotionEmbodimentProfile'
+import type { EarAxisOverride, EarImpulse } from './embodiment/secondary-motion/EarBehaviorRuntime'
+import { LipSync, type LipSyncStartRequest, type MouthWeights } from './embodiment/speech/LipSync'
+import type { SpeechPhrasePhase } from './embodiment/speech/PhraseEnvelopeController'
 import { OverlayAnimationPolicy } from './OverlayAnimationPolicy'
+import { VrmModel } from './rendering/three/VrmModel'
+import type { OverlayViewMode } from './tuning/cameraTuning'
+import { speakingGestureTuning } from './tuning/speechTuning'
+import { avatarStartupTuning } from './tuning/startupTuning'
 
 export type { AvatarMode } from './AvatarStateMachine'
 export type { AvatarBehaviorTransitionLogEntry }

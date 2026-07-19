@@ -1,10 +1,10 @@
-import type { VrmBodyActionDebugState, VrmModel } from '../three/VrmModel'
 import {
   type AnimationId,
   getAnimation,
   getAnimationUrl,
   getRootMotionPolicy,
 } from './animationManifest'
+import type { VrmBodyActionDebugState, VrmModel } from './rendering/three/VrmModel'
 
 export type AnimationPlaybackStatus = 'idle' | 'loading' | 'playing' | 'failed'
 

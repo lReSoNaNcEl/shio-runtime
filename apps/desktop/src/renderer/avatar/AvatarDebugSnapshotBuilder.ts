@@ -1,9 +1,3 @@
-import type { FacialDebugState } from '../three/AvatarExpressionMixer'
-import type { EarBehaviorDebugState } from '../three/EarBehaviorRuntime'
-import type { HeadMotionDebugState } from '../three/HeadMotionRuntime'
-import type { MouthWeights } from '../three/LipSync'
-import type { LookAtDebugState } from '../three/LookAtRuntime'
-import type { VrmBodyActionDebugState, VrmModel, VrmPerformanceDebugState } from '../three/VrmModel'
 import type {
   AnimationControllerDebugState,
   AnimationPlaybackStatus,
@@ -31,6 +25,16 @@ import type {
 } from './AvatarSpeakingGestureScheduler'
 import type { AvatarMode, AvatarStateMachine } from './AvatarStateMachine'
 import type { AvatarTransitionDecision } from './AvatarTransitionPolicy'
+import type { FacialDebugState } from './embodiment/facial/AvatarExpressionMixer'
+import type { HeadMotionDebugState } from './embodiment/gaze/HeadMotionRuntime'
+import type { LookAtDebugState } from './embodiment/gaze/LookAtRuntime'
+import type { EarBehaviorDebugState } from './embodiment/secondary-motion/EarBehaviorRuntime'
+import type { MouthWeights } from './embodiment/speech/LipSync'
+import type {
+  VrmBodyActionDebugState,
+  VrmModel,
+  VrmPerformanceDebugState,
+} from './rendering/three/VrmModel'
 
 export interface AvatarBehaviorTransitionLogEntry {
   at: number

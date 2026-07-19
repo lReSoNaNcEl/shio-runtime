@@ -38,20 +38,21 @@ import UserAvatarIcon from '@react-spectrum/s2/icons/UserAvatar'
 import { style } from '@react-spectrum/s2/style' with { type: 'macro' }
 import { useEffect, useRef, useState } from 'react'
 
-import { DEFAULT_SPEECH_URL } from '../../shared/config'
+import { DEFAULT_SPEECH_URL } from '../../shared/config/appSettings'
 import type {
   BacklogSelectorRoleConfig,
   LlmProviderId,
   ModelInfo,
   ProviderCredentials,
   ProviderProfile,
-} from '../../shared/llmProviders'
+} from '../../shared/llm/providers'
 import type { UiLocale } from '../../shared/localization/locale'
 import {
   isValidProjectBranch,
   isValidProjectRepository,
   type ProjectAwarenessStatus,
-} from '../../shared/projectAwareness'
+} from '../../shared/project-awareness'
+import { type OverlayViewMode, overlayCameraPresets } from '../avatar/tuning/cameraTuning'
 import type { ControllerState } from '../Controller'
 import { controller } from '../Controller'
 import { useTranslation } from '../localization/useTranslation'
@@ -62,7 +63,6 @@ import {
   parseTunedNumber,
 } from '../speech/continuous-listening/tuning'
 import type { AttentionMode } from '../speech/continuous-listening/types'
-import { type OverlayViewMode, overlayCameraPresets } from '../three/avatarTuning'
 
 const fullWidth = style({ width: 'full' })
 

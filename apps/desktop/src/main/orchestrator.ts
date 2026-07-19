@@ -1,10 +1,10 @@
-import { EMOTION_SEGMENTS_TUNING, parseEmotionalReply } from '../shared/emotionSegments'
+import type { AppSettings } from '../shared/config/appSettings'
 import {
   normalizeEmotionTag,
   parseLeadingEmotionTag,
   supportedEmotionPromptList,
-} from '../shared/emotions'
-import type { AppSettings } from './ipc'
+} from '../shared/emotion'
+import { EMOTION_SEGMENTS_TUNING, parseEmotionalReply } from '../shared/emotion/segments'
 import type { LLMProvider, LlmRequestOptions } from './llm'
 import { mainLog } from './logging/safeLogger'
 import type { MemoryStore } from './memory'

@@ -1,4 +1,3 @@
-import type { VrmModel } from '../three/VrmModel'
 import type { AvatarAnimationController } from './AvatarAnimationController'
 import {
   AvatarAnimationQueue,
@@ -14,6 +13,7 @@ import {
 import type { AvatarMode, AvatarStateEffect } from './AvatarStateMachine'
 import { type AvatarTransitionDecision, AvatarTransitionPolicy } from './AvatarTransitionPolicy'
 import type { AnimationId } from './animationManifest'
+import type { VrmModel } from './rendering/three/VrmModel'
 
 interface PlaybackContext {
   animationId: string

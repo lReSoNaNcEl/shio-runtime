@@ -1,5 +1,5 @@
-import type { VrmModel } from '../three/VrmModel'
 import type { AvatarMode } from './AvatarStateMachine'
+import type { VrmModel } from './rendering/three/VrmModel'
 
 type IdleBehaviorKind =
   | 'none'
