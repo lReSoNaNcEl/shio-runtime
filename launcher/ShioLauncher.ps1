@@ -111,6 +111,47 @@ function Invoke-Checked {
     if ($process.ExitCode -ne 0) { Fail "Command failed with exit code $($process.ExitCode)." }
 }
 
+function Invoke-CheckedWithRetry {
+    param(
+        [string]$File,
+        [string[]]$Arguments,
+        [string]$WorkingDirectory,
+        [int]$MaxAttempts = 3,
+        [int]$RetryDelaySeconds = 5
+    )
+    for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
+        Write-LauncherLog "Running (attempt $attempt/$MaxAttempts): $File $($Arguments -join ' ')"
+        $process = Start-Process -FilePath $File -ArgumentList $Arguments -WorkingDirectory $WorkingDirectory -Wait -PassThru -NoNewWindow
+        if ($process.ExitCode -eq 0) { return }
+        if ($attempt -lt $MaxAttempts) {
+            $delay = $RetryDelaySeconds * $attempt
+            Write-LauncherLog "Command failed with exit code $($process.ExitCode); retrying in $delay seconds..."
+            Start-Sleep -Seconds $delay
+        }
+    }
+    Fail "Command failed after $MaxAttempts attempts."
+}
+
+function Remove-InstallStaging {
+    param([string]$Path)
+    if (-not (Test-Path -LiteralPath $Path)) { return }
+    $local = [IO.Path]::GetFullPath($LocalRoot)
+    $resolved = [IO.Path]::GetFullPath($Path)
+    if (-not $resolved.StartsWith($local + [IO.Path]::DirectorySeparatorChar,
+            [StringComparison]::OrdinalIgnoreCase) -or
+        -not [IO.Path]::GetFileName($resolved).Contains(".staging.")) {
+        Fail "Refusing to remove an unsafe staging path: $resolved"
+    }
+    $voices = Join-Path $resolved "services\api\voices"
+    if (Test-Path -LiteralPath $voices) {
+        $item = Get-Item -LiteralPath $voices -Force
+        if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+            Remove-Item -LiteralPath $voices -Force
+        }
+    }
+    Remove-Item -LiteralPath $resolved -Recurse -Force
+}
+
 function Install-SpeechPack {
     param($Manifest, [switch]$Repair)
     Assert-Platform
@@ -122,7 +163,15 @@ function Install-SpeechPack {
         Fail "Speech Pack payload is incomplete."
     }
     $staging = "$($paths.Root).staging.$PID"
-    if (Test-Path -LiteralPath $staging) { Remove-Item -LiteralPath $staging -Recurse -Force }
+    $stagingParent = Split-Path -Parent $paths.Root
+    if (Test-Path -LiteralPath $stagingParent) {
+        Get-ChildItem -LiteralPath $stagingParent -Directory -Force |
+            Where-Object { $_.Name.Contains(".staging.") } |
+            ForEach-Object {
+                Write-LauncherLog "Removing incomplete staging directory: $($_.FullName)"
+                Remove-InstallStaging $_.FullName
+            }
+    }
     New-Item -ItemType Directory -Force -Path $staging | Out-Null
     try {
         Write-LauncherLog "Copying Speech Pack $($Manifest.speechPack.version)..."
@@ -145,7 +194,7 @@ function Install-SpeechPack {
         $voicesPath = Join-Path $stagingApi "voices"
         if (Test-Path -LiteralPath $voicesPath) { Remove-Item -LiteralPath $voicesPath -Recurse -Force }
         New-Item -ItemType Junction -Path $voicesPath -Target $persistentVoices | Out-Null
-        Invoke-Checked $stagingPython @("scripts\sync_voices.py") $stagingApi
+        Invoke-CheckedWithRetry $stagingPython @("scripts\sync_voices.py") $stagingApi
         Invoke-Checked $stagingPython @("scripts\doctor_strict.py") $stagingApi
         $state = @{
             schemaVersion = 1
@@ -166,7 +215,8 @@ function Install-SpeechPack {
         }
         Write-LauncherLog "Speech Pack installation is ready."
     } catch {
-        Write-LauncherLog "Installation failed; inactive staging directory: $staging"
+        Write-LauncherLog "Installation failed; removing inactive staging directory: $staging"
+        Remove-InstallStaging $staging
         throw
     }
 }

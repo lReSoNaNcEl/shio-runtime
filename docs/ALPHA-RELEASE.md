@@ -24,7 +24,7 @@ Download the Actions artifact and qualify that artifact—not a local build—on
 After successful qualification and explicit release approval:
 
 ```powershell
-$version = "0.1.0-alpha.2"
+$version = "0.1.0-alpha.3"
 git tag -a "v$version" -m "Shio Runtime v$version"
 git push origin "v$version"
 ```

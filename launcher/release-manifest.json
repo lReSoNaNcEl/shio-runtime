@@ -1,13 +1,13 @@
 {
   "schemaVersion": 1,
-  "productVersion": "0.1.0-alpha.2",
+  "productVersion": "0.1.0-alpha.3",
   "platform": "win32",
   "architecture": "x64",
   "desktop": {
     "relativeExecutablePath": "desktop/Shio Runtime.exe"
   },
   "speechPack": {
-    "version": "0.1.0-alpha.2",
+    "version": "0.1.0-alpha.3",
     "sourceRelativePath": "speech-pack",
     "host": "127.0.0.1",
     "port": 8000,

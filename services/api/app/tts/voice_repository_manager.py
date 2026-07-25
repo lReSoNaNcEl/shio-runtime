@@ -209,9 +209,11 @@ class VoiceRepositoryManager:
     """Synchronizes remote voice datasets into local manifest entries."""
 
     def __init__(self, manifest_path: str, status_path: str):
-        self.manifest_path = Path(manifest_path).resolve()
+        # Keep the service root lexical: resolving it can dereference a packaged
+        # path or normalize only one side of a Windows 8.3 path comparison.
+        self.manifest_path = Path(manifest_path).absolute()
         self.root_dir = self.manifest_path.parent
-        self.status_path = Path(status_path).resolve()
+        self.status_path = Path(status_path).absolute()
 
     def repositories(self) -> list[dict[str, Any]]:
         manifest = _read_json(self.manifest_path, {"datasets": []})
@@ -638,7 +640,16 @@ class VoiceRepositoryManager:
         return (self.root_dir / path).resolve()
 
     def _relative(self, path: Path) -> str:
-        return path.resolve().relative_to(self.root_dir).as_posix()
+        # Keep the manifest path relative to the service root without resolving
+        # directory junctions. The Windows launcher intentionally maps
+        # services/api/voices to the persistent application data directory; a
+        # full resolve would escape root_dir and make relative_to() fail.
+        absolute_path = path.absolute()
+        try:
+            return absolute_path.relative_to(self.root_dir).as_posix()
+        except ValueError:
+            # Absolute paths remain supported for explicitly external assets.
+            return absolute_path.as_posix()
 
     def _save_status(self, status: dict[str, Any]) -> None:
         _write_json(self.status_path, status)

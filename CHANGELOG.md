@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.1.0-alpha.3] - 2026-07-26
+
+### Fixed
+
+- Voice synchronization now preserves manifest paths through the launcher's persistent voices junction instead of failing when the resolved files are outside the Speech Pack directory.
+- The Windows launcher now retries voice synchronization in a fresh process after transient Hugging Face TLS or HTTP-client failures.
+- Failed and abandoned Speech Pack staging directories are safely removed without traversing the persistent voices junction.
+
+### Known Limitations
+
+- `0.1.0-alpha.1` and `0.1.0-alpha.2` are superseded prereleases with blocking first-run launcher defects and must not be used for qualification.
+
 ## [0.1.0-alpha.2] - 2026-07-19
 
 ### Fixed
