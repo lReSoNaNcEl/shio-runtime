@@ -15,6 +15,9 @@ $LogsRoot = Join-Path $LocalRoot "Logs"
 $RuntimeRoot = Join-Path $LocalRoot "Runtime"
 $LauncherLog = Join-Path $LogsRoot "launcher.log"
 $OwnershipPath = Join-Path $RuntimeRoot "speech-api.json"
+$LauncherMutexName = "Local\ShioRuntimeLauncher"
+$script:LauncherMutex = $null
+$script:LauncherMutexHeld = $false
 
 New-Item -ItemType Directory -Force -Path $DataRoot, $LogsRoot, $RuntimeRoot | Out-Null
 $env:HF_HOME = Join-Path $DataRoot "huggingface"
@@ -111,25 +114,86 @@ function Invoke-Checked {
     if ($process.ExitCode -ne 0) { Fail "Command failed with exit code $($process.ExitCode)." }
 }
 
+function Enter-LauncherLock {
+    if ($script:LauncherMutexHeld) { return }
+    $script:LauncherMutex = [Threading.Mutex]::new($false, $LauncherMutexName)
+    try {
+        $script:LauncherMutexHeld = $script:LauncherMutex.WaitOne(0)
+    } catch [Threading.AbandonedMutexException] {
+        $script:LauncherMutexHeld = $true
+        Write-LauncherLog "Recovered launcher lock abandoned by a previous process."
+    }
+    if (-not $script:LauncherMutexHeld) {
+        $script:LauncherMutex.Dispose()
+        $script:LauncherMutex = $null
+        Fail "Another Shio Runtime launcher is already running. Use the existing window and wait for it to finish."
+    }
+}
+
+function Exit-LauncherLock {
+    if ($script:LauncherMutexHeld -and $null -ne $script:LauncherMutex) {
+        $script:LauncherMutex.ReleaseMutex()
+    }
+    if ($null -ne $script:LauncherMutex) {
+        $script:LauncherMutex.Dispose()
+    }
+    $script:LauncherMutex = $null
+    $script:LauncherMutexHeld = $false
+}
+
 function Invoke-CheckedWithRetry {
     param(
         [string]$File,
         [string[]]$Arguments,
         [string]$WorkingDirectory,
         [int]$MaxAttempts = 3,
-        [int]$RetryDelaySeconds = 5
+        [int]$RetryDelaySeconds = 5,
+        [int]$TimeoutSeconds = 900,
+        [int]$ProgressIntervalSeconds = 30
     )
     for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
         Write-LauncherLog "Running (attempt $attempt/$MaxAttempts): $File $($Arguments -join ' ')"
-        $process = Start-Process -FilePath $File -ArgumentList $Arguments -WorkingDirectory $WorkingDirectory -Wait -PassThru -NoNewWindow
-        if ($process.ExitCode -eq 0) { return }
+        $process = Start-Process -FilePath $File -ArgumentList $Arguments -WorkingDirectory $WorkingDirectory -PassThru -NoNewWindow
+        # Windows PowerShell releases the native process handle too early unless
+        # it is accessed while the process is alive; retain it for ExitCode.
+        $processHandle = $process.Handle
+        $stopwatch = [Diagnostics.Stopwatch]::StartNew()
+        $nextProgress = $ProgressIntervalSeconds
+        while (-not $process.WaitForExit(1000)) {
+            if ($stopwatch.Elapsed.TotalSeconds -ge $TimeoutSeconds) {
+                Write-LauncherLog "Command timed out after $TimeoutSeconds seconds; stopping PID $($process.Id)."
+                Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+                Wait-Process -Id $process.Id -Timeout 10 -ErrorAction SilentlyContinue
+                break
+            }
+            if ($stopwatch.Elapsed.TotalSeconds -ge $nextProgress) {
+                Write-LauncherLog "Command is still running ($([int]$stopwatch.Elapsed.TotalSeconds)s elapsed)..."
+                $nextProgress += $ProgressIntervalSeconds
+            }
+        }
+        $stopwatch.Stop()
+        $process.WaitForExit()
+        $process.Refresh()
+        $exitCode = $process.ExitCode
+        if ($exitCode -eq 0) { return }
         if ($attempt -lt $MaxAttempts) {
             $delay = $RetryDelaySeconds * $attempt
-            Write-LauncherLog "Command failed with exit code $($process.ExitCode); retrying in $delay seconds..."
+            Write-LauncherLog "Command failed with exit code $exitCode; retrying in $delay seconds..."
             Start-Sleep -Seconds $delay
         }
     }
     Fail "Command failed after $MaxAttempts attempts."
+}
+
+function Invoke-StrictDoctor {
+    param([string]$Python, [string]$ApiRoot, [string]$VenvRoot)
+    $previousVenv = $env:SHIO_API_VENV
+    try {
+        $env:SHIO_API_VENV = $VenvRoot
+        Invoke-Checked $Python @("scripts\doctor_strict.py") $ApiRoot
+    } finally {
+        $env:SHIO_API_VENV = $previousVenv
+    }
 }
 
 function Remove-InstallStaging {
@@ -194,8 +258,12 @@ function Install-SpeechPack {
         $voicesPath = Join-Path $stagingApi "voices"
         if (Test-Path -LiteralPath $voicesPath) { Remove-Item -LiteralPath $voicesPath -Recurse -Force }
         New-Item -ItemType Junction -Path $voicesPath -Target $persistentVoices | Out-Null
-        Invoke-CheckedWithRetry $stagingPython @("scripts\sync_voices.py") $stagingApi
-        Invoke-Checked $stagingPython @("scripts\doctor_strict.py") $stagingApi
+        Write-LauncherLog "Synchronizing voice references. Dataset scanning can be quiet for several minutes; do not start another launcher."
+        Invoke-CheckedWithRetry `
+            -File $stagingPython `
+            -Arguments @("scripts\sync_voices.py") `
+            -WorkingDirectory $stagingApi
+        Invoke-StrictDoctor $stagingPython $stagingApi (Join-Path $staging ".venv")
         $state = @{
             schemaVersion = 1
             speechPackVersion = $Manifest.speechPack.version
@@ -312,7 +380,11 @@ function Start-Shio {
 }
 
 $manifest = Read-Manifest
+$exitCode = 0
 try {
+    if ($Command -in @("start", "install", "repair", "doctor")) {
+        Enter-LauncherLock
+    }
     switch ($Command) {
         "start" { Start-Shio $manifest }
         "install" { Install-SpeechPack $manifest }
@@ -321,7 +393,7 @@ try {
             Assert-Platform
             $paths = Get-InstallPaths $manifest
             if (-not (Test-Path -LiteralPath $paths.Python)) { Fail "Speech Pack is not installed." }
-            Invoke-Checked $paths.Python @("scripts\doctor_strict.py") $paths.Api
+            Invoke-StrictDoctor $paths.Python $paths.Api (Join-Path $paths.Root ".venv")
         }
         "status" {
             $paths = Get-InstallPaths $manifest
@@ -332,8 +404,10 @@ try {
         "stop" { Stop-OwnedApi }
         "open-logs" { Start-Process explorer.exe -ArgumentList "`"$LogsRoot`"" }
     }
-    exit 0
 } catch {
     Write-LauncherLog $_.Exception.Message
-    exit 1
+    $exitCode = 1
+} finally {
+    Exit-LauncherLock
 }
+exit $exitCode

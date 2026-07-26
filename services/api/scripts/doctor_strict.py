@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import importlib
 import json
+import os
 import re
 import sys
 from pathlib import Path
 
 SERVICE_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SERVICE_ROOT))
-EXPECTED_VENV = (SERVICE_ROOT / ".venv").resolve()
 EXPECTED_TORCH_VERSION = "2.11.0+cu128"
 EXPECTED_CUDA_VERSION = "12.8"
 COMMIT_SHA = re.compile(r"^[0-9a-f]{40}$")
@@ -25,11 +25,17 @@ def require_file(path: Path, label: str) -> None:
         fail(f"{label} is missing: {path}")
 
 
+def expected_venv() -> Path:
+    configured = os.environ.get("SHIO_API_VENV", "").strip()
+    return Path(configured).resolve() if configured else (SERVICE_ROOT / ".venv").resolve()
+
+
 def main() -> int:
+    required_venv = expected_venv()
     if sys.version_info[:2] != (3, 12):
         fail(f"Python 3.12 is required; detected {sys.version.split()[0]}")
-    if Path(sys.prefix).resolve() != EXPECTED_VENV:
-        fail(f"Expected venv {EXPECTED_VENV}; selected {Path(sys.prefix).resolve()}")
+    if Path(sys.prefix).resolve() != required_venv:
+        fail(f"Expected venv {required_venv}; selected {Path(sys.prefix).resolve()}")
 
     for module_name in ("faster_whisper", "silero_vad", "f5_tts"):
         importlib.import_module(module_name)
@@ -99,7 +105,7 @@ def main() -> int:
     )
 
     print(f"Python: {sys.version.split()[0]}")
-    print(f"Environment: {EXPECTED_VENV}")
+    print(f"Environment: {required_venv}")
     print(f"PyTorch: {torch.__version__} (CUDA {torch.version.cuda})")
     print(f"NVIDIA GPU: {gpu_name}")
     print(f"API bind: {host}:{settings.PORT}")

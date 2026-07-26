@@ -18,6 +18,13 @@ foreach ($required in @(
     "startTime",
     "Wait-Process",
     "Invoke-CheckedWithRetry",
+    "Invoke-StrictDoctor",
+    "Enter-LauncherLock",
+    "Exit-LauncherLock",
+    "SHIO_API_VENV",
+    "Another Shio Runtime launcher is already running",
+    "Command is still running",
+    "Command timed out",
     "Remove-InstallStaging",
     "retrying in",
     "removing inactive staging directory"
@@ -43,10 +50,12 @@ function Import-LauncherFunction {
     Set-Item -Path "function:script:$Name" -Value $body
 }
 
-function Write-LauncherLog { param([string]$Message) }
+function Write-LauncherLog { param([string]$Message) Write-Host "[launcher-check] $Message" }
 function Fail { param([string]$Message) throw $Message }
 
 Import-LauncherFunction "Invoke-CheckedWithRetry"
+Import-LauncherFunction "Enter-LauncherLock"
+Import-LauncherFunction "Exit-LauncherLock"
 Import-LauncherFunction "Remove-InstallStaging"
 
 $retryRoot = Join-Path ([IO.Path]::GetTempPath()) "shio-launcher-retry-check-$PID"
@@ -61,16 +70,102 @@ $attempt = [int](Get-Content -Raw -LiteralPath $Counter) + 1
 Set-Content -LiteralPath $Counter -Encoding ascii -Value $attempt
 if ($attempt -lt 3) { exit 1 }
 '@ | Set-Content -LiteralPath $probeScript -Encoding UTF8
-    Invoke-CheckedWithRetry powershell.exe @(
-        "-NoProfile",
-        "-ExecutionPolicy",
-        "Bypass",
-        "-File",
-        "`"$probeScript`"",
-        "`"$counter`""
-    ) $retryRoot 3 0
+    Invoke-CheckedWithRetry `
+        -File powershell.exe `
+        -Arguments @(
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            "`"$probeScript`"",
+            "`"$counter`""
+        ) `
+        -WorkingDirectory $retryRoot `
+        -MaxAttempts 3 `
+        -RetryDelaySeconds 0 `
+        -TimeoutSeconds 30 `
+        -ProgressIntervalSeconds 1
     if ([int](Get-Content -Raw -LiteralPath $counter) -ne 3) {
         throw "Launcher retry did not run exactly three attempts."
+    }
+
+    $timeoutPid = Join-Path $retryRoot "timeout-pid.txt"
+    $timeoutProbe = Join-Path $retryRoot "timeout-probe.ps1"
+    @'
+param([string]$PidPath)
+Set-Content -LiteralPath $PidPath -Encoding ascii -Value $PID
+Start-Sleep -Seconds 30
+'@ | Set-Content -LiteralPath $timeoutProbe -Encoding UTF8
+    $timedOut = $false
+    try {
+        Invoke-CheckedWithRetry `
+            -File powershell.exe `
+            -Arguments @(
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                "`"$timeoutProbe`"",
+                "`"$timeoutPid`""
+            ) `
+            -WorkingDirectory $retryRoot `
+            -MaxAttempts 1 `
+            -RetryDelaySeconds 0 `
+            -TimeoutSeconds 1 `
+            -ProgressIntervalSeconds 1
+    } catch {
+        $timedOut = $_.Exception.Message.Contains("after 1 attempts")
+    }
+    if (-not $timedOut) {
+        throw "Launcher timeout did not fail the hung command."
+    }
+    $timedOutProcessId = [int](Get-Content -Raw -LiteralPath $timeoutPid)
+    if ($null -ne (Get-Process -Id $timedOutProcessId -ErrorAction SilentlyContinue)) {
+        throw "Launcher timeout left the owned command running."
+    }
+
+    $script:LauncherMutexName = "Local\ShioRuntimeLauncherCheck$PID"
+    $heldMutex = [Threading.Mutex]::new($true, $script:LauncherMutexName)
+    try {
+        $lockFailed = $false
+        $lockProbe = Start-Job -ScriptBlock {
+            param($LauncherPath, $MutexName)
+            $script:LauncherMutexName = $MutexName
+            $script:LauncherMutex = $null
+            $script:LauncherMutexHeld = $false
+            function Write-LauncherLog { param([string]$Message) }
+            function Fail { param([string]$Message) throw $Message }
+            $errors = $null
+            $ast = [Management.Automation.Language.Parser]::ParseFile(
+                $LauncherPath, [ref]$null, [ref]$errors
+            )
+            foreach ($name in @("Enter-LauncherLock", "Exit-LauncherLock")) {
+                $definition = $ast.Find({
+                    param($node)
+                    $node -is [Management.Automation.Language.FunctionDefinitionAst] -and
+                        $node.Name -eq $name
+                }, $true)
+                $bodyText = $definition.Body.Extent.Text
+                $body = [scriptblock]::Create($bodyText.Substring(1, $bodyText.Length - 2))
+                Set-Item -Path "function:script:$name" -Value $body
+            }
+            try {
+                Enter-LauncherLock
+                return "unexpected"
+            } catch {
+                return $_.Exception.Message
+            } finally {
+                Exit-LauncherLock
+            }
+        } -ArgumentList $launcher, $script:LauncherMutexName
+        $lockResult = Receive-Job -Job $lockProbe -Wait -AutoRemoveJob
+        $lockFailed = ([string]$lockResult).Contains("already running")
+        if (-not $lockFailed) {
+            throw "Launcher single-instance lock did not reject a concurrent process."
+        }
+    } finally {
+        $heldMutex.ReleaseMutex()
+        $heldMutex.Dispose()
     }
 
     $script:LocalRoot = Join-Path $retryRoot "local"

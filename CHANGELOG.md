@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.1.0-alpha.4] - 2026-07-26
+
+### Fixed
+
+- Strict doctor now validates the launcher's actual Speech Pack virtual environment instead of assuming a service-local `.venv`.
+- Mutating launcher commands are single-instance, preventing a second launch from deleting an active staging installation.
+- Long voice synchronization reports periodic activity and stops/retries a process that exceeds the installation timeout.
+
+### Known Limitations
+
+- `0.1.0-alpha.1` through `0.1.0-alpha.3` are superseded prereleases with blocking first-run launcher defects and must not be used for qualification.
+
 ## [0.1.0-alpha.3] - 2026-07-26
 
 ### Fixed

@@ -1,4 +1,4 @@
-# Shio Runtime 0.1.0-alpha.3
+# Shio Runtime 0.1.0-alpha.4
 
 This is the first technical alpha for invited testers. It is an unsigned portable build intended for functional evaluation, not a production release.
 
@@ -41,7 +41,7 @@ Application settings and encrypted credential files are stored under Electron's 
 Runtime Health is available without Developer Mode:
 
 - **Open logs folder** opens the persistent log location.
-- **Copy version** copies `0.1.0-alpha.3`.
+- **Copy version** copies `0.1.0-alpha.4`.
 - **Copy Runtime Health** copies readable JSON containing release and safe runtime status.
 
 The copied payload contains no API keys, GitHub token, authorization headers, encrypted credential contents, screenshots, or audio buffers. Review it before attaching it to a report.
