@@ -1,6 +1,9 @@
 ﻿numpy==1.26.4
 pydantic-settings==2.14.2
 fastapi==0.139.2
+scipy==1.17.1
+soundfile==0.14.0
+python-multipart==0.0.32
 huggingface-hub==1.24.0
 faster-whisper==1.2.1
 silero-vad==6.2.1
