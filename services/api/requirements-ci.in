@@ -1,5 +1,6 @@
 ﻿numpy==1.26.4
 pydantic-settings==2.14.2
+fastapi==0.139.2
 huggingface-hub==1.24.0
 faster-whisper==1.2.1
 silero-vad==6.2.1
