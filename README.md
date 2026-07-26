@@ -74,7 +74,7 @@ npm run api:dev
 ```
 
 Desktop alpha testers run `Shio Runtime.exe` from the portable
-`Shio-Runtime-0.1.0-alpha.5-win-x64.zip`; `desktop:dev` is not part of the tester
+`Shio-Runtime-0.1.0-alpha.6-win-x64.zip`; `desktop:dev` is not part of the tester
 workflow.
 
 ## Developer setup

@@ -2,9 +2,28 @@
 
 ## [Unreleased]
 
+## [0.1.0-alpha.6] - 2026-07-26
+
+### Changed
+
+- The canonical repository application layout is now `apps/desktop` and `apps/api`; Desktop and Speech API remain independent processes connected only through HTTP.
+- The Windows release payload now places the tracked-only Speech API beneath `speech-pack/api` without leaking repository layout into the user-facing bundle.
+- The top-level release `README-FIRST.txt` is rendered from a launcher-owned template using the synchronized manifest product version.
+- Root API commands use only `apps/api/.venv`; environments from previous layouts are detected for migration guidance but are never executable fallbacks.
+
 ### Fixed
 
 - Alpha publication now discovers unpublished drafts through the releases list and uploads assets by release ID, matching GitHub's draft API behavior.
+- Repository-owned Ruff invocations place cache output below `apps/api` and no longer create `.ruff_cache` in the repository root.
+
+### Known Limitations
+
+- Windows 11 x64 only; the qualified local speech path requires an NVIDIA CUDA-capable GPU and Python 3.12 x64.
+- The unsigned ZIP has no installer, automatic update, code signing, or macOS/Linux target.
+- First installation remains large and network-dependent because locked dependencies, voice references, and pinned models are installed into persistent local data.
+- Clean-machine launcher, real CUDA/F5/Whisper inference, microphone, VRM, playback, shutdown, ownership adoption, and failed-repair rollback qualification were explicitly waived before publication.
+- Testers provide their own LLM credential and a separate GitHub token for Project Awareness.
+- Screen Context 2.x, Memory Layer, and Action Runtime remain outside the release-ready alpha scope.
 
 ## [0.1.0-alpha.5] - 2026-07-26
 

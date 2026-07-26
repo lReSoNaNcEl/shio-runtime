@@ -1,6 +1,6 @@
 {
   "name": "shio-runtime-desktop",
-  "version": "0.1.0-alpha.5",
+  "version": "0.1.0-alpha.6",
   "description": "Desktop AI character runtime with local speech integration.",
   "main": "out/main/index.js",
   "engines": {

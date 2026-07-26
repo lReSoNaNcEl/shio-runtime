@@ -1,10 +1,10 @@
 # Technical alpha
 
-Shio Runtime `0.1.0-alpha.5` is an unsigned technical prerelease for invited testers.
+Shio Runtime `0.1.0-alpha.6` is an unsigned technical prerelease for invited testers.
 
-This release hardens immutable publication, model prefetch, managed process ownership, repair rollback, and tracked-only bundle assembly. First-run UX now guides missing LLM setup without losing the draft, separates configured and loaded VRM state, warms the selected voice/language, uses package-aware Developer defaults, and reports Project credential and connection state independently.
+This release normalizes the monorepo application layout without changing Runtime behavior: Desktop and Speech API now live together below `apps/`, release tooling consumes the canonical API source, and the user-facing bundle contains `speech-pack/api`. It also isolates Ruff cache output below the API application, renders the top-level release README from the manifest version, and preserves immutable draft-release recovery.
 
-`0.1.0-alpha.1` through `0.1.0-alpha.4` are superseded prereleases. Use alpha.5 for qualification.
+`0.1.0-alpha.1` through `0.1.0-alpha.5` are superseded prereleases. Use alpha.6 for qualification.
 
 ## What Shio Runtime can do
 
@@ -30,7 +30,7 @@ macOS and Linux are unsupported. There is no installer, code signing, telemetry,
 ## Installation and start
 
 1. Verify the downloaded ZIP with:
-   `Get-FileHash .\Shio-Runtime-0.1.0-alpha.5-win-x64.zip -Algorithm SHA256`
+   `Get-FileHash .\Shio-Runtime-0.1.0-alpha.6-win-x64.zip -Algorithm SHA256`
 2. Extract the entire ZIP.
 3. Double-click `Start Shio Runtime.cmd`.
 4. Wait for the launcher to install locked dependencies, download revision-pinned models and voice references, run strict doctor, start Speech API, and then start Desktop.
@@ -39,6 +39,6 @@ Run `Start Shio Runtime.cmd doctor` for diagnostics or `Start Shio Runtime.cmd o
 
 ## Known limitations and reporting
 
-The first installation is large and may take significant time. Normal startup does not silently download missing large models; run `Start Shio Runtime.cmd repair` if the prefetched model cache is incomplete. This CI build validates source, packaging, launcher structure, and API tests, but does not prove real CUDA/F5/Whisper inference works. The release operator explicitly waived completion of clean-machine launcher, real CUDA/F5/Whisper, microphone, VRM, playback, shutdown, and repair qualification before publication.
+The first installation is large and may take significant time. Normal startup does not silently download missing large models; run `Start Shio Runtime.cmd repair` if the prefetched model cache is incomplete. This CI build validates source, packaging, launcher structure, and API tests, but does not prove real CUDA/F5/Whisper inference works. The release operator explicitly waived completion of clean-machine launcher, real CUDA/F5/Whisper inference, microphone, VRM, playback, shutdown, managed API ownership adoption, and failed-repair rollback qualification before publication.
 
 When reporting a problem, include reproduction steps, copied Runtime Health, and relevant logs after removing sensitive data.

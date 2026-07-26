@@ -25,7 +25,7 @@ Download and verify the Actions artifact—not a local build. By default, qualif
 After successful qualification and explicit release approval, or after the release operator explicitly waives reported incomplete live checks:
 
 ```powershell
-$version = "0.1.0-alpha.5"
+$version = "0.1.0-alpha.6"
 git tag -a "v$version" -m "Shio Runtime v$version"
 git push origin "v$version"
 ```
