@@ -1,5 +1,44 @@
 # Changelog
 
+## [0.1.0-alpha.5] - 2026-07-26
+
+### Added
+
+- Selected-voice Speech API warmup prepares the configured F5 voice, language, and Russian accent path in the background.
+- Chat shows typed LLM setup readiness with a direct Settings action when the active provider credential is missing.
+- Launcher installation prefetches revision-pinned Whisper, F5, vocoder, and RUAccent model assets before normal startup.
+
+### Changed
+
+- Published alpha releases and assets are immutable; only an unpublished draft targeting the exact release commit may be recreated.
+- Managed Speech API ownership now includes and revalidates the process start time, executable, installation root, version, endpoint, and service identity.
+- Repair builds and validates a staging replacement while retaining the previous working installation until replacement succeeds.
+- Packaged fresh configs default Developer Mode and its animation HUD to off; development fresh configs default both to on.
+- Project credential storage and GitHub connection readiness are presented as independent statuses.
+
+### Fixed
+
+- Missing LLM credentials no longer clear the composer draft, append the user turn, or appear as a red chat error, including credential-removal races.
+- VRM configuration is independent of a mounted Three.js Preview scene, so first selection immediately unlocks Camera and Overlay guards.
+- Selected Russian voices no longer remain cold after the core default-voice warmup.
+- F5 warmup and real synthesis share one inference lock; concurrent identical warmups coalesce and the distinct warmup queue is bounded.
+- Launcher adoption no longer treats an unrelated healthy process as managed, and stop/repair operations reject ownership identity mismatches.
+- Normal managed API startup reports missing prefetched assets as a repair requirement instead of downloading models silently.
+- Release bundles are assembled from Git-tracked allowlisted files and reject credentials, runtime data, model weights, logs, databases, and temporary artifacts.
+
+### Security
+
+- Release workflows require annotated tags from `origin/main`, pin official Actions by immutable commit SHA, and never overwrite a published release.
+- Published Speech Packs require the expected service/contract identity and real F5 mode; mock F5 cannot satisfy release readiness.
+
+### Known Limitations
+
+- Windows 11 x64 only; the qualified local speech path requires an NVIDIA CUDA-capable GPU and Python 3.12 x64.
+- The unsigned ZIP has no installer, automatic update, code signing, or macOS/Linux target.
+- First installation remains large and network-dependent because locked dependencies, voice references, and pinned models are installed into persistent local data.
+- Testers provide their own LLM credential and a separate GitHub token for Project Awareness.
+- Screen Context 2.x, Memory Layer, and Action Runtime remain outside the release-ready alpha scope.
+
 ## [0.1.0-alpha.4] - 2026-07-26
 
 ### Fixed

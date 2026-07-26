@@ -1,7 +1,7 @@
 {
   "name": "shio-runtime",
   "private": true,
-  "version": "0.1.0-alpha.4",
+  "version": "0.1.0-alpha.5",
   "description": "Monorepo root for the Shio runtime: Electron desktop client + local ASR/TTS speech service. Root only orchestrates existing per-project commands; the two apps stay independent and communicate solely over the HTTP API contract.",
   "scripts": {
     "desktop:install": "npm --prefix apps/desktop install",

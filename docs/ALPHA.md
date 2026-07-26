@@ -1,4 +1,4 @@
-# Shio Runtime 0.1.0-alpha.4
+# Shio Runtime 0.1.0-alpha.5
 
 This is the first technical alpha for invited testers. It is an unsigned portable build intended for functional evaluation, not a production release.
 
@@ -17,7 +17,7 @@ Python and a compatible NVIDIA driver remain system prerequisites. The launcher 
 
 ## Install and start
 
-Double-click `Start Shio Runtime.cmd`. The launcher checks the platform, Python and NVIDIA driver, installs or repairs the Local Speech Pack, waits for `/health`, and starts Desktop. When Desktop closes, it stops only the API process it started. A compatible externally managed API is reused and never stopped.
+Double-click `Start Shio Runtime.cmd`. The launcher checks the platform, Python and NVIDIA driver, installs or repairs the Local Speech Pack, prefetches revision-pinned models, waits for strict `/health` identity and real-engine readiness, and starts Desktop. When Desktop closes, it stops only a fully revalidated API process it owns. A compatible externally managed API is reused and never stopped.
 
 ## First run
 
@@ -41,7 +41,7 @@ Application settings and encrypted credential files are stored under Electron's 
 Runtime Health is available without Developer Mode:
 
 - **Open logs folder** opens the persistent log location.
-- **Copy version** copies `0.1.0-alpha.4`.
+- **Copy version** copies `0.1.0-alpha.5`.
 - **Copy Runtime Health** copies readable JSON containing release and safe runtime status.
 
 The copied payload contains no API keys, GitHub token, authorization headers, encrypted credential contents, screenshots, or audio buffers. Review it before attaching it to a report.
@@ -65,7 +65,7 @@ Do not include API keys, GitHub tokens, private source code, screen captures, or
 - First start requires internet access and downloads large Speech Pack dependencies and models.
 - The executable is unsigned, so SmartScreen can warn.
 - There is no installer, automatic update, telemetry, macOS build, or Linux build.
-- First Speech API launch can download large models.
+- Normal Speech API startup does not download missing large models; use launcher `repair` when the prefetched cache is incomplete.
 - Every tester supplies an LLM provider API key.
 - Project Awareness requires a separate GitHub token.
 - This is a technical alpha; failures and incomplete workflows are expected.
