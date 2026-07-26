@@ -2719,6 +2719,32 @@ body.overlay-window.overlay-solid-background #canvas {
   color: var(--text);
 }
 
+@media (max-width: 680px) {
+  .speech-banner {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .speech-banner-body {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .speech-banner-actions {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
+  .speech-banner-actions > * {
+    flex: 1 1 180px;
+  }
+
+  .speech-banner-close {
+    grid-column: 2;
+    grid-row: 1;
+  }
+}
+
 /* Microphone in unavailable state (recognition down) */
 .mic-unavailable {
   opacity: 0.5;
