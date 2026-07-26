@@ -98,6 +98,19 @@ function runMarkdownAndUrlRegression(): void {
 function runSafetyAndIdempotenceRegression(): void {
   check(normalize('Ха-ха!') === 'Ха-ха!', 'nonverbal reaction remains natural')
   check(normalize('Фух…') === 'Фух…', 'breath-like reaction remains natural')
+  check(normalize('foo_bar_baz') === 'foo_bar_baz', 'underscore identifier remains intact')
+  check(
+    normalize('some_file_name.py') === 'some_file_name.py',
+    'underscore filename remains intact',
+  )
+  check(
+    normalize('`some_file_name.py`') === 'some_file_name.py',
+    'inline code with underscores remains intact',
+  )
+  check(normalize('__init__.py') === '__init__.py', 'dunder filename remains intact')
+  check(normalize('__dunder__') === '__dunder__', 'dunder identifier remains intact')
+  check(normalize('_my emphasis_') === 'my emphasis', 'underscore emphasis is cleaned')
+  check(normalize('**bold**') === 'bold', 'bold emphasis is cleaned')
   check(
     normalize('CustomWidgetFactory') === 'CustomWidgetFactory',
     'unknown identifier is conservative',

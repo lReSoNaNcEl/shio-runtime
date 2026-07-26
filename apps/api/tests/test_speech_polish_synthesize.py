@@ -85,6 +85,8 @@ def test_response_headers_duration_and_cache_hit_preserve_boundary_metrics(monke
     sample_rate, samples = wavfile.read(io.BytesIO(first.body))
     assert sample_rate == 16_000
     assert abs(float(first.headers["X-Duration-Sec"]) - len(samples) / sample_rate) < 1e-6
+    expected_rtf = 12.5 / 1000.0 / (len(samples) / sample_rate)
+    assert abs(float(first.headers["X-RTF"]) - expected_rtf) < 1e-6
 
 
 def test_boundary_processing_runs_after_pitch_processing(monkeypatch):

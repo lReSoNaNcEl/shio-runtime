@@ -124,6 +124,54 @@ def test_fades_reduce_endpoint_discontinuities_and_output_is_valid_float32():
     assert abs(metrics.output_duration_ms - len(output) * 1000.0 / SAMPLE_RATE) < 0.001
 
 
+def test_fades_are_applied_only_to_trimmed_boundaries():
+    leading_only = _speech_clip(leading_ms=220.0, trailing_ms=0.0)
+    leading_output, leading_metrics = process_audio_boundaries(
+        leading_only, SAMPLE_RATE, utterance_kind="normal", emotion="neutral"
+    )
+    assert leading_metrics.trimmed_leading_ms > 0
+    assert leading_metrics.trimmed_trailing_ms == 0
+    assert leading_metrics.fade_in_ms == 10.0
+    assert leading_metrics.fade_out_ms == 0.0
+    assert leading_output[0] == 0.0
+    assert np.isclose(leading_output[-1], 0.08)
+
+    trailing_only = _speech_clip(leading_ms=0.0, trailing_ms=260.0)
+    trailing_output, trailing_metrics = process_audio_boundaries(
+        trailing_only, SAMPLE_RATE, utterance_kind="normal", emotion="neutral"
+    )
+    assert trailing_metrics.trimmed_leading_ms == 0
+    assert trailing_metrics.trimmed_trailing_ms > 0
+    assert trailing_metrics.fade_in_ms == 0.0
+    assert trailing_metrics.fade_out_ms == 10.0
+    assert np.isclose(trailing_output[0], 0.08)
+    assert trailing_output[-1] == 0.0
+
+
+def test_intermittent_quiet_onset_is_backtracked_without_using_distant_noise():
+    intermittent_onset = np.concatenate(
+        [_samples(5.0, 0.004) if index % 2 == 0 else _samples(5.0) for index in range(14)]
+    )
+    audio = np.concatenate(
+        [
+            _samples(80.0),
+            _samples(5.0, 0.004),
+            _samples(115.0),
+            intermittent_onset,
+            _samples(400.0, 0.08),
+            _samples(250.0),
+        ]
+    )
+
+    output, metrics = process_audio_boundaries(
+        audio, SAMPLE_RATE, utterance_kind="normal", emotion="neutral"
+    )
+
+    assert 190.0 <= metrics.detected_leading_silence_ms <= 210.0
+    retained_onset = round(metrics.retained_leading_ms * SAMPLE_RATE / 1000.0)
+    assert np.max(np.abs(output[retained_onset : retained_onset + len(intermittent_onset)])) > 0
+
+
 def test_invalid_values_are_sanitized_without_invalid_output():
     audio = _speech_clip()
     audio[0] = np.nan

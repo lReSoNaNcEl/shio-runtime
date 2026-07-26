@@ -168,6 +168,9 @@ def _apply_audio_boundaries(
         emotion=emotion,
     )
     result.duration_sec = len(result.audio) / result.sample_rate
+    # X-RTF remains inference latency divided by the final returned duration.
+    # Boundary postprocess latency is intentionally excluded from this metric.
+    result.rtf = result.latency_ms / 1000.0 / result.duration_sec if result.duration_sec else 0.0
     return result, metrics
 
 

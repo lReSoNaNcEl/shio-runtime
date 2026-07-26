@@ -59,6 +59,8 @@ _FRAME_MS = 10.0
 _HOP_MS = 5.0
 _MINIMUM_CLIP_MS = 180.0
 _MAXIMUM_TRIM_FRACTION = 0.45
+_QUIET_ONSET_LOOKBACK_MS = 100.0
+_QUIET_ONSET_MAX_GAP_MS = 15.0
 
 
 def process_audio_boundaries(
@@ -159,15 +161,16 @@ def process_audio_boundaries(
             trailing_ms=trailing_ms,
         )
 
-    fade_samples = min(
+    maximum_fade_samples = min(
         round(profile.fade_ms * sample_rate / 1000.0),
         max(0, (len(processed) - 1) // 2),
     )
-    fade_ms = _duration_ms(fade_samples, sample_rate)
-    if fade_samples > 0:
-        ramp = _half_cosine_ramp(fade_samples)
-        processed[:fade_samples] *= ramp
-        processed[-fade_samples:] *= ramp[::-1]
+    fade_in_samples = maximum_fade_samples if trim_leading_ms > 0 else 0
+    fade_out_samples = maximum_fade_samples if trim_trailing_ms > 0 else 0
+    if fade_in_samples > 0:
+        processed[:fade_in_samples] *= _half_cosine_ramp(fade_in_samples)
+    if fade_out_samples > 0:
+        processed[-fade_out_samples:] *= _half_cosine_ramp(fade_out_samples)[::-1]
 
     processed = np.clip(processed, -1.0, 1.0).astype(np.float32, copy=False)
     latency_ms = (time.perf_counter() - started) * 1000.0
@@ -181,8 +184,8 @@ def process_audio_boundaries(
         trimmed_trailing_ms=trim_trailing_ms,
         retained_leading_ms=max(0.0, leading_ms - trim_leading_ms),
         retained_trailing_ms=max(0.0, trailing_ms - trim_trailing_ms),
-        fade_in_ms=fade_ms,
-        fade_out_ms=fade_ms,
+        fade_in_ms=_duration_ms(fade_in_samples, sample_rate),
+        fade_out_ms=_duration_ms(fade_out_samples, sample_rate),
         postprocess_latency_ms=latency_ms,
         bypass_reason=None,
     )
@@ -223,17 +226,36 @@ def _stable_activity_region(active: np.ndarray, stable_frames: int) -> tuple[int
     )
     if stable_starts.size == 0:
         return None
-    first = int(stable_starts[0])
+    first = _backtrack_quiet_onset(
+        active,
+        int(stable_starts[0]),
+        max_frames=round(_QUIET_ONSET_LOOKBACK_MS / _HOP_MS),
+        max_gap_frames=round(_QUIET_ONSET_MAX_GAP_MS / _HOP_MS),
+    )
     last = int(stable_starts[-1] + stable_frames - 1)
 
     active_indices = np.flatnonzero(active)
-    earlier = active_indices[active_indices <= first]
     later = active_indices[active_indices >= last]
-    if earlier.size:
-        first = int(earlier[-1])
     if later.size:
         last = int(later[-1])
     return first, last
+
+
+def _backtrack_quiet_onset(
+    active: np.ndarray, stable_start: int, *, max_frames: int, max_gap_frames: int
+) -> int:
+    first = stable_start
+    gap = 0
+    minimum = max(0, stable_start - max_frames)
+    for index in range(stable_start - 1, minimum - 1, -1):
+        if active[index]:
+            first = index
+            gap = 0
+            continue
+        gap += 1
+        if gap > max_gap_frames:
+            break
+    return first
 
 
 def _confirmed_trim(

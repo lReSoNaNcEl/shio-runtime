@@ -7,13 +7,19 @@ export interface MarkdownSpeechParseResult {
 
 export function parseMarkdownForSpeech(text: string, language: string): MarkdownSpeechParseResult {
   const rules = new Set<string>()
+  const protectedCode: string[] = []
+  const protectCode = (code: string): string => {
+    const placeholder = `\uE000${protectedCode.length}\uE001`
+    protectedCode.push(code)
+    return placeholder
+  }
   let output = text
 
   output = output.replace(/```[^\r\n]*\r?\n([\s\S]*?)```/gu, (_match, contents: string) => {
     const trimmed = contents.trim()
     if (trimmed && !trimmed.includes('\n') && trimmed.length <= 80) {
       rules.add('code.block-short')
-      return ` ${trimmed} `
+      return ` ${protectCode(trimmed)} `
     }
     rules.add('code.block-omitted')
     return language.toLowerCase().startsWith('ru')
@@ -31,7 +37,7 @@ export function parseMarkdownForSpeech(text: string, language: string): Markdown
   })
   output = output.replace(/`([^`\r\n]+)`/gu, (_match, code: string) => {
     rules.add('code.inline')
-    return code.trim()
+    return protectCode(code.trim())
   })
 
   output = output
@@ -66,8 +72,10 @@ export function parseMarkdownForSpeech(text: string, language: string): Markdown
     })
     .join('\n')
 
-  if (/[*_~]{1,3}/u.test(output)) rules.add('markdown.emphasis')
-  output = output.replace(/(\*\*|__|\*|_|~~)(.*?)\1/gu, '$2')
+  output = removeMarkdownEmphasis(output, rules)
+  output = output.replace(/\uE000(\d+)\uE001/gu, (_match, index: string) => {
+    return protectedCode[Number(index)] ?? ''
+  })
 
   return {
     text: output,
@@ -75,6 +83,21 @@ export function parseMarkdownForSpeech(text: string, language: string): Markdown
     hasCode: [...rules].some((rule) => rule.startsWith('code.')),
     hasList: [...rules].some((rule) => rule.startsWith('list.')),
   }
+}
+
+function removeMarkdownEmphasis(text: string, rules: Set<string>): string {
+  let output = text
+  const remove = (pattern: RegExp): void => {
+    const before = output
+    output = output.replace(pattern, '$1')
+    if (output !== before) rules.add('markdown.emphasis')
+  }
+
+  remove(/(?<![\p{L}\p{N}_])\*\*(?=\S)([\s\S]*?\S)\*\*(?![\p{L}\p{N}_])/gu)
+  remove(/(?<![\p{L}\p{N}_])~~(?=\S)([\s\S]*?\S)~~(?![\p{L}\p{N}_])/gu)
+  remove(/(?<![\p{L}\p{N}_])\*(?!\*)(?=\S)([\s\S]*?\S)\*(?![\p{L}\p{N}_*])/gu)
+  remove(/(?<![\p{L}\p{N}_])_(?!_)(?=\S)([\s\S]*?\S)_(?![\p{L}\p{N}_])/gu)
+  return output
 }
 
 import { russianInteger } from './technicalTokenParser'

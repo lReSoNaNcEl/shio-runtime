@@ -314,6 +314,8 @@ body.overlay-window.overlay-solid-background #canvas {
 
 /* Controls */
 #controls {
+  container-name: composer-controls;
+  container-type: inline-size;
   padding: 8px 12px 10px;
   display: flex;
   flex-direction: column;
@@ -2719,7 +2721,7 @@ body.overlay-window.overlay-solid-background #canvas {
   color: var(--text);
 }
 
-@media (max-width: 680px) {
+@container composer-controls (max-width: 680px) {
   .speech-banner {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
