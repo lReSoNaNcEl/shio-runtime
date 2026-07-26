@@ -18,9 +18,11 @@ jobs:
     name: API validation
     runs-on: windows-latest
     timeout-minutes: 20
+    env:
+      RUFF_CACHE_DIR: ${{ github.workspace }}/apps/api/.ruff_cache
     defaults:
       run:
-        working-directory: services/api
+        working-directory: apps/api
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
@@ -29,7 +31,7 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-          cache-dependency-path: services/api/requirements-ci.lock.txt
+          cache-dependency-path: apps/api/requirements-ci.lock.txt
       - name: Install locked API development dependencies
         run: python -m pip install -r requirements-ci.lock.txt
       - name: Ruff lint

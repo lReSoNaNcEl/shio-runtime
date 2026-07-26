@@ -45,7 +45,7 @@ The backend removes the tag from spoken text and resolves the speech emotion thr
 
 ## Local setup
 
-The canonical Python environment is `services/api/.venv`. From the repository root:
+The canonical Python environment is `apps/api/.venv`. From the repository root:
 
 ```powershell
 npm run alpha:setup

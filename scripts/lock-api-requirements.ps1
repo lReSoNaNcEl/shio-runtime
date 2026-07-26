@@ -2,7 +2,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
-$apiRoot = Join-Path $repoRoot "services\api"
+$apiRoot = Join-Path $repoRoot "apps\api"
 $tempBase = [System.IO.Path]::GetFullPath([System.IO.Path]::GetTempPath())
 $tempRoot = Join-Path $tempBase ("shio-api-lock-" + [guid]::NewGuid().ToString("N"))
 $venvPython = Join-Path $tempRoot "Scripts\python.exe"

@@ -39,23 +39,23 @@ __pycache__/
 *.egg-info/
 
 # Python builds
-services/api/dist/
-services/api/build/
+apps/api/dist/
+apps/api/build/
 
 # API model storage
-/services/api/models/
+/apps/api/models/
 
 # Runtime and temporary data
 /logs/
 /temp/
 /tmp/
-/services/api/logs/
-/services/api/tmp/
+/apps/api/logs/
+/apps/api/tmp/
 *.log
 *.pid
 
 # Generated audio (do NOT blanket-ignore *.wav; voice reference wavs are handled by
-# services/api/.gitignore, which git-ignores them per upstream design)
+# apps/api/.gitignore, which git-ignores them per upstream design)
 *.generated.wav
 *.temporary.wav
 *.tmp.wav

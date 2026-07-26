@@ -26,7 +26,20 @@ try {
 } finally { Pop-Location }
 
 Copy-Item -LiteralPath (Join-Path $repoRoot "launcher\Start Shio Runtime.cmd") -Destination $bundleRoot
-Copy-Item -LiteralPath (Join-Path $repoRoot "README-FIRST.txt") -Destination $bundleRoot
+$readmeTemplatePath = Join-Path $repoRoot "launcher\assets\README-FIRST.template.txt"
+$readmeTemplate = Get-Content -Raw -Encoding UTF8 -LiteralPath $readmeTemplatePath
+if (-not $readmeTemplate.Contains("{{PRODUCT_VERSION}}")) {
+    throw "Release README template is missing the required {{PRODUCT_VERSION}} placeholder."
+}
+$renderedReadme = $readmeTemplate.Replace("{{PRODUCT_VERSION}}", $manifest.productVersion)
+if ($renderedReadme -match "{{[^{}]+}}") {
+    throw "Release README contains an unresolved template placeholder."
+}
+[IO.File]::WriteAllText(
+    (Join-Path $bundleRoot "README-FIRST.txt"),
+    $renderedReadme,
+    [Text.UTF8Encoding]::new($false)
+)
 $launcherTarget = Join-Path $bundleRoot "launcher"
 New-Item -ItemType Directory -Force -Path $launcherTarget | Out-Null
 Copy-Item -LiteralPath (Join-Path $repoRoot "launcher\ShioLauncher.ps1") -Destination $launcherTarget
@@ -36,27 +49,48 @@ Copy-Item -LiteralPath (Join-Path $repoRoot "apps\desktop\release\win-unpacked")
 
 $speechRoot = Join-Path $bundleRoot "speech-pack"
 New-Item -ItemType Directory -Force -Path $speechRoot | Out-Null
-$apiSource = Join-Path $repoRoot "services\api"
-$apiTarget = Join-Path $speechRoot "services\api"
+$apiSource = Join-Path $repoRoot "apps\api"
+$apiTarget = Join-Path $speechRoot "api"
+if (-not (Test-Path -LiteralPath $apiSource -PathType Container)) {
+    throw "Canonical Speech API source is missing: $apiSource"
+}
 New-Item -ItemType Directory -Force -Path $apiTarget | Out-Null
-$trackedApiFiles = & git -C $repoRoot ls-files -- "services/api"
+$trackedApiFiles = & git -C $repoRoot ls-files -- "apps/api"
 if ($LASTEXITCODE -ne 0) { throw "Could not enumerate tracked Speech Pack files." }
+if ($trackedApiFiles.Where({ -not $_.StartsWith("apps/api/") }).Count -ne 0) {
+    throw "Tracked Speech Pack source escaped the canonical apps/api prefix."
+}
 $releaseFiles = $trackedApiFiles | Where-Object {
-    $_ -match '^services/api/app/' -or
-    $_ -match '^services/api/web/' -or
+    $_ -match '^apps/api/app/' -or
+    $_ -match '^apps/api/web/' -or
     $_ -in @(
-        "services/api/.env.release",
-        "services/api/emotion_manifest.json",
-        "services/api/voice_manifest.json",
-        "services/api/requirements.lock.txt",
-        "services/api/requirements-torch-cu128.txt",
-        "services/api/scripts/doctor_strict.py",
-        "services/api/scripts/prefetch_models.py",
-        "services/api/scripts/sync_voices.py"
+        "apps/api/.env.release",
+        "apps/api/emotion_manifest.json",
+        "apps/api/voice_manifest.json",
+        "apps/api/requirements.lock.txt",
+        "apps/api/requirements-torch-cu128.txt",
+        "apps/api/scripts/doctor_strict.py",
+        "apps/api/scripts/prefetch_models.py",
+        "apps/api/scripts/sync_voices.py"
     )
 }
+$requiredReleaseSources = @(
+    "apps/api/.env.release",
+    "apps/api/emotion_manifest.json",
+    "apps/api/voice_manifest.json",
+    "apps/api/requirements.lock.txt",
+    "apps/api/requirements-torch-cu128.txt",
+    "apps/api/scripts/doctor_strict.py",
+    "apps/api/scripts/prefetch_models.py",
+    "apps/api/scripts/sync_voices.py"
+)
+foreach ($requiredSource in $requiredReleaseSources) {
+    if ($requiredSource -notin $releaseFiles) {
+        throw "Required tracked Speech Pack source is missing: $requiredSource"
+    }
+}
 foreach ($tracked in $releaseFiles) {
-    $relative = $tracked.Substring("services/api/".Length)
+    $relative = $tracked.Substring("apps/api/".Length)
     $destination = Join-Path $apiTarget $relative
     New-Item -ItemType Directory -Force -Path (Split-Path -Parent $destination) | Out-Null
     Copy-Item -LiteralPath (Join-Path $repoRoot $tracked) -Destination $destination

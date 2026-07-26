@@ -2,8 +2,8 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
-$apiEnv = Join-Path $repoRoot "services\api\.env"
-$apiEnvExample = Join-Path $repoRoot "services\api\.env.example"
+$apiEnv = Join-Path $repoRoot "apps\api\.env"
+$apiEnvExample = Join-Path $repoRoot "apps\api\.env.example"
 
 function Get-CommandVersion {
     param(
@@ -53,10 +53,10 @@ if ($pythonVersion -ne "3.12") {
 
 if (-not (Test-Path -LiteralPath $apiEnv)) {
     Copy-Item -LiteralPath $apiEnvExample -Destination $apiEnv
-    Write-Host "Created services/api/.env from .env.example."
+    Write-Host "Created apps/api/.env from .env.example."
 }
 else {
-    Write-Host "Keeping existing services/api/.env."
+    Write-Host "Keeping existing apps/api/.env."
 }
 
 Push-Location $repoRoot

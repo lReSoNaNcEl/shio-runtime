@@ -9,7 +9,10 @@ rules.
 ## 1. Repository
 
 - `apps/desktop` — Electron, React, TypeScript, Three.js client.
-- `services/api` — Python, FastAPI, ASR and TTS service (port `8000`).
+- `apps/api` — Python, FastAPI, ASR and TTS service (port `8000`).
+- `launcher` — release installation and process coordination.
+- `scripts` — repository and release tooling.
+- `docs` — product, architecture, and release documentation.
 - `ARCHITECTURE.md` is the canonical architecture document.
 
 ## Desktop application rules
@@ -34,7 +37,7 @@ Architecture and ownership:
   may expose credential presence and source, never its value.
 - Repository and branch are selected through the Project settings UI. Do not
   hardcode a repository identity in the renderer or Runtime implementation.
-- Preserve the existing HTTP contract with `services/api` unless the task
+- Preserve the existing HTTP contract with `apps/api` unless the task
   explicitly changes it.
 
 Desktop quality and validation:
@@ -60,7 +63,7 @@ Desktop quality and validation:
 
 ## API service rules
 
-`services/api` is the FastAPI service that owns ASR and F5-TTS.
+`apps/api` is the FastAPI service that owns ASR and F5-TTS.
 
 Architecture and ownership:
 
@@ -69,7 +72,7 @@ Architecture and ownership:
   `apps/desktop`.
 - Preserve the existing HTTP API unless the task explicitly changes the contract.
 - Resolve service assets relative to the service root using `Path(__file__)` /
-  `services/api`, never from the monorepo working directory.
+  `apps/api`, never from the monorepo working directory.
 - FastAPI runs on port `8000`. ASR uses faster-whisper with Silero VAD. TTS uses
   one in-process `F5LocalEngine` wrapping `f5_tts.api.F5TTS`.
 - `/synthesize` returns WAV plus engine, language, emotion, VRM-emotion, latency,
@@ -79,15 +82,18 @@ Architecture and ownership:
 
 API commands and validation:
 
-- Run API commands from the repository root. The `api:*` launcher resolves
-  `services/api/.venv` or the legacy `services/api/venv`; manual activation and
-  `cd services/api` are unnecessary.
+- Run API commands from the repository root. The `api:*` launcher resolves the
+  canonical `apps/api/.venv`; environments from previous layouts are diagnostic
+  signals only and are never executable fallbacks. Manual activation and
+  `cd apps/api` are unnecessary.
 - Override the interpreter with `SHIO_API_PYTHON` when needed and inspect the
   selected interpreter with `npm run api:doctor`.
 - `npm run api:install:dev` creates `.venv` and installs runtime and development
   dependencies.
 - `npm run api:dev` starts uvicorn on port `8000`; extra arguments pass through
   after `--`.
+- Repository-owned Ruff invocations set `RUFF_CACHE_DIR` explicitly to
+  `apps/api/.ruff_cache`; they must not create `.ruff_cache` in the repository root.
 - Run `npm run api:lint`, `npm run api:format:check`, and `npm run api:test`.
 - Do not rely on `py_compile` alone. Applicable endpoint validation covers
   `/health`, `/voices`, `/emotions`, `/synthesize`, and `/recognize`; synthesis
@@ -114,7 +120,7 @@ Voice registry and references:
   `POST /voices/sync`.
 - Voice sync must remain single-flight, revision-pinnable, validated, and atomic;
   interrupted downloads must not produce a partially available voice.
-- Confirm `voice_manifest.json` and reference assets resolve from `services/api`.
+- Confirm `voice_manifest.json` and reference assets resolve from `apps/api`.
 - Server-side F5 knobs remain in `.env`: `F5_NFE_STEP`, `F5_CFG_STRENGTH`, and
   `F5_USE_ACCENT`.
 - Never commit model caches, secrets, generated audio, or the local virtual
@@ -187,7 +193,7 @@ npm run build
 
 Desktop lint/format/import ordering is owned by Biome (`apps/desktop/biome.jsonc`,
 installed only in `apps/desktop`); the Python API uses Ruff; TypeScript types use
-`tsc`. Do not add Biome to `services/api`, and do not run Biome over Python.
+`tsc`. Do not add Biome to `apps/api`, and do not run Biome over Python.
 
 - Before committing Desktop changes → `npm run desktop:check`, the desktop build,
   typecheck, and applicable repro tests.

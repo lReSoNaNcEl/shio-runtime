@@ -24,6 +24,8 @@
     "api:install:alpha": "node scripts/api-runner.mjs install-alpha",
     "api:voices:sync": "node scripts/api-runner.mjs voices-sync",
     "api:dev": "node scripts/api-runner.mjs dev",
+    "api:start": "node scripts/api-runner.mjs start",
+    "api:prefetch": "node scripts/api-runner.mjs prefetch",
     "api:lint": "node scripts/api-runner.mjs lint",
     "api:lint:fix": "node scripts/api-runner.mjs lint-fix",
     "api:format": "node scripts/api-runner.mjs format",

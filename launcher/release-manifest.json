@@ -16,7 +16,7 @@
     "installTimeoutSeconds": 7200,
     "serviceId": "shio.speech-api",
     "contractVersion": "1.1",
-    "releaseEnvironmentTemplate": "services/api/.env.release",
+    "releaseEnvironmentTemplate": "api/.env.release",
     "modelRevisions": {
       "fasterWhisper": "08e178d48790749d25932bbc082711ddcfdfbc4f",
       "f5": "ea166adeae4c80ec5ee423a671e2bdb83906cf84",

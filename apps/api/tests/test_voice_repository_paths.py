@@ -10,7 +10,7 @@ class VoiceRepositoryPathTests(TestCase):
     def test_manifest_keeps_junction_backed_voice_paths_relative_to_service_root(self):
         with TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
-            service_root = root / "speech-pack" / "services" / "api"
+            service_root = root / "speech-pack" / "api"
             persistent_voices = root / "data" / "voices"
             voice_dir = persistent_voices / "AnimeVox" / "Frieren"
             voice_dir.mkdir(parents=True)

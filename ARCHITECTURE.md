@@ -201,6 +201,13 @@ Shio Runtime is composed of a small number of independent Runtime systems. No Ru
 
 The Windows Alpha Launcher is a release-infrastructure component, not a Runtime and not part of the character decision pipeline. It may install and repair a versioned Local Speech API package, prefetch revision-pinned model assets into persistent release data, coordinate a process that it started, validate the stable service identity and readiness fields exposed by the backwards-compatible Speech HTTP health contract, launch Desktop, and stop only the API process whose complete ownership identity it recorded and revalidated. It never performs ASR or TTS, imports Desktop or API implementation code, changes Speech Runtime ownership, or terminates an externally managed process. Desktop and Local Speech API remain independently runnable applications; the launcher only coordinates the packaged alpha experience.
 
+The repository layout reflects these process boundaries: `apps/desktop` contains the
+Electron Desktop application, `apps/api` contains the Python Speech API application,
+`launcher` contains release installation and process coordination, `scripts` contains
+repository and release tooling, and `docs` contains product, architecture, and release
+documentation. This source layout does not merge the Desktop and Speech API lifecycles
+or make the launcher a Runtime.
+
 Architecture overview:
 
 ```text

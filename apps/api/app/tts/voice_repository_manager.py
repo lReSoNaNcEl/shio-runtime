@@ -642,7 +642,7 @@ class VoiceRepositoryManager:
     def _relative(self, path: Path) -> str:
         # Keep the manifest path relative to the service root without resolving
         # directory junctions. The Windows launcher intentionally maps
-        # services/api/voices to the persistent application data directory; a
+        # apps/api/voices to the persistent application data directory; a
         # full resolve would escape root_dir and make relative_to() fail.
         absolute_path = path.absolute()
         try:

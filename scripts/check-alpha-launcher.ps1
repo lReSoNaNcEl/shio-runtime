@@ -180,8 +180,8 @@ Start-Sleep -Seconds 30
     $junctionTarget = Join-Path $retryRoot "persistent-voices"
     New-Item -ItemType Directory -Force -Path $junctionTarget | Out-Null
     Set-Content -LiteralPath (Join-Path $junctionTarget "reference.txt") -Value "persistent"
-    New-Item -ItemType Directory -Force -Path (Join-Path $staging "services\api") | Out-Null
-    New-Item -ItemType Junction -Path (Join-Path $staging "services\api\voices") `
+    New-Item -ItemType Directory -Force -Path (Join-Path $staging "api") | Out-Null
+    New-Item -ItemType Junction -Path (Join-Path $staging "api\voices") `
         -Target $junctionTarget | Out-Null
     Remove-InstallStaging $staging
     if (Test-Path -LiteralPath $staging) {

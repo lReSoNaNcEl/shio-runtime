@@ -1,7 +1,7 @@
 // Cross-platform launcher for the `api:*` root commands.
 //
 // Purpose (repository tooling only — no runtime / HTTP-contract changes):
-// pick the correct Python interpreter for `services/api` and run the requested
+// pick the correct Python interpreter for `apps/api` and run the requested
 // action from a stable working directory, without requiring a manually activated
 // virtualenv, a `python`/`python3` on PATH, or any shell-specific syntax.
 //
@@ -19,7 +19,14 @@ const __dirname = path.dirname(__filename)
 
 // Repo root is the parent of this file's `scripts/` directory. Independent of cwd.
 const repoRoot = path.resolve(__dirname, '..')
-const apiRoot = path.join(repoRoot, 'services', 'api')
+const apiRoot = path.join(repoRoot, 'apps', 'api')
+const canonicalVenv = path.join(apiRoot, '.venv')
+const staleVenvs = [
+  path.join(repoRoot, 'services', 'api', '.venv'),
+  path.join(repoRoot, 'services', 'api', 'venv'),
+  path.join(apiRoot, 'venv'),
+]
+const ruffCacheDir = path.join(apiRoot, '.ruff_cache')
 
 const isWindows = process.platform === 'win32'
 const REQUIRED_PY = [3, 12]
@@ -28,12 +35,6 @@ const ALPHA_TORCH_VERSION = '2.11.0+cu128'
 
 // --- Virtual environment discovery -----------------------------------------
 
-// Canonical env for new installs is `.venv`; legacy `venv` stays supported.
-const VENV_DIRS = [
-  { type: '.venv', dir: path.join(apiRoot, '.venv') },
-  { type: 'venv', dir: path.join(apiRoot, 'venv') },
-]
-
 function venvPython(venvDir) {
   return isWindows
     ? path.join(venvDir, 'Scripts', 'python.exe')
@@ -41,7 +42,8 @@ function venvPython(venvDir) {
 }
 
 // Resolve the Python interpreter to use for run-only actions.
-// Priority: SHIO_API_PYTHON -> .venv -> venv. Returns null when nothing usable.
+// Priority: SHIO_API_PYTHON -> canonical .venv. Old environments are diagnostic
+// signals only and are never executable fallbacks.
 function findLocalPython() {
   const override = process.env.SHIO_API_PYTHON
   if (override) {
@@ -54,28 +56,41 @@ function findLocalPython() {
     return { python: override, type: 'override' }
   }
 
-  for (const { type, dir } of VENV_DIRS) {
-    const py = venvPython(dir)
-    if (existsSync(py)) {
-      if (type === 'venv') {
-        console.error(
-          'Legacy API virtual environment detected: services/api/venv\n\n' +
-            'Recreate the canonical environment with:\n  npm run api:install:dev',
-        )
-      }
-      return { python: py, type }
-    }
+  const py = venvPython(canonicalVenv)
+  if (existsSync(py)) {
+    return { python: py, type: '.venv' }
+  }
+
+  if (staleVenvs.some((dir) => existsSync(venvPython(dir)))) {
+    console.error(
+      'A virtual environment from the previous API layout was detected.\n\n' +
+        'Recreate the canonical environment with:\n  npm run api:install:dev',
+    )
   }
 
   return null
 }
 
-// Install actions always create or update the canonical environment. Run actions
-// retain the legacy fallback separately so existing local setups keep working until
-// the user explicitly migrates them.
+function staleEnvironmentStatus() {
+  const detected = staleVenvs
+    .filter((dir) => existsSync(venvPython(dir)))
+    .map((dir) => path.relative(repoRoot, dir))
+  return detected.length > 0 ? `detected (not used): ${detected.join(', ')}` : 'not found'
+}
+
+function processEnvironment() {
+  return {
+    ...process.env,
+    RUFF_CACHE_DIR: ruffCacheDir,
+  }
+}
+
 function targetVenvForInstall() {
-  const canonical = VENV_DIRS[0]
-  return { type: canonical.type, dir: canonical.dir, python: venvPython(canonical.dir) }
+  return {
+    type: '.venv',
+    dir: canonicalVenv,
+    python: venvPython(canonicalVenv),
+  }
 }
 
 // --- System Python discovery (bootstrap only) ------------------------------
@@ -143,7 +158,7 @@ function run(command, args) {
     cwd: apiRoot,
     stdio: 'inherit',
     shell: false,
-    env: process.env,
+    env: processEnvironment(),
   })
 
   const forward = (signal) => {
@@ -155,6 +170,7 @@ function run(command, args) {
       }
     }
   }
+
   const onSigint = () => forward('SIGINT')
   const onSigterm = () => forward('SIGTERM')
   process.on('SIGINT', onSigint)
@@ -223,7 +239,7 @@ function ensureVenv() {
       fail(
         `The canonical environment must use Python ${REQUIRED_PY.join('.')}.\n` +
           `Detected Python ${version ?? 'unknown'} at:\n  ${target.python}\n\n` +
-          'Remove services/api/.venv and rerun the install command.',
+          'Remove apps/api/.venv and rerun the install command.',
       )
     }
     return target.python
@@ -234,7 +250,7 @@ function ensureVenv() {
   const res = spawnSync(
     sysPy.executable,
     [...sysPy.prefixArgs, '-m', 'venv', target.dir],
-    { cwd: apiRoot, stdio: 'inherit', shell: false, env: process.env },
+    { cwd: apiRoot, stdio: 'inherit', shell: false, env: processEnvironment() },
   )
   if (res.status !== 0) {
     fail('Failed to create the virtual environment.')
@@ -298,13 +314,12 @@ function printDoctor() {
   }
 
   const { host, port } = apiServerConfig()
-  const legacyExists = existsSync(VENV_DIRS[1].dir)
   const report = [
     ['Platform', process.platform],
     ['Repository root', repoRoot],
     ['API root', apiRoot],
-    ['Canonical environment', 'services/api/.venv'],
-    ['Legacy environment', legacyExists ? 'detected: services/api/venv' : 'not found'],
+    ['Canonical environment', 'apps/api/.venv'],
+    ['Stale environment', staleEnvironmentStatus()],
     ['Selected Python path', py ?? '(none — run: npm run api:install:dev)'],
     ['Python version', py ? pyVersion : 'n/a'],
     ['Virtual environment type', found?.type ?? 'none'],
@@ -337,7 +352,7 @@ function actionDoctor() {
 async function actionDoctorStrict() {
   const target = targetVenvForInstall()
   if (!existsSync(target.python)) {
-    fail('Canonical API environment is missing: services/api/.venv')
+    fail('Canonical API environment is missing: apps/api/.venv')
   }
   const version = checkPythonVersion({ executable: target.python, prefixArgs: [] })
   if (version !== `${REQUIRED_PY[0]}.${REQUIRED_PY[1]}`) {
@@ -354,6 +369,8 @@ async function actionDoctorStrict() {
 
 const RUN_ACTIONS = {
   'voices-sync': ['scripts/sync_voices.py'],
+  prefetch: ['scripts/prefetch_models.py'],
+  start: ['-m', 'uvicorn', 'app.main:app'],
   dev: ['-m', 'uvicorn', 'app.main:app'],
   lint: ['-m', 'ruff', 'check', '.'],
   'lint-fix': ['-m', 'ruff', 'check', '.', '--fix'],
@@ -386,7 +403,7 @@ async function main() {
         fail(`Unknown action: ${action}`)
       }
       const python = requireLocalPython()
-      if (action === 'dev') {
+      if (action === 'dev' || action === 'start') {
         const { host, port } = apiServerConfig()
         console.log('Starting Shio Speech API')
         console.log(`Local URL: http://localhost:${port}`)

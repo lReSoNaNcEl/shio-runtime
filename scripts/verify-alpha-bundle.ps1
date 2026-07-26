@@ -20,11 +20,11 @@ try {
         "launcher\ShioLauncher.ps1",
         "launcher\release-manifest.json",
         "desktop\Shio Runtime.exe",
-        "speech-pack\services\api\requirements.lock.txt",
-        "speech-pack\services\api\requirements-torch-cu128.txt",
-        "speech-pack\services\api\.env.release",
-        "speech-pack\services\api\scripts\prefetch_models.py",
-        "speech-pack\services\api\scripts\doctor_strict.py",
+        "speech-pack\api\requirements.lock.txt",
+        "speech-pack\api\requirements-torch-cu128.txt",
+        "speech-pack\api\.env.release",
+        "speech-pack\api\scripts\prefetch_models.py",
+        "speech-pack\api\scripts\doctor_strict.py",
         "docs\ALPHA-INSTALL.md",
         "docs\ALPHA-TROUBLESHOOTING.md"
     )
@@ -35,6 +35,35 @@ try {
     if ($bundledManifest.productVersion -ne $manifest.productVersion -or
         $bundledManifest.speechPack.version -ne $manifest.productVersion) {
         throw "Bundle version mismatch."
+    }
+    $readme = Get-Content -Raw -Encoding UTF8 (Join-Path $root "README-FIRST.txt")
+    if (-not $readme.Contains($manifest.productVersion)) {
+        throw "Generated README does not contain the manifest product version."
+    }
+    if ($readme -match "{{[^{}]+}}") {
+        throw "Generated README contains an unresolved template placeholder."
+    }
+    foreach ($requiredReadmeText in @(
+        "Windows 11 x64",
+        "NVIDIA",
+        "Python 3.12",
+        "unsigned technical alpha",
+        "first start",
+        "Start Shio Runtime.cmd",
+        "doctor",
+        "repair",
+        "status",
+        "stop",
+        "open-logs",
+        "docs\ALPHA-INSTALL.md",
+        "docs\ALPHA-TROUBLESHOOTING.md"
+    )) {
+        if (-not $readme.Contains($requiredReadmeText)) {
+            throw "Generated README is missing required text: $requiredReadmeText"
+        }
+    }
+    if (Test-Path -LiteralPath (Join-Path $root "launcher\assets\README-FIRST.template.txt")) {
+        throw "Release README source template leaked into the bundle."
     }
     $forbiddenNames = @(
         ".env", ".env.example", ".venv", ".git", "__pycache__", "coverage",
@@ -55,12 +84,17 @@ try {
             ))
     }
     if ($bad) { throw "Forbidden bundle content: $($bad[0].FullName)" }
-    $apiRoot = Join-Path $root "speech-pack\services\api"
-    $tracked = & git -C $repoRoot ls-files -- "services/api"
+    foreach ($forbiddenPath in @("speech-pack\services", "services\api", "apps\api")) {
+        if (Test-Path -LiteralPath (Join-Path $root $forbiddenPath)) {
+            throw "Stale repository layout leaked into the bundle: $forbiddenPath"
+        }
+    }
+    $apiRoot = Join-Path $root "speech-pack\api"
+    $tracked = & git -C $repoRoot ls-files -- "apps/api"
     if ($LASTEXITCODE -ne 0) { throw "Could not enumerate tracked API files." }
     $trackedSet = @{}
     foreach ($item in $tracked) {
-        $trackedSet[$item.Substring("services/api/".Length).Replace("/", "\")] = $true
+        $trackedSet[$item.Substring("apps/api/".Length).Replace("/", "\")] = $true
     }
     foreach ($file in Get-ChildItem -LiteralPath $apiRoot -Recurse -File -Force) {
         $relative = $file.FullName.Substring($apiRoot.Length + 1)

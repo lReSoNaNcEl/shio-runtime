@@ -6,6 +6,13 @@ $workflow = Get-Content -Raw -LiteralPath (Join-Path $repoRoot ".github\workflow
 $publisher = Get-Content -Raw -LiteralPath (Join-Path $repoRoot "scripts\publish-alpha-release.ps1")
 $launcher = Get-Content -Raw -LiteralPath (Join-Path $repoRoot "launcher\ShioLauncher.ps1")
 $bundle = Get-Content -Raw -LiteralPath (Join-Path $repoRoot "scripts\build-alpha-bundle.ps1")
+$bundleVerifier = Get-Content -Raw -LiteralPath (
+    Join-Path $repoRoot "scripts\verify-alpha-bundle.ps1"
+)
+$apiRunner = Get-Content -Raw -LiteralPath (Join-Path $repoRoot "scripts\api-runner.mjs")
+$readmeTemplate = Get-Content -Raw -LiteralPath (
+    Join-Path $repoRoot "launcher\assets\README-FIRST.template.txt"
+)
 
 if ($workflow -match "uses:\s+\S+@v\d") { throw "An official Action is not pinned to a SHA." }
 if ($workflow.Contains("gh release edit") -or $workflow.Contains("--clobber") -or
@@ -129,6 +136,35 @@ foreach ($required in @(
 }
 if (-not $bundle.Contains("git -C `$repoRoot ls-files") -or $bundle.Contains("robocopy")) {
     throw "Speech Pack bundle is not assembled exclusively from tracked files."
+}
+foreach ($requiredLayoutGuard in @(
+    'path.join(repoRoot, ''apps'', ''api'')',
+    "RUFF_CACHE_DIR: ruffCacheDir",
+    'Join-Path $speechRoot "api"',
+    'git -C $repoRoot ls-files -- "apps/api"',
+    'Substring("apps/api/".Length)',
+    'Replace("{{PRODUCT_VERSION}}", $manifest.productVersion)'
+)) {
+    if (-not ($apiRunner + $bundle).Contains($requiredLayoutGuard)) {
+        throw "Monorepo layout guard missing: $requiredLayoutGuard"
+    }
+}
+if (-not $workflow.Contains("RUFF_CACHE_DIR:")) {
+    throw "Workflow does not pin Ruff cache below apps/api."
+}
+if (-not $readmeTemplate.Contains("{{PRODUCT_VERSION}}") -or
+    $readmeTemplate -match "\d+\.\d+\.\d+-alpha\.\d+") {
+    throw "Release README template does not use the stable product-version placeholder."
+}
+foreach ($requiredBundleGuard in @(
+    'speech-pack\api\requirements.lock.txt',
+    'Generated README contains an unresolved template placeholder',
+    'Release README source template leaked into the bundle',
+    'Untracked Speech Pack file found'
+)) {
+    if (-not $bundleVerifier.Contains($requiredBundleGuard)) {
+        throw "Bundle verification guard missing: $requiredBundleGuard"
+    }
 }
 
 $launcherErrors = $null

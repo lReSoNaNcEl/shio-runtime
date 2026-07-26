@@ -11,7 +11,7 @@
 
   "files": {
     "ignoreUnknown": true,
-    // Biome обслуживает только Desktop (эта директория). Python API (services/api) вне области.
+    // Biome обслуживает только Desktop (эта директория). Python API (apps/api) вне области.
     "includes": [
       "**",
 

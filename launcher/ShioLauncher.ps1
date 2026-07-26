@@ -112,7 +112,7 @@ function Get-InstallPaths {
     $install = Join-Path $LocalRoot ("SpeechPack\{0}" -f $Manifest.speechPack.version)
     return @{
         Root = $install
-        Api = Join-Path $install "services\api"
+        Api = Join-Path $install "api"
         Python = Join-Path $install ".venv\Scripts\python.exe"
         State = Join-Path $install "install-state.json"
     }
@@ -250,7 +250,7 @@ function Remove-InstallStaging {
         -not [IO.Path]::GetFileName($resolved).Contains(".staging.")) {
         Fail "Refusing to remove an unsafe staging path: $resolved"
     }
-    $voices = Join-Path $resolved "services\api\voices"
+    $voices = Join-Path $resolved "api\voices"
     if (Test-Path -LiteralPath $voices) {
         $item = Get-Item -LiteralPath $voices -Force
         if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
@@ -288,7 +288,7 @@ function Install-SpeechPack {
         }
     }
     $source = Resolve-BundlePath $Manifest.speechPack.sourceRelativePath
-    if (-not (Test-Path -LiteralPath (Join-Path $source "services\api\requirements.lock.txt"))) {
+    if (-not (Test-Path -LiteralPath (Join-Path $source "api\requirements.lock.txt"))) {
         Fail "Speech Pack payload is incomplete."
     }
     $staging = "$($paths.Root).staging.$PID"
@@ -304,8 +304,8 @@ function Install-SpeechPack {
     New-Item -ItemType Directory -Force -Path $staging | Out-Null
     try {
         Write-LauncherLog "Copying Speech Pack $($Manifest.speechPack.version)..."
-        Copy-Item -LiteralPath (Join-Path $source "services") -Destination $staging -Recurse
-        $stagingApi = Join-Path $staging "services\api"
+        Copy-Item -LiteralPath (Join-Path $source "api") -Destination $staging -Recurse
+        $stagingApi = Join-Path $staging "api"
         & $python.File @($python.Args) -m venv (Join-Path $staging ".venv")
         if ($LASTEXITCODE -ne 0) { Fail "Could not create the Speech Pack virtual environment." }
         $stagingPython = Join-Path $staging ".venv\Scripts\python.exe"
@@ -498,7 +498,9 @@ function Stop-OwnedApi {
 function Ensure-Installed {
     param($Manifest)
     $paths = Get-InstallPaths $Manifest
-    if (-not (Test-Path -LiteralPath $paths.State) -or -not (Test-Path -LiteralPath $paths.Python)) {
+    if (-not (Test-Path -LiteralPath $paths.State) -or
+        -not (Test-Path -LiteralPath $paths.Python) -or
+        -not (Test-Path -LiteralPath (Join-Path $paths.Api "requirements.lock.txt"))) {
         Install-SpeechPack $Manifest
     }
     $env:SHIO_MODEL_ROOT = Join-Path $DataRoot "models"

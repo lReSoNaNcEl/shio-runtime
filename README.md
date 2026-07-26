@@ -5,7 +5,7 @@ Desktop AI character runtime with a local ASR/TTS service.
 The repository contains two independent applications:
 
 - `apps/desktop` — Electron desktop client;
-- `services/api` — local FastAPI service for speech recognition and synthesis.
+- `apps/api` — local FastAPI service for speech recognition and synthesis.
 
 They communicate only through an HTTP API. Neither application imports or directly
 reads the implementation files of the other. See [ARCHITECTURE.md](./ARCHITECTURE.md)
@@ -16,10 +16,11 @@ and [AGENTS.md](./AGENTS.md).
 ```text
 shio-runtime/
 ├─ apps/
-│  └─ desktop/          Electron + React + Three.js client
-├─ services/
-│  └─ api/              FastAPI ASR/TTS service (faster-whisper + Silero VAD + F5-TTS)
-├─ scripts/             Repository-level scripts
+│  ├─ desktop/          Electron + React + Three.js application
+│  └─ api/              Python Speech API application
+├─ launcher/            Release installation and process coordination
+├─ scripts/             Repository and release tooling
+├─ docs/                Product, architecture, and release documentation
 ├─ ARCHITECTURE.md      Canonical architecture document
 ├─ AGENTS.md            Instructions for coding agents
 └─ package.json         Root command orchestration
@@ -43,7 +44,7 @@ PyTorch CUDA 12.8
 ```
 
 CPU mode is supported through the API configuration, but ASR and TTS will be
-significantly slower. To use it, set in `services/api/.env`:
+significantly slower. To use it, set in `apps/api/.env`:
 
 ```text
 DEVICE=cpu
@@ -62,7 +63,7 @@ npm run alpha:setup
 ```
 
 `alpha:setup` verifies Node.js 24.x, npm 11.x, Python 3.12 and Windows x64,
-creates `services/api/.env` only when missing, installs the locked CUDA 12.8 API
+creates `apps/api/.env` only when missing, installs the locked CUDA 12.8 API
 environment, downloads the pinned voice dataset revision and runs the strict doctor.
 It does not install system software and does not start either application.
 
@@ -73,12 +74,12 @@ npm run api:dev
 ```
 
 Desktop alpha testers run `Shio Runtime.exe` from the portable
-`Shio-Runtime-0.1.0-alpha.4-win-x64.zip`; `desktop:dev` is not part of the tester
+`Shio-Runtime-0.1.0-alpha.5-win-x64.zip`; `desktop:dev` is not part of the tester
 workflow.
 
 ## Developer setup
 
-The canonical Python environment is `services/api/.venv`. For development tooling:
+The canonical Python environment is `apps/api/.venv`. For development tooling:
 
 ```powershell
 npm run api:install:dev
@@ -93,9 +94,10 @@ npm run api:voices:sync
 npm run api:doctor:strict
 ```
 
-The `api:*` npm commands automatically use the local virtual environment
-(`services/api/.venv`, or an existing legacy `services/api/venv`). No manual
-`activate` is required. To point the commands at a different interpreter, set
+The `api:*` npm commands automatically use the canonical local virtual environment
+(`apps/api/.venv`). Environments from the previous layout are detected only to show
+migration instructions and are never executed. No manual `activate` is required.
+To point the commands at a different interpreter, set
 `SHIO_API_PYTHON`. Run `npm run api:doctor` to see which interpreter is selected.
 
 Regenerate dependency locks only when direct dependencies change:
@@ -119,12 +121,12 @@ npm run api:voices:sync
 The command downloads the configured AnimeVox voice references from Hugging Face into:
 
 ```text
-services/api/voices/<dataset>/<voice>/
+apps/api/voices/<dataset>/<voice>/
 ├─ reference.wav
 └─ reference.txt
 ```
 
-Set `HF_TOKEN` in `services/api/.env` when authentication or higher Hugging Face
+Set `HF_TOKEN` in `apps/api/.env` when authentication or higher Hugging Face
 rate limits are required.
 
 ### 4. Start the applications
@@ -142,7 +144,7 @@ forwards the signal so uvicorn shuts down and port 8000 is released.
 
 > **First run may be slow.** On the first `api:dev` the F5-TTS model (`F5_MODEL_ID`,
 > default `Misha24-10/F5-TTS_RUSSIAN`) and the ASR model are downloaded into the
-> Hugging Face cache / `services/api/models/`. These weights are not stored in Git,
+> Hugging Face cache / `apps/api/models/`. These weights are not stored in Git,
 > so the first startup can take a while before the service becomes ready.
 
 **Terminal 2 — Desktop**
@@ -177,7 +179,7 @@ formatter, linter, and import sorting together; `desktop:check:fix` applies the
 safe fixes. Tooling ownership across the monorepo:
 
 - Desktop (`apps/desktop`) → Biome
-- API (`services/api`, Python) → Ruff
+- API (`apps/api`, Python) → Ruff
 - TypeScript types → `tsc` (`npm run desktop:typecheck`)
 
 ### API
@@ -191,6 +193,8 @@ npm run api:install:dev
 npm run api:install:alpha
 npm run api:voices:sync
 npm run api:dev
+npm run api:start
+npm run api:prefetch
 npm run api:lint
 npm run api:lint:fix
 npm run api:format
@@ -201,6 +205,9 @@ npm run api:doctor:strict
 npm run api:lock
 npm run alpha:setup
 ```
+
+Repository-owned Ruff commands explicitly set `RUFF_CACHE_DIR` to
+`apps/api/.ruff_cache`, including when they are launched from the repository root.
 
 On macOS the same commands apply, e.g.:
 
@@ -213,11 +220,11 @@ npm run api:dev
 Optional manual activation (only for working with Python directly) still works:
 
 ```bash
-source services/api/.venv/bin/activate
+source apps/api/.venv/bin/activate
 ```
 
 ```powershell
-services\api\.venv\Scripts\Activate.ps1
+apps\api\.venv\Scripts\Activate.ps1
 ```
 
 ### Repository (aggregated)
@@ -258,14 +265,14 @@ examples. Local `.env` files are ignored by Git.
 
 ```text
 apps/desktop/.env       (from apps/desktop/.env.example)
-services/api/.env       (from services/api/.env.example)
+apps/api/.env       (from apps/api/.env.example)
 ```
 
 ### Desktop → API URL
 
 The Desktop client connects to `http://localhost:8000`. The URL can be overridden
 with the environment variable `PYTHON_SPEECH_URL`. Despite its legacy name, it now
-points to the service located in `services/api`.
+points to the service located in `apps/api`.
 
 ### API host and port
 
@@ -284,16 +291,16 @@ and is not a browser URL.
 ### Manifests (single source of truth)
 
 - `VOICE_MANIFEST_PATH` — path to the voice manifest
-  (`services/api/voice_manifest.json`).
+  (`apps/api/voice_manifest.json`).
 - `EMOTION_MANIFEST_PATH` — path to the emotion manifest
-  (`services/api/emotion_manifest.json`).
+  (`apps/api/emotion_manifest.json`).
 
 Both paths are resolved relative to the API working directory.
 
 ### Voice dataset revision
 
 The repository-owned AnimeVox revision is pinned to an exact commit in
-`services/api/voice_manifest.json`. `VOICE_DATASET_REVISION` is only an optional
+`apps/api/voice_manifest.json`. `VOICE_DATASET_REVISION` is only an optional
 environment override.
 
 ```text
@@ -313,8 +320,8 @@ run and are not committed (see below).
 API virtual environments
 node_modules
 build output
-F5 model weights and Hugging Face model caches (services/api/models/)
-voice reference assets (services/api/voices/**/reference.wav|.txt)
+F5 model weights and Hugging Face model caches (apps/api/models/)
+voice reference assets (apps/api/voices/**/reference.wav|.txt)
 generated and temporary audio
 runtime logs
 ```
@@ -352,7 +359,7 @@ encoding, or synthesis lifecycle).
 
 ## Architecture
 
-`apps/desktop` and `services/api` are independently runnable applications. Their
+`apps/desktop` and `apps/api` are independently runnable applications. Their
 boundary is the HTTP API contract:
 
 ```text

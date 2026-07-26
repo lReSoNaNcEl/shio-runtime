@@ -7,7 +7,7 @@ but does not require a running server.
 
 Source is configured in app/tts/voice_repository_manager.py (DEFAULT_REPOSITORIES):
 the HuggingFace dataset `taresh18/AnimeVox`. Set HF_TOKEN in .env for higher rate
-limits. Usage (from repo root or from services/api):
+limits. Usage (from repo root or from apps/api):
 
     python scripts/sync_voices.py                 # up to VOICE_SYNC_MAX_VOICES voices
     python scripts/sync_voices.py --limit 3       # only the first 3
