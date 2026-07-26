@@ -21,11 +21,14 @@ const createCycleId = (): string => `admission-${Date.now()}-${++admissionCycleS
 
 export class ConversationAdmissionCoordinator {
   private activeExecution: ActiveConversationExecution | undefined
-  private drainPromise: Promise<void> | undefined
+  private drainPromise: Promise<unknown> | undefined
   private arbitrationPromise: Promise<unknown> | undefined
   private activeCycleId: string | undefined
   private continuousEnabled = false
-  private pendingExplicit: ConversationInput | null = null
+  private pendingExplicit: {
+    input: ConversationInput
+    settle?: (result: ConversationCompletionResult) => void
+  } | null = null
   private llmConfig: BacklogSelectorLlmConfig = {
     enabled: false,
     providerId: '',
@@ -104,15 +107,48 @@ export class ConversationAdmissionCoordinator {
     return 'started'
   }
 
+  async admitExplicit(input: ConversationInput): Promise<ConversationCompletionResult> {
+    if (this.activeExecution || this.drainPromise) {
+      return new Promise<ConversationCompletionResult>((resolve) => {
+        this.handleBusyInput(input, undefined, resolve)
+      })
+    }
+    const cycleId = createCycleId()
+    const initialTurn: AdmittedConversationTurn = { ...input, admissionCycleId: cycleId }
+    this.activeCycleId = cycleId
+    let settleInitial!: (result: ConversationCompletionResult) => void
+    const initialResult = new Promise<ConversationCompletionResult>((resolve) => {
+      settleInitial = resolve
+    })
+    const currentPromise = this.executeCycle(initialTurn, cycleId, settleInitial)
+    this.drainPromise = currentPromise
+    const settleCycle = (): void => {
+      if (this.drainPromise === currentPromise) {
+        this.drainPromise = undefined
+        if (this.activeCycleId === cycleId) this.activeCycleId = undefined
+      }
+    }
+    void currentPromise.then(settleCycle, (error) => {
+      this.onError(error, input)
+      settleCycle()
+    })
+    return initialResult
+  }
+
   private handleBusyInput(
     input: ConversationInput,
     buffered?: BufferedUtterance,
+    settle?: (result: ConversationCompletionResult) => void,
   ): ConversationAdmissionOutcome {
     if (input.source === 'continuous_listening' && buffered) return this.enqueueStreaming(buffered)
     if (input.source === 'text_chat' || input.source === 'push_to_talk') {
       this.selector.cancel()
       if (input.source === 'text_chat') this.backlog.discardWeak()
-      this.pendingExplicit = input
+      this.pendingExplicit?.settle?.({
+        status: 'cancelled',
+        turnId: this.pendingExplicit.input.turnId,
+      })
+      this.pendingExplicit = { input, settle }
       console.debug(
         `[admission] turnId=${input.turnId} source=${input.source} outcome=buffered activeTurnId=${this.activeExecution?.turnId ?? 'none'}`,
       )
@@ -127,20 +163,23 @@ export class ConversationAdmissionCoordinator {
   private async executeCycle(
     initialTurn: AdmittedConversationTurn,
     cycleId: string,
-  ): Promise<void> {
-    await this.executeTurn(initialTurn)
+    settleInitial?: (result: ConversationCompletionResult) => void,
+  ): Promise<ConversationCompletionResult> {
+    const initialResult = await this.executeTurn(initialTurn)
+    settleInitial?.(initialResult)
     if (initialTurn.source === 'text_chat') this.backlog.discardWeak()
     await this.drainPendingExplicit(cycleId)
     if (!this.continuousEnabled) {
       this.backlog.clear()
-      return
+      return initialResult
     }
     await this.drainOneStreamingTurn(cycleId)
     await this.drainPendingExplicit(cycleId)
     this.backlog.discardWeak()
+    return initialResult
   }
 
-  private async executeTurn(turn: AdmittedConversationTurn): Promise<void> {
+  private async executeTurn(turn: AdmittedConversationTurn): Promise<ConversationCompletionResult> {
     if (this.activeExecution) {
       throw new Error(
         `Conversation execution overlap: activeTurnId=${this.activeExecution.turnId} requestedTurnId=${turn.turnId}`,
@@ -165,8 +204,17 @@ export class ConversationAdmissionCoordinator {
     try {
       const result = await this.runConversation(turn, reportPhase)
       console.debug(`[conversation] turnId=${turn.turnId} terminal=${result.status}`)
+      return result
     } catch (error) {
       this.onError(error, turn)
+      return {
+        status: 'failed',
+        turnId: turn.turnId,
+        phase: 'generation',
+        error: 'UNKNOWN',
+        code: 'UNKNOWN',
+        recoverable: false,
+      }
     } finally {
       if (this.activeExecution?.turnId === turn.turnId) this.activeExecution = undefined
     }
@@ -206,7 +254,8 @@ export class ConversationAdmissionCoordinator {
     while (this.pendingExplicit) {
       const explicit = this.pendingExplicit
       this.pendingExplicit = null
-      await this.executeTurn({ ...explicit, admissionCycleId: cycleId })
+      const result = await this.executeTurn({ ...explicit.input, admissionCycleId: cycleId })
+      explicit.settle?.(result)
     }
   }
 }

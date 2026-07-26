@@ -57,7 +57,10 @@ import {
   parseAttentionMode,
   parseTunedNumber,
 } from './speech/continuous-listening/tuning'
-import type { ContinuousListeningSettings } from './speech/continuous-listening/types'
+import type {
+  ChatSubmissionResult,
+  ContinuousListeningSettings,
+} from './speech/continuous-listening/types'
 import { ConversationInputCoordinator } from './speech/conversation/ConversationInputCoordinator'
 
 export type {
@@ -851,8 +854,8 @@ export class Controller {
   }
 
   // ---- chat cycle ----------------------------------------------------------
-  async sendText(text: string, screenContextId?: string): Promise<void> {
-    await this.conversationInput.admitText(text, screenContextId)
+  async sendText(text: string, screenContextId?: string): Promise<ChatSubmissionResult> {
+    return this.conversationInput.admitText(text, screenContextId)
   }
 
   async runDebugFullRuntimeTest(emotionKey = 'happy'): Promise<void> {

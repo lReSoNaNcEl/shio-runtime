@@ -38,6 +38,7 @@ import {
 import type {
   AdmittedConversationTurn,
   BufferedUtterance,
+  ChatSubmissionResult,
   ContinuousListeningSettings,
   ConversationCompletionResult,
   ConversationExecutionPhase,
@@ -124,10 +125,10 @@ export class ConversationInputCoordinator {
     )
   }
 
-  async admitText(text: string, screenContextId?: string): Promise<void> {
+  async admitText(text: string, screenContextId?: string): Promise<ChatSubmissionResult> {
     const trimmed = text.trim()
-    if (!trimmed) return
-    await this.conversationAdmission.admit({
+    if (!trimmed) return { status: 'cancelled' }
+    const result = await this.conversationAdmission.admitExplicit({
       turnId: this.dependencies.createTurnId('text'),
       text: trimmed,
       source: 'text_chat',
@@ -139,6 +140,14 @@ export class ConversationInputCoordinator {
         recognitionUncertain: false,
       },
     })
+    if (result.status === 'completed') return { status: 'completed' }
+    if (result.status === 'cancelled') return { status: 'cancelled' }
+    return {
+      status: 'failed',
+      code: result.code ?? 'UNKNOWN',
+      recoverable: result.recoverable ?? false,
+      providerId: result.providerId,
+    }
   }
 
   async admitPushToTalk(text: string): Promise<void> {

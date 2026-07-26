@@ -1,4 +1,9 @@
-import type { LlmProviderId, ModelFetchErrorKind } from '../../shared/llm'
+import type {
+  LlmProviderId,
+  LlmResponseFailure,
+  LlmTurnErrorCode,
+  ModelFetchErrorKind,
+} from '../../shared/llm'
 
 export type { ModelFetchErrorKind }
 
@@ -12,15 +17,26 @@ export class ModelFetchError extends Error {
   }
 }
 
-export class LlmResponseError extends Error {
-  provider: LlmProviderId
-  rawResponse: unknown
+export class LlmResponseError extends Error implements LlmResponseFailure {
+  readonly providerId: LlmProviderId
+  readonly code: LlmTurnErrorCode
+  readonly recoverable: boolean
+  readonly technicalMessage?: string
 
-  constructor(params: { provider: LlmProviderId; message: string; rawResponse?: unknown }) {
+  constructor(params: {
+    provider: LlmProviderId
+    code?: LlmTurnErrorCode
+    recoverable?: boolean
+    message: string
+    technicalMessage?: string
+    rawResponse?: unknown
+  }) {
     super(params.message)
     this.name = 'LlmResponseError'
-    this.provider = params.provider
-    this.rawResponse = params.rawResponse
+    this.providerId = params.provider
+    this.code = params.code ?? 'PROVIDER_REJECTED'
+    this.recoverable = params.recoverable ?? false
+    this.technicalMessage = params.technicalMessage ?? params.message
   }
 }
 
@@ -41,6 +57,17 @@ export class LlmCredentialMissingError extends Error {
   constructor() {
     super('LLM_CREDENTIAL_MISSING')
     this.name = 'LlmCredentialMissingError'
+  }
+}
+
+export class LlmTurnCancelledError extends Error {
+  readonly code = 'CANCELLED'
+  readonly recoverable = true
+  readonly technicalMessage = 'LLM turn cancelled'
+
+  constructor() {
+    super('CANCELLED')
+    this.name = 'LlmTurnCancelledError'
   }
 }
 
@@ -70,4 +97,16 @@ export function normalizeHttpErrorMessage(displayName: string, status: number): 
 
 export function networkErrorMessage(displayName: string): string {
   return `${displayName}: не удалось соединиться с провайдером (сетевая ошибка).`
+}
+
+export function classifyHttpFailure(status: number): {
+  code: LlmTurnErrorCode
+  recoverable: boolean
+} {
+  if (status === 408 || status === 504) return { code: 'TIMEOUT', recoverable: true }
+  if (status === 401 || status === 403) return { code: 'AUTH_ERROR', recoverable: false }
+  if (status === 413) return { code: 'REQUEST_TOO_LARGE', recoverable: false }
+  if (status === 429) return { code: 'RATE_LIMITED', recoverable: true }
+  if (status >= 500) return { code: 'PROVIDER_REJECTED', recoverable: true }
+  return { code: 'PROVIDER_REJECTED', recoverable: false }
 }

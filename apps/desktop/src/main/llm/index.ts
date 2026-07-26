@@ -13,8 +13,10 @@ export type {
 export { LLM_PROVIDER_IDS } from '../../shared/llm'
 export { defaultLlmConfig, normalizeLlmConfig } from './config'
 export {
+  classifyHttpFailure,
   LlmCapabilityError,
   LlmResponseError,
+  LlmTurnCancelledError,
   ModelFetchError,
   normalizeHttpErrorMessage,
 } from './errors'

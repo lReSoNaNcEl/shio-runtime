@@ -11,7 +11,7 @@ import type {
   SpeechAudioBoundaryTelemetry,
   SpeechTextNormalizationTelemetry,
 } from '../shared/speech'
-import type { LLMProvider, LlmRequestOptions } from './llm'
+import { type LLMProvider, type LlmRequestOptions, LlmTurnCancelledError } from './llm'
 import { mainLog } from './logging/safeLogger'
 import type { MemoryStore } from './memory'
 import type { ProjectAwarenessRuntime } from './project-awareness'
@@ -175,7 +175,6 @@ export class Orchestrator {
   }> {
     const { userText, screenContext } = input
     const history = await this.memory.getHistory(SESSION_ID)
-    await this.memory.append(SESSION_ID, { role: 'user', content: userText })
 
     const projectContext = this.projectAwareness?.buildContextPacket(userText)
     const messages = [
@@ -201,9 +200,14 @@ export class Orchestrator {
     ]
 
     const replyText = await this.llm.chat(messages, options)
-    await this.memory.append(SESSION_ID, {
-      role: 'assistant',
-      content: parseEmotionalReply(replyText).visibleText,
+    if (options.signal?.aborted) throw new LlmTurnCancelledError()
+    const visibleReplyText = parseEmotionalReply(replyText).visibleText
+    await this.memory.appendTurn(SESSION_ID, {
+      user: { role: 'user', content: userText },
+      assistant: {
+        role: 'assistant',
+        content: visibleReplyText,
+      },
     })
 
     const emotionKey = parseLeadingEmotionTag(replyText)

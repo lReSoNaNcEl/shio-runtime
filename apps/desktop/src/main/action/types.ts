@@ -12,6 +12,8 @@ export interface ActionResult<TResult = unknown> {
   error?: string
   /** Stable, normalized domain error code when the thrown error carried one. */
   errorCode?: string
+  recoverable?: boolean
+  providerId?: string
 }
 
 export type ActionHandler<TPayload = unknown, TResult = unknown> = (

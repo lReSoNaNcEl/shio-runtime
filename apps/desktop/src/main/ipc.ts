@@ -5,6 +5,7 @@ import { type BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { z } from 'zod'
 
 import type { AppSettings } from '../shared/config'
+import type { LlmTurnErrorCode } from '../shared/llm'
 import { translate } from '../shared/localization'
 import type {
   ProjectAwarenessPublicConfig,
@@ -106,7 +107,6 @@ export function registerIpcHandlers(
       activeCharacterGenerationTurnId = turnId
       try {
         const result = await orchestrator().createReply(input, { signal })
-        if (cancelledTurns.has(turnId)) throw new Error(`Conversation interrupted turnId=${turnId}`)
         return result
       } finally {
         if (activeCharacterGenerationTurnId === turnId) activeCharacterGenerationTurnId = null
@@ -422,7 +422,7 @@ export function registerIpcHandlers(
       return { ok: false, errorCode: 'LLM_CREDENTIAL_MISSING' as const }
     }
 
-    let pendingCapture: ReturnType<ScreenContextService['consume']> | undefined
+    let pendingCapture: ReturnType<ScreenContextService['acquireForTurn']> | undefined
     if (screenContextId) {
       const capabilities = llm().getActiveCapabilities()
       if (!capabilities.supportsVision) {
@@ -432,7 +432,7 @@ export function registerIpcHandlers(
         }
       }
       try {
-        pendingCapture = screenContext.consume(event.sender.id, screenContextId)
+        pendingCapture = screenContext.acquireForTurn(event.sender.id, screenContextId, turnId)
       } catch (error) {
         return {
           ok: false,
@@ -480,20 +480,35 @@ export function registerIpcHandlers(
         },
       })
       if (action.status === 'success' && action.result) {
-        if (pendingCapture) mainLog.info('Vision Request Completed', { turnId })
+        if (pendingCapture && screenContextId) {
+          screenContext.completeTurn(event.sender.id, screenContextId, turnId)
+          mainLog.info('Vision Request Completed', { turnId })
+        }
         const { replyText, emotionKey } = action.result
         return { ok: true, replyText, emotionKey }
       }
-      if (pendingCapture && action.error === 'VISION_UNSUPPORTED') {
-        return { ok: false, errorCode: 'VISION_UNSUPPORTED' as const }
+      const code = (action.errorCode as LlmTurnErrorCode | undefined) ?? 'UNKNOWN'
+      const recoverable = action.recoverable ?? false
+      if (pendingCapture && screenContextId) {
+        if (recoverable || code === 'CANCELLED') {
+          screenContext.rollbackTurn(event.sender.id, screenContextId, turnId)
+        } else {
+          screenContext.completeTurn(event.sender.id, screenContextId, turnId)
+        }
       }
-      if (
-        pendingCapture &&
-        /некорректный запрос|запрос слишком большой|изображен|vision/i.test(action.error ?? '')
-      ) {
-        return { ok: false, error: 'SCREEN_CONTEXT_PROVIDER_REJECTED' }
+      mainLog.warn('LLM Turn Failed', {
+        provider: action.providerId ?? llmConfig.activeProvider,
+        turnId,
+        code,
+        vision: Boolean(pendingCapture),
+        recoverable,
+      })
+      return {
+        ok: false,
+        providerId: action.providerId ?? llmConfig.activeProvider,
+        errorCode: code,
+        recoverable,
       }
-      return { ok: false, error: action.error, errorCode: action.errorCode }
     } finally {
       replyAbortControllers.delete(turnId)
       cancelledTurns.delete(turnId)

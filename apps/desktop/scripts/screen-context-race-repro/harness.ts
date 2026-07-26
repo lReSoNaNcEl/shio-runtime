@@ -68,8 +68,9 @@ async function run(): Promise<void> {
     if (!(error instanceof ScreenContextError) || error.code !== 'OPERATION_STALE') throw error
   }
 
-  const retained = service.consume(rendererId, descriptorB.captureId)
+  const retained = service.acquireForTurn(rendererId, descriptorB.captureId, 'turn-b')
   if (retained.sourceName !== 'B') throw new Error('Capture B was not retained')
+  service.completeTurn(rendererId, descriptorB.captureId, 'turn-b')
 
   const operationC = crypto.randomUUID()
   const captureC = service.capture(rendererId, operationC, 'C')

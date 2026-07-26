@@ -18,6 +18,7 @@ import { type ScreenCaptureAdapter, ScreenCaptureError } from './ScreenCaptureAd
 
 export const SCREEN_CONTEXT_TUNING = {
   ttlMs: 120_000,
+  rollbackTtlMs: 60_000,
   maxPendingPerRenderer: 1,
   maxBytes: 5 * 1024 * 1024,
 } as const
@@ -44,6 +45,7 @@ export class ScreenContextError extends Error {
 interface StoredCapture extends PendingCapture {
   expirationTimer: ReturnType<typeof setTimeout>
   recaptureSourceId?: string
+  leaseTurnId?: string
 }
 
 export class ScreenContextService {
@@ -141,6 +143,7 @@ export class ScreenContextService {
     this.beginOperation(rendererId, operationId)
     try {
       const existing = this.getOwnedCapture(rendererId, captureId)
+      if (existing.leaseTurnId) throw new ScreenContextError('CAPTURE_NOT_OWNED')
       if (!existing.recaptureSourceId) {
         throw new ScreenContextError('RECAPTURE_UNAVAILABLE')
       }
@@ -171,11 +174,14 @@ export class ScreenContextService {
     }
   }
 
-  consume(rendererId: number, captureId: string): PendingCapture {
+  acquireForTurn(rendererId: number, captureId: string, turnId: string): PendingCapture {
     const capture = this.getOwnedCapture(rendererId, captureId)
-    this.removeCapture(captureId)
-    mainLog.info('Screen Context Consumed', {
+    if (capture.leaseTurnId) throw new ScreenContextError('CAPTURE_NOT_OWNED')
+    clearTimeout(capture.expirationTimer)
+    capture.leaseTurnId = turnId
+    mainLog.info('Screen Context Lease Acquired', {
       rendererId,
+      turnId,
       sourceKind: capture.sourceKind,
       width: capture.width,
       height: capture.height,
@@ -184,9 +190,41 @@ export class ScreenContextService {
     const {
       expirationTimer: _expirationTimer,
       recaptureSourceId: _recaptureSourceId,
+      leaseTurnId: _leaseTurnId,
       ...pending
     } = capture
     return pending
+  }
+
+  completeTurn(rendererId: number, captureId: string, turnId: string): boolean {
+    const capture = this.getLeasedCapture(rendererId, captureId, turnId)
+    if (!capture) return false
+    this.removeCapture(captureId)
+    mainLog.info('Screen Context Lease Completed', {
+      rendererId,
+      turnId,
+      sourceKind: capture.sourceKind,
+      bytes: capture.bytes.byteLength,
+    })
+    return true
+  }
+
+  rollbackTurn(rendererId: number, captureId: string, turnId: string): boolean {
+    const capture = this.getLeasedCapture(rendererId, captureId, turnId)
+    if (!capture) return false
+    capture.leaseTurnId = undefined
+    capture.expiresAt = Date.now() + SCREEN_CONTEXT_TUNING.rollbackTtlMs
+    capture.expirationTimer = setTimeout(
+      () => this.expireCapture(captureId),
+      SCREEN_CONTEXT_TUNING.rollbackTtlMs,
+    )
+    mainLog.info('Screen Context Lease Rolled Back', {
+      rendererId,
+      turnId,
+      sourceKind: capture.sourceKind,
+      bytes: capture.bytes.byteLength,
+    })
+    return true
   }
 
   release(rendererId: number, captureId: string): boolean {
@@ -292,6 +330,19 @@ export class ScreenContextService {
     if (capture.expiresAt <= Date.now()) {
       this.expireCapture(captureId)
       throw new ScreenContextError('CAPTURE_EXPIRED')
+    }
+    return capture
+  }
+
+  private getLeasedCapture(
+    rendererId: number,
+    captureId: string,
+    turnId: string,
+  ): StoredCapture | undefined {
+    const capture = this.captures.get(captureId)
+    if (!capture) return undefined
+    if (capture.rendererId !== rendererId || capture.leaseTurnId !== turnId) {
+      throw new ScreenContextError('CAPTURE_NOT_OWNED')
     }
     return capture
   }

@@ -360,6 +360,29 @@ async function main(): Promise<void> {
     assert.equal(arbitrationCalls, 0)
   }
 
+  // Explicit text receives its terminal failure and releases admission state.
+  {
+    const coordinator = new ConversationAdmissionCoordinator(
+      async (value) => ({
+        status: 'failed',
+        turnId: value.turnId,
+        phase: 'generation',
+        error: 'NETWORK_ERROR',
+        code: 'NETWORK_ERROR',
+        recoverable: true,
+        providerId: 'mistral',
+      }),
+      new UtteranceBacklog(),
+      new BacklogSelector(),
+    )
+    const result = await coordinator.admitExplicit(input('failed-explicit', 'text_chat'))
+    await flush()
+    assert.equal(result.status, 'failed')
+    assert.equal(result.status === 'failed' && result.code, 'NETWORK_ERROR')
+    assert.equal(coordinator.isBusy(), false)
+    assert.equal(coordinator.getActiveExecution(), undefined)
+  }
+
   // Three delayed busy phrases produce at most one successor; P0 wins.
   {
     const release = deferred<void>()

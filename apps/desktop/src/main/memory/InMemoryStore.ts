@@ -7,12 +7,14 @@ export class InMemoryStore implements MemoryStore {
   private sessions = new Map<string, ChatMessage[]>()
 
   async getHistory(sessionId: string): Promise<ChatMessage[]> {
-    return this.sessions.get(sessionId) ?? []
+    return [...(this.sessions.get(sessionId) ?? [])]
   }
 
-  async append(sessionId: string, msg: ChatMessage): Promise<void> {
-    const history = this.sessions.get(sessionId) ?? []
-    history.push(msg)
+  async appendTurn(
+    sessionId: string,
+    turn: { user: ChatMessage; assistant: ChatMessage },
+  ): Promise<void> {
+    const history = [...(this.sessions.get(sessionId) ?? []), turn.user, turn.assistant]
     if (history.length > MAX_MESSAGES) {
       history.splice(0, history.length - MAX_MESSAGES)
     }

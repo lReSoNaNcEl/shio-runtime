@@ -6,6 +6,7 @@ export type {
 } from '../../../shared/conversation'
 
 import type { AttentionMode } from '../../../shared/conversation'
+import type { LlmProviderId, LlmTurnErrorCode } from '../../../shared/llm'
 
 export type ConversationInputSource =
   | 'text_chat'
@@ -51,8 +52,21 @@ export type ConversationCompletionResult =
       turnId: string
       phase: 'generation' | 'synthesis' | 'playback' | 'cleanup'
       error: string
+      code?: LlmTurnErrorCode
+      recoverable?: boolean
+      providerId?: LlmProviderId
     }
   | { status: 'cancelled'; turnId: string }
+
+export type ChatSubmissionResult =
+  | { status: 'completed' }
+  | {
+      status: 'failed'
+      code: LlmTurnErrorCode
+      recoverable: boolean
+      providerId?: LlmProviderId
+    }
+  | { status: 'cancelled' }
 
 export type ChunkCompletionReason = 'asr_final' | 'vad_pause' | 'timeout' | 'max_length'
 

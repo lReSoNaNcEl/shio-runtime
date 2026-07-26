@@ -18,7 +18,7 @@ import { ChatStatus } from './ChatStatus'
 import { LlmSetupCard } from './LlmSetupCard'
 import { ScreenContextAttachment } from './ScreenContextAttachment'
 import { ScreenContextDropOverlay } from './ScreenContextDropOverlay'
-import { ScreenContextInputFeedback } from './ScreenContextInputFeedback'
+import { type ChatTurnFailure, ScreenContextInputFeedback } from './ScreenContextInputFeedback'
 import { ScreenContextPicker } from './ScreenContextPicker'
 import { SpeechUnavailableBanner } from './SpeechUnavailableBanner'
 import {
@@ -49,12 +49,16 @@ export const ChatOverlay = forwardRef<ChatOverlayHandle, Props>(function ChatOve
   const [dismissedIncidentId, setDismissedIncidentId] = useState<number | null>(null)
   const [bannerHighlight, setBannerHighlight] = useState(false)
   const [llmSetupHighlight, setLlmSetupHighlight] = useState(false)
+  const [submissionPending, setSubmissionPending] = useState(false)
+  const [turnFailure, setTurnFailure] = useState<
+    (ChatTurnFailure & { submittedText: string }) | null
+  >(null)
   const highlightTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const llmHighlightTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const dragDepthRef = useRef(0)
   const panelRef = useRef<HTMLElement>(null)
   const screenContext = useScreenContextAttachment()
-  const busy = state.status !== 'idle'
+  const busy = state.status !== 'idle' || submissionPending
   const listening = state.status === 'listening'
   const capabilities = state.speechCapabilities
   const recognitionUnavailable = capabilities.recognition === 'unavailable'
@@ -63,7 +67,8 @@ export const ChatOverlay = forwardRef<ChatOverlayHandle, Props>(function ChatOve
   const canInterrupt =
     ['thinking', 'synthesizing', 'speaking'].includes(state.status) &&
     !state.responseInterruptionPending
-  const imageOperationActive = screenContext.importing || screenContext.recapturing
+  const imageOperationActive =
+    screenContext.importing || screenContext.recapturing || screenContext.state === 'submitting'
   const imageInputAvailable =
     !gateOpen && !busy && !imageOperationActive && !screenContext.pickerOpen
 
@@ -84,6 +89,7 @@ export const ChatOverlay = forwardRef<ChatOverlayHandle, Props>(function ChatOve
       await screenContext.release()
       await controller.startNewConversation()
       controller.setChatDraft('')
+      setTurnFailure(null)
       setInterrupting(false)
     },
   }))
@@ -99,8 +105,8 @@ export const ChatOverlay = forwardRef<ChatOverlayHandle, Props>(function ChatOve
     highlightTimer.current = setTimeout(() => setBannerHighlight(false), 1200)
   }
 
-  const submit = (raw: string): void => {
-    if (gateOpen || imageOperationActive) return
+  const submit = (raw: string, withoutImage = false): void => {
+    if (gateOpen || imageOperationActive || submissionPending) return
     const userText = raw.trim()
     if (!userText) return
     if (shouldBlockChatSubmission(state.llmReadiness)) {
@@ -110,10 +116,41 @@ export const ChatOverlay = forwardRef<ChatOverlayHandle, Props>(function ChatOve
       return
     }
     void (async () => {
-      const captureId = await screenContext.submitCaptureId()
-      if (screenContext.pending && !captureId) return
-      controller.setChatDraft('')
-      void controller.sendText(userText, captureId)
+      setSubmissionPending(true)
+      setTurnFailure(null)
+      let captureId: string | undefined
+      try {
+        if (withoutImage) await screenContext.release()
+        captureId = withoutImage ? undefined : await screenContext.beginSubmission()
+        if (!withoutImage && screenContext.pending && !captureId) return
+        const result = await controller.sendText(userText, captureId)
+        if (captureId) screenContext.settleSubmission(result)
+        if (result.status === 'completed') {
+          controller.setChatDraft('')
+          return
+        }
+        if (result.status === 'failed') {
+          setTurnFailure({
+            ...result,
+            providerName: state.llmReadiness.providerDisplayName,
+            submittedText: userText,
+          })
+        }
+      } catch {
+        const failure = {
+          status: 'failed' as const,
+          code: 'UNKNOWN' as const,
+          recoverable: true,
+        }
+        if (captureId) screenContext.settleSubmission(failure)
+        setTurnFailure({
+          ...failure,
+          providerName: state.llmReadiness.providerDisplayName,
+          submittedText: userText,
+        })
+      } finally {
+        setSubmissionPending(false)
+      }
     })()
   }
 
@@ -218,7 +255,16 @@ export const ChatOverlay = forwardRef<ChatOverlayHandle, Props>(function ChatOve
           />
         )}
         <ChatStatus state={state} />
-        <ScreenContextInputFeedback error={screenContext.error} />
+        <ScreenContextInputFeedback
+          error={screenContext.error}
+          failure={turnFailure}
+          onRetry={turnFailure?.recoverable ? () => submit(turnFailure.submittedText) : undefined}
+          onSendWithoutImage={
+            turnFailure?.recoverable && screenContext.pending
+              ? () => submit(turnFailure.submittedText, true)
+              : undefined
+          }
+        />
         {screenContext.pending && (
           <ScreenContextAttachment
             capture={screenContext.pending}

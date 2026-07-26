@@ -59,16 +59,6 @@ function extractMessageContent(content: unknown): { text: string; hadReasoning: 
   return { text: parts.join(''), hadReasoning }
 }
 
-function shortPreview(value: unknown): string {
-  try {
-    const json = JSON.stringify(value)
-    if (!json) return String(value)
-    return json.length > 300 ? `${json.slice(0, 300)}...` : json
-  } catch {
-    return String(value)
-  }
-}
-
 export function parseChatCompletion(
   provider: LlmProviderId,
   displayName: string,
@@ -78,16 +68,18 @@ export function parseChatCompletion(
   if (!parsed.success) {
     throw new LlmResponseError({
       provider,
+      code: 'PROVIDER_REJECTED',
+      recoverable: false,
       message: `${displayName}: не удалось разобрать ответ модели.`,
-      rawResponse: raw,
     })
   }
 
   if (parsed.data.error && (!parsed.data.choices || parsed.data.choices.length === 0)) {
     throw new LlmResponseError({
       provider,
-      message: `${displayName}: API вернул ошибку: ${shortPreview(parsed.data.error)}`,
-      rawResponse: raw,
+      code: 'PROVIDER_REJECTED',
+      recoverable: false,
+      message: `${displayName}: API отклонил запрос.`,
     })
   }
 
@@ -111,23 +103,26 @@ export function parseChatCompletion(
     if (finishReason === 'length') {
       throw new LlmResponseError({
         provider,
+        code: 'PROVIDER_REJECTED',
+        recoverable: true,
         message:
           `${displayName}: рассуждение завершено, но лимит генерации был исчерпан до финального ответа. ` +
           'Увеличьте лимит токенов или выберите модель без reasoning.',
-        rawResponse: raw,
       })
     }
     if (finishReason === 'content_filter') {
       throw new LlmResponseError({
         provider,
+        code: 'PROVIDER_REJECTED',
+        recoverable: false,
         message: `${displayName}: ответ заблокирован фильтром контента.`,
-        rawResponse: raw,
       })
     }
     throw new LlmResponseError({
       provider,
+      code: 'PROVIDER_REJECTED',
+      recoverable: true,
       message: `${displayName}: модель вернула пустой ответ (нет choices[0].message.content).`,
-      rawResponse: raw,
     })
   }
 

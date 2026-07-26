@@ -2,7 +2,12 @@ import axios, { type AxiosInstance } from 'axios'
 
 import type { LlmProviderId } from '../../../shared/llm'
 import { llmDebug } from '../diagnostics'
-import { LlmResponseError, networkErrorMessage, normalizeHttpErrorMessage } from '../errors'
+import {
+  classifyHttpFailure,
+  LlmResponseError,
+  networkErrorMessage,
+  normalizeHttpErrorMessage,
+} from '../errors'
 import type { ChatMessage, LlmCapabilities, LlmRequestOptions } from '../types'
 import { prepareMessages } from './messageCompatibility'
 import { type ParsedCompletion, parseChatCompletion } from './response'
@@ -76,6 +81,7 @@ export async function runChatCompletionDetailed(
     }
     if (axios.isAxiosError(error) && error.response) {
       const message = normalizeHttpErrorMessage(config.displayName, error.response.status)
+      const failure = classifyHttpFailure(error.response.status)
       llmDebug({
         provider: config.provider,
         model: config.model,
@@ -88,8 +94,31 @@ export async function runChatCompletionDetailed(
       })
       throw new LlmResponseError({
         provider: config.provider,
+        ...failure,
         message,
-        rawResponse: error.response.data,
+      })
+    }
+    if (
+      options.signal?.aborted ||
+      axios.isCancel(error) ||
+      (axios.isAxiosError(error) && error.code === 'ERR_CANCELED')
+    ) {
+      throw new LlmResponseError({
+        provider: config.provider,
+        code: 'CANCELLED',
+        recoverable: true,
+        message: `${config.displayName}: запрос отменён.`,
+      })
+    }
+    if (
+      axios.isAxiosError(error) &&
+      (error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT')
+    ) {
+      throw new LlmResponseError({
+        provider: config.provider,
+        code: 'TIMEOUT',
+        recoverable: true,
+        message: `${config.displayName}: превышено время ожидания ответа.`,
       })
     }
     const message = networkErrorMessage(config.displayName)
@@ -102,6 +131,11 @@ export async function runChatCompletionDetailed(
       contentEmpty: true,
       error: message,
     })
-    throw new LlmResponseError({ provider: config.provider, message })
+    throw new LlmResponseError({
+      provider: config.provider,
+      code: 'NETWORK_ERROR',
+      recoverable: true,
+      message,
+    })
   }
 }

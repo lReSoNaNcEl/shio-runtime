@@ -494,12 +494,20 @@ body.overlay-window.overlay-solid-background #canvas {
 }
 
 .screen-context-input-feedback {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
   padding: 7px 9px;
   border: 1px solid rgba(248, 113, 113, 0.4);
   border-radius: 8px;
   background: rgba(127, 29, 29, 0.2);
   color: #fca5a5;
   font-size: 0.76rem;
+}
+
+.screen-context-input-feedback > span {
+  flex: 1;
 }
 
 .screen-context-drop-overlay {

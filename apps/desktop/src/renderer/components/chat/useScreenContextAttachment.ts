@@ -5,10 +5,12 @@ import {
   type ScreenContextCaptureDescriptor,
 } from '../../../shared/screen-context'
 import { useTranslation } from '../../localization/useTranslation'
+import type { ChatSubmissionResult } from '../../speech/continuous-listening/types'
 import { screenContextErrorMessage } from './screenContextErrorMessage'
 import { isSupportedImageFile, isSupportedImageMimeType } from './screenContextImageInput'
 
 export interface ScreenContextAttachmentController {
+  state: ScreenContextAttachmentState
   pending: ScreenContextCaptureDescriptor | null
   error: string | null
   pickerOpen: boolean
@@ -22,12 +24,21 @@ export interface ScreenContextAttachmentController {
   release: () => Promise<void>
   importFile: (file: File, sourceKind: 'clipboard' | 'file') => Promise<void>
   recapture: () => Promise<void>
-  submitCaptureId: () => Promise<string | undefined>
+  beginSubmission: () => Promise<string | undefined>
+  settleSubmission: (result: ChatSubmissionResult) => void
 }
+
+export type ScreenContextAttachmentState =
+  | 'empty'
+  | 'pending'
+  | 'submitting'
+  | 'retryable'
+  | 'expired'
 
 export function useScreenContextAttachment(): ScreenContextAttachmentController {
   const { t } = useTranslation()
   const [pending, setPending] = useState<ScreenContextCaptureDescriptor | null>(null)
+  const [state, setState] = useState<ScreenContextAttachmentState>('empty')
   const [error, setError] = useState<string | null>(null)
   const [pickerOpen, setPickerOpen] = useState(false)
   const [dragActive, setDragActive] = useState(false)
@@ -69,6 +80,7 @@ export function useScreenContextAttachment(): ScreenContextAttachmentController 
     const capture = pendingRef.current
     pendingRef.current = null
     setPending(null)
+    setState('empty')
     setError(null)
     setPickerOpen(false)
     if (mainOperationId) {
@@ -84,6 +96,7 @@ export function useScreenContextAttachment(): ScreenContextAttachmentController 
     setRecapturing(false)
     pendingRef.current = capture
     setPending(capture)
+    setState('pending')
     setError(null)
   }
 
@@ -133,6 +146,7 @@ export function useScreenContextAttachment(): ScreenContextAttachmentController 
       }
       pendingRef.current = result.value
       setPending(result.value)
+      setState('pending')
       setError(null)
     } catch {
       if (operationId === operationIdRef.current) {
@@ -173,6 +187,7 @@ export function useScreenContextAttachment(): ScreenContextAttachmentController 
       }
       pendingRef.current = result.value
       setPending(result.value)
+      setState('pending')
     } catch {
       if (operationId === operationIdRef.current) {
         setError(t('screenContext.error.unknown'))
@@ -188,7 +203,7 @@ export function useScreenContextAttachment(): ScreenContextAttachmentController 
     }
   }
 
-  const submitCaptureId = async (): Promise<string | undefined> => {
+  const beginSubmission = async (): Promise<string | undefined> => {
     if (operationActiveRef.current) return undefined
     const capture = pendingRef.current
     if (!capture) return undefined
@@ -206,12 +221,32 @@ export function useScreenContextAttachment(): ScreenContextAttachmentController 
       return undefined
     }
     setError(null)
-    pendingRef.current = null
-    setPending(null)
+    setState('submitting')
     return capture.captureId
   }
 
+  const settleSubmission = (result: ChatSubmissionResult): void => {
+    if (!pendingRef.current) {
+      setState('empty')
+      return
+    }
+    if (result.status === 'completed') {
+      pendingRef.current = null
+      setPending(null)
+      setState('empty')
+      return
+    }
+    if (result.status === 'cancelled' || result.recoverable) {
+      setState('retryable')
+      return
+    }
+    pendingRef.current = null
+    setPending(null)
+    setState('expired')
+  }
+
   return {
+    state,
     pending,
     error,
     pickerOpen,
@@ -225,6 +260,7 @@ export function useScreenContextAttachment(): ScreenContextAttachmentController 
     release,
     importFile,
     recapture,
-    submitCaptureId,
+    beginSubmission,
+    settleSubmission,
   }
 }

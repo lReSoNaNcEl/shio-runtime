@@ -48,7 +48,12 @@ export class ActionRuntime {
         typeof e === 'object' &&
         typeof (e as { code?: unknown }).code === 'string' &&
         typeof (e as { recoverable?: unknown }).recoverable === 'boolean'
-          ? (e as { code: string; technicalMessage?: string })
+          ? (e as {
+              code: string
+              recoverable: boolean
+              providerId?: string
+              technicalMessage?: string
+            })
           : null
       const error = normalized?.technicalMessage ?? String(e)
       this.publishActionEvent('ToolFailed', request.name, error)
@@ -57,6 +62,8 @@ export class ActionRuntime {
         action: request.name,
         error,
         errorCode: normalized?.code,
+        recoverable: normalized?.recoverable,
+        providerId: normalized?.providerId,
       }
     }
   }

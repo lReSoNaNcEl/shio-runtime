@@ -19,7 +19,7 @@ import type { AvatarMode, AvatarRuntime } from './AvatarRuntime'
 import type { ConversationPresenceRuntime } from './ConversationPresenceRuntime'
 import { EmotionSpeechPipeline, type PreparedEmotionSpeechSegment } from './EmotionSpeechPipeline'
 import type { OverlayRuntime, SyncedAvatarState } from './OverlayRuntime'
-import { LlmCredentialMissingError, type SpeechRuntime } from './SpeechRuntime'
+import { LlmCredentialMissingError, LlmTurnFailureError, type SpeechRuntime } from './SpeechRuntime'
 import { isSpeechServiceError } from './speechCapabilities'
 
 export type ConversationStatus =
@@ -357,6 +357,31 @@ export class ConversationRuntime {
         this.deps.recordRuntimeEvent('LLM Setup Required', `turnId=${turn.turnId}`)
         await this.recoverToIdle(turn.turnId)
         return { status: 'failed', turnId: turn.turnId, phase: failurePhase, error: error.message }
+      }
+      if (error instanceof LlmTurnFailureError) {
+        this.deps.recordRuntimeEvent(
+          'LLM Turn Failed',
+          `provider=${error.providerId} turnId=${turn.turnId} code=${error.code} vision=${Boolean(turn.screenContextId)} recoverable=${error.recoverable}`,
+        )
+        try {
+          await this.recoverToIdle(turn.turnId)
+        } catch (cleanupError) {
+          return {
+            status: 'failed',
+            turnId: turn.turnId,
+            phase: 'cleanup',
+            error: String(cleanupError),
+          }
+        }
+        return {
+          status: 'failed',
+          turnId: turn.turnId,
+          phase: failurePhase,
+          error: error.code,
+          code: error.code,
+          recoverable: error.recoverable,
+          providerId: error.providerId,
+        }
       }
       // Speech output (TTS) is a secondary capability. If synthesis fails because
       // the Speech API is unavailable, the reply text has already been shown

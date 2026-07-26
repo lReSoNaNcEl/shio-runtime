@@ -3,6 +3,7 @@ import {
   parseEmotionalReply,
   stripAssistantMarkup,
 } from '../../shared/emotion'
+import { LLM_PROVIDER_IDS, type LlmProviderId, type LlmTurnErrorCode } from '../../shared/llm'
 import type {
   CharacterActivityState,
   CharacterConversationPresenceState,
@@ -37,6 +38,29 @@ export class LlmCredentialMissingError extends Error {
     this.name = 'LlmCredentialMissingError'
   }
 }
+
+export class LlmTurnFailureError extends Error {
+  constructor(
+    readonly providerId: LlmProviderId,
+    readonly code: LlmTurnErrorCode,
+    readonly recoverable: boolean,
+  ) {
+    super(code)
+    this.name = 'LlmTurnFailureError'
+  }
+}
+
+const LLM_TURN_ERROR_CODES = new Set<LlmTurnErrorCode>([
+  'NETWORK_ERROR',
+  'TIMEOUT',
+  'AUTH_ERROR',
+  'RATE_LIMITED',
+  'PROVIDER_REJECTED',
+  'REQUEST_TOO_LARGE',
+  'VISION_UNSUPPORTED',
+  'CANCELLED',
+  'UNKNOWN',
+])
 export type SuccessfulSpeechReply = SpeechReply & { ok: true; audioBuffer: ArrayBuffer }
 
 interface SpeechStateTransition {
@@ -211,8 +235,20 @@ export class SpeechRuntime {
     const reply = await window.api.llm.reply(turnId, userText, screenContextId)
     if (!reply.ok || !reply.replyText) {
       if (reply.errorCode === 'LLM_CREDENTIAL_MISSING') throw new LlmCredentialMissingError()
+      if (
+        reply.errorCode &&
+        LLM_TURN_ERROR_CODES.has(reply.errorCode as LlmTurnErrorCode) &&
+        reply.providerId &&
+        LLM_PROVIDER_IDS.includes(reply.providerId)
+      ) {
+        throw new LlmTurnFailureError(
+          reply.providerId,
+          reply.errorCode as LlmTurnErrorCode,
+          reply.recoverable ?? false,
+        )
+      }
       if (reply.errorCode) throw new Error(`SCREEN_CONTEXT_ERROR:${reply.errorCode}`)
-      throw new Error(reply.error ?? 'Нет ответа')
+      throw new Error('UNKNOWN')
     }
 
     const parsed = parseEmotionalReply(reply.replyText)
