@@ -212,8 +212,13 @@ export class ConversationAdmissionCoordinator {
         turnId: turn.turnId,
         phase: 'generation',
         error: 'UNKNOWN',
-        code: 'UNKNOWN',
-        recoverable: false,
+        failure: {
+          domain: 'llm',
+          code: 'UNKNOWN',
+          attachmentDisposition: turn.screenContextId ? 'retained' : 'released',
+          retrySameRequest: false,
+          canResubmitWithoutImage: Boolean(turn.screenContextId),
+        },
       }
     } finally {
       if (this.activeExecution?.turnId === turn.turnId) this.activeExecution = undefined

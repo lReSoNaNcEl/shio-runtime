@@ -14,6 +14,7 @@ import {
   ScreenContextService,
 } from '../../src/main/screen-context/ScreenContextService'
 import type { AppSettings } from '../../src/shared/config'
+import { deriveTurnRecoveryCapabilities } from '../../src/shared/conversation'
 
 class FakeProvider implements LLMProvider {
   readonly requests: readonly ChatMessage[][] = []
@@ -169,6 +170,18 @@ async function testHttp413Classification(): Promise<void> {
       caught.code === 'REQUEST_TOO_LARGE' &&
       caught.recoverable === false &&
       !caught.message.includes('sensitive'),
+  )
+  assert.deepEqual(
+    deriveTurnRecoveryCapabilities({
+      code: 'REQUEST_TOO_LARGE',
+      transportRecoverable: false,
+      hadImage: true,
+      attachmentDisposition: 'released',
+    }),
+    {
+      retrySameRequest: false,
+      canResubmitWithoutImage: true,
+    },
   )
 }
 

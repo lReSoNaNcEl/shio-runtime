@@ -42,6 +42,25 @@ def test_known_silence_is_measured_and_only_confirmed_silence_is_trimmed():
     assert metrics.bypass_reason is None
 
 
+def test_long_speech_after_short_silence_is_not_mistaken_for_noise():
+    for speech_ms in (2_000.0, 5_000.0):
+        audio = _speech_clip(
+            leading_ms=200.0,
+            speech_ms=speech_ms,
+            trailing_ms=250.0,
+            amplitude=0.08,
+        )
+
+        output, metrics = process_audio_boundaries(
+            audio, SAMPLE_RATE, utterance_kind="normal", emotion="neutral"
+        )
+
+        assert metrics.bypass_reason is None
+        assert metrics.trimmed_leading_ms > 80.0
+        assert metrics.trimmed_trailing_ms > 80.0
+        assert len(output) < len(audio)
+
+
 def test_very_short_silent_and_ambiguous_low_level_clips_are_bypassed():
     cases = [
         (_samples(120.0, 0.1), "short-clip"),

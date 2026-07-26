@@ -1,7 +1,7 @@
 import type { AppSettings } from '../config/appSettings'
 import type { BacklogSelectionResult, BufferedUtterance } from '../conversation/backlog'
+import type { ConversationTurnFailure } from '../conversation/turnFailure'
 import type { LlmCapabilities } from '../llm/capabilities'
-import type { LlmTurnErrorCode } from '../llm/errors'
 import type {
   FetchModelsResult,
   LlmCredentialStatus,
@@ -14,7 +14,6 @@ import type { RuntimeEventInput } from '../runtime/events'
 import type {
   ScreenContextCaptureDescriptor,
   ScreenContextCaptureRequest,
-  ScreenContextErrorCode,
   ScreenContextImportRequest,
   ScreenContextRecaptureRequest,
   ScreenContextResult,
@@ -60,9 +59,8 @@ export interface ShioRuntimeApi {
       ok: boolean
       replyText?: string
       emotionKey?: string
-      errorCode?: ScreenContextErrorCode | LlmTurnErrorCode | 'LLM_CREDENTIAL_MISSING'
-      recoverable?: boolean
-      providerId?: LlmProviderId
+      errorCode?: 'LLM_CREDENTIAL_MISSING'
+      failure?: ConversationTurnFailure
     }>
     cancelReply: (turnId: string) => Promise<{ ok: boolean }>
     getActiveCapabilities: () => Promise<LlmCapabilities>

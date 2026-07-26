@@ -5,8 +5,7 @@ export type {
   BufferedUtterance,
 } from '../../../shared/conversation'
 
-import type { AttentionMode } from '../../../shared/conversation'
-import type { LlmProviderId, LlmTurnErrorCode } from '../../../shared/llm'
+import type { AttentionMode, ConversationTurnFailure } from '../../../shared/conversation'
 
 export type ConversationInputSource =
   | 'text_chat'
@@ -52,9 +51,7 @@ export type ConversationCompletionResult =
       turnId: string
       phase: 'generation' | 'synthesis' | 'playback' | 'cleanup'
       error: string
-      code?: LlmTurnErrorCode
-      recoverable?: boolean
-      providerId?: LlmProviderId
+      failure?: ConversationTurnFailure
     }
   | { status: 'cancelled'; turnId: string }
 
@@ -62,9 +59,7 @@ export type ChatSubmissionResult =
   | { status: 'completed' }
   | {
       status: 'failed'
-      code: LlmTurnErrorCode
-      recoverable: boolean
-      providerId?: LlmProviderId
+      failure: ConversationTurnFailure
     }
   | { status: 'cancelled' }
 

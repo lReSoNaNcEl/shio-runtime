@@ -236,13 +236,17 @@ export function useScreenContextAttachment(): ScreenContextAttachmentController 
       setState('empty')
       return
     }
-    if (result.status === 'cancelled' || result.recoverable) {
+    if (result.status === 'cancelled') {
+      setState('retryable')
+      return
+    }
+    if (result.failure.attachmentDisposition === 'retained') {
       setState('retryable')
       return
     }
     pendingRef.current = null
     setPending(null)
-    setState('expired')
+    setState(result.failure.attachmentDisposition === 'expired' ? 'expired' : 'empty')
   }
 
   return {

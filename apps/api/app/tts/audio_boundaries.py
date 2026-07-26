@@ -57,6 +57,8 @@ _NONVERBAL_PROFILE = _BoundaryProfile(
 _NONVERBAL_EMOTIONS = {"laugh", "chuckle", "sigh", "gasp", "groan", "crying", "whisper"}
 _FRAME_MS = 10.0
 _HOP_MS = 5.0
+_NOISE_EDGE_WINDOW_MS = 200.0
+_MAX_THRESHOLD_PEAK_RATIO = 0.5
 _MINIMUM_CLIP_MS = 180.0
 _MAXIMUM_TRIM_FRACTION = 0.45
 _QUIET_ONSET_LOOKBACK_MS = 100.0
@@ -90,8 +92,12 @@ def process_audio_boundaries(
     if maximum_rms < profile.absolute_floor * 1.25:
         return samples, _bypass_metrics(profile, input_duration_ms, "effectively-silent", started)
 
-    noise_floor = float(np.percentile(rms, 20))
-    threshold = max(profile.absolute_floor, noise_floor * profile.noise_multiplier)
+    noise_floor = _estimate_noise_floor(rms)
+    adaptive_threshold = min(
+        noise_floor * profile.noise_multiplier,
+        maximum_rms * _MAX_THRESHOLD_PEAK_RATIO,
+    )
+    threshold = max(profile.absolute_floor, adaptive_threshold)
     active = rms >= threshold
     stable_frames = max(2, round(profile.stable_activity_ms / _HOP_MS))
     region = _stable_activity_region(active, stable_frames)
@@ -215,6 +221,12 @@ def _frame_rms(audio: np.ndarray, frame_samples: int, hop_samples: int) -> np.nd
         for start in range(0, len(audio) - frame_samples + 1, hop_samples)
     ]
     return np.asarray(values, dtype=np.float32)
+
+
+def _estimate_noise_floor(rms: np.ndarray) -> float:
+    edge_frame_count = max(1, round(_NOISE_EDGE_WINDOW_MS / _HOP_MS))
+    edge_rms = np.concatenate((rms[:edge_frame_count], rms[-edge_frame_count:]))
+    return float(np.percentile(edge_rms, 20))
 
 
 def _stable_activity_region(active: np.ndarray, stable_frames: int) -> tuple[int, int] | None:

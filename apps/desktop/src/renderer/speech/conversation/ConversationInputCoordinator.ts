@@ -144,9 +144,13 @@ export class ConversationInputCoordinator {
     if (result.status === 'cancelled') return { status: 'cancelled' }
     return {
       status: 'failed',
-      code: result.code ?? 'UNKNOWN',
-      recoverable: result.recoverable ?? false,
-      providerId: result.providerId,
+      failure: result.failure ?? {
+        domain: screenContextId ? 'screen-context' : 'llm',
+        code: 'UNKNOWN',
+        attachmentDisposition: screenContextId ? 'retained' : 'released',
+        retrySameRequest: false,
+        canResubmitWithoutImage: Boolean(screenContextId),
+      },
     }
   }
 

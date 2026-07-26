@@ -131,7 +131,7 @@ export const ChatOverlay = forwardRef<ChatOverlayHandle, Props>(function ChatOve
         }
         if (result.status === 'failed') {
           setTurnFailure({
-            ...result,
+            ...result.failure,
             providerName: state.llmReadiness.providerDisplayName,
             submittedText: userText,
           })
@@ -139,12 +139,17 @@ export const ChatOverlay = forwardRef<ChatOverlayHandle, Props>(function ChatOve
       } catch {
         const failure = {
           status: 'failed' as const,
-          code: 'UNKNOWN' as const,
-          recoverable: true,
+          failure: {
+            domain: captureId ? ('screen-context' as const) : ('llm' as const),
+            code: 'UNKNOWN' as const,
+            attachmentDisposition: captureId ? ('retained' as const) : ('released' as const),
+            retrySameRequest: true,
+            canResubmitWithoutImage: Boolean(captureId),
+          },
         }
         if (captureId) screenContext.settleSubmission(failure)
         setTurnFailure({
-          ...failure,
+          ...failure.failure,
           providerName: state.llmReadiness.providerDisplayName,
           submittedText: userText,
         })
@@ -258,9 +263,11 @@ export const ChatOverlay = forwardRef<ChatOverlayHandle, Props>(function ChatOve
         <ScreenContextInputFeedback
           error={screenContext.error}
           failure={turnFailure}
-          onRetry={turnFailure?.recoverable ? () => submit(turnFailure.submittedText) : undefined}
+          onRetry={
+            turnFailure?.retrySameRequest ? () => submit(turnFailure.submittedText) : undefined
+          }
           onSendWithoutImage={
-            turnFailure?.recoverable && screenContext.pending
+            turnFailure?.canResubmitWithoutImage
               ? () => submit(turnFailure.submittedText, true)
               : undefined
           }

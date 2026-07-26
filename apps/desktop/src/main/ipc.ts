@@ -5,6 +5,7 @@ import { type BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { z } from 'zod'
 
 import type { AppSettings } from '../shared/config'
+import { type AttachmentDisposition, deriveTurnRecoveryCapabilities } from '../shared/conversation'
 import type { LlmTurnErrorCode } from '../shared/llm'
 import { translate } from '../shared/localization'
 import type {
@@ -428,15 +429,28 @@ export function registerIpcHandlers(
       if (!capabilities.supportsVision) {
         return {
           ok: false,
-          errorCode: 'VISION_UNSUPPORTED' as const,
+          failure: {
+            domain: 'screen-context' as const,
+            code: 'VISION_UNSUPPORTED' as const,
+            attachmentDisposition: 'retained' as const,
+            retrySameRequest: false,
+            canResubmitWithoutImage: true,
+          },
         }
       }
       try {
         pendingCapture = screenContext.acquireForTurn(event.sender.id, screenContextId, turnId)
       } catch (error) {
+        const errorCode = screenContextErrorCode(error)
         return {
           ok: false,
-          errorCode: screenContextErrorCode(error),
+          failure: {
+            domain: 'screen-context' as const,
+            code: errorCode,
+            attachmentDisposition: screenContextFailureDisposition(errorCode),
+            retrySameRequest: false,
+            canResubmitWithoutImage: true,
+          },
         }
       }
     }
@@ -489,9 +503,11 @@ export function registerIpcHandlers(
       }
       const code = (action.errorCode as LlmTurnErrorCode | undefined) ?? 'UNKNOWN'
       const recoverable = action.recoverable ?? false
+      let attachmentDisposition: AttachmentDisposition = 'released'
       if (pendingCapture && screenContextId) {
         if (recoverable || code === 'CANCELLED') {
           screenContext.rollbackTurn(event.sender.id, screenContextId, turnId)
+          attachmentDisposition = 'retained'
         } else {
           screenContext.completeTurn(event.sender.id, screenContextId, turnId)
         }
@@ -503,11 +519,21 @@ export function registerIpcHandlers(
         vision: Boolean(pendingCapture),
         recoverable,
       })
+      const recovery = deriveTurnRecoveryCapabilities({
+        code,
+        transportRecoverable: recoverable,
+        hadImage: Boolean(screenContextId),
+        attachmentDisposition,
+      })
       return {
         ok: false,
-        providerId: action.providerId ?? llmConfig.activeProvider,
-        errorCode: code,
-        recoverable,
+        failure: {
+          domain: 'llm' as const,
+          code,
+          providerId: action.providerId ?? llmConfig.activeProvider,
+          attachmentDisposition,
+          ...recovery,
+        },
       }
     } finally {
       replyAbortControllers.delete(turnId)
@@ -921,4 +947,10 @@ export function registerIpcHandlers(
     writeFileSync(filePath, JSON.stringify(payload, null, 2), 'utf-8')
     return { ok: true, filePath }
   })
+}
+
+function screenContextFailureDisposition(code: ScreenContextErrorCode): AttachmentDisposition {
+  if (code === 'CAPTURE_EXPIRED') return 'expired'
+  if (code === 'CAPTURE_NOT_OWNED') return 'released'
+  return 'retained'
 }

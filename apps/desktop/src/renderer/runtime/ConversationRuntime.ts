@@ -19,7 +19,11 @@ import type { AvatarMode, AvatarRuntime } from './AvatarRuntime'
 import type { ConversationPresenceRuntime } from './ConversationPresenceRuntime'
 import { EmotionSpeechPipeline, type PreparedEmotionSpeechSegment } from './EmotionSpeechPipeline'
 import type { OverlayRuntime, SyncedAvatarState } from './OverlayRuntime'
-import { LlmCredentialMissingError, LlmTurnFailureError, type SpeechRuntime } from './SpeechRuntime'
+import {
+  ConversationTurnFailureError,
+  LlmCredentialMissingError,
+  type SpeechRuntime,
+} from './SpeechRuntime'
 import { isSpeechServiceError } from './speechCapabilities'
 
 export type ConversationStatus =
@@ -358,10 +362,11 @@ export class ConversationRuntime {
         await this.recoverToIdle(turn.turnId)
         return { status: 'failed', turnId: turn.turnId, phase: failurePhase, error: error.message }
       }
-      if (error instanceof LlmTurnFailureError) {
+      if (error instanceof ConversationTurnFailureError) {
+        const { failure } = error
         this.deps.recordRuntimeEvent(
-          'LLM Turn Failed',
-          `provider=${error.providerId} turnId=${turn.turnId} code=${error.code} vision=${Boolean(turn.screenContextId)} recoverable=${error.recoverable}`,
+          'Conversation Turn Failed',
+          `provider=${failure.providerId ?? 'none'} turnId=${turn.turnId} code=${failure.code} vision=${Boolean(turn.screenContextId)} attachmentDisposition=${failure.attachmentDisposition} retrySameRequest=${failure.retrySameRequest} canResubmitWithoutImage=${failure.canResubmitWithoutImage}`,
         )
         try {
           await this.recoverToIdle(turn.turnId)
@@ -377,10 +382,8 @@ export class ConversationRuntime {
           status: 'failed',
           turnId: turn.turnId,
           phase: failurePhase,
-          error: error.code,
-          code: error.code,
-          recoverable: error.recoverable,
-          providerId: error.providerId,
+          error: failure.code,
+          failure,
         }
       }
       // Speech output (TTS) is a secondary capability. If synthesis fails because
