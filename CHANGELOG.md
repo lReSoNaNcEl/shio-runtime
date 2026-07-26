@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+
+- Alpha publication now discovers unpublished drafts through the releases list and uploads assets by release ID, matching GitHub's draft API behavior.
+
 ## [0.1.0-alpha.5] - 2026-07-26
 
 ### Added

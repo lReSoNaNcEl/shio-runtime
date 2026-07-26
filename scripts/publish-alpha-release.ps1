@@ -22,13 +22,21 @@ if (($actualNames -join "`n") -ne ($expectedNames -join "`n")) {
     throw "Release assets do not match the exact expected names. Expected: $($expectedNames -join ', ')"
 }
 
-$release = $null
-try {
-    $release = gh api "repos/$env:GITHUB_REPOSITORY/releases/tags/$Tag" | ConvertFrom-Json
-} catch {
-    if ($LASTEXITCODE -ne 1) { throw }
+function Get-ReleaseByTag {
+    $serializedReleases = @(gh api --paginate `
+            "repos/$env:GITHUB_REPOSITORY/releases?per_page=100" `
+            --jq ".[] | @json")
+    if ($LASTEXITCODE -ne 0) { throw "Could not inspect existing releases." }
+    $matches = @(
+        $serializedReleases |
+            ForEach-Object { $_ | ConvertFrom-Json } |
+            Where-Object { $_.tag_name -eq $Tag }
+    )
+    if ($matches.Count -gt 1) { throw "Multiple releases unexpectedly use tag $Tag." }
+    return $matches | Select-Object -First 1
 }
 
+$release = Get-ReleaseByTag
 if ($null -ne $release -and -not $release.draft) {
     throw "Published release $Tag is immutable. Create and qualify a new version."
 }
@@ -37,7 +45,7 @@ if ($null -ne $release) {
         throw "Draft release $Tag targets $($release.target_commitish), not $targetCommit."
     }
     Write-Host "Recreating unpublished draft $Tag to resume from a clean asset set."
-    gh release delete $Tag --yes
+    gh api --method DELETE "repos/$env:GITHUB_REPOSITORY/releases/$($release.id)" | Out-Null
     if ($LASTEXITCODE -ne 0) { throw "Could not delete the unpublished draft." }
 }
 
@@ -45,10 +53,21 @@ $title = "Shio Runtime v$($Tag.TrimStart('v'))"
 gh release create $Tag --draft --prerelease --target $targetCommit --title $title --notes-file $NotesFile
 if ($LASTEXITCODE -ne 0) { throw "Could not create draft prerelease." }
 
-gh release upload $Tag @($assets.FullName)
-if ($LASTEXITCODE -ne 0) { throw "Could not upload release assets." }
+$draft = Get-ReleaseByTag
+if ($null -eq $draft -or -not $draft.draft -or $draft.target_commitish -ne $targetCommit) {
+    throw "Release changed while the draft was being prepared; publication refused."
+}
+foreach ($asset in $assets) {
+    $contentType = if ($asset.Extension -eq ".zip") { "application/zip" } else { "text/plain" }
+    $encodedName = [Uri]::EscapeDataString($asset.Name)
+    $uploadUrl = "https://uploads.github.com/repos/$env:GITHUB_REPOSITORY/releases/" +
+        "$($draft.id)/assets?name=$encodedName"
+    gh api --method POST -H "Content-Type: $contentType" $uploadUrl `
+        --input $asset.FullName --silent
+    if ($LASTEXITCODE -ne 0) { throw "Could not upload release asset $($asset.Name)." }
+}
 
-$draft = gh api "repos/$env:GITHUB_REPOSITORY/releases/tags/$Tag" | ConvertFrom-Json
+$draft = gh api "repos/$env:GITHUB_REPOSITORY/releases/$($draft.id)" | ConvertFrom-Json
 if (-not $draft.draft -or $draft.target_commitish -ne $targetCommit) {
     throw "Release changed while the draft was being prepared; publication refused."
 }

@@ -35,21 +35,42 @@ try {
     $env:RELEASE_COMMIT = ""
     $script:ghCalls = [Collections.Generic.List[string]]::new()
     $script:ghMode = "published"
+    $script:testTag = "v$($manifest.productVersion)"
     function gh {
         $global:LASTEXITCODE = 0
         $call = $args -join " "
         [void]$script:ghCalls.Add($call)
-        if ($call -like "api repos/*/releases/tags/*") {
+        if ($call -like "api --paginate repos/*/releases?per_page=100 --jq *") {
             if ($script:ghMode -eq "published") {
-                return '{"id":41,"draft":false,"target_commitish":"1111111111111111111111111111111111111111"}'
+                return "{`"id`":41,`"tag_name`":`"$($script:testTag)`",`"draft`":false," +
+                    "`"target_commitish`":`"1111111111111111111111111111111111111111`"}"
             }
-            return '{"id":42,"draft":true,"target_commitish":"1111111111111111111111111111111111111111"}'
+            if ($script:ghMode -eq "draft") {
+                return "{`"id`":42,`"tag_name`":`"$($script:testTag)`",`"draft`":true," +
+                    "`"target_commitish`":`"1111111111111111111111111111111111111111`"}"
+            }
+            return
+        }
+        if ($call.Contains("uploads.github.com")) {
+            return "{}"
         }
         if ($call.Contains("/releases/42/assets")) {
             return "[{`"name`":`"$zip`"},{`"name`":`"$zip.sha256`"},{`"name`":`"SHA256SUMS.txt`"}]"
         }
-        if ($call -match "release (delete|create|upload)" -or $call.Contains("--method PATCH")) {
+        if ($call.Contains("release create")) {
+            $script:ghMode = "draft"
             return "{}"
+        }
+        if ($call.Contains("--method DELETE")) {
+            $script:ghMode = "absent"
+            return "{}"
+        }
+        if ($call.Contains("--method PATCH")) {
+            return "{}"
+        }
+        if ($call.Contains("api repos/owner/repo/releases/42")) {
+            return "{`"id`":42,`"tag_name`":`"$($script:testTag)`",`"draft`":true," +
+                "`"target_commitish`":`"1111111111111111111111111111111111111111`"}"
         }
         throw "Unhandled mocked gh call: $call"
     }
@@ -72,10 +93,24 @@ try {
     . (Join-Path $repoRoot "scripts\publish-alpha-release.ps1") `
         -Tag "v$($manifest.productVersion)" -AssetsDirectory $assetsRoot `
         -NotesFile (Join-Path $repoRoot "docs\RELEASE-NOTES-ALPHA.md")
-    foreach ($requiredCall in @("release delete", "release create", "release upload", "--method PATCH")) {
+    foreach ($requiredCall in @("--method DELETE", "release create", "uploads.github.com", "--method PATCH")) {
         if (-not $script:ghCalls.Where({ $_.Contains($requiredCall) })) {
             throw "Draft completion did not call: $requiredCall"
         }
+    }
+
+    $script:ghCalls.Clear()
+    $script:ghMode = "absent"
+    . (Join-Path $repoRoot "scripts\publish-alpha-release.ps1") `
+        -Tag $script:testTag -AssetsDirectory $assetsRoot `
+        -NotesFile (Join-Path $repoRoot "docs\RELEASE-NOTES-ALPHA.md")
+    foreach ($requiredCall in @("release create", "uploads.github.com", "--method PATCH")) {
+        if (-not $script:ghCalls.Where({ $_.Contains($requiredCall) })) {
+            throw "Fresh publication did not call: $requiredCall"
+        }
+    }
+    if ($script:ghCalls.Where({ $_.Contains("--method DELETE") }).Count -ne 0) {
+        throw "Fresh publication unexpectedly attempted to delete a release."
     }
 } finally {
     Remove-Item -LiteralPath $assetsRoot -Recurse -Force
