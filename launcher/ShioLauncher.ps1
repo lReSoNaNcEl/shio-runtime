@@ -16,6 +16,7 @@ $RuntimeRoot = Join-Path $LocalRoot "Runtime"
 $LauncherLog = Join-Path $LogsRoot "launcher.log"
 $OwnershipPath = Join-Path $RuntimeRoot "speech-api.json"
 $LauncherMutexName = "Local\ShioRuntimeLauncher"
+$MaxLogBytes = 5MB
 $script:LauncherMutex = $null
 $script:LauncherMutexHeld = $false
 
@@ -24,8 +25,18 @@ $env:HF_HOME = Join-Path $DataRoot "huggingface"
 $env:TORCH_HOME = Join-Path $DataRoot "torch"
 $env:XDG_CACHE_HOME = Join-Path $DataRoot "cache"
 
+function Rotate-Log {
+    param([string]$Path)
+    if (-not (Test-Path -LiteralPath $Path)) { return }
+    if ((Get-Item -LiteralPath $Path).Length -lt $MaxLogBytes) { return }
+    $previous = "$Path.1"
+    if (Test-Path -LiteralPath $previous) { Remove-Item -LiteralPath $previous -Force }
+    Move-Item -LiteralPath $Path -Destination $previous
+}
+
 function Write-LauncherLog {
     param([string]$Message)
+    Rotate-Log $LauncherLog
     $line = "[{0}] {1}" -f (Get-Date -Format "yyyy-MM-dd HH:mm:ss.fff"), $Message
     Add-Content -LiteralPath $LauncherLog -Encoding UTF8 -Value $line
     Write-Host $Message
@@ -40,7 +51,7 @@ function Fail {
 function Read-Manifest {
     if (-not (Test-Path -LiteralPath $ManifestPath)) { Fail "Release manifest is missing: $ManifestPath" }
     $manifest = Get-Content -Raw -Encoding UTF8 -LiteralPath $ManifestPath | ConvertFrom-Json
-    if ($manifest.schemaVersion -ne 1 -or $manifest.platform -ne "win32" -or
+    if ($manifest.schemaVersion -ne 2 -or $manifest.platform -ne "win32" -or
         $manifest.architecture -ne "x64") {
         Fail "Release manifest is incompatible."
     }
@@ -108,9 +119,28 @@ function Get-InstallPaths {
 }
 
 function Invoke-Checked {
-    param([string]$File, [string[]]$Arguments, [string]$WorkingDirectory)
+    param(
+        [string]$File,
+        [string[]]$Arguments,
+        [string]$WorkingDirectory,
+        [string]$LogPath = ""
+    )
     Write-LauncherLog "Running: $File $($Arguments -join ' ')"
-    $process = Start-Process -FilePath $File -ArgumentList $Arguments -WorkingDirectory $WorkingDirectory -Wait -PassThru -NoNewWindow
+    $startArgs = @{
+        FilePath = $File
+        ArgumentList = $Arguments
+        WorkingDirectory = $WorkingDirectory
+        Wait = $true
+        PassThru = $true
+        NoNewWindow = $true
+    }
+    if ($LogPath) {
+        Rotate-Log $LogPath
+        Rotate-Log "$LogPath.error.log"
+        $startArgs.RedirectStandardOutput = $LogPath
+        $startArgs.RedirectStandardError = "$LogPath.error.log"
+    }
+    $process = Start-Process @startArgs
     if ($process.ExitCode -ne 0) { Fail "Command failed with exit code $($process.ExitCode)." }
 }
 
@@ -149,11 +179,25 @@ function Invoke-CheckedWithRetry {
         [int]$MaxAttempts = 3,
         [int]$RetryDelaySeconds = 5,
         [int]$TimeoutSeconds = 900,
-        [int]$ProgressIntervalSeconds = 30
+        [int]$ProgressIntervalSeconds = 30,
+        [string]$LogPath = ""
     )
     for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
         Write-LauncherLog "Running (attempt $attempt/$MaxAttempts): $File $($Arguments -join ' ')"
-        $process = Start-Process -FilePath $File -ArgumentList $Arguments -WorkingDirectory $WorkingDirectory -PassThru -NoNewWindow
+        $startArgs = @{
+            FilePath = $File
+            ArgumentList = $Arguments
+            WorkingDirectory = $WorkingDirectory
+            PassThru = $true
+            NoNewWindow = $true
+        }
+        if ($LogPath) {
+            Rotate-Log $LogPath
+            Rotate-Log "$LogPath.error.log"
+            $startArgs.RedirectStandardOutput = $LogPath
+            $startArgs.RedirectStandardError = "$LogPath.error.log"
+        }
+        $process = Start-Process @startArgs
         # Windows PowerShell releases the native process handle too early unless
         # it is accessed while the process is alive; retain it for ExitCode.
         $processHandle = $process.Handle
@@ -190,7 +234,7 @@ function Invoke-StrictDoctor {
     $previousVenv = $env:SHIO_API_VENV
     try {
         $env:SHIO_API_VENV = $VenvRoot
-        Invoke-Checked $Python @("scripts\doctor_strict.py") $ApiRoot
+        Invoke-Checked $Python @("scripts\doctor_strict.py") $ApiRoot (Join-Path $LogsRoot "doctor.log")
     } finally {
         $env:SHIO_API_VENV = $previousVenv
     }
@@ -217,11 +261,32 @@ function Remove-InstallStaging {
 }
 
 function Install-SpeechPack {
-    param($Manifest, [switch]$Repair)
+    param($Manifest, [switch]$Repair, [switch]$RestoreManaged)
     Assert-Platform
     if (-not (Test-Nvidia)) { Fail "A working NVIDIA GPU/driver is required for this alpha." }
     $python = Find-Python312
     $paths = Get-InstallPaths $Manifest
+    $wasManaged = $false
+    if ($Repair -and (Test-Path -LiteralPath $paths.Root)) {
+        $owned = Read-Ownership
+        if ($null -ne $owned -and (Test-OwnedProcess $owned $Manifest $paths.Root)) {
+            $wasManaged = $true
+            Stop-OwnedApi $Manifest $paths.Root
+        } else {
+            $listener = Get-NetTCPConnection -LocalPort $Manifest.speechPack.port -State Listen -ErrorAction SilentlyContinue |
+                Select-Object -First 1
+            if ($null -ne $listener) {
+                $listenerProcess = Get-Process -Id $listener.OwningProcess -ErrorAction SilentlyContinue
+                if ($null -ne $listenerProcess -and $listenerProcess.Path -and
+                    $listenerProcess.Path.StartsWith(
+                        [IO.Path]::GetFullPath($paths.Root) + [IO.Path]::DirectorySeparatorChar,
+                        [StringComparison]::OrdinalIgnoreCase
+                    )) {
+                    Fail "Repair refused: an unowned process is using this Speech Pack installation."
+                }
+            }
+        }
+    }
     $source = Resolve-BundlePath $Manifest.speechPack.sourceRelativePath
     if (-not (Test-Path -LiteralPath (Join-Path $source "services\api\requirements.lock.txt"))) {
         Fail "Speech Pack payload is incomplete."
@@ -244,15 +309,26 @@ function Install-SpeechPack {
         & $python.File @($python.Args) -m venv (Join-Path $staging ".venv")
         if ($LASTEXITCODE -ne 0) { Fail "Could not create the Speech Pack virtual environment." }
         $stagingPython = Join-Path $staging ".venv\Scripts\python.exe"
-        Invoke-Checked $stagingPython @("-m", "pip", "install", "--upgrade", "pip>=25.3,<26") $stagingApi
-        Invoke-Checked $stagingPython @("-m", "pip", "install", "-r", "requirements-torch-cu128.txt") $stagingApi
-        Invoke-Checked $stagingPython @("-m", "pip", "install", "-r", "requirements.lock.txt") $stagingApi
-        Invoke-Checked $stagingPython @("-m", "pip", "check") $stagingApi
+        $installLog = Join-Path $LogsRoot "install.log"
+        Invoke-Checked $stagingPython @("-m", "pip", "install", "--upgrade", "pip>=25.3,<26") $stagingApi $installLog
+        Invoke-Checked $stagingPython @("-m", "pip", "install", "-r", "requirements-torch-cu128.txt") $stagingApi $installLog
+        Invoke-Checked $stagingPython @("-m", "pip", "install", "-r", "requirements.lock.txt") $stagingApi $installLog
+        Invoke-Checked $stagingPython @("-m", "pip", "check") $stagingApi $installLog
         $persistentEnv = Join-Path $DataRoot "speech-api.env"
         if (-not (Test-Path -LiteralPath $persistentEnv)) {
-            Copy-Item -LiteralPath (Join-Path $stagingApi ".env.example") -Destination $persistentEnv
+            $template = Join-Path $staging $Manifest.speechPack.releaseEnvironmentTemplate
+            Copy-Item -LiteralPath $template -Destination $persistentEnv
         }
         Copy-Item -LiteralPath $persistentEnv -Destination (Join-Path $stagingApi ".env")
+        Add-Content -LiteralPath (Join-Path $stagingApi ".env") -Encoding UTF8 -Value @(
+            "SHIO_MODEL_ROOT=$((Join-Path $DataRoot 'models').Replace('\', '/'))",
+            "SPEECH_PACK_VERSION=$($Manifest.speechPack.version)",
+            "F5_ALLOW_MOCK=false",
+            "F5_MODEL_REVISION=$($Manifest.speechPack.modelRevisions.f5)",
+            "WHISPER_MODEL_REVISION=$($Manifest.speechPack.modelRevisions.fasterWhisper)",
+            "F5_VOCODER_REVISION=$($Manifest.speechPack.modelRevisions.vocoder)",
+            "RUACCENT_MODEL_REVISION=$($Manifest.speechPack.modelRevisions.ruaccent)"
+        )
         $persistentVoices = Join-Path $DataRoot "voices"
         New-Item -ItemType Directory -Force -Path $persistentVoices | Out-Null
         $voicesPath = Join-Path $stagingApi "voices"
@@ -262,7 +338,18 @@ function Install-SpeechPack {
         Invoke-CheckedWithRetry `
             -File $stagingPython `
             -Arguments @("scripts\sync_voices.py") `
-            -WorkingDirectory $stagingApi
+            -WorkingDirectory $stagingApi `
+            -TimeoutSeconds $Manifest.speechPack.installTimeoutSeconds `
+            -LogPath $installLog
+        Write-LauncherLog "Prefetching pinned Speech models. This may take up to $($Manifest.speechPack.installTimeoutSeconds / 60) minutes."
+        $env:SHIO_MODEL_ROOT = Join-Path $DataRoot "models"
+        Invoke-CheckedWithRetry `
+            -File $stagingPython `
+            -Arguments @("scripts\prefetch_models.py") `
+            -WorkingDirectory $stagingApi `
+            -TimeoutSeconds $Manifest.speechPack.installTimeoutSeconds `
+            -ProgressIntervalSeconds 30 `
+            -LogPath $installLog
         Invoke-StrictDoctor $stagingPython $stagingApi (Join-Path $staging ".venv")
         $state = @{
             schemaVersion = 1
@@ -271,17 +358,29 @@ function Install-SpeechPack {
             installDirectory = $paths.Root
             pythonExecutable = $paths.Python
             status = "ready"
+            modelsReady = $true
         } | ConvertTo-Json
         Set-Content -LiteralPath (Join-Path $staging "install-state.json") -Encoding UTF8 -Value $state
         if (Test-Path -LiteralPath $paths.Root) {
             $backup = "$($paths.Root).previous.$PID"
             Move-Item -LiteralPath $paths.Root -Destination $backup
-            Move-Item -LiteralPath $staging -Destination $paths.Root
-            Remove-Item -LiteralPath $backup -Recurse -Force
+            try {
+                Move-Item -LiteralPath $staging -Destination $paths.Root
+                Remove-Item -LiteralPath $backup -Recurse -Force
+            } catch {
+                if (-not (Test-Path -LiteralPath $paths.Root) -and
+                    (Test-Path -LiteralPath $backup)) {
+                    Move-Item -LiteralPath $backup -Destination $paths.Root
+                }
+                throw
+            }
         } else {
             Move-Item -LiteralPath $staging -Destination $paths.Root
         }
         Write-LauncherLog "Speech Pack installation is ready."
+        if ($RestoreManaged -and $wasManaged) {
+            Start-ManagedApi $Manifest $paths | Out-Null
+        }
     } catch {
         Write-LauncherLog "Installation failed; removing inactive staging directory: $staging"
         Remove-InstallStaging $staging
@@ -289,13 +388,28 @@ function Install-SpeechPack {
     }
 }
 
-function Test-Health {
+function Get-Health {
     param($Manifest)
     $uri = "http://$($Manifest.speechPack.host):$($Manifest.speechPack.port)$($Manifest.speechPack.healthPath)"
     try {
-        $health = Invoke-RestMethod -Uri $uri -TimeoutSec 3
-        return $health.status -eq "ok" -and $null -ne $health.engines
-    } catch { return $false }
+        return Invoke-RestMethod -Uri $uri -TimeoutSec 3
+    } catch { return $null }
+}
+
+function Test-Health {
+    param($Manifest)
+    $health = Get-Health $Manifest
+    if ($null -eq $health) { return $false }
+    return (
+        $health.status -eq "ok" -and
+        $health.ready -eq $true -and
+        $health.serviceId -eq $Manifest.speechPack.serviceId -and
+        $health.contractVersion -eq $Manifest.speechPack.contractVersion -and
+        $health.speechPackVersion -eq $Manifest.speechPack.version -and
+        $health.asr.ready -eq $true -and
+        $health.engines.f5.ready -eq $true -and
+        $health.engines.f5.mode -eq "real"
+    )
 }
 
 function Get-PortOccupied {
@@ -308,23 +422,76 @@ function Read-Ownership {
     try { return Get-Content -Raw -LiteralPath $OwnershipPath | ConvertFrom-Json } catch { return $null }
 }
 
+function Get-ProcessExecutablePath {
+    param([int]$ProcessId)
+    try {
+        return (Get-CimInstance Win32_Process -Filter "ProcessId = $ProcessId").ExecutablePath
+    } catch { return $null }
+}
+
+function Test-OwnedProcess {
+    param($Owned, $Manifest, [string]$ExpectedInstallRoot)
+    try {
+        if ($null -eq $Owned -or $Owned.schemaVersion -ne 2) { return $false }
+        $process = Get-Process -Id $Owned.pid -ErrorAction SilentlyContinue
+        if ($null -eq $process) { return $false }
+        $actualStart = $process.StartTime.ToUniversalTime().ToString("o")
+        $actualExecutable = Get-ProcessExecutablePath $Owned.pid
+        $expectedRoot = [IO.Path]::GetFullPath($ExpectedInstallRoot)
+        if (-not $actualExecutable) { return $false }
+        $actualExecutable = [IO.Path]::GetFullPath($actualExecutable)
+        return (
+            $actualStart -eq $Owned.startTime -and
+            $actualExecutable -eq [IO.Path]::GetFullPath($Owned.executablePath) -and
+            $actualExecutable.StartsWith(
+                $expectedRoot + [IO.Path]::DirectorySeparatorChar,
+                [StringComparison]::OrdinalIgnoreCase
+            ) -and
+            [IO.Path]::GetFullPath($Owned.installRoot) -eq $expectedRoot -and
+            $Owned.speechPackVersion -eq $Manifest.speechPack.version -and
+            $Owned.host -eq $Manifest.speechPack.host -and
+            [int]$Owned.port -eq [int]$Manifest.speechPack.port -and
+            $Owned.serviceId -eq $Manifest.speechPack.serviceId
+        )
+    } catch {
+        return $false
+    }
+}
+
 function Stop-OwnedApi {
+    param($Manifest, [string]$ExpectedInstallRoot)
     $owned = Read-Ownership
     if ($null -eq $owned) { return }
+    if (-not $ExpectedInstallRoot) {
+        $ExpectedInstallRoot = (Get-InstallPaths $Manifest).Root
+    }
     $process = Get-Process -Id $owned.pid -ErrorAction SilentlyContinue
     if ($null -eq $process) {
         Remove-Item -LiteralPath $OwnershipPath -Force -ErrorAction SilentlyContinue
         return
     }
-    $actualStart = $process.StartTime.ToUniversalTime().ToString("o")
-    if ($actualStart -ne $owned.startTime) {
-        Write-LauncherLog "Stale ownership state ignored; PID belongs to another process."
-        Remove-Item -LiteralPath $OwnershipPath -Force
+    if (-not (Test-OwnedProcess $owned $Manifest $ExpectedInstallRoot)) {
+        Write-LauncherLog "Ownership validation failed; the process will not be stopped."
+        return
+    }
+    $health = Get-Health $Manifest
+    if ($null -ne $health -and $health.serviceId -ne $owned.serviceId) {
+        Write-LauncherLog "Health identity mismatch; the process will not be stopped."
         return
     }
     Write-LauncherLog "Stopping managed Speech API (PID $($owned.pid))..."
-    Stop-Process -Id $owned.pid
+    Stop-Process -Id $owned.pid -ErrorAction SilentlyContinue
     Wait-Process -Id $owned.pid -Timeout 15 -ErrorAction SilentlyContinue
+    if ($null -ne (Get-Process -Id $owned.pid -ErrorAction SilentlyContinue)) {
+        if (-not (Test-OwnedProcess $owned $Manifest $ExpectedInstallRoot)) {
+            Fail "Managed Speech API identity changed while stopping; force stop refused."
+        }
+        Stop-Process -Id $owned.pid -Force
+        Wait-Process -Id $owned.pid -Timeout 15 -ErrorAction SilentlyContinue
+    }
+    if ($null -ne (Get-Process -Id $owned.pid -ErrorAction SilentlyContinue)) {
+        Fail "Managed Speech API did not exit."
+    }
     Remove-Item -LiteralPath $OwnershipPath -Force -ErrorAction SilentlyContinue
 }
 
@@ -334,7 +501,61 @@ function Ensure-Installed {
     if (-not (Test-Path -LiteralPath $paths.State) -or -not (Test-Path -LiteralPath $paths.Python)) {
         Install-SpeechPack $Manifest
     }
+    $env:SHIO_MODEL_ROOT = Join-Path $DataRoot "models"
+    try {
+        Invoke-Checked $paths.Python @("scripts\prefetch_models.py", "--check") $paths.Api
+    } catch {
+        Fail "Required Speech model cache is missing or incomplete. Run 'Start Shio Runtime.cmd repair'."
+    }
     return $paths
+}
+
+function Start-ManagedApi {
+    param($Manifest, $Paths)
+    $runtimeLog = Join-Path $LogsRoot "speech-api.log"
+    $runtimeErrorLog = Join-Path $LogsRoot "speech-api-error.log"
+    Rotate-Log $runtimeLog
+    Rotate-Log $runtimeErrorLog
+    $env:SHIO_MODEL_ROOT = Join-Path $DataRoot "models"
+    $env:SPEECH_PACK_VERSION = $Manifest.speechPack.version
+    $env:F5_MODEL_REVISION = $Manifest.speechPack.modelRevisions.f5
+    $env:WHISPER_MODEL_REVISION = $Manifest.speechPack.modelRevisions.fasterWhisper
+    $env:F5_VOCODER_REVISION = $Manifest.speechPack.modelRevisions.vocoder
+    $env:RUACCENT_MODEL_REVISION = $Manifest.speechPack.modelRevisions.ruaccent
+    $env:F5_ALLOW_MOCK = "false"
+    $arguments = @(
+        "-m", "uvicorn", "app.main:app", "--host", $Manifest.speechPack.host,
+        "--port", [string]$Manifest.speechPack.port
+    )
+    $api = Start-Process -FilePath $Paths.Python -ArgumentList $arguments -WorkingDirectory $Paths.Api `
+        -PassThru -WindowStyle Hidden -RedirectStandardOutput $runtimeLog `
+        -RedirectStandardError $runtimeErrorLog
+    @{
+        schemaVersion = 2
+        pid = $api.Id
+        startTime = $api.StartTime.ToUniversalTime().ToString("o")
+        executablePath = [IO.Path]::GetFullPath($Paths.Python)
+        installRoot = [IO.Path]::GetFullPath($Paths.Root)
+        speechPackVersion = $Manifest.speechPack.version
+        host = $Manifest.speechPack.host
+        port = $Manifest.speechPack.port
+        serviceId = $Manifest.speechPack.serviceId
+    } | ConvertTo-Json | Set-Content -LiteralPath $OwnershipPath -Encoding UTF8
+    return $api
+}
+
+function Get-HealthyApiClassification {
+    param($Manifest, $Paths)
+    if (-not (Test-Health $Manifest)) { return "unavailable" }
+    $owned = Read-Ownership
+    if ($null -ne $owned -and (Test-OwnedProcess $owned $Manifest $Paths.Root)) {
+        return "managed-existing"
+    }
+    if ($null -ne $owned) {
+        Write-LauncherLog "Removing stale ownership state; healthy API remains external."
+        Remove-Item -LiteralPath $OwnershipPath -Force -ErrorAction SilentlyContinue
+    }
+    return "external"
 }
 
 function Start-Shio {
@@ -344,21 +565,19 @@ function Start-Shio {
     if (-not (Test-Path -LiteralPath $desktop)) { Fail "Desktop executable is missing." }
     $paths = Ensure-Installed $Manifest
     $ownsApi = $false
-    if (Test-Health $Manifest) {
-        Write-LauncherLog "Using compatible externally managed Speech API."
+    $classification = Get-HealthyApiClassification $Manifest $paths
+    if ($classification -ne "unavailable") {
+        if ($classification -eq "managed-existing") {
+            Write-LauncherLog "Adopting an existing managed Speech API after launcher interruption."
+            $ownsApi = $true
+        } else {
+            Write-LauncherLog "Using compatible externally managed Speech API."
+        }
     } elseif (Get-PortOccupied $Manifest) {
         Fail "Port $($Manifest.speechPack.port) is occupied by an incompatible service. The launcher will not stop it."
     } else {
         $runtimeLog = Join-Path $LogsRoot "speech-api.log"
-        $arguments = @("-m", "uvicorn", "app.main:app", "--host", $Manifest.speechPack.host, "--port", [string]$Manifest.speechPack.port)
-        $api = Start-Process -FilePath $paths.Python -ArgumentList $arguments -WorkingDirectory $paths.Api `
-            -PassThru -WindowStyle Hidden -RedirectStandardOutput $runtimeLog -RedirectStandardError (Join-Path $LogsRoot "speech-api-error.log")
-        @{
-            schemaVersion = 1
-            pid = $api.Id
-            startTime = $api.StartTime.ToUniversalTime().ToString("o")
-            speechPackVersion = $Manifest.speechPack.version
-        } | ConvertTo-Json | Set-Content -LiteralPath $OwnershipPath -Encoding UTF8
+        $api = Start-ManagedApi $Manifest $paths
         $ownsApi = $true
         $deadline = (Get-Date).AddSeconds($Manifest.speechPack.startupTimeoutSeconds)
         while ((Get-Date) -lt $deadline -and -not (Test-Health $Manifest)) {
@@ -366,7 +585,7 @@ function Start-Shio {
             Start-Sleep -Seconds 2
         }
         if (-not (Test-Health $Manifest)) {
-            Stop-OwnedApi
+            Stop-OwnedApi $Manifest $paths.Root
             Fail "Speech API did not become healthy. See $runtimeLog"
         }
     }
@@ -375,7 +594,7 @@ function Start-Shio {
         $desktopProcess = Start-Process -FilePath $desktop -WorkingDirectory (Split-Path -Parent $desktop) -PassThru
         Wait-Process -Id $desktopProcess.Id
     } finally {
-        if ($ownsApi) { Stop-OwnedApi }
+        if ($ownsApi) { Stop-OwnedApi $Manifest $paths.Root }
     }
 }
 
@@ -401,7 +620,10 @@ try {
             Write-Host "Speech API healthy:   $(Test-Health $manifest)"
             Write-Host "Managed ownership:    $($null -ne (Read-Ownership))"
         }
-        "stop" { Stop-OwnedApi }
+        "stop" {
+            $paths = Get-InstallPaths $manifest
+            Stop-OwnedApi $manifest $paths.Root
+        }
         "open-logs" { Start-Process explorer.exe -ArgumentList "`"$LogsRoot`"" }
     }
 } catch {

@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "productVersion": "0.1.0-alpha.4",
   "platform": "win32",
   "architecture": "x64",
@@ -12,7 +12,17 @@
     "host": "127.0.0.1",
     "port": 8000,
     "healthPath": "/health",
-    "startupTimeoutSeconds": 180
+    "startupTimeoutSeconds": 180,
+    "installTimeoutSeconds": 7200,
+    "serviceId": "shio.speech-api",
+    "contractVersion": "1.1",
+    "releaseEnvironmentTemplate": "services/api/.env.release",
+    "modelRevisions": {
+      "fasterWhisper": "08e178d48790749d25932bbc082711ddcfdfbc4f",
+      "f5": "ea166adeae4c80ec5ee423a671e2bdb83906cf84",
+      "vocoder": "0feb3fdd929bcd6649e0e7c5a688cf7dd012ef21",
+      "ruaccent": "b78ae5ea1e62beaf138bed1865cd8c3b0b5ca855"
+    }
   },
   "requirements": {
     "windows": "11",

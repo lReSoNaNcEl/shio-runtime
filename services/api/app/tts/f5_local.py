@@ -2,6 +2,7 @@ import logging
 import os
 import re
 from dataclasses import dataclass
+from pathlib import Path
 
 import numpy as np
 import soundfile as sf
@@ -55,8 +56,13 @@ class F5LocalEngine(LocalTTSEngine):
         self,
         device: str = "cuda",
         model_id: str = "Misha24-10/F5-TTS_RUSSIAN",
+        model_revision: str = "main",
+        vocoder_revision: str = "main",
+        accent_revision: str = "main",
         ckpt_subpath: str = "F5TTS_v1_Base_v2/model_last_inference.safetensors",
         vocab_subpath: str = "F5TTS_v1_Base/vocab.txt",
+        model_root: str = "",
+        allow_mock: bool = True,
         use_accent: bool = True,
         nfe_step: int = 24,
         cfg_strength: float = 1.5,
@@ -71,6 +77,9 @@ class F5LocalEngine(LocalTTSEngine):
         self.model = None
         self.sample_rate = F5_SAMPLE_RATE
         self.model_id = model_id
+        self.model_revision = model_revision
+        self._accent_revision = accent_revision
+        self._model_root = Path(model_root) if model_root else None
         self._accentizer = None
         self._use_accent = use_accent
         self._nfe_step = int(nfe_step)
@@ -86,24 +95,55 @@ class F5LocalEngine(LocalTTSEngine):
         logger.info("Loading F5-TTS model '%s' on %s...", model_id, device)
         try:
             from f5_tts.api import F5TTS
-            from huggingface_hub import hf_hub_download
+            from huggingface_hub import hf_hub_download, snapshot_download
 
             _patch_torchaudio_load_with_soundfile()
-            ckpt = hf_hub_download(model_id, ckpt_subpath)
-            vocab = hf_hub_download(model_id, vocab_subpath)
+            prefetched_root = Path(model_root) / "f5" / model_revision if model_root else None
+            prefetched_ckpt = prefetched_root / ckpt_subpath if prefetched_root else None
+            prefetched_vocab = prefetched_root / vocab_subpath if prefetched_root else None
+            if prefetched_root:
+                if not prefetched_ckpt.is_file() or not prefetched_vocab.is_file():
+                    raise FileNotFoundError(
+                        "Prefetched F5 assets are missing; run the launcher repair command"
+                    )
+                ckpt = str(prefetched_ckpt)
+                vocab = str(prefetched_vocab)
+                vocoder = Path(model_root) / "vocoder" / vocoder_revision
+                if (
+                    not (vocoder / "config.yaml").is_file()
+                    or not (vocoder / "pytorch_model.bin").is_file()
+                ):
+                    raise FileNotFoundError(
+                        "Prefetched Vocos assets are missing; run the launcher repair command"
+                    )
+            else:
+                ckpt = hf_hub_download(model_id, ckpt_subpath, revision=model_revision)
+                vocab = hf_hub_download(model_id, vocab_subpath, revision=model_revision)
+                vocoder = Path(
+                    snapshot_download(
+                        "charactr/vocos-mel-24khz",
+                        revision=vocoder_revision,
+                        allow_patterns=["config.yaml", "pytorch_model.bin"],
+                    )
+                )
             self.model = F5TTS(
                 model="F5TTS_v1_Base",
                 ckpt_file=ckpt,
                 vocab_file=vocab,
+                vocoder_local_path=str(vocoder),
                 device=device,
             )
             self.is_ready = True
             logger.info("F5-TTS model loaded")
         except ImportError:
+            if not allow_mock:
+                raise
             logger.warning("f5-tts not installed - F5 runs in MOCK mode")
             self.model = None
             self.is_ready = True
         except Exception as e:
+            if not allow_mock:
+                raise RuntimeError("F5-TTS real model failed to load") from e
             logger.error("Failed to load F5-TTS model (%s) - MOCK mode", e)
             self.model = None
             self.is_ready = True
@@ -128,10 +168,33 @@ class F5LocalEngine(LocalTTSEngine):
             return text
         try:
             if self._accentizer is None:
+                import ruaccent.ruaccent as ruaccent_module
                 from ruaccent import RUAccent
 
                 acc = RUAccent()
-                acc.load(omograph_model_size="tiny", use_dictionary=True)
+                if self._model_root:
+                    accent_root = self._model_root / "ruaccent" / self._accent_revision
+                    if (
+                        not (accent_root / "dictionary").is_dir()
+                        or not (accent_root / "nn").is_dir()
+                    ):
+                        raise FileNotFoundError(
+                            "Prefetched RUAccent assets are missing; run launcher repair"
+                        )
+                    original_module_file = ruaccent_module.__file__
+                    try:
+                        # RUAccent derives its koziev asset root from its module file.
+                        # Point that lookup at the revision-pinned persistent cache.
+                        ruaccent_module.__file__ = str(accent_root / "ruaccent.py")
+                        acc.load(
+                            omograph_model_size="tiny",
+                            use_dictionary=True,
+                            workdir=str(accent_root),
+                        )
+                    finally:
+                        ruaccent_module.__file__ = original_module_file
+                else:
+                    acc.load(omograph_model_size="tiny", use_dictionary=True)
                 self._accentizer = acc
             return self._accentizer.process_all(text)
         except Exception as e:

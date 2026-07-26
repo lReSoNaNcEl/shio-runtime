@@ -56,12 +56,16 @@ def main() -> int:
         fail("NVIDIA GPU name is empty")
 
     from app.config import settings
+    from scripts.prefetch_models import model_root, verify
 
     host = settings.HOST.strip()
     if not host or any(character.isspace() for character in host):
         fail(f"Invalid API bind address: {settings.HOST!r}")
     if not 1 <= settings.PORT <= 65535:
         fail(f"Invalid API port: {settings.PORT}")
+    if settings.F5_ALLOW_MOCK:
+        fail("F5_ALLOW_MOCK must be false for a published Speech Pack")
+    verify(model_root())
 
     manifest_path = (SERVICE_ROOT / settings.VOICE_MANIFEST_PATH).resolve()
     emotion_path = (SERVICE_ROOT / settings.EMOTION_MANIFEST_PATH).resolve()

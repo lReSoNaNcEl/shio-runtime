@@ -6,6 +6,7 @@
 npm ci --prefix apps/desktop
 npm run alpha:version:check
 npm run alpha:launcher:check
+npm run alpha:integrity:check
 npm run alpha:bundle
 npm run alpha:bundle:verify
 npm run alpha:checksums
@@ -29,10 +30,10 @@ git tag -a "v$version" -m "Shio Runtime v$version"
 git push origin "v$version"
 ```
 
-The tag workflow checks every version source, then creates or updates a GitHub prerelease and replaces its ZIP/checksum assets safely.
+The tag workflow requires an annotated tag whose commit is in `origin/main`, checks every version source, creates a draft prerelease, verifies the exact ZIP/checksum asset names, and only then publishes it. An unpublished draft for the same commit may be safely recreated. A published release and its assets are immutable; rerunning the workflow fails and requires a new version.
 
 ## Rollback
 
-Do not rewrite or reuse a published tag. If publication is defective, remove the prerelease assets or prerelease through GitHub, fix the source, increment the alpha version, qualify a new workflow artifact, and publish a new tag.
+Do not rewrite, remove, or reuse a published tag or mutate a published release. If publication is defective, record the defect, fix the source, increment the alpha version, qualify a new workflow artifact, and publish a new tag.
 
 GitHub Actions success does not prove CUDA, F5-TTS, Whisper, microphone, avatar, or end-to-end runtime behavior. Clean-machine qualification remains mandatory.

@@ -33,7 +33,8 @@ The backend removes the tag from spoken text and resolves the speech emotion thr
 
 - `GET /` - Web UI.
 - `GET /docs` - Swagger UI.
-- `GET /health` - service status with `engines.f5`.
+- `GET /health` - backwards-compatible service status with stable service,
+  contract, Speech Pack identity, and explicit ASR/F5 readiness.
 - `GET /voices` - manifest-backed voices, datasets, installed/available references, sync metadata, emotion contract.
 - `GET /emotions` - shared emotion manifest contract.
 - `GET /voices/status` - remote sync state, installed voices, and missing local assets.
@@ -66,6 +67,11 @@ npm run api:doctor
 Regenerate lock files after changing direct requirements with `npm run api:lock`.
 `VOICE_DATASET_REVISION` is an optional override; when empty, voice sync uses the
 exact commit SHA stored in `voice_manifest.json`.
+
+Managed release installation runs `scripts/prefetch_models.py` with
+`SHIO_MODEL_ROOT` pointing below the launcher's persistent Data directory. It
+downloads only the configured commit revisions; `--check` verifies the cache
+without network access.
 
 Open `http://localhost:8000` or `http://localhost:8000/docs`.
 `127.0.0.1` is the local bind address; `0.0.0.0` means “listen on all interfaces”

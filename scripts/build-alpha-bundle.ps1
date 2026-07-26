@@ -38,11 +38,29 @@ $speechRoot = Join-Path $bundleRoot "speech-pack"
 New-Item -ItemType Directory -Force -Path $speechRoot | Out-Null
 $apiSource = Join-Path $repoRoot "services\api"
 $apiTarget = Join-Path $speechRoot "services\api"
-New-Item -ItemType Directory -Force -Path (Split-Path -Parent $apiTarget) | Out-Null
-& robocopy $apiSource $apiTarget /E /NFL /NDL /NJH /NJS /NP `
-    /XD .venv venv __pycache__ voices .pytest_cache .ruff_cache `
-    /XF .env *.pyc *.pyo *.wav *.sqlite *.sqlite3
-if ($LASTEXITCODE -ge 8) { throw "Speech Pack copy failed with robocopy exit code $LASTEXITCODE." }
+New-Item -ItemType Directory -Force -Path $apiTarget | Out-Null
+$trackedApiFiles = & git -C $repoRoot ls-files -- "services/api"
+if ($LASTEXITCODE -ne 0) { throw "Could not enumerate tracked Speech Pack files." }
+$releaseFiles = $trackedApiFiles | Where-Object {
+    $_ -match '^services/api/app/' -or
+    $_ -match '^services/api/web/' -or
+    $_ -in @(
+        "services/api/.env.release",
+        "services/api/emotion_manifest.json",
+        "services/api/voice_manifest.json",
+        "services/api/requirements.lock.txt",
+        "services/api/requirements-torch-cu128.txt",
+        "services/api/scripts/doctor_strict.py",
+        "services/api/scripts/prefetch_models.py",
+        "services/api/scripts/sync_voices.py"
+    )
+}
+foreach ($tracked in $releaseFiles) {
+    $relative = $tracked.Substring("services/api/".Length)
+    $destination = Join-Path $apiTarget $relative
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $destination) | Out-Null
+    Copy-Item -LiteralPath (Join-Path $repoRoot $tracked) -Destination $destination
+}
 
 $docsTarget = Join-Path $bundleRoot "docs"
 New-Item -ItemType Directory -Force -Path $docsTarget | Out-Null

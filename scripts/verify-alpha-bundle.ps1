@@ -22,6 +22,8 @@ try {
         "desktop\Shio Runtime.exe",
         "speech-pack\services\api\requirements.lock.txt",
         "speech-pack\services\api\requirements-torch-cu128.txt",
+        "speech-pack\services\api\.env.release",
+        "speech-pack\services\api\scripts\prefetch_models.py",
         "speech-pack\services\api\scripts\doctor_strict.py",
         "docs\ALPHA-INSTALL.md",
         "docs\ALPHA-TROUBLESHOOTING.md"
@@ -34,9 +36,18 @@ try {
         $bundledManifest.speechPack.version -ne $manifest.productVersion) {
         throw "Bundle version mismatch."
     }
-    $forbiddenNames = @(".env", ".venv", ".git", "__pycache__")
+    $forbiddenNames = @(
+        ".env", ".env.example", ".venv", ".git", "__pycache__", "coverage",
+        ".coverage", ".pytest_cache", ".ruff_cache", "voice_repository_status.json"
+    )
+    $forbiddenExtensions = @(
+        ".key", ".pem", ".pfx", ".p12", ".cer", ".crt", ".log", ".db",
+        ".sqlite", ".sqlite3", ".ckpt", ".safetensors", ".pt", ".pth", ".onnx",
+        ".tmp", ".temp", ".coverage"
+    )
     $bad = Get-ChildItem -LiteralPath $root -Recurse -Force | Where-Object {
-        $forbiddenNames -contains $_.Name -or $_.Extension -in @(".pyc", ".pyo", ".wav") -or
+        $forbiddenNames -contains $_.Name -or
+        $_.Extension -in ($forbiddenExtensions + @(".pyc", ".pyo", ".wav")) -or
         ($_.Name -eq "node_modules" -and
             -not $_.FullName.StartsWith(
                 (Join-Path $root "desktop\resources\app.asar.unpacked\node_modules"),
@@ -44,6 +55,19 @@ try {
             ))
     }
     if ($bad) { throw "Forbidden bundle content: $($bad[0].FullName)" }
+    $apiRoot = Join-Path $root "speech-pack\services\api"
+    $tracked = & git -C $repoRoot ls-files -- "services/api"
+    if ($LASTEXITCODE -ne 0) { throw "Could not enumerate tracked API files." }
+    $trackedSet = @{}
+    foreach ($item in $tracked) {
+        $trackedSet[$item.Substring("services/api/".Length).Replace("/", "\")] = $true
+    }
+    foreach ($file in Get-ChildItem -LiteralPath $apiRoot -Recurse -File -Force) {
+        $relative = $file.FullName.Substring($apiRoot.Length + 1)
+        if (-not $trackedSet.ContainsKey($relative)) {
+            throw "Untracked Speech Pack file found: $relative"
+        }
+    }
     $textFiles = Get-ChildItem -LiteralPath $root -Recurse -File |
         Where-Object { $_.Extension -in @(".txt", ".md", ".json", ".ps1", ".cmd", ".py") }
     foreach ($file in $textFiles) {

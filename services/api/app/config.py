@@ -40,6 +40,13 @@ class Settings(BaseSettings):
     WHISPER_MODEL: WhisperModel = Field(
         default=WhisperModel.MEDIUM, description="Whisper model size"
     )
+    WHISPER_MODEL_REVISION: str = Field(
+        default="08e178d48790749d25932bbc082711ddcfdfbc4f",
+        description="Pinned Hugging Face revision for the configured faster-whisper model",
+    )
+    SHIO_MODEL_ROOT: str = Field(
+        default="", description="Persistent root prepared by the release model-prefetch command"
+    )
     ASR_LANGUAGE: Language = Field(default=Language.AUTO, description="ASR language (auto/ru/en)")
     WHISPER_COMPUTE_TYPE: str = Field(default="auto", description="Whisper compute type")
     VAD_THRESHOLD: float = Field(default=0.5, ge=0.0, le=1.0)
@@ -78,6 +85,18 @@ class Settings(BaseSettings):
     F5_MODEL_ID: str = Field(
         default="Misha24-10/F5-TTS_RUSSIAN", description="Hugging Face model id for F5-TTS"
     )
+    F5_MODEL_REVISION: str = Field(
+        default="ea166adeae4c80ec5ee423a671e2bdb83906cf84",
+        description="Pinned Hugging Face revision for F5 model assets",
+    )
+    F5_VOCODER_REVISION: str = Field(
+        default="0feb3fdd929bcd6649e0e7c5a688cf7dd012ef21",
+        description="Pinned Hugging Face revision for the F5 Vocos model",
+    )
+    RUACCENT_MODEL_REVISION: str = Field(
+        default="b78ae5ea1e62beaf138bed1865cd8c3b0b5ca855",
+        description="Pinned Hugging Face revision for RUAccent model assets",
+    )
     F5_CKPT_SUBPATH: str = Field(
         default="F5TTS_v1_Base_v2/model_last_inference.safetensors",
         description="F5 checkpoint path in the model repo",
@@ -115,6 +134,17 @@ class Settings(BaseSettings):
         ge=-40.0,
         le=-8.0,
         description="Final F5 response RMS target after validation/chunking",
+    )
+    F5_ALLOW_MOCK: bool = Field(
+        default=True,
+        description="Explicit development/test opt-in for mock TTS; release configuration disables it",
+    )
+
+    # Stable launcher/service identity
+    SERVICE_ID: str = Field(default="shio.speech-api", description="Stable Speech API identity")
+    CONTRACT_VERSION: str = Field(default="1.1", description="Speech HTTP contract version")
+    SPEECH_PACK_VERSION: str = Field(
+        default="development", description="Version of the packaged Speech API runtime"
     )
 
     # Device

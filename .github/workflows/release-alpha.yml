@@ -17,12 +17,15 @@ jobs:
   api-validation:
     name: API validation
     runs-on: windows-latest
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: services/api
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.12"
           cache: pip
@@ -39,15 +42,20 @@ jobs:
   windows-bundle:
     name: Windows alpha bundle
     runs-on: windows-latest
+    timeout-minutes: 60
     needs: api-validation
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 0
+      - name: Verify tag ancestry
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-alpha-tag.ps1
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: "24"
           cache: npm
           cache-dependency-path: apps/desktop/package-lock.json
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.12"
       - name: Use npm 11
@@ -63,14 +71,16 @@ jobs:
           npm run desktop:imports:check
           npm run typecheck
       - name: Launcher validation
-        run: npm run alpha:launcher:check
+        run: |
+          npm run alpha:launcher:check
+          npm run alpha:integrity:check
       - name: Build complete alpha bundle
         run: npm run alpha:bundle
       - name: Verify extracted alpha bundle
         run: npm run alpha:bundle:verify
       - name: Generate checksums
         run: npm run alpha:checksums
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: shio-runtime-alpha-bundle
           path: |
@@ -84,31 +94,31 @@ jobs:
     name: Publish GitHub prerelease
     if: github.ref_type == 'tag'
     runs-on: windows-latest
+    timeout-minutes: 15
     needs: windows-bundle
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 0
+      - name: Verify tag ancestry
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-alpha-tag.ps1
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: "24"
       - name: Verify tag and release versions
         run: npm run alpha:version:check
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: shio-runtime-alpha-bundle
           path: release-assets
-      - name: Create or update prerelease
+      - name: Create and publish immutable prerelease
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          $version = "${{ github.ref_name }}".TrimStart("v")
-          $title = "Shio Runtime v$version"
-          $assets = Get-ChildItem release-assets -File | ForEach-Object FullName
-          if (gh release view "${{ github.ref_name }}" 2>$null) {
-            gh release edit "${{ github.ref_name }}" --title $title --prerelease --notes-file docs/RELEASE-NOTES-ALPHA.md
-            gh release upload "${{ github.ref_name }}" $assets --clobber
-          } else {
-            gh release create "${{ github.ref_name }}" $assets --title $title --prerelease --notes-file docs/RELEASE-NOTES-ALPHA.md
-          }
+        run: >
+          ./scripts/publish-alpha-release.ps1
+          -Tag "${{ github.ref_name }}"
+          -AssetsDirectory release-assets
+          -NotesFile docs/RELEASE-NOTES-ALPHA.md

@@ -24,8 +24,16 @@ _tts_engines = {}
 async def init_asr():
     """Initialize ASR components."""
     logger.info("Initializing ASR components...")
+    model_name = settings.WHISPER_MODEL.value
+    if settings.SHIO_MODEL_ROOT:
+        model_name = str(
+            Path(settings.SHIO_MODEL_ROOT)
+            / "asr"
+            / f"faster-whisper-{settings.WHISPER_MODEL.value}"
+            / settings.WHISPER_MODEL_REVISION
+        )
     whisper = WhisperASR(
-        model_size=settings.WHISPER_MODEL.value,
+        model_size=model_name,
         device=settings.DEVICE,
         compute_type=settings.WHISPER_COMPUTE_TYPE,
         language=settings.ASR_LANGUAGE.value if settings.ASR_LANGUAGE.value != "auto" else None,
@@ -50,8 +58,13 @@ async def init_tts_engines():
         f5_engine = F5LocalEngine(
             device=settings.DEVICE,
             model_id=settings.F5_MODEL_ID,
+            model_revision=settings.F5_MODEL_REVISION,
+            vocoder_revision=settings.F5_VOCODER_REVISION,
+            accent_revision=settings.RUACCENT_MODEL_REVISION,
             ckpt_subpath=settings.F5_CKPT_SUBPATH,
             vocab_subpath=settings.F5_VOCAB_SUBPATH,
+            model_root=settings.SHIO_MODEL_ROOT,
+            allow_mock=settings.F5_ALLOW_MOCK,
             use_accent=settings.F5_USE_ACCENT,
             nfe_step=settings.F5_NFE_STEP,
             cfg_strength=settings.F5_CFG_STRENGTH,
@@ -65,10 +78,11 @@ async def init_tts_engines():
         if settings.WARMUP_ON_STARTUP:
             f5_engine.warmup()
         mode = "real" if f5_engine.model is not None else "mock"
-        health.set_engine_ready("f5", True, mode)
+        health.set_engine_ready("f5", mode == "real" or settings.F5_ALLOW_MOCK, mode)
         logger.info("F5-TTS loaded (%s)", mode)
     except Exception as e:
         logger.error("Failed to load F5-TTS: %s", e)
+        health.set_engine_ready("f5", False, "unavailable")
 
     synthesize.init_engines(f5_engine)
     if f5_engine is None:
