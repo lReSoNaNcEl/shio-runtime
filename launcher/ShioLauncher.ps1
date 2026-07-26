@@ -254,7 +254,7 @@ function Remove-InstallStaging {
     if (Test-Path -LiteralPath $voices) {
         $item = Get-Item -LiteralPath $voices -Force
         if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
-            Remove-Item -LiteralPath $voices -Force
+            [IO.Directory]::Delete($voices)
         }
     }
     Remove-Item -LiteralPath $resolved -Recurse -Force

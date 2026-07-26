@@ -23,6 +23,8 @@
 - Selected Russian voices no longer remain cold after the core default-voice warmup.
 - F5 warmup and real synthesis share one inference lock; concurrent identical warmups coalesce and the distinct warmup queue is bounded.
 - Launcher adoption no longer treats an unrelated healthy process as managed, and stop/repair operations reject ownership identity mismatches.
+- Packaged model prefetch now bootstraps the Speech API import root when launched as a script.
+- Failed installation cleanup removes only the staging voice junction and preserves persistent voice data.
 - Normal managed API startup reports missing prefetched assets as a repair requirement instead of downloading models silently.
 - Release bundles are assembled from Git-tracked allowlisted files and reject credentials, runtime data, model weights, logs, databases, and temporary artifacts.
 

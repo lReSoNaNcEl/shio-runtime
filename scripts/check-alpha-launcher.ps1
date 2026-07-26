@@ -176,6 +176,20 @@ Start-Sleep -Seconds 30
     if (Test-Path -LiteralPath $staging) {
         throw "Launcher staging cleanup did not remove the incomplete directory."
     }
+
+    $junctionTarget = Join-Path $retryRoot "persistent-voices"
+    New-Item -ItemType Directory -Force -Path $junctionTarget | Out-Null
+    Set-Content -LiteralPath (Join-Path $junctionTarget "reference.txt") -Value "persistent"
+    New-Item -ItemType Directory -Force -Path (Join-Path $staging "services\api") | Out-Null
+    New-Item -ItemType Junction -Path (Join-Path $staging "services\api\voices") `
+        -Target $junctionTarget | Out-Null
+    Remove-InstallStaging $staging
+    if (Test-Path -LiteralPath $staging) {
+        throw "Launcher staging cleanup did not remove a staging directory with a voice junction."
+    }
+    if (-not (Test-Path -LiteralPath (Join-Path $junctionTarget "reference.txt"))) {
+        throw "Launcher staging cleanup removed persistent voice data behind the junction."
+    }
 } finally {
     if (Test-Path -LiteralPath $retryRoot) {
         Remove-Item -LiteralPath $retryRoot -Recurse -Force

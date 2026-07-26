@@ -6,11 +6,16 @@ import argparse
 import json
 import os
 import shutil
+import sys
 from pathlib import Path
 
-from huggingface_hub import hf_hub_download, snapshot_download
+SERVICE_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(SERVICE_ROOT))
+os.chdir(SERVICE_ROOT)
 
-from app.config import settings
+from huggingface_hub import hf_hub_download, snapshot_download  # noqa: E402
+
+from app.config import settings  # noqa: E402
 
 
 def model_root() -> Path:
