@@ -18,11 +18,11 @@ Only the complete root `release/Shio-Runtime-<version>-win-x64.zip` is user-faci
 
 Run the `Release Windows Alpha` workflow with `workflow_dispatch`. It validates API and Desktop, builds and extracts the complete bundle, applies the denylist, and uploads ZIP plus checksums for 10 days. Manual runs never create a tag or GitHub Release.
 
-Download the Actions artifact and qualify that artifact—not a local build—on a clean Windows 11 x64 NVIDIA machine.
+Download and verify the Actions artifact—not a local build. By default, qualify that artifact on a clean Windows 11 x64 NVIDIA machine.
 
 ## Tag and prerelease
 
-After successful qualification and explicit release approval:
+After successful qualification and explicit release approval, or after the release operator explicitly waives reported incomplete live checks:
 
 ```powershell
 $version = "0.1.0-alpha.5"
@@ -36,4 +36,4 @@ The tag workflow requires an annotated tag whose commit is in `origin/main`, che
 
 Do not rewrite, remove, or reuse a published tag or mutate a published release. If publication is defective, record the defect, fix the source, increment the alpha version, qualify a new workflow artifact, and publish a new tag.
 
-GitHub Actions success does not prove CUDA, F5-TTS, Whisper, microphone, avatar, or end-to-end runtime behavior. Clean-machine qualification remains mandatory.
+GitHub Actions success does not prove CUDA, F5-TTS, Whisper, microphone, avatar, or end-to-end runtime behavior. Clean-machine qualification is the default release gate. An operator may explicitly waive incomplete live checks after they are reported; every waived check must remain visible in the release notes and final release report.

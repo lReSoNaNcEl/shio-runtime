@@ -38,6 +38,7 @@
 - Windows 11 x64 only; the qualified local speech path requires an NVIDIA CUDA-capable GPU and Python 3.12 x64.
 - The unsigned ZIP has no installer, automatic update, code signing, or macOS/Linux target.
 - First installation remains large and network-dependent because locked dependencies, voice references, and pinned models are installed into persistent local data.
+- Clean-machine launcher, real CUDA/F5/Whisper, microphone, VRM, playback, shutdown, and repair qualification were explicitly waived before publication.
 - Testers provide their own LLM credential and a separate GitHub token for Project Awareness.
 - Screen Context 2.x, Memory Layer, and Action Runtime remain outside the release-ready alpha scope.
 

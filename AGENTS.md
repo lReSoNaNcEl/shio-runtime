@@ -304,13 +304,16 @@ instructions. Do not use release notes as a substitute for the changelog.
 4. Regenerate and commit lock files when direct dependencies changed.
 5. Run the full required validation for every affected application. For a
    Desktop/API bundle, validate both applications and the launcher.
-6. Run the channel's manual build workflow first. Download and qualify the exact
-   workflow artifact that may become the release; do not substitute a local ZIP.
-7. Perform clean-machine qualification on the supported platform and hardware.
+6. Run the channel's manual build workflow first. Download and verify the exact
+   workflow artifact for the release commit; do not substitute a local ZIP.
+7. By default, perform clean-machine qualification on the supported platform and hardware.
    For the current Windows speech bundle this includes launcher first-run setup,
    repair/doctor behavior, Desktop startup, API health, real ASR/TTS, microphone,
    VRM loading, playback, shutdown, and ownership-safe API cleanup.
-8. After explicit publication approval, create an annotated tag matching the
+   If the user explicitly directs publication after being told which qualification
+   remains incomplete, treat that repeated direction as an informed qualification
+   waiver and continue. Record every waived check in the release notes and final report.
+8. After explicit publication approval or an informed qualification waiver, create an annotated tag matching the
    synchronized version (`vX.Y.Z-alpha.N`, `vX.Y.Z-beta.N`, `vX.Y.Z-rc.N`, or
    `vX.Y.Z`) and push only that tag.
 9. Monitor the tag workflow through completion. Verify the GitHub Release channel
@@ -321,7 +324,10 @@ instructions. Do not use release notes as a substitute for the changelog.
 
 Tagging and publishing change external release state. Do them only when the user
 explicitly asks to release or publish; a request to prepare a release alone does
-not authorize pushing a tag.
+not authorize pushing a tag. Once automated validation and exact-artifact
+verification pass, an explicit direction to publish must not be blocked solely
+because live qualification is incomplete when the user has already been informed
+of that gap.
 
 Never move, force-update, or reuse a published tag. If a release is defective,
 record the problem, fix it on `main`, increment the appropriate prerelease or

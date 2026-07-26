@@ -39,6 +39,6 @@ Run `Start Shio Runtime.cmd doctor` for diagnostics or `Start Shio Runtime.cmd o
 
 ## Known limitations and reporting
 
-The first installation is large and may take significant time. Normal startup does not silently download missing large models; run `Start Shio Runtime.cmd repair` if the prefetched model cache is incomplete. This CI build validates source, packaging, launcher structure, and API tests, but does not prove real CUDA/F5/Whisper inference works. Qualification on a clean NVIDIA Windows 11 machine is mandatory before publishing.
+The first installation is large and may take significant time. Normal startup does not silently download missing large models; run `Start Shio Runtime.cmd repair` if the prefetched model cache is incomplete. This CI build validates source, packaging, launcher structure, and API tests, but does not prove real CUDA/F5/Whisper inference works. The release operator explicitly waived completion of clean-machine launcher, real CUDA/F5/Whisper, microphone, VRM, playback, shutdown, and repair qualification before publication.
 
 When reporting a problem, include reproduction steps, copied Runtime Health, and relevant logs after removing sensitive data.
