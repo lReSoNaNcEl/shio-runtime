@@ -1,8 +1,9 @@
-import { LlmCapabilityError } from './errors'
+import { LlmCapabilityError, LlmCredentialMissingError } from './errors'
 import {
   createLLMProvider,
   createModelCatalog,
   enrichModelCatalog,
+  getProviderProfile,
   hasLoadedModelCatalog,
   resolveModelCapabilities,
 } from './registry'
@@ -33,6 +34,9 @@ export class LlmGateway implements LLMProvider {
 
   async chat(messages: readonly ChatMessage[], options: LlmRequestOptions = {}): Promise<string> {
     const { provider, apiKey, model } = this.getSettings()
+    if (getProviderProfile(provider).requiresApiKey && !apiKey.trim()) {
+      throw new LlmCredentialMissingError()
+    }
     const capabilities = resolveModelCapabilities(provider, model)
     const hasImage = messages.some(
       (message) =>

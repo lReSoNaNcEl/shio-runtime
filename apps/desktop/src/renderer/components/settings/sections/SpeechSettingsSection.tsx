@@ -1,4 +1,4 @@
-import { Picker, PickerItem, TextField } from '@react-spectrum/s2'
+import { Picker, PickerItem, StatusLight, TextField } from '@react-spectrum/s2'
 import { style } from '@react-spectrum/s2/style' with { type: 'macro' }
 
 import { useTranslation } from '../../../localization/useTranslation'
@@ -43,6 +43,19 @@ export function SpeechSettingsSection({
           </PickerItem>
         ))}
       </Picker>
+      {state.voiceWarmup.state !== 'idle' && (
+        <StatusLight
+          variant={
+            state.voiceWarmup.state === 'ready'
+              ? 'positive'
+              : state.voiceWarmup.state === 'failed'
+                ? 'negative'
+                : 'neutral'
+          }
+        >
+          {t(`settings.speech.voiceWarmup.${state.voiceWarmup.state}`)}
+        </StatusLight>
+      )}
     </div>
   )
 }

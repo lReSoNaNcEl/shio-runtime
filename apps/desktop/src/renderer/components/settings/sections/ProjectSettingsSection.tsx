@@ -6,6 +6,7 @@ import {
   isValidProjectRepository,
 } from '../../../../shared/project-awareness'
 import { useTranslation } from '../../../localization/useTranslation'
+import { connectionStatusKey, credentialStatusKey } from '../projectStatusPresentation'
 import { type ProjectSettingsActions, type ProjectSettingsState } from '../state/settingsContracts'
 
 const fullWidth = style({ width: 'full' })
@@ -65,21 +66,6 @@ export function ProjectSettingsSection({
             ? t('settings.project.applying')
             : t('settings.project.apply')}
         </ActionButton>
-        {state.status && (
-          <StatusLight
-            variant={
-              state.status.state === 'ready'
-                ? 'positive'
-                : state.status.state === 'error'
-                  ? 'negative'
-                  : 'neutral'
-            }
-          >
-            {state.status.credential.configured
-              ? t('settings.project.credentialSaved', { state: state.status.state })
-              : t('settings.project.credentialMissing')}
-          </StatusLight>
-        )}
       </div>
       {state.applyState === 'applied' && (
         <Text UNSAFE_className="settings-hint">{t('settings.project.applied')}</Text>
@@ -92,6 +78,25 @@ export function ProjectSettingsSection({
           <strong>{t('settings.project.credential.title')}</strong>
           <span>{t('settings.project.credential.description')}</span>
         </div>
+        {state.status && (
+          <StatusLight
+            variant={
+              state.status.credential.lastError ||
+              !state.status.credential.secureStorageAvailable ||
+              state.credentialSaveState === 'failed'
+                ? 'negative'
+                : state.status.credential.configured
+                  ? 'positive'
+                  : 'neutral'
+            }
+          >
+            {state.credentialSaveState === 'saving'
+              ? t('settings.project.credential.saving')
+              : state.credentialSaveState === 'failed'
+                ? t('settings.project.credential.storageError')
+                : t(credentialStatusKey(state.status.credential))}
+          </StatusLight>
+        )}
         <TextField
           label={
             state.status?.credential.configured
@@ -153,6 +158,22 @@ export function ProjectSettingsSection({
           <strong>{t('settings.project.controls.title')}</strong>
           <span>{t('settings.project.controls.description')}</span>
         </div>
+        {state.status && (
+          <StatusLight
+            variant={
+              state.status.state === 'ready'
+                ? 'positive'
+                : state.status.state === 'error'
+                  ? 'negative'
+                  : 'neutral'
+            }
+          >
+            {t(connectionStatusKey[state.status.state])}
+          </StatusLight>
+        )}
+        {state.status?.lastError && (
+          <Text UNSAFE_className="project-awareness-error">{state.status.lastError}</Text>
+        )}
         <div className="project-awareness-actions">
           {state.connected ? (
             <ActionButton

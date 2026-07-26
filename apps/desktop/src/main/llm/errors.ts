@@ -33,6 +33,17 @@ export class LlmCapabilityError extends Error {
   }
 }
 
+export class LlmCredentialMissingError extends Error {
+  readonly code = 'LLM_CREDENTIAL_MISSING'
+  readonly recoverable = true
+  readonly technicalMessage = 'Active LLM provider credential is missing'
+
+  constructor() {
+    super('LLM_CREDENTIAL_MISSING')
+    this.name = 'LlmCredentialMissingError'
+  }
+}
+
 export function normalizeHttpErrorMessage(displayName: string, status: number): string {
   switch (status) {
     case 400:

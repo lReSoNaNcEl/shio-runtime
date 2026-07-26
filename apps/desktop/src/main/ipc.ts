@@ -411,6 +411,16 @@ export function registerIpcHandlers(
     if (!parsed.success) return { ok: false, error: 'Invalid LLM reply request' }
     const { turnId, userText, screenContextId } = parsed.data
     cancelledTurns.delete(turnId)
+    const llmConfig = getRendererConfig().llm
+    const activeProfile = PROVIDER_PROFILES.find(
+      (profile) => profile.id === llmConfig.activeProvider,
+    )
+    if (
+      activeProfile?.requiresApiKey !== false &&
+      !llmConfig.providers[llmConfig.activeProvider].credential.configured
+    ) {
+      return { ok: false, errorCode: 'LLM_CREDENTIAL_MISSING' as const }
+    }
 
     let pendingCapture: ReturnType<ScreenContextService['consume']> | undefined
     if (screenContextId) {
@@ -483,7 +493,7 @@ export function registerIpcHandlers(
       ) {
         return { ok: false, error: 'SCREEN_CONTEXT_PROVIDER_REJECTED' }
       }
-      return { ok: false, error: action.error }
+      return { ok: false, error: action.error, errorCode: action.errorCode }
     } finally {
       replyAbortControllers.delete(turnId)
       cancelledTurns.delete(turnId)
@@ -631,6 +641,14 @@ export function registerIpcHandlers(
       return { ok: false, error: action.error, errorCode: action.errorCode }
     },
   )
+  const ttsWarmupSchema = z.object({
+    engine: z.literal('f5'),
+    voiceId: z.string().trim().min(1).max(200),
+    language: z.enum(['ru', 'en']),
+  })
+  ipcMain.handle('tts:warmup', (_event, input: unknown) =>
+    speech().warmupVoice(ttsWarmupSchema.parse(input)),
+  )
   ipcMain.handle('tts:cancel-synthesis', (_event, turnId: string) => {
     cancelledTurns.add(turnId)
     if (activeSynthesisTurnId === turnId) activeSynthesisTurnId = null
@@ -702,7 +720,12 @@ export function registerIpcHandlers(
     const credential = await projectCredentialStore().save(parsedToken)
     await runtime.disconnect()
     applyProjectCredential(runtime, credential)
-    return runtime.getStatus().enabled ? runtime.connect() : runtime.getStatus()
+    if (!runtime.getStatus().enabled) return runtime.getStatus()
+    try {
+      return await runtime.connect()
+    } catch {
+      return runtime.getStatus()
+    }
   })
   ipcMain.handle('project-awareness:forget-credential', async () => {
     const runtime = projectAwareness()
@@ -762,6 +785,22 @@ export function registerIpcHandlers(
   )
 
   ipcMain.handle('llm:providers', (): ProviderProfile[] => [...PROVIDER_PROFILES])
+  ipcMain.handle('llm:get-readiness', () => {
+    const config = getRendererConfig().llm
+    const provider = PROVIDER_PROFILES.find((item) => item.id === config.activeProvider)
+    const credentialReady =
+      provider?.requiresApiKey === false ||
+      config.providers[config.activeProvider].credential.configured
+    return {
+      reason: credentialReady
+        ? config.providers[config.activeProvider].model.trim()
+          ? 'ready'
+          : 'model-missing'
+        : 'missing-credential',
+      providerId: config.activeProvider,
+      providerDisplayName: provider?.displayName ?? config.activeProvider,
+    }
+  })
 
   ipcMain.handle('llm:fetch-models', async (_event, provider: string) => {
     const action = await actions.execute<
@@ -832,7 +871,9 @@ export function registerIpcHandlers(
       name: 'vrm.pick',
       payload: undefined,
     })
-    return action.status === 'success' ? action.result : { ok: false, error: action.error }
+    if (action.status !== 'success' || !action.result) return { ok: false, error: action.error }
+    if (action.result.ok) win.webContents.send('config:updated', getRendererConfig())
+    return action.result
   })
 
   ipcMain.handle('vrm:read', (_event, filePath: string) => {

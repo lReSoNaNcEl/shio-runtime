@@ -1,6 +1,7 @@
 import logging
 import os
 import re
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -91,6 +92,7 @@ class F5LocalEngine(LocalTTSEngine):
         self._tail_validation = bool(tail_validation)
         self._target_rms = float(10 ** (target_rms_db / 20))
         self.last_debug_chunks: list[dict] = []
+        self._inference_lock = threading.Lock()
 
         logger.info("Loading F5-TTS model '%s' on %s...", model_id, device)
         try:
@@ -465,14 +467,15 @@ class F5LocalEngine(LocalTTSEngine):
         if not text.strip():
             raise ValueError("Text cannot be empty")
 
-        audio, latency_ms = self._measure_synthesis(
-            self._synthesize_internal,
-            text=text,
-            language=language,
-            emotion=emotion,
-            voice=voice or default_voice_id(),
-            speed=speed,
-        )
+        with self._inference_lock:
+            audio, latency_ms = self._measure_synthesis(
+                self._synthesize_internal,
+                text=text,
+                language=language,
+                emotion=emotion,
+                voice=voice or default_voice_id(),
+                speed=speed,
+            )
         duration_sec = len(audio) / self.sample_rate
         rtf = self.measure_rtf(audio, self.sample_rate, latency_ms)
         return SynthesisResult(

@@ -34,6 +34,7 @@ export interface SettingsDialogProps {
   overlayVisible: boolean
   overlayViewModeProjection: OverlayViewMode
   llmHealth: ControllerState['llmHealth']
+  voiceWarmup: ControllerState['voiceWarmup']
   onOverlayVisibleChange: (visible: boolean) => void
   onToggleOverlay: (visible: boolean) => void | Promise<void>
   onClose: () => void
@@ -65,6 +66,7 @@ export interface ProjectSettingsState {
   applyState: 'idle' | 'applying' | 'applied' | 'error'
   applyError: string
   credentialInput: string
+  credentialSaveState: 'idle' | 'saving' | 'saved' | 'failed'
   actionBusy: boolean
   forgetConfirmation: boolean
   settingsValid: boolean
@@ -98,6 +100,7 @@ export interface SpeechSettingsState {
   currentTtsVoice: string
   microphones: Array<{ deviceId: string; label: string }>
   microphoneId: string
+  voiceWarmup: ControllerState['voiceWarmup']
 }
 
 export interface SpeechSettingsActions {

@@ -21,6 +21,7 @@ export function SettingsDialog({
   overlayVisible,
   overlayViewModeProjection,
   llmHealth,
+  voiceWarmup,
   onOverlayVisibleChange,
   onToggleOverlay,
 }: SettingsDialogProps) {
@@ -34,6 +35,7 @@ export function SettingsDialog({
     overlayVisible,
     overlayViewModeProjection,
     llmHealth,
+    voiceWarmup,
     onOverlayVisibleChange,
     onToggleOverlay,
   })

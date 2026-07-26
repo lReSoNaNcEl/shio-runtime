@@ -19,7 +19,7 @@ import type { AvatarMode, AvatarRuntime } from './AvatarRuntime'
 import type { ConversationPresenceRuntime } from './ConversationPresenceRuntime'
 import { EmotionSpeechPipeline, type PreparedEmotionSpeechSegment } from './EmotionSpeechPipeline'
 import type { OverlayRuntime, SyncedAvatarState } from './OverlayRuntime'
-import type { SpeechRuntime } from './SpeechRuntime'
+import { LlmCredentialMissingError, type SpeechRuntime } from './SpeechRuntime'
 import { isSpeechServiceError } from './speechCapabilities'
 
 export type ConversationStatus =
@@ -70,6 +70,7 @@ export interface ConversationRuntimeDeps {
   rememberSpeechMetadata: (speech: SpeechReply) => void
   updateSpeechPlaybackProgress: (progress: number) => void
   isContinuousCaptureAlive: () => boolean
+  handleLlmSetupRequired: (userText: string) => void
 }
 
 export class ConversationRuntime {
@@ -350,6 +351,12 @@ export class ConversationRuntime {
         !this.isCurrentTurn(turn.turnId)
       ) {
         return { status: 'cancelled', turnId: turn.turnId }
+      }
+      if (error instanceof LlmCredentialMissingError) {
+        this.deps.handleLlmSetupRequired(turn.text)
+        this.deps.recordRuntimeEvent('LLM Setup Required', `turnId=${turn.turnId}`)
+        await this.recoverToIdle(turn.turnId)
+        return { status: 'failed', turnId: turn.turnId, phase: failurePhase, error: error.message }
       }
       // Speech output (TTS) is a secondary capability. If synthesis fails because
       // the Speech API is unavailable, the reply text has already been shown

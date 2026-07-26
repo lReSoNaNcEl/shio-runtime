@@ -128,6 +128,9 @@ export function AvatarPreviewView({ onOpenSettings }: { onOpenSettings: () => vo
               <Button variant="secondary" onPress={() => void open()}>
                 {t('common.retry')}
               </Button>
+              <Button variant="secondary" onPress={onOpenSettings}>
+                {t('avatarPreview.openSettings')}
+              </Button>
             </>
           )}
         </div>

@@ -55,6 +55,15 @@ export interface SynthesizeResult {
   durationSec?: string
 }
 
+export interface VoiceWarmupResult {
+  state: 'warming' | 'ready' | 'failed'
+  engine: string
+  voiceId: string
+  language: string
+  latencyMs?: number
+  error?: string
+}
+
 export class SpeechClient {
   private http: AxiosInstance
 
@@ -111,6 +120,15 @@ export class SpeechClient {
     } catch (error) {
       throw normalizeSpeechError(error, 'recognition')
     }
+  }
+
+  async warmupVoice(input: {
+    engine: string
+    voiceId: string
+    language: string
+  }): Promise<VoiceWarmupResult> {
+    const response = await this.http.post('/tts/warmup', input)
+    return response.data as VoiceWarmupResult
   }
 
   async synthesize(params: {

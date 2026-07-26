@@ -34,6 +34,7 @@ import type {
   HealthState,
   RuntimeDebugSnapshot,
 } from './controller/contracts'
+import { isVrmConfigured } from './controller/firstRunState'
 import { RuntimeDiagnosticsProjection } from './controller/RuntimeDiagnosticsProjection'
 import { type AvatarMode, AvatarRuntime } from './runtime/AvatarRuntime'
 import { ConversationPresenceRuntime } from './runtime/ConversationPresenceRuntime'
@@ -81,6 +82,9 @@ export class Controller {
   // detach so async VRM loads can detect that the scene they started with was torn
   // down or replaced, and silently abort instead of touching a disposed SceneManager.
   private previewSceneVersion = 0
+  private selectedVoice = ''
+  private selectedVoiceLanguage = ''
+  private voiceWarmupKey = ''
   private overlayRuntime = new OverlayRuntime()
   private avatarRuntime = new AvatarRuntime(this.shioRuntime.events, {
     overlayMode: this.overlayRuntime.isOverlayWindow(),
@@ -122,9 +126,17 @@ export class Controller {
     status: 'idle',
     responseInterruptionPending: false,
     messages: [],
+    chatDraft: '',
     health: { state: 'checking', text: translate(DEFAULT_UI_LOCALE, 'common.checkingEllipsis') },
     speechCapabilities: INITIAL_SPEECH_CAPABILITIES,
+    voiceWarmup: { state: 'idle', voiceId: '', language: '' },
     llmHealth: { state: 'unknown', detail: translate(DEFAULT_UI_LOCALE, 'common.notChecked') },
+    llmReadiness: {
+      reason: 'checking',
+      providerId: 'groq',
+      providerDisplayName: 'Groq',
+    },
+    vrmConfigured: false,
     vrmLoaded: false,
     faceTrackingEnabled: false,
     passiveCompanionEnabled: false,
@@ -172,6 +184,14 @@ export class Controller {
     rememberSpeechMetadata: (speech) => this.rememberSpeechMetadata(speech),
     updateSpeechPlaybackProgress: (progress) => this.updateSpeechPlaybackProgress(progress),
     isContinuousCaptureAlive: () => this.speechInputRuntime.isContinuousCaptureAlive(),
+    handleLlmSetupRequired: (userText) => {
+      this.store.removeLatestUserMessage(userText)
+      const current = this.state.llmReadiness
+      this.set({
+        chatDraft: userText,
+        llmReadiness: { ...current, reason: 'missing-credential' },
+      })
+    },
   })
   private conversationInput = new ConversationInputCoordinator({
     speechInputRuntime: this.speechInputRuntime,
@@ -304,6 +324,45 @@ export class Controller {
 
   private handleSpeechCapabilitiesChange(capabilities: SpeechCapabilitiesState): void {
     this.set({ speechCapabilities: capabilities, health: this.toLegacyHealth(capabilities) })
+    if (capabilities.service === 'available') void this.warmSelectedVoice()
+  }
+
+  private async warmSelectedVoice(): Promise<void> {
+    if (!this.selectedVoice || !this.selectedVoiceLanguage) return
+    const key = `f5:${this.selectedVoice}:${this.selectedVoiceLanguage}`
+    if (this.voiceWarmupKey === key && this.state.voiceWarmup.state !== 'failed') return
+    this.voiceWarmupKey = key
+    this.set({
+      voiceWarmup: {
+        state: 'warming',
+        voiceId: this.selectedVoice,
+        language: this.selectedVoiceLanguage,
+      },
+    })
+    try {
+      const result = await window.api.tts.warmup({
+        engine: 'f5',
+        voiceId: this.selectedVoice,
+        language: this.selectedVoiceLanguage,
+      })
+      if (key !== this.voiceWarmupKey) return
+      this.set({
+        voiceWarmup: {
+          state: result.state === 'ready' ? 'ready' : 'failed',
+          voiceId: result.voiceId,
+          language: result.language,
+        },
+      })
+    } catch {
+      if (key !== this.voiceWarmupKey) return
+      this.set({
+        voiceWarmup: {
+          state: 'failed',
+          voiceId: this.selectedVoice,
+          language: this.selectedVoiceLanguage,
+        },
+      })
+    }
   }
 
   private toLegacyHealth(capabilities: SpeechCapabilitiesState): {
@@ -355,6 +414,10 @@ export class Controller {
     this.store.appendMessage({ id: nextId(), role, text })
   }
 
+  setChatDraft(chatDraft: string): void {
+    this.set({ chatDraft })
+  }
+
   private markAssistantMessageInterrupted(): void {
     this.store.markLatestAssistantInterrupted()
   }
@@ -394,6 +457,10 @@ export class Controller {
     this.publishControllerRuntimeEvent('RuntimeInitialized', 'system')
     this.recordRuntimeEvent(this.overlayRuntime.runtimeAttachedLabel())
     const cfg = await window.api.config.get()
+    this.selectedVoice = cfg.ttsVoice
+    this.selectedVoiceLanguage = cfg.ttsLanguage
+    this.set({ vrmConfigured: isVrmConfigured(cfg.vrmPath) })
+    this.set({ llmReadiness: await window.api.llm.getReadiness() })
     this.applyUiLocale(normalizeUiLocale(cfg.uiLocale))
     await this.checkHealth()
     void this.checkLlmHealth()
@@ -414,6 +481,18 @@ export class Controller {
     window.api.config.onUpdated((updated) => {
       this.applyOverlayConfigProjection(updated)
       this.applyUiLocale(normalizeUiLocale(updated.uiLocale))
+      this.set({ vrmConfigured: isVrmConfigured(updated.vrmPath) })
+      void window.api.llm.getReadiness().then((llmReadiness) => this.set({ llmReadiness }))
+      void this.checkLlmHealth()
+      const voiceChanged =
+        updated.ttsVoice !== this.selectedVoice ||
+        updated.ttsLanguage !== this.selectedVoiceLanguage
+      this.selectedVoice = updated.ttsVoice
+      this.selectedVoiceLanguage = updated.ttsLanguage
+      if (voiceChanged) {
+        this.voiceWarmupKey = ''
+        void this.warmSelectedVoice()
+      }
     })
     this.speechInputRuntime.setMicrophone(cfg.micDeviceId ?? '', false)
     // Camera-follow gaze is the normal embodiment default; the persisted key is
@@ -908,6 +987,11 @@ export class Controller {
     }
   }
 
+  selectVrm(filePath: string): void {
+    this.set({ vrmConfigured: isVrmConfigured(filePath) })
+    if (this.scene) void this.loadVrmFromPath(filePath)
+  }
+
   async loadAnimation(buffer: ArrayBuffer): Promise<void> {
     await this.avatarRuntime.loadAnimation(buffer, true)
     this.updateOverlayAnimationHudFile()
@@ -1085,10 +1169,22 @@ export class Controller {
       }
       const res = await window.api.llm.fetchModels(activeProvider)
       if (res.ok) {
+        this.set({
+          llmReadiness: {
+            ...(await window.api.llm.getReadiness()),
+            reason: model ? 'ready' : 'model-missing',
+          },
+        })
         this.setLlmHealth('ok', model ? { raw: model } : 'controller.llm.providerAvailable')
         return
       }
       if (res.kind === 'auth') {
+        this.set({
+          llmReadiness: {
+            ...(await window.api.llm.getReadiness()),
+            reason: settings?.credential.configured ? 'auth-error' : 'missing-credential',
+          },
+        })
         this.setLlmHealth(
           settings?.credential.configured ? 'error' : 'unknown',
           settings?.credential.configured
@@ -1097,8 +1193,15 @@ export class Controller {
         )
         return
       }
+      this.set({
+        llmReadiness: {
+          ...(await window.api.llm.getReadiness()),
+          reason: res.kind === 'network' ? 'network-error' : 'checking',
+        },
+      })
       this.setLlmHealth('error', 'controller.llm.unavailable')
     } catch {
+      this.set({ llmReadiness: { ...this.state.llmReadiness, reason: 'network-error' } })
       this.setLlmHealth('error', 'controller.llm.checkFailed')
     }
   }

@@ -129,7 +129,7 @@ export function App() {
   }
 
   const setOverlayVisible = async (visible: boolean): Promise<void> => {
-    if (visible && !state.vrmLoaded) {
+    if (visible && !state.vrmConfigured) {
       setMissingVrmDialogOpen(true)
       return
     }
@@ -172,7 +172,7 @@ export function App() {
               <OverlayCameraControl
                 overlayState={state.overlayState}
                 cameraMode={state.overlayCameraMode}
-                vrmLoaded={state.vrmLoaded}
+                vrmConfigured={state.vrmConfigured}
                 onToggle={() => setOverlayVisible(state.overlayState !== 'on')}
                 onCameraModeChange={(mode) => controller.setOverlayViewMode(mode)}
               />
@@ -235,6 +235,7 @@ export function App() {
             overlayVisible={state.overlayState === 'on'}
             overlayViewModeProjection={state.overlayCameraMode}
             llmHealth={state.llmHealth}
+            voiceWarmup={state.voiceWarmup}
             onOverlayVisibleChange={() => void controller.refreshOverlayVisibility()}
             onToggleOverlay={setOverlayVisible}
             onClose={() => setSection('chat')}

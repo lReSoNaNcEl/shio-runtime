@@ -9,11 +9,13 @@ import {
 } from 'react'
 
 import { type ControllerState, controller } from '../../Controller'
+import { shouldBlockChatSubmission } from '../../controller/firstRunState'
 import { useTranslation } from '../../localization/useTranslation'
 import { bannerCopy } from '../../runtime/speechCapabilities'
 import { ChatComposer } from './ChatComposer'
 import { ChatMessageList } from './ChatMessageList'
 import { ChatStatus } from './ChatStatus'
+import { LlmSetupCard } from './LlmSetupCard'
 import { ScreenContextAttachment } from './ScreenContextAttachment'
 import { ScreenContextDropOverlay } from './ScreenContextDropOverlay'
 import { ScreenContextInputFeedback } from './ScreenContextInputFeedback'
@@ -42,11 +44,13 @@ export const ChatOverlay = forwardRef<ChatOverlayHandle, Props>(function ChatOve
   ref,
 ) {
   const { locale, t } = useTranslation()
-  const [text, setText] = useState('')
+  const text = state.chatDraft
   const [interrupting, setInterrupting] = useState(false)
   const [dismissedIncidentId, setDismissedIncidentId] = useState<number | null>(null)
   const [bannerHighlight, setBannerHighlight] = useState(false)
+  const [llmSetupHighlight, setLlmSetupHighlight] = useState(false)
   const highlightTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const llmHighlightTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const dragDepthRef = useRef(0)
   const panelRef = useRef<HTMLElement>(null)
   const screenContext = useScreenContextAttachment()
@@ -66,6 +70,7 @@ export const ChatOverlay = forwardRef<ChatOverlayHandle, Props>(function ChatOve
   useEffect(
     () => () => {
       if (highlightTimer.current) clearTimeout(highlightTimer.current)
+      if (llmHighlightTimer.current) clearTimeout(llmHighlightTimer.current)
     },
     [],
   )
@@ -78,7 +83,7 @@ export const ChatOverlay = forwardRef<ChatOverlayHandle, Props>(function ChatOve
     async startNewConversation(): Promise<void> {
       await screenContext.release()
       await controller.startNewConversation()
-      setText('')
+      controller.setChatDraft('')
       setInterrupting(false)
     },
   }))
@@ -98,10 +103,16 @@ export const ChatOverlay = forwardRef<ChatOverlayHandle, Props>(function ChatOve
     if (gateOpen || imageOperationActive) return
     const userText = raw.trim()
     if (!userText) return
+    if (shouldBlockChatSubmission(state.llmReadiness)) {
+      setLlmSetupHighlight(true)
+      if (llmHighlightTimer.current) clearTimeout(llmHighlightTimer.current)
+      llmHighlightTimer.current = setTimeout(() => setLlmSetupHighlight(false), 1200)
+      return
+    }
     void (async () => {
       const captureId = await screenContext.submitCaptureId()
       if (screenContext.pending && !captureId) return
-      setText('')
+      controller.setChatDraft('')
       void controller.sendText(userText, captureId)
     })()
   }
@@ -199,6 +210,13 @@ export const ChatOverlay = forwardRef<ChatOverlayHandle, Props>(function ChatOve
             onDismiss={() => setDismissedIncidentId(capabilities.incidentId)}
           />
         )}
+        {state.llmReadiness.reason === 'missing-credential' && (
+          <LlmSetupCard
+            providerName={state.llmReadiness.providerDisplayName}
+            highlight={llmSetupHighlight}
+            onOpenSettings={() => onOpenLlmSettings?.()}
+          />
+        )}
         <ChatStatus state={state} />
         <ScreenContextInputFeedback error={screenContext.error} />
         {screenContext.pending && (
@@ -220,7 +238,7 @@ export const ChatOverlay = forwardRef<ChatOverlayHandle, Props>(function ChatOve
           interruptionPending={interrupting || state.responseInterruptionPending}
           microphoneUnavailable={recognitionUnavailable}
           microphoneDisabled={state.continuousListeningEnabled || (busy && !listening)}
-          onTextChange={setText}
+          onTextChange={(draft) => controller.setChatDraft(draft)}
           onSubmit={() => submit(text)}
           onAttachScreen={() => screenContext.setPickerOpen(true)}
           onToggleMicrophone={() => {

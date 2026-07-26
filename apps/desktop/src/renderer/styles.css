@@ -2880,3 +2880,21 @@ body.overlay-window.overlay-solid-background #canvas {
     grid-template-columns: 1fr;
   }
 }
+.llm-setup-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 14px;
+  border: 1px solid rgb(246 196 83 / 55%);
+  border-radius: 12px;
+  background: rgb(73 54 15 / 72%);
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.llm-setup-card-highlight {
+  border-color: rgb(255 215 113);
+  box-shadow: 0 0 0 3px rgb(255 215 113 / 22%);
+}

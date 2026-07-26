@@ -40,4 +40,14 @@ export class ControllerStore {
     messages[index] = { ...messages[index], interrupted: true }
     this.patch({ messages })
   }
+
+  removeLatestUserMessage(text: string): void {
+    const messages = [...this.state.messages]
+    const index = messages.findLastIndex(
+      (message) => message.role === 'user' && message.text === text,
+    )
+    if (index < 0) return
+    messages.splice(index, 1)
+    this.patch({ messages })
+  }
 }

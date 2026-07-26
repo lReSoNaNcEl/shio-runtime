@@ -1,3 +1,4 @@
+import type { LlmReadiness } from '../../shared/llm'
 import type { CharacterState, RuntimeEvent } from '../../shared/runtime'
 import type { MicrophoneGateState } from '../audio/microphoneGateTypes'
 import type { AnimationPlaybackStatus } from '../avatar/AvatarAnimationController'
@@ -52,10 +53,18 @@ export interface ControllerState {
   status: AppStatus
   responseInterruptionPending: boolean
   messages: ChatMsg[]
+  chatDraft: string
   health: { state: HealthState; text: string }
   /** Read-only projection of Speech API capability availability (ASR/TTS/streaming). */
   speechCapabilities: SpeechCapabilitiesState
+  voiceWarmup: {
+    state: 'idle' | 'warming' | 'ready' | 'failed'
+    voiceId: string
+    language: string
+  }
   llmHealth: { state: 'unknown' | 'checking' | 'ok' | 'error'; detail: string }
+  llmReadiness: LlmReadiness
+  vrmConfigured: boolean
   vrmLoaded: boolean
   faceTrackingEnabled: boolean
   passiveCompanionEnabled: boolean

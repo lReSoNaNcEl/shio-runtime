@@ -52,6 +52,7 @@ interface SettingsDialogStateOptions {
   overlayVisible: boolean
   overlayViewModeProjection: OverlayViewMode
   llmHealth: SettingsDialogViewModel['llm']['state']['health']
+  voiceWarmup: SettingsDialogViewModel['speech']['state']['voiceWarmup']
   onOverlayVisibleChange: (visible: boolean) => void
   onToggleOverlay: (visible: boolean) => void | Promise<void>
 }
@@ -65,6 +66,7 @@ export function useSettingsDialogState({
   overlayVisible,
   overlayViewModeProjection,
   llmHealth,
+  voiceWarmup,
   onOverlayVisibleChange,
   onToggleOverlay,
 }: SettingsDialogStateOptions): SettingsDialogViewModel {
@@ -82,6 +84,8 @@ export function useSettingsDialogState({
     useState<ProjectSettingsState['applyState']>('idle')
   const [projectApplyError, setProjectApplyError] = useState('')
   const [projectCredentialInput, setProjectCredentialInput] = useState('')
+  const [projectCredentialSaveState, setProjectCredentialSaveState] =
+    useState<ProjectSettingsState['credentialSaveState']>('idle')
   const [projectActionBusy, setProjectActionBusy] = useState(false)
   const [projectForgetConfirmation, setProjectForgetConfirmation] = useState(false)
   const [lang, setLang] = useState(defaultSettingsForm.ttsLanguage)
@@ -296,7 +300,7 @@ export function useSettingsDialogState({
     const result = await window.api.vrm.pick()
     if (result.ok && result.vrmPath) {
       setVrmName(baseName(result.vrmPath))
-      void controller.loadVrmFromPath(result.vrmPath)
+      controller.selectVrm(result.vrmPath)
     }
   }
 
@@ -376,12 +380,22 @@ export function useSettingsDialogState({
   }
 
   const saveProjectCredential = async (): Promise<void> => {
-    await runProjectAction(async () => {
+    setProjectCredentialSaveState('saving')
+    setProjectApplyError('')
+    setProjectActionBusy(true)
+    try {
       const status = await window.api.projectAwareness.saveCredential(projectCredentialInput)
       setProjectStatus(status)
       setProjectCredentialInput('')
       setProjectForgetConfirmation(false)
-    })
+      setProjectCredentialSaveState('saved')
+    } catch (error) {
+      setProjectApplyError(projectActionError(error))
+      setProjectCredentialSaveState('failed')
+    } finally {
+      setProjectStatus(await window.api.projectAwareness.getStatus())
+      setProjectActionBusy(false)
+    }
   }
 
   const forgetProjectCredential = async (): Promise<void> => {
@@ -519,6 +533,7 @@ export function useSettingsDialogState({
         applyState: projectApplyState,
         applyError: projectApplyError,
         credentialInput: projectCredentialInput,
+        credentialSaveState: projectCredentialSaveState,
         actionBusy: projectActionBusy,
         forgetConfirmation: projectForgetConfirmation,
         settingsValid: projectSettingsValid,
@@ -552,6 +567,7 @@ export function useSettingsDialogState({
         currentTtsVoice,
         microphones: mics,
         microphoneId: micId,
+        voiceWarmup,
       },
       actions: {
         setSpeechUrl,

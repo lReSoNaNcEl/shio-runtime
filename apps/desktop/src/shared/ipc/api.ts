@@ -5,6 +5,7 @@ import type {
   FetchModelsResult,
   LlmCredentialStatus,
   LlmProviderId,
+  LlmReadiness,
   ProviderProfile,
 } from '../llm/providers'
 import type { ProjectAwarenessApi } from '../project-awareness'
@@ -58,7 +59,7 @@ export interface ShioRuntimeApi {
       replyText?: string
       emotionKey?: string
       error?: string
-      errorCode?: ScreenContextErrorCode
+      errorCode?: ScreenContextErrorCode | 'LLM_CREDENTIAL_MISSING'
     }>
     cancelReply: (turnId: string) => Promise<{ ok: boolean }>
     getActiveCapabilities: () => Promise<LlmCapabilities>
@@ -69,6 +70,7 @@ export interface ShioRuntimeApi {
       model: string
     }) => Promise<{ ok: boolean; result?: BacklogSelectionResult; error?: string }>
     providers: () => Promise<ProviderProfile[]>
+    getReadiness: () => Promise<LlmReadiness>
     fetchModels: (provider: LlmProviderId) => Promise<FetchModelsResult>
     validateCredential: (provider: LlmProviderId, apiKey: string) => Promise<FetchModelsResult>
     saveCredential: (provider: LlmProviderId, apiKey: string) => Promise<LlmCredentialStatus>
@@ -90,6 +92,14 @@ export interface ShioRuntimeApi {
     release: (captureId: string) => Promise<ScreenContextResult<boolean>>
   }
   tts: {
+    warmup: (input: { engine: string; voiceId: string; language: string }) => Promise<{
+      state: 'warming' | 'ready' | 'failed'
+      engine: string
+      voiceId: string
+      language: string
+      latencyMs?: number
+      error?: string
+    }>
     synthesizeReply: (
       turnId: string,
       replyText: string,

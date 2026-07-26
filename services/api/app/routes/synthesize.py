@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import logging
 import time
@@ -47,6 +48,12 @@ class VoiceSyncRequest(BaseModel):
     )
 
 
+class VoiceWarmupRequest(BaseModel):
+    engine: str = Field(default="f5", description="Only f5 is supported")
+    voiceId: str | None = Field(default=None, description="Logical voice ID from /voices")
+    language: str = Field(default="ru", pattern="^(ru|en)$")
+
+
 _f5_engine: F5LocalEngine | None = None
 emotion_registry = EmotionRegistry(settings.EMOTION_MANIFEST_PATH)
 _emotion_translator: EmotionTranslator | None = EmotionTranslator(emotion_registry)
@@ -54,6 +61,10 @@ _tts_cache: "OrderedDict[str, tuple[bytes, dict[str, str]]]" = OrderedDict()
 TTS_CACHE_MAX_ITEMS = 128
 TTS_CACHE_MAX_TEXT_LENGTH = 120
 TTS_CACHE_VERSION = "f5-v2"
+_warmup_tasks: dict[tuple[str, str, str], asyncio.Task] = {}
+_warmup_status: dict[tuple[str, str, str], dict[str, str | float]] = {}
+_warmup_gate = asyncio.Semaphore(1)
+MAX_PENDING_VOICE_WARMUPS = 8
 
 
 def _has_speakable_content(text: str) -> bool:
@@ -64,6 +75,8 @@ def init_engines(f5_engine: F5LocalEngine | None):
     """Initialize the TTS engine."""
     global _f5_engine, _emotion_translator
     _f5_engine = f5_engine
+    _warmup_tasks.clear()
+    _warmup_status.clear()
     emotion_registry.reload()
     _emotion_translator = EmotionTranslator(emotion_registry)
 
@@ -150,6 +163,102 @@ def _request_voice_id(request: SynthesizeRequest) -> str:
     except KeyError:
         logger.warning("Requested unknown voiceId '%s'; using default voice.", requested)
     return default_voice_id()
+
+
+def _resolve_voice_id(requested: str | None) -> str:
+    voice_id = requested or default_voice_id()
+    try:
+        entry = voice_registry.get(voice_id)
+        if not entry.is_available():
+            raise ValueError(f"Voice '{voice_id}' has no local reference assets")
+    except KeyError as exc:
+        raise ValueError(f"Unknown voiceId: {voice_id}") from exc
+    return voice_id
+
+
+async def _run_voice_warmup(
+    key: tuple[str, str, str], engine: F5LocalEngine
+) -> dict[str, str | float]:
+    _, voice_id, language = key
+    started = time.perf_counter()
+    _warmup_status[key] = {
+        "state": "warming",
+        "engine": "f5",
+        "voiceId": voice_id,
+        "language": language,
+    }
+    try:
+        async with _warmup_gate:
+            phrase = "Короткая проверка голоса." if language == "ru" else "Short voice check."
+            await asyncio.to_thread(
+                engine.synthesize,
+                text=phrase,
+                language=language,
+                emotion="neutral",
+                voice=voice_id,
+            )
+        latency_ms = (time.perf_counter() - started) * 1000
+        result: dict[str, str | float] = {
+            "state": "ready",
+            "engine": "f5",
+            "voiceId": voice_id,
+            "language": language,
+            "latencyMs": round(latency_ms, 1),
+        }
+        _warmup_status[key] = result
+        logger.info(
+            "Voice warmup ready: engine=f5 voiceId=%s language=%s latencyMs=%.1f",
+            voice_id,
+            language,
+            latency_ms,
+        )
+        return result
+    except Exception as exc:
+        result = {
+            "state": "failed",
+            "engine": "f5",
+            "voiceId": voice_id,
+            "language": language,
+            "error": str(exc),
+        }
+        _warmup_status[key] = result
+        logger.warning(
+            "Voice warmup failed: engine=f5 voiceId=%s language=%s error=%s",
+            voice_id,
+            language,
+            exc,
+        )
+        return result
+
+
+@router.post("/tts/warmup", summary="Prepare a selected F5 voice and language")
+async def warmup_voice(request: VoiceWarmupRequest):
+    engine = _engine_by_name(request.engine)
+    try:
+        voice_id = _resolve_voice_id(request.voiceId)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    key = ("f5", voice_id, request.language)
+    if _warmup_status.get(key, {}).get("state") == "ready":
+        return _warmup_status[key]
+    task = _warmup_tasks.get(key)
+    if task is None or task.done():
+        pending = sum(not candidate.done() for candidate in _warmup_tasks.values())
+        if pending >= MAX_PENDING_VOICE_WARMUPS:
+            raise HTTPException(status_code=429, detail="Voice warmup queue is full")
+        task = asyncio.create_task(_run_voice_warmup(key, engine))
+        _warmup_tasks[key] = task
+    return await task
+
+
+@router.get("/tts/warmup", summary="Selected voice warmup status")
+async def warmup_status(engine: str = "f5", voiceId: str | None = None, language: str = "ru"):
+    voice_id = _resolve_voice_id(voiceId)
+    key = (engine, voice_id, language)
+    return _warmup_status.get(
+        key,
+        {"state": "idle", "engine": engine, "voiceId": voice_id, "language": language},
+    )
 
 
 @router.get("/voices", summary="List F5 voices, available references and emotion contract")
@@ -273,7 +382,11 @@ async def synthesize(request: SynthesizeRequest):
 
         voice_id = _request_voice_id(request)
 
-        result = engine.synthesize(
+        warmup_task = _warmup_tasks.get(("f5", voice_id, request.language))
+        if warmup_task is not None and not warmup_task.done():
+            await warmup_task
+        result = await asyncio.to_thread(
+            engine.synthesize,
             text=text,
             language=request.language,
             emotion=emotion,

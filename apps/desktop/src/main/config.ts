@@ -12,6 +12,7 @@ import {
   type UiLocale,
 } from '../shared/localization'
 import type { ProjectAwarenessPublicConfig } from '../shared/project-awareness'
+import { developerModeDefaults, resolveDeveloperModeSettings } from './configDefaults'
 import { defaultLlmConfig, type LlmCredentialStore, normalizeLlmConfig } from './llm'
 import { toPublicLlmConfig } from './llm/config'
 import { resolveLlmPersistence } from './llm/persistence'
@@ -55,34 +56,35 @@ export interface AppConfig {
 // String-valued keys only; `llm` is handled separately because it is an object.
 type StringConfigKey = Exclude<keyof AppConfig, 'llm' | 'projectAwareness' | 'uiLocale'>
 
-const stringDefaults: Record<StringConfigKey, string> = {
-  pythonSpeechUrl: process.env.PYTHON_SPEECH_URL ?? DEFAULT_SPEECH_URL,
-  ttsVoice: process.env.TTS_VOICE ?? 'animevox_makima',
-  ttsLanguage: process.env.TTS_LANGUAGE ?? 'ru',
-  ttsEngine: process.env.TTS_ENGINE ?? 'f5',
-  vrmPath: '',
-  micDeviceId: '',
-  overlayWidth: process.env.OVERLAY_WIDTH ?? '360',
-  overlayHeight: process.env.OVERLAY_HEIGHT ?? '560',
-  overlayMargin: process.env.OVERLAY_MARGIN ?? '24',
-  overlayOpacity: process.env.OVERLAY_OPACITY ?? '1',
-  overlayTransparentBackground: process.env.OVERLAY_TRANSPARENT_BACKGROUND ?? 'true',
-  overlayClickThrough: process.env.OVERLAY_CLICK_THROUGH ?? 'true',
-  overlayCorner: process.env.OVERLAY_CORNER ?? 'bottom-right',
-  overlayScale: process.env.OVERLAY_SCALE ?? '1',
-  overlayViewMode: 'front',
-  developerOverlayAnimationHudEnabled: 'true',
-  developerModeEnabled: 'false',
-  passiveCompanionEnabled: process.env.PASSIVE_COMPANION_ENABLED ?? 'false',
-  lookAtEnabled: 'true',
-  continuousListeningEnabled: 'false',
-  continuousListeningMode: 'silent',
-  continuousListeningReplyCooldownMs: '15000',
-  continuousListeningFollowUpWindowMs: '20000',
-  continuousListeningCuriosityChance: '0.03',
+function stringDefaults(isPackaged = app.isPackaged): Record<StringConfigKey, string> {
+  return {
+    pythonSpeechUrl: process.env.PYTHON_SPEECH_URL ?? DEFAULT_SPEECH_URL,
+    ttsVoice: process.env.TTS_VOICE ?? 'animevox_makima',
+    ttsLanguage: process.env.TTS_LANGUAGE ?? 'ru',
+    ttsEngine: process.env.TTS_ENGINE ?? 'f5',
+    vrmPath: '',
+    micDeviceId: '',
+    overlayWidth: process.env.OVERLAY_WIDTH ?? '360',
+    overlayHeight: process.env.OVERLAY_HEIGHT ?? '560',
+    overlayMargin: process.env.OVERLAY_MARGIN ?? '24',
+    overlayOpacity: process.env.OVERLAY_OPACITY ?? '1',
+    overlayTransparentBackground: process.env.OVERLAY_TRANSPARENT_BACKGROUND ?? 'true',
+    overlayClickThrough: process.env.OVERLAY_CLICK_THROUGH ?? 'true',
+    overlayCorner: process.env.OVERLAY_CORNER ?? 'bottom-right',
+    overlayScale: process.env.OVERLAY_SCALE ?? '1',
+    overlayViewMode: 'front',
+    ...developerModeDefaults(isPackaged),
+    passiveCompanionEnabled: process.env.PASSIVE_COMPANION_ENABLED ?? 'false',
+    lookAtEnabled: 'true',
+    continuousListeningEnabled: 'false',
+    continuousListeningMode: 'silent',
+    continuousListeningReplyCooldownMs: '15000',
+    continuousListeningFollowUpWindowMs: '20000',
+    continuousListeningCuriosityChance: '0.03',
+  }
 }
 
-function freshDefaults(): AppConfig {
+export function freshDefaults(isPackaged = app.isPackaged): AppConfig {
   return {
     llm: defaultLlmConfig(),
     projectAwareness: {
@@ -93,7 +95,7 @@ function freshDefaults(): AppConfig {
       maxFileSizeBytes: 256 * 1024,
     },
     uiLocale: DEFAULT_UI_LOCALE,
-    ...stringDefaults,
+    ...stringDefaults(isPackaged),
   }
 }
 
@@ -104,7 +106,7 @@ function pickKnownStrings(
   saved: Record<string, unknown>,
 ): Partial<Record<StringConfigKey, string>> {
   const result: Partial<Record<StringConfigKey, string>> = {}
-  for (const key of Object.keys(stringDefaults) as StringConfigKey[]) {
+  for (const key of Object.keys(stringDefaults()) as StringConfigKey[]) {
     const value = saved[key]
     if (typeof value === 'string') result[key] = value
   }
@@ -151,6 +153,7 @@ export async function loadConfig(llmCredentialStore: LlmCredentialStore): Promis
       const { llm, plaintextCredentials, plaintextProviders, migrated } =
         resolveLlmPersistence(saved)
       const projectAwareness = resolveProjectAwarenessConfig(saved)
+      const developerMode = resolveDeveloperModeSettings(known, app.isPackaged)
       const hasLegacyProjectToken =
         typeof saved.projectAwareness === 'object' &&
         saved.projectAwareness !== null &&
@@ -158,9 +161,7 @@ export async function loadConfig(llmCredentialStore: LlmCredentialStore): Promis
       _config = {
         ...freshDefaults(),
         ...known,
-        developerModeEnabled: normalizeDeveloperMode(known.developerModeEnabled),
-        developerOverlayAnimationHudEnabled:
-          known.developerOverlayAnimationHudEnabled === 'false' ? 'false' : 'true',
+        ...developerMode,
         llm,
         projectAwareness,
         uiLocale: normalizeUiLocale(saved.uiLocale),

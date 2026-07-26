@@ -25,6 +25,13 @@ export type SpeechRuntimeStatus =
   | 'synthesizing'
   | 'speaking'
 type SpeechReply = Awaited<ReturnType<Window['api']['tts']['synthesizeReply']>>
+
+export class LlmCredentialMissingError extends Error {
+  constructor() {
+    super('LLM_CREDENTIAL_MISSING')
+    this.name = 'LlmCredentialMissingError'
+  }
+}
 export type SuccessfulSpeechReply = SpeechReply & { ok: true; audioBuffer: ArrayBuffer }
 
 interface SpeechStateTransition {
@@ -186,6 +193,7 @@ export class SpeechRuntime {
   ): Promise<AssistantReplyDraft> {
     const reply = await window.api.llm.reply(turnId, userText, screenContextId)
     if (!reply.ok || !reply.replyText) {
+      if (reply.errorCode === 'LLM_CREDENTIAL_MISSING') throw new LlmCredentialMissingError()
       if (reply.errorCode) throw new Error(`SCREEN_CONTEXT_ERROR:${reply.errorCode}`)
       throw new Error(reply.error ?? 'Нет ответа')
     }

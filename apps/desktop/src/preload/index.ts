@@ -29,6 +29,7 @@ const api = {
     getActiveCapabilities: () => ipcRenderer.invoke('llm:get-active-capabilities'),
     arbitrateBacklog: (payload: unknown) => ipcRenderer.invoke('llm:arbitrate-backlog', payload),
     providers: () => ipcRenderer.invoke('llm:providers'),
+    getReadiness: () => ipcRenderer.invoke('llm:get-readiness'),
     fetchModels: (provider: LlmProviderId) => ipcRenderer.invoke('llm:fetch-models', provider),
     validateCredential: (provider: LlmProviderId, apiKey: string) =>
       ipcRenderer.invoke('llm:validate-credential', { provider, apiKey }),
@@ -52,6 +53,8 @@ const api = {
     release: (captureId: string) => ipcRenderer.invoke('screen-context:release', captureId),
   },
   tts: {
+    warmup: (input: { engine: string; voiceId: string; language: string }) =>
+      ipcRenderer.invoke('tts:warmup', input),
     synthesizeReply: (turnId: string, replyText: string, emotionKey: string) =>
       ipcRenderer.invoke('tts:synthesize-reply', turnId, replyText, emotionKey),
     cancelSynthesis: (turnId: string) => ipcRenderer.invoke('tts:cancel-synthesis', turnId),

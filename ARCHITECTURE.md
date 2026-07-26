@@ -764,6 +764,8 @@ Speech Runtime is streaming-first on both sides. It should begin producing outpu
 
 The speech-output queue guarantees sequential playback, interruption handling, cancellation, future prioritization, and synchronization with Character State.
 
+The Local Speech API may expose an idempotent selected-voice warmup operation as part of its speech-adapter contract. Warmup resolves the configured engine, voice, and language through the same synthesis implementation as normal output, discards generated audio, and shares the engine's single inference synchronization boundary with real synthesis. Desktop may request this preparation in the background and project its status, but the API remains the owner of model, accent, voice-reference, and inference readiness.
+
 A current implementation may use a local service, a persistent bidirectional transport, incremental speech recognition, and a remote structured-output model. These are replaceable implementation choices, not architectural ownership boundaries.
 
 **Character State Integration**

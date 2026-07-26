@@ -47,6 +47,20 @@ export interface LlmCredentialStatus {
   lastError?: string
 }
 
+export type LlmReadinessReason =
+  | 'ready'
+  | 'missing-credential'
+  | 'auth-error'
+  | 'model-missing'
+  | 'network-error'
+  | 'checking'
+
+export interface LlmReadiness {
+  reason: LlmReadinessReason
+  providerId: LlmProviderId
+  providerDisplayName: string
+}
+
 export interface LlmProviderPersistedSettings {
   model: string
 }
