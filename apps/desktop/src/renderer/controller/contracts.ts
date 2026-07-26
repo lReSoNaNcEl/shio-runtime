@@ -1,5 +1,6 @@
 import type { LlmReadiness } from '../../shared/llm'
 import type { CharacterState, RuntimeEvent } from '../../shared/runtime'
+import type { SpeechPolishDebugState } from '../../shared/speech'
 import type { MicrophoneGateState } from '../audio/microphoneGateTypes'
 import type { AnimationPlaybackStatus } from '../avatar/AvatarAnimationController'
 import type { AnimationCooldownState } from '../avatar/AvatarAnimationCooldownManager'
@@ -122,6 +123,7 @@ export interface RuntimeDebugSnapshot {
   performance: ReturnType<AvatarRuntime['getDebugState']>['performance']
   playbackRequests: AvatarPlaybackRequestDebugState
   speechTimeline: SpeechStateTimelineEntry[]
+  speechPolish: SpeechPolishDebugState
   behaviorTimeline: AvatarBehaviorTransitionLogEntry[]
   ttsLatencyMs: string
   ttsCache: string

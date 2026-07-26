@@ -1,6 +1,7 @@
 import axios, { type AxiosInstance } from 'axios'
 
 import { type EmotionContract, emotionRegistry } from '../../shared/emotion'
+import type { SpeechAudioBoundaryTelemetry, SpeechUtteranceKind } from '../../shared/speech'
 import { mainLog } from '../logging/safeLogger'
 import { type Health, HealthSchema, type Recognize, RecognizeSchema } from '../schemas'
 import { normalizeSpeechError, SpeechServiceError } from './speechErrors'
@@ -53,6 +54,7 @@ export interface SynthesizeResult {
   cache?: string
   rtf?: string
   durationSec?: string
+  audioBoundaries?: SpeechAudioBoundaryTelemetry
 }
 
 export interface VoiceWarmupResult {
@@ -139,6 +141,7 @@ export class SpeechClient {
     speed?: number
     pitch?: number
     engine?: string
+    utteranceKind?: SpeechUtteranceKind
   }): Promise<SynthesizeResult> {
     try {
       return await this.synthesizeInternal(params)
@@ -155,6 +158,7 @@ export class SpeechClient {
     speed?: number
     pitch?: number
     engine?: string
+    utteranceKind?: SpeechUtteranceKind
   }): Promise<SynthesizeResult> {
     const res = await this.http.post(
       '/synthesize',
@@ -166,6 +170,7 @@ export class SpeechClient {
         speed: params.speed ?? 1.0,
         pitch: params.pitch ?? 0,
         engine: params.engine ?? 'f5',
+        utteranceKind: params.utteranceKind ?? 'normal',
       },
       { responseType: 'arraybuffer' },
     )
@@ -195,6 +200,7 @@ export class SpeechClient {
         cache: res.headers['x-cache'],
         rtf: res.headers['x-rtf'],
         durationSec: res.headers['x-duration-sec'],
+        audioBoundaries: parseAudioBoundaryTelemetry(res.headers),
       }
     }
     return {
@@ -208,6 +214,54 @@ export class SpeechClient {
       cache: res.headers['x-cache'],
       rtf: res.headers['x-rtf'],
       durationSec: res.headers['x-duration-sec'],
+      audioBoundaries: parseAudioBoundaryTelemetry(res.headers),
     }
   }
+}
+
+function parseAudioBoundaryTelemetry(
+  headers: Record<string, unknown>,
+): SpeechAudioBoundaryTelemetry | undefined {
+  const profile = headerString(headers, 'x-audio-boundary-profile')
+  if (!profile) return undefined
+  const values = [
+    headerNumber(headers, 'x-audio-leading-silence-ms'),
+    headerNumber(headers, 'x-audio-trailing-silence-ms'),
+    headerNumber(headers, 'x-audio-trimmed-leading-ms'),
+    headerNumber(headers, 'x-audio-trimmed-trailing-ms'),
+    headerNumber(headers, 'x-audio-fade-in-ms'),
+    headerNumber(headers, 'x-audio-fade-out-ms'),
+    headerNumber(headers, 'x-audio-postprocess-ms'),
+  ]
+  if (values.some((value) => value === undefined)) return undefined
+  const [
+    leadingSilenceMs,
+    trailingSilenceMs,
+    trimmedLeadingMs,
+    trimmedTrailingMs,
+    fadeInMs,
+    fadeOutMs,
+    postprocessMs,
+  ] = values as number[]
+  return {
+    profile,
+    leadingSilenceMs,
+    trailingSilenceMs,
+    trimmedLeadingMs,
+    trimmedTrailingMs,
+    fadeInMs,
+    fadeOutMs,
+    postprocessMs,
+  }
+}
+
+function headerString(headers: Record<string, unknown>, name: string): string | undefined {
+  const value = headers[name]
+  if (typeof value !== 'string' || !value.trim()) return undefined
+  return value
+}
+
+function headerNumber(headers: Record<string, unknown>, name: string): number | undefined {
+  const value = Number(headers[name])
+  return Number.isFinite(value) && value >= 0 ? value : undefined
 }

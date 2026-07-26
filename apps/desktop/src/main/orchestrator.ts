@@ -7,11 +7,16 @@ import {
   supportedEmotionPromptList,
 } from '../shared/emotion'
 import type { ScreenContextImageMimeType } from '../shared/screen-context'
+import type {
+  SpeechAudioBoundaryTelemetry,
+  SpeechTextNormalizationTelemetry,
+} from '../shared/speech'
 import type { LLMProvider, LlmRequestOptions } from './llm'
 import { mainLog } from './logging/safeLogger'
 import type { MemoryStore } from './memory'
 import type { ProjectAwarenessRuntime } from './project-awareness'
 import type { SpeechClient } from './speech/speechClient'
+import { classifySpeechUtterance, normalizeSpeechText } from './speech/text-normalization'
 
 const SESSION_ID = 'default'
 const TTS_VOICE_ID = 'animevox_makima'
@@ -218,14 +223,33 @@ export class Orchestrator {
     latencyMs?: string
     generatedLatencyMs?: string
     cache?: string
+    normalization?: SpeechTextNormalizationTelemetry
+    audioBoundaries?: SpeechAudioBoundaryTelemetry
   }> {
     const cfg = this.settings()
-    const speechResult = await this.speech.synthesize({
+    const normalization = normalizeSpeechText({
       text: replyText,
+      language: cfg.ttsLanguage,
+    })
+    if (normalization.diagnostics.fallbackReason) {
+      mainLog.warn('[speech-polish] text normalization fallback', {
+        category: normalization.diagnostics.fallbackReason,
+        inputCharacters: normalization.diagnostics.inputCharacters,
+        outputCharacters: normalization.diagnostics.outputCharacters,
+      })
+    }
+    const utteranceKind = classifySpeechUtterance(
+      normalization.text,
+      emotionKey,
+      normalization.utteranceKind === 'technical',
+    )
+    const speechResult = await this.speech.synthesize({
+      text: normalization.text,
       language: cfg.ttsLanguage,
       voiceId: cfg.ttsVoice || TTS_VOICE_ID,
       engine: TTS_ENGINE,
       emotion: emotionKey,
+      utteranceKind,
     })
     mainLog.info('[emotion] TTS result', {
       requestedEmotion: emotionKey,
@@ -245,6 +269,15 @@ export class Orchestrator {
       latencyMs: speechResult.latencyMs,
       generatedLatencyMs: speechResult.generatedLatencyMs,
       cache: speechResult.cache,
+      normalization: {
+        version: normalization.diagnostics.version,
+        changed: normalization.diagnostics.changed,
+        inputCharacters: normalization.diagnostics.inputCharacters,
+        outputCharacters: normalization.diagnostics.outputCharacters,
+        appliedRuleCount: normalization.diagnostics.appliedRuleIds.length,
+        categories: normalization.diagnostics.categories,
+      },
+      audioBoundaries: speechResult.audioBoundaries,
     }
   }
 

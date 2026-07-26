@@ -160,6 +160,7 @@ export class Controller {
     getOverlayDebugState: () => this.overlayRuntime.getDebugState(),
     getEventHistory: () => this.shioRuntime.events.getHistory(),
     getSpeechTimeline: () => this.speechRuntime.getSpeechTimeline(),
+    getSpeechPolishDebugState: () => this.speechRuntime.getSpeechPolishDebugState(),
     getMicrophoneGateDebug: () => this.microphoneGate.getDebugState(),
     isAvatarLoaded: () => this.avatarRuntime.isLoaded(),
     createId: () => nextId(),

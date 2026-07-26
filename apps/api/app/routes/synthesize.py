@@ -3,6 +3,7 @@ import hashlib
 import logging
 import time
 from collections import OrderedDict
+from typing import Literal
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
@@ -10,6 +11,7 @@ from pydantic import BaseModel, Field
 from app.audio import apply_pitch_shift, save_wav
 from app.config import settings
 from app.tts import EmotionRegistry, EmotionTranslator, SynthesisResult
+from app.tts.audio_boundaries import AudioBoundaryMetrics, process_audio_boundaries
 from app.tts.f5_local import F5LocalEngine
 from app.tts.voice_repository_manager import voice_repository_manager
 from app.tts.voices import default_voice_id, list_presets, voice_registry
@@ -34,6 +36,10 @@ class SynthesizeRequest(BaseModel):
         default=0.0, ge=-12.0, le=12.0, description="Post-process pitch shift in semitones"
     )
     engine: str | None = Field(default=None, description="Only f5 is supported")
+    utteranceKind: Literal["normal", "technical", "nonverbal", "short-interjection"] = Field(
+        default="normal",
+        description="Optional conservative final-boundary profile hint",
+    )
 
 
 class VoiceSyncRequest(BaseModel):
@@ -60,7 +66,7 @@ _emotion_translator: EmotionTranslator | None = EmotionTranslator(emotion_regist
 _tts_cache: "OrderedDict[str, tuple[bytes, dict[str, str]]]" = OrderedDict()
 TTS_CACHE_MAX_ITEMS = 128
 TTS_CACHE_MAX_TEXT_LENGTH = 120
-TTS_CACHE_VERSION = "f5-v2"
+TTS_CACHE_VERSION = "f5-v3-speech-polish"
 _warmup_tasks: dict[tuple[str, str, str], asyncio.Task] = {}
 _warmup_status: dict[tuple[str, str, str], dict[str, str | float]] = {}
 _warmup_gate = asyncio.Semaphore(1)
@@ -115,6 +121,7 @@ def _cache_key(request: SynthesizeRequest, text: str, emotion: str) -> str:
             str(request.speed),
             str(request.pitch),
             "f5",
+            request.utteranceKind,
             TTS_CACHE_VERSION,
         ]
     )
@@ -149,6 +156,32 @@ def _apply_pitch(result: SynthesisResult, semitones: float) -> SynthesisResult:
         result.audio = apply_pitch_shift(result.audio, result.sample_rate, semitones)
         result.duration_sec = len(result.audio) / result.sample_rate
     return result
+
+
+def _apply_audio_boundaries(
+    result: SynthesisResult, request: SynthesizeRequest, emotion: str
+) -> tuple[SynthesisResult, AudioBoundaryMetrics]:
+    result.audio, metrics = process_audio_boundaries(
+        result.audio,
+        result.sample_rate,
+        utterance_kind=request.utteranceKind,
+        emotion=emotion,
+    )
+    result.duration_sec = len(result.audio) / result.sample_rate
+    return result, metrics
+
+
+def _boundary_headers(metrics: AudioBoundaryMetrics) -> dict[str, str]:
+    return {
+        "X-Audio-Boundary-Profile": metrics.profile,
+        "X-Audio-Leading-Silence-Ms": str(metrics.detected_leading_silence_ms),
+        "X-Audio-Trailing-Silence-Ms": str(metrics.detected_trailing_silence_ms),
+        "X-Audio-Trimmed-Leading-Ms": str(metrics.trimmed_leading_ms),
+        "X-Audio-Trimmed-Trailing-Ms": str(metrics.trimmed_trailing_ms),
+        "X-Audio-Fade-In-Ms": str(metrics.fade_in_ms),
+        "X-Audio-Fade-Out-Ms": str(metrics.fade_out_ms),
+        "X-Audio-Postprocess-Ms": str(metrics.postprocess_latency_ms),
+    }
 
 
 def _request_voice_id(request: SynthesizeRequest) -> str:
@@ -325,7 +358,7 @@ async def voices_sync(request: VoiceSyncRequest = VoiceSyncRequest()):  # noqa: 
     responses={
         200: {
             "content": {"audio/wav": {}},
-            "description": "WAV audio + X-Engine, X-Language, X-Emotion, X-Latency-Ms, X-RTF, X-Duration-Sec",
+            "description": "WAV audio plus synthesis, duration, cache and optional audio-boundary telemetry headers",
         }
     },
 )
@@ -373,10 +406,10 @@ async def synthesize(request: SynthesizeRequest):
                 )
                 headers["X-Latency-Ms"] = str((time.perf_counter() - started) * 1000)
                 logger.info(
-                    "TTS cache hit: text=%r emotion=%s voiceId=%s",
-                    text[:80],
-                    emotion,
-                    _request_voice_id(request),
+                    "TTS cache hit: textChars=%d audioBytes=%d profile=%s",
+                    len(text),
+                    len(audio_bytes),
+                    headers.get("X-Audio-Boundary-Profile", "none"),
                 )
                 return Response(content=audio_bytes, media_type="audio/wav", headers=headers)
 
@@ -394,6 +427,7 @@ async def synthesize(request: SynthesizeRequest):
             speed=request.speed,
         )
         result = _apply_pitch(result, request.pitch)
+        result, boundary_metrics = _apply_audio_boundaries(result, request, emotion)
         audio_bytes = _synthesis_result_to_response(result)
         logger.info(
             "Synthesis emotion metadata: requested=%s text=%s resolved=%s",
@@ -413,7 +447,24 @@ async def synthesize(request: SynthesizeRequest):
             "X-RTF": str(result.rtf),
             "X-Duration-Sec": str(result.duration_sec),
             "X-Cache": "MISS" if cacheable else "SKIP",
+            **_boundary_headers(boundary_metrics),
         }
+        logger.info(
+            "Speech audio boundary processed: profile=%s inputMs=%.1f outputMs=%.1f "
+            "leadingMs=%.1f trailingMs=%.1f trimLeadingMs=%.1f trimTrailingMs=%.1f "
+            "fadeInMs=%.1f fadeOutMs=%.1f postprocessMs=%.2f bypass=%s",
+            boundary_metrics.profile,
+            boundary_metrics.input_duration_ms,
+            boundary_metrics.output_duration_ms,
+            boundary_metrics.detected_leading_silence_ms,
+            boundary_metrics.detected_trailing_silence_ms,
+            boundary_metrics.trimmed_leading_ms,
+            boundary_metrics.trimmed_trailing_ms,
+            boundary_metrics.fade_in_ms,
+            boundary_metrics.fade_out_ms,
+            boundary_metrics.postprocess_latency_ms,
+            boundary_metrics.bypass_reason or "none",
+        )
         if cacheable:
             _cache_set(cache_key, audio_bytes, headers)
 

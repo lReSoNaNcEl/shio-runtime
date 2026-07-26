@@ -19,6 +19,7 @@ import type {
   ScreenContextResult,
   ScreenContextSource,
 } from '../screen-context/contracts'
+import type { SpeechAudioBoundaryTelemetry, SpeechTextNormalizationTelemetry } from '../speech'
 import type { SpeechServiceErrorCode } from '../speech/errors'
 import type { ReleaseInfo, RuntimeSupportBundle } from '../system'
 
@@ -114,6 +115,8 @@ export interface ShioRuntimeApi {
       latencyMs?: string
       generatedLatencyMs?: string
       cache?: string
+      normalization?: SpeechTextNormalizationTelemetry
+      audioBoundaries?: SpeechAudioBoundaryTelemetry
       error?: string
       errorCode?: SpeechServiceErrorCode
     }>

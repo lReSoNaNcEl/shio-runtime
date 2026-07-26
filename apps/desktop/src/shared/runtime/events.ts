@@ -34,6 +34,8 @@ export type RuntimeEventType =
   | 'BargeInUtteranceFinalized'
   | 'BargeInConversationAdmitted'
   | 'SpeechPhrasePhaseChanged'
+  | 'Speech Text Normalized'
+  | 'Speech Audio Boundary Processed'
   | 'EarImpulseTriggered'
   | 'EarImpulseRejected'
   | 'EmotionEmbodimentResolved'

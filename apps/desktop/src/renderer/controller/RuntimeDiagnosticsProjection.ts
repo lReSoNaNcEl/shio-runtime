@@ -1,4 +1,5 @@
 import type { CharacterState, RuntimeEvent } from '../../shared/runtime'
+import type { SpeechPolishDebugState } from '../../shared/speech'
 import type { AudioPlayer } from '../audio/audioPlayer'
 import type { MicrophoneGateDebugState } from '../audio/microphoneGateTypes'
 import type { AvatarRuntimeDebugState } from '../runtime/AvatarRuntime'
@@ -18,6 +19,7 @@ export interface RuntimeDiagnosticsDependencies {
   getOverlayDebugState(): Promise<string>
   getEventHistory(): readonly RuntimeEvent[]
   getSpeechTimeline(): SpeechStateTimelineEntry[]
+  getSpeechPolishDebugState(): SpeechPolishDebugState
   getMicrophoneGateDebug(): MicrophoneGateDebugState
   isAvatarLoaded(): boolean
   createId(): string
@@ -97,6 +99,7 @@ export class RuntimeDiagnosticsProjection {
       performance: avatar.performance,
       playbackRequests: avatar.playbackRequests,
       speechTimeline: this.dependencies.getSpeechTimeline(),
+      speechPolish: this.dependencies.getSpeechPolishDebugState(),
       behaviorTimeline: avatar.behaviorTimeline,
       ttsLatencyMs: this.lastTtsLatencyMs,
       ttsCache: this.lastTtsCache,

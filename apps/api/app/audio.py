@@ -74,7 +74,7 @@ def pad_audio(data: np.ndarray, sr: int, duration_sec: float) -> np.ndarray:
 
 
 def trim_silence(data: np.ndarray, sr: int, threshold_db: float = -40) -> np.ndarray:
-    """Trim silence from audio edges."""
+    """Legacy ASR-era helper; production TTS uses app.tts.audio_boundaries."""
     # Calculate threshold
     threshold = 10 ** (threshold_db / 20)
 

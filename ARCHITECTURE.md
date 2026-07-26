@@ -762,10 +762,19 @@ Audio Input
 
 ```text
 Response Text / Speech Intent (from Character Response Generation)
+  -> Per-Segment Speech Text Preparation
+  -> Deterministic TTS-Only Text Normalization
   -> Speech Synthesis
+  -> Final Audio Boundary Processing
   -> Speech Playback
   -> Speech Completion
 ```
+
+The output chain preserves distinct text representations. `replyText` is the original Character Response Generation result and may contain internal emotion markup. `displayText` is the visible assistant response with internal emotion markup removed. `speechText` is one independently preserved emotion segment after assistant-markup cleanup. `normalizedSpeechText` is a deterministic, provider-independent, TTS-only representation derived at the Desktop Speech boundary. Only `normalizedSpeechText` crosses the synthesis request boundary. It never replaces visible conversation text, conversational history, or Memory Layer content, and normalization never merges segments or changes their emotion boundaries, transition targets, or look-ahead ownership.
+
+Desktop owns technical-text, Markdown, URL, path, version, list, and nonverbal speech normalization because these are speech-domain preparation rules shared by local and future replaceable speech providers. The Speech API owns final waveform-boundary analysis because it alone owns the synthesized waveform. Final boundary processing runs after provider-specific complete-response processing and optional pitch processing, and before WAV serialization and TTS cache storage. For F5, this final response-level responsibility does not replace per-chunk tail validation, suspicious-tail retry, chunk crossfade, safe loudness normalization, selected-voice warmup, or the shared inference synchronization boundary.
+
+Speech-normalization and audio-boundary diagnostics are transient Runtime Debug and Event projections, not Character State or conversational memory. They may contain rule counts, category names, versions, lengths, profiles, durations, trim values, fade values, and processing latency. They never contain original or normalized speech text, URL or path values, code contents, query parameter values, credentials, or voice-reference transcripts.
 
 Speech Runtime is streaming-first on both sides. It should begin producing output as soon as meaningful information becomes available, including partial recognition, sentence-level synthesis, and incremental playback.
 

@@ -24,6 +24,7 @@
     "check": "biome check .",
     "check:fix": "biome check --write .",
     "repro:playback": "esbuild scripts/speech-playback-repro/harness.ts --bundle --platform=node --format=cjs --outfile=out/speech-playback-repro.cjs && node out/speech-playback-repro.cjs",
+    "repro:speech-polish": "esbuild scripts/speech-polish-repro/harness.ts --bundle --platform=node --format=cjs --outfile=out/speech-polish-repro.cjs && node out/speech-polish-repro.cjs",
     "repro:invariants": "esbuild scripts/runtime-invariant-repro/harness.ts --bundle --platform=node --format=cjs --outfile=out/runtime-invariant-repro.cjs && node out/runtime-invariant-repro.cjs",
     "repro:ear": "esbuild scripts/ear-repro/harness.ts --bundle --platform=node --format=cjs --outfile=out/ear-repro.cjs && node out/ear-repro.cjs",
     "repro:embodiment-polish": "esbuild scripts/embodiment-polish-repro/harness.ts --bundle --platform=node --format=cjs --outfile=out/embodiment-polish-repro.cjs && node out/embodiment-polish-repro.cjs",

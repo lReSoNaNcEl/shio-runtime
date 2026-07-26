@@ -35,7 +35,7 @@ const MAX_VISIBLE_EVENTS = 500
 
 const SNAPSHOT_GROUPS = {
   character: ['appStatus', 'characterState', 'emotionKey', 'vrmEmotion'],
-  conversationSpeech: ['speechTimeline', 'ttsLatencyMs', 'ttsCache'],
+  conversationSpeech: ['speechTimeline', 'speechPolish', 'ttsLatencyMs', 'ttsCache'],
   avatarPlayback: [
     'avatarMode',
     'currentBodyAnimation',

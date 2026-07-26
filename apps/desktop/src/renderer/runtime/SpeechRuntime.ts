@@ -12,6 +12,11 @@ import type {
   EventBus,
   RuntimeEventType,
 } from '../../shared/runtime'
+import type {
+  SpeechAudioBoundaryTelemetry,
+  SpeechPolishDebugState,
+  SpeechTextNormalizationTelemetry,
+} from '../../shared/speech'
 import { hasSpeakableContent } from '../../shared/speech'
 import type { MouthWeights } from '../avatar/embodiment/speech/LipSync'
 import type { CharacterStateStore } from './ShioRuntime'
@@ -87,6 +92,11 @@ export interface RecognizedSpeech {
 export class SpeechRuntime {
   private speechTimeline: SpeechStateTimelineEntry[] = []
   private lastSpeechTransitionAt: number | null = null
+  private speechPolishTurnId: string | null = null
+  private speechPolishDebug: SpeechPolishDebugState = {
+    normalization: [],
+    audioBoundaries: [],
+  }
 
   constructor(
     private readonly characterState: CharacterStateStore,
@@ -186,6 +196,13 @@ export class SpeechRuntime {
     return [...this.speechTimeline]
   }
 
+  getSpeechPolishDebugState(): SpeechPolishDebugState {
+    return {
+      normalization: this.speechPolishDebug.normalization.map((item) => ({ ...item })),
+      audioBoundaries: this.speechPolishDebug.audioBoundaries.map((item) => ({ ...item })),
+    }
+  }
+
   async createAssistantReply(
     turnId: string,
     userText: string,
@@ -219,6 +236,7 @@ export class SpeechRuntime {
       throw new Error(speech.error ?? 'Нет аудио')
     }
     const successfulSpeech = speech as SuccessfulSpeechReply
+    this.recordSpeechPolishTelemetry(turnId, 0, successfulSpeech)
 
     return {
       ...draft,
@@ -236,7 +254,9 @@ export class SpeechRuntime {
       if (speech.errorCode) throw speechErrorFromResponse('synthesis', speech)
       throw new Error(speech.error ?? 'No audio')
     }
-    return speech as SuccessfulSpeechReply
+    const successfulSpeech = speech as SuccessfulSpeechReply
+    this.recordSpeechPolishTelemetry(turnId, segment.index, successfulSpeech)
+    return successfulSpeech
   }
 
   hasSpeakableContent(text: string): boolean {
@@ -251,6 +271,7 @@ export class SpeechRuntime {
       throw new Error(speech.error ?? 'нет аудио')
     }
     const successfulSpeech = speech as SuccessfulSpeechReply
+    this.recordSpeechPolishTelemetry(turnId, 0, successfulSpeech)
 
     return {
       text,
@@ -364,6 +385,82 @@ export class SpeechRuntime {
       source: 'renderer.speechRuntime',
       detail,
     })
+  }
+
+  private recordSpeechPolishTelemetry(
+    turnId: string,
+    segmentIndex: number,
+    speech: {
+      normalization?: SpeechTextNormalizationTelemetry
+      audioBoundaries?: SpeechAudioBoundaryTelemetry
+    },
+  ): void {
+    if (this.speechPolishTurnId !== turnId) {
+      this.speechPolishTurnId = turnId
+      this.speechPolishDebug = { normalization: [], audioBoundaries: [] }
+    }
+    if (speech.normalization) {
+      const normalization = { ...speech.normalization }
+      const items = [...this.speechPolishDebug.normalization]
+      items[segmentIndex] = normalization
+      this.speechPolishDebug.normalization = items.slice(0, 3)
+      this.events.publish({
+        type: 'Speech Text Normalized',
+        category: 'speech',
+        source: 'renderer.speechRuntime',
+        detail: [
+          `turnId=${turnId}`,
+          `segmentIndex=${segmentIndex}`,
+          `normalizationVersion=${normalization.version}`,
+          `ruleCount=${normalization.appliedRuleCount}`,
+          `inputCharacters=${normalization.inputCharacters}`,
+          `outputCharacters=${normalization.outputCharacters}`,
+        ].join(' '),
+        metadata: {
+          turnId,
+          segmentIndex,
+          normalizationVersion: normalization.version,
+          ruleCount: normalization.appliedRuleCount,
+          inputCharacters: normalization.inputCharacters,
+          outputCharacters: normalization.outputCharacters,
+        },
+      })
+    }
+    if (speech.audioBoundaries) {
+      const boundaries = { ...speech.audioBoundaries }
+      const items = [...this.speechPolishDebug.audioBoundaries]
+      items[segmentIndex] = boundaries
+      this.speechPolishDebug.audioBoundaries = items.slice(0, 3)
+      this.events.publish({
+        type: 'Speech Audio Boundary Processed',
+        category: 'speech',
+        source: 'renderer.speechRuntime',
+        detail: [
+          `turnId=${turnId}`,
+          `segmentIndex=${segmentIndex}`,
+          `boundaryProfile=${boundaries.profile}`,
+          `leadingSilenceMs=${boundaries.leadingSilenceMs}`,
+          `trailingSilenceMs=${boundaries.trailingSilenceMs}`,
+          `trimmedLeadingMs=${boundaries.trimmedLeadingMs}`,
+          `trimmedTrailingMs=${boundaries.trimmedTrailingMs}`,
+          `fadeInMs=${boundaries.fadeInMs}`,
+          `fadeOutMs=${boundaries.fadeOutMs}`,
+          `postprocessMs=${boundaries.postprocessMs}`,
+        ].join(' '),
+        metadata: {
+          turnId,
+          segmentIndex,
+          boundaryProfile: boundaries.profile,
+          leadingSilenceMs: boundaries.leadingSilenceMs,
+          trailingSilenceMs: boundaries.trailingSilenceMs,
+          trimmedLeadingMs: boundaries.trimmedLeadingMs,
+          trimmedTrailingMs: boundaries.trimmedTrailingMs,
+          fadeInMs: boundaries.fadeInMs,
+          fadeOutMs: boundaries.fadeOutMs,
+          postprocessMs: boundaries.postprocessMs,
+        },
+      })
+    }
   }
 
   private recordSpeechTimeline(
