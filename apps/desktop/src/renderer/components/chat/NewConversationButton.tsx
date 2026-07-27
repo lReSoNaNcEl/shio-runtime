@@ -1,4 +1,4 @@
-import { ActionButton, Tooltip, TooltipTrigger } from '@react-spectrum/s2'
+import { ActionButton, Text, Tooltip, TooltipTrigger } from '@react-spectrum/s2'
 import Add from '@react-spectrum/s2/icons/Add'
 
 import { useTranslation } from '../../localization/useTranslation'
@@ -14,8 +14,14 @@ export function NewConversationButton({ isDisabled, onPress }: NewConversationBu
 
   return (
     <TooltipTrigger delay={200}>
-      <ActionButton aria-label={label} isDisabled={isDisabled} onPress={onPress}>
+      <ActionButton
+        aria-label={label}
+        isDisabled={isDisabled}
+        onPress={onPress}
+        UNSAFE_className="new-chat-action"
+      >
         <Add />
+        <Text>{label}</Text>
       </ActionButton>
       <Tooltip>{label}</Tooltip>
     </TooltipTrigger>

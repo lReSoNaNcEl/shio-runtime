@@ -293,13 +293,6 @@ interface HealthCard {
   busy?: boolean
 }
 
-const MODE_LABEL: Record<ControllerState['continuousListeningMode'], string> = {
-  silent: 'Silent',
-  passive: 'Passive',
-  active: 'Active',
-  streamer: 'Streamer',
-}
-
 function buildCards(state: ControllerState, t: LocalizationContextValue['t']): HealthCard[] {
   const cards: HealthCard[] = []
 
@@ -360,9 +353,7 @@ function buildCards(state: ControllerState, t: LocalizationContextValue['t']): H
         title: t('health.streaming.title'),
         tone: 'positive',
         status: t('health.streaming.running'),
-        detail: t('health.streaming.mode', {
-          mode: MODE_LABEL[state.continuousListeningMode],
-        }),
+        detail: t('health.streaming.listeningDetail'),
       })
       break
     case 'starting':
@@ -462,16 +453,6 @@ export function RuntimeHealthView({
           <Text UNSAFE_className="health-dashboard-subtitle">{t('health.subtitle')}</Text>
         </div>
         <div className="health-dashboard-actions">
-          <ActionButton onPress={() => void window.api.system.openLogsFolder()}>
-            {t('health.support.openLogs')}
-          </ActionButton>
-          <ActionButton
-            onPress={() =>
-              void window.api.system.getReleaseInfo().then((info) => copyText(info.version))
-            }
-          >
-            {t('health.support.copyVersion')}
-          </ActionButton>
           <ActionButton
             onPress={() =>
               void window.api.system

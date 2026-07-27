@@ -65,7 +65,6 @@ const item = (
   correctionHint: priorityClass === 'P0',
   followUpHint: priorityClass === 'P2',
   attentionScore: score,
-  attentionMode: 'streamer',
   capturedWhileShioBusy: true,
   capturedDuringPlayback: false,
   likelySelfEcho: false,
@@ -309,7 +308,6 @@ async function main(): Promise<void> {
   const engine = new AttentionEngine()
   const gate = new RuleGate()
   const attention = engine.evaluate(first, {
-    mode: 'passive',
     isSpeaking: true,
     cooldownActive: false,
     recentConversation: false,

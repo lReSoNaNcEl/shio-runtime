@@ -73,7 +73,7 @@ export class SceneManager {
   }
 
   setOverlayCameraView(scale = 1): void {
-    this.setOverlayCameraPreset('front', scale)
+    this.setOverlayCameraPreset('bust', scale)
   }
 
   /**
@@ -122,7 +122,7 @@ export class SceneManager {
   }
 
   setOverlayCameraPreset(mode: OverlayViewMode, scale = 1): void {
-    const preset = overlayCameraPresets[mode] ?? overlayCameraPresets.front
+    const preset = overlayCameraPresets[mode] ?? overlayCameraPresets.bust
     const clampedScale = Math.max(preset.scaleMin, Math.min(preset.scaleMax, scale))
     const target = preset.target
     const offset = {

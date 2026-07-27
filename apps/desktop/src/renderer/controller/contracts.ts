@@ -22,7 +22,6 @@ import type { AvatarMode, AvatarRuntime } from '../runtime/AvatarRuntime'
 import type { RuntimeHealth } from '../runtime/RuntimeStateInvariantValidator'
 import type { SpeechStateTimelineEntry } from '../runtime/SpeechRuntime'
 import type { SpeechCapabilitiesState } from '../runtime/speechCapabilities'
-import type { ContinuousListeningSettings } from '../speech/continuous-listening/types'
 
 export type AppStatus =
   | 'idle'
@@ -68,9 +67,7 @@ export interface ControllerState {
   vrmConfigured: boolean
   vrmLoaded: boolean
   faceTrackingEnabled: boolean
-  passiveCompanionEnabled: boolean
   continuousListeningEnabled: boolean
-  continuousListeningMode: ContinuousListeningSettings['mode']
   continuousListeningState: 'off' | 'starting' | 'on' | 'error'
   continuousListeningError: string
   overlayState: 'off' | 'opening' | 'on' | 'closing' | 'error'

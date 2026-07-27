@@ -4,7 +4,7 @@ import type { OverlayViewMode } from '../../../avatar/tuning/cameraTuning'
 export const baseName = (path: string): string => path.split(/[\\/]/).pop() ?? ''
 
 export function parseOverlayViewMode(mode: string | undefined): OverlayViewMode {
-  return mode === 'bust' || mode === 'face' || mode === 'portrait' ? mode : 'front'
+  return mode === 'bust' || mode === 'face' || mode === 'portrait' ? mode : 'bust'
 }
 
 export function clampNumber(value: number, min: number, max: number): number {

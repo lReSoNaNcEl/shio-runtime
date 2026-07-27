@@ -179,7 +179,7 @@ export class OverlayRuntime {
 
   private parseOverlayViewMode(mode: unknown): OverlayViewMode {
     if (mode === 'bust' || mode === 'face' || mode === 'portrait') return mode
-    return 'front'
+    return 'bust'
   }
 
   private clampWeight(value: unknown): number {

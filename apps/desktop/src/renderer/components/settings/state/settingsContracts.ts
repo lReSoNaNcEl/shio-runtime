@@ -11,30 +11,21 @@ import type { UiLocale } from '../../../../shared/localization'
 import type { ProjectAwarenessStatus } from '../../../../shared/project-awareness'
 import type { OverlayViewMode } from '../../../avatar/tuning/cameraTuning'
 import type { ControllerState } from '../../../Controller'
-import type { AttentionMode } from '../../../speech/continuous-listening/types'
 
-export type SettingsSection =
-  | 'general'
-  | 'project'
-  | 'speech'
-  | 'listening'
-  | 'llm'
-  | 'avatar'
-  | 'advanced'
+export type SettingsSection = 'general' | 'project' | 'speech' | 'llm' | 'avatar' | 'advanced'
 
 export interface SettingsDialogProps {
   isOpen: boolean
   initialSection?: SettingsSection
-  continuousListeningMode: AttentionMode
   vrmLoaded: boolean
   faceTrackingEnabled: boolean
-  passiveCompanionEnabled: boolean
   onToggleFaceTracking: () => void
-  onPassiveCompanionChange: (enabled: boolean) => void
   overlayVisible: boolean
   overlayViewModeProjection: OverlayViewMode
   llmHealth: ControllerState['llmHealth']
   voiceWarmup: ControllerState['voiceWarmup']
+  continuousListeningState: ControllerState['continuousListeningState']
+  onToggleContinuousListening: () => void
   onOverlayVisibleChange: (visible: boolean) => void
   onToggleOverlay: (visible: boolean) => void | Promise<void>
   onClose: () => void
@@ -101,6 +92,15 @@ export interface SpeechSettingsState {
   microphones: Array<{ deviceId: string; label: string }>
   microphoneId: string
   voiceWarmup: ControllerState['voiceWarmup']
+  continuousListeningState: ControllerState['continuousListeningState']
+  microphoneTestState:
+    | 'idle'
+    | 'recording'
+    | 'ready'
+    | 'playing'
+    | 'capture-error'
+    | 'playback-error'
+  microphoneLevel: number
 }
 
 export interface SpeechSettingsActions {
@@ -108,21 +108,9 @@ export interface SpeechSettingsActions {
   setLanguage: (language: string) => void
   setCurrentTtsVoice: (voice: string) => void
   setMicrophoneId: (id: string) => void
-}
-
-export interface ListeningSettingsState {
-  replyCooldownMs: number
-  followUpWindowMs: number
-  curiosityChancePercent: number
-  curiosityEnabled: boolean
-  mode: AttentionMode
-}
-
-export interface ListeningSettingsActions {
-  setMode: (mode: AttentionMode) => Promise<void>
-  setReplyCooldownMs: (value: number) => void
-  setFollowUpWindowMs: (value: number) => void
-  setCuriosityChancePercent: (value: number) => void
+  recordMicrophoneTest: () => Promise<void>
+  playMicrophoneTest: () => Promise<void>
+  toggleContinuousListening: () => void
 }
 
 export interface LlmSettingsState {
@@ -152,7 +140,6 @@ export interface LlmSettingsActions {
 
 export interface AvatarSettingsState {
   vrmName: string
-  passiveCompanionEnabled: boolean
   overlayVisible: boolean
   overlayViewMode: OverlayViewMode
   overlayWidth: number
@@ -167,7 +154,6 @@ export interface AvatarSettingsState {
 
 export interface AvatarSettingsActions {
   pickVrm: () => Promise<void>
-  setPassiveCompanionEnabled: (enabled: boolean) => void
   toggleOverlay: (visible: boolean) => Promise<void>
   setOverlayViewMode: (mode: OverlayViewMode) => void
   setOverlayWidth: (value: number) => void
@@ -184,11 +170,18 @@ export interface AvatarSettingsActions {
 export interface AdvancedSettingsState {
   developerModeEnabled: boolean
   developerOverlayAnimationHudEnabled: boolean
+  speechUrl: string
+  backlogRole: BacklogSelectorRoleConfig
+  providers: ProviderProfile[]
+  providerSettings: Record<LlmProviderId, LlmProviderPublicSettings>
+  backlogModels: ModelInfo[]
 }
 
 export interface AdvancedSettingsActions {
   setDeveloperModeEnabled: (enabled: boolean) => Promise<void>
   setDeveloperOverlayAnimationHudEnabled: (enabled: boolean) => Promise<void>
+  setSpeechUrl: (url: string) => void
+  setBacklogRole: Dispatch<SetStateAction<BacklogSelectorRoleConfig>>
 }
 
 export interface SettingsDialogViewModel {
@@ -198,7 +191,6 @@ export interface SettingsDialogViewModel {
   general: { state: GeneralSettingsState; actions: GeneralSettingsActions }
   project: { state: ProjectSettingsState; actions: ProjectSettingsActions }
   speech: { state: SpeechSettingsState; actions: SpeechSettingsActions }
-  listening: { state: ListeningSettingsState; actions: ListeningSettingsActions }
   llm: { state: LlmSettingsState; actions: LlmSettingsActions }
   avatar: { state: AvatarSettingsState; actions: AvatarSettingsActions }
   advanced: { state: AdvancedSettingsState; actions: AdvancedSettingsActions }

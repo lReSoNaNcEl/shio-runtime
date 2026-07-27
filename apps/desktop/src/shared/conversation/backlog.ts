@@ -1,5 +1,3 @@
-export type AttentionMode = 'silent' | 'passive' | 'active' | 'streamer'
-
 export type BacklogPriorityClass = 'P0' | 'P1' | 'P2' | 'P3' | 'P4'
 
 export interface BufferedUtterance {
@@ -14,7 +12,6 @@ export interface BufferedUtterance {
   correctionHint: boolean
   followUpHint: boolean
   attentionScore: number
-  attentionMode: AttentionMode
   capturedWhileShioBusy: boolean
   capturedDuringPlayback: boolean
   likelySelfEcho: boolean

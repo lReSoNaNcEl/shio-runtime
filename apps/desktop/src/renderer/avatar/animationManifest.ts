@@ -101,7 +101,7 @@ export interface AnimationManifestEntry {
   /** Runtime states in which this animation may be selected. */
   compatibleStates?: readonly string[]
   /** Camera presets where automatic selection may use this clip. */
-  compatibleCameraModes?: readonly OverlayViewMode[]
+  compatibleCameraModes?: readonly AvatarPreviewCameraMode[]
   /** Explicit semantic usage gates; categories do not imply runtime safety. */
   usage?: AnimationUsage
   /** Whether behaviour resolution may select this animation automatically. */
@@ -175,7 +175,7 @@ export const ANIMATION_MANIFEST = [
       'idle-orchestration',
     ],
     compatibleStates: ['idle', 'thinking', 'speaking'],
-    compatibleCameraModes: ['front', 'bust'],
+    compatibleCameraModes: ['full', 'bust'],
     usage: IDLE_AND_SPEECH_USAGE,
     description: 'Neutral body motion, quiet idle and speaking variant.',
   },
@@ -189,7 +189,7 @@ export const ANIMATION_MANIFEST = [
     cooldownMs: 9000,
     behaviorTags: ['behavior:idle', 'idle-orchestration'],
     compatibleStates: ['idle'],
-    compatibleCameraModes: ['front', 'bust', 'face'],
+    compatibleCameraModes: ['full', 'bust', 'face'],
     usage: IDLE_USAGE,
     interruptible: true,
     description:
@@ -210,7 +210,7 @@ export const ANIMATION_MANIFEST = [
     cooldownMs: 45000,
     behaviorTags: ['idle-presence'],
     compatibleStates: ['idle'],
-    compatibleCameraModes: ['front', 'bust'],
+    compatibleCameraModes: ['full', 'bust'],
     usage: EXTENDED_IDLE_USAGE,
     rootMotionPolicy: 'lockAll',
     description: 'Extended idle sway for long quiet moments.',
@@ -224,7 +224,7 @@ export const ANIMATION_MANIFEST = [
     cooldownMs: 50000,
     behaviorTags: ['idle-presence'],
     compatibleStates: ['idle'],
-    compatibleCameraModes: ['front', 'bust'],
+    compatibleCameraModes: ['full', 'bust'],
     usage: EXTENDED_IDLE_USAGE,
     rootMotionPolicy: 'lockAll',
     description: 'Alternate extended idle sway for long quiet moments.',
@@ -238,7 +238,7 @@ export const ANIMATION_MANIFEST = [
     cooldownMs: 52000,
     behaviorTags: ['idle-presence'],
     compatibleStates: ['idle'],
-    compatibleCameraModes: ['front', 'bust'],
+    compatibleCameraModes: ['full', 'bust'],
     usage: EXTENDED_IDLE_USAGE,
     rootMotionPolicy: 'lockAll',
     description: 'Extended idle swing motion for sustained inactivity.',
@@ -252,7 +252,7 @@ export const ANIMATION_MANIFEST = [
     cooldownMs: 48000,
     behaviorTags: ['idle-presence'],
     compatibleStates: ['idle'],
-    compatibleCameraModes: ['front', 'bust'],
+    compatibleCameraModes: ['full', 'bust'],
     usage: EXTENDED_IDLE_USAGE,
     rootMotionPolicy: 'lockAll',
     description: 'Compact extended idle swing motion for sustained inactivity.',
@@ -266,7 +266,7 @@ export const ANIMATION_MANIFEST = [
     cooldownMs: 60000,
     behaviorTags: ['idle-presence'],
     compatibleStates: ['idle'],
-    compatibleCameraModes: ['front', 'bust'],
+    compatibleCameraModes: ['full', 'bust'],
     usage: EXTENDED_IDLE_USAGE,
     rootMotionPolicy: 'lockAll',
     description: 'Playful long-idle dance motion for rare quiet stretches.',
@@ -281,7 +281,7 @@ export const ANIMATION_MANIFEST = [
     cooldownMs: 60000,
     behaviorTags: ['idle-presence'],
     compatibleStates: ['idle'],
-    compatibleCameraModes: ['front', 'bust'],
+    compatibleCameraModes: ['full', 'bust'],
     usage: EXTENDED_IDLE_USAGE,
     interruptible: true,
     rootMotionPolicy: 'lockAll',
@@ -297,7 +297,7 @@ export const ANIMATION_MANIFEST = [
     cooldownMs: 90000,
     behaviorTags: ['idle-presence'],
     compatibleStates: ['idle'],
-    compatibleCameraModes: ['front', 'bust'],
+    compatibleCameraModes: ['full', 'bust'],
     usage: EXTENDED_IDLE_USAGE,
     interruptible: true,
     rootMotionPolicy: 'lockAll',
@@ -504,7 +504,7 @@ export const ANIMATION_MANIFEST = [
     cooldownMs: 60000,
     behaviorTags: ['idle-presence'],
     compatibleStates: ['idle'],
-    compatibleCameraModes: ['front', 'bust'],
+    compatibleCameraModes: ['full', 'bust'],
     usage: EXTENDED_IDLE_USAGE,
     rootMotionPolicy: 'lockAll',
     description:
@@ -519,7 +519,7 @@ export const ANIMATION_MANIFEST = [
     cooldownMs: 60000,
     behaviorTags: ['idle-presence'],
     compatibleStates: ['idle'],
-    compatibleCameraModes: ['front', 'bust'],
+    compatibleCameraModes: ['full', 'bust'],
     usage: EXTENDED_IDLE_USAGE,
     rootMotionPolicy: 'lockAll',
     description: 'Rare restless idle variation for extended quiet moments.',
@@ -568,7 +568,7 @@ export const ANIMATION_MANIFEST = [
     cooldownMs: 120000,
     behaviorTags: ['behavior:flirty'],
     compatibleStates: ['idle', 'awaitingSpeech'],
-    compatibleCameraModes: ['front', 'bust'],
+    compatibleCameraModes: ['full', 'bust'],
     automaticSelection: false,
     interruptible: true,
     description:
@@ -668,7 +668,7 @@ function assertManifestIntegrity(entries: readonly AnimationManifestEntry[]): vo
     if (
       entry.category === 'idlePresence' &&
       (entry.compatibleCameraModes?.length !== 2 ||
-        !entry.compatibleCameraModes.includes('front') ||
+        !entry.compatibleCameraModes.includes('full') ||
         !entry.compatibleCameraModes.includes('bust'))
     )
       throw new Error(`Idle Presence animation must be Front/Bust-only: ${entry.id}`)
@@ -788,7 +788,7 @@ export function isAnimationInterruptible(entry: AnimationManifestEntry): boolean
 /** Camera compatibility is a selection constraint; direct debug preview may opt out. */
 export function isAnimationCameraCompatible(
   entry: AnimationManifestEntry,
-  cameraMode?: OverlayViewMode,
+  cameraMode?: AvatarPreviewCameraMode,
 ): boolean {
   return (
     !cameraMode || !entry.compatibleCameraModes || entry.compatibleCameraModes.includes(cameraMode)
@@ -834,3 +834,5 @@ export function getGroupedAnimations(): Array<{
 }
 
 import type { OverlayViewMode } from './tuning/cameraTuning'
+
+type AvatarPreviewCameraMode = OverlayViewMode | 'full'

@@ -1,11 +1,10 @@
 export type {
-  AttentionMode,
   BacklogPriorityClass,
   BacklogSelectionResult,
   BufferedUtterance,
 } from '../../../shared/conversation'
 
-import type { AttentionMode, ConversationTurnFailure } from '../../../shared/conversation'
+import type { ConversationTurnFailure } from '../../../shared/conversation'
 
 export type ConversationInputSource =
   | 'text_chat'
@@ -83,7 +82,6 @@ export interface AttentionDecision {
   score: number
   threshold: number
   reasons: string[]
-  mode: AttentionMode
   directAddress: boolean
 }
 
@@ -94,7 +92,6 @@ export type RuleGateDecision =
 
 export interface ContinuousListeningSettings {
   enabled: boolean
-  mode: AttentionMode
   replyCooldownMs: number
   followUpWindowMs: number
   curiosityChance: number

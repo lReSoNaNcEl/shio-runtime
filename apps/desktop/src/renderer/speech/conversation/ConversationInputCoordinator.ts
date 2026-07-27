@@ -206,7 +206,6 @@ export class ConversationInputCoordinator {
     const config = await this.dependencies.getConfig()
     this.conversationAdmission.configureSelector(config.llm.roles.backlogSelector)
     this.dependencies.patchControllerState({
-      continuousListeningMode: settings.mode,
       continuousListeningState: settings.enabled ? 'starting' : 'off',
       continuousListeningError: '',
     })
@@ -235,7 +234,6 @@ export class ConversationInputCoordinator {
     }
     if (persist) {
       await this.dependencies.saveConfig({
-        continuousListeningMode: settings.mode,
         continuousListeningReplyCooldownMs: String(settings.replyCooldownMs),
         continuousListeningFollowUpWindowMs: String(settings.followUpWindowMs),
         continuousListeningCuriosityChance: String(settings.curiosityChance),
@@ -251,7 +249,7 @@ export class ConversationInputCoordinator {
       await this.applyContinuousSettings({ ...this.continuousSettings, enabled: false })
       return
     }
-    await this.requestStreamingStart(this.continuousSettings.mode)
+    await this.requestStreamingStart('default')
   }
 
   handleStreamingServiceLost(_error: SerializedSpeechError): void {
@@ -300,7 +298,6 @@ export class ConversationInputCoordinator {
       await this.applyContinuousSettings({
         ...this.continuousSettings,
         enabled: true,
-        mode: modeId,
       })
     } catch (error) {
       const failure = this.dependencies.normalizeMicrophoneFailure(error)
@@ -325,7 +322,7 @@ export class ConversationInputCoordinator {
 
   private async handleContinuousDeviceLost(): Promise<void> {
     if (!this.continuousSettings.enabled) return
-    const modeId = this.continuousSettings.mode
+    const modeId: StreamingModeId = 'default'
     this.dependencies.recordRuntimeEvent('Streaming Microphone Lost', modeId)
     await this.applyContinuousSettings({ ...this.continuousSettings, enabled: false })
     this.dependencies.patchControllerState({
@@ -451,7 +448,6 @@ export class ConversationInputCoordinator {
     const isSpeaking = state.status === 'speaking'
     const conversationBusy = this.conversationAdmission.isBusy() || state.status !== 'idle'
     const attention = this.attentionEngine.evaluate(chunk, {
-      mode: this.continuousSettings.mode,
       isSpeaking,
       cooldownActive,
       recentConversation: followUpWindow,
@@ -538,9 +534,7 @@ export class ConversationInputCoordinator {
           ? 'P1'
           : attention.directAddress || followUpWindow
             ? 'P2'
-            : attention.mode === 'active' || attention.mode === 'streamer'
-              ? 'P3'
-              : 'P4'
+            : 'P3'
     const ttl = chunk.triggeredBargeIn
       ? backlogTuning.ttlMs.correction
       : correctionHint
@@ -562,7 +556,6 @@ export class ConversationInputCoordinator {
       correctionHint,
       followUpHint: followUpWindow,
       attentionScore: attention.score,
-      attentionMode: attention.mode,
       capturedWhileShioBusy: conversationBusy,
       capturedDuringPlayback: Boolean(chunk.capturedDuringPlayback),
       likelySelfEcho,

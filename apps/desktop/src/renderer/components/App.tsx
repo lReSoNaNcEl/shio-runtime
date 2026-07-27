@@ -7,12 +7,13 @@ import { useTranslation } from '../localization/useTranslation'
 import { ChatOverlay, type ChatOverlayHandle } from './chat/ChatOverlay'
 import { NewConversationButton } from './chat/NewConversationButton'
 import { NewConversationDialog } from './chat/NewConversationDialog'
+import { ListeningControl } from './controls/ListeningControl'
 import { OverlayCameraControl } from './controls/OverlayCameraControl'
-import { StreamingModeControl } from './controls/StreamingModeControl'
 import { MicrophoneGateOverlay } from './overlays/MicrophoneGateOverlay'
 import { MissingVrmDialog } from './overlays/MissingVrmDialog'
 import { SettingsDialog } from './settings/SettingsDialog'
 import { type SettingsSection } from './settings/state/settingsContracts'
+import { SetupCenter } from './setup/SetupCenter'
 import { type AppSection, AppShell, SectionHeading } from './shell/AppShell'
 import { AvatarPreviewView } from './views/AvatarPreviewView'
 import { DiagnosticsView } from './views/DiagnosticsView'
@@ -25,6 +26,7 @@ export function App() {
   const [section, setSection] = useState<AppSection>('chat')
   const [settingsInitialSection, setSettingsInitialSection] = useState<SettingsSection>('general')
   const [developerModeEnabled, setDeveloperModeEnabled] = useState(false)
+  const [setupOpen, setSetupOpen] = useState(false)
   const [speechToast, setSpeechToast] = useState<string | null>(null)
   const [newConversationDialogOpen, setNewConversationDialogOpen] = useState(false)
   const [newConversationPending, setNewConversationPending] = useState(false)
@@ -56,6 +58,7 @@ export function App() {
   useEffect(() => {
     void window.api.config.get().then((config) => {
       setDeveloperModeEnabled(config.developerModeEnabled === 'true')
+      setSetupOpen(!config.setup.completed)
     })
     window.api.config.onUpdated((config) => {
       setDeveloperModeEnabled(config.developerModeEnabled === 'true')
@@ -63,7 +66,16 @@ export function App() {
   }, [])
 
   useEffect(() => {
-    if (!developerModeEnabled && section === 'debug') setSection('health')
+    const openSetup = () => {
+      setSection('chat')
+      setSetupOpen(true)
+    }
+    window.addEventListener('shio:open-setup', openSetup)
+    return () => window.removeEventListener('shio:open-setup', openSetup)
+  }, [])
+
+  useEffect(() => {
+    if (!developerModeEnabled && (section === 'debug' || section === 'avatar')) setSection('chat')
   }, [developerModeEnabled, section])
   const isOverlay = useMemo(
     () => new URLSearchParams(window.location.search).get('overlay') === '1',
@@ -151,23 +163,19 @@ export function App() {
       <AppShell
         section={section}
         onSectionChange={(nextSection) => {
+          if (setupOpen) setSetupOpen(false)
           if (nextSection === 'settings') setSettingsInitialSection('general')
           setSection(nextSection)
         }}
         health={state.health}
         developerModeEnabled={developerModeEnabled}
+        hideHeader={setupOpen}
         headerAction={
-          section === 'chat' ? (
+          section === 'chat' && !setupOpen ? (
             <div className="chat-header-controls">
-              <NewConversationButton
-                isDisabled={newConversationDisabled}
-                onPress={requestNewConversation}
-              />
-              <StreamingModeControl
-                mode={state.continuousListeningMode}
+              <ListeningControl
                 listeningState={state.continuousListeningState}
                 onToggle={() => void controller.toggleContinuousListening()}
-                onModeChange={(mode) => void controller.setContinuousListeningMode(mode)}
               />
               <OverlayCameraControl
                 overlayState={state.overlayState}
@@ -180,21 +188,45 @@ export function App() {
           ) : undefined
         }
       >
-        <SectionHeading title={copy.title} subtitle={copy.subtitle} />
+        {!setupOpen && (
+          <SectionHeading
+            title={copy.title}
+            subtitle={copy.subtitle}
+            action={
+              section === 'chat' && state.messages.length > 0 ? (
+                <NewConversationButton
+                  isDisabled={newConversationDisabled}
+                  onPress={requestNewConversation}
+                />
+              ) : undefined
+            }
+          />
+        )}
       </AppShell>
-      <div className="section-content">
+      <div className={`section-content${setupOpen ? ' setup-layer' : ''}`}>
         {section === 'chat' && (
           <>
-            <ChatOverlay
-              ref={chatOverlayRef}
-              state={state}
-              gateOpen={state.microphoneGate.status !== 'closed'}
-              onOpenHealth={() => setSection('health')}
-              onOpenLlmSettings={() => {
-                setSettingsInitialSection('llm')
-                setSection('settings')
-              }}
-            />
+            {setupOpen ? (
+              <SetupCenter
+                state={state}
+                onClose={() => setSetupOpen(false)}
+                onComplete={() => setSetupOpen(false)}
+                onToggleOverlay={async (visible) => {
+                  await setOverlayVisible(visible)
+                }}
+              />
+            ) : (
+              <ChatOverlay
+                ref={chatOverlayRef}
+                state={state}
+                gateOpen={state.microphoneGate.status !== 'closed'}
+                onOpenHealth={() => setSection('health')}
+                onOpenLlmSettings={() => {
+                  setSettingsInitialSection('llm')
+                  setSection('settings')
+                }}
+              />
+            )}
             <MicrophoneGateOverlay
               state={state.microphoneGate}
               onDeviceSelect={(id) => controller.selectMicrophoneGateDevice(id)}
@@ -226,16 +258,15 @@ export function App() {
           <SettingsDialog
             isOpen
             initialSection={settingsInitialSection}
-            continuousListeningMode={state.continuousListeningMode}
             vrmLoaded={state.vrmLoaded}
             faceTrackingEnabled={state.faceTrackingEnabled}
-            passiveCompanionEnabled={state.passiveCompanionEnabled}
             onToggleFaceTracking={() => controller.toggleFaceTracking()}
-            onPassiveCompanionChange={(enabled) => controller.setPassiveCompanionMode(enabled)}
             overlayVisible={state.overlayState === 'on'}
             overlayViewModeProjection={state.overlayCameraMode}
             llmHealth={state.llmHealth}
             voiceWarmup={state.voiceWarmup}
+            continuousListeningState={state.continuousListeningState}
+            onToggleContinuousListening={() => void controller.toggleContinuousListening()}
             onOverlayVisibleChange={() => void controller.refreshOverlayVisibility()}
             onToggleOverlay={setOverlayVisible}
             onClose={() => setSection('chat')}

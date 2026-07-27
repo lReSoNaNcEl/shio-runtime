@@ -1,30 +1,14 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
-import { DEFAULT_SPEECH_URL } from '../../../../shared/config'
-import type {
-  BacklogSelectorRoleConfig,
-  LlmProviderId,
-  LlmProviderPublicSettings,
-  ModelInfo,
-  ProviderProfile,
-} from '../../../../shared/llm'
-import type { UiLocale } from '../../../../shared/localization'
+import type { AppSettings } from '../../../../shared/config'
+import type { LlmProviderId } from '../../../../shared/llm'
 import {
   isValidProjectBranch,
   isValidProjectRepository,
-  type ProjectAwarenessStatus,
 } from '../../../../shared/project-awareness'
 import type { OverlayViewMode } from '../../../avatar/tuning/cameraTuning'
 import { controller } from '../../../Controller'
-import {
-  defaultContinuousListeningSettings,
-  isCuriosityControlEnabled,
-  parseTunedNumber,
-} from '../../../speech/continuous-listening/tuning'
-import type { AttentionMode } from '../../../speech/continuous-listening/types'
 import type {
-  ModelsState,
-  ProjectSettingsState,
   SettingsDialogViewModel,
   SettingsSaveState,
   SettingsSection,
@@ -42,17 +26,23 @@ import {
   parseOverlayViewMode,
   projectActionError,
 } from './settingsParsers'
+import { useAiSettings } from './useAiSettings'
+import { useAvatarSettings } from './useAvatarSettings'
+import { useDeveloperSettings } from './useDeveloperSettings'
+import { useGeneralSettings } from './useGeneralSettings'
+import { useProjectSettings } from './useProjectSettings'
+import { useSettingsNavigation } from './useSettingsNavigation'
+import { useVoiceSettings } from './useVoiceSettings'
 
 interface SettingsDialogStateOptions {
   isOpen: boolean
   initialSection: SettingsSection
-  continuousListeningMode: AttentionMode
-  passiveCompanionEnabled: boolean
-  onPassiveCompanionChange: (enabled: boolean) => void
   overlayVisible: boolean
   overlayViewModeProjection: OverlayViewMode
   llmHealth: SettingsDialogViewModel['llm']['state']['health']
   voiceWarmup: SettingsDialogViewModel['speech']['state']['voiceWarmup']
+  continuousListeningState: SettingsDialogViewModel['speech']['state']['continuousListeningState']
+  onToggleContinuousListening: () => void
   onOverlayVisibleChange: (visible: boolean) => void
   onToggleOverlay: (visible: boolean) => void | Promise<void>
 }
@@ -60,75 +50,111 @@ interface SettingsDialogStateOptions {
 export function useSettingsDialogState({
   isOpen,
   initialSection,
-  continuousListeningMode,
-  passiveCompanionEnabled,
-  onPassiveCompanionChange,
   overlayVisible,
   overlayViewModeProjection,
   llmHealth,
   voiceWarmup,
+  continuousListeningState,
+  onToggleContinuousListening,
   onOverlayVisibleChange,
   onToggleOverlay,
 }: SettingsDialogStateOptions): SettingsDialogViewModel {
-  const [activeSection, setActiveSection] = useState<SettingsSection>(initialSection)
+  const { activeSection, setActiveSection } = useSettingsNavigation(isOpen, initialSection)
   const hydrated = useRef(false)
   const saveSequence = useRef(0)
   const saveStatusTimer = useRef<number | null>(null)
+  const microphoneTestSequence = useRef(0)
+  const microphoneTestRecording = useRef<ArrayBuffer | null>(null)
   const [saveState, setSaveState] = useState<SettingsSaveState>('idle')
-  const [speechUrl, setSpeechUrl] = useState(DEFAULT_SPEECH_URL)
-  const [projectEnabled, setProjectEnabled] = useState(defaultSettingsForm.projectEnabled)
-  const [projectRepository, setProjectRepository] = useState('')
-  const [projectBranch, setProjectBranch] = useState(defaultSettingsForm.projectBranch)
-  const [projectStatus, setProjectStatus] = useState<ProjectAwarenessStatus | null>(null)
-  const [projectApplyState, setProjectApplyState] =
-    useState<ProjectSettingsState['applyState']>('idle')
-  const [projectApplyError, setProjectApplyError] = useState('')
-  const [projectCredentialInput, setProjectCredentialInput] = useState('')
-  const [projectCredentialSaveState, setProjectCredentialSaveState] =
-    useState<ProjectSettingsState['credentialSaveState']>('idle')
-  const [projectActionBusy, setProjectActionBusy] = useState(false)
-  const [projectForgetConfirmation, setProjectForgetConfirmation] = useState(false)
-  const [lang, setLang] = useState(defaultSettingsForm.ttsLanguage)
-  const [uiLocale, setUiLocale] = useState<UiLocale>('ru')
-  const [developerModeEnabled, setDeveloperModeEnabled] = useState(false)
-  const [developerOverlayAnimationHudEnabled, setDeveloperOverlayAnimationHudEnabledState] =
-    useState(true)
-  const [vrmName, setVrmName] = useState('')
-  const [mics, setMics] = useState<Array<{ deviceId: string; label: string }>>([])
-  const [micId, setMicId] = useState(defaultSettingsForm.microphoneId)
-  const [replyCooldownMs, setReplyCooldownMs] = useState(
-    defaultContinuousListeningSettings.replyCooldownMs,
-  )
-  const [followUpWindowMs, setFollowUpWindowMs] = useState(
-    defaultContinuousListeningSettings.followUpWindowMs,
-  )
-  const [curiosityChancePercent, setCuriosityChancePercent] = useState(
-    defaultContinuousListeningSettings.curiosityChance * 100,
-  )
-  const [overlayWidth, setOverlayWidth] = useState(overlayDefaults.width)
-  const [overlayHeight, setOverlayHeight] = useState(overlayDefaults.height)
-  const [overlayMargin, setOverlayMargin] = useState(overlayDefaults.margin)
-  const [overlayOpacityPercent, setOverlayOpacityPercent] = useState(overlayDefaults.opacityPercent)
-  const [overlayTransparentBackground, setOverlayTransparentBackground] = useState(true)
-  const [overlayClickThrough, setOverlayClickThrough] = useState(true)
-  const [overlayCorner, setOverlayCorner] = useState(overlayDefaults.corner)
-  const [overlayScalePercent, setOverlayScalePercent] = useState(overlayDefaults.scalePercent)
-  const [overlayViewMode, setOverlayViewMode] = useState<OverlayViewMode>('front')
-  const [currentTtsVoice, setCurrentTtsVoice] = useState(defaultSettingsForm.ttsVoice)
-  const [editingKey, setEditingKey] = useState(false)
-  const [keyInput, setKeyInput] = useState('')
-  const [providers, setProviders] = useState<ProviderProfile[]>([])
-  const [activeProvider, setActiveProvider] = useState<LlmProviderId>('groq')
-  const [providerSettings, setProviderSettings] = useState<
-    Record<LlmProviderId, LlmProviderPublicSettings>
-  >({} as Record<LlmProviderId, LlmProviderPublicSettings>)
-  const [modelOptions, setModelOptions] = useState<ModelInfo[]>([])
-  const [modelsState, setModelsState] = useState<ModelsState>('idle')
-  const [backlogRole, setBacklogRole] = useState<BacklogSelectorRoleConfig>(
-    defaultBacklogSelectorRole,
-  )
-  const [backlogModels, setBacklogModels] = useState<ModelInfo[]>([])
+  const {
+    projectActionBusy,
+    projectApplyError,
+    projectApplyState,
+    projectBranch,
+    projectCredentialInput,
+    projectCredentialSaveState,
+    projectEnabled,
+    projectForgetConfirmation,
+    projectRepository,
+    projectStatus,
+    setProjectActionBusy,
+    setProjectApplyError,
+    setProjectApplyState,
+    setProjectBranch,
+    setProjectCredentialInput,
+    setProjectCredentialSaveState,
+    setProjectEnabled,
+    setProjectForgetConfirmation,
+    setProjectRepository,
+    setProjectStatus,
+  } = useProjectSettings()
+  const { uiLocale, setUiLocale } = useGeneralSettings()
+  const {
+    developerModeEnabled,
+    developerOverlayAnimationHudEnabled,
+    setDeveloperModeEnabled,
+    setDeveloperOverlayAnimationHudEnabledState,
+  } = useDeveloperSettings()
+  const {
+    currentTtsVoice,
+    lang,
+    microphoneLevel,
+    microphoneTestState,
+    micId,
+    mics,
+    setCurrentTtsVoice,
+    setLang,
+    setMicrophoneLevel,
+    setMicrophoneTestState,
+    setMicId,
+    setMics,
+    setSpeechUrl,
+    speechUrl,
+  } = useVoiceSettings()
+  const {
+    overlayClickThrough,
+    overlayCorner,
+    overlayHeight,
+    overlayMargin,
+    overlayOpacityPercent,
+    overlayScalePercent,
+    overlayTransparentBackground,
+    overlayViewMode,
+    overlayWidth,
+    setOverlayClickThrough,
+    setOverlayCorner,
+    setOverlayHeight,
+    setOverlayMargin,
+    setOverlayOpacityPercent,
+    setOverlayScalePercent,
+    setOverlayTransparentBackground,
+    setOverlayViewMode,
+    setOverlayWidth,
+    setVrmName,
+    vrmName,
+  } = useAvatarSettings()
+  const {
+    activeProvider,
+    backlogModels,
+    backlogRole,
+    editingKey,
+    keyInput,
+    modelOptions,
+    modelsState,
+    providers,
+    providerSettings,
+    setActiveProvider,
+    setBacklogModels,
+    setBacklogRole,
+    setEditingKey,
+    setKeyInput,
+    setModelOptions,
+    setModelsState,
+    setProviders,
+    setProviderSettings,
+  } = useAiSettings()
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: domain hooks expose stable React state setters.
   useEffect(() => {
     setOverlayViewMode(overlayViewModeProjection)
   }, [overlayViewModeProjection])
@@ -143,8 +169,13 @@ export function useSettingsDialogState({
   useEffect(() => {
     if (isOpen) return
     hydrated.current = false
-  }, [isOpen])
+    microphoneTestSequence.current += 1
+    microphoneTestRecording.current = null
+    setMicrophoneTestState('idle')
+    setMicrophoneLevel(0)
+  }, [isOpen, setMicrophoneLevel, setMicrophoneTestState])
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: hydration targets stable React state setters owned by domain hooks.
   useEffect(() => {
     if (!isOpen) return
     void (async () => {
@@ -167,15 +198,6 @@ export function useSettingsDialogState({
         cfg.developerOverlayAnimationHudEnabled !== 'false',
       )
       setCurrentTtsVoice(cfg.ttsVoice ?? defaultSettingsForm.ttsVoice)
-      setReplyCooldownMs(
-        parseTunedNumber(cfg.continuousListeningReplyCooldownMs, 15_000, 0, 120_000),
-      )
-      setFollowUpWindowMs(
-        parseTunedNumber(cfg.continuousListeningFollowUpWindowMs, 20_000, 0, 120_000),
-      )
-      setCuriosityChancePercent(
-        parseTunedNumber(cfg.continuousListeningCuriosityChance, 0.03, 0, 1) * 100,
-      )
       setEditingKey(false)
       setKeyInput('')
       setActiveProvider(cfg.llm?.activeProvider ?? 'groq')
@@ -198,6 +220,7 @@ export function useSettingsDialogState({
     })()
   }, [initialSection, isOpen])
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: project status setter is stable across domain-hook renders.
   useEffect(() => {
     if (!isOpen || activeSection !== 'project') return
     let active = true
@@ -274,6 +297,7 @@ export function useSettingsDialogState({
     return () => window.clearTimeout(timer)
   }, [isOpen, activeProvider, activeCredentialConfigured, providers])
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: AI domain setters are stable React state setters.
   useEffect(() => {
     if (!isOpen || !backlogRole.enabled || !backlogRole.providerId) {
       setBacklogModels([])
@@ -410,64 +434,169 @@ export function useSettingsDialogState({
     })
   }
 
-  const save = async (sequence = ++saveSequence.current): Promise<void> => {
-    await window.api.config.save({
-      pythonSpeechUrl: speechUrl,
-      ttsVoice: currentTtsVoice,
-      ttsLanguage: lang,
-      uiLocale,
-      developerModeEnabled: developerModeEnabled ? 'true' : 'false',
-      developerOverlayAnimationHudEnabled: developerOverlayAnimationHudEnabled ? 'true' : 'false',
-      ttsEngine: 'f5',
-      continuousListeningReplyCooldownMs: String(replyCooldownMs),
-      continuousListeningFollowUpWindowMs: String(followUpWindowMs),
-      continuousListeningCuriosityChance: String(clampNumber(curiosityChancePercent / 100, 0, 1)),
-      overlayWidth: String(clampNumber(overlayWidth, 250, 2000)),
-      overlayHeight: String(clampNumber(overlayHeight, 250, 2000)),
-      overlayMargin: String(clampNumber(overlayMargin, 0, 500)),
-      overlayOpacity: String(clampNumber(overlayOpacityPercent, 0, 100) / 100),
-      overlayTransparentBackground: overlayTransparentBackground ? 'true' : 'false',
-      overlayCorner,
-      overlayScale: String(clampNumber(overlayScalePercent, 50, 200) / 100),
-      overlayViewMode,
-      overlayClickThrough: overlayClickThrough ? 'true' : 'false',
-      llm: {
-        activeProvider,
-        providers: providerSettings,
-        roles: { backlogSelector: backlogRole },
-      },
+  const connectProject = async (): Promise<void> => {
+    await runProjectAction(async () => {
+      const configured = await window.api.projectAwareness.configure({
+        enabled: true,
+        provider: 'github',
+        repository: projectRepository.trim(),
+        branch: projectBranch.trim(),
+      })
+      setProjectEnabled(true)
+      setProjectStatus(configured)
+      await window.api.projectAwareness.connect()
     })
-    await window.api.overlay.applySettings()
-    const result = await window.api.overlay.isVisible()
-    onOverlayVisibleChange(Boolean(result.visible))
-    if (sequence === saveSequence.current) {
-      setSaveState('saved')
-      if (saveStatusTimer.current !== null) window.clearTimeout(saveStatusTimer.current)
-      saveStatusTimer.current = window.setTimeout(() => setSaveState('idle'), 1800)
+  }
+
+  const recordMicrophoneTest = async (): Promise<void> => {
+    const sequence = ++microphoneTestSequence.current
+    setMicrophoneTestState('recording')
+    setMicrophoneLevel(0)
+    microphoneTestRecording.current = null
+    let stream: MediaStream | null = null
+    let context: AudioContext | null = null
+    let recorder: MediaRecorder | null = null
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio:
+          micId && micId !== defaultSettingsForm.microphoneId
+            ? { deviceId: { exact: micId } }
+            : true,
+      })
+      context = new AudioContext()
+      const analyser = context.createAnalyser()
+      analyser.fftSize = 256
+      context.createMediaStreamSource(stream).connect(analyser)
+      const chunks: BlobPart[] = []
+      recorder = new MediaRecorder(stream)
+      recorder.addEventListener('dataavailable', (event) => {
+        if (event.data.size > 0) chunks.push(event.data)
+      })
+      const stopped = new Promise<void>((resolve, reject) => {
+        recorder?.addEventListener('stop', () => resolve(), { once: true })
+        recorder?.addEventListener(
+          'error',
+          () => reject(new Error('Microphone recording failed')),
+          { once: true },
+        )
+      })
+      recorder.start()
+      const samples = new Uint8Array(analyser.fftSize)
+      const deadline = performance.now() + 3000
+      while (performance.now() < deadline) {
+        analyser.getByteTimeDomainData(samples)
+        const peak = samples.reduce((value, sample) => Math.max(value, Math.abs(sample - 128)), 0)
+        setMicrophoneLevel(Math.min(100, Math.round((peak / 128) * 100)))
+        await new Promise((resolve) => window.setTimeout(resolve, 80))
+      }
+      recorder.stop()
+      await stopped
+      const recording = await new Blob(chunks, { type: recorder.mimeType }).arrayBuffer()
+      if (recording.byteLength === 0) throw new Error('Microphone recording is empty')
+      if (sequence !== microphoneTestSequence.current) return
+      microphoneTestRecording.current = recording
+      setMicrophoneTestState('ready')
+    } catch {
+      if (sequence === microphoneTestSequence.current) setMicrophoneTestState('capture-error')
+    } finally {
+      if (recorder?.state === 'recording') recorder.stop()
+      stream?.getTracks().forEach((track) => {
+        track.stop()
+      })
+      if (context) await context.close()
+      setMicrophoneLevel(0)
     }
   }
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: preserved autosave trigger list and sequencing.
+  const playMicrophoneTest = async (): Promise<void> => {
+    const recording = microphoneTestRecording.current
+    if (!recording) return
+    const sequence = ++microphoneTestSequence.current
+    setMicrophoneTestState('playing')
+    try {
+      await controller.playMicrophonePreview(recording)
+      if (sequence === microphoneTestSequence.current) setMicrophoneTestState('ready')
+    } catch {
+      if (sequence === microphoneTestSequence.current) setMicrophoneTestState('playback-error')
+    }
+  }
+
+  const persistPatch = useCallback(
+    async (partial: Partial<AppSettings>, applyOverlay = false): Promise<void> => {
+      const sequence = ++saveSequence.current
+      setSaveState('saving')
+      const result = await window.api.config.save(partial)
+      if (!result.ok) throw new Error(result.error)
+      if (applyOverlay) {
+        await window.api.overlay.applySettings()
+        const overlay = await window.api.overlay.isVisible()
+        onOverlayVisibleChange(Boolean(overlay.visible))
+      }
+      if (sequence === saveSequence.current) {
+        setSaveState('saved')
+        if (saveStatusTimer.current !== null) window.clearTimeout(saveStatusTimer.current)
+        saveStatusTimer.current = window.setTimeout(() => setSaveState('idle'), 1800)
+      }
+    },
+    [onOverlayVisibleChange],
+  )
+
+  // Each effect persists one domain patch. Overlay application is intentionally
+  // limited to avatar/overlay changes.
   useEffect(() => {
     if (!hydrated.current || !isOpen) return
-    const sequence = ++saveSequence.current
-    setSaveState('saving')
     const timer = window.setTimeout(() => {
-      void save(sequence).catch(() => {
-        if (sequence === saveSequence.current) setSaveState('error')
-      })
+      void persistPatch({ uiLocale }).catch(() => setSaveState('error'))
+    }, 650)
+    return () => window.clearTimeout(timer)
+  }, [uiLocale, isOpen, persistPatch])
+
+  useEffect(() => {
+    if (!hydrated.current || !isOpen) return
+    const timer = window.setTimeout(() => {
+      void persistPatch({
+        ttsVoice: currentTtsVoice,
+        ttsLanguage: lang,
+        ttsEngine: 'f5',
+      }).catch(() => setSaveState('error'))
+    }, 650)
+    return () => window.clearTimeout(timer)
+  }, [currentTtsVoice, lang, isOpen, persistPatch])
+
+  useEffect(() => {
+    if (!hydrated.current || !isOpen) return
+    const timer = window.setTimeout(() => {
+      void persistPatch({
+        llm: {
+          activeProvider,
+          providers: providerSettings,
+          roles: { backlogSelector: backlogRole },
+        },
+      }).catch(() => setSaveState('error'))
+    }, 650)
+    return () => window.clearTimeout(timer)
+  }, [activeProvider, providerSettings, backlogRole, isOpen, persistPatch])
+
+  useEffect(() => {
+    if (!hydrated.current || !isOpen) return
+    const timer = window.setTimeout(() => {
+      void persistPatch(
+        {
+          overlayWidth: String(clampNumber(overlayWidth, 250, 2000)),
+          overlayHeight: String(clampNumber(overlayHeight, 250, 2000)),
+          overlayMargin: String(clampNumber(overlayMargin, 0, 500)),
+          overlayOpacity: String(clampNumber(overlayOpacityPercent, 0, 100) / 100),
+          overlayTransparentBackground: overlayTransparentBackground ? 'true' : 'false',
+          overlayCorner,
+          overlayScale: String(clampNumber(overlayScalePercent, 50, 200) / 100),
+          overlayViewMode,
+          overlayClickThrough: overlayClickThrough ? 'true' : 'false',
+        },
+        true,
+      ).catch(() => setSaveState('error'))
     }, 650)
     return () => window.clearTimeout(timer)
   }, [
-    speechUrl,
-    lang,
-    uiLocale,
-    developerModeEnabled,
-    developerOverlayAnimationHudEnabled,
-    currentTtsVoice,
-    replyCooldownMs,
-    followUpWindowMs,
-    curiosityChancePercent,
     overlayWidth,
     overlayHeight,
     overlayMargin,
@@ -477,10 +606,21 @@ export function useSettingsDialogState({
     overlayCorner,
     overlayScalePercent,
     overlayViewMode,
-    activeProvider,
-    providerSettings,
-    backlogRole,
+    isOpen,
+    persistPatch,
   ])
+
+  useEffect(() => {
+    if (!hydrated.current || !isOpen) return
+    const timer = window.setTimeout(() => {
+      void persistPatch({
+        pythonSpeechUrl: speechUrl,
+        developerModeEnabled: developerModeEnabled ? 'true' : 'false',
+        developerOverlayAnimationHudEnabled: developerOverlayAnimationHudEnabled ? 'true' : 'false',
+      }).catch(() => setSaveState('error'))
+    }, 650)
+    return () => window.clearTimeout(timer)
+  }, [speechUrl, developerModeEnabled, developerOverlayAnimationHudEnabled, isOpen, persistPatch])
 
   const toggleOverlay = async (visible: boolean): Promise<void> => {
     await onToggleOverlay(visible)
@@ -554,7 +694,7 @@ export function useSettingsDialogState({
         saveCredential: saveProjectCredential,
         forgetCredential: forgetProjectCredential,
         openTokenSettings: () => window.api.projectAwareness.openTokenSettings(),
-        connect: () => runProjectAction(() => window.api.projectAwareness.connect()),
+        connect: connectProject,
         disconnect: () => runProjectAction(() => window.api.projectAwareness.disconnect()),
         sync: () => runProjectAction(() => window.api.projectAwareness.sync()),
         rebuild: () => runProjectAction(() => window.api.projectAwareness.rebuildIndex()),
@@ -568,6 +708,9 @@ export function useSettingsDialogState({
         microphones: mics,
         microphoneId: micId,
         voiceWarmup,
+        continuousListeningState,
+        microphoneTestState,
+        microphoneLevel,
       },
       actions: {
         setSpeechUrl,
@@ -577,23 +720,9 @@ export function useSettingsDialogState({
           setMicId(id)
           controller.setMicrophone(id === defaultSettingsForm.microphoneId ? '' : id)
         },
-      },
-    },
-    listening: {
-      state: {
-        replyCooldownMs,
-        followUpWindowMs,
-        curiosityChancePercent,
-        curiosityEnabled: isCuriosityControlEnabled(true, continuousListeningMode),
-        mode: continuousListeningMode,
-      },
-      actions: {
-        setMode: async (mode) => {
-          await controller.setContinuousListeningMode(mode)
-        },
-        setReplyCooldownMs,
-        setFollowUpWindowMs,
-        setCuriosityChancePercent,
+        recordMicrophoneTest,
+        playMicrophoneTest,
+        toggleContinuousListening: onToggleContinuousListening,
       },
     },
     llm: {
@@ -624,7 +753,6 @@ export function useSettingsDialogState({
     avatar: {
       state: {
         vrmName,
-        passiveCompanionEnabled,
         overlayVisible,
         overlayViewMode,
         overlayWidth,
@@ -638,7 +766,6 @@ export function useSettingsDialogState({
       },
       actions: {
         pickVrm,
-        setPassiveCompanionEnabled: onPassiveCompanionChange,
         toggleOverlay,
         setOverlayViewMode,
         setOverlayWidth,
@@ -653,10 +780,20 @@ export function useSettingsDialogState({
       },
     },
     advanced: {
-      state: { developerModeEnabled, developerOverlayAnimationHudEnabled },
+      state: {
+        developerModeEnabled,
+        developerOverlayAnimationHudEnabled,
+        speechUrl,
+        backlogRole,
+        providers,
+        providerSettings,
+        backlogModels,
+      },
       actions: {
         setDeveloperModeEnabled: applyDeveloperModeEnabled,
         setDeveloperOverlayAnimationHudEnabled,
+        setSpeechUrl,
+        setBacklogRole,
       },
     },
   }

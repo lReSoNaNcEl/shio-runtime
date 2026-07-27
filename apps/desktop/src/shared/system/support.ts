@@ -7,6 +7,7 @@ export interface ReleaseInfo {
   arch: string
   electronVersion: string
   nodeVersion: string
+  isPackaged: boolean
 }
 
 export interface RuntimeSupportBundle {

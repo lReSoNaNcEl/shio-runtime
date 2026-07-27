@@ -8,7 +8,6 @@ import {
   TooltipTrigger,
 } from '@react-spectrum/s2'
 import ChevronDown from '@react-spectrum/s2/icons/ChevronDown'
-import FullScreen from '@react-spectrum/s2/icons/FullScreen'
 import OrientationPortrait from '@react-spectrum/s2/icons/OrientationPortrait'
 import User from '@react-spectrum/s2/icons/User'
 import UserAvatar from '@react-spectrum/s2/icons/UserAvatar'
@@ -19,9 +18,8 @@ import { useTranslation } from '../../localization/useTranslation'
 
 const CAMERA_MODE_ICONS: Array<{
   id: OverlayViewMode
-  Icon: typeof FullScreen
+  Icon: typeof User
 }> = [
-  { id: 'front', Icon: FullScreen },
   { id: 'bust', Icon: User },
   { id: 'face', Icon: UserAvatar },
   { id: 'portrait', Icon: OrientationPortrait },

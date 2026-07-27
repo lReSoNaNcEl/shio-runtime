@@ -1,4 +1,5 @@
-/* NOTE: do NOT use a global `* { margin:0; padding:0 }` reset — it strips the
+/* Baseline rules preserved during the feature stylesheet split.
+   NOTE: do NOT use a global `* { margin:0; padding:0 }` reset — it strips the
    internal spacing of React Spectrum S2 components (buttons, dialog, etc.). */
 *,
 *::before,
@@ -1828,11 +1829,6 @@ body.overlay-window.overlay-solid-background #canvas {
   border-radius: 12px;
   background: rgba(255, 255, 255, 0.025);
   align-content: center;
-}
-
-.settings-switch-with-description {
-  display: grid;
-  gap: 4px;
 }
 
 @media (max-width: 760px) {

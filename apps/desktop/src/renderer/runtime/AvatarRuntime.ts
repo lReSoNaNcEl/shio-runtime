@@ -68,7 +68,7 @@ export interface AvatarRuntimeDebugState {
   idleBehavior: string
   nextIdleBehaviorIn: number
   idleOrchestrator: IdleOrchestratorDebugState
-  passiveCompanionMode: boolean
+  ambientIdleBehavior: boolean
   lipsyncWeights: MouthWeights
   facial: FacialDebugState
   lookAt: LookAtDebugState
@@ -302,14 +302,6 @@ export class AvatarRuntime {
   setEarAmplitudeScale(scale: number): void {
     this.controller.setEarAmplitudeScale(scale)
     this.publishAvatarEvent('RuntimeDebugEvent', `Ear Amplitude Scale: ${scale.toFixed(2)}`)
-  }
-
-  setPassiveCompanionMode(enabled: boolean): void {
-    this.controller.setPassiveCompanionMode(enabled)
-    this.publishAvatarEvent(
-      'RuntimeDebugEvent',
-      enabled ? 'Passive Companion Mode: on' : 'Passive Companion Mode: off',
-    )
   }
 
   private publishAvatarChanges(previous: AvatarRuntimeDebugState): void {

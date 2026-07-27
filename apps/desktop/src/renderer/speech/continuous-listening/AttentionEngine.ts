@@ -1,8 +1,7 @@
 import { attentionTuning } from './tuning'
-import type { AttentionDecision, AttentionMode, UtteranceChunk } from './types'
+import type { AttentionDecision, UtteranceChunk } from './types'
 
 export interface AttentionContext {
-  mode: AttentionMode
   isSpeaking: boolean
   cooldownActive: boolean
   recentConversation: boolean
@@ -39,24 +38,18 @@ export class AttentionEngine {
     if (context.recentConversation)
       add(attentionTuning.score.recentConversation, 'recent_conversation')
     if (context.followUpWindow) add(attentionTuning.score.followUpWindow, 'follow_up')
-    if (context.mode === 'streamer' && (emotional || question))
-      add(attentionTuning.score.streamerRelevance, 'streamer_relevance')
+    if (emotional || question)
+      add(attentionTuning.score.defaultPolicyRelevance, 'default_policy_relevance')
     if (emotional) add(attentionTuning.score.emotionalExpression, 'emotional_expression')
     if (text.length < 4) add(attentionTuning.score.tooShort, 'too_short')
-    if (context.mode === 'passive' && !directAddress)
-      add(attentionTuning.score.likelySelfTalk, 'passive_self_talk')
     if (context.cooldownActive && !directAddress)
       add(attentionTuning.score.replyCooldown, 'reply_cooldown')
     if (context.isSpeaking && !directAddress)
       add(attentionTuning.score.speakingNonDirect, 'speaking_non_direct')
 
-    const threshold = attentionTuning.thresholds[context.mode]
+    const threshold = attentionTuning.threshold
     let shouldAttend = score >= threshold
-    if (
-      !shouldAttend &&
-      (context.mode === 'active' || context.mode === 'streamer') &&
-      !context.cooldownActive
-    ) {
+    if (!shouldAttend && !context.cooldownActive) {
       const curiosityHit = (context.rng ?? Math.random)() < context.curiosityChance
       if (curiosityHit) {
         score = Math.max(score, threshold)
@@ -64,8 +57,7 @@ export class AttentionEngine {
         shouldAttend = true
       }
     }
-    if (context.mode === 'silent') shouldAttend = false
     if (reasons.length === 0) reasons.push('no_attention_signal')
-    return { shouldAttend, score, threshold, reasons, mode: context.mode, directAddress }
+    return { shouldAttend, score, threshold, reasons, directAddress }
   }
 }

@@ -44,35 +44,6 @@ export function AvatarSettingsSection({
         </div>
       </section>
       <Divider />
-      <section className="avatar-section" aria-labelledby="avatar-behavior-title">
-        <h3 id="avatar-behavior-title" className="overlay-section-title">
-          {t('settings.avatar.behaviorSection')}
-        </h3>
-        <div
-          className={
-            state.passiveCompanionEnabled ? 'overlay-toggle-card active' : 'overlay-toggle-card'
-          }
-        >
-          <div className="overlay-toggle-copy">
-            <span className="overlay-toggle-title">{t('settings.avatar.passiveTitle')}</span>
-            <span className="overlay-toggle-hint">{t('settings.avatar.passiveHint')}</span>
-          </div>
-          <div className="overlay-toggle-control">
-            <span className="overlay-toggle-status">
-              {state.passiveCompanionEnabled
-                ? t('settings.avatar.passiveOn')
-                : t('settings.avatar.passiveOff')}
-            </span>
-            <Switch
-              size="L"
-              isEmphasized
-              isSelected={state.passiveCompanionEnabled}
-              onChange={actions.setPassiveCompanionEnabled}
-            />
-          </div>
-        </div>
-      </section>
-      <Divider />
       <section
         className="overlay-section overlay-display-section"
         aria-labelledby="avatar-overlay-title"
@@ -170,7 +141,8 @@ export function AvatarSettingsSection({
             </SegmentedControlItem>
           </SegmentedControl>
         </section>
-        <section className="overlay-section" aria-labelledby="overlay-window-title">
+        <details className="overlay-section overlay-advanced">
+          <summary>{t('settings.avatar.advancedWindow')}</summary>
           <div>
             <h3 id="overlay-window-title" className="overlay-section-title">
               {t('settings.avatar.windowSection')}
@@ -209,7 +181,7 @@ export function AvatarSettingsSection({
               hideStepper
             />
           </div>
-        </section>
+        </details>
         <section className="overlay-section" aria-labelledby="overlay-interaction-title">
           <h3 id="overlay-interaction-title" className="overlay-section-title">
             {t('settings.avatar.interactionSection')}

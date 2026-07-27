@@ -167,10 +167,6 @@ export class AvatarController {
     this.animations.stop()
   }
 
-  setPassiveCompanionMode(enabled: boolean): void {
-    this.idleBehaviors.setPassiveCompanionMode(enabled)
-  }
-
   setMode(mode: AvatarMode): void {
     this.applyStateEffect(this.stateMachine.setMode(mode))
   }

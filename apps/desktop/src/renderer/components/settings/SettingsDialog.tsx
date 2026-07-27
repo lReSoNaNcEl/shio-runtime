@@ -5,7 +5,6 @@ import { SettingsNavigation } from './SettingsNavigation'
 import { AdvancedSettingsSection } from './sections/AdvancedSettingsSection'
 import { AvatarSettingsSection } from './sections/AvatarSettingsSection'
 import { GeneralSettingsSection } from './sections/GeneralSettingsSection'
-import { ListeningSettingsSection } from './sections/ListeningSettingsSection'
 import { LlmSettingsSection } from './sections/LlmSettingsSection'
 import { ProjectSettingsSection } from './sections/ProjectSettingsSection'
 import { SpeechSettingsSection } from './sections/SpeechSettingsSection'
@@ -15,13 +14,12 @@ import { useSettingsDialogState } from './state/useSettingsDialogState'
 export function SettingsDialog({
   isOpen,
   initialSection = 'general',
-  continuousListeningMode,
-  passiveCompanionEnabled,
-  onPassiveCompanionChange,
   overlayVisible,
   overlayViewModeProjection,
   llmHealth,
   voiceWarmup,
+  continuousListeningState,
+  onToggleContinuousListening,
   onOverlayVisibleChange,
   onToggleOverlay,
 }: SettingsDialogProps) {
@@ -29,13 +27,12 @@ export function SettingsDialog({
   const viewModel = useSettingsDialogState({
     isOpen,
     initialSection,
-    continuousListeningMode,
-    passiveCompanionEnabled,
-    onPassiveCompanionChange,
     overlayVisible,
     overlayViewModeProjection,
     llmHealth,
     voiceWarmup,
+    continuousListeningState,
+    onToggleContinuousListening,
     onOverlayVisibleChange,
     onToggleOverlay,
   })
@@ -43,7 +40,6 @@ export function SettingsDialog({
     general: t('settings.section.general'),
     project: t('settings.section.project'),
     speech: t('settings.section.speech'),
-    listening: t('settings.section.listening'),
     llm: t('settings.section.llm'),
     avatar: t('settings.section.avatar'),
     advanced: t('settings.section.advanced'),
@@ -58,8 +54,6 @@ export function SettingsDialog({
       <ProjectSettingsSection {...viewModel.project} />
     ) : viewModel.activeSection === 'speech' ? (
       <SpeechSettingsSection {...viewModel.speech} />
-    ) : viewModel.activeSection === 'listening' ? (
-      <ListeningSettingsSection {...viewModel.listening} />
     ) : viewModel.activeSection === 'llm' ? (
       <LlmSettingsSection {...viewModel.llm} />
     ) : viewModel.activeSection === 'avatar' ? (

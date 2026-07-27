@@ -54,7 +54,6 @@ import {
 } from './runtime/speechCapabilities'
 import {
   defaultContinuousListeningSettings,
-  parseAttentionMode,
   parseTunedNumber,
 } from './speech/continuous-listening/tuning'
 import type {
@@ -142,13 +141,11 @@ export class Controller {
     vrmConfigured: false,
     vrmLoaded: false,
     faceTrackingEnabled: false,
-    passiveCompanionEnabled: false,
     continuousListeningEnabled: false,
-    continuousListeningMode: 'silent',
     continuousListeningState: 'off',
     continuousListeningError: '',
     overlayState: 'off',
-    overlayCameraMode: 'front',
+    overlayCameraMode: 'bust',
     overlayError: '',
     speechProgress: 0,
     overlayAnimationHudEnabled: false,
@@ -502,7 +499,6 @@ export class Controller {
     // Camera-follow gaze is the normal embodiment default; the persisted key is
     // retained for backward compatibility but no longer controls product UI.
     this.set({ faceTrackingEnabled: true })
-    this.setPassiveCompanionMode(cfg.passiveCompanionEnabled === 'true', false)
     // Streaming is never auto-started at launch: that would call getUserMedia()
     // (a permission prompt) without an explicit user action, which the
     // microphone-gate contract forbids. The remembered mode is restored, but the
@@ -510,7 +506,6 @@ export class Controller {
     await this.applyContinuousListeningSettings(
       {
         enabled: false,
-        mode: parseAttentionMode(cfg.continuousListeningMode),
         replyCooldownMs: parseTunedNumber(
           cfg.continuousListeningReplyCooldownMs,
           defaultContinuousListeningSettings.replyCooldownMs,
@@ -582,7 +577,7 @@ export class Controller {
       cfg.overlayViewMode === 'face' ||
       cfg.overlayViewMode === 'portrait'
         ? cfg.overlayViewMode
-        : 'front'
+        : 'bust'
     this.set({ overlayCameraMode })
   }
 
@@ -680,7 +675,7 @@ export class Controller {
         cfg.overlayViewMode === 'face' ||
         cfg.overlayViewMode === 'portrait'
           ? cfg.overlayViewMode
-          : 'front'
+          : 'bust'
       this.avatarRuntime.setCameraMode(mode)
     }
     const overlayAnimationHudEnabled =
@@ -853,6 +848,14 @@ export class Controller {
     return this.speechInputRuntime.getMicrophoneId()
   }
 
+  async playMicrophonePreview(encodedAudio: ArrayBuffer): Promise<void> {
+    const prepared = await this.player.prepareEncoded(encodedAudio)
+    await this.player.playPrepared(prepared, {
+      turnId: `microphone-preview-${nextId()}`,
+      onReady: () => {},
+    })
+  }
+
   // ---- chat cycle ----------------------------------------------------------
   async sendText(text: string, screenContextId?: string): Promise<ChatSubmissionResult> {
     return this.conversationInput.admitText(text, screenContextId)
@@ -930,14 +933,6 @@ export class Controller {
   dispose(): void {
     this.microphoneGate.dispose()
     this.speechCapabilitiesRuntime.dispose()
-  }
-
-  async setContinuousListeningMode(
-    mode: ContinuousListeningSettings['mode'],
-  ): Promise<'applied' | 'blocked'> {
-    if (this.state.microphoneGate.status !== 'closed') return 'blocked'
-    await this.applyContinuousListeningSettings({ ...this.conversationInput.getSettings(), mode })
-    return 'applied'
   }
 
   // ---- VRM / animation -----------------------------------------------------
@@ -1090,15 +1085,6 @@ export class Controller {
     this.set({ faceTrackingEnabled: ok ? next : false })
     void window.api.config.save({ lookAtEnabled: ok && next ? 'true' : 'false' })
     if (!this.overlayRuntime.isOverlayWindow()) void window.api.overlay.reloadAvatar()
-  }
-
-  setPassiveCompanionMode(enabled: boolean, persist = true): void {
-    this.avatarRuntime.setPassiveCompanionMode(enabled)
-    this.set({ passiveCompanionEnabled: enabled })
-    if (persist)
-      void window.api.config.save({ passiveCompanionEnabled: enabled ? 'true' : 'false' })
-    if (persist && !this.overlayRuntime.isOverlayWindow()) void window.api.overlay.reloadAvatar()
-    this.recordRuntimeEvent('Passive Companion Mode', enabled ? 'on' : 'off')
   }
 
   private subscribeActionRuntimeEvents(): void {

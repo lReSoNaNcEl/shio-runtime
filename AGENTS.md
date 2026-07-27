@@ -40,6 +40,29 @@ Architecture and ownership:
 - Preserve the existing HTTP contract with `apps/api` unless the task
   explicitly changes it.
 
+Desktop UI and UX:
+
+- Build all new or changed Desktop UI/UX with React Spectrum 2
+  (`@react-spectrum/s2`). This is mandatory, not a preference.
+- Use React Spectrum 2 components for every available UI primitive, including
+  buttons, action buttons, fields, pickers, switches, meters, progress
+  indicators, status lights, text, headings, badges, tooltips, dialogs, and
+  similar controls. Do not recreate an available Spectrum component with
+  vanilla HTML and custom CSS.
+- Native HTML elements are allowed only for semantic document structure and
+  layout when React Spectrum 2 has no equivalent, for example `section`, `nav`,
+  `main`, `div`, and list containers. They must not implement a hand-rolled
+  interactive control or imitate Spectrum styling and behavior.
+- Prefer React Spectrum 2 component props, Spectrum style macros, and Spectrum
+  design tokens before adding custom CSS. Keep custom CSS limited to
+  application-specific layout and integration that Spectrum does not provide;
+  do not override Spectrum component internals to invent a parallel design
+  system.
+- When modifying an existing vanilla control, migrate the touched control to
+  the appropriate React Spectrum 2 component as part of the same Work Item
+  unless no Spectrum equivalent exists. If no equivalent exists, state that
+  explicitly in the final report.
+
 Desktop quality and validation:
 
 - Desktop formatting, linting, React checks, and import ordering are owned by

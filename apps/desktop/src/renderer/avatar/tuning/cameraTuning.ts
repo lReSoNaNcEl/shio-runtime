@@ -1,14 +1,6 @@
-export type OverlayViewMode = 'front' | 'bust' | 'face' | 'portrait'
+export type OverlayViewMode = 'bust' | 'face' | 'portrait'
 
 export const overlayCameraPresets = {
-  front: {
-    label: 'Front',
-    position: { x: 0, y: 1.48, z: -2.9 },
-    target: { x: 0, y: 1.12, z: 0 },
-    fov: 32,
-    scaleMin: 0.65,
-    scaleMax: 1.8,
-  },
   bust: {
     label: 'Bust',
     position: { x: 0, y: 1.5, z: -1.9 },

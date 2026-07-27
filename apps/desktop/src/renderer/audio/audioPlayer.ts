@@ -61,7 +61,16 @@ export class AudioPlayer {
 
   async prepare(wavBuffer: ArrayBuffer): Promise<PreparedAudio> {
     this.assertValidWav(wavBuffer)
-    const audioBuffer = await this.audioCtx.decodeAudioData(wavBuffer.slice(0))
+    return this.decodePreparedAudio(wavBuffer)
+  }
+
+  async prepareEncoded(encodedBuffer: ArrayBuffer): Promise<PreparedAudio> {
+    if (encodedBuffer.byteLength === 0) throw new Error('Audio preview is empty')
+    return this.decodePreparedAudio(encodedBuffer)
+  }
+
+  private async decodePreparedAudio(encodedBuffer: ArrayBuffer): Promise<PreparedAudio> {
+    const audioBuffer = await this.audioCtx.decodeAudioData(encodedBuffer.slice(0))
     return {
       audioBuffer,
       durationMs: audioBuffer.duration * 1000,

@@ -74,7 +74,7 @@ export interface AvatarControllerDebugState {
   idleBehavior: string
   nextIdleBehaviorIn: number
   idleOrchestrator: IdleOrchestratorDebugState
-  passiveCompanionMode: boolean
+  ambientIdleBehavior: boolean
   lipsyncWeights: MouthWeights
   facial: FacialDebugState
   lookAt: LookAtDebugState
@@ -139,7 +139,7 @@ export class AvatarDebugSnapshotBuilder {
       idleBehavior: idle.activeBehavior,
       nextIdleBehaviorIn: idle.nextBehaviorIn,
       idleOrchestrator,
-      passiveCompanionMode: idle.passiveCompanionMode,
+      ambientIdleBehavior: idle.ambientIdleBehavior,
       lipsyncWeights: input.mouthWeights,
       facial: input.vrmModel.getFacialDebugState(),
       lookAt: input.vrmModel.getLookAtDebugState(),

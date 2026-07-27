@@ -4,7 +4,14 @@ import type { ProjectAwarenessPublicConfig } from '../project-awareness'
 
 export const DEFAULT_SPEECH_URL = 'http://localhost:8000'
 
+export interface SetupLifecycleConfig {
+  completed: boolean
+  completedAt?: string
+}
+
 export interface AppSettings {
+  configSchemaVersion: number
+  setup: SetupLifecycleConfig
   llm: LlmPublicConfig
   projectAwareness: ProjectAwarenessPublicConfig
   uiLocale: UiLocale
@@ -25,10 +32,7 @@ export interface AppSettings {
   overlayViewMode: string
   developerOverlayAnimationHudEnabled: string
   developerModeEnabled: string
-  passiveCompanionEnabled?: string
   lookAtEnabled: string
-  continuousListeningEnabled: string
-  continuousListeningMode: string
   continuousListeningReplyCooldownMs: string
   continuousListeningFollowUpWindowMs: string
   continuousListeningCuriosityChance: string

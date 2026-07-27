@@ -3,7 +3,13 @@ import { join } from 'node:path'
 
 import { app } from 'electron'
 
-import { type AppSettings, DEFAULT_SPEECH_URL } from '../shared/config'
+import {
+  type AppSettings,
+  DEFAULT_SPEECH_URL,
+  DESKTOP_CONFIG_SCHEMA_VERSION,
+  migrateLegacyDesktopSettings,
+  type SetupLifecycleConfig,
+} from '../shared/config'
 import type { LlmPersistedConfig } from '../shared/llm'
 import {
   DEFAULT_UI_LOCALE,
@@ -18,12 +24,15 @@ import { toPublicLlmConfig } from './llm/config'
 import { resolveLlmPersistence } from './llm/persistence'
 
 const CONFIG_PATH = join(app.getPath('userData'), 'config.json')
+export const CURRENT_CONFIG_SCHEMA_VERSION = DESKTOP_CONFIG_SCHEMA_VERSION
 
 export interface ProjectAwarenessConfig extends ProjectAwarenessPublicConfig {
   maxFileSizeBytes: number
 }
 
 export interface AppConfig {
+  configSchemaVersion: number
+  setup: SetupLifecycleConfig
   llm: LlmPersistedConfig
   projectAwareness: ProjectAwarenessConfig
   uiLocale: UiLocale
@@ -44,17 +53,17 @@ export interface AppConfig {
   overlayViewMode: string
   developerOverlayAnimationHudEnabled: string
   developerModeEnabled: string
-  passiveCompanionEnabled: string
   lookAtEnabled: string
-  continuousListeningEnabled: string
-  continuousListeningMode: string
   continuousListeningReplyCooldownMs: string
   continuousListeningFollowUpWindowMs: string
   continuousListeningCuriosityChance: string
 }
 
 // String-valued keys only; `llm` is handled separately because it is an object.
-type StringConfigKey = Exclude<keyof AppConfig, 'llm' | 'projectAwareness' | 'uiLocale'>
+type StringConfigKey = Exclude<
+  keyof AppConfig,
+  'configSchemaVersion' | 'setup' | 'llm' | 'projectAwareness' | 'uiLocale'
+>
 
 function stringDefaults(isPackaged = app.isPackaged): Record<StringConfigKey, string> {
   return {
@@ -72,12 +81,9 @@ function stringDefaults(isPackaged = app.isPackaged): Record<StringConfigKey, st
     overlayClickThrough: process.env.OVERLAY_CLICK_THROUGH ?? 'true',
     overlayCorner: process.env.OVERLAY_CORNER ?? 'bottom-right',
     overlayScale: process.env.OVERLAY_SCALE ?? '1',
-    overlayViewMode: 'front',
+    overlayViewMode: 'bust',
     ...developerModeDefaults(isPackaged),
-    passiveCompanionEnabled: process.env.PASSIVE_COMPANION_ENABLED ?? 'false',
     lookAtEnabled: 'true',
-    continuousListeningEnabled: 'false',
-    continuousListeningMode: 'silent',
     continuousListeningReplyCooldownMs: '15000',
     continuousListeningFollowUpWindowMs: '20000',
     continuousListeningCuriosityChance: '0.03',
@@ -86,9 +92,11 @@ function stringDefaults(isPackaged = app.isPackaged): Record<StringConfigKey, st
 
 export function freshDefaults(isPackaged = app.isPackaged): AppConfig {
   return {
+    configSchemaVersion: CURRENT_CONFIG_SCHEMA_VERSION,
+    setup: { completed: false },
     llm: defaultLlmConfig(),
     projectAwareness: {
-      enabled: true,
+      enabled: false,
       provider: 'github',
       repository: '',
       branch: 'main',
@@ -117,12 +125,26 @@ function normalizeDeveloperMode(value: unknown): string {
   return value === 'true' ? 'true' : 'false'
 }
 
+function resolveSetupLifecycle(saved: Record<string, unknown>): SetupLifecycleConfig {
+  if (!saved.setup || typeof saved.setup !== 'object') return { completed: false }
+  const setup = saved.setup as Record<string, unknown>
+  return {
+    completed: setup.completed === true,
+    ...(typeof setup.completedAt === 'string' ? { completedAt: setup.completedAt } : {}),
+  }
+}
+
 function resolveProjectAwarenessConfig(saved: Record<string, unknown>): ProjectAwarenessConfig {
   const defaults = freshDefaults().projectAwareness
   if (!saved.projectAwareness || typeof saved.projectAwareness !== 'object') return defaults
   const project = saved.projectAwareness as Record<string, unknown>
   return {
-    enabled: typeof project.enabled === 'boolean' ? project.enabled : defaults.enabled,
+    enabled:
+      typeof project.enabled === 'boolean' &&
+      typeof project.repository === 'string' &&
+      project.repository.trim().length > 0
+        ? project.enabled
+        : false,
     provider: 'github',
     repository:
       typeof project.repository === 'string' && project.repository
@@ -147,13 +169,23 @@ export async function loadConfig(llmCredentialStore: LlmCredentialStore): Promis
   await llmCredentialStore.load()
   try {
     if (existsSync(CONFIG_PATH)) {
-      const saved = JSON.parse(readFileSync(CONFIG_PATH, 'utf-8')) as Record<string, unknown> &
+      const rawSaved = JSON.parse(readFileSync(CONFIG_PATH, 'utf-8')) as Record<string, unknown> &
+        import('./llm/persistence').LegacyPersistedLlmConfig
+      const saved = migrateLegacyDesktopSettings(rawSaved) as Record<string, unknown> &
         import('./llm/persistence').LegacyPersistedLlmConfig
       const known = pickKnownStrings(saved)
       const { llm, plaintextCredentials, plaintextProviders, migrated } =
         resolveLlmPersistence(saved)
       const projectAwareness = resolveProjectAwarenessConfig(saved)
+      const setup = resolveSetupLifecycle(saved)
       const developerMode = resolveDeveloperModeSettings(known, app.isPackaged)
+      const configNeedsMigration =
+        rawSaved.configSchemaVersion !== CURRENT_CONFIG_SCHEMA_VERSION ||
+        rawSaved.continuousListeningMode !== undefined ||
+        rawSaved.continuousListeningEnabled !== undefined ||
+        rawSaved.passiveCompanionEnabled !== undefined ||
+        rawSaved.overlayViewMode === 'front' ||
+        rawSaved.setup === undefined
       const hasLegacyProjectToken =
         typeof saved.projectAwareness === 'object' &&
         saved.projectAwareness !== null &&
@@ -164,7 +196,10 @@ export async function loadConfig(llmCredentialStore: LlmCredentialStore): Promis
         ...developerMode,
         llm,
         projectAwareness,
+        setup,
+        configSchemaVersion: CURRENT_CONFIG_SCHEMA_VERSION,
         uiLocale: normalizeUiLocale(saved.uiLocale),
+        overlayViewMode: known.overlayViewMode ?? 'bust',
       }
 
       let llmMigrationCompleted = !migrated
@@ -179,7 +214,11 @@ export async function loadConfig(llmCredentialStore: LlmCredentialStore): Promis
           )
         }
       }
-      if ((migrated && llmMigrationCompleted) || (!migrated && hasLegacyProjectToken)) {
+      if (
+        (migrated && llmMigrationCompleted) ||
+        (!migrated && hasLegacyProjectToken) ||
+        configNeedsMigration
+      ) {
         writeFileSync(CONFIG_PATH, serializedConfig(_config), 'utf-8')
       }
     }
@@ -208,9 +247,10 @@ export function getRendererConfig(): AppSettings {
 }
 
 export function saveConfig(
-  partial: Partial<Omit<AppConfig, 'projectAwareness' | 'llm'>> & {
+  partial: Partial<Omit<AppConfig, 'projectAwareness' | 'llm' | 'setup'>> & {
     llm?: unknown
     projectAwareness?: Partial<ProjectAwarenessPublicConfig>
+    setup?: SetupLifecycleConfig
   },
 ): void {
   const input = partial as Record<string, unknown>
@@ -219,6 +259,8 @@ export function saveConfig(
   _config = {
     ..._config,
     ...knownStrings,
+    configSchemaVersion: CURRENT_CONFIG_SCHEMA_VERSION,
+    setup: partial.setup ? resolveSetupLifecycle({ setup: partial.setup }) : _config.setup,
     llm: normalizedLlm,
     developerModeEnabled:
       knownStrings.developerModeEnabled === undefined

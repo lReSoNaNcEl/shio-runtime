@@ -1,4 +1,4 @@
-import { ActionButton, StatusLight, Switch, Text, TextField } from '@react-spectrum/s2'
+import { ActionButton, StatusLight, Text, TextField } from '@react-spectrum/s2'
 import { style } from '@react-spectrum/s2/style' with { type: 'macro' }
 
 import {
@@ -18,118 +18,57 @@ export function ProjectSettingsSection({
   state: ProjectSettingsState
   actions: ProjectSettingsActions
 }) {
-  const { t } = useTranslation()
+  const { intlLocale, t } = useTranslation()
+  const credentialReady = Boolean(state.status?.credential.configured)
+  const targetValid =
+    isValidProjectRepository(state.repository) && isValidProjectBranch(state.branch)
+
   return (
-    <div className="settings-grid">
-      <Switch
-        isSelected={state.enabled}
-        onChange={(enabled) => {
-          actions.setEnabled(enabled)
-          actions.setApplyState('idle')
-        }}
-      >
-        {t('settings.project.enable')}
-      </Switch>
-      <TextField
-        label={t('settings.project.repository')}
-        value={state.repository}
-        onChange={(value) => {
-          actions.setRepository(value)
-          actions.setApplyState('idle')
-        }}
-        placeholder="owner/repository"
-        isDisabled={!state.enabled}
-        isInvalid={state.enabled && !isValidProjectRepository(state.repository)}
-        errorMessage={t('main.error.project.repositoryFormat')}
-        styles={fullWidth}
-      />
-      <TextField
-        label={t('settings.project.branch')}
-        value={state.branch}
-        onChange={(value) => {
-          actions.setBranch(value)
-          actions.setApplyState('idle')
-        }}
-        placeholder="main"
-        isDisabled={!state.enabled}
-        isInvalid={state.enabled && !isValidProjectBranch(state.branch)}
-        errorMessage={t('main.error.project.branchInvalid')}
-        styles={fullWidth}
-      />
-      <Text UNSAFE_className="settings-hint">{t('settings.project.targetChange')}</Text>
-      <div className="settings-row">
-        <ActionButton
-          isDisabled={!state.settingsValid || state.runtimeBusy}
-          onPress={() => void actions.apply()}
-        >
-          {state.applyState === 'applying'
-            ? t('settings.project.applying')
-            : t('settings.project.apply')}
-        </ActionButton>
-      </div>
-      {state.applyState === 'applied' && (
-        <Text UNSAFE_className="settings-hint">{t('settings.project.applied')}</Text>
-      )}
-      {state.applyError && (
-        <Text UNSAFE_className="project-awareness-error">{state.applyError}</Text>
-      )}
-      <div className="project-credential-panel">
-        <div className="project-credential-copy">
-          <strong>{t('settings.project.credential.title')}</strong>
-          <span>{t('settings.project.credential.description')}</span>
-        </div>
+    <div className="settings-grid project-setup-flow">
+      <section className="project-stage" aria-labelledby="project-credential-title">
+        <h3 id="project-credential-title">{t('settings.project.credential.title')}</h3>
+        <p>{t('settings.project.credential.description')}</p>
         {state.status && (
           <StatusLight
             variant={
-              state.status.credential.lastError ||
-              !state.status.credential.secureStorageAvailable ||
-              state.credentialSaveState === 'failed'
-                ? 'negative'
-                : state.status.credential.configured
-                  ? 'positive'
+              state.status.credential.configured
+                ? 'positive'
+                : state.status.credential.lastError
+                  ? 'negative'
                   : 'neutral'
             }
           >
-            {state.credentialSaveState === 'saving'
-              ? t('settings.project.credential.saving')
-              : state.credentialSaveState === 'failed'
-                ? t('settings.project.credential.storageError')
-                : t(credentialStatusKey(state.status.credential))}
+            {t(credentialStatusKey(state.status.credential))}
           </StatusLight>
         )}
         <TextField
           label={
-            state.status?.credential.configured
+            credentialReady
               ? t('settings.project.credential.replace')
               : t('settings.project.credential.token')
           }
           value={state.credentialInput}
           onChange={actions.setCredentialInput}
           type="password"
-          placeholder="github_pat_…"
+          autoComplete="off"
           isDisabled={state.runtimeBusy}
           styles={fullWidth}
         />
         <div className="project-credential-actions">
-          <ActionButton
-            isDisabled={state.runtimeBusy || !state.status?.credential.secureStorageAvailable}
-            onPress={() => void actions.openTokenSettings()}
-          >
+          <ActionButton onPress={() => void actions.openTokenSettings()}>
             {t('settings.project.credential.create')}
           </ActionButton>
           <ActionButton
             isDisabled={
               state.runtimeBusy ||
-              !state.enabled ||
-              !state.targetApplied ||
               !state.status?.credential.secureStorageAvailable ||
               state.credentialInput.trim().length < 20
             }
             onPress={() => void actions.saveCredential()}
           >
-            {state.status?.credential.configured
-              ? t('settings.project.credential.replaceAndConnect')
-              : t('settings.project.credential.saveAndConnect')}
+            {credentialReady
+              ? t('settings.project.credential.replace')
+              : t('settings.project.credential.save')}
           </ActionButton>
           {state.status?.credential.source === 'secure_store' && (
             <ActionButton
@@ -142,22 +81,50 @@ export function ProjectSettingsSection({
             </ActionButton>
           )}
         </div>
-        {!state.status?.credential.secureStorageAvailable && (
-          <Text UNSAFE_className="project-credential-warning">
-            {t('settings.project.credential.unavailable')}
-          </Text>
-        )}
-        {state.status?.credential.lastError && (
-          <Text UNSAFE_className="project-credential-warning">
-            {state.status.credential.lastError}
-          </Text>
-        )}
-      </div>
-      <div className="project-runtime-controls">
-        <div className="project-credential-copy">
-          <strong>{t('settings.project.controls.title')}</strong>
-          <span>{t('settings.project.controls.description')}</span>
-        </div>
+      </section>
+
+      <section
+        className="project-stage"
+        aria-labelledby="project-target-title"
+        aria-disabled={!credentialReady}
+      >
+        <h3 id="project-target-title">{t('settings.project.target.title')}</h3>
+        {!credentialReady && <p>{t('settings.project.target.credentialRequired')}</p>}
+        <TextField
+          label={t('settings.project.repository')}
+          value={state.repository}
+          onChange={actions.setRepository}
+          placeholder="owner/repository"
+          isDisabled={!credentialReady || state.runtimeBusy}
+          isInvalid={credentialReady && !isValidProjectRepository(state.repository)}
+          errorMessage={t('main.error.project.repositoryFormat')}
+          styles={fullWidth}
+        />
+        <TextField
+          label={t('settings.project.branch')}
+          value={state.branch}
+          onChange={actions.setBranch}
+          placeholder="main"
+          isDisabled={!credentialReady || state.runtimeBusy}
+          isInvalid={credentialReady && !isValidProjectBranch(state.branch)}
+          errorMessage={t('main.error.project.branchInvalid')}
+          styles={fullWidth}
+        />
+        <ActionButton
+          isDisabled={!credentialReady || !targetValid || state.runtimeBusy}
+          onPress={() => void actions.connect()}
+        >
+          {t('settings.project.connectProject')}
+        </ActionButton>
+      </section>
+
+      <section
+        className="project-stage"
+        aria-labelledby="project-runtime-title"
+        aria-disabled={!state.connected}
+      >
+        <h3 id="project-runtime-title">{t('settings.project.controls.title')}</h3>
+        {!state.connected && <p>{t('settings.project.controls.connectRequired')}</p>}
         {state.status && (
           <StatusLight
             variant={
@@ -171,50 +138,44 @@ export function ProjectSettingsSection({
             {t(connectionStatusKey[state.status.state])}
           </StatusLight>
         )}
-        {state.status?.lastError && (
-          <Text UNSAFE_className="project-awareness-error">{state.status.lastError}</Text>
+        {state.status?.remoteHead && (
+          <Text UNSAFE_className="settings-hint">
+            {t('settings.project.commit', { sha: state.status.remoteHead.slice(0, 12) })}
+          </Text>
+        )}
+        {state.status?.lastSyncAt && (
+          <Text UNSAFE_className="settings-hint">
+            {t('settings.project.lastSync', {
+              time: new Date(state.status.lastSyncAt).toLocaleString(intlLocale),
+            })}
+          </Text>
         )}
         <div className="project-awareness-actions">
-          {state.connected ? (
-            <ActionButton
-              isDisabled={state.runtimeBusy || !state.targetApplied}
-              onPress={() => void actions.disconnect()}
-            >
-              {t('common.disconnect')}
-            </ActionButton>
-          ) : (
-            <ActionButton
-              isDisabled={
-                state.runtimeBusy ||
-                !state.enabled ||
-                !state.targetApplied ||
-                !state.status?.credential.configured
-              }
-              onPress={() => void actions.connect()}
-            >
-              {t('common.connect')}
-            </ActionButton>
-          )}
           <ActionButton
-            isDisabled={!state.connected || state.runtimeBusy || !state.targetApplied}
+            isDisabled={!state.connected || state.runtimeBusy}
             onPress={() => void actions.sync()}
           >
             {t('settings.project.sync')}
           </ActionButton>
           <ActionButton
-            isDisabled={
-              !state.hasIndex ||
-              state.runtimeBusy ||
-              !state.enabled ||
-              !state.targetApplied ||
-              !state.status?.credential.configured
-            }
+            isDisabled={!state.connected || state.runtimeBusy}
             onPress={() => void actions.rebuild()}
           >
             {t('settings.project.rebuild')}
           </ActionButton>
+          <ActionButton
+            isDisabled={!state.connected || state.runtimeBusy}
+            onPress={() => void actions.disconnect()}
+          >
+            {t('common.disconnect')}
+          </ActionButton>
         </div>
-      </div>
+        {state.applyError && (
+          <div className="project-awareness-error" role="alert">
+            {state.applyError}
+          </div>
+        )}
+      </section>
     </div>
   )
 }

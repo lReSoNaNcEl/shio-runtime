@@ -1,4 +1,4 @@
-import type { AttentionMode, ContinuousListeningSettings } from './types'
+import type { ContinuousListeningSettings } from './types'
 
 export const chunkBuilderTuning = {
   pauseCompletionMs: 900,
@@ -8,19 +8,14 @@ export const chunkBuilderTuning = {
 } as const
 
 export const attentionTuning = {
-  thresholds: {
-    silent: Number.POSITIVE_INFINITY,
-    passive: 70,
-    active: 45,
-    streamer: 28,
-  } satisfies Record<AttentionMode, number>,
+  threshold: 28,
   score: {
     directNameMention: 80,
     question: 18,
     recentConversation: 20,
     followUpWindow: 15,
     secondPersonAddress: 30,
-    streamerRelevance: 12,
+    defaultPolicyRelevance: 12,
     emotionalExpression: 12,
     likelySelfTalk: -35,
     tooShort: -45,
@@ -31,7 +26,6 @@ export const attentionTuning = {
 
 export const defaultContinuousListeningSettings: ContinuousListeningSettings = {
   enabled: false,
-  mode: 'silent',
   replyCooldownMs: 15_000,
   followUpWindowMs: 20_000,
   curiosityChance: 0.03,
@@ -56,18 +50,6 @@ export const backlogTuning = {
   recentIdLimit: 128,
 } as const
 
-export function parseAttentionMode(value: string | undefined): AttentionMode {
-  switch (value) {
-    case 'silent':
-    case 'passive':
-    case 'active':
-    case 'streamer':
-      return value
-    default:
-      return 'silent'
-  }
-}
-
 export function parseTunedNumber(
   value: string | undefined,
   fallback: number,
@@ -76,8 +58,4 @@ export function parseTunedNumber(
 ): number {
   const parsed = Number(value)
   return Math.min(max, Math.max(min, Number.isFinite(parsed) ? parsed : fallback))
-}
-
-export function isCuriosityControlEnabled(enabled: boolean, mode: AttentionMode): boolean {
-  return enabled && (mode === 'active' || mode === 'streamer')
 }

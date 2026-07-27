@@ -1,13 +1,9 @@
 import {
   ActionButton,
-  Content,
-  ContextualHelp,
-  Divider,
   Heading,
   Picker,
   PickerItem,
   ProgressCircle,
-  Switch,
   Text,
   TextField,
 } from '@react-spectrum/s2'
@@ -138,58 +134,6 @@ export function LlmSettingsSection({
             </ActionButton>
           )}
         </div>
-      </section>
-      <Divider />
-      <section className="llm-settings-section" aria-labelledby="backlog-selector-title">
-        <div className="llm-selector-title-row">
-          <Heading id="backlog-selector-title" level={3}>
-            {t('settings.llm.smart.title')}
-          </Heading>
-          <div className="llm-selector-actions">
-            <Switch
-              aria-label={t('settings.llm.smart.enable')}
-              isSelected={state.backlogRole.enabled}
-              onChange={(enabled) => actions.setBacklogRole((value) => ({ ...value, enabled }))}
-            />
-            <ContextualHelp variant="info" size="S" aria-label={t('settings.llm.smart.more')}>
-              <Heading>{t('settings.llm.smart.title')}</Heading>
-              <Content>{t('settings.llm.smart.description')}</Content>
-            </ContextualHelp>
-          </div>
-        </div>
-        <Text UNSAFE_className="settings-hint">{t('settings.llm.smart.hint')}</Text>
-        {state.backlogRole.enabled && (
-          <div className="llm-selector-fields">
-            <Picker
-              label={t('common.provider')}
-              selectedKey={state.backlogRole.providerId || null}
-              onSelectionChange={(key) =>
-                actions.setBacklogRole((value) => ({
-                  ...value,
-                  providerId: String(key) as LlmProviderId,
-                  model: '',
-                }))
-              }
-              styles={fullWidth}
-            >
-              {state.providers
-                .filter((provider) => state.providerSettings[provider.id]?.credential.configured)
-                .map((provider) => (
-                  <PickerItem key={provider.id} id={provider.id}>
-                    {provider.displayName}
-                  </PickerItem>
-                ))}
-            </Picker>
-            <ModelComboBox
-              label={t('common.model')}
-              models={state.backlogModels}
-              selectedId={state.backlogRole.model}
-              isDisabled={!state.backlogRole.providerId || state.backlogModels.length === 0}
-              placeholder={t('common.searchModel')}
-              onSelect={(id) => actions.setBacklogRole((value) => ({ ...value, model: id }))}
-            />
-          </div>
-        )}
       </section>
     </div>
   )

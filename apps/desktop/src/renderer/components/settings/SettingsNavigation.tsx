@@ -1,4 +1,3 @@
-import AudioWaveIcon from '@react-spectrum/s2/icons/AudioWave'
 import CodeIcon from '@react-spectrum/s2/icons/Code'
 import DataIcon from '@react-spectrum/s2/icons/Data'
 import MicrophoneIcon from '@react-spectrum/s2/icons/Microphone'
@@ -12,7 +11,6 @@ const icons: Record<SettingsSection, ReactElement> = {
   general: <SettingsIcon />,
   project: <DataIcon />,
   speech: <MicrophoneIcon />,
-  listening: <AudioWaveIcon />,
   llm: <DataIcon />,
   avatar: <UserAvatarIcon />,
   advanced: <CodeIcon />,
@@ -20,11 +18,10 @@ const icons: Record<SettingsSection, ReactElement> = {
 
 const sections: readonly SettingsSection[] = [
   'general',
-  'project',
-  'speech',
-  'listening',
   'llm',
+  'speech',
   'avatar',
+  'project',
   'advanced',
 ]
 

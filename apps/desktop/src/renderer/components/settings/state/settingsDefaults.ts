@@ -1,7 +1,7 @@
 import type { BacklogSelectorRoleConfig } from '../../../../shared/llm'
 import type { OverlayViewMode } from '../../../avatar/tuning/cameraTuning'
 
-export const overlayViewModes: readonly OverlayViewMode[] = ['front', 'bust', 'face', 'portrait']
+export const overlayViewModes: readonly OverlayViewMode[] = ['bust', 'face', 'portrait']
 
 export const overlayDefaults = {
   width: 360,
@@ -12,7 +12,7 @@ export const overlayDefaults = {
   clickThrough: true,
   corner: 'bottom-right',
   scalePercent: 100,
-  viewMode: 'front' as OverlayViewMode,
+  viewMode: 'bust' as OverlayViewMode,
 }
 
 export const defaultBacklogSelectorRole: BacklogSelectorRoleConfig = {

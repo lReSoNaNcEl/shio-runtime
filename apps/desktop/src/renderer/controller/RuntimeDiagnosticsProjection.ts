@@ -133,7 +133,7 @@ export class RuntimeDiagnosticsProjection {
         idleOrchestrator: avatar.idleOrchestrator.paused ? 'paused' : 'running',
         idleBehavior: avatar.idleBehavior,
         nextIdleBehaviorIn: `${avatar.nextIdleBehaviorIn}s`,
-        passiveCompanion: avatar.passiveCompanionMode ? 'on' : 'off',
+        ambientIdleBehavior: avatar.ambientIdleBehavior ? 'on' : 'off',
         animationFailures: avatar.animationFailures.length
           ? avatar.animationFailures.join(', ')
           : 'none',

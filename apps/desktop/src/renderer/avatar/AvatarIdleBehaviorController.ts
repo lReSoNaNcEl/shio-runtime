@@ -18,7 +18,6 @@ export class AvatarIdleBehaviorController {
   private activeBehavior: IdleBehaviorKind = 'none'
   private nextBehaviorIn = 2.5
   private activeFor = 0
-  private passiveCompanionMode = false
 
   constructor(private vrmModel: VrmModel) {}
 
@@ -40,40 +39,30 @@ export class AvatarIdleBehaviorController {
     if (this.nextBehaviorIn > 0) return
 
     this.playNextBehavior()
-    this.nextBehaviorIn = this.passiveCompanionMode
-      ? this.randomBetween(3.0, 6.5)
-      : this.randomBetween(7.0, 14.0)
-  }
-
-  setPassiveCompanionMode(enabled: boolean): void {
-    if (this.passiveCompanionMode === enabled) return
-    this.passiveCompanionMode = enabled
-    this.reset()
+    this.nextBehaviorIn = this.randomBetween(3.0, 6.5)
   }
 
   reset(): void {
     this.activeBehavior = 'none'
     this.activeFor = 0
-    this.nextBehaviorIn = this.passiveCompanionMode
-      ? this.randomBetween(1.5, 3.5)
-      : this.randomBetween(4.0, 8.0)
+    this.nextBehaviorIn = this.randomBetween(1.5, 3.5)
   }
 
-  getDebugState(): IdleBehaviorDebugState & { passiveCompanionMode: boolean } {
+  getDebugState(): IdleBehaviorDebugState & { ambientIdleBehavior: true } {
     return {
       activeBehavior: this.activeBehavior,
       nextBehaviorIn: Number(Math.max(0, this.nextBehaviorIn).toFixed(1)),
-      passiveCompanionMode: this.passiveCompanionMode,
+      ambientIdleBehavior: true,
     }
   }
 
   private playNextBehavior(): void {
     const roll = Math.random()
 
-    const glanceLeftThreshold = this.passiveCompanionMode ? 0.3 : 0.22
-    const glanceRightThreshold = this.passiveCompanionMode ? 0.6 : 0.44
-    const glanceDownThreshold = this.passiveCompanionMode ? 0.78 : 0.64
-    const postureThreshold = this.passiveCompanionMode ? 0.92 : 0.82
+    const glanceLeftThreshold = 0.3
+    const glanceRightThreshold = 0.6
+    const glanceDownThreshold = 0.78
+    const postureThreshold = 0.92
 
     if (roll < glanceLeftThreshold) {
       this.startGlance('glance-left', -1)

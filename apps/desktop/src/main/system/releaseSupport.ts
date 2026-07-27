@@ -23,6 +23,7 @@ function releaseInfo(): ReleaseInfo {
     arch: process.arch,
     electronVersion: process.versions.electron,
     nodeVersion: process.versions.node,
+    isPackaged: app.isPackaged,
   }
 }
 

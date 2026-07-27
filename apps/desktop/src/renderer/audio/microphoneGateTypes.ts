@@ -1,12 +1,10 @@
-import type { AttentionMode } from '../speech/continuous-listening/types'
-
 /**
  * The set of attention modes whose runtime requires a working microphone.
  * All existing attention modes drive continuous audio capture (Silero VAD +
  * ASR), so every value is microphone-dependent; enabling/disabling streaming is
  * a separate `enabled` flag, not one of these values.
  */
-export type StreamingModeId = AttentionMode
+export type StreamingModeId = 'default'
 
 /**
  * What the user was trying to start when the microphone prerequisite guard ran.
