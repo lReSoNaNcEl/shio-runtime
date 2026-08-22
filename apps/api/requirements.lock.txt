@@ -102,7 +102,7 @@ ema-pytorch==0.7.9
     # via f5-tts
 encodec==0.1.1
     # via vocos
-f5-tts==1.1.21
+f5-tts==1.1.22
     # via -r requirements.txt
 fastapi==0.139.2
     # via
