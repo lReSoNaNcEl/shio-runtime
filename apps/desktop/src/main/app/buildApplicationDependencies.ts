@@ -44,7 +44,7 @@ import {
 import { GitHubProjectAdapter } from '../project-awareness/adapters/GitHubProjectAdapter'
 import { observeMainPromise } from '../reliability/observePromise'
 import { ScreenCaptureAdapter, ScreenContextService } from '../screen-context'
-import { SpeechClient } from '../speech/speechClient'
+import { SpeechClientManager } from '../speech/SpeechClientManager'
 import { registerReleaseSupportHandlers } from '../system/releaseSupport'
 import { MainWindowManager } from '../windows/MainWindowManager'
 import { OverlayWindowManager } from '../windows/OverlayWindowManager'
@@ -63,7 +63,7 @@ export function buildApplicationDependencies(): ApplicationDependencies {
   let orchestrator: Orchestrator | null = null
   let llmGateway: LlmGateway | null = null
   let llmCredentialStore: LlmCredentialStore | null = null
-  let speechClient: SpeechClient | null = null
+  let speechClientManager: SpeechClientManager | null = null
   let pluginRuntime: PluginRuntime | null = null
   let projectAwareness: ProjectAwarenessPlugin | null = null
   let desktopControl: DesktopControlPlugin | null = null
@@ -260,8 +260,12 @@ export function buildApplicationDependencies(): ApplicationDependencies {
     avatarRuntimeHealth: () => lastAvatarRuntimeHealth,
   })
 
+  const getSpeechClientManager = (): SpeechClientManager => {
+    speechClientManager ??= new SpeechClientManager(getConfig().pythonSpeechUrl)
+    return speechClientManager
+  }
+
   const buildOrchestrator = (): Orchestrator => {
-    const cfg = getConfig()
     llmGateway = new LlmGateway(() => {
       const { activeProvider, providers } = getConfig().llm
       const credential = getLlmCredentialStore().resolve(activeProvider)
@@ -271,12 +275,12 @@ export function buildApplicationDependencies(): ApplicationDependencies {
         model: providers[activeProvider].model,
       }
     })
-    speechClient = new SpeechClient(cfg.pythonSpeechUrl)
-    observeMainPromise(speechClient.warnIfEmotionContractDrift(), 'check speech emotion contract')
+    const speech = getSpeechClientManager()
+    observeMainPromise(speech.warnIfEmotionContractDrift(), 'check speech emotion contract')
     return new Orchestrator(
       llmGateway,
       conversationMemory,
-      speechClient,
+      speech,
       getRendererConfig,
       () => pluginCapabilities.getProjectContextProvider(),
       capabilityCatalog,
@@ -309,6 +313,7 @@ export function buildApplicationDependencies(): ApplicationDependencies {
       rendererNetworkObserver?.dispose()
       rendererNetworkObserver = null
       screenContextService.dispose()
+      speechClientManager?.dispose()
       unsubscribePluginCapabilities?.()
       unsubscribePluginCapabilities = null
       unsubscribeProjectCapabilities?.()
@@ -385,10 +390,7 @@ export function buildApplicationDependencies(): ApplicationDependencies {
       getPluginRuntime,
       getProjectAwareness,
       getDesktopControl,
-      () => {
-        speechClient ??= new SpeechClient(getConfig().pythonSpeechUrl)
-        return speechClient
-      },
+      getSpeechClientManager,
       screenContextService,
       capabilityCatalog,
       win,
@@ -398,10 +400,7 @@ export function buildApplicationDependencies(): ApplicationDependencies {
       {
         llmCredentials: getLlmCredentialStore,
         plugins: getPluginRuntime,
-        speech: () => {
-          speechClient ??= new SpeechClient(getConfig().pythonSpeechUrl)
-          return speechClient
-        },
+        speech: getSpeechClientManager,
         isOverlayVisible: () => overlayWindows.isVisible(),
         avatarRuntimeHealth: () => lastAvatarRuntimeHealth,
         mainRendererHealth: () => mainWindows.getHealth(),

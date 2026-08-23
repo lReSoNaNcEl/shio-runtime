@@ -11,6 +11,7 @@
  */
 
 export type SpeechServiceErrorCode =
+  | 'CANCELLED' // request was intentionally cancelled by its owning Runtime
   | 'SERVICE_UNAVAILABLE' // transport failure: service unreachable (recoverable)
   | 'SERVICE_ERROR' // service reached but returned 5xx (recoverable)
   | 'REQUEST_TIMEOUT' // request timed out (recoverable)

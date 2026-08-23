@@ -49,7 +49,7 @@ import {
 import { mainLog } from './logging/safeLogger'
 import type { MemoryStore } from './memory'
 import { PROJECT_CONTEXT_BUDGET } from './project-awareness/retrieval/ProjectEvidenceSelector'
-import type { SpeechClient } from './speech/speechClient'
+import type { SpeechSynthesisClient } from './speech/speechClient'
 import { classifySpeechUtterance, normalizeSpeechText } from './speech/text-normalization'
 
 const SESSION_ID = 'default'
@@ -556,7 +556,7 @@ export class Orchestrator {
   constructor(
     private llm: LLMProvider,
     private memory: MemoryStore,
-    private speech: SpeechClient,
+    private speech: SpeechSynthesisClient,
     private settings: () => AppSettings,
     private projectContext?: ProjectContextProviderResolver,
     private capabilityContext?: ShioCapabilityProvider,
@@ -806,6 +806,7 @@ export class Orchestrator {
   async synthesizeReply(
     replyText: string,
     emotionKey: string,
+    signal?: AbortSignal,
   ): Promise<{
     audioBuffer: ArrayBuffer
     emotionKey: string
@@ -835,14 +836,17 @@ export class Orchestrator {
       emotionKey,
       normalization.utteranceKind === 'technical',
     )
-    const speechResult = await this.speech.synthesize({
-      text: normalization.text,
-      language: cfg.ttsLanguage,
-      voiceId: TTS_VOICE_ID,
-      engine: TTS_ENGINE,
-      emotion: emotionKey,
-      utteranceKind,
-    })
+    const speechResult = await this.speech.synthesize(
+      {
+        text: normalization.text,
+        language: cfg.ttsLanguage,
+        voiceId: TTS_VOICE_ID,
+        engine: TTS_ENGINE,
+        emotion: emotionKey,
+        utteranceKind,
+      },
+      signal,
+    )
     mainLog.info('[emotion] TTS result', {
       requestedEmotion: emotionKey,
       ttsRequestedEmotion: speechResult.requestedEmotion,

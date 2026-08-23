@@ -40,7 +40,8 @@ import type { CharacterReplyInput, Orchestrator } from '../orchestrator'
 import type { PluginRuntime } from '../plugins'
 import type { ProjectAwarenessPlugin } from '../project-awareness'
 import { ScreenContextError, type ScreenContextService } from '../screen-context'
-import type { SpeechClient } from '../speech/speechClient'
+import type { SpeechClientManager } from '../speech/SpeechClientManager'
+import { SpeechServiceError } from '../speech/speechErrors'
 import { IPC_ONE_PAYLOAD, type IpcAuthorization } from './IpcAuthorization'
 import { configSaveSchema, vrmAssetHandleSchema } from './payloadSchemas'
 import { registerActionIpc } from './registerActionIpc'
@@ -59,6 +60,14 @@ import { registerSystemIpc } from './registerSystemIpc'
 const screenContextErrorCode = (error: unknown): ScreenContextErrorCode =>
   error instanceof ScreenContextError ? error.code : 'UNKNOWN'
 
+const synthesisCancelled = (turnId: string): SpeechServiceError =>
+  new SpeechServiceError({
+    code: 'CANCELLED',
+    operation: 'synthesis',
+    recoverable: false,
+    technicalMessage: `Conversation interrupted turnId=${turnId}`,
+  })
+
 export function registerIpcHandlers(
   orchestrator: () => Orchestrator,
   llm: () => LlmGateway,
@@ -66,7 +75,7 @@ export function registerIpcHandlers(
   plugins: () => PluginRuntime,
   projectAwareness: () => ProjectAwarenessPlugin,
   desktopControl: () => DesktopControlPlugin,
-  speech: () => SpeechClient,
+  speech: () => SpeechClientManager,
   screenContext: ScreenContextService,
   capabilityCatalog: CapabilityCatalog,
   win: BrowserWindow,
@@ -113,6 +122,8 @@ export function registerIpcHandlers(
   const cancelledTurns = new Set<string>()
   const replyAbortControllers = new Map<string, AbortController>()
   const replySettlements = new Map<string, Promise<void>>()
+  const synthesisAbortControllers = new Map<string, AbortController>()
+  const synthesisSettlements = new Map<string, Promise<void>>()
   const visionTurns = new Set<string>()
 
   actions.register<DesktopWorkflowRequest, DesktopWorkflowExecution>({
@@ -142,14 +153,14 @@ export function registerIpcHandlers(
     name: 'speech.health',
     description: 'Check local speech service health.',
     validate: (payload) => z.undefined().parse(payload),
-    execute: async () => speech().health(),
+    execute: async (_payload, context) => speech().health(context.signal),
   })
   actions.register<ArrayBuffer, { text: string }>({
     name: 'speech.recognize',
     description: 'Recognize WAV audio through the local speech service.',
     validate: (payload) => z.instanceof(ArrayBuffer).parse(payload),
-    execute: async (wavBuffer) => {
-      const result = await speech().recognize(wavBuffer)
+    execute: async (wavBuffer, context) => {
+      const result = await speech().transcribe(wavBuffer, context.signal)
       return { text: result.text }
     },
   })
@@ -218,19 +229,44 @@ export function registerIpcHandlers(
         })
         .strict()
         .parse(payload),
-    execute: async ({ turnId, replyText, emotionKey }) => {
+    execute: async ({ turnId, replyText, emotionKey }, context) => {
+      if (cancelledTurns.has(turnId)) {
+        cancelledTurns.delete(turnId)
+        throw synthesisCancelled(turnId)
+      }
       if (activeSynthesisTurnId) {
         throw new Error(
           `TTS synthesis overlap: activeTurnId=${activeSynthesisTurnId} requestedTurnId=${turnId}`,
         )
       }
       activeSynthesisTurnId = turnId
+      const abortController = new AbortController()
+      const abortFromAction = (): void => abortController.abort(context.signal.reason)
+      context.signal.addEventListener('abort', abortFromAction, { once: true })
+      if (context.signal.aborted) abortFromAction()
+      synthesisAbortControllers.set(turnId, abortController)
+      let settleSynthesis!: () => void
+      synthesisSettlements.set(
+        turnId,
+        new Promise<void>((resolve) => {
+          settleSynthesis = resolve
+        }),
+      )
       try {
-        const result = await orchestrator().synthesizeReply(replyText, emotionKey)
-        if (cancelledTurns.has(turnId)) throw new Error(`Conversation interrupted turnId=${turnId}`)
+        const result = await orchestrator().synthesizeReply(
+          replyText,
+          emotionKey,
+          abortController.signal,
+        )
+        if (cancelledTurns.has(turnId)) throw synthesisCancelled(turnId)
         return result
       } finally {
+        context.signal.removeEventListener('abort', abortFromAction)
+        synthesisAbortControllers.delete(turnId)
+        synthesisSettlements.delete(turnId)
+        cancelledTurns.delete(turnId)
         if (activeSynthesisTurnId === turnId) activeSynthesisTurnId = null
+        settleSynthesis()
       }
     },
   })
@@ -248,7 +284,10 @@ export function registerIpcHandlers(
     description: 'Persist application configuration.',
     validate: (payload) => configSaveSchema.parse(payload) as Partial<AppSettings>,
     execute: (partial) => {
+      const previousSpeechUrl = getConfig().pythonSpeechUrl
       saveConfig(partial)
+      const currentSpeechUrl = getConfig().pythonSpeechUrl
+      if (currentSpeechUrl !== previousSpeechUrl) speech().reconfigure(currentSpeechUrl)
       win.webContents.send('config:updated', getRendererConfig())
       return { ok: true }
     },
@@ -340,9 +379,10 @@ export function registerIpcHandlers(
   registerSpeechIpc({
     actions,
     speech,
-    cancelSynthesis: (turnId) => {
+    cancelSynthesis: async (turnId) => {
       cancelledTurns.add(turnId)
-      if (activeSynthesisTurnId === turnId) activeSynthesisTurnId = null
+      synthesisAbortControllers.get(turnId)?.abort(new Error('Conversation interrupted'))
+      await synthesisSettlements.get(turnId)
     },
     onCapabilitiesProbe: (probe) => capabilityCatalog.reportSpeechCapabilities(probe),
     authorization,

@@ -21,6 +21,7 @@
     "desktop:check:fix": "npm --prefix apps/desktop run check:fix",
     "desktop:security:repro": "npm --prefix apps/desktop run repro:desktop-security",
     "desktop:reliability:repro": "npm --prefix apps/desktop run repro:desktop-reliability",
+    "desktop:speech-reliability:repro": "npm --prefix apps/desktop run repro:speech-reliability",
     "desktop:ui:repro": "npm --prefix apps/desktop run repro:desktop-ui-architecture",
     "desktop:network-diagnostics:repro": "npm --prefix apps/desktop run repro:network-diagnostics",
     "desktop:health:repro": "npm --prefix apps/desktop run repro:runtime-health",

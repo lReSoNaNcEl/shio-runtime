@@ -259,6 +259,10 @@ const USER_MESSAGE_KEYS: Record<
   SpeechServiceErrorCode,
   { title: TranslationKey; description: TranslationKey }
 > = {
+  CANCELLED: {
+    title: 'speech.error.unknown.title',
+    description: 'speech.error.unknown.description',
+  },
   SERVICE_UNAVAILABLE: {
     title: 'speech.error.serviceUnavailable.title',
     description: 'speech.error.serviceUnavailable.description',

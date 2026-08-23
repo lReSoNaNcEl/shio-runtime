@@ -4,19 +4,19 @@ import { z } from 'zod'
 import type { SpeechOperation, SpeechServiceErrorCode } from '../../shared/speech'
 import type { ActionRuntime } from '../action/ActionRuntime'
 import type { Orchestrator } from '../orchestrator'
+import type { SpeechClientManager } from '../speech/SpeechClientManager'
 import {
   DEFAULT_TTS_VOICE_ID,
   deriveCapabilities,
   type SpeechCapabilitiesProbe,
-  type SpeechClient,
 } from '../speech/speechClient'
 import { logSpeechError, logSpeechRecovery } from '../speech/speechErrors'
 import type { IpcAuthorization } from './IpcAuthorization'
 
 interface RegisterSpeechIpcOptions {
   actions: ActionRuntime
-  speech: () => SpeechClient
-  cancelSynthesis: (turnId: string) => void
+  speech: () => SpeechClientManager
+  cancelSynthesis: (turnId: string) => Promise<void>
   onCapabilitiesProbe?: (probe: SpeechCapabilitiesProbe) => void
   authorization: IpcAuthorization
 }
@@ -43,7 +43,10 @@ export function registerSpeechIpc({
   ipcMain.handle(
     'health:check',
     authorization.handle('health:check', async () => {
-      const action = await actions.execute<void, Awaited<ReturnType<SpeechClient['health']>>>({
+      const action = await actions.execute<
+        void,
+        Awaited<ReturnType<SpeechClientManager['health']>>
+      >({
         name: 'speech.health',
         payload: undefined,
       })
@@ -106,7 +109,7 @@ export function registerSpeechIpc({
           logSpeechRecovery('synthesis')
           return { ok: true, ...action.result }
         }
-        logFailure('synthesis', action)
+        if (action.errorCode !== 'CANCELLED') logFailure('synthesis', action)
         return { ok: false, error: action.error, errorCode: action.errorCode }
       },
     ),
@@ -130,8 +133,8 @@ export function registerSpeechIpc({
     authorization.handlePayload(
       'tts:cancel-synthesis',
       z.tuple([z.string().trim().min(1).max(100)]),
-      (_event, turnId) => {
-        cancelSynthesis(turnId)
+      async (_event, turnId) => {
+        await cancelSynthesis(turnId)
         return { ok: true }
       },
     ),

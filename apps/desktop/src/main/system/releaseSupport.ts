@@ -10,13 +10,14 @@ import { IPC_ONE_PAYLOAD, type IpcAuthorization } from '../ipc/IpcAuthorization'
 import type { LlmCredentialStore } from '../llm'
 import { getRecentSafeErrors } from '../logging/safeLogger'
 import type { PluginRuntime } from '../plugins'
-import { deriveCapabilities, type SpeechClient } from '../speech/speechClient'
+import type { SpeechClientManager } from '../speech/SpeechClientManager'
+import { deriveCapabilities } from '../speech/speechClient'
 import { externalHttpUrlSchema } from './externalNavigation'
 
 interface ReleaseSupportDependencies {
   llmCredentials: () => LlmCredentialStore
   plugins: () => PluginRuntime
-  speech: () => SpeechClient
+  speech: () => SpeechClientManager
   isOverlayVisible: () => boolean
   avatarRuntimeHealth: () => AvatarRuntimeHealth | null
   mainRendererHealth: () => RuntimeSupportBundle['renderers']['main']

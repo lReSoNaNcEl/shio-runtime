@@ -412,6 +412,29 @@ export class ConversationRuntime {
       // (pushed before synthesis). The turn is therefore a successful conversation
       // completion — the failure is a Speech capability failure, not a turn
       // failure — so we degrade to a stable idle state without a red chat error.
+      if (
+        isSpeechServiceError(error) &&
+        error.operation === 'synthesis' &&
+        error.code === 'CANCELLED'
+      ) {
+        this.deps.recordRuntimeEvent('synthesis_cancelled', `turnId=${turn.turnId}`)
+        try {
+          await this.recoverToIdle(turn.turnId)
+        } catch (cleanupError) {
+          return {
+            status: 'failed',
+            turnId: turn.turnId,
+            phase: 'cleanup',
+            error: String(cleanupError),
+          }
+        }
+        return {
+          status: 'completed',
+          turnId: turn.turnId,
+          playbackCompleted: false,
+          cleanupCompleted: true,
+        }
+      }
       if (isSpeechServiceError(error) && error.operation === 'synthesis') {
         this.deps.recordRuntimeEvent(
           'synthesis_degraded',

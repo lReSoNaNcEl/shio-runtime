@@ -208,6 +208,7 @@ async function main(): Promise<void> {
         triggerEarImpulse: () => false,
         triggerReactionGesture: () => false,
         triggerUserInterruption: () => true,
+        setEmbodimentIntent: () => undefined,
       },
       overlayRuntime: {
         publishAvatarState: () => undefined,
@@ -222,6 +223,7 @@ async function main(): Promise<void> {
       pushMessage: (role: string, text: string) => {
         if (role === 'error') errorMessages.push(text)
       },
+      formatUserError: (message: string) => message,
       markAssistantMessageInterrupted: () => {
         interruptedMessages += 1
       },

@@ -41,6 +41,7 @@ export class SpeechServiceError extends Error implements SerializedSpeechError {
 }
 
 const RECOVERABLE: Record<SpeechServiceErrorCode, boolean> = {
+  CANCELLED: false,
   SERVICE_UNAVAILABLE: true,
   SERVICE_ERROR: true,
   REQUEST_TIMEOUT: true,
@@ -86,7 +87,9 @@ export function normalizeSpeechError(
   } else if (isAxiosError(error)) {
     const status = error.response?.status
     const errCode = error.code
-    if (typeof status === 'number') {
+    if (errCode === 'ERR_CANCELED') {
+      code = 'CANCELLED'
+    } else if (typeof status === 'number') {
       code = status >= 500 ? 'SERVICE_ERROR' : status >= 400 ? 'REQUEST_REJECTED' : 'UNKNOWN'
     } else if (errCode && TIMEOUT_CODES.has(errCode)) {
       code = 'REQUEST_TIMEOUT'
