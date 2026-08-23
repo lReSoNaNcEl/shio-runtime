@@ -1,9 +1,20 @@
-import { ActionButton, Button, Heading, Text, Tooltip, TooltipTrigger } from '@react-spectrum/s2'
+import {
+  ActionButton,
+  Button,
+  Heading,
+  Menu,
+  MenuItem,
+  MenuTrigger,
+  Text,
+  Tooltip,
+  TooltipTrigger,
+} from '@react-spectrum/s2'
 import Apps from '@react-spectrum/s2/icons/Apps'
 import Bug from '@react-spectrum/s2/icons/Bug'
 import Chat from '@react-spectrum/s2/icons/Chat'
 import Discover from '@react-spectrum/s2/icons/Discover'
 import Heart from '@react-spectrum/s2/icons/Heart'
+import More from '@react-spectrum/s2/icons/More'
 import Settings from '@react-spectrum/s2/icons/Settings'
 import User from '@react-spectrum/s2/icons/User'
 import { type ReactNode, useEffect, useRef, useState } from 'react'
@@ -29,6 +40,7 @@ export function AppShell({
   developerModeEnabled,
   children,
   heading,
+  sidebarAction,
   headerAction,
   hideHeader = false,
   contentClassName,
@@ -39,6 +51,7 @@ export function AppShell({
   developerModeEnabled: boolean
   children: ReactNode
   heading?: ReactNode
+  sidebarAction?: ReactNode
   headerAction?: ReactNode
   hideHeader?: boolean
   contentClassName?: string
@@ -74,26 +87,58 @@ export function AppShell({
     if (versionCopiedTimer.current !== null) window.clearTimeout(versionCopiedTimer.current)
     versionCopiedTimer.current = window.setTimeout(() => setVersionCopied(false), 2_000)
   }
-  const primary: Array<{ id: AppSection; label: string; icon: ReactNode }> = [
+  type NavigationItem = {
+    id: AppSection
+    label: string
+    icon: ReactNode
+    mobileOverflow?: boolean
+  }
+  const primary: NavigationItem[] = [
     { id: 'chat', label: t('app.nav.chat'), icon: <Chat /> },
     { id: 'capabilities', label: t('app.nav.capabilities'), icon: <Discover /> },
     ...(developerModeEnabled
-      ? [{ id: 'avatar' as const, label: t('app.nav.avatar'), icon: <User /> }]
+      ? [
+          {
+            id: 'avatar' as const,
+            label: t('app.nav.avatar'),
+            icon: <User />,
+            mobileOverflow: true,
+          },
+        ]
       : []),
     { id: 'plugins', label: t('app.nav.plugins'), icon: <Apps /> },
     { id: 'health', label: t('app.nav.health'), icon: <Heart /> },
   ]
-  const utility: Array<{ id: AppSection; label: string; icon: ReactNode }> = [
+  const utility: NavigationItem[] = [
     ...(developerModeEnabled
-      ? [{ id: 'debug' as const, label: t('app.nav.diagnostics'), icon: <Bug /> }]
+      ? [
+          {
+            id: 'debug' as const,
+            label: t('app.nav.diagnostics'),
+            icon: <Bug />,
+            mobileOverflow: true,
+          },
+        ]
       : []),
   ]
-  const renderItems = (items: typeof primary) =>
+  const settingsItem: NavigationItem = {
+    id: 'settings',
+    label: t('app.nav.settings'),
+    icon: <Settings />,
+    mobileOverflow: true,
+  }
+  const mobileOverflowItems: NavigationItem[] = [
+    ...primary.filter((item) => item.mobileOverflow),
+    ...utility.filter((item) => item.mobileOverflow),
+    settingsItem,
+  ]
+  const mobileOverflowActive = mobileOverflowItems.some((item) => item.id === section)
+  const renderItems = (items: NavigationItem[]) =>
     items.map((item) => (
       <ActionButton
         key={item.id}
         isQuiet
-        UNSAFE_className="sidebar-item"
+        UNSAFE_className={`sidebar-item${item.mobileOverflow ? ' sidebar-item-mobile-overflow' : ''}`}
         aria-label={item.label}
         aria-current={section === item.id ? 'page' : undefined}
         onPress={() => onSectionChange(item.id)}
@@ -108,10 +153,37 @@ export function AppShell({
     <div className="app-shell">
       <nav className="app-sidebar" aria-label={t('app.nav.label')}>
         <div className="sidebar-brand">Shio</div>
+        {sidebarAction ? <div className="sidebar-primary-action">{sidebarAction}</div> : null}
         <div className="sidebar-group">{renderItems(primary)}</div>
         <div className="sidebar-utility">
           {renderItems(utility)}
-          {renderItems([{ id: 'settings', label: t('app.nav.settings'), icon: <Settings /> }])}
+          {renderItems([settingsItem])}
+          <div className="sidebar-mobile-more">
+            <MenuTrigger direction="top" align="end">
+              <ActionButton
+                isQuiet
+                aria-label={t('app.nav.more')}
+                aria-current={mobileOverflowActive ? 'page' : undefined}
+                UNSAFE_className="sidebar-item"
+              >
+                <span className="sidebar-icon" aria-hidden="true">
+                  <More />
+                </span>
+                <Text UNSAFE_className="sidebar-label">{t('app.nav.more')}</Text>
+              </ActionButton>
+              <Menu
+                aria-label={t('app.nav.more')}
+                onAction={(key) => onSectionChange(String(key) as AppSection)}
+              >
+                {mobileOverflowItems.map((item) => (
+                  <MenuItem id={item.id} key={item.id} textValue={item.label}>
+                    {item.icon}
+                    <Text>{item.label}</Text>
+                  </MenuItem>
+                ))}
+              </Menu>
+            </MenuTrigger>
+          </div>
           <TooltipTrigger delay={200}>
             <ActionButton
               isQuiet

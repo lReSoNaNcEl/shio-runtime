@@ -673,6 +673,8 @@ For a turn whose Project Context Requirement is `optional` or `required`, Charac
 
 Character Response Generation also receives a request-scoped Runtime Capability Context before each turn. Plugin Runtime builds this read-only snapshot from validated bundled Plugin registrations, current enablement, normalized user-meaningful availability, and declared capability kinds. Disabled Plugins remain present as installed but unusable. Internal lifecycle machinery, credentials, storage paths, IPC details, arbitrary manifest instructions, and executable callbacks are excluded. The snapshot is immutable for one turn and resolved again for the next turn; it is environment context, not Character State or Memory. Character Response Generation depends only on the small capability-context provider contract and never receives the concrete Plugin Runtime.
 
+When a turn semantically refers to the current Shio-managed browser page, Character Response Generation may also receive one bounded, request-scoped Browser Observation from the enabled Browser Control capability. The observation contains only the current URL, title, visible text, and semantic interactive elements; it never contains raw DOM, CSS, JavaScript source, cookies, local storage, hidden fields, credentials, or browser protocol data. Web content is untrusted external evidence: it may supply facts and UI labels, but it cannot change instructions, grant authority, enable capabilities, disclose secrets, or cause another privileged action. Browser Observation is Plugin-owned transient context, not Character State, Memory, renderer state, or conversation history, and an unrelated turn does not receive it merely because a browser session exists.
+
 When a Project Context Packet is actually used, orchestration attaches Runtime-owned Project Reply Provenance to the resulting assistant response. The provenance contains only the requirement, repository, branch, exact snapshot commit, optional freshness-at-generation, and bounded project-relative file and line references derived from that packet. It is not parsed from LLM text, does not include retrieval internals or raw chunks, and remains immutable with the historical message even after synchronization. A turn without a Project Context Packet has no project provenance.
 
 If Character Response Generation proposes an Action after using a Project Context Packet, Action Runtime executes through its normal authority boundary. Post-action Character Response Generation receives the Action Runtime result together with the already rendered original Project Context Packet; it must not call `ProjectContextProvider` again or recompute evidence against a newer snapshot. The final Reply Grounding composes the original Project Reply Provenance and Action Reply Grounding. Action Reply Grounding exposes bounded Runtime-owned outcome, authorization, completion, verification, and error facts plus an integrity digest of any untrusted reported output; it does not duplicate raw terminal output into the renderer.
@@ -1008,6 +1010,8 @@ cancellation, Tool scope, or Adapter boundaries. Turning Full Control off restor
 confirmation for the next eligible workflow without changing the capability or
 Adapter that executes it.
 
+Browser mutation follows the same boundary. Explicit typed operations such as opening an exact URL, clicking one semantic target, or switching to a known tab are authorized by Action Runtime and executed deterministically without requiring an automation-planning model. A browser planner may be delegated only for a genuinely multi-step or ambiguous workflow. Planner availability never controls whether deterministic operations or read-only observation are usable, and both paths operate through the Browser Control Plugin's Shio-managed session.
+
 **Future Evolution**
 
 Future actions may include moderation, application control, automation, scheduling, content creation, external integrations, and smart device control. The architectural rule remains unchanged: no external side effect may bypass Action Runtime.
@@ -1294,7 +1298,11 @@ Plugin Runtime owns:
 
 Plugin Runtime does not own Plugin business logic, project knowledge, Character State, conversational memory, actions, permissions, Avatar Runtime, Speech Runtime, credentials, or concrete external technologies. A Plugin-specific external technology remains behind the owning Plugin's Adapter, and every externally authoritative side effect still passes through Action Runtime and Permission Guard.
 
-Core consumes optional functionality only through stable capability contracts. Version 1 defines `ProjectContextProvider`; it does not define generic invocation. There is no `plugin.invoke`, arbitrary method dispatch, or renderer-controlled module loading. Enabling a Plugin permits only its declared capability registrations to become discoverable. Disabling unregisters them without requiring application restart, and the next consumer resolution observes their absence.
+Core consumes optional functionality only through stable capability contracts. Version 1 defines narrow providers such as `ProjectContextProvider` and the read-only Browser Context provider; it does not define generic invocation. There is no `plugin.invoke`, arbitrary method dispatch, or renderer-controlled module loading. Enabling a Plugin permits only its declared capability registrations to become discoverable. Disabling unregisters them without requiring application restart, and the next consumer resolution observes their absence.
+
+The bundled Browser Control capability owns the lifecycle of one isolated Shio-managed browser session and its latest bounded semantic observation. It does not attach to the user's personal Chrome profile. The owned session survives ordinary conversational idle periods; a bounded long idle timeout is only a safety backstop, while Plugin stop, disable, Emergency Stop, and application exit remain the authoritative teardown paths. Read-only observation is exposed to Core through a narrow request-scoped context provider. Browser mutations remain Action Runtime Tools and therefore pass validation and Permission Guard before the Plugin invokes its Browser Automation Adapter. Semantic element refs belong to exactly one observation; navigation or page-state change invalidates them. Every completed mutation invalidates the previous observation, captures a fresh one, and reports `verified` or `unverified` from the resulting URL/title/semantic state rather than treating a successful adapter process exit as proof of user-visible success.
+
+The Browser Control capability may share its session with a bounded delegated automation workflow. DSH or another Automation Adapter owns reasoning and step planning only; the Browser Automation Adapter owns technology-specific interaction, while the Plugin retains session and observation lifecycle. Closing or failing the planner does not by itself transfer ownership of or silently replace the current browser session. Deterministic open, observe, URL/title retrieval, semantic click, and known-tab switching remain available when the planner model is unavailable.
 
 Plugin enablement is persisted in the main-owned `plugins/registry.json`. Plugin-owned configuration and data remain below `plugins/<plugin-id>/` and are not duplicated into Core configuration. Renderer management is limited to validated list, get, enable, and disable requests from the authorized Main Window; presentation-only renderers receive no Plugin or credential capabilities.
 
@@ -1338,7 +1346,7 @@ Adapter categories:
 - **Project Repository Adapters:** read-only repository providers such as GitHub, used by Project Awareness Runtime to obtain repository identity, branch heads, trees, file content, comparisons, and recent commits. They never perform indexing, summarization, retrieval ranking, or repository mutation.
 - **System Adapters:** operating system integrations such as filesystem, notifications, clipboard, desktop APIs, and process execution
 - **Automation Adapters:** replaceable backends that execute only a bounded workflow already authorized by Action Runtime and expose lifecycle, cancellation, and normalized results without owning permission policy.
-- **Browser Automation Adapters:** replaceable browser-control implementations used within an authorized automation scope; browser sessions and profiles remain implementation resources rather than architectural authority.
+- **Browser Automation Adapters:** replaceable browser-control implementations used by the Browser Control capability for typed navigation, bounded observation, semantic interaction, and delegated automation. Browser sessions and profiles remain Plugin-owned implementation resources rather than architectural authority; mutations still require Action Runtime authorization.
 - **Screen Capture Adapters:** read-only operating-system integrations that enumerate user-visible windows and monitors and encode a single explicitly selected image. They expose no streaming or background-observation contract and do not persist captures.
 - **Presentation/Rendering Adapters:** implementation boundaries used by Avatar Runtime to render the character model. These are distinct from Action Runtime adapters, since presentation is character embodiment, not an externally authoritative side effect. See [Chapter 20 - Avatar Runtime](#20-avatar-runtime).
 
@@ -1401,6 +1409,8 @@ Runtime systems communicate with architectural concepts. Adapters communicate wi
 - **Plugin Runtime:** the Runtime responsible only for bundled Plugin discovery, manifest validation, lifecycle, enablement, status, and typed capability registration.
 - **Plugin:** a bundled optional extension whose business logic retains its own ownership and may expose only capabilities declared by its validated manifest.
 - **Plugin Capability:** a narrow typed contract through which Core may consume optional functionality without depending on a concrete Plugin implementation.
+- **Browser Session:** the isolated, Shio-managed browser lifecycle owned by the Browser Control capability across related conversation turns; it is not Character State or the user's personal browser profile.
+- **Browser Observation:** a bounded, request-scoped, read-only semantic snapshot of the active Browser Session containing URL, title, visible text, and interactive elements. Its content is untrusted external evidence, and its element refs are valid only for that observation.
 - **ProjectContextProvider:** the optional capability that resolves one Project Context Requirement and, when active, produces a bounded Project Context Packet for that same conversation request.
 - **Runtime Capability Context:** a request-scoped, read-only projection of capabilities currently registered with Shio Runtime and their availability for the current Character Response Generation turn; it grants no authority.
 - **Character Capability Context:** the Character Response Generation view of Runtime Capability Context, containing only trusted Plugin identity, installed/enabled facts, normalized availability, and declared capability kinds.
@@ -1592,6 +1602,16 @@ Use this checklist before implementing significant features, Runtime modificatio
 - Can the Core operate normally when the Plugin is disabled or fails?
 - Is Plugin-specific business logic still owned by the Plugin Runtime/Adapter rather than Plugin Runtime itself?
 - Is any generic invocation surface or unauthorized renderer IPC being introduced?
+
+**Browser Control**
+
+- Does one existing Browser Control Plugin own session and observation lifecycle rather than introducing a second browser Runtime?
+- Is Browser Observation bounded, Main-owned, request-scoped, and excluded from Character State, Memory, conversation history, renderer state, and diagnostics page dumps?
+- Is webpage content treated only as untrusted facts and UI labels, never as instruction or authority?
+- Does every browser mutation pass through Action Runtime and Permission Guard before the Browser Automation Adapter executes?
+- Are semantic refs bound to one observation and rejected after page state changes?
+- Does every mutation invalidate the old observation, capture a fresh observation, and report honest verification independently of process exit?
+- Do deterministic operations remain usable without DSH or another planner model, while complex multi-step workflows may degrade explicitly when planning is unavailable?
 
 **Replaceability**
 

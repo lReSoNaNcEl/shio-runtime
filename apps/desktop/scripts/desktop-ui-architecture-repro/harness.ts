@@ -38,6 +38,9 @@ function assertSemanticAppShell(): void {
 
   const app = source('src/renderer/components/App.tsx')
   assert.match(app, /heading=\{\s*!setupOpen/)
+  assert.match(app, /sidebarAction=/)
+  assert.match(shell, /sidebar-primary-action/)
+  assert.match(shell, /sidebar-mobile-more/)
   assert.doesNotMatch(app, /<AppShell[^>]*\/>/)
 }
 
@@ -121,6 +124,13 @@ function assertViewHierarchy(): void {
   assert.match(plugins, /PluginCatalogStatus/)
   assert.match(plugins, /plugin\.enabled \? t\('common\.enabled'\) : t\('common\.disabled'\)/)
   assert.match(plugins, /plugin-section-heading/)
+  assert.match(plugins, /plugin-setup-steps/)
+  assert.match(plugins, /<CheckmarkIcon/)
+  assert.doesNotMatch(plugins, /plugin-setup-step-status/)
+  assert.match(plugins, /plugin-feedback/)
+  assert.match(plugins, /<Disclosure/)
+  const pluginStyles = source('src/renderer/styles/plugins.css')
+  assert.match(pluginStyles, /\.plugin-detail-heading h2 \{[\s\S]*?margin: 0;/)
   assert.match(plugins, /plugins\.desktopControl\.accessMode\.confirm/)
   assert.doesNotMatch(
     plugins,
@@ -135,6 +145,18 @@ function assertViewHierarchy(): void {
   assert.match(capabilities, /capabilities\.availability\.needsSetup/)
   assert.match(capabilities, /capabilities\.availability\.degraded/)
   assert.match(capabilities, /capabilities\.availability\.unavailable/)
+  assert.match(capabilities, /CapabilityCategory/)
+  assert.match(capabilities, /capabilities\.category\.communication/)
+  assert.match(capabilities, /<ToggleButton/)
+  assert.match(capabilities, /capabilities\.authority\.readOnly/)
+  const capabilityStyles = source('src/renderer/styles/capabilities.css')
+  assert.match(capabilityStyles, /repeat\(auto-fill, minmax\(min\(100%, 420px\), 1fr\)\)/)
+  assert.match(capabilityStyles, /min-height: 158px/)
+
+  const diagnostics = source('src/renderer/components/views/DiagnosticsView.tsx')
+  assert.match(diagnostics, /pausedNetworkRequests/)
+  assert.match(diagnostics, /diagnostics\.stream\.live/)
+  assert.match(diagnostics, /copyDiagnostic/)
 }
 
 function assertScreenContextPickerLayout(): void {
@@ -150,10 +172,24 @@ function assertScreenContextPickerLayout(): void {
   assert.match(chatStyles, /\.screen-context-source > img \{[\s\S]*?aspect-ratio: 16 \/ 9;/)
 }
 
+function assertMicrophoneGateLayout(): void {
+  const gate = source('src/renderer/components/overlays/MicrophoneGateOverlay.tsx')
+  const chatStyles = source('src/renderer/styles/chat.css')
+
+  assert.match(gate, /<div className="mic-device-list">[\s\S]*?<RadioGroup/)
+  assert.match(gate, /description=\{validating/)
+  assert.doesNotMatch(gate, /UNSAFE_className="mic-device-row"/)
+  assert.doesNotMatch(chatStyles, /\.mic-device-row/)
+  assert.doesNotMatch(chatStyles, /\.mic-gate-card \{[^}]*max-height:/)
+  assert.match(chatStyles, /\.mic-gate-empty \{[^}]*display: block;/)
+  assert.doesNotMatch(chatStyles, /\.mic-gate-empty \{[^}]*border: 1px dashed/)
+}
+
 assertSemanticAppShell()
 assertSpectrumInteractiveSurface()
 assertCssOwnership()
 assertViewHierarchy()
 assertScreenContextPickerLayout()
+assertMicrophoneGateLayout()
 
 console.log('Desktop UI Architecture Cleanup focused repro: PASS')

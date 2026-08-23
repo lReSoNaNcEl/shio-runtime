@@ -1,5 +1,11 @@
 import { z } from 'zod'
 
+import {
+  type BrowserActionExecution,
+  browserActionExecutionSchema,
+  browserOperationSchema,
+} from '../desktop-control/browser'
+
 export const DESKTOP_WORKFLOW_CAPABILITIES = [
   'browser',
   'desktop-ui',
@@ -28,11 +34,12 @@ const browserUrlSchema = z
     )
   }, 'Browser URL must be an HTTP(S) URL without embedded credentials')
 
-function validateShellCommandContract(
+function validateDesktopWorkflowContract(
   value: {
     requestedCapabilities: DesktopWorkflowCapability[]
     shellCommand?: string
     browserUrl?: string
+    browserOperation?: z.infer<typeof browserOperationSchema>
   },
   context: z.RefinementCtx,
 ): void {
@@ -59,6 +66,20 @@ function validateShellCommandContract(
       message: 'Browser URLs require the browser capability',
     })
   }
+  if (!browserRequested && value.browserOperation !== undefined) {
+    context.addIssue({
+      code: 'custom',
+      path: ['browserOperation'],
+      message: 'Browser operations require the browser capability',
+    })
+  }
+  if (value.browserUrl !== undefined && value.browserOperation !== undefined) {
+    context.addIssue({
+      code: 'custom',
+      path: ['browserOperation'],
+      message: 'Use either the legacy browser URL or one typed browser operation',
+    })
+  }
 }
 
 export const desktopWorkflowRequestSchema = z
@@ -67,6 +88,7 @@ export const desktopWorkflowRequestSchema = z
     goal: z.string().trim().min(1).max(2_000),
     shellCommand: shellCommandSchema.optional(),
     browserUrl: browserUrlSchema.optional(),
+    browserOperation: browserOperationSchema.optional(),
     requestedCapabilities: z
       .array(z.enum(DESKTOP_WORKFLOW_CAPABILITIES))
       .min(1)
@@ -75,7 +97,7 @@ export const desktopWorkflowRequestSchema = z
     risk: z.enum(['normal', 'destructive']),
   })
   .strict()
-  .superRefine(validateShellCommandContract)
+  .superRefine(validateDesktopWorkflowContract)
 export type DesktopWorkflowRequest = z.infer<typeof desktopWorkflowRequestSchema>
 
 export const actionIdSchema = z.string().regex(/^action-[0-9]+-[0-9a-f-]{36}$/i)
@@ -88,11 +110,12 @@ export const actionConfirmationRequestSchema = z
     goal: z.string().min(1).max(2_000),
     shellCommand: shellCommandSchema.optional(),
     browserUrl: browserUrlSchema.optional(),
+    browserOperation: browserOperationSchema.optional(),
     requestedCapabilities: z.array(z.enum(DESKTOP_WORKFLOW_CAPABILITIES)).min(1).max(4),
     risk: z.enum(['normal', 'destructive']),
   })
   .strict()
-  .superRefine(validateShellCommandContract)
+  .superRefine(validateDesktopWorkflowContract)
 export type ActionConfirmationRequest = z.infer<typeof actionConfirmationRequestSchema>
 
 export const actionConfirmationResponseSchema = z
@@ -139,6 +162,7 @@ export interface ActionReplyGrounding {
     authorization?: ActionAuthorization
     runtimeCompleted?: boolean
     verification?: DesktopWorkflowExecution['verification']
+    browser?: BrowserActionExecution
     reportedOutcomeSha256?: string
     reportedOutcomeCharacters?: number
     errorCode?: string
@@ -150,6 +174,7 @@ export const desktopWorkflowExecutionSchema = z
     runtimeCompleted: z.boolean(),
     reportedOutcome: z.string().max(DESKTOP_WORKFLOW_REPORTED_OUTCOME_MAX_CHARS).optional(),
     verification: z.enum(['verified', 'unverified']),
+    browser: browserActionExecutionSchema.optional(),
   })
   .strict()
 export type DesktopWorkflowExecution = z.infer<typeof desktopWorkflowExecutionSchema>

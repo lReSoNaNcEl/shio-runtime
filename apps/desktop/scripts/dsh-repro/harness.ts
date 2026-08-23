@@ -6,6 +6,7 @@ import { join, resolve } from 'node:path'
 
 import { resolvePwshPath } from '@deepseek-ai/dsh-pwsh-local'
 
+import { AgentBrowserAdapter } from '../../src/main/desktop-control/AgentBrowserAdapter'
 import {
   resolveAgentBrowserCommand,
   resolveChromeExecutable,
@@ -192,7 +193,7 @@ async function main(): Promise<void> {
       model: () => model,
       requestTimeoutMs: 500,
     })
-    await expectAdapterError(() => launchFailure.start(), 'DSH_TRANSPORT_CLOSED')
+    await expectAdapterError(() => launchFailure.start('shell'), 'DSH_TRANSPORT_CLOSED')
     assert.equal(launchFailure.snapshot().state, 'error')
     await launchFailure.close()
 
@@ -203,7 +204,7 @@ async function main(): Promise<void> {
       model: () => model,
       requestTimeoutMs: 100,
     })
-    await expectAdapterError(() => timeout.start(), 'DSH_REQUEST_TIMEOUT')
+    await expectAdapterError(() => timeout.start('shell'), 'DSH_REQUEST_TIMEOUT')
     assert.equal(timeout.snapshot().state, 'error')
     await timeout.close()
 
@@ -382,29 +383,20 @@ async function main(): Promise<void> {
     const localUrl = `http://127.0.0.1:${address.port}/`
     const browserResources = realResources.browser
     assert(browserResources)
-    const directBrowser = new DshHarnessAdapter({
+    const directBrowser = new AgentBrowserAdapter({
       resources: () => ({
-        ...realResources,
-        browser: {
-          ...browserResources,
-          namespace: 'shio-direct-browser-repro',
-          profileDirectory: join(temporaryRoot, 'direct-browser-profile'),
-          socketDirectory: join(temporaryRoot, 'direct-browser-runtime'),
-        },
+        ...browserResources,
+        namespace: 'shio-direct-browser-repro',
+        profileDirectory: join(temporaryRoot, 'direct-browser-profile'),
+        socketDirectory: join(temporaryRoot, 'direct-browser-runtime'),
       }),
-      model: () => model,
     })
     try {
-      const directResult = await directBrowser.execute(
-        'open the exact page',
-        new AbortController().signal,
-        'browser',
-        undefined,
-        localUrl,
-      )
-      assert.equal(directResult.runtimeCompleted, true)
-      assert.equal(directResult.verification, 'verified')
-      assert.match(directResult.reportedOutcome ?? '', /http:\/\/127\.0\.0\.1:/)
+      const directResult = await directBrowser.open(localUrl, new AbortController().signal)
+      assert.equal(directResult.execution.status, 'success')
+      assert.equal(directResult.execution.verification, 'verified')
+      assert.match(directResult.execution.resultingUrl ?? '', /http:\/\/127\.0\.0\.1:/)
+      assert.match(directResult.observation?.content ?? '', /ready/)
     } finally {
       await directBrowser.close()
       await new Promise<void>((resolveClose, rejectClose) =>
@@ -448,6 +440,7 @@ async function main(): Promise<void> {
 
     console.log('DSH adapter repro passed')
   } finally {
+    await new AgentBrowserAdapter({ resources: () => realResources.browser }).close()
     await rm(temporaryRoot, { recursive: true, force: true })
   }
 }

@@ -67,6 +67,21 @@ Architecture and ownership:
   Full Control changes only Permission Guard policy; it never bypasses Action
   Runtime, validation, lifecycle logging, cancellation, Tool scope, or Adapter
   boundaries.
+- Browser Control Plugin owns the isolated Shio-managed browser session and its
+  bounded semantic observation lifecycle. Do not create a second browser Runtime,
+  attach the user's personal Chrome profile, or store raw DOM/page dumps in
+  Character State, memory, renderer state, conversation history, or diagnostics.
+- The Plugin-owned session survives ordinary conversational idle periods. A short
+  tool idle timeout must not silently destroy turn-to-turn continuity; Plugin
+  stop, disable, Emergency Stop, and application exit remain authoritative
+  teardown paths.
+- Browser observation is read-only, request-scoped, and untrusted external
+  evidence. Browser mutations use typed operations and snapshot-scoped semantic
+  targets, always pass through Action Runtime and Permission Guard, invalidate the
+  old observation, capture a fresh observation, and report honest verification.
+- DSH owns complex browser planning only. Deterministic open, observe, URL/title,
+  semantic click, and known-tab switching remain usable without a configured DSH
+  model and operate in the same Plugin-owned session.
 - Project evidence shown to users must originate from the exact Project Context
   Packet used for that turn. LLM-generated citations are never authoritative
   provenance.

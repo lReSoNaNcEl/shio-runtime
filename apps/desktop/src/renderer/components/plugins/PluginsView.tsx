@@ -2,8 +2,15 @@ import {
   ActionButton,
   Badge,
   Button,
+  ButtonGroup,
   Content,
+  Dialog,
+  DialogContainer,
+  Disclosure,
+  DisclosurePanel,
+  DisclosureTitle,
   Divider,
+  Footer,
   Heading,
   InlineAlert,
   ProgressCircle,
@@ -12,9 +19,11 @@ import {
   Text,
   TextField,
 } from '@react-spectrum/s2'
+import CheckmarkIcon from '@react-spectrum/s2/icons/Checkmark'
 import ChevronLeftIcon from '@react-spectrum/s2/icons/ChevronLeft'
-import DataIcon from '@react-spectrum/s2/icons/Data'
-import { useEffect, useState } from 'react'
+import DeviceDesktopIcon from '@react-spectrum/s2/icons/DeviceDesktop'
+import ProjectIcon from '@react-spectrum/s2/icons/Project'
+import { type ReactNode, useEffect, useState } from 'react'
 
 import { type DesktopControlStatus } from '../../../shared/desktop-control'
 import {
@@ -218,6 +227,52 @@ function PluginCatalogStatus({ plugin }: { plugin: PluginStatus }) {
   )
 }
 
+function PluginCatalogCard({
+  plugin,
+  icon,
+  nameKey,
+  descriptionKey,
+  onToggle,
+  onOpen,
+  onRetry,
+}: {
+  plugin?: PluginStatus
+  icon: ReactNode
+  nameKey: Parameters<LocalizationContextValue['t']>[0]
+  descriptionKey: Parameters<LocalizationContextValue['t']>[0]
+  onToggle: (enabled: boolean) => void
+  onOpen: () => void
+  onRetry: () => void
+}) {
+  const { t } = useTranslation()
+  return (
+    <article className="plugin-card plugin-card-compact">
+      <div className="plugin-card-title">
+        <span className="plugin-icon" aria-hidden="true">
+          {icon}
+        </span>
+        <Heading level={2}>{t(nameKey)}</Heading>
+        {plugin ? <PluginToggle plugin={plugin} onChange={onToggle} /> : null}
+      </div>
+      <div className="plugin-card-description">
+        <Text>{t(descriptionKey)}</Text>
+      </div>
+      <div className="plugin-card-footer">
+        {plugin ? (
+          <PluginCatalogStatus plugin={plugin} />
+        ) : (
+          <StatusLight variant="negative" size="S">
+            {t('plugins.catalog.unavailable')}
+          </StatusLight>
+        )}
+        <Button size="S" variant="secondary" onPress={plugin ? onOpen : onRetry}>
+          {t(plugin ? 'plugins.openDetails' : 'common.retry')}
+        </Button>
+      </div>
+    </article>
+  )
+}
+
 function relativeTime(timestamp: number | undefined, intlLocale: string, justNow: string): string {
   return timestamp ? formatRelativeTime(timestamp, intlLocale, justNow) : '—'
 }
@@ -271,12 +326,14 @@ function ProjectKnowledge({
   busy,
   onSync,
   onRefresh,
+  disabledReason,
 }: {
   status: ProjectAwarenessStatus
   compact?: boolean
   busy: boolean
   onSync: () => void
   onRefresh?: () => void
+  disabledReason?: string
 }) {
   const { intlLocale, t } = useTranslation()
   const freshness = PROJECT_FRESHNESS[status.freshness]
@@ -341,6 +398,9 @@ function ProjectKnowledge({
           </ActionButton>
         )}
       </div>
+      {busy && disabledReason ? (
+        <Text UNSAFE_className="plugin-action-hint">{disabledReason}</Text>
+      ) : null}
       {status.freshness === 'stale' && status.snapshotDelta && (
         <ChangedFilesSummary delta={status.snapshotDelta} />
       )}
@@ -368,7 +428,7 @@ function ProjectAwarenessDetails({
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
-  const [confirmForget, setConfirmForget] = useState(false)
+  const [forgetDialogOpen, setForgetDialogOpen] = useState(false)
 
   useEffect(() => {
     let active = true
@@ -433,37 +493,44 @@ function ProjectAwarenessDetails({
     await run(async () => {
       setStatus(await window.api.projectAwareness.saveCredential(credential))
       setCredential('')
-      setConfirmForget(false)
+      setForgetDialogOpen(false)
     }, t('common.saved'))
   }
 
   const forgetCredential = async (): Promise<void> => {
-    if (!confirmForget) {
-      setConfirmForget(true)
-      return
-    }
     await run(async () => {
       setStatus(await window.api.projectAwareness.forgetCredential())
       setCredential('')
-      setConfirmForget(false)
+      setForgetDialogOpen(false)
     })
   }
 
   const validTarget =
     isValidProjectRepository(config.repository) && isValidProjectBranch(config.branch)
+  const savedTarget =
+    validTarget &&
+    status.repository === config.repository.trim() &&
+    status.branch === config.branch.trim()
   const runtimeDisabled = busy || plugin.busy || !plugin.enabled
-  const projectActionsDisabled = runtimeDisabled || !status.credential.configured || !validTarget
+  const projectActionsDisabled = runtimeDisabled || !status.credential.configured || !savedTarget
   const connected = ['ready', 'syncing', 'indexing', 'stale'].includes(status.state)
+  const projectActionDisabledReason = !plugin.enabled
+    ? t('plugins.project.requirement.enable')
+    : !status.credential.configured
+      ? t('plugins.project.requirement.credential')
+      : !savedTarget
+        ? t('plugins.project.requirement.repository')
+        : ''
 
   return (
-    <section className="plugin-detail">
+    <section className="plugin-detail page-container">
       <ActionButton isQuiet onPress={onBack} UNSAFE_className="plugin-back-button">
         <ChevronLeftIcon />
         <Text>{t('plugins.backToCatalog')}</Text>
       </ActionButton>
       <div className="plugin-detail-heading">
         <span className="plugin-icon" aria-hidden="true">
-          <DataIcon />
+          <ProjectIcon />
         </span>
         <div>
           <Heading level={2}>{t(plugin.manifest.nameKey)}</Heading>
@@ -474,38 +541,42 @@ function ProjectAwarenessDetails({
       <PluginSummary plugin={plugin} />
       <Divider />
 
-      <section className="plugin-detail-section">
-        <Heading level={3}>{t('plugins.project.configTitle')}</Heading>
-        <Text>{t('plugins.project.configDescription')}</Text>
-        <div className="plugin-project-fields">
-          <TextField
-            label={t('common.repository')}
-            value={config.repository}
-            onChange={(repository) => setConfig((current) => ({ ...current, repository }))}
-            isDisabled={busy}
-          />
-          <TextField
-            label={t('common.branch')}
-            value={config.branch}
-            onChange={(branch) => setConfig((current) => ({ ...current, branch }))}
-            isDisabled={busy}
-          />
+      {(error || plugin.lastError || status.lastError || message) && (
+        <div className="plugin-feedback">
+          {error || plugin.lastError || status.lastError ? (
+            <InlineAlert variant="negative" fillStyle="subtleFill">
+              <Heading>{t('common.error')}</Heading>
+              <Content>{error || plugin.lastError || status.lastError}</Content>
+            </InlineAlert>
+          ) : (
+            <StatusLight variant="positive" role="status">
+              {message}
+            </StatusLight>
+          )}
         </div>
-        <Button
-          variant="secondary"
-          onPress={() => void saveConfig()}
-          isDisabled={!validTarget || busy}
-        >
-          {busy ? t('plugins.project.applying') : t('plugins.project.apply')}
-        </Button>
-      </section>
+      )}
 
-      <ProjectKnowledge
-        status={status}
-        busy={projectActionsDisabled}
-        onSync={() => void run(() => window.api.projectAwareness.sync())}
-        onRefresh={() => void run(() => window.api.projectAwareness.refreshSnapshotStatus(true))}
-      />
+      <section className="plugin-setup-overview" aria-label={t('plugins.setup.title')}>
+        <Heading level={3}>{t('plugins.setup.title')}</Heading>
+        <ol className="plugin-setup-steps">
+          {[
+            { label: t('plugins.setup.enable'), complete: plugin.enabled },
+            { label: t('plugins.setup.credential'), complete: status.credential.configured },
+            { label: t('plugins.setup.repository'), complete: savedTarget },
+            { label: t('plugins.setup.connect'), complete: connected },
+          ].map((step, index) => (
+            <li className={step.complete ? 'is-complete' : ''} key={step.label}>
+              <span className="plugin-setup-step-number" aria-hidden="true">
+                {step.complete ? <CheckmarkIcon /> : index + 1}
+              </span>
+              <Text>{step.label}</Text>
+              <span className="visually-hidden">
+                {t(step.complete ? 'plugins.setup.done' : 'plugins.setup.pending')}
+              </span>
+            </li>
+          ))}
+        </ol>
+      </section>
 
       <section className="plugin-detail-section">
         <Heading level={3}>{t('plugins.project.credentialTitle')}</Heading>
@@ -531,12 +602,10 @@ function ProjectAwarenessDetails({
             {t('plugins.project.saveCredential')}
           </Button>
           <ActionButton
-            onPress={() => void forgetCredential()}
+            onPress={() => setForgetDialogOpen(true)}
             isDisabled={!status.credential.configured || busy}
           >
-            {confirmForget
-              ? t('plugins.project.confirmForget')
-              : t('plugins.project.forgetCredential')}
+            {t('plugins.project.forgetCredential')}
           </ActionButton>
           <ActionButton
             onPress={() =>
@@ -549,6 +618,37 @@ function ProjectAwarenessDetails({
             {t('plugins.project.openTokenSettings')}
           </ActionButton>
         </div>
+      </section>
+
+      <section className="plugin-detail-section">
+        <Heading level={3}>{t('plugins.project.configTitle')}</Heading>
+        <Text>{t('plugins.project.configDescription')}</Text>
+        <div className="plugin-project-fields">
+          <TextField
+            label={t('common.repository')}
+            value={config.repository}
+            onChange={(repository) => setConfig((current) => ({ ...current, repository }))}
+            isDisabled={busy}
+            isInvalid={config.repository.length > 0 && !isValidProjectRepository(config.repository)}
+            errorMessage={t('plugins.project.repositoryInvalid')}
+            description={t('plugins.project.repositoryHint')}
+          />
+          <TextField
+            label={t('common.branch')}
+            value={config.branch}
+            onChange={(branch) => setConfig((current) => ({ ...current, branch }))}
+            isDisabled={busy}
+            isInvalid={config.branch.length > 0 && !isValidProjectBranch(config.branch)}
+            errorMessage={t('plugins.project.branchInvalid')}
+          />
+        </div>
+        <Button
+          variant="secondary"
+          onPress={() => void saveConfig()}
+          isDisabled={!validTarget || busy}
+        >
+          {busy ? t('plugins.project.applying') : t('plugins.project.apply')}
+        </Button>
       </section>
 
       <section className="plugin-detail-section">
@@ -573,7 +673,7 @@ function ProjectAwarenessDetails({
             variant="secondary"
             onPress={() => void run(() => window.api.projectAwareness.connect())}
             isDisabled={
-              runtimeDisabled || connected || !validTarget || !status.credential.configured
+              runtimeDisabled || connected || !savedTarget || !status.credential.configured
             }
           >
             {t('common.connect')}
@@ -586,24 +686,50 @@ function ProjectAwarenessDetails({
           </ActionButton>
           <ActionButton
             onPress={() => void run(() => window.api.projectAwareness.rebuildIndex())}
-            isDisabled={runtimeDisabled || !status.credential.configured || !validTarget}
+            isDisabled={runtimeDisabled || !status.credential.configured || !savedTarget}
           >
             {t('plugins.project.rebuild')}
           </ActionButton>
         </div>
+        {projectActionDisabledReason ? (
+          <Text UNSAFE_className="plugin-action-hint">{projectActionDisabledReason}</Text>
+        ) : null}
       </section>
 
-      {(error || plugin.lastError || status.lastError) && (
-        <InlineAlert variant="negative" fillStyle="subtleFill">
-          <Heading>{t('common.error')}</Heading>
-          <Content>{error || plugin.lastError || status.lastError}</Content>
-        </InlineAlert>
-      )}
-      {message && (
-        <StatusLight variant="positive" role="status">
-          {message}
-        </StatusLight>
-      )}
+      <ProjectKnowledge
+        status={status}
+        busy={projectActionsDisabled}
+        disabledReason={projectActionDisabledReason}
+        onSync={() => void run(() => window.api.projectAwareness.sync())}
+        onRefresh={() => void run(() => window.api.projectAwareness.refreshSnapshotStatus(true))}
+      />
+
+      <DialogContainer
+        onDismiss={() => {
+          if (!busy) setForgetDialogOpen(false)
+        }}
+      >
+        {forgetDialogOpen && (
+          <Dialog>
+            <Heading>{t('plugins.project.forgetDialog.title')}</Heading>
+            <Content>{t('plugins.project.forgetDialog.description')}</Content>
+            <Footer>
+              <ButtonGroup>
+                <Button
+                  variant="secondary"
+                  isDisabled={busy}
+                  onPress={() => setForgetDialogOpen(false)}
+                >
+                  {t('common.cancel')}
+                </Button>
+                <Button variant="negative" isPending={busy} onPress={() => void forgetCredential()}>
+                  {t('plugins.project.forgetCredential')}
+                </Button>
+              </ButtonGroup>
+            </Footer>
+          </Dialog>
+        )}
+      </DialogContainer>
     </section>
   )
 }
@@ -614,12 +740,14 @@ function DesktopControlDetails({
   onBack,
   onPluginChange,
   onStatusChange,
+  onOpenLlmSettings,
 }: {
   plugin: PluginStatus
   status: DesktopControlStatus
   onBack: () => void
   onPluginChange: (enabled: boolean) => void
   onStatusChange: (status: DesktopControlStatus) => void
+  onOpenLlmSettings: () => void
 }) {
   const { t } = useTranslation()
   const [busy, setBusy] = useState(false)
@@ -671,14 +799,14 @@ function DesktopControlDetails({
           : 'neutral'
 
   return (
-    <section className="plugin-detail">
+    <section className="plugin-detail page-container">
       <ActionButton isQuiet onPress={onBack} UNSAFE_className="plugin-back-button">
         <ChevronLeftIcon />
         <Text>{t('plugins.backToCatalog')}</Text>
       </ActionButton>
       <div className="plugin-detail-heading">
         <span className="plugin-icon" aria-hidden="true">
-          <DataIcon />
+          <DeviceDesktopIcon />
         </span>
         <div>
           <Heading level={2}>{t(plugin.manifest.nameKey)}</Heading>
@@ -688,6 +816,27 @@ function DesktopControlDetails({
       </div>
       <PluginSummary plugin={plugin} />
       <Divider size="S" />
+
+      {(error ||
+        plugin.lastError ||
+        status.runtime.lastError ||
+        status.model.lastError ||
+        message) && (
+        <div className="plugin-feedback">
+          {error || plugin.lastError || status.runtime.lastError || status.model.lastError ? (
+            <InlineAlert variant="negative" fillStyle="subtleFill">
+              <Heading>{t('common.error')}</Heading>
+              <Content>
+                {error || plugin.lastError || status.runtime.lastError || status.model.lastError}
+              </Content>
+            </InlineAlert>
+          ) : (
+            <StatusLight variant="positive" role="status">
+              {message}
+            </StatusLight>
+          )}
+        </div>
+      )}
 
       <section className="plugin-detail-section">
         <Heading level={3}>{t('plugins.desktopControl.stateTitle')}</Heading>
@@ -734,6 +883,11 @@ function DesktopControlDetails({
           </div>
         </dl>
         <Text>{t('plugins.desktopControl.modelSettingsHint')}</Text>
+        {!status.model.configured && (
+          <Button variant="secondary" onPress={onOpenLlmSettings}>
+            {t('plugins.desktopControl.openModelSettings')}
+          </Button>
+        )}
       </section>
 
       <section className="plugin-detail-section">
@@ -755,6 +909,12 @@ function DesktopControlDetails({
               : t('plugins.desktopControl.accessMode.confirm')}
           </StatusLight>
         </div>
+        {status.authorityMode === 'full' && (
+          <InlineAlert variant="notice" fillStyle="subtleFill">
+            <Heading>{t('plugins.desktopControl.fullAccessWarningTitle')}</Heading>
+            <Content>{t('plugins.desktopControl.fullAccessWarningDescription')}</Content>
+          </InlineAlert>
+        )}
       </section>
 
       <section className="plugin-detail-section">
@@ -805,61 +965,49 @@ function DesktopControlDetails({
         )}
       </section>
 
-      <section className="plugin-detail-section">
-        <Heading level={3}>{t('plugins.desktopControl.technicalTitle')}</Heading>
-        <dl className="plugin-status-list plugin-runtime-status">
-          <div>
-            <dt>{t('plugins.desktopControl.dshVersion')}</dt>
-            <dd>{status.runtime.version}</dd>
-          </div>
-          <div>
-            <dt>{t('plugins.desktopControl.browserBackend')}</dt>
-            <dd>agent-browser {status.browser.version}</dd>
-          </div>
-          <div>
-            <dt>{t('plugins.desktopControl.browserBinary')}</dt>
-            <dd>
-              {status.browser.packagedBinaryAvailable
-                ? t('plugins.desktopControl.resourceAvailable')
-                : t('plugins.desktopControl.resourceMissing')}
-            </dd>
-          </div>
-          <div>
-            <dt>{t('plugins.desktopControl.chromeExecutable')}</dt>
-            <dd>
-              {status.browser.executableAvailable
-                ? t('plugins.desktopControl.resourceAvailable')
-                : t('plugins.desktopControl.resourceMissing')}
-            </dd>
-          </div>
-          <div>
-            <dt>{t('plugins.desktopControl.browserProfile')}</dt>
-            <dd>{t('plugins.desktopControl.browserProfileIsolated')}</dd>
-          </div>
-          <div>
-            <dt>{t('plugins.desktopControl.powerShell')}</dt>
-            <dd>
-              {status.shell.executableAvailable
-                ? t('plugins.desktopControl.resourceAvailable')
-                : t('plugins.desktopControl.resourceMissing')}
-            </dd>
-          </div>
-        </dl>
-      </section>
-
-      {(error || plugin.lastError || status.runtime.lastError || status.model.lastError) && (
-        <InlineAlert variant="negative" fillStyle="subtleFill">
-          <Heading>{t('common.error')}</Heading>
-          <Content>
-            {error || plugin.lastError || status.runtime.lastError || status.model.lastError}
-          </Content>
-        </InlineAlert>
-      )}
-      {message && (
-        <StatusLight variant="positive" role="status">
-          {message}
-        </StatusLight>
-      )}
+      <Disclosure UNSAFE_className="plugin-technical-details">
+        <DisclosureTitle level={3}>{t('plugins.desktopControl.technicalTitle')}</DisclosureTitle>
+        <DisclosurePanel>
+          <dl className="plugin-status-list plugin-runtime-status">
+            <div>
+              <dt>{t('plugins.desktopControl.dshVersion')}</dt>
+              <dd>{status.runtime.version}</dd>
+            </div>
+            <div>
+              <dt>{t('plugins.desktopControl.browserBackend')}</dt>
+              <dd>agent-browser {status.browser.version}</dd>
+            </div>
+            <div>
+              <dt>{t('plugins.desktopControl.browserBinary')}</dt>
+              <dd>
+                {status.browser.packagedBinaryAvailable
+                  ? t('plugins.desktopControl.resourceAvailable')
+                  : t('plugins.desktopControl.resourceMissing')}
+              </dd>
+            </div>
+            <div>
+              <dt>{t('plugins.desktopControl.chromeExecutable')}</dt>
+              <dd>
+                {status.browser.executableAvailable
+                  ? t('plugins.desktopControl.resourceAvailable')
+                  : t('plugins.desktopControl.resourceMissing')}
+              </dd>
+            </div>
+            <div>
+              <dt>{t('plugins.desktopControl.browserProfile')}</dt>
+              <dd>{t('plugins.desktopControl.browserProfileIsolated')}</dd>
+            </div>
+            <div>
+              <dt>{t('plugins.desktopControl.powerShell')}</dt>
+              <dd>
+                {status.shell.executableAvailable
+                  ? t('plugins.desktopControl.resourceAvailable')
+                  : t('plugins.desktopControl.resourceMissing')}
+              </dd>
+            </div>
+          </dl>
+        </DisclosurePanel>
+      </Disclosure>
     </section>
   )
 }
@@ -868,15 +1016,18 @@ export function PluginsView({
   detailPluginId,
   onShowDetails,
   onBack,
+  onOpenLlmSettings,
 }: {
   detailPluginId: PluginId | null
   onShowDetails: (id: PluginId) => void
   onBack: () => void
+  onOpenLlmSettings: () => void
 }) {
   const { t } = useTranslation()
   const [plugins, setPlugins] = useState<PluginStatus[]>([])
   const [desktopStatus, setDesktopStatus] = useState<DesktopControlStatus>(EMPTY_DESKTOP_STATUS)
   const [error, setError] = useState('')
+  const [loaded, setLoaded] = useState(false)
 
   const refresh = (): void => {
     observeRendererPromise(
@@ -885,9 +1036,14 @@ export function PluginsView({
         if (detailPluginId === DESKTOP_CONTROL_PLUGIN_ID) {
           setDesktopStatus(await window.api.desktopControl.getStatus())
         }
+        setError('')
+        setLoaded(true)
       }),
       'refresh Plugin catalog',
-      (reason) => setError(rendererError(reason)),
+      (reason) => {
+        setError(rendererError(reason))
+        setLoaded(true)
+      },
     )
   }
 
@@ -903,11 +1059,16 @@ export function PluginsView({
           if (active) {
             setPlugins(items)
             if (desktopStatus) setDesktopStatus(desktopStatus)
+            setError('')
+            setLoaded(true)
           }
         }),
         'load Plugin catalog',
         (reason) => {
-          if (active) setError(rendererError(reason))
+          if (active) {
+            setError(rendererError(reason))
+            setLoaded(true)
+          }
         },
       )
     }
@@ -947,9 +1108,9 @@ export function PluginsView({
     )
   }
 
-  if (!projectPlugin || !desktopPlugin) {
+  if (!loaded) {
     return (
-      <div className="plugins-loading">
+      <div className="plugins-loading page-container">
         <ProgressCircle isIndeterminate aria-label={t('common.loading')} />
         {error && <Text>{error}</Text>}
       </div>
@@ -957,6 +1118,23 @@ export function PluginsView({
   }
 
   if (detailPluginId === PROJECT_AWARENESS_PLUGIN_ID) {
+    if (!projectPlugin) {
+      return (
+        <section className="plugin-detail page-container">
+          <ActionButton isQuiet onPress={onBack} UNSAFE_className="plugin-back-button">
+            <ChevronLeftIcon />
+            <Text>{t('plugins.backToCatalog')}</Text>
+          </ActionButton>
+          <InlineAlert variant="negative" fillStyle="subtleFill">
+            <Heading>{t('plugins.projectAwareness.name')}</Heading>
+            <Content>{t('plugins.catalog.unavailable')}</Content>
+            <Button variant="secondary" onPress={refresh}>
+              {t('common.retry')}
+            </Button>
+          </InlineAlert>
+        </section>
+      )
+    }
     return (
       <ProjectAwarenessDetails
         plugin={projectPlugin}
@@ -967,6 +1145,23 @@ export function PluginsView({
   }
 
   if (detailPluginId === DESKTOP_CONTROL_PLUGIN_ID) {
+    if (!desktopPlugin) {
+      return (
+        <section className="plugin-detail page-container">
+          <ActionButton isQuiet onPress={onBack} UNSAFE_className="plugin-back-button">
+            <ChevronLeftIcon />
+            <Text>{t('plugins.backToCatalog')}</Text>
+          </ActionButton>
+          <InlineAlert variant="negative" fillStyle="subtleFill">
+            <Heading>{t('plugins.desktopControl.name')}</Heading>
+            <Content>{t('plugins.catalog.unavailable')}</Content>
+            <Button variant="secondary" onPress={refresh}>
+              {t('common.retry')}
+            </Button>
+          </InlineAlert>
+        </section>
+      )
+    }
     return (
       <DesktopControlDetails
         plugin={desktopPlugin}
@@ -974,64 +1169,33 @@ export function PluginsView({
         onBack={onBack}
         onPluginChange={(enabled) => togglePlugin(DESKTOP_CONTROL_PLUGIN_ID, enabled)}
         onStatusChange={setDesktopStatus}
+        onOpenLlmSettings={onOpenLlmSettings}
       />
     )
   }
 
   return (
-    <section className="plugins-catalog">
+    <section className="plugins-catalog page-container">
       <Text>{t('plugins.catalog.description')}</Text>
       <div className="plugin-catalog-grid">
-        <article className="plugin-card plugin-card-compact">
-          <div className="plugin-card-title">
-            <span className="plugin-icon" aria-hidden="true">
-              <DataIcon />
-            </span>
-            <Heading level={2}>{t(projectPlugin.manifest.nameKey)}</Heading>
-            <PluginToggle
-              plugin={projectPlugin}
-              onChange={(enabled) => togglePlugin(PROJECT_AWARENESS_PLUGIN_ID, enabled)}
-            />
-          </div>
-          <div className="plugin-card-description">
-            <Text>{t(projectPlugin.manifest.descriptionKey)}</Text>
-          </div>
-          <div className="plugin-card-footer">
-            <PluginCatalogStatus plugin={projectPlugin} />
-            <Button
-              size="S"
-              variant="secondary"
-              onPress={() => onShowDetails(PROJECT_AWARENESS_PLUGIN_ID)}
-            >
-              {t('plugins.openDetails')}
-            </Button>
-          </div>
-        </article>
-        <article className="plugin-card plugin-card-compact">
-          <div className="plugin-card-title">
-            <span className="plugin-icon" aria-hidden="true">
-              <DataIcon />
-            </span>
-            <Heading level={2}>{t(desktopPlugin.manifest.nameKey)}</Heading>
-            <PluginToggle
-              plugin={desktopPlugin}
-              onChange={(enabled) => togglePlugin(DESKTOP_CONTROL_PLUGIN_ID, enabled)}
-            />
-          </div>
-          <div className="plugin-card-description">
-            <Text>{t(desktopPlugin.manifest.descriptionKey)}</Text>
-          </div>
-          <div className="plugin-card-footer">
-            <PluginCatalogStatus plugin={desktopPlugin} />
-            <Button
-              size="S"
-              variant="secondary"
-              onPress={() => onShowDetails(DESKTOP_CONTROL_PLUGIN_ID)}
-            >
-              {t('plugins.openDetails')}
-            </Button>
-          </div>
-        </article>
+        <PluginCatalogCard
+          plugin={projectPlugin}
+          icon={<ProjectIcon />}
+          nameKey="plugins.projectAwareness.name"
+          descriptionKey="plugins.projectAwareness.description"
+          onToggle={(enabled) => togglePlugin(PROJECT_AWARENESS_PLUGIN_ID, enabled)}
+          onOpen={() => onShowDetails(PROJECT_AWARENESS_PLUGIN_ID)}
+          onRetry={refresh}
+        />
+        <PluginCatalogCard
+          plugin={desktopPlugin}
+          icon={<DeviceDesktopIcon />}
+          nameKey="plugins.desktopControl.name"
+          descriptionKey="plugins.desktopControl.description"
+          onToggle={(enabled) => togglePlugin(DESKTOP_CONTROL_PLUGIN_ID, enabled)}
+          onOpen={() => onShowDetails(DESKTOP_CONTROL_PLUGIN_ID)}
+          onRetry={refresh}
+        />
       </div>
       {error && (
         <InlineAlert variant="negative" fillStyle="subtleFill">

@@ -50,7 +50,7 @@ export function NewConversationDialog({
               <Button variant="secondary" isDisabled={isPending} onPress={onDismiss}>
                 {t('common.cancel')}
               </Button>
-              <Button variant="accent" isPending={isPending} onPress={onConfirm}>
+              <Button variant="negative" isPending={isPending} onPress={onConfirm}>
                 {t('chat.newConversation.confirm')}
               </Button>
             </ButtonGroup>

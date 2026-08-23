@@ -793,8 +793,14 @@
 /* Align the chat header content (title + controls) to the same centered 1100px
    column as the messages/composer, so their left/right edges line up. */
 .section-header:has(.chat-header-controls) {
-  padding-left: max(24px, calc((100% - 1100px) / 2 + 24px));
-  padding-right: max(24px, calc((100% - 1100px) / 2 + 24px));
+  padding-left: max(24px, calc((100% - 1100px) / 2));
+  padding-right: max(24px, calc((100% - 1100px) / 2));
+}
+@media (max-width: 760px) {
+  .section-header:has(.chat-header-controls) {
+    padding-right: 16px;
+    padding-left: 16px;
+  }
 }
 .attention-control,
 .camera-control {
@@ -980,7 +986,6 @@
 /* Microphone gate dialog — Spectrum owns the modal/focus behavior. */
 .mic-gate-card {
   width: min(460px, 100%);
-  max-height: min(84vh, 640px);
 }
 .mic-gate-title {
   margin: 0;
@@ -1068,10 +1073,11 @@
   letter-spacing: 0.04em;
 }
 .mic-gate-empty {
+  display: block;
   margin: 0;
-  padding: 14px;
-  border: 1px dashed var(--border);
+  padding: 12px 14px;
   border-radius: 10px;
+  background: var(--surface-inset);
   color: var(--text-dim);
   font-size: 0.88rem;
   text-align: center;
@@ -1084,135 +1090,18 @@
   font-size: 0.88rem;
 }
 .mic-device-list {
-  display: grid;
-  gap: 0;
+  max-height: 44vh;
+  padding: 12px;
   border: 1px solid var(--border);
   border-radius: 12px;
-  overflow: hidden;
-}
-.mic-device-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  width: 100%;
-  margin: 0;
-  padding: 12px 14px;
-  border-top: 1px solid var(--border-faint);
-  cursor: pointer;
-  transition: background 0.12s ease;
-}
-.mic-device-list > .mic-device-row:first-child {
-  border-top: 0;
-}
-.mic-device-row:hover {
-  background: var(--surface-hover);
-}
-.mic-device-row[data-selected] {
-  background: var(--surface-selected);
-}
-.mic-device-icon {
-  display: grid;
-  place-items: center;
-  color: var(--text-dim);
-}
-.mic-device-icon svg {
-  width: 18px;
-  height: 18px;
-}
-.mic-device-row[data-selected] .mic-device-icon {
-  color: var(--accent);
-}
-.mic-device-text {
-  display: grid;
-  gap: 1px;
-  min-width: 0;
-  text-align: left;
-}
-.mic-device-name {
-  font-size: 0.94rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.mic-device-sub {
-  color: var(--text-dim);
-  font-size: 0.78rem;
-}
-.mic-device-checking {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--accent);
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .mic-gate-alert {
   margin-top: 2px;
 }
 .mic-gate-btn-spinner {
   margin-right: 8px;
-}
-
-/* Microphone gate — responsive Spectrum radio rows. */
-.mic-device-list {
-  display: grid;
-  gap: 0;
-  max-height: 44vh;
-  overflow-y: auto;
-}
-.mic-device-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  width: 100%;
-  margin: 0;
-  padding: 12px 14px;
-  border: 0;
-  border-top: 1px solid var(--border-faint);
-  border-radius: 0;
-  background: transparent;
-  color: var(--text);
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-  transition: background 0.12s ease;
-}
-.mic-device-list > .mic-device-row:first-child {
-  border-top: 0;
-}
-.mic-device-row:hover {
-  background: var(--surface-hover);
-}
-.mic-device-row[data-selected] {
-  background: var(--surface-selected);
-}
-.mic-device-row:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: -2px;
-}
-.mic-device-icon {
-  flex: 0 0 auto;
-  display: grid;
-  place-items: center;
-  color: var(--text-dim);
-}
-.mic-device-icon svg {
-  width: 18px;
-  height: 18px;
-}
-.mic-device-row[data-selected] .mic-device-icon {
-  color: var(--accent);
-}
-.mic-device-text {
-  flex: 1 1 auto;
-  display: grid;
-  gap: 1px;
-  min-width: 0;
-  text-align: left;
-}
-.mic-device-name {
-  font-size: 0.94rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 /* Microphone gate — action row alignment (override) */
@@ -1227,23 +1116,7 @@
   flex: 0 1 auto;
 }
 
-/* Microphone gate — icon box + button label centering (override) */
-.mic-device-icon {
-  flex: 0 0 20px;
-  width: 20px;
-  height: 20px;
-  display: grid;
-  place-items: center;
-}
-.mic-device-icon svg {
-  /* biome-ignore lint/complexity/noImportantStyles: overrides the React Spectrum icon sizing
-     so the microphone glyph keeps a fixed 18px box inside the device row. */
-  width: 18px !important;
-  /* biome-ignore lint/complexity/noImportantStyles: overrides the React Spectrum icon sizing
-     so the microphone glyph keeps a fixed 18px box inside the device row. */
-  height: 18px !important;
-  flex: none;
-}
+/* Microphone gate — button label centering (override) */
 .mic-gate-continue {
   display: inline-flex;
   align-items: center;

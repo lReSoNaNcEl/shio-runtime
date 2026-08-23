@@ -13,7 +13,11 @@ import {
 import { type DesktopControlRuntimeState, DSH_RUNTIME_VERSION } from '../../shared/desktop-control'
 import type { LlmProviderId } from '../../shared/llm'
 import { mainLog } from '../logging/safeLogger'
-import type { AgentBrowserRuntimeResources } from './AgentBrowserResources'
+import {
+  AGENT_BROWSER_SESSION_IDLE_TIMEOUT_ARGUMENT,
+  type AgentBrowserRuntimeResources,
+  buildAgentBrowserChildEnvironment,
+} from './AgentBrowserResources'
 
 export interface DshLaunchResources {
   command: string
@@ -177,44 +181,6 @@ function observeBrowserToolNotification(notification: unknown, trace: BrowserToo
   if (!failedContent) trace.successfulResults.add(callId)
 }
 
-function findHttpUrl(value: unknown): string | undefined {
-  if (typeof value === 'string') {
-    try {
-      const parsed = new URL(value)
-      return parsed.protocol === 'http:' || parsed.protocol === 'https:' ? parsed.href : undefined
-    } catch {
-      return undefined
-    }
-  }
-  if (Array.isArray(value)) {
-    for (const item of value) {
-      const found = findHttpUrl(item)
-      if (found) return found
-    }
-    return undefined
-  }
-  if (!value || typeof value !== 'object') return undefined
-  for (const [key, item] of Object.entries(value)) {
-    if (key.toLowerCase() === 'url') {
-      const found = findHttpUrl(item)
-      if (found) return found
-    }
-  }
-  for (const item of Object.values(value)) {
-    const found = findHttpUrl(item)
-    if (found) return found
-  }
-  return undefined
-}
-
-function parseAgentBrowserUrl(output: string): string | undefined {
-  try {
-    return findHttpUrl(JSON.parse(output))
-  } catch {
-    return undefined
-  }
-}
-
 export function buildDshChildEnvironment(
   hostEnvironment: NodeJS.ProcessEnv,
   resources: Pick<
@@ -253,30 +219,6 @@ export function buildDshChildEnvironment(
     if (browser.executablePath) {
       environment.SHIO_AGENT_BROWSER_EXECUTABLE_PATH = browser.executablePath
     }
-  }
-  return environment
-}
-
-export function buildAgentBrowserChildEnvironment(
-  hostEnvironment: NodeJS.ProcessEnv,
-  browser: AgentBrowserRuntimeResources,
-): NodeJS.ProcessEnv {
-  const environment: NodeJS.ProcessEnv = {
-    AGENT_BROWSER_PROFILE: browser.profileDirectory,
-    AGENT_BROWSER_SOCKET_DIR: browser.socketDirectory,
-    AGENT_BROWSER_NAMESPACE: browser.namespace,
-    AGENT_BROWSER_SESSION: browser.namespace,
-    AGENT_BROWSER_CONTENT_BOUNDARIES: '1',
-    AGENT_BROWSER_MAX_OUTPUT: '20000',
-    AGENT_BROWSER_IDLE_TIMEOUT_MS: '60000',
-    AGENT_BROWSER_HEADED: '1',
-  }
-  for (const name of SAFE_OS_VARIABLES) {
-    const value = hostEnvironment[name]
-    if (value) environment[name] = value
-  }
-  if (browser.executablePath) {
-    environment.AGENT_BROWSER_EXECUTABLE_PATH = browser.executablePath
   }
   return environment
 }
@@ -432,7 +374,6 @@ export class DshHarnessAdapter {
   private startedAt: number | undefined
   private lastError: string | undefined
   private activeModelSignature = ''
-  private activeCapability: DshWorkflowCapability | undefined
   private startTask: Promise<void> | null = null
   private closeTask: Promise<void> | null = null
   private running = false
@@ -579,7 +520,6 @@ export class DshHarnessAdapter {
       await harness.start()
       this.startedAt = Date.now()
       this.activeModelSignature = modelSignature
-      this.activeCapability = capability
       this.lastError = undefined
       this.setState('ready')
       mainLog.info('[DesktopControl] DSH runtime started', {
@@ -590,7 +530,6 @@ export class DshHarnessAdapter {
       })
     } catch (error) {
       if (harness) await Promise.allSettled([harness.close()])
-      if (capability === 'browser') await this.stopBrowser(resources.browser, hostEnvironment)
       if (this.harness === harness) this.harness = null
       const normalized = await this.normalizeError(error, 'DSH_STARTUP_FAILED')
       this.fail(normalized.code)
@@ -603,13 +542,9 @@ export class DshHarnessAdapter {
     signal: AbortSignal,
     capability: DshWorkflowCapability,
     shellCommand?: string,
-    browserUrl?: string,
   ): Promise<DesktopWorkflowExecution> {
     if (this.running) {
       throw new DshAdapterError('DSH_REMOTE_ERROR', 'Desktop Control is already running a task')
-    }
-    if (capability === 'browser' && browserUrl) {
-      return this.executeBrowserNavigation(browserUrl, signal)
     }
     await this.start(capability)
     const harness = this.harness
@@ -722,64 +657,6 @@ export class DshHarnessAdapter {
     }
   }
 
-  private async executeBrowserNavigation(
-    browserUrl: string,
-    signal: AbortSignal,
-  ): Promise<DesktopWorkflowExecution> {
-    const resources = this.options.resources()
-    const browser = resources.browser
-    const hostEnvironment = this.options.environment ?? process.env
-    if (!browser || !(await this.browserResourcesAvailable(browser))) {
-      throw new DshAdapterError('DSH_RUNTIME_UNAVAILABLE', publicMessage('DSH_RUNTIME_UNAVAILABLE'))
-    }
-    await Promise.all([
-      mkdir(browser.profileDirectory, { recursive: true }),
-      mkdir(browser.socketDirectory, { recursive: true }),
-    ])
-    this.running = true
-    this.activeCapability = 'browser'
-    this.startedAt ??= Date.now()
-    this.setState('running')
-    try {
-      await runAgentBrowserCommand(
-        browser,
-        hostEnvironment,
-        ['--json', '--session', browser.namespace, '--idle-timeout', '60s', 'open', browserUrl],
-        30_000,
-        signal,
-      )
-      const currentUrlOutput = await runAgentBrowserCommand(
-        browser,
-        hostEnvironment,
-        ['--json', '--session', browser.namespace, '--idle-timeout', '60s', 'get', 'url'],
-        15_000,
-        signal,
-      )
-      const currentUrl = parseAgentBrowserUrl(currentUrlOutput)
-      if (!currentUrl) {
-        throw new DshAdapterError('DSH_PROTOCOL_ERROR', publicMessage('DSH_PROTOCOL_ERROR'))
-      }
-      mainLog.info('[DesktopControl] browser navigation verified', {
-        requestedOrigin: new URL(browserUrl).origin,
-        resultingOrigin: new URL(currentUrl).origin,
-      })
-      return {
-        runtimeCompleted: true,
-        reportedOutcome: `Browser opened: ${currentUrl}`,
-        verification: 'verified',
-      }
-    } catch (error) {
-      if (signal.aborted) {
-        await this.stopBrowser(browser, hostEnvironment)
-        throw new DshAdapterError('DSH_CANCELLED', publicMessage('DSH_CANCELLED'))
-      }
-      throw await this.normalizeError(error, 'DSH_REMOTE_ERROR')
-    } finally {
-      this.running = false
-      if (this.state === 'running') this.setState('ready')
-    }
-  }
-
   close(): Promise<void> {
     this.closeTask ??= this.performClose().finally(() => {
       this.closeTask = null
@@ -790,16 +667,9 @@ export class DshHarnessAdapter {
   private async performClose(): Promise<void> {
     if (this.startTask) await this.startTask.catch(() => undefined)
     const harness = this.harness
-    const resources = this.options.resources()
-    const hostEnvironment = this.options.environment ?? process.env
-    const activeCapability = this.activeCapability
     this.harness = null
     this.activeModelSignature = ''
-    this.activeCapability = undefined
     if (!harness) {
-      if (activeCapability === 'browser') {
-        await this.stopBrowser(resources.browser, hostEnvironment)
-      }
       this.startedAt = undefined
       this.setState('stopped')
       return
@@ -811,9 +681,6 @@ export class DshHarnessAdapter {
     } catch (error) {
       mainLog.warn('[DesktopControl] DSH runtime shutdown failed', { error })
     } finally {
-      if (activeCapability === 'browser') {
-        await this.stopBrowser(resources.browser, hostEnvironment)
-      }
       this.startedAt = undefined
       this.running = false
       this.setState('stopped')
@@ -829,47 +696,24 @@ export class DshHarnessAdapter {
     return results.every((result) => result.status === 'fulfilled')
   }
 
-  private async stopBrowser(
-    browser: AgentBrowserRuntimeResources | undefined,
-    hostEnvironment: NodeJS.ProcessEnv,
-  ): Promise<void> {
-    if (!browser) return
-    try {
-      await access(browser.command)
-      await runAgentBrowserCommand(
-        browser,
-        hostEnvironment,
-        ['--idle-timeout', '1s', 'close', '--all'],
-        5_000,
-      )
-    } catch (error) {
-      mainLog.warn('[DesktopControl] agent-browser shutdown failed', {
-        technicalError: error instanceof Error ? error.message.slice(0, 500) : String(error),
-      })
-    }
-    await new Promise((resolveWait) => setTimeout(resolveWait, 500))
-  }
-
   private async prewarmBrowser(
     browser: AgentBrowserRuntimeResources,
     hostEnvironment: NodeJS.ProcessEnv,
   ): Promise<void> {
-    let lastError: unknown
-    for (let attempt = 0; attempt < 3; attempt += 1) {
-      try {
-        await runAgentBrowserCommand(
-          browser,
-          hostEnvironment,
-          ['--json', '--session', browser.namespace, '--idle-timeout', '60s', 'get', 'url'],
-          15_000,
-        )
-        return
-      } catch (error) {
-        lastError = error
-        await this.stopBrowser(browser, hostEnvironment)
-      }
-    }
-    throw lastError
+    await runAgentBrowserCommand(
+      browser,
+      hostEnvironment,
+      [
+        '--json',
+        '--session',
+        browser.namespace,
+        '--idle-timeout',
+        AGENT_BROWSER_SESSION_IDLE_TIMEOUT_ARGUMENT,
+        'get',
+        'url',
+      ],
+      15_000,
+    )
   }
 
   private async normalizeError(

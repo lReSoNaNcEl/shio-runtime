@@ -199,6 +199,7 @@ export function App() {
   }
 
   const requestNewConversation = (): void => {
+    if (section !== 'chat') setSection('chat')
     if (state.messages.length > 0 || activeResponse) {
       setNewConversationError(null)
       setNewConversationDialogOpen(true)
@@ -206,6 +207,7 @@ export function App() {
     }
     observeRendererPromise(startNewConversation(), 'start new conversation')
   }
+  const showNewConversationAction = state.messages.length > 0 || activeResponse
 
   const navigateToCapabilityTarget = (target: CapabilityNavigationTarget): void => {
     if (target.kind === 'settings') {
@@ -271,24 +273,27 @@ export function App() {
         hideHeader={setupOpen}
         contentClassName={setupOpen ? 'setup-layer' : undefined}
         heading={
-          !setupOpen ? (
-            <SectionHeading
-              title={copy.title}
-              subtitle={copy.subtitle}
-              action={
-                section === 'chat' && state.messages.length > 0 ? (
-                  <NewConversationButton
-                    isDisabled={newConversationDisabled}
-                    onPress={requestNewConversation}
-                  />
-                ) : undefined
-              }
+          !setupOpen ? <SectionHeading title={copy.title} subtitle={copy.subtitle} /> : undefined
+        }
+        sidebarAction={
+          !setupOpen && showNewConversationAction ? (
+            <NewConversationButton
+              isDisabled={newConversationDisabled}
+              onPress={requestNewConversation}
             />
           ) : undefined
         }
         headerAction={
           section === 'chat' && !setupOpen ? (
             <div className="chat-header-controls">
+              {showNewConversationAction && (
+                <div className="chat-mobile-new-conversation">
+                  <NewConversationButton
+                    isDisabled={newConversationDisabled}
+                    onPress={requestNewConversation}
+                  />
+                </div>
+              )}
               <ListeningControl
                 listeningState={state.continuousListeningState}
                 onToggle={() =>
@@ -386,6 +391,10 @@ export function App() {
             detailPluginId={pluginDetails}
             onShowDetails={setPluginDetails}
             onBack={() => setPluginDetails(null)}
+            onOpenLlmSettings={() => {
+              setSettingsInitialSection('llm')
+              setSection('settings')
+            }}
           />
         )}
         {section === 'debug' && developerModeEnabled && <DiagnosticsView />}

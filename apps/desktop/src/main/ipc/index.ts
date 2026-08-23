@@ -139,12 +139,13 @@ export function registerIpcHandlers(
         goal: payload.goal,
         shellCommand: payload.shellCommand,
         browserUrl: payload.browserUrl,
+        browserOperation: payload.browserOperation,
         requestedCapabilities: payload.requestedCapabilities,
         risk: payload.risk,
       }),
     timeoutMs: 120_000,
     singleFlight: true,
-    adapter: 'dsh-harness',
+    adapter: 'desktop-control',
     execute: (request, context) => desktopControl().executeWorkflow(request, context.signal),
   })
   actions.onEmergencyStop(() => desktopControl().emergencyStop())

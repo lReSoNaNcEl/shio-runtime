@@ -10,6 +10,7 @@ import { type ActionRuntime, toDesktopWorkflowActionResult } from '../action'
 import { CapabilityCatalog } from '../capabilities'
 import { getConfig, getOverlayPresentationConfig, getRendererConfig, loadConfig } from '../config'
 import {
+  AgentBrowserAdapter,
   DESKTOP_CONTROL_MANIFEST,
   DesktopControlPlugin,
   DshHarnessAdapter,
@@ -183,6 +184,14 @@ export function buildApplicationDependencies(): ApplicationDependencies {
       const modulesDirectory = app.isPackaged
         ? join(process.resourcesPath, 'app.asar.unpacked', 'node_modules')
         : join(app.getAppPath(), 'node_modules')
+      const browserResources = {
+        command: resolveAgentBrowserCommand(modulesDirectory),
+        executablePath: resolveChromeExecutable(),
+        namespace: 'shio-desktop-control',
+        profileDirectory: join(directory, 'browser-profile'),
+        socketDirectory: join(directory, 'browser-runtime'),
+      }
+      const browser = new AgentBrowserAdapter({ resources: () => browserResources })
       desktopControl = new DesktopControlPlugin({
         adapter: new DshHarnessAdapter({
           model: () => {
@@ -210,15 +219,10 @@ export function buildApplicationDependencies(): ApplicationDependencies {
             shell: {
               command: resolvePwshPath(undefined, process.env, process.platform),
             },
-            browser: {
-              command: resolveAgentBrowserCommand(modulesDirectory),
-              executablePath: resolveChromeExecutable(),
-              namespace: 'shio-desktop-control',
-              profileDirectory: join(directory, 'browser-profile'),
-              socketDirectory: join(directory, 'browser-runtime'),
-            },
+            browser: browserResources,
           }),
         }),
+        browser,
         authorityMode: () => getConfig().desktopAuthorityMode,
       })
       unsubscribeDesktopCapabilities = desktopControl.onChanged(() =>
@@ -301,6 +305,7 @@ export function buildApplicationDependencies(): ApplicationDependencies {
           signal.removeEventListener('abort', abort)
         }
       },
+      () => pluginCapabilities.getBrowserContextProvider(),
     )
   }
 

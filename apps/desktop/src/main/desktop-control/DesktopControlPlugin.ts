@@ -1,5 +1,7 @@
 import type { DesktopAuthorityMode, DesktopWorkflowRequest } from '../../shared/actions'
 import type {
+  BrowserContextProvider,
+  BrowserContextRequirement,
   DesktopControlCapabilityProjection,
   DesktopControlStatus,
 } from '../../shared/desktop-control'
@@ -8,6 +10,11 @@ import type { PluginHealth, PluginManifest } from '../../shared/plugins'
 import { DESKTOP_CONTROL_PLUGIN_ID } from '../../shared/plugins'
 import { ActionError } from '../action'
 import type { BundledPlugin, PluginInitializationContext } from '../plugins/PluginRuntime'
+import {
+  type AgentBrowserAdapter,
+  BrowserAutomationError,
+  type BrowserInteractionResult,
+} from './AgentBrowserAdapter'
 import { DshAdapterError, type DshHarnessAdapter } from './DshHarnessAdapter'
 
 export const DESKTOP_CONTROL_MANIFEST: PluginManifest = {
@@ -21,6 +28,7 @@ export const DESKTOP_CONTROL_MANIFEST: PluginManifest = {
 
 export interface DesktopControlPluginDependencies {
   adapter: DshHarnessAdapter
+  browser: AgentBrowserAdapter
   authorityMode(): DesktopAuthorityMode
 }
 
@@ -39,6 +47,13 @@ export class DesktopControlPlugin implements BundledPlugin {
   }
   private readonly listeners = new Set<() => void>()
   private readonly unsubscribeAdapter: () => void
+  private readonly browserContextProvider: BrowserContextProvider = {
+    resolveRequirement: ({ userText }) => this.resolveBrowserContextRequirement(userText),
+    buildContext: async () => {
+      this.assertActive()
+      return this.dependencies.browser.observe()
+    },
+  }
 
   constructor(private readonly dependencies: DesktopControlPluginDependencies) {
     this.unsubscribeAdapter = dependencies.adapter.onChanged(() => this.publishChanged())
@@ -69,7 +84,7 @@ export class DesktopControlPlugin implements BundledPlugin {
 
   async stop(): Promise<void> {
     this.active = false
-    await this.dependencies.adapter.close()
+    await Promise.allSettled([this.dependencies.adapter.close(), this.dependencies.browser.close()])
     this.publishChanged()
   }
 
@@ -90,26 +105,37 @@ export class DesktopControlPlugin implements BundledPlugin {
     this.shellAvailability = await this.dependencies.adapter.checkShellAvailability()
     const runtime = this.dependencies.adapter.snapshot()
     const model = this.dependencies.adapter.modelSnapshot()
+    const browserReady =
+      this.browserAvailability.packagedBinaryAvailable &&
+      this.browserAvailability.executableAvailable
     if (!this.packagedRuntimeAvailable) {
       return {
-        state: 'needs-setup',
+        state: browserReady ? 'degraded' : 'needs-setup',
         detailKey: 'plugins.desktopControl.runtimeMissing',
         checkedAt: Date.now(),
       }
     }
     if (runtime.state === 'error') {
-      return { state: 'error', detail: runtime.lastError, checkedAt: Date.now() }
+      return {
+        state: browserReady ? 'degraded' : 'error',
+        detail: runtime.lastError,
+        checkedAt: Date.now(),
+      }
+    }
+    if (this.active && this.dependencies.browser.sessionSnapshot()?.status === 'error') {
+      return {
+        state: 'degraded',
+        detailKey: 'plugins.desktopControl.browserSessionError',
+        checkedAt: Date.now(),
+      }
     }
     if (this.active && !model.configured) {
       return {
-        state: 'needs-setup',
+        state: browserReady ? 'degraded' : 'needs-setup',
         detailKey: 'plugins.desktopControl.modelNeedsSetup',
         checkedAt: Date.now(),
       }
     }
-    const browserReady =
-      this.browserAvailability.packagedBinaryAvailable &&
-      this.browserAvailability.executableAvailable
     if (this.active && !browserReady && !this.shellAvailability.executableAvailable) {
       return {
         state: 'needs-setup',
@@ -135,10 +161,8 @@ export class DesktopControlPlugin implements BundledPlugin {
       this.active && this.packagedRuntimeAvailable && model.configured ? 'ready' : 'needs-setup'
     const browserControl =
       this.active &&
-      this.packagedRuntimeAvailable &&
       this.browserAvailability.packagedBinaryAvailable &&
-      this.browserAvailability.executableAvailable &&
-      model.configured
+      this.browserAvailability.executableAvailable
         ? 'ready'
         : 'needs-setup'
     const computerControl =
@@ -188,6 +212,10 @@ export class DesktopControlPlugin implements BundledPlugin {
     return this.getStatus()
   }
 
+  getBrowserContextProvider(): BrowserContextProvider {
+    return this.browserContextProvider
+  }
+
   async stopRuntime(): Promise<DesktopControlStatus> {
     await this.dependencies.adapter.close()
     return this.getStatus()
@@ -221,7 +249,7 @@ export class DesktopControlPlugin implements BundledPlugin {
     if (capability === 'browser' && status.browserControl !== 'ready') {
       throw new ActionError(
         'BROWSER_CONTROL_NEEDS_SETUP',
-        'Browser Control requires the bundled browser bridge, Chrome, and an active model in Settings',
+        'Browser Control requires the bundled browser bridge and Chrome',
         'failure',
         true,
         'desktop-control',
@@ -237,20 +265,118 @@ export class DesktopControlPlugin implements BundledPlugin {
       )
     }
     try {
+      if (capability === 'browser') {
+        const operation =
+          request.browserOperation ??
+          (request.browserUrl
+            ? { operation: 'open' as const, url: request.browserUrl }
+            : (() => {
+                const url = singleHttpUrl(request.goal)
+                return url ? { operation: 'open' as const, url } : undefined
+              })())
+        if (operation) {
+          const result = await this.executeBrowserOperation(operation, signal)
+          return {
+            runtimeCompleted: true,
+            verification: result.execution.verification ?? 'unverified',
+            browser: result.execution,
+          }
+        }
+        if (status.automationEngine !== 'ready') {
+          throw new ActionError(
+            'DSH_MODEL_NOT_CONFIGURED',
+            'Automatic browser planning is unavailable',
+            'failure',
+            true,
+            'desktop-control',
+          )
+        }
+        await this.dependencies.browser.prepareForDelegation(signal)
+        const observationBeforeDelegation = await this.dependencies.browser
+          .observe(signal)
+          .catch(() => undefined)
+        const delegated = await this.dependencies.adapter.execute(
+          request.goal,
+          signal,
+          capability,
+          request.shellCommand,
+        )
+        const observationAfterDelegation = await this.dependencies.browser
+          .observe(signal)
+          .catch(() => undefined)
+        return {
+          ...delegated,
+          verification:
+            observationBeforeDelegation &&
+            observationAfterDelegation &&
+            observationBeforeDelegation.observationId !== observationAfterDelegation.observationId
+              ? 'verified'
+              : 'unverified',
+        }
+      }
       return await this.dependencies.adapter.execute(
         request.goal,
         signal,
         capability,
         request.shellCommand,
-        request.browserUrl ?? (capability === 'browser' ? singleHttpUrl(request.goal) : undefined),
       )
     } catch (error) {
+      if (signal.aborted) {
+        throw new ActionError(
+          'ACTION_CANCELLED',
+          'Browser action was cancelled',
+          'cancelled',
+          true,
+          'desktop-control',
+        )
+      }
+      if (error instanceof ActionError) throw error
+      if (error instanceof BrowserAutomationError) {
+        throw new ActionError(
+          error.code,
+          error.message,
+          'failure',
+          error.recoverable,
+          'desktop-control',
+        )
+      }
       throw mapDshAdapterError(error)
     }
   }
 
-  emergencyStop(): Promise<void> {
-    return this.dependencies.adapter.close()
+  async emergencyStop(): Promise<void> {
+    await Promise.allSettled([this.dependencies.adapter.close(), this.dependencies.browser.close()])
+  }
+
+  private executeBrowserOperation(
+    operation: NonNullable<DesktopWorkflowRequest['browserOperation']>,
+    signal: AbortSignal,
+  ): Promise<BrowserInteractionResult> {
+    switch (operation.operation) {
+      case 'open':
+        return this.dependencies.browser.open(operation.url, signal)
+      case 'click':
+        return this.dependencies.browser.click(operation.target, signal)
+      case 'switch-tab':
+        return this.dependencies.browser.switchTab(operation.tabId, signal)
+    }
+  }
+
+  private resolveBrowserContextRequirement(userText: string): BrowserContextRequirement {
+    const session = this.dependencies.browser.sessionSnapshot()
+    if (session?.status !== 'ready') return 'none'
+    const normalized = userText.normalize('NFKC').toLocaleLowerCase()
+    const browserSemanticCue =
+      /(?:брауз|страниц|сайт|вклад|url|заголов|контент|кноп|ссыл|раздел|каталог|меню|наж|клик|перей|подробнее|результат|открыл|вернись|назад|впер[её]д)/u.test(
+        normalized,
+      ) ||
+      /(?:browser|page|site|tab|title|content|button|link|section|catalog|menu|click|press|open|result|back|forward)/u.test(
+        normalized,
+      ) ||
+      /(?:что\s+(?:теперь|здесь|там)|что\s+открылось|what(?:'s| is)\s+(?:here|open|on it)|what\s+now)/u.test(
+        normalized,
+      )
+    return browserSemanticCue ? 'current-page' : 'none'
   }
 
   private assertInitialized(): void {

@@ -14,9 +14,18 @@ import ToolRuntime from '@deepseek-ai/dsh-tools'
 
 import BrowserToolPolicy from '../../resources/desktop-control/browser-policy.mjs'
 import {
+  AgentBrowserAdapter,
+  BrowserAutomationError,
+} from '../../src/main/desktop-control/AgentBrowserAdapter'
+import {
+  AGENT_BROWSER_SESSION_IDLE_TIMEOUT_ARGUMENT,
+  AGENT_BROWSER_SESSION_IDLE_TIMEOUT_MS,
   resolveAgentBrowserCommand,
   resolveChromeExecutable,
 } from '../../src/main/desktop-control/AgentBrowserResources'
+import { DesktopControlPlugin } from '../../src/main/desktop-control/DesktopControlPlugin'
+import { DshHarnessAdapter } from '../../src/main/desktop-control/DshHarnessAdapter'
+import { BROWSER_OBSERVATION_MAX_INTERACTIVE_ELEMENTS } from '../../src/shared/desktop-control'
 
 interface McpTextBlock {
   type: 'text'
@@ -50,7 +59,7 @@ function agentBrowserEnvironment(options: {
     AGENT_BROWSER_SESSION: options.namespace,
     AGENT_BROWSER_CONTENT_BOUNDARIES: '1',
     AGENT_BROWSER_MAX_OUTPUT: '20000',
-    AGENT_BROWSER_IDLE_TIMEOUT_MS: '60000',
+    AGENT_BROWSER_IDLE_TIMEOUT_MS: String(AGENT_BROWSER_SESSION_IDLE_TIMEOUT_MS),
   }
 }
 
@@ -63,7 +72,15 @@ async function prewarmAgentBrowser(
   await new Promise<void>((resolveReady, reject) => {
     const child = spawn(
       command,
-      ['--json', '--session', namespace, '--idle-timeout', '60s', 'get', 'url'],
+      [
+        '--json',
+        '--session',
+        namespace,
+        '--idle-timeout',
+        AGENT_BROWSER_SESSION_IDLE_TIMEOUT_ARGUMENT,
+        'get',
+        'url',
+      ],
       {
         cwd,
         env: environment,
@@ -153,14 +170,52 @@ async function startTestServer(): Promise<{ server: Server; baseUrl: string }> {
       response.end(`<!doctype html><title>Long output</title><p>${'x'.repeat(25_000)}</p>`)
       return
     }
+    if (request.url === '/many') {
+      response.end(
+        `<!doctype html><title>Many controls</title>${Array.from(
+          { length: BROWSER_OBSERVATION_MAX_INTERACTIVE_ELEMENTS + 5 },
+          (_, index) => `<button>Control ${index + 1}</button>`,
+        ).join('')}`,
+      )
+      return
+    }
     if (request.url === '/second') {
       response.end('<!doctype html><title>Second tab</title><h1>Second tab verified</h1>')
+      return
+    }
+    if (request.url === '/details') {
+      response.end(
+        '<!doctype html><title>Details</title><h1>More details</h1><p>Fresh details observation</p>',
+      )
+      return
+    }
+    if (request.url === '/catalog') {
+      response.end(`<!doctype html><title>Catalog</title><h1>Catalog</h1>
+        <button type="button" onclick="location.href='/next'">Next page</button>`)
+      return
+    }
+    if (request.url === '/next') {
+      response.end('<!doctype html><title>Next page</title><h1>Next page</h1>')
+      return
+    }
+    if (request.url === '/ambiguous') {
+      response.end(`<!doctype html><title>Ambiguous</title><h1>Choose</h1>
+        <button type="button">Continue</button><button type="button">Continue</button>`)
+      return
+    }
+    if (request.url === '/noop') {
+      response.end(
+        '<!doctype html><title>No change</title><h1>No change</h1><button type="button">Do nothing</button>',
+      )
       return
     }
     response.end(`<!doctype html>
       <title>Shio browser control test</title>
       <main>
         <h1>Browser Control Test</h1>
+        <p>Controlled semantic browser fixture</p>
+        <a href="/details">More details</a>
+        <button type="button" onclick="location.href='/catalog'">Open catalog</button>
         <label for="message">Message</label>
         <input id="message" aria-label="Message" />
         <button id="apply" type="button">Apply message</button>
@@ -426,7 +481,278 @@ async function main(): Promise<void> {
     bridge = null
     assert.deepEqual(await processesUsingPath(temporaryRoot), [])
 
-    console.log('Browser Control DSH -> MCP -> agent-browser -> Chrome repro passed')
+    const adapterNamespace = 'shio-browser-adapter-repro'
+    const adapterProfile = join(temporaryRoot, 'adapter-browser-profile')
+    const adapterSocket = join(temporaryRoot, 'adapter-browser-runtime')
+    const adapterEnvironment = agentBrowserEnvironment({
+      executablePath,
+      profileDirectory: adapterProfile,
+      socketDirectory: adapterSocket,
+      namespace: adapterNamespace,
+    })
+    const adapter = new AgentBrowserAdapter({
+      resources: () => ({
+        command: browserCommand,
+        executablePath,
+        namespace: adapterNamespace,
+        profileDirectory: adapterProfile,
+        socketDirectory: adapterSocket,
+      }),
+    })
+    try {
+      const opened = await adapter.open(testServer.baseUrl)
+      assert.equal(opened.execution.verification, 'verified')
+      assert.equal(opened.observation?.title, 'Shio browser control test')
+      assert.match(opened.observation?.content ?? '', /Controlled semantic browser fixture/)
+      const sessionId = adapter.sessionSnapshot()?.sessionId
+      assert(sessionId)
+      const details = opened.observation?.interactiveElements.find(
+        (element) => element.role === 'link' && element.name === 'More details',
+      )
+      assert(details)
+      const detailsResult = await adapter.click({
+        kind: 'semantic-ref',
+        observationId: opened.observation.observationId,
+        ref: details.ref,
+      })
+      assert.equal(detailsResult.execution.verification, 'verified')
+      assert.match(detailsResult.execution.resultingUrl ?? '', /\/details$/)
+      assert.match(detailsResult.observation?.content ?? '', /Fresh details observation/)
+      assert.notEqual(detailsResult.observation?.observationId, opened.observation.observationId)
+      await assert.rejects(
+        adapter.click({
+          kind: 'semantic-ref',
+          observationId: opened.observation.observationId,
+          ref: details.ref,
+        }),
+        (error: unknown) =>
+          error instanceof BrowserAutomationError && error.code === 'TARGET_STALE',
+      )
+
+      const catalogPage = await adapter.open(testServer.baseUrl)
+      assert.equal(adapter.sessionSnapshot()?.sessionId, sessionId)
+      const catalog = catalogPage.observation?.interactiveElements.find(
+        (element) => element.role === 'button' && element.name === 'Open catalog',
+      )
+      assert(catalog)
+      const catalogResult = await adapter.click({
+        kind: 'semantic-ref',
+        observationId: catalogPage.observation.observationId,
+        ref: catalog.ref,
+      })
+      assert.equal(catalogResult.execution.verification, 'verified')
+      assert.equal(catalogResult.observation?.title, 'Catalog')
+      const next = catalogResult.observation?.interactiveElements.find(
+        (element) => element.role === 'button' && element.name === 'Next page',
+      )
+      assert(next)
+      const nextResult = await adapter.click({
+        kind: 'semantic-ref',
+        observationId: catalogResult.observation.observationId,
+        ref: next.ref,
+      })
+      assert.equal(nextResult.observation?.title, 'Next page')
+      assert.equal(adapter.sessionSnapshot()?.sessionId, sessionId)
+
+      await adapter.open(`${testServer.baseUrl}/ambiguous`)
+      const ambiguous = adapter.observationSnapshot()
+      assert(ambiguous)
+      await assert.rejects(
+        adapter.click({
+          kind: 'accessible-name',
+          observationId: ambiguous.observationId,
+          role: 'button',
+          name: 'Continue',
+        }),
+        (error: unknown) =>
+          error instanceof BrowserAutomationError && error.code === 'TARGET_AMBIGUOUS',
+      )
+      await assert.rejects(
+        adapter.click({
+          kind: 'accessible-name',
+          observationId: ambiguous.observationId,
+          role: 'button',
+          name: 'Missing target',
+        }),
+        (error: unknown) =>
+          error instanceof BrowserAutomationError && error.code === 'TARGET_NOT_FOUND',
+      )
+
+      const noChange = await adapter.open(`${testServer.baseUrl}/noop`)
+      const noChangeButton = noChange.observation?.interactiveElements.find(
+        (element) => element.name === 'Do nothing',
+      )
+      assert(noChangeButton)
+      const unverified = await adapter.click({
+        kind: 'semantic-ref',
+        observationId: noChange.observation.observationId,
+        ref: noChangeButton.ref,
+      })
+      assert.equal(unverified.execution.verification, 'unverified')
+
+      const boundedControls = await adapter.open(`${testServer.baseUrl}/many`)
+      assert.equal(
+        boundedControls.observation?.interactiveElements.length,
+        BROWSER_OBSERVATION_MAX_INTERACTIVE_ELEMENTS,
+      )
+      assert.equal(boundedControls.observation?.truncated, true)
+
+      await adapter.open(testServer.baseUrl)
+      await execFileAsync(
+        browserCommand,
+        [
+          '--json',
+          '--session',
+          adapterNamespace,
+          '--idle-timeout',
+          AGENT_BROWSER_SESSION_IDLE_TIMEOUT_ARGUMENT,
+          'tab',
+          'new',
+          `${testServer.baseUrl}/second`,
+        ],
+        { cwd: adapterSocket, env: adapterEnvironment, timeout: 15_000, windowsHide: true },
+      )
+      const adapterTabs = await adapter.listTabs()
+      const firstTab = adapterTabs.find((tab) => tab.url === `${testServer.baseUrl}/`)
+      const secondAdapterTab = adapterTabs.find((tab) => tab.url?.endsWith('/second'))
+      assert(firstTab, `Root tab missing from ${JSON.stringify(adapterTabs)}`)
+      assert(secondAdapterTab, `Second tab missing from ${JSON.stringify(adapterTabs)}`)
+      const switched = await adapter.switchTab(firstTab.tabId)
+      assert.equal(switched.execution.verification, 'verified')
+      assert.equal(switched.observation?.title, 'Shio browser control test')
+    } finally {
+      await adapter.close()
+    }
+    await assert.rejects(
+      adapter.observe(),
+      (error: unknown) =>
+        error instanceof BrowserAutomationError && error.code === 'SESSION_CLOSED',
+    )
+    assert.deepEqual(await processesUsingPath(temporaryRoot), [])
+
+    const pluginBrowserResources = {
+      command: browserCommand,
+      executablePath,
+      namespace: 'shio-browser-no-dsh-repro',
+      profileDirectory: join(temporaryRoot, 'no-dsh-browser-profile'),
+      socketDirectory: join(temporaryRoot, 'no-dsh-browser-runtime'),
+    }
+    const plugin = new DesktopControlPlugin({
+      adapter: new DshHarnessAdapter({
+        resources: () => ({
+          command: process.execPath,
+          runtimeScript: resolve(desktopRoot, 'resources', 'desktop-control', 'dsh-runtime.mjs'),
+          profileDirectory: resolve(desktopRoot, 'resources', 'desktop-control'),
+          workspaceDirectory: join(temporaryRoot, 'no-dsh-workspace'),
+          sessionDirectory: join(temporaryRoot, 'no-dsh-sessions'),
+          homeDirectory: join(temporaryRoot, 'no-dsh-home'),
+          browser: pluginBrowserResources,
+        }),
+        model: () => ({
+          provider: 'mistral',
+          providerDisplayName: 'Mistral',
+          model: '',
+          baseURL: 'https://api.mistral.ai/v1',
+          apiKey: '',
+          credentialConfigured: false,
+        }),
+      }),
+      browser: new AgentBrowserAdapter({ resources: () => pluginBrowserResources }),
+      authorityMode: () => 'confirm',
+    })
+    await plugin.initialize({ pluginId: 'desktop-control' })
+    await plugin.start()
+    try {
+      const statusWithoutDsh = await plugin.getStatus()
+      assert.equal(statusWithoutDsh.browserControl, 'ready')
+      assert.equal(statusWithoutDsh.automationEngine, 'needs-setup')
+      assert.equal((await plugin.getHealth()).state, 'degraded')
+      const deterministicWithoutDsh = await plugin.executeWorkflow(
+        {
+          type: 'desktop.workflow',
+          goal: 'Open the exact controlled fixture',
+          browserOperation: { operation: 'open', url: testServer.baseUrl },
+          requestedCapabilities: ['browser'],
+          risk: 'normal',
+        },
+        new AbortController().signal,
+      )
+      assert.equal(deterministicWithoutDsh.browser?.verification, 'verified')
+      const browserContext = plugin.getBrowserContextProvider()
+      assert.equal(
+        browserContext.resolveRequirement({
+          userText: 'Какая сегодня погода?',
+          traceId: 'weather',
+        }),
+        'none',
+      )
+      assert.equal(
+        browserContext.resolveRequirement({
+          userText: 'Что на этой странице?',
+          traceId: 'page',
+        }),
+        'current-page',
+      )
+      assert.match(
+        (await browserContext.buildContext({ userText: 'Что здесь?', traceId: 'page' })).content,
+        /Controlled semantic browser fixture/,
+      )
+      const plannerLifecycle = new DshHarnessAdapter({
+        resources: () => ({
+          command: process.execPath,
+          runtimeScript: resolve(desktopRoot, 'resources', 'desktop-control', 'dsh-runtime.mjs'),
+          profileDirectory: resolve(desktopRoot, 'resources', 'desktop-control'),
+          workspaceDirectory: join(temporaryRoot, 'planner-workspace'),
+          sessionDirectory: join(temporaryRoot, 'planner-sessions'),
+          homeDirectory: join(temporaryRoot, 'planner-home'),
+          browser: pluginBrowserResources,
+        }),
+        model: () => ({
+          provider: 'mistral',
+          providerDisplayName: 'Mistral',
+          model: 'planner-model',
+          baseURL: 'https://planner.invalid/v1',
+          apiKey: 'test-only',
+          credentialConfigured: true,
+        }),
+        createHarness: async () => ({
+          start: async () => undefined,
+          run: async () => ({ finalResponse: '', notifications: [] }),
+          close: async () => undefined,
+        }),
+      })
+      await plannerLifecycle.start('browser')
+      await plannerLifecycle.close()
+      assert.match(
+        (await browserContext.buildContext({ userText: 'Что здесь?', traceId: 'after-planner' }))
+          .content,
+        /Controlled semantic browser fixture/,
+      )
+      await assert.rejects(
+        plugin.executeWorkflow(
+          {
+            type: 'desktop.workflow',
+            goal: 'Compare several pages and choose the best option',
+            requestedCapabilities: ['browser'],
+            risk: 'normal',
+          },
+          new AbortController().signal,
+        ),
+        (error: unknown) =>
+          Boolean(
+            error &&
+              typeof error === 'object' &&
+              (error as { code?: unknown }).code === 'DSH_MODEL_NOT_CONFIGURED',
+          ),
+      )
+      assert.equal(AGENT_BROWSER_SESSION_IDLE_TIMEOUT_ARGUMENT, '1800s')
+      assert.equal(AGENT_BROWSER_SESSION_IDLE_TIMEOUT_MS, 30 * 60 * 1_000)
+    } finally {
+      await plugin.stop()
+    }
+    assert.deepEqual(await processesUsingPath(temporaryRoot), [])
+
+    console.log('Browser observation, continuity and deterministic interaction repro passed')
   } finally {
     if (browserOpened && bridge) {
       await bridge.call('agent_browser_close', {}).catch(() => undefined)

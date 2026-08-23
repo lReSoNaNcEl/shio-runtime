@@ -22,6 +22,7 @@ import {
   type AuthorityChangeRequest,
   type DesktopWorkflowCapability,
 } from '../../../shared/actions'
+import { type BrowserOperation } from '../../../shared/desktop-control'
 import { type TranslationKey } from '../../../shared/localization'
 import { useTranslation } from '../../localization/useTranslation'
 import { observeRendererPromise } from '../../reliability/observePromise'
@@ -32,6 +33,25 @@ const CAPABILITY_LABELS: Record<DesktopWorkflowCapability, TranslationKey> = {
   'desktop-ui': 'actions.capability.desktopUi',
   filesystem: 'actions.capability.filesystem',
   shell: 'actions.capability.shell',
+}
+
+const BROWSER_OPERATION_LABELS: Record<BrowserOperation['operation'], TranslationKey> = {
+  open: 'actions.confirm.browserOpen',
+  click: 'actions.confirm.browserClick',
+  'switch-tab': 'actions.confirm.browserSwitchTab',
+}
+
+function browserOperationDetail(operation: BrowserOperation): string {
+  switch (operation.operation) {
+    case 'open':
+      return operation.url
+    case 'click':
+      return operation.target.kind === 'semantic-ref'
+        ? `@${operation.target.ref}`
+        : `${operation.target.role} “${operation.target.name}”`
+    case 'switch-tab':
+      return operation.tabId
+  }
 }
 
 export function ActionRuntimeHost() {
@@ -161,6 +181,16 @@ export function ActionRuntimeHost() {
                       {t('actions.confirm.command')}
                     </Text>
                     <code className="action-confirmation-command">{confirmation.shellCommand}</code>
+                  </div>
+                )}
+                {confirmation.browserOperation && (
+                  <div>
+                    <Text UNSAFE_className="action-confirmation-label">
+                      {t(BROWSER_OPERATION_LABELS[confirmation.browserOperation.operation])}
+                    </Text>
+                    <code className="action-confirmation-command">
+                      {browserOperationDetail(confirmation.browserOperation)}
+                    </code>
                   </div>
                 )}
                 <div>

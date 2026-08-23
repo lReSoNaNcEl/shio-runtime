@@ -94,25 +94,11 @@ function DeviceRow({ device, validating }: { device: MicrophoneOption; validatin
   const { t } = useTranslation()
   const { primary, secondary } = splitLabel(device.label)
   return (
-    <Radio value={device.deviceId} UNSAFE_className="mic-device-row">
-      <span className="mic-device-icon">
-        <MicrophoneIcon />
-      </span>
-      <span className="mic-device-text">
-        <span className="mic-device-name">{primary}</span>
-        {validating ? (
-          <span className="mic-device-sub mic-device-checking">
-            <ProgressCircle
-              aria-label={t('microphone.gate.checkingAccess')}
-              isIndeterminate
-              size="S"
-            />
-            {t('microphone.gate.checkingAccess')}
-          </span>
-        ) : (
-          secondary && <span className="mic-device-sub">{secondary}</span>
-        )}
-      </span>
+    <Radio
+      value={device.deviceId}
+      description={validating ? t('microphone.gate.checkingAccess') : (secondary ?? undefined)}
+    >
+      {primary}
     </Radio>
   )
 }
@@ -182,21 +168,23 @@ export function MicrophoneGateOverlay({
           )}
 
           {!loading && !emptyDevices && (
-            <RadioGroup
-              value={selectedDeviceId ?? ''}
-              onChange={onDeviceSelect}
-              isDisabled={validating}
-              aria-label={t('microphone.gate.selection')}
-              UNSAFE_className="mic-device-list"
-            >
-              {devices.map((device) => (
-                <DeviceRow
-                  key={device.deviceId}
-                  device={device}
-                  validating={validating && selectedDeviceId === device.deviceId}
-                />
-              ))}
-            </RadioGroup>
+            <div className="mic-device-list">
+              <RadioGroup
+                value={selectedDeviceId ?? ''}
+                onChange={onDeviceSelect}
+                isDisabled={validating}
+                isEmphasized
+                aria-label={t('microphone.gate.selection')}
+              >
+                {devices.map((device) => (
+                  <DeviceRow
+                    key={device.deviceId}
+                    device={device}
+                    validating={validating && selectedDeviceId === device.deviceId}
+                  />
+                ))}
+              </RadioGroup>
+            </div>
           )}
 
           {error && (

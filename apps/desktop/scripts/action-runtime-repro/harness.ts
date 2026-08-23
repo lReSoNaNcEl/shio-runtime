@@ -71,6 +71,7 @@ async function main(): Promise<void> {
         tool: request.type,
         goal: request.goal,
         shellCommand: request.shellCommand,
+        browserOperation: request.browserOperation,
         requestedCapabilities: request.requestedCapabilities,
         risk: request.risk,
       }),
@@ -134,8 +135,26 @@ async function main(): Promise<void> {
   assert.equal(confirmedResult.authorization, 'confirmed')
   assert.equal(executionCount, 1)
 
-  const cancelled = runtime.execute({ name: 'desktop.workflow', payload: workflow('cancelled') })
+  const cancelled = runtime.execute({
+    name: 'desktop.workflow',
+    payload: {
+      type: 'desktop.workflow',
+      goal: 'Click the exact Catalog button',
+      browserOperation: {
+        operation: 'click',
+        target: {
+          kind: 'accessible-name',
+          observationId: 'browser-observation-00000000-0000-4000-8000-000000000000',
+          role: 'button',
+          name: 'Catalog',
+        },
+      },
+      requestedCapabilities: ['browser'],
+      risk: 'normal',
+    },
+  })
   await new Promise((resolve) => setTimeout(resolve, 0))
+  assert.equal(actionConfirmationEvents[1].browserOperation?.operation, 'click')
   assert(
     confirmations.respondToAction({
       actionId: actionConfirmationEvents[1].actionId,
@@ -144,7 +163,7 @@ async function main(): Promise<void> {
   )
   const cancelledResult = await cancelled
   assert.equal(cancelledResult.status, 'cancelled')
-  assert.equal(executionCount, 1, 'Cancelled action reached the Adapter')
+  assert.equal(executionCount, 1, 'Permission-denied browser click reached the Adapter')
 
   mode = 'full'
   runtime.notifyAuthorityModeChanged()

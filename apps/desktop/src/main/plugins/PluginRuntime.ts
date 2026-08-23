@@ -1,5 +1,6 @@
 import { z } from 'zod'
 
+import type { BrowserContextProvider } from '../../shared/desktop-control'
 import type {
   PluginHealth,
   PluginId,
@@ -28,6 +29,7 @@ export interface BundledPlugin {
     | Promise<RuntimePluginHealthPresentation>
     | RuntimePluginHealthPresentation
   getProjectContextProvider?(): ProjectContextProvider
+  getBrowserContextProvider?(): BrowserContextProvider
 }
 
 const manifestSchema = z
@@ -244,10 +246,16 @@ export class PluginRuntime {
 
   private registerCapabilities(record: PluginRecord): void {
     const { manifest } = record.plugin
-    if (!manifest.capabilities.includes('project-context')) return
-    const provider = record.plugin.getProjectContextProvider?.()
-    if (!provider) throw new Error(`${manifest.id} did not provide project-context capability`)
-    this.capabilities.registerProjectContext(manifest.id, provider)
+    if (manifest.capabilities.includes('project-context')) {
+      const provider = record.plugin.getProjectContextProvider?.()
+      if (!provider) throw new Error(`${manifest.id} did not provide project-context capability`)
+      this.capabilities.registerProjectContext(manifest.id, provider)
+    }
+    if (manifest.capabilities.includes('browser-control')) {
+      const provider = record.plugin.getBrowserContextProvider?.()
+      if (!provider) throw new Error(`${manifest.id} did not provide browser-context capability`)
+      this.capabilities.registerBrowserContext(manifest.id, provider)
+    }
   }
 
   private async initializeRecord(record: PluginRecord): Promise<void> {
@@ -260,6 +268,7 @@ export class PluginRuntime {
 
   private unregisterCapabilities(record: PluginRecord): void {
     this.capabilities.unregisterProjectContext(record.plugin.manifest.id)
+    this.capabilities.unregisterBrowserContext(record.plugin.manifest.id)
   }
 
   private async snapshot(record: PluginRecord): Promise<PluginStatus> {
