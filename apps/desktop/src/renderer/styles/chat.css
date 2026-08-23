@@ -129,6 +129,94 @@
   line-height: 1.4;
 }
 
+.project-evidence {
+  display: grid;
+  gap: 4px;
+  max-width: 100%;
+  margin-top: 4px;
+  padding: 8px 10px;
+  border: 1px solid rgba(52, 211, 153, 0.2);
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.42);
+}
+
+.project-evidence-summary,
+.project-evidence-chips {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.project-evidence-summary {
+  justify-content: space-between;
+  color: var(--text-dim);
+  font-size: 0.76rem;
+}
+
+.project-evidence-disclosure {
+  min-width: 0;
+}
+
+.project-evidence-metadata {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 8px 0 10px;
+}
+
+.project-evidence-metadata > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.project-evidence-metadata dt {
+  color: var(--text-dim);
+  font-size: 0.72rem;
+}
+
+.project-evidence-metadata dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: 0.78rem;
+}
+
+.project-evidence-code {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+.project-evidence-source-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.project-evidence-source-list li {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  font-size: 0.76rem;
+}
+
+.project-evidence-path {
+  overflow-wrap: anywhere;
+  color: var(--text);
+}
+
+.project-evidence-source-list li > span:not(.project-evidence-path) {
+  color: var(--text-dim);
+}
+
+@media (max-width: 620px) {
+  .project-evidence-metadata {
+    grid-template-columns: 1fr;
+  }
+}
+
 .message-error {
   align-self: stretch;
   background: var(--err-bubble);
@@ -407,7 +495,15 @@
 }
 
 .screen-context-source {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  width: 100%;
+  height: auto;
   min-width: 0;
+  min-block-size: 0;
+  block-size: auto;
   padding: 0;
   overflow: hidden;
   border: 2px solid transparent;
@@ -439,6 +535,7 @@
 
 .screen-context-source > img {
   display: block;
+  flex: none;
   width: 100%;
   aspect-ratio: 16 / 9;
   object-fit: cover;
@@ -448,13 +545,32 @@
 .screen-context-source-info {
   min-width: 0;
   display: flex;
+  flex: 1;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
   padding: 9px 10px 10px;
 }
 
+.screen-context-source-identity {
+  min-width: 0;
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 7px;
+}
+
+.screen-context-source-app-icon {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  object-fit: contain;
+  border-radius: 4px;
+}
+
 .screen-context-source-name {
+  display: block;
+  flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;

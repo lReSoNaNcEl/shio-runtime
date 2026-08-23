@@ -40,6 +40,44 @@ export interface PluginStatus {
   lastError?: string
 }
 
+export type RuntimePluginHealthDetailValue =
+  | { kind: 'text'; value: string; code?: boolean }
+  | { kind: 'translation'; key: TranslationKey }
+  | { kind: 'timestamp'; value: number }
+
+export interface RuntimePluginHealthDetail {
+  id: string
+  labelKey: TranslationKey
+  value: RuntimePluginHealthDetailValue
+}
+
+/**
+ * Optional dashboard-oriented diagnostic data owned by a Plugin. This contract is
+ * deliberately data-only: presentation and navigation behavior remain renderer-owned.
+ */
+export interface RuntimePluginHealthPresentation {
+  summary?: string
+  context?: string
+  contextCode?: boolean
+  statusKey?: TranslationKey
+  lastActivityAt?: number
+  lastActivityLabelKey?: TranslationKey
+  details?: readonly RuntimePluginHealthDetail[]
+}
+
+export interface RuntimePluginHealth {
+  pluginId: PluginId
+  enabled: true
+  lifecycle: PluginLifecycleState
+  health: PluginHealth
+  displayNameKey: TranslationKey
+  presentation?: RuntimePluginHealthPresentation
+  navigationTarget?: {
+    kind: 'open-plugin'
+    pluginId: PluginId
+  }
+}
+
 export interface PluginManagementApi {
   list(): Promise<PluginStatus[]>
   get(id: PluginId): Promise<PluginStatus>

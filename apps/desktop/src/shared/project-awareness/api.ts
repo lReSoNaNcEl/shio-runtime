@@ -28,6 +28,7 @@ export interface ProjectAwarenessApi {
   openTokenSettings(): Promise<void>
   connect(): Promise<ProjectAwarenessStatus>
   disconnect(): Promise<ProjectAwarenessStatus>
+  refreshSnapshotStatus(force: boolean): Promise<ProjectAwarenessStatus>
   sync(): Promise<ProjectSyncResult>
   rebuildIndex(): Promise<ProjectSyncResult>
   getProjectMap(): Promise<ProjectMap | null>

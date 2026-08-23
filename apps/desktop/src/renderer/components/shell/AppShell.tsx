@@ -7,9 +7,9 @@ import Settings from '@react-spectrum/s2/icons/Settings'
 import User from '@react-spectrum/s2/icons/User'
 import { type ReactNode, useEffect, useRef, useState } from 'react'
 
-import { type HealthState } from '../../Controller'
 import { useTranslation } from '../../localization/useTranslation'
 import { observeRendererPromise } from '../../reliability/observePromise'
+import { type ApplicationHealth } from '../../runtime/runtimeHealth'
 import { RuntimeStatusIndicator } from './RuntimeStatusIndicator'
 
 export type AppSection = 'chat' | 'avatar' | 'plugins' | 'health' | 'debug' | 'settings'
@@ -27,7 +27,7 @@ export function AppShell({
 }: {
   section: AppSection
   onSectionChange: (section: AppSection) => void
-  health: { state: HealthState; text: string }
+  health: { state: ApplicationHealth; text: string }
   developerModeEnabled: boolean
   children: ReactNode
   heading?: ReactNode

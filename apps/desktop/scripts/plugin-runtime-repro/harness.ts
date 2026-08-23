@@ -245,6 +245,7 @@ async function conversationCapabilityContract(): Promise<void> {
     snapshotSha: 'abc1234',
     repository: 'owner/project',
     branch: 'main',
+    freshness: 'fresh' as const,
     evidence: [
       {
         path: 'src/index.ts',

@@ -2,6 +2,7 @@ import type { CharacterEmbodimentIntent } from '../character-response'
 import type { AppSettings } from '../config/appSettings'
 import type { BacklogSelectionResult, BufferedUtterance } from '../conversation/backlog'
 import type { ConversationTurnFailure } from '../conversation/turnFailure'
+import type { NetworkRequestDiagnostic, NetworkRequestDiagnosticDetails } from '../diagnostics'
 import type { LlmCapabilities } from '../llm/capabilities'
 import type {
   FetchModelsResult,
@@ -11,7 +12,7 @@ import type {
   ProviderProfile,
 } from '../llm/providers'
 import type { PluginManagementApi } from '../plugins'
-import type { ProjectAwarenessApi } from '../project-awareness'
+import type { ProjectAwarenessApi, ProjectReplyProvenance } from '../project-awareness'
 import type { AvatarRuntimeHealth, RuntimeEventInput } from '../runtime'
 import type {
   ScreenContextCaptureDescriptor,
@@ -61,6 +62,10 @@ export interface OverlayPresentationApi {
 }
 
 export interface ShioRuntimeApi {
+  diagnostics: {
+    getNetworkRequests: () => Promise<NetworkRequestDiagnostic[]>
+    getNetworkRequestDetails: (requestId: string) => Promise<NetworkRequestDiagnosticDetails | null>
+  }
   system: {
     getReleaseInfo: () => Promise<ReleaseInfo>
     openLogsFolder: () => Promise<{ ok: boolean }>
@@ -91,6 +96,7 @@ export interface ShioRuntimeApi {
       replyText?: string
       emotionKey?: string
       embodimentIntent?: CharacterEmbodimentIntent
+      provenance?: ProjectReplyProvenance
       errorCode?: 'LLM_CREDENTIAL_MISSING'
       failure?: ConversationTurnFailure
     }>

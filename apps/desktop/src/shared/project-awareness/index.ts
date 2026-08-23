@@ -1,5 +1,7 @@
 export * from './api'
 export * from './context'
+export * from './freshness'
+export * from './provenance'
 export * from './queries'
 export * from './repository'
 export * from './status'

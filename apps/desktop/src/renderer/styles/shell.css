@@ -1,22 +1,11 @@
 /* shell feature stylesheet. Keep feature-owned rules out of base.css. */
 
 .runtime-status-trigger {
-  display: inline-grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  border: 0;
-  border-radius: 50%;
-  background: transparent;
-  cursor: pointer;
+  min-width: 36px;
 }
-.runtime-status-trigger:hover {
-  background: rgba(255, 255, 255, 0.06);
-}
-.runtime-status-trigger:focus-visible {
-  outline: 2px solid #c4b5fd;
-  outline-offset: 2px;
+
+.runtime-status-label {
+  white-space: nowrap;
 }
 .sidebar-item {
   display: flex;
@@ -258,6 +247,17 @@
 
   .new-chat-action [data-slot="text"] {
     display: none;
+  }
+}
+
+@media (max-width: 980px) {
+  .runtime-status-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
   }
 }
 

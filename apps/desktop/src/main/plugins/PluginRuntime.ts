@@ -1,13 +1,22 @@
 import { z } from 'zod'
 
 import type {
+  CharacterCapabilityContext,
+  CharacterPluginAvailability,
   PluginHealth,
   PluginId,
   PluginManifest,
   PluginStatus,
   ProjectContextProvider,
+  RuntimePluginHealth,
+  RuntimePluginHealthPresentation,
 } from '../../shared/plugins'
-import { PROJECT_AWARENESS_PLUGIN_ID } from '../../shared/plugins'
+import {
+  CHARACTER_CAPABILITY_CONTEXT_SCHEMA_VERSION,
+  MAX_CHARACTER_CAPABILITY_KINDS_PER_PLUGIN,
+  MAX_CHARACTER_PLUGIN_CAPABILITIES,
+  PROJECT_AWARENESS_PLUGIN_ID,
+} from '../../shared/plugins'
 import type { PluginCapabilityRegistry } from './PluginCapabilityRegistry'
 import type { PluginRegistryStore } from './PluginRegistryStore'
 
@@ -22,6 +31,9 @@ export interface BundledPlugin {
   stop(): Promise<void>
   dispose(): Promise<void>
   getHealth(): Promise<PluginHealth> | PluginHealth
+  getHealthPresentation?():
+    | Promise<RuntimePluginHealthPresentation>
+    | RuntimePluginHealthPresentation
   getProjectContextProvider?(): ProjectContextProvider
 }
 
@@ -29,8 +41,8 @@ const manifestSchema = z
   .object({
     id: z.literal(PROJECT_AWARENESS_PLUGIN_ID),
     version: z.string().regex(/^\d+\.\d+\.\d+$/),
-    nameKey: z.string().min(1),
-    descriptionKey: z.string().min(1),
+    nameKey: z.literal('plugins.projectAwareness.name'),
+    descriptionKey: z.literal('plugins.projectAwareness.description'),
     defaultEnabled: z.boolean(),
     capabilities: z.array(z.literal('project-context')).max(1),
   })
@@ -48,6 +60,21 @@ interface PluginRecord {
 
 function safeError(error: unknown): string {
   return (error instanceof Error ? error.message : String(error)).slice(0, 500)
+}
+
+function characterAvailability(status: PluginStatus): CharacterPluginAvailability {
+  if (!status.enabled) return 'disabled'
+  if (status.lifecycle === 'error' || status.lifecycle === 'disposed') return 'unavailable'
+  switch (status.health.state) {
+    case 'healthy':
+      return status.lifecycle === 'active' ? 'available' : 'unavailable'
+    case 'needs-setup':
+      return 'needs-setup'
+    case 'degraded':
+      return 'degraded'
+    case 'error':
+      return 'unavailable'
+  }
 }
 
 export class PluginRuntime {
@@ -111,6 +138,65 @@ export class PluginRuntime {
   async get(id: PluginId): Promise<PluginStatus> {
     await this.initialize()
     return this.snapshot(this.requireRecord(id))
+  }
+
+  async listEnabledHealth(): Promise<RuntimePluginHealth[]> {
+    await this.initialize()
+    const projections = await Promise.all(
+      [...this.records.values()].map(async (record): Promise<RuntimePluginHealth | null> => {
+        const status = await this.snapshot(record)
+        if (!status.enabled) return null
+        try {
+          return {
+            pluginId: status.manifest.id,
+            enabled: true,
+            lifecycle: status.lifecycle,
+            health: status.health,
+            displayNameKey: status.manifest.nameKey,
+            presentation: await record.plugin.getHealthPresentation?.(),
+            navigationTarget: { kind: 'open-plugin', pluginId: status.manifest.id },
+          }
+        } catch (error) {
+          const detail = safeError(error)
+          return {
+            pluginId: status.manifest.id,
+            enabled: true,
+            lifecycle: status.lifecycle,
+            health: { state: 'error', detail, checkedAt: Date.now() },
+            displayNameKey: status.manifest.nameKey,
+            navigationTarget: { kind: 'open-plugin', pluginId: status.manifest.id },
+          }
+        }
+      }),
+    )
+    return projections.filter(
+      (projection): projection is RuntimePluginHealth => projection !== null,
+    )
+  }
+
+  async getCharacterCapabilitySnapshot(): Promise<CharacterCapabilityContext> {
+    await this.initialize()
+    const statuses = await Promise.all(
+      [...this.records.values()]
+        .slice(0, MAX_CHARACTER_PLUGIN_CAPABILITIES)
+        .map((record) => this.snapshot(record)),
+    )
+    const plugins = statuses.map((status) =>
+      Object.freeze({
+        id: status.manifest.id,
+        displayNameKey: status.manifest.nameKey,
+        installed: true as const,
+        enabled: status.enabled,
+        availability: characterAvailability(status),
+        capabilities: Object.freeze(
+          [...status.manifest.capabilities].slice(0, MAX_CHARACTER_CAPABILITY_KINDS_PER_PLUGIN),
+        ),
+      }),
+    )
+    return Object.freeze({
+      schemaVersion: CHARACTER_CAPABILITY_CONTEXT_SCHEMA_VERSION,
+      plugins: Object.freeze(plugins),
+    })
   }
 
   async enable(id: PluginId): Promise<PluginStatus> {

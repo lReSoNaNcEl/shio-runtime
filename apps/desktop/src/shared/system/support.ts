@@ -1,5 +1,5 @@
 import type { LlmProviderId } from '../llm'
-import type { ProjectAwarenessStatus } from '../project-awareness'
+import type { RuntimePluginHealth } from '../plugins'
 import type { AvatarRuntimeHealth } from '../runtime'
 
 export type RendererProcessStatus =
@@ -49,7 +49,8 @@ export interface RuntimeSupportBundle {
     model: string
     credentialConfigured: Record<LlmProviderId, boolean>
   }
-  projectAwareness: ProjectAwarenessStatus
+  /** Enabled Plugins only; disabled optional capabilities are intentionally absent. */
+  plugins: readonly RuntimePluginHealth[]
   avatarRuntime: {
     /** False when the renderer is not ready, so a previously reported snapshot is stale. */
     reportFresh: boolean

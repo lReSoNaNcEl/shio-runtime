@@ -1,20 +1,19 @@
 import { ActionButton, StatusLight, Tooltip, TooltipTrigger } from '@react-spectrum/s2'
 
-import { type HealthState } from '../../Controller'
+import { type ApplicationHealth } from '../../runtime/runtimeHealth'
 
-const VARIANT: Record<HealthState, 'positive' | 'notice' | 'negative' | 'neutral'> = {
-  ok: 'positive',
-  warn: 'notice',
-  err: 'negative',
-  checking: 'neutral',
+const VARIANT: Record<ApplicationHealth, 'positive' | 'notice' | 'negative'> = {
+  healthy: 'positive',
+  notice: 'notice',
+  error: 'negative',
 }
 
-/** Compact reusable Runtime Health dot. Color + tooltip + accessible label only — no inline text. */
+/** Application-level Runtime Health trigger; text collapses only at compact widths. */
 export function RuntimeStatusIndicator({
   health,
   onPress,
 }: {
-  health: { state: HealthState; text: string }
+  health: { state: ApplicationHealth; text: string }
   onPress?: () => void
 }) {
   return (
@@ -26,7 +25,7 @@ export function RuntimeStatusIndicator({
         onPress={onPress}
       >
         <StatusLight variant={VARIANT[health.state]} size="S">
-          <span className="visually-hidden">{health.text}</span>
+          <span className="runtime-status-label">{health.text}</span>
         </StatusLight>
       </ActionButton>
       <Tooltip>{health.text}</Tooltip>

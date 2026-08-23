@@ -5,6 +5,7 @@ import { app, type BrowserWindow, Menu, safeStorage } from 'electron'
 import { translate } from '../../shared/localization'
 import type { AvatarRuntimeHealth } from '../../shared/runtime'
 import { getConfig, getOverlayPresentationConfig, getRendererConfig, loadConfig } from '../config'
+import { RendererNetworkObserver } from '../diagnostics/RendererNetworkObserver'
 import { registerIpcHandlers } from '../ipc'
 import { IpcAuthorization } from '../ipc/IpcAuthorization'
 import { registerOverlayIpc } from '../ipc/registerOverlayIpc'
@@ -49,6 +50,7 @@ export function buildApplicationDependencies(): ApplicationDependencies {
   let projectAwareness: ProjectAwarenessPlugin | null = null
   let projectCredentialStore: ProjectCredentialStore | null = null
   let projectKnowledgeStore: ProjectKnowledgeStore | null = null
+  let rendererNetworkObserver: RendererNetworkObserver | null = null
   let lastAvatarState: unknown = null
   let lastAvatarMouth: unknown = null
   let lastAvatarRuntimeHealth: AvatarRuntimeHealth | null = null
@@ -166,8 +168,13 @@ export function buildApplicationDependencies(): ApplicationDependencies {
     })
     speechClient = new SpeechClient(cfg.pythonSpeechUrl)
     observeMainPromise(speechClient.warnIfEmotionContractDrift(), 'check speech emotion contract')
-    return new Orchestrator(llmGateway, createMemoryStore(), speechClient, getRendererConfig, () =>
-      pluginCapabilities.getProjectContextProvider(),
+    return new Orchestrator(
+      llmGateway,
+      createMemoryStore(),
+      speechClient,
+      getRendererConfig,
+      () => pluginCapabilities.getProjectContextProvider(),
+      { getSnapshot: () => getPluginRuntime().getCharacterCapabilitySnapshot() },
     )
   }
 
@@ -175,6 +182,8 @@ export function buildApplicationDependencies(): ApplicationDependencies {
     quitting = true
     overlayWindows.setQuitting()
     overlayWindows.destroy()
+    rendererNetworkObserver?.dispose()
+    rendererNetworkObserver = null
     screenContextService.dispose()
     if (pluginRuntime) {
       observeMainPromise(pluginRuntime.dispose(), 'dispose Plugin Runtime')
@@ -198,12 +207,17 @@ export function buildApplicationDependencies(): ApplicationDependencies {
 
     lastAvatarRuntimeHealth = null
     win = mainWindows.create()
+    rendererNetworkObserver?.dispose()
+    const networkObserver = new RendererNetworkObserver(win.webContents.session, win.webContents.id)
+    rendererNetworkObserver = networkObserver
     win.on('closed', () => {
       win = null
       if (!quitting) shutdown()
     })
     const rendererId = win.webContents.id
     win.webContents.once('destroyed', () => {
+      networkObserver.dispose()
+      if (rendererNetworkObserver === networkObserver) rendererNetworkObserver = null
       screenContextService.disposeRenderer(rendererId)
     })
 
@@ -240,7 +254,7 @@ export function buildApplicationDependencies(): ApplicationDependencies {
     registerReleaseSupportHandlers(
       {
         llmCredentials: getLlmCredentialStore,
-        projectAwareness: getProjectAwareness,
+        plugins: getPluginRuntime,
         speech: () => {
           speechClient ??= new SpeechClient(getConfig().pythonSpeechUrl)
           return speechClient

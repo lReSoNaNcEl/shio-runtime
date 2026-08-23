@@ -1,6 +1,7 @@
 import axios, { type AxiosInstance } from 'axios'
 
 import type { LlmProviderId } from '../../../shared/llm'
+import { mainLog } from '../../logging/safeLogger'
 import { llmDebug } from '../diagnostics'
 import {
   classifyHttpFailure,
@@ -24,9 +25,45 @@ export interface ChatRunConfig {
   extraHeaders?: Record<string, string>
   temperature?: number
   maxTokensOverride?: number
+  requestTimeoutMs?: number
 }
 
 const DEFAULT_TEMPERATURE = 0.7
+const DEFAULT_REQUEST_TIMEOUT_MS = 60_000
+
+function safeTraceId(value: string | undefined): string {
+  return value && /^[A-Za-z0-9_.:-]{1,100}$/.test(value) ? value : 'untracked'
+}
+
+function requestDeadline(
+  callerSignal: AbortSignal | undefined,
+  timeoutMs: number,
+): {
+  signal: AbortSignal
+  didTimeOut: () => boolean
+  dispose: () => void
+} {
+  const controller = new AbortController()
+  let timedOut = false
+  const abortFromCaller = (): void => controller.abort(callerSignal?.reason)
+  if (callerSignal?.aborted) abortFromCaller()
+  else callerSignal?.addEventListener('abort', abortFromCaller, { once: true })
+  const timer = setTimeout(
+    () => {
+      timedOut = true
+      controller.abort(new Error('LLM request deadline exceeded'))
+    },
+    Math.max(1, timeoutMs),
+  )
+  return {
+    signal: controller.signal,
+    didTimeOut: () => timedOut,
+    dispose: () => {
+      clearTimeout(timer)
+      callerSignal?.removeEventListener('abort', abortFromCaller)
+    },
+  }
+}
 
 export async function runChatCompletion(
   config: ChatRunConfig,
@@ -40,20 +77,39 @@ export async function runChatCompletionDetailed(
   options: LlmRequestOptions = {},
 ): Promise<ParsedCompletion> {
   const started = Date.now()
+  const requestedTimeoutMs = config.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS
+  const timeoutMs = Number.isFinite(requestedTimeoutMs)
+    ? Math.max(1, requestedTimeoutMs)
+    : DEFAULT_REQUEST_TIMEOUT_MS
+  const deadline = requestDeadline(options.signal, timeoutMs)
+  const preparedMessages = prepareMessages(config.messages, config.capabilities)
   const body: Record<string, unknown> = {
     model: config.model,
-    messages: prepareMessages(config.messages, config.capabilities),
+    messages: preparedMessages,
     max_tokens: config.maxTokensOverride ?? config.capabilities.recommendedMaxTokens,
     stream: false,
   }
   if (config.capabilities.supportsTemperature) {
     body.temperature = config.temperature ?? DEFAULT_TEMPERATURE
   }
+  const traceId = safeTraceId(options.traceId)
+  let terminalResult = 'failure'
+  let terminalCode = 'UNKNOWN'
+  mainLog.info('[LLMTransportTrace] request_started', {
+    traceId,
+    provider: config.provider,
+    model: config.model,
+    messageCount: preparedMessages.length,
+    serializedRequestCharacters: JSON.stringify(body).length,
+    streaming: false,
+    deadlineMs: timeoutMs,
+  })
 
   try {
     const response = await config.http.post(config.chatPath, body, {
       headers: { Authorization: `Bearer ${config.apiKey}`, ...config.extraHeaders },
-      signal: options.signal,
+      signal: deadline.signal,
+      timeout: timeoutMs,
     })
     const parsed = parseChatCompletion(config.provider, config.displayName, response.data)
     llmDebug({
@@ -65,9 +121,12 @@ export async function runChatCompletionDetailed(
       contentEmpty: false,
       usage: parsed.usage,
     })
+    terminalResult = 'success'
+    terminalCode = 'OK'
     return parsed
   } catch (error) {
     if (error instanceof LlmResponseError) {
+      terminalCode = error.code
       llmDebug({
         provider: config.provider,
         model: config.model,
@@ -82,6 +141,7 @@ export async function runChatCompletionDetailed(
     if (axios.isAxiosError(error) && error.response) {
       const message = normalizeHttpErrorMessage(config.displayName, error.response.status)
       const failure = classifyHttpFailure(error.response.status)
+      terminalCode = failure.code
       llmDebug({
         provider: config.provider,
         model: config.model,
@@ -98,11 +158,17 @@ export async function runChatCompletionDetailed(
         message,
       })
     }
-    if (
-      options.signal?.aborted ||
-      axios.isCancel(error) ||
-      (axios.isAxiosError(error) && error.code === 'ERR_CANCELED')
-    ) {
+    if (deadline.didTimeOut()) {
+      terminalCode = 'TIMEOUT'
+      throw new LlmResponseError({
+        provider: config.provider,
+        code: 'TIMEOUT',
+        recoverable: true,
+        message: `${config.displayName}: превышено время ожидания ответа.`,
+      })
+    }
+    if (options.signal?.aborted || axios.isCancel(error)) {
+      terminalCode = 'CANCELLED'
       throw new LlmResponseError({
         provider: config.provider,
         code: 'CANCELLED',
@@ -114,6 +180,7 @@ export async function runChatCompletionDetailed(
       axios.isAxiosError(error) &&
       (error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT')
     ) {
+      terminalCode = 'TIMEOUT'
       throw new LlmResponseError({
         provider: config.provider,
         code: 'TIMEOUT',
@@ -121,7 +188,19 @@ export async function runChatCompletionDetailed(
         message: `${config.displayName}: превышено время ожидания ответа.`,
       })
     }
+    if (axios.isAxiosError(error)) {
+      const cause = error.cause as { code?: unknown; name?: unknown; syscall?: unknown } | undefined
+      mainLog.warn('[LLM] transport failure', {
+        provider: config.provider,
+        model: config.model,
+        code: error.code ?? 'unknown',
+        causeCode: typeof cause?.code === 'string' ? cause.code : undefined,
+        causeName: typeof cause?.name === 'string' ? cause.name : undefined,
+        causeSyscall: typeof cause?.syscall === 'string' ? cause.syscall : undefined,
+      })
+    }
     const message = networkErrorMessage(config.displayName)
+    terminalCode = 'NETWORK_ERROR'
     llmDebug({
       provider: config.provider,
       model: config.model,
@@ -136,6 +215,17 @@ export async function runChatCompletionDetailed(
       code: 'NETWORK_ERROR',
       recoverable: true,
       message,
+    })
+  } finally {
+    deadline.dispose()
+    mainLog.info('[LLMTransportTrace] request_terminal', {
+      traceId,
+      provider: config.provider,
+      model: config.model,
+      result: terminalResult,
+      code: terminalCode,
+      elapsedMs: Date.now() - started,
+      streaming: false,
     })
   }
 }

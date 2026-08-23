@@ -7,12 +7,12 @@ import { getConfig } from '../config'
 import type { IpcAuthorization } from '../ipc/IpcAuthorization'
 import type { LlmCredentialStore } from '../llm'
 import { getRecentSafeErrors } from '../logging/safeLogger'
-import type { ProjectAwarenessPlugin } from '../project-awareness'
+import type { PluginRuntime } from '../plugins'
 import { deriveCapabilities, type SpeechClient } from '../speech/speechClient'
 
 interface ReleaseSupportDependencies {
   llmCredentials: () => LlmCredentialStore
-  projectAwareness: () => ProjectAwarenessPlugin
+  plugins: () => PluginRuntime
   speech: () => SpeechClient
   isOverlayVisible: () => boolean
   avatarRuntimeHealth: () => AvatarRuntimeHealth | null
@@ -84,7 +84,7 @@ export function registerReleaseSupportHandlers(
             model: config.llm.providers[activeProvider].model,
             credentialConfigured,
           },
-          projectAwareness: dependencies.projectAwareness().getStatus(),
+          plugins: await dependencies.plugins().listEnabledHealth(),
           avatarRuntime: {
             reportFresh: mainRenderer.status === 'ready' && avatarRuntimeHealth !== null,
             health: avatarRuntimeHealth,

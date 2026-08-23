@@ -1,27 +1,46 @@
 import {
   ActionButton,
-  Content,
+  Button,
   Disclosure,
   DisclosurePanel,
   DisclosureTitle,
   Heading,
-  InlineAlert,
   ProgressCircle,
   StatusLight,
   Text,
+  Tooltip,
+  TooltipTrigger,
 } from '@react-spectrum/s2'
+import AppsIcon from '@react-spectrum/s2/icons/Apps'
 import AudioWaveIcon from '@react-spectrum/s2/icons/AudioWave'
+import CopyIcon from '@react-spectrum/s2/icons/Copy'
 import DataIcon from '@react-spectrum/s2/icons/Data'
 import MicrophoneIcon from '@react-spectrum/s2/icons/Microphone'
 import RefreshIcon from '@react-spectrum/s2/icons/Refresh'
-import { type ReactElement, useEffect, useState } from 'react'
+import { type ReactElement, type ReactNode, useEffect, useRef, useState } from 'react'
 
-import { type PluginStatus, PROJECT_AWARENESS_PLUGIN_ID } from '../../../shared/plugins'
-import { type ProjectAwarenessStatus } from '../../../shared/project-awareness'
-import { type ControllerState, controller } from '../../Controller'
+import { type TranslationKey } from '../../../shared/localization'
+import {
+  type PluginHealthState,
+  type PluginLifecycleState,
+  type RuntimePluginHealth,
+  type RuntimePluginHealthDetailValue,
+} from '../../../shared/plugins'
+import { type RuntimeSupportBundle } from '../../../shared/system'
+import { type ControllerState } from '../../controller/contracts'
 import { type LocalizationContextValue } from '../../localization/LocalizationProvider'
 import { useTranslation } from '../../localization/useTranslation'
-import { observeRendererPromise } from '../../reliability/observePromise'
+import {
+  type ApplicationHealth,
+  formatRelativeTime,
+  type HealthSeverity,
+  type RuntimeHealthComponent,
+  type RuntimeHealthProjection,
+} from '../../runtime/runtimeHealth'
+/*
+ * Health presentation consumes explicit owner projections. It intentionally has
+ * no Plugin-id-specific imports or configuration operations.
+ */
 import {
   type SpeechCapabilitiesState,
   type SpeechCapabilityStatus,
@@ -29,161 +48,121 @@ import {
 
 type CardTone = 'positive' | 'informative' | 'neutral' | 'notice' | 'negative'
 
-const EMPTY_PROJECT_STATUS: ProjectAwarenessStatus = {
-  enabled: false,
-  state: 'disconnected',
-  provider: 'github',
-  repository: '',
-  branch: 'main',
-  indexState: 'not_built',
-  access: 'read-only',
-  indexedFileCount: 0,
-  credential: {
-    configured: false,
-    source: 'none',
-    secureStorageAvailable: false,
-  },
+const SEVERITY_TONE: Record<HealthSeverity, CardTone> = {
+  healthy: 'positive',
+  notice: 'notice',
+  degraded: 'notice',
+  error: 'negative',
 }
 
-const PROJECT_STATUS: Record<
-  ProjectAwarenessStatus['state'],
-  { key: Parameters<LocalizationContextValue['t']>[0]; tone: CardTone }
-> = {
-  disconnected: { key: 'health.project.state.disconnected', tone: 'neutral' },
-  connecting: { key: 'health.project.state.connecting', tone: 'informative' },
-  ready: { key: 'health.project.state.ready', tone: 'positive' },
-  syncing: { key: 'health.project.state.syncing', tone: 'informative' },
-  indexing: { key: 'health.project.state.indexing', tone: 'informative' },
-  stale: { key: 'health.project.state.stale', tone: 'notice' },
-  error: { key: 'common.error', tone: 'negative' },
+const OVERALL_TONE: Record<ApplicationHealth, CardTone> = {
+  healthy: 'positive',
+  notice: 'notice',
+  error: 'negative',
 }
 
-const INDEX_STATE_KEY: Record<
-  ProjectAwarenessStatus['indexState'],
-  Parameters<LocalizationContextValue['t']>[0]
-> = {
-  not_built: 'health.project.index.notBuilt',
-  current: 'health.project.index.current',
-  stale: 'health.project.index.stale',
-  building: 'health.project.index.building',
-  error: 'common.error',
+const OVERALL_KEY: Record<ApplicationHealth, TranslationKey> = {
+  healthy: 'health.overall.ok',
+  notice: 'health.overall.attention',
+  error: 'health.overall.problems',
 }
 
-function ProjectAwarenessCard({
-  plugin,
-  status,
-  onOpenPlugin,
+const PLUGIN_HEALTH_KEY: Record<PluginHealthState, TranslationKey> = {
+  healthy: 'plugins.health.healthy',
+  'needs-setup': 'plugins.health.needsSetup',
+  degraded: 'plugins.health.degraded',
+  error: 'plugins.health.error',
+}
+
+const LIFECYCLE_KEY: Record<PluginLifecycleState, TranslationKey> = {
+  registered: 'plugins.lifecycle.registered',
+  initializing: 'plugins.lifecycle.initializing',
+  disabled: 'plugins.lifecycle.disabled',
+  starting: 'plugins.lifecycle.starting',
+  active: 'plugins.lifecycle.active',
+  stopping: 'plugins.lifecycle.stopping',
+  error: 'plugins.lifecycle.error',
+  disposed: 'plugins.lifecycle.disposed',
+}
+
+function exactTime(timestamp: number, locale: string): string {
+  return new Intl.DateTimeFormat(locale, {
+    dateStyle: 'medium',
+    timeStyle: 'medium',
+  }).format(timestamp)
+}
+
+function RelativeTimestamp({
+  timestamp,
+  labelKey,
 }: {
-  plugin: PluginStatus | null
-  status: ProjectAwarenessStatus
-  onOpenPlugin: () => void
+  timestamp?: number
+  labelKey: TranslationKey
 }) {
   const { intlLocale, t } = useTranslation()
-  const state = plugin?.enabled
-    ? PROJECT_STATUS[status.state]
-    : ({ key: 'common.disabled', tone: 'neutral' } as const)
-  const stateLabel = t(state.key)
-  const busy = Boolean(plugin?.busy) || ['connecting', 'syncing', 'indexing'].includes(status.state)
-  const healthLabel = plugin
-    ? plugin.health.detailKey
-      ? t(plugin.health.detailKey)
-      : plugin.health.detail || t('plugins.health.healthy')
-    : t('common.loading')
-
+  if (!timestamp) return <Text UNSAFE_className="health-metadata">{t('common.none')}</Text>
+  const relative = formatRelativeTime(timestamp, intlLocale, t('health.time.justNow'))
+  const label = t(labelKey, { time: relative })
+  const exact = exactTime(timestamp, intlLocale)
   return (
-    <article className={`health-card health-card-${state.tone} health-card-project-awareness`}>
+    <TooltipTrigger delay={200}>
+      <ActionButton
+        isQuiet
+        aria-label={`${label}. ${exact}`}
+        UNSAFE_className="health-time-trigger"
+      >
+        <Text>{label}</Text>
+      </ActionButton>
+      <Tooltip>{exact}</Tooltip>
+    </TooltipTrigger>
+  )
+}
+
+function HealthCardShell({
+  icon,
+  title,
+  tone,
+  status,
+  busy = false,
+  children,
+  className = '',
+}: {
+  icon: ReactElement
+  title: string
+  tone: CardTone
+  status: string
+  busy?: boolean
+  children?: ReactNode
+  className?: string
+}) {
+  return (
+    <article className={`health-card health-card-${tone}${className ? ` ${className}` : ''}`}>
       <div className="health-card-top">
         <span className="health-card-icon" aria-hidden="true">
-          <DataIcon />
+          {icon}
         </span>
         <Heading level={3} UNSAFE_className="health-card-name">
-          {t('health.project.title')}
+          {title}
         </Heading>
         {busy ? (
-          <ProgressCircle
-            size="S"
-            isIndeterminate
-            aria-label={stateLabel}
-            UNSAFE_className="health-card-dot-busy"
-          />
+          <ProgressCircle size="S" isIndeterminate aria-label={status} />
         ) : (
-          <StatusLight variant={state.tone} size="S">
-            <span className="visually-hidden">{stateLabel}</span>
+          <StatusLight variant={tone} size="S">
+            <span className="visually-hidden">{status}</span>
           </StatusLight>
         )}
       </div>
-      <StatusLight variant={state.tone} size="S" UNSAFE_className="health-card-status">
-        {stateLabel}
+      <StatusLight variant={tone} size="S" UNSAFE_className="health-card-status">
+        {status}
       </StatusLight>
-      <dl className="project-awareness-details">
-        <div>
-          <dt>{t('common.provider')}</dt>
-          <dd>{t('common.github')}</dd>
-        </div>
-        <div>
-          <dt>{t('common.enabled')}</dt>
-          <dd>{plugin?.enabled ? t('common.yes') : t('common.no')}</dd>
-        </div>
-        <div>
-          <dt>{t('plugins.health.label')}</dt>
-          <dd>{healthLabel}</dd>
-        </div>
-        <div>
-          <dt>{t('common.repository')}</dt>
-          <dd>{status.repository}</dd>
-        </div>
-        <div>
-          <dt>{t('common.branch')}</dt>
-          <dd>{status.branch}</dd>
-        </div>
-        <div>
-          <dt>{t('health.project.remoteHead')}</dt>
-          <dd>{status.remoteHead?.slice(0, 7) ?? t('common.none')}</dd>
-        </div>
-        <div>
-          <dt>{t('health.project.indexedCommit')}</dt>
-          <dd>{status.indexedCommit?.slice(0, 7) ?? t('common.none')}</dd>
-        </div>
-        <div>
-          <dt>{t('health.project.indexState')}</dt>
-          <dd>{t(INDEX_STATE_KEY[status.indexState])}</dd>
-        </div>
-        <div>
-          <dt>{t('health.project.access')}</dt>
-          <dd>{t('common.readOnly')}</dd>
-        </div>
-        <div>
-          <dt>{t('health.project.credential')}</dt>
-          <dd>
-            {status.credential.source === 'secure_store'
-              ? t('health.project.credentialSaved')
-              : t('common.notConfigured')}
-          </dd>
-        </div>
-        <div>
-          <dt>{t('health.project.lastSync')}</dt>
-          <dd>
-            {status.lastSyncAt
-              ? new Date(status.lastSyncAt).toLocaleTimeString(intlLocale)
-              : t('common.none')}
-          </dd>
-        </div>
-      </dl>
-      {(plugin?.lastError || status.lastError) && (
-        <Text UNSAFE_className="health-project-error">{plugin?.lastError || status.lastError}</Text>
-      )}
-      <div className="health-project-actions">
-        <ActionButton isDisabled={busy} onPress={onOpenPlugin}>
-          {t('health.project.openPlugin')}
-        </ActionButton>
-      </div>
+      {children}
     </article>
   )
 }
 
 const SPEECH_SERVICE: Record<
   SpeechCapabilitiesState['service'],
-  { key: Parameters<LocalizationContextValue['t']>[0]; tone: CardTone }
+  { key: TranslationKey; tone: CardTone }
 > = {
   unknown: { key: 'common.checking', tone: 'informative' },
   checking: { key: 'common.checking', tone: 'informative' },
@@ -196,22 +175,18 @@ function capabilityLabel(
   status: SpeechCapabilityStatus,
   t: LocalizationContextValue['t'],
 ): { text: string; tone: CardTone } {
-  switch (status) {
-    case 'available':
-      return { text: t('health.speech.available'), tone: 'positive' }
-    case 'unavailable':
-      return { text: t('common.unavailable'), tone: 'negative' }
-    default:
-      return { text: t('common.none'), tone: 'neutral' }
-  }
+  if (status === 'available') return { text: t('health.speech.available'), tone: 'positive' }
+  if (status === 'unavailable') return { text: t('common.unavailable'), tone: 'negative' }
+  return { text: t('common.notChecked'), tone: 'neutral' }
 }
 
-/**
- * Dedicated Speech API card (ТЗ §7): aggregated service state plus per-capability
- * ASR/TTS/Streaming detail, last-check time, a recheck button, and an expandable —
- * closed by default — technical-details block. No IP/port shown outside it.
- */
-function SpeechApiCard({ capabilities }: { capabilities: SpeechCapabilitiesState }) {
+function SpeechApiCard({
+  capabilities,
+  onRetry,
+}: {
+  capabilities: SpeechCapabilitiesState
+  onRetry: () => void
+}) {
   const { intlLocale, t } = useTranslation()
   const service = SPEECH_SERVICE[capabilities.service]
   const serviceLabel = t(service.key)
@@ -224,321 +199,401 @@ function SpeechApiCard({ capabilities }: { capabilities: SpeechCapabilitiesState
       status: capabilities.streaming,
     },
   ]
-  const lastChecked = capabilities.lastCheckedAt
-    ? new Date(capabilities.lastCheckedAt).toLocaleTimeString(intlLocale)
-    : t('common.none')
   const hasProblem = capabilities.service === 'unavailable' || capabilities.service === 'degraded'
+  const exactAttempt = capabilities.lastCheckedAt
+    ? exactTime(capabilities.lastCheckedAt, intlLocale)
+    : t('common.none')
 
   return (
-    <article className={`health-card health-card-${service.tone} health-card-speech`}>
-      <div className="health-card-top">
-        <span className="health-card-icon" aria-hidden="true">
-          <AudioWaveIcon />
-        </span>
-        <Heading level={3} UNSAFE_className="health-card-name">
-          {t('health.speech.title')}
-        </Heading>
-        <StatusLight variant={service.tone} size="S">
-          <span className="visually-hidden">{serviceLabel}</span>
-        </StatusLight>
-      </div>
-      <StatusLight variant={service.tone} size="S" UNSAFE_className="health-card-status">
-        {serviceLabel}
-      </StatusLight>
-
-      <dl className="speech-capability-list">
+    <HealthCardShell
+      icon={<AudioWaveIcon />}
+      title={t('health.speech.title')}
+      tone={service.tone}
+      status={serviceLabel}
+      busy={capabilities.service === 'checking' || capabilities.service === 'unknown'}
+      className="health-card-speech"
+    >
+      {hasProblem ? (
+        <Text UNSAFE_className="health-card-detail">{t('health.speech.connectionFailed')}</Text>
+      ) : null}
+      <dl className="health-detail-list">
         {rows.map((row) => {
           const value = capabilityLabel(row.status, t)
           return (
-            <div className="speech-capability-row" key={row.id}>
+            <div className="health-detail-row" key={row.id}>
               <dt>{row.label}</dt>
-              <dd className={`speech-capability-${value.tone}`}>{value.text}</dd>
+              <dd className={`health-value-${value.tone}`}>{value.text}</dd>
             </div>
           )
         })}
       </dl>
-      <Text UNSAFE_className="health-card-detail">
-        {t('health.speech.lastCheck', { time: lastChecked })}
-      </Text>
-      {hasProblem && (
-        <Text UNSAFE_className="health-card-detail">{t('health.speech.connectionFailed')}</Text>
-      )}
-
-      <div className="speech-card-actions">
-        <ActionButton onPress={() => controller.recheckSpeechService()}>
+      <RelativeTimestamp
+        timestamp={capabilities.lastCheckedAt}
+        labelKey="health.speech.checkedRelative"
+      />
+      <div className="health-card-actions">
+        <Button
+          variant="secondary"
+          isDisabled={capabilities.service === 'checking'}
+          onPress={onRetry}
+        >
           {t('health.speech.retry')}
-        </ActionButton>
+        </Button>
       </div>
-
-      {capabilities.technicalMessage && (
-        <Disclosure isQuiet UNSAFE_className="speech-technical-details">
-          <DisclosureTitle level={4}>{t('health.speech.technicalDetails')}</DisclosureTitle>
-          <DisclosurePanel>
-            <code>{capabilities.technicalMessage}</code>
-          </DisclosurePanel>
-        </Disclosure>
-      )}
-    </article>
+      <Disclosure isQuiet UNSAFE_className="health-technical-details">
+        <DisclosureTitle level={4}>{t('health.speech.technicalDetails')}</DisclosureTitle>
+        <DisclosurePanel>
+          <dl className="health-detail-list health-detail-list-technical">
+            <div className="health-detail-row">
+              <dt>{t('health.technical.lastAttempt')}</dt>
+              <dd>{exactAttempt}</dd>
+            </div>
+            <div className="health-detail-row">
+              <dt>{t('health.technical.errorCode')}</dt>
+              <dd>{capabilities.lastErrorCode ?? t('common.none')}</dd>
+            </div>
+          </dl>
+          {capabilities.technicalMessage ? (
+            <code className="health-technical-message">{capabilities.technicalMessage}</code>
+          ) : null}
+        </DisclosurePanel>
+      </Disclosure>
+    </HealthCardShell>
   )
 }
 
-interface HealthCard {
-  id: string
-  icon: ReactElement
-  title: string
-  tone: CardTone
-  status: string
-  detail: string
-  busy?: boolean
+function LlmCard({
+  state,
+  support,
+  onOpenSettings,
+}: {
+  state: ControllerState
+  support: RuntimeSupportBundle | null
+  onOpenSettings: () => void
+}) {
+  const { t } = useTranslation()
+  const readiness = state.llmReadiness.reason
+  const needsSetup = readiness === 'missing-credential' || readiness === 'model-missing'
+  const checking = readiness === 'checking' || state.llmHealth.state === 'checking'
+  const failed = readiness === 'auth-error' || readiness === 'network-error'
+  const tone: CardTone = failed
+    ? 'negative'
+    : needsSetup
+      ? 'notice'
+      : checking
+        ? 'informative'
+        : state.llmHealth.state === 'ok'
+          ? 'positive'
+          : 'notice'
+  const status = failed
+    ? t('common.error')
+    : needsSetup
+      ? t('plugins.health.needsSetup')
+      : checking
+        ? t('health.llm.checking')
+        : state.llmHealth.state === 'ok'
+          ? t('common.available')
+          : t('common.notChecked')
+  const provider = state.llmReadiness.providerDisplayName
+  const model = support?.llm.model
+
+  return (
+    <HealthCardShell
+      icon={<DataIcon />}
+      title={t('health.llm.title')}
+      tone={tone}
+      status={status}
+      busy={checking}
+    >
+      <div className="health-identity-details">
+        <Text>{provider}</Text>
+        {model ? <code>{model}</code> : null}
+      </div>
+      {failed ? <Text UNSAFE_className="health-card-detail">{state.llmHealth.detail}</Text> : null}
+      {needsSetup ? (
+        <div className="health-card-actions">
+          <Button variant="secondary" onPress={onOpenSettings}>
+            {t('health.llm.openSettings')}
+          </Button>
+        </div>
+      ) : null}
+    </HealthCardShell>
+  )
 }
 
-function buildCards(state: ControllerState, t: LocalizationContextValue['t']): HealthCard[] {
-  const cards: HealthCard[] = []
+function StreamingCard({ state }: { state: ControllerState }) {
+  const { t } = useTranslation()
+  const presentation =
+    state.continuousListeningState === 'on'
+      ? {
+          tone: 'positive' as const,
+          status: t('health.streaming.active'),
+          detail: t('health.streaming.listeningDetail'),
+          busy: false,
+        }
+      : state.continuousListeningState === 'starting'
+        ? {
+            tone: 'informative' as const,
+            status: t('health.streaming.starting'),
+            detail: t('health.streaming.openingMicrophone'),
+            busy: true,
+          }
+        : state.continuousListeningState === 'error'
+          ? {
+              tone: 'negative' as const,
+              status: t('common.error'),
+              detail: state.continuousListeningError || t('health.streaming.openFailed'),
+              busy: false,
+            }
+          : {
+              tone: 'neutral' as const,
+              status: t('health.streaming.off'),
+              detail: t('health.streaming.offDetail'),
+              busy: false,
+            }
+  return (
+    <HealthCardShell
+      icon={<MicrophoneIcon />}
+      title={t('health.streaming.title')}
+      tone={presentation.tone}
+      status={presentation.status}
+      busy={presentation.busy}
+    >
+      <Text UNSAFE_className="health-card-detail">{presentation.detail}</Text>
+    </HealthCardShell>
+  )
+}
 
-  // Speech API is rendered separately as a richer card (see SpeechApiCard) and is
-  // intentionally not part of this uniform card list.
+function renderPluginDetailValue(
+  value: RuntimePluginHealthDetailValue,
+  t: LocalizationContextValue['t'],
+  locale: string,
+): ReactNode {
+  if (value.kind === 'translation') return t(value.key)
+  if (value.kind === 'timestamp') return exactTime(value.value, locale)
+  return value.code ? <code>{value.value}</code> : value.value
+}
 
-  // LLM
-  const llm = state.llmHealth
-  switch (llm.state) {
-    case 'checking':
-      cards.push({
-        id: 'llm',
-        icon: <DataIcon />,
-        title: t('health.llm.title'),
-        tone: 'informative',
-        status: t('health.llm.checking'),
-        detail: llm.detail,
-        busy: true,
-      })
-      break
-    case 'ok':
-      cards.push({
-        id: 'llm',
-        icon: <DataIcon />,
-        title: t('health.llm.title'),
-        tone: 'positive',
-        status: t('common.available'),
-        detail: llm.detail,
-      })
-      break
-    case 'error':
-      cards.push({
-        id: 'llm',
-        icon: <DataIcon />,
-        title: t('health.llm.title'),
-        tone: 'negative',
-        status: t('common.error'),
-        detail: llm.detail,
-      })
-      break
-    default:
-      cards.push({
-        id: 'llm',
-        icon: <DataIcon />,
-        title: t('health.llm.title'),
-        tone: 'neutral',
-        status: t('common.notChecked'),
-        detail: llm.detail,
-      })
-  }
+function PluginHealthCard({
+  plugin,
+  onNavigate,
+}: {
+  plugin: RuntimePluginHealth
+  onNavigate: (target: NonNullable<RuntimePluginHealth['navigationTarget']>) => void
+}) {
+  const { intlLocale, t } = useTranslation()
+  const presentation = plugin.presentation
+  const severity: HealthSeverity =
+    plugin.lifecycle === 'error'
+      ? 'error'
+      : plugin.health.state === 'degraded'
+        ? 'degraded'
+        : plugin.health.state === 'needs-setup'
+          ? 'notice'
+          : plugin.health.state
+  const tone = SEVERITY_TONE[severity]
+  const status = t(plugin.health.detailKey ?? PLUGIN_HEALTH_KEY[plugin.health.state])
+  const busy = ['initializing', 'starting', 'stopping'].includes(plugin.lifecycle)
+  const navigationTarget = plugin.navigationTarget
+  return (
+    <HealthCardShell
+      icon={<AppsIcon />}
+      title={t(plugin.displayNameKey)}
+      tone={tone}
+      status={status}
+      busy={busy}
+      className="health-card-plugin"
+    >
+      {presentation?.summary ? (
+        <Text UNSAFE_className="health-plugin-summary">{presentation.summary}</Text>
+      ) : null}
+      {presentation?.context ? (
+        presentation.contextCode ? (
+          <code className="health-plugin-context">{presentation.context}</code>
+        ) : (
+          <Text UNSAFE_className="health-plugin-context">{presentation.context}</Text>
+        )
+      ) : null}
+      {presentation?.statusKey ? (
+        <Text UNSAFE_className="health-card-detail">{t(presentation.statusKey)}</Text>
+      ) : null}
+      {plugin.health.detail && plugin.health.state === 'error' ? (
+        <Text UNSAFE_className="health-card-detail health-card-error-detail">
+          {plugin.health.detail}
+        </Text>
+      ) : null}
+      {presentation?.lastActivityLabelKey ? (
+        <RelativeTimestamp
+          timestamp={presentation.lastActivityAt}
+          labelKey={presentation.lastActivityLabelKey}
+        />
+      ) : null}
+      {navigationTarget ? (
+        <div className="health-card-actions">
+          <Button variant="secondary" onPress={() => onNavigate(navigationTarget)}>
+            {t('health.plugin.open')}
+          </Button>
+        </div>
+      ) : null}
+      <Disclosure isQuiet UNSAFE_className="health-technical-details">
+        <DisclosureTitle level={4}>{t('health.speech.technicalDetails')}</DisclosureTitle>
+        <DisclosurePanel>
+          <dl className="health-detail-list health-detail-list-technical">
+            <div className="health-detail-row">
+              <dt>{t('plugins.lifecycle.label')}</dt>
+              <dd>{t(LIFECYCLE_KEY[plugin.lifecycle])}</dd>
+            </div>
+            {presentation?.details?.map((detail) => (
+              <div className="health-detail-row" key={detail.id}>
+                <dt>{t(detail.labelKey)}</dt>
+                <dd>{renderPluginDetailValue(detail.value, t, intlLocale)}</dd>
+              </div>
+            ))}
+          </dl>
+        </DisclosurePanel>
+      </Disclosure>
+    </HealthCardShell>
+  )
+}
 
-  // Стриминг (continuous listening)
-  switch (state.continuousListeningState) {
-    case 'on':
-      cards.push({
-        id: 'streaming',
-        icon: <MicrophoneIcon />,
-        title: t('health.streaming.title'),
-        tone: 'positive',
-        status: t('health.streaming.running'),
-        detail: t('health.streaming.listeningDetail'),
-      })
-      break
-    case 'starting':
-      cards.push({
-        id: 'streaming',
-        icon: <MicrophoneIcon />,
-        title: t('health.streaming.title'),
-        tone: 'informative',
-        status: t('health.streaming.starting'),
-        detail: t('health.streaming.openingMicrophone'),
-        busy: true,
-      })
-      break
-    case 'error':
-      cards.push({
-        id: 'streaming',
-        icon: <MicrophoneIcon />,
-        title: t('health.streaming.title'),
-        tone: 'negative',
-        status: t('common.error'),
-        detail: state.continuousListeningError || t('health.streaming.openFailed'),
-      })
-      break
-    default:
-      cards.push({
-        id: 'streaming',
-        icon: <MicrophoneIcon />,
-        title: t('health.streaming.title'),
-        tone: 'neutral',
-        status: t('health.streaming.off'),
-        detail: t('health.streaming.notRunning'),
-      })
-  }
-
-  return cards
+function SystemIssueCard({ component }: { component: RuntimeHealthComponent }) {
+  const { t } = useTranslation()
+  return (
+    <HealthCardShell
+      icon={<DataIcon />}
+      title={t(component.titleKey)}
+      tone={SEVERITY_TONE[component.severity]}
+      status={t(component.summaryKey)}
+      busy={component.id === 'support-projection'}
+    />
+  )
 }
 
 export function RuntimeHealthView({
   state,
-  onRetry,
-  onOpenProjectPlugin,
+  support,
+  projection,
+  onRefresh,
+  onRetrySpeech,
+  onOpenLlmSettings,
+  onOpenPlugin,
+  getSupportReport,
 }: {
   state: ControllerState
-  onRetry: () => void
-  onOpenProjectPlugin: () => void
+  support: RuntimeSupportBundle | null
+  projection: RuntimeHealthProjection
+  onRefresh: () => Promise<void>
+  onRetrySpeech: () => void
+  onOpenLlmSettings: () => void
+  onOpenPlugin: (pluginId: RuntimePluginHealth['pluginId']) => void
+  getSupportReport: () => Promise<RuntimeSupportBundle>
 }) {
   const { t } = useTranslation()
-  const [projectStatus, setProjectStatus] = useState<ProjectAwarenessStatus>(EMPTY_PROJECT_STATUS)
-  const [projectPlugin, setProjectPlugin] = useState<PluginStatus | null>(null)
+  const [refreshing, setRefreshing] = useState(false)
+  const [copying, setCopying] = useState(false)
   const [supportStatus, setSupportStatus] = useState('')
-  useEffect(() => {
-    let active = true
-    const refresh = (): void => {
-      observeRendererPromise(
-        Promise.all([
-          window.api.projectAwareness.getStatus(),
-          window.api.plugins.get(PROJECT_AWARENESS_PLUGIN_ID),
-        ]).then(([status, plugin]) => {
-          if (!active) return
-          setProjectStatus(status)
-          setProjectPlugin(plugin)
-        }),
-        'refresh Project Awareness health',
-      )
-    }
-    refresh()
-    const intervalId = window.setInterval(refresh, 3_000)
-    return () => {
-      active = false
-      window.clearInterval(intervalId)
-    }
-  }, [])
-  const cards = buildCards(state, t)
-  const speechService = state.speechCapabilities.service
-  const checking =
-    speechService === 'checking' ||
-    speechService === 'unknown' ||
-    state.llmHealth.state === 'checking' ||
-    Boolean(projectPlugin?.busy) ||
-    (Boolean(projectPlugin?.enabled) &&
-      ['connecting', 'syncing', 'indexing'].includes(projectStatus.state))
-  const hasError =
-    cards.some((card) => card.tone === 'negative') ||
-    speechService === 'unavailable' ||
-    projectPlugin?.health.state === 'error'
-  const hasNotice =
-    cards.some((card) => card.tone === 'notice') ||
-    speechService === 'degraded' ||
-    projectPlugin?.health.state === 'degraded'
+  const statusTimer = useRef<number | null>(null)
 
-  const overall: { variant: CardTone; label: string } = checking
-    ? { variant: 'informative', label: t('common.checkingEllipsis') }
-    : hasError
-      ? { variant: 'negative', label: t('health.overall.problems') }
-      : hasNotice
-        ? { variant: 'notice', label: t('health.overall.attention') }
-        : { variant: 'positive', label: t('health.overall.ok') }
+  useEffect(
+    () => () => {
+      if (statusTimer.current !== null) window.clearTimeout(statusTimer.current)
+    },
+    [],
+  )
 
-  const copyText = async (value: string): Promise<void> => {
-    await navigator.clipboard.writeText(value)
-    setSupportStatus(t('health.support.copied'))
-    window.setTimeout(() => setSupportStatus(''), 2_000)
+  const announceSupportStatus = (message: string): void => {
+    setSupportStatus(message)
+    if (statusTimer.current !== null) window.clearTimeout(statusTimer.current)
+    statusTimer.current = window.setTimeout(() => setSupportStatus(''), 2_000)
   }
+
+  const refresh = async (): Promise<void> => {
+    if (refreshing) return
+    setRefreshing(true)
+    try {
+      await onRefresh()
+    } finally {
+      setRefreshing(false)
+    }
+  }
+
+  const copyReport = async (): Promise<void> => {
+    if (copying) return
+    setCopying(true)
+    try {
+      const report = await getSupportReport()
+      await navigator.clipboard.writeText(JSON.stringify(report, null, 2))
+      announceSupportStatus(t('health.support.copied'))
+    } catch {
+      announceSupportStatus(t('health.support.copyFailed'))
+    } finally {
+      setCopying(false)
+    }
+  }
+
+  const systemIssues = projection.components.filter(
+    (component) =>
+      component.enabled &&
+      component.category === 'runtime' &&
+      component.id !== 'streaming' &&
+      component.severity !== 'healthy',
+  )
 
   return (
     <section className="health-dashboard">
       <div className="health-dashboard-toolbar">
+        <StatusLight
+          role="status"
+          aria-live="polite"
+          variant={OVERALL_TONE[projection.overall]}
+          size="M"
+          UNSAFE_className="health-overall-status"
+        >
+          {t(OVERALL_KEY[projection.overall])}
+        </StatusLight>
         <div className="health-dashboard-actions">
-          <ActionButton
-            onPress={() =>
-              observeRendererPromise(
-                window.api.system
-                  .getRuntimeSupportBundle()
-                  .then((bundle) => copyText(JSON.stringify(bundle, null, 2))),
-                'copy Runtime Support Bundle',
-                () => setSupportStatus(t('health.support.copyFailed')),
-              )
-            }
-          >
-            {t('health.support.copyRuntimeHealth')}
-          </ActionButton>
-          {supportStatus ? (
-            <span role="status">
-              <Text>{supportStatus}</Text>
-            </span>
-          ) : null}
-          <StatusLight role="status" variant={overall.variant} size="M">
-            {overall.label}
-          </StatusLight>
-          <ActionButton
-            onPress={onRetry}
-            isDisabled={checking}
-            aria-label={checking ? t('health.checkingNow') : t('health.retryCheck')}
-          >
-            {checking ? (
-              <ProgressCircle size="S" isIndeterminate aria-label={t('common.checking')} />
-            ) : (
-              <RefreshIcon />
-            )}
-          </ActionButton>
+          <TooltipTrigger delay={200}>
+            <ActionButton
+              isQuiet
+              isDisabled={refreshing}
+              aria-label={t('health.refresh')}
+              onPress={() => {
+                void refresh().catch(() => announceSupportStatus(t('health.refreshFailed')))
+              }}
+            >
+              {refreshing ? (
+                <ProgressCircle size="S" isIndeterminate aria-label={t('health.checkingNow')} />
+              ) : (
+                <RefreshIcon />
+              )}
+            </ActionButton>
+            <Tooltip>{t('health.refresh')}</Tooltip>
+          </TooltipTrigger>
+          <Button variant="secondary" isPending={copying} onPress={() => void copyReport()}>
+            <CopyIcon />
+            <Text>{t('health.support.copyReport')}</Text>
+          </Button>
         </div>
+        <span className="health-support-status" role="status" aria-live="polite">
+          {supportStatus}
+        </span>
       </div>
 
       <div className="health-card-grid">
-        <SpeechApiCard capabilities={state.speechCapabilities} />
-        <ProjectAwarenessCard
-          plugin={projectPlugin}
-          status={projectStatus}
-          onOpenPlugin={onOpenProjectPlugin}
-        />
-        {cards.map((card) => (
-          <article className={`health-card health-card-${card.tone}`} key={card.id}>
-            <div className="health-card-top">
-              <span className="health-card-icon" aria-hidden="true">
-                {card.icon}
-              </span>
-              <Heading level={3} UNSAFE_className="health-card-name">
-                {card.title}
-              </Heading>
-              {card.busy ? (
-                <ProgressCircle
-                  size="S"
-                  isIndeterminate
-                  aria-label={t('health.cardChecking')}
-                  UNSAFE_className="health-card-dot-busy"
-                />
-              ) : (
-                <StatusLight variant={card.tone} size="S">
-                  <span className="visually-hidden">{card.status}</span>
-                </StatusLight>
-              )}
-            </div>
-            <StatusLight variant={card.tone} size="S" UNSAFE_className="health-card-status">
-              {card.status}
-            </StatusLight>
-            <Text UNSAFE_className="health-card-detail">{card.detail}</Text>
-          </article>
+        <SpeechApiCard capabilities={state.speechCapabilities} onRetry={onRetrySpeech} />
+        {projection.plugins.map((plugin) => (
+          <PluginHealthCard
+            key={plugin.pluginId}
+            plugin={plugin}
+            onNavigate={(target) => onOpenPlugin(target.pluginId)}
+          />
+        ))}
+        <LlmCard state={state} support={support} onOpenSettings={onOpenLlmSettings} />
+        <StreamingCard state={state} />
+        {systemIssues.map((component) => (
+          <SystemIssueCard key={component.id} component={component} />
         ))}
       </div>
-
-      {hasError && (
-        <InlineAlert variant="negative" fillStyle="subtleFill">
-          <Heading>{t('health.alert.title')}</Heading>
-          <Content>{t('health.alert.description')}</Content>
-        </InlineAlert>
-      )}
     </section>
   )
 }

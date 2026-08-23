@@ -94,6 +94,14 @@ export function registerProjectAwarenessIpc({
     authorization.handle('project-awareness:disconnect', () => plugin().disconnect()),
   )
   ipcMain.handle(
+    'project-awareness:refresh-snapshot-status',
+    authorization.handlePayload(
+      'project-awareness:refresh-snapshot-status',
+      IPC_ONE_PAYLOAD,
+      (_event, force: unknown) => plugin().refreshSnapshotStatus(z.boolean().parse(force)),
+    ),
+  )
+  ipcMain.handle(
     'project-awareness:sync',
     authorization.handle('project-awareness:sync', () => plugin().sync()),
   )

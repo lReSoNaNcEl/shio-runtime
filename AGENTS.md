@@ -50,6 +50,22 @@ Architecture and ownership:
 - Every new Plugin UI string must be added in both Russian and English.
 - Every Plugin IPC endpoint requires sender authorization and runtime payload
   validation.
+- Character LLM must never infer current Plugin availability from static prompt
+  text. Current Plugin and capability state comes only from Runtime Capability
+  Context resolved for the current turn.
+- Plugin manifests may not inject arbitrary system prompt instructions into
+  Character Response Generation.
+- Knowing a capability never authorizes enabling, configuration, invocation, or
+  execution. Existing Action Runtime, Permission Guard, IPC, and Adapter boundaries
+  remain authoritative.
+- Project evidence shown to users must originate from the exact Project Context
+  Packet used for that turn. LLM-generated citations are never authoritative
+  provenance.
+- Evidence remains bound to the original turn snapshot; later synchronization may
+  not rewrite historical message provenance.
+- Project snapshot staleness is diagnostic freshness, not Runtime failure.
+- New Project evidence UI uses React Spectrum 2, and every new evidence or Plugin UI
+  string is added in both Russian and English.
 - Preserve the existing HTTP contract with `apps/api` unless the task
   explicitly changes it.
 

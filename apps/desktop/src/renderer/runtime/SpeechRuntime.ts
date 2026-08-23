@@ -5,6 +5,7 @@ import {
   parseEmotionalReply,
   stripAssistantMarkup,
 } from '../../shared/emotion'
+import type { ProjectReplyProvenance } from '../../shared/project-awareness'
 import type {
   CharacterActivityState,
   CharacterConversationPresenceState,
@@ -78,6 +79,7 @@ export interface AssistantReplyDraft {
   speechText: string
   emotionKey: string
   embodimentIntent?: CharacterEmbodimentIntent
+  provenance?: ProjectReplyProvenance
   segments: EmotionTextSegment[]
 }
 
@@ -240,6 +242,7 @@ export class SpeechRuntime {
       emotionKey,
       segments,
       embodimentIntent: reply.embodimentIntent,
+      provenance: reply.provenance,
     }
   }
 

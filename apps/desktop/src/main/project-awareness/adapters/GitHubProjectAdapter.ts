@@ -5,6 +5,7 @@ import type {
   ProjectRepositoryIdentity,
   ProjectSourceFile,
 } from '../../../shared/project-awareness'
+import { observeAxiosNetwork } from '../../diagnostics/observeAxiosNetwork'
 import type {
   ProjectChangedFile,
   ProjectCommit,
@@ -119,6 +120,7 @@ export class GitHubProjectAdapter implements ProjectRepositoryAdapter {
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
     })
+    observeAxiosNetwork(this.http, 'project-awareness')
     this.http.interceptors.response.use((response) => response, normalizeRejectedRequest)
     this.rawHttp = axios.create({
       baseURL: `https://raw.githubusercontent.com/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`,
@@ -127,6 +129,7 @@ export class GitHubProjectAdapter implements ProjectRepositoryAdapter {
       transformResponse: [(data: unknown) => data],
       headers: token ? { Authorization: `Bearer ${token}` } : undefined,
     })
+    observeAxiosNetwork(this.rawHttp, 'project-awareness')
     this.rawHttp.interceptors.response.use((response) => response, normalizeRejectedRequest)
   }
 

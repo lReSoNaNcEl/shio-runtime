@@ -1,3 +1,4 @@
+import type { ProjectSnapshotDelta, ProjectSnapshotFreshness } from './freshness'
 import type { ProjectProvider } from './repository'
 
 export type ProjectAwarenessState =
@@ -28,6 +29,9 @@ export interface ProjectAwarenessStatus {
   branch: string
   remoteHead?: string
   indexedCommit?: string
+  freshness: ProjectSnapshotFreshness
+  lastFreshnessCheckAt?: number
+  snapshotDelta?: ProjectSnapshotDelta
   indexState: ProjectIndexState
   access: 'read-only'
   lastSyncAt?: number

@@ -124,12 +124,10 @@ export const ChatOverlay = forwardRef<ChatOverlayHandle, Props>(function ChatOve
         if (withoutImage) await screenContext.release()
         captureId = withoutImage ? undefined : await screenContext.beginSubmission()
         if (!withoutImage && screenContext.pending && !captureId) return
+        controller.setChatDraft('')
         const result = await controller.sendText(userText, captureId)
         if (captureId) screenContext.settleSubmission(result)
-        if (result.status === 'completed') {
-          controller.setChatDraft('')
-          return
-        }
+        if (result.status === 'completed') return
         if (result.status === 'failed') {
           setTurnFailure({
             ...result.failure,

@@ -60,6 +60,18 @@ function fakeHttp(handler: (path: string, body: Record<string, unknown>) => unkn
   return { http, lastBody: () => captured }
 }
 
+function hangingHttp(): AxiosInstance {
+  return {
+    post: async (_path, _body, config) =>
+      new Promise((_resolve, reject) => {
+        const signal = config?.signal
+        const rejectCancelled = (): void => reject(new axios.CanceledError())
+        if (signal?.aborted) rejectCancelled()
+        else signal?.addEventListener('abort', rejectCancelled, { once: true })
+      }),
+  } as unknown as AxiosInstance
+}
+
 function axiosErr(status: number): Error {
   return new axios.AxiosError(
     `HTTP ${status}`,
@@ -183,6 +195,7 @@ async function runProviderBattery(pc: ProviderCase): Promise<void> {
       `got ${lastBody().max_tokens}`,
     )
     check('temperature sent for standard model', lastBody().temperature === 0.7)
+    check('provider lifecycle uses the bounded non-streaming path', lastBody().stream === false)
     check('non-reasoning model flagged correctly', caps.supportsReasoning === false)
     check('supportsSystemPrompt true', caps.supportsSystemPrompt === true)
   }
@@ -461,6 +474,44 @@ async function testMistralModelsApi(): Promise<void> {
   }
 }
 
+async function testRequestDeadline(): Promise<void> {
+  console.log('\n=== request deadline ===')
+  const config = {
+    provider: 'mistral' as const,
+    displayName: 'Mistral',
+    http: hangingHttp(),
+    chatPath: '/chat/completions',
+    apiKey: 'test-key',
+    model: 'mistral-small-latest',
+    capabilities: resolveCapabilities('mistral', 'mistral-small-latest'),
+    messages: baseMessages('Project context question'),
+  }
+
+  let timeoutError: unknown
+  try {
+    await runChatCompletion({ ...config, requestTimeoutMs: 10 })
+  } catch (error) {
+    timeoutError = error
+  }
+  check(
+    'hard deadline normalizes a hanging request as TIMEOUT',
+    timeoutError instanceof LlmResponseError && timeoutError.code === 'TIMEOUT',
+  )
+
+  const caller = new AbortController()
+  caller.abort()
+  let cancellationError: unknown
+  try {
+    await runChatCompletion({ ...config, requestTimeoutMs: 1_000 }, { signal: caller.signal })
+  } catch (error) {
+    cancellationError = error
+  }
+  check(
+    'caller cancellation remains CANCELLED',
+    cancellationError instanceof LlmResponseError && cancellationError.code === 'CANCELLED',
+  )
+}
+
 async function testCatalogCapabilityMetadata(): Promise<void> {
   console.log('\n=== provider catalog capability metadata ===')
   const fetch = (
@@ -623,6 +674,7 @@ async function main(): Promise<void> {
   for (const pc of PROVIDERS) {
     await runProviderBattery(pc)
   }
+  await testRequestDeadline()
   await testMistralModelsApi()
   await testCatalogCapabilityMetadata()
   testEnrichedModelCatalog()

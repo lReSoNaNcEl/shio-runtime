@@ -4,6 +4,7 @@ import { useEffect, useRef } from 'react'
 
 import { type ControllerState } from '../../Controller'
 import { useTranslation } from '../../localization/useTranslation'
+import { ProjectEvidenceBar } from './ProjectEvidenceBar'
 
 export interface ChatMessageListProps {
   messages: ControllerState['messages']
@@ -61,6 +62,9 @@ export function ChatMessageList({
             </span>
           )}
           <span className="msg-text">{message.text}</span>
+          {message.role === 'assistant' && message.provenance && (
+            <ProjectEvidenceBar provenance={message.provenance} />
+          )}
           {message.interrupted && <span className="msg-interrupted">{t('chat.interrupted')}</span>}
         </div>
       ))}

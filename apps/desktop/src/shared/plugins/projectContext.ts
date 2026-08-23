@@ -2,6 +2,7 @@ import type { ProjectContextPacket } from '../project-awareness'
 
 export interface ProjectContextRequest {
   userText: string
+  traceId?: string
 }
 
 export interface ProjectContextProvider {

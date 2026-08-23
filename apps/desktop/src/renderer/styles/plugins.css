@@ -9,13 +9,74 @@
 }
 
 .plugin-card,
-.plugin-detail-section {
+.plugin-detail-section,
+.plugin-project-knowledge {
   display: grid;
   gap: 16px;
   padding: 20px;
   border: 1px solid rgba(148, 163, 184, 0.18);
   border-radius: 14px;
   background: rgba(255, 255, 255, 0.025);
+}
+
+.plugin-project-knowledge.compact {
+  gap: 8px;
+  padding: 14px;
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.32);
+}
+
+.plugin-project-repository {
+  overflow-wrap: anywhere;
+  font-weight: 600;
+}
+
+.plugin-project-commit,
+.plugin-project-code {
+  overflow-wrap: anywhere;
+  color: var(--text-dim);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 0.8rem;
+}
+
+.plugin-project-relative {
+  color: var(--text-dim);
+  font-size: 0.8rem;
+}
+
+.plugin-project-knowledge-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.plugin-project-delta {
+  display: grid;
+  gap: 10px;
+  margin-top: 4px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(148, 163, 184, 0.16);
+}
+
+.plugin-project-delta-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.plugin-project-delta-files {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.plugin-project-delta-files li {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  gap: 6px;
+  min-width: 0;
+  color: var(--text-dim);
+  font-size: 0.8rem;
 }
 
 .plugin-card-heading,
@@ -105,7 +166,12 @@
 
   .plugin-status-list,
   .plugin-project-fields,
-  .plugin-runtime-status {
+  .plugin-runtime-status,
+  .plugin-project-knowledge-grid {
     grid-template-columns: 1fr;
   }
+}
+
+.plugin-project-delta-files li > :last-child {
+  overflow-wrap: anywhere;
 }

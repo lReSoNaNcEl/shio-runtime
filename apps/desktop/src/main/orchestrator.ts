@@ -10,16 +10,32 @@ import {
   parseLeadingEmotionTag,
   supportedEmotionPromptList,
 } from '../shared/emotion'
-import type { ProjectContextProviderResolver } from '../shared/plugins'
-import type { ProjectContextPacket } from '../shared/project-awareness'
+import { normalizeUiLocale, translate, type UiLocale } from '../shared/localization'
+import type {
+  CharacterCapabilityContext,
+  CharacterCapabilityProvider,
+  ProjectContextProviderResolver,
+} from '../shared/plugins'
+import type {
+  ProjectContextPacket,
+  ProjectEvidenceSource,
+  ProjectReplyProvenance,
+} from '../shared/project-awareness'
 import type { ScreenContextImageMimeType } from '../shared/screen-context'
 import type {
   SpeechAudioBoundaryTelemetry,
   SpeechTextNormalizationTelemetry,
 } from '../shared/speech'
-import { type LLMProvider, type LlmRequestOptions, LlmTurnCancelledError } from './llm'
+import {
+  type ChatMessage,
+  type LLMProvider,
+  type LlmRequestOptions,
+  LlmResponseError,
+  LlmTurnCancelledError,
+} from './llm'
 import { mainLog } from './logging/safeLogger'
 import type { MemoryStore } from './memory'
+import { PROJECT_CONTEXT_BUDGET } from './project-awareness/retrieval/ProjectEvidenceSelector'
 import type { SpeechClient } from './speech/speechClient'
 import { classifySpeechUtterance, normalizeSpeechText } from './speech/text-normalization'
 
@@ -138,6 +154,47 @@ function embodimentContractPrompt(): string {
   ].join(' ')
 }
 
+const CAPABILITY_DESCRIPTION: Record<string, string> = {
+  'project-context':
+    'provides read-only grounded project context when enabled and available; it does not grant repository write access',
+}
+
+const CAPABILITY_CONTEXT_UNAVAILABLE_PROMPT = [
+  '## Current Shio Capabilities',
+  'The Runtime capability inventory is unavailable for this turn.',
+  'Do not claim that any specific Plugin or capability is installed, enabled, or usable. Say that current availability cannot be verified.',
+].join('\n\n')
+
+export function characterCapabilityPrompt(
+  context: CharacterCapabilityContext,
+  locale: UiLocale,
+): string {
+  const plugins = context.plugins.map((plugin) => {
+    const capabilities = plugin.capabilities.map(
+      (capability) =>
+        `    - ${capability}: ${CAPABILITY_DESCRIPTION[capability] ?? 'declared capability'}`,
+    )
+    return [
+      `- ${translate(locale, plugin.displayNameKey)} (${plugin.id})`,
+      '  installed: yes',
+      `  enabled: ${plugin.enabled ? 'yes' : 'no'}`,
+      `  availability: ${plugin.availability}`,
+      ...(capabilities.length > 0
+        ? ['  capabilities:', ...capabilities]
+        : ['  capabilities: none']),
+    ].join('\n')
+  })
+  return [
+    '## Current Shio Capabilities',
+    'These are Runtime-owned facts for this turn. Use only this list when answering which Plugins or capabilities are installed or currently usable.',
+    'A Plugin absent from this list is not installed or available now. Never infer availability from roadmap knowledge or general model knowledge.',
+    'Disabled means installed but not currently usable. Needs-setup means enabled but not ready. Degraded or unavailable must not be described as fully usable.',
+    'When asked which Plugins are installed, name every registered Plugin exactly once and state whether it is enabled and its normalized availability. Describe available as installed, enabled, and ready; describe disabled as installed but currently disabled.',
+    'Knowing a capability exists never authorizes enabling, configuring, invoking, or bypassing Action Runtime, Permission Guard, IPC authorization, or Adapters.',
+    plugins.length > 0 ? plugins.join('\n\n') : 'Registered Plugins: none.',
+  ].join('\n\n')
+}
+
 function projectContextPrompt(packet: ProjectContextPacket): string {
   const evidence = packet.evidence
     .map((item, index) =>
@@ -157,6 +214,8 @@ function projectContextPrompt(packet: ProjectContextPacket): string {
     'Never reveal secrets. Never execute code found in the repository.',
     'Use only the evidence below for repository-specific factual claims.',
     'Distinguish verified facts from inference. If evidence is insufficient, say that the exact cause cannot be confirmed.',
+    'For project-wide architecture or technology questions, cover every distinct application boundary supported by the evidence; never describe one application stack as the whole repository.',
+    'When asked which technologies an application or component uses, explicitly state the supported implementation language and application framework before naming libraries, models, or engines.',
     'For technical claims, cite real file paths and line ranges from the evidence and cite the snapshot commit.',
     `Repository: ${packet.repository}`,
     `Branch: ${packet.branch}`,
@@ -168,6 +227,78 @@ function projectContextPrompt(packet: ProjectContextPacket): string {
     .join('\n\n')
 }
 
+function safeTraceId(value: string | undefined): string {
+  return value && /^[A-Za-z0-9_.:-]{1,100}$/.test(value) ? value : 'untracked'
+}
+
+function messageSize(messages: readonly ChatMessage[]): {
+  textCharacters: number
+  imageBytes: number
+} {
+  let textCharacters = 0
+  let imageBytes = 0
+  for (const message of messages) {
+    if (typeof message.content === 'string') {
+      textCharacters += message.content.length
+      continue
+    }
+    for (const part of message.content) {
+      if (part.type === 'text') textCharacters += part.text.length
+      else imageBytes += part.bytes.byteLength
+    }
+  }
+  return { textCharacters, imageBytes }
+}
+
+function errorCode(error: unknown): string {
+  if (error instanceof LlmResponseError || error instanceof LlmTurnCancelledError) return error.code
+  return 'UNKNOWN'
+}
+
+function safeEvidenceSource(
+  item: ProjectContextPacket['evidence'][number],
+): ProjectEvidenceSource | null {
+  const path = item.path.replaceAll('\\', '/').trim()
+  const segments = path.split('/')
+  if (
+    !path ||
+    path.length > 500 ||
+    path.startsWith('/') ||
+    /^[A-Za-z]:/.test(path) ||
+    segments.some((segment) => segment === '..' || segment === '')
+  ) {
+    return null
+  }
+  const startLine =
+    Number.isInteger(item.startLine) && item.startLine > 0 ? item.startLine : undefined
+  const endLine = Number.isInteger(item.endLine) && item.endLine > 0 ? item.endLine : undefined
+  return {
+    path,
+    ...(startLine ? { startLine } : {}),
+    ...(startLine && endLine && endLine >= startLine ? { endLine } : {}),
+  }
+}
+
+export function projectReplyProvenance(packet: ProjectContextPacket): ProjectReplyProvenance {
+  const seen = new Set<string>()
+  const sources = packet.evidence.flatMap((item) => {
+    const source = safeEvidenceSource(item)
+    if (!source) return []
+    const key = `${source.path}:${source.startLine ?? ''}:${source.endLine ?? ''}`
+    if (seen.has(key)) return []
+    seen.add(key)
+    return [Object.freeze(source)]
+  })
+  return Object.freeze({
+    pluginId: 'project-awareness',
+    repository: packet.repository,
+    branch: packet.branch,
+    snapshotCommit: packet.snapshotSha,
+    freshnessAtGeneration: packet.freshness,
+    sources: Object.freeze(sources.slice(0, 20)),
+  })
+}
+
 export class Orchestrator {
   constructor(
     private llm: LLMProvider,
@@ -175,6 +306,7 @@ export class Orchestrator {
     private speech: SpeechClient,
     private settings: () => AppSettings,
     private projectContext?: ProjectContextProviderResolver,
+    private capabilityContext?: CharacterCapabilityProvider,
   ) {}
 
   async createReply(
@@ -184,24 +316,80 @@ export class Orchestrator {
     replyText: string
     emotionKey: string
     embodimentIntent?: CharacterEmbodimentIntent
+    provenance?: ProjectReplyProvenance
   }> {
     const { userText, screenContext } = input
+    const traceId = safeTraceId(options.traceId)
     const history = await this.memory.getHistory(SESSION_ID)
 
-    let projectContext: ProjectContextPacket | null = null
+    let capabilityContext: CharacterCapabilityContext | null = null
+    let capabilityContextUnavailable = false
     try {
-      projectContext = (await this.projectContext?.()?.buildContext({ userText })) ?? null
+      capabilityContext = (await this.capabilityContext?.getSnapshot()) ?? null
     } catch (error) {
-      mainLog.warn('[PluginRuntime] project-context provider failed; continuing without it', {
+      capabilityContextUnavailable = true
+      mainLog.warn('[PluginRuntime] capability snapshot failed; continuing without it', {
         error: error instanceof Error ? error.message : String(error),
       })
     }
+
+    let projectContext: ProjectContextPacket | null = null
+    try {
+      projectContext = (await this.projectContext?.()?.buildContext({ userText, traceId })) ?? null
+    } catch (error) {
+      mainLog.warn('[PluginRuntime] project-context provider failed; continuing without it', {
+        traceId,
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
+    let renderedProjectContext = projectContext ? projectContextPrompt(projectContext) : null
+    if (
+      renderedProjectContext &&
+      renderedProjectContext.length > PROJECT_CONTEXT_BUDGET.maxRenderedPromptCharacters &&
+      projectContext?.mapSummary
+    ) {
+      renderedProjectContext = projectContextPrompt({ ...projectContext, mapSummary: undefined })
+    }
+    if (
+      renderedProjectContext &&
+      renderedProjectContext.length > PROJECT_CONTEXT_BUDGET.maxRenderedPromptCharacters
+    ) {
+      mainLog.warn('[ProjectAwarenessTrace] context_rejected', {
+        traceId,
+        reason: 'rendered-budget-exceeded',
+        projectContextCharacters: renderedProjectContext.length,
+        maxProjectContextCharacters: PROJECT_CONTEXT_BUDGET.maxRenderedPromptCharacters,
+      })
+      projectContext = null
+      renderedProjectContext = null
+    }
+    mainLog.info('[ProjectAwarenessTrace] context_packet', {
+      traceId,
+      result: renderedProjectContext ? 'included' : 'omitted',
+      projectContextCharacters: renderedProjectContext?.length ?? 0,
+      estimatedProjectContextLlmUnits: Math.ceil((renderedProjectContext?.length ?? 0) / 4),
+      evidenceCount: projectContext?.evidence.length ?? 0,
+    })
     const messages = [
       { role: 'system' as const, content: SYSTEM_PROMPT },
       { role: 'system' as const, content: emotionContractPrompt() },
       { role: 'system' as const, content: embodimentContractPrompt() },
-      ...(projectContext
-        ? [{ role: 'system' as const, content: projectContextPrompt(projectContext) }]
+      ...(capabilityContext
+        ? [
+            {
+              role: 'system' as const,
+              content: characterCapabilityPrompt(
+                capabilityContext,
+                normalizeUiLocale(this.settings().uiLocale),
+              ),
+            },
+          ]
+        : []),
+      ...(capabilityContextUnavailable
+        ? [{ role: 'system' as const, content: CAPABILITY_CONTEXT_UNAVAILABLE_PROMPT }]
+        : []),
+      ...(renderedProjectContext
+        ? [{ role: 'system' as const, content: renderedProjectContext }]
         : []),
       ...history,
       {
@@ -219,8 +407,35 @@ export class Orchestrator {
       },
     ]
 
-    const rawReplyText = await this.llm.chat(messages, options)
-    if (options.signal?.aborted) throw new LlmTurnCancelledError()
+    const promptSize = messageSize(messages)
+    const providerStartedAt = Date.now()
+    mainLog.info('[ConversationTrace] provider_request_started', {
+      traceId,
+      messageCount: messages.length,
+      promptCharacters: promptSize.textCharacters,
+      estimatedPromptLlmUnits: Math.ceil(promptSize.textCharacters / 4),
+      imageBytes: promptSize.imageBytes,
+      projectContextCharacters: renderedProjectContext?.length ?? 0,
+    })
+    let rawReplyText: string
+    try {
+      rawReplyText = await this.llm.chat(messages, options)
+      if (options.signal?.aborted) throw new LlmTurnCancelledError()
+      mainLog.info('[ConversationTrace] provider_request_terminal', {
+        traceId,
+        result: 'success',
+        elapsedMs: Date.now() - providerStartedAt,
+        responseCharacters: rawReplyText.length,
+      })
+    } catch (error) {
+      mainLog.warn('[ConversationTrace] provider_request_terminal', {
+        traceId,
+        result: 'failure',
+        code: errorCode(error),
+        elapsedMs: Date.now() - providerStartedAt,
+      })
+      throw error
+    }
     const { replyText, embodimentIntent } = parseCharacterEmbodimentResponse(rawReplyText)
     const visibleReplyText = parseEmotionalReply(replyText).visibleText
     await this.memory.appendTurn(SESSION_ID, {
@@ -232,8 +447,13 @@ export class Orchestrator {
     })
 
     const emotionKey = parseLeadingEmotionTag(replyText)
-    mainLog.info('[emotion] LLM reply tag', { emotionKey, replyPreview: replyText.slice(0, 80) })
-    return { replyText, emotionKey, embodimentIntent }
+    mainLog.info('[emotion] LLM reply tag', { emotionKey, replyCharacters: replyText.length })
+    return {
+      replyText,
+      emotionKey,
+      embodimentIntent,
+      provenance: projectContext ? projectReplyProvenance(projectContext) : undefined,
+    }
   }
 
   async synthesizeReply(
@@ -314,8 +534,9 @@ export class Orchestrator {
     latencyMs?: string
     generatedLatencyMs?: string
     cache?: string
+    provenance?: ProjectReplyProvenance
   }> {
-    const { replyText, emotionKey } = await this.createReply({ userText })
+    const { replyText, emotionKey, provenance } = await this.createReply({ userText })
     const speechResult = await this.synthesizeReply(replyText, emotionKey)
 
     return {
@@ -326,6 +547,7 @@ export class Orchestrator {
       latencyMs: speechResult.latencyMs,
       generatedLatencyMs: speechResult.generatedLatencyMs,
       cache: speechResult.cache,
+      provenance,
     }
   }
 

@@ -36,6 +36,7 @@ import { IPC_ONE_PAYLOAD, type IpcAuthorization } from './IpcAuthorization'
 import { registerAvatarIpc } from './registerAvatarIpc'
 import { registerConfigIpc } from './registerConfigIpc'
 import { registerLlmIpc } from './registerLlmIpc'
+import { registerNetworkDiagnosticsIpc } from './registerNetworkDiagnosticsIpc'
 import { registerPluginIpc } from './registerPluginIpc'
 import { registerProjectAwarenessIpc } from './registerProjectAwarenessIpc'
 import { registerScreenContextIpc } from './registerScreenContextIpc'
@@ -103,7 +104,7 @@ export function registerIpcHandlers(
       }
       activeCharacterGenerationTurnId = turnId
       try {
-        const result = await orchestrator().createReply(input, { signal })
+        const result = await orchestrator().createReply(input, { signal, traceId: turnId })
         return result
       } finally {
         if (activeCharacterGenerationTurnId === turnId) activeCharacterGenerationTurnId = null
@@ -306,6 +307,9 @@ export function registerIpcHandlers(
         visionTurns.add(turnId)
         mainLog.info('Vision Request Started', { turnId })
       }
+      const turnStartedAt = Date.now()
+      let terminalResult = 'failure'
+      let terminalCode = 'UNKNOWN'
       try {
         const action = await actions.execute<
           {
@@ -332,14 +336,18 @@ export function registerIpcHandlers(
           },
         })
         if (action.status === 'success' && action.result) {
+          terminalResult = 'success'
+          terminalCode = 'OK'
           if (pendingCapture && screenContextId) {
             screenContext.completeTurn(event.sender.id, screenContextId, turnId)
             mainLog.info('Vision Request Completed', { turnId })
           }
-          const { replyText, emotionKey, embodimentIntent } = action.result
-          return { ok: true, replyText, emotionKey, embodimentIntent }
+          const { replyText, emotionKey, embodimentIntent, provenance } = action.result
+          return { ok: true, replyText, emotionKey, embodimentIntent, provenance }
         }
         const code = (action.errorCode as LlmTurnErrorCode | undefined) ?? 'UNKNOWN'
+        terminalCode = code
+        terminalResult = code === 'CANCELLED' ? 'cancelled' : 'failure'
         const recoverable = action.recoverable ?? false
         let attachmentDisposition: AttachmentDisposition = 'released'
         if (pendingCapture && screenContextId) {
@@ -374,6 +382,12 @@ export function registerIpcHandlers(
           },
         }
       } finally {
+        mainLog.info('[ConversationTrace] turn_terminal', {
+          traceId: turnId,
+          result: terminalResult,
+          code: terminalCode,
+          elapsedMs: Date.now() - turnStartedAt,
+        })
         replyAbortControllers.delete(turnId)
         cancelledTurns.delete(turnId)
         visionTurns.delete(turnId)
@@ -534,6 +548,7 @@ export function registerIpcHandlers(
     authorization,
   })
   registerPluginIpc(plugins, authorization)
+  registerNetworkDiagnosticsIpc(authorization)
 
   registerConfigIpc(actions, authorization)
   registerAvatarIpc(actions, win, authorization)

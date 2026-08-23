@@ -21,6 +21,10 @@ import type {
   ProjectTreeEntry,
 } from '../../src/main/project-awareness/contracts'
 import { sourcePriority } from '../../src/main/project-awareness/indexing/SourceFilter'
+import {
+  PROJECT_CONTEXT_BUDGET,
+  selectProjectEvidence,
+} from '../../src/main/project-awareness/retrieval/ProjectEvidenceSelector'
 import { type Translator, translate } from '../../src/shared/localization'
 import {
   isValidProjectBranch,
@@ -31,6 +35,7 @@ import {
 
 const sourceV1 = [
   "import { value } from './value'",
+  "export const apiSpeechBackend = 'tts synthesize voice speech'",
   'export interface RuntimeContract {',
   '  run(): void',
   '}',
@@ -38,6 +43,75 @@ const sourceV1 = [
   '  sync(): void {}',
   '}',
 ].join('\n')
+
+function assertDeterministicBalancedEvidenceBudget(): void {
+  const largeContent = Array.from({ length: 500 }, (_, index) => `runtime line ${index}`).join('\n')
+  const selection = selectProjectEvidence(
+    [
+      {
+        id: 1,
+        path: 'src/large.ts',
+        startLine: 1,
+        endLine: 500,
+        content: largeContent,
+        matches: [{ kind: 'fts', ordinal: 0 }],
+      },
+      {
+        id: 2,
+        path: 'src/large.ts',
+        startLine: 501,
+        endLine: 1_000,
+        content: largeContent,
+        matches: [{ kind: 'fts', ordinal: 1 }],
+      },
+      {
+        id: 3,
+        path: 'apps/api/runtime.py',
+        startLine: 1,
+        endLine: 50,
+        content: 'runtime fastapi backend\n'.repeat(50),
+        matches: [{ kind: 'fts', ordinal: 2 }],
+      },
+    ],
+    {
+      commitSha: 'a'.repeat(40),
+      normalizedTerms: ['runtime', 'backend'],
+    },
+  )
+  assert.equal(selection.quality, 'strong')
+  assert.deepEqual(
+    selection.evidence.slice(0, 2).map((item) => item.path),
+    ['apps/api/runtime.py', 'src/large.ts'],
+  )
+  assert.equal(selection.selectedSources.length, 2)
+  assert(selection.totalEvidenceCharacters <= PROJECT_CONTEXT_BUDGET.maxTotalEvidenceCharacters)
+  assert(
+    selection.selectedSources.every(
+      (source) => source.characters <= PROJECT_CONTEXT_BUDGET.maxSourceCharacters,
+    ),
+  )
+  assert(
+    selection.evidence.every(
+      (item) => item.content.length <= PROJECT_CONTEXT_BUDGET.maxFragmentCharacters,
+    ),
+  )
+
+  const weak = selectProjectEvidence(
+    [
+      {
+        id: 4,
+        path: 'src/unrelated.ts',
+        startLine: 1,
+        endLine: 200,
+        content: `needle\n${'x'.repeat(5_000)}`,
+        matches: [{ kind: 'fts', ordinal: 20 }],
+      },
+    ],
+    { commitSha: 'b'.repeat(40), normalizedTerms: ['needle', 'missing', 'terms'] },
+  )
+  assert.equal(weak.quality, 'weak')
+  assert(weak.totalEvidenceCharacters <= 1_200)
+}
 
 const translateEnglish: Translator = (key, params) => translate('en', key, params)
 
@@ -47,6 +121,19 @@ const stableSource = [
   'export const stableProjectValue = 42',
   'export type StableProjectValue = number',
 ].join('\n')
+const packageManifest = JSON.stringify(
+  {
+    name: 'technology-fixture',
+    dependencies: {
+      electron: '1.0.0',
+      react: '1.0.0',
+      typescript: '1.0.0',
+    },
+  },
+  null,
+  2,
+)
+const apiReadme = '# API\n\nThe speech backend uses Python and FastAPI.'
 
 class MockRepositoryAdapter implements ProjectRepositoryAdapter {
   head = '1111111111111111111111111111111111111111'
@@ -83,19 +170,43 @@ class MockRepositoryAdapter implements ProjectRepositoryAdapter {
         size: Buffer.byteLength(stableSource),
         type: 'blob',
       },
+      {
+        path: 'package.json',
+        sha: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+        size: Buffer.byteLength(packageManifest),
+        type: 'blob',
+      },
+      {
+        path: 'apps/api/README.md',
+        sha: 'cccccccccccccccccccccccccccccccccccccccc',
+        size: Buffer.byteLength(apiReadme),
+        type: 'blob',
+      },
     ]
   }
 
   async readFile(path: string): Promise<ProjectSourceFile> {
-    const content = path === 'src/stable.ts' ? stableSource : this.content
+    const content =
+      path === 'src/stable.ts'
+        ? stableSource
+        : path === 'package.json'
+          ? packageManifest
+          : path === 'apps/api/README.md'
+            ? apiReadme
+            : this.content
+    const fixedSha =
+      path === 'src/stable.ts'
+        ? 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+        : path === 'package.json'
+          ? 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
+          : path === 'apps/api/README.md'
+            ? 'cccccccccccccccccccccccccccccccccccccccc'
+            : undefined
     return {
       path,
-      sha:
-        path === 'src/stable.ts'
-          ? 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
-          : this.head.slice(0, 40),
+      sha: fixedSha ?? this.head.slice(0, 40),
       size: Buffer.byteLength(content),
-      language: 'typescript',
+      language: path.endsWith('.json') ? 'json' : path.endsWith('.md') ? 'markdown' : 'typescript',
       content,
     }
   }
@@ -117,6 +228,7 @@ class MockRepositoryAdapter implements ProjectRepositoryAdapter {
 }
 
 async function main(): Promise<void> {
+  assertDeterministicBalancedEvidenceBudget()
   assert.equal(
     isAllowedProjectPath({ path: 'apps/desktop/src/main/index.ts', size: 100 }, 1024),
     true,
@@ -276,6 +388,8 @@ async function main(): Promise<void> {
   }
   assert(longPythonExtracted.chunks.every((chunk) => chunk.endLine - chunk.startLine + 1 <= 220))
   assert.equal(isProjectRelevantRequest('Как работает ProjectRuntime?'), true)
+  assert.equal(isProjectRelevantRequest('А бекенд?'), true)
+  assert.equal(isProjectRelevantRequest('А TTS и ASR?'), true)
   assert.equal(isProjectRelevantRequest('Расскажи короткую шутку'), false)
   const privateRepositoryError = normalizeGitHubProjectError(
     { isAxiosError: true, response: { status: 404 } },
@@ -366,10 +480,30 @@ async function main(): Promise<void> {
     assert.equal(receivedToken, 'secret-token-that-is-long-enough')
     assert.equal(JSON.stringify(runtime.getStatus()).includes('secret-token'), false)
     assert.equal(runtime.getStatus().credential.source, 'secure_store')
-    assert.equal(runtime.getStatus().indexedFileCount, 2)
+    assert.equal(runtime.getStatus().indexedFileCount, 4)
     assert(runtime.getProjectMap())
-    assert.equal(runtime.search({ query: 'ProjectRuntime' })[0]?.symbol, 'ProjectRuntime')
-    assert.equal(runtime.readSymbol({ name: 'ProjectRuntime' }).startLine, 5)
+    const projectRuntimeResults = runtime.search({ query: 'ProjectRuntime' })
+    assert.equal(projectRuntimeResults[0]?.symbol, 'ProjectRuntime')
+    const speechBackendResults = runtime.search({
+      query:
+        'Можешь коротко рассказать раз у тебя уже есть Project Awareness как устроен твой api-бекенд голосовой озвучки?',
+    })
+    const speechBackendSource = speechBackendResults.find(
+      (result) => result.path === 'src/ProjectRuntime.ts',
+    )
+    assert(speechBackendSource)
+    assert.match(speechBackendSource.content, /apiSpeechBackend/)
+    const technologyResults = runtime.search({
+      query: 'Расскажи коротко используя project awarness на каких технологиях написан проект?',
+      limit: 6,
+      maxCharacters: 10_000,
+    })
+    assert.deepEqual(
+      technologyResults.slice(0, 2).map((result) => result.path),
+      ['package.json', 'apps/api/README.md'],
+    )
+    assert.match(technologyResults.map((result) => result.content).join('\n'), /Electron|FastAPI/)
+    assert.equal(runtime.readSymbol({ name: 'ProjectRuntime' }).startLine, 6)
 
     adapter.head = '2222222222222222222222222222222222222222'
     adapter.content = sourceV2

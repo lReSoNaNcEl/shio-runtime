@@ -1,5 +1,6 @@
 import {
   ActionButton,
+  Badge,
   Button,
   Content,
   Divider,
@@ -26,10 +27,13 @@ import {
   isValidProjectRepository,
   type ProjectAwarenessPublicConfig,
   type ProjectAwarenessStatus,
+  type ProjectSnapshotDelta,
+  type ProjectSnapshotFreshness,
 } from '../../../shared/project-awareness'
 import { type LocalizationContextValue } from '../../localization/LocalizationProvider'
 import { useTranslation } from '../../localization/useTranslation'
 import { observeRendererPromise } from '../../reliability/observePromise'
+import { formatRelativeTime } from '../../runtime/runtimeHealth'
 
 type Tone = 'positive' | 'informative' | 'neutral' | 'notice' | 'negative'
 
@@ -78,12 +82,23 @@ const PROJECT_INDEX_STATE_KEY: Record<
   error: 'common.error',
 }
 
+const PROJECT_FRESHNESS: Record<
+  ProjectSnapshotFreshness,
+  { key: Parameters<LocalizationContextValue['t']>[0]; tone: Tone }
+> = {
+  unknown: { key: 'plugins.project.freshness.unknown', tone: 'neutral' },
+  checking: { key: 'plugins.project.freshness.checking', tone: 'informative' },
+  fresh: { key: 'plugins.project.freshness.fresh', tone: 'positive' },
+  stale: { key: 'plugins.project.freshness.stale', tone: 'notice' },
+}
+
 const EMPTY_PROJECT_STATUS: ProjectAwarenessStatus = {
   enabled: false,
   state: 'disconnected',
   provider: 'github',
   repository: '',
   branch: 'main',
+  freshness: 'unknown',
   indexState: 'not_built',
   access: 'read-only',
   indexedFileCount: 0,
@@ -140,6 +155,136 @@ function PluginToggle({
   )
 }
 
+function relativeTime(timestamp: number | undefined, intlLocale: string, justNow: string): string {
+  return timestamp ? formatRelativeTime(timestamp, intlLocale, justNow) : '—'
+}
+
+function ChangedFilesSummary({ delta }: { delta: ProjectSnapshotDelta }) {
+  const { t } = useTranslation()
+  const marker = {
+    added: '+',
+    modified: '~',
+    deleted: '−',
+    renamed: '↪',
+  } as const
+  return (
+    <section className="plugin-project-delta">
+      <Heading level={4}>{t('plugins.project.delta.title')}</Heading>
+      <Text>{t('plugins.project.delta.total', { count: delta.total })}</Text>
+      <div className="plugin-project-delta-counts">
+        <Badge size="S" variant="positive">
+          + {delta.added}
+        </Badge>
+        <Badge size="S" variant="informative">
+          ~ {delta.modified}
+        </Badge>
+        <Badge size="S" variant="negative">
+          − {delta.deleted}
+        </Badge>
+        {delta.renamed > 0 && (
+          <Badge size="S" variant="gray">
+            ↪ {delta.renamed}
+          </Badge>
+        )}
+      </div>
+      <ul className="plugin-project-delta-files">
+        {delta.files.map((file) => (
+          <li key={`${file.status}:${file.path}`}>
+            <span aria-hidden="true">{marker[file.status]}</span>
+            <span>{file.path}</span>
+          </li>
+        ))}
+      </ul>
+      {delta.omitted > 0 && (
+        <Text>{t('plugins.project.delta.more', { count: delta.omitted })}</Text>
+      )}
+    </section>
+  )
+}
+
+function ProjectKnowledge({
+  status,
+  compact = false,
+  busy,
+  onSync,
+  onRefresh,
+}: {
+  status: ProjectAwarenessStatus
+  compact?: boolean
+  busy: boolean
+  onSync: () => void
+  onRefresh?: () => void
+}) {
+  const { intlLocale, t } = useTranslation()
+  const freshness = PROJECT_FRESHNESS[status.freshness]
+  const snapshot = status.indexedCommit?.slice(0, 7)
+  const remote = status.remoteHead?.slice(0, 7)
+  const justNow = t('health.time.justNow')
+  return (
+    <section className={compact ? 'plugin-project-knowledge compact' : 'plugin-project-knowledge'}>
+      {!compact && <Heading level={3}>{t('plugins.project.knowledgeTitle')}</Heading>}
+      {status.repository && (
+        <Text UNSAFE_className="plugin-project-repository">{status.repository}</Text>
+      )}
+      {(status.branch || snapshot) && (
+        <Text UNSAFE_className="plugin-project-commit">
+          {[status.branch, snapshot].filter(Boolean).join(' · ')}
+        </Text>
+      )}
+      <StatusLight variant={freshness.tone} size="S">
+        {t(freshness.key)}
+      </StatusLight>
+      {status.freshness === 'stale' && remote && (
+        <Text UNSAFE_className="plugin-project-commit">
+          {t('plugins.project.remoteHeadValue', { sha: remote })}
+        </Text>
+      )}
+      {!compact && (
+        <dl className="plugin-status-list plugin-project-knowledge-grid">
+          <div>
+            <dt>{t('plugins.project.snapshot')}</dt>
+            <dd className="plugin-project-code">{status.indexedCommit ?? '—'}</dd>
+          </div>
+          <div>
+            <dt>{t('health.project.remoteHead')}</dt>
+            <dd className="plugin-project-code">{status.remoteHead ?? '—'}</dd>
+          </div>
+          <div>
+            <dt>{t('plugins.project.lastSyncLabel')}</dt>
+            <dd>{relativeTime(status.lastSyncAt, intlLocale, justNow)}</dd>
+          </div>
+          <div>
+            <dt>{t('plugins.project.lastCheckLabel')}</dt>
+            <dd>{relativeTime(status.lastFreshnessCheckAt, intlLocale, justNow)}</dd>
+          </div>
+        </dl>
+      )}
+      {compact && status.lastSyncAt && (
+        <Text UNSAFE_className="plugin-project-relative">
+          {t('health.project.syncedRelative', {
+            time: relativeTime(status.lastSyncAt, intlLocale, justNow),
+          })}
+        </Text>
+      )}
+      <div className="plugin-action-row">
+        {(!compact || status.freshness === 'stale') && (
+          <Button variant="secondary" onPress={onSync} isDisabled={busy}>
+            {t('plugins.project.sync')}
+          </Button>
+        )}
+        {!compact && onRefresh && (
+          <ActionButton onPress={onRefresh} isDisabled={busy}>
+            {t('plugins.project.refreshFreshness')}
+          </ActionButton>
+        )}
+      </div>
+      {status.freshness === 'stale' && status.snapshotDelta && (
+        <ChangedFilesSummary delta={status.snapshotDelta} />
+      )}
+    </section>
+  )
+}
+
 function ProjectAwarenessDetails({
   plugin,
   onBack,
@@ -149,7 +294,7 @@ function ProjectAwarenessDetails({
   onBack: () => void
   onPluginChange: (enabled: boolean) => void
 }) {
-  const { intlLocale, t } = useTranslation()
+  const { t } = useTranslation()
   const [config, setConfig] = useState<ProjectAwarenessPublicConfig>({
     provider: 'github',
     repository: '',
@@ -167,7 +312,9 @@ function ProjectAwarenessDetails({
     observeRendererPromise(
       Promise.all([
         window.api.projectAwareness.getConfig(),
-        window.api.projectAwareness.getStatus(),
+        plugin.enabled
+          ? window.api.projectAwareness.refreshSnapshotStatus(false)
+          : window.api.projectAwareness.getStatus(),
       ]).then(([nextConfig, nextStatus]) => {
         if (!active) return
         setConfig(nextConfig)
@@ -190,7 +337,7 @@ function ProjectAwarenessDetails({
       active = false
       window.clearInterval(intervalId)
     }
-  }, [])
+  }, [plugin.enabled])
 
   const run = async (operation: () => Promise<unknown>, successMessage = ''): Promise<void> => {
     setBusy(true)
@@ -242,6 +389,7 @@ function ProjectAwarenessDetails({
   const validTarget =
     isValidProjectRepository(config.repository) && isValidProjectBranch(config.branch)
   const runtimeDisabled = busy || plugin.busy || !plugin.enabled
+  const projectActionsDisabled = runtimeDisabled || !status.credential.configured || !validTarget
   const connected = ['ready', 'syncing', 'indexing', 'stale'].includes(status.state)
 
   return (
@@ -288,6 +436,13 @@ function ProjectAwarenessDetails({
           {busy ? t('plugins.project.applying') : t('plugins.project.apply')}
         </Button>
       </section>
+
+      <ProjectKnowledge
+        status={status}
+        busy={projectActionsDisabled}
+        onSync={() => void run(() => window.api.projectAwareness.sync())}
+        onRefresh={() => void run(() => window.api.projectAwareness.refreshSnapshotStatus(true))}
+      />
 
       <section className="plugin-detail-section">
         <Heading level={3}>{t('plugins.project.credentialTitle')}</Heading>
@@ -350,16 +505,6 @@ function ProjectAwarenessDetails({
             <dd>{t('common.readOnly')}</dd>
           </div>
         </dl>
-        {status.indexedCommit && (
-          <Text>{t('plugins.project.knownCommit', { sha: status.indexedCommit.slice(0, 7) })}</Text>
-        )}
-        {status.lastSyncAt && (
-          <Text>
-            {t('plugins.project.lastSync', {
-              time: new Date(status.lastSyncAt).toLocaleTimeString(intlLocale),
-            })}
-          </Text>
-        )}
         <div className="plugin-action-row">
           <Button
             variant="secondary"
@@ -375,12 +520,6 @@ function ProjectAwarenessDetails({
             isDisabled={runtimeDisabled || !connected}
           >
             {t('common.disconnect')}
-          </ActionButton>
-          <ActionButton
-            onPress={() => void run(() => window.api.projectAwareness.sync())}
-            isDisabled={runtimeDisabled || !status.credential.configured || !validTarget}
-          >
-            {t('plugins.project.sync')}
           </ActionButton>
           <ActionButton
             onPress={() => void run(() => window.api.projectAwareness.rebuildIndex())}
@@ -417,11 +556,18 @@ export function PluginsView({
 }) {
   const { t } = useTranslation()
   const [plugins, setPlugins] = useState<PluginStatus[]>([])
+  const [projectStatus, setProjectStatus] = useState<ProjectAwarenessStatus>(EMPTY_PROJECT_STATUS)
+  const [projectBusy, setProjectBusy] = useState(false)
   const [error, setError] = useState('')
 
   const refresh = (): void => {
     observeRendererPromise(
-      window.api.plugins.list().then(setPlugins),
+      Promise.all([window.api.plugins.list(), window.api.projectAwareness.getStatus()]).then(
+        ([items, status]) => {
+          setPlugins(items)
+          setProjectStatus(status)
+        },
+      ),
       'refresh Plugin catalog',
       (reason) => setError(rendererError(reason)),
     )
@@ -431,8 +577,15 @@ export function PluginsView({
     let active = true
     const load = (): void => {
       observeRendererPromise(
-        window.api.plugins.list().then((items) => {
-          if (active) setPlugins(items)
+        window.api.plugins.list().then(async (items) => {
+          const project = items.find((plugin) => plugin.manifest.id === PROJECT_AWARENESS_PLUGIN_ID)
+          const status = project?.enabled
+            ? await window.api.projectAwareness.refreshSnapshotStatus(false)
+            : await window.api.projectAwareness.getStatus()
+          if (active) {
+            setPlugins(items)
+            setProjectStatus(status)
+          }
         }),
         'load Plugin catalog',
         (reason) => {
@@ -465,12 +618,34 @@ export function PluginsView({
         setPlugins((items) =>
           items.map((item) => (item.manifest.id === next.manifest.id ? next : item)),
         )
+        observeRendererPromise(
+          window.api.projectAwareness.getStatus().then(setProjectStatus),
+          'refresh Project Awareness status after toggle',
+        )
       }),
       'toggle Project Awareness plugin',
       (reason) => {
         setError(rendererError(reason))
         refresh()
       },
+    )
+  }
+
+  const syncProject = (): void => {
+    if (projectBusy || !projectPlugin?.enabled) return
+    observeRendererPromise(
+      (async () => {
+        setProjectBusy(true)
+        setError('')
+        try {
+          await window.api.projectAwareness.sync()
+          setProjectStatus(await window.api.projectAwareness.getStatus())
+        } finally {
+          setProjectBusy(false)
+        }
+      })(),
+      'synchronize Project Awareness from Plugin catalog',
+      (reason) => setError(rendererError(reason)),
     )
   }
 
@@ -504,6 +679,14 @@ export function PluginsView({
           <PluginToggle plugin={projectPlugin} onChange={toggle} />
         </div>
         <PluginSummary plugin={projectPlugin} />
+        {projectStatus.repository && (
+          <ProjectKnowledge
+            status={projectStatus}
+            compact
+            busy={projectBusy || projectPlugin.busy || !projectPlugin.enabled}
+            onSync={syncProject}
+          />
+        )}
         <div className="plugin-capabilities">
           <Heading level={3}>{t('plugins.capabilities.title')}</Heading>
           <Text>{t('plugins.capability.projectContext')}</Text>

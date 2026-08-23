@@ -11,6 +11,11 @@ import type {
 } from '../shared/screen-context'
 
 const api = {
+  diagnostics: {
+    getNetworkRequests: () => ipcRenderer.invoke('diagnostics:get-network-requests'),
+    getNetworkRequestDetails: (requestId: string) =>
+      ipcRenderer.invoke('diagnostics:get-network-request-details', requestId),
+  },
   system: {
     getReleaseInfo: () => ipcRenderer.invoke('system:get-release-info'),
     openLogsFolder: () => ipcRenderer.invoke('system:open-logs-folder'),
@@ -78,6 +83,8 @@ const api = {
     openTokenSettings: () => ipcRenderer.invoke('project-awareness:open-token-settings'),
     connect: () => ipcRenderer.invoke('project-awareness:connect'),
     disconnect: () => ipcRenderer.invoke('project-awareness:disconnect'),
+    refreshSnapshotStatus: (force: boolean) =>
+      ipcRenderer.invoke('project-awareness:refresh-snapshot-status', force),
     sync: () => ipcRenderer.invoke('project-awareness:sync'),
     rebuildIndex: () => ipcRenderer.invoke('project-awareness:rebuild-index'),
     getProjectMap: () => ipcRenderer.invoke('project-awareness:get-project-map'),

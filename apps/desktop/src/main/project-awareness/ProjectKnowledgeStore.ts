@@ -11,6 +11,7 @@ import type {
   ProjectSymbolReference,
 } from '../../shared/project-awareness'
 import type { PreparedProjectFile } from './contracts'
+import { isProjectTechnologyOverviewRequest } from './ProjectRelevanceGate'
 
 interface SnapshotRow {
   id: string
@@ -59,6 +60,126 @@ interface ChunkRow {
   content: string
 }
 
+export type ProjectRetrievalMatchKind = 'symbol' | 'path' | 'technology-overview' | 'fts'
+
+export interface ProjectRetrievalMatch {
+  kind: ProjectRetrievalMatchKind
+  ordinal: number
+}
+
+export interface ProjectRetrievalCandidate {
+  id: number
+  path: string
+  startLine: number
+  endLine: number
+  symbol?: string
+  content: string
+  matches: ProjectRetrievalMatch[]
+}
+
+export interface ProjectRetrievalCandidates {
+  candidates: ProjectRetrievalCandidate[]
+  normalizedTerms: string[]
+}
+
+const FTS_TERM_LIMIT = 12
+
+const QUERY_STOP_WORDS = new Set([
+  'a',
+  'an',
+  'and',
+  'are',
+  'can',
+  'could',
+  'do',
+  'does',
+  'for',
+  'from',
+  'how',
+  'into',
+  'is',
+  'it',
+  'please',
+  'tell',
+  'the',
+  'this',
+  'what',
+  'where',
+  'which',
+  'with',
+  'you',
+  'your',
+  'без',
+  'был',
+  'для',
+  'его',
+  'если',
+  'есть',
+  'или',
+  'как',
+  'когда',
+  'коротко',
+  'мне',
+  'можешь',
+  'мой',
+  'она',
+  'пожалуйста',
+  'почему',
+  'раз',
+  'рассказать',
+  'так',
+  'тебя',
+  'твой',
+  'уже',
+  'устроен',
+  'что',
+  'это',
+  'этот',
+])
+
+const QUERY_STOP_WORD_PATTERNS = [/^расскаж/u, /^использ/u, /^каки/u, /^на$/u]
+
+const PROJECT_CONTEXT_TERMS = new Set([
+  'awareness',
+  'awarness',
+  'project',
+  'repository',
+  'проект',
+  'проекта',
+  'проекте',
+  'репозиторий',
+])
+
+const TECHNICAL_TERM_ALIASES: ReadonlyArray<{
+  matches: RegExp
+  terms: readonly string[]
+}> = [
+  { matches: /^(?:api-)?(?:бекенд|бэкенд)$/u, terms: ['backend', 'server', 'api'] },
+  { matches: /^голос/u, terms: ['voice', 'speech', 'tts'] },
+  { matches: /^озвуч/u, terms: ['tts', 'speech', 'synthesize'] },
+  {
+    matches: /^(?:технолог\p{L}*|техстек|stack)$/u,
+    terms: ['typescript', 'python', 'electron', 'react', 'fastapi', 'dependencies'],
+  },
+]
+
+const TECHNOLOGY_OVERVIEW_PATH_CONDITION = `(
+  lower(f.path) = 'package.json'
+  OR lower(f.path) LIKE '%/package.json'
+  OR lower(f.path) = 'pyproject.toml'
+  OR lower(f.path) LIKE '%/pyproject.toml'
+  OR lower(f.path) = 'requirements.txt'
+  OR lower(f.path) LIKE '%/requirements.txt'
+  OR lower(f.path) = 'readme.md'
+  OR lower(f.path) LIKE '%/readme.md'
+)`
+
+function isQueryStopWord(term: string): boolean {
+  return (
+    QUERY_STOP_WORDS.has(term) || QUERY_STOP_WORD_PATTERNS.some((pattern) => pattern.test(term))
+  )
+}
+
 function repositoryId(repository: ProjectRepositoryIdentity): string {
   return `${repository.provider}:${repository.owner}/${repository.name}`
 }
@@ -77,13 +198,41 @@ function snapshotFromRow(row: SnapshotRow): ProjectSnapshotIdentity {
   }
 }
 
-function ftsQuery(query: string): string | null {
-  const terms = query
-    .normalize('NFKC')
-    .match(/[\p{L}\p{N}_./-]{2,}/gu)
-    ?.slice(0, 12)
-    .map((term) => `"${term.replace(/"/g, '""')}"`)
-  return terms?.length ? terms.join(' OR ') : null
+function normalizeRetrievalQuery(query: string): { expression: string | null; terms: string[] } {
+  const rawTerms =
+    query
+      .normalize('NFKC')
+      .toLowerCase()
+      .match(/[\p{L}\p{N}_./-]{2,}/gu) ?? []
+  const expandedTerms: string[] = []
+  const seen = new Set<string>()
+  const add = (term: string): void => {
+    if (term.length < 2 || seen.has(term)) return
+    seen.add(term)
+    expandedTerms.push(term)
+  }
+  for (const term of rawTerms) {
+    add(term)
+    for (const part of term.split(/[./-]+/u)) add(part)
+    for (const aliases of TECHNICAL_TERM_ALIASES) {
+      if (aliases.matches.test(term)) aliases.terms.forEach(add)
+    }
+  }
+
+  const meaningfulTerms = expandedTerms.filter((term) => !isQueryStopWord(term))
+  const prioritizedTerms = [
+    ...meaningfulTerms.filter((term) => !PROJECT_CONTEXT_TERMS.has(term)),
+    ...meaningfulTerms.filter((term) => PROJECT_CONTEXT_TERMS.has(term)),
+  ]
+  const terms = (prioritizedTerms.length > 0 ? prioritizedTerms : expandedTerms).slice(
+    0,
+    FTS_TERM_LIMIT,
+  )
+  const quotedTerms = terms.map((term) => `"${term.replace(/"/g, '""')}"`)
+  return {
+    expression: quotedTerms.length > 0 ? quotedTerms.join(' OR ') : null,
+    terms,
+  }
 }
 
 export class ProjectKnowledgeStore {
@@ -266,6 +415,26 @@ export class ProjectKnowledgeStore {
          LIMIT 1`,
       )
       .get(repositoryId(repository), branch) as (SnapshotRow & { file_count: number }) | undefined
+    if (!row) return null
+    return { id: row.id, snapshot: snapshotFromRow(row), fileCount: row.file_count }
+  }
+
+  getCurrentSnapshotByTarget(
+    owner: string,
+    name: string,
+    branch: string,
+  ): { id: string; snapshot: ProjectSnapshotIdentity; fileCount: number } | null {
+    const row = this.database
+      .prepare(
+        `SELECT s.id, s.branch, s.commit_sha, s.created_at, r.owner, r.name, r.default_branch,
+          (SELECT COUNT(*) FROM files f WHERE f.snapshot_id = s.id) AS file_count
+         FROM snapshots s
+         JOIN repositories r ON r.id = s.repository_id
+         WHERE r.provider = 'github' AND r.owner = ? AND r.name = ?
+           AND s.branch = ? AND s.is_current = 1
+         LIMIT 1`,
+      )
+      .get(owner, name, branch) as (SnapshotRow & { file_count: number }) | undefined
     if (!row) return null
     return { id: row.id, snapshot: snapshotFromRow(row), fileCount: row.file_count }
   }
@@ -523,18 +692,24 @@ export class ProjectKnowledgeStore {
     return row ? (JSON.parse(row.map_json) as ProjectMap) : null
   }
 
-  search(
-    snapshotId: string,
-    commitSha: string,
-    query: string,
-    limit: number,
-    maxCharacters: number,
-  ): ProjectEvidence[] {
-    const ranked = new Map<number, { row: ChunkRow; relevance: number }>()
-    const add = (rows: ChunkRow[], relevance: number): void => {
-      for (const row of rows) {
-        const existing = ranked.get(row.id)
-        if (!existing || existing.relevance < relevance) ranked.set(row.id, { row, relevance })
+  findCandidates(snapshotId: string, query: string, limit: number): ProjectRetrievalCandidates {
+    const candidates = new Map<number, ProjectRetrievalCandidate>()
+    const add = (rows: ChunkRow[], kind: ProjectRetrievalMatchKind): void => {
+      for (const [ordinal, row] of rows.entries()) {
+        const existing = candidates.get(row.id)
+        if (existing) {
+          existing.matches.push({ kind, ordinal })
+        } else {
+          candidates.set(row.id, {
+            id: row.id,
+            path: row.path,
+            startLine: row.start_line,
+            endLine: row.end_line,
+            ...(row.symbol_name ? { symbol: row.symbol_name } : {}),
+            content: row.content,
+            matches: [{ kind, ordinal }],
+          })
+        }
       }
     }
     const symbolRows = this.database
@@ -547,7 +722,7 @@ export class ProjectKnowledgeStore {
          LIMIT ?`,
       )
       .all(snapshotId, query.trim(), limit) as unknown as ChunkRow[]
-    add(symbolRows, 1)
+    add(symbolRows, 'symbol')
     const pathRows = this.database
       .prepare(
         `SELECT c.id, f.path, c.start_line, c.end_line, c.symbol_name, c.content
@@ -557,9 +732,37 @@ export class ProjectKnowledgeStore {
          LIMIT ?`,
       )
       .all(snapshotId, `%${query.trim().slice(0, 200)}%`, limit) as unknown as ChunkRow[]
-    add(pathRows, 0.9)
-    const match = ftsQuery(query)
-    if (match) {
+    add(pathRows, 'path')
+    if (isProjectTechnologyOverviewRequest(query)) {
+      const technologyOverviewRows = this.database
+        .prepare(
+          `SELECT c.id, f.path, c.start_line, c.end_line, c.symbol_name, c.content
+           FROM chunks c JOIN files f ON f.id = c.file_id
+           WHERE f.snapshot_id = ?
+             AND ${TECHNOLOGY_OVERVIEW_PATH_CONDITION}
+             AND c.start_line = (
+               SELECT MIN(first_chunk.start_line)
+               FROM chunks first_chunk
+               WHERE first_chunk.file_id = f.id
+             )
+           ORDER BY
+             CASE
+               WHEN lower(f.path) = 'package.json' THEN 0
+               WHEN lower(f.path) LIKE '%/package.json' THEN 1
+               WHEN lower(f.path) LIKE '%pyproject.toml' THEN 2
+               WHEN lower(f.path) LIKE '%requirements.txt' THEN 3
+               ELSE 4
+             END,
+             f.priority DESC,
+             length(f.path),
+             f.path
+           LIMIT ?`,
+        )
+        .all(snapshotId, limit) as unknown as ChunkRow[]
+      add(technologyOverviewRows, 'technology-overview')
+    }
+    const normalized = normalizeRetrievalQuery(query)
+    if (normalized.expression) {
       const ftsRows = this.database
         .prepare(
           `SELECT CAST(chunk_id AS INTEGER) AS id, path, 0 AS start_line, 0 AS end_line,
@@ -569,7 +772,7 @@ export class ProjectKnowledgeStore {
            ORDER BY rank
            LIMIT ?`,
         )
-        .all(snapshotId, match, limit * 3) as unknown as ChunkRow[]
+        .all(snapshotId, normalized.expression, limit * 3) as unknown as ChunkRow[]
       const hydrate = this.database.prepare(
         `SELECT c.id, f.path, c.start_line, c.end_line, c.symbol_name, c.content
          FROM chunks c JOIN files f ON f.id = c.file_id WHERE c.id = ?`,
@@ -579,36 +782,13 @@ export class ProjectKnowledgeStore {
           const full = hydrate.get(row.id) as ChunkRow | undefined
           return full ? [full] : []
         }),
-        0.72,
+        'fts',
       )
     }
-
-    let usedCharacters = 0
-    return [...ranked.values()]
-      .sort(
-        (left, right) =>
-          right.relevance - left.relevance ||
-          left.row.path.localeCompare(right.row.path) ||
-          left.row.start_line - right.row.start_line,
-      )
-      .flatMap(({ row, relevance }) => {
-        if (usedCharacters >= maxCharacters) return []
-        const remaining = maxCharacters - usedCharacters
-        const content = row.content.slice(0, remaining)
-        usedCharacters += content.length
-        return [
-          {
-            path: row.path,
-            startLine: row.start_line,
-            endLine: row.end_line,
-            ...(row.symbol_name ? { symbol: row.symbol_name } : {}),
-            commitSha,
-            content,
-            relevance,
-          },
-        ]
-      })
-      .slice(0, limit)
+    return {
+      candidates: [...candidates.values()],
+      normalizedTerms: normalized.terms,
+    }
   }
 
   readFile(

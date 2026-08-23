@@ -2,6 +2,7 @@ import axios, { type AxiosInstance } from 'axios'
 
 import { type EmotionContract, emotionRegistry } from '../../shared/emotion'
 import type { SpeechAudioBoundaryTelemetry, SpeechUtteranceKind } from '../../shared/speech'
+import { observeAxiosNetwork } from '../diagnostics/observeAxiosNetwork'
 import { mainLog } from '../logging/safeLogger'
 import { type Health, HealthSchema, type Recognize, RecognizeSchema } from '../schemas'
 import { normalizeSpeechError, SpeechServiceError } from './speechErrors'
@@ -79,6 +80,7 @@ export class SpeechClient {
       // The local speech backend should never be routed through a proxy.
       proxy: false,
     })
+    observeAxiosNetwork(this.http, 'speech-api')
   }
 
   async health(): Promise<Health> {

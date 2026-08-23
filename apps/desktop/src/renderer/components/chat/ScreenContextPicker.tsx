@@ -208,8 +208,17 @@ export function ScreenContextPicker({ isOpen, onDismiss, onChangeModel, onAttach
                       >
                         <img src={source.previewDataUrl} alt="" />
                         <span className="screen-context-source-info">
-                          <span className="screen-context-source-name" title={source.name}>
-                            {source.name}
+                          <span className="screen-context-source-identity">
+                            {source.appIconDataUrl && (
+                              <img
+                                className="screen-context-source-app-icon"
+                                src={source.appIconDataUrl}
+                                alt=""
+                              />
+                            )}
+                            <span className="screen-context-source-name" title={source.name}>
+                              {source.name}
+                            </span>
                           </span>
                           <Badge
                             size="S"

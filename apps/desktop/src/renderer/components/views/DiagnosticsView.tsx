@@ -4,6 +4,7 @@ import {
   MenuItem,
   MenuTrigger,
   SearchField,
+  StatusLight,
   Tab,
   TabList,
   TabPanel,
@@ -15,13 +16,21 @@ import Erase from '@react-spectrum/s2/icons/Erase'
 import Filter from '@react-spectrum/s2/icons/Filter'
 import Pause from '@react-spectrum/s2/icons/Pause'
 import Play from '@react-spectrum/s2/icons/Play'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
+import {
+  type NetworkBodyDiagnostic,
+  type NetworkHeaderDiagnostic,
+  type NetworkRequestDiagnostic,
+  type NetworkRequestDiagnosticDetails,
+  type NetworkRequestOutcome,
+  type NetworkRequestSource,
+} from '../../../shared/diagnostics'
 import { controller, type RuntimeDebugSnapshot, type RuntimeTimelineEvent } from '../../Controller'
 import { useTranslation } from '../../localization/useTranslation'
 import { observeRendererPromise } from '../../reliability/observePromise'
 
-type DiagnosticsTab = 'events' | 'snapshot'
+type DiagnosticsTab = 'events' | 'network' | 'snapshot'
 
 interface DisplayEvent {
   id: string
@@ -87,6 +96,23 @@ function formatTime(value: number): string {
   })
 }
 
+function networkOutcomeTone(
+  outcome: NetworkRequestOutcome,
+): 'informative' | 'positive' | 'negative' | 'notice' | 'neutral' {
+  switch (outcome) {
+    case 'pending':
+      return 'informative'
+    case 'success':
+      return 'positive'
+    case 'timeout':
+      return 'notice'
+    case 'failure':
+      return 'negative'
+    case 'cancelled':
+      return 'neutral'
+  }
+}
+
 function timelineEvent(event: RuntimeTimelineEvent): DisplayEvent {
   return {
     id: `timeline:${event.id}`,
@@ -133,15 +159,122 @@ function SnapshotValue({ value }: { value: unknown }) {
   return <span>{String(value)}</span>
 }
 
+function NetworkRequestDetailPanel({
+  details,
+  state,
+}: {
+  details: NetworkRequestDiagnosticDetails | null
+  state: 'loading' | 'ready' | 'missing' | 'failed'
+}) {
+  const { t } = useTranslation()
+  if (state === 'loading') {
+    return (
+      <Text UNSAFE_className="diagnostics-network-detail-state">
+        {t('diagnostics.network.detail.loading')}
+      </Text>
+    )
+  }
+  if (state === 'missing' || state === 'failed' || !details) {
+    return (
+      <StatusLight
+        variant={state === 'failed' ? 'negative' : 'notice'}
+        size="S"
+        UNSAFE_className="diagnostics-network-detail-state"
+      >
+        {state === 'failed'
+          ? t('diagnostics.network.detail.failed')
+          : t('diagnostics.network.detail.unavailable')}
+      </StatusLight>
+    )
+  }
+  return (
+    <div className="diagnostics-network-detail-grid">
+      <NetworkExchangeDetail
+        title={t('diagnostics.network.detail.request')}
+        headers={details.requestHeaders}
+        body={details.requestBody}
+      />
+      <NetworkExchangeDetail
+        title={t('diagnostics.network.detail.response')}
+        headers={details.responseHeaders}
+        body={details.responseBody}
+      />
+    </div>
+  )
+}
+
+function NetworkExchangeDetail({
+  title,
+  headers,
+  body,
+}: {
+  title: string
+  headers: NetworkHeaderDiagnostic[]
+  body: NetworkBodyDiagnostic
+}) {
+  const { t } = useTranslation()
+  const metadata = [
+    body.contentType,
+    body.byteLength === undefined
+      ? undefined
+      : t('diagnostics.network.detail.bytes', { count: body.byteLength }),
+    body.truncated ? t('diagnostics.network.detail.truncated') : undefined,
+  ]
+    .filter(Boolean)
+    .join(' · ')
+  const bodyText = body.text ?? t(`diagnostics.network.detail.body.${body.kind}`)
+  return (
+    <section className="diagnostics-network-detail-column">
+      <Text UNSAFE_className="diagnostics-network-detail-title">{title}</Text>
+      <div className="diagnostics-network-detail-block">
+        <Text UNSAFE_className="diagnostics-network-detail-label">
+          {t('diagnostics.network.detail.headers')}
+        </Text>
+        <pre className="diagnostics-network-detail-content">
+          {formatNetworkHeaders(headers, t('diagnostics.network.detail.noHeaders'))}
+        </pre>
+      </div>
+      <div className="diagnostics-network-detail-block">
+        <div className="diagnostics-network-detail-body-heading">
+          <Text UNSAFE_className="diagnostics-network-detail-label">
+            {t('diagnostics.network.detail.body')}
+          </Text>
+          {metadata && <Text UNSAFE_className="diagnostics-network-detail-meta">{metadata}</Text>}
+        </div>
+        <pre className="diagnostics-network-detail-content diagnostics-network-detail-body">
+          {bodyText}
+        </pre>
+      </div>
+    </section>
+  )
+}
+
+function formatNetworkHeaders(headers: NetworkHeaderDiagnostic[], emptyLabel: string): string {
+  if (headers.length === 0) return emptyLabel
+  return headers.map((header) => `${header.name}: ${header.value}`).join('\n')
+}
+
 export function DiagnosticsView() {
   const { t } = useTranslation()
   const [snapshot, setSnapshot] = useState<RuntimeDebugSnapshot | null>(null)
+  const [networkRequests, setNetworkRequests] = useState<NetworkRequestDiagnostic[]>([])
   const [activeTab, setActiveTab] = useState<DiagnosticsTab>('events')
   const [search, setSearch] = useState('')
   const [domain, setDomain] = useState('')
   const [pausedEvents, setPausedEvents] = useState<DisplayEvent[] | null>(null)
   const [expandedEvents, setExpandedEvents] = useState<Set<string>>(() => new Set())
   const [clearedEventIds, setClearedEventIds] = useState<Set<string>>(() => new Set())
+  const [networkSearch, setNetworkSearch] = useState('')
+  const [clearedNetworkRequestIds, setClearedNetworkRequestIds] = useState<Set<string>>(
+    () => new Set(),
+  )
+  const [expandedNetworkRequestId, setExpandedNetworkRequestId] = useState<string | null>(null)
+  const [networkRequestDetails, setNetworkRequestDetails] =
+    useState<NetworkRequestDiagnosticDetails | null>(null)
+  const [networkRequestDetailState, setNetworkRequestDetailState] = useState<
+    'loading' | 'ready' | 'missing' | 'failed'
+  >('missing')
+  const networkDetailRequestVersion = useRef(0)
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(
     () =>
       new Set([
@@ -156,12 +289,26 @@ export function DiagnosticsView() {
 
   useEffect(() => {
     let active = true
+    let networkRefreshInFlight = false
     const refresh = (): void => {
       observeRendererPromise(
-        controller.getRuntimeDebug().then((next) => {
-          if (active) setSnapshot(next)
+        controller.getRuntimeDebug().then((nextSnapshot) => {
+          if (active) setSnapshot(nextSnapshot)
         }),
         'refresh Runtime diagnostics',
+      )
+      if (networkRefreshInFlight) return
+      networkRefreshInFlight = true
+      observeRendererPromise(
+        window.api.diagnostics
+          .getNetworkRequests()
+          .then((nextNetworkRequests) => {
+            if (active) setNetworkRequests(nextNetworkRequests)
+          })
+          .finally(() => {
+            networkRefreshInFlight = false
+          }),
+        'refresh network diagnostics',
       )
     }
     refresh()
@@ -171,6 +318,13 @@ export function DiagnosticsView() {
       window.clearInterval(timer)
     }
   }, [])
+
+  useEffect(
+    () => () => {
+      networkDetailRequestVersion.current += 1
+    },
+    [],
+  )
 
   const currentEvents = useMemo(() => collectEvents(snapshot), [snapshot])
   const presentedEvents = pausedEvents ?? currentEvents
@@ -193,6 +347,21 @@ export function DiagnosticsView() {
         .includes(query)
     })
   }, [domain, search, visibleEvents])
+
+  const visibleNetworkRequests = useMemo(
+    () => networkRequests.filter((request) => !clearedNetworkRequestIds.has(request.id)),
+    [clearedNetworkRequestIds, networkRequests],
+  )
+  const filteredNetworkRequests = useMemo(() => {
+    const query = networkSearch.trim().toLocaleLowerCase()
+    if (!query) return visibleNetworkRequests
+    return visibleNetworkRequests.filter((request) =>
+      [request.source, request.method, request.target, request.outcome, request.status]
+        .join(' ')
+        .toLocaleLowerCase()
+        .includes(query),
+    )
+  }, [networkSearch, visibleNetworkRequests])
 
   useEffect(() => {
     if (domain && !domains.includes(domain)) setDomain('')
@@ -272,15 +441,67 @@ export function DiagnosticsView() {
     setExpandedEvents(new Set())
   }
 
+  const clearNetworkView = (): void => {
+    setClearedNetworkRequestIds((current) => {
+      const next = new Set(current)
+      for (const request of networkRequests) next.add(request.id)
+      return next
+    })
+    networkDetailRequestVersion.current += 1
+    setExpandedNetworkRequestId(null)
+    setNetworkRequestDetails(null)
+    setNetworkRequestDetailState('missing')
+  }
+
+  const toggleNetworkRequest = (id: string): void => {
+    if (expandedNetworkRequestId === id) {
+      networkDetailRequestVersion.current += 1
+      setExpandedNetworkRequestId(null)
+      setNetworkRequestDetails(null)
+      setNetworkRequestDetailState('missing')
+      return
+    }
+    const requestVersion = ++networkDetailRequestVersion.current
+    setExpandedNetworkRequestId(id)
+    setNetworkRequestDetails(null)
+    setNetworkRequestDetailState('loading')
+    observeRendererPromise(
+      window.api.diagnostics
+        .getNetworkRequestDetails(id)
+        .then((details) => {
+          if (networkDetailRequestVersion.current !== requestVersion) return
+          setNetworkRequestDetails(details)
+          setNetworkRequestDetailState(details ? 'ready' : 'missing')
+        })
+        .catch((error: unknown) => {
+          if (networkDetailRequestVersion.current !== requestVersion) return
+          setNetworkRequestDetails(null)
+          setNetworkRequestDetailState('failed')
+          throw error
+        }),
+      'load network request details',
+    )
+  }
+
+  const networkSourceLabel = (source: NetworkRequestSource): string =>
+    t(`diagnostics.network.source.${source}`)
+
+  const networkOutcomeLabel = (outcome: NetworkRequestOutcome): string =>
+    t(`diagnostics.network.outcome.${outcome}`)
+
   return (
     <section className="diagnostics-view">
       <Tabs
         aria-label={t('app.nav.diagnostics')}
         selectedKey={activeTab}
-        onSelectionChange={(key) => setActiveTab(key === 'snapshot' ? 'snapshot' : 'events')}
+        onSelectionChange={(key) => {
+          if (key === 'network' || key === 'snapshot') setActiveTab(key)
+          else setActiveTab('events')
+        }}
       >
         <TabList UNSAFE_className="diagnostics-tabs">
           <Tab id="events">{t('diagnostics.tabs.events')}</Tab>
+          <Tab id="network">{t('diagnostics.tabs.network')}</Tab>
           <Tab id="snapshot">{t('diagnostics.tabs.snapshot')}</Tab>
         </TabList>
         <TabPanel id="events">
@@ -388,6 +609,81 @@ export function DiagnosticsView() {
             )}
             {visibleEvents.length > 0 && filteredEvents.length === 0 && (
               <Text UNSAFE_className="diagnostics-empty">{t('diagnostics.events.noMatches')}</Text>
+            )}
+          </div>
+        </TabPanel>
+        <TabPanel id="network">
+          <div className="diagnostics-network">
+            <div className="diagnostics-toolbar diagnostics-network-toolbar">
+              <SearchField
+                aria-label={t('diagnostics.network.searchPlaceholder')}
+                value={networkSearch}
+                onChange={setNetworkSearch}
+                placeholder={t('diagnostics.network.searchPlaceholder')}
+                size="M"
+                UNSAFE_className="diagnostics-search"
+              />
+              <ActionButton
+                aria-label={t('diagnostics.events.clear')}
+                onPress={clearNetworkView}
+                UNSAFE_className="diagnostics-toolbar-action"
+              >
+                <Erase />
+                <Text>{t('diagnostics.events.clear')}</Text>
+              </ActionButton>
+            </div>
+            <Text UNSAFE_className="diagnostics-network-privacy">
+              {t('diagnostics.network.safeMetadata')}
+            </Text>
+            <div className="diagnostics-network-table">
+              <div className="diagnostics-network-header">
+                <span>{t('diagnostics.events.time')}</span>
+                <span>{t('diagnostics.network.source')}</span>
+                <span>{t('diagnostics.network.method')}</span>
+                <span>{t('diagnostics.network.target')}</span>
+                <span>{t('diagnostics.network.status')}</span>
+                <span>{t('diagnostics.network.duration')}</span>
+              </div>
+              {filteredNetworkRequests.map((request) => (
+                <div className="diagnostics-network-entry" key={request.id}>
+                  <ActionButton
+                    UNSAFE_className="diagnostics-network-row"
+                    aria-expanded={expandedNetworkRequestId === request.id}
+                    aria-controls={`network-details-${request.id}`}
+                    onPress={() => toggleNetworkRequest(request.id)}
+                  >
+                    <span>{formatTime(request.startedAt)}</span>
+                    <span>{networkSourceLabel(request.source)}</span>
+                    <strong>{request.method}</strong>
+                    <span title={request.target}>{request.target}</span>
+                    <StatusLight variant={networkOutcomeTone(request.outcome)} size="S">
+                      {request.status ?? networkOutcomeLabel(request.outcome)}
+                    </StatusLight>
+                    <span>
+                      {request.durationMs === undefined
+                        ? t('diagnostics.network.pendingDuration')
+                        : `${request.durationMs} ms`}
+                    </span>
+                  </ActionButton>
+                  {expandedNetworkRequestId === request.id && (
+                    <div
+                      className="diagnostics-network-detail"
+                      id={`network-details-${request.id}`}
+                    >
+                      <NetworkRequestDetailPanel
+                        details={networkRequestDetails}
+                        state={networkRequestDetailState}
+                      />
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+            {visibleNetworkRequests.length === 0 && (
+              <Text UNSAFE_className="diagnostics-empty">{t('diagnostics.network.empty')}</Text>
+            )}
+            {visibleNetworkRequests.length > 0 && filteredNetworkRequests.length === 0 && (
+              <Text UNSAFE_className="diagnostics-empty">{t('diagnostics.network.noMatches')}</Text>
             )}
           </div>
         </TabPanel>

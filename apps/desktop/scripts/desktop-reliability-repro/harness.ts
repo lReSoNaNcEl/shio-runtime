@@ -92,6 +92,16 @@ function assertStaticLifecycleWiring(): void {
   const app = source('src/renderer/components/App.tsx')
   assert.match(app, /return window\.api\.config\.onUpdated/)
   assert.match(app, /return \(\) => controller\.dispose\(\)/)
+
+  const chat = source('src/renderer/components/chat/ChatOverlay.tsx')
+  const submission = chat.slice(chat.indexOf('const submit ='))
+  const clearDraftAt = submission.indexOf("controller.setChatDraft('')")
+  const awaitTurnAt = submission.indexOf('await controller.sendText')
+  assert(clearDraftAt >= 0, 'accepted text submission must clear the composer draft')
+  assert(
+    clearDraftAt < awaitTurnAt,
+    'composer draft must clear before waiting for LLM, TTS, and playback completion',
+  )
 }
 
 function transitionRecording(framePayload: string, frameCount = 1): unknown {

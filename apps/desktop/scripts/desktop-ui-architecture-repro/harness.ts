@@ -115,9 +115,23 @@ function assertViewHierarchy(): void {
   assert.match(plugins, /window\.api\.plugins\.(?:enable|disable)/)
 }
 
+function assertScreenContextPickerLayout(): void {
+  const picker = source('src/renderer/components/chat/ScreenContextPicker.tsx')
+  const chatStyles = source('src/renderer/styles/chat.css')
+
+  assert.match(picker, /<ToggleButton/)
+  assert.match(picker, /source\.appIconDataUrl/)
+  assert.match(picker, /className="screen-context-source-name"[^>]*>[\s\S]*?\{source\.name\}/)
+  assert.match(chatStyles, /\.screen-context-source \{[\s\S]*?flex-direction: column;/)
+  assert.match(chatStyles, /\.screen-context-source \{[\s\S]*?height: auto;/)
+  assert.match(chatStyles, /\.screen-context-source \{[\s\S]*?block-size: auto;/)
+  assert.match(chatStyles, /\.screen-context-source > img \{[\s\S]*?aspect-ratio: 16 \/ 9;/)
+}
+
 assertSemanticAppShell()
 assertSpectrumInteractiveSurface()
 assertCssOwnership()
 assertViewHierarchy()
+assertScreenContextPickerLayout()
 
 console.log('Desktop UI Architecture Cleanup focused repro: PASS')

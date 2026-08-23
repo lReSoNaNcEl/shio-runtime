@@ -184,7 +184,7 @@ export class Controller {
     events: this.shioRuntime.events,
     player: this.player,
     setStatus: (status) => this.set({ status }),
-    pushMessage: (role, text) => this.pushMessage(role, text),
+    pushMessage: (role, text, provenance) => this.pushMessage(role, text, provenance),
     formatUserError: (message) => this.formatConversationUserError(message),
     markAssistantMessageInterrupted: () => this.markAssistantMessageInterrupted(),
     setResponseInterruptionPending: (pending) => this.set({ responseInterruptionPending: pending }),
@@ -423,8 +423,12 @@ export class Controller {
     this.store.patch(patch)
   }
 
-  private pushMessage(role: ChatMsg['role'], text: string): void {
-    this.store.appendMessage({ id: nextId(), role, text })
+  private pushMessage(
+    role: ChatMsg['role'],
+    text: string,
+    provenance?: ChatMsg['provenance'],
+  ): void {
+    this.store.appendMessage({ id: nextId(), role, text, provenance })
   }
 
   setChatDraft(chatDraft: string): void {

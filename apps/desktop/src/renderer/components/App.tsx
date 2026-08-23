@@ -3,8 +3,10 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { controller } from '../Controller'
 import { useControllerState } from '../hooks/useControllerState'
+import { useRuntimeSupportBundle } from '../hooks/useRuntimeSupportBundle'
 import { useTranslation } from '../localization/useTranslation'
 import { observeRendererPromise } from '../reliability/observePromise'
+import { buildRuntimeHealthProjection } from '../runtime/runtimeHealth'
 import { ChatOverlay, type ChatOverlayHandle } from './chat/ChatOverlay'
 import { NewConversationButton } from './chat/NewConversationButton'
 import { NewConversationDialog } from './chat/NewConversationDialog'
@@ -41,6 +43,18 @@ export function App() {
   const isOverlay = useMemo(
     () => new URLSearchParams(window.location.search).get('overlay') === '1',
     [],
+  )
+  const runtimeSupport = useRuntimeSupportBundle(!isOverlay)
+  const runtimeHealth = useMemo(
+    () => buildRuntimeHealthProjection(state, runtimeSupport.bundle),
+    [runtimeSupport.bundle, state],
+  )
+  const runtimeHealthLabel = t(
+    runtimeHealth.overall === 'healthy'
+      ? 'health.shell.healthy'
+      : runtimeHealth.overall === 'notice'
+        ? 'health.shell.notice'
+        : 'health.shell.error',
   )
 
   // One unobtrusive, auto-dismissing toast when the Speech API recovers (ТЗ §9).
@@ -183,7 +197,7 @@ export function App() {
           if (nextSection === 'plugins') setShowProjectPluginDetails(false)
           setSection(nextSection)
         }}
-        health={state.health}
+        health={{ state: runtimeHealth.overall, text: runtimeHealthLabel }}
         developerModeEnabled={developerModeEnabled}
         hideHeader={setupOpen}
         contentClassName={setupOpen ? 'setup-layer' : undefined}
@@ -269,14 +283,25 @@ export function App() {
         {section === 'health' && (
           <RuntimeHealthView
             state={state}
-            onOpenProjectPlugin={() => {
+            support={runtimeSupport.bundle}
+            projection={runtimeHealth}
+            onOpenPlugin={() => {
               setShowProjectPluginDetails(true)
               setSection('plugins')
             }}
-            onRetry={() => {
-              observeRendererPromise(controller.checkHealth(), 'recheck Speech health')
-              observeRendererPromise(controller.checkLlmHealth(), 'recheck LLM health')
+            onOpenLlmSettings={() => {
+              setSettingsInitialSection('llm')
+              setSection('settings')
             }}
+            onRetrySpeech={() => controller.recheckSpeechService()}
+            onRefresh={async () => {
+              await Promise.all([
+                controller.checkHealth(),
+                controller.checkLlmHealth(),
+                runtimeSupport.refresh(),
+              ])
+            }}
+            getSupportReport={runtimeSupport.refresh}
           />
         )}
         {section === 'plugins' && (

@@ -1,5 +1,6 @@
 import axios, { type AxiosInstance } from 'axios'
 
+import { observeAxiosNetwork } from '../../diagnostics/observeAxiosNetwork'
 import type {
   ChatMessage,
   LLMProvider,
@@ -42,6 +43,7 @@ export class OpenAICompatibleClient implements LLMProvider, ModelCatalogProvider
       timeout: 60_000,
       proxy: config.definition.chat.useEnvironmentProxy ? proxyFromEnv() : undefined,
     })
+    observeAxiosNetwork(this.http, 'llm')
   }
 
   capabilities(): LlmCapabilities {

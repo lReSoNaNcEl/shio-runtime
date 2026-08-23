@@ -1,4 +1,5 @@
 import type { CharacterEmbodimentIntent } from '../../shared/character-response'
+import type { ProjectReplyProvenance } from '../../shared/project-awareness'
 import type {
   CharacterConversationPresenceState,
   CharacterRuntimeMode,
@@ -57,7 +58,7 @@ export interface ConversationRuntimeDeps {
   events: EventBus
   player: AudioPlayer
   setStatus: (status: ConversationStatus) => void
-  pushMessage: (role: ChatMsg['role'], text: string) => void
+  pushMessage: (role: ChatMsg['role'], text: string, provenance?: ProjectReplyProvenance) => void
   formatUserError: (message: string) => string
   markAssistantMessageInterrupted: () => void
   setResponseInterruptionPending: (pending: boolean) => void
@@ -123,9 +124,21 @@ export class ConversationRuntime {
       `[conversation] turnId=${turn.turnId} source=${turn.source} cycleId=${turn.admissionCycleId} started`,
     )
     try {
-      return turn.source === 'debug'
-        ? await this.executeDebug(turn, trackPhase)
-        : await this.executeConversation(turn, trackPhase)
+      const result =
+        turn.source === 'debug'
+          ? await this.executeDebug(turn, trackPhase)
+          : await this.executeConversation(turn, trackPhase)
+      this.deps.recordRuntimeEvent(
+        'Conversation Terminal',
+        `turnId=${turn.turnId} result=${result.status}${result.status === 'failed' ? ` phase=${result.phase} code=${result.failure?.code ?? 'UNCLASSIFIED'}` : ''}`,
+      )
+      return result
+    } catch (error) {
+      this.deps.recordRuntimeEvent(
+        'Conversation Terminal',
+        `turnId=${turn.turnId} result=threw code=${error instanceof Error ? error.name : 'UNKNOWN'}`,
+      )
+      throw error
     } finally {
       if (this.activeTurnId === turn.turnId) this.activeTurnId = null
       if (this.activeTurnId === null) {
@@ -236,7 +249,7 @@ export class ConversationRuntime {
         emotionKey: draft.emotionKey,
       })
       this.deps.speechRuntime.updateConversationPresence(generatedPresence)
-      this.deps.pushMessage('assistant', draft.displayText)
+      this.deps.pushMessage('assistant', draft.displayText, draft.provenance)
 
       if (!this.deps.speechRuntime.hasSpeakableContent(draft.speechText)) {
         reportPhase('cleaning_up')

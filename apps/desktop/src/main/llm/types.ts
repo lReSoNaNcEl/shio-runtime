@@ -26,6 +26,7 @@ export interface ChatMessage {
 
 export interface LlmRequestOptions {
   signal?: AbortSignal
+  traceId?: string
 }
 
 export interface LLMProvider {

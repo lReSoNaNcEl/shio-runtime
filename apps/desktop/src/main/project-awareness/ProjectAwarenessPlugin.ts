@@ -1,4 +1,9 @@
-import type { PluginHealth, PluginManifest, ProjectContextProvider } from '../../shared/plugins'
+import type {
+  PluginHealth,
+  PluginManifest,
+  ProjectContextProvider,
+  RuntimePluginHealthPresentation,
+} from '../../shared/plugins'
 import { PROJECT_AWARENESS_PLUGIN_ID } from '../../shared/plugins'
 import {
   isValidProjectBranch,
@@ -45,7 +50,8 @@ export class ProjectAwarenessPlugin implements BundledPlugin {
   private active = false
   private disposed = false
   private readonly contextProvider: ProjectContextProvider = {
-    buildContext: async ({ userText }) => this.requireRuntime().buildContextPacket(userText),
+    buildContext: async ({ userText, traceId }) =>
+      this.requireRuntime().buildContextPacket(userText, traceId),
   }
 
   constructor(private readonly dependencies: ProjectAwarenessPluginDependencies) {}
@@ -103,20 +109,77 @@ export class ProjectAwarenessPlugin implements BundledPlugin {
         checkedAt: Date.now(),
       }
     }
-    if (status.state === 'error') {
+    if (status.state === 'error' && !status.indexedCommit) {
       return { state: 'error', detail: status.lastError, checkedAt: Date.now() }
-    }
-    if (status.state === 'stale' || status.indexState === 'stale') {
-      return {
-        state: 'degraded',
-        detailKey: 'plugins.health.stale',
-        checkedAt: Date.now(),
-      }
     }
     return {
       state: 'healthy',
       detailKey: this.active ? 'plugins.health.healthy' : 'plugins.health.disabledHealthy',
       checkedAt: Date.now(),
+    }
+  }
+
+  getHealthPresentation(): RuntimePluginHealthPresentation {
+    const status = this.requireRuntime().getStatus()
+    const snapshotKey =
+      status.freshness === 'fresh'
+        ? 'health.project.snapshot.current'
+        : status.freshness === 'checking'
+          ? 'health.project.snapshot.building'
+          : status.freshness === 'stale'
+            ? 'health.project.snapshot.stale'
+            : status.indexedCommit
+              ? 'health.project.snapshot.unknown'
+              : 'health.project.snapshot.notBuilt'
+    const snapshotCommit = status.indexedCommit ?? status.remoteHead
+    const details: RuntimePluginHealthPresentation['details'] = [
+      {
+        id: 'provider',
+        labelKey: 'common.provider',
+        value: { kind: 'translation', key: 'common.github' },
+      },
+      {
+        id: 'remote-head',
+        labelKey: 'health.project.remoteHead',
+        value: status.remoteHead
+          ? { kind: 'text', value: status.remoteHead.slice(0, 7), code: true }
+          : { kind: 'translation', key: 'common.none' },
+      },
+      {
+        id: 'indexed-commit',
+        labelKey: 'health.project.indexedCommit',
+        value: status.indexedCommit
+          ? { kind: 'text', value: status.indexedCommit.slice(0, 7), code: true }
+          : { kind: 'translation', key: 'common.none' },
+      },
+      {
+        id: 'access',
+        labelKey: 'health.project.access',
+        value: { kind: 'translation', key: 'common.readOnly' },
+      },
+      ...(!status.credential.configured || !status.credential.secureStorageAvailable
+        ? [
+            {
+              id: 'credential',
+              labelKey: 'health.project.credential' as const,
+              value: {
+                kind: 'translation' as const,
+                key: status.credential.secureStorageAvailable
+                  ? ('common.notConfigured' as const)
+                  : ('health.project.secureStorageUnavailable' as const),
+              },
+            },
+          ]
+        : []),
+    ]
+    return {
+      summary: status.repository || undefined,
+      context: [status.branch, snapshotCommit?.slice(0, 7)].filter(Boolean).join(' · '),
+      contextCode: true,
+      statusKey: snapshotKey,
+      lastActivityAt: status.lastSyncAt,
+      lastActivityLabelKey: 'health.project.syncedRelative',
+      details,
     }
   }
 
@@ -163,6 +226,13 @@ export class ProjectAwarenessPlugin implements BundledPlugin {
   sync(): ReturnType<ProjectAwarenessRuntime['sync']> {
     this.assertActive()
     return this.requireRuntime().sync()
+  }
+
+  refreshSnapshotStatus(
+    force = false,
+  ): ReturnType<ProjectAwarenessRuntime['refreshSnapshotStatus']> {
+    this.assertActive()
+    return this.requireRuntime().refreshSnapshotStatus(force)
   }
 
   rebuildIndex(): ReturnType<ProjectAwarenessRuntime['rebuildIndex']> {

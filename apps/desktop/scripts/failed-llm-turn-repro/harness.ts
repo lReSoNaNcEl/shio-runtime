@@ -13,6 +13,11 @@ import {
   ScreenContextError,
   ScreenContextService,
 } from '../../src/main/screen-context/ScreenContextService'
+import {
+  ConversationRuntime,
+  type ConversationRuntimeDeps,
+} from '../../src/renderer/runtime/ConversationRuntime'
+import { ConversationTurnFailureError } from '../../src/renderer/runtime/SpeechRuntime'
 import type { AppSettings } from '../../src/shared/config'
 import { deriveTurnRecoveryCapabilities } from '../../src/shared/conversation'
 
@@ -94,6 +99,65 @@ async function testTransactionalMemory(): Promise<void> {
     (error) => error instanceof Error && error.message === 'CANCELLED',
   )
   assert.equal((await memory.getHistory('default')).length, 4)
+}
+
+async function testConversationAlwaysLeavesThinking(): Promise<void> {
+  for (const code of ['TIMEOUT', 'CANCELLED', 'NETWORK_ERROR'] as const) {
+    const statuses: string[] = []
+    const events: string[] = []
+    const runtime = new ConversationRuntime({
+      speechRuntime: {
+        getCharacterState: () => ({}),
+        updateConversationPresence: () => undefined,
+        createAssistantReply: async () => {
+          throw new ConversationTurnFailureError({
+            domain: 'llm',
+            code,
+            providerId: 'mistral',
+            attachmentDisposition: 'released',
+            retrySameRequest: code !== 'CANCELLED',
+            canResubmitWithoutImage: false,
+          })
+        },
+      },
+      conversationPresenceRuntime: { update: (patch: object) => patch },
+      avatarRuntime: {
+        applyCharacterState: () => undefined,
+        setEmbodimentIntent: () => undefined,
+        stopLipSync: () => undefined,
+        triggerEarImpulse: () => false,
+      },
+      overlayRuntime: { publishAvatarState: () => undefined },
+      events: { publish: () => undefined },
+      player: { stopCurrent: () => undefined },
+      setStatus: (status: string) => statuses.push(status),
+      pushMessage: () => undefined,
+      formatUserError: (message: string) => message,
+      markAssistantMessageInterrupted: () => undefined,
+      setResponseInterruptionPending: () => undefined,
+      recordRuntimeEvent: (label: string) => events.push(label),
+      reportSpeechServiceError: () => undefined,
+      updateCharacterState: () => ({}),
+      rememberSpeechMetadata: () => undefined,
+      updateSpeechPlaybackProgress: () => undefined,
+      isContinuousCaptureAlive: () => false,
+      handleLlmSetupRequired: () => undefined,
+    } as unknown as ConversationRuntimeDeps)
+    const result = await runtime.execute(
+      {
+        turnId: `turn-${code.toLowerCase()}`,
+        text: 'safe diagnostic query',
+        source: 'text_chat',
+        createdAt: Date.now(),
+        admissionCycleId: `cycle-${code.toLowerCase()}`,
+      },
+      () => undefined,
+    )
+    assert.equal(result.status, 'failed')
+    assert.equal(statuses.includes('thinking'), true)
+    assert.equal(statuses.at(-1), 'idle')
+    assert.equal(events.includes('Conversation Terminal'), true)
+  }
 }
 
 async function testScreenContextLease(): Promise<void> {
@@ -187,6 +251,7 @@ async function testHttp413Classification(): Promise<void> {
 
 async function run(): Promise<void> {
   await testTransactionalMemory()
+  await testConversationAlwaysLeavesThinking()
   await testScreenContextLease()
   await testHttp413Classification()
   console.log('Failed LLM turn recovery repro passed')

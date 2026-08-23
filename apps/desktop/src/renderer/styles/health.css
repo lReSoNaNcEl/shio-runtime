@@ -1,221 +1,253 @@
-/* health feature stylesheet. Keep feature-owned rules out of base.css. */
+/* Runtime Health feature stylesheet. Interactive visuals remain owned by Spectrum. */
 
-.health-list {
-  display: grid;
-  width: min(100%, 680px);
-}
-.health-row {
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 12px 0;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.16);
-}
-.health-row span {
-  color: var(--text-dim);
-}
-.health-row strong {
-  text-align: right;
-}
 .health-dashboard {
   display: grid;
-  gap: 20px;
-  width: min(100%, 960px);
   align-content: start;
+  width: min(100%, 1040px);
+  margin: 0 auto;
+  gap: 18px;
 }
+
 .health-dashboard-toolbar {
   display: flex;
+  position: relative;
   flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
+  gap: 12px;
 }
+
+.health-overall-status {
+  margin-right: 2px;
+  font-weight: 650;
+}
+
 .health-dashboard-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 14px;
   align-items: center;
+  gap: 8px;
 }
+
+.health-support-status {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+
 .health-card-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 310px), 1fr));
+  align-items: start;
   gap: 14px;
 }
+
 .health-card {
   display: grid;
-  gap: 4px;
-  align-content: start;
-  min-height: 108px;
-  padding: 16px;
+  min-width: 0;
+  padding: 18px;
   border: 1px solid rgba(148, 163, 184, 0.16);
   border-radius: 12px;
   background: rgba(255, 255, 255, 0.025);
+  gap: 9px;
+  align-content: start;
 }
+
 .health-card-negative {
   border-color: rgba(248, 113, 113, 0.42);
-  background: rgba(127, 29, 29, 0.12);
+  background: rgba(127, 29, 29, 0.1);
 }
+
 .health-card-notice {
-  border-color: rgba(251, 191, 36, 0.36);
-  background: rgba(120, 53, 15, 0.12);
+  border-color: rgba(251, 191, 36, 0.32);
+  background: rgba(120, 53, 15, 0.09);
 }
+
 .health-card-top {
   display: flex;
+  min-width: 0;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 4px;
+  gap: 9px;
 }
+
 .health-card-icon {
   display: inline-flex;
-  width: 18px;
-  height: 18px;
+  width: 19px;
+  height: 19px;
+  flex: 0 0 19px;
   color: var(--text-dim);
 }
+
 .health-card-icon svg {
-  width: 18px;
-  height: 18px;
+  width: 19px;
+  height: 19px;
 }
+
 .health-card-name {
   flex: 1;
   min-width: 0;
-  color: var(--text);
-  font-size: 0.9rem;
-  font-weight: 700;
-}
-.health-card-dot-busy {
-  flex: 0 0 auto;
-}
-.health-card-status {
-  color: var(--text);
-  font-size: 0.96rem;
-  font-weight: 600;
-}
-.health-card-detail {
-  color: var(--text-dim);
-  font-size: 0.8rem;
-}
-
-/* Runtime Health — Speech API capability detail */
-.speech-capability-list {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  margin: 6px 0 2px;
-}
-.speech-capability-row {
-  display: flex;
-  justify-content: space-between;
-  font-size: 0.82rem;
-}
-.speech-capability-row dt {
-  color: var(--text-dim);
-}
-.speech-capability-positive {
-  color: #86efac;
-}
-.speech-capability-negative {
-  color: #fca5a5;
-}
-.speech-capability-neutral {
-  color: var(--text-dim);
-}
-.speech-card-actions {
-  margin-top: 8px;
-}
-.speech-technical-details {
-  margin-top: 8px;
-  font-size: 0.78rem;
-  color: var(--text-dim);
-}
-.speech-technical-details summary {
-  cursor: pointer;
-}
-.speech-technical-details code {
-  display: block;
-  margin-top: 6px;
-  padding: 6px 8px;
-  border-radius: 6px;
-  background: rgba(15, 23, 42, 0.6);
-  color: #cbd5e1;
-  word-break: break-all;
-}
-
-.health-card-project-awareness {
-  grid-column: span 2;
-}
-
-.project-awareness-details {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 4px 18px;
-  margin: 8px 0 4px;
-}
-
-.project-awareness-details > div {
-  display: flex;
-  min-width: 0;
-  justify-content: space-between;
-  gap: 12px;
-  font-size: 0.8rem;
-}
-
-.project-awareness-details dt {
-  color: var(--text-dim);
-}
-
-.project-awareness-details dd {
   overflow: hidden;
-  margin: 0;
   color: var(--text);
-  text-align: right;
+  font-size: 0.95rem;
+  font-weight: 700;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.health-project-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 10px;
+.health-card-status {
+  color: var(--text);
+  font-size: 0.94rem;
+  font-weight: 650;
 }
 
-.health-project-error {
-  display: block;
-  margin-top: 6px;
+.health-card-detail,
+.health-metadata {
+  color: var(--text-dim);
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.health-card-error-detail {
   color: #fca5a5;
+  overflow-wrap: anywhere;
+}
+
+.health-detail-list {
+  display: grid;
+  margin: 3px 0 0;
+  gap: 5px;
+}
+
+.health-detail-row {
+  display: flex;
+  min-width: 0;
+  justify-content: space-between;
+  gap: 14px;
+  font-size: 0.8rem;
+}
+
+.health-detail-row dt {
+  min-width: 0;
+  color: var(--text-dim);
+}
+
+.health-detail-row dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  text-align: right;
+}
+
+.health-value-positive {
+  color: #86efac;
+}
+
+.health-value-negative {
+  color: #fca5a5;
+}
+
+.health-value-neutral,
+.health-value-informative,
+.health-value-notice {
+  color: var(--text-dim);
+}
+
+.health-identity-details {
+  display: grid;
+  min-width: 0;
+  color: var(--text-dim);
+  font-size: 0.82rem;
+  gap: 2px;
+}
+
+.health-identity-details code,
+.health-plugin-context {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  color: color-mix(in srgb, var(--text-dim) 90%, white);
   font-size: 0.78rem;
-  word-break: break-word;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.health-plugin-summary {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-size: 0.84rem;
+}
+
+.health-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  margin-top: 3px;
+  gap: 8px;
+}
+
+.health-time-trigger {
+  justify-self: start;
+  max-width: 100%;
+  color: var(--text-dim);
+  font-size: 0.76rem;
+}
+
+.health-technical-details {
+  margin-top: 1px;
+  color: var(--text-dim);
+  font-size: 0.78rem;
+}
+
+.health-detail-list-technical {
+  margin-top: 7px;
+}
+
+.health-technical-message {
+  display: block;
+  margin-top: 8px;
+  padding: 7px 9px;
+  border-radius: 6px;
+  background: rgba(15, 23, 42, 0.6);
+  color: #cbd5e1;
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
 }
 
 @media (max-width: 720px) {
-  .health-card-grid {
-    grid-template-columns: 1fr;
+  .health-dashboard-toolbar {
+    display: grid;
+    justify-content: stretch;
+  }
+
+  .health-overall-status {
+    justify-self: start;
   }
 
   .health-dashboard-actions {
     align-items: stretch;
-    width: 100%;
   }
 
-  .health-dashboard-actions > * {
-    flex: 1 1 auto;
-  }
-
-  .health-card-project-awareness {
-    grid-column: auto;
-  }
-
-  .project-awareness-details {
+  .health-card-grid {
     grid-template-columns: 1fr;
   }
 }
 
-@media (max-width: 560px) {
-  .health-row {
-    align-items: flex-start;
-    flex-direction: column;
+@media (max-width: 420px) {
+  .health-dashboard-actions {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
   }
 
-  .health-row strong {
+  .health-detail-row {
+    display: grid;
+    gap: 1px;
+  }
+
+  .health-detail-row dd {
     text-align: left;
   }
 }

@@ -8,32 +8,13 @@
 }
 
 .diagnostics-tabs {
-  display: inline-grid;
-  grid-template-columns: repeat(2, minmax(140px, 1fr));
-  width: min(100%, 420px);
-  padding: 4px;
-  border: 1px solid rgba(139, 92, 246, 0.34);
-  border-radius: 10px;
-  background: rgba(10, 10, 18, 0.46);
-}
-
-.diagnostics-tabs button,
-.diagnostics-snapshot-heading {
-  min-height: 36px;
-  border: 0;
-  border-radius: 7px;
-  background: transparent;
-  color: var(--text-dim);
-  cursor: pointer;
-  font: inherit;
-}
-
-.diagnostics-tabs [role="tab"][data-selected] {
-  background: rgba(139, 92, 246, 0.28);
-  color: var(--text);
+  width: fit-content;
+  max-width: 100%;
+  overflow-x: auto;
 }
 
 .diagnostics-events,
+.diagnostics-network,
 .diagnostics-snapshot {
   display: grid;
   gap: 12px;
@@ -41,9 +22,6 @@
 }
 
 .diagnostics-toolbar {
-  position: sticky;
-  z-index: 2;
-  top: -24px;
   display: flex;
   gap: 12px;
   align-items: center;
@@ -54,6 +32,15 @@
   border-radius: 12px;
   background: color-mix(in srgb, var(--bg) 94%, var(--accent));
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+}
+
+.diagnostics-network-toolbar {
+  justify-content: flex-start;
+}
+
+.diagnostics-network-privacy {
+  color: var(--text-dim);
+  font-size: 0.78rem;
 }
 
 .diagnostics-toolbar-filters,
@@ -105,6 +92,148 @@
   border: 1px solid var(--border);
   border-radius: 10px;
   background: rgba(0, 0, 0, 0.16);
+}
+
+.diagnostics-network-table {
+  min-width: 0;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.16);
+}
+
+.diagnostics-network-header,
+.diagnostics-network-row {
+  display: grid;
+  grid-template-columns:
+    82px minmax(120px, 0.75fr) 64px minmax(280px, 2fr) minmax(110px, 0.7fr)
+    84px;
+  gap: 10px;
+  align-items: center;
+  min-width: 840px;
+  padding: 8px 12px;
+}
+
+.diagnostics-network-header {
+  color: var(--text-dim);
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.diagnostics-network-entry {
+  min-width: 840px;
+  border-top: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.diagnostics-network-row {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.diagnostics-network-row:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.diagnostics-network-row > span,
+.diagnostics-network-row > strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.diagnostics-network-row > span {
+  color: var(--text-dim);
+  font-size: 0.78rem;
+}
+
+.diagnostics-network-row > strong {
+  font-size: 0.82rem;
+}
+
+.diagnostics-network-detail {
+  padding: 12px;
+  border-top: 1px solid rgba(148, 163, 184, 0.12);
+  background: color-mix(in srgb, var(--panel-2) 86%, black);
+}
+
+.diagnostics-network-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.diagnostics-network-detail-column,
+.diagnostics-network-detail-block {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.diagnostics-network-detail-column {
+  align-content: start;
+  padding: 10px;
+  border: 1px solid rgba(139, 92, 246, 0.2);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.14);
+}
+
+.diagnostics-network-detail-title {
+  color: var(--text);
+  font-size: 0.84rem;
+  font-weight: 700;
+}
+
+.diagnostics-network-detail-label,
+.diagnostics-network-detail-meta,
+.diagnostics-network-detail-state {
+  color: var(--text-dim);
+  font-size: 0.74rem;
+}
+
+.diagnostics-network-detail-state {
+  display: block;
+  padding: 12px;
+}
+
+.diagnostics-network-detail-body-heading {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.diagnostics-network-detail-meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.diagnostics-network-detail-content {
+  max-width: 100%;
+  max-height: 180px;
+  margin: 0;
+  overflow: auto;
+  padding: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.24);
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.72rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.diagnostics-network-detail-body {
+  max-height: 240px;
 }
 
 .diagnostics-event-header,
@@ -194,6 +323,7 @@
   align-items: center;
   justify-content: space-between;
   width: 100%;
+  min-height: 36px;
   padding: 10px 12px;
   color: var(--text);
   text-align: left;
@@ -233,7 +363,6 @@
 
 @media (max-width: 760px) {
   .diagnostics-toolbar {
-    top: -16px;
     align-items: stretch;
     flex-direction: column;
   }
@@ -259,6 +388,12 @@
   }
 
   .diagnostics-snapshot-fields {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 900px) {
+  .diagnostics-network-detail-grid {
     grid-template-columns: 1fr;
   }
 }
