@@ -1,16 +1,34 @@
 import { join } from 'node:path'
 
+import { resolvePwshPath } from '@deepseek-ai/dsh-pwsh-local'
 import { app, type BrowserWindow, Menu, safeStorage } from 'electron'
 
+import type { DesktopWorkflowExecution, DesktopWorkflowRequest } from '../../shared/actions'
 import { translate } from '../../shared/localization'
 import type { AvatarRuntimeHealth } from '../../shared/runtime'
+import { type ActionRuntime, toDesktopWorkflowActionResult } from '../action'
+import { CapabilityCatalog } from '../capabilities'
 import { getConfig, getOverlayPresentationConfig, getRendererConfig, loadConfig } from '../config'
+import {
+  DESKTOP_CONTROL_MANIFEST,
+  DesktopControlPlugin,
+  DshHarnessAdapter,
+  resolveAgentBrowserCommand,
+  resolveChromeExecutable,
+} from '../desktop-control'
 import { RendererNetworkObserver } from '../diagnostics/RendererNetworkObserver'
 import { registerIpcHandlers } from '../ipc'
 import { IpcAuthorization } from '../ipc/IpcAuthorization'
 import { registerOverlayIpc } from '../ipc/registerOverlayIpc'
 import { registerRuntimeHealthIpc } from '../ipc/registerRuntimeHealthIpc'
-import { LlmCredentialStore, LlmGateway, type LlmProviderId } from '../llm'
+import {
+  getProviderDefinition,
+  LlmCredentialStore,
+  LlmGateway,
+  type LlmProviderId,
+  LlmTurnCancelledError,
+  resolveLlmReadiness,
+} from '../llm'
 import { mainLog } from '../logging/safeLogger'
 import { createMemoryStore } from '../memory'
 import { Orchestrator } from '../orchestrator'
@@ -35,7 +53,7 @@ export interface ApplicationDependencies {
   createWindow(): Promise<void>
   initialize(): Promise<void>
   isQuitting(): boolean
-  prepareForQuit(): void
+  prepareForQuit(): Promise<void>
   shutdown(): void
 }
 
@@ -48,9 +66,16 @@ export function buildApplicationDependencies(): ApplicationDependencies {
   let speechClient: SpeechClient | null = null
   let pluginRuntime: PluginRuntime | null = null
   let projectAwareness: ProjectAwarenessPlugin | null = null
+  let desktopControl: DesktopControlPlugin | null = null
   let projectCredentialStore: ProjectCredentialStore | null = null
   let projectKnowledgeStore: ProjectKnowledgeStore | null = null
   let rendererNetworkObserver: RendererNetworkObserver | null = null
+  let actionRuntime: ActionRuntime | null = null
+  let prepareForQuitTask: Promise<void> | null = null
+  const conversationMemory = createMemoryStore()
+  let unsubscribePluginCapabilities: (() => void) | null = null
+  let unsubscribeProjectCapabilities: (() => void) | null = null
+  let unsubscribeDesktopCapabilities: (() => void) | null = null
   let lastAvatarState: unknown = null
   let lastAvatarMouth: unknown = null
   let lastAvatarRuntimeHealth: AvatarRuntimeHealth | null = null
@@ -140,20 +165,100 @@ export function buildApplicationDependencies(): ApplicationDependencies {
   }
 
   const getProjectAwareness = (): ProjectAwarenessPlugin => {
-    projectAwareness ??= buildProjectAwareness()
+    if (!projectAwareness) {
+      projectAwareness = buildProjectAwareness()
+      unsubscribeProjectCapabilities = projectAwareness.onChanged(() =>
+        capabilityCatalog.invalidate(),
+      )
+    }
     return projectAwareness
   }
 
+  const getDesktopControl = (): DesktopControlPlugin => {
+    if (!desktopControl) {
+      const directory = join(app.getPath('userData'), 'plugins', DESKTOP_CONTROL_MANIFEST.id)
+      const profileDirectory = app.isPackaged
+        ? join(process.resourcesPath, 'app.asar.unpacked', 'desktop-control')
+        : join(app.getAppPath(), 'resources', 'desktop-control')
+      const modulesDirectory = app.isPackaged
+        ? join(process.resourcesPath, 'app.asar.unpacked', 'node_modules')
+        : join(app.getAppPath(), 'node_modules')
+      desktopControl = new DesktopControlPlugin({
+        adapter: new DshHarnessAdapter({
+          model: () => {
+            const { activeProvider, providers } = getConfig().llm
+            const definition = getProviderDefinition(activeProvider)
+            const credential = getLlmCredentialStore().resolve(activeProvider)
+            const chatPathPrefix = definition.chat.path.replace(/\/chat\/completions\/?$/, '')
+            return {
+              provider: activeProvider,
+              providerDisplayName: definition.profile.displayName,
+              model: providers[activeProvider].model.trim(),
+              baseURL: `${definition.chat.baseUrl.replace(/\/$/, '')}${chatPathPrefix}`,
+              apiKey: credential.apiKey,
+              credentialConfigured: credential.status.configured,
+              lastError: credential.status.lastError,
+            }
+          },
+          resources: () => ({
+            command: process.execPath,
+            runtimeScript: join(profileDirectory, 'dsh-runtime.mjs'),
+            profileDirectory,
+            workspaceDirectory: join(directory, 'workspace'),
+            sessionDirectory: join(directory, 'sessions'),
+            homeDirectory: join(directory, 'runtime'),
+            shell: {
+              command: resolvePwshPath(undefined, process.env, process.platform),
+            },
+            browser: {
+              command: resolveAgentBrowserCommand(modulesDirectory),
+              executablePath: resolveChromeExecutable(),
+              namespace: 'shio-desktop-control',
+              profileDirectory: join(directory, 'browser-profile'),
+              socketDirectory: join(directory, 'browser-runtime'),
+            },
+          }),
+        }),
+        authorityMode: () => getConfig().desktopAuthorityMode,
+      })
+      unsubscribeDesktopCapabilities = desktopControl.onChanged(() =>
+        capabilityCatalog.invalidate(),
+      )
+    }
+    return desktopControl
+  }
+
   const getPluginRuntime = (): PluginRuntime => {
-    pluginRuntime ??= new PluginRuntime(
-      [getProjectAwareness()],
-      new PluginRegistryStore(join(app.getPath('userData'), 'plugins', 'registry.json'), [
-        PROJECT_AWARENESS_MANIFEST,
-      ]),
-      pluginCapabilities,
-    )
+    if (!pluginRuntime) {
+      pluginRuntime = new PluginRuntime(
+        [getProjectAwareness(), getDesktopControl()],
+        new PluginRegistryStore(join(app.getPath('userData'), 'plugins', 'registry.json'), [
+          PROJECT_AWARENESS_MANIFEST,
+          DESKTOP_CONTROL_MANIFEST,
+        ]),
+        pluginCapabilities,
+      )
+      unsubscribePluginCapabilities = pluginRuntime.onChanged(() => capabilityCatalog.invalidate())
+    }
     return pluginRuntime
   }
+
+  const capabilityCatalog = new CapabilityCatalog({
+    settings: getRendererConfig,
+    llmReadiness: () => resolveLlmReadiness(getRendererConfig().llm),
+    llmCapabilities: () =>
+      llmGateway?.getActiveCapabilities() ?? {
+        supportsReasoning: false,
+        supportsStreaming: false,
+        supportsTemperature: false,
+        supportsSystemPrompt: true,
+        supportsVision: false,
+        recommendedMaxTokens: 1_024,
+      },
+    plugins: () => getPluginRuntime().list(),
+    desktopControl: () => getDesktopControl().getCapabilityProjection(),
+    avatarRuntimeHealth: () => lastAvatarRuntimeHealth,
+  })
 
   const buildOrchestrator = (): Orchestrator => {
     const cfg = getConfig()
@@ -170,34 +275,70 @@ export function buildApplicationDependencies(): ApplicationDependencies {
     observeMainPromise(speechClient.warnIfEmotionContractDrift(), 'check speech emotion contract')
     return new Orchestrator(
       llmGateway,
-      createMemoryStore(),
+      conversationMemory,
       speechClient,
       getRendererConfig,
       () => pluginCapabilities.getProjectContextProvider(),
-      { getSnapshot: () => getPluginRuntime().getCharacterCapabilitySnapshot() },
+      capabilityCatalog,
+      async (request, signal) => {
+        const runtime = actionRuntime
+        if (!runtime || signal.aborted) throw new LlmTurnCancelledError()
+        const abort = (): void => {
+          observeMainPromise(runtime.emergencyStop(), 'cancel conversation desktop workflow')
+        }
+        signal.addEventListener('abort', abort, { once: true })
+        try {
+          const action = await runtime.execute<DesktopWorkflowRequest, DesktopWorkflowExecution>({
+            name: 'desktop.workflow',
+            payload: request,
+          })
+          return toDesktopWorkflowActionResult(action)
+        } finally {
+          signal.removeEventListener('abort', abort)
+        }
+      },
     )
   }
 
-  const prepareForQuit = (): void => {
+  const prepareForQuit = (): Promise<void> => {
+    if (prepareForQuitTask) return prepareForQuitTask
     quitting = true
-    overlayWindows.setQuitting()
-    overlayWindows.destroy()
-    rendererNetworkObserver?.dispose()
-    rendererNetworkObserver = null
-    screenContextService.dispose()
-    if (pluginRuntime) {
-      observeMainPromise(pluginRuntime.dispose(), 'dispose Plugin Runtime')
-    } else {
-      projectKnowledgeStore?.close()
-      projectKnowledgeStore = null
-    }
+    prepareForQuitTask = (async () => {
+      overlayWindows.setQuitting()
+      overlayWindows.destroy()
+      rendererNetworkObserver?.dispose()
+      rendererNetworkObserver = null
+      screenContextService.dispose()
+      unsubscribePluginCapabilities?.()
+      unsubscribePluginCapabilities = null
+      unsubscribeProjectCapabilities?.()
+      unsubscribeProjectCapabilities = null
+      unsubscribeDesktopCapabilities?.()
+      unsubscribeDesktopCapabilities = null
+      capabilityCatalog.dispose()
+
+      const cleanupResults = await Promise.allSettled([
+        actionRuntime?.emergencyStop() ?? Promise.resolve(),
+        pluginRuntime?.dispose() ?? Promise.resolve(),
+      ])
+      for (const [index, result] of cleanupResults.entries()) {
+        if (result.status === 'rejected') {
+          mainLog.warn('[Application] shutdown cleanup failed', {
+            owner: index === 0 ? 'action-runtime' : 'plugin-runtime',
+            error: result.reason instanceof Error ? result.reason.message : String(result.reason),
+          })
+        }
+      }
+      if (!pluginRuntime) {
+        projectKnowledgeStore?.close()
+        projectKnowledgeStore = null
+      }
+    })()
+    return prepareForQuitTask
   }
 
   const shutdown = (): void => {
     if (quitting) return
-    prepareForQuit()
-    if (win && !win.isDestroyed()) win.destroy()
-    win = null
     app.quit()
   }
 
@@ -230,7 +371,7 @@ export function buildApplicationDependencies(): ApplicationDependencies {
       })
     }
     orchestrator = buildOrchestrator()
-    registerIpcHandlers(
+    actionRuntime = registerIpcHandlers(
       () => {
         if (!orchestrator) orchestrator = buildOrchestrator()
         return orchestrator
@@ -243,11 +384,13 @@ export function buildApplicationDependencies(): ApplicationDependencies {
       getLlmCredentialStore,
       getPluginRuntime,
       getProjectAwareness,
+      getDesktopControl,
       () => {
         speechClient ??= new SpeechClient(getConfig().pythonSpeechUrl)
         return speechClient
       },
       screenContextService,
+      capabilityCatalog,
       win,
       ipcAuthorization,
     )
@@ -265,7 +408,12 @@ export function buildApplicationDependencies(): ApplicationDependencies {
         overlayRendererHealth: () => overlayWindows.getHealth(),
       },
       ipcAuthorization,
+      actionRuntime,
     )
+    win.webContents.on('did-start-loading', () => {
+      lastAvatarRuntimeHealth = null
+      capabilityCatalog.invalidate()
+    })
     win.webContents.on('did-finish-load', () => {
       orchestrator = buildOrchestrator()
     })
@@ -276,6 +424,7 @@ export function buildApplicationDependencies(): ApplicationDependencies {
   const initialize = async (): Promise<void> => {
     registerRuntimeHealthIpc((health) => {
       lastAvatarRuntimeHealth = health
+      capabilityCatalog.invalidate()
     }, ipcAuthorization)
     registerOverlayIpc(
       {

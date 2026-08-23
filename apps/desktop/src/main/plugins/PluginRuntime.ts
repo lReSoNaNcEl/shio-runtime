@@ -1,8 +1,6 @@
 import { z } from 'zod'
 
 import type {
-  CharacterCapabilityContext,
-  CharacterPluginAvailability,
   PluginHealth,
   PluginId,
   PluginManifest,
@@ -11,12 +9,7 @@ import type {
   RuntimePluginHealth,
   RuntimePluginHealthPresentation,
 } from '../../shared/plugins'
-import {
-  CHARACTER_CAPABILITY_CONTEXT_SCHEMA_VERSION,
-  MAX_CHARACTER_CAPABILITY_KINDS_PER_PLUGIN,
-  MAX_CHARACTER_PLUGIN_CAPABILITIES,
-  PROJECT_AWARENESS_PLUGIN_ID,
-} from '../../shared/plugins'
+import { DESKTOP_CONTROL_PLUGIN_ID, PROJECT_AWARENESS_PLUGIN_ID } from '../../shared/plugins'
 import type { PluginCapabilityRegistry } from './PluginCapabilityRegistry'
 import type { PluginRegistryStore } from './PluginRegistryStore'
 
@@ -39,12 +32,17 @@ export interface BundledPlugin {
 
 const manifestSchema = z
   .object({
-    id: z.literal(PROJECT_AWARENESS_PLUGIN_ID),
+    id: z.enum([PROJECT_AWARENESS_PLUGIN_ID, DESKTOP_CONTROL_PLUGIN_ID]),
     version: z.string().regex(/^\d+\.\d+\.\d+$/),
-    nameKey: z.literal('plugins.projectAwareness.name'),
-    descriptionKey: z.literal('plugins.projectAwareness.description'),
+    nameKey: z.string().trim().min(1).max(160),
+    descriptionKey: z.string().trim().min(1).max(160),
     defaultEnabled: z.boolean(),
-    capabilities: z.array(z.literal('project-context')).max(1),
+    capabilities: z
+      .array(
+        z.enum(['project-context', 'automation-engine', 'browser-control', 'computer-control']),
+      )
+      .max(4)
+      .refine((values) => new Set(values).size === values.length, 'Capabilities must be unique'),
   })
   .strict()
 
@@ -62,23 +60,9 @@ function safeError(error: unknown): string {
   return (error instanceof Error ? error.message : String(error)).slice(0, 500)
 }
 
-function characterAvailability(status: PluginStatus): CharacterPluginAvailability {
-  if (!status.enabled) return 'disabled'
-  if (status.lifecycle === 'error' || status.lifecycle === 'disposed') return 'unavailable'
-  switch (status.health.state) {
-    case 'healthy':
-      return status.lifecycle === 'active' ? 'available' : 'unavailable'
-    case 'needs-setup':
-      return 'needs-setup'
-    case 'degraded':
-      return 'degraded'
-    case 'error':
-      return 'unavailable'
-  }
-}
-
 export class PluginRuntime {
   private readonly records = new Map<PluginId, PluginRecord>()
+  private readonly listeners = new Set<() => void>()
   private initializePromise: Promise<void> | null = null
   private disposePromise: Promise<void> | null = null
 
@@ -106,6 +90,11 @@ export class PluginRuntime {
     return this.initializePromise
   }
 
+  onChanged(listener: () => void): () => void {
+    this.listeners.add(listener)
+    return () => this.listeners.delete(listener)
+  }
+
   private async performInitialize(): Promise<void> {
     await this.registry.load()
     await Promise.all(
@@ -124,10 +113,12 @@ export class PluginRuntime {
             record.lifecycle = 'error'
             record.lastError = safeError(error)
             record.health = { state: 'error', detail: record.lastError, checkedAt: Date.now() }
+            this.publishChanged()
           }
         })
       }),
     )
+    this.publishChanged()
   }
 
   async list(): Promise<PluginStatus[]> {
@@ -174,31 +165,6 @@ export class PluginRuntime {
     )
   }
 
-  async getCharacterCapabilitySnapshot(): Promise<CharacterCapabilityContext> {
-    await this.initialize()
-    const statuses = await Promise.all(
-      [...this.records.values()]
-        .slice(0, MAX_CHARACTER_PLUGIN_CAPABILITIES)
-        .map((record) => this.snapshot(record)),
-    )
-    const plugins = statuses.map((status) =>
-      Object.freeze({
-        id: status.manifest.id,
-        displayNameKey: status.manifest.nameKey,
-        installed: true as const,
-        enabled: status.enabled,
-        availability: characterAvailability(status),
-        capabilities: Object.freeze(
-          [...status.manifest.capabilities].slice(0, MAX_CHARACTER_CAPABILITY_KINDS_PER_PLUGIN),
-        ),
-      }),
-    )
-    return Object.freeze({
-      schemaVersion: CHARACTER_CAPABILITY_CONTEXT_SCHEMA_VERSION,
-      plugins: Object.freeze(plugins),
-    })
-  }
-
   async enable(id: PluginId): Promise<PluginStatus> {
     await this.initialize()
     const record = this.requireRecord(id)
@@ -206,6 +172,7 @@ export class PluginRuntime {
       if (record.enabled && record.lifecycle === 'active') return
       await this.registry.setEnabled(id, true)
       record.enabled = true
+      this.publishChanged()
       await this.activate(record)
     })
     return this.snapshot(record)
@@ -218,8 +185,10 @@ export class PluginRuntime {
       await this.registry.setEnabled(id, false)
       record.enabled = false
       this.unregisterCapabilities(record)
+      this.publishChanged()
       if (record.initialized && record.lifecycle !== 'disabled') {
         record.lifecycle = 'stopping'
+        this.publishChanged()
         try {
           await record.plugin.stop()
         } catch (error) {
@@ -228,6 +197,7 @@ export class PluginRuntime {
       }
       record.lifecycle = 'disabled'
       record.health = await record.plugin.getHealth()
+      this.publishChanged()
     })
     return this.snapshot(record)
   }
@@ -245,6 +215,7 @@ export class PluginRuntime {
             }
           }
           record.lifecycle = 'disposed'
+          this.publishChanged()
         }),
       ),
     ).then(() => undefined)
@@ -256,15 +227,18 @@ export class PluginRuntime {
       record.lastError = undefined
       await this.initializeRecord(record)
       record.lifecycle = 'starting'
+      this.publishChanged()
       await record.plugin.start()
       this.registerCapabilities(record)
       record.lifecycle = 'active'
       record.health = await record.plugin.getHealth()
+      this.publishChanged()
     } catch (error) {
       this.unregisterCapabilities(record)
       record.lifecycle = 'error'
       record.lastError = safeError(error)
       record.health = { state: 'error', detail: record.lastError, checkedAt: Date.now() }
+      this.publishChanged()
     }
   }
 
@@ -279,6 +253,7 @@ export class PluginRuntime {
   private async initializeRecord(record: PluginRecord): Promise<void> {
     if (record.initialized) return
     record.lifecycle = 'initializing'
+    this.publishChanged()
     await record.plugin.initialize({ pluginId: record.plugin.manifest.id })
     record.initialized = true
   }
@@ -315,5 +290,9 @@ export class PluginRuntime {
     const next = record.operation.catch(() => undefined).then(operation)
     record.operation = next.catch(() => undefined)
     return next
+  }
+
+  private publishChanged(): void {
+    for (const listener of this.listeners) listener()
   }
 }

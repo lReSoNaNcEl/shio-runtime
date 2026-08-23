@@ -5,6 +5,7 @@ import type {
   ProjectAwarenessStatus,
   ProjectChangeSummary,
   ProjectContextPacket,
+  ProjectContextRequirement,
   ProjectCredentialStatus,
   ProjectFileExcerpt,
   ProjectMap,
@@ -36,7 +37,7 @@ import {
 } from './indexing/SourceFilter'
 import { extractSource } from './indexing/SymbolExtractor'
 import type { ProjectKnowledgeStore } from './ProjectKnowledgeStore'
-import { isProjectRelevantRequest } from './ProjectRelevanceGate'
+import { projectContextRequirement } from './ProjectRelevanceGate'
 import { PROJECT_CONTEXT_BUDGET, selectProjectEvidence } from './retrieval/ProjectEvidenceSelector'
 
 export interface ProjectAwarenessRuntimeConfig {
@@ -598,13 +599,23 @@ export class ProjectAwarenessRuntime {
     }
   }
 
-  buildContextPacket(userText: string, traceIdValue?: string): ProjectContextPacket | null {
+  resolveProjectContextRequirement(userText: string): ProjectContextRequirement {
+    return projectContextRequirement(userText)
+  }
+
+  buildContextPacket(
+    userText: string,
+    traceIdValue?: string,
+    requestedRequirement = this.resolveProjectContextRequirement(userText),
+  ): ProjectContextPacket | null {
     const traceId = safeTraceId(traceIdValue)
     const startedAt = Date.now()
-    const relevant = isProjectRelevantRequest(userText)
+    const requirement = requestedRequirement
+    const relevant = requirement !== 'none'
     mainLog.info('[ProjectAwarenessTrace] relevance_gate', {
       traceId,
       relevant,
+      requirement,
       queryCharacters: userText.length,
     })
     if (!relevant) {
@@ -690,6 +701,7 @@ export class ProjectAwarenessRuntime {
       elapsedMs: Date.now() - startedAt,
     })
     return {
+      requirement,
       snapshotSha: current.snapshot.commitSha,
       repository: this.config.repository,
       branch: this.config.branch,

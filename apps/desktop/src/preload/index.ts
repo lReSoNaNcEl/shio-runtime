@@ -1,5 +1,14 @@
 import { contextBridge, ipcRenderer } from 'electron'
 
+import type {
+  ActionConfirmationRequest,
+  ActionConfirmationResponse,
+  ActionRuntimeSnapshot,
+  AuthorityChangeRequest,
+  AuthorityChangeResponse,
+  DesktopAuthorityMode,
+} from '../shared/actions'
+import type { ShioCapabilitySnapshot } from '../shared/capabilities'
 import type { AppSettings } from '../shared/config'
 import type { ShioRuntimeApi } from '../shared/ipc'
 import type { LlmProviderId } from '../shared/llm'
@@ -11,6 +20,43 @@ import type {
 } from '../shared/screen-context'
 
 const api = {
+  actions: {
+    respondToConfirmation: (response: ActionConfirmationResponse) =>
+      ipcRenderer.invoke('actions:respond-confirmation', response),
+    requestAuthorityMode: (mode: DesktopAuthorityMode) =>
+      ipcRenderer.invoke('actions:request-authority-mode', mode),
+    respondToAuthorityChange: (response: AuthorityChangeResponse) =>
+      ipcRenderer.invoke('actions:respond-authority-change', response),
+    emergencyStop: () => ipcRenderer.invoke('actions:emergency-stop'),
+    snapshot: () => ipcRenderer.invoke('actions:snapshot'),
+    onConfirmationRequested: (callback: (request: ActionConfirmationRequest) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, request: ActionConfirmationRequest) =>
+        callback(request)
+      ipcRenderer.on('action-runtime:confirmation-requested', listener)
+      return () => ipcRenderer.removeListener('action-runtime:confirmation-requested', listener)
+    },
+    onAuthorityChangeRequested: (callback: (request: AuthorityChangeRequest) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, request: AuthorityChangeRequest) =>
+        callback(request)
+      ipcRenderer.on('action-runtime:authority-change-requested', listener)
+      return () => ipcRenderer.removeListener('action-runtime:authority-change-requested', listener)
+    },
+    onChanged: (callback: (snapshot: ActionRuntimeSnapshot) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, snapshot: ActionRuntimeSnapshot) =>
+        callback(snapshot)
+      ipcRenderer.on('action-runtime:changed', listener)
+      return () => ipcRenderer.removeListener('action-runtime:changed', listener)
+    },
+  },
+  capabilities: {
+    snapshot: () => ipcRenderer.invoke('capabilities:snapshot') as Promise<ShioCapabilitySnapshot>,
+    onChanged: (callback: (snapshot: ShioCapabilitySnapshot) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, snapshot: unknown): void =>
+        callback(snapshot as ShioCapabilitySnapshot)
+      ipcRenderer.on('capabilities:changed', listener)
+      return () => ipcRenderer.removeListener('capabilities:changed', listener)
+    },
+  },
   diagnostics: {
     getNetworkRequests: () => ipcRenderer.invoke('diagnostics:get-network-requests'),
     getNetworkRequestDetails: (requestId: string) =>
@@ -18,6 +64,8 @@ const api = {
   },
   system: {
     getReleaseInfo: () => ipcRenderer.invoke('system:get-release-info'),
+    openExternalLink: (url: string) =>
+      ipcRenderer.invoke('system:open-external-link', url) as Promise<{ ok: true }>,
     openLogsFolder: () => ipcRenderer.invoke('system:open-logs-folder'),
     reportRendererFailure: () => ipcRenderer.invoke('system:report-renderer-failure'),
     getRuntimeSupportBundle: () => ipcRenderer.invoke('system:get-runtime-support-bundle'),
@@ -72,6 +120,11 @@ const api = {
     get: (id) => ipcRenderer.invoke('plugins:get', id),
     enable: (id) => ipcRenderer.invoke('plugins:enable', id),
     disable: (id) => ipcRenderer.invoke('plugins:disable', id),
+  },
+  desktopControl: {
+    getStatus: () => ipcRenderer.invoke('desktop-control:get-status'),
+    startRuntime: () => ipcRenderer.invoke('desktop-control:start-runtime'),
+    stopRuntime: () => ipcRenderer.invoke('desktop-control:stop-runtime'),
   },
   projectAwareness: {
     getConfig: () => ipcRenderer.invoke('project-awareness:get-config'),

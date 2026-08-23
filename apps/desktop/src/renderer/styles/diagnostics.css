@@ -28,10 +28,10 @@
   justify-content: space-between;
   min-width: 0;
   padding: 10px;
-  border: 1px solid rgba(139, 92, 246, 0.22);
+  border: 1px solid var(--border);
   border-radius: 12px;
   background: color-mix(in srgb, var(--bg) 94%, var(--accent));
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 8px 24px var(--shadow);
 }
 
 .diagnostics-network-toolbar {
@@ -82,16 +82,16 @@
 }
 
 .diagnostics-toolbar-action-active {
-  color: #ddd6fe;
-  background: rgba(139, 92, 246, 0.22);
-  box-shadow: inset 0 0 0 1px rgba(167, 139, 250, 0.42);
+  color: var(--text);
+  background: var(--surface-selected);
+  box-shadow: inset 0 0 0 1px var(--border);
 }
 
 .diagnostics-event-table {
   min-width: 0;
   border: 1px solid var(--border);
   border-radius: 10px;
-  background: rgba(0, 0, 0, 0.16);
+  background: var(--surface-inset);
 }
 
 .diagnostics-network-table {
@@ -99,7 +99,7 @@
   overflow-x: auto;
   border: 1px solid var(--border);
   border-radius: 10px;
-  background: rgba(0, 0, 0, 0.16);
+  background: var(--surface-inset);
 }
 
 .diagnostics-network-header,
@@ -123,7 +123,7 @@
 
 .diagnostics-network-entry {
   min-width: 840px;
-  border-top: 1px solid rgba(148, 163, 184, 0.12);
+  border-top: 1px solid var(--border-faint);
 }
 
 .diagnostics-network-row {
@@ -137,7 +137,7 @@
 }
 
 .diagnostics-network-row:hover {
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--surface-hover);
 }
 
 .diagnostics-network-row > span,
@@ -159,8 +159,8 @@
 
 .diagnostics-network-detail {
   padding: 12px;
-  border-top: 1px solid rgba(148, 163, 184, 0.12);
-  background: color-mix(in srgb, var(--panel-2) 86%, black);
+  border-top: 1px solid var(--border-faint);
+  background: var(--panel-2);
 }
 
 .diagnostics-network-detail-grid {
@@ -179,9 +179,9 @@
 .diagnostics-network-detail-column {
   align-content: start;
   padding: 10px;
-  border: 1px solid rgba(139, 92, 246, 0.2);
+  border: 1px solid var(--border);
   border-radius: 8px;
-  background: rgba(0, 0, 0, 0.14);
+  background: var(--surface-subtle);
 }
 
 .diagnostics-network-detail-title {
@@ -221,9 +221,9 @@
   margin: 0;
   overflow: auto;
   padding: 8px;
-  border: 1px solid rgba(148, 163, 184, 0.12);
+  border: 1px solid var(--border-faint);
   border-radius: 6px;
-  background: rgba(0, 0, 0, 0.24);
+  background: var(--surface-code);
   color: var(--text);
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.72rem;
@@ -255,7 +255,7 @@
 
 .diagnostics-event {
   min-width: 0;
-  border-top: 1px solid rgba(148, 163, 184, 0.12);
+  border-top: 1px solid var(--border-faint);
 }
 
 .diagnostics-event-row {
@@ -269,7 +269,7 @@
 }
 
 .diagnostics-event-row:hover {
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--surface-hover);
 }
 
 .diagnostics-event-row span,
@@ -293,8 +293,8 @@
   margin: 0;
   overflow-x: auto;
   padding: 12px;
-  border-top: 1px solid rgba(148, 163, 184, 0.12);
-  background: color-mix(in srgb, var(--panel-2) 82%, black);
+  border-top: 1px solid var(--border-faint);
+  background: var(--panel-2);
   color: var(--text);
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.78rem;
@@ -315,7 +315,7 @@
   overflow: hidden;
   border: 1px solid var(--border);
   border-radius: 10px;
-  background: rgba(0, 0, 0, 0.16);
+  background: var(--surface-inset);
 }
 
 .diagnostics-snapshot-heading {
@@ -347,9 +347,9 @@
   min-width: 0;
   align-content: start;
   padding: 10px;
-  border: 1px solid rgba(139, 92, 246, 0.22);
+  border: 1px solid var(--border);
   border-radius: 8px;
-  background: color-mix(in srgb, var(--panel-2) 82%, black);
+  background: var(--panel-2);
 }
 
 .diagnostics-snapshot-field > span:first-child {

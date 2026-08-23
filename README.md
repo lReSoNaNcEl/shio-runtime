@@ -26,6 +26,60 @@ shio-runtime/
 └─ package.json         Root command orchestration
 ```
 
+## Desktop features
+
+### Capabilities
+
+Open **Capabilities** in the main sidebar to see what Shio can do right now.
+The page distinguishes capabilities that are available, disabled, need setup,
+degraded, or unavailable and links to the canonical setting or Plugin owner. It is
+a live read-only view: changing Plugin state, credentials, Runtime readiness, or
+Full Computer Access updates the page without creating another settings store.
+
+### Plugins
+
+Plugins are bundled first-party optional features with declared capability and
+permission boundaries. They can be enabled independently, and disabling one keeps
+its configuration and data. Shio Core remains usable with every optional Plugin
+disabled. Version 1 does not load third-party JavaScript or provide arbitrary Plugin
+method dispatch.
+
+### Desktop Control and Browser Control
+
+The Desktop Control Plugin runs validated, bounded automation workflows through
+Action Runtime. Computer Control executes foreground PowerShell commands through
+the pinned DSH PowerShell tool, while Browser Control uses the Shio-owned
+automation backend, bundled MCP client, and bundled `agent-browser` executable. It
+uses an isolated browser profile below Shio application data; it does not reuse the
+user's normal Chrome profile, cookies, or signed-in sessions.
+
+Desktop Control reuses the active OpenAI-compatible provider, model, and encrypted
+API key from Shio Settings through the provider-neutral `dsh-llm-pi-ai` Adapter; it
+does not keep a second DSH credential. Browser Control additionally needs a
+compatible local Google Chrome installation. The packaged Windows build contains
+the pinned automation libraries and native `agent-browser` executable; development
+builds obtain the same exact versions through the Desktop lockfile. Each workflow
+mounts only its authorized tool family: browser or PowerShell, never both.
+
+### Full Computer Access and Emergency Stop
+
+By default, each eligible desktop workflow shows a scope preview and requires
+confirmation. **Full Computer Access** is an explicit persisted policy that removes
+that per-workflow confirmation after a warning is accepted; validation, Action
+Runtime, permission policy, logging, cancellation, and Adapter boundaries still
+apply. Turning it off makes the next eligible workflow require confirmation again.
+
+**Emergency Stop** cancels pending and running desktop workflows and shuts down the
+owned automation and browser processes. A later action starts a fresh session.
+
+### Chat presentation and diagnostics
+
+Assistant Markdown is rendered by Streamdown only in the Chat presentation layer,
+with raw HTML disabled, restricted link/image protocols, safe external navigation,
+React Spectrum 2 controls, and escaped-plaintext fallback. Runtime Health reports
+technical readiness; Diagnostics exposes bounded Action Runtime and Desktop Control
+details without logging credentials or full browser/DOM snapshots.
+
 ## Requirements
 
 - Node.js 24.x
@@ -373,6 +427,5 @@ API service
 Desktop must not import API source code or read its internal files. The API must not
 depend on Desktop source code or control avatar playback, LipSync or UI state.
 
-See [ARCHITECTURE.md](./ARCHITECTURE.md) and [AGENTS.md](./AGENTS.md).
-</content>
-</invoke>
+See [ARCHITECTURE.md](./ARCHITECTURE.md), [AGENTS.md](./AGENTS.md), and the
+[third-party license inventory](./THIRD_PARTY_NOTICES.md).

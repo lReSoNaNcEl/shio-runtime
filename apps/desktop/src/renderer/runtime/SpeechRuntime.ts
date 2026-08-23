@@ -1,11 +1,10 @@
 import type { CharacterEmbodimentIntent } from '../../shared/character-response'
-import type { ConversationTurnFailure } from '../../shared/conversation'
+import type { ConversationTurnFailure, ReplyGrounding } from '../../shared/conversation'
 import {
   type EmotionTextSegment,
   parseEmotionalReply,
   stripAssistantMarkup,
 } from '../../shared/emotion'
-import type { ProjectReplyProvenance } from '../../shared/project-awareness'
 import type {
   CharacterActivityState,
   CharacterConversationPresenceState,
@@ -79,7 +78,7 @@ export interface AssistantReplyDraft {
   speechText: string
   emotionKey: string
   embodimentIntent?: CharacterEmbodimentIntent
-  provenance?: ProjectReplyProvenance
+  grounding?: ReplyGrounding
   segments: EmotionTextSegment[]
 }
 
@@ -242,7 +241,7 @@ export class SpeechRuntime {
       emotionKey,
       segments,
       embodimentIntent: reply.embodimentIntent,
-      provenance: reply.provenance,
+      grounding: reply.grounding,
     }
   }
 

@@ -103,10 +103,17 @@ export function useScreenContextAttachment(): ScreenContextAttachmentController 
     operationActiveRef.current = false
     setImporting(false)
     setRecapturing(false)
+    const previousCapture = pendingRef.current
     pendingRef.current = capture
     setPending(capture)
     setState('pending')
     setError(null)
+    if (previousCapture && previousCapture.captureId !== capture.captureId) {
+      observeRendererPromise(
+        window.api.screenContext.release(previousCapture.captureId),
+        'release replaced Screen Context capture',
+      )
+    }
   }
 
   const importFile = async (file: File, sourceKind: 'clipboard' | 'file'): Promise<void> => {
@@ -153,10 +160,17 @@ export function useScreenContextAttachment(): ScreenContextAttachmentController 
         setError(screenContextErrorMessage(result.error.code, t))
         return
       }
+      const previousCapture = pendingRef.current
       pendingRef.current = result.value
       setPending(result.value)
       setState('pending')
       setError(null)
+      if (previousCapture && previousCapture.captureId !== result.value.captureId) {
+        observeRendererPromise(
+          window.api.screenContext.release(previousCapture.captureId),
+          'release replaced imported Screen Context capture',
+        )
+      }
     } catch {
       if (operationId === operationIdRef.current) {
         setError(t('screenContext.error.unknown'))
@@ -197,6 +211,12 @@ export function useScreenContextAttachment(): ScreenContextAttachmentController 
       pendingRef.current = result.value
       setPending(result.value)
       setState('pending')
+      if (capture.captureId !== result.value.captureId) {
+        observeRendererPromise(
+          window.api.screenContext.release(capture.captureId),
+          'release replaced recaptured Screen Context capture',
+        )
+      }
     } catch {
       if (operationId === operationIdRef.current) {
         setError(t('screenContext.error.unknown'))

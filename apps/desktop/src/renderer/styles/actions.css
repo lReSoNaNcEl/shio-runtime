@@ -1,0 +1,55 @@
+.action-runtime-status-slot {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.action-runtime-status-slot:empty {
+  display: none;
+}
+
+.action-runtime-active {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--text-dim);
+}
+
+.action-runtime-active-label {
+  overflow: hidden;
+  font-size: 0.78rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.action-confirmation-content {
+  display: grid;
+  gap: 16px;
+}
+
+.action-confirmation-label {
+  color: var(--text-dim);
+}
+
+.action-confirmation-command {
+  display: block;
+  margin-top: 6px;
+  padding: 10px 12px;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  background: var(--setup-surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.action-confirmation-capabilities {
+  margin: 8px 0 0;
+  padding-inline-start: 24px;
+}
+
+@media (max-width: 840px) {
+  .action-runtime-active-label {
+    display: none;
+  }
+}

@@ -26,8 +26,18 @@ observeMainPromise(
   () => app.exit(1),
 )
 
-app.on('before-quit', () => {
-  dependencies.prepareForQuit()
+let cleanupCompleted = false
+app.on('before-quit', (event) => {
+  if (cleanupCompleted) return
+  event.preventDefault()
+  observeMainPromise(
+    dependencies.prepareForQuit().then(() => {
+      cleanupCompleted = true
+      app.quit()
+    }),
+    'prepare application shutdown',
+    () => app.exit(1),
+  )
 })
 
 app.on('window-all-closed', () => {

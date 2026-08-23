@@ -184,7 +184,7 @@ export class Controller {
     events: this.shioRuntime.events,
     player: this.player,
     setStatus: (status) => this.set({ status }),
-    pushMessage: (role, text, provenance) => this.pushMessage(role, text, provenance),
+    pushMessage: (role, text, grounding) => this.pushMessage(role, text, grounding),
     formatUserError: (message) => this.formatConversationUserError(message),
     markAssistantMessageInterrupted: () => this.markAssistantMessageInterrupted(),
     setResponseInterruptionPending: (pending) => this.set({ responseInterruptionPending: pending }),
@@ -423,12 +423,8 @@ export class Controller {
     this.store.patch(patch)
   }
 
-  private pushMessage(
-    role: ChatMsg['role'],
-    text: string,
-    provenance?: ChatMsg['provenance'],
-  ): void {
-    this.store.appendMessage({ id: nextId(), role, text, provenance })
+  private pushMessage(role: ChatMsg['role'], text: string, grounding?: ChatMsg['grounding']): void {
+    this.store.appendMessage({ id: nextId(), role, text, grounding })
   }
 
   setChatDraft(chatDraft: string): void {
@@ -679,6 +675,17 @@ export class Controller {
     this.scene = null
     this.avatarRuntime.detachPresentation()
     this.set({ vrmLoaded: false })
+  }
+
+  async reloadPreviewModel(): Promise<void> {
+    await this.bootstrap()
+    if (this.disposed || !this.scene) return
+    const scene = this.scene
+    const version = ++this.previewSceneVersion
+    const cfg = await window.api.config.get()
+    if (this.disposed || this.scene !== scene || version !== this.previewSceneVersion) return
+    this.set({ vrmLoaded: false })
+    await this.loadVrmFromPath(resolveVrmSource(cfg.vrmAssetHandle), scene, version)
   }
 
   // Avatar Runtime tick (LipSync, facial mixer, overlay mouth-weight publish) must
@@ -986,7 +993,7 @@ export class Controller {
     this.avatarTickRafId = null
     this.detachCanvas()
     this.overlayRuntime.dispose()
-    this.player.stop()
+    observeRendererPromise(this.player.dispose(), 'dispose output AudioContext')
     this.speechInputRuntime.dispose()
     this.microphoneGate.dispose()
     this.speechCapabilitiesRuntime.dispose()

@@ -59,6 +59,8 @@ export function useSettingsDialogState({
   const saveStatusTimer = useRef<number | null>(null)
   const microphoneTestSequence = useRef(0)
   const microphoneTestRecording = useRef<ArrayBuffer | null>(null)
+  const microphoneTestCleanup = useRef<() => void>(() => undefined)
+  const modelRequestSequence = useRef(0)
   const [saveState, setSaveState] = useState<SettingsSaveState>('idle')
   const { uiLocale, setUiLocale } = useGeneralSettings()
   const {
@@ -123,6 +125,8 @@ export function useSettingsDialogState({
     setProviders,
     setProviderSettings,
   } = useAiSettings()
+  const activeProviderRef = useRef(activeProvider)
+  activeProviderRef.current = activeProvider
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: domain hooks expose stable React state setters.
   useEffect(() => {
@@ -132,6 +136,9 @@ export function useSettingsDialogState({
   useEffect(
     () => () => {
       if (saveStatusTimer.current !== null) window.clearTimeout(saveStatusTimer.current)
+      microphoneTestSequence.current += 1
+      microphoneTestRecording.current = null
+      microphoneTestCleanup.current()
     },
     [],
   )
@@ -207,8 +214,15 @@ export function useSettingsDialogState({
   }
 
   const loadModels = async (providerId: LlmProviderId): Promise<void> => {
+    const requestSequence = ++modelRequestSequence.current
     setModelsState('loading')
     const result = await window.api.llm.fetchModels(providerId)
+    if (
+      requestSequence !== modelRequestSequence.current ||
+      activeProviderRef.current !== providerId
+    ) {
+      return
+    }
     if (result.ok) {
       const models = deduplicateModelsById(result.models ?? [])
       setModelOptions(models)
@@ -242,6 +256,7 @@ export function useSettingsDialogState({
     if (!isOpen) return
     const profile = providers.find((provider) => provider.id === activeProvider)
     if (profile?.modelsRequireApiKey && !activeCredentialConfigured) {
+      modelRequestSequence.current += 1
       setModelOptions([])
       setModelsState('missing-key')
       return
@@ -249,7 +264,10 @@ export function useSettingsDialogState({
     const timer = window.setTimeout(() => {
       observeRendererPromise(loadModels(activeProvider), 'load active-provider models')
     }, 400)
-    return () => window.clearTimeout(timer)
+    return () => {
+      modelRequestSequence.current += 1
+      window.clearTimeout(timer)
+    }
   }, [isOpen, activeProvider, activeCredentialConfigured, providers])
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: AI domain setters are stable React state setters.
@@ -321,6 +339,24 @@ export function useSettingsDialogState({
     let stream: MediaStream | null = null
     let context: AudioContext | null = null
     let recorder: MediaRecorder | null = null
+    const cleanup = (): void => {
+      if (recorder?.state === 'recording') recorder.stop()
+      stream?.getTracks().forEach((track) => {
+        track.stop()
+      })
+      stream = null
+      if (context) {
+        const currentContext = context
+        context = null
+        if (currentContext.state !== 'closed') {
+          observeRendererPromise(currentContext.close(), 'close microphone test AudioContext')
+        }
+      }
+      if (microphoneTestCleanup.current === cleanup) {
+        microphoneTestCleanup.current = () => undefined
+      }
+    }
+    microphoneTestCleanup.current = cleanup
     try {
       stream = await navigator.mediaDevices.getUserMedia({
         audio:
@@ -328,6 +364,7 @@ export function useSettingsDialogState({
             ? { deviceId: { exact: micId } }
             : true,
       })
+      if (sequence !== microphoneTestSequence.current) return
       context = new AudioContext()
       const analyser = context.createAnalyser()
       analyser.fftSize = 256
@@ -348,12 +385,13 @@ export function useSettingsDialogState({
       recorder.start()
       const samples = new Uint8Array(analyser.fftSize)
       const deadline = performance.now() + 3000
-      while (performance.now() < deadline) {
+      while (performance.now() < deadline && sequence === microphoneTestSequence.current) {
         analyser.getByteTimeDomainData(samples)
         const peak = samples.reduce((value, sample) => Math.max(value, Math.abs(sample - 128)), 0)
         setMicrophoneLevel(Math.min(100, Math.round((peak / 128) * 100)))
         await new Promise((resolve) => window.setTimeout(resolve, 80))
       }
+      if (sequence !== microphoneTestSequence.current) return
       recorder.stop()
       await stopped
       const recording = await new Blob(chunks, { type: recorder.mimeType }).arrayBuffer()
@@ -364,11 +402,7 @@ export function useSettingsDialogState({
     } catch {
       if (sequence === microphoneTestSequence.current) setMicrophoneTestState('capture-error')
     } finally {
-      if (recorder?.state === 'recording') recorder.stop()
-      stream?.getTracks().forEach((track) => {
-        track.stop()
-      })
-      if (context) await context.close()
+      cleanup()
       setMicrophoneLevel(0)
     }
   }

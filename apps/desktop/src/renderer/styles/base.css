@@ -14,19 +14,6 @@ body,
   padding: 0;
 }
 
-:root {
-  --bg: #0d0d1a;
-  --panel: rgba(10, 10, 25, 0.85);
-  --accent: #8b5cf6;
-  --accent2: #a78bfa;
-  --text: #e2e8f0;
-  --text-dim: #94a3b8;
-  --border: rgba(139, 92, 246, 0.3);
-  --user-bubble: rgba(139, 92, 246, 0.2);
-  --holo-bubble: rgba(16, 185, 129, 0.15);
-  --err-bubble: rgba(239, 68, 68, 0.2);
-}
-
 html,
 body,
 #root {

@@ -8,8 +8,21 @@ files:
   - out/**/*
   - package.json
 asarUnpack:
-  - node_modules/sharp/**/*
-  - node_modules/@img/**/*
+  # The DSH child runs as an external Node process rooted in app.asar.unpacked.
+  # Keep one physical module graph so Cordis scope identities are never split
+  # between the virtual app.asar tree and its unpacked counterpart.
+  - node_modules/**/*
+extraResources:
+  - from: resources/desktop-control
+    to: app.asar.unpacked/desktop-control
+    filter:
+      - cordis.yml
+      - dsh-runtime.mjs
+      - browser-policy.mjs
+      - workflow-tools.mjs
+      - sdk-jsonrpc-server.mjs
+  - from: ../../THIRD_PARTY_NOTICES.md
+    to: THIRD_PARTY_NOTICES.md
 win:
   target:
     - target: zip
@@ -17,4 +30,6 @@ win:
         - x64
   icon: build/icon.ico
 artifactName: Shio-Runtime-${version}-win-${arch}.${ext}
-npmRebuild: true
+# DSH native dependencies ship N-API prebuilds. Rebuilding them would require a
+# local Visual Studio toolchain and would replace the verified portable binaries.
+npmRebuild: false

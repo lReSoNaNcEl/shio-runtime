@@ -111,7 +111,6 @@ export function SetupCenter({ state, onClose, onComplete, onToggleOverlay }: Set
 
   const saveModel = async (nextModel: string): Promise<void> => {
     if (!config) return
-    setModel(nextModel)
     const nextLlm = {
       ...config.llm,
       activeProvider: provider,
@@ -120,7 +119,12 @@ export function SetupCenter({ state, onClose, onComplete, onToggleOverlay }: Set
         [provider]: { ...config.llm.providers[provider], model: nextModel },
       },
     }
-    await window.api.config.save({ llm: nextLlm })
+    const result = await window.api.config.save({ llm: nextLlm })
+    if (!result.ok) {
+      setAiAction('error')
+      return
+    }
+    setModel(nextModel)
     setConfig({ ...config, llm: nextLlm })
     await controller.checkLlmHealth()
   }
@@ -140,23 +144,29 @@ export function SetupCenter({ state, onClose, onComplete, onToggleOverlay }: Set
   const selectMicrophone = async (key: Key | null): Promise<void> => {
     if (key === null) return
     const deviceId = String(key) === '__default__' ? '' : String(key)
+    const result = await window.api.config.save({ micDeviceId: deviceId })
+    if (!result.ok) return
     setMicrophoneId(deviceId)
     controller.setMicrophone(deviceId)
-    await window.api.config.save({ micDeviceId: deviceId })
   }
 
   const complete = async (): Promise<void> => {
-    await window.api.config.save({
+    const result = await window.api.config.save({
       setup: { completed: true, completedAt: new Date().toISOString() },
     })
+    if (!result.ok) return
     onComplete()
   }
 
   const enableOverlay = async (): Promise<void> => {
-    await window.api.config.save({
+    const result = await window.api.config.save({
       overlayViewMode: 'bust',
       overlayCorner: 'bottom-right',
     })
+    if (!result.ok) {
+      setAvatarAction('error')
+      return
+    }
     await controller.setOverlayViewMode('bust')
     await onToggleOverlay(true)
   }

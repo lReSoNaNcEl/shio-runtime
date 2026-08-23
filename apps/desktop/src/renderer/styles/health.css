@@ -49,21 +49,21 @@
   display: grid;
   min-width: 0;
   padding: 18px;
-  border: 1px solid rgba(148, 163, 184, 0.16);
+  border: 1px solid var(--border-subtle);
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.025);
+  background: var(--surface-subtle);
   gap: 9px;
   align-content: start;
 }
 
 .health-card-negative {
   border-color: rgba(248, 113, 113, 0.42);
-  background: rgba(127, 29, 29, 0.1);
+  background: var(--negative-surface);
 }
 
 .health-card-notice {
   border-color: rgba(251, 191, 36, 0.32);
-  background: rgba(120, 53, 15, 0.09);
+  background: var(--warning-surface);
 }
 
 .health-card-top {
@@ -111,7 +111,7 @@
 }
 
 .health-card-error-detail {
-  color: #fca5a5;
+  color: var(--negative-text);
   overflow-wrap: anywhere;
 }
 
@@ -143,11 +143,11 @@
 }
 
 .health-value-positive {
-  color: #86efac;
+  color: var(--positive-text);
 }
 
 .health-value-negative {
-  color: #fca5a5;
+  color: var(--negative-text);
 }
 
 .health-value-neutral,
@@ -169,7 +169,7 @@
   display: block;
   min-width: 0;
   overflow: hidden;
-  color: color-mix(in srgb, var(--text-dim) 90%, white);
+  color: color-mix(in srgb, var(--text-dim) 90%, var(--text));
   font-size: 0.78rem;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -211,8 +211,8 @@
   margin-top: 8px;
   padding: 7px 9px;
   border-radius: 6px;
-  background: rgba(15, 23, 42, 0.6);
-  color: #cbd5e1;
+  background: var(--surface-inset);
+  color: var(--text);
   font-size: 0.75rem;
   overflow-wrap: anywhere;
 }

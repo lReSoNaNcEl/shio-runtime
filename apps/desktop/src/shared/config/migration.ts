@@ -1,4 +1,4 @@
-export const DESKTOP_CONFIG_SCHEMA_VERSION = 4
+export const DESKTOP_CONFIG_SCHEMA_VERSION = 5
 
 export function migrateLegacyDesktopSettings(
   input: Record<string, unknown>,
@@ -11,6 +11,7 @@ export function migrateLegacyDesktopSettings(
   // during migration; runtime uses its stable internal default instead.
   delete migrated.ttsVoice
   migrated.configSchemaVersion = DESKTOP_CONFIG_SCHEMA_VERSION
+  migrated.uiTheme = input.uiTheme === 'dark' ? 'dark' : 'light'
   migrated.overlayViewMode = input.overlayViewMode === 'front' ? 'bust' : input.overlayViewMode
   migrated.setup =
     input.setup && typeof input.setup === 'object'

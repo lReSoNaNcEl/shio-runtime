@@ -1,11 +1,11 @@
 import { ipcMain } from 'electron'
 import { z } from 'zod'
 
-import { PROJECT_AWARENESS_PLUGIN_ID } from '../../shared/plugins'
+import { DESKTOP_CONTROL_PLUGIN_ID, PROJECT_AWARENESS_PLUGIN_ID } from '../../shared/plugins'
 import type { PluginRuntime } from '../plugins'
 import { IPC_ONE_PAYLOAD, type IpcAuthorization } from './IpcAuthorization'
 
-const pluginIdSchema = z.literal(PROJECT_AWARENESS_PLUGIN_ID)
+const pluginIdSchema = z.enum([PROJECT_AWARENESS_PLUGIN_ID, DESKTOP_CONTROL_PLUGIN_ID])
 
 export function registerPluginIpc(
   runtime: () => PluginRuntime,

@@ -138,6 +138,13 @@ export class AudioPlayer {
     active.settle = null
   }
 
+  async dispose(): Promise<void> {
+    this.stop()
+    this.clearProgressTimer()
+    this.analyser.disconnect()
+    if (this.audioCtx.state !== 'closed') await this.audioCtx.close()
+  }
+
   stopCurrent(turnId: string, _reason: 'conversation-interrupted'): void {
     if (this.activePlayback?.turnId !== turnId) return
     this.stop()

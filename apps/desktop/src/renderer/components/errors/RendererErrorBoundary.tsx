@@ -1,6 +1,7 @@
 import { Button, Heading, Provider, Text } from '@react-spectrum/s2'
 import { Component, type ErrorInfo, type ReactNode } from 'react'
 
+import { normalizeUiTheme } from '../../../shared/config'
 import { normalizeUiLocale, toIntlLocale, translate } from '../../../shared/localization'
 import { observeRendererPromise } from '../../reliability/observePromise'
 
@@ -35,9 +36,10 @@ export class RendererErrorBoundary extends Component<
     if (!this.state.failed) return this.props.children
 
     const locale = normalizeUiLocale(document.documentElement.lang)
+    const uiTheme = normalizeUiTheme(document.documentElement.dataset.theme)
     return (
       <Provider
-        colorScheme="dark"
+        colorScheme={uiTheme}
         locale={toIntlLocale(locale)}
         UNSAFE_className="renderer-error-provider"
       >

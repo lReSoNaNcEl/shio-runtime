@@ -41,6 +41,8 @@ Architecture and ownership:
 - No dynamic external JavaScript loading is allowed for Plugins.
 - Plugin enablement never grants authority outside the capabilities declared by
   the validated Plugin manifest.
+- Every externally authoritative side effect passes through Action Runtime,
+  including side effects requested through Plugins or delegated automation.
 - External side effects exposed by a Plugin still pass through Action Runtime.
 - Plugin-specific external technologies remain Adapters.
 - Plugin failure must not break Core.
@@ -58,9 +60,23 @@ Architecture and ownership:
 - Knowing a capability never authorizes enabling, configuration, invocation, or
   execution. Existing Action Runtime, Permission Guard, IPC, and Adapter boundaries
   remain authoritative.
+- Capability UI and Character Capability Context derive from the canonical
+  main-owned capability projection, never from ad-hoc renderer checks or a second
+  enabled-state store.
+- DSH and other delegated automation backends are Adapters, not authority owners.
+  Full Control changes only Permission Guard policy; it never bypasses Action
+  Runtime, validation, lifecycle logging, cancellation, Tool scope, or Adapter
+  boundaries.
 - Project evidence shown to users must originate from the exact Project Context
   Packet used for that turn. LLM-generated citations are never authoritative
   provenance.
+- Project Context relevance is an explicit semantic requirement of `none`,
+  `optional`, or `required`; the presence of a terminal or Action request alone
+  must neither suppress nor require Project Awareness.
+- When Project Context participates in planning an Action, post-action narration
+  reuses that exact turn packet and must not rerun relevance, retrieval, or
+  snapshot resolution. The immutable response grounding preserves both the
+  Project Reply Provenance and the Action Runtime result grounding.
 - Evidence remains bound to the original turn snapshot; later synchronization may
   not rewrite historical message provenance.
 - Project snapshot staleness is diagnostic freshness, not Runtime failure.
@@ -91,6 +107,9 @@ Desktop UI and UX:
   the appropriate React Spectrum 2 component as part of the same Work Item
   unless no Spectrum equivalent exists. If no equivalent exists, state that
   explicitly in the final report.
+- Streamdown and other Markdown presentation libraries may not enable raw unsafe
+  HTML, permissive custom protocols, remote content beyond the existing product
+  policy, or non-Spectrum interactive controls.
 
 Desktop quality and validation:
 
@@ -108,6 +127,13 @@ Desktop quality and validation:
 - No renderer-controlled filesystem paths cross an IPC boundary. Filesystem
   resources are represented by main-owned opaque handles or validated application
   resources; custom protocols may resolve only explicitly registered bundled assets.
+- No renderer may spawn or configure arbitrary child processes. Child-process
+  commands, arguments, working directories, environments, and executable paths are
+  owned and validated by Electron Main.
+- Subprocess environments are explicit and credential-minimal. Do not launch
+  application-runtime tools through `npx` or another network-resolving launcher.
+  Every owned child process has deterministic shutdown, cancellation, and app-exit
+  cleanup.
 - Runtime health and support contracts must report explicit owned state. Do not
   infer health from adjacent projections, and mark cached renderer reports stale
   whenever their renderer is not ready.
@@ -136,6 +162,8 @@ Desktop quality and validation:
   CSS block form) over disabling a rule. Never add blanket suppressions.
 - When live validation is explicitly requested for Electron main, preload, or
   renderer changes, rebuild, restart Electron, and confirm the client starts.
+- Any Electron main, preload, native executable, or subprocess integration change
+  requires a live Electron smoke check in addition to static checks and builds.
 - When live validation is explicitly requested after Avatar Runtime changes,
   verify VRM loading, idle animation, `loadAnimation`, Debug Preview, Speaking,
   LipSync, Overlay, absence of A-pose, and Runtime Health. Animation Runtime

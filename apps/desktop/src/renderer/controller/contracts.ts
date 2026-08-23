@@ -1,5 +1,5 @@
+import type { ReplyGrounding } from '../../shared/conversation'
 import type { LlmReadiness } from '../../shared/llm'
-import type { ProjectReplyProvenance } from '../../shared/project-awareness'
 import type { AvatarRuntimeHealth, CharacterState, RuntimeEvent } from '../../shared/runtime'
 import type { SpeechPolishDebugState } from '../../shared/speech'
 import type { MicrophoneGateState } from '../audio/microphoneGateTypes'
@@ -46,7 +46,7 @@ export interface ChatMsg {
   role: 'user' | 'assistant' | 'error' | 'meta'
   text: string
   interrupted?: boolean
-  provenance?: ProjectReplyProvenance
+  grounding?: ReplyGrounding
 }
 
 export type HealthState = 'checking' | 'ok' | 'warn' | 'err'

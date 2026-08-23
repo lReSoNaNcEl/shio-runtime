@@ -1,8 +1,9 @@
 import type { TranslationKey } from '../localization'
 
 export const PROJECT_AWARENESS_PLUGIN_ID = 'project-awareness' as const
+export const DESKTOP_CONTROL_PLUGIN_ID = 'desktop-control' as const
 
-export type PluginId = typeof PROJECT_AWARENESS_PLUGIN_ID
+export type PluginId = typeof PROJECT_AWARENESS_PLUGIN_ID | typeof DESKTOP_CONTROL_PLUGIN_ID
 export type PluginLifecycleState =
   | 'registered'
   | 'initializing'
@@ -13,7 +14,11 @@ export type PluginLifecycleState =
   | 'error'
   | 'disposed'
 export type PluginHealthState = 'healthy' | 'needs-setup' | 'degraded' | 'error'
-export type PluginCapability = 'project-context'
+export type PluginCapability =
+  | 'project-context'
+  | 'automation-engine'
+  | 'browser-control'
+  | 'computer-control'
 
 export interface PluginManifest {
   id: PluginId

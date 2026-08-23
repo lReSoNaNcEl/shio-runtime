@@ -25,6 +25,7 @@ apps/desktop/release/
 /release/
 
 # Desktop runtime debug output (cwd-relative, regenerated at runtime)
+/runtime-debug/
 apps/desktop/runtime-debug/
 
 # Python environments and cache

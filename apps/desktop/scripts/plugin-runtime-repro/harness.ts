@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
+import { DESKTOP_CONTROL_MANIFEST } from '../../src/main/desktop-control'
 import type { ChatMessage, LLMProvider } from '../../src/main/llm'
 import type { MemoryStore } from '../../src/main/memory'
 import { Orchestrator } from '../../src/main/orchestrator'
@@ -31,6 +32,7 @@ import { PROJECT_AWARENESS_PLUGIN_ID } from '../../src/shared/plugins'
 
 class FakePlugin implements BundledPlugin {
   readonly provider: ProjectContextProvider = {
+    resolveRequirement: () => 'none',
     buildContext: async () => null,
   }
   initializeCount = 0
@@ -44,7 +46,7 @@ class FakePlugin implements BundledPlugin {
   ) {}
 
   async initialize(context: PluginInitializationContext): Promise<void> {
-    assert.equal(context.pluginId, PROJECT_AWARENESS_PLUGIN_ID)
+    assert.equal(context.pluginId, this.manifest.id)
     this.initializeCount += 1
   }
 
@@ -125,6 +127,30 @@ async function runtimeContract(directory: string): Promise<void> {
   )
   await disabledRestart.initialize()
   assert.equal((await disabledRestart.get(PROJECT_AWARENESS_PLUGIN_ID)).enabled, false)
+
+  const desktopRegistryPath = join(directory, 'desktop-control-registry.json')
+  const desktopPlugin = new FakePlugin(DESKTOP_CONTROL_MANIFEST)
+  const desktopRuntime = new PluginRuntime(
+    [desktopPlugin],
+    new PluginRegistryStore(desktopRegistryPath, [DESKTOP_CONTROL_MANIFEST]),
+    new PluginCapabilityRegistry(),
+  )
+  await desktopRuntime.initialize()
+  assert.equal((await desktopRuntime.get(DESKTOP_CONTROL_MANIFEST.id)).enabled, false)
+  await desktopRuntime.enable(DESKTOP_CONTROL_MANIFEST.id)
+  await desktopRuntime.dispose()
+
+  const restartedDesktopPlugin = new FakePlugin(DESKTOP_CONTROL_MANIFEST)
+  const restartedDesktopRuntime = new PluginRuntime(
+    [restartedDesktopPlugin],
+    new PluginRegistryStore(desktopRegistryPath, [DESKTOP_CONTROL_MANIFEST]),
+    new PluginCapabilityRegistry(),
+  )
+  await restartedDesktopRuntime.initialize()
+  assert.equal((await restartedDesktopRuntime.get(DESKTOP_CONTROL_MANIFEST.id)).enabled, true)
+  assert.equal(restartedDesktopPlugin.startCount, 1)
+  await restartedDesktopRuntime.disable(DESKTOP_CONTROL_MANIFEST.id)
+  await restartedDesktopRuntime.dispose()
 
   const failing = new PluginRuntime(
     [new FakePlugin(PROJECT_AWARENESS_MANIFEST, true)],
@@ -242,6 +268,7 @@ async function conversationCapabilityContract(): Promise<void> {
     clear: async () => undefined,
   }
   const packet = {
+    requirement: 'required' as const,
     snapshotSha: 'abc1234',
     repository: 'owner/project',
     branch: 'main',
@@ -263,6 +290,7 @@ async function conversationCapabilityContract(): Promise<void> {
     },
   }
   let provider: ProjectContextProvider | undefined = {
+    resolveRequirement: () => 'required',
     buildContext: async () => packet,
   }
   const orchestrator = new Orchestrator(
@@ -295,7 +323,10 @@ async function conversationCapabilityContract(): Promise<void> {
     false,
   )
 
-  provider = { buildContext: async () => Promise.reject(new Error('provider failure')) }
+  provider = {
+    resolveRequirement: () => 'required',
+    buildContext: async () => Promise.reject(new Error('provider failure')),
+  }
   await orchestrator.createReply({ userText: 'Core still replies' })
   assert.equal(captured.at(-1)?.content, 'Core still replies')
 }

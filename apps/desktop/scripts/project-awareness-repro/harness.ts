@@ -12,6 +12,7 @@ import {
   ProjectAwarenessRuntime,
   ProjectCredentialStore,
   ProjectKnowledgeStore,
+  projectContextRequirement,
 } from '../../src/main/project-awareness'
 import { normalizeGitHubProjectError } from '../../src/main/project-awareness/adapters/GitHubProjectAdapter'
 import type {
@@ -387,9 +388,26 @@ async function main(): Promise<void> {
     assert.equal(overlappingChunks.length, 1, `${method.name} must stay in one AST chunk`)
   }
   assert(longPythonExtracted.chunks.every((chunk) => chunk.endLine - chunk.startLine + 1 <= 220))
-  assert.equal(isProjectRelevantRequest('Как работает ProjectRuntime?'), true)
-  assert.equal(isProjectRelevantRequest('А бекенд?'), true)
-  assert.equal(isProjectRelevantRequest('А TTS и ASR?'), true)
+  assert.equal(projectContextRequirement('Как работает ProjectRuntime?'), 'required')
+  assert.equal(projectContextRequirement('А бекенд?'), 'optional')
+  assert.equal(projectContextRequirement('А TTS и ASR?'), 'optional')
+  assert.equal(projectContextRequirement('Выполни node -v'), 'none')
+  assert.equal(
+    projectContextRequirement('Какая версия Node установлена? Проверь терминалом'),
+    'none',
+  )
+  assert.equal(
+    projectContextRequirement('Проверь терминалом, какая версия node.js установлена'),
+    'none',
+  )
+  assert.equal(projectContextRequirement('Какую версию Node требует этот проект?'), 'required')
+  assert.equal(projectContextRequirement('Запусти typecheck этого проекта'), 'required')
+  assert.equal(
+    projectContextRequirement('Посмотри package.json и запусти правильную build-команду'),
+    'required',
+  )
+  assert.equal(projectContextRequirement('Выполни npm run typecheck'), 'none')
+  assert.equal(isProjectRelevantRequest('Как Node.js используется в этом проекте?'), true)
   assert.equal(isProjectRelevantRequest('Расскажи короткую шутку'), false)
   const privateRepositoryError = normalizeGitHubProjectError(
     { isAxiosError: true, response: { status: 404 } },

@@ -34,7 +34,10 @@ function source(relativePath: string): Promise<string> {
 class HealthPlugin implements BundledPlugin {
   readonly manifest = PROJECT_AWARENESS_MANIFEST
   private health: PluginHealth = { state: 'healthy', checkedAt: Date.now() }
-  private readonly provider: ProjectContextProvider = { buildContext: async () => null }
+  private readonly provider: ProjectContextProvider = {
+    resolveRequirement: () => 'none',
+    buildContext: async () => null,
+  }
 
   initialize(context: PluginInitializationContext): Promise<void> {
     assert.equal(context.pluginId, PROJECT_AWARENESS_PLUGIN_ID)

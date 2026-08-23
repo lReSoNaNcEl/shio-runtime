@@ -13,6 +13,8 @@ import { useSettingsDialogState } from './state/useSettingsDialogState'
 export function SettingsDialog({
   isOpen,
   initialSection = 'general',
+  uiTheme,
+  onThemeChange,
   overlayVisible,
   overlayViewModeProjection,
   llmHealth,
@@ -47,7 +49,11 @@ export function SettingsDialog({
 
   const section =
     viewModel.activeSection === 'general' ? (
-      <GeneralSettingsSection {...viewModel.general} />
+      <GeneralSettingsSection
+        {...viewModel.general}
+        uiTheme={uiTheme}
+        onThemeChange={onThemeChange}
+      />
     ) : viewModel.activeSection === 'speech' ? (
       <SpeechSettingsSection {...viewModel.speech} />
     ) : viewModel.activeSection === 'llm' ? (

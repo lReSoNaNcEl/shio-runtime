@@ -1,5 +1,6 @@
 import type { Dispatch, SetStateAction } from 'react'
 
+import type { UiTheme } from '../../../../shared/config'
 import type {
   BacklogSelectorRoleConfig,
   LlmProviderId,
@@ -16,6 +17,8 @@ export type SettingsSection = 'general' | 'speech' | 'llm' | 'avatar' | 'advance
 export interface SettingsDialogProps {
   isOpen: boolean
   initialSection?: SettingsSection
+  uiTheme: UiTheme
+  onThemeChange: (theme: UiTheme) => void
   vrmLoaded: boolean
   faceTrackingEnabled: boolean
   onToggleFaceTracking: () => void

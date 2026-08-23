@@ -117,6 +117,17 @@ export function AvatarPreviewView({ onOpenSettings }: { onOpenSettings: () => vo
     }
   }
 
+  async function reload(): Promise<void> {
+    setPhase('loading')
+    try {
+      await controller.reloadPreviewModel()
+      if (!mountedRef.current) return
+      setPhase(controller.getState().vrmLoaded ? 'ready' : 'error')
+    } catch {
+      if (mountedRef.current) setPhase('error')
+    }
+  }
+
   const ready = phase === 'ready'
   const categoryLabel = (category: AnimationManifestEntry['category']): string =>
     t(`avatarPreview.category.${category}` as TranslationKey)
@@ -149,7 +160,7 @@ export function AvatarPreviewView({ onOpenSettings }: { onOpenSettings: () => vo
               <Heading level={2} UNSAFE_className="preview-loader-title">
                 {t('avatarPreview.loadFailed')}
               </Heading>
-              <Button variant="secondary" onPress={() => void open()}>
+              <Button variant="secondary" onPress={() => void reload()}>
                 {t('common.retry')}
               </Button>
               <Button variant="secondary" onPress={onOpenSettings}>
@@ -345,7 +356,7 @@ export function AvatarPreviewView({ onOpenSettings }: { onOpenSettings: () => vo
                 </Button>
               </div>
               <div className="preview-actions preview-actions-secondary">
-                <Button variant="secondary" onPress={() => void open()}>
+                <Button variant="secondary" onPress={() => void reload()}>
                   {t('avatarPreview.reloadModel')}
                 </Button>
               </div>

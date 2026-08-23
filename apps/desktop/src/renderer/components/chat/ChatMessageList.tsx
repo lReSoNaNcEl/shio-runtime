@@ -4,6 +4,7 @@ import { useEffect, useRef } from 'react'
 
 import { type ControllerState } from '../../Controller'
 import { useTranslation } from '../../localization/useTranslation'
+import { MarkdownMessage } from './MarkdownMessage'
 import { ProjectEvidenceBar } from './ProjectEvidenceBar'
 
 export interface ChatMessageListProps {
@@ -61,9 +62,15 @@ export function ChatMessageList({
               {message.role === 'user' ? t('chat.you') : t('chat.assistant')}
             </span>
           )}
-          <span className="msg-text">{message.text}</span>
-          {message.role === 'assistant' && message.provenance && (
-            <ProjectEvidenceBar provenance={message.provenance} />
+          {message.role === 'assistant' ? (
+            <div className="msg-text">
+              <MarkdownMessage text={message.text} />
+            </div>
+          ) : (
+            <span className="msg-text">{message.text}</span>
+          )}
+          {message.role === 'assistant' && message.grounding?.project && (
+            <ProjectEvidenceBar provenance={message.grounding.project} />
           )}
           {message.interrupted && <span className="msg-interrupted">{t('chat.interrupted')}</span>}
         </div>

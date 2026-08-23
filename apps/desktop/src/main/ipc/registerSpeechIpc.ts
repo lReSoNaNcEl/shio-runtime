@@ -4,7 +4,12 @@ import { z } from 'zod'
 import type { SpeechOperation, SpeechServiceErrorCode } from '../../shared/speech'
 import type { ActionRuntime } from '../action/ActionRuntime'
 import type { Orchestrator } from '../orchestrator'
-import { DEFAULT_TTS_VOICE_ID, deriveCapabilities, type SpeechClient } from '../speech/speechClient'
+import {
+  DEFAULT_TTS_VOICE_ID,
+  deriveCapabilities,
+  type SpeechCapabilitiesProbe,
+  type SpeechClient,
+} from '../speech/speechClient'
 import { logSpeechError, logSpeechRecovery } from '../speech/speechErrors'
 import type { IpcAuthorization } from './IpcAuthorization'
 
@@ -12,6 +17,7 @@ interface RegisterSpeechIpcOptions {
   actions: ActionRuntime
   speech: () => SpeechClient
   cancelSynthesis: (turnId: string) => void
+  onCapabilitiesProbe?: (probe: SpeechCapabilitiesProbe) => void
   authorization: IpcAuthorization
 }
 
@@ -19,6 +25,7 @@ export function registerSpeechIpc({
   actions,
   speech,
   cancelSynthesis,
+  onCapabilitiesProbe,
   authorization,
 }: RegisterSpeechIpcOptions): void {
   const logFailure = (
@@ -42,8 +49,16 @@ export function registerSpeechIpc({
       })
       if (action.status === 'success' && action.result) {
         logSpeechRecovery('health')
-        return { ok: true, data: action.result, capabilities: deriveCapabilities(action.result) }
+        const capabilities = deriveCapabilities(action.result)
+        onCapabilitiesProbe?.(capabilities)
+        return { ok: true, data: action.result, capabilities }
       }
+      onCapabilitiesProbe?.({
+        serviceReachable: false,
+        recognition: false,
+        synthesis: false,
+        streaming: false,
+      })
       logFailure('health', action)
       return { ok: false, error: action.error, errorCode: action.errorCode }
     }),

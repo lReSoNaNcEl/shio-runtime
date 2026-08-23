@@ -3,8 +3,10 @@
 .settings-nav button {
   display: flex;
   align-items: center;
+  justify-content: flex-start;
   gap: 10px;
   min-height: 40px;
+  width: 100%;
   padding: 0 12px;
   border: 0;
   border-radius: 8px;
@@ -17,17 +19,17 @@
 
 .settings-nav button:hover {
   color: var(--text);
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--surface-hover);
 }
 
 .settings-nav button.active {
   color: var(--text);
-  background: rgba(139, 92, 246, 0.28);
+  background: var(--surface-selected);
   box-shadow: inset 3px 0 0 var(--accent2);
 }
 
 .settings-nav button:focus-visible {
-  outline: 2px solid #c4b5fd;
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 
@@ -58,10 +60,10 @@
   width: min(100%, 320px);
   margin-bottom: 18px;
   padding: 4px;
-  border: 1px solid rgba(139, 92, 246, 0.34);
+  border: 1px solid var(--border);
   border-radius: 10px;
-  background: rgba(10, 10, 18, 0.46);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.025);
+  background: var(--surface-inset);
+  box-shadow: inset 0 0 0 1px var(--border-faint);
 }
 
 .settings-tabs-three {
@@ -92,15 +94,15 @@
 
 .settings-tab:hover {
   color: var(--text);
-  background: rgba(255, 255, 255, 0.045);
+  background: var(--surface-hover);
 }
 
 .settings-tab.active {
   color: var(--text);
-  background: rgba(139, 92, 246, 0.44);
+  background: var(--surface-selected);
   box-shadow:
-    0 0 0 1px rgba(167, 139, 250, 0.38),
-    0 6px 18px rgba(0, 0, 0, 0.16);
+    0 0 0 1px var(--border),
+    0 6px 18px var(--shadow);
 }
 
 .settings-field {
@@ -181,10 +183,10 @@
   align-items: center;
   gap: 3px;
   padding: 2px 6px;
-  border: 1px solid rgba(167, 139, 250, 0.4);
+  border: 1px solid var(--border);
   border-radius: 999px;
-  color: #c4b5fd;
-  background: rgba(139, 92, 246, 0.14);
+  color: var(--accent2);
+  background: var(--surface-selected);
   font-size: 0.72em;
   font-weight: 650;
   line-height: 1.2;
@@ -216,7 +218,7 @@
   font-size: 0.92em;
 }
 .model-capability-status-positive {
-  color: #86efac;
+  color: var(--positive-text);
 }
 .model-capability-status-neutral {
   color: var(--text-dim);
@@ -257,9 +259,9 @@
   gap: 18px;
   align-items: center;
   padding: 14px 16px;
-  border: 1px solid rgba(148, 163, 184, 0.18);
+  border: 1px solid var(--border-subtle);
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.035);
+  background: var(--surface-subtle);
 }
 
 .overlay-toggle-card.active {
@@ -307,7 +309,7 @@
   display: grid;
   gap: 10px;
   padding-block: 2px 14px;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .overlay-section:last-of-type {
@@ -331,7 +333,7 @@
 }
 
 .overlay-disabled-note {
-  color: var(--accent2, #a78bfa);
+  color: var(--accent2);
 }
 
 .avatar-panel {
@@ -424,7 +426,7 @@
 .settings-content > .spectrum-ButtonGroup {
   margin-top: 0;
   padding: 16px 0 20px;
-  border-top: 1px solid rgba(148, 163, 184, 0.18);
+  border-top: 1px solid var(--border-subtle);
 }
 
 .settings-view {
@@ -445,7 +447,7 @@
   font-size: 0.78rem;
 }
 .settings-save-state.error {
-  color: #fca5a5;
+  color: var(--negative-text);
 }
 .settings-section-heading {
   display: flex;
@@ -469,7 +471,7 @@
   white-space: nowrap;
 }
 .settings-save-error {
-  color: #fca5a5;
+  color: var(--negative-text);
   overflow-wrap: anywhere;
 }
 
@@ -482,14 +484,14 @@
   overflow: hidden;
   border: 1px solid var(--border);
   border-radius: 12px;
-  background: rgba(10, 10, 25, 0.72);
+  background: var(--panel);
 }
 .settings-nav {
   display: grid;
   align-content: start;
   gap: 4px;
   padding: 18px 10px;
-  border-right: 1px solid rgba(148, 163, 184, 0.16);
+  border-right: 1px solid var(--border-subtle);
 }
 .settings-nav strong {
   padding: 0 10px 10px;
@@ -523,12 +525,14 @@
     display: flex;
     overflow-x: auto;
     border-right: 0;
-    border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+    border-bottom: 1px solid var(--border-subtle);
   }
   .settings-nav strong {
     display: none;
   }
   .settings-nav button {
+    width: auto;
+    flex: 0 0 auto;
     white-space: nowrap;
   }
 }

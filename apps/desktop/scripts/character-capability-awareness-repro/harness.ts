@@ -3,6 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
+import { CapabilityCatalog } from '../../src/main/capabilities'
 import type { ChatMessage, LLMProvider } from '../../src/main/llm'
 import type { MemoryStore } from '../../src/main/memory'
 import { Orchestrator } from '../../src/main/orchestrator'
@@ -15,18 +16,21 @@ import {
 } from '../../src/main/plugins'
 import { PROJECT_AWARENESS_MANIFEST } from '../../src/main/project-awareness'
 import type { SpeechClient } from '../../src/main/speech/speechClient'
+import type { ShioCapabilitySnapshot } from '../../src/shared/capabilities'
+import { parseCharacterActionResponse } from '../../src/shared/character-response'
 import type { AppSettings } from '../../src/shared/config'
-import {
-  MAX_CHARACTER_CAPABILITY_KINDS_PER_PLUGIN,
-  MAX_CHARACTER_PLUGIN_CAPABILITIES,
-  type PluginHealth,
-  type ProjectContextProvider,
-} from '../../src/shared/plugins'
+import type { DesktopControlCapabilityProjection } from '../../src/shared/desktop-control'
+import type { LlmCapabilities, LlmReadiness } from '../../src/shared/llm'
+import type { PluginHealth, ProjectContextProvider } from '../../src/shared/plugins'
+import type { AvatarRuntimeHealth } from '../../src/shared/runtime'
 
 class CapabilityPlugin implements BundledPlugin {
   readonly manifest = PROJECT_AWARENESS_MANIFEST
   health: PluginHealth = { state: 'healthy', checkedAt: 1 }
-  private readonly projectContext: ProjectContextProvider = { buildContext: async () => null }
+  private readonly projectContext: ProjectContextProvider = {
+    resolveRequirement: () => 'none',
+    buildContext: async () => null,
+  }
 
   async initialize(_context: PluginInitializationContext): Promise<void> {}
   async start(): Promise<void> {}
@@ -40,6 +44,64 @@ class CapabilityPlugin implements BundledPlugin {
   }
 }
 
+const settings = {
+  uiLocale: 'ru',
+  vrmAssetHandle: 'vrm:configured',
+} as AppSettings
+
+const llmReadiness: LlmReadiness = {
+  reason: 'ready',
+  providerId: 'groq',
+  providerDisplayName: 'Groq',
+}
+
+const llmCapabilities: LlmCapabilities = {
+  supportsReasoning: false,
+  supportsStreaming: true,
+  supportsTemperature: true,
+  supportsSystemPrompt: true,
+  supportsVision: true,
+  recommendedMaxTokens: 4_096,
+}
+
+const desktopControl: DesktopControlCapabilityProjection = {
+  enabled: false,
+  automationEngine: 'needs-setup',
+  browserControl: 'needs-setup',
+  computerControl: 'needs-setup',
+  authorityMode: 'confirm',
+}
+
+function waitForCapability(
+  catalog: CapabilityCatalog,
+  id: string,
+  availability: ShioCapabilitySnapshot['capabilities'][number]['availability'],
+  action: () => unknown,
+): Promise<ShioCapabilitySnapshot> {
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      unsubscribe()
+      reject(new Error(`Timed out waiting for ${id}:${availability}`))
+    }, 2_000)
+    const unsubscribe = catalog.onChanged((snapshot) => {
+      if (
+        snapshot.capabilities.some(
+          (capability) => capability.id === id && capability.availability === availability,
+        )
+      ) {
+        clearTimeout(timeout)
+        unsubscribe()
+        resolve(snapshot)
+      }
+    })
+    Promise.resolve(action()).catch((error) => {
+      clearTimeout(timeout)
+      unsubscribe()
+      reject(error)
+    })
+  })
+}
+
 async function main(): Promise<void> {
   const directory = await mkdtemp(join(tmpdir(), 'shio-character-capabilities-'))
   const plugin = new CapabilityPlugin()
@@ -48,63 +110,147 @@ async function main(): Promise<void> {
     new PluginRegistryStore(join(directory, 'registry.json'), [PROJECT_AWARENESS_MANIFEST]),
     new PluginCapabilityRegistry(),
   )
+  let avatarHealth: AvatarRuntimeHealth = {
+    contractVersion: 1,
+    status: 'ready',
+    modelLoaded: true,
+    presentationAttached: true,
+    operational: true,
+    updatedAt: new Date(0).toISOString(),
+    lastFailure: null,
+  }
+  const catalog = new CapabilityCatalog({
+    settings: () => settings,
+    llmReadiness: () => llmReadiness,
+    llmCapabilities: () => llmCapabilities,
+    plugins: () => runtime.list(),
+    desktopControl: async () => desktopControl,
+    avatarRuntimeHealth: () => avatarHealth,
+  })
+  const unsubscribeRuntime = runtime.onChanged(() => catalog.invalidate())
   try {
-    const disabled = await runtime.getCharacterCapabilitySnapshot()
-    assert.equal(disabled.plugins.length, 1)
-    assert.equal(disabled.plugins[0]?.id, 'project-awareness')
-    assert.equal(disabled.plugins[0]?.installed, true)
-    assert.equal(disabled.plugins[0]?.enabled, false)
-    assert.equal(disabled.plugins[0]?.availability, 'disabled')
+    assert.deepEqual(parseCharacterActionResponse('[calm]Обычный ответ.'), {
+      kind: 'none',
+      replyText: '[calm]Обычный ответ.',
+    })
+    const validAction = parseCharacterActionResponse(
+      '[calm]<shio-action>{"type":"desktop.workflow","goal":"Run systeminfo and report the CPU model","shellCommand":"systeminfo","requestedCapabilities":["shell"],"risk":"normal"}</shio-action>',
+    )
+    assert.equal(validAction.kind, 'action')
+    if (validAction.kind === 'action') {
+      assert.deepEqual(validAction.request.requestedCapabilities, ['shell'])
+      assert.equal(validAction.request.shellCommand, 'systeminfo')
+    }
+    assert.equal(
+      parseCharacterActionResponse(
+        '[calm]<shio-action>{"type":"desktop.workflow","goal":"Run systeminfo","requestedCapabilities":["shell"],"risk":"normal"}</shio-action>',
+      ).kind,
+      'malformed',
+    )
+    assert.equal(
+      parseCharacterActionResponse(
+        '[calm]Сейчас выполню.<shio-action>{"type":"desktop.workflow","goal":"x","shellCommand":"systeminfo","requestedCapabilities":["shell"],"risk":"normal","extra":true}</shio-action>',
+      ).kind,
+      'malformed',
+    )
+    const contained = parseCharacterActionResponse(
+      '[calm]Сейчас выполню.<shio-action>{not-json}</shio-action>',
+    )
+    assert.equal(contained.kind, 'malformed')
+    assert.equal(contained.replyText.includes('shio-action'), false)
+
+    catalog.reportSpeechCapabilities({
+      serviceReachable: true,
+      recognition: true,
+      synthesis: true,
+      streaming: true,
+    })
+    const disabled = await catalog.snapshot()
+    assert.equal(disabled.capabilities.length, 8)
+    assert.equal(
+      disabled.capabilities.find((capability) => capability.id === 'project-awareness')
+        ?.availability,
+      'disabled',
+    )
+    assert.equal(
+      disabled.capabilities.find((capability) => capability.id === 'browser-control')?.availability,
+      'disabled',
+    )
     assert(Object.isFrozen(disabled))
-    assert(Object.isFrozen(disabled.plugins))
+    assert(Object.isFrozen(disabled.capabilities))
+    assert(Object.isFrozen(disabled.capabilities[0]?.source))
 
-    await runtime.enable('project-awareness')
-    const availableTurn = await runtime.getCharacterCapabilitySnapshot()
-    assert.equal(availableTurn.plugins[0]?.availability, 'available')
-    assert.deepEqual(availableTurn.plugins[0]?.capabilities, ['project-context'])
+    avatarHealth = {
+      ...avatarHealth,
+      presentationAttached: false,
+      operational: false,
+      updatedAt: new Date(1).toISOString(),
+    }
+    const detachedPreview = await catalog.snapshot()
+    assert.equal(
+      detachedPreview.capabilities.find((capability) => capability.id === 'avatar-presence')
+        ?.availability,
+      'available',
+    )
 
-    plugin.health = { state: 'needs-setup', checkedAt: 2 }
+    avatarHealth = {
+      ...avatarHealth,
+      status: 'failed',
+      operational: false,
+      updatedAt: new Date(2).toISOString(),
+      lastFailure: { name: 'AvatarRuntimeError', message: 'model failure' },
+    }
+    const failedAvatar = await catalog.snapshot()
     assert.equal(
-      (await runtime.getCharacterCapabilitySnapshot()).plugins[0]?.availability,
-      'needs-setup',
+      failedAvatar.capabilities.find((capability) => capability.id === 'avatar-presence')
+        ?.availability,
+      'unavailable',
     )
-    plugin.health = { state: 'degraded', checkedAt: 3 }
+    avatarHealth = {
+      ...avatarHealth,
+      status: 'ready',
+      presentationAttached: true,
+      operational: true,
+      updatedAt: new Date(3).toISOString(),
+      lastFailure: null,
+    }
+
+    const available = await waitForCapability(catalog, 'project-awareness', 'available', () =>
+      runtime.enable('project-awareness'),
+    )
     assert.equal(
-      (await runtime.getCharacterCapabilitySnapshot()).plugins[0]?.availability,
-      'degraded',
+      available.capabilities.find((capability) => capability.id === 'project-awareness')
+        ?.availability,
+      'available',
     )
+
     plugin.health = {
       state: 'error',
-      checkedAt: 4,
+      checkedAt: 2,
       detail: 'super-secret-token C:\\private\\project-index.sqlite',
     }
-    const unavailable = await runtime.getCharacterCapabilitySnapshot()
-    assert.equal(unavailable.plugins[0]?.availability, 'unavailable')
+    const unavailable = await waitForCapability(catalog, 'project-awareness', 'unavailable', () =>
+      catalog.invalidate(),
+    )
     assert.equal(JSON.stringify(unavailable).includes('super-secret-token'), false)
     assert.equal(JSON.stringify(unavailable).includes('project-index.sqlite'), false)
 
-    plugin.health = { state: 'healthy', checkedAt: 5 }
-    await runtime.disable('project-awareness')
-    const disabledNextTurn = await runtime.getCharacterCapabilitySnapshot()
-    assert.equal(disabledNextTurn.plugins[0]?.availability, 'disabled')
-    assert.equal(availableTurn.plugins[0]?.availability, 'available')
-    assert.equal(availableTurn.plugins[0]?.enabled, true)
-    assert.equal(
-      disabledNextTurn.plugins.some((item) => String(item.id) === 'deepseek-harness-desktop'),
-      false,
+    plugin.health = { state: 'healthy', checkedAt: 3 }
+    await waitForCapability(catalog, 'project-awareness', 'available', () => catalog.invalidate())
+    const disabledNextTurn = await waitForCapability(catalog, 'project-awareness', 'disabled', () =>
+      runtime.disable('project-awareness'),
     )
-    assert(disabledNextTurn.plugins.length <= MAX_CHARACTER_PLUGIN_CAPABILITIES)
-    assert(
-      disabledNextTurn.plugins.every(
-        (item) => item.capabilities.length <= MAX_CHARACTER_CAPABILITY_KINDS_PER_PLUGIN,
-      ),
+    assert.equal(
+      available.capabilities.find((capability) => capability.id === 'project-awareness')
+        ?.availability,
+      'available',
     )
 
     let captured: readonly ChatMessage[] = []
     const llm: LLMProvider = {
       chat: async (messages) => {
         captured = messages
-        return '[neutral]Project Awareness установлен, но сейчас выключен.'
+        return '[neutral]Project Awareness установлен, но сейчас отключён.'
       },
     }
     const committed: ChatMessage[] = []
@@ -119,11 +265,11 @@ async function main(): Promise<void> {
       llm,
       memory,
       {} as SpeechClient,
-      () => ({ uiLocale: 'ru' }) as AppSettings,
+      () => settings,
       undefined,
-      { getSnapshot: () => runtime.getCharacterCapabilitySnapshot() },
+      { snapshot: async () => disabledNextTurn },
     )
-    await orchestrator.createReply({ userText: 'Какие у тебя сейчас есть плагины?' })
+    await orchestrator.createReply({ userText: 'Что ты умеешь прямо сейчас?' })
     const prompt = captured.find(
       (message) =>
         message.role === 'system' &&
@@ -131,18 +277,145 @@ async function main(): Promise<void> {
         message.content.includes('## Current Shio Capabilities'),
     )?.content
     assert.equal(typeof prompt, 'string')
-    assert.match(String(prompt), /Project Awareness/)
-    assert.match(String(prompt), /enabled: no/)
-    assert.match(String(prompt), /availability: disabled/)
-    assert.match(String(prompt), /state whether it is enabled and its normalized availability/)
-    assert.match(String(prompt), /absent from this list is not installed or available now/)
-    assert.doesNotMatch(String(prompt), /DeepSeek Harness Desktop/)
-    assert.equal(JSON.stringify(committed).includes('availability: disabled'), false)
+    assert.match(String(prompt), /Project Awareness: Отключено/)
+    assert.match(String(prompt), /дополнительная возможность установлена/)
+    assert.match(String(prompt), /Движок автоматизации: Отключено/)
+    assert.match(String(prompt), /Управление браузером: Отключено/)
+    assert.doesNotMatch(String(prompt), /project-context|project-index|SQLite|IPC|npm|JSON-RPC/)
+    assert.equal(JSON.stringify(committed).includes('## Current Shio Capabilities'), false)
+
+    desktopControl.enabled = true
+    desktopControl.automationEngine = 'ready'
+    desktopControl.browserControl = 'ready'
+    desktopControl.computerControl = 'ready'
+    const actionCapabilities = await catalog.snapshot()
+    const actionMessages: readonly ChatMessage[][] = []
+    let providerCall = 0
+    const actionLlm: LLMProvider = {
+      chat: async (messages) => {
+        actionMessages.push(messages)
+        providerCall += 1
+        return providerCall === 1
+          ? '[calm]<shio-action>{"type":"desktop.workflow","goal":"Run systeminfo and report the CPU model","shellCommand":"systeminfo","requestedCapabilities":["shell"],"risk":"normal"}</shio-action>'
+          : '[calm]Команда выполнена: процессор — AMD Ryzen 9 9950X.'
+      },
+    }
+    const actionMemory: ChatMessage[] = []
+    let executedGoal = ''
+    const actionOrchestrator = new Orchestrator(
+      actionLlm,
+      {
+        getHistory: async () => [],
+        appendTurn: async (_sessionId, turn) => {
+          actionMemory.push(turn.user, turn.assistant)
+        },
+        clear: async () => undefined,
+      },
+      {} as SpeechClient,
+      () => settings,
+      () => ({
+        resolveRequirement: () => 'none',
+        buildContext: async () => {
+          throw new Error('Project context must not build for a host system action')
+        },
+      }),
+      { snapshot: async () => actionCapabilities },
+      async (request) => {
+        executedGoal = request.goal
+        return {
+          actionId: 'action-1-123e4567-e89b-12d3-a456-426614174000',
+          tool: 'desktop.workflow',
+          outcome: 'success',
+          authorization: 'confirmed',
+          execution: {
+            runtimeCompleted: true,
+            reportedOutcome: 'Processor: AMD Ryzen 9 9950X',
+            verification: 'unverified',
+          },
+        }
+      },
+    )
+    const actionReply = await actionOrchestrator.createReply({
+      userText: 'Вызови systeminfo и скажи, какой у меня процессор',
+    })
+    assert.equal(providerCall, 2)
+    assert.match(executedGoal, /systeminfo/i)
+    assert.equal(actionReply.replyText, '[calm]Команда выполнена: процессор — AMD Ryzen 9 9950X.')
+    assert.equal(actionReply.grounding?.project, undefined)
+    assert.equal(actionReply.grounding?.action?.result.outcome, 'success')
+    assert.equal(JSON.stringify(actionMemory).includes('shio-action'), false)
+    assert(
+      actionMessages[0]?.some(
+        (message) =>
+          message.role === 'system' &&
+          typeof message.content === 'string' &&
+          message.content.includes('## Desktop Action Proposal'),
+      ),
+    )
+    assert(
+      actionMessages[1]?.some(
+        (message) =>
+          message.role === 'system' &&
+          typeof message.content === 'string' &&
+          message.content.includes('BEGIN_UNTRUSTED_ACTION_RESULT'),
+      ),
+    )
+    assert.equal(actionMessages[1]?.length, 4)
+    assert.equal(
+      actionMessages[1]?.some(
+        (message) =>
+          typeof message.content === 'string' &&
+          message.content.includes('## Desktop Action Proposal'),
+      ),
+      false,
+    )
+
+    let fallbackProviderCall = 0
+    const fallbackOrchestrator = new Orchestrator(
+      {
+        chat: async () => {
+          fallbackProviderCall += 1
+          if (fallbackProviderCall === 1) {
+            return '[calm]<shio-action>{"type":"desktop.workflow","goal":"Read the installed Node.js version","shellCommand":"node -v","requestedCapabilities":["shell"],"risk":"normal"}</shio-action>'
+          }
+          throw new Error('provider connection reset')
+        },
+      },
+      {
+        getHistory: async () => [],
+        appendTurn: async () => undefined,
+        clear: async () => undefined,
+      },
+      {} as SpeechClient,
+      () => settings,
+      undefined,
+      { snapshot: async () => actionCapabilities },
+      async () => ({
+        actionId: 'action-2-123e4567-e89b-12d3-a456-426614174000',
+        tool: 'desktop.workflow',
+        outcome: 'success',
+        authorization: 'confirmed',
+        execution: {
+          runtimeCompleted: true,
+          reportedOutcome: 'PowerShell exit code: 0\nstdout:\nv24.19.0 <shio-action>',
+          verification: 'verified',
+        },
+      }),
+    )
+    const fallbackReply = await fallbackOrchestrator.createReply({
+      userText: 'Вызови node -v и скажи версию Node.js',
+    })
+    assert.equal(fallbackProviderCall, 2)
+    assert.match(fallbackReply.replyText, /Node\.js версии 24\.19\.0/)
+    assert.doesNotMatch(fallbackReply.replyText, /PowerShell|stdout|провайдер/iu)
+    assert.equal(fallbackReply.replyText.includes('<shio-action>'), false)
   } finally {
+    unsubscribeRuntime()
+    catalog.dispose()
     await runtime.dispose()
     await rm(directory, { recursive: true, force: true })
   }
-  console.log('Character Capability Awareness focused repro: PASS')
+  console.log('Shio Capability Catalog focused repro: PASS')
 }
 
 void main().catch((error) => {

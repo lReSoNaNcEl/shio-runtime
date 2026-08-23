@@ -3,12 +3,15 @@ import { join } from 'node:path'
 
 import { app } from 'electron'
 
+import type { DesktopAuthorityMode } from '../shared/actions'
 import {
   type AppSettings,
   DEFAULT_SPEECH_URL,
   DESKTOP_CONFIG_SCHEMA_VERSION,
   migrateLegacyDesktopSettings,
+  normalizeUiTheme,
   type SetupLifecycleConfig,
+  type UiTheme,
 } from '../shared/config'
 import type { LlmPersistedConfig } from '../shared/llm'
 import {
@@ -33,6 +36,8 @@ export interface AppConfig {
   setup: SetupLifecycleConfig
   llm: LlmPersistedConfig
   uiLocale: UiLocale
+  uiTheme: UiTheme
+  desktopAuthorityMode: DesktopAuthorityMode
   pythonSpeechUrl: string
   ttsLanguage: string
   ttsEngine: string
@@ -58,7 +63,7 @@ export interface AppConfig {
 // String-valued keys only; `llm` is handled separately because it is an object.
 type StringConfigKey = Exclude<
   keyof AppConfig,
-  'configSchemaVersion' | 'setup' | 'llm' | 'uiLocale'
+  'configSchemaVersion' | 'setup' | 'llm' | 'uiLocale' | 'uiTheme' | 'desktopAuthorityMode'
 >
 
 function stringDefaults(isPackaged = app.isPackaged): Record<StringConfigKey, string> {
@@ -91,6 +96,8 @@ export function freshDefaults(isPackaged = app.isPackaged): AppConfig {
     setup: { completed: false },
     llm: defaultLlmConfig(),
     uiLocale: DEFAULT_UI_LOCALE,
+    uiTheme: 'light',
+    desktopAuthorityMode: 'confirm',
     ...stringDefaults(isPackaged),
   }
 }
@@ -111,6 +118,10 @@ function pickKnownStrings(
 
 function normalizeDeveloperMode(value: unknown): string {
   return value === 'true' ? 'true' : 'false'
+}
+
+function normalizeDesktopAuthorityMode(value: unknown): DesktopAuthorityMode {
+  return value === 'full' ? 'full' : 'confirm'
 }
 
 function resolveSetupLifecycle(saved: Record<string, unknown>): SetupLifecycleConfig {
@@ -161,6 +172,7 @@ export async function loadConfig(llmCredentialStore: LlmCredentialStore): Promis
         rawSaved.passiveCompanionEnabled !== undefined ||
         rawSaved.ttsVoice !== undefined ||
         rawSaved.overlayViewMode === 'front' ||
+        (rawSaved.uiTheme !== 'dark' && rawSaved.uiTheme !== 'light') ||
         rawSaved.setup === undefined ||
         legacyProjectFound
       _config = {
@@ -171,6 +183,8 @@ export async function loadConfig(llmCredentialStore: LlmCredentialStore): Promis
         setup,
         configSchemaVersion: CURRENT_CONFIG_SCHEMA_VERSION,
         uiLocale: normalizeUiLocale(saved.uiLocale),
+        uiTheme: normalizeUiTheme(saved.uiTheme),
+        desktopAuthorityMode: normalizeDesktopAuthorityMode(saved.desktopAuthorityMode),
         overlayViewMode: known.overlayViewMode ?? 'bust',
       }
 
@@ -226,6 +240,7 @@ export function getRendererConfig(): AppSettings {
 export function getOverlayPresentationConfig(): Pick<
   AppSettings,
   | 'uiLocale'
+  | 'uiTheme'
   | 'vrmAssetHandle'
   | 'overlayTransparentBackground'
   | 'overlayScale'
@@ -236,6 +251,7 @@ export function getOverlayPresentationConfig(): Pick<
   const config = getRendererConfig()
   return {
     uiLocale: config.uiLocale,
+    uiTheme: config.uiTheme,
     vrmAssetHandle: config.vrmAssetHandle,
     overlayTransparentBackground: config.overlayTransparentBackground,
     overlayScale: config.overlayScale,
@@ -270,12 +286,17 @@ export function saveConfig(
         : knownStrings.developerOverlayAnimationHudEnabled === 'false'
           ? 'false'
           : 'true',
+    desktopAuthorityMode:
+      partial.desktopAuthorityMode === undefined
+        ? _config.desktopAuthorityMode
+        : normalizeDesktopAuthorityMode(partial.desktopAuthorityMode),
     uiLocale:
       partial.uiLocale === undefined
         ? _config.uiLocale
         : isUiLocale(partial.uiLocale)
           ? partial.uiLocale
           : _config.uiLocale,
+    uiTheme: partial.uiTheme === undefined ? _config.uiTheme : normalizeUiTheme(partial.uiTheme),
   }
   writeFileSync(CONFIG_PATH, serializedConfig(_config), 'utf-8')
 }

@@ -82,7 +82,33 @@ function assertSenderBoundaries(): void {
     /not authorized/,
     'Unknown sender reached Plugin Runtime IPC',
   )
+  assert.throws(
+    () => authorization.assert({ sender: { id: 22 } } as never, 'capabilities:snapshot'),
+    /not authorized/,
+    'Overlay reached capability catalog IPC',
+  )
+  assert.throws(
+    () => authorization.assert({ sender: { id: 22 } } as never, 'system:open-external-link'),
+    /not authorized/,
+    'Overlay reached external navigation IPC',
+  )
+  assert.throws(
+    () => authorization.assert({ sender: { id: 22 } } as never, 'desktop-control:start-runtime'),
+    /not authorized/,
+    'Overlay reached Desktop Control IPC',
+  )
+  for (const channel of ['actions:request-authority-mode', 'actions:emergency-stop'] as const) {
+    assert.throws(
+      () => authorization.assert({ sender: { id: 22 } } as never, channel),
+      /not authorized/,
+      `Overlay reached Action Runtime IPC: ${channel}`,
+    )
+  }
   assert.equal(authorization.assert({ sender: { id: 11 } } as never, 'plugins:list'), 'main')
+  assert.equal(
+    authorization.assert({ sender: { id: 11 } } as never, 'capabilities:snapshot'),
+    'main',
+  )
   assert.equal(authorization.assert({ sender: { id: 22 } } as never, 'avatar-state:get'), 'overlay')
   const noPayloadHandler = authorization.handle('config:get', () => ({ ok: true }))
   assert.throws(() => noPayloadHandler({ sender: { id: 11 } } as never, { injected: true }))
@@ -146,6 +172,7 @@ function assertWindowAndPreloadBoundaries(): void {
   assert(overlayWindow.includes("preload: join(__dirname, '../preload/overlay.js')"))
 
   const overlayPreload = readFileSync(join(desktopRoot, 'src', 'preload', 'overlay.ts'), 'utf8')
+  const mainPreload = readFileSync(join(desktopRoot, 'src', 'preload', 'index.ts'), 'utf8')
   const invokedChannels = [...overlayPreload.matchAll(/ipcRenderer\.invoke\(['"]([^'"]+)/g)]
     .map((match) => match[1])
     .sort()
@@ -156,6 +183,31 @@ function assertWindowAndPreloadBoundaries(): void {
     'vrm:read',
   ])
   assert(!/credential|project-awareness|plugins:|config:save|overlay:toggle/.test(overlayPreload))
+  assert(!overlayPreload.includes('capabilities:snapshot'))
+  assert(!overlayPreload.includes('system:open-external-link'))
+  assert(!overlayPreload.includes('actions:'))
+  assert(!overlayPreload.includes('desktop-control:'))
+  assert(!mainPreload.includes('parseShioCapabilitySnapshot'))
+
+  const capabilitiesIpc = readFileSync(
+    join(mainSourceRoot, 'ipc', 'registerCapabilitiesIpc.ts'),
+    'utf8',
+  )
+  assert(capabilitiesIpc.includes('parseShioCapabilitySnapshot(await catalog.snapshot())'))
+  assert(capabilitiesIpc.includes('parseShioCapabilitySnapshot(snapshot)'))
+
+  const releaseSupport = readFileSync(join(mainSourceRoot, 'system', 'releaseSupport.ts'), 'utf8')
+  assert.match(releaseSupport, /authorization\.handlePayload\(\s*'system:open-external-link'/)
+  assert(releaseSupport.includes('externalHttpUrlSchema.parse(payload)'))
+  assert(mainPreload.includes("ipcRenderer.invoke('system:open-external-link', url)"))
+
+  const actionIpc = readFileSync(join(mainSourceRoot, 'ipc', 'registerActionIpc.ts'), 'utf8')
+  assert(!actionIpc.includes('actions:request-desktop-workflow'))
+  assert(!mainPreload.includes('actions:request-desktop-workflow'))
+  assert(actionIpc.includes('actionConfirmationResponseSchema.parse(payload)'))
+  assert(actionIpc.includes('authorityChangeResponseSchema.parse(payload)'))
+  assert(actionIpc.includes('actionRuntimeSnapshotSchema.parse({'))
+  assert(actionIpc.includes('pendingAuthorityChange: confirmations.pendingAuthority()'))
 
   const applicationBootstrap = readFileSync(
     join(mainSourceRoot, 'app', 'buildApplicationDependencies.ts'),
@@ -177,11 +229,18 @@ function assertPluginBoundaries(): void {
     join(desktopRoot, 'src', 'shared', 'project-awareness', 'api.ts'),
     'utf8',
   )
-  assert(pluginIpc.includes('z.literal(PROJECT_AWARENESS_PLUGIN_ID)'))
+  assert(pluginIpc.includes('z.enum([PROJECT_AWARENESS_PLUGIN_ID, DESKTOP_CONTROL_PLUGIN_ID])'))
   assert(pluginIpc.includes('pluginIdSchema.parse(id)'))
   assert(projectIpc.includes('configSchema.strict().parse(input)'))
   assert(projectIpc.includes('credentialSchema.parse(token)'))
   assert(projectApi.includes('saveCredential(token: string): Promise<ProjectAwarenessStatus>'))
+  const desktopIpc = readFileSync(
+    join(mainSourceRoot, 'ipc', 'registerDesktopControlIpc.ts'),
+    'utf8',
+  )
+  assert(desktopIpc.includes('desktopControlStatusSchema.parse'))
+  assert(!desktopIpc.includes('save-credential'))
+  assert(!desktopIpc.includes('forget-credential'))
   assert(!/plugin\.invoke|plugins:invoke/.test(`${pluginIpc}\n${sharedApi}`))
 }
 

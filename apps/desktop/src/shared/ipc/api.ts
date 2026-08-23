@@ -1,7 +1,11 @@
+import type { ShioActionsApi } from '../actions'
+import type { ShioCapabilitiesApi } from '../capabilities'
 import type { CharacterEmbodimentIntent } from '../character-response'
 import type { AppSettings } from '../config/appSettings'
 import type { BacklogSelectionResult, BufferedUtterance } from '../conversation/backlog'
+import type { ReplyGrounding } from '../conversation/grounding'
 import type { ConversationTurnFailure } from '../conversation/turnFailure'
+import type { DesktopControlApi } from '../desktop-control'
 import type { NetworkRequestDiagnostic, NetworkRequestDiagnosticDetails } from '../diagnostics'
 import type { LlmCapabilities } from '../llm/capabilities'
 import type {
@@ -12,7 +16,7 @@ import type {
   ProviderProfile,
 } from '../llm/providers'
 import type { PluginManagementApi } from '../plugins'
-import type { ProjectAwarenessApi, ProjectReplyProvenance } from '../project-awareness'
+import type { ProjectAwarenessApi } from '../project-awareness'
 import type { AvatarRuntimeHealth, RuntimeEventInput } from '../runtime'
 import type {
   ScreenContextCaptureDescriptor,
@@ -35,6 +39,7 @@ export interface SpeechHealthCapabilities {
 
 export interface OverlayPresentationConfig {
   uiLocale: AppSettings['uiLocale']
+  uiTheme: AppSettings['uiTheme']
   vrmAssetHandle: string
   overlayTransparentBackground: string
   overlayScale: string
@@ -62,12 +67,15 @@ export interface OverlayPresentationApi {
 }
 
 export interface ShioRuntimeApi {
+  actions: ShioActionsApi
+  capabilities: ShioCapabilitiesApi
   diagnostics: {
     getNetworkRequests: () => Promise<NetworkRequestDiagnostic[]>
     getNetworkRequestDetails: (requestId: string) => Promise<NetworkRequestDiagnosticDetails | null>
   }
   system: {
     getReleaseInfo: () => Promise<ReleaseInfo>
+    openExternalLink: (url: string) => Promise<{ ok: true }>
     openLogsFolder: () => Promise<{ ok: boolean }>
     reportRendererFailure: () => Promise<{ ok: boolean }>
     getRuntimeSupportBundle: () => Promise<RuntimeSupportBundle>
@@ -96,7 +104,7 @@ export interface ShioRuntimeApi {
       replyText?: string
       emotionKey?: string
       embodimentIntent?: CharacterEmbodimentIntent
-      provenance?: ProjectReplyProvenance
+      grounding?: ReplyGrounding
       errorCode?: 'LLM_CREDENTIAL_MISSING'
       failure?: ConversationTurnFailure
     }>
@@ -161,6 +169,7 @@ export interface ShioRuntimeApi {
   }
   memory: { clear: () => Promise<unknown> }
   plugins: PluginManagementApi
+  desktopControl: DesktopControlApi
   projectAwareness: ProjectAwarenessApi
   config: {
     get: () => Promise<AppSettings>

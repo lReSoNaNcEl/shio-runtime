@@ -3,6 +3,13 @@ import { readFileSync } from 'node:fs'
 import { type BrowserWindow, dialog, ipcMain } from 'electron'
 import { z } from 'zod'
 
+import {
+  actionConfirmationRequestSchema,
+  actionRuntimeSnapshotSchema,
+  type DesktopWorkflowExecution,
+  type DesktopWorkflowRequest,
+  desktopWorkflowRequestSchema,
+} from '../../shared/actions'
 import type { AppSettings } from '../../shared/config'
 import {
   type AttachmentDisposition,
@@ -12,9 +19,11 @@ import type { LlmTurnErrorCode } from '../../shared/llm'
 import { translate } from '../../shared/localization'
 import type { RuntimeEventInput } from '../../shared/runtime'
 import type { ScreenContextErrorCode } from '../../shared/screen-context'
-import { ActionRuntime } from '../action/ActionRuntime'
+import { ActionConfirmationBroker, ActionPermissionGuard, ActionRuntime } from '../action'
 import { vrmAssetRegistry } from '../assets/VrmAssetRegistry'
+import type { CapabilityCatalog } from '../capabilities'
 import { getConfig, getRendererConfig, saveConfig } from '../config'
+import type { DesktopControlPlugin } from '../desktop-control'
 import {
   createLLMProvider,
   createModelCatalog,
@@ -33,8 +42,12 @@ import type { ProjectAwarenessPlugin } from '../project-awareness'
 import { ScreenContextError, type ScreenContextService } from '../screen-context'
 import type { SpeechClient } from '../speech/speechClient'
 import { IPC_ONE_PAYLOAD, type IpcAuthorization } from './IpcAuthorization'
+import { configSaveSchema, vrmAssetHandleSchema } from './payloadSchemas'
+import { registerActionIpc } from './registerActionIpc'
 import { registerAvatarIpc } from './registerAvatarIpc'
+import { registerCapabilitiesIpc } from './registerCapabilitiesIpc'
 import { registerConfigIpc } from './registerConfigIpc'
+import { registerDesktopControlIpc } from './registerDesktopControlIpc'
 import { registerLlmIpc } from './registerLlmIpc'
 import { registerNetworkDiagnosticsIpc } from './registerNetworkDiagnosticsIpc'
 import { registerPluginIpc } from './registerPluginIpc'
@@ -52,16 +65,48 @@ export function registerIpcHandlers(
   llmCredentialStore: () => LlmCredentialStore,
   plugins: () => PluginRuntime,
   projectAwareness: () => ProjectAwarenessPlugin,
+  desktopControl: () => DesktopControlPlugin,
   speech: () => SpeechClient,
   screenContext: ScreenContextService,
+  capabilityCatalog: CapabilityCatalog,
   win: BrowserWindow,
   authorization: IpcAuthorization,
-): void {
+): ActionRuntime {
   const sendActionEvent = (event: RuntimeEventInput): void => {
     if (win.isDestroyed()) return
     win.webContents.send('action-runtime:event', event)
+    if (
+      event.type === 'ToolCompleted' &&
+      ['config.save', 'speech.health', 'vrm.pick'].includes(String(event.metadata?.action))
+    ) {
+      capabilityCatalog.invalidate()
+    }
   }
-  const actions = new ActionRuntime(sendActionEvent)
+  const sendToMainRenderer = (channel: string, payload: unknown): void => {
+    if (!win.isDestroyed()) win.webContents.send(channel, payload)
+  }
+  const confirmations = new ActionConfirmationBroker(
+    (request) => sendToMainRenderer('action-runtime:confirmation-requested', request),
+    (request) => sendToMainRenderer('action-runtime:authority-change-requested', request),
+  )
+  const permissionGuard = new ActionPermissionGuard({
+    authorityMode: () => getConfig().desktopAuthorityMode,
+    requestConfirmation: (request) => confirmations.requestAction(request),
+  })
+  const actions = new ActionRuntime({
+    permissionGuard,
+    authorityMode: () => getConfig().desktopAuthorityMode,
+    cancelPendingConfirmations: () => confirmations.cancelAll(),
+    onEvent: sendActionEvent,
+    onChanged: (snapshot) =>
+      sendToMainRenderer(
+        'action-runtime:changed',
+        actionRuntimeSnapshotSchema.parse({
+          ...snapshot,
+          pendingAuthorityChange: confirmations.pendingAuthority(),
+        }),
+      ),
+  })
   let backlogArbitrationInFlight = false
   let activeCharacterGenerationTurnId: string | null = null
   let activeSynthesisTurnId: string | null = null
@@ -70,14 +115,39 @@ export function registerIpcHandlers(
   const replySettlements = new Map<string, Promise<void>>()
   const visionTurns = new Set<string>()
 
+  actions.register<DesktopWorkflowRequest, DesktopWorkflowExecution>({
+    name: 'desktop.workflow',
+    description: 'Execute a validated, bounded desktop automation workflow.',
+    validate: (payload) => desktopWorkflowRequestSchema.parse(payload),
+    authority: 'desktop-workflow',
+    confirmation: (actionId, payload) =>
+      actionConfirmationRequestSchema.parse({
+        schemaVersion: 1,
+        actionId,
+        tool: 'desktop.workflow',
+        goal: payload.goal,
+        shellCommand: payload.shellCommand,
+        browserUrl: payload.browserUrl,
+        requestedCapabilities: payload.requestedCapabilities,
+        risk: payload.risk,
+      }),
+    timeoutMs: 120_000,
+    singleFlight: true,
+    adapter: 'dsh-harness',
+    execute: (request, context) => desktopControl().executeWorkflow(request, context.signal),
+  })
+  actions.onEmergencyStop(() => desktopControl().emergencyStop())
+
   actions.register({
     name: 'speech.health',
     description: 'Check local speech service health.',
+    validate: (payload) => z.undefined().parse(payload),
     execute: async () => speech().health(),
   })
   actions.register<ArrayBuffer, { text: string }>({
     name: 'speech.recognize',
     description: 'Recognize WAV audio through the local speech service.',
+    validate: (payload) => z.instanceof(ArrayBuffer).parse(payload),
     execute: async (wavBuffer) => {
       const result = await speech().recognize(wavBuffer)
       return { text: result.text }
@@ -93,7 +163,19 @@ export function registerIpcHandlers(
   >({
     name: 'speech.createReply',
     description: 'Create a character reply through the current LLM orchestration.',
-    execute: async ({ turnId, input, signal }) => {
+    validate: (payload) =>
+      z
+        .object({
+          turnId: z.string().min(1).max(200),
+          input: z.custom<CharacterReplyInput>(
+            (value) => typeof value === 'object' && value !== null,
+          ),
+          signal: z.instanceof(AbortSignal),
+        })
+        .strict()
+        .parse(payload),
+    timeoutMs: 240_000,
+    execute: async ({ turnId, input, signal }, context) => {
       if (cancelledTurns.has(turnId)) {
         throw new Error(`Conversation interrupted turnId=${turnId}`)
       }
@@ -103,10 +185,20 @@ export function registerIpcHandlers(
         )
       }
       activeCharacterGenerationTurnId = turnId
+      const combinedAbort = new AbortController()
+      const abortCombined = (): void => combinedAbort.abort()
+      signal.addEventListener('abort', abortCombined, { once: true })
+      context.signal.addEventListener('abort', abortCombined, { once: true })
+      if (signal.aborted || context.signal.aborted) combinedAbort.abort()
       try {
-        const result = await orchestrator().createReply(input, { signal, traceId: turnId })
+        const result = await orchestrator().createReply(input, {
+          signal: combinedAbort.signal,
+          traceId: turnId,
+        })
         return result
       } finally {
+        signal.removeEventListener('abort', abortCombined)
+        context.signal.removeEventListener('abort', abortCombined)
         if (activeCharacterGenerationTurnId === turnId) activeCharacterGenerationTurnId = null
       }
     },
@@ -117,6 +209,15 @@ export function registerIpcHandlers(
   >({
     name: 'speech.synthesizeReply',
     description: 'Synthesize speech audio for an assistant reply.',
+    validate: (payload) =>
+      z
+        .object({
+          turnId: z.string().min(1).max(200),
+          replyText: z.string().max(200_000),
+          emotionKey: z.string().min(1).max(100),
+        })
+        .strict()
+        .parse(payload),
     execute: async ({ turnId, replyText, emotionKey }) => {
       if (activeSynthesisTurnId) {
         throw new Error(
@@ -136,6 +237,7 @@ export function registerIpcHandlers(
   actions.register({
     name: 'memory.clear',
     description: 'Clear current conversation memory.',
+    validate: (payload) => z.undefined().parse(payload),
     execute: async () => {
       await orchestrator().clearHistory()
       return { ok: true }
@@ -144,6 +246,7 @@ export function registerIpcHandlers(
   actions.register<Partial<AppSettings>, { ok: boolean }>({
     name: 'config.save',
     description: 'Persist application configuration.',
+    validate: (payload) => configSaveSchema.parse(payload) as Partial<AppSettings>,
     execute: (partial) => {
       saveConfig(partial)
       win.webContents.send('config:updated', getRendererConfig())
@@ -156,6 +259,11 @@ export function registerIpcHandlers(
   >({
     name: 'llm.fetchModels',
     description: 'Load the available model catalog for an LLM provider.',
+    validate: (payload) =>
+      z
+        .object({ provider: z.string().min(1).max(100) })
+        .strict()
+        .parse(payload),
     execute: async ({ provider }) => {
       if (!isLlmProviderId(provider)) {
         return {
@@ -181,6 +289,7 @@ export function registerIpcHandlers(
   actions.register({
     name: 'vrm.pick',
     description: 'Open a native file dialog for selecting a VRM model.',
+    validate: (payload) => z.undefined().parse(payload),
     execute: async () => {
       const result = await dialog.showOpenDialog(win, {
         title: translate(getConfig().uiLocale, 'main.dialog.vrm.title'),
@@ -199,11 +308,13 @@ export function registerIpcHandlers(
   actions.register<string, { ok: boolean; buffer?: ArrayBuffer; error?: string }>({
     name: 'vrm.read',
     description: 'Read a registered VRM model asset.',
+    validate: (payload) => vrmAssetHandleSchema.parse(payload),
     execute: (assetHandle) => ({ ok: true, buffer: vrmAssetRegistry.readAsset(assetHandle) }),
   })
   actions.register({
     name: 'vrma.pick',
     description: 'Open a native file dialog for selecting and reading a VRM animation.',
+    validate: (payload) => z.undefined().parse(payload),
     execute: async () => {
       const result = await dialog.showOpenDialog(win, {
         title: translate(getConfig().uiLocale, 'main.dialog.vrma.title'),
@@ -233,10 +344,19 @@ export function registerIpcHandlers(
       cancelledTurns.add(turnId)
       if (activeSynthesisTurnId === turnId) activeSynthesisTurnId = null
     },
+    onCapabilitiesProbe: (probe) => capabilityCatalog.reportSpeechCapabilities(probe),
     authorization,
   })
 
-  registerLlmIpc({ actions, llm, credentials: llmCredentialStore, window: win, authorization })
+  registerLlmIpc({
+    actions,
+    llm,
+    credentials: llmCredentialStore,
+    window: win,
+    authorization,
+    onCapabilitiesChanged: () => capabilityCatalog.invalidate(),
+  })
+  registerCapabilitiesIpc(capabilityCatalog, win, authorization)
   registerScreenContextIpc(screenContext, authorization)
 
   const replyPayloadSchema = z.object({
@@ -342,8 +462,8 @@ export function registerIpcHandlers(
             screenContext.completeTurn(event.sender.id, screenContextId, turnId)
             mainLog.info('Vision Request Completed', { turnId })
           }
-          const { replyText, emotionKey, embodimentIntent, provenance } = action.result
-          return { ok: true, replyText, emotionKey, embodimentIntent, provenance }
+          const { replyText, emotionKey, embodimentIntent, grounding } = action.result
+          return { ok: true, replyText, emotionKey, embodimentIntent, grounding }
         }
         const code = (action.errorCode as LlmTurnErrorCode | undefined) ?? 'UNKNOWN'
         terminalCode = code
@@ -545,15 +665,26 @@ export function registerIpcHandlers(
 
   registerProjectAwarenessIpc({
     plugin: projectAwareness,
+    actions,
     authorization,
   })
+  registerDesktopControlIpc(desktopControl, authorization)
   registerPluginIpc(plugins, authorization)
   registerNetworkDiagnosticsIpc(authorization)
+
+  registerActionIpc({
+    actions,
+    confirmations,
+    window: win,
+    capabilityCatalog,
+    authorization,
+  })
 
   registerConfigIpc(actions, authorization)
   registerAvatarIpc(actions, win, authorization)
 
   registerSystemIpc(authorization)
+  return actions
 }
 
 function screenContextFailureDisposition(code: ScreenContextErrorCode): AttachmentDisposition {

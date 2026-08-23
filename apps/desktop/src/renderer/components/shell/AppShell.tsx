@@ -2,6 +2,7 @@ import { ActionButton, Button, Heading, Text, Tooltip, TooltipTrigger } from '@r
 import Apps from '@react-spectrum/s2/icons/Apps'
 import Bug from '@react-spectrum/s2/icons/Bug'
 import Chat from '@react-spectrum/s2/icons/Chat'
+import Discover from '@react-spectrum/s2/icons/Discover'
 import Heart from '@react-spectrum/s2/icons/Heart'
 import Settings from '@react-spectrum/s2/icons/Settings'
 import User from '@react-spectrum/s2/icons/User'
@@ -12,7 +13,14 @@ import { observeRendererPromise } from '../../reliability/observePromise'
 import { type ApplicationHealth } from '../../runtime/runtimeHealth'
 import { RuntimeStatusIndicator } from './RuntimeStatusIndicator'
 
-export type AppSection = 'chat' | 'avatar' | 'plugins' | 'health' | 'debug' | 'settings'
+export type AppSection =
+  | 'chat'
+  | 'capabilities'
+  | 'avatar'
+  | 'plugins'
+  | 'health'
+  | 'debug'
+  | 'settings'
 
 export function AppShell({
   section,
@@ -68,6 +76,7 @@ export function AppShell({
   }
   const primary: Array<{ id: AppSection; label: string; icon: ReactNode }> = [
     { id: 'chat', label: t('app.nav.chat'), icon: <Chat /> },
+    { id: 'capabilities', label: t('app.nav.capabilities'), icon: <Discover /> },
     ...(developerModeEnabled
       ? [{ id: 'avatar' as const, label: t('app.nav.avatar'), icon: <User /> }]
       : []),
@@ -127,6 +136,7 @@ export function AppShell({
           <header className="section-header">
             <div>{heading}</div>
             <div className="section-header-actions">
+              <div id="action-runtime-status-slot" className="action-runtime-status-slot" />
               {headerAction}
               <RuntimeStatusIndicator health={health} onPress={() => onSectionChange('health')} />
             </div>

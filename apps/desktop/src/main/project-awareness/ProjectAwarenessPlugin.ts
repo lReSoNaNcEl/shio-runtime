@@ -49,12 +49,20 @@ export class ProjectAwarenessPlugin implements BundledPlugin {
   private runtime: ProjectAwarenessRuntime | null = null
   private active = false
   private disposed = false
+  private readonly listeners = new Set<() => void>()
   private readonly contextProvider: ProjectContextProvider = {
-    buildContext: async ({ userText, traceId }) =>
-      this.requireRuntime().buildContextPacket(userText, traceId),
+    resolveRequirement: ({ userText }) =>
+      this.requireRuntime().resolveProjectContextRequirement(userText),
+    buildContext: async ({ userText, traceId, requirement }) =>
+      this.requireRuntime().buildContextPacket(userText, traceId, requirement),
   }
 
   constructor(private readonly dependencies: ProjectAwarenessPluginDependencies) {}
+
+  onChanged(listener: () => void): () => void {
+    this.listeners.add(listener)
+    return () => this.listeners.delete(listener)
+  }
 
   async initialize(_context: PluginInitializationContext): Promise<void> {
     if (this.runtime) return
@@ -62,26 +70,29 @@ export class ProjectAwarenessPlugin implements BundledPlugin {
     const credential = await this.dependencies.credentials.load()
     this.runtime = this.dependencies.createRuntime(config)
     this.runtime.setCredential(credential.token, credentialProjection(credential))
+    this.publishChanged()
   }
 
   async start(): Promise<void> {
     const runtime = this.requireRuntime()
     this.active = true
-    await runtime.setEnabled(true)
-    const config = await this.dependencies.config.load()
-    if (
-      config.repository &&
-      isValidProjectRepository(config.repository) &&
-      isValidProjectBranch(config.branch) &&
-      runtime.getStatus().credential.configured
-    ) {
-      await runtime.initialize()
-    }
+    await this.trackChange(async () => {
+      await runtime.setEnabled(true)
+      const config = await this.dependencies.config.load()
+      if (
+        config.repository &&
+        isValidProjectRepository(config.repository) &&
+        isValidProjectBranch(config.branch) &&
+        runtime.getStatus().credential.configured
+      ) {
+        await runtime.initialize()
+      }
+    })
   }
 
   async stop(): Promise<void> {
     this.active = false
-    if (this.runtime) await this.runtime.setEnabled(false)
+    if (this.runtime) await this.trackChange(() => this.requireRuntime().setEnabled(false))
   }
 
   async dispose(): Promise<void> {
@@ -89,6 +100,7 @@ export class ProjectAwarenessPlugin implements BundledPlugin {
     this.disposed = true
     await this.stop()
     this.dependencies.closeStore()
+    this.publishChanged()
   }
 
   getProjectContextProvider(): ProjectContextProvider {
@@ -111,6 +123,9 @@ export class ProjectAwarenessPlugin implements BundledPlugin {
     }
     if (status.state === 'error' && !status.indexedCommit) {
       return { state: 'error', detail: status.lastError, checkedAt: Date.now() }
+    }
+    if (status.lastError && status.indexedCommit) {
+      return { state: 'degraded', detail: status.lastError, checkedAt: Date.now() }
     }
     return {
       state: 'healthy',
@@ -189,24 +204,30 @@ export class ProjectAwarenessPlugin implements BundledPlugin {
   }
 
   async configure(config: ProjectAwarenessPublicConfig): Promise<ProjectAwarenessStatus> {
-    await this.dependencies.config.savePublic(config)
-    return this.requireRuntime().configure(config)
+    return this.trackChange(async () => {
+      await this.dependencies.config.savePublic(config)
+      return this.requireRuntime().configure(config)
+    })
   }
 
   async saveCredential(token: string): Promise<ProjectAwarenessStatus> {
-    const runtime = this.requireRuntime()
-    await runtime.disconnect()
-    const credential = await this.dependencies.credentials.save(token)
-    runtime.setCredential(credential.token, credentialProjection(credential))
-    return runtime.getStatus()
+    return this.trackChange(async () => {
+      const runtime = this.requireRuntime()
+      await runtime.disconnect()
+      const credential = await this.dependencies.credentials.save(token)
+      runtime.setCredential(credential.token, credentialProjection(credential))
+      return runtime.getStatus()
+    })
   }
 
   async forgetCredential(): Promise<ProjectAwarenessStatus> {
-    const runtime = this.requireRuntime()
-    await runtime.disconnect()
-    const credential = await this.dependencies.credentials.clear()
-    runtime.setCredential(credential.token, credentialProjection(credential))
-    return runtime.getStatus()
+    return this.trackChange(async () => {
+      const runtime = this.requireRuntime()
+      await runtime.disconnect()
+      const credential = await this.dependencies.credentials.clear()
+      runtime.setCredential(credential.token, credentialProjection(credential))
+      return runtime.getStatus()
+    })
   }
 
   getStatus(): ProjectAwarenessStatus {
@@ -215,29 +236,29 @@ export class ProjectAwarenessPlugin implements BundledPlugin {
 
   connect(): Promise<ProjectAwarenessStatus> {
     this.assertActive()
-    return this.requireRuntime().connect()
+    return this.trackChange(() => this.requireRuntime().connect())
   }
 
   disconnect(): Promise<ProjectAwarenessStatus> {
     this.assertActive()
-    return this.requireRuntime().disconnect()
+    return this.trackChange(() => this.requireRuntime().disconnect())
   }
 
   sync(): ReturnType<ProjectAwarenessRuntime['sync']> {
     this.assertActive()
-    return this.requireRuntime().sync()
+    return this.trackChange(() => this.requireRuntime().sync())
   }
 
   refreshSnapshotStatus(
     force = false,
   ): ReturnType<ProjectAwarenessRuntime['refreshSnapshotStatus']> {
     this.assertActive()
-    return this.requireRuntime().refreshSnapshotStatus(force)
+    return this.trackChange(() => this.requireRuntime().refreshSnapshotStatus(force))
   }
 
   rebuildIndex(): ReturnType<ProjectAwarenessRuntime['rebuildIndex']> {
     this.assertActive()
-    return this.requireRuntime().rebuildIndex()
+    return this.trackChange(() => this.requireRuntime().rebuildIndex())
   }
 
   getProjectMap(): ReturnType<ProjectAwarenessRuntime['getProjectMap']> {
@@ -271,5 +292,18 @@ export class ProjectAwarenessPlugin implements BundledPlugin {
 
   private assertActive(): void {
     if (!this.active) throw new Error('Project Awareness plugin is disabled')
+  }
+
+  private async trackChange<T>(operation: () => Promise<T>): Promise<T> {
+    this.publishChanged()
+    try {
+      return await operation()
+    } finally {
+      this.publishChanged()
+    }
+  }
+
+  private publishChanged(): void {
+    for (const listener of this.listeners) listener()
   }
 }

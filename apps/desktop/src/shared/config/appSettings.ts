@@ -1,7 +1,14 @@
+import type { DesktopAuthorityMode } from '../actions'
 import type { LlmPublicConfig } from '../llm/providers'
 import type { UiLocale } from '../localization/locale'
 
 export const DEFAULT_SPEECH_URL = 'http://localhost:8000'
+
+export type UiTheme = 'dark' | 'light'
+
+export function normalizeUiTheme(value: unknown): UiTheme {
+  return value === 'dark' ? 'dark' : 'light'
+}
 
 export interface SetupLifecycleConfig {
   completed: boolean
@@ -13,6 +20,8 @@ export interface AppSettings {
   setup: SetupLifecycleConfig
   llm: LlmPublicConfig
   uiLocale: UiLocale
+  uiTheme: UiTheme
+  desktopAuthorityMode: DesktopAuthorityMode
   pythonSpeechUrl: string
   ttsLanguage: string
   ttsEngine: string

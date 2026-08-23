@@ -1,5 +1,5 @@
 import type { CharacterEmbodimentIntent } from '../../shared/character-response'
-import type { ProjectReplyProvenance } from '../../shared/project-awareness'
+import type { ReplyGrounding } from '../../shared/conversation'
 import type {
   CharacterConversationPresenceState,
   CharacterRuntimeMode,
@@ -58,7 +58,7 @@ export interface ConversationRuntimeDeps {
   events: EventBus
   player: AudioPlayer
   setStatus: (status: ConversationStatus) => void
-  pushMessage: (role: ChatMsg['role'], text: string, provenance?: ProjectReplyProvenance) => void
+  pushMessage: (role: ChatMsg['role'], text: string, grounding?: ReplyGrounding) => void
   formatUserError: (message: string) => string
   markAssistantMessageInterrupted: () => void
   setResponseInterruptionPending: (pending: boolean) => void
@@ -249,7 +249,7 @@ export class ConversationRuntime {
         emotionKey: draft.emotionKey,
       })
       this.deps.speechRuntime.updateConversationPresence(generatedPresence)
-      this.deps.pushMessage('assistant', draft.displayText, draft.provenance)
+      this.deps.pushMessage('assistant', draft.displayText, draft.grounding)
 
       if (!this.deps.speechRuntime.hasSpeakableContent(draft.speechText)) {
         reportPhase('cleaning_up')

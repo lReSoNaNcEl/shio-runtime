@@ -55,7 +55,7 @@
 
 #top-bar .topbar-toggle-active {
   border-color: rgba(52, 211, 153, 0.65);
-  color: #86efac;
+  color: var(--positive-text);
 }
 
 #main-area {

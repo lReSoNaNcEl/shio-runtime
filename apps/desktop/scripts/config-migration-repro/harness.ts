@@ -16,6 +16,7 @@ for (const mode of ['silent', 'passive', 'active', 'streamer']) {
     projectAwareness: { enabled: true, repository: '' },
   })
   assert.equal(migrated.configSchemaVersion, DESKTOP_CONFIG_SCHEMA_VERSION)
+  assert.equal(migrated.uiTheme, 'light')
   assert.equal(migrated.overlayViewMode, 'bust')
   assert.equal('continuousListeningMode' in migrated, false)
   assert.equal('continuousListeningEnabled' in migrated, false)
@@ -26,5 +27,9 @@ for (const mode of ['silent', 'passive', 'active', 'streamer']) {
   assert.equal('projectAwareness' in migrated, false)
   assert.deepEqual(migrateLegacyDesktopSettings(migrated), migrated)
 }
+
+assert.equal(migrateLegacyDesktopSettings({ uiTheme: 'light' }).uiTheme, 'light')
+assert.equal(migrateLegacyDesktopSettings({ uiTheme: 'dark' }).uiTheme, 'dark')
+assert.equal(migrateLegacyDesktopSettings({ uiTheme: 'unknown' }).uiTheme, 'light')
 
 console.log('config migration repro: passed')

@@ -87,32 +87,37 @@ export class MicCapture {
   async start(deviceId?: string): Promise<void> {
     const audioConstraints: MediaTrackConstraints =
       deviceId && deviceId !== 'default' ? { deviceId: { exact: deviceId } } : {}
-    this.stream = await navigator.mediaDevices.getUserMedia({
-      audio: audioConstraints,
-      video: false,
-    })
+    try {
+      this.stream = await navigator.mediaDevices.getUserMedia({
+        audio: audioConstraints,
+        video: false,
+      })
 
-    this.audioCtx = new AudioContext()
-    // After `await getUserMedia` the gesture is consumed, so the context can start
-    // suspended — then ScriptProcessorNode.onaudioprocess never fires and we'd
-    // capture pure silence. Force it running.
-    if (this.audioCtx.state === 'suspended') {
-      await this.audioCtx.resume()
+      this.audioCtx = new AudioContext()
+      // After `await getUserMedia` the gesture is consumed, so the context can start
+      // suspended — then ScriptProcessorNode.onaudioprocess never fires and we'd
+      // capture pure silence. Force it running.
+      if (this.audioCtx.state === 'suspended') {
+        await this.audioCtx.resume()
+      }
+      this.source = this.audioCtx.createMediaStreamSource(this.stream)
+      this.processor = this.audioCtx.createScriptProcessor(4096, 1, 1)
+      this.chunks = []
+      this.recording = true
+
+      this.processor.onaudioprocess = (e) => {
+        if (!this.recording || !this.audioCtx) return
+        const input = e.inputBuffer.getChannelData(0)
+        const ds = downsampleFloat32(input, this.audioCtx.sampleRate, ASR_SAMPLE_RATE)
+        this.chunks.push(floatToInt16(ds))
+      }
+
+      this.source.connect(this.processor)
+      this.processor.connect(this.audioCtx.destination)
+    } catch (error) {
+      this.stop()
+      throw error
     }
-    this.source = this.audioCtx.createMediaStreamSource(this.stream)
-    this.processor = this.audioCtx.createScriptProcessor(4096, 1, 1)
-    this.chunks = []
-    this.recording = true
-
-    this.processor.onaudioprocess = (e) => {
-      if (!this.recording || !this.audioCtx) return
-      const input = e.inputBuffer.getChannelData(0)
-      const ds = downsampleFloat32(input, this.audioCtx.sampleRate, ASR_SAMPLE_RATE)
-      this.chunks.push(floatToInt16(ds))
-    }
-
-    this.source.connect(this.processor)
-    this.processor.connect(this.audioCtx.destination)
   }
 
   stop(): ArrayBuffer {

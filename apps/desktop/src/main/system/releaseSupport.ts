@@ -1,14 +1,17 @@
 import { app, ipcMain, shell } from 'electron'
+import { z } from 'zod'
 
 import { LLM_PROVIDER_IDS } from '../../shared/llm'
 import type { AvatarRuntimeHealth } from '../../shared/runtime'
 import type { ReleaseInfo, RuntimeSupportBundle } from '../../shared/system'
+import type { ActionRuntime } from '../action'
 import { getConfig } from '../config'
-import type { IpcAuthorization } from '../ipc/IpcAuthorization'
+import { IPC_ONE_PAYLOAD, type IpcAuthorization } from '../ipc/IpcAuthorization'
 import type { LlmCredentialStore } from '../llm'
 import { getRecentSafeErrors } from '../logging/safeLogger'
 import type { PluginRuntime } from '../plugins'
 import { deriveCapabilities, type SpeechClient } from '../speech/speechClient'
+import { externalHttpUrlSchema } from './externalNavigation'
 
 interface ReleaseSupportDependencies {
   llmCredentials: () => LlmCredentialStore
@@ -19,6 +22,8 @@ interface ReleaseSupportDependencies {
   mainRendererHealth: () => RuntimeSupportBundle['renderers']['main']
   overlayRendererHealth: () => RuntimeSupportBundle['renderers']['overlay']
 }
+
+const externalNavigationResultSchema = z.object({ ok: z.literal(true) }).strict()
 
 function releaseInfo(): ReleaseInfo {
   return {
@@ -34,16 +39,54 @@ function releaseInfo(): ReleaseInfo {
 export function registerReleaseSupportHandlers(
   dependencies: ReleaseSupportDependencies,
   authorization: IpcAuthorization,
+  actions: ActionRuntime,
 ): void {
+  actions.register<string, { ok: true }>({
+    name: 'system.openExternalLink',
+    description: 'Open a validated HTTP(S) link in the operating-system browser.',
+    validate: (payload) => externalHttpUrlSchema.parse(payload),
+    adapter: 'electron-shell',
+    execute: async (url) => {
+      await shell.openExternal(url)
+      return { ok: true }
+    },
+  })
+  actions.register<void, { ok: boolean }>({
+    name: 'system.openLogsFolder',
+    description: 'Open the main-owned application logs folder.',
+    validate: (payload) => z.undefined().parse(payload),
+    adapter: 'electron-shell',
+    execute: async () => ({ ok: (await shell.openPath(app.getPath('logs'))) === '' }),
+  })
   ipcMain.handle(
     'system:get-release-info',
     authorization.handle('system:get-release-info', () => releaseInfo()),
   )
   ipcMain.handle(
+    'system:open-external-link',
+    authorization.handlePayload(
+      'system:open-external-link',
+      IPC_ONE_PAYLOAD,
+      async (_event, payload: unknown) => {
+        const url = externalHttpUrlSchema.parse(payload)
+        const action = await actions.execute<string, { ok: true }>({
+          name: 'system.openExternalLink',
+          payload: url,
+        })
+        if (action.status !== 'success') throw new Error(action.error)
+        return externalNavigationResultSchema.parse(action.result)
+      },
+    ),
+  )
+  ipcMain.handle(
     'system:open-logs-folder',
-    authorization.handle('system:open-logs-folder', async () => ({
-      ok: (await shell.openPath(app.getPath('logs'))) === '',
-    })),
+    authorization.handle('system:open-logs-folder', async () => {
+      const action = await actions.execute<void, { ok: boolean }>({
+        name: 'system.openLogsFolder',
+        payload: undefined,
+      })
+      return action.status === 'success' ? action.result : { ok: false }
+    }),
   )
   ipcMain.handle(
     'system:get-runtime-support-bundle',

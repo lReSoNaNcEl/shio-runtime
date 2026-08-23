@@ -15,6 +15,7 @@ import {
   type ModelInfo,
   PROVIDER_PROFILES,
   type ProviderProfile,
+  resolveLlmReadiness,
 } from '../llm'
 import { mainLog } from '../logging/safeLogger'
 import { IPC_ONE_PAYLOAD, type IpcAuthorization } from './IpcAuthorization'
@@ -25,6 +26,7 @@ interface RegisterLlmIpcOptions {
   credentials: () => LlmCredentialStore
   window: BrowserWindow
   authorization: IpcAuthorization
+  onCapabilitiesChanged?: () => void
 }
 
 export function registerLlmIpc({
@@ -33,12 +35,15 @@ export function registerLlmIpc({
   credentials,
   window,
   authorization,
+  onCapabilitiesChanged,
 }: RegisterLlmIpcOptions): void {
   ipcMain.handle(
     'llm:get-active-capabilities',
     authorization.handle('llm:get-active-capabilities', async () => {
       try {
-        return await llm().refreshActiveCapabilities()
+        const capabilities = await llm().refreshActiveCapabilities()
+        onCapabilitiesChanged?.()
+        return capabilities
       } catch (error) {
         mainLog.warn('LLM capability catalog refresh failed; using fallback resolution', {
           error: error instanceof Error ? error.message : String(error),
@@ -54,22 +59,7 @@ export function registerLlmIpc({
   )
   ipcMain.handle(
     'llm:get-readiness',
-    authorization.handle('llm:get-readiness', () => {
-      const config = getRendererConfig().llm
-      const provider = PROVIDER_PROFILES.find((item) => item.id === config.activeProvider)
-      const credentialReady =
-        provider?.requiresApiKey === false ||
-        config.providers[config.activeProvider].credential.configured
-      return {
-        reason: credentialReady
-          ? config.providers[config.activeProvider].model.trim()
-            ? 'ready'
-            : 'model-missing'
-          : 'missing-credential',
-        providerId: config.activeProvider,
-        providerDisplayName: provider?.displayName ?? config.activeProvider,
-      }
-    }),
+    authorization.handle('llm:get-readiness', () => resolveLlmReadiness(getRendererConfig().llm)),
   )
 
   const providerSchema = z
@@ -112,6 +102,7 @@ export function registerLlmIpc({
         const { provider, apiKey } = credentialSchema.parse(payload)
         const status = await credentials().save(provider, apiKey)
         window.webContents.send('config:updated', getRendererConfig())
+        onCapabilitiesChanged?.()
         return status
       },
     ),
@@ -124,6 +115,7 @@ export function registerLlmIpc({
       async (_event, provider: unknown) => {
         const status = await credentials().forget(providerSchema.parse(provider))
         window.webContents.send('config:updated', getRendererConfig())
+        onCapabilitiesChanged?.()
         return status
       },
     ),

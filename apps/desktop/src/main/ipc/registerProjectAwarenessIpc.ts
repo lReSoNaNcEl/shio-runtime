@@ -1,19 +1,22 @@
-import { ipcMain, shell } from 'electron'
+import { ipcMain } from 'electron'
 import { z } from 'zod'
 
 import { translate } from '../../shared/localization'
 import { isValidProjectBranch, isValidProjectRepository } from '../../shared/project-awareness'
+import type { ActionRuntime } from '../action'
 import { getConfig } from '../config'
 import type { ProjectAwarenessPlugin } from '../project-awareness'
 import { IPC_ONE_PAYLOAD, type IpcAuthorization } from './IpcAuthorization'
 
 export interface ProjectAwarenessIpcDependencies {
   plugin: () => ProjectAwarenessPlugin
+  actions: ActionRuntime
   authorization: IpcAuthorization
 }
 
 export function registerProjectAwarenessIpc({
   plugin,
+  actions,
   authorization,
 }: ProjectAwarenessIpcDependencies): void {
   ipcMain.handle(
@@ -81,9 +84,14 @@ export function registerProjectAwarenessIpc({
   )
   ipcMain.handle(
     'project-awareness:open-token-settings',
-    authorization.handle('project-awareness:open-token-settings', () =>
-      shell.openExternal('https://github.com/settings/personal-access-tokens/new'),
-    ),
+    authorization.handle('project-awareness:open-token-settings', async () => {
+      const action = await actions.execute<string, { ok: true }>({
+        name: 'system.openExternalLink',
+        payload: 'https://github.com/settings/personal-access-tokens/new',
+      })
+      if (action.status !== 'success') throw new Error(action.error)
+      return action.result
+    }),
   )
   ipcMain.handle(
     'project-awareness:connect',

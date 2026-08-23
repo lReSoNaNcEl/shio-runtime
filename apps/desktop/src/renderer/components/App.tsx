@@ -1,12 +1,21 @@
 import { Provider } from '@react-spectrum/s2'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
+import { type CapabilityNavigationTarget } from '../../shared/capabilities'
+import { normalizeUiTheme, type UiTheme } from '../../shared/config'
+import {
+  DESKTOP_CONTROL_PLUGIN_ID,
+  type PluginId,
+  PROJECT_AWARENESS_PLUGIN_ID,
+} from '../../shared/plugins'
 import { controller } from '../Controller'
+import { useCapabilities } from '../hooks/useCapabilities'
 import { useControllerState } from '../hooks/useControllerState'
 import { useRuntimeSupportBundle } from '../hooks/useRuntimeSupportBundle'
 import { useTranslation } from '../localization/useTranslation'
 import { observeRendererPromise } from '../reliability/observePromise'
 import { buildRuntimeHealthProjection } from '../runtime/runtimeHealth'
+import { ActionRuntimeHost } from './actions/ActionRuntimeHost'
 import { ChatOverlay, type ChatOverlayHandle } from './chat/ChatOverlay'
 import { NewConversationButton } from './chat/NewConversationButton'
 import { NewConversationDialog } from './chat/NewConversationDialog'
@@ -20,6 +29,7 @@ import { type SettingsSection } from './settings/state/settingsContracts'
 import { SetupCenter } from './setup/SetupCenter'
 import { type AppSection, AppShell, SectionHeading } from './shell/AppShell'
 import { AvatarPreviewView } from './views/AvatarPreviewView'
+import { CapabilitiesView } from './views/CapabilitiesView'
 import { DiagnosticsView } from './views/DiagnosticsView'
 import { RuntimeHealthView } from './views/RuntimeHealthView'
 
@@ -30,13 +40,14 @@ export function App() {
   const [section, setSection] = useState<AppSection>('chat')
   const [settingsInitialSection, setSettingsInitialSection] = useState<SettingsSection>('general')
   const [developerModeEnabled, setDeveloperModeEnabled] = useState(false)
+  const [uiTheme, setUiTheme] = useState<UiTheme>('light')
   const [setupOpen, setSetupOpen] = useState(false)
   const [speechToast, setSpeechToast] = useState<string | null>(null)
   const [newConversationDialogOpen, setNewConversationDialogOpen] = useState(false)
   const [newConversationPending, setNewConversationPending] = useState(false)
   const [newConversationError, setNewConversationError] = useState<string | null>(null)
   const [missingVrmDialogOpen, setMissingVrmDialogOpen] = useState(false)
-  const [showProjectPluginDetails, setShowProjectPluginDetails] = useState(false)
+  const [pluginDetails, setPluginDetails] = useState<PluginId | null>(null)
   const chatOverlayRef = useRef<ChatOverlayHandle>(null)
   const prevSpeechService = useRef(state.speechCapabilities.service)
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -45,6 +56,7 @@ export function App() {
     [],
   )
   const runtimeSupport = useRuntimeSupportBundle(!isOverlay)
+  const capabilities = useCapabilities(!isOverlay)
   const runtimeHealth = useMemo(
     () => buildRuntimeHealthProjection(state, runtimeSupport.bundle),
     [runtimeSupport.bundle, state],
@@ -77,18 +89,40 @@ export function App() {
   )
 
   useEffect(() => {
-    if (isOverlay) return
+    if (isOverlay) {
+      let active = true
+      observeRendererPromise(
+        window.overlayApi.config.get().then((config) => {
+          if (active) setUiTheme(normalizeUiTheme(config.uiTheme))
+        }),
+        'load Overlay theme',
+      )
+      const unsubscribe = window.overlayApi.config.onUpdated((config) => {
+        if (active) setUiTheme(normalizeUiTheme(config.uiTheme))
+      })
+      return () => {
+        active = false
+        unsubscribe()
+      }
+    }
     observeRendererPromise(
       window.api.config.get().then((config) => {
         setDeveloperModeEnabled(config.developerModeEnabled === 'true')
+        setUiTheme(normalizeUiTheme(config.uiTheme))
         setSetupOpen(!config.setup.completed)
       }),
       'load App configuration',
     )
     return window.api.config.onUpdated((config) => {
       setDeveloperModeEnabled(config.developerModeEnabled === 'true')
+      setUiTheme(normalizeUiTheme(config.uiTheme))
     })
   }, [isOverlay])
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = uiTheme
+    document.documentElement.style.colorScheme = uiTheme
+  }, [uiTheme])
 
   useEffect(() => {
     const openSetup = () => {
@@ -120,6 +154,10 @@ export function App() {
 
   const sectionCopy: Record<AppSection, { title: string; subtitle?: string }> = {
     chat: { title: t('app.nav.chat') },
+    capabilities: {
+      title: t('app.nav.capabilities'),
+      subtitle: t('app.section.capabilities.subtitle'),
+    },
     avatar: {
       title: t('app.section.avatar.title'),
       subtitle: t('app.section.avatar.subtitle'),
@@ -169,6 +207,25 @@ export function App() {
     observeRendererPromise(startNewConversation(), 'start new conversation')
   }
 
+  const navigateToCapabilityTarget = (target: CapabilityNavigationTarget): void => {
+    if (target.kind === 'settings') {
+      if (['general', 'speech', 'llm', 'avatar', 'advanced'].includes(target.id)) {
+        setSettingsInitialSection(target.id as SettingsSection)
+      }
+      setSection('settings')
+      return
+    }
+    if (target.kind === 'plugin') {
+      if (target.id === PROJECT_AWARENESS_PLUGIN_ID || target.id === DESKTOP_CONTROL_PLUGIN_ID) {
+        setPluginDetails(target.id)
+      }
+      setSection('plugins')
+      return
+    }
+    const views: AppSection[] = ['chat', 'capabilities', 'plugins', 'health']
+    if (views.includes(target.id as AppSection)) setSection(target.id as AppSection)
+  }
+
   const setOverlayVisible = async (visible: boolean): Promise<void> => {
     if (visible && !state.vrmConfigured) {
       setMissingVrmDialogOpen(true)
@@ -177,9 +234,21 @@ export function App() {
     await controller.setOverlayVisible(visible)
   }
 
+  const changeUiTheme = (nextTheme: UiTheme): void => {
+    const previousTheme = uiTheme
+    setUiTheme(nextTheme)
+    observeRendererPromise(
+      window.api.config.save({ uiTheme: nextTheme }).then((result) => {
+        if (!result.ok) throw new Error(result.error ?? 'Theme setting could not be saved')
+      }),
+      'save UI theme',
+      () => setUiTheme(previousTheme),
+    )
+  }
+
   if (isOverlay)
     return (
-      <Provider colorScheme="dark" locale={intlLocale} UNSAFE_className="app-provider">
+      <Provider colorScheme={uiTheme} locale={intlLocale} UNSAFE_className="app-provider">
         <canvas id="canvas" ref={overlayCanvasRef} />
         {state.overlayAnimationHudEnabled && state.overlayAnimationFile && (
           <div className="overlay-animation-hud">{state.overlayAnimationFile}</div>
@@ -188,13 +257,13 @@ export function App() {
     )
 
   return (
-    <Provider colorScheme="dark" locale={intlLocale} UNSAFE_className="app-provider">
+    <Provider colorScheme={uiTheme} locale={intlLocale} UNSAFE_className="app-provider">
       <AppShell
         section={section}
         onSectionChange={(nextSection) => {
           if (setupOpen) setSetupOpen(false)
           if (nextSection === 'settings') setSettingsInitialSection('general')
-          if (nextSection === 'plugins') setShowProjectPluginDetails(false)
+          if (nextSection === 'plugins') setPluginDetails(null)
           setSection(nextSection)
         }}
         health={{ state: runtimeHealth.overall, text: runtimeHealthLabel }}
@@ -280,13 +349,21 @@ export function App() {
             }}
           />
         )}
+        {section === 'capabilities' && (
+          <CapabilitiesView
+            snapshot={capabilities.snapshot}
+            error={capabilities.error}
+            onRefresh={capabilities.refresh}
+            onNavigate={navigateToCapabilityTarget}
+          />
+        )}
         {section === 'health' && (
           <RuntimeHealthView
             state={state}
             support={runtimeSupport.bundle}
             projection={runtimeHealth}
             onOpenPlugin={() => {
-              setShowProjectPluginDetails(true)
+              setPluginDetails(PROJECT_AWARENESS_PLUGIN_ID)
               setSection('plugins')
             }}
             onOpenLlmSettings={() => {
@@ -306,9 +383,9 @@ export function App() {
         )}
         {section === 'plugins' && (
           <PluginsView
-            showProjectDetails={showProjectPluginDetails}
-            onShowProjectDetails={() => setShowProjectPluginDetails(true)}
-            onBack={() => setShowProjectPluginDetails(false)}
+            detailPluginId={pluginDetails}
+            onShowDetails={setPluginDetails}
+            onBack={() => setPluginDetails(null)}
           />
         )}
         {section === 'debug' && developerModeEnabled && <DiagnosticsView />}
@@ -316,6 +393,8 @@ export function App() {
           <SettingsDialog
             isOpen
             initialSection={settingsInitialSection}
+            uiTheme={uiTheme}
+            onThemeChange={changeUiTheme}
             vrmLoaded={state.vrmLoaded}
             faceTrackingEnabled={state.faceTrackingEnabled}
             onToggleFaceTracking={() => controller.toggleFaceTracking()}
@@ -366,6 +445,7 @@ export function App() {
           setSection('settings')
         }}
       />
+      <ActionRuntimeHost />
     </Provider>
   )
 }

@@ -14,6 +14,7 @@ import type { ProjectContextPacket } from '../../src/shared/project-awareness'
 
 function packet(snapshotSha: string): ProjectContextPacket {
   return {
+    requirement: 'required',
     snapshotSha,
     repository: 'owner/project',
     branch: 'main',
@@ -100,6 +101,7 @@ async function main(): Promise<void> {
     clear: async () => undefined,
   }
   const provider: ProjectContextProvider = {
+    resolveRequirement: () => (activePacket ? activePacket.requirement : 'none'),
     buildContext: async (request) => {
       projectContextTraceId = request.traceId
       return activePacket
@@ -119,8 +121,8 @@ async function main(): Promise<void> {
   )
   assert.equal(projectContextTraceId, 'trace-project-1')
   assert.equal(llmTraceId, 'trace-project-1')
-  assert.equal(oldReply.provenance?.snapshotCommit, 'abc1234567890')
-  assert.equal(oldReply.provenance?.sources.length, 3)
+  assert.equal(oldReply.grounding?.project?.snapshotCommit, 'abc1234567890')
+  assert.equal(oldReply.grounding?.project?.sources.length, 3)
   assert(
     captured.some(
       (message) =>
@@ -148,12 +150,12 @@ async function main(): Promise<void> {
 
   activePacket = packet('def5678901234')
   const newReply = await orchestrator.createReply({ userText: 'Как устроен Orchestrator?' })
-  assert.equal(newReply.provenance?.snapshotCommit, 'def5678901234')
-  assert.equal(oldReply.provenance?.snapshotCommit, 'abc1234567890')
+  assert.equal(newReply.grounding?.project?.snapshotCommit, 'def5678901234')
+  assert.equal(oldReply.grounding?.project?.snapshotCommit, 'abc1234567890')
 
   activePacket = null
   const ordinaryReply = await orchestrator.createReply({ userText: 'Как дела?' })
-  assert.equal(ordinaryReply.provenance, undefined)
+  assert.equal(ordinaryReply.grounding, undefined)
 
   generationFails = true
   const committedBeforeFailure = committedTurns
@@ -168,10 +170,10 @@ async function main(): Promise<void> {
     id: 'assistant-1',
     role: 'assistant',
     text: 'Ответ уже показан',
-    provenance: oldReply.provenance,
+    grounding: oldReply.grounding,
   })
   store.appendMessage({ id: 'tts-error', role: 'error', text: 'TTS unavailable' })
-  assert.equal(store.getState().messages[0]?.provenance?.snapshotCommit, 'abc1234567890')
+  assert.equal(store.getState().messages[0]?.grounding?.project?.snapshotCommit, 'abc1234567890')
 
   const conversationRuntimeSource = readFileSync(
     join(process.cwd(), 'src/renderer/runtime/ConversationRuntime.ts'),
@@ -179,14 +181,14 @@ async function main(): Promise<void> {
   )
   assert(
     conversationRuntimeSource.indexOf(
-      "pushMessage('assistant', draft.displayText, draft.provenance)",
+      "pushMessage('assistant', draft.displayText, draft.grounding)",
     ) < conversationRuntimeSource.indexOf('synthesizeSegment(turn.turnId, segment)'),
   )
   const chatSource = readFileSync(
     join(process.cwd(), 'src/renderer/components/chat/ChatMessageList.tsx'),
     'utf8',
   )
-  assert.match(chatSource, /message\.role === 'assistant' && message\.provenance/)
+  assert.match(chatSource, /message\.role === 'assistant' && message\.grounding\?\.project/)
   console.log('Project Reply Provenance focused repro: PASS')
 }
 

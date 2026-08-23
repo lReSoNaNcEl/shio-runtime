@@ -64,6 +64,7 @@ function assertCssOwnership(): void {
   for (const feature of [
     'shell',
     'chat',
+    'capabilities',
     'settings',
     'avatar-preview',
     'health',
@@ -76,6 +77,7 @@ function assertCssOwnership(): void {
   for (const feature of [
     'shell',
     'chat',
+    'capabilities',
     'settings',
     'avatar-preview',
     'health',
@@ -111,8 +113,28 @@ function assertViewHierarchy(): void {
   const plugins = source('src/renderer/components/plugins/PluginsView.tsx')
   assert.doesNotMatch(settings, /ProjectSettings|activeSection === 'project'/)
   assert.match(shell, /id: 'plugins'/)
+  assert.match(shell, /id: 'capabilities'/)
   assert.match(plugins, /@react-spectrum\/s2/)
   assert.match(plugins, /window\.api\.plugins\.(?:enable|disable)/)
+  assert.match(plugins, /plugin-card plugin-card-compact/)
+  assert.match(plugins, /plugin-card-title/)
+  assert.match(plugins, /PluginCatalogStatus/)
+  assert.match(plugins, /plugin\.enabled \? t\('common\.enabled'\) : t\('common\.disabled'\)/)
+  assert.match(plugins, /plugin-section-heading/)
+  assert.match(plugins, /plugins\.desktopControl\.accessMode\.confirm/)
+  assert.doesNotMatch(
+    plugins,
+    /<Badge variant="negative">\{t\('actions\.fullAccessBadge'\)\}<\/Badge>/,
+  )
+  assert.doesNotMatch(plugins, /window\.api\.desktopControl\.(?:save|forget)Credential/)
+
+  const capabilities = source('src/renderer/components/views/CapabilitiesView.tsx')
+  assert.match(capabilities, /@react-spectrum\/s2/)
+  assert.match(capabilities, /capabilities\.availability\.available/)
+  assert.match(capabilities, /capabilities\.availability\.disabled/)
+  assert.match(capabilities, /capabilities\.availability\.needsSetup/)
+  assert.match(capabilities, /capabilities\.availability\.degraded/)
+  assert.match(capabilities, /capabilities\.availability\.unavailable/)
 }
 
 function assertScreenContextPickerLayout(): void {

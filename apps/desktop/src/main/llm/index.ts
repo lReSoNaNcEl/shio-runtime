@@ -27,10 +27,12 @@ export {
   type ResolvedLlmCredential,
 } from './LlmCredentialStore'
 export { LlmGateway } from './LlmGateway'
+export { resolveLlmReadiness } from './readiness'
 export {
   createLLMProvider,
   createModelCatalog,
   enrichModelCatalog,
+  getProviderDefinition,
   getProviderProfile,
   hasLoadedModelCatalog,
   isLlmProviderId,
