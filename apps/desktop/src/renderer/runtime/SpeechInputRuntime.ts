@@ -7,6 +7,7 @@ import type {
 import type { SerializedSpeechError } from '../../shared/speech'
 import { MicCapture } from '../audio/micCapture'
 import { StreamingPcmCapture } from '../audio/StreamingPcmCapture'
+import { observeRendererPromise } from '../reliability/observePromise'
 import {
   type AsrStreamEvent,
   StreamingAsrClient,
@@ -123,7 +124,12 @@ export class SpeechInputRuntime {
 
   setMicrophone(deviceId: string, persist = true): void {
     this.micDeviceId = deviceId
-    if (persist) void window.api.config.save({ micDeviceId: deviceId })
+    if (persist) {
+      observeRendererPromise(
+        window.api.config.save({ micDeviceId: deviceId }),
+        'save microphone selection',
+      )
+    }
   }
 
   getMicrophoneId(): string {
@@ -241,8 +247,8 @@ export class SpeechInputRuntime {
     if (!this.continuousEnabled) return
     this.streamingGeneration += 1
     this.continuousEnabled = false
-    void this.streamingCapture.stop()
-    void this.streamingClient.stop()
+    observeRendererPromise(this.streamingCapture.stop(), 'stop lost streaming capture')
+    observeRendererPromise(this.streamingClient.stop(), 'stop lost streaming client')
     this.publishSpeechEvent('ListeningFinished', 'continuous')
     this.recordRuntimeEvent('Streaming Service Lost', reason)
     const error: SerializedSpeechError = {
@@ -257,6 +263,20 @@ export class SpeechInputRuntime {
 
   isContinuousListening(): boolean {
     return this.continuousEnabled
+  }
+
+  dispose(): void {
+    this.streamingGeneration += 1
+    this.continuousEnabled = false
+    this.clearReconnectWatchdog()
+    this.playbackCapturedSegments.clear()
+    this.onStreamingServiceLost = null
+    this.onContinuousFinal = null
+    this.onContinuousPartial = null
+    this.onContinuousDeviceLost = null
+    if (this.micCapture.isRecording()) this.micCapture.stop()
+    observeRendererPromise(this.streamingCapture.stop(), 'dispose streaming capture')
+    observeRendererPromise(this.streamingClient.stop(), 'dispose streaming client')
   }
 
   isContinuousCaptureAlive(): boolean {

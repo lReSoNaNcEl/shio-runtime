@@ -1,4 +1,4 @@
-import { Content, Divider, Heading, ProgressCircle, StatusLight } from '@react-spectrum/s2'
+import { Content, Divider, Heading, ProgressCircle, StatusLight, Text } from '@react-spectrum/s2'
 
 import { useTranslation } from '../../localization/useTranslation'
 import { SettingsNavigation } from './SettingsNavigation'
@@ -6,7 +6,6 @@ import { AdvancedSettingsSection } from './sections/AdvancedSettingsSection'
 import { AvatarSettingsSection } from './sections/AvatarSettingsSection'
 import { GeneralSettingsSection } from './sections/GeneralSettingsSection'
 import { LlmSettingsSection } from './sections/LlmSettingsSection'
-import { ProjectSettingsSection } from './sections/ProjectSettingsSection'
 import { SpeechSettingsSection } from './sections/SpeechSettingsSection'
 import { type SettingsDialogProps, type SettingsSection } from './state/settingsContracts'
 import { useSettingsDialogState } from './state/useSettingsDialogState'
@@ -38,7 +37,6 @@ export function SettingsDialog({
   })
   const labels: Record<SettingsSection, string> = {
     general: t('settings.section.general'),
-    project: t('settings.section.project'),
     speech: t('settings.section.speech'),
     llm: t('settings.section.llm'),
     avatar: t('settings.section.avatar'),
@@ -50,8 +48,6 @@ export function SettingsDialog({
   const section =
     viewModel.activeSection === 'general' ? (
       <GeneralSettingsSection {...viewModel.general} />
-    ) : viewModel.activeSection === 'project' ? (
-      <ProjectSettingsSection {...viewModel.project} />
     ) : viewModel.activeSection === 'speech' ? (
       <SpeechSettingsSection {...viewModel.speech} />
     ) : viewModel.activeSection === 'llm' ? (
@@ -89,10 +85,7 @@ export function SettingsDialog({
           </span>
         </div>
         {viewModel.activeSection === 'advanced' && (
-          <p className="settings-description">{t('settings.advanced.description')}</p>
-        )}
-        {viewModel.activeSection === 'project' && (
-          <p className="settings-description">{t('settings.project.description')}</p>
+          <Text UNSAFE_className="settings-description">{t('settings.advanced.description')}</Text>
         )}
         <Divider />
         <Content key={viewModel.activeSection}>{section}</Content>

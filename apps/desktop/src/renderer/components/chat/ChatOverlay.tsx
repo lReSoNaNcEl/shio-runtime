@@ -11,6 +11,7 @@ import {
 import { type ControllerState, controller } from '../../Controller'
 import { shouldBlockChatSubmission } from '../../controller/firstRunState'
 import { useTranslation } from '../../localization/useTranslation'
+import { observeRendererPromise } from '../../reliability/observePromise'
 import { bannerCopy } from '../../runtime/speechCapabilities'
 import { ChatComposer } from './ChatComposer'
 import { ChatMessageList } from './ChatMessageList'
@@ -177,7 +178,7 @@ export const ChatOverlay = forwardRef<ChatOverlayHandle, Props>(function ChatOve
       screenContext.setInputError(t('screenContext.input.unsupportedType'))
       return
     }
-    void screenContext.importFile(files[0], 'clipboard')
+    observeRendererPromise(screenContext.importFile(files[0], 'clipboard'), 'import pasted image')
   }
 
   const isFileDrag = (event: DragEvent<HTMLElement>): boolean =>
@@ -217,7 +218,7 @@ export const ChatOverlay = forwardRef<ChatOverlayHandle, Props>(function ChatOve
       screenContext.setInputError(t('screenContext.input.unsupportedType'))
       return
     }
-    void screenContext.importFile(files[0], 'file')
+    observeRendererPromise(screenContext.importFile(files[0], 'file'), 'import dropped image')
   }
 
   return (
@@ -240,7 +241,12 @@ export const ChatOverlay = forwardRef<ChatOverlayHandle, Props>(function ChatOve
         continuousListeningError={
           state.continuousListeningState === 'error' ? state.continuousListeningError : undefined
         }
-        onRetryContinuousListening={() => void controller.toggleContinuousListening()}
+        onRetryContinuousListening={() =>
+          observeRendererPromise(
+            controller.toggleContinuousListening(),
+            'retry continuous listening',
+          )
+        }
       />
       <div id="controls">
         {bannerVisible && (
@@ -277,9 +283,13 @@ export const ChatOverlay = forwardRef<ChatOverlayHandle, Props>(function ChatOve
             capture={screenContext.pending}
             recapturing={screenContext.recapturing}
             imageOperationActive={imageOperationActive}
-            onRecapture={() => void screenContext.recapture()}
+            onRecapture={() =>
+              observeRendererPromise(screenContext.recapture(), 'recapture Screen Context')
+            }
             onReplace={() => screenContext.setPickerOpen(true)}
-            onRemove={() => void screenContext.release()}
+            onRemove={() =>
+              observeRendererPromise(screenContext.release(), 'release Screen Context')
+            }
           />
         )}
         <ChatComposer
@@ -299,11 +309,14 @@ export const ChatOverlay = forwardRef<ChatOverlayHandle, Props>(function ChatOve
               pulseBanner()
               return
             }
-            void controller.toggleMic()
+            observeRendererPromise(controller.toggleMic(), 'toggle push-to-talk microphone')
           }}
           onInterrupt={() => {
             setInterrupting(true)
-            void controller.interruptCurrentResponse('manual-stop')
+            observeRendererPromise(
+              controller.interruptCurrentResponse('manual-stop'),
+              'interrupt current response',
+            )
           }}
         />
       </div>

@@ -1,5 +1,6 @@
 import type * as THREE from 'three'
 
+import type { CharacterEmbodimentIntent } from '../../shared/character-response'
 import type { CharacterState } from '../../shared/runtime'
 import { AvatarAnimationController } from './AvatarAnimationController'
 import type { AvatarAnimationQueueItem } from './AvatarAnimationQueue'
@@ -64,6 +65,7 @@ export class AvatarController {
   private frame = 0
   private lastCharacterStateKey: string | null = null
   private overlayAnimationPolicy: OverlayAnimationPolicy | null = null
+  private embodimentIntent: CharacterEmbodimentIntent | undefined
 
   constructor(options: { overlayMode?: boolean } = {}) {
     this.overlayAnimationPolicy = options.overlayMode ? new OverlayAnimationPolicy() : null
@@ -178,7 +180,7 @@ export class AvatarController {
     const mode = toAvatarMode(state.mode)
     const emotionKey = state.emotion || state.avatar.expression || 'neutral'
     const vrmEmotion = state.avatar.vrmExpression
-    const semanticKey = `${mode}|${emotionKey}|${vrmEmotion ?? ''}|${options.lipSyncStart?.session.playbackId ?? ''}`
+    const semanticKey = `${mode}|${emotionKey}|${vrmEmotion ?? ''}|${JSON.stringify(this.embodimentIntent) ?? ''}|${options.lipSyncStart?.session.playbackId ?? ''}`
 
     if (semanticKey === this.lastCharacterStateKey) {
       this.vrmModel.applyEmotion(emotionKey || 'neutral', vrmEmotion)
@@ -225,6 +227,11 @@ export class AvatarController {
     this.vrmModel.applyEmotion(emotionKey || 'neutral', vrmEmotion)
     const effect = this.stateMachine.setEmotion(emotionKey)
     if (effect) this.applyStateEffect(effect, vrmEmotion)
+  }
+
+  setEmbodimentIntent(intent: CharacterEmbodimentIntent | undefined): void {
+    this.embodimentIntent = intent
+    this.lastCharacterStateKey = null
   }
 
   prepareSpeaking(emotionKey?: string, vrmEmotion?: string, state?: CharacterState): void {
@@ -513,7 +520,14 @@ export class AvatarController {
     stopLipSyncTurnId?: string,
     continuingSpeech = false,
   ): void {
-    this.stateEffects.apply({ effect, vrmEmotion, lipSyncStart, stopLipSyncTurnId, state })
+    this.stateEffects.apply({
+      effect,
+      vrmEmotion,
+      lipSyncStart,
+      stopLipSyncTurnId,
+      state,
+      gazeHint: this.embodimentIntent?.gazeHint,
+    })
 
     if (effect.mode === 'speaking') {
       if (continuingSpeech) {
@@ -601,14 +615,26 @@ export class AvatarController {
       ...this.getOverlayExcludedAnimationIds(effect),
     ]
     const embodiment = resolveEmotionEmbodimentProfile(effect.emotionKey)
+    const intentResolution =
+      decision.phase === 'opening' && this.embodimentIntent?.gestureHint
+        ? this.behaviorResolver.resolveEmbodimentIntent(
+            effect,
+            this.embodimentIntent,
+            'speaking',
+            excluded,
+          )
+        : null
     const resolved =
-      this.behaviorResolver.resolveAnimationTags(
-        effect,
-        embodiment.animationTags,
-        decision.behaviorId,
-        decision.phase === 'emphasis' ? 'reaction' : 'speaking',
-        excluded,
-      ) ??
+      intentResolution ??
+      (this.embodimentIntent?.gestureHint && decision.phase === 'opening'
+        ? this.behaviorResolver.resolveBehaviorTag(effect, 'behavior:neutral', 'neutral', excluded)
+        : this.behaviorResolver.resolveAnimationTags(
+            effect,
+            embodiment.animationTags,
+            decision.behaviorId,
+            decision.phase === 'emphasis' ? 'reaction' : 'speaking',
+            excluded,
+          )) ??
       (decision.phase === 'emphasis'
         ? null
         : this.behaviorResolver.resolveBehaviorTag(

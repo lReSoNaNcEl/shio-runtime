@@ -32,11 +32,24 @@ Architecture and ownership:
   move into the renderer.
 - Project repository access remains read-only. Repository-derived knowledge is
   neither Character State nor conversational memory.
-- GitHub credentials entered through Settings are encrypted through Electron
+- GitHub credentials entered through the Project Awareness Plugin UI are encrypted through Electron
   `safeStorage` and persisted only below application `userData`. Renderer status
   may expose credential presence and source, never its value.
-- Repository and branch are selected through the Project settings UI. Do not
+- Repository and branch are selected through the Project Awareness Plugin UI. Do not
   hardcode a repository identity in the renderer or Runtime implementation.
+- Plugins v1 are bundled first-party only.
+- No dynamic external JavaScript loading is allowed for Plugins.
+- Plugin enablement never grants authority outside the capabilities declared by
+  the validated Plugin manifest.
+- External side effects exposed by a Plugin still pass through Action Runtime.
+- Plugin-specific external technologies remain Adapters.
+- Plugin failure must not break Core.
+- Core must run with every optional Plugin disabled.
+- Do not add generic `plugin.invoke` or arbitrary Plugin method dispatch.
+- Plugin renderer UI follows React Spectrum 2.
+- Every new Plugin UI string must be added in both Russian and English.
+- Every Plugin IPC endpoint requires sender authorization and runtime payload
+  validation.
 - Preserve the existing HTTP contract with `apps/api` unless the task
   explicitly changes it.
 
@@ -64,6 +77,34 @@ Desktop UI and UX:
   explicitly in the final report.
 
 Desktop quality and validation:
+
+- Renderer input is always untrusted. TypeScript types are not runtime
+  authorization.
+- Every renderer-facing `BrowserWindow` must keep `sandbox`, `webSecurity`, and
+  `contextIsolation` enabled, `nodeIntegration` disabled, and unexpected
+  navigation/new-window creation denied.
+- Presentation-only windows must use a minimal preload and cannot inherit the
+  privileged API surface of the main application renderer. Overlay receives only
+  presentation projections and strictly necessary presentation commands.
+- Every privileged IPC endpoint validates both payload and caller identity. Every
+  renderer-to-main handler must also be present in the canonical channel inventory;
+  unknown senders and invalid argument tuples are rejected before domain code runs.
+- No renderer-controlled filesystem paths cross an IPC boundary. Filesystem
+  resources are represented by main-owned opaque handles or validated application
+  resources; custom protocols may resolve only explicitly registered bundled assets.
+- Runtime health and support contracts must report explicit owned state. Do not
+  infer health from adjacent projections, and mark cached renderer reports stale
+  whenever their renderer is not ready.
+- Every renderer root has an Error Boundary. Every renderer-facing `BrowserWindow`
+  handles `did-fail-load` and `render-process-gone` with bounded recovery and
+  exposes the failure in diagnostics.
+- Every subscription, DOM/process listener, timer, animation frame, and owned media
+  resource has an idempotent teardown path exercised by its owner.
+- Every intentionally detached Promise has an explicit rejection observer or is
+  implemented by a function whose full body contains and reports all failures.
+- Provider control syntax and structured embodiment markers are internal protocol
+  data. Malformed markers must be contained before text reaches chat, TTS, memory,
+  or other user-visible projections.
 
 - Desktop formatting, linting, React checks, and import ordering are owned by
   Biome through `apps/desktop/biome.jsonc` and the local `@biomejs/biome`

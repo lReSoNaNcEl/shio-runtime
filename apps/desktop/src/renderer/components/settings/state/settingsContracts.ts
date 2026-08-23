@@ -8,11 +8,10 @@ import type {
   ProviderProfile,
 } from '../../../../shared/llm'
 import type { UiLocale } from '../../../../shared/localization'
-import type { ProjectAwarenessStatus } from '../../../../shared/project-awareness'
 import type { OverlayViewMode } from '../../../avatar/tuning/cameraTuning'
 import type { ControllerState } from '../../../Controller'
 
-export type SettingsSection = 'general' | 'project' | 'speech' | 'llm' | 'avatar' | 'advanced'
+export type SettingsSection = 'general' | 'speech' | 'llm' | 'avatar' | 'advanced'
 
 export interface SettingsDialogProps {
   isOpen: boolean
@@ -49,46 +48,9 @@ export interface GeneralSettingsActions {
   setUiLocale: (locale: UiLocale) => void
 }
 
-export interface ProjectSettingsState {
-  enabled: boolean
-  repository: string
-  branch: string
-  status: ProjectAwarenessStatus | null
-  applyState: 'idle' | 'applying' | 'applied' | 'error'
-  applyError: string
-  credentialInput: string
-  credentialSaveState: 'idle' | 'saving' | 'saved' | 'failed'
-  actionBusy: boolean
-  forgetConfirmation: boolean
-  settingsValid: boolean
-  targetApplied: boolean
-  connected: boolean
-  runtimeBusy: boolean
-  hasIndex: boolean
-}
-
-export interface ProjectSettingsActions {
-  setEnabled: (enabled: boolean) => void
-  setRepository: (repository: string) => void
-  setBranch: (branch: string) => void
-  setApplyState: (state: ProjectSettingsState['applyState']) => void
-  setApplyError: (error: string) => void
-  setCredentialInput: (credential: string) => void
-  setForgetConfirmation: (confirming: boolean) => void
-  apply: () => Promise<void>
-  saveCredential: () => Promise<void>
-  forgetCredential: () => Promise<void>
-  openTokenSettings: () => Promise<void>
-  connect: () => Promise<void>
-  disconnect: () => Promise<void>
-  sync: () => Promise<void>
-  rebuild: () => Promise<void>
-}
-
 export interface SpeechSettingsState {
   speechUrl: string
   language: string
-  currentTtsVoice: string
   microphones: Array<{ deviceId: string; label: string }>
   microphoneId: string
   voiceWarmup: ControllerState['voiceWarmup']
@@ -106,7 +68,6 @@ export interface SpeechSettingsState {
 export interface SpeechSettingsActions {
   setSpeechUrl: (url: string) => void
   setLanguage: (language: string) => void
-  setCurrentTtsVoice: (voice: string) => void
   setMicrophoneId: (id: string) => void
   recordMicrophoneTest: () => Promise<void>
   playMicrophoneTest: () => Promise<void>
@@ -189,7 +150,6 @@ export interface SettingsDialogViewModel {
   setActiveSection: (section: SettingsSection) => void
   saveState: SettingsSaveState
   general: { state: GeneralSettingsState; actions: GeneralSettingsActions }
-  project: { state: ProjectSettingsState; actions: ProjectSettingsActions }
   speech: { state: SpeechSettingsState; actions: SpeechSettingsActions }
   llm: { state: LlmSettingsState; actions: LlmSettingsActions }
   avatar: { state: AvatarSettingsState; actions: AvatarSettingsActions }

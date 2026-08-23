@@ -1,4 +1,4 @@
-import type { CharacterState, RuntimeEvent } from '../../shared/runtime'
+import type { AvatarRuntimeHealth, CharacterState, RuntimeEvent } from '../../shared/runtime'
 import type { SpeechPolishDebugState } from '../../shared/speech'
 import type { AudioPlayer } from '../audio/audioPlayer'
 import type { MicrophoneGateDebugState } from '../audio/microphoneGateTypes'
@@ -15,6 +15,7 @@ export interface RuntimeDiagnosticsDependencies {
   getControllerState(): ControllerState
   getCharacterState(): CharacterState
   getAvatarDebugState(): AvatarRuntimeDebugState
+  getAvatarRuntimeHealth(): AvatarRuntimeHealth
   getPlaybackDebug(): ReturnType<AudioPlayer['getPlaybackDebug']>
   getOverlayDebugState(): Promise<string>
   getEventHistory(): readonly RuntimeEvent[]
@@ -67,6 +68,7 @@ export class RuntimeDiagnosticsProjection {
     const micGate = this.dependencies.getMicrophoneGateDebug()
     return {
       appStatus: state.status,
+      avatarRuntimeHealth: this.dependencies.getAvatarRuntimeHealth(),
       characterState: this.dependencies.getCharacterState(),
       eventHistory: this.dependencies.getEventHistory(),
       avatarMode: avatar.mode,

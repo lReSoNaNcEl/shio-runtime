@@ -6,6 +6,7 @@ import {
   DialogContainer,
   Footer,
   Heading,
+  Text,
 } from '@react-spectrum/s2'
 
 import { useTranslation } from '../../localization/useTranslation'
@@ -27,8 +28,8 @@ export function MissingVrmDialog({
         <Dialog>
           <Heading>{t('camera.missingVrm.title')}</Heading>
           <Content>
-            <p>{t('camera.missingVrm.description')}</p>
-            <p>{t('camera.missingVrm.hint')}</p>
+            <Text>{t('camera.missingVrm.description')}</Text>
+            <Text>{t('camera.missingVrm.hint')}</Text>
           </Content>
           <Footer>
             <ButtonGroup>

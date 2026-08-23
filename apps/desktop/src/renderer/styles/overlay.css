@@ -1,1 +1,64 @@
-/* Overlay transparency and window behavior remain unchanged in base.css. */
+/* overlay feature stylesheet. Keep feature-owned rules out of base.css. */
+
+.overlay-animation-hud {
+  position: fixed;
+  top: 10px;
+  left: 50%;
+  z-index: 20;
+  max-width: calc(100vw - 24px);
+  transform: translateX(-50%);
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.42);
+  color: #fff;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.25;
+  overflow: hidden;
+  pointer-events: none;
+  text-overflow: ellipsis;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.65);
+  white-space: nowrap;
+}
+
+/* Overlay */
+#ui-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+}
+
+#top-bar {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 16px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  backdrop-filter: blur(8px);
+}
+
+.app-title {
+  font-size: 1.1em;
+  font-weight: 600;
+  color: var(--accent2);
+}
+
+#top-bar .app-title {
+  margin-right: auto;
+}
+
+#top-bar .topbar-toggle-active {
+  border-color: rgba(52, 211, 153, 0.65);
+  color: #86efac;
+}
+
+#main-area {
+  flex: 1;
+  pointer-events: none;
+}

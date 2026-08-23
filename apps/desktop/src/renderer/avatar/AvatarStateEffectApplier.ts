@@ -1,3 +1,4 @@
+import type { EmbodimentGazeHint } from '../../shared/character-response'
 import type { CharacterState } from '../../shared/runtime'
 import { toHeadMotionProfile, toLookAtMode } from './AvatarRuntimeMappers'
 import type { AvatarStateEffect } from './AvatarStateMachine'
@@ -16,10 +17,11 @@ export class AvatarStateEffectApplier {
     lipSyncStart?: LipSyncStartRequest
     stopLipSyncTurnId?: string
     state?: CharacterState
+    gazeHint?: EmbodimentGazeHint
   }): void {
-    const { effect, vrmEmotion, lipSyncStart, stopLipSyncTurnId, state } = input
+    const { effect, vrmEmotion, lipSyncStart, stopLipSyncTurnId, state, gazeHint } = input
     this.vrmModel.setProceduralMode(effect.proceduralMode)
-    const lookAtMode = toLookAtMode(effect, state)
+    const lookAtMode = toLookAtMode(effect, state, gazeHint)
     this.vrmModel.setLookAtMode(lookAtMode)
     this.vrmModel.setHeadMotionProfile(toHeadMotionProfile(lookAtMode))
     this.vrmModel.applyEmotion(effect.emotionKey, vrmEmotion)

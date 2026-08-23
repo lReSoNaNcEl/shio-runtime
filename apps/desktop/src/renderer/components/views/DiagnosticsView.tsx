@@ -1,4 +1,15 @@
-import { ActionButton, Menu, MenuItem, MenuTrigger, SearchField, Text } from '@react-spectrum/s2'
+import {
+  ActionButton,
+  Menu,
+  MenuItem,
+  MenuTrigger,
+  SearchField,
+  Tab,
+  TabList,
+  TabPanel,
+  Tabs,
+  Text,
+} from '@react-spectrum/s2'
 import ChevronDown from '@react-spectrum/s2/icons/ChevronDown'
 import Erase from '@react-spectrum/s2/icons/Erase'
 import Filter from '@react-spectrum/s2/icons/Filter'
@@ -8,6 +19,7 @@ import { useEffect, useMemo, useState } from 'react'
 
 import { controller, type RuntimeDebugSnapshot, type RuntimeTimelineEvent } from '../../Controller'
 import { useTranslation } from '../../localization/useTranslation'
+import { observeRendererPromise } from '../../reliability/observePromise'
 
 type DiagnosticsTab = 'events' | 'snapshot'
 
@@ -64,7 +76,7 @@ const SNAPSHOT_GROUPS = {
     'behaviorTimeline',
   ],
   embodiment: ['lipsyncWeights', 'facial', 'lookAt', 'headMotion', 'earBehavior', 'performance'],
-  invariants: ['runtimeHealth'],
+  invariants: ['avatarRuntimeHealth', 'runtimeHealth'],
 } as const
 
 function formatTime(value: number): string {
@@ -145,9 +157,12 @@ export function DiagnosticsView() {
   useEffect(() => {
     let active = true
     const refresh = (): void => {
-      void controller.getRuntimeDebug().then((next) => {
-        if (active) setSnapshot(next)
-      })
+      observeRendererPromise(
+        controller.getRuntimeDebug().then((next) => {
+          if (active) setSnapshot(next)
+        }),
+        'refresh Runtime diagnostics',
+      )
     }
     refresh()
     const timer = window.setInterval(refresh, 500)
@@ -259,167 +274,155 @@ export function DiagnosticsView() {
 
   return (
     <section className="diagnostics-view">
-      <div className="diagnostics-tabs" role="tablist" aria-label={t('app.nav.diagnostics')}>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={activeTab === 'events'}
-          className={activeTab === 'events' ? 'active' : undefined}
-          onClick={() => setActiveTab('events')}
-        >
-          {t('diagnostics.tabs.events')}
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={activeTab === 'snapshot'}
-          className={activeTab === 'snapshot' ? 'active' : undefined}
-          onClick={() => setActiveTab('snapshot')}
-        >
-          {t('diagnostics.tabs.snapshot')}
-        </button>
-      </div>
-
-      {activeTab === 'events' ? (
-        <div className="diagnostics-events">
-          <div className="diagnostics-toolbar">
-            <div className="diagnostics-toolbar-filters">
-              <SearchField
-                aria-label={t('diagnostics.events.searchPlaceholder')}
-                value={search}
-                onChange={setSearch}
-                placeholder={t('diagnostics.events.searchPlaceholder')}
-                size="M"
-                UNSAFE_className="diagnostics-search"
-              />
-              <MenuTrigger>
-                <ActionButton
-                  aria-label={t('diagnostics.events.domain')}
-                  UNSAFE_className="diagnostics-domain-trigger"
-                >
-                  <Filter />
-                  <Text>{domain || t('diagnostics.events.allDomains')}</Text>
-                  <ChevronDown />
-                </ActionButton>
-                <Menu
-                  aria-label={t('diagnostics.events.domain')}
-                  selectionMode="single"
-                  disallowEmptySelection
-                  selectedKeys={[domain || '__all__']}
-                  onSelectionChange={(keys) => {
-                    if (keys === 'all') return
-                    const [key] = keys
-                    setDomain(key === '__all__' ? '' : String(key))
-                  }}
-                >
-                  <MenuItem id="__all__">{t('diagnostics.events.allDomains')}</MenuItem>
-                  {domains.map((item) => (
-                    <MenuItem key={item} id={item}>
-                      {item}
-                    </MenuItem>
-                  ))}
-                </Menu>
-              </MenuTrigger>
-            </div>
-            <div className="diagnostics-toolbar-actions">
-              <ActionButton
-                aria-label={
-                  pausedEvents === null
-                    ? t('diagnostics.events.pause')
-                    : t('diagnostics.events.resume')
-                }
-                aria-pressed={pausedEvents !== null}
-                onPress={() =>
-                  setPausedEvents((current) => (current === null ? [...currentEvents] : null))
-                }
-                UNSAFE_className={
-                  pausedEvents === null
-                    ? 'diagnostics-toolbar-action'
-                    : 'diagnostics-toolbar-action diagnostics-toolbar-action-active'
-                }
-              >
-                {pausedEvents === null ? <Pause /> : <Play />}
-                <Text>
-                  {pausedEvents === null
-                    ? t('diagnostics.events.pause')
-                    : t('diagnostics.events.resume')}
-                </Text>
-              </ActionButton>
-              <ActionButton
-                aria-label={t('diagnostics.events.clear')}
-                onPress={clearView}
-                UNSAFE_className="diagnostics-toolbar-action"
-              >
-                <Erase />
-                <Text>{t('diagnostics.events.clear')}</Text>
-              </ActionButton>
-            </div>
-          </div>
-          <div className="diagnostics-event-table">
-            <div className="diagnostics-event-header">
-              <span>{t('diagnostics.events.time')}</span>
-              <span>{t('diagnostics.events.domain')}</span>
-              <span>{t('diagnostics.events.event')}</span>
-              <span>{t('diagnostics.events.summary')}</span>
-            </div>
-            {filteredEvents.map((event) => (
-              <div className="diagnostics-event" key={event.id}>
-                <button
-                  type="button"
-                  className="diagnostics-event-row"
-                  aria-expanded={expandedEvents.has(event.id)}
-                  onClick={() => toggleEvent(event.id)}
-                >
-                  <span>{formatTime(event.time)}</span>
-                  <span>{event.domain}</span>
-                  <strong>{event.name}</strong>
-                  <span>{event.summary}</span>
-                </button>
-                {expandedEvents.has(event.id) && (
-                  <pre className="diagnostics-json">{JSON.stringify(event.payload, null, 2)}</pre>
-                )}
-              </div>
-            ))}
-          </div>
-          {visibleEvents.length === 0 && (
-            <p className="diagnostics-empty">{t('diagnostics.events.empty')}</p>
-          )}
-          {visibleEvents.length > 0 && filteredEvents.length === 0 && (
-            <p className="diagnostics-empty">{t('diagnostics.events.noMatches')}</p>
-          )}
-        </div>
-      ) : (
-        <div className="diagnostics-snapshot">
-          {snapshotSections.map((section) => {
-            const collapsed = collapsedSections.has(section.id)
-            return (
-              <section className="diagnostics-snapshot-section" key={section.id}>
-                <button
-                  type="button"
-                  className="diagnostics-snapshot-heading"
-                  aria-expanded={!collapsed}
-                  onClick={() => toggleSection(section.id)}
-                >
-                  <strong>{section.title}</strong>
-                  <span>
-                    {t('diagnostics.snapshot.fieldCount', { count: section.fields.length })}
-                  </span>
-                </button>
-                {!collapsed && (
-                  <div className="diagnostics-snapshot-fields">
-                    {section.fields.map((field) => (
-                      <div className="diagnostics-snapshot-field" key={field.label}>
-                        <span>{field.label}</span>
-                        <SnapshotValue value={field.value} />
-                      </div>
+      <Tabs
+        aria-label={t('app.nav.diagnostics')}
+        selectedKey={activeTab}
+        onSelectionChange={(key) => setActiveTab(key === 'snapshot' ? 'snapshot' : 'events')}
+      >
+        <TabList UNSAFE_className="diagnostics-tabs">
+          <Tab id="events">{t('diagnostics.tabs.events')}</Tab>
+          <Tab id="snapshot">{t('diagnostics.tabs.snapshot')}</Tab>
+        </TabList>
+        <TabPanel id="events">
+          <div className="diagnostics-events">
+            <div className="diagnostics-toolbar">
+              <div className="diagnostics-toolbar-filters">
+                <SearchField
+                  aria-label={t('diagnostics.events.searchPlaceholder')}
+                  value={search}
+                  onChange={setSearch}
+                  placeholder={t('diagnostics.events.searchPlaceholder')}
+                  size="M"
+                  UNSAFE_className="diagnostics-search"
+                />
+                <MenuTrigger>
+                  <ActionButton
+                    aria-label={t('diagnostics.events.domain')}
+                    UNSAFE_className="diagnostics-domain-trigger"
+                  >
+                    <Filter />
+                    <Text>{domain || t('diagnostics.events.allDomains')}</Text>
+                    <ChevronDown />
+                  </ActionButton>
+                  <Menu
+                    aria-label={t('diagnostics.events.domain')}
+                    selectionMode="single"
+                    disallowEmptySelection
+                    selectedKeys={[domain || '__all__']}
+                    onSelectionChange={(keys) => {
+                      if (keys === 'all') return
+                      const [key] = keys
+                      setDomain(key === '__all__' ? '' : String(key))
+                    }}
+                  >
+                    <MenuItem id="__all__">{t('diagnostics.events.allDomains')}</MenuItem>
+                    {domains.map((item) => (
+                      <MenuItem key={item} id={item}>
+                        {item}
+                      </MenuItem>
                     ))}
-                  </div>
-                )}
-              </section>
-            )
-          })}
-        </div>
-      )}
+                  </Menu>
+                </MenuTrigger>
+              </div>
+              <div className="diagnostics-toolbar-actions">
+                <ActionButton
+                  aria-label={
+                    pausedEvents === null
+                      ? t('diagnostics.events.pause')
+                      : t('diagnostics.events.resume')
+                  }
+                  aria-pressed={pausedEvents !== null}
+                  onPress={() =>
+                    setPausedEvents((current) => (current === null ? [...currentEvents] : null))
+                  }
+                  UNSAFE_className={
+                    pausedEvents === null
+                      ? 'diagnostics-toolbar-action'
+                      : 'diagnostics-toolbar-action diagnostics-toolbar-action-active'
+                  }
+                >
+                  {pausedEvents === null ? <Pause /> : <Play />}
+                  <Text>
+                    {pausedEvents === null
+                      ? t('diagnostics.events.pause')
+                      : t('diagnostics.events.resume')}
+                  </Text>
+                </ActionButton>
+                <ActionButton
+                  aria-label={t('diagnostics.events.clear')}
+                  onPress={clearView}
+                  UNSAFE_className="diagnostics-toolbar-action"
+                >
+                  <Erase />
+                  <Text>{t('diagnostics.events.clear')}</Text>
+                </ActionButton>
+              </div>
+            </div>
+            <div className="diagnostics-event-table">
+              <div className="diagnostics-event-header">
+                <span>{t('diagnostics.events.time')}</span>
+                <span>{t('diagnostics.events.domain')}</span>
+                <span>{t('diagnostics.events.event')}</span>
+                <span>{t('diagnostics.events.summary')}</span>
+              </div>
+              {filteredEvents.map((event) => (
+                <div className="diagnostics-event" key={event.id}>
+                  <ActionButton
+                    UNSAFE_className="diagnostics-event-row"
+                    aria-expanded={expandedEvents.has(event.id)}
+                    onPress={() => toggleEvent(event.id)}
+                  >
+                    <span>{formatTime(event.time)}</span>
+                    <span>{event.domain}</span>
+                    <strong>{event.name}</strong>
+                    <span>{event.summary}</span>
+                  </ActionButton>
+                  {expandedEvents.has(event.id) && (
+                    <pre className="diagnostics-json">{JSON.stringify(event.payload, null, 2)}</pre>
+                  )}
+                </div>
+              ))}
+            </div>
+            {visibleEvents.length === 0 && (
+              <Text UNSAFE_className="diagnostics-empty">{t('diagnostics.events.empty')}</Text>
+            )}
+            {visibleEvents.length > 0 && filteredEvents.length === 0 && (
+              <Text UNSAFE_className="diagnostics-empty">{t('diagnostics.events.noMatches')}</Text>
+            )}
+          </div>
+        </TabPanel>
+        <TabPanel id="snapshot">
+          <div className="diagnostics-snapshot">
+            {snapshotSections.map((section) => {
+              const collapsed = collapsedSections.has(section.id)
+              return (
+                <section className="diagnostics-snapshot-section" key={section.id}>
+                  <ActionButton
+                    UNSAFE_className="diagnostics-snapshot-heading"
+                    aria-expanded={!collapsed}
+                    onPress={() => toggleSection(section.id)}
+                  >
+                    <strong>{section.title}</strong>
+                    <span>
+                      {t('diagnostics.snapshot.fieldCount', { count: section.fields.length })}
+                    </span>
+                  </ActionButton>
+                  {!collapsed && (
+                    <div className="diagnostics-snapshot-fields">
+                      {section.fields.map((field) => (
+                        <div className="diagnostics-snapshot-field" key={field.label}>
+                          <span>{field.label}</span>
+                          <SnapshotValue value={field.value} />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </section>
+              )
+            })}
+          </div>
+        </TabPanel>
+      </Tabs>
     </section>
   )
 }

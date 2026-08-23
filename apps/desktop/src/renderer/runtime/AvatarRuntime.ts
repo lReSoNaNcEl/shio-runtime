@@ -1,6 +1,8 @@
 import type * as THREE from 'three'
 
+import type { CharacterEmbodimentIntent } from '../../shared/character-response'
 import type {
+  AvatarRuntimeHealth,
   CharacterAvatarState,
   CharacterState,
   EventBus,
@@ -40,6 +42,7 @@ import type {
   VrmPerformanceDebugState,
 } from '../avatar/rendering/three/VrmModel'
 import type { OverlayViewMode } from '../avatar/tuning/cameraTuning'
+import { AvatarRuntimeHealthTracker } from './AvatarRuntimeHealthTracker'
 
 export type { AvatarMode }
 
@@ -86,6 +89,7 @@ export type AvatarRuntimeMirrorState = Partial<
 
 export class AvatarRuntime {
   private controller: AvatarController
+  private readonly health: AvatarRuntimeHealthTracker
   private lastPhrasePhase = 'idle'
   private lastEmotionProfile = 'neutral'
   private lastSpeakingGesturePhase = 'idle'
@@ -93,9 +97,13 @@ export class AvatarRuntime {
 
   constructor(
     private readonly events: EventBus,
-    options: { overlayMode?: boolean } = {},
+    options: {
+      overlayMode?: boolean
+      onHealthChange?: (health: AvatarRuntimeHealth) => void
+    } = {},
   ) {
     this.controller = new AvatarController(options)
+    this.health = new AvatarRuntimeHealthTracker(options.onHealthChange)
   }
 
   update(delta: number, state?: CharacterState): void {
@@ -124,8 +132,35 @@ export class AvatarRuntime {
   }
 
   async loadVrm(scene: THREE.Scene, buffer: ArrayBuffer): Promise<void> {
-    await this.controller.loadVrm(scene, buffer)
-    this.publishAvatarEvent('RuntimeInitialized', 'VRM Loaded')
+    this.health.markLoading()
+    try {
+      await this.controller.loadVrm(scene, buffer)
+      this.health.markReady(this.controller.isLoaded())
+      this.publishAvatarEvent('RuntimeInitialized', 'VRM Loaded')
+    } catch (error) {
+      this.health.markFailed(error, this.controller.isLoaded())
+      throw error
+    }
+  }
+
+  getHealth(): AvatarRuntimeHealth {
+    return this.health.getSnapshot()
+  }
+
+  reportHealth(): void {
+    this.health.reportCurrent()
+  }
+
+  attachPresentation(): void {
+    this.health.setPresentationAttached(true)
+  }
+
+  detachPresentation(): void {
+    this.health.setPresentationAttached(false)
+  }
+
+  dispose(): void {
+    this.health.markDisposed()
   }
 
   async loadAnimation(buffer: ArrayBuffer, loop = true): Promise<void> {
@@ -157,6 +192,11 @@ export class AvatarRuntime {
       this.lastEmotionProfile = emotionProfile
       this.publishAvatarEvent('EmotionEmbodimentResolved', `emotion=${emotionProfile}`)
     }
+  }
+
+  /** Stable semantic input; concrete gaze and clip selection remain internal. */
+  setEmbodimentIntent(intent: CharacterEmbodimentIntent | undefined): void {
+    this.controller.setEmbodimentIntent(intent)
   }
 
   getMirrorState(): AvatarRuntimeMirrorState {

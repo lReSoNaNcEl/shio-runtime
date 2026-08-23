@@ -1,4 +1,4 @@
-import { Tooltip, TooltipTrigger } from '@react-spectrum/s2'
+import { ActionButton, StatusLight, Tooltip, TooltipTrigger } from '@react-spectrum/s2'
 
 import { type HealthState } from '../../Controller'
 
@@ -19,17 +19,16 @@ export function RuntimeStatusIndicator({
 }) {
   return (
     <TooltipTrigger delay={200}>
-      <button
-        type="button"
-        className="runtime-status-trigger"
+      <ActionButton
+        isQuiet
+        UNSAFE_className="runtime-status-trigger"
         aria-label={health.text}
-        onClick={onPress}
+        onPress={onPress}
       >
-        <span
-          className={`runtime-status-light runtime-status-${VARIANT[health.state]}`}
-          aria-hidden="true"
-        />
-      </button>
+        <StatusLight variant={VARIANT[health.state]} size="S">
+          <span className="visually-hidden">{health.text}</span>
+        </StatusLight>
+      </ActionButton>
       <Tooltip>{health.text}</Tooltip>
     </TooltipTrigger>
   )

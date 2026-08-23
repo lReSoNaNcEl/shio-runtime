@@ -1,6 +1,5 @@
 import type { LlmPublicConfig } from '../llm/providers'
 import type { UiLocale } from '../localization/locale'
-import type { ProjectAwarenessPublicConfig } from '../project-awareness'
 
 export const DEFAULT_SPEECH_URL = 'http://localhost:8000'
 
@@ -13,13 +12,12 @@ export interface AppSettings {
   configSchemaVersion: number
   setup: SetupLifecycleConfig
   llm: LlmPublicConfig
-  projectAwareness: ProjectAwarenessPublicConfig
   uiLocale: UiLocale
   pythonSpeechUrl: string
-  ttsVoice: string
   ttsLanguage: string
   ttsEngine: string
-  vrmPath: string
+  vrmAssetHandle: string
+  vrmAssetName: string
   micDeviceId: string
   overlayWidth: string
   overlayHeight: string

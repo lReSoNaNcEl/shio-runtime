@@ -3,7 +3,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type { AppSettings } from '../shared/config'
 import type { ShioRuntimeApi } from '../shared/ipc'
 import type { LlmProviderId } from '../shared/llm'
-import type { RuntimeEventInput } from '../shared/runtime'
+import type { AvatarRuntimeHealth, RuntimeEventInput } from '../shared/runtime'
 import type {
   ScreenContextCaptureRequest,
   ScreenContextImportRequest,
@@ -14,6 +14,7 @@ const api = {
   system: {
     getReleaseInfo: () => ipcRenderer.invoke('system:get-release-info'),
     openLogsFolder: () => ipcRenderer.invoke('system:open-logs-folder'),
+    reportRendererFailure: () => ipcRenderer.invoke('system:report-renderer-failure'),
     getRuntimeSupportBundle: () => ipcRenderer.invoke('system:get-runtime-support-bundle'),
   },
   health: {
@@ -53,8 +54,7 @@ const api = {
     release: (captureId: string) => ipcRenderer.invoke('screen-context:release', captureId),
   },
   tts: {
-    warmup: (input: { engine: string; voiceId: string; language: string }) =>
-      ipcRenderer.invoke('tts:warmup', input),
+    warmup: (input: { language: string }) => ipcRenderer.invoke('tts:warmup', input),
     synthesizeReply: (turnId: string, replyText: string, emotionKey: string) =>
       ipcRenderer.invoke('tts:synthesize-reply', turnId, replyText, emotionKey),
     cancelSynthesis: (turnId: string) => ipcRenderer.invoke('tts:cancel-synthesis', turnId),
@@ -62,7 +62,14 @@ const api = {
   memory: {
     clear: () => ipcRenderer.invoke('memory:clear'),
   },
+  plugins: {
+    list: () => ipcRenderer.invoke('plugins:list'),
+    get: (id) => ipcRenderer.invoke('plugins:get', id),
+    enable: (id) => ipcRenderer.invoke('plugins:enable', id),
+    disable: (id) => ipcRenderer.invoke('plugins:disable', id),
+  },
   projectAwareness: {
+    getConfig: () => ipcRenderer.invoke('project-awareness:get-config'),
     getStatus: () => ipcRenderer.invoke('project-awareness:get-status'),
     configure: (config: unknown) => ipcRenderer.invoke('project-awareness:configure', config),
     saveCredential: (token: string) =>
@@ -91,7 +98,7 @@ const api = {
   },
   vrm: {
     pick: () => ipcRenderer.invoke('vrm:pick'),
-    read: (filePath: string) => ipcRenderer.invoke('vrm:read', filePath),
+    read: (assetHandle: string) => ipcRenderer.invoke('vrm:read', assetHandle),
   },
   vrma: {
     pick: () => ipcRenderer.invoke('vrma:pick'),
@@ -101,23 +108,16 @@ const api = {
     isVisible: () => ipcRenderer.invoke('overlay:is-visible'),
     applySettings: () => ipcRenderer.invoke('overlay:apply-settings'),
     reloadAvatar: () => ipcRenderer.invoke('overlay:reload-avatar'),
-    onSettingsUpdated: (cb: (cfg: AppSettings) => void) => {
-      ipcRenderer.on('overlay-settings:updated', (_e, cfg) => cb(cfg))
-    },
   },
   avatarState: {
-    get: () => ipcRenderer.invoke('avatar-state:get'),
     publish: (state: unknown) => ipcRenderer.invoke('avatar-state:publish', state),
-    onUpdated: (cb: (state: unknown) => void) => {
-      ipcRenderer.on('avatar-state:updated', (_e, state) => cb(state))
-    },
   },
   avatarMouth: {
-    get: () => ipcRenderer.invoke('avatar-mouth:get'),
     publish: (weights: unknown) => ipcRenderer.invoke('avatar-mouth:publish', weights),
-    onUpdated: (cb: (weights: unknown) => void) => {
-      ipcRenderer.on('avatar-mouth:updated', (_e, weights) => cb(weights))
-    },
+  },
+  avatarRuntime: {
+    publishHealth: (health: AvatarRuntimeHealth) =>
+      ipcRenderer.invoke('avatar-runtime:publish-health', health),
   },
   actionEvents: {
     onPublished: (cb: (event: RuntimeEventInput) => void) => {

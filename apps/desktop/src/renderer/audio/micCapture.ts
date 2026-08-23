@@ -1,3 +1,5 @@
+import { observeRendererPromise } from '../reliability/observePromise'
+
 const ASR_SAMPLE_RATE = 16000
 
 function downsampleFloat32(buffer: Float32Array, inSr: number, outSr: number): Float32Array {
@@ -132,7 +134,7 @@ export class MicCapture {
       this.stream = null
     }
     if (this.audioCtx) {
-      void this.audioCtx.close()
+      observeRendererPromise(this.audioCtx.close(), 'close microphone AudioContext')
       this.audioCtx = null
     }
 

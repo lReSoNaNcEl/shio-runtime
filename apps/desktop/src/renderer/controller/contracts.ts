@@ -1,5 +1,5 @@
 import type { LlmReadiness } from '../../shared/llm'
-import type { CharacterState, RuntimeEvent } from '../../shared/runtime'
+import type { AvatarRuntimeHealth, CharacterState, RuntimeEvent } from '../../shared/runtime'
 import type { SpeechPolishDebugState } from '../../shared/speech'
 import type { MicrophoneGateState } from '../audio/microphoneGateTypes'
 import type { AnimationPlaybackStatus } from '../avatar/AvatarAnimationController'
@@ -88,6 +88,7 @@ export interface RuntimeTimelineEvent {
 
 export interface RuntimeDebugSnapshot {
   appStatus: AppStatus
+  avatarRuntimeHealth: AvatarRuntimeHealth
   characterState: CharacterState
   eventHistory: readonly RuntimeEvent[]
   avatarMode: AvatarMode

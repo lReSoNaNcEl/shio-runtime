@@ -1,3 +1,4 @@
+import { observeRendererPromise } from '../reliability/observePromise'
 import {
   type MicrophoneDeviceService,
   type MicrophoneFailure,
@@ -51,7 +52,7 @@ export class MicrophoneGateController {
   private operationId = 0
   private disposed = false
   private readonly handleDeviceChange = (): void => {
-    void this.onDeviceChange()
+    this.runBackground(this.onDeviceChange(), 'handle microphone device change')
   }
 
   private debug: MicrophoneGateDebugState = {
@@ -116,9 +117,12 @@ export class MicrophoneGateController {
     const forceOpen =
       reason === 'runtime-start-failed' || reason === 'active-device-lost' || initialError != null
     if (forceOpen) {
-      void this.openGate(intent, reason, initialError ?? null)
+      this.runBackground(
+        this.openGate(intent, reason, initialError ?? null),
+        'open microphone gate',
+      )
     } else {
-      void this.checkSavedDeviceThenOpen(intent)
+      this.runBackground(this.checkSavedDeviceThenOpen(intent), 'check saved microphone')
     }
     return promise
   }
@@ -294,6 +298,13 @@ export class MicrophoneGateController {
       selectedDeviceLabel: this.selectedLabel(next),
     }
     if (!this.disposed) this.onStateChange(next)
+  }
+
+  private runBackground(promise: Promise<void>, context: string): void {
+    observeRendererPromise(promise, context, (error) => {
+      this.recordEvent?.('Microphone Gate Error', String(error))
+      if (this.pending) this.finish({ status: 'cancelled', intent: this.pending.intent })
+    })
   }
 
   private selectedLabel(state: MicrophoneGateState): string | null {

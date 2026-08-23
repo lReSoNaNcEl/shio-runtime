@@ -1,4 +1,4 @@
-import { Button } from '@react-spectrum/s2'
+import { ActionButton, Button } from '@react-spectrum/s2'
 import Close from '@react-spectrum/s2/icons/Close'
 
 import { useTranslation } from '../../localization/useTranslation'
@@ -44,14 +44,14 @@ export function SpeechUnavailableBanner({
           {t('speech.banner.openHealth')}
         </Button>
       </div>
-      <button
-        type="button"
-        className="speech-banner-close"
+      <ActionButton
+        isQuiet
+        UNSAFE_className="speech-banner-close"
         aria-label={t('speech.banner.dismiss')}
-        onClick={onDismiss}
+        onPress={onDismiss}
       >
         <Close />
-      </button>
+      </ActionButton>
     </div>
   )
 }

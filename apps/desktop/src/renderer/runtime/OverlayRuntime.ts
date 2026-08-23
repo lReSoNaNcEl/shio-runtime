@@ -1,7 +1,12 @@
+import {
+  type CharacterEmbodimentIntent,
+  normalizeCharacterEmbodimentIntent,
+} from '../../shared/character-response'
 import type { EarImpulse } from '../avatar/embodiment/secondary-motion/EarBehaviorRuntime'
 import type { MouthWeights } from '../avatar/embodiment/speech/LipSync'
 import type { SceneManager } from '../avatar/rendering/three/SceneManager'
 import type { OverlayViewMode } from '../avatar/tuning/cameraTuning'
+import { observeRendererPromise } from '../reliability/observePromise'
 import type { AvatarMode } from './AvatarRuntime'
 
 export interface SyncedAvatarState {
@@ -12,6 +17,7 @@ export interface SyncedAvatarState {
   reactionId?: string
   earImpulse?: EarImpulse
   earImpulseId?: string
+  embodimentIntent?: CharacterEmbodimentIntent
 }
 
 /**
@@ -39,6 +45,7 @@ export class OverlayRuntime {
   private mouthPublishTimer = 0
   private lastMouthPublishSpeaking = false
   private lastMirrorLipSyncLogAt = 0
+  private remoteUnsubscribers: Array<() => void> = []
 
   isOverlayWindow(): boolean {
     return this.overlayWindow
@@ -78,8 +85,8 @@ export class OverlayRuntime {
     if (!this.overlayWindow) return { avatarState: null, mouthWeights: null }
 
     const [avatarState, mouthWeights] = await Promise.all([
-      window.api.avatarState.get(),
-      window.api.avatarMouth.get(),
+      window.overlayApi.avatarState.get(),
+      window.overlayApi.avatarMouth.get(),
     ])
 
     return {
@@ -90,26 +97,33 @@ export class OverlayRuntime {
 
   subscribeToRemoteUpdates(handlers: OverlayRemoteHandlers): void {
     if (!this.overlayWindow) return
+    this.disposeRemoteSubscriptions()
 
-    window.api.avatarState.onUpdated((state) => {
-      const parsed = this.parseAvatarState(state)
-      if (parsed) handlers.avatarState?.(parsed)
-    })
-    window.api.avatarMouth.onUpdated((weights) => {
-      const parsed = this.parseMouthWeights(weights)
-      if (parsed) {
-        this.logMirrorLipSync('mirror', parsed, 'ipc-receive')
-        handlers.mouthWeights?.(parsed)
-      }
-    })
-    window.api.overlay.onSettingsUpdated((cfg) => {
-      handlers.settings?.(cfg)
-    })
+    this.remoteUnsubscribers = [
+      window.overlayApi.avatarState.onUpdated((state) => {
+        const parsed = this.parseAvatarState(state)
+        if (parsed) handlers.avatarState?.(parsed)
+      }),
+      window.overlayApi.avatarMouth.onUpdated((weights) => {
+        const parsed = this.parseMouthWeights(weights)
+        if (parsed) {
+          this.logMirrorLipSync('mirror', parsed, 'ipc-receive')
+          handlers.mouthWeights?.(parsed)
+        }
+      }),
+      window.overlayApi.config.onUpdated((cfg) => {
+        handlers.settings?.(cfg)
+      }),
+    ]
+  }
+
+  dispose(): void {
+    this.disposeRemoteSubscriptions()
   }
 
   publishAvatarState(state: SyncedAvatarState): void {
     if (this.overlayWindow) return
-    void window.api.avatarState.publish(state)
+    observeRendererPromise(window.api.avatarState.publish(state), 'publish Overlay avatar state')
   }
 
   publishMouthWeightsFrame(delta: number, speaking: boolean, weights: MouthWeights): void {
@@ -125,13 +139,20 @@ export class OverlayRuntime {
       this.lastMouthPublishSpeaking = false
       const closed = { aa: 0, ih: 0, ou: 0, ee: 0, oh: 0 }
       this.logMirrorLipSync('main', closed, 'ipc-publish-stop')
-      void window.api.avatarMouth.publish(closed)
+      observeRendererPromise(
+        window.api.avatarMouth.publish(closed),
+        'publish Overlay mouth release',
+      )
       return
     }
 
     this.lastMouthPublishSpeaking = true
     this.logMirrorLipSync('main', weights, releaseActive ? 'ipc-publish-release' : 'ipc-publish')
-    void window.api.avatarMouth.publish(weights)
+    observeRendererPromise(window.api.avatarMouth.publish(weights), 'publish Overlay mouth weights')
+  }
+
+  private disposeRemoteSubscriptions(): void {
+    for (const unsubscribe of this.remoteUnsubscribers.splice(0)) unsubscribe()
   }
 
   private parseAvatarState(state: unknown): SyncedAvatarState | null {
@@ -162,6 +183,7 @@ export class OverlayRuntime {
           ? value.earImpulse
           : undefined,
       earImpulseId: typeof value.earImpulseId === 'string' ? value.earImpulseId : undefined,
+      embodimentIntent: normalizeCharacterEmbodimentIntent(value.embodimentIntent),
     }
   }
 

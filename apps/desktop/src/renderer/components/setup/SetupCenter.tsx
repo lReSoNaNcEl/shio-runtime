@@ -16,6 +16,7 @@ import { type LlmProviderId, type ModelInfo, type ProviderProfile } from '../../
 import { controller } from '../../Controller'
 import { type ControllerState } from '../../controller/contracts'
 import { useTranslation } from '../../localization/useTranslation'
+import { observeRendererPromise } from '../../reliability/observePromise'
 import { ModelComboBox } from '../settings/ModelComboBox'
 
 const fullWidth = style({ width: 'full' })
@@ -47,15 +48,18 @@ export function SetupCenter({ state, onClose, onComplete, onToggleOverlay }: Set
   useEffect(() => {
     const devices =
       navigator.mediaDevices?.enumerateDevices().catch(() => []) ?? Promise.resolve([])
-    void Promise.all([window.api.llm.providers(), window.api.config.get(), devices]).then(
-      ([availableProviders, currentConfig, availableDevices]) => {
-        setProviders(availableProviders)
-        setConfig(currentConfig)
-        setProvider(currentConfig.llm.activeProvider)
-        setModel(currentConfig.llm.providers[currentConfig.llm.activeProvider].model)
-        setMicrophoneId(currentConfig.micDeviceId)
-        setMicrophones(availableDevices.filter((device) => device.kind === 'audioinput'))
-      },
+    observeRendererPromise(
+      Promise.all([window.api.llm.providers(), window.api.config.get(), devices]).then(
+        ([availableProviders, currentConfig, availableDevices]) => {
+          setProviders(availableProviders)
+          setConfig(currentConfig)
+          setProvider(currentConfig.llm.activeProvider)
+          setModel(currentConfig.llm.providers[currentConfig.llm.activeProvider].model)
+          setMicrophoneId(currentConfig.micDeviceId)
+          setMicrophones(availableDevices.filter((device) => device.kind === 'audioinput'))
+        },
+      ),
+      'load Setup Center data',
     )
   }, [])
 
@@ -124,11 +128,11 @@ export function SetupCenter({ state, onClose, onComplete, onToggleOverlay }: Set
   const pickAvatar = async (): Promise<void> => {
     setAvatarAction('busy')
     const result = await window.api.vrm.pick()
-    if (!result.ok || !result.vrmPath) {
+    if (!result.ok || !result.assetHandle) {
       setAvatarAction('error')
       return
     }
-    controller.selectVrm(result.vrmPath)
+    controller.selectVrm(result.assetHandle)
     setConfig(await window.api.config.get())
     setAvatarAction('ready')
   }
@@ -212,7 +216,7 @@ export function SetupCenter({ state, onClose, onComplete, onToggleOverlay }: Set
             <ActionButton
               isDisabled={!credentialConfigured}
               isPending={aiAction === 'busy'}
-              onPress={() => void loadModels()}
+              onPress={() => observeRendererPromise(loadModels(), 'load Setup Center models')}
             >
               {t('setup.ai.loadModels')}
             </ActionButton>

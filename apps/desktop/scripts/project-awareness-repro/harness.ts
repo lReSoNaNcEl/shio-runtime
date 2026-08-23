@@ -428,7 +428,6 @@ async function main(): Promise<void> {
     assert.equal(recent.commits[0]?.changedFiles[0], 'src/ProjectRuntime.ts')
 
     const reconfigured = await runtime.configure({
-      enabled: true,
       provider: 'github',
       repository: 'another/project',
       branch: 'feature/project-awareness',
@@ -439,12 +438,7 @@ async function main(): Promise<void> {
     assert.equal(receivedName, 'project')
     assert.equal(adapter.lastBranch, 'feature/project-awareness')
 
-    const disabled = await runtime.configure({
-      enabled: false,
-      provider: 'github',
-      repository: 'another/project',
-      branch: 'feature/project-awareness',
-    })
+    const disabled = await runtime.setEnabled(false)
     assert.equal(disabled.enabled, false)
     assert.equal(disabled.state, 'disconnected')
   } finally {

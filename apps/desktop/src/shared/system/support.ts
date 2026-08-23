@@ -1,5 +1,28 @@
 import type { LlmProviderId } from '../llm'
 import type { ProjectAwarenessStatus } from '../project-awareness'
+import type { AvatarRuntimeHealth } from '../runtime'
+
+export type RendererProcessStatus =
+  | 'not-created'
+  | 'loading'
+  | 'ready'
+  | 'failed-to-load'
+  | 'render-process-gone'
+  | 'closed'
+
+export interface RendererProcessFailure {
+  kind: 'load' | 'process'
+  code: number
+  reason: string
+  description: string
+}
+
+export interface RendererProcessHealth {
+  status: RendererProcessStatus
+  updatedAt: string
+  recoveryAttempts: number
+  lastFailure: RendererProcessFailure | null
+}
 
 export interface ReleaseInfo {
   version: string
@@ -27,7 +50,15 @@ export interface RuntimeSupportBundle {
     credentialConfigured: Record<LlmProviderId, boolean>
   }
   projectAwareness: ProjectAwarenessStatus
-  vrmLoaded: boolean
+  avatarRuntime: {
+    /** False when the renderer is not ready, so a previously reported snapshot is stale. */
+    reportFresh: boolean
+    health: AvatarRuntimeHealth | null
+  }
+  renderers: {
+    main: RendererProcessHealth
+    overlay: RendererProcessHealth
+  }
   microphoneConfigured: boolean
   overlayVisible: boolean
   latestRuntimeErrors: ReadonlyArray<{ timestamp: string; message: string }>

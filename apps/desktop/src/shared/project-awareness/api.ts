@@ -14,13 +14,13 @@ import type { ProjectProvider } from './repository'
 import type { ProjectAwarenessStatus } from './status'
 
 export interface ProjectAwarenessPublicConfig {
-  enabled: boolean
   provider: ProjectProvider
   repository: string
   branch: string
 }
 
 export interface ProjectAwarenessApi {
+  getConfig(): Promise<ProjectAwarenessPublicConfig>
   getStatus(): Promise<ProjectAwarenessStatus>
   configure(config: ProjectAwarenessPublicConfig): Promise<ProjectAwarenessStatus>
   saveCredential(token: string): Promise<ProjectAwarenessStatus>

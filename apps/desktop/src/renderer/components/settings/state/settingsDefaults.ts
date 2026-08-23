@@ -25,8 +25,5 @@ export const defaultBacklogSelectorRole: BacklogSelectorRoleConfig = {
 
 export const defaultSettingsForm = {
   ttsLanguage: 'ru',
-  ttsVoice: 'animevox_makima',
   microphoneId: 'default',
-  projectEnabled: true,
-  projectBranch: 'main',
 }

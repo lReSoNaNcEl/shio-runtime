@@ -3,13 +3,22 @@ import * as THREE from 'three'
 
 import { avatarLookAtTuning } from '../../tuning/motionTuning'
 
-export type LookAtMode = 'idle' | 'speaking' | 'listening' | 'thinking' | 'userFocus'
+export type LookAtMode =
+  | 'idle'
+  | 'speaking'
+  | 'listening'
+  | 'thinking'
+  | 'userFocus'
+  | 'screenFocus'
+  | 'away'
 export type LookAtTargetKind =
   | 'none'
   | 'camera'
   | 'idleOffset'
   | 'thinkingOffset'
   | 'conversationFocus'
+  | 'screenContext'
+  | 'replyAway'
 
 export interface LookAtDebugState {
   mode: LookAtMode
@@ -81,7 +90,15 @@ export class LookTargetResolver {
     let pitch = this.saccadePitch
     let returnProgress = 1
 
-    if (mode === 'thinking') {
+    if (mode === 'screenFocus') {
+      yaw += avatarLookAtTuning.targets.thinkingOffset.yaw * 1.35
+      pitch += avatarLookAtTuning.targets.thinkingOffset.pitch * 0.8
+      targetKind = 'screenContext'
+    } else if (mode === 'away') {
+      yaw += avatarLookAtTuning.targets.idleOffset.yaw * 1.4
+      pitch += avatarLookAtTuning.targets.idleOffset.pitch
+      targetKind = 'replyAway'
+    } else if (mode === 'thinking') {
       const duration = avatarLookAtTuning.thinkingLookAwayDurationMs
       const hold = Math.min(1, this.thinkingTimerMs / Math.max(1, duration))
       const returnStart = avatarLookAtTuning.thinkingReturnStart

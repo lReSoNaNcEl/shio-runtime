@@ -22,6 +22,7 @@ import {
   type MicrophoneGateDebugState,
 } from './audio/microphoneGateTypes'
 import type { DebugAvatarMode } from './avatar/avatarAnimations'
+import { readResolvedVrmSource, resolveVrmSource } from './avatar/defaultVrm'
 import type { EarAxisOverride } from './avatar/embodiment/secondary-motion/EarBehaviorRuntime'
 import type { MouthWeights } from './avatar/embodiment/speech/LipSync'
 import { SceneManager } from './avatar/rendering/three/SceneManager'
@@ -36,6 +37,7 @@ import type {
 } from './controller/contracts'
 import { isVrmConfigured } from './controller/firstRunState'
 import { RuntimeDiagnosticsProjection } from './controller/RuntimeDiagnosticsProjection'
+import { observeRendererPromise } from './reliability/observePromise'
 import { type AvatarMode, AvatarRuntime } from './runtime/AvatarRuntime'
 import { ConversationPresenceRuntime } from './runtime/ConversationPresenceRuntime'
 import { ConversationRuntime } from './runtime/ConversationRuntime'
@@ -84,12 +86,18 @@ export class Controller {
   // detach so async VRM loads can detect that the scene they started with was torn
   // down or replaced, and silently abort instead of touching a disposed SceneManager.
   private previewSceneVersion = 0
-  private selectedVoice = ''
   private selectedVoiceLanguage = ''
   private voiceWarmupKey = ''
   private overlayRuntime = new OverlayRuntime()
   private avatarRuntime = new AvatarRuntime(this.shioRuntime.events, {
     overlayMode: this.overlayRuntime.isOverlayWindow(),
+    onHealthChange: (health) => {
+      if (this.overlayRuntime.isOverlayWindow()) return
+      observeRendererPromise(
+        window.api.avatarRuntime.publishHealth(health),
+        'publish Avatar Runtime health',
+      )
+    },
   })
   private player = new AudioPlayer()
   private speechRuntime = new SpeechRuntime(
@@ -156,6 +164,7 @@ export class Controller {
     getControllerState: () => this.store.getState(),
     getCharacterState: () => this.getCharacterStateSnapshot(),
     getAvatarDebugState: () => this.avatarRuntime.getDebugState(),
+    getAvatarRuntimeHealth: () => this.avatarRuntime.getHealth(),
     getPlaybackDebug: () => this.player.getPlaybackDebug(),
     getOverlayDebugState: () => this.overlayRuntime.getDebugState(),
     getEventHistory: () => this.shioRuntime.events.getHistory(),
@@ -219,11 +228,14 @@ export class Controller {
   private overlayDesired: boolean | null = null
   private newConversationCommand: Promise<void> | null = null
   private unsubscribeActionEvents: (() => void) | null = null
+  private unsubscribeConfigUpdates: (() => void) | null = null
   private actionRuntimeBoundary = { process: 'main', source: 'main.actionRuntime' }
   // Dedup for the one-per-incident "показан текстом" note while TTS is down.
   private lastSynthesisNoticeIncidentId = 0
   private frameCounter = 0
   private bootstrapped = false
+  private bootstrapTask: Promise<void> | null = null
+  private disposed = false
   private avatarTickRafId: number | null = null
   private avatarTickLastTime = 0
   private llmHealthDetailKey: TranslationKey | null = 'common.notChecked'
@@ -325,32 +337,32 @@ export class Controller {
 
   private handleSpeechCapabilitiesChange(capabilities: SpeechCapabilitiesState): void {
     this.set({ speechCapabilities: capabilities, health: this.toLegacyHealth(capabilities) })
-    if (capabilities.service === 'available') void this.warmSelectedVoice()
+    if (capabilities.service === 'available') {
+      observeRendererPromise(this.warmSelectedVoice(), 'warm selected voice')
+    }
   }
 
   private async warmSelectedVoice(): Promise<void> {
-    if (!this.selectedVoice || !this.selectedVoiceLanguage) return
-    const key = `f5:${this.selectedVoice}:${this.selectedVoiceLanguage}`
+    if (!this.selectedVoiceLanguage) return
+    const key = `f5:${this.selectedVoiceLanguage}`
     if (this.voiceWarmupKey === key && this.state.voiceWarmup.state !== 'failed') return
     this.voiceWarmupKey = key
     this.set({
       voiceWarmup: {
         state: 'warming',
-        voiceId: this.selectedVoice,
+        voiceId: '',
         language: this.selectedVoiceLanguage,
       },
     })
     try {
       const result = await window.api.tts.warmup({
-        engine: 'f5',
-        voiceId: this.selectedVoice,
         language: this.selectedVoiceLanguage,
       })
       if (key !== this.voiceWarmupKey) return
       this.set({
         voiceWarmup: {
           state: result.state === 'ready' ? 'ready' : 'failed',
-          voiceId: result.voiceId,
+          voiceId: '',
           language: result.language,
         },
       })
@@ -359,7 +371,7 @@ export class Controller {
       this.set({
         voiceWarmup: {
           state: 'failed',
-          voiceId: this.selectedVoice,
+          voiceId: '',
           language: this.selectedVoiceLanguage,
         },
       })
@@ -452,47 +464,67 @@ export class Controller {
 
   // ---- lifecycle -----------------------------------------------------------
   async bootstrap(): Promise<void> {
-    if (this.bootstrapped) return
-    this.bootstrapped = true
-    this.subscribeActionRuntimeEvents()
+    if (this.bootstrapped || this.disposed) return
+    if (this.bootstrapTask) return this.bootstrapTask
+    const task = this.bootstrapInternal()
+    this.bootstrapTask = task
+    try {
+      await task
+      if (!this.disposed) this.bootstrapped = true
+    } finally {
+      if (this.bootstrapTask === task) this.bootstrapTask = null
+    }
+  }
+
+  private async bootstrapInternal(): Promise<void> {
+    if (this.disposed) return
     this.publishControllerRuntimeEvent('RuntimeInitialized', 'system')
     this.recordRuntimeEvent(this.overlayRuntime.runtimeAttachedLabel())
-    const cfg = await window.api.config.get()
-    this.selectedVoice = cfg.ttsVoice
-    this.selectedVoiceLanguage = cfg.ttsLanguage
-    this.set({ vrmConfigured: isVrmConfigured(cfg.vrmPath) })
-    this.set({ llmReadiness: await window.api.llm.getReadiness() })
-    this.applyUiLocale(normalizeUiLocale(cfg.uiLocale))
-    await this.checkHealth()
-    void this.checkLlmHealth()
     // The overlay renderer is a presentation projection, not a second
-    // application runtime. It must never start microphone capture, admission,
-    // generation, synthesis, or playback. It only consumes the main renderer's
-    // avatar/mouth projections and maintains its own visual tick.
+    // application runtime. Its bootstrap must use only the minimal Overlay bridge.
     if (this.overlayRuntime.isOverlayWindow()) {
+      const cfg = await window.overlayApi.config.get()
+      if (this.disposed) return
+      this.set({ vrmConfigured: isVrmConfigured(resolveVrmSource(cfg.vrmAssetHandle)) })
+      this.applyUiLocale(normalizeUiLocale(cfg.uiLocale))
       const remote = await this.overlayRuntime.loadInitialRemoteState()
+      if (this.disposed) return
       if (remote.avatarState) this.applyRemoteAvatarState(remote.avatarState, false)
       if (remote.mouthWeights) this.applyRemoteMouthWeights(remote.mouthWeights)
       this.startAvatarTickLoop()
       return
     }
+
+    this.subscribeActionRuntimeEvents()
+    this.avatarRuntime.reportHealth()
+    const cfg = await window.api.config.get()
+    if (this.disposed) return
+    this.selectedVoiceLanguage = cfg.ttsLanguage
+    this.set({ vrmConfigured: isVrmConfigured(resolveVrmSource(cfg.vrmAssetHandle)) })
+    this.set({ llmReadiness: await window.api.llm.getReadiness() })
+    if (this.disposed) return
+    this.applyUiLocale(normalizeUiLocale(cfg.uiLocale))
+    await this.checkHealth()
+    if (this.disposed) return
+    observeRendererPromise(this.checkLlmHealth(), 'check LLM health during bootstrap')
     this.applyOverlayConfigProjection(cfg)
     const overlay = await window.api.overlay.isVisible()
+    if (this.disposed) return
     this.set({ overlayState: overlay.visible ? 'on' : 'off' })
-    window.api.config.onUpdated((updated) => {
+    this.unsubscribeConfigUpdates = window.api.config.onUpdated((updated) => {
       this.applyOverlayConfigProjection(updated)
       this.applyUiLocale(normalizeUiLocale(updated.uiLocale))
-      this.set({ vrmConfigured: isVrmConfigured(updated.vrmPath) })
-      void window.api.llm.getReadiness().then((llmReadiness) => this.set({ llmReadiness }))
-      void this.checkLlmHealth()
-      const voiceChanged =
-        updated.ttsVoice !== this.selectedVoice ||
-        updated.ttsLanguage !== this.selectedVoiceLanguage
-      this.selectedVoice = updated.ttsVoice
+      this.set({ vrmConfigured: isVrmConfigured(resolveVrmSource(updated.vrmAssetHandle)) })
+      observeRendererPromise(
+        window.api.llm.getReadiness().then((llmReadiness) => this.set({ llmReadiness })),
+        'refresh LLM readiness after config update',
+      )
+      observeRendererPromise(this.checkLlmHealth(), 'check LLM health after config update')
+      const voiceChanged = updated.ttsLanguage !== this.selectedVoiceLanguage
       this.selectedVoiceLanguage = updated.ttsLanguage
       if (voiceChanged) {
         this.voiceWarmupKey = ''
-        void this.warmSelectedVoice()
+        observeRendererPromise(this.warmSelectedVoice(), 'warm updated voice')
       }
     })
     this.speechInputRuntime.setMicrophone(cfg.micDeviceId ?? '', false)
@@ -619,24 +651,29 @@ export class Controller {
     options: { loadModel?: boolean } = {},
   ): Promise<void> {
     await this.bootstrap()
+    if (this.disposed) return
     if (this.scene) return
     const scene = new SceneManager(canvas)
     const version = ++this.previewSceneVersion
     this.scene = scene
     scene.start()
+    this.avatarRuntime.attachPresentation()
 
-    const cfg = await window.api.config.get()
+    const cfg = this.overlayRuntime.isOverlayWindow()
+      ? await window.overlayApi.config.get()
+      : await window.api.config.get()
     this.applyOverlaySettings(cfg)
-    if (options.loadModel !== false && cfg.vrmPath)
-      await this.loadVrmFromPath(cfg.vrmPath, scene, version)
+    if (options.loadModel !== false)
+      await this.loadVrmFromPath(resolveVrmSource(cfg.vrmAssetHandle), scene, version)
   }
 
   detachCanvas(): void {
-    if (!this.scene || this.overlayRuntime.isOverlayWindow()) return
+    if (!this.scene) return
     // Invalidate any in-flight preview load so its post-await steps abort.
     ++this.previewSceneVersion
     this.scene.dispose()
     this.scene = null
+    this.avatarRuntime.detachPresentation()
     this.set({ vrmLoaded: false })
   }
 
@@ -709,6 +746,7 @@ export class Controller {
       emotion: avatarState.emotionKey ?? 'neutral',
       vrmEmotion: avatarState.vrmEmotion,
     })
+    this.avatarRuntime.setEmbodimentIntent(avatarState.embodimentIntent)
     this.applyAvatarCharacterState()
     if (allowReaction && avatarState.reaction === 'user-interruption')
       this.avatarRuntime.triggerUserInterruption()
@@ -914,11 +952,14 @@ export class Controller {
   }
 
   refreshMicrophoneGateDevices(): void {
-    void this.microphoneGate.refreshDevices()
+    observeRendererPromise(this.microphoneGate.refreshDevices(), 'refresh microphone devices')
   }
 
   continueMicrophoneGate(): void {
-    void this.microphoneGate.validateAndContinue()
+    observeRendererPromise(
+      this.microphoneGate.validateAndContinue(),
+      'validate microphone selection',
+    )
   }
 
   cancelMicrophoneGate(): void {
@@ -929,10 +970,23 @@ export class Controller {
     return this.microphoneGate.getDebugState()
   }
 
-  /** Tear down Controller-owned listeners (microphone gate, capability probing). */
+  /** Tear down Controller-owned listeners, renderer resources, and projections. */
   dispose(): void {
+    if (this.disposed) return
+    this.disposed = true
+    this.unsubscribeActionEvents?.()
+    this.unsubscribeActionEvents = null
+    this.unsubscribeConfigUpdates?.()
+    this.unsubscribeConfigUpdates = null
+    if (this.avatarTickRafId !== null) cancelAnimationFrame(this.avatarTickRafId)
+    this.avatarTickRafId = null
+    this.detachCanvas()
+    this.overlayRuntime.dispose()
+    this.player.stop()
+    this.speechInputRuntime.dispose()
     this.microphoneGate.dispose()
     this.speechCapabilitiesRuntime.dispose()
+    this.avatarRuntime.dispose()
   }
 
   // ---- VRM / animation -----------------------------------------------------
@@ -947,7 +1001,7 @@ export class Controller {
     // must abort silently — it must never touch a disposed SceneManager.
     const isCurrent = (): boolean => version === this.previewSceneVersion && this.scene === scene
     try {
-      const res = await window.api.vrm.read(filePath)
+      const res = await readResolvedVrmSource(filePath)
       if (!res.ok || !res.buffer) throw new Error(res.error ?? this.t('controller.fileReadFailed'))
       if (!isCurrent()) return
       await this.avatarRuntime.loadVrm(scene.scene, res.buffer)
@@ -974,7 +1028,7 @@ export class Controller {
       // Only the main window drives this; the overlay reloads itself in place,
       // so it must never re-trigger the refresh on its own boot.
       if (!this.overlayRuntime.isOverlayWindow()) {
-        void window.api.overlay.reloadAvatar()
+        observeRendererPromise(window.api.overlay.reloadAvatar(), 'reload Overlay avatar')
       }
     } catch (e) {
       // A load invalidated by detach/replace is an expected cancellation, not a
@@ -988,7 +1042,7 @@ export class Controller {
 
   selectVrm(filePath: string): void {
     this.set({ vrmConfigured: isVrmConfigured(filePath) })
-    if (this.scene) void this.loadVrmFromPath(filePath)
+    if (this.scene) observeRendererPromise(this.loadVrmFromPath(filePath), 'load selected VRM')
   }
 
   async loadAnimation(buffer: ArrayBuffer): Promise<void> {
@@ -1083,8 +1137,13 @@ export class Controller {
     const next = !this.state.faceTrackingEnabled
     const ok = this.avatarRuntime.setLookAtTarget(next ? this.scene.getLookAtTarget() : null)
     this.set({ faceTrackingEnabled: ok ? next : false })
-    void window.api.config.save({ lookAtEnabled: ok && next ? 'true' : 'false' })
-    if (!this.overlayRuntime.isOverlayWindow()) void window.api.overlay.reloadAvatar()
+    observeRendererPromise(
+      window.api.config.save({ lookAtEnabled: ok && next ? 'true' : 'false' }),
+      'save look-at setting',
+    )
+    if (!this.overlayRuntime.isOverlayWindow()) {
+      observeRendererPromise(window.api.overlay.reloadAvatar(), 'reload Overlay after look-at')
+    }
   }
 
   private subscribeActionRuntimeEvents(): void {

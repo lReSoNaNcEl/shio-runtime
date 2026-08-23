@@ -10,6 +10,7 @@ for (const mode of ['silent', 'passive', 'active', 'streamer']) {
     continuousListeningMode: mode,
     continuousListeningEnabled: 'true',
     passiveCompanionEnabled: 'false',
+    ttsVoice: 'legacy-user-voice',
     overlayViewMode: 'front',
     micDeviceId: 'saved-microphone',
     projectAwareness: { enabled: true, repository: '' },
@@ -19,9 +20,10 @@ for (const mode of ['silent', 'passive', 'active', 'streamer']) {
   assert.equal('continuousListeningMode' in migrated, false)
   assert.equal('continuousListeningEnabled' in migrated, false)
   assert.equal('passiveCompanionEnabled' in migrated, false)
+  assert.equal('ttsVoice' in migrated, false)
   assert.equal(migrated.micDeviceId, 'saved-microphone')
   assert.deepEqual(migrated.setup, { completed: false })
-  assert.equal((migrated.projectAwareness as { enabled: boolean }).enabled, false)
+  assert.equal('projectAwareness' in migrated, false)
   assert.deepEqual(migrateLegacyDesktopSettings(migrated), migrated)
 }
 

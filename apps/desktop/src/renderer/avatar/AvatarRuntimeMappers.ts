@@ -1,3 +1,4 @@
+import type { EmbodimentGazeHint } from '../../shared/character-response'
 import type { CharacterState } from '../../shared/runtime'
 import type { AvatarMode, AvatarStateEffect } from './AvatarStateMachine'
 import type { HeadMotionProfile } from './embodiment/gaze/HeadMotionRuntime'
@@ -17,7 +18,14 @@ export function toAvatarMode(mode: CharacterState['mode']): AvatarMode {
   }
 }
 
-export function toLookAtMode(effect: AvatarStateEffect, state?: CharacterState): LookAtMode {
+export function toLookAtMode(
+  effect: AvatarStateEffect,
+  state?: CharacterState,
+  gazeHint?: EmbodimentGazeHint,
+): LookAtMode {
+  if (gazeHint === 'screen') return 'screenFocus'
+  if (gazeHint === 'away') return 'away'
+  if (gazeHint === 'user') return 'userFocus'
   if (effect.mode === 'speaking') return 'speaking'
   if (effect.mode === 'listening') return 'listening'
   if (effect.mode === 'thinking' || effect.mode === 'awaitingSpeech') return 'thinking'
@@ -26,6 +34,8 @@ export function toLookAtMode(effect: AvatarStateEffect, state?: CharacterState):
 }
 
 export function toHeadMotionProfile(mode: LookAtMode): HeadMotionProfile {
+  if (mode === 'screenFocus') return 'thinking'
+  if (mode === 'away') return 'idle'
   return mode
 }
 

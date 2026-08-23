@@ -13,6 +13,7 @@ import { translate } from '../../shared/localization'
 import type { RuntimeEventInput } from '../../shared/runtime'
 import type { ScreenContextErrorCode } from '../../shared/screen-context'
 import { ActionRuntime } from '../action/ActionRuntime'
+import { vrmAssetRegistry } from '../assets/VrmAssetRegistry'
 import { getConfig, getRendererConfig, saveConfig } from '../config'
 import {
   createLLMProvider,
@@ -27,12 +28,15 @@ import {
 } from '../llm'
 import { mainLog } from '../logging/safeLogger'
 import type { CharacterReplyInput, Orchestrator } from '../orchestrator'
-import type { ProjectAwarenessRuntime, ProjectCredentialStore } from '../project-awareness'
+import type { PluginRuntime } from '../plugins'
+import type { ProjectAwarenessPlugin } from '../project-awareness'
 import { ScreenContextError, type ScreenContextService } from '../screen-context'
 import type { SpeechClient } from '../speech/speechClient'
+import { IPC_ONE_PAYLOAD, type IpcAuthorization } from './IpcAuthorization'
 import { registerAvatarIpc } from './registerAvatarIpc'
 import { registerConfigIpc } from './registerConfigIpc'
 import { registerLlmIpc } from './registerLlmIpc'
+import { registerPluginIpc } from './registerPluginIpc'
 import { registerProjectAwarenessIpc } from './registerProjectAwarenessIpc'
 import { registerScreenContextIpc } from './registerScreenContextIpc'
 import { registerSpeechIpc } from './registerSpeechIpc'
@@ -45,11 +49,12 @@ export function registerIpcHandlers(
   orchestrator: () => Orchestrator,
   llm: () => LlmGateway,
   llmCredentialStore: () => LlmCredentialStore,
-  projectAwareness: () => ProjectAwarenessRuntime,
-  projectCredentialStore: () => ProjectCredentialStore,
+  plugins: () => PluginRuntime,
+  projectAwareness: () => ProjectAwarenessPlugin,
   speech: () => SpeechClient,
   screenContext: ScreenContextService,
   win: BrowserWindow,
+  authorization: IpcAuthorization,
 ): void {
   const sendActionEvent = (event: RuntimeEventInput): void => {
     if (win.isDestroyed()) return
@@ -139,8 +144,7 @@ export function registerIpcHandlers(
     name: 'config.save',
     description: 'Persist application configuration.',
     execute: (partial) => {
-      const { projectAwareness: _projectAwareness, ...settings } = partial
-      saveConfig(settings)
+      saveConfig(partial)
       win.webContents.send('config:updated', getRendererConfig())
       return { ok: true }
     },
@@ -186,17 +190,15 @@ export function registerIpcHandlers(
       })
       if (result.canceled || result.filePaths.length === 0) return { ok: false }
       const vrmPath = result.filePaths[0]
+      const asset = vrmAssetRegistry.registerSelectedAsset(vrmPath)
       saveConfig({ vrmPath })
-      return { ok: true, vrmPath }
+      return { ok: true, ...asset }
     },
   })
   actions.register<string, { ok: boolean; buffer?: ArrayBuffer; error?: string }>({
     name: 'vrm.read',
-    description: 'Read a VRM model file from disk.',
-    execute: (filePath) => {
-      const buf = readFileSync(filePath)
-      return { ok: true, buffer: buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) }
-    },
+    description: 'Read a registered VRM model asset.',
+    execute: (assetHandle) => ({ ok: true, buffer: vrmAssetRegistry.readAsset(assetHandle) }),
   })
   actions.register({
     name: 'vrma.pick',
@@ -230,162 +232,174 @@ export function registerIpcHandlers(
       cancelledTurns.add(turnId)
       if (activeSynthesisTurnId === turnId) activeSynthesisTurnId = null
     },
+    authorization,
   })
 
-  registerLlmIpc({ actions, llm, credentials: llmCredentialStore, window: win })
-  registerScreenContextIpc(screenContext)
+  registerLlmIpc({ actions, llm, credentials: llmCredentialStore, window: win, authorization })
+  registerScreenContextIpc(screenContext, authorization)
 
   const replyPayloadSchema = z.object({
     turnId: z.string().trim().min(1).max(100),
     userText: z.string().trim().min(1).max(20_000),
     screenContextId: z.string().trim().min(1).max(100).optional(),
   })
-  ipcMain.handle('llm:reply', async (event, payload: unknown) => {
-    const parsed = replyPayloadSchema.safeParse(payload)
-    if (!parsed.success) return { ok: false, error: 'Invalid LLM reply request' }
-    const { turnId, userText, screenContextId } = parsed.data
-    cancelledTurns.delete(turnId)
-    const llmConfig = getRendererConfig().llm
-    const activeProfile = PROVIDER_PROFILES.find(
-      (profile) => profile.id === llmConfig.activeProvider,
-    )
-    if (
-      activeProfile?.requiresApiKey !== false &&
-      !llmConfig.providers[llmConfig.activeProvider].credential.configured
-    ) {
-      return { ok: false, errorCode: 'LLM_CREDENTIAL_MISSING' as const }
-    }
+  ipcMain.handle(
+    'llm:reply',
+    authorization.handlePayload('llm:reply', IPC_ONE_PAYLOAD, async (event, payload: unknown) => {
+      const parsed = replyPayloadSchema.safeParse(payload)
+      if (!parsed.success) return { ok: false, error: 'Invalid LLM reply request' }
+      const { turnId, userText, screenContextId } = parsed.data
+      cancelledTurns.delete(turnId)
+      const llmConfig = getRendererConfig().llm
+      const activeProfile = PROVIDER_PROFILES.find(
+        (profile) => profile.id === llmConfig.activeProvider,
+      )
+      if (
+        activeProfile?.requiresApiKey !== false &&
+        !llmConfig.providers[llmConfig.activeProvider].credential.configured
+      ) {
+        return { ok: false, errorCode: 'LLM_CREDENTIAL_MISSING' as const }
+      }
 
-    let pendingCapture: ReturnType<ScreenContextService['acquireForTurn']> | undefined
-    if (screenContextId) {
-      const capabilities = llm().getActiveCapabilities()
-      if (!capabilities.supportsVision) {
-        return {
-          ok: false,
-          failure: {
-            domain: 'screen-context' as const,
-            code: 'VISION_UNSUPPORTED' as const,
-            attachmentDisposition: 'retained' as const,
-            retrySameRequest: false,
-            canResubmitWithoutImage: true,
-          },
+      let pendingCapture: ReturnType<ScreenContextService['acquireForTurn']> | undefined
+      if (screenContextId) {
+        const capabilities = llm().getActiveCapabilities()
+        if (!capabilities.supportsVision) {
+          return {
+            ok: false,
+            failure: {
+              domain: 'screen-context' as const,
+              code: 'VISION_UNSUPPORTED' as const,
+              attachmentDisposition: 'retained' as const,
+              retrySameRequest: false,
+              canResubmitWithoutImage: true,
+            },
+          }
         }
+        try {
+          pendingCapture = screenContext.acquireForTurn(event.sender.id, screenContextId, turnId)
+        } catch (error) {
+          const errorCode = screenContextErrorCode(error)
+          return {
+            ok: false,
+            failure: {
+              domain: 'screen-context' as const,
+              code: errorCode,
+              attachmentDisposition: screenContextFailureDisposition(errorCode),
+              retrySameRequest: false,
+              canResubmitWithoutImage: true,
+            },
+          }
+        }
+      }
+
+      const abortController = new AbortController()
+      replyAbortControllers.set(turnId, abortController)
+      let settleReply!: () => void
+      replySettlements.set(
+        turnId,
+        new Promise<void>((resolve) => {
+          settleReply = resolve
+        }),
+      )
+      if (pendingCapture) {
+        visionTurns.add(turnId)
+        mainLog.info('Vision Request Started', { turnId })
       }
       try {
-        pendingCapture = screenContext.acquireForTurn(event.sender.id, screenContextId, turnId)
-      } catch (error) {
-        const errorCode = screenContextErrorCode(error)
+        const action = await actions.execute<
+          {
+            turnId: string
+            input: CharacterReplyInput
+            signal: AbortSignal
+          },
+          Awaited<ReturnType<Orchestrator['createReply']>>
+        >({
+          name: 'speech.createReply',
+          payload: {
+            turnId,
+            input: {
+              userText,
+              screenContext: pendingCapture
+                ? {
+                    mimeType: pendingCapture.mimeType,
+                    bytes: pendingCapture.bytes,
+                    sourceName: pendingCapture.sourceName,
+                  }
+                : undefined,
+            },
+            signal: abortController.signal,
+          },
+        })
+        if (action.status === 'success' && action.result) {
+          if (pendingCapture && screenContextId) {
+            screenContext.completeTurn(event.sender.id, screenContextId, turnId)
+            mainLog.info('Vision Request Completed', { turnId })
+          }
+          const { replyText, emotionKey, embodimentIntent } = action.result
+          return { ok: true, replyText, emotionKey, embodimentIntent }
+        }
+        const code = (action.errorCode as LlmTurnErrorCode | undefined) ?? 'UNKNOWN'
+        const recoverable = action.recoverable ?? false
+        let attachmentDisposition: AttachmentDisposition = 'released'
+        if (pendingCapture && screenContextId) {
+          if (recoverable || code === 'CANCELLED') {
+            screenContext.rollbackTurn(event.sender.id, screenContextId, turnId)
+            attachmentDisposition = 'retained'
+          } else {
+            screenContext.completeTurn(event.sender.id, screenContextId, turnId)
+          }
+        }
+        mainLog.warn('LLM Turn Failed', {
+          provider: action.providerId ?? llmConfig.activeProvider,
+          turnId,
+          code,
+          vision: Boolean(pendingCapture),
+          recoverable,
+        })
+        const recovery = deriveTurnRecoveryCapabilities({
+          code,
+          transportRecoverable: recoverable,
+          hadImage: Boolean(screenContextId),
+          attachmentDisposition,
+        })
         return {
           ok: false,
           failure: {
-            domain: 'screen-context' as const,
-            code: errorCode,
-            attachmentDisposition: screenContextFailureDisposition(errorCode),
-            retrySameRequest: false,
-            canResubmitWithoutImage: true,
+            domain: 'llm' as const,
+            code,
+            providerId: action.providerId ?? llmConfig.activeProvider,
+            attachmentDisposition,
+            ...recovery,
           },
         }
+      } finally {
+        replyAbortControllers.delete(turnId)
+        cancelledTurns.delete(turnId)
+        visionTurns.delete(turnId)
+        pendingCapture = undefined
+        settleReply()
+        replySettlements.delete(turnId)
       }
-    }
-
-    const abortController = new AbortController()
-    replyAbortControllers.set(turnId, abortController)
-    let settleReply!: () => void
-    replySettlements.set(
-      turnId,
-      new Promise<void>((resolve) => {
-        settleReply = resolve
-      }),
-    )
-    if (pendingCapture) {
-      visionTurns.add(turnId)
-      mainLog.info('Vision Request Started', { turnId })
-    }
-    try {
-      const action = await actions.execute<
-        {
-          turnId: string
-          input: CharacterReplyInput
-          signal: AbortSignal
-        },
-        Awaited<ReturnType<Orchestrator['createReply']>>
-      >({
-        name: 'speech.createReply',
-        payload: {
-          turnId,
-          input: {
-            userText,
-            screenContext: pendingCapture
-              ? {
-                  mimeType: pendingCapture.mimeType,
-                  bytes: pendingCapture.bytes,
-                  sourceName: pendingCapture.sourceName,
-                }
-              : undefined,
-          },
-          signal: abortController.signal,
-        },
-      })
-      if (action.status === 'success' && action.result) {
-        if (pendingCapture && screenContextId) {
-          screenContext.completeTurn(event.sender.id, screenContextId, turnId)
-          mainLog.info('Vision Request Completed', { turnId })
-        }
-        const { replyText, emotionKey } = action.result
-        return { ok: true, replyText, emotionKey }
-      }
-      const code = (action.errorCode as LlmTurnErrorCode | undefined) ?? 'UNKNOWN'
-      const recoverable = action.recoverable ?? false
-      let attachmentDisposition: AttachmentDisposition = 'released'
-      if (pendingCapture && screenContextId) {
-        if (recoverable || code === 'CANCELLED') {
-          screenContext.rollbackTurn(event.sender.id, screenContextId, turnId)
-          attachmentDisposition = 'retained'
-        } else {
-          screenContext.completeTurn(event.sender.id, screenContextId, turnId)
-        }
-      }
-      mainLog.warn('LLM Turn Failed', {
-        provider: action.providerId ?? llmConfig.activeProvider,
-        turnId,
-        code,
-        vision: Boolean(pendingCapture),
-        recoverable,
-      })
-      const recovery = deriveTurnRecoveryCapabilities({
-        code,
-        transportRecoverable: recoverable,
-        hadImage: Boolean(screenContextId),
-        attachmentDisposition,
-      })
-      return {
-        ok: false,
-        failure: {
-          domain: 'llm' as const,
-          code,
-          providerId: action.providerId ?? llmConfig.activeProvider,
-          attachmentDisposition,
-          ...recovery,
-        },
-      }
-    } finally {
-      replyAbortControllers.delete(turnId)
-      cancelledTurns.delete(turnId)
-      visionTurns.delete(turnId)
-      pendingCapture = undefined
-      settleReply()
-      replySettlements.delete(turnId)
-    }
-  })
-  ipcMain.handle('llm:cancel-reply', async (_event, turnId: string) => {
-    const abortController = replyAbortControllers.get(turnId)
-    if (!abortController) return { ok: true }
-    cancelledTurns.add(turnId)
-    abortController.abort()
-    if (visionTurns.has(turnId)) mainLog.info('Vision Request Cancelled', { turnId })
-    await replySettlements.get(turnId)
-    return { ok: true }
-  })
+    }),
+  )
+  ipcMain.handle(
+    'llm:cancel-reply',
+    authorization.handlePayload(
+      'llm:cancel-reply',
+      IPC_ONE_PAYLOAD,
+      async (_event, payload: unknown) => {
+        const turnId = z.string().trim().min(1).max(100).parse(payload)
+        const abortController = replyAbortControllers.get(turnId)
+        if (!abortController) return { ok: true }
+        cancelledTurns.add(turnId)
+        abortController.abort()
+        if (visionTurns.has(turnId)) mainLog.info('Vision Request Cancelled', { turnId })
+        await replySettlements.get(turnId)
+        return { ok: true }
+      },
+    ),
+  )
 
   const backlogResultSchema = z
     .object({
@@ -407,112 +421,124 @@ export function registerIpcHandlers(
 
   ipcMain.handle(
     'llm:arbitrate-backlog',
-    async (
-      _event,
-      payload: {
-        items?: Array<{
-          id: string
-          text: string
-          priorityClass: string
-          attentionScore: number
-          createdAt: number
-        }>
-        backlogVersion?: number
-        providerId?: string
-        model?: string
+    authorization.handlePayload(
+      'llm:arbitrate-backlog',
+      IPC_ONE_PAYLOAD,
+      async (_event, rawPayload: unknown) => {
+        const payloadSchema = z
+          .object({
+            items: z
+              .array(
+                z
+                  .object({
+                    id: z.string().min(1).max(100),
+                    text: z.string().min(1).max(2_000),
+                    priorityClass: z.string().min(1).max(50),
+                    attentionScore: z.number().finite(),
+                    createdAt: z.number().finite(),
+                  })
+                  .strict(),
+              )
+              .max(10),
+            backlogVersion: z.number().int().nonnegative(),
+            providerId: z.string().refine(isLlmProviderId),
+            model: z.string().trim().min(1).max(500),
+          })
+          .strict()
+        const parsed = payloadSchema.safeParse(rawPayload)
+        if (!parsed.success) {
+          return { ok: false, error: translate(getConfig().uiLocale, 'main.error.invalidBacklog') }
+        }
+        const payload = parsed.data
+        const config = getConfig()
+        const role = config.llm.roles.backlogSelector
+        if (
+          !role.enabled ||
+          role.providerId !== payload.providerId ||
+          role.model !== payload.model
+        ) {
+          return {
+            ok: false,
+            error: translate(getConfig().uiLocale, 'main.error.selectorDisabled'),
+          }
+        }
+        if (!role.providerId)
+          return {
+            ok: false,
+            error: translate(getConfig().uiLocale, 'main.error.selectorProviderMissing'),
+          }
+        const providerId = role.providerId
+        const credential = llmCredentialStore().resolve(providerId)
+        if (!credential.apiKey)
+          return {
+            ok: false,
+            error: translate(getConfig().uiLocale, 'main.error.selectorKeyMissing'),
+          }
+        if (backlogArbitrationInFlight)
+          return {
+            ok: false,
+            error: translate(getConfig().uiLocale, 'main.error.arbitrationActive'),
+          }
+        const prompt = [
+          'You are a conversation backlog arbitration classifier.',
+          'You inspect completed user utterances captured through continuous microphone listening while the assistant was busy.',
+          'Do not answer the user, roleplay, or invent wording. Select, merge, or discard only.',
+          'Prefer direct corrections, direct questions, direct follow-ups, then recent relevant continuation.',
+          'Reject self-echo, duplicates, stale utterances, filler, and unrelated background speech.',
+          'Return valid JSON only with action, selectedIds, optional text, reason, confidence, backlogVersion.',
+          'Select at most one next user turn. When merging, preserve the user wording and meaning.',
+        ].join(' ')
+        try {
+          backlogArbitrationInFlight = true
+          const provider = createLLMProvider({
+            provider: providerId,
+            apiKey: credential.apiKey,
+            model: role.model,
+          })
+          const raw = await provider.chat([
+            { role: 'system', content: prompt },
+            {
+              role: 'user',
+              content: JSON.stringify({
+                backlogVersion: payload.backlogVersion,
+                items: payload.items,
+              }),
+            },
+          ])
+          const json = JSON.parse(
+            raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, ''),
+          ) as unknown
+          return { ok: true, result: backlogResultSchema.parse(json) }
+        } catch (error) {
+          return { ok: false, error: error instanceof Error ? error.message : String(error) }
+        } finally {
+          backlogArbitrationInFlight = false
+        }
       },
-    ) => {
-      if (
-        !payload ||
-        !Array.isArray(payload.items) ||
-        !isLlmProviderId(payload.providerId ?? '') ||
-        typeof payload.model !== 'string' ||
-        !payload.model ||
-        !Number.isInteger(payload.backlogVersion)
-      ) {
-        return { ok: false, error: translate(getConfig().uiLocale, 'main.error.invalidBacklog') }
-      }
-      const config = getConfig()
-      const role = config.llm.roles.backlogSelector
-      if (!role.enabled || role.providerId !== payload.providerId || role.model !== payload.model) {
-        return {
-          ok: false,
-          error: translate(getConfig().uiLocale, 'main.error.selectorDisabled'),
-        }
-      }
-      if (!role.providerId)
-        return {
-          ok: false,
-          error: translate(getConfig().uiLocale, 'main.error.selectorProviderMissing'),
-        }
-      const providerId = role.providerId
-      const credential = llmCredentialStore().resolve(providerId)
-      if (!credential.apiKey)
-        return {
-          ok: false,
-          error: translate(getConfig().uiLocale, 'main.error.selectorKeyMissing'),
-        }
-      if (backlogArbitrationInFlight)
-        return {
-          ok: false,
-          error: translate(getConfig().uiLocale, 'main.error.arbitrationActive'),
-        }
-      const prompt = [
-        'You are a conversation backlog arbitration classifier.',
-        'You inspect completed user utterances captured through continuous microphone listening while the assistant was busy.',
-        'Do not answer the user, roleplay, or invent wording. Select, merge, or discard only.',
-        'Prefer direct corrections, direct questions, direct follow-ups, then recent relevant continuation.',
-        'Reject self-echo, duplicates, stale utterances, filler, and unrelated background speech.',
-        'Return valid JSON only with action, selectedIds, optional text, reason, confidence, backlogVersion.',
-        'Select at most one next user turn. When merging, preserve the user wording and meaning.',
-      ].join(' ')
-      try {
-        backlogArbitrationInFlight = true
-        const provider = createLLMProvider({
-          provider: providerId,
-          apiKey: credential.apiKey,
-          model: role.model,
-        })
-        const raw = await provider.chat([
-          { role: 'system', content: prompt },
-          {
-            role: 'user',
-            content: JSON.stringify({
-              backlogVersion: payload.backlogVersion,
-              items: payload.items,
-            }),
-          },
-        ])
-        const json = JSON.parse(
-          raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, ''),
-        ) as unknown
-        return { ok: true, result: backlogResultSchema.parse(json) }
-      } catch (error) {
-        return { ok: false, error: error instanceof Error ? error.message : String(error) }
-      } finally {
-        backlogArbitrationInFlight = false
-      }
-    },
+    ),
   )
 
-  ipcMain.handle('memory:clear', async () => {
-    const action = await actions.execute<void, { ok: boolean }>({
-      name: 'memory.clear',
-      payload: undefined,
-    })
-    return action.status === 'success' ? { ok: true } : { ok: false, error: action.error }
-  })
+  ipcMain.handle(
+    'memory:clear',
+    authorization.handle('memory:clear', async () => {
+      const action = await actions.execute<void, { ok: boolean }>({
+        name: 'memory.clear',
+        payload: undefined,
+      })
+      return action.status === 'success' ? { ok: true } : { ok: false, error: action.error }
+    }),
+  )
 
   registerProjectAwarenessIpc({
-    runtime: projectAwareness,
-    credentials: projectCredentialStore,
-    window: win,
+    plugin: projectAwareness,
+    authorization,
   })
+  registerPluginIpc(plugins, authorization)
 
-  registerConfigIpc(actions)
-  registerAvatarIpc(actions, win)
+  registerConfigIpc(actions, authorization)
+  registerAvatarIpc(actions, win, authorization)
 
-  registerSystemIpc()
+  registerSystemIpc(authorization)
 }
 
 function screenContextFailureDisposition(code: ScreenContextErrorCode): AttachmentDisposition {

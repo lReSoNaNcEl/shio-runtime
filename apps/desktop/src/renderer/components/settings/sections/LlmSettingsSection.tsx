@@ -11,6 +11,7 @@ import { style } from '@react-spectrum/s2/style' with { type: 'macro' }
 
 import { type LlmProviderId } from '../../../../shared/llm'
 import { useTranslation } from '../../../localization/useTranslation'
+import { observeRendererPromise } from '../../../reliability/observePromise'
 import { LlmHealthStatus } from '../LlmHealthStatus'
 import { ModelComboBox } from '../ModelComboBox'
 import { type LlmSettingsActions, type LlmSettingsState } from '../state/settingsContracts'
@@ -74,7 +75,9 @@ export function LlmSettingsSection({
             )}
             {showCredentialInput ? (
               <ActionButton
-                onPress={() => void actions.saveCredential()}
+                onPress={() =>
+                  observeRendererPromise(actions.saveCredential(), 'save LLM credential')
+                }
                 isDisabled={!state.keyInput.trim() || credential?.secureStorageAvailable === false}
               >
                 <Text>{t('settings.llm.saveKey')}</Text>
@@ -84,7 +87,11 @@ export function LlmSettingsSection({
                 <ActionButton onPress={() => actions.setEditingKey(true)}>
                   <Text>{t('settings.llm.replaceKey')}</Text>
                 </ActionButton>
-                <ActionButton onPress={() => void actions.forgetCredential()}>
+                <ActionButton
+                  onPress={() =>
+                    observeRendererPromise(actions.forgetCredential(), 'forget LLM credential')
+                  }
+                >
                   <Text>{t('settings.llm.deleteKey')}</Text>
                 </ActionButton>
               </>
@@ -129,7 +136,14 @@ export function LlmSettingsSection({
             {state.modelsState === 'network-error' && t('settings.llm.modelsNetworkError')}
           </span>
           {(state.modelsState === 'network-error' || state.modelsState === 'auth-error') && (
-            <ActionButton onPress={() => void actions.loadModels(state.activeProvider)}>
+            <ActionButton
+              onPress={() =>
+                observeRendererPromise(
+                  actions.loadModels(state.activeProvider),
+                  'reload LLM models',
+                )
+              }
+            >
               <Text>{t('settings.llm.loadModels')}</Text>
             </ActionButton>
           )}

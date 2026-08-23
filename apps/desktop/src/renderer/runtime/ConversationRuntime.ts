@@ -1,3 +1,4 @@
+import type { CharacterEmbodimentIntent } from '../../shared/character-response'
 import type {
   CharacterConversationPresenceState,
   CharacterRuntimeMode,
@@ -85,6 +86,7 @@ export class ConversationRuntime {
   private synthesisTurnId: string | null = null
   private playbackTurnId: string | null = null
   private activeEmotionPipeline: EmotionSpeechPipeline | null = null
+  private embodimentIntent: CharacterEmbodimentIntent | undefined
   private interruption: {
     turnId: string
     promise: Promise<never>
@@ -142,6 +144,7 @@ export class ConversationRuntime {
     const interruption = this.interruption
     if (!turnId || !interruption || interruption.turnId !== turnId) return false
     this.deps.setResponseInterruptionPending(true)
+    this.setEmbodimentIntent(undefined)
     this.activeEmotionPipeline?.cancel()
     this.activeTurnId = null
     this.activePhase = null
@@ -207,6 +210,9 @@ export class ConversationRuntime {
   ): Promise<ConversationCompletionResult> {
     let failurePhase: 'generation' | 'synthesis' | 'playback' | 'cleanup' = 'generation'
     try {
+      this.setEmbodimentIntent(
+        turn.screenContextId ? { intensity: 'subtle', gazeHint: 'screen' } : undefined,
+      )
       const thinkingPresence = this.deps.conversationPresenceRuntime.update({
         phase: 'thinking',
         userText: turn.text,
@@ -219,6 +225,8 @@ export class ConversationRuntime {
         this.deps.speechRuntime.createAssistantReply(turn.turnId, turn.text, turn.screenContextId),
       )
       if (!this.isCurrentTurn(turn.turnId)) return { status: 'cancelled', turnId: turn.turnId }
+
+      this.setEmbodimentIntent(draft.embodimentIntent)
 
       this.publishRuntimeEvent('SentenceGenerated', 'speech', `turnId=${turn.turnId}`)
       const generatedPresence = this.deps.conversationPresenceRuntime.update({
@@ -652,6 +660,7 @@ export class ConversationRuntime {
       )
       return
     }
+    this.setEmbodimentIntent(undefined)
     this.deps.avatarRuntime.stopLipSync(turnId)
     const finishing = this.deps.conversationPresenceRuntime.update({ phase: 'finishingSpeech' })
     this.deps.updateCharacterState({
@@ -674,11 +683,13 @@ export class ConversationRuntime {
 
   private async recoverToIdle(turnId: string): Promise<void> {
     if (!this.isCurrentTurn(turnId)) return
+    this.setEmbodimentIntent(undefined)
     this.deps.avatarRuntime.stopLipSync(turnId)
     this.enterAvatarMode('idle', 'neutral', 'idle')
   }
 
   private completeSilentReply(turnId: string, emotionKey: string, replyText: string): void {
+    this.setEmbodimentIntent(undefined)
     const listening = this.deps.isContinuousCaptureAlive()
     const status: ConversationStatus = listening ? 'listening' : 'idle'
     const mode: CharacterRuntimeMode = listening ? 'listening' : 'idle'
@@ -717,7 +728,15 @@ export class ConversationRuntime {
   }
 
   private publishAvatarState(state: SyncedAvatarState): void {
-    this.deps.overlayRuntime.publishAvatarState(state)
+    this.deps.overlayRuntime.publishAvatarState({
+      ...state,
+      embodimentIntent: this.embodimentIntent,
+    })
+  }
+
+  private setEmbodimentIntent(intent: CharacterEmbodimentIntent | undefined): void {
+    this.embodimentIntent = intent
+    this.deps.avatarRuntime.setEmbodimentIntent(intent)
   }
 
   private publishRuntimeEvent(

@@ -9,6 +9,7 @@ import {
   translate,
   type UiLocale,
 } from '../../shared/localization'
+import { observeRendererPromise } from '../reliability/observePromise'
 
 export interface LocalizationContextValue {
   locale: UiLocale
@@ -23,14 +24,20 @@ export function LocalizationProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let active = true
-    void window.api.config.get().then((config) => {
-      if (active) setLocale(normalizeUiLocale(config.uiLocale))
-    })
-    window.api.config.onUpdated((config) => {
+    const isOverlay = new URLSearchParams(window.location.search).get('overlay') === '1'
+    const configApi = isOverlay ? window.overlayApi.config : window.api.config
+    observeRendererPromise(
+      configApi.get().then((config) => {
+        if (active) setLocale(normalizeUiLocale(config.uiLocale))
+      }),
+      'load UI locale',
+    )
+    const unsubscribe = configApi.onUpdated((config) => {
       if (active) setLocale(normalizeUiLocale(config.uiLocale))
     })
     return () => {
       active = false
+      unsubscribe()
     }
   }, [])
 

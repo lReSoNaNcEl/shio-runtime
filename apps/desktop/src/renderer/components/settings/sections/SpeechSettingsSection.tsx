@@ -7,13 +7,13 @@ import {
   StatusLight,
   Switch,
   Text,
-  TextField,
 } from '@react-spectrum/s2'
 import Microphone from '@react-spectrum/s2/icons/Microphone'
 import Play from '@react-spectrum/s2/icons/Play'
 import { style } from '@react-spectrum/s2/style' with { type: 'macro' }
 
 import { useTranslation } from '../../../localization/useTranslation'
+import { observeRendererPromise } from '../../../reliability/observePromise'
 import { type SpeechSettingsActions, type SpeechSettingsState } from '../state/settingsContracts'
 
 const fullWidth = style({ width: 'full' })
@@ -53,12 +53,6 @@ export function SpeechSettingsSection({
 
   return (
     <div className="settings-grid">
-      <TextField
-        label={t('settings.speech.voice')}
-        value={state.currentTtsVoice}
-        onChange={actions.setCurrentTtsVoice}
-        styles={fullWidth}
-      />
       <Picker
         label={t('settings.speech.ttsLanguage')}
         selectedKey={state.language}
@@ -108,7 +102,9 @@ export function SpeechSettingsSection({
             size="S"
             isPending={isRecording}
             isDisabled={isPlaying || testDisabled}
-            onPress={() => void actions.recordMicrophoneTest()}
+            onPress={() =>
+              observeRendererPromise(actions.recordMicrophoneTest(), 'record microphone test')
+            }
           >
             <Microphone />
             <Text>{t('settings.speech.test.record')}</Text>
@@ -119,7 +115,9 @@ export function SpeechSettingsSection({
             size="S"
             isPending={isPlaying}
             isDisabled={!recordingAvailable || isRecording || testDisabled}
-            onPress={() => void actions.playMicrophoneTest()}
+            onPress={() =>
+              observeRendererPromise(actions.playMicrophoneTest(), 'play microphone test')
+            }
           >
             <Play />
             <Text>{t('settings.speech.test.play')}</Text>

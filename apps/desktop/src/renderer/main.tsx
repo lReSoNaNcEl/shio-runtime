@@ -1,6 +1,7 @@
 import { createRoot } from 'react-dom/client'
 
 import { App } from './components/App'
+import { RendererErrorBoundary } from './components/errors/RendererErrorBoundary'
 import { LocalizationProvider } from './localization/LocalizationProvider'
 import './styles/tokens.css'
 import './styles/base.css'
@@ -9,6 +10,8 @@ import './styles/chat.css'
 import './styles/settings.css'
 import './styles/setup-center.css'
 import './styles/avatar-preview.css'
+import './styles/health.css'
+import './styles/plugins.css'
 import './styles/overlay.css'
 import './styles/diagnostics.css'
 
@@ -17,7 +20,9 @@ import './styles/diagnostics.css'
 const rootElement = document.getElementById('root')
 if (!rootElement) throw new Error('Root element #root not found')
 createRoot(rootElement).render(
-  <LocalizationProvider>
-    <App />
-  </LocalizationProvider>,
+  <RendererErrorBoundary>
+    <LocalizationProvider>
+      <App />
+    </LocalizationProvider>
+  </RendererErrorBoundary>,
 )

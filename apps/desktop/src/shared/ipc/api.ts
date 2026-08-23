@@ -1,3 +1,4 @@
+import type { CharacterEmbodimentIntent } from '../character-response'
 import type { AppSettings } from '../config/appSettings'
 import type { BacklogSelectionResult, BufferedUtterance } from '../conversation/backlog'
 import type { ConversationTurnFailure } from '../conversation/turnFailure'
@@ -9,8 +10,9 @@ import type {
   LlmReadiness,
   ProviderProfile,
 } from '../llm/providers'
+import type { PluginManagementApi } from '../plugins'
 import type { ProjectAwarenessApi } from '../project-awareness'
-import type { RuntimeEventInput } from '../runtime/events'
+import type { AvatarRuntimeHealth, RuntimeEventInput } from '../runtime'
 import type {
   ScreenContextCaptureDescriptor,
   ScreenContextCaptureRequest,
@@ -30,10 +32,39 @@ export interface SpeechHealthCapabilities {
   streaming: boolean
 }
 
+export interface OverlayPresentationConfig {
+  uiLocale: AppSettings['uiLocale']
+  vrmAssetHandle: string
+  overlayTransparentBackground: string
+  overlayScale: string
+  overlayViewMode: string
+  developerModeEnabled: string
+  developerOverlayAnimationHudEnabled: string
+}
+
+export interface OverlayPresentationApi {
+  config: {
+    get: () => Promise<OverlayPresentationConfig>
+    onUpdated: (callback: (settings: OverlayPresentationConfig) => void) => () => void
+  }
+  vrm: {
+    read: (assetHandle: string) => Promise<{ ok: boolean; buffer?: ArrayBuffer; error?: string }>
+  }
+  avatarState: {
+    get: () => Promise<unknown>
+    onUpdated: (callback: (state: unknown) => void) => () => void
+  }
+  avatarMouth: {
+    get: () => Promise<unknown>
+    onUpdated: (callback: (weights: unknown) => void) => () => void
+  }
+}
+
 export interface ShioRuntimeApi {
   system: {
     getReleaseInfo: () => Promise<ReleaseInfo>
     openLogsFolder: () => Promise<{ ok: boolean }>
+    reportRendererFailure: () => Promise<{ ok: boolean }>
     getRuntimeSupportBundle: () => Promise<RuntimeSupportBundle>
   }
   health: {
@@ -59,6 +90,7 @@ export interface ShioRuntimeApi {
       ok: boolean
       replyText?: string
       emotionKey?: string
+      embodimentIntent?: CharacterEmbodimentIntent
       errorCode?: 'LLM_CREDENTIAL_MISSING'
       failure?: ConversationTurnFailure
     }>
@@ -93,10 +125,9 @@ export interface ShioRuntimeApi {
     release: (captureId: string) => Promise<ScreenContextResult<boolean>>
   }
   tts: {
-    warmup: (input: { engine: string; voiceId: string; language: string }) => Promise<{
+    warmup: (input: { language: string }) => Promise<{
       state: 'warming' | 'ready' | 'failed'
       engine: string
-      voiceId: string
       language: string
       latencyMs?: number
       error?: string
@@ -123,6 +154,7 @@ export interface ShioRuntimeApi {
     cancelSynthesis: (turnId: string) => Promise<{ ok: boolean }>
   }
   memory: { clear: () => Promise<unknown> }
+  plugins: PluginManagementApi
   projectAwareness: ProjectAwarenessApi
   config: {
     get: () => Promise<AppSettings>
@@ -130,8 +162,13 @@ export interface ShioRuntimeApi {
     onUpdated: (callback: (settings: AppSettings) => void) => () => void
   }
   vrm: {
-    pick: () => Promise<{ ok: boolean; vrmPath?: string }>
-    read: (filePath: string) => Promise<{ ok: boolean; buffer?: ArrayBuffer; error?: string }>
+    pick: () => Promise<{
+      ok: boolean
+      assetHandle?: string
+      displayName?: string
+      error?: string
+    }>
+    read: (assetHandle: string) => Promise<{ ok: boolean; buffer?: ArrayBuffer; error?: string }>
   }
   vrma: {
     pick: () => Promise<{ ok: boolean; animPath?: string; buffer?: ArrayBuffer; error?: string }>
@@ -141,17 +178,15 @@ export interface ShioRuntimeApi {
     isVisible: () => Promise<{ visible: boolean }>
     applySettings: () => Promise<{ ok: boolean; visible: boolean }>
     reloadAvatar: () => Promise<{ ok: boolean; visible: boolean }>
-    onSettingsUpdated: (callback: (settings: AppSettings) => void) => void
   }
   avatarState: {
-    get: () => Promise<unknown>
     publish: (state: unknown) => Promise<{ ok: boolean }>
-    onUpdated: (callback: (state: unknown) => void) => void
   }
   avatarMouth: {
-    get: () => Promise<unknown>
     publish: (weights: unknown) => Promise<{ ok: boolean }>
-    onUpdated: (callback: (weights: unknown) => void) => void
+  }
+  avatarRuntime: {
+    publishHealth: (health: AvatarRuntimeHealth) => Promise<{ ok: boolean }>
   }
   actionEvents: {
     onPublished: (callback: (event: RuntimeEventInput) => void) => () => void

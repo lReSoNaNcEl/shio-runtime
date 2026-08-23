@@ -1,4 +1,5 @@
-import { Button, Text, Tooltip, TooltipTrigger } from '@react-spectrum/s2'
+import { ActionButton, Button, Heading, Text, Tooltip, TooltipTrigger } from '@react-spectrum/s2'
+import Apps from '@react-spectrum/s2/icons/Apps'
 import Bug from '@react-spectrum/s2/icons/Bug'
 import Chat from '@react-spectrum/s2/icons/Chat'
 import Heart from '@react-spectrum/s2/icons/Heart'
@@ -8,9 +9,10 @@ import { type ReactNode, useEffect, useRef, useState } from 'react'
 
 import { type HealthState } from '../../Controller'
 import { useTranslation } from '../../localization/useTranslation'
+import { observeRendererPromise } from '../../reliability/observePromise'
 import { RuntimeStatusIndicator } from './RuntimeStatusIndicator'
 
-export type AppSection = 'chat' | 'avatar' | 'health' | 'debug' | 'settings'
+export type AppSection = 'chat' | 'avatar' | 'plugins' | 'health' | 'debug' | 'settings'
 
 export function AppShell({
   section,
@@ -18,16 +20,20 @@ export function AppShell({
   health,
   developerModeEnabled,
   children,
+  heading,
   headerAction,
   hideHeader = false,
+  contentClassName,
 }: {
   section: AppSection
   onSectionChange: (section: AppSection) => void
   health: { state: HealthState; text: string }
   developerModeEnabled: boolean
   children: ReactNode
+  heading?: ReactNode
   headerAction?: ReactNode
   hideHeader?: boolean
+  contentClassName?: string
 }) {
   const { t } = useTranslation()
   const [releaseInfo, setReleaseInfo] = useState<
@@ -37,9 +43,12 @@ export function AppShell({
   const versionCopiedTimer = useRef<number | null>(null)
   useEffect(() => {
     let active = true
-    void window.api.system.getReleaseInfo().then((info) => {
-      if (active) setReleaseInfo(info)
-    })
+    observeRendererPromise(
+      window.api.system.getReleaseInfo().then((info) => {
+        if (active) setReleaseInfo(info)
+      }),
+      'load Desktop release information',
+    )
     return () => {
       active = false
     }
@@ -62,6 +71,7 @@ export function AppShell({
     ...(developerModeEnabled
       ? [{ id: 'avatar' as const, label: t('app.nav.avatar'), icon: <User /> }]
       : []),
+    { id: 'plugins', label: t('app.nav.plugins'), icon: <Apps /> },
     { id: 'health', label: t('app.nav.health'), icon: <Heart /> },
   ]
   const utility: Array<{ id: AppSection; label: string; icon: ReactNode }> = [
@@ -71,18 +81,19 @@ export function AppShell({
   ]
   const renderItems = (items: typeof primary) =>
     items.map((item) => (
-      <button
+      <ActionButton
         key={item.id}
-        className="sidebar-item"
-        type="button"
+        isQuiet
+        UNSAFE_className="sidebar-item"
+        aria-label={item.label}
         aria-current={section === item.id ? 'page' : undefined}
-        onClick={() => onSectionChange(item.id)}
+        onPress={() => onSectionChange(item.id)}
       >
         <span className="sidebar-icon" aria-hidden="true">
           {item.icon}
         </span>
-        {item.label}
-      </button>
+        <Text UNSAFE_className="sidebar-label">{item.label}</Text>
+      </ActionButton>
     ))
   return (
     <div className="app-shell">
@@ -93,17 +104,17 @@ export function AppShell({
           {renderItems(utility)}
           {renderItems([{ id: 'settings', label: t('app.nav.settings'), icon: <Settings /> }])}
           <TooltipTrigger delay={200}>
-            <button
-              className="sidebar-version"
-              type="button"
-              disabled={!releaseInfo}
+            <ActionButton
+              isQuiet
+              UNSAFE_className="sidebar-version"
+              isDisabled={!releaseInfo}
               aria-label={t('app.version.copy')}
-              onClick={() => void copyVersion()}
+              onPress={() => observeRendererPromise(copyVersion(), 'copy Desktop version')}
             >
               <Text UNSAFE_className="sidebar-version-number">
                 {releaseInfo ? `v${releaseInfo.version}` : 'v\u00a0—'}
               </Text>
-            </button>
+            </ActionButton>
             <Tooltip>{t(versionCopied ? 'app.version.copied' : 'app.version.copy')}</Tooltip>
           </TooltipTrigger>
           <span className="sidebar-version-status" role="status" aria-live="polite">
@@ -111,16 +122,19 @@ export function AppShell({
           </span>
         </div>
       </nav>
-      <main className="app-main">
+      <main className={`app-main${hideHeader ? ' app-main-full' : ''}`}>
         {!hideHeader && (
           <header className="section-header">
-            <div>{children}</div>
+            <div>{heading}</div>
             <div className="section-header-actions">
               {headerAction}
               <RuntimeStatusIndicator health={health} onPress={() => onSectionChange('health')} />
             </div>
           </header>
         )}
+        <div className={`section-content${contentClassName ? ` ${contentClassName}` : ''}`}>
+          {children}
+        </div>
       </main>
     </div>
   )
@@ -138,10 +152,10 @@ export function SectionHeading({
   return (
     <div className="section-heading-copy">
       <div className="section-title-row">
-        <h1>{title}</h1>
+        <Heading level={1}>{title}</Heading>
         {action}
       </div>
-      {subtitle ? <p>{subtitle}</p> : null}
+      {subtitle ? <Text>{subtitle}</Text> : null}
     </div>
   )
 }

@@ -7,6 +7,8 @@ import {
   Footer,
   Heading,
   ProgressCircle,
+  Text,
+  ToggleButton,
 } from '@react-spectrum/s2'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
@@ -16,6 +18,7 @@ import {
   type ScreenContextSource,
 } from '../../../shared/screen-context'
 import { useTranslation } from '../../localization/useTranslation'
+import { observeRendererPromise } from '../../reliability/observePromise'
 import { screenContextErrorMessage } from './screenContextErrorMessage'
 
 type PickerState =
@@ -90,20 +93,26 @@ export function ScreenContextPicker({ isOpen, onDismiss, onChangeModel, onAttach
       const mainOperationId = mainOperationIdRef.current
       mainOperationIdRef.current = null
       if (mainOperationId) {
-        void window.api.screenContext.cancelOperation(mainOperationId)
+        observeRendererPromise(
+          window.api.screenContext.cancelOperation(mainOperationId),
+          'cancel closed Screen Context picker operation',
+        )
       }
       return
     }
-    void refreshCapabilities()
+    observeRendererPromise(refreshCapabilities(), 'load Screen Context capabilities')
     const unsubscribe = window.api.config.onUpdated(() => {
-      void refreshCapabilities()
+      observeRendererPromise(refreshCapabilities(), 'refresh Screen Context capabilities')
     })
     return () => {
       operationIdRef.current += 1
       const mainOperationId = mainOperationIdRef.current
       mainOperationIdRef.current = null
       if (mainOperationId) {
-        void window.api.screenContext.cancelOperation(mainOperationId)
+        observeRendererPromise(
+          window.api.screenContext.cancelOperation(mainOperationId),
+          'cancel Screen Context picker operation during cleanup',
+        )
       }
       unsubscribe()
     }
@@ -154,19 +163,19 @@ export function ScreenContextPicker({ isOpen, onDismiss, onChangeModel, onAttach
               {busy && (
                 <div className="screen-context-picker-state">
                   <ProgressCircle aria-label={t('common.loading')} isIndeterminate size="L" />
-                  <p>
+                  <Text>
                     {state === 'checking-capability'
                       ? t('screenContext.picker.checking')
                       : state === 'capturing'
                         ? t('screenContext.picker.capturing')
                         : t('screenContext.picker.loading')}
-                  </p>
+                  </Text>
                 </div>
               )}
               {state === 'unsupported' && (
                 <div className="screen-context-picker-state" role="status">
                   <Heading level={3}>{t('screenContext.unsupported.title')}</Heading>
-                  <p>{t('screenContext.unsupported.description')}</p>
+                  <Text>{t('screenContext.unsupported.description')}</Text>
                   <Button variant="accent" onPress={onChangeModel}>
                     {t('screenContext.unsupported.changeModel')}
                   </Button>
@@ -175,8 +184,13 @@ export function ScreenContextPicker({ isOpen, onDismiss, onChangeModel, onAttach
               {state === 'error' && errorCode && (
                 <div className="screen-context-picker-state" role="alert">
                   <Heading level={3}>{t('common.error')}</Heading>
-                  <p>{screenContextErrorMessage(errorCode, t)}</p>
-                  <Button variant="secondary" onPress={() => void loadSources()}>
+                  <Text>{screenContextErrorMessage(errorCode, t)}</Text>
+                  <Button
+                    variant="secondary"
+                    onPress={() =>
+                      observeRendererPromise(loadSources(), 'reload Screen Context sources')
+                    }
+                  >
                     {t('common.retry')}
                   </Button>
                 </div>
@@ -186,12 +200,11 @@ export function ScreenContextPicker({ isOpen, onDismiss, onChangeModel, onAttach
                   {sources.map((source) => {
                     const selected = source.id === selectedId
                     return (
-                      <button
+                      <ToggleButton
                         key={source.id}
-                        type="button"
-                        className={`screen-context-source${selected ? ' selected' : ''}`}
-                        aria-pressed={selected}
-                        onClick={() => setSelectedId(source.id)}
+                        isSelected={selected}
+                        UNSAFE_className="screen-context-source"
+                        onChange={(isSelected) => setSelectedId(isSelected ? source.id : null)}
                       >
                         <img src={source.previewDataUrl} alt="" />
                         <span className="screen-context-source-info">
@@ -207,7 +220,7 @@ export function ScreenContextPicker({ isOpen, onDismiss, onChangeModel, onAttach
                               : t('screenContext.source.window')}
                           </Badge>
                         </span>
-                      </button>
+                      </ToggleButton>
                     )
                   })}
                 </div>
@@ -217,7 +230,12 @@ export function ScreenContextPicker({ isOpen, onDismiss, onChangeModel, onAttach
           <Footer>
             <div className="screen-context-picker-actions">
               {state === 'source-list' && (
-                <Button variant="secondary" onPress={() => void loadSources()}>
+                <Button
+                  variant="secondary"
+                  onPress={() =>
+                    observeRendererPromise(loadSources(), 'retry Screen Context sources')
+                  }
+                >
                   {t('screenContext.picker.refresh')}
                 </Button>
               )}
@@ -225,7 +243,13 @@ export function ScreenContextPicker({ isOpen, onDismiss, onChangeModel, onAttach
                 {t('common.cancel')}
               </Button>
               {state === 'source-list' && (
-                <Button variant="accent" isDisabled={!selectedId} onPress={() => void attach()}>
+                <Button
+                  variant="accent"
+                  isDisabled={!selectedId}
+                  onPress={() =>
+                    observeRendererPromise(attach(), 'attach selected Screen Context source')
+                  }
+                >
                   {t('screenContext.picker.attach')}
                 </Button>
               )}

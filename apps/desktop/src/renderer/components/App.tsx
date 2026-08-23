@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { controller } from '../Controller'
 import { useControllerState } from '../hooks/useControllerState'
 import { useTranslation } from '../localization/useTranslation'
+import { observeRendererPromise } from '../reliability/observePromise'
 import { ChatOverlay, type ChatOverlayHandle } from './chat/ChatOverlay'
 import { NewConversationButton } from './chat/NewConversationButton'
 import { NewConversationDialog } from './chat/NewConversationDialog'
@@ -11,6 +12,7 @@ import { ListeningControl } from './controls/ListeningControl'
 import { OverlayCameraControl } from './controls/OverlayCameraControl'
 import { MicrophoneGateOverlay } from './overlays/MicrophoneGateOverlay'
 import { MissingVrmDialog } from './overlays/MissingVrmDialog'
+import { PluginsView } from './plugins/PluginsView'
 import { SettingsDialog } from './settings/SettingsDialog'
 import { type SettingsSection } from './settings/state/settingsContracts'
 import { SetupCenter } from './setup/SetupCenter'
@@ -32,9 +34,14 @@ export function App() {
   const [newConversationPending, setNewConversationPending] = useState(false)
   const [newConversationError, setNewConversationError] = useState<string | null>(null)
   const [missingVrmDialogOpen, setMissingVrmDialogOpen] = useState(false)
+  const [showProjectPluginDetails, setShowProjectPluginDetails] = useState(false)
   const chatOverlayRef = useRef<ChatOverlayHandle>(null)
   const prevSpeechService = useRef(state.speechCapabilities.service)
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const isOverlay = useMemo(
+    () => new URLSearchParams(window.location.search).get('overlay') === '1',
+    [],
+  )
 
   // One unobtrusive, auto-dismissing toast when the Speech API recovers (ТЗ §9).
   const speechService = state.speechCapabilities.service
@@ -56,14 +63,18 @@ export function App() {
   )
 
   useEffect(() => {
-    void window.api.config.get().then((config) => {
+    if (isOverlay) return
+    observeRendererPromise(
+      window.api.config.get().then((config) => {
+        setDeveloperModeEnabled(config.developerModeEnabled === 'true')
+        setSetupOpen(!config.setup.completed)
+      }),
+      'load App configuration',
+    )
+    return window.api.config.onUpdated((config) => {
       setDeveloperModeEnabled(config.developerModeEnabled === 'true')
-      setSetupOpen(!config.setup.completed)
     })
-    window.api.config.onUpdated((config) => {
-      setDeveloperModeEnabled(config.developerModeEnabled === 'true')
-    })
-  }, [])
+  }, [isOverlay])
 
   useEffect(() => {
     const openSetup = () => {
@@ -77,20 +88,20 @@ export function App() {
   useEffect(() => {
     if (!developerModeEnabled && (section === 'debug' || section === 'avatar')) setSection('chat')
   }, [developerModeEnabled, section])
-  const isOverlay = useMemo(
-    () => new URLSearchParams(window.location.search).get('overlay') === '1',
-    [],
-  )
-
   useEffect(() => {
     document.documentElement.classList.toggle('overlay-window', isOverlay)
     document.body.classList.toggle('overlay-window', isOverlay)
     if (isOverlay && overlayCanvasRef.current) {
-      void controller.attachCanvas(overlayCanvasRef.current)
-      controller.subscribeOverlayUpdates()
+      observeRendererPromise(
+        controller.attachCanvas(overlayCanvasRef.current).then(() => {
+          controller.subscribeOverlayUpdates()
+        }),
+        'bootstrap Overlay renderer',
+      )
     } else if (!isOverlay) {
-      void controller.bootstrap()
+      observeRendererPromise(controller.bootstrap(), 'bootstrap main renderer')
     }
+    return () => controller.dispose()
   }, [isOverlay])
 
   const sectionCopy: Record<AppSection, { title: string; subtitle?: string }> = {
@@ -100,6 +111,10 @@ export function App() {
       subtitle: t('app.section.avatar.subtitle'),
     },
     health: { title: t('app.nav.health'), subtitle: t('app.section.health.subtitle') },
+    plugins: {
+      title: t('app.section.plugins.title'),
+      subtitle: t('app.section.plugins.subtitle'),
+    },
     debug: {
       title: t('app.section.diagnostics.title'),
       subtitle: t('app.section.diagnostics.subtitle'),
@@ -137,7 +152,7 @@ export function App() {
       setNewConversationDialogOpen(true)
       return
     }
-    void startNewConversation()
+    observeRendererPromise(startNewConversation(), 'start new conversation')
   }
 
   const setOverlayVisible = async (visible: boolean): Promise<void> => {
@@ -165,17 +180,40 @@ export function App() {
         onSectionChange={(nextSection) => {
           if (setupOpen) setSetupOpen(false)
           if (nextSection === 'settings') setSettingsInitialSection('general')
+          if (nextSection === 'plugins') setShowProjectPluginDetails(false)
           setSection(nextSection)
         }}
         health={state.health}
         developerModeEnabled={developerModeEnabled}
         hideHeader={setupOpen}
+        contentClassName={setupOpen ? 'setup-layer' : undefined}
+        heading={
+          !setupOpen ? (
+            <SectionHeading
+              title={copy.title}
+              subtitle={copy.subtitle}
+              action={
+                section === 'chat' && state.messages.length > 0 ? (
+                  <NewConversationButton
+                    isDisabled={newConversationDisabled}
+                    onPress={requestNewConversation}
+                  />
+                ) : undefined
+              }
+            />
+          ) : undefined
+        }
         headerAction={
           section === 'chat' && !setupOpen ? (
             <div className="chat-header-controls">
               <ListeningControl
                 listeningState={state.continuousListeningState}
-                onToggle={() => void controller.toggleContinuousListening()}
+                onToggle={() =>
+                  observeRendererPromise(
+                    controller.toggleContinuousListening(),
+                    'toggle continuous listening',
+                  )
+                }
               />
               <OverlayCameraControl
                 overlayState={state.overlayState}
@@ -188,22 +226,6 @@ export function App() {
           ) : undefined
         }
       >
-        {!setupOpen && (
-          <SectionHeading
-            title={copy.title}
-            subtitle={copy.subtitle}
-            action={
-              section === 'chat' && state.messages.length > 0 ? (
-                <NewConversationButton
-                  isDisabled={newConversationDisabled}
-                  onPress={requestNewConversation}
-                />
-              ) : undefined
-            }
-          />
-        )}
-      </AppShell>
-      <div className={`section-content${setupOpen ? ' setup-layer' : ''}`}>
         {section === 'chat' && (
           <>
             {setupOpen ? (
@@ -247,10 +269,21 @@ export function App() {
         {section === 'health' && (
           <RuntimeHealthView
             state={state}
-            onRetry={() => {
-              void controller.checkHealth()
-              void controller.checkLlmHealth()
+            onOpenProjectPlugin={() => {
+              setShowProjectPluginDetails(true)
+              setSection('plugins')
             }}
+            onRetry={() => {
+              observeRendererPromise(controller.checkHealth(), 'recheck Speech health')
+              observeRendererPromise(controller.checkLlmHealth(), 'recheck LLM health')
+            }}
+          />
+        )}
+        {section === 'plugins' && (
+          <PluginsView
+            showProjectDetails={showProjectPluginDetails}
+            onShowProjectDetails={() => setShowProjectPluginDetails(true)}
+            onBack={() => setShowProjectPluginDetails(false)}
           />
         )}
         {section === 'debug' && developerModeEnabled && <DiagnosticsView />}
@@ -266,13 +299,23 @@ export function App() {
             llmHealth={state.llmHealth}
             voiceWarmup={state.voiceWarmup}
             continuousListeningState={state.continuousListeningState}
-            onToggleContinuousListening={() => void controller.toggleContinuousListening()}
-            onOverlayVisibleChange={() => void controller.refreshOverlayVisibility()}
+            onToggleContinuousListening={() =>
+              observeRendererPromise(
+                controller.toggleContinuousListening(),
+                'toggle continuous listening from Settings',
+              )
+            }
+            onOverlayVisibleChange={() =>
+              observeRendererPromise(
+                controller.refreshOverlayVisibility(),
+                'refresh Overlay visibility',
+              )
+            }
             onToggleOverlay={setOverlayVisible}
             onClose={() => setSection('chat')}
           />
         )}
-      </div>
+      </AppShell>
       {speechToast && (
         <div className="speech-toast" role="status" aria-live="polite">
           {speechToast}
@@ -282,7 +325,7 @@ export function App() {
         isOpen={newConversationDialogOpen}
         isPending={newConversationPending}
         error={newConversationError}
-        onConfirm={() => void startNewConversation()}
+        onConfirm={() => observeRendererPromise(startNewConversation(), 'confirm new conversation')}
         onDismiss={() => {
           if (newConversationPending) return
           setNewConversationDialogOpen(false)

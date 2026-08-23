@@ -2,12 +2,9 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 import type { AppSettings } from '../../../../shared/config'
 import type { LlmProviderId } from '../../../../shared/llm'
-import {
-  isValidProjectBranch,
-  isValidProjectRepository,
-} from '../../../../shared/project-awareness'
 import type { OverlayViewMode } from '../../../avatar/tuning/cameraTuning'
 import { controller } from '../../../Controller'
+import { observeRendererPromise } from '../../../reliability/observePromise'
 import type {
   SettingsDialogViewModel,
   SettingsSaveState,
@@ -19,18 +16,15 @@ import {
   overlayDefaults,
 } from './settingsDefaults'
 import {
-  baseName,
   clampNumber,
   deduplicateModelsById,
   parseNumberSetting,
   parseOverlayViewMode,
-  projectActionError,
 } from './settingsParsers'
 import { useAiSettings } from './useAiSettings'
 import { useAvatarSettings } from './useAvatarSettings'
 import { useDeveloperSettings } from './useDeveloperSettings'
 import { useGeneralSettings } from './useGeneralSettings'
-import { useProjectSettings } from './useProjectSettings'
 import { useSettingsNavigation } from './useSettingsNavigation'
 import { useVoiceSettings } from './useVoiceSettings'
 
@@ -66,28 +60,6 @@ export function useSettingsDialogState({
   const microphoneTestSequence = useRef(0)
   const microphoneTestRecording = useRef<ArrayBuffer | null>(null)
   const [saveState, setSaveState] = useState<SettingsSaveState>('idle')
-  const {
-    projectActionBusy,
-    projectApplyError,
-    projectApplyState,
-    projectBranch,
-    projectCredentialInput,
-    projectCredentialSaveState,
-    projectEnabled,
-    projectForgetConfirmation,
-    projectRepository,
-    projectStatus,
-    setProjectActionBusy,
-    setProjectApplyError,
-    setProjectApplyState,
-    setProjectBranch,
-    setProjectCredentialInput,
-    setProjectCredentialSaveState,
-    setProjectEnabled,
-    setProjectForgetConfirmation,
-    setProjectRepository,
-    setProjectStatus,
-  } = useProjectSettings()
   const { uiLocale, setUiLocale } = useGeneralSettings()
   const {
     developerModeEnabled,
@@ -96,13 +68,11 @@ export function useSettingsDialogState({
     setDeveloperOverlayAnimationHudEnabledState,
   } = useDeveloperSettings()
   const {
-    currentTtsVoice,
     lang,
     microphoneLevel,
     microphoneTestState,
     micId,
     mics,
-    setCurrentTtsVoice,
     setLang,
     setMicrophoneLevel,
     setMicrophoneTestState,
@@ -178,64 +148,49 @@ export function useSettingsDialogState({
   // biome-ignore lint/correctness/useExhaustiveDependencies: hydration targets stable React state setters owned by domain hooks.
   useEffect(() => {
     if (!isOpen) return
-    void (async () => {
-      const cfg = await window.api.config.get()
-      setActiveSection(initialSection)
-      setSpeechUrl(cfg.pythonSpeechUrl)
-      setProjectEnabled(cfg.projectAwareness.enabled)
-      setProjectRepository(cfg.projectAwareness.repository)
-      setProjectBranch(cfg.projectAwareness.branch)
-      setProjectStatus(await window.api.projectAwareness.getStatus())
-      setProjectApplyState('idle')
-      setProjectApplyError('')
-      setProjectCredentialInput('')
-      setProjectActionBusy(false)
-      setProjectForgetConfirmation(false)
-      setLang(cfg.ttsLanguage ?? defaultSettingsForm.ttsLanguage)
-      setUiLocale(cfg.uiLocale)
-      setDeveloperModeEnabled(cfg.developerModeEnabled === 'true')
-      setDeveloperOverlayAnimationHudEnabledState(
-        cfg.developerOverlayAnimationHudEnabled !== 'false',
-      )
-      setCurrentTtsVoice(cfg.ttsVoice ?? defaultSettingsForm.ttsVoice)
-      setEditingKey(false)
-      setKeyInput('')
-      setActiveProvider(cfg.llm?.activeProvider ?? 'groq')
-      setProviderSettings(cfg.llm.providers)
-      setBacklogRole(cfg.llm?.roles?.backlogSelector ?? defaultBacklogSelectorRole)
-      setVrmName(cfg.vrmPath ? baseName(cfg.vrmPath) : '')
-      setOverlayWidth(parseNumberSetting(cfg.overlayWidth, overlayDefaults.width, 250, 2000))
-      setOverlayHeight(parseNumberSetting(cfg.overlayHeight, overlayDefaults.height, 250, 2000))
-      setOverlayMargin(parseNumberSetting(cfg.overlayMargin, overlayDefaults.margin, 0, 500))
-      setOverlayOpacityPercent(Math.round(parseNumberSetting(cfg.overlayOpacity, 1, 0, 1) * 100))
-      setOverlayTransparentBackground(cfg.overlayTransparentBackground !== 'false')
-      setOverlayClickThrough(cfg.overlayClickThrough !== 'false')
-      setOverlayCorner(cfg.overlayCorner ?? overlayDefaults.corner)
-      setOverlayScalePercent(Math.round(parseNumberSetting(cfg.overlayScale, 1, 0.5, 2) * 100))
-      setOverlayViewMode(parseOverlayViewMode(cfg.overlayViewMode))
-      setProviders(await window.api.llm.providers())
-      setMics(await controller.listMicrophones())
-      setMicId(controller.getMicrophoneId() || defaultSettingsForm.microphoneId)
-      hydrated.current = true
-    })()
-  }, [initialSection, isOpen])
-
-  // biome-ignore lint/correctness/useExhaustiveDependencies: project status setter is stable across domain-hook renders.
-  useEffect(() => {
-    if (!isOpen || activeSection !== 'project') return
     let active = true
-    const refresh = (): void => {
-      void window.api.projectAwareness.getStatus().then((status) => {
-        if (active) setProjectStatus(status)
-      })
-    }
-    refresh()
-    const intervalId = window.setInterval(refresh, 3_000)
+    observeRendererPromise(
+      (async () => {
+        const cfg = await window.api.config.get()
+        if (!active) return
+        setActiveSection(initialSection)
+        setSpeechUrl(cfg.pythonSpeechUrl)
+        setLang(cfg.ttsLanguage ?? defaultSettingsForm.ttsLanguage)
+        setUiLocale(cfg.uiLocale)
+        setDeveloperModeEnabled(cfg.developerModeEnabled === 'true')
+        setDeveloperOverlayAnimationHudEnabledState(
+          cfg.developerOverlayAnimationHudEnabled !== 'false',
+        )
+        setEditingKey(false)
+        setKeyInput('')
+        setActiveProvider(cfg.llm?.activeProvider ?? 'groq')
+        setProviderSettings(cfg.llm.providers)
+        setBacklogRole(cfg.llm?.roles?.backlogSelector ?? defaultBacklogSelectorRole)
+        setVrmName(cfg.vrmAssetName)
+        setOverlayWidth(parseNumberSetting(cfg.overlayWidth, overlayDefaults.width, 250, 2000))
+        setOverlayHeight(parseNumberSetting(cfg.overlayHeight, overlayDefaults.height, 250, 2000))
+        setOverlayMargin(parseNumberSetting(cfg.overlayMargin, overlayDefaults.margin, 0, 500))
+        setOverlayOpacityPercent(Math.round(parseNumberSetting(cfg.overlayOpacity, 1, 0, 1) * 100))
+        setOverlayTransparentBackground(cfg.overlayTransparentBackground !== 'false')
+        setOverlayClickThrough(cfg.overlayClickThrough !== 'false')
+        setOverlayCorner(cfg.overlayCorner ?? overlayDefaults.corner)
+        setOverlayScalePercent(Math.round(parseNumberSetting(cfg.overlayScale, 1, 0.5, 2) * 100))
+        setOverlayViewMode(parseOverlayViewMode(cfg.overlayViewMode))
+        const availableProviders = await window.api.llm.providers()
+        if (!active) return
+        setProviders(availableProviders)
+        const availableMicrophones = await controller.listMicrophones()
+        if (!active) return
+        setMics(availableMicrophones)
+        setMicId(controller.getMicrophoneId() || defaultSettingsForm.microphoneId)
+        hydrated.current = true
+      })(),
+      'hydrate Settings dialog',
+    )
     return () => {
       active = false
-      window.clearInterval(intervalId)
     }
-  }, [activeSection, isOpen])
+  }, [initialSection, isOpen])
 
   const selectedModel = providerSettings[activeProvider]?.model ?? ''
   const activeCredentialConfigured =
@@ -292,7 +247,7 @@ export function useSettingsDialogState({
       return
     }
     const timer = window.setTimeout(() => {
-      void loadModels(activeProvider)
+      observeRendererPromise(loadModels(activeProvider), 'load active-provider models')
     }, 400)
     return () => window.clearTimeout(timer)
   }, [isOpen, activeProvider, activeCredentialConfigured, providers])
@@ -310,9 +265,14 @@ export function useSettingsDialogState({
     }
     let current = true
     const timer = window.setTimeout(() => {
-      void window.api.llm.fetchModels(backlogRole.providerId as LlmProviderId).then((result) => {
-        if (current) setBacklogModels(result.ok ? deduplicateModelsById(result.models ?? []) : [])
-      })
+      observeRendererPromise(
+        window.api.llm.fetchModels(backlogRole.providerId as LlmProviderId).then((result) => {
+          if (current) {
+            setBacklogModels(result.ok ? deduplicateModelsById(result.models ?? []) : [])
+          }
+        }),
+        'load backlog-selector models',
+      )
     }, 400)
     return () => {
       current = false
@@ -322,9 +282,9 @@ export function useSettingsDialogState({
 
   const pickVrm = async (): Promise<void> => {
     const result = await window.api.vrm.pick()
-    if (result.ok && result.vrmPath) {
-      setVrmName(baseName(result.vrmPath))
-      controller.selectVrm(result.vrmPath)
+    if (result.ok && result.assetHandle) {
+      setVrmName(result.displayName ?? '')
+      controller.selectVrm(result.assetHandle)
     }
   }
 
@@ -351,101 +311,6 @@ export function useSettingsDialogState({
     setEditingKey(false)
     setModelOptions([])
     setModelsState(credential.configured ? 'idle' : 'missing-key')
-  }
-
-  const projectSettingsValid =
-    !projectEnabled ||
-    (isValidProjectRepository(projectRepository) && isValidProjectBranch(projectBranch))
-  const projectTargetApplied =
-    projectStatus !== null &&
-    projectStatus.enabled === projectEnabled &&
-    projectStatus.repository === projectRepository.trim() &&
-    projectStatus.branch === projectBranch.trim()
-  const projectConnected =
-    projectStatus !== null &&
-    ['ready', 'syncing', 'indexing', 'stale'].includes(projectStatus.state)
-  const projectRuntimeBusy =
-    projectActionBusy ||
-    projectApplyState === 'applying' ||
-    (projectStatus !== null && ['connecting', 'syncing', 'indexing'].includes(projectStatus.state))
-
-  const applyProjectSettings = async (): Promise<void> => {
-    setProjectApplyState('applying')
-    setProjectApplyError('')
-    try {
-      const status = await window.api.projectAwareness.configure({
-        enabled: projectEnabled,
-        provider: 'github',
-        repository: projectRepository.trim(),
-        branch: projectBranch.trim(),
-      })
-      setProjectRepository(status.repository)
-      setProjectBranch(status.branch)
-      setProjectStatus(status)
-      setProjectApplyState('applied')
-    } catch (error) {
-      setProjectApplyError(projectActionError(error))
-      setProjectStatus(await window.api.projectAwareness.getStatus())
-      setProjectApplyState('error')
-    }
-  }
-
-  const runProjectAction = async (operation: () => Promise<unknown>): Promise<void> => {
-    setProjectApplyError('')
-    setProjectActionBusy(true)
-    try {
-      await operation()
-    } catch (error) {
-      setProjectApplyError(projectActionError(error))
-    } finally {
-      setProjectStatus(await window.api.projectAwareness.getStatus())
-      setProjectActionBusy(false)
-    }
-  }
-
-  const saveProjectCredential = async (): Promise<void> => {
-    setProjectCredentialSaveState('saving')
-    setProjectApplyError('')
-    setProjectActionBusy(true)
-    try {
-      const status = await window.api.projectAwareness.saveCredential(projectCredentialInput)
-      setProjectStatus(status)
-      setProjectCredentialInput('')
-      setProjectForgetConfirmation(false)
-      setProjectCredentialSaveState('saved')
-    } catch (error) {
-      setProjectApplyError(projectActionError(error))
-      setProjectCredentialSaveState('failed')
-    } finally {
-      setProjectStatus(await window.api.projectAwareness.getStatus())
-      setProjectActionBusy(false)
-    }
-  }
-
-  const forgetProjectCredential = async (): Promise<void> => {
-    if (!projectForgetConfirmation) {
-      setProjectForgetConfirmation(true)
-      return
-    }
-    await runProjectAction(async () => {
-      setProjectStatus(await window.api.projectAwareness.forgetCredential())
-      setProjectCredentialInput('')
-      setProjectForgetConfirmation(false)
-    })
-  }
-
-  const connectProject = async (): Promise<void> => {
-    await runProjectAction(async () => {
-      const configured = await window.api.projectAwareness.configure({
-        enabled: true,
-        provider: 'github',
-        repository: projectRepository.trim(),
-        branch: projectBranch.trim(),
-      })
-      setProjectEnabled(true)
-      setProjectStatus(configured)
-      await window.api.projectAwareness.connect()
-    })
   }
 
   const recordMicrophoneTest = async (): Promise<void> => {
@@ -555,13 +420,12 @@ export function useSettingsDialogState({
     if (!hydrated.current || !isOpen) return
     const timer = window.setTimeout(() => {
       void persistPatch({
-        ttsVoice: currentTtsVoice,
         ttsLanguage: lang,
         ttsEngine: 'f5',
       }).catch(() => setSaveState('error'))
     }, 650)
     return () => window.clearTimeout(timer)
-  }, [currentTtsVoice, lang, isOpen, persistPatch])
+  }, [lang, isOpen, persistPatch])
 
   useEffect(() => {
     if (!hydrated.current || !isOpen) return
@@ -664,47 +528,10 @@ export function useSettingsDialogState({
       state: { uiLocale },
       actions: { setUiLocale },
     },
-    project: {
-      state: {
-        enabled: projectEnabled,
-        repository: projectRepository,
-        branch: projectBranch,
-        status: projectStatus,
-        applyState: projectApplyState,
-        applyError: projectApplyError,
-        credentialInput: projectCredentialInput,
-        credentialSaveState: projectCredentialSaveState,
-        actionBusy: projectActionBusy,
-        forgetConfirmation: projectForgetConfirmation,
-        settingsValid: projectSettingsValid,
-        targetApplied: projectTargetApplied,
-        connected: projectConnected,
-        runtimeBusy: projectRuntimeBusy,
-        hasIndex: Boolean(projectStatus?.indexedCommit),
-      },
-      actions: {
-        setEnabled: setProjectEnabled,
-        setRepository: setProjectRepository,
-        setBranch: setProjectBranch,
-        setApplyState: setProjectApplyState,
-        setApplyError: setProjectApplyError,
-        setCredentialInput: setProjectCredentialInput,
-        setForgetConfirmation: setProjectForgetConfirmation,
-        apply: applyProjectSettings,
-        saveCredential: saveProjectCredential,
-        forgetCredential: forgetProjectCredential,
-        openTokenSettings: () => window.api.projectAwareness.openTokenSettings(),
-        connect: connectProject,
-        disconnect: () => runProjectAction(() => window.api.projectAwareness.disconnect()),
-        sync: () => runProjectAction(() => window.api.projectAwareness.sync()),
-        rebuild: () => runProjectAction(() => window.api.projectAwareness.rebuildIndex()),
-      },
-    },
     speech: {
       state: {
         speechUrl,
         language: lang,
-        currentTtsVoice,
         microphones: mics,
         microphoneId: micId,
         voiceWarmup,
@@ -715,7 +542,6 @@ export function useSettingsDialogState({
       actions: {
         setSpeechUrl,
         setLanguage: setLang,
-        setCurrentTtsVoice,
         setMicrophoneId: (id) => {
           setMicId(id)
           controller.setMicrophone(id === defaultSettingsForm.microphoneId ? '' : id)

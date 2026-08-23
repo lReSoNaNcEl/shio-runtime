@@ -1,5 +1,4 @@
 .section-content.setup-layer {
-  inset: 0 0 0 208px;
   padding: 0;
 }
 
@@ -93,12 +92,6 @@
 @media (max-width: 1200px) {
   .setup-steps {
     grid-template-columns: 1fr;
-  }
-}
-
-@media (max-width: 760px) {
-  .section-content.setup-layer {
-    inset: 0 0 56px;
   }
 }
 

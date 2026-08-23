@@ -1,3 +1,4 @@
+import type { CharacterEmbodimentIntent } from '../../shared/character-response'
 import type { ConversationTurnFailure } from '../../shared/conversation'
 import {
   type EmotionTextSegment,
@@ -76,6 +77,7 @@ export interface AssistantReplyDraft {
   displayText: string
   speechText: string
   emotionKey: string
+  embodimentIntent?: CharacterEmbodimentIntent
   segments: EmotionTextSegment[]
 }
 
@@ -231,7 +233,14 @@ export class SpeechRuntime {
       text: this.speechText(segment.text),
     }))
     const speechText = segments.map((segment) => segment.text).join(' ')
-    return { replyText: reply.replyText, displayText, speechText, emotionKey, segments }
+    return {
+      replyText: reply.replyText,
+      displayText,
+      speechText,
+      emotionKey,
+      segments,
+      embodimentIntent: reply.embodimentIntent,
+    }
   }
 
   async synthesizeAssistantReply(

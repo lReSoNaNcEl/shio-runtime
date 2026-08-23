@@ -12,6 +12,7 @@ import { style } from '@react-spectrum/s2/style' with { type: 'macro' }
 
 import { type LlmProviderId } from '../../../../shared/llm'
 import { useTranslation } from '../../../localization/useTranslation'
+import { observeRendererPromise } from '../../../reliability/observePromise'
 import { ModelComboBox } from '../ModelComboBox'
 import {
   type AdvancedSettingsActions,
@@ -39,7 +40,12 @@ export function AdvancedSettingsSection({
         </div>
         <Switch
           isSelected={state.developerModeEnabled}
-          onChange={(enabled) => void actions.setDeveloperModeEnabled(enabled)}
+          onChange={(enabled) =>
+            observeRendererPromise(
+              actions.setDeveloperModeEnabled(enabled),
+              'toggle developer mode',
+            )
+          }
         >
           {t('settings.developerMode.title')}
         </Switch>
@@ -67,7 +73,10 @@ export function AdvancedSettingsSection({
                 <Switch
                   isSelected={state.developerOverlayAnimationHudEnabled}
                   onChange={(enabled) =>
-                    void actions.setDeveloperOverlayAnimationHudEnabled(enabled)
+                    observeRendererPromise(
+                      actions.setDeveloperOverlayAnimationHudEnabled(enabled),
+                      'toggle Overlay animation HUD',
+                    )
                   }
                 >
                   {t('settings.developerAnimationHud.title')}
@@ -77,7 +86,14 @@ export function AdvancedSettingsSection({
                 </Text>
               </div>
               <div className="settings-compact-actions">
-                <ActionButton onPress={() => void window.api.system.openLogsFolder()}>
+                <ActionButton
+                  onPress={() =>
+                    observeRendererPromise(
+                      window.api.system.openLogsFolder(),
+                      'open Desktop logs folder',
+                    )
+                  }
+                >
                   <FolderOpen />
                   <Text>{t('settings.developer.logsFolder')}</Text>
                 </ActionButton>

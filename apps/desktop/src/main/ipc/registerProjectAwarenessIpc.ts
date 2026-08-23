@@ -1,44 +1,36 @@
-import { type BrowserWindow, ipcMain, shell } from 'electron'
+import { ipcMain, shell } from 'electron'
 import { z } from 'zod'
 
 import { translate } from '../../shared/localization'
-import {
-  isValidProjectBranch,
-  isValidProjectRepository,
-  type ProjectAwarenessPublicConfig,
-  type ProjectReadFileInput,
-  type ProjectReadSymbolInput,
-  type ProjectRecentChangesInput,
-  type ProjectSearchInput,
-} from '../../shared/project-awareness'
-import { getConfig, getRendererConfig, saveConfig } from '../config'
-import type {
-  LoadedProjectCredential,
-  ProjectAwarenessRuntime,
-  ProjectCredentialStore,
-} from '../project-awareness'
+import { isValidProjectBranch, isValidProjectRepository } from '../../shared/project-awareness'
+import { getConfig } from '../config'
+import type { ProjectAwarenessPlugin } from '../project-awareness'
+import { IPC_ONE_PAYLOAD, type IpcAuthorization } from './IpcAuthorization'
 
 export interface ProjectAwarenessIpcDependencies {
-  runtime: () => ProjectAwarenessRuntime
-  credentials: () => ProjectCredentialStore
-  window: BrowserWindow
+  plugin: () => ProjectAwarenessPlugin
+  authorization: IpcAuthorization
 }
 
 export function registerProjectAwarenessIpc({
-  runtime,
-  credentials,
-  window,
+  plugin,
+  authorization,
 }: ProjectAwarenessIpcDependencies): void {
-  ipcMain.handle('project-awareness:get-status', () => runtime().getStatus())
+  ipcMain.handle(
+    'project-awareness:get-config',
+    authorization.handle('project-awareness:get-config', () => plugin().getConfig()),
+  )
+  ipcMain.handle(
+    'project-awareness:get-status',
+    authorization.handle('project-awareness:get-status', () => plugin().getStatus()),
+  )
   const configSchema = z
     .object({
-      enabled: z.boolean(),
       provider: z.literal('github'),
       repository: z.string().trim().max(200),
       branch: z.string().trim().max(255),
     })
     .superRefine((config, context) => {
-      if (!config.enabled) return
       if (!isValidProjectRepository(config.repository)) {
         context.addIssue({
           code: 'custom',
@@ -56,12 +48,14 @@ export function registerProjectAwarenessIpc({
     })
   ipcMain.handle(
     'project-awareness:configure',
-    async (_event, input: ProjectAwarenessPublicConfig) => {
-      const config = configSchema.parse(input)
-      saveConfig({ projectAwareness: config })
-      window.webContents.send('config:updated', getRendererConfig())
-      return runtime().configure(config)
-    },
+    authorization.handlePayload(
+      'project-awareness:configure',
+      IPC_ONE_PAYLOAD,
+      async (_event, input: unknown) => {
+        const config = configSchema.strict().parse(input)
+        return plugin().configure(config)
+      },
+    ),
   )
   const credentialSchema = z
     .string()
@@ -69,38 +63,48 @@ export function registerProjectAwarenessIpc({
     .min(20)
     .max(500)
     .refine((token) => !/\s/.test(token))
-  const applyCredential = (
-    projectRuntime: ProjectAwarenessRuntime,
-    credential: LoadedProjectCredential,
-  ): void => {
-    projectRuntime.setCredential(credential.token, {
-      configured: credential.configured,
-      source: credential.source,
-      secureStorageAvailable: credential.secureStorageAvailable,
-      lastError: credential.lastError,
-    })
-  }
-  ipcMain.handle('project-awareness:save-credential', async (_event, token: string) => {
-    const projectRuntime = runtime()
-    const credential = await credentials().save(credentialSchema.parse(token))
-    await projectRuntime.disconnect()
-    applyCredential(projectRuntime, credential)
-    return projectRuntime.getStatus()
-  })
-  ipcMain.handle('project-awareness:forget-credential', async () => {
-    const projectRuntime = runtime()
-    await projectRuntime.disconnect()
-    applyCredential(projectRuntime, await credentials().clear())
-    return projectRuntime.getStatus()
-  })
-  ipcMain.handle('project-awareness:open-token-settings', () =>
-    shell.openExternal('https://github.com/settings/personal-access-tokens/new'),
+  ipcMain.handle(
+    'project-awareness:save-credential',
+    authorization.handlePayload(
+      'project-awareness:save-credential',
+      IPC_ONE_PAYLOAD,
+      async (_event, token: unknown) => {
+        return plugin().saveCredential(credentialSchema.parse(token))
+      },
+    ),
   )
-  ipcMain.handle('project-awareness:connect', () => runtime().connect())
-  ipcMain.handle('project-awareness:disconnect', () => runtime().disconnect())
-  ipcMain.handle('project-awareness:sync', () => runtime().sync())
-  ipcMain.handle('project-awareness:rebuild-index', () => runtime().rebuildIndex())
-  ipcMain.handle('project-awareness:get-project-map', () => runtime().getProjectMap())
+  ipcMain.handle(
+    'project-awareness:forget-credential',
+    authorization.handle('project-awareness:forget-credential', async () => {
+      return plugin().forgetCredential()
+    }),
+  )
+  ipcMain.handle(
+    'project-awareness:open-token-settings',
+    authorization.handle('project-awareness:open-token-settings', () =>
+      shell.openExternal('https://github.com/settings/personal-access-tokens/new'),
+    ),
+  )
+  ipcMain.handle(
+    'project-awareness:connect',
+    authorization.handle('project-awareness:connect', () => plugin().connect()),
+  )
+  ipcMain.handle(
+    'project-awareness:disconnect',
+    authorization.handle('project-awareness:disconnect', () => plugin().disconnect()),
+  )
+  ipcMain.handle(
+    'project-awareness:sync',
+    authorization.handle('project-awareness:sync', () => plugin().sync()),
+  )
+  ipcMain.handle(
+    'project-awareness:rebuild-index',
+    authorization.handle('project-awareness:rebuild-index', () => plugin().rebuildIndex()),
+  )
+  ipcMain.handle(
+    'project-awareness:get-project-map',
+    authorization.handle('project-awareness:get-project-map', () => plugin().getProjectMap()),
+  )
 
   const searchSchema = z.object({
     query: z.string().min(1).max(500),
@@ -129,18 +133,37 @@ export function registerProjectAwarenessIpc({
     limit: z.number().int().min(1).max(10).optional(),
     query: z.string().max(300).optional(),
   })
-  ipcMain.handle('project-awareness:search', (_event, input: ProjectSearchInput) =>
-    runtime().search(searchSchema.parse(input)),
+  ipcMain.handle(
+    'project-awareness:search',
+    authorization.handlePayload(
+      'project-awareness:search',
+      IPC_ONE_PAYLOAD,
+      (_event, input: unknown) => plugin().search(searchSchema.strict().parse(input)),
+    ),
   )
-  ipcMain.handle('project-awareness:read-file', (_event, input: ProjectReadFileInput) =>
-    runtime().readFile(readFileSchema.parse(input)),
+  ipcMain.handle(
+    'project-awareness:read-file',
+    authorization.handlePayload(
+      'project-awareness:read-file',
+      IPC_ONE_PAYLOAD,
+      (_event, input: unknown) => plugin().readFile(readFileSchema.strict().parse(input)),
+    ),
   )
-  ipcMain.handle('project-awareness:read-symbol', (_event, input: ProjectReadSymbolInput) =>
-    runtime().readSymbol(readSymbolSchema.parse(input)),
+  ipcMain.handle(
+    'project-awareness:read-symbol',
+    authorization.handlePayload(
+      'project-awareness:read-symbol',
+      IPC_ONE_PAYLOAD,
+      (_event, input: unknown) => plugin().readSymbol(readSymbolSchema.strict().parse(input)),
+    ),
   )
   ipcMain.handle(
     'project-awareness:get-recent-changes',
-    (_event, input: ProjectRecentChangesInput) =>
-      runtime().getRecentChanges(recentChangesSchema.parse(input)),
+    authorization.handlePayload(
+      'project-awareness:get-recent-changes',
+      IPC_ONE_PAYLOAD,
+      (_event, input: unknown) =>
+        plugin().getRecentChanges(recentChangesSchema.strict().parse(input)),
+    ),
   )
 }

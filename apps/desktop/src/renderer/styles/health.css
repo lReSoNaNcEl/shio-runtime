@@ -1,0 +1,221 @@
+/* health feature stylesheet. Keep feature-owned rules out of base.css. */
+
+.health-list {
+  display: grid;
+  width: min(100%, 680px);
+}
+.health-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 0;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+}
+.health-row span {
+  color: var(--text-dim);
+}
+.health-row strong {
+  text-align: right;
+}
+.health-dashboard {
+  display: grid;
+  gap: 20px;
+  width: min(100%, 960px);
+  align-content: start;
+}
+.health-dashboard-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+}
+.health-dashboard-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  align-items: center;
+}
+.health-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 14px;
+}
+.health-card {
+  display: grid;
+  gap: 4px;
+  align-content: start;
+  min-height: 108px;
+  padding: 16px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.025);
+}
+.health-card-negative {
+  border-color: rgba(248, 113, 113, 0.42);
+  background: rgba(127, 29, 29, 0.12);
+}
+.health-card-notice {
+  border-color: rgba(251, 191, 36, 0.36);
+  background: rgba(120, 53, 15, 0.12);
+}
+.health-card-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.health-card-icon {
+  display: inline-flex;
+  width: 18px;
+  height: 18px;
+  color: var(--text-dim);
+}
+.health-card-icon svg {
+  width: 18px;
+  height: 18px;
+}
+.health-card-name {
+  flex: 1;
+  min-width: 0;
+  color: var(--text);
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+.health-card-dot-busy {
+  flex: 0 0 auto;
+}
+.health-card-status {
+  color: var(--text);
+  font-size: 0.96rem;
+  font-weight: 600;
+}
+.health-card-detail {
+  color: var(--text-dim);
+  font-size: 0.8rem;
+}
+
+/* Runtime Health — Speech API capability detail */
+.speech-capability-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 6px 0 2px;
+}
+.speech-capability-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.82rem;
+}
+.speech-capability-row dt {
+  color: var(--text-dim);
+}
+.speech-capability-positive {
+  color: #86efac;
+}
+.speech-capability-negative {
+  color: #fca5a5;
+}
+.speech-capability-neutral {
+  color: var(--text-dim);
+}
+.speech-card-actions {
+  margin-top: 8px;
+}
+.speech-technical-details {
+  margin-top: 8px;
+  font-size: 0.78rem;
+  color: var(--text-dim);
+}
+.speech-technical-details summary {
+  cursor: pointer;
+}
+.speech-technical-details code {
+  display: block;
+  margin-top: 6px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: rgba(15, 23, 42, 0.6);
+  color: #cbd5e1;
+  word-break: break-all;
+}
+
+.health-card-project-awareness {
+  grid-column: span 2;
+}
+
+.project-awareness-details {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px 18px;
+  margin: 8px 0 4px;
+}
+
+.project-awareness-details > div {
+  display: flex;
+  min-width: 0;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 0.8rem;
+}
+
+.project-awareness-details dt {
+  color: var(--text-dim);
+}
+
+.project-awareness-details dd {
+  overflow: hidden;
+  margin: 0;
+  color: var(--text);
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.health-project-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.health-project-error {
+  display: block;
+  margin-top: 6px;
+  color: #fca5a5;
+  font-size: 0.78rem;
+  word-break: break-word;
+}
+
+@media (max-width: 720px) {
+  .health-card-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .health-dashboard-actions {
+    align-items: stretch;
+    width: 100%;
+  }
+
+  .health-dashboard-actions > * {
+    flex: 1 1 auto;
+  }
+
+  .health-card-project-awareness {
+    grid-column: auto;
+  }
+
+  .project-awareness-details {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 560px) {
+  .health-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .health-row strong {
+    text-align: left;
+  }
+}

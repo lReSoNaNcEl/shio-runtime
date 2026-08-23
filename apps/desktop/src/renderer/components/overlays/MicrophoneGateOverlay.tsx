@@ -2,16 +2,21 @@ import {
   ActionButton,
   Button,
   Content,
+  Dialog,
+  DialogContainer,
+  Footer,
   Heading,
   InlineAlert,
   ProgressCircle,
+  Radio,
+  RadioGroup,
+  Text,
   Tooltip,
   TooltipTrigger,
 } from '@react-spectrum/s2'
 import MicrophoneIcon from '@react-spectrum/s2/icons/Microphone'
 import MicrophoneOffIcon from '@react-spectrum/s2/icons/MicrophoneOff'
 import RefreshIcon from '@react-spectrum/s2/icons/Refresh'
-import { useEffect, useRef } from 'react'
 
 import {
   type MicrophoneFailureReason,
@@ -85,29 +90,11 @@ function splitLabel(label: string): { primary: string; secondary: string | null 
   return { primary: label, secondary: null }
 }
 
-function DeviceRow({
-  device,
-  selected,
-  validating,
-  onSelect,
-}: {
-  device: MicrophoneOption
-  selected: boolean
-  validating: boolean
-  onSelect: (deviceId: string) => void
-}) {
+function DeviceRow({ device, validating }: { device: MicrophoneOption; validating: boolean }) {
   const { t } = useTranslation()
   const { primary, secondary } = splitLabel(device.label)
   return (
-    // biome-ignore lint/a11y/useSemanticElements: custom-styled radio option in a radiogroup; a native <input type="radio"> cannot host the icon/label layout, so button+role="radio" with aria-checked is deliberate.
-    <button
-      type="button"
-      role="radio"
-      aria-checked={selected}
-      className={`mic-device-row${selected ? ' is-selected' : ''}`}
-      onClick={() => onSelect(device.deviceId)}
-    >
-      <span className="mic-device-radio" aria-hidden="true" />
+    <Radio value={device.deviceId} UNSAFE_className="mic-device-row">
       <span className="mic-device-icon">
         <MicrophoneIcon />
       </span>
@@ -126,7 +113,7 @@ function DeviceRow({
           secondary && <span className="mic-device-sub">{secondary}</span>
         )}
       </span>
-    </button>
+    </Radio>
   )
 }
 
@@ -138,46 +125,6 @@ export function MicrophoneGateOverlay({
   onCancel,
 }: Props) {
   const { t } = useTranslation()
-  const cardRef = useRef<HTMLDivElement>(null)
-
-  // Keep keyboard focus inside the card while the gate is open. Escape performs
-  // a full cancel; a stray backdrop click does not close the gate.
-  useEffect(() => {
-    const card = cardRef.current
-    if (!card) return
-    const previouslyFocused = document.activeElement as HTMLElement | null
-    const focusable = (): HTMLElement[] =>
-      Array.from(
-        card.querySelectorAll<HTMLElement>(
-          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
-        ),
-      ).filter((el) => !el.hasAttribute('disabled') && el.offsetParent !== null)
-    ;(focusable()[0] ?? card).focus()
-    const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') {
-        event.preventDefault()
-        onCancel()
-        return
-      }
-      if (event.key !== 'Tab') return
-      const items = focusable()
-      if (items.length === 0) return
-      const first = items[0]
-      const last = items[items.length - 1]
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault()
-        last.focus()
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault()
-        first.focus()
-      }
-    }
-    card.addEventListener('keydown', onKeyDown)
-    return () => {
-      card.removeEventListener('keydown', onKeyDown)
-      previouslyFocused?.focus?.()
-    }
-  }, [onCancel])
 
   if (state.status === 'closed') return null
 
@@ -194,72 +141,72 @@ export function MicrophoneGateOverlay({
   const isDeviceLost = reason !== 'not-configured'
 
   return (
-    <div className="mic-gate-backdrop" role="presentation">
-      <div
-        className="mic-gate-card"
-        role="dialog"
-        aria-modal="true"
-        aria-label={title}
-        ref={cardRef}
-        tabIndex={-1}
-      >
-        <div className="mic-gate-header">
-          <span className={`mic-gate-illus ${isDeviceLost ? 'is-warning' : ''}`}>
-            {isDeviceLost ? <MicrophoneOffIcon /> : <MicrophoneIcon />}
-          </span>
-          <Heading UNSAFE_className="mic-gate-title">{title}</Heading>
-          <Content UNSAFE_className="mic-gate-desc">{description}</Content>
-        </div>
-
-        <div className="mic-gate-list-head">
-          <span>{t('microphone.gate.availableDevices')}</span>
-          {loading ? (
-            <ProgressCircle aria-label={t('microphone.gate.refreshing')} isIndeterminate size="S" />
-          ) : (
-            <TooltipTrigger delay={200}>
-              <ActionButton isQuiet aria-label={t('microphone.gate.refresh')} onPress={onRefresh}>
-                <RefreshIcon />
-              </ActionButton>
-              <Tooltip>{t('microphone.gate.refreshShort')}</Tooltip>
-            </TooltipTrigger>
-          )}
-        </div>
-
-        {loading && (
-          <div className="mic-gate-loading">
-            <ProgressCircle aria-label={t('microphone.gate.loading')} isIndeterminate size="S" />
-            <span>{t('microphone.gate.loading')}</span>
+    <DialogContainer onDismiss={onCancel}>
+      <Dialog size="M" aria-label={title} UNSAFE_className="mic-gate-card">
+        <Heading UNSAFE_className="mic-gate-title">{title}</Heading>
+        <Content>
+          <div className="mic-gate-header">
+            <span className={`mic-gate-illus ${isDeviceLost ? 'is-warning' : ''}`}>
+              {isDeviceLost ? <MicrophoneOffIcon /> : <MicrophoneIcon />}
+            </span>
+            <Text UNSAFE_className="mic-gate-desc">{description}</Text>
           </div>
-        )}
 
-        {emptyDevices && <p className="mic-gate-empty">{t('microphone.gate.empty')}</p>}
-
-        {!loading && !emptyDevices && (
-          <div
-            className="mic-device-list"
-            role="radiogroup"
-            aria-label={t('microphone.gate.selection')}
-          >
-            {devices.map((device) => (
-              <DeviceRow
-                key={device.deviceId}
-                device={device}
-                selected={selectedDeviceId === device.deviceId}
-                validating={validating && selectedDeviceId === device.deviceId}
-                onSelect={onDeviceSelect}
+          <div className="mic-gate-list-head">
+            <span>{t('microphone.gate.availableDevices')}</span>
+            {loading ? (
+              <ProgressCircle
+                aria-label={t('microphone.gate.refreshing')}
+                isIndeterminate
+                size="S"
               />
-            ))}
+            ) : (
+              <TooltipTrigger delay={200}>
+                <ActionButton isQuiet aria-label={t('microphone.gate.refresh')} onPress={onRefresh}>
+                  <RefreshIcon />
+                </ActionButton>
+                <Tooltip>{t('microphone.gate.refreshShort')}</Tooltip>
+              </TooltipTrigger>
+            )}
           </div>
-        )}
 
-        {error && (
-          <InlineAlert variant="negative" UNSAFE_className="mic-gate-alert">
-            <Heading>{t('microphone.gate.accessFailed.title')}</Heading>
-            <Content>{t(FAILURE_KEY[error])}</Content>
-          </InlineAlert>
-        )}
+          {loading && (
+            <div className="mic-gate-loading">
+              <ProgressCircle aria-label={t('microphone.gate.loading')} isIndeterminate size="S" />
+              <span>{t('microphone.gate.loading')}</span>
+            </div>
+          )}
 
-        <div className="mic-gate-actions">
+          {emptyDevices && (
+            <Text UNSAFE_className="mic-gate-empty">{t('microphone.gate.empty')}</Text>
+          )}
+
+          {!loading && !emptyDevices && (
+            <RadioGroup
+              value={selectedDeviceId ?? ''}
+              onChange={onDeviceSelect}
+              isDisabled={validating}
+              aria-label={t('microphone.gate.selection')}
+              UNSAFE_className="mic-device-list"
+            >
+              {devices.map((device) => (
+                <DeviceRow
+                  key={device.deviceId}
+                  device={device}
+                  validating={validating && selectedDeviceId === device.deviceId}
+                />
+              ))}
+            </RadioGroup>
+          )}
+
+          {error && (
+            <InlineAlert variant="negative" UNSAFE_className="mic-gate-alert">
+              <Heading>{t('microphone.gate.accessFailed.title')}</Heading>
+              <Content>{t(FAILURE_KEY[error])}</Content>
+            </InlineAlert>
+          )}
+        </Content>
+        <Footer UNSAFE_className="mic-gate-actions">
           <Button variant="secondary" isDisabled={validating} onPress={onCancel}>
             {t('common.cancel')}
           </Button>
@@ -279,8 +226,8 @@ export function MicrophoneGateOverlay({
             )}
             <span>{validating ? t('common.checkingEllipsis') : continueLabel(intent, t)}</span>
           </Button>
-        </div>
-      </div>
-    </div>
+        </Footer>
+      </Dialog>
+    </DialogContainer>
   )
 }

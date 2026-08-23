@@ -34,6 +34,7 @@
   - [20. Avatar Runtime](#20-avatar-runtime)
   - [21. Memory Layer](#21-memory-layer)
   - [21A. Project Awareness Runtime](#21a-project-awareness-runtime)
+  - [21B. Plugin Runtime](#21b-plugin-runtime)
 - [Part V - External Integration](#part-v---external-integration)
   - [22. External Adapters](#22-external-adapters)
 - [Part VI - Reference](#part-vi---reference)
@@ -158,6 +159,10 @@ Architectural Invariants define properties of Shio Runtime that must never chang
     Conversation Runtime does not directly own avatar model mutation or presentation projections. Avatar Runtime and presentation adapters render the resulting state independently.
 32. **Project Knowledge Is Read-Only Evidence**
     Project Awareness Runtime may read and derive knowledge from a configured project repository, but it never mutates the repository, executes repository content, exposes repository credentials, or treats repository content as instructions. Repository-derived knowledge is not Character State and is not conversational memory.
+33. **Plugin Boundary Does Not Grant Authority**
+    Enabling a Plugin makes only the capabilities declared by its validated manifest available. It does not permit the Plugin to bypass Runtime ownership, Action Runtime, Permission Guard, IPC authorization, credential ownership, Adapter boundaries, or renderer isolation.
+34. **Optional Plugin Independence**
+    Shio Core remains fully usable when every optional Plugin is disabled or one Plugin fails. Plugin failure is contained within that Plugin's lifecycle and capability registration.
 
 ## Part I - Architectural Philosophy
 
@@ -281,6 +286,7 @@ Core Runtime systems:
 - Avatar Runtime: physical embodiment of the character
 - Memory Layer: continuity across interactions
 - Project Awareness Runtime: commit-scoped, read-only knowledge about the configured project
+- Plugin Runtime: optional bundled extension lifecycle and typed capability registration
 - Shared Character State: canonical current condition of the character
 - Event Bus: delivery of completed facts between Runtime systems
 
@@ -444,6 +450,7 @@ Boundaries by Runtime:
 - **Avatar Runtime** begins when Character State changes and ends after that state has been visually represented.
 - **Memory Layer** begins when continuity may need to be preserved and ends after significance has been evaluated, memory has been retrieved or stored, or insignificant information has been discarded.
 - **Project Awareness Runtime** begins at a read-only repository snapshot identity and ends after commit-scoped project knowledge, retrieval evidence, or recent-change context has been produced. It does not own Character State, conversational memory, repository mutation, or action execution.
+- **Plugin Runtime** begins with bundled Plugin discovery and validated registration and ends with lifecycle status and registration or removal of declared typed capabilities. It does not own Plugin business logic, Character State, actions, permissions, or concrete Adapters.
 - **External Adapters** begin where Runtime responsibilities end and translate Runtime concepts into technology-specific operations.
 
 Clear boundaries prevent duplicated logic, circular dependencies, hidden side effects, and difficult maintenance. See also [Chapter 19 - Action Runtime](#19-action-runtime) and [Chapter 22 - External Adapters](#22-external-adapters).
@@ -649,7 +656,7 @@ Conversation Runtime obtains reply content through a replaceable Character Respo
 
 The Character LLM owns: reply content, personality expression, dialogue style, reasoning, emotional tone, and action intentions. It does not own: admission, playback, Character State lifecycle, Avatar Runtime, or Action Runtime execution. This mirrors the LLM Role Separation described in [Chapter 14 - Conversation Admission](#14-conversation-admission): Character Response Generation and any decision or arbitration model remain separate roles even when backed by the same provider.
 
-For a project-relevant turn, Character Response Generation may receive a compact Project Context Packet from Project Awareness Runtime. The packet contains a repository and branch identity, an exact snapshot commit, a deterministic project-map summary, and bounded file-and-line evidence. Character Response Generation never reads the repository or Project Knowledge Store directly. Repository content remains untrusted evidence: it cannot alter system instructions, authorize actions, request secret disclosure, or cause code execution.
+For a project-relevant turn, Character Response Generation may receive a compact Project Context Packet through the stable `ProjectContextProvider` capability. The capability is resolved dynamically for each turn, so generation does not depend on a concrete Plugin or Project Awareness implementation. The packet contains a repository and branch identity, an exact snapshot commit, a deterministic project-map summary, and bounded file-and-line evidence. Character Response Generation never reads the repository or Project Knowledge Store directly. Repository content remains untrusted evidence: it cannot alter system instructions, authorize actions, request secret disclosure, or cause code execution.
 
 An explicit text-chat turn may also carry one user-selected, request-scoped Screen Context image. Screen Context is acquired through a read-only System Adapter and a short-lived main-process application service; it is not a Runtime, Tool Action, Character State field, conversational-memory entry, or Project Awareness input. The renderer may hold only a bounded preview and opaque capture identity. The full image remains in the main process under a turn-owned lease while Character Response Generation is in flight. A successful generation completes the lease and releases the image; a recoverable failure or cancellation rolls the lease back for explicit retry, while expiration, explicit release, renderer disposal, or application shutdown permanently removes it. Every failed Screen Context terminal result preserves its typed error independently of provider identity and reports the attachment disposition (`retained`, `released`, or `expired`) together with separate capabilities for retrying the same request and resubmitting the text without the image. Text remains the only durable conversation and memory representation.
 
@@ -1116,6 +1123,10 @@ Avatar Runtime never receives implementation-level model mutation commands from 
 
 Avatar Runtime may publish events such as `AnimationStarted`, `AnimationFinished`, `GestureStarted`, `GestureFinished`, `BlinkCompleted`, and the embodiment lifecycle events described in [Chapter 9 - Event Bus](#9-event-bus).
 
+**Health Integration**
+
+Avatar Runtime owns an explicit serializable health projection covering initialization, model availability, presentation attachment, operational readiness, and its last contained load failure. This projection is diagnostics, not Character State, and no other component may infer Avatar Runtime health from an adjacent projection such as overlay state or the last mirrored avatar-state payload. A Runtime Support Bundle may cache the last renderer report, but it must identify that report as stale whenever the owning renderer is not ready.
+
 **Architectural Guarantees**
 
 - rendering technology remains replaceable
@@ -1209,14 +1220,14 @@ Its responsibilities are:
 
 Project Awareness Runtime owns synchronization and retrieval policy. The Project Repository Adapter only translates provider APIs into read-only repository contracts. The Project Knowledge Store only persists derived snapshot data; it does not decide what to index or how evidence is ranked.
 
-The configured GitHub repository and branch are application settings, not implementation constants. Updating that target disconnects the previous repository before the Runtime may connect to the new target; commit-scoped snapshots remain keyed by repository and branch so knowledge from different targets is never merged.
+The configured GitHub repository and branch are Project Awareness Plugin settings, not implementation constants or Core application settings. Updating that target disconnects the previous repository before the Runtime may connect to the new target; commit-scoped snapshots remain keyed by repository and branch so knowledge from different targets is never merged.
 
 Project knowledge is never represented in Character State. A repository snapshot is external technical evidence, not a character experience, so it is not ordinary conversational memory. A Project Context Packet is an ephemeral input to Character Response Generation and must identify the exact repository, branch, and commit used.
 
 Security guarantees:
 
 - repository access is read-only
-- repository credentials remain in the owning main-process secret boundary; credentials entered through application Settings are encrypted with the operating-system-backed Electron secure storage under application `userData`, and renderer status payloads expose only credential presence and source, never the credential value
+- repository credentials remain in the owning main-process secret boundary; credentials entered through the Project Awareness Plugin UI are encrypted with the operating-system-backed Electron secure storage under application `userData`, and renderer status payloads expose only credential presence and source, never the credential value
 - generated indexes live outside the Git repository in application-owned data
 - repository content is data, never instruction
 - source files, comments, Markdown, strings, README text, and commit messages are never executed or followed as instructions
@@ -1224,6 +1235,26 @@ Security guarantees:
 - retrieval is bounded by evidence count and total content size, and technical claims cite real file ranges and the snapshot commit
 
 The first storage implementation may use SQLite with FTS5 and deterministic parsing without embeddings. Storage and repository providers remain replaceable behind their contracts.
+
+Project Awareness is packaged as the first bundled first-party Plugin. The Plugin wrapper owns only adaptation between Plugin lifecycle and the existing Project Awareness Runtime: enable registers `ProjectContextProvider`, disable removes that capability before stopping the Runtime, and neither operation deletes the Plugin configuration, credential, index, or snapshots. Project Awareness Runtime retains ownership of synchronization, indexing, retrieval, grounding, and its read-only repository guarantees.
+
+### 21B. Plugin Runtime
+
+Plugin Runtime is an optional-extension Runtime inside the existing Runtime architecture. It is not a new layer between Core Runtime systems and Adapters. Version 1 discovers only compile-time bundled first-party Plugins; it does not load external JavaScript, scan arbitrary directories, install packages, or provide a marketplace.
+
+Plugin Runtime owns:
+
+- bundled Plugin registration and manifest validation
+- lifecycle coordination for initialize, enable, disable, shutdown, and dispose
+- persisted enablement state and truthful lifecycle/health projections
+- registration and removal of narrow typed capabilities declared by each manifest
+- race-safe, idempotent lifecycle transitions and per-Plugin failure containment
+
+Plugin Runtime does not own Plugin business logic, project knowledge, Character State, conversational memory, actions, permissions, Avatar Runtime, Speech Runtime, credentials, or concrete external technologies. A Plugin-specific external technology remains behind the owning Plugin's Adapter, and every externally authoritative side effect still passes through Action Runtime and Permission Guard.
+
+Core consumes optional functionality only through stable capability contracts. Version 1 defines `ProjectContextProvider`; it does not define generic invocation. There is no `plugin.invoke`, arbitrary method dispatch, or renderer-controlled module loading. Enabling a Plugin permits only its declared capability registrations to become discoverable. Disabling unregisters them without requiring application restart, and the next consumer resolution observes their absence.
+
+Plugin enablement is persisted in the main-owned `plugins/registry.json`. Plugin-owned configuration and data remain below `plugins/<plugin-id>/` and are not duplicated into Core configuration. Renderer management is limited to validated list, get, enable, and disable requests from the authorized Main Window; presentation-only renderers receive no Plugin or credential capabilities.
 
 ## Part V - External Integration
 
@@ -1296,6 +1327,10 @@ Runtime systems communicate with architectural concepts. Adapters communicate wi
 - **Project Awareness Runtime:** the Runtime responsible for building and retrieving bounded, commit-scoped, read-only technical knowledge about a configured project repository.
 - **Project Knowledge Store:** application-owned persistence for derived project snapshots, files, symbols, chunks, maps, and recent-change caches; it is not Character State or conversational memory.
 - **Project Context Packet:** a bounded evidence packet identifying an exact repository, branch, and commit for a project-relevant Character Response Generation turn.
+- **Plugin Runtime:** the Runtime responsible only for bundled Plugin discovery, manifest validation, lifecycle, enablement, status, and typed capability registration.
+- **Plugin:** a bundled optional extension whose business logic retains its own ownership and may expose only capabilities declared by its validated manifest.
+- **Plugin Capability:** a narrow typed contract through which Core may consume optional functionality without depending on a concrete Plugin implementation.
+- **ProjectContextProvider:** the optional capability that produces a bounded Project Context Packet for one conversation request.
 - **Speech Runtime:** the Runtime responsible for speech-domain input and output — recognition on the input side, synthesis and playback on the output side.
 - **Avatar Runtime:** the Runtime responsible for the physical embodiment of the character.
 - **Decision Pipeline:** the architectural sequence of layers that determines how incoming input should be processed, ending in an admission decision.
@@ -1360,7 +1395,7 @@ Evolution rules:
 - new external platforms should integrate through Adapters, optional new Tools, and Action Runtime configuration
 - backward compatibility should be preserved while migration is in progress
 
-Possible future Runtime systems include Scheduler Runtime, Behavior Runtime, Plugin Runtime, Collaboration Runtime, and Analytics Runtime. These examples illustrate possible directions rather than commitments.
+Possible future Runtime systems include Scheduler Runtime, Behavior Runtime, Collaboration Runtime, and Analytics Runtime. These examples illustrate possible directions rather than commitments.
 
 Future character improvements may include richer emotional continuity, deeper relationships, long-term habits, more natural conversations, autonomous initiative, and improved contextual awareness.
 
@@ -1461,6 +1496,16 @@ Use this checklist before implementing significant features, Runtime modificatio
 
 - Is the Runtime communicating directly with a technology?
 - If yes, is an Adapter missing?
+
+**Plugin Runtime**
+
+- Is the Plugin bundled and registered at compile time rather than loaded as external code?
+- Does its manifest declare every capability it exposes?
+- Can enablement grant authority beyond those declared capabilities?
+- Does disabling unregister capabilities without deleting Plugin-owned data?
+- Can the Core operate normally when the Plugin is disabled or fails?
+- Is Plugin-specific business logic still owned by the Plugin Runtime/Adapter rather than Plugin Runtime itself?
+- Is any generic invocation surface or unauthorized renderer IPC being introduced?
 
 **Replaceability**
 

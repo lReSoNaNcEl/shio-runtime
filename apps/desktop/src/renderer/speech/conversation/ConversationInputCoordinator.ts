@@ -9,6 +9,7 @@ import type { MicrophoneGateController } from '../../audio/MicrophoneGateControl
 import { isDefaultMicrophone, type StreamingModeId } from '../../audio/microphoneGateTypes'
 import { semanticEarTuning } from '../../avatar/tuning/motionTuning'
 import type { ChatMsg, ControllerState } from '../../controller/contracts'
+import { observeRendererPromise } from '../../reliability/observePromise'
 import type { AvatarRuntime } from '../../runtime/AvatarRuntime'
 import type { ConversationRuntime } from '../../runtime/ConversationRuntime'
 import type { SyncedAvatarState } from '../../runtime/OverlayRuntime'
@@ -215,7 +216,10 @@ export class ConversationInputCoordinator {
         (recognized) => this.handleContinuousFinal(recognized),
         (partial) => this.handleContinuousPartial(partial),
         () => {
-          void this.handleContinuousDeviceLost()
+          observeRendererPromise(
+            this.handleContinuousDeviceLost(),
+            'recover from continuous microphone loss',
+          )
         },
       )
       this.dependencies.patchControllerState({
@@ -421,11 +425,15 @@ export class ConversationInputCoordinator {
     const acceptedDetail = `turn=${decision.responseId} segment=${partial.segmentId}`
     this.dependencies.recordRuntimeEvent('Barge In Accepted', acceptedDetail)
     this.dependencies.publishRuntimeEvent('BargeInAccepted', 'speech', acceptedDetail)
-    void this.dependencies.conversationRuntime
-      .interruptCurrentResponse('voice-barge-in')
-      .then((interrupted) => {
-        if (!interrupted) this.bargeInSegments.delete(segmentKey)
-      })
+    observeRendererPromise(
+      this.dependencies.conversationRuntime
+        .interruptCurrentResponse('voice-barge-in')
+        .then((interrupted) => {
+          if (!interrupted) this.bargeInSegments.delete(segmentKey)
+        }),
+      'interrupt response for voice barge-in',
+      () => this.bargeInSegments.delete(segmentKey),
+    )
   }
 
   private ensureStreamingSession(streamingSessionId: string): void {

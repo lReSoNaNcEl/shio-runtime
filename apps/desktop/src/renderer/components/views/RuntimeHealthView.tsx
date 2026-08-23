@@ -1,6 +1,9 @@
 import {
   ActionButton,
   Content,
+  Disclosure,
+  DisclosurePanel,
+  DisclosureTitle,
   Heading,
   InlineAlert,
   ProgressCircle,
@@ -13,10 +16,12 @@ import MicrophoneIcon from '@react-spectrum/s2/icons/Microphone'
 import RefreshIcon from '@react-spectrum/s2/icons/Refresh'
 import { type ReactElement, useEffect, useState } from 'react'
 
-import { type ProjectAwarenessStatus, type ProjectMap } from '../../../shared/project-awareness'
+import { type PluginStatus, PROJECT_AWARENESS_PLUGIN_ID } from '../../../shared/plugins'
+import { type ProjectAwarenessStatus } from '../../../shared/project-awareness'
 import { type ControllerState, controller } from '../../Controller'
 import { type LocalizationContextValue } from '../../localization/LocalizationProvider'
 import { useTranslation } from '../../localization/useTranslation'
+import { observeRendererPromise } from '../../reliability/observePromise'
 import {
   type SpeechCapabilitiesState,
   type SpeechCapabilityStatus,
@@ -25,7 +30,7 @@ import {
 type CardTone = 'positive' | 'informative' | 'neutral' | 'notice' | 'negative'
 
 const EMPTY_PROJECT_STATUS: ProjectAwarenessStatus = {
-  enabled: true,
+  enabled: false,
   state: 'disconnected',
   provider: 'github',
   repository: '',
@@ -64,32 +69,26 @@ const INDEX_STATE_KEY: Record<
   error: 'common.error',
 }
 
-function projectActionError(error: unknown): string {
-  const message = error instanceof Error ? error.message : String(error)
-  return message.replace(/^Error invoking remote method '[^']+': Error: /, '')
-}
-
-function ProjectAwarenessCard({ status }: { status: ProjectAwarenessStatus }) {
+function ProjectAwarenessCard({
+  plugin,
+  status,
+  onOpenPlugin,
+}: {
+  plugin: PluginStatus | null
+  status: ProjectAwarenessStatus
+  onOpenPlugin: () => void
+}) {
   const { intlLocale, t } = useTranslation()
-  const [map, setMap] = useState<ProjectMap | null>(null)
-  const [actionError, setActionError] = useState('')
-  const [mapLoading, setMapLoading] = useState(false)
-  const state = PROJECT_STATUS[status.state]
+  const state = plugin?.enabled
+    ? PROJECT_STATUS[status.state]
+    : ({ key: 'common.disabled', tone: 'neutral' } as const)
   const stateLabel = t(state.key)
-  const busy = mapLoading || ['connecting', 'syncing', 'indexing'].includes(status.state)
-  const hasIndex = Boolean(status.indexedCommit)
-
-  const openMap = async (): Promise<void> => {
-    setActionError('')
-    setMapLoading(true)
-    try {
-      setMap((await window.api.projectAwareness.getProjectMap()) ?? null)
-    } catch (error) {
-      setActionError(projectActionError(error))
-    } finally {
-      setMapLoading(false)
-    }
-  }
+  const busy = Boolean(plugin?.busy) || ['connecting', 'syncing', 'indexing'].includes(status.state)
+  const healthLabel = plugin
+    ? plugin.health.detailKey
+      ? t(plugin.health.detailKey)
+      : plugin.health.detail || t('plugins.health.healthy')
+    : t('common.loading')
 
   return (
     <article className={`health-card health-card-${state.tone} health-card-project-awareness`}>
@@ -97,7 +96,9 @@ function ProjectAwarenessCard({ status }: { status: ProjectAwarenessStatus }) {
         <span className="health-card-icon" aria-hidden="true">
           <DataIcon />
         </span>
-        <span className="health-card-name">Project Awareness</span>
+        <Heading level={3} UNSAFE_className="health-card-name">
+          {t('health.project.title')}
+        </Heading>
         {busy ? (
           <ProgressCircle
             size="S"
@@ -106,21 +107,26 @@ function ProjectAwarenessCard({ status }: { status: ProjectAwarenessStatus }) {
             UNSAFE_className="health-card-dot-busy"
           />
         ) : (
-          <span
-            className={`runtime-status-light runtime-status-${state.tone} health-card-dot`}
-            aria-hidden="true"
-          />
+          <StatusLight variant={state.tone} size="S">
+            <span className="visually-hidden">{stateLabel}</span>
+          </StatusLight>
         )}
       </div>
-      <span className="health-card-status">{stateLabel}</span>
+      <StatusLight variant={state.tone} size="S" UNSAFE_className="health-card-status">
+        {stateLabel}
+      </StatusLight>
       <dl className="project-awareness-details">
         <div>
           <dt>{t('common.provider')}</dt>
-          <dd>GitHub</dd>
+          <dd>{t('common.github')}</dd>
         </div>
         <div>
           <dt>{t('common.enabled')}</dt>
-          <dd>{status.enabled ? t('common.yes') : t('common.no')}</dd>
+          <dd>{plugin?.enabled ? t('common.yes') : t('common.no')}</dd>
+        </div>
+        <div>
+          <dt>{t('plugins.health.label')}</dt>
+          <dd>{healthLabel}</dd>
         </div>
         <div>
           <dt>{t('common.repository')}</dt>
@@ -163,30 +169,14 @@ function ProjectAwarenessCard({ status }: { status: ProjectAwarenessStatus }) {
           </dd>
         </div>
       </dl>
-      {(actionError || status.lastError) && (
-        <span className="project-awareness-error">{actionError || status.lastError}</span>
+      {(plugin?.lastError || status.lastError) && (
+        <Text UNSAFE_className="health-project-error">{plugin?.lastError || status.lastError}</Text>
       )}
-      <div className="project-awareness-actions">
-        <ActionButton isDisabled={!hasIndex || busy} onPress={openMap}>
-          {mapLoading ? t('health.project.openingMap') : t('health.project.openMap')}
+      <div className="health-project-actions">
+        <ActionButton isDisabled={busy} onPress={onOpenPlugin}>
+          {t('health.project.openPlugin')}
         </ActionButton>
       </div>
-      {map && (
-        <details className="project-map-details" open>
-          <summary>
-            {t('health.project.mapSummary', { commit: map.snapshot.commitSha.slice(0, 7) })}
-          </summary>
-          <p>{map.overview}</p>
-          <ul>
-            {map.architecture.map((section) => (
-              <li key={section.name}>
-                <strong>{section.name}</strong> ·{' '}
-                {t('health.project.keyFiles', { count: section.paths.length })}
-              </li>
-            ))}
-          </ul>
-        </details>
-      )}
     </article>
   )
 }
@@ -226,9 +216,13 @@ function SpeechApiCard({ capabilities }: { capabilities: SpeechCapabilitiesState
   const service = SPEECH_SERVICE[capabilities.service]
   const serviceLabel = t(service.key)
   const rows: Array<{ id: string; label: string; status: SpeechCapabilityStatus }> = [
-    { id: 'asr', label: 'ASR', status: capabilities.recognition },
-    { id: 'tts', label: 'TTS', status: capabilities.synthesis },
-    { id: 'streaming', label: 'Streaming', status: capabilities.streaming },
+    { id: 'asr', label: t('health.speech.capability.asr'), status: capabilities.recognition },
+    { id: 'tts', label: t('health.speech.capability.tts'), status: capabilities.synthesis },
+    {
+      id: 'streaming',
+      label: t('health.speech.capability.streaming'),
+      status: capabilities.streaming,
+    },
   ]
   const lastChecked = capabilities.lastCheckedAt
     ? new Date(capabilities.lastCheckedAt).toLocaleTimeString(intlLocale)
@@ -241,13 +235,16 @@ function SpeechApiCard({ capabilities }: { capabilities: SpeechCapabilitiesState
         <span className="health-card-icon" aria-hidden="true">
           <AudioWaveIcon />
         </span>
-        <span className="health-card-name">Speech API</span>
-        <span
-          className={`runtime-status-light runtime-status-${service.tone} health-card-dot`}
-          aria-hidden="true"
-        />
+        <Heading level={3} UNSAFE_className="health-card-name">
+          {t('health.speech.title')}
+        </Heading>
+        <StatusLight variant={service.tone} size="S">
+          <span className="visually-hidden">{serviceLabel}</span>
+        </StatusLight>
       </div>
-      <span className="health-card-status">{serviceLabel}</span>
+      <StatusLight variant={service.tone} size="S" UNSAFE_className="health-card-status">
+        {serviceLabel}
+      </StatusLight>
 
       <dl className="speech-capability-list">
         {rows.map((row) => {
@@ -260,11 +257,11 @@ function SpeechApiCard({ capabilities }: { capabilities: SpeechCapabilitiesState
           )
         })}
       </dl>
-      <span className="health-card-detail">
+      <Text UNSAFE_className="health-card-detail">
         {t('health.speech.lastCheck', { time: lastChecked })}
-      </span>
+      </Text>
       {hasProblem && (
-        <span className="health-card-detail">{t('health.speech.connectionFailed')}</span>
+        <Text UNSAFE_className="health-card-detail">{t('health.speech.connectionFailed')}</Text>
       )}
 
       <div className="speech-card-actions">
@@ -274,10 +271,12 @@ function SpeechApiCard({ capabilities }: { capabilities: SpeechCapabilitiesState
       </div>
 
       {capabilities.technicalMessage && (
-        <details className="speech-technical-details">
-          <summary>{t('health.speech.technicalDetails')}</summary>
-          <code>{capabilities.technicalMessage}</code>
-        </details>
+        <Disclosure isQuiet UNSAFE_className="speech-technical-details">
+          <DisclosureTitle level={4}>{t('health.speech.technicalDetails')}</DisclosureTitle>
+          <DisclosurePanel>
+            <code>{capabilities.technicalMessage}</code>
+          </DisclosurePanel>
+        </Disclosure>
       )}
     </article>
   )
@@ -306,7 +305,7 @@ function buildCards(state: ControllerState, t: LocalizationContextValue['t']): H
       cards.push({
         id: 'llm',
         icon: <DataIcon />,
-        title: 'LLM',
+        title: t('health.llm.title'),
         tone: 'informative',
         status: t('health.llm.checking'),
         detail: llm.detail,
@@ -317,7 +316,7 @@ function buildCards(state: ControllerState, t: LocalizationContextValue['t']): H
       cards.push({
         id: 'llm',
         icon: <DataIcon />,
-        title: 'LLM',
+        title: t('health.llm.title'),
         tone: 'positive',
         status: t('common.available'),
         detail: llm.detail,
@@ -327,7 +326,7 @@ function buildCards(state: ControllerState, t: LocalizationContextValue['t']): H
       cards.push({
         id: 'llm',
         icon: <DataIcon />,
-        title: 'LLM',
+        title: t('health.llm.title'),
         tone: 'negative',
         status: t('common.error'),
         detail: llm.detail,
@@ -337,7 +336,7 @@ function buildCards(state: ControllerState, t: LocalizationContextValue['t']): H
       cards.push({
         id: 'llm',
         icon: <DataIcon />,
-        title: 'LLM',
+        title: t('health.llm.title'),
         tone: 'neutral',
         status: t('common.notChecked'),
         detail: llm.detail,
@@ -394,19 +393,30 @@ function buildCards(state: ControllerState, t: LocalizationContextValue['t']): H
 export function RuntimeHealthView({
   state,
   onRetry,
+  onOpenProjectPlugin,
 }: {
   state: ControllerState
   onRetry: () => void
+  onOpenProjectPlugin: () => void
 }) {
   const { t } = useTranslation()
   const [projectStatus, setProjectStatus] = useState<ProjectAwarenessStatus>(EMPTY_PROJECT_STATUS)
+  const [projectPlugin, setProjectPlugin] = useState<PluginStatus | null>(null)
   const [supportStatus, setSupportStatus] = useState('')
   useEffect(() => {
     let active = true
     const refresh = (): void => {
-      void window.api.projectAwareness.getStatus().then((status) => {
-        if (active) setProjectStatus(status)
-      })
+      observeRendererPromise(
+        Promise.all([
+          window.api.projectAwareness.getStatus(),
+          window.api.plugins.get(PROJECT_AWARENESS_PLUGIN_ID),
+        ]).then(([status, plugin]) => {
+          if (!active) return
+          setProjectStatus(status)
+          setProjectPlugin(plugin)
+        }),
+        'refresh Project Awareness health',
+      )
     }
     refresh()
     const intervalId = window.setInterval(refresh, 3_000)
@@ -421,15 +431,17 @@ export function RuntimeHealthView({
     speechService === 'checking' ||
     speechService === 'unknown' ||
     state.llmHealth.state === 'checking' ||
-    ['connecting', 'syncing', 'indexing'].includes(projectStatus.state)
+    Boolean(projectPlugin?.busy) ||
+    (Boolean(projectPlugin?.enabled) &&
+      ['connecting', 'syncing', 'indexing'].includes(projectStatus.state))
   const hasError =
     cards.some((card) => card.tone === 'negative') ||
     speechService === 'unavailable' ||
-    projectStatus.state === 'error'
+    projectPlugin?.health.state === 'error'
   const hasNotice =
     cards.some((card) => card.tone === 'notice') ||
     speechService === 'degraded' ||
-    projectStatus.state === 'stale'
+    projectPlugin?.health.state === 'degraded'
 
   const overall: { variant: CardTone; label: string } = checking
     ? { variant: 'informative', label: t('common.checkingEllipsis') }
@@ -447,17 +459,17 @@ export function RuntimeHealthView({
 
   return (
     <section className="health-dashboard">
-      <header className="health-dashboard-header">
-        <div className="health-dashboard-title">
-          <Heading>Runtime Health</Heading>
-          <Text UNSAFE_className="health-dashboard-subtitle">{t('health.subtitle')}</Text>
-        </div>
+      <div className="health-dashboard-toolbar">
         <div className="health-dashboard-actions">
           <ActionButton
             onPress={() =>
-              void window.api.system
-                .getRuntimeSupportBundle()
-                .then((bundle) => copyText(JSON.stringify(bundle, null, 2)))
+              observeRendererPromise(
+                window.api.system
+                  .getRuntimeSupportBundle()
+                  .then((bundle) => copyText(JSON.stringify(bundle, null, 2))),
+                'copy Runtime Support Bundle',
+                () => setSupportStatus(t('health.support.copyFailed')),
+              )
             }
           >
             {t('health.support.copyRuntimeHealth')}
@@ -482,18 +494,24 @@ export function RuntimeHealthView({
             )}
           </ActionButton>
         </div>
-      </header>
+      </div>
 
       <div className="health-card-grid">
         <SpeechApiCard capabilities={state.speechCapabilities} />
-        <ProjectAwarenessCard status={projectStatus} />
+        <ProjectAwarenessCard
+          plugin={projectPlugin}
+          status={projectStatus}
+          onOpenPlugin={onOpenProjectPlugin}
+        />
         {cards.map((card) => (
           <article className={`health-card health-card-${card.tone}`} key={card.id}>
             <div className="health-card-top">
               <span className="health-card-icon" aria-hidden="true">
                 {card.icon}
               </span>
-              <span className="health-card-name">{card.title}</span>
+              <Heading level={3} UNSAFE_className="health-card-name">
+                {card.title}
+              </Heading>
               {card.busy ? (
                 <ProgressCircle
                   size="S"
@@ -502,14 +520,15 @@ export function RuntimeHealthView({
                   UNSAFE_className="health-card-dot-busy"
                 />
               ) : (
-                <span
-                  className={`runtime-status-light runtime-status-${card.tone} health-card-dot`}
-                  aria-hidden="true"
-                />
+                <StatusLight variant={card.tone} size="S">
+                  <span className="visually-hidden">{card.status}</span>
+                </StatusLight>
               )}
             </div>
-            <span className="health-card-status">{card.status}</span>
-            <span className="health-card-detail">{card.detail}</span>
+            <StatusLight variant={card.tone} size="S" UNSAFE_className="health-card-status">
+              {card.status}
+            </StatusLight>
+            <Text UNSAFE_className="health-card-detail">{card.detail}</Text>
           </article>
         ))}
       </div>

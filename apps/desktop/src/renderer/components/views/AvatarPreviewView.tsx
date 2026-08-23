@@ -4,9 +4,14 @@ import {
   Button,
   Content,
   ContextualHelp,
+  Disclosure,
+  DisclosurePanel,
+  DisclosureTitle,
   Heading,
   ProgressCircle,
   SearchField,
+  Text,
+  ToggleButton,
   Tooltip,
   TooltipTrigger,
 } from '@react-spectrum/s2'
@@ -20,15 +25,27 @@ import {
   getGroupedAnimations,
   isAnimationAutomaticallySelectable,
 } from '../../avatar/animationManifest'
+import { resolveVrmSource } from '../../avatar/defaultVrm'
 import { controller } from '../../Controller'
 import { useTranslation } from '../../localization/useTranslation'
+import { observeRendererPromise } from '../../reliability/observePromise'
 
 type Phase = 'closed' | 'loading' | 'ready' | 'error'
 
-function cameraLabel(entry: AnimationManifestEntry): string | null {
+const CAMERA_LABEL: Record<string, TranslationKey> = {
+  full: 'avatarPreview.cameraPreset.full',
+  bust: 'avatarPreview.cameraPreset.bust',
+  face: 'avatarPreview.cameraPreset.face',
+  portrait: 'avatarPreview.cameraPreset.portrait',
+}
+
+function cameraLabel(
+  entry: AnimationManifestEntry,
+  t: (key: TranslationKey) => string,
+): string | null {
   if (!entry.compatibleCameraModes || entry.compatibleCameraModes.length === 0) return null
   return entry.compatibleCameraModes
-    .map((mode) => mode.charAt(0).toUpperCase() + mode.slice(1))
+    .map((mode) => t(CAMERA_LABEL[mode] ?? 'avatarPreview.cameraPreset.full'))
     .join('/')
 }
 
@@ -70,12 +87,15 @@ export function AvatarPreviewView({ onOpenSettings }: { onOpenSettings: () => vo
   // biome-ignore lint/correctness/useExhaustiveDependencies: intentional mount/unmount effect — bootstrap once on mount and tear down on unmount; adding `open` would re-run it and break the once-per-tab-entry lifecycle.
   useEffect(() => {
     let cancelled = false
-    void window.api.config.get().then((cfg) => {
-      if (cancelled) return
-      const has = Boolean(cfg.vrmPath)
-      setHasModel(has)
-      if (has) void open()
-    })
+    observeRendererPromise(
+      window.api.config.get().then((cfg) => {
+        if (cancelled) return
+        const has = Boolean(resolveVrmSource(cfg.vrmAssetHandle))
+        setHasModel(has)
+        if (has) observeRendererPromise(open(), 'open Avatar Preview')
+      }),
+      'load Avatar Preview configuration',
+    )
     return () => {
       cancelled = true
       mountedRef.current = false
@@ -104,8 +124,8 @@ export function AvatarPreviewView({ onOpenSettings }: { onOpenSettings: () => vo
   if (hasModel === false)
     return (
       <section className="empty-state">
-        <h2>{t('avatarPreview.notConfigured.title')}</h2>
-        <p>{t('avatarPreview.notConfigured.description')}</p>
+        <Heading level={2}>{t('avatarPreview.notConfigured.title')}</Heading>
+        <Text>{t('avatarPreview.notConfigured.description')}</Text>
         <Button variant="accent" onPress={onOpenSettings}>
           {t('avatarPreview.openSettings')}
         </Button>
@@ -119,12 +139,16 @@ export function AvatarPreviewView({ onOpenSettings }: { onOpenSettings: () => vo
           {phase !== 'error' ? (
             <>
               <ProgressCircle aria-label={t('avatarPreview.loading')} isIndeterminate size="L" />
-              <p className="preview-loader-title">{t('avatarPreview.loadingTitle')}</p>
-              <p className="preview-loader-hint">{t('avatarPreview.loadingHint')}</p>
+              <Heading level={2} UNSAFE_className="preview-loader-title">
+                {t('avatarPreview.loadingTitle')}
+              </Heading>
+              <Text UNSAFE_className="preview-loader-hint">{t('avatarPreview.loadingHint')}</Text>
             </>
           ) : (
             <>
-              <p className="preview-loader-title">{t('avatarPreview.loadFailed')}</p>
+              <Heading level={2} UNSAFE_className="preview-loader-title">
+                {t('avatarPreview.loadFailed')}
+              </Heading>
               <Button variant="secondary" onPress={() => void open()}>
                 {t('common.retry')}
               </Button>
@@ -139,23 +163,23 @@ export function AvatarPreviewView({ onOpenSettings }: { onOpenSettings: () => vo
       <div className={ready ? 'avatar-preview-workspace' : 'avatar-preview-workspace collapsed'}>
         {ready && (
           <aside className="animation-library">
-            <div className="animation-library-header">
+            <header className="animation-library-header">
               <div className="animation-library-title">
-                <strong>{t('avatarPreview.library')}</strong>
+                <Heading level={2}>{t('avatarPreview.library')}</Heading>
                 <ContextualHelp variant="info" size="S" aria-label={t('avatarPreview.tagsHelp')}>
                   <Heading>{t('avatarPreview.tagsTitle')}</Heading>
                   <Content>
                     <dl className="animation-tags-help">
                       <div>
-                        <dt>Loop</dt>
+                        <dt>{t('avatarPreview.tag.loop')}</dt>
                         <dd>{t('avatarPreview.tags.loop')}</dd>
                       </div>
                       <div>
-                        <dt>One-shot</dt>
+                        <dt>{t('avatarPreview.tag.oneShot')}</dt>
                         <dd>{t('avatarPreview.tags.oneShot')}</dd>
                       </div>
                       <div>
-                        <dt>Front / Bust / Face / Portrait</dt>
+                        <dt>{t('avatarPreview.tag.cameraModes')}</dt>
                         <dd>{t('avatarPreview.tags.camera')}</dd>
                       </div>
                       <div>
@@ -163,11 +187,11 @@ export function AvatarPreviewView({ onOpenSettings }: { onOpenSettings: () => vo
                         <dd>{t('avatarPreview.tags.noCameraDescription')}</dd>
                       </div>
                       <div>
-                        <dt>Auto</dt>
+                        <dt>{t('avatarPreview.tag.auto')}</dt>
                         <dd>{t('avatarPreview.tags.auto')}</dd>
                       </div>
                       <div>
-                        <dt>Manual</dt>
+                        <dt>{t('avatarPreview.tag.manual')}</dt>
                         <dd>{t('avatarPreview.tags.manual')}</dd>
                       </div>
                     </dl>
@@ -181,65 +205,82 @@ export function AvatarPreviewView({ onOpenSettings }: { onOpenSettings: () => vo
                 placeholder={t('avatarPreview.searchPlaceholder')}
                 size="S"
               />
-            </div>
+            </header>
             <div className="animation-library-list">
               {filteredGroups.length === 0 && (
-                <p className="animation-library-empty">{t('avatarPreview.empty')}</p>
+                <Text UNSAFE_className="animation-library-empty">{t('avatarPreview.empty')}</Text>
               )}
               {filteredGroups.map((group) => (
-                <div key={group.category} className="animation-library-group">
-                  <div className="animation-library-category">{categoryLabel(group.category)}</div>
+                <section key={group.category} className="animation-library-group">
+                  <Heading level={3} UNSAFE_className="animation-library-category">
+                    {categoryLabel(group.category)}
+                  </Heading>
                   {group.animations.map((animation) => (
-                    <button
+                    <ToggleButton
                       key={animation.id}
-                      type="button"
-                      className={`animation-row${animation.id === animationId ? ' active' : ''}`}
-                      aria-pressed={animation.id === animationId}
-                      onClick={() => {
+                      isSelected={animation.id === animationId}
+                      UNSAFE_className="animation-row"
+                      onChange={(isSelected) => {
+                        if (!isSelected) return
                         setAnimationId(animation.id)
                         controller.previewAvatarAnimation(animation.id)
                       }}
                     >
-                      <span className="animation-row-title">{getAnimationTitle(animation)}</span>
-                      <span className="animation-row-file">{animation.file}</span>
-                      <span className="animation-row-badges">
-                        <Badge size="S" variant={animation.loop ? 'informative' : 'neutral'}>
-                          {animation.loop ? 'Loop' : 'One-shot'}
-                        </Badge>
-                        {cameraLabel(animation) && (
-                          <Badge size="S" variant="gray">
-                            {cameraLabel(animation)}
+                      <span className="animation-row-content">
+                        <span className="animation-row-title">{getAnimationTitle(animation)}</span>
+                        <span className="animation-row-file">{animation.file}</span>
+                        <span className="animation-row-badges">
+                          <Badge size="S" variant={animation.loop ? 'informative' : 'neutral'}>
+                            {animation.loop
+                              ? t('avatarPreview.tag.loop')
+                              : t('avatarPreview.tag.oneShot')}
                           </Badge>
-                        )}
-                        <Badge
-                          size="S"
-                          variant={
-                            isAnimationAutomaticallySelectable(animation) ? 'positive' : 'neutral'
-                          }
-                        >
-                          {isAnimationAutomaticallySelectable(animation) ? 'Auto' : 'Manual'}
-                        </Badge>
+                          {cameraLabel(animation, t) && (
+                            <Badge size="S" variant="gray">
+                              {cameraLabel(animation, t)}
+                            </Badge>
+                          )}
+                          <Badge
+                            size="S"
+                            variant={
+                              isAnimationAutomaticallySelectable(animation) ? 'positive' : 'neutral'
+                            }
+                          >
+                            {isAnimationAutomaticallySelectable(animation)
+                              ? t('avatarPreview.tag.auto')
+                              : t('avatarPreview.tag.manual')}
+                          </Badge>
+                        </span>
                       </span>
-                    </button>
+                    </ToggleButton>
                   ))}
-                </div>
+                </section>
               ))}
             </div>
           </aside>
         )}
 
-        <div className="preview-viewport">
+        <section className="preview-viewport" aria-labelledby="avatar-preview-workspace-title">
+          {ready && (
+            <header className="preview-viewport-header">
+              <Heading level={2} id="avatar-preview-workspace-title">
+                {t('avatarPreview.workspace')}
+              </Heading>
+              <Text>{t('avatarPreview.localOnly')}</Text>
+            </header>
+          )}
           <div className={ready ? 'avatar-preview-stage' : 'avatar-preview-stage collapsed'}>
             {ready && (
-              <div className="preview-camera-toolbar">
+              <fieldset className="preview-camera-toolbar">
+                <legend className="visually-hidden">{t('avatarPreview.cameraPresets')}</legend>
                 <Button variant="secondary" onPress={() => controller.previewCameraPreset('full')}>
-                  Full
+                  {t('avatarPreview.cameraPreset.full')}
                 </Button>
                 <Button variant="secondary" onPress={() => controller.previewCameraPreset('bust')}>
-                  Bust
+                  {t('avatarPreview.cameraPreset.bust')}
                 </Button>
                 <Button variant="secondary" onPress={() => controller.previewCameraPreset('face')}>
-                  Face
+                  {t('avatarPreview.cameraPreset.face')}
                 </Button>
                 <TooltipTrigger delay={200}>
                   <ActionButton
@@ -250,7 +291,7 @@ export function AvatarPreviewView({ onOpenSettings }: { onOpenSettings: () => vo
                   </ActionButton>
                   <Tooltip>{t('avatarPreview.resetCamera')}</Tooltip>
                 </TooltipTrigger>
-              </div>
+              </fieldset>
             )}
             <canvas
               ref={canvasRef}
@@ -263,16 +304,23 @@ export function AvatarPreviewView({ onOpenSettings }: { onOpenSettings: () => vo
           </div>
 
           {ready && (
-            <div className="preview-playback">
-              <span className="settings-hint">{t('avatarPreview.localOnly')}</span>
+            <section className="preview-playback" aria-labelledby="avatar-preview-playback-title">
+              <Heading level={3} id="avatar-preview-playback-title">
+                {t('avatarPreview.playbackControls')}
+              </Heading>
               {selectedAnimation ? (
-                <p className="preview-animation-summary">
+                <Text UNSAFE_className="preview-animation-summary">
                   {getAnimationTitle(selectedAnimation)} ·{' '}
                   {categoryLabel(selectedAnimation.category)} ·{' '}
-                  {selectedAnimation.loop ? 'Loop' : 'One-shot'} · {selectedAnimation.file}
-                </p>
+                  {selectedAnimation.loop
+                    ? t('avatarPreview.tag.loop')
+                    : t('avatarPreview.tag.oneShot')}{' '}
+                  · {selectedAnimation.file}
+                </Text>
               ) : (
-                <p className="preview-animation-summary">{t('avatarPreview.selectAnimation')}</p>
+                <Text UNSAFE_className="preview-animation-summary">
+                  {t('avatarPreview.selectAnimation')}
+                </Text>
               )}
               <div className="preview-actions">
                 <Button
@@ -302,47 +350,51 @@ export function AvatarPreviewView({ onOpenSettings }: { onOpenSettings: () => vo
                 </Button>
               </div>
               {selectedAnimation && (
-                <details className="preview-animation-details">
-                  <summary>{t('avatarPreview.details')}</summary>
-                  <dl className="preview-animation-meta">
-                    <div>
-                      <dt>ID</dt>
-                      <dd>{selectedAnimation.id}</dd>
-                    </div>
-                    <div>
-                      <dt>{t('avatarPreview.file')}</dt>
-                      <dd>{selectedAnimation.file}</dd>
-                    </div>
-                    <div>
-                      <dt>{t('avatarPreview.category')}</dt>
-                      <dd>{categoryLabel(selectedAnimation.category)}</dd>
-                    </div>
-                    <div>
-                      <dt>Loop</dt>
-                      <dd>{selectedAnimation.loop ? t('common.yes') : t('common.no')}</dd>
-                    </div>
-                    <div>
-                      <dt>{t('avatarPreview.camera')}</dt>
-                      <dd>{cameraLabel(selectedAnimation) ?? t('avatarPreview.noCameraLimit')}</dd>
-                    </div>
-                    <div>
-                      <dt>{t('avatarPreview.selection')}</dt>
-                      <dd>
-                        {isAnimationAutomaticallySelectable(selectedAnimation)
-                          ? t('avatarPreview.automatic')
-                          : t('avatarPreview.manualOnly')}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt>{t('avatarPreview.description')}</dt>
-                      <dd>{selectedAnimation.description}</dd>
-                    </div>
-                  </dl>
-                </details>
+                <Disclosure isQuiet UNSAFE_className="preview-animation-details">
+                  <DisclosureTitle level={4}>{t('avatarPreview.details')}</DisclosureTitle>
+                  <DisclosurePanel>
+                    <dl className="preview-animation-meta">
+                      <div>
+                        <dt>{t('avatarPreview.id')}</dt>
+                        <dd>{selectedAnimation.id}</dd>
+                      </div>
+                      <div>
+                        <dt>{t('avatarPreview.file')}</dt>
+                        <dd>{selectedAnimation.file}</dd>
+                      </div>
+                      <div>
+                        <dt>{t('avatarPreview.category')}</dt>
+                        <dd>{categoryLabel(selectedAnimation.category)}</dd>
+                      </div>
+                      <div>
+                        <dt>{t('avatarPreview.tag.loop')}</dt>
+                        <dd>{selectedAnimation.loop ? t('common.yes') : t('common.no')}</dd>
+                      </div>
+                      <div>
+                        <dt>{t('avatarPreview.camera')}</dt>
+                        <dd>
+                          {cameraLabel(selectedAnimation, t) ?? t('avatarPreview.noCameraLimit')}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>{t('avatarPreview.selection')}</dt>
+                        <dd>
+                          {isAnimationAutomaticallySelectable(selectedAnimation)
+                            ? t('avatarPreview.automatic')
+                            : t('avatarPreview.manualOnly')}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>{t('avatarPreview.description')}</dt>
+                        <dd>{selectedAnimation.description}</dd>
+                      </div>
+                    </dl>
+                  </DisclosurePanel>
+                </Disclosure>
               )}
-            </div>
+            </section>
           )}
-        </div>
+        </section>
       </div>
     </section>
   )

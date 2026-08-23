@@ -1,3 +1,7 @@
+import {
+  type CharacterEmbodimentIntent,
+  parseCharacterEmbodimentResponse,
+} from '../shared/character-response'
 import type { AppSettings } from '../shared/config'
 import {
   EMOTION_SEGMENTS_TUNING,
@@ -6,6 +10,8 @@ import {
   parseLeadingEmotionTag,
   supportedEmotionPromptList,
 } from '../shared/emotion'
+import type { ProjectContextProviderResolver } from '../shared/plugins'
+import type { ProjectContextPacket } from '../shared/project-awareness'
 import type { ScreenContextImageMimeType } from '../shared/screen-context'
 import type {
   SpeechAudioBoundaryTelemetry,
@@ -14,7 +20,6 @@ import type {
 import { type LLMProvider, type LlmRequestOptions, LlmTurnCancelledError } from './llm'
 import { mainLog } from './logging/safeLogger'
 import type { MemoryStore } from './memory'
-import type { ProjectAwarenessRuntime } from './project-awareness'
 import type { SpeechClient } from './speech/speechClient'
 import { classifySpeechUtterance, normalizeSpeechText } from './speech/text-normalization'
 
@@ -125,9 +130,15 @@ function emotionContractPrompt(): string {
   ].join(' ')
 }
 
-function projectContextPrompt(
-  packet: NonNullable<ReturnType<ProjectAwarenessRuntime['buildContextPacket']>>,
-): string {
+function embodimentContractPrompt(): string {
+  return [
+    'You may append one optional trailing marker only when it improves visible embodiment:',
+    '<shio-embodiment>{"intensity":"subtle|normal|strong","gestureHint":"explain|agree|disagree|tease|surprise|think|celebrate","gazeHint":"user|screen|away"}</shio-embodiment>.',
+    'The marker is internal and must be valid JSON. Never mention or return animation ids, filenames, VRMA/VRM data, morph values, bones, transforms, eye coordinates, speed, or model controls.',
+  ].join(' ')
+}
+
+function projectContextPrompt(packet: ProjectContextPacket): string {
   const evidence = packet.evidence
     .map((item, index) =>
       [
@@ -163,7 +174,7 @@ export class Orchestrator {
     private memory: MemoryStore,
     private speech: SpeechClient,
     private settings: () => AppSettings,
-    private projectAwareness?: ProjectAwarenessRuntime,
+    private projectContext?: ProjectContextProviderResolver,
   ) {}
 
   async createReply(
@@ -172,14 +183,23 @@ export class Orchestrator {
   ): Promise<{
     replyText: string
     emotionKey: string
+    embodimentIntent?: CharacterEmbodimentIntent
   }> {
     const { userText, screenContext } = input
     const history = await this.memory.getHistory(SESSION_ID)
 
-    const projectContext = this.projectAwareness?.buildContextPacket(userText)
+    let projectContext: ProjectContextPacket | null = null
+    try {
+      projectContext = (await this.projectContext?.()?.buildContext({ userText })) ?? null
+    } catch (error) {
+      mainLog.warn('[PluginRuntime] project-context provider failed; continuing without it', {
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
     const messages = [
       { role: 'system' as const, content: SYSTEM_PROMPT },
       { role: 'system' as const, content: emotionContractPrompt() },
+      { role: 'system' as const, content: embodimentContractPrompt() },
       ...(projectContext
         ? [{ role: 'system' as const, content: projectContextPrompt(projectContext) }]
         : []),
@@ -199,8 +219,9 @@ export class Orchestrator {
       },
     ]
 
-    const replyText = await this.llm.chat(messages, options)
+    const rawReplyText = await this.llm.chat(messages, options)
     if (options.signal?.aborted) throw new LlmTurnCancelledError()
+    const { replyText, embodimentIntent } = parseCharacterEmbodimentResponse(rawReplyText)
     const visibleReplyText = parseEmotionalReply(replyText).visibleText
     await this.memory.appendTurn(SESSION_ID, {
       user: { role: 'user', content: userText },
@@ -212,7 +233,7 @@ export class Orchestrator {
 
     const emotionKey = parseLeadingEmotionTag(replyText)
     mainLog.info('[emotion] LLM reply tag', { emotionKey, replyPreview: replyText.slice(0, 80) })
-    return { replyText, emotionKey }
+    return { replyText, emotionKey, embodimentIntent }
   }
 
   async synthesizeReply(
@@ -250,7 +271,7 @@ export class Orchestrator {
     const speechResult = await this.speech.synthesize({
       text: normalization.text,
       language: cfg.ttsLanguage,
-      voiceId: cfg.ttsVoice || TTS_VOICE_ID,
+      voiceId: TTS_VOICE_ID,
       engine: TTS_ENGINE,
       emotion: emotionKey,
       utteranceKind,

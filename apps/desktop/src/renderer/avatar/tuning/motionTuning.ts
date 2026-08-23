@@ -79,6 +79,22 @@ export const avatarLookAtTuning = {
       glanceAwayChance: 0.03,
       glanceAwayDurationMs: 520,
     },
+    screenFocus: {
+      saccadeIntervalMs: { min: 1000, max: 1800 },
+      saccadeAmplitude: { yaw: 0.008, pitch: 0.006 },
+      focusHoldMs: { min: 1600, max: 2600 },
+      eyeContactBias: 0.96,
+      glanceAwayChance: 0,
+      glanceAwayDurationMs: 0,
+    },
+    away: {
+      saccadeIntervalMs: { min: 820, max: 1500 },
+      saccadeAmplitude: { yaw: 0.01, pitch: 0.008 },
+      focusHoldMs: { min: 1000, max: 1900 },
+      eyeContactBias: 0.45,
+      glanceAwayChance: 0,
+      glanceAwayDurationMs: 0,
+    },
   } satisfies Record<
     LookAtMode,
     {

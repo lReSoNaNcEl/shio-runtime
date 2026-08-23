@@ -5,6 +5,7 @@ import {
   type ScreenContextCaptureDescriptor,
 } from '../../../shared/screen-context'
 import { useTranslation } from '../../localization/useTranslation'
+import { observeRendererPromise } from '../../reliability/observePromise'
 import type { ChatSubmissionResult } from '../../speech/continuous-listening/types'
 import { screenContextErrorMessage } from './screenContextErrorMessage'
 import { isSupportedImageFile, isSupportedImageMimeType } from './screenContextImageInput'
@@ -58,9 +59,17 @@ export function useScreenContextAttachment(): ScreenContextAttachmentController 
       const capture = pendingRef.current
       pendingRef.current = null
       if (mainOperationId) {
-        void window.api.screenContext.cancelOperation(mainOperationId)
+        observeRendererPromise(
+          window.api.screenContext.cancelOperation(mainOperationId),
+          'cancel Screen Context operation during cleanup',
+        )
       }
-      if (capture) void window.api.screenContext.release(capture.captureId)
+      if (capture) {
+        observeRendererPromise(
+          window.api.screenContext.release(capture.captureId),
+          'release Screen Context capture during cleanup',
+        )
+      }
     },
     [],
   )

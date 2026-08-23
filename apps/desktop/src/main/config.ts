@@ -17,27 +17,23 @@ import {
   normalizeUiLocale,
   type UiLocale,
 } from '../shared/localization'
-import type { ProjectAwarenessPublicConfig } from '../shared/project-awareness'
+import { vrmAssetRegistry } from './assets/VrmAssetRegistry'
 import { developerModeDefaults, resolveDeveloperModeSettings } from './configDefaults'
 import { defaultLlmConfig, type LlmCredentialStore, normalizeLlmConfig } from './llm'
 import { toPublicLlmConfig } from './llm/config'
 import { resolveLlmPersistence } from './llm/persistence'
+import { mainLog } from './logging/safeLogger'
+import { migrateProjectAwarenessPlugin } from './plugins'
 
 const CONFIG_PATH = join(app.getPath('userData'), 'config.json')
 export const CURRENT_CONFIG_SCHEMA_VERSION = DESKTOP_CONFIG_SCHEMA_VERSION
-
-export interface ProjectAwarenessConfig extends ProjectAwarenessPublicConfig {
-  maxFileSizeBytes: number
-}
 
 export interface AppConfig {
   configSchemaVersion: number
   setup: SetupLifecycleConfig
   llm: LlmPersistedConfig
-  projectAwareness: ProjectAwarenessConfig
   uiLocale: UiLocale
   pythonSpeechUrl: string
-  ttsVoice: string
   ttsLanguage: string
   ttsEngine: string
   vrmPath: string
@@ -62,13 +58,12 @@ export interface AppConfig {
 // String-valued keys only; `llm` is handled separately because it is an object.
 type StringConfigKey = Exclude<
   keyof AppConfig,
-  'configSchemaVersion' | 'setup' | 'llm' | 'projectAwareness' | 'uiLocale'
+  'configSchemaVersion' | 'setup' | 'llm' | 'uiLocale'
 >
 
 function stringDefaults(isPackaged = app.isPackaged): Record<StringConfigKey, string> {
   return {
     pythonSpeechUrl: process.env.PYTHON_SPEECH_URL ?? DEFAULT_SPEECH_URL,
-    ttsVoice: process.env.TTS_VOICE ?? 'animevox_makima',
     ttsLanguage: process.env.TTS_LANGUAGE ?? 'ru',
     ttsEngine: process.env.TTS_ENGINE ?? 'f5',
     vrmPath: '',
@@ -95,13 +90,6 @@ export function freshDefaults(isPackaged = app.isPackaged): AppConfig {
     configSchemaVersion: CURRENT_CONFIG_SCHEMA_VERSION,
     setup: { completed: false },
     llm: defaultLlmConfig(),
-    projectAwareness: {
-      enabled: false,
-      provider: 'github',
-      repository: '',
-      branch: 'main',
-      maxFileSizeBytes: 256 * 1024,
-    },
     uiLocale: DEFAULT_UI_LOCALE,
     ...stringDefaults(isPackaged),
   }
@@ -134,32 +122,6 @@ function resolveSetupLifecycle(saved: Record<string, unknown>): SetupLifecycleCo
   }
 }
 
-function resolveProjectAwarenessConfig(saved: Record<string, unknown>): ProjectAwarenessConfig {
-  const defaults = freshDefaults().projectAwareness
-  if (!saved.projectAwareness || typeof saved.projectAwareness !== 'object') return defaults
-  const project = saved.projectAwareness as Record<string, unknown>
-  return {
-    enabled:
-      typeof project.enabled === 'boolean' &&
-      typeof project.repository === 'string' &&
-      project.repository.trim().length > 0
-        ? project.enabled
-        : false,
-    provider: 'github',
-    repository:
-      typeof project.repository === 'string' && project.repository
-        ? project.repository
-        : defaults.repository,
-    branch: typeof project.branch === 'string' && project.branch ? project.branch : defaults.branch,
-    maxFileSizeBytes:
-      typeof project.maxFileSizeBytes === 'number' &&
-      Number.isFinite(project.maxFileSizeBytes) &&
-      project.maxFileSizeBytes >= 16 * 1024
-        ? Math.min(project.maxFileSizeBytes, 2 * 1024 * 1024)
-        : defaults.maxFileSizeBytes,
-  }
-}
-
 function serializedConfig(config: AppConfig): string {
   return JSON.stringify(config, null, 2)
 }
@@ -171,12 +133,25 @@ export async function loadConfig(llmCredentialStore: LlmCredentialStore): Promis
     if (existsSync(CONFIG_PATH)) {
       const rawSaved = JSON.parse(readFileSync(CONFIG_PATH, 'utf-8')) as Record<string, unknown> &
         import('./llm/persistence').LegacyPersistedLlmConfig
+      const legacyProjectFound =
+        typeof rawSaved.projectAwareness === 'object' && rawSaved.projectAwareness !== null
+      let projectMigrationCompleted = true
+      try {
+        await migrateProjectAwarenessPlugin({
+          userDataPath: app.getPath('userData'),
+          legacyConfig: rawSaved.projectAwareness,
+        })
+      } catch (error) {
+        projectMigrationCompleted = false
+        mainLog.error('[PluginRuntime] Project Awareness persistence migration failed', {
+          error: error instanceof Error ? error.message : String(error),
+        })
+      }
       const saved = migrateLegacyDesktopSettings(rawSaved) as Record<string, unknown> &
         import('./llm/persistence').LegacyPersistedLlmConfig
       const known = pickKnownStrings(saved)
       const { llm, plaintextCredentials, plaintextProviders, migrated } =
         resolveLlmPersistence(saved)
-      const projectAwareness = resolveProjectAwarenessConfig(saved)
       const setup = resolveSetupLifecycle(saved)
       const developerMode = resolveDeveloperModeSettings(known, app.isPackaged)
       const configNeedsMigration =
@@ -184,18 +159,15 @@ export async function loadConfig(llmCredentialStore: LlmCredentialStore): Promis
         rawSaved.continuousListeningMode !== undefined ||
         rawSaved.continuousListeningEnabled !== undefined ||
         rawSaved.passiveCompanionEnabled !== undefined ||
+        rawSaved.ttsVoice !== undefined ||
         rawSaved.overlayViewMode === 'front' ||
-        rawSaved.setup === undefined
-      const hasLegacyProjectToken =
-        typeof saved.projectAwareness === 'object' &&
-        saved.projectAwareness !== null &&
-        typeof (saved.projectAwareness as Record<string, unknown>).token === 'string'
+        rawSaved.setup === undefined ||
+        legacyProjectFound
       _config = {
         ...freshDefaults(),
         ...known,
         ...developerMode,
         llm,
-        projectAwareness,
         setup,
         configSchemaVersion: CURRENT_CONFIG_SCHEMA_VERSION,
         uiLocale: normalizeUiLocale(saved.uiLocale),
@@ -215,9 +187,8 @@ export async function loadConfig(llmCredentialStore: LlmCredentialStore): Promis
         }
       }
       if (
-        (migrated && llmMigrationCompleted) ||
-        (!migrated && hasLegacyProjectToken) ||
-        configNeedsMigration
+        projectMigrationCompleted &&
+        ((migrated && llmMigrationCompleted) || configNeedsMigration)
       ) {
         writeFileSync(CONFIG_PATH, serializedConfig(_config), 'utf-8')
       }
@@ -233,7 +204,6 @@ export function getConfig(): AppConfig {
 }
 
 export function getRendererConfig(): AppSettings {
-  const { maxFileSizeBytes: _maxFileSizeBytes, ...projectAwareness } = _config.projectAwareness
   const llm = toPublicLlmConfig(_config.llm, (provider) =>
     _llmCredentialStore
       ? _llmCredentialStore.getStatus(provider)
@@ -243,13 +213,41 @@ export function getRendererConfig(): AppSettings {
           secureStorageAvailable: false,
         },
   )
-  return { ..._config, llm, projectAwareness }
+  const { vrmPath, ...publicConfig } = _config
+  const vrmAsset = vrmAssetRegistry.describeConfiguredAsset(vrmPath)
+  return {
+    ...publicConfig,
+    llm,
+    vrmAssetHandle: vrmAsset.assetHandle,
+    vrmAssetName: vrmAsset.displayName,
+  }
+}
+
+export function getOverlayPresentationConfig(): Pick<
+  AppSettings,
+  | 'uiLocale'
+  | 'vrmAssetHandle'
+  | 'overlayTransparentBackground'
+  | 'overlayScale'
+  | 'overlayViewMode'
+  | 'developerModeEnabled'
+  | 'developerOverlayAnimationHudEnabled'
+> {
+  const config = getRendererConfig()
+  return {
+    uiLocale: config.uiLocale,
+    vrmAssetHandle: config.vrmAssetHandle,
+    overlayTransparentBackground: config.overlayTransparentBackground,
+    overlayScale: config.overlayScale,
+    overlayViewMode: config.overlayViewMode,
+    developerModeEnabled: config.developerModeEnabled,
+    developerOverlayAnimationHudEnabled: config.developerOverlayAnimationHudEnabled,
+  }
 }
 
 export function saveConfig(
-  partial: Partial<Omit<AppConfig, 'projectAwareness' | 'llm' | 'setup'>> & {
+  partial: Partial<Omit<AppConfig, 'llm' | 'setup'>> & {
     llm?: unknown
-    projectAwareness?: Partial<ProjectAwarenessPublicConfig>
     setup?: SetupLifecycleConfig
   },
 ): void {
@@ -278,9 +276,6 @@ export function saveConfig(
         : isUiLocale(partial.uiLocale)
           ? partial.uiLocale
           : _config.uiLocale,
-    projectAwareness: partial.projectAwareness
-      ? { ..._config.projectAwareness, ...partial.projectAwareness }
-      : _config.projectAwareness,
   }
   writeFileSync(CONFIG_PATH, serializedConfig(_config), 'utf-8')
 }

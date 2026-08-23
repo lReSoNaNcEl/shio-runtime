@@ -32,7 +32,9 @@ LLM credentials are encrypted through Windows-backed Electron secure storage. Pr
 
 ## Project Awareness
 
-In Settings, select GitHub, enter the repository in `owner/name` form, choose a branch, save a separate GitHub token, and connect. Project Awareness is read-only: it downloads repository metadata and source content into a local SQLite/FTS index and does not modify the repository.
+Open **Plugins**, enable **Project Awareness**, and open its settings. Enter the GitHub repository in `owner/name` form, choose a branch, save a separate GitHub token, and connect. Project Awareness is read-only: it downloads repository metadata and source content into a local SQLite/FTS index and does not modify the repository.
+
+Disabling the Plugin immediately removes project context from later chat turns but preserves its repository settings, encrypted credential, index, and snapshots. Re-enabling restores the capability without requiring an application restart. Plugin Runtime v1 supports bundled first-party Plugins only; it does not load external JavaScript or install third-party packages.
 
 ## Settings, logs, and support data
 

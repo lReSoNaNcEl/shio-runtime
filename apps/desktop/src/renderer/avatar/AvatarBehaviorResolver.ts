@@ -1,3 +1,4 @@
+import type { CharacterEmbodimentIntent } from '../../shared/character-response'
 import {
   type AnimationCooldownState,
   AvatarAnimationCooldownManager,
@@ -154,6 +155,49 @@ export class AvatarBehaviorResolver {
       fallbackAnimationId: this.getFallbackAnimationId(manifestState, excludedIds),
       activeCooldowns: this.cooldowns.getActiveCooldowns(now),
       selectionReason: `${tags.join('|')}: ${selection.reason}`,
+    }
+  }
+
+  /**
+   * Resolve only manifest entries explicitly compatible with the semantic
+   * proposal. Unlike the generic resolver, absence of a match remains `null`
+   * so callers can take the neutral/speaking fallback instead of a random clip.
+   */
+  resolveEmbodimentIntent(
+    effect: AvatarStateEffect,
+    intent: CharacterEmbodimentIntent,
+    usage: 'speaking' | 'reaction',
+    excludedAnimationIds: readonly string[] = [],
+  ): AvatarBehaviorResolution | null {
+    if (!intent.gestureHint) return null
+    const now = Date.now()
+    const manifestState = this.toManifestState(effect.mode)
+    const byGesture = getAnimationsByBehaviorTagForState(
+      `gesture:${intent.gestureHint}`,
+      manifestState,
+    )
+    const intensityMatches = byGesture.filter((entry) =>
+      entry.behaviorTags?.includes(`intensity:${intent.intensity}`),
+    )
+    const entries = intensityMatches.length > 0 ? intensityMatches : byGesture
+    const animationIds = entries
+      .filter((entry) => entry.usage?.[usage])
+      .map((entry) => entry.id as AnimationId)
+    if (animationIds.length === 0) return null
+    const candidates = this.buildCandidates(animationIds, now)
+    const excludedIds = new Set(excludedAnimationIds)
+    const selection = this.selectAnimation(candidates, excludedIds, manifestState, usage)
+    this.annotateCandidates(candidates, selection.animationId, excludedIds)
+    this.cooldowns.markPlayed(selection.animationId, now)
+    const entry = getAnimation(selection.animationId)
+    return {
+      behaviorId: this.normalizeBehavior(effect.behaviorId),
+      candidates,
+      animationId: selection.animationId,
+      loop: entry?.loop ?? effect.loop,
+      fallbackAnimationId: this.getFallbackAnimationId(manifestState, excludedIds),
+      activeCooldowns: this.cooldowns.getActiveCooldowns(now),
+      selectionReason: `intent:${intent.gestureHint}/${intent.intensity}; ${selection.reason}`,
     }
   }
 

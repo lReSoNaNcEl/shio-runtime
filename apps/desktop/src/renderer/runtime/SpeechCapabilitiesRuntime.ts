@@ -1,5 +1,6 @@
 import type { EventBus } from '../../shared/runtime'
 import type { SerializedSpeechError } from '../../shared/speech'
+import { observeRendererPromise } from '../reliability/observePromise'
 import {
   applyHealthFailure,
   applyHealthProbe,
@@ -56,14 +57,14 @@ export class SpeechCapabilitiesRuntime {
     if (this.disposed) return
     this.clearTimer()
     this.attempt = 0
-    void this.probe()
+    observeRendererPromise(this.probe(), 'recheck Speech capabilities')
   }
 
   /** Delegated Controller health check. Probe now if not already running. */
   checkNow(): void {
     if (this.disposed) return
     if (this.probing) return
-    void this.probe()
+    observeRendererPromise(this.probe(), 'check Speech capabilities')
   }
 
   dispose(): void {
@@ -86,7 +87,7 @@ export class SpeechCapabilitiesRuntime {
       : (RETRY_OFFSETS_MS[this.attempt] ?? RETRY_STEADY_MS)
     this.timer = setTimeout(() => {
       this.timer = null
-      void this.probe()
+      observeRendererPromise(this.probe(), 'scheduled Speech capability probe')
     }, delay)
   }
 

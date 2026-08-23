@@ -1,4 +1,4 @@
-export const DESKTOP_CONFIG_SCHEMA_VERSION = 2
+export const DESKTOP_CONFIG_SCHEMA_VERSION = 4
 
 export function migrateLegacyDesktopSettings(
   input: Record<string, unknown>,
@@ -7,6 +7,9 @@ export function migrateLegacyDesktopSettings(
   delete migrated.continuousListeningMode
   delete migrated.continuousListeningEnabled
   delete migrated.passiveCompanionEnabled
+  // Voice selection is product-internal. Preserve no user-selectable value
+  // during migration; runtime uses its stable internal default instead.
+  delete migrated.ttsVoice
   migrated.configSchemaVersion = DESKTOP_CONFIG_SCHEMA_VERSION
   migrated.overlayViewMode = input.overlayViewMode === 'front' ? 'bust' : input.overlayViewMode
   migrated.setup =
@@ -15,15 +18,6 @@ export function migrateLegacyDesktopSettings(
       : {
           completed: false,
         }
-  if (input.projectAwareness && typeof input.projectAwareness === 'object') {
-    const project = input.projectAwareness as Record<string, unknown>
-    migrated.projectAwareness = {
-      ...project,
-      enabled:
-        project.enabled === true &&
-        typeof project.repository === 'string' &&
-        project.repository.trim().length > 0,
-    }
-  }
+  delete migrated.projectAwareness
   return migrated
 }

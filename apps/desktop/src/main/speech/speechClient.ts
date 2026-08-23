@@ -8,7 +8,7 @@ import { normalizeSpeechError, SpeechServiceError } from './speechErrors'
 
 export type { Health, Recognize }
 
-const DEFAULT_TTS_VOICE_ID = 'animevox_makima'
+export const DEFAULT_TTS_VOICE_ID = 'animevox_makima'
 
 /**
  * Per-capability projection derived from a successful `/health` response. A

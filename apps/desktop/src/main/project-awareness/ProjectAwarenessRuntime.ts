@@ -106,31 +106,35 @@ export class ProjectAwarenessRuntime {
   }
 
   async configure(
-    config: Pick<ProjectAwarenessRuntimeConfig, 'enabled' | 'provider' | 'repository' | 'branch'>,
+    config: Pick<ProjectAwarenessRuntimeConfig, 'provider' | 'repository' | 'branch'>,
   ): Promise<ProjectAwarenessStatus> {
     if (
-      config.enabled &&
+      this.config.enabled &&
       (!isValidProjectRepository(config.repository) || !isValidProjectBranch(config.branch))
     ) {
       throw new Error(this.t('main.error.project.targetInvalid'))
     }
     const next = {
       ...this.config,
-      enabled: config.enabled,
       provider: config.provider,
       repository: config.repository.trim(),
       branch: config.branch.trim(),
     }
     const unchanged =
-      this.config.enabled === next.enabled &&
-      this.config.repository === next.repository &&
-      this.config.branch === next.branch
+      this.config.repository === next.repository && this.config.branch === next.branch
     if (unchanged) return this.getStatus()
 
     await this.disconnect()
     this.config = next
     if (!next.enabled || !this.credential.configured) return this.getStatus()
     return this.connect()
+  }
+
+  async setEnabled(enabled: boolean): Promise<ProjectAwarenessStatus> {
+    if (this.config.enabled === enabled) return this.getStatus()
+    await this.disconnect()
+    this.config = { ...this.config, enabled }
+    return this.getStatus()
   }
 
   async initialize(): Promise<void> {

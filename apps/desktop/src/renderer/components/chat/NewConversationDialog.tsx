@@ -6,6 +6,7 @@ import {
   DialogContainer,
   Footer,
   Heading,
+  Text,
 } from '@react-spectrum/s2'
 
 import { useTranslation } from '../../localization/useTranslation'
@@ -37,8 +38,12 @@ export function NewConversationDialog({
         <Dialog>
           <Heading>{t('chat.newConversation.title')}</Heading>
           <Content>
-            <p>{t('chat.newConversation.description')}</p>
-            {error && <p role="alert">{error}</p>}
+            <Text>{t('chat.newConversation.description')}</Text>
+            {error && (
+              <span role="alert">
+                <Text>{error}</Text>
+              </span>
+            )}
           </Content>
           <Footer>
             <ButtonGroup>

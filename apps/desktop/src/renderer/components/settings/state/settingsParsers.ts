@@ -21,11 +21,6 @@ export function parseNumberSetting(
   return clampNumber(Number.isFinite(parsed) ? parsed : fallback, min, max)
 }
 
-export function projectActionError(error: unknown): string {
-  const message = error instanceof Error ? error.message : String(error)
-  return message.replace(/^Error invoking remote method '[^']+': Error: /, '')
-}
-
 export function deduplicateModelsById(models: ModelInfo[]): ModelInfo[] {
   const result: ModelInfo[] = []
   const indexById = new Map<string, number>()
