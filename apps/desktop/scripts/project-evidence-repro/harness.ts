@@ -18,7 +18,7 @@ function packet(snapshotSha: string): ProjectContextPacket {
     snapshotSha,
     repository: 'owner/project',
     branch: 'main',
-    freshness: 'fresh',
+    freshness: 'current',
     evidence: [
       {
         path: 'ARCHITECTURE.md',
@@ -89,7 +89,7 @@ async function main(): Promise<void> {
       captured = messages
       llmTraceId = options?.traceId
       if (generationFails) throw new Error('generation failed')
-      return '[neutral]Проверенный ответ.'
+      return '[neutral]Проверенный ответ. Sources: attacker/fake.ts:1-9.'
     },
   }
   let committedTurns = 0
@@ -123,6 +123,10 @@ async function main(): Promise<void> {
   assert.equal(llmTraceId, 'trace-project-1')
   assert.equal(oldReply.grounding?.project?.snapshotCommit, 'abc1234567890')
   assert.equal(oldReply.grounding?.project?.sources.length, 3)
+  assert.equal(
+    oldReply.grounding?.project?.sources.some((source) => source.path.includes('attacker')),
+    false,
+  )
   assert(
     captured.some(
       (message) =>
@@ -189,6 +193,12 @@ async function main(): Promise<void> {
     'utf8',
   )
   assert.match(chatSource, /message\.role === 'assistant' && message\.grounding\?\.project/)
+  const evidenceBarSource = readFileSync(
+    join(process.cwd(), 'src/renderer/components/chat/ProjectEvidenceBar.tsx'),
+    'utf8',
+  )
+  assert.match(evidenceBarSource, /freshnessAtGeneration === 'stale'/)
+  assert.match(evidenceBarSource, /chat\.evidence\.projectSources/)
   console.log('Project Reply Provenance focused repro: PASS')
 }
 

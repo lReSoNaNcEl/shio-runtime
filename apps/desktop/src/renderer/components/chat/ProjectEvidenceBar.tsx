@@ -3,16 +3,13 @@ import {
   Disclosure,
   DisclosurePanel,
   DisclosureTitle,
+  StatusLight,
   Text,
-  Tooltip,
-  TooltipTrigger,
 } from '@react-spectrum/s2'
 
 import { type ProjectReplyProvenance } from '../../../shared/project-awareness'
 import { useTranslation } from '../../localization/useTranslation'
-import { evidenceFileName, groupProjectEvidence } from './projectEvidence'
-
-const MAX_VISIBLE_CHIPS = 2
+import { groupProjectEvidence } from './projectEvidence'
 
 function lineRange(
   range: { startLine?: number; endLine?: number },
@@ -28,37 +25,25 @@ function lineRange(
 export function ProjectEvidenceBar({ provenance }: { provenance: ProjectReplyProvenance }) {
   const { t } = useTranslation()
   const sources = groupProjectEvidence(provenance.sources)
-  const visibleSources = sources.slice(0, MAX_VISIBLE_CHIPS)
-  const omitted = Math.max(0, sources.length - visibleSources.length)
   const shortCommit = provenance.snapshotCommit.slice(0, 7)
 
   return (
     <div className="project-evidence">
       <div className="project-evidence-summary">
-        <Text>{t('chat.evidence.summary', { count: sources.length })}</Text>
+        <Text>{t('chat.evidence.projectSources', { count: sources.length })}</Text>
         <div className="project-evidence-chips">
-          {visibleSources.map((source) => (
-            <Badge key={source.path} size="S" variant="gray">
-              {evidenceFileName(source.path)}
-            </Badge>
-          ))}
-          {omitted > 0 && (
-            <Badge size="S" variant="gray">
-              +{omitted}
-            </Badge>
-          )}
-          <TooltipTrigger delay={200}>
-            <Badge size="S" variant="informative">
-              {shortCommit}
-            </Badge>
-            <Tooltip>
-              {t('chat.evidence.snapshotCommit', { sha: provenance.snapshotCommit })}
-            </Tooltip>
-          </TooltipTrigger>
+          <Badge size="S" variant="informative">
+            {shortCommit}
+          </Badge>
         </div>
       </div>
+      {provenance.freshnessAtGeneration === 'stale' && (
+        <StatusLight variant="notice" size="S">
+          {t('chat.evidence.staleWarning', { branch: provenance.branch })}
+        </StatusLight>
+      )}
       <Disclosure isQuiet UNSAFE_className="project-evidence-disclosure">
-        <DisclosureTitle level={3}>{t('chat.evidence.show')}</DisclosureTitle>
+        <DisclosureTitle level={3}>{t('chat.evidence.showProjectSources')}</DisclosureTitle>
         <DisclosurePanel>
           <dl className="project-evidence-metadata">
             <div>

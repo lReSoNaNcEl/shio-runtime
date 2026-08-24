@@ -1,5 +1,5 @@
 import type { ActiveProjectContextRequirement } from './context'
-import type { ProjectSnapshotFreshness } from './freshness'
+import type { ProjectTurnFreshness } from './freshness'
 
 export interface ProjectEvidenceSource {
   path: string
@@ -14,6 +14,6 @@ export interface ProjectReplyProvenance {
   repository: string
   branch: string
   snapshotCommit: string
-  freshnessAtGeneration?: ProjectSnapshotFreshness
+  freshnessAtGeneration?: ProjectTurnFreshness
   sources: readonly ProjectEvidenceSource[]
 }

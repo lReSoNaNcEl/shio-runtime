@@ -121,11 +121,8 @@ export class ProjectAwarenessPlugin implements BundledPlugin {
         checkedAt: Date.now(),
       }
     }
-    if (status.state === 'error' && !status.indexedCommit) {
+    if (status.state === 'error' && !status.snapshot) {
       return { state: 'error', detail: status.lastError, checkedAt: Date.now() }
-    }
-    if (status.lastError && status.indexedCommit) {
-      return { state: 'degraded', detail: status.lastError, checkedAt: Date.now() }
     }
     return {
       state: 'healthy',
@@ -135,67 +132,9 @@ export class ProjectAwarenessPlugin implements BundledPlugin {
   }
 
   getHealthPresentation(): RuntimePluginHealthPresentation {
-    const status = this.requireRuntime().getStatus()
-    const snapshotKey =
-      status.freshness === 'fresh'
-        ? 'health.project.snapshot.current'
-        : status.freshness === 'checking'
-          ? 'health.project.snapshot.building'
-          : status.freshness === 'stale'
-            ? 'health.project.snapshot.stale'
-            : status.indexedCommit
-              ? 'health.project.snapshot.unknown'
-              : 'health.project.snapshot.notBuilt'
-    const snapshotCommit = status.indexedCommit ?? status.remoteHead
-    const details: RuntimePluginHealthPresentation['details'] = [
-      {
-        id: 'provider',
-        labelKey: 'common.provider',
-        value: { kind: 'translation', key: 'common.github' },
-      },
-      {
-        id: 'remote-head',
-        labelKey: 'health.project.remoteHead',
-        value: status.remoteHead
-          ? { kind: 'text', value: status.remoteHead.slice(0, 7), code: true }
-          : { kind: 'translation', key: 'common.none' },
-      },
-      {
-        id: 'indexed-commit',
-        labelKey: 'health.project.indexedCommit',
-        value: status.indexedCommit
-          ? { kind: 'text', value: status.indexedCommit.slice(0, 7), code: true }
-          : { kind: 'translation', key: 'common.none' },
-      },
-      {
-        id: 'access',
-        labelKey: 'health.project.access',
-        value: { kind: 'translation', key: 'common.readOnly' },
-      },
-      ...(!status.credential.configured || !status.credential.secureStorageAvailable
-        ? [
-            {
-              id: 'credential',
-              labelKey: 'health.project.credential' as const,
-              value: {
-                kind: 'translation' as const,
-                key: status.credential.secureStorageAvailable
-                  ? ('common.notConfigured' as const)
-                  : ('health.project.secureStorageUnavailable' as const),
-              },
-            },
-          ]
-        : []),
-    ]
-    return {
-      summary: status.repository || undefined,
-      context: [status.branch, snapshotCommit?.slice(0, 7)].filter(Boolean).join(' · '),
-      contextCode: true,
-      statusKey: snapshotKey,
-      lastActivityAt: status.lastSyncAt,
-      lastActivityLabelKey: 'health.project.syncedRelative',
-      details,
-    }
+    // Project identity, freshness, and index details belong to the Plugin surface.
+    // Runtime Health remains a high-level lifecycle and health projection.
+    return {}
   }
 
   async getConfig(): Promise<ProjectAwarenessPublicConfig> {
