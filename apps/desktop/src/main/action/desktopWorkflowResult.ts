@@ -70,8 +70,18 @@ function browserProjection(
           ? 'cancelled'
           : 'failed',
     verification: action.verification?.status,
+    riskClass: evidence.riskClass ?? defaultBrowserRiskClass(evidence.operation),
     resultingUrl: evidence.after?.url,
     resultingTitle: evidence.after?.title,
     targetName: evidence.targetName,
+    tabs: evidence.tabs,
   })
+}
+
+function defaultBrowserRiskClass(
+  operation: Exclude<BrowserExecutionEvidence['operation'], 'workflow'>,
+): BrowserActionExecution['riskClass'] {
+  if (operation === 'observe' || operation === 'tabs') return 'read'
+  if (operation === 'fill' || operation === 'select') return 'input'
+  return 'navigation'
 }

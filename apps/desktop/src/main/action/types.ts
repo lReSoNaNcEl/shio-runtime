@@ -14,6 +14,9 @@ export type ActionStatus = ActionOutcome
 export interface ActionRequest<TPayload = unknown> {
   name: string
   payload: TPayload
+  /** Main-owned scope metadata. This is never accepted from renderer payloads. */
+  authorizationScopeId?: string
+  signal?: AbortSignal
 }
 
 export interface ActionResult<TResult = unknown> {
@@ -51,7 +54,11 @@ export interface ToolDefinition<TPayload = unknown, TResult = unknown> {
   description: string
   validate: (payload: unknown) => TPayload
   authority?: 'implicit' | 'desktop-workflow'
-  confirmation?: (actionId: string, payload: TPayload) => ActionConfirmationRequest
+  confirmation?: (
+    actionId: string,
+    payload: TPayload,
+    request: ActionRequest<TPayload>,
+  ) => ActionConfirmationRequest
   adapter?: string
   timeoutMs?: number
   singleFlight?: boolean

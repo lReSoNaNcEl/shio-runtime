@@ -1,14 +1,32 @@
-import type { BrowserObservation, BrowserSessionState } from '../../shared/desktop-control'
+import type {
+  BrowserObservation,
+  BrowserSemanticRiskClass,
+  BrowserSessionState,
+  BrowserTab,
+} from '../../shared/desktop-control'
 
 export interface BrowserExecutionEvidence {
   kind: 'browser'
-  operation: 'open' | 'click' | 'switch-tab' | 'workflow'
+  operation:
+    | 'observe'
+    | 'open'
+    | 'click'
+    | 'fill'
+    | 'select'
+    | 'scroll'
+    | 'back'
+    | 'forward'
+    | 'tabs'
+    | 'switch-tab'
+    | 'workflow'
+  riskClass?: BrowserSemanticRiskClass
   requestedUrl?: string
   requestedTabId?: string
   targetName?: string
   before?: BrowserObservation
   after?: BrowserObservation
   afterSession?: BrowserSessionState
+  tabs?: readonly BrowserTab[]
   browserToolCalls?: number
   successfulBrowserToolResults?: number
   observationErrorCode?: string

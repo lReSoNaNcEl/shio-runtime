@@ -28,6 +28,7 @@ interface ActionRuntimeOptions {
   permissionGuard: ActionPermissionGuard
   authorityMode: () => DesktopAuthorityMode
   cancelPendingConfirmations: () => void
+  cancelConfirmation?: (actionId: string) => void
   onEvent?: ActionRuntimeEventListener
   onChanged?: (snapshot: ActionRuntimeSnapshot) => void
 }
@@ -168,16 +169,40 @@ export class ActionRuntime {
     }
 
     let authorization: ActionAuthorization
+    let detachAuthorizationAbort: (() => void) | undefined
     try {
-      const confirmation = tool.confirmation?.(actionId, payload)
-      if (confirmation) {
-        this.pendingConfirmation = confirmation
-        this.publishSnapshot()
-      }
-      authorization = await this.options.permissionGuard.authorize(
+      const confirmation = tool.confirmation?.(actionId, payload, request as ActionRequest<unknown>)
+      const authorizationTask = this.options.permissionGuard.authorize(
         tool.authority ?? 'implicit',
         confirmation,
+        request.authorizationScopeId,
+        (pending) => {
+          this.pendingConfirmation = pending
+          this.publishSnapshot()
+        },
       )
+      const authorizationAbort = request.signal
+        ? new Promise<never>((_resolve, reject) => {
+            const abort = (): void => {
+              this.options.cancelConfirmation?.(actionId)
+              reject(
+                new ActionError(
+                  'ACTION_CANCELLED',
+                  'Action cancelled before authorization',
+                  'cancelled',
+                  true,
+                ),
+              )
+            }
+            request.signal?.addEventListener('abort', abort, { once: true })
+            detachAuthorizationAbort = () => request.signal?.removeEventListener('abort', abort)
+            if (request.signal?.aborted) abort()
+          })
+        : null
+      authorization = authorizationAbort
+        ? await Promise.race([authorizationTask, authorizationAbort])
+        : await authorizationTask
+      detachAuthorizationAbort?.()
       this.pendingConfirmation = null
       this.advance(log, 'authorized')
       log.authorization = authorization
@@ -187,6 +212,7 @@ export class ActionRuntime {
         authorization,
       })
     } catch (error) {
+      detachAuthorizationAbort?.()
       this.pendingConfirmation = null
       const normalized = this.cancelledActionIds.has(actionId)
         ? cancelledError()
@@ -210,11 +236,21 @@ export class ActionRuntime {
         ),
       )
     const abortFromParent = (): void => {
-      controller.abort()
+      controller.abort(internal.parentSignal?.reason)
+      cancel()
+    }
+    const abortFromRequest = (): void => {
+      controller.abort(request.signal?.reason)
       cancel()
     }
     if (internal.parentSignal?.aborted) abortFromParent()
     else internal.parentSignal?.addEventListener('abort', abortFromParent, { once: true })
+    if (request.signal?.aborted) abortFromRequest()
+    else request.signal?.addEventListener('abort', abortFromRequest, { once: true })
+    const detachExecutionAbort = (): void => {
+      internal.parentSignal?.removeEventListener('abort', abortFromParent)
+      request.signal?.removeEventListener('abort', abortFromRequest)
+    }
     this.active.set(actionId, { tool: request.name, phase: 'executing', controller, cancel })
     log.adapter = tool.adapter
     this.publishSnapshot()
@@ -238,13 +274,13 @@ export class ActionRuntime {
 
     if (execution.status === 'timeout') {
       this.active.delete(actionId)
-      internal.parentSignal?.removeEventListener('abort', abortFromParent)
+      detachExecutionAbort()
       this.cancelledActionIds.delete(actionId)
       return this.finishExecutionTerminal(log, request.name, authorization, execution)
     }
     if (controller.signal.aborted || execution.status === 'cancelled') {
       this.active.delete(actionId)
-      internal.parentSignal?.removeEventListener('abort', abortFromParent)
+      detachExecutionAbort()
       this.cancelledActionIds.delete(actionId)
       return this.finishCancelled(log, request.name, authorization, execution)
     }
@@ -276,7 +312,7 @@ export class ActionRuntime {
         this.cancelledActionIds.has(actionId)
       ) {
         this.active.delete(actionId)
-        internal.parentSignal?.removeEventListener('abort', abortFromParent)
+        detachExecutionAbort()
         this.cancelledActionIds.delete(actionId)
         return this.finishCancelled(log, request.name, authorization, execution)
       }
@@ -321,7 +357,7 @@ export class ActionRuntime {
       })
       if (controller.signal.aborted || recovered.status === 'cancelled') {
         this.active.delete(actionId)
-        internal.parentSignal?.removeEventListener('abort', abortFromParent)
+        detachExecutionAbort()
         this.cancelledActionIds.delete(actionId)
         return this.finishCancelled(log, request.name, authorization, execution)
       }
@@ -339,7 +375,7 @@ export class ActionRuntime {
     }
 
     this.active.delete(actionId)
-    internal.parentSignal?.removeEventListener('abort', abortFromParent)
+    detachExecutionAbort()
     this.cancelledActionIds.delete(actionId)
     this.complete(log, result.status, result.errorCode)
     this.publishTerminalEvent(request.name, result)

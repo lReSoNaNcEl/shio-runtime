@@ -4,6 +4,15 @@ import type { ToolVerificationPolicy } from './contracts'
 export function desktopWorkflowVerificationPolicy(
   request: DesktopWorkflowRequest,
 ): ToolVerificationPolicy {
+  if (
+    request.browserOperation?.operation === 'observe' ||
+    request.browserOperation?.operation === 'tabs'
+  ) {
+    return {
+      mode: 'none',
+      retrySafety: 'never-auto',
+    }
+  }
   if (request.requestedCapabilities[0] === 'shell') {
     return {
       mode: 'execution-evidence',

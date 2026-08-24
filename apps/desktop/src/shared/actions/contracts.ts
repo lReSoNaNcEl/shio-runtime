@@ -1,6 +1,7 @@
 import { z } from 'zod'
 
 import {
+  BROWSER_SEMANTIC_RISK_CLASSES,
   type BrowserActionExecution,
   browserActionExecutionSchema,
   browserOperationSchema,
@@ -111,6 +112,7 @@ export const actionConfirmationRequestSchema = z
     shellCommand: shellCommandSchema.optional(),
     browserUrl: browserUrlSchema.optional(),
     browserOperation: browserOperationSchema.optional(),
+    browserRiskClass: z.enum(BROWSER_SEMANTIC_RISK_CLASSES).optional(),
     requestedCapabilities: z.array(z.enum(DESKTOP_WORKFLOW_CAPABILITIES)).min(1).max(4),
     risk: z.enum(['normal', 'destructive']),
   })

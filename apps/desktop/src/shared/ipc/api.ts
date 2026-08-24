@@ -90,6 +90,7 @@ export interface ShioRuntimeApi {
     }>
   }
   asr: {
+    getStreamingConnection: () => Promise<{ baseUrl: string }>
     recognize: (
       buf: ArrayBuffer,
     ) => Promise<{ ok: boolean; text?: string; error?: string; errorCode?: SpeechServiceErrorCode }>

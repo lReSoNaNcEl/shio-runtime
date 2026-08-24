@@ -80,8 +80,6 @@ export function useSettingsDialogState({
     setMicrophoneTestState,
     setMicId,
     setMics,
-    setSpeechUrl,
-    speechUrl,
   } = useVoiceSettings()
   const {
     overlayClickThrough,
@@ -161,7 +159,6 @@ export function useSettingsDialogState({
         const cfg = await window.api.config.get()
         if (!active) return
         setActiveSection(initialSection)
-        setSpeechUrl(cfg.pythonSpeechUrl)
         setLang(cfg.ttsLanguage ?? defaultSettingsForm.ttsLanguage)
         setUiLocale(cfg.uiLocale)
         setDeveloperModeEnabled(cfg.developerModeEnabled === 'true')
@@ -512,13 +509,12 @@ export function useSettingsDialogState({
     if (!hydrated.current || !isOpen) return
     const timer = window.setTimeout(() => {
       void persistPatch({
-        pythonSpeechUrl: speechUrl,
         developerModeEnabled: developerModeEnabled ? 'true' : 'false',
         developerOverlayAnimationHudEnabled: developerOverlayAnimationHudEnabled ? 'true' : 'false',
       }).catch(() => setSaveState('error'))
     }, 650)
     return () => window.clearTimeout(timer)
-  }, [speechUrl, developerModeEnabled, developerOverlayAnimationHudEnabled, isOpen, persistPatch])
+  }, [developerModeEnabled, developerOverlayAnimationHudEnabled, isOpen, persistPatch])
 
   const toggleOverlay = async (visible: boolean): Promise<void> => {
     await onToggleOverlay(visible)
@@ -564,7 +560,6 @@ export function useSettingsDialogState({
     },
     speech: {
       state: {
-        speechUrl,
         language: lang,
         microphones: mics,
         microphoneId: micId,
@@ -574,7 +569,6 @@ export function useSettingsDialogState({
         microphoneLevel,
       },
       actions: {
-        setSpeechUrl,
         setLanguage: setLang,
         setMicrophoneId: (id) => {
           setMicId(id)
@@ -643,7 +637,6 @@ export function useSettingsDialogState({
       state: {
         developerModeEnabled,
         developerOverlayAnimationHudEnabled,
-        speechUrl,
         backlogRole,
         providers,
         providerSettings,
@@ -652,7 +645,6 @@ export function useSettingsDialogState({
       actions: {
         setDeveloperModeEnabled: applyDeveloperModeEnabled,
         setDeveloperOverlayAnimationHudEnabled,
-        setSpeechUrl,
         setBacklogRole,
       },
     },

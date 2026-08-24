@@ -124,7 +124,7 @@ function sanitize(value: unknown, key = '', depth = 0): unknown {
   if (!value || typeof value !== 'object' || depth >= 5) return value
   if (Array.isArray(value)) return value.slice(0, 50).map((item) => sanitize(item, '', depth + 1))
   const keys = Object.keys(value)
-  if (keys.includes('pythonSpeechUrl') && keys.includes('llm') && keys.includes('uiLocale')) {
+  if (keys.includes('configSchemaVersion') && keys.includes('llm') && keys.includes('uiLocale')) {
     return '[application config omitted]'
   }
   return Object.fromEntries(

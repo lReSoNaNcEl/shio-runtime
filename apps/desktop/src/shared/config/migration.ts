@@ -1,4 +1,4 @@
-export const DESKTOP_CONFIG_SCHEMA_VERSION = 5
+export const DESKTOP_CONFIG_SCHEMA_VERSION = 6
 
 export function migrateLegacyDesktopSettings(
   input: Record<string, unknown>,
@@ -10,6 +10,8 @@ export function migrateLegacyDesktopSettings(
   // Voice selection is product-internal. Preserve no user-selectable value
   // during migration; runtime uses its stable internal default instead.
   delete migrated.ttsVoice
+  // Speech endpoint ownership moved to immutable Main environment configuration.
+  delete migrated.pythonSpeechUrl
   migrated.configSchemaVersion = DESKTOP_CONFIG_SCHEMA_VERSION
   migrated.uiTheme = input.uiTheme === 'dark' ? 'dark' : 'light'
   migrated.overlayViewMode = input.overlayViewMode === 'front' ? 'bust' : input.overlayViewMode

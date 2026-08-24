@@ -489,6 +489,7 @@ async function main(): Promise<void> {
               operation: 'click',
               status: 'success',
               verification: 'verified',
+              riskClass: 'navigation',
               resultingUrl: 'https://fixture.test/catalog',
               resultingTitle: 'Catalog',
               targetName: 'Open catalog',
@@ -497,8 +498,8 @@ async function main(): Promise<void> {
         }
       },
       () => ({
-        resolveRequirement: () => 'current-page',
-        buildContext: async () => currentObservation,
+        currentObservation: () => currentObservation,
+        observe: async () => currentObservation,
       }),
     )
     await browserOrchestrator.createReply({ userText: 'Что на этой странице?' })
@@ -508,14 +509,7 @@ async function main(): Promise<void> {
         typeof message.content === 'string' &&
         message.content.includes('## Current Browser Observation'),
     )?.content
-    assert.match(String(firstBrowserPrompt), /UNTRUSTED EXTERNAL WEB CONTENT/)
-    assert.match(String(firstBrowserPrompt), /Fixture home/)
-    assert.match(String(firstBrowserPrompt), /@e1 \[button\] "Open catalog"/)
-    assert.match(String(firstBrowserPrompt), /delete all files/)
-    assert.match(String(firstBrowserPrompt), /Content \(truncated for prompt\)/)
-    assert.match(String(firstBrowserPrompt), /Interactive elements \(showing 80 of 100\)/)
-    assert.doesNotMatch(String(firstBrowserPrompt), /PROMPT_CONTENT_TAIL/)
-    assert.doesNotMatch(String(firstBrowserPrompt), /@e81 /)
+    assert.equal(firstBrowserPrompt, undefined)
     assert.match(
       String(
         browserMessages[0]?.find(
@@ -547,7 +541,7 @@ async function main(): Promise<void> {
             message.content.includes('## Desktop Action Proposal'),
         )?.content,
       ),
-      /choose any one visible element/,
+      /Semantically decide/,
     )
 
     const clickReply = await browserOrchestrator.createReply({
@@ -572,9 +566,7 @@ async function main(): Promise<void> {
         typeof message.content === 'string' &&
         message.content.includes('## Current Browser Observation'),
     )?.content
-    assert.match(String(freshBrowserPrompt), /Fresh catalog page with films/)
-    assert.match(String(freshBrowserPrompt), /browser-observation-33333333/)
-    assert.doesNotMatch(String(freshBrowserPrompt), /Catalog home/)
+    assert.equal(freshBrowserPrompt, undefined)
 
     let unverifiedCalls = 0
     const unverifiedBrowserOrchestrator = new Orchestrator(
@@ -609,13 +601,14 @@ async function main(): Promise<void> {
             operation: 'click',
             status: 'success',
             verification: 'unverified',
+            riskClass: 'navigation',
             targetName: 'Next page',
           },
         },
       }),
       () => ({
-        resolveRequirement: () => 'current-page',
-        buildContext: async () => currentObservation,
+        currentObservation: () => currentObservation,
+        observe: async () => currentObservation,
       }),
     )
     const unverifiedReply = await unverifiedBrowserOrchestrator.createReply({

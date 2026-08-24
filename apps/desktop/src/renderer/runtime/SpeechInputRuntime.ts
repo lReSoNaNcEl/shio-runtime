@@ -159,8 +159,11 @@ export class SpeechInputRuntime {
     }
     let connected = false
     try {
-      const config = await window.api.config.get()
-      await this.streamingClient.connect(config.pythonSpeechUrl, config.ttsLanguage || 'ru')
+      const [config, connection] = await Promise.all([
+        window.api.config.get(),
+        window.api.asr.getStreamingConnection(),
+      ])
+      await this.streamingClient.connect(connection.baseUrl, config.ttsLanguage || 'ru')
       connected = true
       // A fresh working session: invalidate any watchdog from a previous session.
       this.streamingGeneration += 1

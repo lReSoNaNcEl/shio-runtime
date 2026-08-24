@@ -28,6 +28,7 @@ export type BrowserAutomationErrorCode =
   | 'TARGET_AMBIGUOUS'
   | 'TARGET_STALE'
   | 'CLICK_FAILED'
+  | 'INPUT_FAILED'
   | 'NAVIGATION_FAILED'
   | 'VERIFICATION_FAILED'
   | 'BROWSER_UNAVAILABLE'
@@ -98,6 +99,8 @@ function publicMessage(code: BrowserAutomationErrorCode): string {
       return 'The page changed before the requested element could be used'
     case 'CLICK_FAILED':
       return 'The browser element could not be clicked'
+    case 'INPUT_FAILED':
+      return 'The browser field could not be changed'
     case 'NAVIGATION_FAILED':
       return 'The browser could not open the requested page'
     case 'VERIFICATION_FAILED':
@@ -412,6 +415,34 @@ export class AgentBrowserAdapter {
     })
   }
 
+  async observePage(signal?: AbortSignal): Promise<BrowserInteractionResult> {
+    const observation = await this.observe(signal)
+    const afterSession = this.sessionSnapshot()
+    return {
+      evidence: {
+        kind: 'browser',
+        operation: 'observe',
+        after: observation,
+        ...(afterSession ? { afterSession } : {}),
+      },
+      observation,
+    }
+  }
+
+  async inspectTabs(signal?: AbortSignal): Promise<BrowserInteractionResult> {
+    const tabs = [...(await this.listTabs(signal))]
+    const afterSession = this.sessionSnapshot()
+    return {
+      evidence: {
+        kind: 'browser',
+        operation: 'tabs',
+        tabs: tabs.slice(0, 20),
+        ...(this.observation ? { after: this.observation } : {}),
+        ...(afterSession ? { afterSession } : {}),
+      },
+    }
+  }
+
   switchTab(tabId: string, signal?: AbortSignal): Promise<BrowserInteractionResult> {
     return this.enqueue(async () => {
       this.assertActiveSession()
@@ -515,6 +546,61 @@ export class AgentBrowserAdapter {
     })
   }
 
+  fill(
+    target: BrowserTarget,
+    value: string,
+    signal?: AbortSignal,
+  ): Promise<BrowserInteractionResult> {
+    return this.mutateTarget('fill', target, ['textbox'], ['fill'], [value], signal)
+  }
+
+  select(
+    target: BrowserTarget,
+    values: readonly string[],
+    signal?: AbortSignal,
+  ): Promise<BrowserInteractionResult> {
+    return this.mutateTarget('select', target, ['combobox'], ['select'], values, signal)
+  }
+
+  scroll(
+    direction: 'up' | 'down' | 'left' | 'right',
+    amount: number,
+    signal?: AbortSignal,
+  ): Promise<BrowserInteractionResult> {
+    return this.enqueue(async () => {
+      this.assertActiveSession()
+      const before = this.observationSnapshot() ?? undefined
+      this.observation = null
+      try {
+        await this.command('scroll', ['scroll', direction, String(amount)], 15_000, signal)
+        await (this.options.settleAfterMutation ?? defaultSettleAfterMutation)(signal)
+        const observation = await this.captureObservation(false, signal)
+        const afterSession = this.sessionSnapshot()
+        return {
+          evidence: {
+            kind: 'browser',
+            operation: 'scroll',
+            ...(before ? { before } : {}),
+            after: observation,
+            ...(afterSession ? { afterSession } : {}),
+          },
+          observation,
+        }
+      } catch (error) {
+        this.markError()
+        throw this.normalizeError(error, 'NAVIGATION_FAILED')
+      }
+    })
+  }
+
+  back(signal?: AbortSignal): Promise<BrowserInteractionResult> {
+    return this.navigateHistory('back', signal)
+  }
+
+  forward(signal?: AbortSignal): Promise<BrowserInteractionResult> {
+    return this.navigateHistory('forward', signal)
+  }
+
   close(): Promise<void> {
     return this.enqueue(async () => {
       const resources = this.options.resources()
@@ -579,6 +665,90 @@ export class AgentBrowserAdapter {
       ...(activeTabId ? { activeTabId } : {}),
     })
     return observation
+  }
+
+  private mutateTarget(
+    operation: 'fill' | 'select',
+    target: BrowserTarget,
+    allowedRoles: readonly BrowserInteractiveRole[],
+    command: readonly string[],
+    values: readonly string[],
+    signal?: AbortSignal,
+  ): Promise<BrowserInteractionResult> {
+    return this.enqueue(async () => {
+      this.assertActiveSession()
+      const current = this.observation
+      if (!current || current.observationId !== target.observationId) {
+        throw new BrowserAutomationError('TARGET_STALE', publicMessage('TARGET_STALE'))
+      }
+
+      let preflight: BrowserObservation
+      try {
+        preflight = await this.captureObservation(true, signal)
+      } catch (error) {
+        this.markError()
+        throw this.normalizeError(error, 'OBSERVATION_FAILED')
+      }
+      if (preflight.observationId !== target.observationId) {
+        throw new BrowserAutomationError('TARGET_STALE', publicMessage('TARGET_STALE'))
+      }
+      const element = this.resolveTarget(target, preflight)
+      if (element.disabled || !allowedRoles.includes(element.role)) {
+        throw new BrowserAutomationError('INPUT_FAILED', publicMessage('INPUT_FAILED'))
+      }
+
+      this.observation = null
+      try {
+        await this.command(operation, [...command, `@${element.ref}`, ...values], 30_000, signal)
+        await (this.options.settleAfterMutation ?? defaultSettleAfterMutation)(signal)
+        const observation = await this.captureObservation(false, signal)
+        const afterSession = this.sessionSnapshot()
+        return {
+          evidence: {
+            kind: 'browser',
+            operation,
+            before: preflight,
+            after: observation,
+            ...(afterSession ? { afterSession } : {}),
+            ...(element.name ? { targetName: element.name } : {}),
+          },
+          observation,
+        }
+      } catch (error) {
+        this.markError()
+        throw this.normalizeError(error, 'INPUT_FAILED')
+      }
+    })
+  }
+
+  private navigateHistory(
+    operation: 'back' | 'forward',
+    signal?: AbortSignal,
+  ): Promise<BrowserInteractionResult> {
+    return this.enqueue(async () => {
+      this.assertActiveSession()
+      const before = this.observationSnapshot() ?? undefined
+      this.observation = null
+      try {
+        await this.command(operation, [operation], 30_000, signal)
+        await (this.options.settleAfterMutation ?? defaultSettleAfterMutation)(signal)
+        const observation = await this.captureObservation(false, signal)
+        const afterSession = this.sessionSnapshot()
+        return {
+          evidence: {
+            kind: 'browser',
+            operation,
+            ...(before ? { before } : {}),
+            after: observation,
+            ...(afterSession ? { afterSession } : {}),
+          },
+          observation,
+        }
+      } catch (error) {
+        this.markError()
+        throw this.normalizeError(error, 'NAVIGATION_FAILED')
+      }
+    })
   }
 
   private async captureTabs(signal?: AbortSignal): Promise<BrowserTab[]> {
@@ -780,6 +950,11 @@ export class AgentBrowserAdapter {
           const codeByOperation: Partial<Record<string, BrowserAutomationErrorCode>> = {
             open: 'NAVIGATION_FAILED',
             click: 'CLICK_FAILED',
+            fill: 'INPUT_FAILED',
+            select: 'INPUT_FAILED',
+            scroll: 'NAVIGATION_FAILED',
+            back: 'NAVIGATION_FAILED',
+            forward: 'NAVIGATION_FAILED',
             'switch-tab': 'NAVIGATION_FAILED',
             'get-url': 'OBSERVATION_FAILED',
             'get-title': 'OBSERVATION_FAILED',

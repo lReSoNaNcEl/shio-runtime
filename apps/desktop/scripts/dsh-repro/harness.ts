@@ -377,6 +377,41 @@ async function main(): Promise<void> {
     assert.equal(browserResult.evidence.successfulBrowserToolResults, 1)
     await toolBackedBrowser.close()
 
+    let budgetCloseCount = 0
+    const boundedBrowser = new DshHarnessAdapter({
+      resources: () => ({ ...realResources, browser: undefined }),
+      model: () => model,
+      createHarness: async () => ({
+        start: async () => undefined,
+        run: async (_input, options) => {
+          for (let index = 0; index < 21; index += 1) {
+            options?.onNotification?.({
+              method: 'session.event',
+              params: {
+                event: {
+                  type: 'tool/call',
+                  data: {
+                    callId: `bounded-call-${index}`,
+                    name: 'mcp__agent-browser__agent_browser_click',
+                  },
+                },
+              },
+            })
+          }
+          return { finalResponse: 'never trusted', notifications: [] }
+        },
+        close: async () => {
+          budgetCloseCount += 1
+        },
+      }),
+    })
+    await expectAdapterError(
+      () => boundedBrowser.execute('loop forever', new AbortController().signal, 'browser'),
+      'DSH_ACTION_LIMIT',
+    )
+    assert.equal(budgetCloseCount, 1)
+    await boundedBrowser.close()
+
     const localPage = createServer((_request, response) => {
       response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
       response.end('<!doctype html><title>Shio browser repro</title><h1>ready</h1>')

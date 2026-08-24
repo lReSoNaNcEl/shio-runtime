@@ -1,7 +1,10 @@
-import type { DesktopAuthorityMode, DesktopWorkflowRequest } from '../../shared/actions'
+import {
+  type DesktopAuthorityMode,
+  type DesktopWorkflowRequest,
+  desktopWorkflowRequestSchema,
+} from '../../shared/actions'
 import type {
   BrowserContextProvider,
-  BrowserContextRequirement,
   DesktopControlCapabilityProjection,
   DesktopControlStatus,
 } from '../../shared/desktop-control'
@@ -15,6 +18,11 @@ import {
   BrowserAutomationError,
   type BrowserInteractionResult,
 } from './AgentBrowserAdapter'
+import {
+  classifyBrowserOperationRisk,
+  type EffectiveDesktopWorkflowRequest,
+  requiresExplicitBrowserConfirmation,
+} from './browser-agent/BrowserAgentPolicy'
 import { DshAdapterError, type DshHarnessAdapter } from './DshHarnessAdapter'
 import type { BrowserExecutionEvidence, DesktopWorkflowAdapterResult } from './executionEvidence'
 
@@ -49,10 +57,10 @@ export class DesktopControlPlugin implements BundledPlugin {
   private readonly listeners = new Set<() => void>()
   private readonly unsubscribeAdapter: () => void
   private readonly browserContextProvider: BrowserContextProvider = {
-    resolveRequirement: ({ userText }) => this.resolveBrowserContextRequirement(userText),
-    buildContext: async () => {
+    currentObservation: () => this.dependencies.browser.observationSnapshot(),
+    observe: async ({ signal }) => {
       this.assertActive()
-      return this.dependencies.browser.observe()
+      return this.dependencies.browser.observe(signal)
     },
   }
 
@@ -217,13 +225,35 @@ export class DesktopControlPlugin implements BundledPlugin {
     return this.browserContextProvider
   }
 
+  validateWorkflowRequest(payload: unknown): EffectiveDesktopWorkflowRequest {
+    const request = desktopWorkflowRequestSchema.parse(payload)
+    if (
+      request.requestedCapabilities.length !== 1 ||
+      request.requestedCapabilities[0] !== 'browser'
+    ) {
+      return request
+    }
+    const operation =
+      request.browserOperation ??
+      (request.browserUrl ? { operation: 'open' as const, url: request.browserUrl } : undefined)
+    const browserRiskClass = classifyBrowserOperationRisk(
+      operation,
+      this.dependencies.browser.observationSnapshot(),
+    )
+    return {
+      ...request,
+      risk: requiresExplicitBrowserConfirmation(browserRiskClass) ? 'destructive' : 'normal',
+      browserRiskClass,
+    }
+  }
+
   async stopRuntime(): Promise<DesktopControlStatus> {
     await this.dependencies.adapter.close()
     return this.getStatus()
   }
 
   async executeWorkflow(
-    request: DesktopWorkflowRequest,
+    request: EffectiveDesktopWorkflowRequest,
     signal: AbortSignal,
   ): Promise<DesktopWorkflowAdapterResult> {
     this.assertActive()
@@ -277,9 +307,16 @@ export class DesktopControlPlugin implements BundledPlugin {
               })())
         if (operation) {
           const result = await this.executeBrowserOperation(operation, signal)
+          const riskClass = classifyBrowserOperationRisk(
+            operation,
+            result.observation ?? this.dependencies.browser.observationSnapshot(),
+          )
           return {
             runtimeCompleted: true,
-            evidence: result.evidence,
+            evidence: {
+              ...result.evidence,
+              riskClass: request.browserRiskClass ?? riskClass,
+            },
           }
         }
         if (status.automationEngine !== 'ready') {
@@ -374,30 +411,27 @@ export class DesktopControlPlugin implements BundledPlugin {
     signal: AbortSignal,
   ): Promise<BrowserInteractionResult> {
     switch (operation.operation) {
+      case 'observe':
+        return this.dependencies.browser.observePage(signal)
       case 'open':
         return this.dependencies.browser.open(operation.url, signal)
       case 'click':
         return this.dependencies.browser.click(operation.target, signal)
+      case 'fill':
+        return this.dependencies.browser.fill(operation.target, operation.value, signal)
+      case 'select':
+        return this.dependencies.browser.select(operation.target, operation.values, signal)
+      case 'scroll':
+        return this.dependencies.browser.scroll(operation.direction, operation.amount, signal)
+      case 'back':
+        return this.dependencies.browser.back(signal)
+      case 'forward':
+        return this.dependencies.browser.forward(signal)
+      case 'tabs':
+        return this.dependencies.browser.inspectTabs(signal)
       case 'switch-tab':
         return this.dependencies.browser.switchTab(operation.tabId, signal)
     }
-  }
-
-  private resolveBrowserContextRequirement(userText: string): BrowserContextRequirement {
-    const session = this.dependencies.browser.sessionSnapshot()
-    if (session?.status !== 'ready') return 'none'
-    const normalized = userText.normalize('NFKC').toLocaleLowerCase()
-    const browserSemanticCue =
-      /(?:брауз|страниц|сайт|вклад|url|заголов|контент|кноп|ссыл|раздел|каталог|меню|наж|клик|перей|подробнее|результат|открыл|вернись|назад|впер[её]д)/u.test(
-        normalized,
-      ) ||
-      /(?:browser|page|site|tab|title|content|button|link|section|catalog|menu|click|press|open|result|back|forward)/u.test(
-        normalized,
-      ) ||
-      /(?:что\s+(?:теперь|здесь|там)|что\s+открылось|what(?:'s| is)\s+(?:here|open|on it)|what\s+now)/u.test(
-        normalized,
-      )
-    return browserSemanticCue ? 'current-page' : 'none'
   }
 
   private assertInitialized(): void {
