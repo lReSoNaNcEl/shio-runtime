@@ -210,6 +210,54 @@ class NoMemoryProvider implements LLMProvider {
   }
 }
 
+class RecoverableNativeProvider implements LLMProvider {
+  calls = 0
+
+  capabilities(): LlmCapabilities {
+    return TOOL_CAPABILITIES
+  }
+
+  async chat(): Promise<string> {
+    throw new Error('Native path unexpectedly used chat()')
+  }
+
+  async complete(): Promise<LlmCompletion> {
+    this.calls += 1
+    if (this.calls === 1) {
+      throw new LlmResponseError({
+        provider: 'mistral',
+        code: 'NETWORK_ERROR',
+        recoverable: true,
+        message: 'Connection reset by peer.',
+      })
+    }
+    return { content: '[calm]120.', finishReason: 'stop', toolCalls: [] }
+  }
+}
+
+class RecoverableFallbackProvider implements LLMProvider {
+  calls = 0
+
+  constructor(private readonly failuresBeforeSuccess: number) {}
+
+  capabilities(): LlmCapabilities {
+    return FALLBACK_CAPABILITIES
+  }
+
+  async chat(): Promise<string> {
+    this.calls += 1
+    if (this.calls <= this.failuresBeforeSuccess) {
+      throw new LlmResponseError({
+        provider: 'mistral',
+        code: 'NETWORK_ERROR',
+        recoverable: true,
+        message: 'Connection reset by peer.',
+      })
+    }
+    return '[calm]120.'
+  }
+}
+
 type CompletionStep = (
   messages: readonly ChatMessage[],
   options: LlmCompletionOptions,
@@ -328,6 +376,40 @@ async function rejectedNativeToolsDowngradeToFallback(root: string): Promise<voi
   assert.equal(provider.completeCalls, 1)
   assert.equal(provider.chatCalls, 3)
   runtime.close()
+}
+
+async function recoverableProviderRequestsRetryOnce(root: string): Promise<void> {
+  const nativeRuntime = createSemanticMemoryRuntime(join(root, 'recoverable-native.sqlite'))
+  const nativeProvider = new RecoverableNativeProvider()
+  const nativeReply = await createOrchestrator(
+    nativeProvider,
+    new MemoryToolBroker(nativeRuntime),
+  ).createReply({ userText: 'Сколько будет 5!?' }, { traceId: 'turn-recoverable-native' })
+  assert.equal(nativeReply.replyText, '[calm]120.')
+  assert.equal(nativeProvider.calls, 2)
+  nativeRuntime.close()
+
+  const fallbackRuntime = createSemanticMemoryRuntime(join(root, 'recoverable-fallback.sqlite'))
+  const fallbackProvider = new RecoverableFallbackProvider(1)
+  const fallbackReply = await createOrchestrator(
+    fallbackProvider,
+    new MemoryToolBroker(fallbackRuntime),
+  ).createReply({ userText: 'Сколько будет 5!?' }, { traceId: 'turn-recoverable-fallback' })
+  assert.equal(fallbackReply.replyText, '[calm]120.')
+  assert.equal(fallbackProvider.calls, 2)
+  fallbackRuntime.close()
+
+  const boundedRuntime = createSemanticMemoryRuntime(join(root, 'recoverable-bounded.sqlite'))
+  const boundedProvider = new RecoverableFallbackProvider(2)
+  await assert.rejects(
+    createOrchestrator(boundedProvider, new MemoryToolBroker(boundedRuntime)).createReply(
+      { userText: 'Сколько будет 5!?' },
+      { traceId: 'turn-recoverable-bounded' },
+    ),
+    (error: unknown) => error instanceof LlmResponseError && error.code === 'NETWORK_ERROR',
+  )
+  assert.equal(boundedProvider.calls, 2)
+  boundedRuntime.close()
 }
 
 async function semanticStorePhrasingMatrix(root: string): Promise<void> {
@@ -888,6 +970,7 @@ async function run(): Promise<void> {
   try {
     await nativeAndFallbackPaths(root)
     await rejectedNativeToolsDowngradeToFallback(root)
+    await recoverableProviderRequestsRetryOnce(root)
     await semanticStorePhrasingMatrix(root)
     await semanticForgetPhrasingMatrix(root)
     await semanticUpdatePhrasingMatrix(root)

@@ -962,36 +962,70 @@ export class Orchestrator {
     private semanticMemory?: MemoryToolBroker,
   ) {}
 
+  private async requestProvider<T>(
+    traceId: string,
+    phase: string,
+    options: LlmRequestOptions,
+    request: () => Promise<T>,
+  ): Promise<T> {
+    try {
+      return await request()
+    } catch (error) {
+      const retryable =
+        error instanceof LlmResponseError && error.recoverable && !options.signal?.aborted
+      if (!retryable) throw error
+      mainLog.warn('[ConversationTrace] provider_retry_started', {
+        traceId,
+        phase,
+        code: error.code,
+        nextAttempt: 2,
+      })
+      return request()
+    }
+  }
+
   private async generateWithMemory(
     messages: readonly ChatMessage[],
     locale: UiLocale,
     traceId: string,
     options: LlmRequestOptions,
   ): Promise<string> {
-    if (!this.semanticMemory) return this.llm.chat(messages, options)
+    if (!this.semanticMemory) {
+      return this.requestProvider(traceId, 'character-reply', options, () =>
+        this.llm.chat(messages, options),
+      )
+    }
     const semanticMemory = this.semanticMemory
     const tools = semanticMemory.availableTools()
     const capabilities = this.llm.capabilities?.()
+    const complete = this.llm.complete?.bind(this.llm)
     const nativeToolCalling = Boolean(
       !this.nativeMemoryToolsRejected &&
         tools.length > 0 &&
         capabilities?.supportsToolCalling &&
-        this.llm.complete,
+        complete,
     )
     if (tools.length === 0) {
-      return containMemoryProtocolReply(await this.llm.chat(messages, options), locale)
+      return containMemoryProtocolReply(
+        await this.requestProvider(traceId, 'memory-disabled', options, () =>
+          this.llm.chat(messages, options),
+        ),
+        locale,
+      )
     }
 
     const working: ChatMessage[] = [...messages]
-    if (nativeToolCalling && this.llm.complete) {
+    if (nativeToolCalling && complete) {
       for (let round = 0; round < MAX_MEMORY_TOOL_ROUNDS; round += 1) {
         let completion: LlmCompletion
         try {
-          completion = await this.llm.complete(working, {
-            ...options,
-            tools,
-            toolChoice: 'auto',
-          })
+          completion = await this.requestProvider(traceId, 'memory-native', options, () =>
+            complete(working, {
+              ...options,
+              tools,
+              toolChoice: 'auto',
+            }),
+          )
         } catch (error) {
           if (
             round !== 0 ||
@@ -1036,9 +1070,20 @@ export class Orchestrator {
           calls: completion.toolCalls.length,
         })
       }
-      const finalCompletion = await this.llm.complete(
-        [...working, { role: 'system', content: memoryRoundLimitPrompt() }],
-        { ...options, tools, toolChoice: 'none' },
+      const finalMessages = [
+        ...working,
+        { role: 'system' as const, content: memoryRoundLimitPrompt() },
+      ]
+      const finalCompletion = await this.requestProvider(
+        traceId,
+        'memory-native-final',
+        options,
+        () =>
+          complete(finalMessages, {
+            ...options,
+            tools,
+            toolChoice: 'none',
+          }),
       )
       return finalCompletion.toolCalls.length === 0
         ? containMemoryProtocolReply(finalCompletion.content, locale)
@@ -1046,7 +1091,12 @@ export class Orchestrator {
     }
 
     for (let round = 0; round < MAX_MEMORY_TOOL_ROUNDS; round += 1) {
-      const response = await this.llm.chat(working, options)
+      const response = await this.requestProvider(
+        traceId,
+        'memory-structured-fallback',
+        options,
+        () => this.llm.chat(working, options),
+      )
       const directive = parseCharacterMemoryDirective(response)
       if (directive.kind === 'none') return directive.replyText
       if (directive.kind === 'malformed') return memoryLoopFailure(locale)
@@ -1064,9 +1114,15 @@ export class Orchestrator {
         calls: results.length,
       })
     }
-    const finalResponse = await this.llm.chat(
-      [...working, { role: 'system', content: memoryRoundLimitPrompt() }],
+    const finalMessages = [
+      ...working,
+      { role: 'system' as const, content: memoryRoundLimitPrompt() },
+    ]
+    const finalResponse = await this.requestProvider(
+      traceId,
+      'memory-structured-fallback-final',
       options,
+      () => this.llm.chat(finalMessages, options),
     )
     return containMemoryProtocolReply(finalResponse, locale)
   }
