@@ -183,6 +183,13 @@ async function startTestServer(): Promise<{ server: Server; baseUrl: string }> {
       response.end('<!doctype html><title>Second tab</title><h1>Second tab verified</h1>')
       return
     }
+    if (request.url === '/redirect') {
+      const address = server.address()
+      assert(address && typeof address === 'object')
+      response.writeHead(302, { location: `http://localhost:${address.port}/details` })
+      response.end()
+      return
+    }
     if (request.url === '/details') {
       response.end(
         '<!doctype html><title>Details</title><h1>More details</h1><p>Fresh details observation</p>',
@@ -678,6 +685,11 @@ async function main(): Promise<void> {
       const switched = await adapter.switchTab(firstTab.tabId)
       assert.equal(switched.execution.verification, 'verified')
       assert.equal(switched.observation?.title, 'Shio browser control test')
+
+      const redirected = await adapter.open(`${testServer.baseUrl}/redirect`)
+      assert.equal(redirected.execution.verification, 'verified')
+      assert.match(redirected.execution.resultingUrl ?? '', /^http:\/\/localhost:/u)
+      assert.equal(redirected.observation?.title, 'Details')
     } finally {
       await adapter.close()
     }

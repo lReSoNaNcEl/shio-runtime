@@ -337,13 +337,17 @@ export class AgentBrowserAdapter {
       ) {
         throw new BrowserAutomationError('NAVIGATION_FAILED', publicMessage('NAVIGATION_FAILED'))
       }
+      const previousUrl = this.session?.currentUrl ?? 'about:blank'
       this.ensureSession('starting')
       this.observation = null
       try {
         await this.ensureDirectories()
         await this.command('open', ['open', parsedUrl.href], 30_000, signal)
         const observation = await this.captureObservation(false, signal)
-        const verified = new URL(observation.url).origin === parsedUrl.origin
+        const resultingUrl = new URL(observation.url)
+        const verified =
+          ['http:', 'https:'].includes(resultingUrl.protocol) &&
+          (resultingUrl.origin === parsedUrl.origin || observation.url !== previousUrl)
         return {
           execution: {
             kind: 'browser',

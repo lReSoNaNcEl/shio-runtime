@@ -18,6 +18,7 @@ export interface BrowserAgentContinuationInput {
   steps: readonly BrowserAgentStep[]
   observation: BrowserObservation | null
   allowFurtherActions: boolean
+  assistantReply: string
   signal: AbortSignal
 }
 
@@ -69,6 +70,7 @@ export class BrowserAgentCoordinator {
     const scope = this.scopes.create(options.userGoal, workflowController.signal)
     const steps: BrowserAgentStep[] = []
     let latestResult: DesktopWorkflowActionResult | undefined
+    let assistantReply = options.initialReply
 
     try {
       for (let round = 1; round <= BROWSER_AGENT_MAX_ACTION_ROUNDS; round += 1) {
@@ -118,9 +120,11 @@ export class BrowserAgentCoordinator {
           steps,
           observation,
           allowFurtherActions,
+          assistantReply,
           signal: workflowController.signal,
         })
         if (options.signal.aborted) throw options.signal.reason ?? new Error('Turn cancelled')
+        assistantReply = continued
         response = parseCharacterActionResponse(continued)
         if (response.kind === 'none') {
           return {

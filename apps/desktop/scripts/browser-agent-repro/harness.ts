@@ -224,7 +224,12 @@ async function main(): Promise<void> {
         observation(index, {
           url: 'https://www.blender.org/download/',
           title: 'Download Blender',
-          content: 'Blender 4.5 LTS is the current stable release.',
+          content: `Blender 4.5 LTS is the current stable release. ${'evidence '.repeat(800)}`,
+          interactiveElements: Array.from({ length: 60 }, (_, elementIndex) => ({
+            ref: `e${elementIndex + 1}`,
+            role: 'button',
+            name: `Bounded target ${elementIndex + 1} ${'label '.repeat(100)}`,
+          })),
         }),
       )
       return browserResult(index, request.browserOperation)
@@ -236,6 +241,23 @@ async function main(): Promise<void> {
   assert.match(
     autonomous.calls[1].map((message) => String(message.content)).join('\n'),
     /UNTRUSTED EXTERNAL WEB CONTENT/,
+  )
+  assert.equal(autonomous.calls[1].at(-1)?.role, 'user')
+  assert.match(String(autonomous.calls[1].at(-1)?.content), /Browser Tool Continuation/)
+  assert.deepEqual(
+    autonomous.calls[1].slice(-3).map((message) => message.role),
+    ['user', 'assistant', 'user'],
+  )
+  assert.equal(autonomous.calls[1].at(-3)?.content, 'Узнай актуальную стабильную версию Blender.')
+  assert.match(String(autonomous.calls[1].at(-2)?.content), /<shio-action>/)
+  assert.match(String(autonomous.calls[1].at(-1)?.content), /truncated for prompt/)
+  assert(JSON.stringify(autonomous.calls[1]).length < 12_000)
+  assert.match(
+    autonomous.calls[1]
+      .slice(0, -1)
+      .map((message) => String(message.content))
+      .join('\n'),
+    /Browser Continuation Action Contract/,
   )
 
   const home = observation(10, {
