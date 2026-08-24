@@ -668,6 +668,29 @@ async function main(): Promise<void> {
     true,
   )
   assert.match(verifiedFallback, /готово/iu)
+  const readOnlyFallback = actionResultFallback(
+    {
+      actionId: 'action-1-123e4567-e89b-12d3-a456-426614174001',
+      tool: 'desktop.workflow',
+      outcome: 'success',
+      execution: {
+        runtimeCompleted: true,
+        verification: 'not-required',
+        browser: {
+          kind: 'browser',
+          operation: 'observe',
+          status: 'success',
+          verification: 'not-required',
+          riskClass: 'read',
+          resultingUrl: 'https://example.com/',
+        },
+      },
+    },
+    'Что на странице?',
+    'ru',
+    true,
+  )
+  assert.match(readOnlyFallback, /прочитала текущую страницу/iu)
   const cancelledFallback = actionResultFallback(
     {
       actionId: cancelled.actionId,

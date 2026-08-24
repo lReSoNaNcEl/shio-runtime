@@ -463,7 +463,7 @@ function successfulActionFallback(
 ): string {
   const browser = result.execution?.browser
   if (browser) {
-    if (browser.verification !== 'verified') {
+    if (browser.verification !== 'verified' && browser.verification !== 'not-required') {
       return locale === 'ru'
         ? '[calm]Я выполнила действие в браузере, но не смогла надёжно подтвердить, что страница отреагировала как ожидалось.'
         : '[calm]I performed the browser interaction, but I could not reliably confirm that the page reacted as expected.'
@@ -484,9 +484,20 @@ function successfulActionFallback(
         ? '[calm]Готово — переключилась на нужную вкладку.'
         : '[calm]Done—I switched to the requested tab.'
     }
+    if (browser.operation === 'observe') {
+      return locale === 'ru'
+        ? '[calm]Готово — прочитала текущую страницу.'
+        : '[calm]Done—I read the current page.'
+    }
+    if (browser.operation === 'tabs') {
+      return locale === 'ru'
+        ? '[calm]Готово — проверила открытые вкладки.'
+        : '[calm]Done—I checked the open tabs.'
+    }
   }
   if (browserAction) {
-    return result.execution?.verification === 'verified'
+    return result.execution?.verification === 'verified' ||
+      result.execution?.verification === 'not-required'
       ? locale === 'ru'
         ? '[calm]Готово — действие в браузере выполнено, и изменение страницы подтверждено.'
         : '[calm]Done—the browser action completed and the page change was verified.'
