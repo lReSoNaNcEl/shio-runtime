@@ -1,4 +1,4 @@
-import type { ProjectSnapshotFreshness } from './freshness'
+import type { ProjectTurnFreshness } from './freshness'
 import type { ProjectEvidence } from './queries'
 
 export type ProjectContextRequirement = 'none' | 'optional' | 'required'
@@ -9,7 +9,7 @@ export interface ProjectContextPacket {
   snapshotSha: string
   repository: string
   branch: string
-  freshness: ProjectSnapshotFreshness
+  freshness: ProjectTurnFreshness
   mapSummary?: string
   evidence: ProjectEvidence[]
   instructions: {

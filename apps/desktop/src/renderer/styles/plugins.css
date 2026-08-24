@@ -18,7 +18,6 @@
 .plugin-card,
 .plugin-detail-section,
 .plugin-project-knowledge,
-.plugin-setup-overview,
 .plugin-technical-details {
   display: grid;
   gap: 14px;
@@ -37,57 +36,6 @@
   border-radius: 12px;
   background: var(--surface-overlay);
   box-shadow: 0 8px 24px var(--shadow);
-}
-
-.plugin-setup-overview {
-  gap: 12px;
-}
-
-.plugin-setup-overview h3 {
-  margin: 0;
-}
-
-.plugin-setup-steps {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 8px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.plugin-setup-steps li {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-content: start;
-  gap: 6px 8px;
-  min-width: 0;
-  padding: 10px;
-  border: 1px solid var(--border-subtle);
-  border-radius: 10px;
-  background: var(--surface-inset);
-}
-
-.plugin-setup-step-number {
-  display: grid;
-  width: 24px;
-  height: 24px;
-  border-radius: 999px;
-  color: var(--text-dim);
-  background: var(--surface-selected);
-  font-size: 0.78rem;
-  font-weight: 700;
-  place-items: center;
-}
-
-.plugin-setup-step-number svg {
-  width: 14px;
-  height: 14px;
-}
-
-.plugin-setup-steps li.is-complete .plugin-setup-step-number {
-  color: var(--positive-text);
-  background: color-mix(in srgb, var(--positive-text) 15%, transparent);
 }
 
 .plugin-action-hint {
@@ -136,28 +84,10 @@
   padding-top: 4px;
 }
 
-.plugin-project-knowledge.compact {
-  gap: 8px;
-  padding: 14px;
-  border-radius: 12px;
-  background: var(--surface-inset);
-}
-
-.plugin-project-repository {
-  overflow-wrap: anywhere;
-  font-weight: 600;
-}
-
-.plugin-project-commit,
 .plugin-project-code {
   overflow-wrap: anywhere;
   color: var(--text-dim);
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
-  font-size: 0.8rem;
-}
-
-.plugin-project-relative {
-  color: var(--text-dim);
   font-size: 0.8rem;
 }
 
@@ -311,10 +241,6 @@
 }
 
 @media (max-width: 720px) {
-  .plugin-setup-steps {
-    grid-template-columns: 1fr;
-  }
-
   .plugin-card-title {
     grid-template-columns: 32px minmax(0, 1fr);
   }

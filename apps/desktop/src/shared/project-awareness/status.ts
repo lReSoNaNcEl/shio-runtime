@@ -1,4 +1,4 @@
-import type { ProjectSnapshotDelta, ProjectSnapshotFreshness } from './freshness'
+import type { ProjectFreshness, ProjectSnapshotDelta } from './freshness'
 import type { ProjectProvider } from './repository'
 
 export type ProjectAwarenessState =
@@ -21,21 +21,35 @@ export interface ProjectCredentialStatus {
   lastError?: string
 }
 
+export interface ProjectSnapshotStatus {
+  revision: string
+  indexedAt: number
+  fileCount: number
+}
+
+export type ProjectSyncStage = 'fetching' | 'indexing' | 'validating'
+
+export interface ProjectSyncStatus {
+  state: 'idle' | 'syncing' | 'failed'
+  stage?: ProjectSyncStage
+  startedAt?: number
+  completedAt?: number
+  lastError?: string
+}
+
 export interface ProjectAwarenessStatus {
   enabled: boolean
   state: ProjectAwarenessState
   provider: ProjectProvider
   repository: string
   branch: string
-  remoteHead?: string
-  indexedCommit?: string
-  freshness: ProjectSnapshotFreshness
-  lastFreshnessCheckAt?: number
-  snapshotDelta?: ProjectSnapshotDelta
+  snapshot?: ProjectSnapshotStatus
+  freshness: ProjectFreshness
+  changedFiles?: ProjectSnapshotDelta
+  sync: ProjectSyncStatus
   indexState: ProjectIndexState
   access: 'read-only'
   lastSyncAt?: number
   lastError?: string
-  indexedFileCount: number
   credential: ProjectCredentialStatus
 }

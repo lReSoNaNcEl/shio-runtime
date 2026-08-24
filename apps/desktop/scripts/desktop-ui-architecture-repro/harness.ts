@@ -124,9 +124,13 @@ function assertViewHierarchy(): void {
   assert.match(plugins, /PluginCatalogStatus/)
   assert.match(plugins, /plugin\.enabled \? t\('common\.enabled'\) : t\('common\.disabled'\)/)
   assert.match(plugins, /plugin-section-heading/)
-  assert.match(plugins, /plugin-setup-steps/)
-  assert.match(plugins, /<CheckmarkIcon/)
-  assert.doesNotMatch(plugins, /plugin-setup-step-status/)
+  assert.match(plugins, /plugins\.project\.projectTitle/)
+  assert.match(plugins, /plugins\.project\.freshnessTitle/)
+  assert.match(plugins, /plugins\.project\.indexTitle/)
+  assert.match(plugins, /plugins\.project\.connectionTitle/)
+  assert.match(plugins, /status\.freshness\.state === 'check-failed'/)
+  assert.match(plugins, /<ProgressBar/)
+  assert.doesNotMatch(plugins, /refreshSnapshotStatus\(false\)/)
   assert.match(plugins, /plugin-feedback/)
   assert.match(plugins, /<Disclosure/)
   const pluginStyles = source('src/renderer/styles/plugins.css')
@@ -137,6 +141,11 @@ function assertViewHierarchy(): void {
     /<Badge variant="negative">\{t\('actions\.fullAccessBadge'\)\}<\/Badge>/,
   )
   assert.doesNotMatch(plugins, /window\.api\.desktopControl\.(?:save|forget)Credential/)
+
+  const projectEvidence = source('src/renderer/components/chat/ProjectEvidenceBar.tsx')
+  assert.match(projectEvidence, /chat\.evidence\.projectSources/)
+  assert.match(projectEvidence, /freshnessAtGeneration === 'stale'/)
+  assert.match(projectEvidence, /chat\.evidence\.showProjectSources/)
 
   const capabilities = source('src/renderer/components/views/CapabilitiesView.tsx')
   assert.match(capabilities, /@react-spectrum\/s2/)

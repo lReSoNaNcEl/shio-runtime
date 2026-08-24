@@ -13,13 +13,13 @@ import {
   Footer,
   Heading,
   InlineAlert,
+  ProgressBar,
   ProgressCircle,
   StatusLight,
   Switch,
   Text,
   TextField,
 } from '@react-spectrum/s2'
-import CheckmarkIcon from '@react-spectrum/s2/icons/Checkmark'
 import ChevronLeftIcon from '@react-spectrum/s2/icons/ChevronLeft'
 import DeviceDesktopIcon from '@react-spectrum/s2/icons/DeviceDesktop'
 import ProjectIcon from '@react-spectrum/s2/icons/Project'
@@ -39,8 +39,10 @@ import {
   isValidProjectRepository,
   type ProjectAwarenessPublicConfig,
   type ProjectAwarenessStatus,
+  type ProjectFreshnessFailureReason,
+  type ProjectFreshnessState,
   type ProjectSnapshotDelta,
-  type ProjectSnapshotFreshness,
+  type ProjectSyncStage,
 } from '../../../shared/project-awareness'
 import { type LocalizationContextValue } from '../../localization/LocalizationProvider'
 import { useTranslation } from '../../localization/useTranslation'
@@ -83,25 +85,35 @@ const PROJECT_STATE_KEY: Record<
   error: 'common.error',
 }
 
-const PROJECT_INDEX_STATE_KEY: Record<
-  ProjectAwarenessStatus['indexState'],
-  Parameters<LocalizationContextValue['t']>[0]
-> = {
-  not_built: 'health.project.index.notBuilt',
-  current: 'health.project.index.current',
-  stale: 'health.project.index.stale',
-  building: 'health.project.index.building',
-  error: 'common.error',
-}
-
 const PROJECT_FRESHNESS: Record<
-  ProjectSnapshotFreshness,
+  ProjectFreshnessState,
   { key: Parameters<LocalizationContextValue['t']>[0]; tone: Tone }
 > = {
   unknown: { key: 'plugins.project.freshness.unknown', tone: 'neutral' },
   checking: { key: 'plugins.project.freshness.checking', tone: 'informative' },
-  fresh: { key: 'plugins.project.freshness.fresh', tone: 'positive' },
+  current: { key: 'plugins.project.freshness.fresh', tone: 'positive' },
   stale: { key: 'plugins.project.freshness.stale', tone: 'notice' },
+  'check-failed': { key: 'plugins.project.freshness.checkFailed', tone: 'notice' },
+}
+
+const PROJECT_SYNC_STAGE_KEY: Record<
+  ProjectSyncStage,
+  Parameters<LocalizationContextValue['t']>[0]
+> = {
+  fetching: 'plugins.project.syncStage.fetching',
+  indexing: 'plugins.project.syncStage.indexing',
+  validating: 'plugins.project.syncStage.validating',
+}
+
+const PROJECT_FRESHNESS_REASON_KEY: Record<
+  ProjectFreshnessFailureReason,
+  Parameters<LocalizationContextValue['t']>[0]
+> = {
+  credential: 'plugins.project.freshness.reason.credential',
+  network: 'plugins.project.freshness.reason.network',
+  'rate-limit': 'plugins.project.freshness.reason.rateLimit',
+  'github-unavailable': 'plugins.project.freshness.reason.githubUnavailable',
+  unknown: 'plugins.project.freshness.reason.unknown',
 }
 
 const EMPTY_PROJECT_STATUS: ProjectAwarenessStatus = {
@@ -110,10 +122,10 @@ const EMPTY_PROJECT_STATUS: ProjectAwarenessStatus = {
   provider: 'github',
   repository: '',
   branch: 'main',
-  freshness: 'unknown',
+  freshness: { state: 'unknown' },
+  sync: { state: 'idle' },
   indexState: 'not_built',
   access: 'read-only',
-  indexedFileCount: 0,
   credential: {
     configured: false,
     source: 'none',
@@ -286,113 +298,134 @@ function ChangedFilesSummary({ delta }: { delta: ProjectSnapshotDelta }) {
     renamed: '↪',
   } as const
   return (
-    <section className="plugin-project-delta">
-      <Heading level={4}>{t('plugins.project.delta.title')}</Heading>
-      <Text>{t('plugins.project.delta.total', { count: delta.total })}</Text>
-      <div className="plugin-project-delta-counts">
-        <Badge size="S" variant="positive">
-          + {delta.added}
-        </Badge>
-        <Badge size="S" variant="informative">
-          ~ {delta.modified}
-        </Badge>
-        <Badge size="S" variant="negative">
-          − {delta.deleted}
-        </Badge>
-        {delta.renamed > 0 && (
-          <Badge size="S" variant="gray">
-            ↪ {delta.renamed}
+    <Disclosure UNSAFE_className="plugin-project-delta">
+      <DisclosureTitle level={4}>
+        {t('plugins.project.delta.total', { count: delta.total })}
+      </DisclosureTitle>
+      <DisclosurePanel>
+        <div className="plugin-project-delta-counts">
+          <Badge size="S" variant="positive">
+            + {delta.added}
           </Badge>
+          <Badge size="S" variant="informative">
+            ~ {delta.modified}
+          </Badge>
+          <Badge size="S" variant="negative">
+            − {delta.deleted}
+          </Badge>
+          {delta.renamed > 0 && (
+            <Badge size="S" variant="gray">
+              ↪ {delta.renamed}
+            </Badge>
+          )}
+        </div>
+        <ul className="plugin-project-delta-files">
+          {delta.files.map((file) => (
+            <li key={`${file.status}:${file.path}`}>
+              <span aria-hidden="true">{marker[file.status]}</span>
+              <span>{file.path}</span>
+            </li>
+          ))}
+        </ul>
+        {delta.omitted > 0 && (
+          <Text>{t('plugins.project.delta.more', { count: delta.omitted })}</Text>
         )}
-      </div>
-      <ul className="plugin-project-delta-files">
-        {delta.files.map((file) => (
-          <li key={`${file.status}:${file.path}`}>
-            <span aria-hidden="true">{marker[file.status]}</span>
-            <span>{file.path}</span>
-          </li>
-        ))}
-      </ul>
-      {delta.omitted > 0 && (
-        <Text>{t('plugins.project.delta.more', { count: delta.omitted })}</Text>
-      )}
-    </section>
+      </DisclosurePanel>
+    </Disclosure>
   )
 }
 
-function ProjectKnowledge({
+function ProjectFreshnessPanel({
   status,
-  compact = false,
   busy,
   onSync,
   onRefresh,
   disabledReason,
 }: {
   status: ProjectAwarenessStatus
-  compact?: boolean
   busy: boolean
   onSync: () => void
   onRefresh?: () => void
   disabledReason?: string
 }) {
   const { intlLocale, t } = useTranslation()
-  const freshness = PROJECT_FRESHNESS[status.freshness]
-  const snapshot = status.indexedCommit?.slice(0, 7)
-  const remote = status.remoteHead?.slice(0, 7)
+  const freshness = PROJECT_FRESHNESS[status.freshness.state]
   const justNow = t('health.time.justNow')
+  const syncStage = status.sync.stage
+    ? t(PROJECT_SYNC_STAGE_KEY[status.sync.stage])
+    : t('plugins.project.syncStage.fetching')
   return (
-    <section className={compact ? 'plugin-project-knowledge compact' : 'plugin-project-knowledge'}>
-      {!compact && <Heading level={3}>{t('plugins.project.knowledgeTitle')}</Heading>}
-      {status.repository && (
-        <Text UNSAFE_className="plugin-project-repository">{status.repository}</Text>
-      )}
-      {(status.branch || snapshot) && (
-        <Text UNSAFE_className="plugin-project-commit">
-          {[status.branch, snapshot].filter(Boolean).join(' · ')}
-        </Text>
-      )}
+    <section className="plugin-project-knowledge">
+      <Heading level={3}>{t('plugins.project.freshnessTitle')}</Heading>
       <StatusLight variant={freshness.tone} size="S">
-        {t(freshness.key)}
+        {status.snapshot ? t(freshness.key) : t('plugins.project.freshness.notApplicable')}
       </StatusLight>
-      {status.freshness === 'stale' && remote && (
-        <Text UNSAFE_className="plugin-project-commit">
-          {t('plugins.project.remoteHeadValue', { sha: remote })}
-        </Text>
+      {status.freshness.state === 'check-failed' && (
+        <InlineAlert variant="notice" fillStyle="subtleFill">
+          <Heading>{t('plugins.project.freshness.checkFailed')}</Heading>
+          <Content>
+            {`${t(PROJECT_FRESHNESS_REASON_KEY[status.freshness.reasonCode ?? 'unknown'])} ${t(
+              status.snapshot
+                ? 'plugins.project.freshness.checkFailedDescription'
+                : 'plugins.project.freshness.checkFailedNoSnapshot',
+            )}`}
+          </Content>
+        </InlineAlert>
       )}
-      {!compact && (
-        <dl className="plugin-status-list plugin-project-knowledge-grid">
+      <dl className="plugin-status-list plugin-project-knowledge-grid">
+        {status.freshness.state === 'stale' ? (
+          <>
+            <div>
+              <dt>{t('plugins.project.indexedRevision')}</dt>
+              <dd className="plugin-project-code">{status.freshness.indexedRevision ?? '—'}</dd>
+            </div>
+            <div>
+              <dt>{t('plugins.project.remoteRevision')}</dt>
+              <dd className="plugin-project-code">{status.freshness.remoteRevision ?? '—'}</dd>
+            </div>
+          </>
+        ) : (
           <div>
             <dt>{t('plugins.project.snapshot')}</dt>
-            <dd className="plugin-project-code">{status.indexedCommit ?? '—'}</dd>
+            <dd className="plugin-project-code">{status.snapshot?.revision ?? '—'}</dd>
           </div>
-          <div>
-            <dt>{t('health.project.remoteHead')}</dt>
-            <dd className="plugin-project-code">{status.remoteHead ?? '—'}</dd>
-          </div>
-          <div>
-            <dt>{t('plugins.project.lastSyncLabel')}</dt>
-            <dd>{relativeTime(status.lastSyncAt, intlLocale, justNow)}</dd>
-          </div>
-          <div>
-            <dt>{t('plugins.project.lastCheckLabel')}</dt>
-            <dd>{relativeTime(status.lastFreshnessCheckAt, intlLocale, justNow)}</dd>
-          </div>
-        </dl>
+        )}
+        {(status.freshness.state === 'unknown' || status.freshness.state === 'check-failed') &&
+          status.freshness.lastKnownRemoteRevision && (
+            <div>
+              <dt>{t('plugins.project.lastKnownRemoteRevision')}</dt>
+              <dd className="plugin-project-code">{status.freshness.lastKnownRemoteRevision}</dd>
+            </div>
+          )}
+        <div>
+          <dt>{t('plugins.project.lastCheckLabel')}</dt>
+          <dd>
+            {relativeTime(
+              status.freshness.checkedAt ?? status.freshness.lastKnownRemoteCheckedAt,
+              intlLocale,
+              justNow,
+            )}
+          </dd>
+        </div>
+      </dl>
+      {status.sync.state === 'syncing' && (
+        <ProgressBar isIndeterminate label={syncStage} valueLabel={syncStage} />
       )}
-      {compact && status.lastSyncAt && (
-        <Text UNSAFE_className="plugin-project-relative">
-          {t('health.project.syncedRelative', {
-            time: relativeTime(status.lastSyncAt, intlLocale, justNow),
-          })}
-        </Text>
+      {status.sync.state === 'failed' && (
+        <InlineAlert variant="negative" fillStyle="subtleFill">
+          <Heading>{t('plugins.project.syncFailed')}</Heading>
+          <Content>
+            {status.snapshot
+              ? t('plugins.project.syncFailedPreserved')
+              : status.sync.lastError || t('plugins.project.syncFailedNoSnapshot')}
+          </Content>
+        </InlineAlert>
       )}
       <div className="plugin-action-row">
-        {(!compact || status.freshness === 'stale') && (
-          <Button variant="secondary" onPress={onSync} isDisabled={busy}>
-            {t('plugins.project.sync')}
-          </Button>
-        )}
-        {!compact && onRefresh && (
+        <Button variant="secondary" onPress={onSync} isDisabled={busy}>
+          {status.snapshot ? t('plugins.project.sync') : t('plugins.project.createIndex')}
+        </Button>
+        {onRefresh && (
           <ActionButton onPress={onRefresh} isDisabled={busy}>
             {t('plugins.project.refreshFreshness')}
           </ActionButton>
@@ -401,8 +434,56 @@ function ProjectKnowledge({
       {busy && disabledReason ? (
         <Text UNSAFE_className="plugin-action-hint">{disabledReason}</Text>
       ) : null}
-      {status.freshness === 'stale' && status.snapshotDelta && (
-        <ChangedFilesSummary delta={status.snapshotDelta} />
+      {status.freshness.state === 'stale' && status.changedFiles && (
+        <ChangedFilesSummary delta={status.changedFiles} />
+      )}
+      {status.freshness.state === 'stale' && !status.changedFiles && (
+        <Text>{t('plugins.project.delta.unavailable')}</Text>
+      )}
+    </section>
+  )
+}
+
+function ProjectIndexPanel({
+  status,
+  busy,
+  onRebuild,
+}: {
+  status: ProjectAwarenessStatus
+  busy: boolean
+  onRebuild: () => void
+}) {
+  const { intlLocale, t } = useTranslation()
+  const justNow = t('health.time.justNow')
+  return (
+    <section className="plugin-detail-section">
+      <Heading level={3}>{t('plugins.project.indexTitle')}</Heading>
+      {status.snapshot ? (
+        <>
+          <dl className="plugin-status-list plugin-project-knowledge-grid">
+            <div>
+              <dt>{t('plugins.project.snapshot')}</dt>
+              <dd className="plugin-project-code">{status.snapshot.revision}</dd>
+            </div>
+            <div>
+              <dt>{t('plugins.project.indexedFiles')}</dt>
+              <dd>{status.snapshot.fileCount}</dd>
+            </div>
+            <div>
+              <dt>{t('plugins.project.indexedAt')}</dt>
+              <dd>{relativeTime(status.snapshot.indexedAt, intlLocale, justNow)}</dd>
+            </div>
+            <div>
+              <dt>{t('plugins.project.lastSyncLabel')}</dt>
+              <dd>{relativeTime(status.lastSyncAt, intlLocale, justNow)}</dd>
+            </div>
+          </dl>
+          <ActionButton onPress={onRebuild} isDisabled={busy}>
+            {t('plugins.project.rebuild')}
+          </ActionButton>
+        </>
+      ) : (
+        <Text>{t('plugins.project.indexEmpty')}</Text>
       )}
     </section>
   )
@@ -435,9 +516,7 @@ function ProjectAwarenessDetails({
     observeRendererPromise(
       Promise.all([
         window.api.projectAwareness.getConfig(),
-        plugin.enabled
-          ? window.api.projectAwareness.refreshSnapshotStatus(false)
-          : window.api.projectAwareness.getStatus(),
+        window.api.projectAwareness.getStatus(),
       ]).then(([nextConfig, nextStatus]) => {
         if (!active) return
         setConfig(nextConfig)
@@ -460,9 +539,13 @@ function ProjectAwarenessDetails({
       active = false
       window.clearInterval(intervalId)
     }
-  }, [plugin.enabled])
+  }, [])
 
-  const run = async (operation: () => Promise<unknown>, successMessage = ''): Promise<void> => {
+  const run = async (
+    operation: () => Promise<unknown>,
+    successMessage = '',
+    surfaceError = true,
+  ): Promise<void> => {
     setBusy(true)
     setError('')
     setMessage('')
@@ -471,7 +554,9 @@ function ProjectAwarenessDetails({
       setStatus(await window.api.projectAwareness.getStatus())
       setMessage(successMessage)
     } catch (reason) {
-      setError(rendererError(reason))
+      const nextStatus = await window.api.projectAwareness.getStatus().catch(() => null)
+      if (nextStatus) setStatus(nextStatus)
+      if (surfaceError) setError(rendererError(reason))
     } finally {
       setBusy(false)
     }
@@ -556,34 +641,71 @@ function ProjectAwarenessDetails({
         </div>
       )}
 
-      <section className="plugin-setup-overview" aria-label={t('plugins.setup.title')}>
-        <Heading level={3}>{t('plugins.setup.title')}</Heading>
-        <ol className="plugin-setup-steps">
-          {[
-            { label: t('plugins.setup.enable'), complete: plugin.enabled },
-            { label: t('plugins.setup.credential'), complete: status.credential.configured },
-            { label: t('plugins.setup.repository'), complete: savedTarget },
-            { label: t('plugins.setup.connect'), complete: connected },
-          ].map((step, index) => (
-            <li className={step.complete ? 'is-complete' : ''} key={step.label}>
-              <span className="plugin-setup-step-number" aria-hidden="true">
-                {step.complete ? <CheckmarkIcon /> : index + 1}
-              </span>
-              <Text>{step.label}</Text>
-              <span className="visually-hidden">
-                {t(step.complete ? 'plugins.setup.done' : 'plugins.setup.pending')}
-              </span>
-            </li>
-          ))}
-        </ol>
+      <section className="plugin-detail-section">
+        <Heading level={3}>{t('plugins.project.projectTitle')}</Heading>
+        <Text>{t('plugins.project.configDescription')}</Text>
+        <div className="plugin-project-fields">
+          <TextField
+            label={t('common.repository')}
+            value={config.repository}
+            onChange={(repository) => setConfig((current) => ({ ...current, repository }))}
+            isDisabled={busy}
+            isInvalid={config.repository.length > 0 && !isValidProjectRepository(config.repository)}
+            errorMessage={t('plugins.project.repositoryInvalid')}
+            description={t('plugins.project.repositoryHint')}
+          />
+          <TextField
+            label={t('common.branch')}
+            value={config.branch}
+            onChange={(branch) => setConfig((current) => ({ ...current, branch }))}
+            isDisabled={busy}
+            isInvalid={config.branch.length > 0 && !isValidProjectBranch(config.branch)}
+            errorMessage={t('plugins.project.branchInvalid')}
+          />
+        </div>
+        <Button
+          variant="secondary"
+          onPress={() => void saveConfig()}
+          isDisabled={!validTarget || busy}
+        >
+          {busy ? t('plugins.project.applying') : t('plugins.project.apply')}
+        </Button>
+        {!plugin.enabled && <Text>{t('plugins.project.disabledDataAvailable')}</Text>}
+        {!savedTarget && <Text>{t('plugins.project.projectNotConfigured')}</Text>}
       </section>
 
+      <ProjectFreshnessPanel
+        status={status}
+        busy={projectActionsDisabled}
+        disabledReason={projectActionDisabledReason}
+        onSync={() => void run(() => window.api.projectAwareness.sync(), '', false)}
+        onRefresh={() => void run(() => window.api.projectAwareness.refreshSnapshotStatus(true))}
+      />
+
+      <ProjectIndexPanel
+        status={status}
+        busy={projectActionsDisabled || !status.snapshot}
+        onRebuild={() => void run(() => window.api.projectAwareness.rebuildIndex(), '', false)}
+      />
+
       <section className="plugin-detail-section">
-        <Heading level={3}>{t('plugins.project.credentialTitle')}</Heading>
+        <Heading level={3}>{t('plugins.project.connectionTitle')}</Heading>
+        {!plugin.enabled && <Text>{t('plugins.project.disabledHint')}</Text>}
+        <dl className="plugin-status-list plugin-runtime-status">
+          <div>
+            <dt>{t('plugins.lifecycle.label')}</dt>
+            <dd>{t(PROJECT_STATE_KEY[status.state])}</dd>
+          </div>
+          <div>
+            <dt>{t('plugins.project.credentialTitle')}</dt>
+            <dd>{status.credential.configured ? t('common.saved') : t('common.notConfigured')}</dd>
+          </div>
+          <div>
+            <dt>{t('health.project.access')}</dt>
+            <dd>{t('common.readOnly')}</dd>
+          </div>
+        </dl>
         <Text>{t('plugins.project.credentialDescription')}</Text>
-        <StatusLight variant={status.credential.configured ? 'positive' : 'neutral'} size="S">
-          {status.credential.configured ? t('common.saved') : t('common.notConfigured')}
-        </StatusLight>
         <TextField
           label={t('plugins.project.credentialTitle')}
           aria-label={t('plugins.project.credentialTitle')}
@@ -617,58 +739,6 @@ function ProjectAwarenessDetails({
           >
             {t('plugins.project.openTokenSettings')}
           </ActionButton>
-        </div>
-      </section>
-
-      <section className="plugin-detail-section">
-        <Heading level={3}>{t('plugins.project.configTitle')}</Heading>
-        <Text>{t('plugins.project.configDescription')}</Text>
-        <div className="plugin-project-fields">
-          <TextField
-            label={t('common.repository')}
-            value={config.repository}
-            onChange={(repository) => setConfig((current) => ({ ...current, repository }))}
-            isDisabled={busy}
-            isInvalid={config.repository.length > 0 && !isValidProjectRepository(config.repository)}
-            errorMessage={t('plugins.project.repositoryInvalid')}
-            description={t('plugins.project.repositoryHint')}
-          />
-          <TextField
-            label={t('common.branch')}
-            value={config.branch}
-            onChange={(branch) => setConfig((current) => ({ ...current, branch }))}
-            isDisabled={busy}
-            isInvalid={config.branch.length > 0 && !isValidProjectBranch(config.branch)}
-            errorMessage={t('plugins.project.branchInvalid')}
-          />
-        </div>
-        <Button
-          variant="secondary"
-          onPress={() => void saveConfig()}
-          isDisabled={!validTarget || busy}
-        >
-          {busy ? t('plugins.project.applying') : t('plugins.project.apply')}
-        </Button>
-      </section>
-
-      <section className="plugin-detail-section">
-        <Heading level={3}>{t('plugins.project.runtimeTitle')}</Heading>
-        {!plugin.enabled && <Text>{t('plugins.project.disabledHint')}</Text>}
-        <dl className="plugin-status-list plugin-runtime-status">
-          <div>
-            <dt>{t('plugins.lifecycle.label')}</dt>
-            <dd>{t(PROJECT_STATE_KEY[status.state])}</dd>
-          </div>
-          <div>
-            <dt>{t('health.project.indexState')}</dt>
-            <dd>{t(PROJECT_INDEX_STATE_KEY[status.indexState])}</dd>
-          </div>
-          <div>
-            <dt>{t('health.project.access')}</dt>
-            <dd>{t('common.readOnly')}</dd>
-          </div>
-        </dl>
-        <div className="plugin-action-row">
           <Button
             variant="secondary"
             onPress={() => void run(() => window.api.projectAwareness.connect())}
@@ -684,25 +754,11 @@ function ProjectAwarenessDetails({
           >
             {t('common.disconnect')}
           </ActionButton>
-          <ActionButton
-            onPress={() => void run(() => window.api.projectAwareness.rebuildIndex())}
-            isDisabled={runtimeDisabled || !status.credential.configured || !savedTarget}
-          >
-            {t('plugins.project.rebuild')}
-          </ActionButton>
         </div>
         {projectActionDisabledReason ? (
           <Text UNSAFE_className="plugin-action-hint">{projectActionDisabledReason}</Text>
         ) : null}
       </section>
-
-      <ProjectKnowledge
-        status={status}
-        busy={projectActionsDisabled}
-        disabledReason={projectActionDisabledReason}
-        onSync={() => void run(() => window.api.projectAwareness.sync())}
-        onRefresh={() => void run(() => window.api.projectAwareness.refreshSnapshotStatus(true))}
-      />
 
       <DialogContainer
         onDismiss={() => {

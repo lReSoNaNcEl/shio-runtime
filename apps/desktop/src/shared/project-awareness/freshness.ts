@@ -1,4 +1,24 @@
-export type ProjectSnapshotFreshness = 'unknown' | 'checking' | 'fresh' | 'stale'
+export type ProjectFreshnessState = 'unknown' | 'checking' | 'current' | 'stale' | 'check-failed'
+
+export type ProjectTurnFreshness = 'unknown' | 'current' | 'stale'
+
+export type ProjectFreshnessFailureReason =
+  | 'credential'
+  | 'network'
+  | 'rate-limit'
+  | 'github-unavailable'
+  | 'unknown'
+
+/** Main-owned comparison between one immutable local snapshot and Remote HEAD. */
+export interface ProjectFreshness {
+  state: ProjectFreshnessState
+  indexedRevision?: string
+  remoteRevision?: string
+  checkedAt?: number
+  lastKnownRemoteRevision?: string
+  lastKnownRemoteCheckedAt?: number
+  reasonCode?: ProjectFreshnessFailureReason
+}
 
 export type ProjectSnapshotDeltaFileStatus = 'added' | 'modified' | 'deleted' | 'renamed'
 
