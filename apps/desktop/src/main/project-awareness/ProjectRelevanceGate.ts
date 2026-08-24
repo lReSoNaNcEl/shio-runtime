@@ -48,6 +48,9 @@ const DIRECT_EXECUTION_REQUEST_SHAPE =
 const POLITE_EXECUTION_REQUEST_SHAPE =
   /мож(?:ешь|ете)[^.!?]{0,120}(?:выполнить|запустить|вызвать|ввести|исполнить)|\b(?:can|could|would)\s+you\b[^.!?]{0,120}\b(?:run|execute|launch|invoke)\b/u
 
+const BROWSER_EXECUTION_REQUEST_SHAPE =
+  /(?:^|[\s,])(?:открой|перейди|нажми|кликни|выбери|заполни|прокрути|переключи)(?:$|[\s,:])|мож(?:ешь|ете)[^.!?]{0,180}(?:открыть|перейти|нажать|кликнуть|выбрать|заполнить|прокрутить|переключить)|^(?:please\s+)?(?:open|visit|navigate|click|press|select|fill|scroll|switch)\b|\b(?:can|could|would)\s+you\b[^.!?]{0,180}\b(?:open|visit|navigate|click|press|select|fill|scroll|switch)\b/u
+
 const TERMINAL_INSPECTION_REQUEST_SHAPE =
   /(?:проверь|узнай)[^.!?]{0,120}(?:терминал|powershell|shell|команд)|(?:терминал|powershell|shell|команд)[^.!?]{0,120}(?:проверь|узнай)|\b(?:check|find out)\b[^.!?]{0,120}\b(?:terminal|shell|command)\b|\b(?:terminal|shell|command)\b[^.!?]{0,120}\b(?:check|find out)\b/u
 
@@ -75,6 +78,7 @@ function isExplicitActionRequest(normalized: string): boolean {
   return (
     DIRECT_EXECUTION_REQUEST_SHAPE.test(normalized) ||
     POLITE_EXECUTION_REQUEST_SHAPE.test(normalized) ||
+    BROWSER_EXECUTION_REQUEST_SHAPE.test(normalized) ||
     TERMINAL_INSPECTION_REQUEST_SHAPE.test(normalized)
   )
 }

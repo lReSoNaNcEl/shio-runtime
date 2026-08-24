@@ -407,6 +407,13 @@ async function main(): Promise<void> {
     'required',
   )
   assert.equal(projectContextRequirement('Выполни npm run typecheck'), 'none')
+  assert.equal(
+    projectContextRequirement(
+      'Можешь открыть страничку https://www.npmjs.com/package/@deepseek-ai/dsh-sdk-client?activeTab=readme и кликнуть там на вкладку Code?',
+    ),
+    'none',
+  )
+  assert.equal(projectContextRequirement('Открой package.json и покажи scripts'), 'required')
   assert.equal(isProjectRelevantRequest('Как Node.js используется в этом проекте?'), true)
   assert.equal(isProjectRelevantRequest('Расскажи короткую шутку'), false)
   const privateRepositoryError = normalizeGitHubProjectError(
