@@ -40,6 +40,7 @@
     "repro:capabilities": "npm run repro:character-capability-awareness",
     "repro:streamdown": "esbuild scripts/streamdown-repro/harness.tsx --bundle --platform=node --format=cjs --jsx=automatic --external:electron --outfile=out/streamdown-repro.cjs && node out/streamdown-repro.cjs",
     "repro:action-runtime": "esbuild scripts/action-runtime-repro/harness.ts --bundle --platform=node --format=cjs --external:electron --outfile=out/action-runtime-repro.cjs && node out/action-runtime-repro.cjs",
+    "repro:action-verification": "esbuild scripts/action-verification-repro/harness.ts --bundle --platform=node --format=cjs --external:electron --outfile=out/action-verification-repro.cjs && node out/action-verification-repro.cjs",
     "repro:dsh": "esbuild scripts/dsh-repro/harness.ts --bundle --platform=node --format=cjs --external:electron --external:@deepseek-ai/dsh-sdk-client --outfile=out/dsh-repro.cjs && node out/dsh-repro.cjs",
     "repro:browser-control": "esbuild scripts/browser-control-repro/harness.ts --bundle --platform=node --format=esm --packages=external --outfile=out/browser-control-repro.mjs && node out/browser-control-repro.mjs",
     "repro:project-freshness": "esbuild scripts/project-freshness-repro/harness.ts --bundle --platform=node --format=cjs --external:electron --outfile=out/project-freshness-repro.cjs && node out/project-freshness-repro.cjs",

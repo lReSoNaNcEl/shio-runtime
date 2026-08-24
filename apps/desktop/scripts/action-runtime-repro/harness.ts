@@ -202,7 +202,7 @@ async function main(): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 0))
   assert(runtime.snapshot().activeActionId)
   assert.equal(isDesktopWorkflowActive(runtime.snapshot()), true)
-  assert.equal(desktopWorkflowActivity(runtime.snapshot()), 'running')
+  assert.equal(desktopWorkflowActivity(runtime.snapshot()), 'executing')
   await runtime.emergencyStop()
   assert.equal((await running).status, 'cancelled')
   assert.equal(emergencyCleanupCount, 2)

@@ -7,6 +7,7 @@ export class ActionError extends Error {
     readonly outcome: Exclude<ActionOutcome, 'success'> = 'failure',
     readonly recoverable = false,
     readonly providerId?: string,
+    readonly evidence?: unknown,
   ) {
     super(message)
     this.name = 'ActionError'

@@ -58,6 +58,8 @@ export const enMessages: Record<TranslationKey, string> = {
   'actions.fullControl.enable': 'Enable full access',
   'actions.activeTask': 'Running a task',
   'actions.awaitingConfirmation': 'Waiting for approval',
+  'actions.verifying': 'Verifying the result',
+  'actions.recovering': 'Correcting the action',
   'actions.emergencyStop': 'Stop Shio',
   'actions.fullAccessBadge': 'Full access',
   'capabilities.textChat.title': 'Text chat',

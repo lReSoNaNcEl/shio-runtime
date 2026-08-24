@@ -43,6 +43,15 @@ Architecture and ownership:
   the validated Plugin manifest.
 - Every externally authoritative side effect passes through Action Runtime,
   including side effects requested through Plugins or delegated automation.
+- Do not equate Adapter execution success with verified action success. Action
+  verification belongs to Action Runtime; Adapters return bounded evidence and do
+  not decide semantic success.
+- Full Control may skip confirmation according to Permission Guard policy, but it
+  never bypasses validation, execution tracking, verification, cancellation, or
+  Action logging.
+- Never automatically retry a potentially non-idempotent mutation. Every recovery
+  side effect is a new Action Runtime action and passes through the same validation
+  and permission boundary.
 - External side effects exposed by a Plugin still pass through Action Runtime.
 - Plugin-specific external technologies remain Adapters.
 - Plugin failure must not break Core.

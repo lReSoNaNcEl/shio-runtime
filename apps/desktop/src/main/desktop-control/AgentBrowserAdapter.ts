@@ -5,7 +5,6 @@ import { mkdir } from 'node:fs/promises'
 import {
   BROWSER_OBSERVATION_CONTENT_MAX_CHARS,
   BROWSER_OBSERVATION_MAX_INTERACTIVE_ELEMENTS,
-  type BrowserActionExecution,
   type BrowserInteractiveElement,
   type BrowserInteractiveRole,
   type BrowserObservation,
@@ -19,6 +18,7 @@ import {
   type AgentBrowserRuntimeResources,
   buildAgentBrowserChildEnvironment,
 } from './AgentBrowserResources'
+import type { BrowserExecutionEvidence } from './executionEvidence'
 
 export type BrowserAutomationErrorCode =
   | 'NO_ACTIVE_SESSION'
@@ -44,7 +44,7 @@ export class BrowserAutomationError extends Error {
 }
 
 export interface BrowserInteractionResult {
-  execution: BrowserActionExecution
+  evidence: BrowserExecutionEvidence
   observation?: BrowserObservation
 }
 
@@ -335,20 +335,21 @@ export class AgentBrowserAdapter {
         throw new BrowserAutomationError('NAVIGATION_FAILED', publicMessage('NAVIGATION_FAILED'))
       }
       this.ensureSession('starting')
+      const before = this.observationSnapshot() ?? undefined
       this.observation = null
       try {
         await this.ensureDirectories()
         await this.command('open', ['open', parsedUrl.href], 30_000, signal)
         const observation = await this.captureObservation(false, signal)
-        const verified = new URL(observation.url).origin === parsedUrl.origin
+        const afterSession = this.sessionSnapshot()
         return {
-          execution: {
+          evidence: {
             kind: 'browser',
             operation: 'open',
-            status: 'success',
-            verification: verified ? 'verified' : 'unverified',
-            resultingUrl: observation.url,
-            ...(observation.title ? { resultingTitle: observation.title } : {}),
+            requestedUrl: parsedUrl.href,
+            ...(before ? { before } : {}),
+            after: observation,
+            ...(afterSession ? { afterSession } : {}),
           },
           observation,
         }
@@ -356,11 +357,12 @@ export class AgentBrowserAdapter {
         if (error instanceof BrowserAutomationError && error.code === 'OBSERVATION_FAILED') {
           this.markError()
           return {
-            execution: {
+            evidence: {
               kind: 'browser',
               operation: 'open',
-              status: 'success',
-              verification: 'unverified',
+              requestedUrl: parsedUrl.href,
+              ...(before ? { before } : {}),
+              observationErrorCode: error.code,
             },
           }
         }
@@ -419,16 +421,15 @@ export class AgentBrowserAdapter {
       try {
         await this.command('switch-tab', ['tab', normalizedTabId], 15_000, signal)
         const observation = await this.captureObservation(false, signal)
-        const verified = this.session?.activeTabId === normalizedTabId
+        const afterSession = this.sessionSnapshot()
         return {
-          execution: {
+          evidence: {
             kind: 'browser',
             operation: 'switch-tab',
-            status: 'success',
-            verification:
-              verified || (before && observation.url !== before.url) ? 'verified' : 'unverified',
-            resultingUrl: observation.url,
-            ...(observation.title ? { resultingTitle: observation.title } : {}),
+            requestedTabId: normalizedTabId,
+            ...(before ? { before } : {}),
+            after: observation,
+            ...(afterSession ? { afterSession } : {}),
           },
           observation,
         }
@@ -436,11 +437,12 @@ export class AgentBrowserAdapter {
         if (error instanceof BrowserAutomationError && error.code === 'OBSERVATION_FAILED') {
           this.markError()
           return {
-            execution: {
+            evidence: {
               kind: 'browser',
               operation: 'switch-tab',
-              status: 'success',
-              verification: 'unverified',
+              requestedTabId: normalizedTabId,
+              ...(before ? { before } : {}),
+              observationErrorCode: error.code,
             },
           }
         }
@@ -482,15 +484,14 @@ export class AgentBrowserAdapter {
 
       try {
         const observation = await this.captureObservation(false, signal)
-        const changed = observationFingerprint(preflight) !== observationFingerprint(observation)
+        const afterSession = this.sessionSnapshot()
         return {
-          execution: {
+          evidence: {
             kind: 'browser',
             operation: 'click',
-            status: 'success',
-            verification: changed ? 'verified' : 'unverified',
-            resultingUrl: observation.url,
-            ...(observation.title ? { resultingTitle: observation.title } : {}),
+            before: preflight,
+            after: observation,
+            ...(afterSession ? { afterSession } : {}),
             ...(element.name ? { targetName: element.name } : {}),
           },
           observation,
@@ -501,11 +502,12 @@ export class AgentBrowserAdapter {
           code: error instanceof BrowserAutomationError ? error.code : 'OBSERVATION_FAILED',
         })
         return {
-          execution: {
+          evidence: {
             kind: 'browser',
             operation: 'click',
-            status: 'success',
-            verification: 'unverified',
+            before: preflight,
+            observationErrorCode:
+              error instanceof BrowserAutomationError ? error.code : 'OBSERVATION_FAILED',
             ...(element.name ? { targetName: element.name } : {}),
           },
         }

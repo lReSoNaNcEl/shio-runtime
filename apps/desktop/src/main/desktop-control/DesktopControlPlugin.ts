@@ -16,6 +16,7 @@ import {
   type BrowserInteractionResult,
 } from './AgentBrowserAdapter'
 import { DshAdapterError, type DshHarnessAdapter } from './DshHarnessAdapter'
+import type { BrowserExecutionEvidence, DesktopWorkflowAdapterResult } from './executionEvidence'
 
 export const DESKTOP_CONTROL_MANIFEST: PluginManifest = {
   id: DESKTOP_CONTROL_PLUGIN_ID,
@@ -224,7 +225,7 @@ export class DesktopControlPlugin implements BundledPlugin {
   async executeWorkflow(
     request: DesktopWorkflowRequest,
     signal: AbortSignal,
-  ): Promise<import('../../shared/actions').DesktopWorkflowExecution> {
+  ): Promise<DesktopWorkflowAdapterResult> {
     this.assertActive()
     if (request.requestedCapabilities.length !== 1) {
       throw new ActionError(
@@ -278,8 +279,7 @@ export class DesktopControlPlugin implements BundledPlugin {
           const result = await this.executeBrowserOperation(operation, signal)
           return {
             runtimeCompleted: true,
-            verification: result.execution.verification ?? 'unverified',
-            browser: result.execution,
+            evidence: result.evidence,
           }
         }
         if (status.automationEngine !== 'ready') {
@@ -295,23 +295,39 @@ export class DesktopControlPlugin implements BundledPlugin {
         const observationBeforeDelegation = await this.dependencies.browser
           .observe(signal)
           .catch(() => undefined)
-        const delegated = await this.dependencies.adapter.execute(
-          request.goal,
-          signal,
-          capability,
-          request.shellCommand,
-        )
-        const observationAfterDelegation = await this.dependencies.browser
-          .observe(signal)
-          .catch(() => undefined)
-        return {
-          ...delegated,
-          verification:
-            observationBeforeDelegation &&
-            observationAfterDelegation &&
-            observationBeforeDelegation.observationId !== observationAfterDelegation.observationId
-              ? 'verified'
-              : 'unverified',
+        try {
+          const delegated = await this.dependencies.adapter.execute(
+            request.goal,
+            signal,
+            capability,
+            request.shellCommand,
+          )
+          const observationAfterDelegation = await this.dependencies.browser
+            .observe(signal)
+            .catch(() => undefined)
+          return {
+            ...delegated,
+            evidence: mergeBrowserEvidence(
+              delegated.evidence,
+              observationBeforeDelegation,
+              observationAfterDelegation,
+            ),
+          }
+        } catch (error) {
+          const observationAfterDelegation = await this.dependencies.browser
+            .observe(signal)
+            .catch(() => undefined)
+          if (error instanceof DshAdapterError) {
+            throw mapDshAdapterError(
+              error,
+              mergeBrowserEvidence(
+                error.evidence,
+                observationBeforeDelegation,
+                observationAfterDelegation,
+              ),
+            )
+          }
+          throw error
         }
       }
       return await this.dependencies.adapter.execute(
@@ -346,6 +362,11 @@ export class DesktopControlPlugin implements BundledPlugin {
 
   async emergencyStop(): Promise<void> {
     await Promise.allSettled([this.dependencies.adapter.close(), this.dependencies.browser.close()])
+  }
+
+  async observeBrowserForVerification(signal: AbortSignal) {
+    this.assertActive()
+    return this.dependencies.browser.observe(signal)
   }
 
   private executeBrowserOperation(
@@ -416,7 +437,10 @@ function singleHttpUrl(text: string): string | undefined {
   return urls.size === 1 ? urls.values().next().value : undefined
 }
 
-export function mapDshAdapterError(error: unknown): ActionError {
+export function mapDshAdapterError(
+  error: unknown,
+  evidence?: BrowserExecutionEvidence,
+): ActionError {
   if (!(error instanceof DshAdapterError)) {
     return new ActionError('DESKTOP_CONTROL_FAILED', 'Desktop Control failed', 'failure', true)
   }
@@ -430,5 +454,22 @@ export function mapDshAdapterError(error: unknown): ActionError {
         : 'failure',
     error.recoverable,
     'desktop-control',
+    evidence ?? error.evidence,
   )
+}
+
+function mergeBrowserEvidence(
+  evidence: unknown,
+  before: BrowserExecutionEvidence['before'],
+  after: BrowserExecutionEvidence['after'],
+): BrowserExecutionEvidence {
+  const browserEvidence =
+    evidence && typeof evidence === 'object' && 'kind' in evidence && evidence.kind === 'browser'
+      ? (evidence as BrowserExecutionEvidence)
+      : ({ kind: 'browser', operation: 'workflow' } as const)
+  return {
+    ...browserEvidence,
+    ...(before ? { before } : {}),
+    ...(after ? { after } : {}),
+  }
 }

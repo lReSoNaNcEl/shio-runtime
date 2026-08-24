@@ -29,6 +29,7 @@
     "desktop:capabilities:repro": "npm --prefix apps/desktop run repro:capabilities",
     "desktop:streamdown:repro": "npm --prefix apps/desktop run repro:streamdown",
     "desktop:action-runtime:repro": "npm --prefix apps/desktop run repro:action-runtime",
+    "desktop:action-verification:repro": "npm --prefix apps/desktop run repro:action-verification",
     "desktop:dsh:repro": "npm --prefix apps/desktop run repro:dsh",
     "desktop:browser-control:repro": "npm --prefix apps/desktop run repro:browser-control",
     "desktop:project-freshness:repro": "npm --prefix apps/desktop run repro:project-freshness",

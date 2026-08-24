@@ -136,7 +136,13 @@ export function ActionRuntimeHost() {
 
   const activity = desktopWorkflowActivity(snapshot)
   const activityLabel = t(
-    activity === 'awaiting-confirmation' ? 'actions.awaitingConfirmation' : 'actions.activeTask',
+    activity === 'awaiting-confirmation'
+      ? 'actions.awaitingConfirmation'
+      : activity === 'verifying'
+        ? 'actions.verifying'
+        : activity === 'recovering'
+          ? 'actions.recovering'
+          : 'actions.activeTask',
   )
   const statusTarget = document.getElementById('action-runtime-status-slot')
 
