@@ -976,10 +976,17 @@ Every action follows the same lifecycle:
 2. Validated
 3. Authorized
 4. Executed
-5. Completed
-6. Experience Generated
+5. Observed / Verified when required by the Tool policy
+6. Completed
+7. Experience Generated
 
 Typical outcomes include `Success`, `Failure`, `PermissionDenied`, `Timeout`, and `Cancelled`.
+
+**Action Completion and Verification**
+
+Adapter execution success is not necessarily proof that the intended external state was reached. `Executed` means that the Adapter finished its technical operation. Before producing the canonical Action Result, Action Runtime applies the Tool-owned verification policy to bounded normalized evidence and may perform one bounded post-execution observation. `Completed` therefore represents the Runtime-owned result of execution plus verification, including an honest `unverified` verification status when available evidence is insufficient.
+
+Verification is an internal Action Runtime responsibility, not a separate Runtime. Adapters collect normalized execution or observation evidence but never decide semantic success. Full Control may auto-authorize an eligible action through Permission Guard policy, but it never skips verification. Recovery is bounded, cancellation-aware, and may automatically repeat only explicitly safe operations; a potentially non-idempotent mutation requires replanning and every corrective side effect re-enters the normal Action Runtime validation and permission boundary.
 
 **Character State Integration**
 
@@ -1300,7 +1307,7 @@ Plugin Runtime does not own Plugin business logic, project knowledge, Character 
 
 Core consumes optional functionality only through stable capability contracts. Version 1 defines narrow providers such as `ProjectContextProvider` and the read-only Browser Context provider; it does not define generic invocation. There is no `plugin.invoke`, arbitrary method dispatch, or renderer-controlled module loading. Enabling a Plugin permits only its declared capability registrations to become discoverable. Disabling unregisters them without requiring application restart, and the next consumer resolution observes their absence.
 
-The bundled Browser Control capability owns the lifecycle of one isolated Shio-managed browser session and its latest bounded semantic observation. It does not attach to the user's personal Chrome profile. The owned session survives ordinary conversational idle periods; a bounded long idle timeout is only a safety backstop, while Plugin stop, disable, Emergency Stop, and application exit remain the authoritative teardown paths. Read-only observation is exposed to Core through a narrow request-scoped context provider. Browser mutations remain Action Runtime Tools and therefore pass validation and Permission Guard before the Plugin invokes its Browser Automation Adapter. Semantic element refs belong to exactly one observation; navigation or page-state change invalidates them. Every completed mutation invalidates the previous observation, captures a fresh one, and reports `verified` or `unverified` from the resulting URL/title/semantic state rather than treating a successful adapter process exit as proof of user-visible success.
+The bundled Browser Control capability owns the lifecycle of one isolated Shio-managed browser session and its latest bounded semantic observation. It does not attach to the user's personal Chrome profile. The owned session survives ordinary conversational idle periods; a bounded long idle timeout is only a safety backstop, while Plugin stop, disable, Emergency Stop, and application exit remain the authoritative teardown paths. Read-only observation is exposed to Core through a narrow request-scoped context provider. Browser mutations remain Action Runtime Tools and therefore pass validation and Permission Guard before the Plugin invokes its Browser Automation Adapter. Semantic element refs belong to exactly one observation; navigation or page-state change invalidates them. Every completed mutation invalidates the previous observation and captures a fresh normalized URL/title/semantic-state observation. Action Runtime interprets that evidence and reports `verified`, `unverified`, or `failed`; a successful Adapter process exit is never proof of user-visible success by itself.
 
 The Browser Control capability may share its session with a bounded delegated automation workflow. DSH or another Automation Adapter owns reasoning and step planning only; the Browser Automation Adapter owns technology-specific interaction, while the Plugin retains session and observation lifecycle. Closing or failing the planner does not by itself transfer ownership of or silently replace the current browser session. Deterministic open, observe, URL/title retrieval, semantic click, and known-tab switching remain available when the planner model is unavailable.
 
