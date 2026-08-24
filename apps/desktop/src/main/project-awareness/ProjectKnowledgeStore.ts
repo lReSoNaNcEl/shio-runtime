@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
@@ -26,6 +27,20 @@ interface SnapshotRow {
 interface SnapshotRetentionRow {
   id: string
   is_current: number
+}
+
+interface ProjectMetadataRow {
+  last_remote_sha: string | null
+  last_remote_check_at: number | null
+  last_remote_check_succeeded: number
+  last_successful_sync_at: number | null
+}
+
+export interface ProjectAwarenessMetadata {
+  lastKnownRemoteRevision?: string
+  lastKnownRemoteCheckedAt?: number
+  lastRemoteCheckSucceeded?: boolean
+  lastSuccessfulSyncAt?: number
 }
 
 export interface StoredProjectFile {
@@ -345,6 +360,15 @@ export class ProjectKnowledgeStore {
         changed_files_json TEXT NOT NULL,
         PRIMARY KEY(repository_id, branch, sha)
       );
+      CREATE TABLE IF NOT EXISTS project_awareness_metadata (
+        repository_id TEXT NOT NULL REFERENCES repositories(id) ON DELETE CASCADE,
+        branch TEXT NOT NULL,
+        last_remote_sha TEXT,
+        last_remote_check_at INTEGER,
+        last_remote_check_succeeded INTEGER NOT NULL DEFAULT 0,
+        last_successful_sync_at INTEGER,
+        PRIMARY KEY(repository_id, branch)
+      );
       DELETE FROM chunks_fts
       WHERE CAST(chunk_id AS INTEGER) NOT IN (SELECT id FROM chunks);
     `)
@@ -401,6 +425,81 @@ export class ProjectKnowledgeStore {
       )
   }
 
+  getProjectAwarenessMetadataByTarget(
+    owner: string,
+    name: string,
+    branch: string,
+  ): ProjectAwarenessMetadata {
+    const row = this.database
+      .prepare(
+        `SELECT m.last_remote_sha, m.last_remote_check_at,
+           m.last_remote_check_succeeded, m.last_successful_sync_at
+         FROM project_awareness_metadata m
+         JOIN repositories r ON r.id = m.repository_id
+         WHERE r.provider = 'github' AND r.owner = ? AND r.name = ? AND m.branch = ?
+         LIMIT 1`,
+      )
+      .get(owner, name, branch) as ProjectMetadataRow | undefined
+    if (!row) return {}
+    return {
+      ...(row.last_remote_sha ? { lastKnownRemoteRevision: row.last_remote_sha } : {}),
+      ...(row.last_remote_check_at ? { lastKnownRemoteCheckedAt: row.last_remote_check_at } : {}),
+      lastRemoteCheckSucceeded: Boolean(row.last_remote_check_succeeded),
+      ...(row.last_successful_sync_at ? { lastSuccessfulSyncAt: row.last_successful_sync_at } : {}),
+    }
+  }
+
+  recordRemoteCheckSuccess(
+    repository: ProjectRepositoryIdentity,
+    branch: string,
+    revision: string,
+    checkedAt: number,
+  ): void {
+    this.upsertRepository(repository)
+    this.database
+      .prepare(
+        `INSERT INTO project_awareness_metadata
+          (repository_id, branch, last_remote_sha, last_remote_check_at,
+           last_remote_check_succeeded)
+         VALUES (?, ?, ?, ?, 1)
+         ON CONFLICT(repository_id, branch) DO UPDATE SET
+           last_remote_sha = excluded.last_remote_sha,
+           last_remote_check_at = excluded.last_remote_check_at,
+           last_remote_check_succeeded = 1`,
+      )
+      .run(repositoryId(repository), branch, revision, checkedAt)
+  }
+
+  recordRemoteCheckFailure(repository: ProjectRepositoryIdentity, branch: string): void {
+    this.upsertRepository(repository)
+    this.database
+      .prepare(
+        `INSERT INTO project_awareness_metadata
+          (repository_id, branch, last_remote_check_succeeded)
+         VALUES (?, ?, 0)
+         ON CONFLICT(repository_id, branch) DO UPDATE SET
+           last_remote_check_succeeded = 0`,
+      )
+      .run(repositoryId(repository), branch)
+  }
+
+  recordSuccessfulSync(
+    repository: ProjectRepositoryIdentity,
+    branch: string,
+    completedAt: number,
+  ): void {
+    this.upsertRepository(repository)
+    this.database
+      .prepare(
+        `INSERT INTO project_awareness_metadata
+          (repository_id, branch, last_successful_sync_at)
+         VALUES (?, ?, ?)
+         ON CONFLICT(repository_id, branch) DO UPDATE SET
+           last_successful_sync_at = excluded.last_successful_sync_at`,
+      )
+      .run(repositoryId(repository), branch, completedAt)
+  }
+
   getCurrentSnapshot(
     repository: ProjectRepositoryIdentity,
     branch: string,
@@ -448,31 +547,36 @@ export class ProjectKnowledgeStore {
     files: PreparedProjectFile[]
   }): { id: string; fileCount: number } {
     this.upsertRepository(input.repository)
-    const id = `${repositoryId(input.repository)}:${input.branch}:${input.commitSha}`
+    const canonicalId = `${repositoryId(input.repository)}:${input.branch}:${input.commitSha}`
+    let id = canonicalId
+    let storedCommitSha = input.commitSha
     this.database.exec('BEGIN IMMEDIATE')
     try {
-      this.database
+      const existing = this.database
         .prepare(
-          `DELETE FROM chunks_fts
-           WHERE CAST(chunk_id AS INTEGER) IN (
-             SELECT c.id
-             FROM chunks c
-             JOIN files f ON f.id = c.file_id
-             JOIN snapshots s ON s.id = f.snapshot_id
-             WHERE s.repository_id = ? AND s.branch = ? AND s.commit_sha = ?
-           )`,
+          `SELECT id, is_current
+           FROM snapshots
+           WHERE repository_id = ? AND branch = ? AND commit_sha = ?
+           LIMIT 1`,
         )
-        .run(repositoryId(input.repository), input.branch, input.commitSha)
-      this.database
-        .prepare('DELETE FROM snapshots WHERE repository_id = ? AND branch = ? AND commit_sha = ?')
-        .run(repositoryId(input.repository), input.branch, input.commitSha)
+        .get(repositoryId(input.repository), input.branch, input.commitSha) as
+        | SnapshotRetentionRow
+        | undefined
+      if (existing?.is_current === 1) {
+        const draftSuffix = randomUUID()
+        id = `${canonicalId}:draft:${draftSuffix}`
+        storedCommitSha = `draft:${input.commitSha}:${draftSuffix}`
+      } else if (existing) {
+        this.database.prepare('DELETE FROM chunks_fts WHERE snapshot_id = ?').run(existing.id)
+        this.database.prepare('DELETE FROM snapshots WHERE id = ?').run(existing.id)
+      }
       this.database
         .prepare(
           `INSERT INTO snapshots
             (id, repository_id, branch, commit_sha, created_at, is_current)
            VALUES (?, ?, ?, ?, ?, 0)`,
         )
-        .run(id, repositoryId(input.repository), input.branch, input.commitSha, Date.now())
+        .run(id, repositoryId(input.repository), input.branch, storedCommitSha, Date.now())
 
       if (input.previousSnapshotId) {
         const previousFiles = this.database
@@ -593,13 +697,38 @@ export class ProjectKnowledgeStore {
     }
   }
 
-  publishSnapshot(repository: ProjectRepositoryIdentity, branch: string, snapshotId: string): void {
+  publishSnapshot(
+    repository: ProjectRepositoryIdentity,
+    branch: string,
+    snapshotId: string,
+    revision: string,
+  ): void {
     this.database.exec('BEGIN IMMEDIATE')
     try {
       this.database
         .prepare('UPDATE snapshots SET is_current = 0 WHERE repository_id = ? AND branch = ?')
         .run(repositoryId(repository), branch)
-      this.database.prepare('UPDATE snapshots SET is_current = 1 WHERE id = ?').run(snapshotId)
+      const conflicts = this.database
+        .prepare(
+          `SELECT id
+           FROM snapshots
+           WHERE repository_id = ? AND branch = ? AND commit_sha = ? AND id <> ?`,
+        )
+        .all(repositoryId(repository), branch, revision, snapshotId) as unknown as Array<{
+        id: string
+      }>
+      for (const conflict of conflicts) {
+        this.database.prepare('DELETE FROM chunks_fts WHERE snapshot_id = ?').run(conflict.id)
+        this.database.prepare('DELETE FROM snapshots WHERE id = ?').run(conflict.id)
+      }
+      const result = this.database
+        .prepare(
+          `UPDATE snapshots
+           SET commit_sha = ?, is_current = 1
+           WHERE id = ? AND repository_id = ? AND branch = ?`,
+        )
+        .run(revision, snapshotId, repositoryId(repository), branch)
+      if (result.changes !== 1) throw new Error('Draft snapshot is unavailable')
       this.database.exec('COMMIT')
     } catch (error) {
       this.database.exec('ROLLBACK')

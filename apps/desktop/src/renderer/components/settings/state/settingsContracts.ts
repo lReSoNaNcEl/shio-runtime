@@ -52,7 +52,6 @@ export interface GeneralSettingsActions {
 }
 
 export interface SpeechSettingsState {
-  speechUrl: string
   language: string
   microphones: Array<{ deviceId: string; label: string }>
   microphoneId: string
@@ -69,7 +68,6 @@ export interface SpeechSettingsState {
 }
 
 export interface SpeechSettingsActions {
-  setSpeechUrl: (url: string) => void
   setLanguage: (language: string) => void
   setMicrophoneId: (id: string) => void
   recordMicrophoneTest: () => Promise<void>
@@ -134,7 +132,6 @@ export interface AvatarSettingsActions {
 export interface AdvancedSettingsState {
   developerModeEnabled: boolean
   developerOverlayAnimationHudEnabled: boolean
-  speechUrl: string
   backlogRole: BacklogSelectorRoleConfig
   providers: ProviderProfile[]
   providerSettings: Record<LlmProviderId, LlmProviderPublicSettings>
@@ -144,7 +141,6 @@ export interface AdvancedSettingsState {
 export interface AdvancedSettingsActions {
   setDeveloperModeEnabled: (enabled: boolean) => Promise<void>
   setDeveloperOverlayAnimationHudEnabled: (enabled: boolean) => Promise<void>
-  setSpeechUrl: (url: string) => void
   setBacklogRole: Dispatch<SetStateAction<BacklogSelectorRoleConfig>>
 }
 

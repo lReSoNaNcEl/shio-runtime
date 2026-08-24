@@ -8,7 +8,6 @@ import { z } from 'zod'
 import {
   DESKTOP_WORKFLOW_REPORTED_OUTCOME_MAX_CHARS,
   type DesktopWorkflowCapability,
-  type DesktopWorkflowExecution,
 } from '../../shared/actions'
 import { type DesktopControlRuntimeState, DSH_RUNTIME_VERSION } from '../../shared/desktop-control'
 import type { LlmProviderId } from '../../shared/llm'
@@ -18,6 +17,11 @@ import {
   type AgentBrowserRuntimeResources,
   buildAgentBrowserChildEnvironment,
 } from './AgentBrowserResources'
+import type {
+  DesktopWorkflowAdapterResult,
+  DesktopWorkflowExecutionEvidence,
+  ShellExecutionEvidence,
+} from './executionEvidence'
 
 export interface DshLaunchResources {
   command: string
@@ -91,10 +95,12 @@ export class DshAdapterError extends Error {
       | 'DSH_TRANSPORT_CLOSED'
       | 'DSH_REMOTE_ERROR'
       | 'DSH_CANCELLED'
+      | 'DSH_ACTION_LIMIT'
       | 'DSH_RUNTIME_UNAVAILABLE'
       | 'DSH_MODEL_NOT_CONFIGURED',
     message: string,
     readonly recoverable = true,
+    readonly evidence?: DesktopWorkflowExecutionEvidence,
   ) {
     super(message)
     this.name = 'DshAdapterError'
@@ -115,6 +121,8 @@ const SAFE_OS_VARIABLES = [
 ] as const
 
 const SHELL_REQUEST_TIMEOUT_MS = 60_000
+const DSH_BROWSER_TOOL_CALL_MAX = 20
+const DSH_BROWSER_OBSERVATION_MAX = 30
 const shellOutputSchema = z
   .object({
     text: z.string().max(64_000),
@@ -327,6 +335,8 @@ function publicMessage(code: DshAdapterError['code']): string {
       return 'Desktop Control runtime rejected the request'
     case 'DSH_CANCELLED':
       return 'Desktop Control task was stopped'
+    case 'DSH_ACTION_LIMIT':
+      return 'Desktop Control reached the browser workflow action limit'
     case 'DSH_RUNTIME_UNAVAILABLE':
       return 'Desktop Control runtime is not installed correctly'
     case 'DSH_MODEL_NOT_CONFIGURED':
@@ -336,11 +346,7 @@ function publicMessage(code: DshAdapterError['code']): string {
   }
 }
 
-function renderShellOutcome(result: ShellExecutionResult): string {
-  const status =
-    result.exitCode === null
-      ? `PowerShell ended with signal ${result.signal ?? 'unknown'}`
-      : `PowerShell exit code: ${result.exitCode}`
+function renderShellOutcome(result: ShellExecutionResult): string | undefined {
   const boundedText = (text: string, maxCharacters: number): string => {
     if (text.length <= maxCharacters) return text
     const omission = '\n… output omitted …\n'
@@ -348,24 +354,25 @@ function renderShellOutcome(result: ShellExecutionResult): string {
     const headLength = Math.ceil(available * 0.8)
     return `${text.slice(0, headLength)}${omission}${text.slice(-(available - headLength))}`
   }
-  const renderStream = (
-    name: 'stdout' | 'stderr',
-    stream: ShellExecutionResult['stdout'],
-    maxCharacters: number,
-  ): string | undefined => {
-    const text = stream.text.trim()
-    if (!text) return undefined
-    const suffix = stream.truncated ? '\n[Earlier output was truncated]' : ''
-    return `${name}:\n${boundedText(text, maxCharacters)}${suffix}`
+  const observed = result.stdout.text.trim() || result.stderr.text.trim()
+  if (!observed) return undefined
+  return boundedText(observed, DESKTOP_WORKFLOW_REPORTED_OUTCOME_MAX_CHARS)
+}
+
+function shellExecutionEvidence(
+  result: ShellExecutionResult,
+  durationMs: number,
+): ShellExecutionEvidence {
+  return {
+    kind: 'shell',
+    exitCode: result.exitCode,
+    stdout: result.stdout.text,
+    stderr: result.stderr.text,
+    truncated: result.stdout.truncated || result.stderr.truncated,
+    durationMs,
+    timedOut: result.timedOut,
+    aborted: result.aborted,
   }
-  return [
-    status,
-    renderStream('stdout', result.stdout, result.stderr.text.trim() ? 6_400 : 7_600),
-    renderStream('stderr', result.stderr, 1_200),
-  ]
-    .filter((part): part is string => part !== undefined)
-    .join('\n')
-    .slice(0, DESKTOP_WORKFLOW_REPORTED_OUTCOME_MAX_CHARS)
 }
 
 export class DshHarnessAdapter {
@@ -542,7 +549,7 @@ export class DshHarnessAdapter {
     signal: AbortSignal,
     capability: DshWorkflowCapability,
     shellCommand?: string,
-  ): Promise<DesktopWorkflowExecution> {
+  ): Promise<DesktopWorkflowAdapterResult> {
     if (this.running) {
       throw new DshAdapterError('DSH_REMOTE_ERROR', 'Desktop Control is already running a task')
     }
@@ -562,6 +569,7 @@ export class DshHarnessAdapter {
       calls: new Map(),
       successfulResults: new Set(),
     }
+    let browserBudgetExceeded = false
     const abort = (): void => {
       void this.close().catch((error) => {
         mainLog.warn('[DesktopControl] runtime close after cancellation failed', { error })
@@ -573,6 +581,7 @@ export class DshHarnessAdapter {
         if (!shellCommand?.trim() || !harness.executeShell) {
           throw new DshAdapterError('DSH_PROTOCOL_ERROR', publicMessage('DSH_PROTOCOL_ERROR'))
         }
+        const shellStartedAt = Date.now()
         const parsedResult = shellExecutionResultSchema.safeParse(
           await harness.executeShell(shellCommand.trim(), SHELL_REQUEST_TIMEOUT_MS),
         )
@@ -580,11 +589,17 @@ export class DshHarnessAdapter {
           throw new DshAdapterError('DSH_PROTOCOL_ERROR', publicMessage('DSH_PROTOCOL_ERROR'))
         }
         const result = parsedResult.data
+        const evidence = shellExecutionEvidence(result, Date.now() - shellStartedAt)
         if (result.timedOut) {
-          throw new DshAdapterError('DSH_REQUEST_TIMEOUT', publicMessage('DSH_REQUEST_TIMEOUT'))
+          throw new DshAdapterError(
+            'DSH_REQUEST_TIMEOUT',
+            publicMessage('DSH_REQUEST_TIMEOUT'),
+            true,
+            evidence,
+          )
         }
         if (result.aborted || signal.aborted) {
-          throw new DshAdapterError('DSH_CANCELLED', publicMessage('DSH_CANCELLED'))
+          throw new DshAdapterError('DSH_CANCELLED', publicMessage('DSH_CANCELLED'), true, evidence)
         }
         mainLog.info('[DesktopControl] DSH PowerShell command completed', {
           exitCode: result.exitCode,
@@ -598,17 +613,32 @@ export class DshHarnessAdapter {
           throw new DshAdapterError(
             'DSH_REMOTE_ERROR',
             `PowerShell command failed with exit code ${result.exitCode ?? 'unknown'}`,
+            true,
+            evidence,
           )
         }
         return {
           runtimeCompleted: true,
           reportedOutcome: renderShellOutcome(result),
-          verification: 'verified',
+          evidence,
         }
       }
       const result = await harness.run(goal, {
         onNotification: (notification) => {
           observeBrowserToolNotification(notification, browserToolTrace)
+          const observationCalls = [...browserToolTrace.calls.values()].filter((name) =>
+            /__(?:agent_browser_snapshot|agent_browser_get_(?:text|url|title))$/u.test(name),
+          ).length
+          if (
+            !browserBudgetExceeded &&
+            (browserToolTrace.calls.size > DSH_BROWSER_TOOL_CALL_MAX ||
+              observationCalls > DSH_BROWSER_OBSERVATION_MAX)
+          ) {
+            browserBudgetExceeded = true
+            void harness.close().catch((error) => {
+              mainLog.warn('[DesktopControl] DSH close after browser budget failed', { error })
+            })
+          }
           notificationCount += 1
           if (!notification || typeof notification !== 'object') return
           const envelope = notification as {
@@ -620,12 +650,14 @@ export class DshHarnessAdapter {
           notificationTypes.add(typeof eventType === 'string' ? `${method}:${eventType}` : method)
         },
       })
+      if (browserBudgetExceeded) {
+        throw new DshAdapterError('DSH_ACTION_LIMIT', publicMessage('DSH_ACTION_LIMIT'))
+      }
       if (browserToolTrace.successfulResults.size === 0) {
         mainLog.warn('[DesktopControl] DSH browser workflow produced no successful browser tool', {
           notificationCount,
           browserToolCalls: browserToolTrace.calls.size,
         })
-        throw new DshAdapterError('DSH_PROTOCOL_ERROR', publicMessage('DSH_PROTOCOL_ERROR'))
       }
       mainLog.info('[DesktopControl] DSH task completed', {
         notificationCount,
@@ -639,9 +671,17 @@ export class DshHarnessAdapter {
         runtimeCompleted: true,
         reportedOutcome:
           result.finalResponse.slice(0, DESKTOP_WORKFLOW_REPORTED_OUTCOME_MAX_CHARS) || undefined,
-        verification: 'unverified',
+        evidence: {
+          kind: 'browser',
+          operation: 'workflow',
+          browserToolCalls: browserToolTrace.calls.size,
+          successfulBrowserToolResults: browserToolTrace.successfulResults.size,
+        },
       }
     } catch (error) {
+      if (browserBudgetExceeded) {
+        throw new DshAdapterError('DSH_ACTION_LIMIT', publicMessage('DSH_ACTION_LIMIT'))
+      }
       if (signal.aborted) {
         throw new DshAdapterError('DSH_CANCELLED', publicMessage('DSH_CANCELLED'))
       }
@@ -649,7 +689,13 @@ export class DshHarnessAdapter {
       if (normalized.code === 'DSH_TRANSPORT_CLOSED' || normalized.code === 'DSH_PROTOCOL_ERROR') {
         await this.close()
       }
-      throw normalized
+      if (capability !== 'browser' || normalized.evidence) throw normalized
+      throw new DshAdapterError(normalized.code, normalized.message, normalized.recoverable, {
+        kind: 'browser',
+        operation: 'workflow',
+        browserToolCalls: browserToolTrace.calls.size,
+        successfulBrowserToolResults: browserToolTrace.successfulResults.size,
+      })
     } finally {
       signal.removeEventListener('abort', abort)
       this.running = false

@@ -43,6 +43,15 @@ Architecture and ownership:
   the validated Plugin manifest.
 - Every externally authoritative side effect passes through Action Runtime,
   including side effects requested through Plugins or delegated automation.
+- Do not equate Adapter execution success with verified action success. Action
+  verification belongs to Action Runtime; Adapters return bounded evidence and do
+  not decide semantic success.
+- Full Control may skip confirmation according to Permission Guard policy, but it
+  never bypasses validation, execution tracking, verification, cancellation, or
+  Action logging.
+- Never automatically retry a potentially non-idempotent mutation. Every recovery
+  side effect is a new Action Runtime action and passes through the same validation
+  and permission boundary.
 - External side effects exposed by a Plugin still pass through Action Runtime.
 - Plugin-specific external technologies remain Adapters.
 - Plugin failure must not break Core.
@@ -79,9 +88,17 @@ Architecture and ownership:
   evidence. Browser mutations use typed operations and snapshot-scoped semantic
   targets, always pass through Action Runtime and Permission Guard, invalidate the
   old observation, capture a fresh observation, and report honest verification.
+- Browser use inside a Character turn is a bounded provider-neutral tool loop, not
+  a new Runtime. Character reasoning decides semantically whether web interaction
+  materially helps the current goal; do not add a phrase or keyword browser router.
+- Browser workflow authorization is Main-owned, turn-scoped, expiring, and bounded.
+  It may cover routine browser operations for one goal but never another capability;
+  Main effective risk policy keeps submission, account-change, financial, and
+  destructive operations behind explicit confirmation even in Full Control.
 - DSH owns complex browser planning only. Deterministic open, observe, URL/title,
-  semantic click, and known-tab switching remain usable without a configured DSH
-  model and operate in the same Plugin-owned session.
+  semantic click, fill, select, scroll, history navigation, tab inspection, and
+  known-tab switching remain usable without a configured DSH model and operate in
+  the same Plugin-owned session.
 - Project evidence shown to users must originate from the exact Project Context
   Packet used for that turn. LLM-generated citations are never authoritative
   provenance.
@@ -99,6 +116,10 @@ Architecture and ownership:
   string is added in both Russian and English.
 - Preserve the existing HTTP contract with `apps/api` unless the task
   explicitly changes it.
+- The Desktop Speech API endpoint is immutable Main-owned environment configuration:
+  `SHIO_SPEECH_API_URL`, defaulting to `http://127.0.0.1:8000`. Renderer-editable
+  settings may not persist, mutate, or send an arbitrary endpoint; changing the
+  environment requires restarting Desktop.
 
 Desktop UI and UX:
 

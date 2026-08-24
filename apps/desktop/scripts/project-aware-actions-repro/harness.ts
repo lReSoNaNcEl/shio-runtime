@@ -33,7 +33,7 @@ function packet(snapshotSha: string, content: string): ProjectContextPacket {
     snapshotSha,
     repository: 'owner/project',
     branch: 'main',
-    freshness: 'fresh',
+    freshness: 'current',
     evidence: [
       {
         path: 'package.json',

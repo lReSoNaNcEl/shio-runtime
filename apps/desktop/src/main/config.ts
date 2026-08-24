@@ -6,7 +6,6 @@ import { app } from 'electron'
 import type { DesktopAuthorityMode } from '../shared/actions'
 import {
   type AppSettings,
-  DEFAULT_SPEECH_URL,
   DESKTOP_CONFIG_SCHEMA_VERSION,
   migrateLegacyDesktopSettings,
   normalizeUiTheme,
@@ -38,7 +37,6 @@ export interface AppConfig {
   uiLocale: UiLocale
   uiTheme: UiTheme
   desktopAuthorityMode: DesktopAuthorityMode
-  pythonSpeechUrl: string
   ttsLanguage: string
   ttsEngine: string
   vrmPath: string
@@ -68,7 +66,6 @@ type StringConfigKey = Exclude<
 
 function stringDefaults(isPackaged = app.isPackaged): Record<StringConfigKey, string> {
   return {
-    pythonSpeechUrl: process.env.PYTHON_SPEECH_URL ?? DEFAULT_SPEECH_URL,
     ttsLanguage: process.env.TTS_LANGUAGE ?? 'ru',
     ttsEngine: process.env.TTS_ENGINE ?? 'f5',
     vrmPath: '',
@@ -171,6 +168,7 @@ export async function loadConfig(llmCredentialStore: LlmCredentialStore): Promis
         rawSaved.continuousListeningEnabled !== undefined ||
         rawSaved.passiveCompanionEnabled !== undefined ||
         rawSaved.ttsVoice !== undefined ||
+        rawSaved.pythonSpeechUrl !== undefined ||
         rawSaved.overlayViewMode === 'front' ||
         (rawSaved.uiTheme !== 'dark' && rawSaved.uiTheme !== 'light') ||
         rawSaved.setup === undefined ||

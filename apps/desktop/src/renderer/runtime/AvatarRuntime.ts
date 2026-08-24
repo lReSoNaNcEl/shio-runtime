@@ -36,6 +36,7 @@ import type {
   EarBehaviorDebugState,
   EarImpulse,
 } from '../avatar/embodiment/secondary-motion/EarBehaviorRuntime'
+import type { TailBehaviorDebugState } from '../avatar/embodiment/secondary-motion/TailBehaviorRuntime'
 import type { LipSyncStartRequest, MouthWeights } from '../avatar/embodiment/speech/LipSync'
 import type {
   VrmBodyActionDebugState,
@@ -77,6 +78,7 @@ export interface AvatarRuntimeDebugState {
   lookAt: LookAtDebugState
   headMotion: HeadMotionDebugState
   earBehavior: EarBehaviorDebugState
+  tailBehavior: TailBehaviorDebugState
   performance: VrmPerformanceDebugState
   playbackRequests: AvatarPlaybackRequestDebugState
   behaviorTimeline: AvatarBehaviorTransitionLogEntry[]
@@ -160,6 +162,7 @@ export class AvatarRuntime {
   }
 
   dispose(): void {
+    this.controller.dispose()
     this.health.markDisposed()
   }
 

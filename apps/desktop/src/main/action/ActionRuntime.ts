@@ -11,7 +11,16 @@ import type {
 import type { RuntimeEventInput } from '../../shared/runtime'
 import { ActionError } from './ActionError'
 import type { ActionPermissionGuard } from './ActionPermissionGuard'
+import { getActionCompletionStatus } from './actionResultStatus'
 import type { ActionRequest, ActionResult, NormalizedActionError, ToolDefinition } from './types'
+import {
+  type ActionExecutionResult,
+  ActionVerificationCancelledError,
+  ActionVerificationCoordinator,
+  type ActionVerificationResult,
+  NO_VERIFICATION_POLICY,
+  type ToolVerificationPolicy,
+} from './verification'
 
 export type ActionRuntimeEventListener = (event: RuntimeEventInput) => void
 
@@ -19,17 +28,26 @@ interface ActionRuntimeOptions {
   permissionGuard: ActionPermissionGuard
   authorityMode: () => DesktopAuthorityMode
   cancelPendingConfirmations: () => void
+  cancelConfirmation?: (actionId: string) => void
   onEvent?: ActionRuntimeEventListener
   onChanged?: (snapshot: ActionRuntimeSnapshot) => void
 }
 
 interface ActiveAction {
   tool: string
+  phase: 'executing' | 'verifying' | 'recovering'
   controller: AbortController
   cancel: () => void
 }
 
+interface InternalExecutionOptions {
+  recoveryDepth: number
+  recoveryOf?: string
+  parentSignal?: AbortSignal
+}
+
 const MAX_ACTION_LOG_ENTRIES = 50
+const MAX_CORRECTIVE_ACTIONS = 1
 
 export class ActionRuntime {
   private readonly tools = new Map<string, ToolDefinition<unknown, unknown>>()
@@ -37,12 +55,19 @@ export class ActionRuntime {
   private readonly emergencyStopHandlers = new Set<() => Promise<void> | void>()
   private readonly recentActions: ActionLogEntry[] = []
   private readonly cancelledActionIds = new Set<string>()
+  private readonly verification = new ActionVerificationCoordinator()
   private pendingConfirmation: ActionConfirmationRequest | null = null
 
   constructor(private readonly options: ActionRuntimeOptions) {}
 
   register<TPayload, TResult>(tool: ToolDefinition<TPayload, TResult>): void {
     this.tools.set(tool.name, tool as ToolDefinition<unknown, unknown>)
+  }
+
+  registerVerifier(
+    verifier: Parameters<ActionVerificationCoordinator['registerVerifier']>[0],
+  ): void {
+    this.verification.registerVerifier(verifier)
   }
 
   listTools(): string[] {
@@ -55,6 +80,7 @@ export class ActionRuntime {
   }
 
   snapshot(): ActionRuntimeSnapshot {
+    const firstActive = this.active.entries().next().value as [string, ActiveAction] | undefined
     return {
       schemaVersion: 1,
       authorityMode: this.options.authorityMode(),
@@ -65,7 +91,8 @@ export class ActionRuntime {
           }
         : null,
       pendingAuthorityChange: null,
-      activeActionId: this.active.keys().next().value ?? null,
+      activeActionId: firstActive?.[0] ?? null,
+      activeActionPhase: firstActive?.[1].phase ?? null,
       recentActions: this.recentActions.map((entry) => ({
         ...entry,
         lifecycle: [...entry.lifecycle],
@@ -77,8 +104,25 @@ export class ActionRuntime {
     this.publishSnapshot()
   }
 
-  async execute<TPayload, TResult>(
+  execute<TPayload, TResult>(request: ActionRequest<TPayload>): Promise<ActionResult<TResult>> {
+    return this.executeInternal(request, { recoveryDepth: 0 })
+  }
+
+  async emergencyStop(): Promise<void> {
+    if (this.pendingConfirmation) this.cancelledActionIds.add(this.pendingConfirmation.actionId)
+    for (const [actionId, active] of this.active) {
+      this.cancelledActionIds.add(actionId)
+      active.controller.abort()
+      active.cancel()
+    }
+    this.options.cancelPendingConfirmations()
+    await Promise.allSettled([...this.emergencyStopHandlers].map((handler) => handler()))
+    this.publishSnapshot()
+  }
+
+  private async executeInternal<TPayload, TResult>(
     request: ActionRequest<TPayload>,
+    internal: InternalExecutionOptions,
   ): Promise<ActionResult<TResult>> {
     const actionId = `action-${Date.now()}-${randomUUID()}`
     const log: ActionLogEntry = {
@@ -115,11 +159,7 @@ export class ActionRuntime {
       })
     }
 
-    if (
-      tool.singleFlight &&
-      ([...this.active.values()].some((active) => active.tool === request.name) ||
-        this.pendingConfirmation?.tool === request.name)
-    ) {
+    if (tool.singleFlight && this.hasConflictingAction(request.name, internal.recoveryOf)) {
       return this.fail<TResult>(log, {
         outcome: 'failure',
         code: 'ACTION_ALREADY_RUNNING',
@@ -129,16 +169,40 @@ export class ActionRuntime {
     }
 
     let authorization: ActionAuthorization
+    let detachAuthorizationAbort: (() => void) | undefined
     try {
-      const confirmation = tool.confirmation?.(actionId, payload)
-      if (confirmation) {
-        this.pendingConfirmation = confirmation
-        this.publishSnapshot()
-      }
-      authorization = await this.options.permissionGuard.authorize(
+      const confirmation = tool.confirmation?.(actionId, payload, request as ActionRequest<unknown>)
+      const authorizationTask = this.options.permissionGuard.authorize(
         tool.authority ?? 'implicit',
         confirmation,
+        request.authorizationScopeId,
+        (pending) => {
+          this.pendingConfirmation = pending
+          this.publishSnapshot()
+        },
       )
+      const authorizationAbort = request.signal
+        ? new Promise<never>((_resolve, reject) => {
+            const abort = (): void => {
+              this.options.cancelConfirmation?.(actionId)
+              reject(
+                new ActionError(
+                  'ACTION_CANCELLED',
+                  'Action cancelled before authorization',
+                  'cancelled',
+                  true,
+                ),
+              )
+            }
+            request.signal?.addEventListener('abort', abort, { once: true })
+            detachAuthorizationAbort = () => request.signal?.removeEventListener('abort', abort)
+            if (request.signal?.aborted) abort()
+          })
+        : null
+      authorization = authorizationAbort
+        ? await Promise.race([authorizationTask, authorizationAbort])
+        : await authorizationTask
+      detachAuthorizationAbort?.()
       this.pendingConfirmation = null
       this.advance(log, 'authorized')
       log.authorization = authorization
@@ -148,14 +212,10 @@ export class ActionRuntime {
         authorization,
       })
     } catch (error) {
+      detachAuthorizationAbort?.()
       this.pendingConfirmation = null
       const normalized = this.cancelledActionIds.has(actionId)
-        ? {
-            outcome: 'cancelled' as const,
-            code: 'ACTION_CANCELLED',
-            message: 'Action cancelled by Emergency Stop',
-            recoverable: true,
-          }
+        ? cancelledError()
         : this.normalizeError(error)
       this.cancelledActionIds.delete(actionId)
       return this.fail<TResult>(log, normalized)
@@ -166,79 +226,300 @@ export class ActionRuntime {
     const cancellation = new Promise<never>((_resolve, reject) => {
       cancelExecution = reject
     })
-    this.active.set(actionId, {
-      tool: request.name,
-      controller,
-      cancel: () =>
-        cancelExecution(
-          new ActionError(
-            'ACTION_CANCELLED',
-            'Action cancelled by Emergency Stop',
-            'cancelled',
-            true,
-          ),
+    const cancel = (): void =>
+      cancelExecution(
+        new ActionError(
+          'ACTION_CANCELLED',
+          'Action cancelled by Emergency Stop',
+          'cancelled',
+          true,
         ),
-    })
-    this.advance(log, 'executed')
+      )
+    const abortFromParent = (): void => {
+      controller.abort(internal.parentSignal?.reason)
+      cancel()
+    }
+    const abortFromRequest = (): void => {
+      controller.abort(request.signal?.reason)
+      cancel()
+    }
+    if (internal.parentSignal?.aborted) abortFromParent()
+    else internal.parentSignal?.addEventListener('abort', abortFromParent, { once: true })
+    if (request.signal?.aborted) abortFromRequest()
+    else request.signal?.addEventListener('abort', abortFromRequest, { once: true })
+    const detachExecutionAbort = (): void => {
+      internal.parentSignal?.removeEventListener('abort', abortFromParent)
+      request.signal?.removeEventListener('abort', abortFromRequest)
+    }
+    this.active.set(actionId, { tool: request.name, phase: 'executing', controller, cancel })
     log.adapter = tool.adapter
+    this.publishSnapshot()
     this.publishActionEvent('ToolStarted', request.name, {
       actionId,
-      lifecycle: 'executed',
+      lifecycle: 'authorized',
+      phase: 'executing',
       authorization,
       ...(tool.adapter ? { adapter: tool.adapter } : {}),
     })
 
-    let timeout: ReturnType<typeof setTimeout> | null = null
+    const execution = await this.executeTool<TResult>(
+      tool,
+      payload,
+      actionId,
+      controller,
+      cancellation,
+    )
+    this.advance(log, 'executed')
+    log.executionStatus = execution.status
+
+    if (execution.status === 'timeout') {
+      this.active.delete(actionId)
+      detachExecutionAbort()
+      this.cancelledActionIds.delete(actionId)
+      return this.finishExecutionTerminal(log, request.name, authorization, execution)
+    }
+    if (controller.signal.aborted || execution.status === 'cancelled') {
+      this.active.delete(actionId)
+      detachExecutionAbort()
+      this.cancelledActionIds.delete(actionId)
+      return this.finishCancelled(log, request.name, authorization, execution)
+    }
+
+    const policy = this.resolveVerificationPolicy(tool, payload)
+    const active = this.active.get(actionId)
+    if (active) active.phase = 'verifying'
+    this.advance(log, 'verification-started')
+
+    let verification: ActionVerificationResult
+    try {
+      verification = await Promise.race([
+        this.verification.verify(
+          {
+            actionId,
+            tool: request.name,
+            payload,
+            execution,
+            signal: controller.signal,
+          },
+          policy,
+        ),
+        cancellation,
+      ])
+    } catch (error) {
+      if (
+        controller.signal.aborted ||
+        error instanceof ActionVerificationCancelledError ||
+        this.cancelledActionIds.has(actionId)
+      ) {
+        this.active.delete(actionId)
+        detachExecutionAbort()
+        this.cancelledActionIds.delete(actionId)
+        return this.finishCancelled(log, request.name, authorization, execution)
+      }
+      verification = {
+        status: 'failed',
+        evidence: [],
+        reasonCode: 'verifier-error',
+        summary: 'Verification failed before a trustworthy verdict was produced.',
+        observedAt: Date.now(),
+        durationMs: 0,
+      }
+    }
+    this.advance(log, 'verification-completed')
+    log.verificationStatus = verification.status
+    log.verificationDurationMs = verification.durationMs
+
+    let result = this.buildResult<TResult>(
+      actionId,
+      request.name,
+      authorization,
+      execution,
+      verification,
+    )
+    const recoveryRequest =
+      internal.recoveryDepth < MAX_CORRECTIVE_ACTIONS &&
+      authorization === 'full' &&
+      policy.retrySafety === 'safe' &&
+      verification.status !== 'verified' &&
+      verification.status !== 'not-required' &&
+      tool.recover
+        ? tool.recover(payload, verification)
+        : undefined
+    if (recoveryRequest && !controller.signal.aborted) {
+      log.recoveryAttempted = true
+      const recovering = this.active.get(actionId)
+      if (recovering) recovering.phase = 'recovering'
+      this.publishSnapshot()
+      const recovered = await this.executeInternal<unknown, TResult>(recoveryRequest, {
+        recoveryDepth: internal.recoveryDepth + 1,
+        recoveryOf: actionId,
+        parentSignal: controller.signal,
+      })
+      if (controller.signal.aborted || recovered.status === 'cancelled') {
+        this.active.delete(actionId)
+        detachExecutionAbort()
+        this.cancelledActionIds.delete(actionId)
+        return this.finishCancelled(log, request.name, authorization, execution)
+      }
+      result = {
+        ...(recovered.status === 'success' ? recovered : result),
+        actionId,
+        action: request.name,
+        authorization,
+        recovery: {
+          attempted: true,
+          actionId: recovered.actionId,
+          status: recovered.status,
+        },
+      }
+    }
+
+    this.active.delete(actionId)
+    detachExecutionAbort()
+    this.cancelledActionIds.delete(actionId)
+    this.complete(log, result.status, result.errorCode)
+    this.publishTerminalEvent(request.name, result)
+    return result
+  }
+
+  private async executeTool<TResult>(
+    tool: ToolDefinition<unknown, unknown>,
+    payload: unknown,
+    actionId: string,
+    controller: AbortController,
+    cancellation: Promise<never>,
+  ): Promise<ActionExecutionResult<TResult>> {
+    const startedAt = Date.now()
+    let timeout: ReturnType<typeof setTimeout> | undefined
     const timeoutPromise = new Promise<never>((_resolve, reject) => {
       timeout = setTimeout(() => {
         controller.abort()
         reject(new ActionError('ACTION_TIMEOUT', 'Action execution timed out', 'timeout', true))
       }, tool.timeoutMs ?? 60_000)
     })
-
     try {
-      const execution = Promise.resolve(
-        tool.execute(payload, { actionId, signal: controller.signal }),
-      )
-      const result = (await Promise.race([execution, cancellation, timeoutPromise])) as TResult
-      this.active.delete(actionId)
-      if (timeout) clearTimeout(timeout)
-      this.complete(log, 'success')
-      this.publishActionEvent('ToolCompleted', request.name, {
-        actionId,
-        lifecycle: 'completed',
-        outcome: 'success',
-        authorization,
-      })
+      const output = (await Promise.race([
+        Promise.resolve(tool.execute(payload, { actionId, signal: controller.signal })),
+        cancellation,
+        timeoutPromise,
+      ])) as TResult
+      const completedAt = Date.now()
       return {
-        actionId,
         status: 'success',
-        action: request.name,
-        authorization,
-        result,
+        startedAt,
+        completedAt,
+        durationMs: completedAt - startedAt,
+        output,
       }
     } catch (error) {
-      this.active.delete(actionId)
+      const normalized = this.cancelledActionIds.has(actionId)
+        ? cancelledError()
+        : this.normalizeError(error)
+      const completedAt = Date.now()
+      return {
+        status: executionStatus(normalized.outcome),
+        startedAt,
+        completedAt,
+        durationMs: completedAt - startedAt,
+        evidence: normalized.evidence,
+        errorCode: normalized.code,
+        error: normalized.message,
+      }
+    } finally {
       if (timeout) clearTimeout(timeout)
-      this.cancelledActionIds.delete(actionId)
-      return this.fail<TResult>(log, this.normalizeError(error), authorization)
     }
   }
 
-  async emergencyStop(): Promise<void> {
-    if (this.pendingConfirmation) this.cancelledActionIds.add(this.pendingConfirmation.actionId)
-    for (const [actionId, active] of this.active) {
-      this.cancelledActionIds.add(actionId)
-      active.controller.abort()
-      active.cancel()
+  private buildResult<TResult>(
+    actionId: string,
+    action: string,
+    authorization: ActionAuthorization,
+    execution: ActionExecutionResult<TResult>,
+    verification: ActionVerificationResult,
+  ): ActionResult<TResult> {
+    const candidate: ActionResult<TResult> = {
+      actionId,
+      status: 'failure',
+      action,
+      authorization,
+      ...(execution.output !== undefined ? { result: execution.output } : {}),
+      execution,
+      verification,
+      recoverable: verification.status === 'unverified',
     }
-    this.options.cancelPendingConfirmations()
-    await Promise.allSettled([...this.emergencyStopHandlers].map((handler) => handler()))
-    this.publishSnapshot()
+    const status = getActionCompletionStatus(candidate)
+    return {
+      ...candidate,
+      status,
+      ...(status === 'success'
+        ? {}
+        : {
+            errorCode: execution.errorCode ?? verification.reasonCode,
+            error: execution.error ?? verification.summary,
+          }),
+    }
+  }
+
+  private finishCancelled<TResult>(
+    log: ActionLogEntry,
+    action: string,
+    authorization: ActionAuthorization,
+    execution: ActionExecutionResult<TResult>,
+  ): ActionResult<TResult> {
+    const result: ActionResult<TResult> = {
+      actionId: log.actionId,
+      status: 'cancelled',
+      action,
+      authorization,
+      execution: { ...execution, status: 'cancelled' },
+      error: 'Action cancelled by Emergency Stop',
+      errorCode: 'ACTION_CANCELLED',
+      recoverable: true,
+    }
+    this.complete(log, 'cancelled', result.errorCode)
+    this.publishTerminalEvent(action, result)
+    return result
+  }
+
+  private finishExecutionTerminal<TResult>(
+    log: ActionLogEntry,
+    action: string,
+    authorization: ActionAuthorization,
+    execution: ActionExecutionResult<TResult>,
+  ): ActionResult<TResult> {
+    const status = execution.status === 'timeout' ? 'timeout' : 'failure'
+    const result: ActionResult<TResult> = {
+      actionId: log.actionId,
+      status,
+      action,
+      authorization,
+      execution,
+      error: execution.error,
+      errorCode: execution.errorCode,
+      recoverable: true,
+    }
+    this.complete(log, status, result.errorCode)
+    this.publishTerminalEvent(action, result)
+    return result
+  }
+
+  private hasConflictingAction(tool: string, recoveryOf?: string): boolean {
+    const activeConflict = [...this.active.entries()].some(
+      ([actionId, active]) => active.tool === tool && actionId !== recoveryOf,
+    )
+    return activeConflict || this.pendingConfirmation?.tool === tool
+  }
+
+  private resolveVerificationPolicy(
+    tool: ToolDefinition<unknown, unknown>,
+    payload: unknown,
+  ): ToolVerificationPolicy {
+    if (!tool.verification) return NO_VERIFICATION_POLICY
+    return typeof tool.verification === 'function' ? tool.verification(payload) : tool.verification
   }
 
   private advance(log: ActionLogEntry, stage: ActionLogEntry['lifecycle'][number]): void {
-    log.lifecycle.push(stage)
+    if (!log.lifecycle.includes(stage)) log.lifecycle.push(stage)
     this.publishSnapshot()
   }
 
@@ -258,22 +539,7 @@ export class ActionRuntime {
   ): ActionResult<TResult> {
     if (authorization) log.authorization = authorization
     this.complete(log, error.outcome, error.code)
-    const eventType: RuntimeEventInput['type'] =
-      error.outcome === 'permission-denied'
-        ? 'PermissionDenied'
-        : error.outcome === 'cancelled'
-          ? 'ToolCancelled'
-          : error.outcome === 'timeout'
-            ? 'ToolTimedOut'
-            : 'ToolFailed'
-    this.publishActionEvent(eventType, log.tool, {
-      actionId: log.actionId,
-      lifecycle: 'completed',
-      outcome: error.outcome,
-      errorCode: error.code,
-      ...(authorization ? { authorization } : {}),
-    })
-    return {
+    const result: ActionResult<TResult> = {
       actionId: log.actionId,
       status: error.outcome,
       action: log.tool,
@@ -283,6 +549,31 @@ export class ActionRuntime {
       recoverable: error.recoverable,
       providerId: error.providerId,
     }
+    this.publishTerminalEvent(log.tool, result)
+    return result
+  }
+
+  private publishTerminalEvent(action: string, result: ActionResult): void {
+    const eventType: RuntimeEventInput['type'] =
+      result.status === 'success'
+        ? 'ToolCompleted'
+        : result.status === 'permission-denied'
+          ? 'PermissionDenied'
+          : result.status === 'cancelled'
+            ? 'ToolCancelled'
+            : result.status === 'timeout'
+              ? 'ToolTimedOut'
+              : 'ToolFailed'
+    this.publishActionEvent(eventType, action, {
+      actionId: result.actionId,
+      lifecycle: 'completed',
+      outcome: result.status,
+      ...(result.authorization ? { authorization: result.authorization } : {}),
+      ...(result.execution ? { executionStatus: result.execution.status } : {}),
+      ...(result.verification ? { verificationStatus: result.verification.status } : {}),
+      ...(result.recovery?.attempted ? { recoveryAttempted: 'true' } : {}),
+      ...(result.errorCode ? { errorCode: result.errorCode } : {}),
+    })
   }
 
   private normalizeError(error: unknown): NormalizedActionError {
@@ -293,6 +584,7 @@ export class ActionRuntime {
         message: error.message,
         recoverable: error.recoverable,
         providerId: error.providerId,
+        evidence: error.evidence,
       }
     }
     if (
@@ -305,6 +597,7 @@ export class ActionRuntime {
         recoverable?: boolean
         providerId?: string
         technicalMessage?: string
+        evidence?: unknown
       }
       return {
         outcome: 'failure',
@@ -312,6 +605,7 @@ export class ActionRuntime {
         message: normalized.technicalMessage ?? 'Action execution failed',
         recoverable: normalized.recoverable,
         providerId: normalized.providerId,
+        evidence: normalized.evidence,
       }
     }
     return {
@@ -323,8 +617,9 @@ export class ActionRuntime {
 
   private record(log: ActionLogEntry): void {
     this.recentActions.unshift(log)
-    if (this.recentActions.length > MAX_ACTION_LOG_ENTRIES)
+    if (this.recentActions.length > MAX_ACTION_LOG_ENTRIES) {
       this.recentActions.length = MAX_ACTION_LOG_ENTRIES
+    }
     this.publishSnapshot()
   }
 
@@ -345,4 +640,19 @@ export class ActionRuntime {
       metadata: { action, ...metadata },
     })
   }
+}
+
+function cancelledError(): NormalizedActionError {
+  return {
+    outcome: 'cancelled',
+    code: 'ACTION_CANCELLED',
+    message: 'Action cancelled by Emergency Stop',
+    recoverable: true,
+  }
+}
+
+function executionStatus(outcome: Exclude<ActionOutcome, 'success'>) {
+  if (outcome === 'timeout') return 'timeout' as const
+  if (outcome === 'cancelled') return 'cancelled' as const
+  return 'failure' as const
 }

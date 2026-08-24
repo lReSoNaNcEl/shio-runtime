@@ -48,9 +48,8 @@ async function verifySysteminfoWorkflow(
       'systeminfo',
     )
     assert.equal(systeminfoResult.runtimeCompleted, true)
-    assert.equal(systeminfoResult.verification, 'verified')
-    assert.match(systeminfoResult.reportedOutcome ?? '', /PowerShell exit code: 0/)
-    assert.match(systeminfoResult.reportedOutcome ?? '', /stdout:/)
+    assert.equal(systeminfoResult.evidence.kind, 'shell')
+    assert.equal(systeminfoResult.evidence.exitCode, 0)
     assert(
       (systeminfoResult.reportedOutcome?.length ?? 0) > 1_000,
       'The shell result lost most of systeminfo stdout',
@@ -255,7 +254,8 @@ async function main(): Promise<void> {
       'systeminfo',
     )
     assert.equal(fresh.runtimeCompleted, true)
-    assert.equal(fresh.verification, 'verified')
+    assert.equal(fresh.evidence.kind, 'shell')
+    assert.equal(fresh.evidence.exitCode, 0)
     assert.equal(harnessCreations, 2)
     await cancellable.close()
 
@@ -319,10 +319,13 @@ async function main(): Promise<void> {
         close: async () => undefined,
       }),
     })
-    await expectAdapterError(
-      () => textOnlyBrowser.execute('open the page', new AbortController().signal, 'browser'),
-      'DSH_PROTOCOL_ERROR',
+    const textOnlyResult = await textOnlyBrowser.execute(
+      'open the page',
+      new AbortController().signal,
+      'browser',
     )
+    assert.equal(textOnlyResult.evidence.kind, 'browser')
+    assert.equal(textOnlyResult.evidence.successfulBrowserToolResults, 0)
     await textOnlyBrowser.close()
 
     const toolBackedBrowser = new DshHarnessAdapter({
@@ -370,8 +373,44 @@ async function main(): Promise<void> {
       'browser',
     )
     assert.equal(browserResult.runtimeCompleted, true)
-    assert.equal(browserResult.verification, 'unverified')
+    assert.equal(browserResult.evidence.kind, 'browser')
+    assert.equal(browserResult.evidence.successfulBrowserToolResults, 1)
     await toolBackedBrowser.close()
+
+    let budgetCloseCount = 0
+    const boundedBrowser = new DshHarnessAdapter({
+      resources: () => ({ ...realResources, browser: undefined }),
+      model: () => model,
+      createHarness: async () => ({
+        start: async () => undefined,
+        run: async (_input, options) => {
+          for (let index = 0; index < 21; index += 1) {
+            options?.onNotification?.({
+              method: 'session.event',
+              params: {
+                event: {
+                  type: 'tool/call',
+                  data: {
+                    callId: `bounded-call-${index}`,
+                    name: 'mcp__agent-browser__agent_browser_click',
+                  },
+                },
+              },
+            })
+          }
+          return { finalResponse: 'never trusted', notifications: [] }
+        },
+        close: async () => {
+          budgetCloseCount += 1
+        },
+      }),
+    })
+    await expectAdapterError(
+      () => boundedBrowser.execute('loop forever', new AbortController().signal, 'browser'),
+      'DSH_ACTION_LIMIT',
+    )
+    assert.equal(budgetCloseCount, 1)
+    await boundedBrowser.close()
 
     const localPage = createServer((_request, response) => {
       response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
@@ -393,9 +432,8 @@ async function main(): Promise<void> {
     })
     try {
       const directResult = await directBrowser.open(localUrl, new AbortController().signal)
-      assert.equal(directResult.execution.status, 'success')
-      assert.equal(directResult.execution.verification, 'verified')
-      assert.match(directResult.execution.resultingUrl ?? '', /http:\/\/127\.0\.0\.1:/)
+      assert.equal(directResult.evidence.operation, 'open')
+      assert.match(directResult.evidence.after?.url ?? '', /http:\/\/127\.0\.0\.1:/)
       assert.match(directResult.observation?.content ?? '', /ready/)
     } finally {
       await directBrowser.close()

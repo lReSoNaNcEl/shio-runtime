@@ -32,7 +32,6 @@ export const configSaveSchema = z
     llm: boundedObject.optional(),
     uiLocale: z.enum(['ru', 'en']).optional(),
     uiTheme: z.enum(['dark', 'light']).optional(),
-    pythonSpeechUrl: z.string().url().max(2_048).optional(),
     ttsLanguage: z.string().min(1).max(20).optional(),
     ttsEngine: z.string().min(1).max(100).optional(),
     micDeviceId: z.string().max(1_000).optional(),

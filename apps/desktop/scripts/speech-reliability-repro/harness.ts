@@ -83,11 +83,12 @@ async function expectCancelled(operation: Promise<unknown>): Promise<void> {
 async function main(): Promise<void> {
   const oldServer = await startSpeechServer(true)
   const newServer = await startSpeechServer(false)
-  const manager = new SpeechClientManager(oldServer.url)
+  const cancellingManager = new SpeechClientManager(oldServer.url)
+  let fixedManager: SpeechClientManager | null = null
 
   try {
     const turnAbort = new AbortController()
-    const cancelledByTurn = manager.synthesize(
+    const cancelledByTurn = cancellingManager.synthesize(
       { text: 'long turn cancellation request' },
       turnAbort.signal,
     )
@@ -95,29 +96,21 @@ async function main(): Promise<void> {
     turnAbort.abort()
     await Promise.all([expectCancelled(cancelledByTurn), oldServer.waitForSynthesisClosed(1)])
 
-    const cancelledByReconfigure = manager.synthesize({
-      text: 'long endpoint replacement request',
-    })
-    await oldServer.waitForSynthesisStarted(2)
-    assert.equal(manager.reconfigure(`${newServer.url}/`), true)
-    await Promise.all([
-      expectCancelled(cancelledByReconfigure),
-      oldServer.waitForSynthesisClosed(2),
-    ])
-    assert.equal(manager.reconfigure(newServer.url), false)
-
-    const health = await manager.health()
+    fixedManager = new SpeechClientManager(`${newServer.url}/`)
+    assert.equal(fixedManager.getEndpoint(), newServer.url)
+    const health = await fixedManager.health()
     assert.equal(health.status, 'ok')
-    const recognized = await manager.transcribe(new ArrayBuffer(44))
+    const recognized = await fixedManager.transcribe(new ArrayBuffer(44))
     assert.equal(recognized.text, 'recognized by current endpoint')
-    const synthesized = await manager.synthesize({ text: 'new endpoint request' })
+    const synthesized = await fixedManager.synthesize({ text: 'fixed endpoint request' })
     assert.equal(synthesized.audioBuffer.byteLength, 44)
 
-    assert.deepEqual(oldServer.requests, { health: 0, recognize: 0, synthesize: 2 })
+    assert.deepEqual(oldServer.requests, { health: 0, recognize: 0, synthesize: 1 })
     assert.deepEqual(newServer.requests, { health: 1, recognize: 1, synthesize: 1 })
     console.log('speech reliability repro: passed')
   } finally {
-    manager.dispose()
+    cancellingManager.dispose()
+    fixedManager?.dispose()
     await Promise.all([oldServer.close(), newServer.close()])
   }
 }

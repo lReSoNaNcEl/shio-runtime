@@ -3,13 +3,7 @@ import { readFileSync } from 'node:fs'
 import { type BrowserWindow, dialog, ipcMain } from 'electron'
 import { z } from 'zod'
 
-import {
-  actionConfirmationRequestSchema,
-  actionRuntimeSnapshotSchema,
-  type DesktopWorkflowExecution,
-  type DesktopWorkflowRequest,
-  desktopWorkflowRequestSchema,
-} from '../../shared/actions'
+import { actionConfirmationRequestSchema, actionRuntimeSnapshotSchema } from '../../shared/actions'
 import type { AppSettings } from '../../shared/config'
 import {
   type AttachmentDisposition,
@@ -19,11 +13,25 @@ import type { LlmTurnErrorCode } from '../../shared/llm'
 import { translate } from '../../shared/localization'
 import type { RuntimeEventInput } from '../../shared/runtime'
 import type { ScreenContextErrorCode } from '../../shared/screen-context'
-import { ActionConfirmationBroker, ActionPermissionGuard, ActionRuntime } from '../action'
+import {
+  ActionConfirmationBroker,
+  ActionPermissionGuard,
+  ActionRuntime,
+  BrowserActiveTabVerifier,
+  BrowserInteractionVerifier,
+  BrowserNavigationVerifier,
+  desktopWorkflowVerificationPolicy,
+  ShellExecutionVerifier,
+  safeDesktopWorkflowRecovery,
+} from '../action'
 import { vrmAssetRegistry } from '../assets/VrmAssetRegistry'
 import type { CapabilityCatalog } from '../capabilities'
 import { getConfig, getRendererConfig, saveConfig } from '../config'
-import type { DesktopControlPlugin } from '../desktop-control'
+import type { DesktopControlPlugin, DesktopWorkflowAdapterResult } from '../desktop-control'
+import type {
+  BrowserWorkflowScopeRegistry,
+  EffectiveDesktopWorkflowRequest,
+} from '../desktop-control/browser-agent'
 import {
   createLLMProvider,
   createModelCatalog,
@@ -78,6 +86,7 @@ export function registerIpcHandlers(
   speech: () => SpeechClientManager,
   screenContext: ScreenContextService,
   capabilityCatalog: CapabilityCatalog,
+  browserWorkflowScopes: BrowserWorkflowScopeRegistry,
   win: BrowserWindow,
   authorization: IpcAuthorization,
 ): ActionRuntime {
@@ -101,11 +110,19 @@ export function registerIpcHandlers(
   const permissionGuard = new ActionPermissionGuard({
     authorityMode: () => getConfig().desktopAuthorityMode,
     requestConfirmation: (request) => confirmations.requestAction(request),
+    authorizeScope: (scopeId, confirmation, requestConfirmation) =>
+      browserWorkflowScopes.authorize(scopeId, confirmation, {
+        authorityMode: getConfig().desktopAuthorityMode,
+        requestConfirmation,
+      }),
   })
   const actions = new ActionRuntime({
     permissionGuard,
     authorityMode: () => getConfig().desktopAuthorityMode,
     cancelPendingConfirmations: () => confirmations.cancelAll(),
+    cancelConfirmation: (actionId) => {
+      confirmations.cancelAction(actionId)
+    },
     onEvent: sendActionEvent,
     onChanged: (snapshot) =>
       sendToMainRenderer(
@@ -116,6 +133,13 @@ export function registerIpcHandlers(
         }),
       ),
   })
+  const browserObservationProvider = {
+    observe: (signal: AbortSignal) => desktopControl().observeBrowserForVerification(signal),
+  }
+  actions.registerVerifier(new BrowserNavigationVerifier(browserObservationProvider))
+  actions.registerVerifier(new BrowserInteractionVerifier(browserObservationProvider))
+  actions.registerVerifier(new BrowserActiveTabVerifier())
+  actions.registerVerifier(new ShellExecutionVerifier())
   let backlogArbitrationInFlight = false
   let activeCharacterGenerationTurnId: string | null = null
   let activeSynthesisTurnId: string | null = null
@@ -126,29 +150,35 @@ export function registerIpcHandlers(
   const synthesisSettlements = new Map<string, Promise<void>>()
   const visionTurns = new Set<string>()
 
-  actions.register<DesktopWorkflowRequest, DesktopWorkflowExecution>({
+  actions.register<EffectiveDesktopWorkflowRequest, DesktopWorkflowAdapterResult>({
     name: 'desktop.workflow',
     description: 'Execute a validated, bounded desktop automation workflow.',
-    validate: (payload) => desktopWorkflowRequestSchema.parse(payload),
+    validate: (payload) => desktopControl().validateWorkflowRequest(payload),
     authority: 'desktop-workflow',
-    confirmation: (actionId, payload) =>
+    confirmation: (actionId, payload, request) =>
       actionConfirmationRequestSchema.parse({
         schemaVersion: 1,
         actionId,
         tool: 'desktop.workflow',
-        goal: payload.goal,
+        goal: browserWorkflowScopes.confirmationGoal(request.authorizationScopeId, payload.goal),
         shellCommand: payload.shellCommand,
         browserUrl: payload.browserUrl,
         browserOperation: payload.browserOperation,
+        browserRiskClass: payload.browserRiskClass,
         requestedCapabilities: payload.requestedCapabilities,
         risk: payload.risk,
       }),
     timeoutMs: 120_000,
     singleFlight: true,
     adapter: 'desktop-control',
+    verification: desktopWorkflowVerificationPolicy,
+    recover: (request) => safeDesktopWorkflowRecovery(request),
     execute: (request, context) => desktopControl().executeWorkflow(request, context.signal),
   })
-  actions.onEmergencyStop(() => desktopControl().emergencyStop())
+  actions.onEmergencyStop(() => {
+    browserWorkflowScopes.releaseAll()
+    return desktopControl().emergencyStop()
+  })
 
   actions.register({
     name: 'speech.health',
@@ -285,10 +315,7 @@ export function registerIpcHandlers(
     description: 'Persist application configuration.',
     validate: (payload) => configSaveSchema.parse(payload) as Partial<AppSettings>,
     execute: (partial) => {
-      const previousSpeechUrl = getConfig().pythonSpeechUrl
       saveConfig(partial)
-      const currentSpeechUrl = getConfig().pythonSpeechUrl
-      if (currentSpeechUrl !== previousSpeechUrl) speech().reconfigure(currentSpeechUrl)
       win.webContents.send('config:updated', getRendererConfig())
       return { ok: true }
     },

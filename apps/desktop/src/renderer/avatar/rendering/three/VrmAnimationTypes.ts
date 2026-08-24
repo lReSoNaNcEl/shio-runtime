@@ -1,3 +1,5 @@
+import type { AvatarBodyMotionLayer } from '../../embodiment/motion/AvatarMotionLayer'
+
 export type VrmRootMotionPolicy = 'allow' | 'lockY' | 'lockXZ' | 'lockAll'
 
 export interface VrmAnimationLoadContext {
@@ -10,4 +12,5 @@ export interface VrmAnimationLoadContext {
   forceReplay: boolean
   frame?: number
   rootMotionPolicy: VrmRootMotionPolicy
+  motionLayer: AvatarBodyMotionLayer
 }

@@ -2,7 +2,11 @@ import type { ActionRuntimeSnapshot } from '../../../shared/actions'
 
 const DESKTOP_WORKFLOW_TOOL = 'desktop.workflow'
 
-export type DesktopWorkflowActivity = 'awaiting-confirmation' | 'running'
+export type DesktopWorkflowActivity =
+  | 'awaiting-confirmation'
+  | 'executing'
+  | 'verifying'
+  | 'recovering'
 
 export function desktopWorkflowActivity(
   snapshot: ActionRuntimeSnapshot | null,
@@ -12,14 +16,11 @@ export function desktopWorkflowActivity(
     return 'awaiting-confirmation'
   }
 
-  return snapshot.recentActions.some(
+  const active = snapshot.recentActions.find(
     (action) =>
-      action.tool === DESKTOP_WORKFLOW_TOOL &&
-      action.lifecycle.includes('executed') &&
-      !action.lifecycle.includes('completed'),
+      action.actionId === snapshot.activeActionId && action.tool === DESKTOP_WORKFLOW_TOOL,
   )
-    ? 'running'
-    : null
+  return active ? (snapshot.activeActionPhase ?? 'executing') : null
 }
 
 export function isDesktopWorkflowActive(snapshot: ActionRuntimeSnapshot | null): boolean {

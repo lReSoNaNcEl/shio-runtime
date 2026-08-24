@@ -697,7 +697,7 @@ export class Controller {
     const loop = (): void => {
       this.avatarTickRafId = requestAnimationFrame(loop)
       const now = performance.now()
-      const delta = (now - this.avatarTickLastTime) / 1000
+      const delta = Math.min(0.1, Math.max(0, (now - this.avatarTickLastTime) / 1000))
       this.avatarTickLastTime = now
       this.frameCounter += 1
       this.avatarRuntime.update(delta, this.speechRuntime.getCharacterState())
@@ -1017,6 +1017,10 @@ export class Controller {
       if (!isCurrent()) return
       await this.avatarRuntime.loadVrm(scene.scene, res.buffer)
       if (!isCurrent()) return
+      const renderQuality = scene.configureAvatarModelQuality()
+      console.log(
+        `[RENDERDBG] avatar model quality textures=${renderQuality.textureCount} materials=${renderQuality.materialCount} anisotropy=${renderQuality.anisotropy}`,
+      )
       const lookAtRequested = this.state.faceTrackingEnabled
       const ok = this.avatarRuntime.setLookAtTarget(
         lookAtRequested ? scene.getLookAtTarget() : null,

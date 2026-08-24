@@ -99,38 +99,86 @@ const browserUrlSchema = z
   }, 'Browser URL must be an HTTP(S) URL without embedded credentials')
 
 export const browserOperationSchema = z.discriminatedUnion('operation', [
+  z.object({ operation: z.literal('observe') }).strict(),
   z.object({ operation: z.literal('open'), url: browserUrlSchema }).strict(),
   z.object({ operation: z.literal('click'), target: browserTargetSchema }).strict(),
+  z
+    .object({
+      operation: z.literal('fill'),
+      target: browserTargetSchema,
+      value: z.string().max(2_000),
+    })
+    .strict(),
+  z
+    .object({
+      operation: z.literal('select'),
+      target: browserTargetSchema,
+      values: z.array(z.string().trim().min(1).max(500)).min(1).max(20),
+    })
+    .strict(),
+  z
+    .object({
+      operation: z.literal('scroll'),
+      direction: z.enum(['up', 'down', 'left', 'right']),
+      amount: z.number().int().min(1).max(2_000).default(500),
+    })
+    .strict(),
+  z.object({ operation: z.literal('back') }).strict(),
+  z.object({ operation: z.literal('forward') }).strict(),
+  z.object({ operation: z.literal('tabs') }).strict(),
   z
     .object({ operation: z.literal('switch-tab'), tabId: z.string().trim().min(1).max(200) })
     .strict(),
 ])
 export type BrowserOperation = z.infer<typeof browserOperationSchema>
 
+export const BROWSER_SEMANTIC_RISK_CLASSES = [
+  'read',
+  'navigation',
+  'input',
+  'submission',
+  'account-change',
+  'financial',
+  'destructive',
+] as const
+export type BrowserSemanticRiskClass = (typeof BROWSER_SEMANTIC_RISK_CLASSES)[number]
+
 export const browserActionExecutionSchema = z
   .object({
     kind: z.literal('browser'),
-    operation: z.enum(['open', 'click', 'switch-tab']),
+    operation: z.enum([
+      'observe',
+      'open',
+      'click',
+      'fill',
+      'select',
+      'scroll',
+      'back',
+      'forward',
+      'tabs',
+      'switch-tab',
+    ]),
     status: z.enum(['success', 'failed', 'cancelled']),
-    verification: z.enum(['verified', 'unverified']).optional(),
+    verification: z.enum(['not-required', 'verified', 'unverified', 'failed']).optional(),
+    riskClass: z.enum(BROWSER_SEMANTIC_RISK_CLASSES),
     resultingUrl: z.string().url().max(2_048).optional(),
     resultingTitle: z.string().max(1_000).optional(),
     targetName: z.string().max(500).optional(),
+    tabs: z.array(browserTabSchema).max(20).optional(),
   })
   .strict()
 export type BrowserActionExecution = z.infer<typeof browserActionExecutionSchema>
 
-export type BrowserContextRequirement = 'none' | 'current-page'
-
 export interface BrowserContextRequest {
   userText: string
   traceId: string
+  signal?: AbortSignal
 }
 
 /** Read-only, request-scoped access to the current Plugin-owned browser session. */
 export interface BrowserContextProvider {
-  resolveRequirement(request: BrowserContextRequest): BrowserContextRequirement
-  buildContext(request: BrowserContextRequest): Promise<BrowserObservation | null>
+  currentObservation(): BrowserObservation | null
+  observe(request: BrowserContextRequest): Promise<BrowserObservation | null>
 }
 
 export type BrowserContextProviderResolver = () => BrowserContextProvider | undefined

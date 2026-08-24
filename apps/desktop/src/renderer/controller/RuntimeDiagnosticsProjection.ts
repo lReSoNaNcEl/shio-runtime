@@ -98,6 +98,7 @@ export class RuntimeDiagnosticsProjection {
       lookAt: avatar.lookAt,
       headMotion: avatar.headMotion,
       earBehavior: avatar.earBehavior,
+      tailBehavior: avatar.tailBehavior,
       performance: avatar.performance,
       playbackRequests: avatar.playbackRequests,
       speechTimeline: this.dependencies.getSpeechTimeline(),

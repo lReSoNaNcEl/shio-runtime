@@ -27,7 +27,7 @@ function normalizeEndpoint(endpoint: string): string {
 }
 
 export class SpeechClientManager implements SpeechSynthesisClient {
-  private endpoint: string
+  private readonly endpoint: string
   private current: ManagedSpeechClient
   private disposed = false
 
@@ -39,22 +39,13 @@ export class SpeechClientManager implements SpeechSynthesisClient {
     this.current = this.createClient(this.endpoint)
   }
 
+  getEndpoint(): string {
+    return this.endpoint
+  }
+
   getCurrent(): ManagedSpeechClient {
     this.assertActive()
     return this.current
-  }
-
-  reconfigure(endpoint: string): boolean {
-    this.assertActive()
-    const normalized = normalizeEndpoint(endpoint)
-    if (normalized === this.endpoint) return false
-
-    const next = this.createClient(normalized)
-    const previous = this.current
-    this.endpoint = normalized
-    this.current = next
-    previous.dispose()
-    return true
   }
 
   health(signal?: AbortSignal): Promise<Health> {

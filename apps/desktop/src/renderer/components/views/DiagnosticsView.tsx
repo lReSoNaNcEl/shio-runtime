@@ -86,7 +86,15 @@ const SNAPSHOT_GROUPS = {
     'controllers',
     'behaviorTimeline',
   ],
-  embodiment: ['lipsyncWeights', 'facial', 'lookAt', 'headMotion', 'earBehavior', 'performance'],
+  embodiment: [
+    'lipsyncWeights',
+    'facial',
+    'lookAt',
+    'headMotion',
+    'earBehavior',
+    'tailBehavior',
+    'performance',
+  ],
   invariants: ['avatarRuntimeHealth', 'runtimeHealth'],
 } as const
 

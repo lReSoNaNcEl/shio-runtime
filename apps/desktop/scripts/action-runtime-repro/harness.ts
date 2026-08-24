@@ -8,6 +8,10 @@ import {
   ActionRuntime,
 } from '../../src/main/action'
 import {
+  BrowserWorkflowScopeRegistry,
+  type EffectiveDesktopWorkflowRequest,
+} from '../../src/main/desktop-control/browser-agent'
+import {
   desktopWorkflowActivity,
   isDesktopWorkflowActive,
 } from '../../src/renderer/components/actions/actionRuntimePresentation'
@@ -202,7 +206,7 @@ async function main(): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 0))
   assert(runtime.snapshot().activeActionId)
   assert.equal(isDesktopWorkflowActive(runtime.snapshot()), true)
-  assert.equal(desktopWorkflowActivity(runtime.snapshot()), 'running')
+  assert.equal(desktopWorkflowActivity(runtime.snapshot()), 'executing')
   await runtime.emergencyStop()
   assert.equal((await running).status, 'cancelled')
   assert.equal(emergencyCleanupCount, 2)
@@ -258,6 +262,203 @@ async function main(): Promise<void> {
   const timeoutResult = await undefinedTool.execute({ name: 'timeout', payload: undefined })
   assert.equal(timeoutResult.status, 'timeout')
   assert.equal(timeoutResult.errorCode, 'ACTION_TIMEOUT')
+
+  const scopedConfirmations: Parameters<ActionConfirmationBroker['requestAction']>[0][] = []
+  const scopedBroker = new ActionConfirmationBroker(
+    (request) => scopedConfirmations.push(request),
+    () => undefined,
+    1_000,
+  )
+  const scopes = new BrowserWorkflowScopeRegistry()
+  const scopedGuard = new ActionPermissionGuard({
+    authorityMode: () => mode,
+    requestConfirmation: (request) => scopedBroker.requestAction(request),
+    authorizeScope: (scopeId, confirmation, requestConfirmation) =>
+      scopes.authorize(scopeId, confirmation, {
+        authorityMode: mode,
+        requestConfirmation,
+      }),
+  })
+  let scopedExecutionCount = 0
+  const scopedRuntime = new ActionRuntime({
+    permissionGuard: scopedGuard,
+    authorityMode: () => mode,
+    cancelPendingConfirmations: () => scopedBroker.cancelAll(),
+    cancelConfirmation: (actionId) => {
+      scopedBroker.cancelAction(actionId)
+    },
+  })
+  scopedRuntime.register<EffectiveDesktopWorkflowRequest, { runtimeCompleted: boolean }>({
+    name: 'desktop.workflow',
+    description: 'Scoped browser workflow repro tool',
+    validate: (payload) => {
+      const { browserRiskClass, ...request } = payload as EffectiveDesktopWorkflowRequest
+      return { ...desktopWorkflowRequestSchema.parse(request), browserRiskClass }
+    },
+    authority: 'desktop-workflow',
+    confirmation: (actionId, request, actionRequest) =>
+      actionConfirmationRequestSchema.parse({
+        schemaVersion: 1,
+        actionId,
+        tool: request.type,
+        goal: scopes.confirmationGoal(actionRequest.authorizationScopeId, request.goal),
+        browserOperation: request.browserOperation,
+        browserRiskClass: request.browserRiskClass,
+        requestedCapabilities: request.requestedCapabilities,
+        risk: request.risk,
+      }),
+    execute: async (request, context) => {
+      scopedExecutionCount += 1
+      if (request.goal === 'wait scoped') {
+        await new Promise<void>((_resolve, reject) => {
+          context.signal.addEventListener('abort', () => reject(new Error('aborted')), {
+            once: true,
+          })
+        })
+      }
+      return { runtimeCompleted: true }
+    },
+  })
+
+  const workflowSignal = new AbortController()
+  mode = 'confirm'
+  const scope = scopes.create('Inspect two safe pages', workflowSignal.signal)
+  const firstScoped = scopedRuntime.execute({
+    name: 'desktop.workflow',
+    authorizationScopeId: scope.workflowId,
+    signal: workflowSignal.signal,
+    payload: {
+      type: 'desktop.workflow',
+      goal: 'Model-generated substep text',
+      browserOperation: { operation: 'observe' },
+      browserRiskClass: 'read',
+      requestedCapabilities: ['browser'],
+      risk: 'normal',
+    } as EffectiveDesktopWorkflowRequest,
+  })
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  assert.equal(scopedConfirmations.length, 1)
+  assert.equal(scopedConfirmations[0].goal, 'Inspect two safe pages')
+  assert(
+    scopedBroker.respondToAction({
+      actionId: scopedConfirmations[0].actionId,
+      decision: 'confirm',
+    }),
+  )
+  assert.equal((await firstScoped).authorization, 'confirmed')
+  const secondScoped = await scopedRuntime.execute({
+    name: 'desktop.workflow',
+    authorizationScopeId: scope.workflowId,
+    signal: workflowSignal.signal,
+    payload: {
+      type: 'desktop.workflow',
+      goal: 'Open the next safe page',
+      browserOperation: { operation: 'open', url: 'https://example.com/' },
+      browserRiskClass: 'navigation',
+      requestedCapabilities: ['browser'],
+      risk: 'normal',
+    } as EffectiveDesktopWorkflowRequest,
+  })
+  assert.equal(secondScoped.authorization, 'confirmed')
+  assert.equal(scopedConfirmations.length, 1, 'Safe scoped action requested a second confirmation')
+
+  mode = 'full'
+  const fullScope = scopes.create('Read in Full Control', new AbortController().signal)
+  const fullScoped = await scopedRuntime.execute({
+    name: 'desktop.workflow',
+    authorizationScopeId: fullScope.workflowId,
+    payload: {
+      type: 'desktop.workflow',
+      goal: 'Observe',
+      browserOperation: { operation: 'observe' },
+      browserRiskClass: 'read',
+      requestedCapabilities: ['browser'],
+      risk: 'normal',
+    } as EffectiveDesktopWorkflowRequest,
+  })
+  assert.equal(fullScoped.authorization, 'full')
+  assert.equal(scopedConfirmations.length, 1)
+
+  const criticalScope = scopes.create(
+    'Buy only after explicit approval',
+    new AbortController().signal,
+  )
+  const critical = scopedRuntime.execute({
+    name: 'desktop.workflow',
+    authorizationScopeId: criticalScope.workflowId,
+    payload: {
+      type: 'desktop.workflow',
+      goal: 'Click Buy',
+      browserOperation: {
+        operation: 'click',
+        target: {
+          kind: 'accessible-name',
+          observationId: 'browser-observation-00000000-0000-4000-8000-000000000000',
+          role: 'button',
+          name: 'Buy',
+        },
+      },
+      browserRiskClass: 'financial',
+      requestedCapabilities: ['browser'],
+      risk: 'destructive',
+    } as EffectiveDesktopWorkflowRequest,
+  })
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  assert.equal(scopedConfirmations.length, 2)
+  assert.equal(scopedExecutionCount, 3, 'Critical Full Control action executed before approval')
+  assert(
+    scopedBroker.respondToAction({
+      actionId: scopedConfirmations[1].actionId,
+      decision: 'confirm',
+    }),
+  )
+  assert.equal((await critical).authorization, 'confirmed')
+
+  mode = 'confirm'
+  const deniedScope = scopes.create('Denied browser workflow', new AbortController().signal)
+  const denied = scopedRuntime.execute({
+    name: 'desktop.workflow',
+    authorizationScopeId: deniedScope.workflowId,
+    payload: {
+      type: 'desktop.workflow',
+      goal: 'Observe denied',
+      browserOperation: { operation: 'observe' },
+      browserRiskClass: 'read',
+      requestedCapabilities: ['browser'],
+      risk: 'normal',
+    } as EffectiveDesktopWorkflowRequest,
+  })
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  assert.equal(scopedConfirmations.length, 3)
+  assert(
+    scopedBroker.respondToAction({
+      actionId: scopedConfirmations[2].actionId,
+      decision: 'cancel',
+    }),
+  )
+  assert.equal((await denied).status, 'cancelled')
+  assert.equal(scopedExecutionCount, 4)
+
+  mode = 'full'
+  const abortController = new AbortController()
+  const abortScope = scopes.create('Cancel current browser step', abortController.signal)
+  const externallyCancelled = scopedRuntime.execute({
+    name: 'desktop.workflow',
+    authorizationScopeId: abortScope.workflowId,
+    signal: abortController.signal,
+    payload: {
+      type: 'desktop.workflow',
+      goal: 'wait scoped',
+      browserOperation: { operation: 'observe' },
+      browserRiskClass: 'read',
+      requestedCapabilities: ['browser'],
+      risk: 'normal',
+    } as EffectiveDesktopWorkflowRequest,
+  })
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  abortController.abort()
+  assert.equal((await externallyCancelled).status, 'cancelled')
+  scopes.releaseAll()
 
   console.log('Action Runtime authority, lifecycle, validation and Emergency Stop repro: PASS')
 }

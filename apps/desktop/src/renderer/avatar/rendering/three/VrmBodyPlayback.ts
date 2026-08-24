@@ -100,6 +100,7 @@ export class VrmBodyPlayback {
       previousAnimationId: null,
       forceReplay: false,
       rootMotionPolicy: 'allow',
+      motionLayer: 'base',
     },
   ): Promise<void> {
     if (!this.vrm || !this.mixer) {
@@ -267,6 +268,17 @@ export class VrmBodyPlayback {
     this.diagnostics.logAnimationTransition('after stopAnimation')
   }
 
+  private completeOneShot(): void {
+    // Keep the completed action as the current skeleton owner until the queue
+    // installs its base-motion fallback on the next controller tick. Clearing
+    // it here would start a fade to the bind pose before the replacement clip
+    // has loaded, while retaining it lets loadAnimation perform the ordinary
+    // normalized crossfade from the one-shot's final pose.
+    this.animationPlaying = false
+    this.animationRemaining = null
+    this.diagnostics.logAnimationTransition('one-shot complete; holding for queue handoff')
+  }
+
   update(delta: number, beforeDiagnostics: () => void): void {
     if (!this.vrm) return
 
@@ -287,8 +299,8 @@ export class VrmBodyPlayback {
     if (this.animationRemaining !== null) {
       this.animationRemaining -= delta
       if (this.animationRemaining <= 0) {
-        console.log('[ANIMDBG] oneshot completion ? stopAnimation (remaining<=0)')
-        this.stopAnimation()
+        console.log('[ANIMDBG] oneshot completion -> hold for queue handoff')
+        this.completeOneShot()
       }
     }
 

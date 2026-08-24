@@ -8,6 +8,8 @@ import type {
   ProjectContextRequirement,
   ProjectCredentialStatus,
   ProjectFileExcerpt,
+  ProjectFreshnessFailureReason,
+  ProjectFreshnessState,
   ProjectMap,
   ProjectReadFileInput,
   ProjectReadSymbolInput,
@@ -18,6 +20,8 @@ import type {
   ProjectSnapshotDelta,
   ProjectSymbolExcerpt,
   ProjectSyncResult,
+  ProjectSyncStage,
+  ProjectTurnFreshness,
 } from '../../shared/project-awareness'
 import { isValidProjectBranch, isValidProjectRepository } from '../../shared/project-awareness'
 import { mainLog } from '../logging/safeLogger'
@@ -36,7 +40,7 @@ import {
   sourcePriority,
 } from './indexing/SourceFilter'
 import { extractSource } from './indexing/SymbolExtractor'
-import type { ProjectKnowledgeStore } from './ProjectKnowledgeStore'
+import type { ProjectAwarenessMetadata, ProjectKnowledgeStore } from './ProjectKnowledgeStore'
 import { projectContextRequirement } from './ProjectRelevanceGate'
 import { PROJECT_CONTEXT_BUDGET, selectProjectEvidence } from './retrieval/ProjectEvidenceSelector'
 
@@ -71,6 +75,15 @@ function safeError(error: unknown): string {
   return message.replace(/(?:ghp|github_pat)_[A-Za-z0-9_]+/g, '[redacted]').slice(0, 500)
 }
 
+function freshnessFailureReason(error: unknown): ProjectFreshnessFailureReason {
+  const message = safeError(error).toLowerCase()
+  if (/credential|token|unauthori|forbidden|access private/.test(message)) return 'credential'
+  if (/rate.?limit/.test(message)) return 'rate-limit'
+  if (/network|timed? out|timeout|econn|enotfound|socket/.test(message)) return 'network'
+  if (/github|repository|branch|commit/.test(message)) return 'github-unavailable'
+  return 'unknown'
+}
+
 function changedPaths(changes: ProjectChangedFile[]): Set<string> {
   const paths = new Set<string>()
   for (const change of changes) {
@@ -81,17 +94,17 @@ function changedPaths(changes: ProjectChangedFile[]): Set<string> {
 }
 
 function snapshotDelta(changes: readonly ProjectChangedFile[]): ProjectSnapshotDelta {
-  const files = changes
-    .filter((change) => {
-      const path = change.path.replaceAll('\\', '/')
-      return (
-        path.length > 0 &&
-        path.length <= 500 &&
-        !path.startsWith('/') &&
-        !/^[A-Za-z]:/.test(path) &&
-        !path.split('/').some((segment) => segment === '..' || segment === '')
-      )
-    })
+  const safeChanges = changes.filter((change) => {
+    const path = change.path.replaceAll('\\', '/')
+    return (
+      path.length > 0 &&
+      path.length <= 500 &&
+      !path.startsWith('/') &&
+      !/^[A-Za-z]:/.test(path) &&
+      !path.split('/').some((segment) => segment === '..' || segment === '')
+    )
+  })
+  const files = safeChanges
     .sort((left, right) => (left.path < right.path ? -1 : left.path > right.path ? 1 : 0))
     .slice(0, SNAPSHOT_DELTA_FILE_LIMIT)
     .map((change) => ({
@@ -99,13 +112,13 @@ function snapshotDelta(changes: readonly ProjectChangedFile[]): ProjectSnapshotD
       status: change.status === 'removed' ? ('deleted' as const) : change.status,
     }))
   return {
-    total: changes.length,
-    added: changes.filter((change) => change.status === 'added').length,
-    modified: changes.filter((change) => change.status === 'modified').length,
-    deleted: changes.filter((change) => change.status === 'removed').length,
-    renamed: changes.filter((change) => change.status === 'renamed').length,
+    total: safeChanges.length,
+    added: safeChanges.filter((change) => change.status === 'added').length,
+    modified: safeChanges.filter((change) => change.status === 'modified').length,
+    deleted: safeChanges.filter((change) => change.status === 'removed').length,
+    renamed: safeChanges.filter((change) => change.status === 'renamed').length,
     files,
-    omitted: Math.max(0, changes.length - files.length),
+    omitted: Math.max(0, safeChanges.length - files.length),
   }
 }
 
@@ -113,14 +126,19 @@ export class ProjectAwarenessRuntime {
   private adapter: ProjectRepositoryAdapter | null = null
   private repository: ProjectRepositoryIdentity | null = null
   private state: ProjectAwarenessStatus['state'] = 'disconnected'
-  private remoteHead: string | undefined
-  private lastSyncAt: number | undefined
-  private lastFreshnessCheckAt: number | undefined
-  private snapshotDelta: ProjectSnapshotDelta | undefined
-  private freshnessChecking = false
+  private remoteRevision: string | undefined
+  private freshnessState: ProjectFreshnessState = 'unknown'
+  private freshnessCheckedAt: number | undefined
+  private freshnessFailure: ProjectFreshnessFailureReason | undefined
+  private changedFiles: ProjectSnapshotDelta | undefined
   private freshnessPromise: Promise<ProjectAwarenessStatus> | null = null
   private lastError: string | undefined
   private syncPromise: Promise<ProjectSyncResult> | null = null
+  private syncState: ProjectAwarenessStatus['sync']['state'] = 'idle'
+  private syncStage: ProjectSyncStage | undefined
+  private syncStartedAt: number | undefined
+  private syncCompletedAt: number | undefined
+  private syncError: string | undefined
   private credentialToken: string
   private credential: ProjectCredentialStatus
 
@@ -142,13 +160,14 @@ export class ProjectAwarenessRuntime {
   setCredential(token: string, credential: ProjectCredentialStatus): void {
     this.adapter = null
     this.repository = null
-    this.remoteHead = undefined
-    this.lastFreshnessCheckAt = undefined
-    this.snapshotDelta = undefined
+    this.resetCurrentFreshness()
     this.credentialToken = token
     this.credential = { ...credential }
     this.state = 'disconnected'
     this.lastError = undefined
+    this.syncState = 'idle'
+    this.syncStage = undefined
+    this.syncError = undefined
   }
 
   async configure(
@@ -172,8 +191,7 @@ export class ProjectAwarenessRuntime {
 
     await this.disconnect()
     this.config = next
-    if (!next.enabled || !this.credential.configured) return this.getStatus()
-    return this.connect()
+    return this.getStatus()
   }
 
   async setEnabled(enabled: boolean): Promise<ProjectAwarenessStatus> {
@@ -184,40 +202,29 @@ export class ProjectAwarenessRuntime {
   }
 
   async initialize(): Promise<void> {
-    if (!this.config.enabled || !this.credential.configured) return
-    await this.connect()
-    if (this.adapter && this.repository && this.remoteHead) await this.sync()
+    this.resetCurrentFreshness()
   }
 
   async connect(): Promise<ProjectAwarenessStatus> {
     if (this.state === 'connecting') return this.getStatus()
     this.state = 'connecting'
-    this.freshnessChecking = true
+    this.freshnessState = 'checking'
+    this.freshnessFailure = undefined
     this.lastError = undefined
+    mainLog.info('[ProjectAwareness] freshness_check_started', {
+      repository: this.config.repository,
+      branch: this.config.branch,
+    })
     try {
-      if (!this.config.enabled) {
-        throw new Error(this.t('main.error.project.disabled'))
-      }
-      if (!isValidProjectBranch(this.config.branch)) {
-        throw new Error(this.t('main.error.project.branchSettings'))
-      }
-      if (!this.credentialToken) {
-        throw new Error(this.t('main.error.project.credentialMissing'))
-      }
-      const { owner, name } = parseRepository(this.config.repository, this.t)
-      this.adapter = this.adapterFactory(owner, name, this.credentialToken)
-      this.repository = await this.adapter.getRepository()
-      this.remoteHead = await this.adapter.getBranchHead(this.config.branch)
-      this.lastFreshnessCheckAt = Date.now()
+      const { adapter } = await this.ensureAdapterAndRepository()
+      const remoteRevision = await adapter.getBranchHead(this.config.branch)
       const current = this.currentSnapshot()
-      this.snapshotDelta = await this.buildSnapshotDelta(current, this.remoteHead)
+      await this.applySuccessfulFreshnessCheck(current, remoteRevision)
       this.state = 'ready'
       return this.getStatus()
     } catch (error) {
       const current = this.currentSnapshot()
-      this.remoteHead = undefined
-      this.lastFreshnessCheckAt = Date.now()
-      this.snapshotDelta = undefined
+      this.applyFailedFreshnessCheck(error)
       if (current) {
         this.repository = current.snapshot.repository
         this.state = 'ready'
@@ -229,8 +236,6 @@ export class ProjectAwarenessRuntime {
       this.state = 'error'
       this.lastError = safeError(error)
       throw new Error(this.lastError)
-    } finally {
-      this.freshnessChecking = false
     }
   }
 
@@ -238,22 +243,24 @@ export class ProjectAwarenessRuntime {
     if (this.syncPromise) await this.syncPromise.catch(() => undefined)
     this.adapter = null
     this.repository = null
-    this.remoteHead = undefined
-    this.lastFreshnessCheckAt = undefined
-    this.snapshotDelta = undefined
+    this.resetCurrentFreshness()
     this.state = 'disconnected'
     this.lastError = undefined
+    this.syncState = 'idle'
+    this.syncStage = undefined
+    this.syncError = undefined
     return this.getStatus()
   }
 
   getStatus(): ProjectAwarenessStatus {
     const current = this.currentSnapshot()
+    const metadata = this.projectMetadata()
     const indexState =
-      this.state === 'indexing' || this.state === 'syncing'
+      this.syncState === 'syncing'
         ? 'building'
-        : this.state === 'error'
+        : this.state === 'error' && !current
           ? 'error'
-          : current && this.remoteHead && current.snapshot.commitSha !== this.remoteHead
+          : current && this.freshnessState === 'stale'
             ? 'stale'
             : current
               ? 'current'
@@ -264,25 +271,34 @@ export class ProjectAwarenessRuntime {
       provider: 'github',
       repository: this.config.repository,
       branch: this.config.branch,
-      remoteHead: this.remoteHead,
-      indexedCommit: current?.snapshot.commitSha,
-      freshness: this.freshnessChecking
-        ? 'checking'
-        : !current || !this.remoteHead
-          ? 'unknown'
-          : current.snapshot.commitSha === this.remoteHead
-            ? 'fresh'
-            : 'stale',
-      lastFreshnessCheckAt: this.lastFreshnessCheckAt,
-      snapshotDelta:
-        current && this.remoteHead && current.snapshot.commitSha !== this.remoteHead
-          ? this.snapshotDelta
-          : undefined,
+      snapshot: current
+        ? {
+            revision: current.snapshot.commitSha,
+            indexedAt: current.snapshot.createdAt,
+            fileCount: current.fileCount,
+          }
+        : undefined,
+      freshness: {
+        state: this.freshnessState,
+        indexedRevision: current?.snapshot.commitSha,
+        remoteRevision: this.remoteRevision,
+        checkedAt: this.freshnessCheckedAt,
+        lastKnownRemoteRevision: metadata.lastKnownRemoteRevision,
+        lastKnownRemoteCheckedAt: metadata.lastKnownRemoteCheckedAt,
+        reasonCode: this.freshnessFailure,
+      },
+      changedFiles: current && this.freshnessState === 'stale' ? this.changedFiles : undefined,
+      sync: {
+        state: this.syncState,
+        stage: this.syncStage,
+        startedAt: this.syncStartedAt,
+        completedAt: this.syncCompletedAt,
+        lastError: this.syncError,
+      },
       indexState,
       access: 'read-only',
-      lastSyncAt: this.lastSyncAt ?? current?.snapshot.createdAt,
+      lastSyncAt: metadata.lastSuccessfulSyncAt ?? current?.snapshot.createdAt,
       lastError: this.lastError,
-      indexedFileCount: current?.fileCount ?? 0,
       credential: { ...this.credential },
     }
   }
@@ -299,8 +315,8 @@ export class ProjectAwarenessRuntime {
     if (this.freshnessPromise) return this.freshnessPromise
     if (
       !force &&
-      this.lastFreshnessCheckAt &&
-      Date.now() - this.lastFreshnessCheckAt < FRESHNESS_TTL_MS
+      this.freshnessCheckedAt &&
+      Date.now() - this.freshnessCheckedAt < FRESHNESS_TTL_MS
     ) {
       return Promise.resolve(this.getStatus())
     }
@@ -314,22 +330,20 @@ export class ProjectAwarenessRuntime {
   private async performFreshnessCheck(): Promise<ProjectAwarenessStatus> {
     if (!this.config.enabled || !this.credential.configured) return this.getStatus()
     const current = this.currentSnapshot()
-    this.freshnessChecking = true
+    this.freshnessState = 'checking'
+    this.freshnessFailure = undefined
+    mainLog.info('[ProjectAwareness] freshness_check_started', {
+      repository: this.config.repository,
+      branch: this.config.branch,
+    })
     try {
-      if (!this.adapter) {
-        const { owner, name } = parseRepository(this.config.repository, this.t)
-        this.adapter = this.adapterFactory(owner, name, this.credentialToken)
-      }
-      this.repository ??= current?.snapshot.repository ?? (await this.adapter.getRepository())
-      this.remoteHead = await this.adapter.getBranchHead(this.config.branch)
-      this.lastFreshnessCheckAt = Date.now()
-      this.snapshotDelta = await this.buildSnapshotDelta(current, this.remoteHead)
+      const { adapter } = await this.ensureAdapterAndRepository()
+      const remoteRevision = await adapter.getBranchHead(this.config.branch)
+      await this.applySuccessfulFreshnessCheck(current, remoteRevision)
       if (this.state !== 'syncing' && this.state !== 'indexing') this.state = 'ready'
       this.lastError = undefined
     } catch (error) {
-      this.remoteHead = undefined
-      this.lastFreshnessCheckAt = Date.now()
-      this.snapshotDelta = undefined
+      this.applyFailedFreshnessCheck(error)
       if (current) {
         this.repository = current.snapshot.repository
         if (this.state !== 'syncing' && this.state !== 'indexing') this.state = 'ready'
@@ -338,8 +352,6 @@ export class ProjectAwarenessRuntime {
         this.state = 'error'
         this.lastError = safeError(error)
       }
-    } finally {
-      this.freshnessChecking = false
     }
     return this.getStatus()
   }
@@ -354,33 +366,54 @@ export class ProjectAwarenessRuntime {
   }
 
   private async performSync(forceRebuild: boolean): Promise<ProjectSyncResult> {
-    if (!this.adapter || !this.repository) await this.connect()
-    if (!this.adapter || !this.repository) {
-      throw new Error(this.t('main.error.project.disconnected'))
-    }
-
-    const adapter = this.adapter
-    const repository = this.repository
-    const previous = this.store.getCurrentSnapshot(repository, this.config.branch)
     this.state = 'syncing'
+    this.syncState = 'syncing'
+    this.syncStage = 'fetching'
+    this.syncStartedAt = Date.now()
+    this.syncCompletedAt = undefined
+    this.syncError = undefined
     this.lastError = undefined
+    mainLog.info('[ProjectAwareness] sync_started', {
+      repository: this.config.repository,
+      branch: this.config.branch,
+      mode: forceRebuild ? 'rebuild' : 'sync',
+    })
     let runId: number | undefined
     let draftId: string | undefined
     let changeCount = 0
+    let remoteObserved = false
     try {
-      const headSha = await adapter.getBranchHead(this.config.branch)
-      this.remoteHead = headSha
-      if (!forceRebuild && previous?.snapshot.commitSha === headSha) {
+      const { adapter, repository } = await this.ensureAdapterAndRepository()
+      const previous = this.store.getCurrentSnapshot(repository, this.config.branch)
+      if (forceRebuild && !previous) {
+        throw new Error(this.t('main.error.project.indexMissing'))
+      }
+      const targetRevision = forceRebuild
+        ? previous?.snapshot.commitSha
+        : await adapter.getBranchHead(this.config.branch)
+      if (!targetRevision) throw new Error(this.t('main.error.project.indexMissing'))
+      if (!forceRebuild) {
+        remoteObserved = true
+        await this.applySuccessfulFreshnessCheck(previous, targetRevision)
+      }
+      if (!forceRebuild && previous?.snapshot.commitSha === targetRevision) {
         this.state = 'ready'
-        this.lastSyncAt = Date.now()
-        this.lastFreshnessCheckAt = this.lastSyncAt
-        this.snapshotDelta = undefined
+        this.syncState = 'idle'
+        this.syncStage = undefined
+        this.syncCompletedAt = Date.now()
+        this.store.recordSuccessfulSync(repository, this.config.branch, this.syncCompletedAt)
+        mainLog.info('[ProjectAwareness] sync_succeeded', {
+          repository: this.config.repository,
+          branch: this.config.branch,
+          revision: targetRevision,
+          result: 'unchanged',
+        })
         return {
           status: 'unchanged',
-          commitSha: headSha,
+          commitSha: targetRevision,
           indexedFiles: previous.fileCount,
           changedFiles: 0,
-          completedAt: this.lastSyncAt,
+          completedAt: this.syncCompletedAt,
         }
       }
 
@@ -388,9 +421,9 @@ export class ProjectAwarenessRuntime {
         repository,
         this.config.branch,
         previous?.snapshot.commitSha,
-        headSha,
+        targetRevision,
       )
-      const tree = await adapter.listTree(headSha)
+      const tree = await adapter.listTree(targetRevision)
       const allowedTree = tree.filter((entry) =>
         isAllowedProjectPath(entry, this.config.maxFileSizeBytes),
       )
@@ -399,7 +432,7 @@ export class ProjectAwarenessRuntime {
       let changes: ProjectChangedFile[] = []
       let incremental = Boolean(previous && !forceRebuild)
       if (incremental && previous) {
-        changes = await adapter.compareCommits(previous.snapshot.commitSha, headSha)
+        changes = await adapter.compareCommits(previous.snapshot.commitSha, targetRevision)
         if (changes.length >= 300) incremental = false
       }
 
@@ -420,25 +453,28 @@ export class ProjectAwarenessRuntime {
         entriesToRead.length +
         [...excludedPreviousPaths].filter((path) => !currentPaths.has(path)).length
       this.state = 'indexing'
+      this.syncStage = 'indexing'
       const preparedFiles: PreparedProjectFile[] = []
       for (const entry of entriesToRead) {
-        const prepared = await this.prepareFile(adapter, entry, headSha)
+        const prepared = await this.prepareFile(adapter, entry, targetRevision)
         if (prepared) preparedFiles.push(prepared)
       }
 
       const draft = this.store.createDraftSnapshot({
         repository,
         branch: this.config.branch,
-        commitSha: headSha,
+        commitSha: targetRevision,
         previousSnapshotId: incremental ? previous?.id : undefined,
         excludedPreviousPaths,
         files: preparedFiles,
       })
       draftId = draft.id
+      if (draft.fileCount === 0) throw new Error(this.t('main.error.project.indexEmpty'))
+      this.syncStage = 'validating'
       const snapshot = {
         repository,
         branch: this.config.branch,
-        commitSha: headSha,
+        commitSha: targetRevision,
         createdAt: Date.now(),
       }
       const map = buildProjectMap(
@@ -447,30 +483,60 @@ export class ProjectAwarenessRuntime {
         this.store.listSymbols(draft.id),
       )
       this.store.saveProjectMap(draft.id, map)
-      this.store.publishSnapshot(repository, this.config.branch, draft.id)
+      const savedMap = this.store.getProjectMap(draft.id)
+      if (!savedMap || savedMap.snapshot.commitSha !== targetRevision) {
+        throw new Error(this.t('main.error.project.indexValidationFailed'))
+      }
+      this.store.publishSnapshot(repository, this.config.branch, draft.id, targetRevision)
       draftId = undefined
       this.store.pruneSnapshots(repository, this.config.branch, 2)
       this.store.finishSync(runId, 'completed', changeCount)
-      this.lastSyncAt = Date.now()
-      this.lastFreshnessCheckAt = this.lastSyncAt
-      this.snapshotDelta = undefined
+      this.syncCompletedAt = Date.now()
+      this.store.recordSuccessfulSync(repository, this.config.branch, this.syncCompletedAt)
+      if (!forceRebuild)
+        await this.applySuccessfulFreshnessCheck(this.currentSnapshot(), targetRevision)
       this.state = 'ready'
+      this.syncState = 'idle'
+      this.syncStage = undefined
+      mainLog.info('[ProjectAwareness] snapshot_switched', {
+        repository: this.config.repository,
+        branch: this.config.branch,
+        previousRevision: previous?.snapshot.commitSha,
+        revision: targetRevision,
+      })
+      mainLog.info('[ProjectAwareness] sync_succeeded', {
+        repository: this.config.repository,
+        branch: this.config.branch,
+        revision: targetRevision,
+        indexedFiles: draft.fileCount,
+      })
       return {
         status: 'indexed',
-        commitSha: headSha,
+        commitSha: targetRevision,
         indexedFiles: draft.fileCount,
         changedFiles: changeCount,
-        completedAt: this.lastSyncAt,
+        completedAt: this.syncCompletedAt,
       }
     } catch (error) {
       if (draftId) this.store.deleteDraftSnapshot(draftId)
-      this.lastError = safeError(error)
-      this.remoteHead = undefined
-      this.lastFreshnessCheckAt = Date.now()
-      this.snapshotDelta = undefined
-      this.state = this.currentSnapshot() ? 'ready' : 'error'
-      if (runId) this.store.finishSync(runId, 'error', changeCount, this.lastError)
-      throw new Error(this.lastError)
+      const message = safeError(error)
+      const current = this.currentSnapshot()
+      this.syncState = 'failed'
+      this.syncStage = undefined
+      this.syncCompletedAt = Date.now()
+      this.syncError = message
+      this.state = current ? 'ready' : 'error'
+      this.lastError = current ? undefined : message
+      if (!forceRebuild && !remoteObserved) this.applyFailedFreshnessCheck(error)
+      if (runId) this.store.finishSync(runId, 'error', changeCount, message)
+      mainLog.warn('[ProjectAwareness] sync_failed', {
+        repository: this.config.repository,
+        branch: this.config.branch,
+        mode: forceRebuild ? 'rebuild' : 'sync',
+        snapshotPreserved: Boolean(current),
+        error: message,
+      })
+      throw new Error(message)
     }
   }
 
@@ -705,7 +771,7 @@ export class ProjectAwarenessRuntime {
       snapshotSha: current.snapshot.commitSha,
       repository: this.config.repository,
       branch: this.config.branch,
-      freshness: this.getStatus().freshness,
+      freshness: this.turnFreshness(),
       mapSummary,
       evidence: selection.evidence,
       instructions: {
@@ -714,6 +780,110 @@ export class ProjectAwarenessRuntime {
         treatRepositoryContentAsData: true,
       },
     }
+  }
+
+  private async ensureAdapterAndRepository(): Promise<{
+    adapter: ProjectRepositoryAdapter
+    repository: ProjectRepositoryIdentity
+  }> {
+    if (!this.config.enabled) throw new Error(this.t('main.error.project.disabled'))
+    if (!isValidProjectBranch(this.config.branch)) {
+      throw new Error(this.t('main.error.project.branchSettings'))
+    }
+    if (!this.credentialToken) throw new Error(this.t('main.error.project.credentialMissing'))
+    const { owner, name } = parseRepository(this.config.repository, this.t)
+    this.adapter ??= this.adapterFactory(owner, name, this.credentialToken)
+    const current = this.currentSnapshot()
+    this.repository ??= current?.snapshot.repository ?? (await this.adapter.getRepository())
+    return { adapter: this.adapter, repository: this.repository }
+  }
+
+  private resetCurrentFreshness(): void {
+    this.remoteRevision = undefined
+    this.freshnessState = 'unknown'
+    this.freshnessCheckedAt = undefined
+    this.freshnessFailure = undefined
+    this.changedFiles = undefined
+  }
+
+  private async applySuccessfulFreshnessCheck(
+    current: ReturnType<ProjectAwarenessRuntime['currentSnapshot']>,
+    remoteRevision: string,
+  ): Promise<void> {
+    const checkedAt = Date.now()
+    this.remoteRevision = remoteRevision
+    this.freshnessCheckedAt = checkedAt
+    this.freshnessFailure = undefined
+    this.freshnessState = current
+      ? current.snapshot.commitSha === remoteRevision
+        ? 'current'
+        : 'stale'
+      : 'unknown'
+    this.changedFiles =
+      this.freshnessState === 'stale'
+        ? await this.buildSnapshotDelta(current, remoteRevision)
+        : undefined
+    if (this.repository) {
+      this.store.recordRemoteCheckSuccess(
+        this.repository,
+        this.config.branch,
+        remoteRevision,
+        checkedAt,
+      )
+    }
+    mainLog.info('[ProjectAwareness] freshness_check_succeeded', {
+      repository: this.config.repository,
+      branch: this.config.branch,
+      indexedRevision: current?.snapshot.commitSha,
+      remoteRevision,
+      freshness: this.freshnessState,
+    })
+  }
+
+  private applyFailedFreshnessCheck(error: unknown): void {
+    const checkedAt = Date.now()
+    const reason = freshnessFailureReason(error)
+    this.remoteRevision = undefined
+    this.freshnessCheckedAt = checkedAt
+    this.freshnessState = 'check-failed'
+    this.freshnessFailure = reason
+    this.changedFiles = undefined
+    const current = this.currentSnapshot()
+    const repository = this.repository ?? current?.snapshot.repository
+    if (repository) {
+      this.store.recordRemoteCheckFailure(repository, this.config.branch)
+    }
+    mainLog.warn('[ProjectAwareness] freshness_check_failed', {
+      repository: this.config.repository,
+      branch: this.config.branch,
+      reason,
+      snapshotAvailable: Boolean(current),
+    })
+  }
+
+  private projectMetadata(): ProjectAwarenessMetadata {
+    if (this.repository) {
+      return this.store.getProjectAwarenessMetadataByTarget(
+        this.repository.owner,
+        this.repository.name,
+        this.config.branch,
+      )
+    }
+    if (
+      !isValidProjectRepository(this.config.repository) ||
+      !isValidProjectBranch(this.config.branch)
+    ) {
+      return {}
+    }
+    const { owner, name } = parseRepository(this.config.repository, this.t)
+    return this.store.getProjectAwarenessMetadataByTarget(owner, name, this.config.branch)
+  }
+
+  private turnFreshness(): ProjectTurnFreshness {
+    if (this.freshnessState === 'current' || this.freshnessState === 'stale') {
+      return this.freshnessState
+    }
+    return 'unknown'
   }
 
   private requireCurrent(): {
@@ -754,12 +924,12 @@ export class ProjectAwarenessRuntime {
 
   private async buildSnapshotDelta(
     current: ReturnType<ProjectAwarenessRuntime['currentSnapshot']>,
-    remoteHead: string,
+    remoteRevision: string,
   ): Promise<ProjectSnapshotDelta | undefined> {
-    if (!current || current.snapshot.commitSha === remoteHead || !this.adapter) return undefined
+    if (!current || current.snapshot.commitSha === remoteRevision || !this.adapter) return undefined
     try {
       return snapshotDelta(
-        await this.adapter.compareCommits(current.snapshot.commitSha, remoteHead),
+        await this.adapter.compareCommits(current.snapshot.commitSha, remoteRevision),
       )
     } catch {
       return undefined

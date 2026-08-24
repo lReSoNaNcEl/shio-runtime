@@ -4,6 +4,7 @@ import {
   getAnimationUrl,
   getRootMotionPolicy,
 } from './animationManifest'
+import type { AvatarBodyMotionLayer } from './embodiment/motion/AvatarMotionLayer'
 import type { VrmBodyActionDebugState, VrmModel } from './rendering/three/VrmModel'
 
 export type AnimationPlaybackStatus = 'idle' | 'loading' | 'playing' | 'failed'
@@ -38,6 +39,7 @@ export interface PlayManifestOptions {
   behaviorId?: string
   frame?: number
   previousAnimationId?: string | null
+  motionLayer?: AvatarBodyMotionLayer
 }
 
 export class AvatarAnimationController {
@@ -196,6 +198,7 @@ export class AvatarAnimationController {
         forceReplay,
         frame: options.frame,
         rootMotionPolicy: getRootMotionPolicy(entry),
+        motionLayer: options.motionLayer ?? 'base',
       })
     } catch (e) {
       if (requestId !== this.requestId) return

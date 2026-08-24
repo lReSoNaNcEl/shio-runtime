@@ -41,6 +41,13 @@ export function registerSpeechIpc({
   }
 
   ipcMain.handle(
+    'asr:get-streaming-connection',
+    authorization.handle('asr:get-streaming-connection', () => ({
+      baseUrl: speech().getEndpoint(),
+    })),
+  )
+
+  ipcMain.handle(
     'health:check',
     authorization.handle('health:check', async () => {
       const action = await actions.execute<

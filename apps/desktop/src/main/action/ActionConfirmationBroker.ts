@@ -40,6 +40,10 @@ export class ActionConfirmationBroker {
     return this.respond(this.actionDecisions, response.actionId, response.decision)
   }
 
+  cancelAction(actionId: string): boolean {
+    return this.respond(this.actionDecisions, actionId, 'cancel')
+  }
+
   respondToAuthority(response: AuthorityChangeResponse): boolean {
     const responded = this.respond(this.authorityDecisions, response.requestId, response.decision)
     if (responded && this.pendingAuthorityRequest?.requestId === response.requestId) {

@@ -3,12 +3,34 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 
 import { type OverlayViewMode, overlayCameraPresets } from '../../tuning/cameraTuning'
 import { avatarStartupTuning } from '../../tuning/startupTuning'
+import {
+  AvatarRendererQuality,
+  type AvatarTextureQualityState,
+  computeDrawingBufferSize,
+  resolveEffectiveDpr,
+} from './AvatarRendererQuality'
+
+export interface AvatarRenderQualityDebugState {
+  cssWidth: number
+  cssHeight: number
+  drawingBufferWidth: number
+  drawingBufferHeight: number
+  effectiveDpr: number
+  outputColorSpace: string
+  toneMapping: number
+  drawCalls: number
+  triangles: number
+  geometries: number
+  gpuTextures: number
+  modelTextures: AvatarTextureQualityState
+}
 
 export class SceneManager {
   renderer: THREE.WebGLRenderer
   scene: THREE.Scene
   camera: THREE.PerspectiveCamera
   controls: OrbitControls
+  private readonly quality = new AvatarRendererQuality()
   private readonly lookAtAnchor = new THREE.Object3D()
   private framedPosition: { x: number; y: number; z: number } | null = null
   private framedTarget: { x: number; y: number; z: number } | null = null
@@ -16,32 +38,41 @@ export class SceneManager {
   private animCallbacks: Array<(delta: number) => void> = []
   private rafId = 0
   private resizeObserver: ResizeObserver
+  private effectiveDpr = 1
+  private running = false
+  private disposed = false
+  private renderQualityLogPending = false
 
   constructor(canvas: HTMLCanvasElement) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true })
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+    this.quality.configureRenderer(this.renderer)
+    this.effectiveDpr = resolveEffectiveDpr(window.devicePixelRatio)
+    this.renderer.setPixelRatio(this.effectiveDpr)
     this.renderer.setSize(
       canvas.clientWidth || window.innerWidth,
       canvas.clientHeight || window.innerHeight,
       false,
     )
     this.renderer.setClearColor(0x1a1a2e, 0)
-    this.renderer.shadowMap.enabled = true
 
     this.scene = new THREE.Scene()
     this.scene.add(this.lookAtAnchor)
 
-    const ambient = new THREE.AmbientLight(0xffffff, 0.6)
+    const ambient = new THREE.HemisphereLight(0xfff7f0, 0x262a3a, 0.42)
     this.scene.add(ambient)
 
-    const dir = new THREE.DirectionalLight(0xffffff, 0.8)
-    dir.position.set(1, 2, 2)
-    dir.castShadow = true
-    this.scene.add(dir)
+    const key = new THREE.DirectionalLight(0xfff4e9, 0.92)
+    key.position.set(1.5, 2.4, -2.2)
+    key.castShadow = true
+    this.scene.add(key)
 
-    const fill = new THREE.DirectionalLight(0x8899ff, 0.3)
-    fill.position.set(-1, 0, -1)
+    const fill = new THREE.DirectionalLight(0xaab8ff, 0.28)
+    fill.position.set(-1.8, 1.25, -1.1)
     this.scene.add(fill)
+
+    const rim = new THREE.DirectionalLight(0xd9e5ff, 0.38)
+    rim.position.set(0.8, 2.2, 2.5)
+    this.scene.add(rim)
 
     this.camera = new THREE.PerspectiveCamera(
       avatarStartupTuning.camera.fov,
@@ -151,16 +182,56 @@ export class SceneManager {
     this.animCallbacks.push(cb)
   }
 
+  configureAvatarModelQuality(): AvatarTextureQualityState {
+    const state = this.quality.configureModel(this.scene, this.renderer)
+    this.renderQualityLogPending = true
+    return state
+  }
+
+  getRenderQualityDebugState(): AvatarRenderQualityDebugState {
+    const canvas = this.renderer.domElement
+    const cssWidth = canvas.clientWidth || window.innerWidth
+    const cssHeight = canvas.clientHeight || window.innerHeight
+    const drawingBuffer = computeDrawingBufferSize(cssWidth, cssHeight, this.effectiveDpr)
+    return {
+      cssWidth,
+      cssHeight,
+      drawingBufferWidth: drawingBuffer.width,
+      drawingBufferHeight: drawingBuffer.height,
+      effectiveDpr: this.effectiveDpr,
+      outputColorSpace: this.renderer.outputColorSpace,
+      toneMapping: this.renderer.toneMapping,
+      drawCalls: this.renderer.info.render.calls,
+      triangles: this.renderer.info.render.triangles,
+      geometries: this.renderer.info.memory.geometries,
+      gpuTextures: this.renderer.info.memory.textures,
+      modelTextures: this.quality.getTextureState(),
+    }
+  }
+
   start(): void {
+    if (this.running || this.disposed) return
+    this.running = true
+    this.lastTime = performance.now()
     const loop = (): void => {
+      if (!this.running || this.disposed) return
       this.rafId = requestAnimationFrame(loop)
       const now = performance.now()
-      const delta = (now - this.lastTime) / 1000
+      const delta = Math.min(0.1, Math.max(0, (now - this.lastTime) / 1000))
       this.lastTime = now
+      const nextDpr = resolveEffectiveDpr(window.devicePixelRatio)
+      if (nextDpr !== this.effectiveDpr) this.onResize()
       this.controls.update()
       this.syncLookAtAnchor()
       for (const cb of this.animCallbacks) cb(delta)
       this.renderer.render(this.scene, this.camera)
+      if (this.renderQualityLogPending) {
+        this.renderQualityLogPending = false
+        const quality = this.getRenderQualityDebugState()
+        console.log(
+          `[RENDERDBG] frame css=${quality.cssWidth}x${quality.cssHeight} buffer=${quality.drawingBufferWidth}x${quality.drawingBufferHeight} dpr=${quality.effectiveDpr} calls=${quality.drawCalls} triangles=${quality.triangles} gpuTextures=${quality.gpuTextures} color=${quality.outputColorSpace} toneMapping=${quality.toneMapping}`,
+        )
+      }
     }
     loop()
   }
@@ -171,13 +242,19 @@ export class SceneManager {
   }
 
   stop(): void {
+    if (!this.running) return
+    this.running = false
     cancelAnimationFrame(this.rafId)
+    this.rafId = 0
     this.resizeObserver.disconnect()
     window.removeEventListener('resize', this.onResize)
   }
 
   dispose(): void {
+    if (this.disposed) return
+    this.disposed = true
     this.stop()
+    this.animCallbacks = []
     this.controls.dispose()
     this.renderer.dispose()
     this.renderer.forceContextLoss()
@@ -189,6 +266,11 @@ export class SceneManager {
     const w = canvas.clientWidth || window.innerWidth
     const h = canvas.clientHeight || window.innerHeight
     if (w === 0 || h === 0) return
+    const nextDpr = resolveEffectiveDpr(window.devicePixelRatio)
+    if (nextDpr !== this.effectiveDpr) {
+      this.effectiveDpr = nextDpr
+      this.renderer.setPixelRatio(this.effectiveDpr)
+    }
     this.camera.aspect = w / h
     this.camera.updateProjectionMatrix()
     // false: update only the drawing buffer, let CSS (100%/100%) own display size
