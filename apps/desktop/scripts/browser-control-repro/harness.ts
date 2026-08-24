@@ -218,6 +218,8 @@ async function startTestServer(): Promise<{ server: Server; baseUrl: string }> {
         <button type="button" onclick="location.href='/catalog'">Open catalog</button>
         <label for="message">Message</label>
         <input id="message" aria-label="Message" />
+        <label for="category">Category</label>
+        <select id="category" aria-label="Category"><option value="films">Films</option><option value="series">Series</option></select>
         <button id="apply" type="button">Apply message</button>
         <p id="result">Waiting for input</p>
       </main>
@@ -484,6 +486,13 @@ async function main(): Promise<void> {
     const adapterNamespace = 'shio-browser-adapter-repro'
     const adapterProfile = join(temporaryRoot, 'adapter-browser-profile')
     const adapterSocket = join(temporaryRoot, 'adapter-browser-runtime')
+    const personalChromeProfile = process.env.LOCALAPPDATA
+      ? join(process.env.LOCALAPPDATA, 'Google', 'Chrome', 'User Data')
+      : ''
+    assert.notEqual(
+      resolve(adapterProfile).toLocaleLowerCase(),
+      resolve(personalChromeProfile || temporaryRoot, 'personal-profile').toLocaleLowerCase(),
+    )
     const adapterEnvironment = agentBrowserEnvironment({
       executablePath,
       profileDirectory: adapterProfile,
@@ -528,6 +537,52 @@ async function main(): Promise<void> {
         (error: unknown) =>
           error instanceof BrowserAutomationError && error.code === 'TARGET_STALE',
       )
+      const backed = await adapter.back()
+      assert.equal(backed.execution.verification, 'verified')
+      assert.equal(backed.observation?.title, 'Shio browser control test')
+      const forwarded = await adapter.forward()
+      assert.equal(forwarded.execution.verification, 'verified')
+      assert.equal(forwarded.observation?.title, 'Details')
+
+      const formPage = await adapter.open(testServer.baseUrl)
+      const messageField = formPage.observation?.interactiveElements.find(
+        (element) => element.role === 'textbox' && element.name === 'Message',
+      )
+      assert(messageField)
+      const filled = await adapter.fill(
+        {
+          kind: 'semantic-ref',
+          observationId: formPage.observation.observationId,
+          ref: messageField.ref,
+        },
+        'Typed by deterministic Browser Control',
+      )
+      assert.equal(filled.execution.verification, 'verified')
+      const categoryField = filled.observation?.interactiveElements.find(
+        (element) => element.role === 'combobox' && element.name === 'Category',
+      )
+      assert(categoryField)
+      const selected = await adapter.select(
+        {
+          kind: 'semantic-ref',
+          observationId: filled.observation.observationId,
+          ref: categoryField.ref,
+        },
+        ['series'],
+      )
+      assert.equal(selected.execution.verification, 'verified')
+      const applyMessage = selected.observation?.interactiveElements.find(
+        (element) => element.role === 'button' && element.name === 'Apply message',
+      )
+      assert(applyMessage)
+      const applied = await adapter.click({
+        kind: 'semantic-ref',
+        observationId: selected.observation.observationId,
+        ref: applyMessage.ref,
+      })
+      assert.match(applied.observation?.content ?? '', /Typed by deterministic Browser Control/)
+      const scrolled = await adapter.scroll('down', 300)
+      assert.equal(scrolled.execution.verification, 'verified')
 
       const catalogPage = await adapter.open(testServer.baseUrl)
       assert.equal(adapter.sessionSnapshot()?.sessionId, sessionId)
@@ -617,6 +672,9 @@ async function main(): Promise<void> {
       const secondAdapterTab = adapterTabs.find((tab) => tab.url?.endsWith('/second'))
       assert(firstTab, `Root tab missing from ${JSON.stringify(adapterTabs)}`)
       assert(secondAdapterTab, `Second tab missing from ${JSON.stringify(adapterTabs)}`)
+      const inspectedTabs = await adapter.inspectTabs()
+      assert.equal(inspectedTabs.execution.operation, 'tabs')
+      assert.equal(inspectedTabs.execution.tabs?.length, adapterTabs.length)
       const switched = await adapter.switchTab(firstTab.tabId)
       assert.equal(switched.execution.verification, 'verified')
       assert.equal(switched.observation?.title, 'Shio browser control test')
@@ -678,25 +736,96 @@ async function main(): Promise<void> {
         new AbortController().signal,
       )
       assert.equal(deterministicWithoutDsh.browser?.verification, 'verified')
+      assert.equal(deterministicWithoutDsh.browser?.riskClass, 'navigation')
+      const effectiveSafeNavigation = plugin.validateWorkflowRequest({
+        type: 'desktop.workflow',
+        goal: 'Open safe page',
+        browserOperation: { operation: 'open', url: testServer.baseUrl },
+        requestedCapabilities: ['browser'],
+        risk: 'destructive',
+      })
+      assert.equal(effectiveSafeNavigation.browserRiskClass, 'navigation')
+      assert.equal(effectiveSafeNavigation.risk, 'normal')
       const browserContext = plugin.getBrowserContextProvider()
-      assert.equal(
-        browserContext.resolveRequirement({
-          userText: 'Какая сегодня погода?',
-          traceId: 'weather',
-        }),
-        'none',
-      )
-      assert.equal(
-        browserContext.resolveRequirement({
-          userText: 'Что на этой странице?',
-          traceId: 'page',
-        }),
-        'current-page',
-      )
+      assert(browserContext.currentObservation())
       assert.match(
-        (await browserContext.buildContext({ userText: 'Что здесь?', traceId: 'page' })).content,
+        (await browserContext.observe({ userText: 'Что здесь?', traceId: 'page' }))?.content ?? '',
         /Controlled semantic browser fixture/,
       )
+      const directFieldObservation = browserContext.currentObservation()
+      const directField = directFieldObservation?.interactiveElements.find(
+        (element) => element.role === 'textbox' && element.name === 'Message',
+      )
+      assert(directFieldObservation)
+      assert(directField)
+      const deterministicFillWithoutDsh = await plugin.executeWorkflow(
+        {
+          type: 'desktop.workflow',
+          goal: 'Fill known field without planner',
+          browserOperation: {
+            operation: 'fill',
+            target: {
+              kind: 'semantic-ref',
+              observationId: directFieldObservation.observationId,
+              ref: directField.ref,
+            },
+            value: 'Direct plugin fill without DSH',
+          },
+          requestedCapabilities: ['browser'],
+          risk: 'normal',
+        },
+        new AbortController().signal,
+      )
+      assert.equal(deterministicFillWithoutDsh.browser?.riskClass, 'input')
+      const afterDirectFill = browserContext.currentObservation()
+      const directApply = afterDirectFill?.interactiveElements.find(
+        (element) => element.role === 'button' && element.name === 'Apply message',
+      )
+      assert(afterDirectFill)
+      assert(directApply)
+      await plugin.executeWorkflow(
+        {
+          type: 'desktop.workflow',
+          goal: 'Click known button without planner',
+          browserOperation: {
+            operation: 'click',
+            target: {
+              kind: 'semantic-ref',
+              observationId: afterDirectFill.observationId,
+              ref: directApply.ref,
+            },
+          },
+          requestedCapabilities: ['browser'],
+          risk: 'normal',
+        },
+        new AbortController().signal,
+      )
+      assert.match(
+        browserContext.currentObservation()?.content ?? '',
+        /Direct plugin fill without DSH/,
+      )
+      const applyObservation = browserContext.currentObservation()
+      assert(applyObservation)
+      const applyTarget = applyObservation.interactiveElements.find(
+        (element) => element.name === 'Apply message',
+      )
+      assert(applyTarget)
+      const effectiveSubmission = plugin.validateWorkflowRequest({
+        type: 'desktop.workflow',
+        goal: 'Apply message',
+        browserOperation: {
+          operation: 'click',
+          target: {
+            kind: 'semantic-ref',
+            observationId: applyObservation.observationId,
+            ref: applyTarget.ref,
+          },
+        },
+        requestedCapabilities: ['browser'],
+        risk: 'normal',
+      })
+      assert.equal(effectiveSubmission.browserRiskClass, 'submission')
+      assert.equal(effectiveSubmission.risk, 'destructive')
       const plannerLifecycle = new DshHarnessAdapter({
         resources: () => ({
           command: process.execPath,
@@ -724,8 +853,8 @@ async function main(): Promise<void> {
       await plannerLifecycle.start('browser')
       await plannerLifecycle.close()
       assert.match(
-        (await browserContext.buildContext({ userText: 'Что здесь?', traceId: 'after-planner' }))
-          .content,
+        (await browserContext.observe({ userText: 'Что здесь?', traceId: 'after-planner' }))
+          ?.content ?? '',
         /Controlled semantic browser fixture/,
       )
       await assert.rejects(
