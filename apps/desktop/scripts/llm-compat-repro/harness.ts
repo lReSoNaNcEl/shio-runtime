@@ -177,6 +177,28 @@ async function runProviderBattery(pc: ProviderCase): Promise<void> {
   }
 
   // 2. Dynamic token budget + temperature from capabilities (non-reasoning).
+  if (pc.id === 'mistral') {
+    const { http } = fakeHttp(() => ({
+      choices: [
+        {
+          finish_reason: 'stop',
+          message: { role: 'assistant', content: '[calm] Привет.', tool_calls: null },
+        },
+      ],
+    }))
+    const out = await runChatCompletion({
+      provider: pc.id,
+      displayName,
+      http,
+      chatPath: '/chat/completions',
+      apiKey: 'test-key',
+      model: pc.plainModel,
+      capabilities: resolveCapabilities(pc.id, pc.plainModel),
+      messages: baseMessages('Привет'),
+    })
+    check('explicit null tool_calls is treated as no tool calls', out === '[calm] Привет.')
+  }
+
   {
     const { http, lastBody } = fakeHttp(() => okResponse('[neutral] ok'))
     const caps = resolveCapabilities(pc.id, pc.plainModel)

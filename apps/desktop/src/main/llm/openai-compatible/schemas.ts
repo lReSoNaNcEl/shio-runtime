@@ -36,7 +36,7 @@ export const ChatCompletionSchema = z
               .object({
                 role: z.string().optional(),
                 content: z.union([z.string(), z.array(ContentPartSchema)]).nullish(),
-                tool_calls: z.array(ToolCallSchema).max(16).optional(),
+                tool_calls: z.array(ToolCallSchema).max(16).nullish(),
                 reasoning: z.string().nullish(),
                 reasoning_content: z.string().nullish(),
               })

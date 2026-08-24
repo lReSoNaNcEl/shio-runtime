@@ -1,4 +1,5 @@
 import type { LlmProviderId } from '../../../shared/llm'
+import { mainLog } from '../../logging/safeLogger'
 import { LlmResponseError } from '../errors'
 import type { LlmFinishReason, LlmToolCall } from '../types'
 import { ChatCompletionSchema } from './schemas'
@@ -62,6 +63,14 @@ export function parseChatCompletion(
 ): ParsedCompletion {
   const parsed = ChatCompletionSchema.safeParse(raw)
   if (!parsed.success) {
+    mainLog.warn('[LLM] response schema rejected', {
+      provider,
+      issues: parsed.error.issues.slice(0, 8).map((issue) => ({
+        code: issue.code,
+        path: issue.path.slice(0, 8),
+        message: issue.message.slice(0, 300),
+      })),
+    })
     throw new LlmResponseError({
       provider,
       code: 'PROVIDER_REJECTED',
