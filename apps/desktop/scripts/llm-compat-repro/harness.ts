@@ -31,7 +31,6 @@ import {
 import { runChatCompletion } from '../../src/main/llm/openai-compatible/request'
 import { normalizeFinishReason } from '../../src/main/llm/openai-compatible/response'
 import {
-  createLLMProvider,
   enrichModelCatalog,
   getProviderDefinition,
   getProviderProfile,
@@ -116,12 +115,6 @@ const PROVIDERS: ProviderCase[] = [
     id: 'cloudflare',
     reasoningModel: '@cf/qwen/qwen3.8-27b',
     plainModel: '@cf/meta/llama-3.3-70b-instruct-fp8-fast',
-    expectedPlainBudget: 1024,
-  },
-  {
-    id: 'github',
-    reasoningModel: 'deepseek/DeepSeek-R1',
-    plainModel: 'openai/gpt-4.1',
     expectedPlainBudget: 1024,
   },
   {
@@ -764,19 +757,6 @@ async function testCatalogCapabilityMetadata(): Promise<void> {
       openRouter.capabilities.supportsReasoning === true,
   )
 
-  const [github] = await fetch('github', [
-    {
-      id: 'publisher/github-opaque',
-      name: 'GitHub Opaque',
-      supported_input_modalities: ['text', 'image'],
-      tags: ['reasoning'],
-    },
-  ])
-  check(
-    'GitHub modality metadata maps Vision and Reasoning',
-    github.capabilities?.supportsVision === true && github.capabilities.supportsReasoning === true,
-  )
-
   const cloudflareModels = await getProviderDefinition('cloudflare').fetchModels(
     {
       get: async () => ({
@@ -909,34 +889,6 @@ function testEnrichedModelCatalog(): void {
   check(
     'Groq Qwen 3.6 fallback is Vision-capable',
     resolveCapabilities('groq', 'qwen/qwen3.6-27b').supportsVision,
-  )
-
-  const metadataModelId = 'publisher/model-with-opaque-name'
-  const [metadataModel] = enrichModelCatalog('github', [
-    {
-      id: metadataModelId,
-      capabilities: {
-        supportsVision: true,
-        supportsReasoning: true,
-        supportsToolCalling: true,
-      },
-    },
-  ])
-  check(
-    'authoritative catalog metadata overrides conservative fallback',
-    metadataModel.capabilities.supportsVision &&
-      metadataModel.capabilities.supportsReasoning &&
-      resolveCapabilities('github', metadataModelId).supportsVision,
-  )
-
-  const provider = createLLMProvider({
-    provider: 'github',
-    apiKey: 'test-key',
-    model: metadataModelId,
-  }) as OpenAICompatibleClient
-  check(
-    'chat provider reuses catalog capability resolution',
-    provider.capabilities().supportsVision && provider.capabilities().supportsReasoning,
   )
 }
 

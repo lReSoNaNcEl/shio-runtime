@@ -5,7 +5,6 @@ import {
 } from './openai-compatible/capabilities'
 import { OpenAICompatibleClient } from './openai-compatible/OpenAICompatibleClient'
 import { cloudflareProvider } from './providers/cloudflare'
-import { githubModelsProvider } from './providers/githubModels'
 import { groqProvider } from './providers/groq'
 import { mistralProvider } from './providers/mistral'
 import { openRouterProvider } from './providers/openRouter'
@@ -21,7 +20,6 @@ import type {
 const PROVIDER_DEFINITIONS: Record<LlmProviderId, ProviderDefinition> = {
   groq: groqProvider,
   cloudflare: cloudflareProvider,
-  github: githubModelsProvider,
   openrouter: openRouterProvider,
   mistral: mistralProvider,
 }

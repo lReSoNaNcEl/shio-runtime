@@ -63,15 +63,6 @@ const PROVIDERS: LiveProvider[] = [
     catalogModelPattern: /^@cf\//,
   },
   {
-    id: 'github',
-    displayName: 'GitHub Models',
-    envKeys: ['GITHUB_MODELS_API_KEY', 'GITHUB_TOKEN'],
-    chatModel: 'openai/gpt-4o-mini',
-    chatModelEnv: 'LLM_LIVE_MODEL_GITHUB',
-    reasoningModel: 'deepseek/DeepSeek-R1',
-    reasoningModelEnv: 'LLM_LIVE_REASONING_GITHUB',
-  },
-  {
     id: 'openrouter',
     displayName: 'OpenRouter',
     envKeys: ['OPENROUTER_API_KEY'],

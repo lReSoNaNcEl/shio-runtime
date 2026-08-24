@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Removed
+
+- Removed the retired GitHub Models LLM provider; GitHub repository access for Project Awareness remains available as a separate integration.
+
 ## [0.1.0-alpha.6] - 2026-07-26
 
 ### Changed

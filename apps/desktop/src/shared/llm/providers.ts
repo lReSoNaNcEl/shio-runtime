@@ -5,7 +5,7 @@
  * neither side should redefine these.
  */
 
-export const LLM_PROVIDER_IDS = ['groq', 'cloudflare', 'github', 'openrouter', 'mistral'] as const
+export const LLM_PROVIDER_IDS = ['groq', 'cloudflare', 'openrouter', 'mistral'] as const
 
 export type LlmProviderId = (typeof LLM_PROVIDER_IDS)[number]
 

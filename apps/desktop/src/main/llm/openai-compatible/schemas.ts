@@ -128,18 +128,6 @@ export const CloudflareModelsResponseSchema = z
   })
   .passthrough()
 
-export const GithubModelsResponseSchema = z.array(
-  z
-    .object({
-      id: z.string(),
-      name: z.string().optional(),
-      capabilities: z.array(z.string()).optional(),
-      supported_input_modalities: z.array(z.string()).optional(),
-      tags: z.array(z.string()).optional(),
-    })
-    .passthrough(),
-)
-
 export const OpenRouterModelSchema = z
   .object({
     id: z.string(),

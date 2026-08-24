@@ -127,7 +127,6 @@ export function buildApplicationDependencies(): ApplicationDependencies {
     const variables: Record<LlmProviderId, string[]> = {
       groq: ['GROQ_API_KEY'],
       cloudflare: ['CLOUDFLARE_API_TOKEN'],
-      github: ['GITHUB_MODELS_API_KEY', 'GITHUB_TOKEN'],
       openrouter: ['OPENROUTER_API_KEY'],
       mistral: ['MISTRAL_API_KEY'],
     }

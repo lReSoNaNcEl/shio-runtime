@@ -40,7 +40,7 @@ export class LlmCredentialStore {
       const decrypted = await this.protector.decrypt(encrypted)
       const parsed = parseCredentialMap(decrypted.result)
       this.credentials = parsed.credentials
-      if (decrypted.shouldReEncrypt || parsed.hadLegacyCerebrasCredential) {
+      if (decrypted.shouldReEncrypt || parsed.hadUnknownProviderCredential) {
         if (Object.keys(this.credentials).length > 0) await this.persist(this.credentials)
         else await rm(this.filePath, { force: true })
       }
@@ -173,7 +173,7 @@ export class LlmCredentialStore {
 
 function parseCredentialMap(value: string): {
   credentials: LlmCredentialMap
-  hadLegacyCerebrasCredential: boolean
+  hadUnknownProviderCredential: boolean
 } {
   const parsed = JSON.parse(value) as unknown
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
@@ -181,6 +181,9 @@ function parseCredentialMap(value: string): {
   }
   const record = parsed as Record<string, unknown>
   const credentials: LlmCredentialMap = {}
+  const hadUnknownProviderCredential = Object.keys(record).some(
+    (provider) => !LLM_PROVIDER_IDS.includes(provider as LlmProviderId),
+  )
   for (const provider of LLM_PROVIDER_IDS) {
     if (typeof record[provider] === 'string') {
       const credential = normalizeCredential(record[provider])
@@ -189,7 +192,7 @@ function parseCredentialMap(value: string): {
   }
   return {
     credentials,
-    hadLegacyCerebrasCredential: typeof record.cerebras === 'string',
+    hadUnknownProviderCredential,
   }
 }
 

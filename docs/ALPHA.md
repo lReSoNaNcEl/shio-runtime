@@ -28,7 +28,7 @@ Double-click `Start Shio Runtime.cmd`. The launcher checks the platform, Python 
 5. Choose a `.vrm` avatar file.
 6. Confirm Speech API, LLM, avatar, and microphone state in Runtime Health.
 
-LLM credentials are encrypted through Windows-backed Electron secure storage. Project Awareness uses a separate GitHub token; an LLM GitHub Models credential is not reused for repository access.
+LLM credentials are encrypted through Windows-backed Electron secure storage. Project Awareness uses a separate GitHub token that is not reused as an LLM credential.
 
 ## Project Awareness
 

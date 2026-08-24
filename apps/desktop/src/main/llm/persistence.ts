@@ -25,8 +25,10 @@ export function resolveLlmPersistence(saved: Record<string, unknown> & LegacyPer
       llmRecord.providers && typeof llmRecord.providers === 'object'
         ? (llmRecord.providers as Record<string, unknown>)
         : {}
-    const legacyCerebrasFound =
-      llmRecord.activeProvider === 'cerebras' || Object.hasOwn(providers, 'cerebras')
+    const removedProviderFound =
+      (typeof llmRecord.activeProvider === 'string' &&
+        !isLlmProviderId(llmRecord.activeProvider)) ||
+      Object.keys(providers).some((provider) => !isLlmProviderId(provider))
     for (const provider of LLM_PROVIDER_IDS) {
       const settings = providers[provider]
       if (!settings || typeof settings !== 'object') continue
@@ -44,7 +46,7 @@ export function resolveLlmPersistence(saved: Record<string, unknown> & LegacyPer
       llm: normalizeLlmConfig(saved.llm),
       plaintextCredentials,
       plaintextProviders: [...plaintextProviders],
-      migrated: plaintextProviders.size > 0 || legacyCerebrasFound,
+      migrated: plaintextProviders.size > 0 || removedProviderFound,
     }
   }
 
