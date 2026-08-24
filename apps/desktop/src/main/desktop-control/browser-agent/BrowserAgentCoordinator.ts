@@ -1,6 +1,7 @@
 import type { DesktopWorkflowActionResult, DesktopWorkflowRequest } from '../../../shared/actions'
 import { parseCharacterActionResponse } from '../../../shared/character-response'
 import type { BrowserContextProvider, BrowserObservation } from '../../../shared/desktop-control'
+import { mainLog } from '../../logging/safeLogger'
 import {
   BROWSER_AGENT_MAX_ACTION_ROUNDS,
   BROWSER_AGENT_WORKFLOW_TIMEOUT_MS,
@@ -19,6 +20,7 @@ export interface BrowserAgentContinuationInput {
   observation: BrowserObservation | null
   allowFurtherActions: boolean
   assistantReply: string
+  repairReason?: 'malformed-action-marker'
   signal: AbortSignal
 }
 
@@ -71,6 +73,7 @@ export class BrowserAgentCoordinator {
     const steps: BrowserAgentStep[] = []
     let latestResult: DesktopWorkflowActionResult | undefined
     let assistantReply = options.initialReply
+    let markerRepairUsed = false
 
     try {
       for (let round = 1; round <= BROWSER_AGENT_MAX_ACTION_ROUNDS; round += 1) {
@@ -126,6 +129,29 @@ export class BrowserAgentCoordinator {
         if (options.signal.aborted) throw options.signal.reason ?? new Error('Turn cancelled')
         assistantReply = continued
         response = parseCharacterActionResponse(continued)
+        if (
+          response.kind === 'malformed' &&
+          allowFurtherActions &&
+          !markerRepairUsed &&
+          !workflowController.signal.aborted
+        ) {
+          markerRepairUsed = true
+          mainLog.warn('[BrowserAgentTrace] continuation_repair_started', {
+            round,
+            reason: 'malformed-action-marker',
+          })
+          const repaired = await options.continueConversation({
+            steps,
+            observation,
+            allowFurtherActions,
+            assistantReply: continued,
+            repairReason: 'malformed-action-marker',
+            signal: workflowController.signal,
+          })
+          if (options.signal.aborted) throw options.signal.reason ?? new Error('Turn cancelled')
+          assistantReply = repaired
+          response = parseCharacterActionResponse(repaired)
+        }
         if (response.kind === 'none') {
           return {
             handled: true,
@@ -140,6 +166,21 @@ export class BrowserAgentCoordinator {
           response.request.requestedCapabilities.length !== 1 ||
           response.request.requestedCapabilities[0] !== 'browser'
         ) {
+          mainLog.warn('[BrowserAgentTrace] continuation_rejected', {
+            round,
+            reason:
+              response.kind === 'malformed'
+                ? 'malformed-action-marker'
+                : !allowFurtherActions
+                  ? 'workflow-no-longer-authorized'
+                  : 'non-browser-capability',
+            requestedCapabilities:
+              response.kind === 'action' ? response.request.requestedCapabilities : undefined,
+            browserOperation:
+              response.kind === 'action' ? response.request.browserOperation?.operation : undefined,
+            markerFailure: response.kind === 'malformed' ? response.reason : undefined,
+            markerIssuePaths: response.kind === 'malformed' ? response.issuePaths : undefined,
+          })
           return {
             handled: true,
             replyText: options.rejectedReply(),

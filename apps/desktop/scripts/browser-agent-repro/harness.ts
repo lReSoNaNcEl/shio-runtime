@@ -4,7 +4,7 @@ import {
   BrowserAgentCoordinator,
   BrowserWorkflowScopeRegistry,
 } from '../../src/main/desktop-control/browser-agent'
-import type { ChatMessage, LLMProvider } from '../../src/main/llm'
+import { type ChatMessage, type LLMProvider, LlmResponseError } from '../../src/main/llm'
 import type { MemoryStore } from '../../src/main/memory'
 import { Orchestrator } from '../../src/main/orchestrator'
 import type { SpeechClient } from '../../src/main/speech/speechClient'
@@ -114,7 +114,7 @@ function browserResult(
 
 interface ScenarioOptions {
   userText: string
-  replies: readonly string[] | ((call: number) => string)
+  replies: readonly (string | Error)[] | ((call: number) => string | Error)
   initialObservation?: BrowserObservation | null
   onExecute?: (
     request: DesktopWorkflowRequest,
@@ -143,6 +143,7 @@ async function scenario(options: ScenarioOptions): Promise<{
           ? options.replies(providerCall)
           : options.replies[providerCall - 1]
       assert(reply, `Missing fake browser-agent reply for provider call ${providerCall}`)
+      if (reply instanceof Error) throw reply
       return reply
     },
   }
@@ -260,6 +261,36 @@ async function main(): Promise<void> {
     /Browser Continuation Action Contract/,
   )
 
+  const retried = await scenario({
+    userText: 'Узнай актуальную стабильную версию Blender.',
+    replies: [
+      marker('Open the current Blender release page', {
+        operation: 'open',
+        url: 'https://www.blender.org/download/',
+      }),
+      new LlmResponseError({
+        provider: 'mistral',
+        code: 'NETWORK_ERROR',
+        recoverable: true,
+        message: 'Controlled transient provider failure',
+      }),
+      '[happy]После временного сетевого сбоя всё же нашла Blender 4.5 LTS.',
+    ],
+    onExecute: (request, index, setObservation) => {
+      setObservation(
+        observation(index, {
+          url: 'https://www.blender.org/download/',
+          title: 'Download Blender',
+          content: 'Blender 4.5 LTS is the current stable release.',
+        }),
+      )
+      return browserResult(index, request.browserOperation)
+    },
+  })
+  assert.equal(retried.calls.length, 3)
+  assert.equal(retried.requests.length, 1)
+  assert.match(retried.replyText, /Blender 4\.5 LTS/)
+
   const home = observation(10, {
     title: 'Home',
     content: 'Catalog home',
@@ -276,6 +307,45 @@ async function main(): Promise<void> {
     title: 'Product X',
     content: 'Product X costs 42 credits.',
   })
+  const repairedMarker = await scenario({
+    userText: 'Открой каталог и Product X.',
+    replies: [
+      marker('Open the controlled site', { operation: 'open', url: 'https://fixture.test/' }),
+      '[calm]<shio-action>{"type":"desktop.workflow","goal":"Open Catalog","browserOperation":{"operation":"click","target":{"kind":"semantic-ref","ref":"e1"}},"requestedCapabilities":["browser"],"risk":"normal"}</shio-action>',
+      marker('Open Catalog', {
+        operation: 'click',
+        target: { kind: 'semantic-ref', observationId: home.observationId, ref: 'e1' },
+      }),
+      '[happy]Catalog открыт после единственной коррекции typed-маркера.',
+    ],
+    onExecute: (request, index, setObservation) => {
+      setObservation(index === 1 ? home : catalog)
+      return browserResult(index, request.browserOperation)
+    },
+  })
+  assert.equal(repairedMarker.calls.length, 4)
+  assert.deepEqual(
+    repairedMarker.requests.map((request) => request.browserOperation?.operation),
+    ['open', 'click'],
+  )
+  assert.match(repairedMarker.replyText, /единственной коррекции/)
+
+  const boundedMarkerRepair = await scenario({
+    userText: 'Открой каталог.',
+    replies: [
+      marker('Open the controlled site', { operation: 'open', url: 'https://fixture.test/' }),
+      '<shio-action>{"browserOperation":{"operation":"click"}}</shio-action>',
+      '<shio-action>{"browserOperation":{"operation":"click"}}</shio-action>',
+    ],
+    onExecute: (request, index, setObservation) => {
+      setObservation(home)
+      return browserResult(index, request.browserOperation)
+    },
+  })
+  assert.equal(boundedMarkerRepair.calls.length, 3)
+  assert.equal(boundedMarkerRepair.requests.length, 1)
+  assert.match(boundedMarkerRepair.replyText, /безопасно оформить действие/)
+
   const multiStep = await scenario({
     userText: 'Найди продукт X и открой его.',
     replies: [
