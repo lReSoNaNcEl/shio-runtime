@@ -44,6 +44,7 @@ import {
   PROVIDER_PROFILES,
 } from '../llm'
 import { mainLog } from '../logging/safeLogger'
+import type { MemoryRuntime } from '../memory'
 import type { CharacterReplyInput, Orchestrator } from '../orchestrator'
 import type { PluginRuntime } from '../plugins'
 import type { ProjectAwarenessPlugin } from '../project-awareness'
@@ -58,6 +59,7 @@ import { registerCapabilitiesIpc } from './registerCapabilitiesIpc'
 import { registerConfigIpc } from './registerConfigIpc'
 import { registerDesktopControlIpc } from './registerDesktopControlIpc'
 import { registerLlmIpc } from './registerLlmIpc'
+import { registerMemoryIpc } from './registerMemoryIpc'
 import { registerNetworkDiagnosticsIpc } from './registerNetworkDiagnosticsIpc'
 import { registerPluginIpc } from './registerPluginIpc'
 import { registerProjectAwarenessIpc } from './registerProjectAwarenessIpc'
@@ -85,6 +87,7 @@ export function registerIpcHandlers(
   desktopControl: () => DesktopControlPlugin,
   speech: () => SpeechClientManager,
   screenContext: ScreenContextService,
+  semanticMemory: MemoryRuntime,
   capabilityCatalog: CapabilityCatalog,
   browserWorkflowScopes: BrowserWorkflowScopeRegistry,
   win: BrowserWindow,
@@ -736,6 +739,7 @@ export function registerIpcHandlers(
     actions,
     authorization,
   })
+  registerMemoryIpc(semanticMemory, authorization)
   registerDesktopControlIpc(desktopControl, authorization)
   registerPluginIpc(plugins, authorization)
   registerNetworkDiagnosticsIpc(authorization)

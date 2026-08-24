@@ -34,6 +34,8 @@ export const mistralProvider: ProviderDefinition = {
             model.architecture?.input_modalities?.includes('image') ??
             model.architecture?.modality?.toLowerCase().includes('image'),
           supportsReasoning: model.capabilities?.reasoning,
+          supportsToolCalling:
+            model.capabilities?.tool_calling ?? model.capabilities?.function_calling,
         },
       }))
     } catch (error) {

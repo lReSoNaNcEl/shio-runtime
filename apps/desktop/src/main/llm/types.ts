@@ -20,8 +20,11 @@ export type LlmContentPart = LlmTextContentPart | LlmImageContentPart
 export type LlmMessageContent = string | readonly LlmContentPart[]
 
 export interface ChatMessage {
-  role: 'system' | 'user' | 'assistant'
+  role: 'system' | 'user' | 'assistant' | 'tool'
   content: LlmMessageContent
+  toolCalls?: readonly LlmToolCall[]
+  toolCallId?: string
+  name?: string
 }
 
 export interface LlmRequestOptions {
@@ -29,8 +32,44 @@ export interface LlmRequestOptions {
   traceId?: string
 }
 
+export interface LlmToolDefinition {
+  name: string
+  description: string
+  parameters: Record<string, unknown>
+}
+
+export interface LlmToolCall {
+  id: string
+  name: string
+  argumentsJson: string
+}
+
+export type LlmFinishReason =
+  | 'stop'
+  | 'length'
+  | 'tool_calls'
+  | 'content_filter'
+  | 'error'
+  | 'unknown'
+
+export interface LlmCompletion {
+  content: string
+  toolCalls: readonly LlmToolCall[]
+  finishReason: LlmFinishReason
+}
+
+export interface LlmCompletionOptions extends LlmRequestOptions {
+  tools?: readonly LlmToolDefinition[]
+  toolChoice?: 'auto' | 'none'
+}
+
 export interface LLMProvider {
   chat(messages: readonly ChatMessage[], options?: LlmRequestOptions): Promise<string>
+  complete?(
+    messages: readonly ChatMessage[],
+    options?: LlmCompletionOptions,
+  ): Promise<LlmCompletion>
+  capabilities?(): LlmCapabilities
 }
 
 export interface ModelCatalogEntry {
@@ -39,6 +78,7 @@ export interface ModelCatalogEntry {
   capabilities?: {
     supportsVision?: boolean
     supportsReasoning?: boolean
+    supportsToolCalling?: boolean
   }
 }
 

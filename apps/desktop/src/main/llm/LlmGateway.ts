@@ -11,6 +11,8 @@ import type {
   ChatMessage,
   LLMProvider,
   LlmCapabilities,
+  LlmCompletion,
+  LlmCompletionOptions,
   LlmGatewaySettings,
   LlmRequestOptions,
 } from './types'
@@ -21,6 +23,10 @@ export class LlmGateway implements LLMProvider {
   getActiveCapabilities(): LlmCapabilities {
     const { provider, model } = this.getSettings()
     return resolveModelCapabilities(provider, model)
+  }
+
+  capabilities(): LlmCapabilities {
+    return this.getActiveCapabilities()
   }
 
   async refreshActiveCapabilities(): Promise<LlmCapabilities> {
@@ -46,5 +52,31 @@ export class LlmGateway implements LLMProvider {
     if (hasImage && !capabilities.supportsVision) throw new LlmCapabilityError()
     const active = createLLMProvider({ provider, apiKey, model })
     return active.chat(messages, options)
+  }
+
+  async complete(
+    messages: readonly ChatMessage[],
+    options: LlmCompletionOptions = {},
+  ): Promise<LlmCompletion> {
+    const { provider, apiKey, model } = this.getSettings()
+    if (getProviderProfile(provider).requiresApiKey && !apiKey.trim()) {
+      throw new LlmCredentialMissingError()
+    }
+    const capabilities = resolveModelCapabilities(provider, model)
+    const hasImage = messages.some(
+      (message) =>
+        typeof message.content !== 'string' &&
+        message.content.some((part) => part.type === 'image'),
+    )
+    if (hasImage && !capabilities.supportsVision) throw new LlmCapabilityError()
+    const active = createLLMProvider({ provider, apiKey, model })
+    if (!active.complete) {
+      return {
+        content: await active.chat(messages, options),
+        toolCalls: Object.freeze([]),
+        finishReason: 'stop',
+      }
+    }
+    return active.complete(messages, options)
   }
 }

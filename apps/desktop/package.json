@@ -59,6 +59,7 @@
     "repro:localization": "esbuild scripts/localization-repro/harness.ts --bundle --platform=node --format=cjs --outfile=out/localization-repro.cjs && node out/localization-repro.cjs",
     "repro:screen-context-race": "node node_modules/electron-vite/node_modules/esbuild/bin/esbuild scripts/screen-context-race-repro/harness.ts --bundle --platform=node --format=cjs --external:electron --external:sharp --outfile=out/screen-context-race-repro.cjs && node out/screen-context-race-repro.cjs",
     "repro:failed-llm-turn": "node node_modules/electron-vite/node_modules/esbuild/bin/esbuild scripts/failed-llm-turn-repro/harness.ts --bundle --platform=node --format=cjs --external:electron --external:sharp --outfile=out/failed-llm-turn-repro.cjs && node out/failed-llm-turn-repro.cjs",
+    "repro:memory": "esbuild scripts/memory-repro/harness.ts --bundle --platform=node --format=cjs --external:electron --outfile=out/memory-repro.cjs && node out/memory-repro.cjs",
     "test:llm-live": "npm run repro:llm-live"
   },
   "keywords": [],

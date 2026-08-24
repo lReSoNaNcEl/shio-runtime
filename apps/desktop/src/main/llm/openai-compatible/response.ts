@@ -1,17 +1,13 @@
 import type { LlmProviderId } from '../../../shared/llm'
 import { LlmResponseError } from '../errors'
+import type { LlmFinishReason, LlmToolCall } from '../types'
 import { ChatCompletionSchema } from './schemas'
 
-export type RuntimeFinishReason =
-  | 'stop'
-  | 'length'
-  | 'tool_calls'
-  | 'content_filter'
-  | 'error'
-  | 'unknown'
+export type RuntimeFinishReason = LlmFinishReason
 
 export interface ParsedCompletion {
   content: string
+  toolCalls: readonly LlmToolCall[]
   finishReason: RuntimeFinishReason
   hadReasoning: boolean
   usage?: { promptTokens?: number; completionTokens?: number; totalTokens?: number }
@@ -88,6 +84,13 @@ export function parseChatCompletion(
   const finishReason = normalizeFinishReason(choice?.finish_reason)
   const reasoning = message?.reasoning ?? message?.reasoning_content
   const extracted = extractMessageContent(message?.content)
+  const toolCalls = Object.freeze(
+    (message?.tool_calls ?? []).map((toolCall) => ({
+      id: toolCall.id,
+      name: toolCall.function.name,
+      argumentsJson: toolCall.function.arguments,
+    })),
+  )
   const hadReasoning =
     (typeof reasoning === 'string' && reasoning.length > 0) || extracted.hadReasoning
   const usage = parsed.data.usage
@@ -99,7 +102,7 @@ export function parseChatCompletion(
     : undefined
 
   const content = extracted.text
-  if (content.length === 0) {
+  if (content.length === 0 && toolCalls.length === 0) {
     if (finishReason === 'length') {
       throw new LlmResponseError({
         provider,
@@ -126,5 +129,5 @@ export function parseChatCompletion(
     })
   }
 
-  return { content, finishReason, hadReasoning, usage }
+  return { content, toolCalls, finishReason, hadReasoning, usage }
 }

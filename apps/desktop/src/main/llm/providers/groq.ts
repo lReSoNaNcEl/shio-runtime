@@ -16,6 +16,10 @@ export const groqProvider: ProviderDefinition = {
     path: '/chat/completions',
     useEnvironmentProxy: true,
   },
+  resolveCapabilities: (modelId, base) => ({
+    ...base,
+    supportsToolCalling: !/^groq\/compound(?:-mini)?$/iu.test(modelId.trim()),
+  }),
   fetchModels: async (http, apiKey) => {
     const key = apiKey.trim()
     if (!key) {
@@ -34,6 +38,8 @@ export const groqProvider: ProviderDefinition = {
             model.architecture?.input_modalities?.includes('image') ??
             model.architecture?.modality?.toLowerCase().includes('image'),
           supportsReasoning: model.capabilities?.reasoning,
+          supportsToolCalling:
+            model.capabilities?.tool_calling ?? model.capabilities?.function_calling,
         },
       }))
     } catch (error) {

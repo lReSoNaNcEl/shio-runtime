@@ -12,6 +12,13 @@ import type { ShioCapabilitySnapshot } from '../shared/capabilities'
 import type { AppSettings } from '../shared/config'
 import type { ShioRuntimeApi } from '../shared/ipc'
 import type { LlmProviderId } from '../shared/llm'
+import type {
+  MemoryForgetInput,
+  MemoryKind,
+  MemoryListInput,
+  MemorySearchInput,
+  MemoryUpdateInput,
+} from '../shared/memory'
 import type { AvatarRuntimeHealth, RuntimeEventInput } from '../shared/runtime'
 import type {
   ScreenContextCaptureRequest,
@@ -115,6 +122,15 @@ const api = {
   },
   memory: {
     clear: () => ipcRenderer.invoke('memory:clear'),
+    getStatus: () => ipcRenderer.invoke('memory:get-status'),
+    setEnabled: (enabled: boolean) => ipcRenderer.invoke('memory:set-enabled', enabled),
+    search: (input: MemorySearchInput) => ipcRenderer.invoke('memory:search', input),
+    list: (input: MemoryListInput) => ipcRenderer.invoke('memory:list', input),
+    create: (input: { kind: MemoryKind; text: string }) =>
+      ipcRenderer.invoke('memory:create', input),
+    update: (input: MemoryUpdateInput) => ipcRenderer.invoke('memory:update', input),
+    forget: (input: MemoryForgetInput) => ipcRenderer.invoke('memory:forget', input),
+    clearAll: () => ipcRenderer.invoke('memory:clear-all'),
   },
   plugins: {
     list: () => ipcRenderer.invoke('plugins:list'),

@@ -7,6 +7,24 @@ const ContentPartSchema = z
   })
   .passthrough()
 
+const ToolCallSchema = z
+  .object({
+    id: z.string().trim().min(1).max(200),
+    type: z.literal('function').optional(),
+    function: z
+      .object({
+        name: z
+          .string()
+          .trim()
+          .min(1)
+          .max(100)
+          .regex(/^[A-Za-z0-9_.-]+$/),
+        arguments: z.string().max(20_000),
+      })
+      .strict(),
+  })
+  .passthrough()
+
 export const ChatCompletionSchema = z
   .object({
     choices: z
@@ -18,6 +36,7 @@ export const ChatCompletionSchema = z
               .object({
                 role: z.string().optional(),
                 content: z.union([z.string(), z.array(ContentPartSchema)]).nullish(),
+                tool_calls: z.array(ToolCallSchema).max(16).optional(),
                 reasoning: z.string().nullish(),
                 reasoning_content: z.string().nullish(),
               })
@@ -48,6 +67,8 @@ export const GroqModelsResponseSchema = z.object({
           .object({
             vision: z.boolean().optional(),
             reasoning: z.boolean().optional(),
+            tool_calling: z.boolean().optional(),
+            function_calling: z.boolean().optional(),
           })
           .passthrough()
           .optional(),
@@ -73,6 +94,8 @@ export const CerebrasModelsResponseSchema = z.object({
           .object({
             vision: z.boolean().optional(),
             reasoning: z.boolean().optional(),
+            tool_calling: z.boolean().optional(),
+            function_calling: z.boolean().optional(),
           })
           .passthrough()
           .optional(),
@@ -136,6 +159,8 @@ export const MistralModelSchema = z
       .object({
         vision: z.boolean().optional(),
         reasoning: z.boolean().optional(),
+        tool_calling: z.boolean().optional(),
+        function_calling: z.boolean().optional(),
       })
       .passthrough()
       .optional(),

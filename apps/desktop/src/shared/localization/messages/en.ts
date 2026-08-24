@@ -1,6 +1,56 @@
 import type { TranslationKey } from './ru'
 
 export const enMessages: Record<TranslationKey, string> = {
+  'app.nav.memory': 'Memory',
+  'app.section.memory.title': 'Shio Memory',
+  'app.section.memory.subtitle':
+    'Important facts, preferences, and decisions across conversations.',
+  'capabilities.memory.title': 'Long-term memory',
+  'capabilities.memory.description':
+    'Shio can remember important facts, preferences, and decisions across conversations.',
+  'capabilities.reason.memoryUnavailable': 'The long-term memory store is unavailable.',
+  'capabilities.reason.memoryDisabled': 'Long-term memory was disabled by the user.',
+  'memory.add': 'Add',
+  'memory.addTitle': 'Add memory',
+  'memory.edit': 'Edit',
+  'memory.editTitle': 'Edit memory',
+  'memory.forget': 'Forget',
+  'memory.forgetTitle': 'Forget this?',
+  'memory.forgetDescription':
+    'This record will be removed from long-term memory. This action cannot be undone.',
+  'memory.clearAll': 'Clear all',
+  'memory.clearTitle': 'Clear all memory?',
+  'memory.clearDescription':
+    'All long-term memory records will be removed. This will not change the current conversation history.',
+  'memory.search': 'Search memory',
+  'memory.searchPlaceholder': 'Find a fact, preference, or decision',
+  'memory.category': 'Category',
+  'memory.text': 'What Shio should remember',
+  'memory.count': 'Total records: {count}',
+  'memory.kind.all': 'All categories',
+  'memory.kind.fact': 'Fact',
+  'memory.kind.preference': 'Preference',
+  'memory.kind.decision': 'Decision',
+  'memory.kind.commitment': 'Commitment',
+  'memory.kind.relationship': 'Relationship',
+  'memory.source.conversation': 'From conversation',
+  'memory.source.manual': 'Added manually',
+  'memory.empty.title': 'Memory is empty',
+  'memory.empty.description':
+    'Explicitly ask Shio to remember something important, or add a record manually.',
+  'memory.empty.search': 'No memory records match this search.',
+  'memory.disabled.title': 'Long-term memory is disabled',
+  'memory.disabled.description':
+    'Shio will not search, add, or change records in conversation. Manual management remains available.',
+  'memory.unavailable.title': 'Memory is unavailable',
+  'memory.unavailable.description':
+    'The store could not be opened. Regular chat continues without long-term memory.',
+  'memory.error.disabled': 'Long-term memory is currently disabled.',
+  'memory.error.unavailable': 'Long-term memory is currently unavailable.',
+  'memory.error.invalid': 'The memory request is invalid.',
+  'memory.error.limit': 'The request exceeds a memory limit.',
+  'memory.error.sensitive': 'Passwords, tokens, and other secrets cannot be saved in memory.',
+  'memory.error.notFound': 'This memory record no longer exists.',
   'app.nav.capabilities': 'Capabilities',
   'app.section.capabilities.subtitle': 'What Shio can do now and what still needs setup.',
   'capabilities.catalog.description':

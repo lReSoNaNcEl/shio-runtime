@@ -3,6 +3,7 @@ export interface LlmCapabilities {
   supportsStreaming: boolean
   supportsTemperature: boolean
   supportsSystemPrompt: boolean
+  supportsToolCalling: boolean
   supportsVision: boolean
   recommendedMaxTokens: number
 }

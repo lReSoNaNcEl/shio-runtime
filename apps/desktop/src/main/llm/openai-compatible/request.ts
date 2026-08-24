@@ -9,7 +9,13 @@ import {
   networkErrorMessage,
   normalizeHttpErrorMessage,
 } from '../errors'
-import type { ChatMessage, LlmCapabilities, LlmRequestOptions } from '../types'
+import type {
+  ChatMessage,
+  LlmCapabilities,
+  LlmCompletionOptions,
+  LlmRequestOptions,
+  LlmToolDefinition,
+} from '../types'
 import { prepareMessages } from './messageCompatibility'
 import { type ParsedCompletion, parseChatCompletion } from './response'
 
@@ -26,6 +32,8 @@ export interface ChatRunConfig {
   temperature?: number
   maxTokensOverride?: number
   requestTimeoutMs?: number
+  tools?: readonly LlmToolDefinition[]
+  toolChoice?: 'auto' | 'none'
 }
 
 const DEFAULT_TEMPERATURE = 0.7
@@ -74,7 +82,7 @@ export async function runChatCompletion(
 
 export async function runChatCompletionDetailed(
   config: ChatRunConfig,
-  options: LlmRequestOptions = {},
+  options: LlmCompletionOptions = {},
 ): Promise<ParsedCompletion> {
   const started = Date.now()
   const requestedTimeoutMs = config.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS
@@ -91,6 +99,19 @@ export async function runChatCompletionDetailed(
   }
   if (config.capabilities.supportsTemperature) {
     body.temperature = config.temperature ?? DEFAULT_TEMPERATURE
+  }
+  const tools = options.tools ?? config.tools
+  if (tools && tools.length > 0 && config.capabilities.supportsToolCalling) {
+    body.tools = tools.map((tool) => ({
+      type: 'function',
+      function: {
+        name: tool.name,
+        description: tool.description,
+        parameters: tool.parameters,
+      },
+    }))
+    body.tool_choice = options.toolChoice ?? config.toolChoice ?? 'auto'
+    body.parallel_tool_calls = false
   }
   const traceId = safeTraceId(options.traceId)
   let terminalResult = 'failure'
