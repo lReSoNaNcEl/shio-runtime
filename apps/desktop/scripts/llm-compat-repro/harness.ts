@@ -16,11 +16,18 @@ import axios, { type AxiosInstance } from 'axios'
 import type { ChatMessage, LlmProviderId } from '../../src/main/llm'
 import { normalizeLlmConfig } from '../../src/main/llm/config'
 import {
+  classifyHttpFailure,
   LlmResponseError,
   ModelFetchError,
   normalizeHttpErrorMessage,
 } from '../../src/main/llm/errors'
+import { prepareMessages } from '../../src/main/llm/openai-compatible/messageCompatibility'
 import { OpenAICompatibleClient } from '../../src/main/llm/openai-compatible/OpenAICompatibleClient'
+import {
+  installLlmProxyResolver,
+  proxyFromSystemRules,
+  resolveLlmProxy,
+} from '../../src/main/llm/openai-compatible/proxy'
 import { runChatCompletion } from '../../src/main/llm/openai-compatible/request'
 import { normalizeFinishReason } from '../../src/main/llm/openai-compatible/response'
 import {
@@ -28,7 +35,9 @@ import {
   enrichModelCatalog,
   getProviderDefinition,
   getProviderProfile,
+  normalizeProviderAccountId,
   resolveModelCapabilities as resolveCapabilities,
+  resolveProviderChatBaseUrl,
 } from '../../src/main/llm/registry'
 
 let passed = 0
@@ -104,9 +113,9 @@ const PROVIDERS: ProviderCase[] = [
     expectedPlainBudget: 512,
   },
   {
-    id: 'cerebras',
-    reasoningModel: 'zai-glm-4.7',
-    plainModel: 'llama-3.3-70b',
+    id: 'cloudflare',
+    reasoningModel: '@cf/qwen/qwen3.8-27b',
+    plainModel: '@cf/meta/llama-3.3-70b-instruct-fp8-fast',
     expectedPlainBudget: 1024,
   },
   {
@@ -240,6 +249,28 @@ async function runProviderBattery(pc: ProviderCase): Promise<void> {
     check('reasoning model detected', caps.supportsReasoning === true, pc.reasoningModel)
     check('reasoning budget = 4096', lastBody().max_tokens === 4096, `got ${lastBody().max_tokens}`)
   }
+
+  // 4. Internal callers may apply a smaller latency budget to bounded tool rounds.
+  {
+    const { http, lastBody } = fakeHttp(() => okResponse('[calm] bounded'))
+    await runChatCompletion(
+      {
+        provider: pc.id,
+        displayName,
+        http,
+        chatPath: '/c',
+        apiKey: 'k',
+        model: pc.reasoningModel,
+        capabilities: resolveCapabilities(pc.id, pc.reasoningModel),
+        messages: baseMessages('select one tool'),
+      },
+      { maxTokens: 1_024, timeoutMs: 15_000 },
+    )
+    check(
+      'request-specific token budget overrides the model default',
+      lastBody().max_tokens === 1_024,
+    )
+  }
   for (const [label, text] of [
     ['russian', '[happy] Привет! Как дела, кожаный мешок?'],
     ['english', '[neutral] Hey there, what do you need?'],
@@ -358,6 +389,13 @@ async function runProviderBattery(pc: ProviderCase): Promise<void> {
       `HTTP ${status} hides raw provider JSON`,
       !msg.includes('raw provider json') && !msg.includes('{'),
     )
+    if (status === 401 || status === 403) {
+      check(
+        `HTTP ${status} has distinct failure code`,
+        err instanceof LlmResponseError &&
+          err.code === (status === 401 ? 'AUTH_ERROR' : 'ACCESS_DENIED'),
+      )
+    }
   }
 }
 
@@ -452,6 +490,23 @@ async function testMistralModelsApi(): Promise<void> {
     )
   }
 
+  // Access denied by provider policy or account permissions.
+  {
+    let err: unknown
+    try {
+      await withMockedMistralGet(
+        () => axiosErr(403),
+        (p) => p.fetchModels('valid-key'),
+      )
+    } catch (e) {
+      err = e
+    }
+    check(
+      'models API 403 -> ModelFetchError(access)',
+      err instanceof ModelFetchError && err.kind === 'access',
+    )
+  }
+
   // Invalid request.
   {
     let err: unknown
@@ -521,6 +576,84 @@ async function testMistralModelsApi(): Promise<void> {
   }
 }
 
+async function testProxyResolution(): Promise<void> {
+  console.log('\n=== Main-owned proxy resolution ===')
+
+  const environmentProxy = await resolveLlmProxy('https://openrouter.ai/api/v1/models', {
+    environment: { HTTPS_PROXY: 'http://proxy-user:proxy-pass@127.0.0.1:10809' },
+    resolveSystemProxy: async () => 'PROXY should-not-be-used.invalid:8080',
+  })
+  check(
+    'HTTPS_PROXY has priority and preserves credentials',
+    environmentProxy !== false &&
+      environmentProxy.host === '127.0.0.1' &&
+      environmentProxy.port === 10_809 &&
+      environmentProxy.auth?.username === 'proxy-user' &&
+      environmentProxy.auth.password === 'proxy-pass',
+  )
+
+  const systemProxy = await resolveLlmProxy('https://api.groq.com/openai/v1/models', {
+    environment: {},
+    resolveSystemProxy: async () => 'PROXY 127.0.0.1:10809; DIRECT',
+  })
+  check(
+    'Windows/Chromium proxy rule is converted for Axios',
+    systemProxy !== false && systemProxy.host === '127.0.0.1' && systemProxy.port === 10_809,
+  )
+  check('DIRECT system rule disables proxy', proxyFromSystemRules('DIRECT') === false)
+
+  let resolvedUrl = ''
+  const http = axios.create({
+    baseURL: 'https://openrouter.ai/api/v1',
+    adapter: async (config) => ({
+      config,
+      data: {},
+      headers: {},
+      status: 200,
+      statusText: 'OK',
+    }),
+  })
+  installLlmProxyResolver(http, async (url) => {
+    resolvedUrl = url
+    return false
+  })
+  await http.get('/models')
+  check(
+    'all provider requests resolve proxy against the complete provider URL',
+    resolvedUrl === 'https://openrouter.ai/api/v1/models',
+    resolvedUrl,
+  )
+
+  check('401 classifies as AUTH_ERROR', classifyHttpFailure(401).code === 'AUTH_ERROR')
+  check('403 classifies as ACCESS_DENIED', classifyHttpFailure(403).code === 'ACCESS_DENIED')
+}
+
+async function testProviderModelAccessErrors(): Promise<void> {
+  console.log('\n=== provider model catalog access errors ===')
+  for (const providerId of ['groq', 'openrouter'] as const) {
+    for (const [status, expectedKind] of [
+      [401, 'auth'],
+      [403, 'access'],
+    ] as const) {
+      const http = {
+        get: async () => {
+          throw axiosErr(status)
+        },
+      } as unknown as AxiosInstance
+      let error: unknown
+      try {
+        await getProviderDefinition(providerId).fetchModels(http, 'valid-key')
+      } catch (caught) {
+        error = caught
+      }
+      check(
+        `${providerId} models API ${status} -> ModelFetchError(${expectedKind})`,
+        error instanceof ModelFetchError && error.kind === expectedKind,
+      )
+    }
+  }
+}
+
 async function testRequestDeadline(): Promise<void> {
   console.log('\n=== request deadline ===')
   const config = {
@@ -536,7 +669,7 @@ async function testRequestDeadline(): Promise<void> {
 
   let timeoutError: unknown
   try {
-    await runChatCompletion({ ...config, requestTimeoutMs: 10 })
+    await runChatCompletion(config, { timeoutMs: 10 })
   } catch (error) {
     timeoutError = error
   }
@@ -561,6 +694,48 @@ async function testRequestDeadline(): Promise<void> {
 
 async function testCatalogCapabilityMetadata(): Promise<void> {
   console.log('\n=== provider catalog capability metadata ===')
+  const cloudflareAccountId = '1874c9f91457fd5af98cb0b9c46005b9'
+  check(
+    'Cloudflare Account ID is normalized and provider URL stays main-owned',
+    normalizeProviderAccountId('cloudflare', cloudflareAccountId.toUpperCase()) ===
+      cloudflareAccountId &&
+      resolveProviderChatBaseUrl('cloudflare', { accountId: cloudflareAccountId }) ===
+        `https://api.cloudflare.com/client/v4/accounts/${cloudflareAccountId}/ai/v1`,
+  )
+  const cloudflareDefinition = getProviderDefinition('cloudflare')
+  const cloudflareCapabilities = resolveCapabilities('cloudflare', '@cf/qwen/qwen3.8-27b')
+  const cloudflarePreparedMessages = prepareMessages(
+    [
+      { role: 'system', content: 'System one.' },
+      { role: 'system', content: 'System two.' },
+      { role: 'user', content: 'Hello.' },
+    ],
+    cloudflareCapabilities,
+    cloudflareDefinition.chat.singleLeadingSystemMessage,
+  )
+  check(
+    'Cloudflare combines leading system blocks into one provider-compatible message',
+    cloudflarePreparedMessages.length === 2 &&
+      cloudflarePreparedMessages[0].role === 'system' &&
+      cloudflarePreparedMessages[0].content === 'System one.\n\nSystem two.' &&
+      cloudflarePreparedMessages[1].role === 'user',
+  )
+  const cloudflareContinuationMessages = prepareMessages(
+    [
+      { role: 'system', content: 'System policy.' },
+      { role: 'user', content: 'Use a tool.' },
+      { role: 'assistant', content: '<shio-tools>...</shio-tools>' },
+      { role: 'system', content: 'Trusted runtime tool result.' },
+    ],
+    cloudflareCapabilities,
+    cloudflareDefinition.chat.singleLeadingSystemMessage,
+  )
+  check(
+    'Cloudflare preserves continuation order without a late system role',
+    cloudflareContinuationMessages.map((message) => message.role).join(',') ===
+      'system,user,assistant,user' &&
+      cloudflareContinuationMessages[3].content === 'Trusted runtime tool result.',
+  )
   const fetch = (
     provider: LlmProviderId,
     response: unknown,
@@ -602,19 +777,62 @@ async function testCatalogCapabilityMetadata(): Promise<void> {
     github.capabilities?.supportsVision === true && github.capabilities.supportsReasoning === true,
   )
 
-  const [cerebras] = await fetch('cerebras', {
-    data: [
-      {
-        id: 'cerebras-opaque',
-        name: 'Cerebras Opaque',
-        capabilities: { vision: true, reasoning: false },
-      },
-    ],
-  })
+  const cloudflareModels = await getProviderDefinition('cloudflare').fetchModels(
+    {
+      get: async () => ({
+        data: {
+          success: true,
+          errors: [],
+          messages: [],
+          result: [
+            {
+              id: 'cloudflare-qwen',
+              source: 1,
+              name: '@cf/qwen/qwen3.8-27b',
+              task: { name: 'Text Generation' },
+              properties: [
+                { property_id: 'vision', value: 'true' },
+                { property_id: 'reasoning', value: 'true' },
+                { property_id: 'function_calling', value: 'true' },
+              ],
+            },
+            {
+              id: 'third-party-openai',
+              source: 2,
+              name: 'openai/gpt-5',
+              task: { name: 'Text Generation' },
+              properties: [{ property_id: 'function_calling', value: 'true' }],
+            },
+            {
+              id: 'wrong-prefix',
+              source: 1,
+              name: 'third-party/opaque',
+              task: { name: 'Text Generation' },
+            },
+            {
+              id: 'embedding',
+              source: 1,
+              name: '@cf/baai/bge-m3',
+              task: { name: 'Text Embeddings' },
+            },
+          ],
+          result_info: { count: 4, page: 1, per_page: 100, total_count: 4 },
+        },
+      }),
+    } as AxiosInstance,
+    'test-key',
+    { accountId: cloudflareAccountId },
+  )
+  const [cloudflare] = cloudflareModels
   check(
-    'Cerebras capability flags map without guessing',
-    cerebras.capabilities?.supportsVision === true &&
-      cerebras.capabilities.supportsReasoning === false,
+    'Cloudflare catalog keeps only Cloudflare-hosted text-generation models',
+    cloudflareModels.length === 1 && cloudflare.id === '@cf/qwen/qwen3.8-27b',
+  )
+  check(
+    'Cloudflare property metadata maps Vision, Reasoning, and tool calling',
+    cloudflare.capabilities?.supportsVision === true &&
+      cloudflare.capabilities.supportsReasoning === true &&
+      cloudflare.capabilities.supportsToolCalling === true,
   )
 
   const [groq] = await fetch('groq', {
@@ -747,6 +965,8 @@ async function main(): Promise<void> {
   }
   await testRequestDeadline()
   await testMistralModelsApi()
+  await testProxyResolution()
+  await testProviderModelAccessErrors()
   await testCatalogCapabilityMetadata()
   testEnrichedModelCatalog()
   testFinishReasonNormalization()

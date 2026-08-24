@@ -3,13 +3,11 @@ import type { ReplyGrounding } from '../../shared/conversation'
 import type {
   CharacterConversationPresenceState,
   CharacterRuntimeMode,
-  CharacterState,
   EventBus,
   RuntimeEventCategory,
   RuntimeEventType,
 } from '../../shared/runtime'
 import type { SerializedSpeechError } from '../../shared/speech'
-import type { AudioPlayer, PlaybackSession } from '../audio/audioPlayer'
 import { resolveEmotionEmbodimentProfile } from '../avatar/EmotionEmbodimentProfile'
 import type { ChatMsg } from '../Controller'
 import type {
@@ -17,15 +15,24 @@ import type {
   ConversationCompletionResult,
   ConversationExecutionPhase,
 } from '../speech/continuous-listening/types'
-import type { AvatarMode, AvatarRuntime } from './AvatarRuntime'
-import type { ConversationPresenceRuntime } from './ConversationPresenceRuntime'
-import { EmotionSpeechPipeline, type PreparedEmotionSpeechSegment } from './EmotionSpeechPipeline'
-import type { OverlayRuntime, SyncedAvatarState } from './OverlayRuntime'
 import {
+  type CharacterResponsePort,
   ConversationTurnFailureError,
   LlmCredentialMissingError,
-  type SpeechRuntime,
-} from './SpeechRuntime'
+  LlmModelMissingError,
+} from './CharacterResponsePort'
+import type { CharacterStateReader, ConversationStateWriter } from './CharacterStateStore'
+import type { ConversationPresenceInput } from './ConversationPresenceRuntime'
+import type {
+  ConversationAvatarProjection,
+  ConversationPresentationPort,
+} from './ConversationPresentationPort'
+import { EmotionSpeechPipeline, type PreparedEmotionSpeechSegment } from './EmotionSpeechPipeline'
+import type {
+  SpeechOutputPort,
+  SpeechPlaybackOptions,
+  SpeechPlaybackSession,
+} from './SpeechOutputPort'
 import { isSpeechServiceError } from './speechCapabilities'
 
 export type ConversationStatus =
@@ -51,12 +58,15 @@ type SpeechReply = Awaited<ReturnType<Window['api']['tts']['synthesizeReply']>>
 type SuccessfulSpeechReply = SpeechReply & { ok: true; audioBuffer: ArrayBuffer }
 
 export interface ConversationRuntimeDeps {
-  speechRuntime: SpeechRuntime
-  conversationPresenceRuntime: ConversationPresenceRuntime
-  avatarRuntime: AvatarRuntime
-  overlayRuntime: OverlayRuntime
+  speechOutput: SpeechOutputPort
+  characterResponse: CharacterResponsePort
+  characterState: CharacterStateReader
+  conversationState: ConversationStateWriter
+  conversationPresence: {
+    update(input: ConversationPresenceInput): CharacterConversationPresenceState
+  }
+  presentation: ConversationPresentationPort
   events: EventBus
-  player: AudioPlayer
   setStatus: (status: ConversationStatus) => void
   pushMessage: (role: ChatMsg['role'], text: string, grounding?: ReplyGrounding) => void
   formatUserError: (message: string) => string
@@ -65,18 +75,10 @@ export interface ConversationRuntimeDeps {
   recordRuntimeEvent: (label: string, detail?: string) => void
   /** Report a normalized Speech Adapter failure to the capabilities health component. */
   reportSpeechServiceError: (error: SerializedSpeechError) => void
-  updateCharacterState: (patch: {
-    status: ConversationStatus
-    mode: CharacterRuntimeMode
-    emotion: string
-    vrmEmotion?: string
-    avatar?: ReturnType<AvatarRuntime['getMirrorState']>
-    conversationPresence?: CharacterConversationPresenceState
-  }) => CharacterState
   rememberSpeechMetadata: (speech: SpeechReply) => void
   updateSpeechPlaybackProgress: (progress: number) => void
   isContinuousCaptureAlive: () => boolean
-  handleLlmSetupRequired: (userText: string) => void
+  handleLlmSetupRequired: (userText: string, reason: 'missing-credential' | 'model-missing') => void
 }
 
 export class ConversationRuntime {
@@ -165,15 +167,15 @@ export class ConversationRuntime {
     // Settle the local execution before asking external adapters to cancel.
     // Adapter AbortErrors can therefore never win the local interruption race.
     interruption.reject(new ConversationInterruptedError(turnId, source))
-    this.deps.player.stopCurrent(turnId, 'conversation-interrupted')
-    this.deps.avatarRuntime.interruptLipSync(turnId)
+    this.deps.speechOutput.stopCurrent(turnId, 'conversation-interrupted')
+    this.deps.presentation.interruptLipSync(turnId)
     this.deps.markAssistantMessageInterrupted()
     const listening = this.deps.isContinuousCaptureAlive()
     const status: ConversationStatus = listening ? 'listening' : 'idle'
     const mode: CharacterRuntimeMode = listening ? 'listening' : 'idle'
-    const waiting = this.deps.conversationPresenceRuntime.update({ phase: 'waiting' })
-    this.deps.speechRuntime.updateConversationPresence(waiting)
-    this.deps.updateCharacterState({
+    const waiting = this.deps.conversationPresence.update({ phase: 'waiting' })
+    this.deps.conversationState.setPresence(waiting)
+    this.deps.conversationState.transition({
       status,
       mode,
       emotion: 'neutral',
@@ -182,7 +184,7 @@ export class ConversationRuntime {
     this.applyAvatarCharacterState({ stopLipSyncTurnId: turnId })
     if (source === 'voice-barge-in') {
       try {
-        this.deps.avatarRuntime.triggerUserInterruption()
+        this.deps.presentation.triggerUserInterruption()
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
         this.deps.recordRuntimeEvent('User Interruption Reaction Failed', message)
@@ -226,32 +228,32 @@ export class ConversationRuntime {
       this.setEmbodimentIntent(
         turn.screenContextId ? { intensity: 'subtle', gazeHint: 'screen' } : undefined,
       )
-      const thinkingPresence = this.deps.conversationPresenceRuntime.update({
+      const thinkingPresence = this.deps.conversationPresence.update({
         phase: 'thinking',
         userText: turn.text,
       })
       this.enterAvatarMode('thinking', 'calm', 'thinking')
-      this.deps.speechRuntime.updateConversationPresence(thinkingPresence)
+      this.deps.conversationState.setPresence(thinkingPresence)
       this.deps.recordRuntimeEvent('Thinking', `turnId=${turn.turnId}`)
       reportPhase('generating')
       const draft = await this.runGeneration(turn.turnId, () =>
-        this.deps.speechRuntime.createAssistantReply(turn.turnId, turn.text, turn.screenContextId),
+        this.deps.characterResponse.createReply(turn.turnId, turn.text, turn.screenContextId),
       )
       if (!this.isCurrentTurn(turn.turnId)) return { status: 'cancelled', turnId: turn.turnId }
 
       this.setEmbodimentIntent(draft.embodimentIntent)
 
       this.publishRuntimeEvent('SentenceGenerated', 'speech', `turnId=${turn.turnId}`)
-      const generatedPresence = this.deps.conversationPresenceRuntime.update({
+      const generatedPresence = this.deps.conversationPresence.update({
         phase: 'preparingReply',
         userText: turn.text,
         replyText: draft.displayText,
         emotionKey: draft.emotionKey,
       })
-      this.deps.speechRuntime.updateConversationPresence(generatedPresence)
+      this.deps.conversationState.setPresence(generatedPresence)
       this.deps.pushMessage('assistant', draft.displayText, draft.grounding)
 
-      if (!this.deps.speechRuntime.hasSpeakableContent(draft.speechText)) {
+      if (!this.deps.speechOutput.hasSpeakableContent(draft.speechText)) {
         reportPhase('cleaning_up')
         this.completeSilentReply(turn.turnId, draft.emotionKey, draft.displayText)
         return {
@@ -275,13 +277,13 @@ export class ConversationRuntime {
         const segment = draft.segments[0]
         failurePhase = 'synthesis'
         const speech = await this.runSynthesis(turn.turnId, () =>
-          this.deps.speechRuntime.synthesizeSegment(turn.turnId, segment),
+          this.deps.speechOutput.synthesizeSegment(turn.turnId, segment),
         )
         this.rememberSpeech(speech, null)
         failurePhase = 'playback'
         reportPhase('playing')
         await Promise.race([
-          this.deps.player.play(speech.audioBuffer, {
+          this.deps.speechOutput.play(speech.audioBuffer, {
             turnId: turn.turnId,
             onReady: (session) => {
               if (!this.isCurrentTurn(turn.turnId))
@@ -308,14 +310,14 @@ export class ConversationRuntime {
           synthesize: async (segment) => {
             try {
               return await this.runSynthesis(turn.turnId, () =>
-                this.deps.speechRuntime.synthesizeSegment(turn.turnId, segment),
+                this.deps.speechOutput.synthesizeSegment(turn.turnId, segment),
               )
             } catch (error) {
               synthesisFailure = error
               throw error
             }
           },
-          prepareAudio: (audioBuffer) => this.deps.player.prepare(audioBuffer),
+          prepareAudio: (audioBuffer) => this.deps.speechOutput.prepare(audioBuffer),
           playPrepared: async (item, onStarted) => {
             this.rememberSpeech(item.speech, null)
             failurePhase = 'playback'
@@ -377,8 +379,10 @@ export class ConversationRuntime {
       ) {
         return { status: 'cancelled', turnId: turn.turnId }
       }
-      if (error instanceof LlmCredentialMissingError) {
-        this.deps.handleLlmSetupRequired(turn.text)
+      if (error instanceof LlmCredentialMissingError || error instanceof LlmModelMissingError) {
+        const reason =
+          error instanceof LlmCredentialMissingError ? 'missing-credential' : 'model-missing'
+        this.deps.handleLlmSetupRequired(turn.text, reason)
         this.deps.recordRuntimeEvent('LLM Setup Required', `turnId=${turn.turnId}`)
         await this.recoverToIdle(turn.turnId)
         return { status: 'failed', turnId: turn.turnId, phase: failurePhase, error: error.message }
@@ -495,7 +499,7 @@ export class ConversationRuntime {
       this.prepareSpeech(emotionKey, `debug turnId=${turn.turnId}`)
       reportPhase('synthesizing')
       const speechTurn = await this.runSynthesis(turn.turnId, () =>
-        this.deps.speechRuntime.createDebugSpeechTurn(turn.turnId, emotionKey),
+        this.deps.speechOutput.createDebugSpeechTurn(turn.turnId, emotionKey),
       )
       if (!this.isCurrentTurn(turn.turnId)) return { status: 'cancelled', turnId: turn.turnId }
       this.rememberSpeech(speechTurn.speech, speechTurn.ttsLatencyText)
@@ -504,7 +508,7 @@ export class ConversationRuntime {
       reportPhase('playing')
       this.playbackTurnId = turn.turnId
       await Promise.race([
-        this.deps.player.play(speechTurn.speech.audioBuffer, {
+        this.deps.speechOutput.play(speechTurn.speech.audioBuffer, {
           turnId: turn.turnId,
           onReady: (session) =>
             this.startSpeech(session, speechTurn.speech, speechTurn.emotionKey, speechTurn.text),
@@ -583,14 +587,14 @@ export class ConversationRuntime {
   }
 
   private enterAvatarMode(
-    mode: Exclude<AvatarMode, 'speaking' | 'awaitingSpeech'>,
+    mode: 'idle' | 'listening' | 'thinking',
     emotionKey: string,
     status: ConversationStatus,
   ): void {
-    this.deps.updateCharacterState({ status, mode, emotion: emotionKey })
+    this.deps.conversationState.transition({ status, mode, emotion: emotionKey })
     this.applyAvatarCharacterState()
     const thinkingImpulse =
-      mode === 'thinking' && this.deps.avatarRuntime.triggerEarImpulse('thinking-entry')
+      mode === 'thinking' && this.deps.presentation.triggerEarImpulse('thinking-entry')
     this.publishAvatarState({
       mode,
       emotionKey,
@@ -601,12 +605,12 @@ export class ConversationRuntime {
   }
 
   private prepareSpeech(emotionKey: string, eventDetail: string, replyText = ''): void {
-    const conversationPresence = this.deps.conversationPresenceRuntime.update({
+    const conversationPresence = this.deps.conversationPresence.update({
       phase: 'startingSpeech',
       emotionKey,
       replyText,
     })
-    this.deps.updateCharacterState({
+    this.deps.conversationState.transition({
       status: 'synthesizing',
       mode: 'awaitingSpeech',
       emotion: emotionKey,
@@ -619,7 +623,7 @@ export class ConversationRuntime {
   }
 
   private startSpeech(
-    session: PlaybackSession,
+    session: SpeechPlaybackSession,
     speech: SuccessfulSpeechReply,
     fallbackEmotion: string,
     replyText = '',
@@ -629,12 +633,12 @@ export class ConversationRuntime {
     this.playbackStartedAt = session.startedAt
     const emotionKey = speech.emotionKey ?? fallbackEmotion
     const embodiment = resolveEmotionEmbodimentProfile(emotionKey)
-    const conversationPresence = this.deps.conversationPresenceRuntime.update({
+    const conversationPresence = this.deps.conversationPresence.update({
       phase: 'speaking',
       replyText,
       emotionKey,
     })
-    this.deps.updateCharacterState({
+    this.deps.conversationState.transition({
       status: 'speaking',
       mode: 'speaking',
       emotion: emotionKey,
@@ -650,8 +654,8 @@ export class ConversationRuntime {
     })
     const replyEmphasis =
       (embodiment.id === 'happy' || embodiment.id === 'angry' || embodiment.id === 'surprised') &&
-      this.deps.avatarRuntime.triggerEarImpulse('reply-emphasis', session.playbackId)
-    if (embodiment.id === 'surprised') this.deps.avatarRuntime.triggerReactionGesture('surprise')
+      this.deps.presentation.triggerEarImpulse('reply-emphasis', session.playbackId)
+    if (embodiment.id === 'surprised') this.deps.presentation.triggerReactionGesture('surprise')
     this.publishAvatarState({
       mode: 'speaking',
       emotionKey,
@@ -674,11 +678,11 @@ export class ConversationRuntime {
   private async playPreparedEmotionSegment(
     turnId: string,
     item: PreparedEmotionSpeechSegment,
-    onReady: Parameters<AudioPlayer['playPrepared']>[1]['onReady'],
+    onReady: SpeechPlaybackOptions['onReady'],
     onProgress: (progress: number) => void,
     onStarted: () => void,
   ): Promise<void> {
-    await this.deps.player.playPrepared(item.audio, {
+    await this.deps.speechOutput.playPrepared(item.audio, {
       turnId,
       onReady: (session) => {
         if (!this.isCurrentTurn(turnId)) throw new Error(`Stale playback ready turnId=${turnId}`)
@@ -697,17 +701,17 @@ export class ConversationRuntime {
       return
     }
     this.setEmbodimentIntent(undefined)
-    this.deps.avatarRuntime.stopLipSync(turnId)
-    const finishing = this.deps.conversationPresenceRuntime.update({ phase: 'finishingSpeech' })
-    this.deps.updateCharacterState({
+    this.deps.presentation.stopLipSync(turnId)
+    const finishing = this.deps.conversationPresence.update({ phase: 'finishingSpeech' })
+    this.deps.conversationState.transition({
       status: 'idle',
       mode: 'idle',
       emotion: 'neutral',
       conversationPresence: finishing,
     })
     this.applyAvatarCharacterState({ stopLipSyncTurnId: turnId })
-    const waiting = this.deps.conversationPresenceRuntime.update({ phase: 'waiting' })
-    this.deps.speechRuntime.updateConversationPresence(waiting)
+    const waiting = this.deps.conversationPresence.update({ phase: 'waiting' })
+    this.deps.conversationState.setPresence(waiting)
     this.deps.updateSpeechPlaybackProgress(0)
     this.publishAvatarState({ mode: 'idle', emotionKey: 'neutral' })
     this.deps.setStatus('idle')
@@ -720,7 +724,7 @@ export class ConversationRuntime {
   private async recoverToIdle(turnId: string): Promise<void> {
     if (!this.isCurrentTurn(turnId)) return
     this.setEmbodimentIntent(undefined)
-    this.deps.avatarRuntime.stopLipSync(turnId)
+    this.deps.presentation.stopLipSync(turnId)
     this.enterAvatarMode('idle', 'neutral', 'idle')
   }
 
@@ -729,13 +733,13 @@ export class ConversationRuntime {
     const listening = this.deps.isContinuousCaptureAlive()
     const status: ConversationStatus = listening ? 'listening' : 'idle'
     const mode: CharacterRuntimeMode = listening ? 'listening' : 'idle'
-    const waiting = this.deps.conversationPresenceRuntime.update({
+    const waiting = this.deps.conversationPresence.update({
       phase: 'waiting',
       replyText,
       emotionKey,
     })
-    this.deps.speechRuntime.updateConversationPresence(waiting)
-    this.deps.updateCharacterState({
+    this.deps.conversationState.setPresence(waiting)
+    this.deps.conversationState.transition({
       status,
       mode,
       emotion: emotionKey,
@@ -755,24 +759,18 @@ export class ConversationRuntime {
   }
 
   private applyAvatarCharacterState(
-    options: Parameters<AvatarRuntime['applyCharacterState']>[1] = {},
+    options: Parameters<ConversationPresentationPort['applyCharacterState']>[1] = {},
   ): void {
-    this.deps.avatarRuntime.applyCharacterState(
-      this.deps.speechRuntime.getCharacterState(),
-      options,
-    )
+    this.deps.presentation.applyCharacterState(this.deps.characterState.get(), options)
   }
 
-  private publishAvatarState(state: SyncedAvatarState): void {
-    this.deps.overlayRuntime.publishAvatarState({
-      ...state,
-      embodimentIntent: this.embodimentIntent,
-    })
+  private publishAvatarState(state: ConversationAvatarProjection): void {
+    this.deps.presentation.publishAvatarState(state, this.embodimentIntent)
   }
 
   private setEmbodimentIntent(intent: CharacterEmbodimentIntent | undefined): void {
     this.embodimentIntent = intent
-    this.deps.avatarRuntime.setEmbodimentIntent(intent)
+    this.deps.presentation.setEmbodimentIntent(intent)
   }
 
   private publishRuntimeEvent(

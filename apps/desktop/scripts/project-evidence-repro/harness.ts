@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-import type { ChatMessage, LLMProvider } from '../../src/main/llm'
+import type { ChatMessage, LLMProvider, LlmCapabilities, LlmCompletion } from '../../src/main/llm'
 import type { MemoryStore } from '../../src/main/memory'
 import { Orchestrator, projectReplyProvenance } from '../../src/main/orchestrator'
 import type { SpeechClient } from '../../src/main/speech/speechClient'
@@ -14,7 +14,6 @@ import type { ProjectContextPacket } from '../../src/shared/project-awareness'
 
 function packet(snapshotSha: string): ProjectContextPacket {
   return {
-    requirement: 'required',
     snapshotSha,
     repository: 'owner/project',
     branch: 'main',
@@ -84,12 +83,45 @@ async function main(): Promise<void> {
   let captured: readonly ChatMessage[] = []
   let llmTraceId: string | undefined
   let projectContextTraceId: string | undefined
+  const toolCapabilities: LlmCapabilities = {
+    supportsReasoning: false,
+    supportsStreaming: true,
+    supportsTemperature: true,
+    supportsSystemPrompt: true,
+    supportsToolCalling: true,
+    supportsVision: false,
+    recommendedMaxTokens: 1_024,
+  }
   const llm: LLMProvider = {
-    chat: async (messages, options) => {
+    capabilities: () => toolCapabilities,
+    chat: async () => {
+      throw new Error('Native tool path unexpectedly used chat()')
+    },
+    complete: async (messages, options): Promise<LlmCompletion> => {
       captured = messages
       llmTraceId = options?.traceId
       if (generationFails) throw new Error('generation failed')
-      return '[neutral]Проверенный ответ. Sources: attacker/fake.ts:1-9.'
+      if (
+        activePacket &&
+        !messages.some((message) => message.role === 'tool' && message.name === 'project_search')
+      ) {
+        return {
+          content: '',
+          finishReason: 'tool_calls',
+          toolCalls: [
+            {
+              id: 'project-call-1',
+              name: 'project_search',
+              argumentsJson: JSON.stringify({ query: 'Orchestrator implementation architecture' }),
+            },
+          ],
+        }
+      }
+      return {
+        content: '[neutral]Проверенный ответ. Sources: attacker/fake.ts:1-9.',
+        finishReason: 'stop',
+        toolCalls: [],
+      }
     },
   }
   let committedTurns = 0
@@ -101,8 +133,7 @@ async function main(): Promise<void> {
     clear: async () => undefined,
   }
   const provider: ProjectContextProvider = {
-    resolveRequirement: () => (activePacket ? activePacket.requirement : 'none'),
-    buildContext: async (request) => {
+    search: async (request) => {
       projectContextTraceId = request.traceId
       return activePacket
     },
@@ -130,25 +161,9 @@ async function main(): Promise<void> {
   assert(
     captured.some(
       (message) =>
-        message.role === 'system' &&
+        message.role === 'tool' &&
         typeof message.content === 'string' &&
-        message.content.includes('Snapshot commit: abc1234567890'),
-    ),
-  )
-  assert(
-    captured.some(
-      (message) =>
-        message.role === 'system' &&
-        typeof message.content === 'string' &&
-        message.content.includes('implementation language and application framework'),
-    ),
-  )
-  assert(
-    captured.some(
-      (message) =>
-        message.role === 'system' &&
-        typeof message.content === 'string' &&
-        message.content.includes('never describe one application stack as the whole repository'),
+        message.content.includes('abc1234567890'),
     ),
   )
 

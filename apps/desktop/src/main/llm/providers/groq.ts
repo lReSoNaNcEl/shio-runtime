@@ -14,7 +14,6 @@ export const groqProvider: ProviderDefinition = {
   chat: {
     baseUrl: 'https://api.groq.com/openai/v1',
     path: '/chat/completions',
-    useEnvironmentProxy: true,
   },
   resolveCapabilities: (modelId, base) => ({
     ...base,
@@ -43,11 +42,14 @@ export const groqProvider: ProviderDefinition = {
         },
       }))
     } catch (error) {
-      if (
-        axios.isAxiosError(error) &&
-        (error.response?.status === 401 || error.response?.status === 403)
-      ) {
+      if (axios.isAxiosError(error) && error.response?.status === 401) {
         throw new ModelFetchError('auth', 'Groq: недействительный API ключ.')
+      }
+      if (axios.isAxiosError(error) && error.response?.status === 403) {
+        throw new ModelFetchError(
+          'access',
+          'Groq: доступ запрещён политикой провайдера или ограничениями аккаунта/региона.',
+        )
       }
       if (axios.isAxiosError(error)) {
         if (error.response) {

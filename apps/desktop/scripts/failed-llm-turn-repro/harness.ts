@@ -13,11 +13,11 @@ import {
   ScreenContextError,
   ScreenContextService,
 } from '../../src/main/screen-context/ScreenContextService'
+import { ConversationTurnFailureError } from '../../src/renderer/runtime/CharacterResponsePort'
 import {
   ConversationRuntime,
   type ConversationRuntimeDeps,
 } from '../../src/renderer/runtime/ConversationRuntime'
-import { ConversationTurnFailureError } from '../../src/renderer/runtime/SpeechRuntime'
 import type { AppSettings } from '../../src/shared/config'
 import { deriveTurnRecoveryCapabilities } from '../../src/shared/conversation'
 
@@ -55,7 +55,7 @@ async function testTransactionalMemory(): Promise<void> {
     (() => ({})) as () => AppSettings,
   )
 
-  provider.enqueue(networkFailure(), networkFailure())
+  provider.enqueue(networkFailure(), networkFailure(), networkFailure(), networkFailure())
   await assert.rejects(orchestrator.createReply({ userText: 'failed-one' }))
   await assert.rejects(
     orchestrator.createReply({
@@ -86,7 +86,7 @@ async function testTransactionalMemory(): Promise<void> {
     false,
   )
 
-  provider.enqueue(networkFailure(), '[warm]next')
+  provider.enqueue(networkFailure(), networkFailure(), '[warm]next')
   await assert.rejects(orchestrator.createReply({ userText: 'failed-after-success' }))
   await orchestrator.createReply({ userText: 'next' })
   assert.equal((await memory.getHistory('default')).length, 4)
@@ -106,10 +106,9 @@ async function testConversationAlwaysLeavesThinking(): Promise<void> {
     const statuses: string[] = []
     const events: string[] = []
     const runtime = new ConversationRuntime({
-      speechRuntime: {
-        getCharacterState: () => ({}),
-        updateConversationPresence: () => undefined,
-        createAssistantReply: async () => {
+      speechOutput: { stopCurrent: () => undefined },
+      characterResponse: {
+        createReply: async () => {
           throw new ConversationTurnFailureError({
             domain: 'llm',
             code,
@@ -120,16 +119,23 @@ async function testConversationAlwaysLeavesThinking(): Promise<void> {
           })
         },
       },
-      conversationPresenceRuntime: { update: (patch: object) => patch },
-      avatarRuntime: {
+      characterState: { get: () => ({}) },
+      conversationState: {
+        transition: () => ({}),
+        setPresence: () => ({}),
+      },
+      conversationPresence: { update: (patch: object) => patch },
+      presentation: {
         applyCharacterState: () => undefined,
         setEmbodimentIntent: () => undefined,
+        interruptLipSync: () => undefined,
         stopLipSync: () => undefined,
         triggerEarImpulse: () => false,
+        triggerReactionGesture: () => undefined,
+        triggerUserInterruption: () => undefined,
+        publishAvatarState: () => undefined,
       },
-      overlayRuntime: { publishAvatarState: () => undefined },
       events: { publish: () => undefined },
-      player: { stopCurrent: () => undefined },
       setStatus: (status: string) => statuses.push(status),
       pushMessage: () => undefined,
       formatUserError: (message: string) => message,
@@ -137,7 +143,6 @@ async function testConversationAlwaysLeavesThinking(): Promise<void> {
       setResponseInterruptionPending: () => undefined,
       recordRuntimeEvent: (label: string) => events.push(label),
       reportSpeechServiceError: () => undefined,
-      updateCharacterState: () => ({}),
       rememberSpeechMetadata: () => undefined,
       updateSpeechPlaybackProgress: () => undefined,
       isContinuousCaptureAlive: () => false,

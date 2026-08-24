@@ -5,7 +5,6 @@ import type {
   ProjectAwarenessStatus,
   ProjectChangeSummary,
   ProjectContextPacket,
-  ProjectContextRequirement,
   ProjectCredentialStatus,
   ProjectFileExcerpt,
   ProjectFreshnessFailureReason,
@@ -40,9 +39,13 @@ import {
   sourcePriority,
 } from './indexing/SourceFilter'
 import { extractSource } from './indexing/SymbolExtractor'
-import type { ProjectAwarenessMetadata, ProjectKnowledgeStore } from './ProjectKnowledgeStore'
-import { projectContextRequirement } from './ProjectRelevanceGate'
+import type {
+  ProjectAwarenessMetadata,
+  ProjectKnowledgeStore,
+  ProjectRetrievalCandidates,
+} from './ProjectKnowledgeStore'
 import { PROJECT_CONTEXT_BUDGET, selectProjectEvidence } from './retrieval/ProjectEvidenceSelector'
+import { compileProjectRetrievalQuery } from './retrieval/ProjectRetrievalQueryCompiler'
 
 export interface ProjectAwarenessRuntimeConfig {
   enabled: boolean
@@ -56,6 +59,40 @@ type AdapterFactory = (owner: string, name: string, token: string) => ProjectRep
 
 const FRESHNESS_TTL_MS = 60_000
 const SNAPSHOT_DELTA_FILE_LIMIT = 12
+
+function retrievalQueries(input: ProjectSearchInput): string[] {
+  return [input.query, ...(input.hints?.paths ?? []), ...(input.hints?.symbols ?? [])]
+    .map((value) => value.trim().slice(0, 500))
+    .filter((value, index, values) => value.length > 0 && values.indexOf(value) === index)
+}
+
+function mergeRetrievalCandidates(
+  results: readonly ProjectRetrievalCandidates[],
+): ProjectRetrievalCandidates {
+  const candidates = new Map<number, ProjectRetrievalCandidates['candidates'][number]>()
+  const normalizedTerms = new Set<string>()
+  for (const result of results) {
+    for (const term of result.normalizedTerms) normalizedTerms.add(term)
+    for (const candidate of result.candidates) {
+      const existing = candidates.get(candidate.id)
+      if (!existing) {
+        candidates.set(candidate.id, { ...candidate, matches: [...candidate.matches] })
+        continue
+      }
+      for (const match of candidate.matches) {
+        if (
+          !existing.matches.some(
+            (existingMatch) =>
+              existingMatch.kind === match.kind && existingMatch.ordinal === match.ordinal,
+          )
+        ) {
+          existing.matches.push(match)
+        }
+      }
+    }
+  }
+  return { candidates: [...candidates.values()], normalizedTerms: [...normalizedTerms] }
+}
 
 function safeTraceId(value: string | undefined): string {
   return value && /^[A-Za-z0-9_.:-]{1,100}$/.test(value) ? value : 'untracked'
@@ -572,11 +609,19 @@ export class ProjectAwarenessRuntime {
 
   search(input: ProjectSearchInput): ProjectSearchResult[] {
     const current = this.requireCurrent()
-    const query = input.query.trim().slice(0, 500)
-    if (!query) return []
+    const queries = retrievalQueries(input)
+    if (queries.length === 0) return []
     const maxEvidenceItems = Math.max(1, Math.min(10, input.limit ?? 8))
     const maxCharacters = Math.max(1_000, Math.min(20_000, input.maxCharacters ?? 16_000))
-    const retrieval = this.store.findCandidates(current.id, query, maxEvidenceItems * 6)
+    const retrieval = mergeRetrievalCandidates(
+      queries.map((query) =>
+        this.store.findCandidates(
+          current.id,
+          compileProjectRetrievalQuery(query),
+          maxEvidenceItems * 6,
+        ),
+      ),
+    )
     return selectProjectEvidence(retrieval.candidates, {
       commitSha: current.snapshot.commitSha,
       normalizedTerms: retrieval.normalizedTerms,
@@ -665,29 +710,22 @@ export class ProjectAwarenessRuntime {
     }
   }
 
-  resolveProjectContextRequirement(userText: string): ProjectContextRequirement {
-    return projectContextRequirement(userText)
-  }
-
   buildContextPacket(
-    userText: string,
+    input: ProjectSearchInput,
     traceIdValue?: string,
-    requestedRequirement = this.resolveProjectContextRequirement(userText),
   ): ProjectContextPacket | null {
     const traceId = safeTraceId(traceIdValue)
     const startedAt = Date.now()
-    const requirement = requestedRequirement
-    const relevant = requirement !== 'none'
-    mainLog.info('[ProjectAwarenessTrace] relevance_gate', {
+    const queries = retrievalQueries(input)
+    mainLog.info('[ProjectAwarenessTrace] search_started', {
       traceId,
-      relevant,
-      requirement,
-      queryCharacters: userText.length,
+      queryCharacters: input.query.length,
+      hintCount: (input.hints?.paths?.length ?? 0) + (input.hints?.symbols?.length ?? 0),
     })
-    if (!relevant) {
+    if (queries.length === 0) {
       mainLog.info('[ProjectAwarenessTrace] terminal', {
         traceId,
-        result: 'not-relevant',
+        result: 'invalid-query',
         elapsedMs: Date.now() - startedAt,
       })
       return null
@@ -706,10 +744,14 @@ export class ProjectAwarenessRuntime {
       ? summarizeProjectMap(map).slice(0, PROJECT_CONTEXT_BUDGET.maxMapSummaryCharacters)
       : undefined
     const retrievalStartedAt = Date.now()
-    const retrieval = this.store.findCandidates(
-      current.id,
-      userText.trim().slice(0, 500),
-      PROJECT_CONTEXT_BUDGET.candidateLimit,
+    const retrieval = mergeRetrievalCandidates(
+      queries.map((query) =>
+        this.store.findCandidates(
+          current.id,
+          compileProjectRetrievalQuery(query),
+          PROJECT_CONTEXT_BUDGET.candidateLimit,
+        ),
+      ),
     )
     const selection = selectProjectEvidence(retrieval.candidates, {
       commitSha: current.snapshot.commitSha,
@@ -720,13 +762,11 @@ export class ProjectAwarenessRuntime {
     const candidateMatchCounts = {
       symbol: 0,
       path: 0,
-      technologyOverview: 0,
       fts: 0,
     }
     for (const candidate of retrieval.candidates) {
       for (const match of candidate.matches) {
-        if (match.kind === 'technology-overview') candidateMatchCounts.technologyOverview += 1
-        else candidateMatchCounts[match.kind] += 1
+        candidateMatchCounts[match.kind] += 1
       }
     }
     mainLog.info('[ProjectAwarenessTrace] retrieval_terminal', {
@@ -767,7 +807,6 @@ export class ProjectAwarenessRuntime {
       elapsedMs: Date.now() - startedAt,
     })
     return {
-      requirement,
       snapshotSha: current.snapshot.commitSha,
       repository: this.config.repository,
       branch: this.config.branch,

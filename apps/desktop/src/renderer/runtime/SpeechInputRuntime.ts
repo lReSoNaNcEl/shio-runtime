@@ -1,9 +1,4 @@
-import type {
-  CharacterRuntimeMode,
-  CharacterState,
-  EventBus,
-  RuntimeEventType,
-} from '../../shared/runtime'
+import type { EventBus, RuntimeEventType } from '../../shared/runtime'
 import type { SerializedSpeechError } from '../../shared/speech'
 import { MicCapture } from '../audio/micCapture'
 import { StreamingPcmCapture } from '../audio/StreamingPcmCapture'
@@ -12,8 +7,11 @@ import {
   type AsrStreamEvent,
   StreamingAsrClient,
 } from '../speech/continuous-listening/StreamingAsrClient'
-import type { AvatarMode, AvatarRuntime } from './AvatarRuntime'
-import type { OverlayRuntime, SyncedAvatarState } from './OverlayRuntime'
+import type { CharacterStateReader, SpeechStateWriter } from './CharacterStateStore'
+import type {
+  ConversationAvatarProjection,
+  ConversationPresentationPort,
+} from './ConversationPresentationPort'
 import type { RecognizedSpeech, SpeechRuntime } from './SpeechRuntime'
 import { isSpeechServiceError } from './speechCapabilities'
 
@@ -45,8 +43,9 @@ export interface ContinuousPartialSpeech {
 
 export interface SpeechInputRuntimeDeps {
   speechRuntime: SpeechRuntime
-  avatarRuntime: AvatarRuntime
-  overlayRuntime: OverlayRuntime
+  characterState: CharacterStateReader
+  speechState: SpeechStateWriter
+  presentation: ConversationPresentationPort
   events: EventBus
   setStatus: (status: SpeechInputStatus) => void
   pushMessage: (role: SpeechInputMessageRole, text: string) => void
@@ -55,13 +54,6 @@ export interface SpeechInputRuntimeDeps {
   recordRuntimeEvent: (label: string, detail?: string) => void
   /** Report a normalized Speech Adapter failure to the capabilities health component. */
   reportSpeechServiceError: (error: SerializedSpeechError) => void
-  updateCharacterState: (patch: {
-    status: SpeechInputStatus
-    mode: CharacterRuntimeMode
-    emotion: string
-    vrmEmotion?: string
-    avatar?: ReturnType<AvatarRuntime['getMirrorState']>
-  }) => CharacterState
 }
 
 export class SpeechInputRuntime {
@@ -69,15 +61,15 @@ export class SpeechInputRuntime {
   private streamingCapture = new StreamingPcmCapture()
   private micDeviceId = ''
   private speechRuntime: SpeechRuntime
-  private avatarRuntime: AvatarRuntime
-  private overlayRuntime: OverlayRuntime
+  private characterState: CharacterStateReader
+  private speechState: SpeechStateWriter
+  private presentation: ConversationPresentationPort
   private events: EventBus
   private setStatus: SpeechInputRuntimeDeps['setStatus']
   private pushMessage: SpeechInputRuntimeDeps['pushMessage']
   private formatMicrophoneUnavailable: SpeechInputRuntimeDeps['formatMicrophoneUnavailable']
   private emptyRecordingMessage: SpeechInputRuntimeDeps['emptyRecordingMessage']
   private recordRuntimeEvent: SpeechInputRuntimeDeps['recordRuntimeEvent']
-  private updateCharacterState: SpeechInputRuntimeDeps['updateCharacterState']
   private reportSpeechServiceError: SpeechInputRuntimeDeps['reportSpeechServiceError']
   private continuousEnabled = false
   private onStreamingServiceLost: ((error: SerializedSpeechError) => void) | null = null
@@ -105,15 +97,15 @@ export class SpeechInputRuntime {
 
   constructor(deps: SpeechInputRuntimeDeps) {
     this.speechRuntime = deps.speechRuntime
-    this.avatarRuntime = deps.avatarRuntime
-    this.overlayRuntime = deps.overlayRuntime
+    this.characterState = deps.characterState
+    this.speechState = deps.speechState
+    this.presentation = deps.presentation
     this.events = deps.events
     this.setStatus = deps.setStatus
     this.pushMessage = deps.pushMessage
     this.formatMicrophoneUnavailable = deps.formatMicrophoneUnavailable
     this.emptyRecordingMessage = deps.emptyRecordingMessage
     this.recordRuntimeEvent = deps.recordRuntimeEvent
-    this.updateCharacterState = deps.updateCharacterState
     this.reportSpeechServiceError = deps.reportSpeechServiceError
   }
 
@@ -306,7 +298,7 @@ export class SpeechInputRuntime {
 
     try {
       await this.micCapture.start(this.micDeviceId)
-      this.enterAvatarMode('listening', 'calm', 'listening')
+      this.enterAvatarMode('listening', 'listening')
       this.publishSpeechEvent('ListeningStarted')
       this.recordRuntimeEvent('Listening')
     } catch (e) {
@@ -320,7 +312,7 @@ export class SpeechInputRuntime {
   private handleStreamingEvent(event: AsrStreamEvent): void {
     if (!this.continuousEnabled) return
     if (event.type === 'speech_started') {
-      if (this.speechRuntime.getCharacterState().mode === 'speaking') {
+      if (this.characterState.get().mode === 'speaking') {
         this.playbackCapturedSegments.add(`${event.sessionId}:${event.segmentId}`)
         if (this.playbackCapturedSegments.size > 64) {
           const oldest = this.playbackCapturedSegments.values().next().value
@@ -386,7 +378,7 @@ export class SpeechInputRuntime {
       return null
     }
 
-    this.enterAvatarMode('thinking', 'calm', 'recognizing')
+    this.enterAvatarMode('thinking', 'recognizing')
     this.recordRuntimeEvent('Recognizing')
 
     try {
@@ -418,27 +410,26 @@ export class SpeechInputRuntime {
   }
 
   private enterAvatarMode(
-    mode: Exclude<AvatarMode, 'speaking' | 'awaitingSpeech'>,
-    emotionKey: string,
-    status: SpeechInputStatus,
+    mode: 'idle' | 'listening' | 'thinking',
+    status: 'idle' | 'listening' | 'recognizing',
   ): void {
-    this.updateCharacterState({ status, mode, emotion: emotionKey })
+    const characterState = this.speechState.transitionInput(status, mode)
     this.applyAvatarCharacterState()
-    this.publishAvatarState({ mode, emotionKey })
+    this.publishAvatarState({ mode, emotionKey: characterState.emotion })
     this.setStatus(status)
   }
 
   private returnToIdle(): void {
-    this.enterAvatarMode('idle', 'neutral', 'idle')
+    this.enterAvatarMode('idle', 'idle')
     this.recordRuntimeEvent('Idle')
   }
 
   private applyAvatarCharacterState(): void {
-    this.avatarRuntime.applyCharacterState(this.speechRuntime.getCharacterState())
+    this.presentation.applyCharacterState(this.characterState.get())
   }
 
-  private publishAvatarState(state: SyncedAvatarState): void {
-    this.overlayRuntime.publishAvatarState(state)
+  private publishAvatarState(state: ConversationAvatarProjection): void {
+    this.presentation.publishAvatarState(state)
   }
 
   private publishSpeechEvent(type: RuntimeEventType, detail?: string): void {

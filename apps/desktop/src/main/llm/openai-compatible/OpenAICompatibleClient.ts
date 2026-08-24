@@ -9,10 +9,11 @@ import type {
   LlmCompletionOptions,
   LlmRequestOptions,
   ModelCatalogProvider,
+  ProviderConnectionSettings,
   ProviderDefinition,
 } from '../types'
 import { resolveBaseCapabilities } from './capabilities'
-import { proxyFromEnv } from './proxy'
+import { installLlmProxyResolver } from './proxy'
 import { runChatCompletion, runChatCompletionDetailed } from './request'
 import type { ParsedCompletion } from './response'
 
@@ -20,6 +21,7 @@ export interface OpenAICompatibleClientConfig {
   definition: ProviderDefinition
   apiKey: string
   model: string
+  connection?: ProviderConnectionSettings
   capabilities?: LlmCapabilities
 }
 
@@ -33,19 +35,22 @@ export class OpenAICompatibleClient implements LLMProvider, ModelCatalogProvider
   private readonly model: string
   private readonly http: AxiosInstance
   private readonly definition: ProviderDefinition
+  private readonly connection: ProviderConnectionSettings
   private readonly resolvedCapabilities?: LlmCapabilities
 
   constructor(config: OpenAICompatibleClientConfig) {
     this.definition = config.definition
+    this.connection = config.connection ?? {}
     this.apiKey = config.apiKey.trim()
     const model = config.model.trim()
     this.model = config.definition.normalizeModelId?.(model) ?? model
     this.resolvedCapabilities = config.capabilities
     this.http = axios.create({
-      baseURL: config.definition.chat.baseUrl,
+      baseURL:
+        config.definition.chat.resolveBaseUrl?.(this.connection) ?? config.definition.chat.baseUrl,
       timeout: 60_000,
-      proxy: config.definition.chat.useEnvironmentProxy ? proxyFromEnv() : undefined,
     })
+    installLlmProxyResolver(this.http)
     observeAxiosNetwork(this.http, 'llm')
   }
 
@@ -72,6 +77,7 @@ export class OpenAICompatibleClient implements LLMProvider, ModelCatalogProvider
         capabilities: this.capabilities(),
         messages,
         extraHeaders: this.definition.chat.headers,
+        singleLeadingSystemMessage: this.definition.chat.singleLeadingSystemMessage,
       },
       options,
     )
@@ -97,6 +103,7 @@ export class OpenAICompatibleClient implements LLMProvider, ModelCatalogProvider
         capabilities: this.capabilities(),
         messages,
         extraHeaders: this.definition.chat.headers,
+        singleLeadingSystemMessage: this.definition.chat.singleLeadingSystemMessage,
       },
       options,
     )
@@ -126,12 +133,13 @@ export class OpenAICompatibleClient implements LLMProvider, ModelCatalogProvider
       capabilities: this.capabilities(),
       messages,
       extraHeaders: this.definition.chat.headers,
+      singleLeadingSystemMessage: this.definition.chat.singleLeadingSystemMessage,
       temperature: options.temperature,
       maxTokensOverride: options.maxTokens,
     })
   }
 
   fetchModels(apiKey: string): Promise<import('../types').ModelCatalogEntry[]> {
-    return this.definition.fetchModels(this.http, apiKey)
+    return this.definition.fetchModels(this.http, apiKey, this.connection)
   }
 }

@@ -1,6 +1,9 @@
-import { backlogTuning } from './tuning'
-import type { BacklogSelectionResult, BufferedUtterance } from './types'
-import type { UtteranceBacklog } from './UtteranceBacklog'
+import { backlogTuning } from '../../speech/continuous-listening/tuning'
+import type {
+  BacklogSelectionResult,
+  BufferedUtterance,
+} from '../../speech/continuous-listening/types'
+import type { UtteranceBacklog } from '../../speech/continuous-listening/UtteranceBacklog'
 
 export interface BacklogSelectorLlmConfig {
   enabled: boolean

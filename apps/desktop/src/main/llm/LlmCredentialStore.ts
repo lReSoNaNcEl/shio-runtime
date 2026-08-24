@@ -38,9 +38,11 @@ export class LlmCredentialStore {
     try {
       const encrypted = await readFile(this.filePath)
       const decrypted = await this.protector.decrypt(encrypted)
-      this.credentials = parseCredentialMap(decrypted.result)
-      if (decrypted.shouldReEncrypt && Object.keys(this.credentials).length > 0) {
-        await this.persist(this.credentials)
+      const parsed = parseCredentialMap(decrypted.result)
+      this.credentials = parsed.credentials
+      if (decrypted.shouldReEncrypt || parsed.hadLegacyCerebrasCredential) {
+        if (Object.keys(this.credentials).length > 0) await this.persist(this.credentials)
+        else await rm(this.filePath, { force: true })
       }
     } catch (error) {
       if (!isMissingFile(error)) {
@@ -169,7 +171,10 @@ export class LlmCredentialStore {
   }
 }
 
-function parseCredentialMap(value: string): LlmCredentialMap {
+function parseCredentialMap(value: string): {
+  credentials: LlmCredentialMap
+  hadLegacyCerebrasCredential: boolean
+} {
   const parsed = JSON.parse(value) as unknown
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
     throw new Error('Invalid encrypted LLM credential payload')
@@ -182,7 +187,10 @@ function parseCredentialMap(value: string): LlmCredentialMap {
       if (credential) credentials[provider] = credential
     }
   }
-  return credentials
+  return {
+    credentials,
+    hadLegacyCerebrasCredential: typeof record.cerebras === 'string',
+  }
 }
 
 function validateCredential(value: string): string {

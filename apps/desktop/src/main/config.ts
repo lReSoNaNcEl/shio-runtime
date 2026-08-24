@@ -22,7 +22,7 @@ import {
 import { vrmAssetRegistry } from './assets/VrmAssetRegistry'
 import { developerModeDefaults, resolveDeveloperModeSettings } from './configDefaults'
 import { defaultLlmConfig, type LlmCredentialStore, normalizeLlmConfig } from './llm'
-import { toPublicLlmConfig } from './llm/config'
+import { resolveLlmProviderAccountId, toPublicLlmConfig } from './llm/config'
 import { resolveLlmPersistence } from './llm/persistence'
 import { mainLog } from './logging/safeLogger'
 import { migrateProjectAwarenessPlugin } from './plugins'
@@ -216,14 +216,17 @@ export function getConfig(): AppConfig {
 }
 
 export function getRendererConfig(): AppSettings {
-  const llm = toPublicLlmConfig(_config.llm, (provider) =>
-    _llmCredentialStore
-      ? _llmCredentialStore.getStatus(provider)
-      : {
-          configured: false,
-          source: 'none',
-          secureStorageAvailable: false,
-        },
+  const llm = toPublicLlmConfig(
+    _config.llm,
+    (provider) =>
+      _llmCredentialStore
+        ? _llmCredentialStore.getStatus(provider)
+        : {
+            configured: false,
+            source: 'none',
+            secureStorageAvailable: false,
+          },
+    (provider, accountId) => resolveLlmProviderAccountId(provider, accountId),
   )
   const { vrmPath, ...publicConfig } = _config
   const vrmAsset = vrmAssetRegistry.describeConfiguredAsset(vrmPath)

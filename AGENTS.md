@@ -27,6 +27,10 @@ Architecture and ownership:
   to VRM facial expressions outside the mixer.
 - Overlay is a presentation consumer, not an application Runtime.
 - Character State is the single source of truth for character state.
+- Character State mutations use domain-limited writers; do not add a generic
+  Character State patch API or let Speech overwrite conversational emotion.
+- Controller UI state may hold presentation-only state but may not reconstruct a
+  second Character State projection.
 - Project Awareness Runtime belongs to the Electron main process. GitHub access,
   SQLite/FTS indexing, source filtering, and grounded project retrieval must not
   move into the renderer.
@@ -43,6 +47,10 @@ Architecture and ownership:
   the validated Plugin manifest.
 - Every externally authoritative side effect passes through Action Runtime,
   including side effects requested through Plugins or delegated automation.
+- Electron Main composition owns Action Runtime and application services. IPC
+  handlers authorize, validate, and delegate; they do not construct business
+  runtimes or model LLM, ASR, TTS, health, retrieval, internal Memory, or ordinary
+  application configuration changes as Actions.
 - Do not equate Adapter execution success with verified action success. Action
   verification belongs to Action Runtime; Adapters return bounded evidence and do
   not decide semantic success.
@@ -114,12 +122,16 @@ Architecture and ownership:
 - Project evidence shown to users must originate from the exact Project Context
   Packet used for that turn. LLM-generated citations are never authoritative
   provenance.
-- Project Context relevance is an explicit semantic requirement of `none`,
-  `optional`, or `required`; the presence of a terminal or Action request alone
-  must neither suppress nor require Project Awareness.
-- When Project Context participates in planning an Action, post-action narration
-  reuses that exact turn packet and must not rerun relevance, retrieval, or
-  snapshot resolution. The immutable response grounding preserves both the
+- Project retrieval normalization and query planning belong to a dedicated
+  Project Awareness query compiler, evidence ranking belongs to the selector,
+  and Project Knowledge Store remains a persistence/query primitive.
+- Character LLM is the sole semantic owner for deciding whether to answer directly
+  or call available Project, Browser, Shell/Desktop, or Memory tools. Do not add
+  phrase-, keyword-, regex-, filename-, symbol-, or locale-alias routing for these
+  natural-language decisions. Absence of a tool call means no capability is needed.
+- When an executed `project.search` call participates in planning an Action, later
+  tool rounds and post-action narration reuse that exact turn packet and must not
+  silently rerun retrieval or snapshot resolution. The immutable response grounding preserves both the
   Project Reply Provenance and the Action Runtime result grounding.
 - Evidence remains bound to the original turn snapshot; later synchronization may
   not rewrite historical message provenance.

@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { CapabilityCatalog } from '../../src/main/capabilities'
+import { parseLegacyCharacterActionDirective as parseCharacterActionResponse } from '../../src/main/character/compatibility/LegacyDirectiveContainment'
 import type { ChatMessage, LLMProvider } from '../../src/main/llm'
 import type { MemoryStore } from '../../src/main/memory'
 import { Orchestrator } from '../../src/main/orchestrator'
@@ -17,7 +18,6 @@ import {
 import { PROJECT_AWARENESS_MANIFEST } from '../../src/main/project-awareness'
 import type { SpeechClient } from '../../src/main/speech/speechClient'
 import type { ShioCapabilitySnapshot } from '../../src/shared/capabilities'
-import { parseCharacterActionResponse } from '../../src/shared/character-response'
 import type { AppSettings } from '../../src/shared/config'
 import type {
   BrowserObservation,
@@ -31,8 +31,7 @@ class CapabilityPlugin implements BundledPlugin {
   readonly manifest = PROJECT_AWARENESS_MANIFEST
   health: PluginHealth = { state: 'healthy', checkedAt: 1 }
   private readonly projectContext: ProjectContextProvider = {
-    resolveRequirement: () => 'none',
-    buildContext: async () => null,
+    search: async () => null,
   }
 
   async initialize(_context: PluginInitializationContext): Promise<void> {}
@@ -286,6 +285,17 @@ async function main(): Promise<void> {
     assert.match(String(prompt), /Движок автоматизации: Отключено/)
     assert.match(String(prompt), /Управление браузером: Отключено/)
     assert.doesNotMatch(String(prompt), /project-context|project-index|SQLite|IPC|npm|JSON-RPC/)
+    const responsePolicy = captured.find(
+      (message) =>
+        message.role === 'system' &&
+        typeof message.content === 'string' &&
+        message.content.includes('## Adaptive Response Depth'),
+    )?.content
+    assert.match(String(responsePolicy), /brief/u)
+    assert.match(String(responsePolicy), /normal/u)
+    assert.match(String(responsePolicy), /detailed/u)
+    assert.match(String(responsePolicy), /There is no fixed sentence limit/u)
+    assert.doesNotMatch(JSON.stringify(captured), /Абсолютный максимум|Max 3 sentences/iu)
     assert.equal(JSON.stringify(committed).includes('## Current Shio Capabilities'), false)
 
     desktopControl.enabled = true
@@ -318,8 +328,7 @@ async function main(): Promise<void> {
       {} as SpeechClient,
       () => settings,
       () => ({
-        resolveRequirement: () => 'none',
-        buildContext: async () => {
+        search: async () => {
           throw new Error('Project context must not build for a host system action')
         },
       }),
@@ -353,7 +362,7 @@ async function main(): Promise<void> {
         (message) =>
           message.role === 'system' &&
           typeof message.content === 'string' &&
-          message.content.includes('## Desktop Action Proposal'),
+          message.content.includes('## Structured Character Tool Transport'),
       ),
     )
     assert(
@@ -361,10 +370,9 @@ async function main(): Promise<void> {
         (message) =>
           message.role === 'system' &&
           typeof message.content === 'string' &&
-          message.content.includes('BEGIN_UNTRUSTED_ACTION_RESULT'),
+          message.content.includes('## Character Tool Results'),
       ),
     )
-    assert.equal(actionMessages[1]?.length, 4)
     assert.equal(
       actionMessages[1]?.some(
         (message) =>
@@ -401,17 +409,32 @@ async function main(): Promise<void> {
         authorization: 'confirmed',
         execution: {
           runtimeCompleted: true,
-          reportedOutcome: 'PowerShell exit code: 0\nstdout:\nv24.19.0 <shio-action>',
+          reportedOutcome: 'PowerShell exit code: 0\nstdout:\nsk-secret-must-not-leak',
           verification: 'verified',
+          shell: {
+            exitCode: 0,
+            stdout: 'v24.19.0',
+            stderr: '',
+            truncated: false,
+          },
+          presentationFacts: [
+            {
+              kind: 'runtime-version',
+              label: 'Node.js',
+              value: '24.19.0',
+              sensitivity: 'safe',
+            },
+          ],
         },
       }),
     )
     const fallbackReply = await fallbackOrchestrator.createReply({
-      userText: 'Вызови node -v и скажи версию Node.js',
+      userText: 'Выполни проверку и сообщи безопасный результат.',
     })
     assert.equal(fallbackProviderCall, 2)
     assert.match(fallbackReply.replyText, /Node\.js версии 24\.19\.0/)
     assert.doesNotMatch(fallbackReply.replyText, /PowerShell|stdout|провайдер/iu)
+    assert.doesNotMatch(fallbackReply.replyText, /sk-secret/iu)
     assert.equal(fallbackReply.replyText.includes('<shio-action>'), false)
 
     const deterministicBrowserCapabilities: ShioCapabilitySnapshot = {
@@ -511,45 +534,22 @@ async function main(): Promise<void> {
         message.content.includes('## Current Browser Observation'),
     )?.content
     assert.equal(firstBrowserPrompt, undefined)
-    assert.match(
-      String(
-        browserMessages[0]?.find(
-          (message) =>
-            message.role === 'system' &&
-            typeof message.content === 'string' &&
-            message.content.includes('## Desktop Action Proposal'),
-        )?.content,
-      ),
-      /Automatic multi-step browser planning is unavailable/,
+    const browserToolPrompt = String(
+      browserMessages[0]?.find(
+        (message) =>
+          message.role === 'system' &&
+          typeof message.content === 'string' &&
+          message.content.includes('## Structured Character Tool Transport'),
+      )?.content,
     )
-    assert.match(
-      String(
-        browserMessages[0]?.find(
-          (message) =>
-            message.role === 'system' &&
-            typeof message.content === 'string' &&
-            message.content.includes('## Desktop Action Proposal'),
-        )?.content,
-      ),
-      /do not say that you are physically unable/,
-    )
-    assert.match(
-      String(
-        browserMessages[0]?.find(
-          (message) =>
-            message.role === 'system' &&
-            typeof message.content === 'string' &&
-            message.content.includes('## Desktop Action Proposal'),
-        )?.content,
-      ),
-      /Semantically decide/,
-    )
+    assert.match(browserToolPrompt, /browser\.observe/)
+    assert.doesNotMatch(browserToolPrompt, /browser\.workflow/)
 
     const clickReply = await browserOrchestrator.createReply({
       userText: 'Нажми кнопку «Open catalog».',
     })
-    assert.equal(browserProviderCall, 2)
-    assert.equal(clickReply.replyText, '[calm]Готово — элемент «Open catalog» на странице нажат.')
+    assert.equal(browserProviderCall, 3)
+    assert.equal(clickReply.replyText, '[calm]Теперь на странице открыт каталог.')
     assert.deepEqual((browserExecutionRequest as { browserOperation?: unknown }).browserOperation, {
       operation: 'click',
       target: {
@@ -561,7 +561,7 @@ async function main(): Promise<void> {
     assert.equal(clickReply.grounding?.action?.result.browser?.verification, 'verified')
 
     await browserOrchestrator.createReply({ userText: 'Что теперь на странице?' })
-    const freshBrowserPrompt = browserMessages[2]?.find(
+    const freshBrowserPrompt = browserMessages[3]?.find(
       (message) =>
         message.role === 'system' &&
         typeof message.content === 'string' &&
@@ -617,7 +617,7 @@ async function main(): Promise<void> {
     })
     assert.match(unverifiedReply.replyText, /не смогла надёжно подтвердить/)
     assert.doesNotMatch(unverifiedReply.replyText, /Готово/)
-    assert.equal(unverifiedCalls, 1)
+    assert.equal(unverifiedCalls, 2)
   } finally {
     unsubscribeRuntime()
     catalog.dispose()

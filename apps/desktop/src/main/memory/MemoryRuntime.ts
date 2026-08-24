@@ -232,7 +232,7 @@ export class MemoryRuntime {
       case 'memory.search':
         return this.search(request.input)
       case 'memory.store':
-        return this.storeMemories(request.input)
+        return this.storeMemories(request.input, context)
       case 'memory.update':
         return this.updateMemory(request.input, context)
       case 'memory.forget':
@@ -251,12 +251,15 @@ export class MemoryRuntime {
     })
   }
 
-  private storeMemories(input: MemoryStoreInput): MemoryStoreResult {
+  private storeMemories(
+    input: MemoryStoreInput,
+    context: MemoryToolExecutionContext,
+  ): MemoryStoreResult {
     const items = this.requireStore().insertMany(
       input.memories.map((candidate) => ({
         kind: candidate.kind,
         text: candidate.text,
-        source: { type: 'conversation', turnId: candidate.sourceTurnId },
+        source: { type: 'conversation', turnId: context.sourceTurnId },
       })),
     )
     this.publish(this.status())

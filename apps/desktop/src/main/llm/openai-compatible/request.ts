@@ -29,6 +29,7 @@ export interface ChatRunConfig {
   capabilities: LlmCapabilities
   messages: readonly ChatMessage[]
   extraHeaders?: Record<string, string>
+  singleLeadingSystemMessage?: boolean
   temperature?: number
   maxTokensOverride?: number
   requestTimeoutMs?: number
@@ -85,16 +86,26 @@ export async function runChatCompletionDetailed(
   options: LlmCompletionOptions = {},
 ): Promise<ParsedCompletion> {
   const started = Date.now()
-  const requestedTimeoutMs = config.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS
+  const requestedTimeoutMs =
+    options.timeoutMs ?? config.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS
   const timeoutMs = Number.isFinite(requestedTimeoutMs)
     ? Math.max(1, requestedTimeoutMs)
     : DEFAULT_REQUEST_TIMEOUT_MS
+  const requestedMaxTokens =
+    options.maxTokens ?? config.maxTokensOverride ?? config.capabilities.recommendedMaxTokens
+  const maxTokens = Number.isFinite(requestedMaxTokens)
+    ? Math.max(1, Math.floor(requestedMaxTokens))
+    : config.capabilities.recommendedMaxTokens
   const deadline = requestDeadline(options.signal, timeoutMs)
-  const preparedMessages = prepareMessages(config.messages, config.capabilities)
+  const preparedMessages = prepareMessages(
+    config.messages,
+    config.capabilities,
+    config.singleLeadingSystemMessage,
+  )
   const body: Record<string, unknown> = {
     model: config.model,
     messages: preparedMessages,
-    max_tokens: config.maxTokensOverride ?? config.capabilities.recommendedMaxTokens,
+    max_tokens: maxTokens,
     stream: false,
   }
   if (config.capabilities.supportsTemperature) {
@@ -114,6 +125,7 @@ export async function runChatCompletionDetailed(
     body.parallel_tool_calls = false
   }
   const traceId = safeTraceId(options.traceId)
+  const toolCount = Array.isArray(body.tools) ? body.tools.length : 0
   let terminalResult = 'failure'
   let terminalCode = 'UNKNOWN'
   mainLog.info('[LLMTransportTrace] request_started', {
@@ -122,8 +134,12 @@ export async function runChatCompletionDetailed(
     model: config.model,
     messageCount: preparedMessages.length,
     serializedRequestCharacters: JSON.stringify(body).length,
+    systemMessageCount: preparedMessages.filter((message) => message.role === 'system').length,
+    toolCount,
+    toolChoice: toolCount > 0 ? body.tool_choice : undefined,
     streaming: false,
     deadlineMs: timeoutMs,
+    maxTokens,
   })
 
   try {

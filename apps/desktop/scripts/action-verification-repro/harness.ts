@@ -390,6 +390,14 @@ async function main(): Promise<void> {
     executor: () => ({
       runtimeCompleted: true,
       reportedOutcome: 'v24.19.0',
+      presentationFacts: [
+        {
+          kind: 'runtime-version',
+          label: 'Node.js',
+          value: '24.19.0',
+          sensitivity: 'safe',
+        },
+      ],
       evidence: shellEvidence(),
     }),
   })
@@ -399,11 +407,13 @@ async function main(): Promise<void> {
   >({ name: 'desktop.workflow', payload: shellRequest('node -v') })
   assert.equal(nodeVersion.verification?.status, 'verified')
   assert.equal(nodeVersion.status, 'success')
-  const narrationContext = JSON.stringify(
-    buildActionResultNarrationContext(toDesktopWorkflowActionResult(nodeVersion)),
-  )
+  const nodeVersionProjection = toDesktopWorkflowActionResult(nodeVersion)
+  const narrationContext = JSON.stringify(buildActionResultNarrationContext(nodeVersionProjection))
   assert.match(narrationContext, /v24\.19\.0/)
-  assert(!/(?:exitCode|stdout|stderr|rpcMethod|pid)/u.test(narrationContext))
+  assert.match(narrationContext, /"shell"/u)
+  assert.match(narrationContext, /"stdout":"v24\.19\.0"/u)
+  assert(!/(?:observedResult|reportedOutcome|rpcMethod|pid)/u.test(narrationContext))
+  assert.equal(nodeVersionProjection.execution?.shell?.exitCode, 0)
 
   const failedShellRuntime = createRuntime({
     executor: () => {
@@ -432,6 +442,9 @@ async function main(): Promise<void> {
     DesktopWorkflowAdapterResult
   >({ name: 'desktop.workflow', payload: shellRequest('large informational output') })
   assert.equal(truncatedShell.verification?.status, 'verified')
+  const truncatedProjection = toDesktopWorkflowActionResult(truncatedShell)
+  assert.equal(truncatedProjection.execution?.shell?.stdout.length, 8_000)
+  assert.equal(truncatedProjection.execution?.shell?.truncated, true)
 
   let mutationExecutions = 0
   const mutationRuntime = createRuntime({
@@ -647,24 +660,13 @@ async function main(): Promise<void> {
   assert.equal(actionBLog?.verificationStatus, 'verified')
 
   const unverifiedPresentation = toDesktopWorkflowActionResult(unchangedClick)
-  const unverifiedFallback = actionResultFallback(
-    unverifiedPresentation,
-    'Нажми кнопку',
-    'ru',
-    true,
-  )
+  const unverifiedFallback = actionResultFallback(unverifiedPresentation, 'ru', true)
   assert(!/(?:готово|успешно|сделано)/iu.test(unverifiedFallback))
   assert.match(unverifiedFallback, /не смогла над[её]жно подтвердить/iu)
-  const failedFallback = actionResultFallback(
-    toDesktopWorkflowActionResult(wrongUrl),
-    'Открой страницу',
-    'ru',
-    true,
-  )
+  const failedFallback = actionResultFallback(toDesktopWorkflowActionResult(wrongUrl), 'ru', true)
   assert(!/(?:готово|успешно|сделано)/iu.test(failedFallback))
   const verifiedFallback = actionResultFallback(
     toDesktopWorkflowActionResult(verifiedOpen),
-    'Открой страницу',
     'ru',
     true,
   )
@@ -687,7 +689,6 @@ async function main(): Promise<void> {
         },
       },
     },
-    'Что на странице?',
     'ru',
     true,
   )
@@ -701,12 +702,34 @@ async function main(): Promise<void> {
       errorCode: 'ACTION_CANCELLED',
       error: 'Action cancelled by Emergency Stop',
     },
-    'Открой страницу',
     'ru',
     true,
   )
   assert.match(cancelledFallback, /отменена/iu)
   assert(!/(?:готово|успешно|сделано)/iu.test(cancelledFallback))
+
+  const versionFallback = actionResultFallback(nodeVersionProjection, 'ru')
+  assert.match(versionFallback, /Node\.js версии 24\.19\.0/u)
+  const secretFallback = actionResultFallback(
+    {
+      actionId: 'action-1-123e4567-e89b-12d3-a456-426614174002',
+      tool: 'desktop.workflow',
+      outcome: 'success',
+      execution: {
+        runtimeCompleted: true,
+        verification: 'verified',
+        reportedOutcome: 'API key: sk-secret-must-not-leak',
+        shell: {
+          exitCode: 0,
+          stdout: 'API key: sk-secret-must-not-leak',
+          stderr: '',
+          truncated: false,
+        },
+      },
+    },
+    'ru',
+  )
+  assert.doesNotMatch(secretFallback, /sk-secret|API key/iu)
 
   const llmTransportFailureRuntime = new ActionRuntime({
     permissionGuard: new ActionPermissionGuard({

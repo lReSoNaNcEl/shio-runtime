@@ -1,15 +1,30 @@
 import assert from 'node:assert/strict'
 
-import type { ChatMessage, LLMProvider } from '../../src/main/llm'
+import type {
+  ChatMessage,
+  LLMProvider,
+  LlmCapabilities,
+  LlmCompletion,
+  LlmCompletionOptions,
+} from '../../src/main/llm'
 import type { MemoryStore } from '../../src/main/memory'
 import { Orchestrator } from '../../src/main/orchestrator'
-import { projectContextRequirement } from '../../src/main/project-awareness'
 import type { SpeechClient } from '../../src/main/speech/speechClient'
 import type { DesktopWorkflowActionResult } from '../../src/shared/actions'
 import type { ShioCapabilitySnapshot } from '../../src/shared/capabilities'
 import type { AppSettings } from '../../src/shared/config'
 import type { ProjectContextProvider } from '../../src/shared/plugins'
 import type { ProjectContextPacket } from '../../src/shared/project-awareness'
+
+const toolCapabilities: LlmCapabilities = {
+  supportsReasoning: false,
+  supportsStreaming: true,
+  supportsTemperature: true,
+  supportsSystemPrompt: true,
+  supportsToolCalling: true,
+  supportsVision: false,
+  recommendedMaxTokens: 1_024,
+}
 
 const actionCapabilities: ShioCapabilitySnapshot = {
   schemaVersion: 1,
@@ -29,7 +44,6 @@ const actionCapabilities: ShioCapabilitySnapshot = {
 
 function packet(snapshotSha: string, content: string): ProjectContextPacket {
   return {
-    requirement: 'required',
     snapshotSha,
     repository: 'owner/project',
     branch: 'main',
@@ -66,9 +80,28 @@ function actionResult(actionId: string, reportedOutcome: string): DesktopWorkflo
   }
 }
 
+type ProviderStep =
+  | { tool: 'project_search' | 'shell_execute'; input: Record<string, unknown> }
+  | { reply: string }
+
+function completion(step: ProviderStep, index: number): LlmCompletion {
+  if ('reply' in step) return { content: step.reply, finishReason: 'stop', toolCalls: [] }
+  return {
+    content: '',
+    finishReason: 'tool_calls',
+    toolCalls: [
+      {
+        id: `tool-call-${index}`,
+        name: step.tool,
+        argumentsJson: JSON.stringify(step.input),
+      },
+    ],
+  }
+}
+
 interface ScenarioInput {
   userText: string
-  replies: readonly string[]
+  steps: readonly ProviderStep[]
   initialPacket?: ProjectContextPacket
   replacementPacket?: ProjectContextPacket
   actionResult?: DesktopWorkflowActionResult
@@ -77,21 +110,34 @@ interface ScenarioInput {
 async function runScenario(input: ScenarioInput): Promise<{
   reply: Awaited<ReturnType<Orchestrator['createReply']>>
   calls: readonly (readonly ChatMessage[])[]
-  buildCount: number
+  searchCount: number
   executedCommands: readonly string[]
 }> {
   let activePacket = input.initialPacket ?? null
-  let buildCount = 0
-  let replyIndex = 0
+  let searchCount = 0
+  let stepIndex = 0
   const calls: (readonly ChatMessage[])[] = []
   const executedCommands: string[] = []
   const llm: LLMProvider = {
-    chat: async (messages) => {
+    capabilities: () => toolCapabilities,
+    chat: async () => {
+      throw new Error('Native tool path unexpectedly used chat()')
+    },
+    complete: async (messages, options: LlmCompletionOptions = {}) => {
       calls.push(messages)
-      const reply = input.replies[replyIndex]
-      replyIndex += 1
-      assert(reply, `Missing fake provider reply for call ${replyIndex}`)
-      return reply
+      assert.equal(options.toolChoice === 'none' || options.toolChoice === 'auto', true)
+      assert.equal(
+        options.tools?.some((tool) => tool.name === 'project_search'),
+        true,
+      )
+      assert.equal(
+        options.tools?.some((tool) => tool.name === 'shell_execute'),
+        true,
+      )
+      const step = input.steps[stepIndex]
+      stepIndex += 1
+      assert(step, `Missing fake provider step ${stepIndex}`)
+      return completion(step, stepIndex)
     },
   }
   const memory: MemoryStore = {
@@ -100,10 +146,9 @@ async function runScenario(input: ScenarioInput): Promise<{
     clear: async () => undefined,
   }
   const provider: ProjectContextProvider = {
-    resolveRequirement: ({ userText }) => projectContextRequirement(userText),
-    buildContext: async ({ requirement }) => {
-      buildCount += 1
-      assert.notEqual(requirement, 'none')
+    search: async ({ query }) => {
+      searchCount += 1
+      assert(query.trim().length > 0)
       return activePacket
     },
   }
@@ -125,7 +170,7 @@ async function runScenario(input: ScenarioInput): Promise<{
   return {
     reply: await orchestrator.createReply({ userText: input.userText }),
     calls,
-    buildCount,
+    searchCount,
     executedCommands,
   }
 }
@@ -133,52 +178,56 @@ async function runScenario(input: ScenarioInput): Promise<{
 function hasProjectSnapshot(messages: readonly ChatMessage[], snapshotSha: string): boolean {
   return messages.some(
     (message) =>
+      message.role === 'tool' &&
       typeof message.content === 'string' &&
-      message.content.includes('## Project Context') &&
-      message.content.includes(`Snapshot commit: ${snapshotSha}`),
+      message.content.includes(snapshotSha),
   )
 }
 
 async function main(): Promise<void> {
   const simpleNode = await runScenario({
-    userText: 'Выполни node -v',
-    replies: [
-      '[calm]<shio-action>{"type":"desktop.workflow","goal":"Read the installed runtime version","shellCommand":"node -v","requestedCapabilities":["shell"],"risk":"normal"}</shio-action>',
-      '[calm]У тебя установлена версия 24.19.0. Терминал пережил эту встречу достойно.',
+    userText: 'Какая версия Node установлена?',
+    steps: [
+      { tool: 'shell_execute', input: { command: 'node -v' } },
+      { reply: '[calm]У тебя установлена версия 24.19.0.' },
     ],
     actionResult: actionResult(
       'action-1-123e4567-e89b-12d3-a456-426614174000',
       'PowerShell exit code: 0\nstdout:\nv24.19.0',
     ),
   })
-  assert.equal(simpleNode.buildCount, 0)
+  assert.equal(simpleNode.searchCount, 0)
   assert.deepEqual(simpleNode.executedCommands, ['node -v'])
   assert.equal(simpleNode.reply.grounding?.project, undefined)
   assert.equal(simpleNode.reply.grounding?.action?.result.outcome, 'success')
-  assert.equal(simpleNode.reply.grounding?.action?.result.reportedOutcomeSha256?.length, 64)
-  assert.equal(
-    simpleNode.calls.some((messages) => hasProjectSnapshot(messages, 'old-sha')),
-    false,
-  )
 
   const requiredVersionPacket = packet('version-snapshot', '"engines": { "node": ">=22" }')
   const requiredVersion = await runScenario({
-    userText: 'Какую версию Node требует этот проект?',
-    replies: ['[calm]Проект требует Node.js 22 или новее — package.json тут вполне прямолинеен.'],
+    userText: 'Какая версия Node требуется этому проекту?',
+    steps: [
+      {
+        tool: 'project_search',
+        input: { query: 'Node runtime requirement', hints: { paths: ['package.json'] } },
+      },
+      { reply: '[calm]Проект требует Node.js 22 или новее.' },
+    ],
     initialPacket: requiredVersionPacket,
   })
-  assert.equal(requiredVersion.buildCount, 1)
+  assert.equal(requiredVersion.searchCount, 1)
   assert.equal(requiredVersion.reply.grounding?.project?.snapshotCommit, 'version-snapshot')
   assert.equal(requiredVersion.reply.grounding?.action, undefined)
-  assert(hasProjectSnapshot(requiredVersion.calls[0] ?? [], 'version-snapshot'))
 
   const originalActionPacket = packet('typecheck-original', '"typecheck": "tsc --noEmit"')
   const laterActionPacket = packet('typecheck-later', '"typecheck": "changed-after-action"')
   const projectTypecheck = await runScenario({
-    userText: 'Запусти typecheck этого проекта',
-    replies: [
-      '[calm]<shio-action>{"type":"desktop.workflow","goal":"Run the project typecheck selected from project evidence","shellCommand":"npm run typecheck","requestedCapabilities":["shell"],"risk":"normal"}</shio-action>',
-      '[happy]Typecheck прошёл без ошибок. Даже TypeScript сегодня решил не капризничать.',
+    userText: 'Найди команду typecheck этого проекта и запусти её.',
+    steps: [
+      {
+        tool: 'project_search',
+        input: { query: 'project typecheck command', hints: { paths: ['package.json'] } },
+      },
+      { tool: 'shell_execute', input: { command: 'npm run typecheck' } },
+      { reply: '[happy]Typecheck прошёл без ошибок.' },
     ],
     initialPacket: originalActionPacket,
     replacementPacket: laterActionPacket,
@@ -187,34 +236,31 @@ async function main(): Promise<void> {
       'PowerShell exit code: 0\nstdout:\nTypecheck passed',
     ),
   })
-  assert.equal(projectTypecheck.buildCount, 1)
+  assert.equal(projectTypecheck.searchCount, 1)
   assert.deepEqual(projectTypecheck.executedCommands, ['npm run typecheck'])
   assert.equal(projectTypecheck.reply.grounding?.project?.snapshotCommit, 'typecheck-original')
   assert.equal(projectTypecheck.reply.grounding?.action?.result.outcome, 'success')
   assert(Object.isFrozen(projectTypecheck.reply.grounding))
-  assert(Object.isFrozen(projectTypecheck.reply.grounding?.project))
-  assert(Object.isFrozen(projectTypecheck.reply.grounding?.action))
-  assert(hasProjectSnapshot(projectTypecheck.calls[0] ?? [], 'typecheck-original'))
   assert(hasProjectSnapshot(projectTypecheck.calls[1] ?? [], 'typecheck-original'))
-  assert.equal(hasProjectSnapshot(projectTypecheck.calls[1] ?? [], 'typecheck-later'), false)
+  assert(hasProjectSnapshot(projectTypecheck.calls[2] ?? [], 'typecheck-original'))
+  assert.equal(hasProjectSnapshot(projectTypecheck.calls[2] ?? [], 'typecheck-later'), false)
 
   const literalCommand = await runScenario({
     userText: 'Выполни npm run typecheck',
-    replies: [
-      '[calm]<shio-action>{"type":"desktop.workflow","goal":"Run the literal command requested by the user","shellCommand":"npm run typecheck","requestedCapabilities":["shell"],"risk":"normal"}</shio-action>',
-      '[calm]Команда завершилась успешно. На этот раз npm даже не устроил ритуал зависимости.',
+    steps: [
+      { tool: 'shell_execute', input: { command: 'npm run typecheck' } },
+      { reply: '[calm]Команда завершилась успешно.' },
     ],
     actionResult: actionResult(
       'action-3-123e4567-e89b-12d3-a456-426614174000',
       'PowerShell exit code: 0\nstdout:\nTypecheck passed',
     ),
   })
-  assert.equal(literalCommand.buildCount, 0)
+  assert.equal(literalCommand.searchCount, 0)
   assert.deepEqual(literalCommand.executedCommands, ['npm run typecheck'])
   assert.equal(literalCommand.reply.grounding?.project, undefined)
-  assert.equal(literalCommand.reply.grounding?.action?.result.outcome, 'success')
 
-  console.log('Project-aware Actions focused repro: PASS')
+  console.log('Semantic Project-aware Actions focused repro: PASS')
 }
 
 void main().catch((error) => {

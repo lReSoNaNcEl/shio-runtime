@@ -107,7 +107,7 @@ export interface ShioRuntimeApi {
       emotionKey?: string
       embodimentIntent?: CharacterEmbodimentIntent
       grounding?: ReplyGrounding
-      errorCode?: 'LLM_CREDENTIAL_MISSING'
+      errorCode?: 'LLM_CREDENTIAL_MISSING' | 'LLM_MODEL_MISSING'
       failure?: ConversationTurnFailure
     }>
     cancelReply: (turnId: string) => Promise<{ ok: boolean }>
@@ -120,8 +120,12 @@ export interface ShioRuntimeApi {
     }) => Promise<{ ok: boolean; result?: BacklogSelectionResult; error?: string }>
     providers: () => Promise<ProviderProfile[]>
     getReadiness: () => Promise<LlmReadiness>
-    fetchModels: (provider: LlmProviderId) => Promise<FetchModelsResult>
-    validateCredential: (provider: LlmProviderId, apiKey: string) => Promise<FetchModelsResult>
+    fetchModels: (provider: LlmProviderId, accountId?: string) => Promise<FetchModelsResult>
+    validateCredential: (
+      provider: LlmProviderId,
+      apiKey: string,
+      accountId?: string,
+    ) => Promise<FetchModelsResult>
     saveCredential: (provider: LlmProviderId, apiKey: string) => Promise<LlmCredentialStatus>
     forgetCredential: (provider: LlmProviderId) => Promise<LlmCredentialStatus>
     getCredentialStatus: (provider: LlmProviderId) => Promise<LlmCredentialStatus>

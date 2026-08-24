@@ -6,10 +6,10 @@ import {
   type LlmProviderPersistedSettings,
   type LlmPublicConfig,
 } from '../../shared/llm'
-import { normalizeProviderModelId } from './registry'
+import { normalizeProviderAccountId, normalizeProviderModelId } from './registry'
 
 export function emptyProviderSettings(): LlmProviderPersistedSettings {
-  return { model: '' }
+  return { model: '', accountId: '' }
 }
 
 function isKnownProviderId(value: string): value is LlmProviderId {
@@ -44,6 +44,9 @@ function toProviderSettings(
     if (typeof record.model === 'string' && record.model) {
       base.model = normalizeProviderModelId(providerId, record.model)
     }
+    if (typeof record.accountId === 'string') {
+      base.accountId = normalizeProviderAccountId(providerId, record.accountId)
+    }
   }
   return base
 }
@@ -53,7 +56,12 @@ export function normalizeLlmConfig(value: unknown): LlmPersistedConfig {
   if (!value || typeof value !== 'object') return result
 
   const record = value as Record<string, unknown>
-  if (typeof record.activeProvider === 'string' && isKnownProviderId(record.activeProvider)) {
+  if (record.activeProvider === 'cerebras') {
+    result.activeProvider = 'cloudflare'
+  } else if (
+    typeof record.activeProvider === 'string' &&
+    isKnownProviderId(record.activeProvider)
+  ) {
     result.activeProvider = record.activeProvider
   }
   const providers = record.providers
@@ -75,7 +83,13 @@ export function normalizeLlmConfig(value: unknown): LlmPersistedConfig {
       ) {
         result.roles.backlogSelector.providerId = selectorValue.providerId
       }
-      if (typeof selectorValue.model === 'string') {
+      const legacyCerebrasSelector = selectorValue.providerId === 'cerebras'
+      if (legacyCerebrasSelector) {
+        result.roles.backlogSelector.enabled = false
+        result.roles.backlogSelector.providerId = ''
+        result.roles.backlogSelector.model = ''
+      }
+      if (!legacyCerebrasSelector && typeof selectorValue.model === 'string') {
         result.roles.backlogSelector.model = selectorValue.model
       }
       if (typeof selectorValue.timeoutMs === 'number' && Number.isFinite(selectorValue.timeoutMs)) {
@@ -101,11 +115,16 @@ export function normalizeLlmConfig(value: unknown): LlmPersistedConfig {
 export function toPublicLlmConfig(
   config: LlmPersistedConfig,
   getCredentialStatus: (provider: LlmProviderId) => LlmCredentialStatus,
+  getAccountId: (provider: LlmProviderId, persistedAccountId: string) => string = (
+    _provider,
+    persistedAccountId,
+  ) => persistedAccountId,
 ): LlmPublicConfig {
   const providers = {} as LlmPublicConfig['providers']
   for (const id of LLM_PROVIDER_IDS) {
     providers[id] = {
       model: config.providers[id].model,
+      accountId: getAccountId(id, config.providers[id].accountId ?? ''),
       credential: getCredentialStatus(id),
     }
   }
@@ -114,4 +133,14 @@ export function toPublicLlmConfig(
     providers,
     roles: config.roles,
   }
+}
+
+export function resolveLlmProviderAccountId(
+  providerId: LlmProviderId,
+  persistedAccountId: string | undefined,
+  environment: NodeJS.ProcessEnv = process.env,
+): string {
+  const configured = normalizeProviderAccountId(providerId, persistedAccountId ?? '')
+  if (configured || providerId !== 'cloudflare') return configured
+  return normalizeProviderAccountId(providerId, environment.CLOUDFLARE_ACCOUNT_ID ?? '')
 }

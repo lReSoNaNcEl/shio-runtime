@@ -1,0 +1,244 @@
+import type { AppSettings } from '../../shared/config'
+import type { AttachmentDisposition } from '../../shared/conversation'
+import { deriveTurnRecoveryCapabilities } from '../../shared/conversation'
+import type { LlmTurnErrorCode } from '../../shared/llm'
+import type { LlmGateway } from '../llm'
+import { LlmTurnCancelledError } from '../llm/errors'
+import { PROVIDER_PROFILES } from '../llm/registry'
+import { mainLog } from '../logging/safeLogger'
+import type { CharacterReplyInput, Orchestrator } from '../orchestrator'
+import { ScreenContextError, type ScreenContextService } from '../screen-context'
+
+export interface CharacterReplyRequest {
+  turnId: string
+  userText: string
+  screenContextId?: string
+}
+
+const TURN_ERROR_CODES = new Set<LlmTurnErrorCode>([
+  'NETWORK_ERROR',
+  'TIMEOUT',
+  'AUTH_ERROR',
+  'ACCESS_DENIED',
+  'RATE_LIMITED',
+  'PROVIDER_REJECTED',
+  'REQUEST_TOO_LARGE',
+  'VISION_UNSUPPORTED',
+  'CANCELLED',
+  'UNKNOWN',
+])
+
+function normalizeFailure(error: unknown, fallbackProvider: string) {
+  const candidate = error as {
+    code?: unknown
+    recoverable?: unknown
+    providerId?: unknown
+    technicalMessage?: unknown
+  }
+  const code =
+    typeof candidate?.code === 'string' && TURN_ERROR_CODES.has(candidate.code as LlmTurnErrorCode)
+      ? (candidate.code as LlmTurnErrorCode)
+      : 'UNKNOWN'
+  return {
+    code,
+    recoverable: candidate?.recoverable === true,
+    providerId: typeof candidate?.providerId === 'string' ? candidate.providerId : fallbackProvider,
+    message:
+      typeof candidate?.technicalMessage === 'string'
+        ? candidate.technicalMessage
+        : error instanceof Error
+          ? error.message
+          : 'Character generation failed',
+  }
+}
+
+function screenContextFailureDisposition(code: string): AttachmentDisposition {
+  if (code === 'CAPTURE_EXPIRED') return 'expired'
+  if (code === 'CAPTURE_NOT_OWNED') return 'released'
+  return 'retained'
+}
+
+export class MainConversationTurnService {
+  private activeTurnId: string | null = null
+  private readonly abortControllers = new Map<string, AbortController>()
+  private readonly settlements = new Map<string, Promise<void>>()
+  private readonly visionTurns = new Set<string>()
+
+  constructor(
+    private readonly orchestrator: () => Orchestrator,
+    private readonly llm: () => LlmGateway,
+    private readonly screenContext: ScreenContextService,
+    private readonly llmSettings: () => AppSettings['llm'],
+  ) {}
+
+  async createReply(rendererId: number, request: CharacterReplyRequest) {
+    const { turnId, userText, screenContextId } = request
+    const llmConfig = this.llmSettings()
+    const activeProfile = PROVIDER_PROFILES.find(
+      (profile) => profile.id === llmConfig.activeProvider,
+    )
+    if (
+      activeProfile?.requiresAccountId === true &&
+      !llmConfig.providers[llmConfig.activeProvider].accountId?.trim()
+    ) {
+      return { ok: false as const, errorCode: 'LLM_CREDENTIAL_MISSING' as const }
+    }
+    if (
+      activeProfile?.requiresApiKey !== false &&
+      !llmConfig.providers[llmConfig.activeProvider].credential.configured
+    ) {
+      return { ok: false as const, errorCode: 'LLM_CREDENTIAL_MISSING' as const }
+    }
+    if (!llmConfig.providers[llmConfig.activeProvider].model.trim()) {
+      return { ok: false as const, errorCode: 'LLM_MODEL_MISSING' as const }
+    }
+    if (this.activeTurnId) {
+      return {
+        ok: false as const,
+        failure: {
+          domain: 'llm' as const,
+          code: 'UNKNOWN' as const,
+          providerId: llmConfig.activeProvider,
+          attachmentDisposition: 'released' as const,
+          retrySameRequest: false,
+          canResubmitWithoutImage: Boolean(screenContextId),
+        },
+      }
+    }
+
+    let pendingCapture: ReturnType<ScreenContextService['acquireForTurn']> | undefined
+    if (screenContextId) {
+      if (!this.llm().getActiveCapabilities().supportsVision) {
+        return {
+          ok: false as const,
+          failure: {
+            domain: 'screen-context' as const,
+            code: 'VISION_UNSUPPORTED' as const,
+            attachmentDisposition: 'retained' as const,
+            retrySameRequest: false,
+            canResubmitWithoutImage: true,
+          },
+        }
+      }
+      try {
+        pendingCapture = this.screenContext.acquireForTurn(rendererId, screenContextId, turnId)
+      } catch (error) {
+        const code = error instanceof ScreenContextError ? error.code : 'UNKNOWN'
+        return {
+          ok: false as const,
+          failure: {
+            domain: 'screen-context' as const,
+            code,
+            attachmentDisposition: screenContextFailureDisposition(code),
+            retrySameRequest: false,
+            canResubmitWithoutImage: true,
+          },
+        }
+      }
+    }
+
+    const abortController = new AbortController()
+    this.activeTurnId = turnId
+    this.abortControllers.set(turnId, abortController)
+    let settle!: () => void
+    this.settlements.set(
+      turnId,
+      new Promise<void>((resolve) => {
+        settle = resolve
+      }),
+    )
+    if (pendingCapture) {
+      this.visionTurns.add(turnId)
+      mainLog.info('Vision Request Started', { turnId })
+    }
+    const startedAt = Date.now()
+    let terminalResult = 'failure'
+    let terminalCode = 'UNKNOWN'
+    try {
+      const input: CharacterReplyInput = {
+        userText,
+        screenContext: pendingCapture
+          ? {
+              mimeType: pendingCapture.mimeType,
+              bytes: pendingCapture.bytes,
+              sourceName: pendingCapture.sourceName,
+            }
+          : undefined,
+      }
+      const result = await this.orchestrator().createReply(input, {
+        signal: abortController.signal,
+        traceId: turnId,
+      })
+      if (abortController.signal.aborted) throw new LlmTurnCancelledError()
+      terminalResult = 'success'
+      terminalCode = 'OK'
+      if (pendingCapture && screenContextId) {
+        this.screenContext.completeTurn(rendererId, screenContextId, turnId)
+        mainLog.info('Vision Request Completed', { turnId })
+      }
+      const { replyText, emotionKey, embodimentIntent, grounding } = result
+      return { ok: true as const, replyText, emotionKey, embodimentIntent, grounding }
+    } catch (error) {
+      const failure = normalizeFailure(error, llmConfig.activeProvider)
+      terminalCode = failure.code
+      terminalResult = failure.code === 'CANCELLED' ? 'cancelled' : 'failure'
+      let attachmentDisposition: AttachmentDisposition = 'released'
+      if (pendingCapture && screenContextId) {
+        if (failure.recoverable || failure.code === 'CANCELLED') {
+          this.screenContext.rollbackTurn(rendererId, screenContextId, turnId)
+          attachmentDisposition = 'retained'
+        } else {
+          this.screenContext.completeTurn(rendererId, screenContextId, turnId)
+        }
+      }
+      const recovery = deriveTurnRecoveryCapabilities({
+        code: failure.code,
+        transportRecoverable: failure.recoverable,
+        hadImage: Boolean(screenContextId),
+        attachmentDisposition,
+      })
+      mainLog.warn('LLM Turn Failed', {
+        provider: failure.providerId,
+        turnId,
+        code: failure.code,
+        vision: Boolean(pendingCapture),
+        recoverable: failure.recoverable,
+      })
+      return {
+        ok: false as const,
+        failure: {
+          domain: 'llm' as const,
+          code: failure.code,
+          providerId: failure.providerId,
+          attachmentDisposition,
+          ...recovery,
+        },
+      }
+    } finally {
+      mainLog.info('[ConversationTrace] ipc_turn_terminal', {
+        traceId: turnId,
+        result: terminalResult,
+        code: terminalCode,
+        elapsedMs: Date.now() - startedAt,
+      })
+      this.abortControllers.delete(turnId)
+      this.visionTurns.delete(turnId)
+      if (this.activeTurnId === turnId) this.activeTurnId = null
+      settle()
+      this.settlements.delete(turnId)
+    }
+  }
+
+  async cancelReply(turnId: string): Promise<void> {
+    const abortController = this.abortControllers.get(turnId)
+    if (!abortController) return
+    abortController.abort()
+    if (this.visionTurns.has(turnId)) mainLog.info('Vision Request Cancelled', { turnId })
+    await this.settlements.get(turnId)
+  }
+
+  async dispose(): Promise<void> {
+    const activeTurnId = this.activeTurnId
+    if (activeTurnId) await this.cancelReply(activeTurnId)
+  }
+}

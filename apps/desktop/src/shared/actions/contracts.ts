@@ -19,6 +19,7 @@ export const desktopAuthorityModeSchema = z.enum(['confirm', 'full'])
 export type DesktopAuthorityMode = z.infer<typeof desktopAuthorityModeSchema>
 
 export const DESKTOP_WORKFLOW_REPORTED_OUTCOME_MAX_CHARS = 8_000
+export const DESKTOP_WORKFLOW_SHELL_OUTPUT_MAX_CHARS = 8_000
 
 const shellCommandSchema = z.string().trim().min(1).max(2_000)
 const browserUrlSchema = z
@@ -164,6 +165,26 @@ export const actionVerificationStatusSchema = z.enum([
 ])
 export type ActionVerificationStatus = z.infer<typeof actionVerificationStatusSchema>
 
+export const actionPresentationFactSchema = z
+  .object({
+    kind: z.literal('runtime-version'),
+    label: z.string().trim().min(1).max(100),
+    value: z.string().trim().min(1).max(200),
+    sensitivity: z.enum(['safe', 'sensitive']),
+  })
+  .strict()
+export type ActionPresentationFact = z.infer<typeof actionPresentationFactSchema>
+
+export const shellActionExecutionSchema = z
+  .object({
+    exitCode: z.number().int().nullable(),
+    stdout: z.string().max(DESKTOP_WORKFLOW_SHELL_OUTPUT_MAX_CHARS),
+    stderr: z.string().max(DESKTOP_WORKFLOW_SHELL_OUTPUT_MAX_CHARS),
+    truncated: z.boolean(),
+  })
+  .strict()
+export type ShellActionExecution = z.infer<typeof shellActionExecutionSchema>
+
 export interface ActionReplyGrounding {
   actionId: string
   tool: 'desktop.workflow'
@@ -173,6 +194,7 @@ export interface ActionReplyGrounding {
     runtimeCompleted?: boolean
     verification?: DesktopWorkflowExecution['verification']
     browser?: BrowserActionExecution
+    presentationFacts?: readonly ActionPresentationFact[]
     reportedOutcomeSha256?: string
     reportedOutcomeCharacters?: number
     errorCode?: string
@@ -187,6 +209,8 @@ export const desktopWorkflowExecutionSchema = z
     verificationReason: z.string().max(100).optional(),
     verificationSummary: z.string().max(500).optional(),
     browser: browserActionExecutionSchema.optional(),
+    shell: shellActionExecutionSchema.optional(),
+    presentationFacts: z.array(actionPresentationFactSchema).max(8).optional(),
   })
   .strict()
 export type DesktopWorkflowExecution = z.infer<typeof desktopWorkflowExecutionSchema>

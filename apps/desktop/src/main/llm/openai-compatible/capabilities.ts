@@ -25,7 +25,7 @@ const NO_TEMPERATURE_PATTERNS: readonly RegExp[] = [
 
 const NON_REASONING_BUDGET: Record<LlmProviderId, number> = {
   groq: 512,
-  cerebras: 1024,
+  cloudflare: 1024,
   github: 1024,
   openrouter: 1024,
   mistral: 1024,

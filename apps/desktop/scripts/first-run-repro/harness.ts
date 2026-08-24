@@ -40,6 +40,9 @@ const readiness = {
   providerDisplayName: 'Groq',
 } as const
 assert.equal(shouldBlockChatSubmission(readiness), true)
+assert.equal(shouldBlockChatSubmission({ ...readiness, reason: 'missing-account-id' }), true)
+assert.equal(shouldBlockChatSubmission({ ...readiness, reason: 'model-missing' }), true)
+assert.equal(shouldBlockChatSubmission({ ...readiness, reason: 'ready' }), false)
 assert.equal(isVrmConfigured(''), false)
 assert.equal(isVrmConfigured(' C:\\avatar.vrm '), true)
 assert.equal(

@@ -90,6 +90,8 @@ class NativeStoreProvider implements LLMProvider {
         options.tools?.some((tool) => tool.name === 'memory_store'),
         true,
       )
+      assert.equal(JSON.stringify(options.tools).includes('sourceTurnId'), false)
+      assert.equal(JSON.stringify(messages).includes('current user source turn id'), false)
       assert.equal(
         messages.some(
           (message) =>
@@ -104,7 +106,6 @@ class NativeStoreProvider implements LLMProvider {
           {
             kind: 'preference',
             text: 'Пользователь любит зелёный чай.',
-            sourceTurnId: 'turn-native',
           },
         ],
       })
@@ -137,11 +138,11 @@ class FallbackStoreProvider implements LLMProvider {
           (message) =>
             message.role === 'system' &&
             typeof message.content === 'string' &&
-            message.content.includes('<shio-memory>'),
+            message.content.includes('<shio-tools>'),
         ),
         true,
       )
-      return '<shio-memory>{"operations":[{"name":"memory.store","input":{"memories":[{"kind":"preference","text":"Пользователь любит зелёный чай.","sourceTurnId":"turn-fallback"}]}}]}</shio-memory>'
+      return '<shio-memory>{"operations":[{"name":"memory.store","input":{"memories":[{"kind":"preference","text":"Пользователь любит зелёный чай.","sourceTurnId":"model-forged-turn"}]}}]}</shio-memory>'
     }
     assert.equal(
       messages.some(
@@ -181,7 +182,7 @@ class NativeRejectingFallbackProvider implements LLMProvider {
         (message) =>
           message.role === 'system' &&
           typeof message.content === 'string' &&
-          message.content.includes('<shio-memory>'),
+          message.content.includes('<shio-tools>'),
       ),
       true,
     )
@@ -317,10 +318,10 @@ function firstMemoryId(data: Record<string, unknown>): string {
   return items?.[0]?.id as string
 }
 
-function storeRequest(turnId: string, text: string): MemoryToolRequest {
+function storeRequest(_turnId: string, text: string): MemoryToolRequest {
   return {
     name: 'memory.store',
-    input: { memories: [{ kind: 'preference', text, sourceTurnId: turnId }] },
+    input: { memories: [{ kind: 'preference', text }] },
   }
 }
 
@@ -337,6 +338,7 @@ async function nativeAndFallbackPaths(root: string): Promise<void> {
   )
   assert.match(nativeReply.replyText, /Зелёный чай/u)
   assert.equal(nativeRuntime.listForUi({}).items.length, 1)
+  assert.equal(nativeRuntime.listForUi({}).items[0]?.source.turnId, 'turn-native')
   assert.equal(nativeProvider.calls, 2)
   nativeRuntime.close()
 
@@ -352,6 +354,7 @@ async function nativeAndFallbackPaths(root: string): Promise<void> {
     { traceId: 'turn-fallback' },
   )
   assert.equal(fallbackRuntime.listForUi({}).items[0]?.text, 'Пользователь любит зелёный чай.')
+  assert.equal(fallbackRuntime.listForUi({}).items[0]?.source.turnId, 'turn-fallback')
   assert.equal(fallbackProvider.calls, 2)
   fallbackRuntime.close()
 }
@@ -432,7 +435,6 @@ async function semanticStorePhrasingMatrix(root: string): Promise<void> {
             {
               kind: 'preference',
               text: 'Пользователь любит зелёный чай.',
-              sourceTurnId: traceId,
             },
           ],
         })
@@ -449,6 +451,49 @@ async function semanticStorePhrasingMatrix(root: string): Promise<void> {
     assert.equal(runtime.listForUi({}).items[0]?.text, 'Пользователь любит зелёный чай.')
     runtime.close()
   }
+}
+
+async function questionFormPersistenceContract(root: string): Promise<void> {
+  const phrase = 'Можешь запомнить что я люблю пиццу?'
+  const traceId = 'turn-question-form-store'
+  const runtime = createSemanticMemoryRuntime(join(root, 'question-form-store.sqlite'))
+  const provider = new ScriptedNativeProvider([
+    (messages, options) => {
+      assertUserTurn(messages, phrase)
+      assert.equal(options.toolChoice, 'auto')
+      assert.equal(
+        messages.some(
+          (message) =>
+            message.role === 'system' &&
+            typeof message.content === 'string' &&
+            message.content.includes('do not require a second confirmation') &&
+            message.content.includes('Можешь запомнить, что я люблю пиццу?') &&
+            message.content.includes('Do not answer with only a promise'),
+        ),
+        true,
+      )
+      return toolCompletion('memory_store', {
+        memories: [
+          {
+            kind: 'preference',
+            text: 'Пользователь любит пиццу.',
+          },
+        ],
+      })
+    },
+    (messages) => {
+      latestToolData(messages)
+      return { content: '[warm]Запомнила: ты любишь пиццу.', finishReason: 'stop', toolCalls: [] }
+    },
+  ])
+  const reply = await createOrchestrator(provider, new MemoryToolBroker(runtime)).createReply(
+    { userText: phrase },
+    { traceId },
+  )
+  assert.match(reply.replyText, /Запомнила/u)
+  assert.equal(runtime.listForUi({}).items[0]?.text, 'Пользователь любит пиццу.')
+  assert.equal(provider.calls, 2)
+  runtime.close()
 }
 
 async function semanticForgetPhrasingMatrix(root: string): Promise<void> {
@@ -693,6 +738,42 @@ async function multiOperationFallback(root: string): Promise<void> {
   runtime.close()
 }
 
+async function committedForgetSurvivesNarrationFailure(root: string): Promise<void> {
+  const runtime = createSemanticMemoryRuntime(join(root, 'forget-narration-failure.sqlite'))
+  runtime.createManual({ kind: 'preference', text: 'Пользователь любит пиццу.' })
+  const memoryId = runtime.listForUi({}).items[0]?.id
+  assert.ok(memoryId)
+
+  let calls = 0
+  const provider: LLMProvider = {
+    capabilities: () => FALLBACK_CAPABILITIES,
+    chat: async () => {
+      calls += 1
+      if (calls === 1) {
+        return '<shio-tools>{"calls":[{"tool":"memory.search","arguments":{"query":"любимая еда пользователя пицца"}}]}</shio-tools>'
+      }
+      if (calls === 2) {
+        return `<shio-tools>{"calls":[{"tool":"memory.forget","arguments":{"ids":["${memoryId}"]}}]}</shio-tools>`
+      }
+      throw new LlmResponseError({
+        provider: 'mistral',
+        code: 'NETWORK_ERROR',
+        recoverable: true,
+        message: 'Connection reset after the committed memory mutation.',
+      })
+    },
+  }
+
+  const reply = await createOrchestrator(provider, new MemoryToolBroker(runtime)).createReply(
+    { userText: 'Удали из памяти, что я люблю пиццу.' },
+    { traceId: 'turn-forget-narration-failure' },
+  )
+  assert.equal(runtime.listForUi({}).items.length, 0)
+  assert.match(reply.replyText, /удалила запись из долговременной памяти/u)
+  assert.equal(calls, 3, 'committed memory mutation must not retry failed narration')
+  runtime.close()
+}
+
 async function ambiguityDoesNotDelete(root: string): Promise<void> {
   const runtime = createSemanticMemoryRuntime(join(root, 'ambiguous.sqlite'))
   runtime.createManual({ kind: 'preference', text: 'Пользователь любит зелёный чай.' })
@@ -736,8 +817,8 @@ async function boundedToolLoop(root: string): Promise<void> {
     { userText: 'Продолжай искать бесконечно.' },
     { traceId: 'turn-bounded-loop' },
   )
-  assert.equal(calls, 4)
-  assert.match(reply.replyText, /Не смогла безопасно завершить/u)
+  assert.equal(calls, 9)
+  assert.match(reply.replyText, /пределах текущего лимита/u)
   runtime.close()
 }
 
@@ -785,7 +866,6 @@ function boundedPayloads(root: string): void {
         memories: Array.from({ length: MEMORY_LIMITS.maxRecordsPerStore + 1 }, (_, index) => ({
           kind: 'fact',
           text: `fact ${index}`,
-          sourceTurnId: 'turn-limits',
         })),
       }),
     },
@@ -884,7 +964,6 @@ async function noFalseSuccess(): Promise<void> {
             {
               kind: 'preference',
               text: 'Пользователь любит зелёный чай.',
-              sourceTurnId: 'turn-failure',
             },
           ],
         })
@@ -972,12 +1051,14 @@ async function run(): Promise<void> {
     await rejectedNativeToolsDowngradeToFallback(root)
     await recoverableProviderRequestsRetryOnce(root)
     await semanticStorePhrasingMatrix(root)
+    await questionFormPersistenceContract(root)
     await semanticForgetPhrasingMatrix(root)
     await semanticUpdatePhrasingMatrix(root)
     await semanticRecallPhrasingMatrix(root)
     await irrelevantTurnDoesNotInvokeMemory(root)
     policyAndMutationSafety(root)
     await multiOperationFallback(root)
+    await committedForgetSurvivesNarrationFailure(root)
     await ambiguityDoesNotDelete(root)
     await boundedToolLoop(root)
     await controlMarkersAreContained(root)

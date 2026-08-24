@@ -35,6 +35,7 @@ export function SetupCenter({ state, onClose, onComplete, onToggleOverlay }: Set
   const [providers, setProviders] = useState<ProviderProfile[]>([])
   const [provider, setProvider] = useState<LlmProviderId>(state.llmReadiness.providerId)
   const [apiKey, setApiKey] = useState('')
+  const [accountId, setAccountId] = useState('')
   const [models, setModels] = useState<ModelInfo[]>([])
   const [model, setModel] = useState('')
   const [config, setConfig] = useState<Awaited<ReturnType<typeof window.api.config.get>> | null>(
@@ -54,6 +55,9 @@ export function SetupCenter({ state, onClose, onComplete, onToggleOverlay }: Set
           setProviders(availableProviders)
           setConfig(currentConfig)
           setProvider(currentConfig.llm.activeProvider)
+          setAccountId(
+            currentConfig.llm.providers[currentConfig.llm.activeProvider].accountId ?? '',
+          )
           setModel(currentConfig.llm.providers[currentConfig.llm.activeProvider].model)
           setMicrophoneId(currentConfig.micDeviceId)
           setMicrophones(availableDevices.filter((device) => device.kind === 'audioinput'))
@@ -64,7 +68,11 @@ export function SetupCenter({ state, onClose, onComplete, onToggleOverlay }: Set
   }, [])
 
   const credentialConfigured = Boolean(config?.llm.providers[provider].credential.configured)
+  const providerProfile = providers.find((item) => item.id === provider)
+  const accountIdReady =
+    providerProfile?.requiresAccountId !== true || /^[a-f0-9]{32}$/iu.test(accountId.trim())
   const aiComplete =
+    accountIdReady &&
     credentialConfigured &&
     Boolean(model) &&
     state.llmReadiness.reason !== 'missing-credential' &&
@@ -77,7 +85,7 @@ export function SetupCenter({ state, onClose, onComplete, onToggleOverlay }: Set
 
   const loadModels = async (): Promise<void> => {
     setAiAction('busy')
-    const result = await window.api.llm.fetchModels(provider)
+    const result = await window.api.llm.fetchModels(provider, accountId)
     if (!result.ok) {
       setAiAction('error')
       return
@@ -87,8 +95,20 @@ export function SetupCenter({ state, onClose, onComplete, onToggleOverlay }: Set
   }
 
   const saveCredential = async (): Promise<void> => {
-    if (!apiKey.trim()) return
+    if (!apiKey.trim() || !accountIdReady || !config) return
     setAiAction('busy')
+    const nextLlm = {
+      ...config.llm,
+      providers: {
+        ...config.llm.providers,
+        [provider]: { ...config.llm.providers[provider], accountId: accountId.trim() },
+      },
+    }
+    const saved = await window.api.config.save({ llm: nextLlm })
+    if (!saved.ok) {
+      setAiAction('error')
+      return
+    }
     const credential = await window.api.llm.saveCredential(provider, apiKey.trim())
     setApiKey('')
     const current = await window.api.config.get()
@@ -116,7 +136,11 @@ export function SetupCenter({ state, onClose, onComplete, onToggleOverlay }: Set
       activeProvider: provider,
       providers: {
         ...config.llm.providers,
-        [provider]: { ...config.llm.providers[provider], model: nextModel },
+        [provider]: {
+          ...config.llm.providers[provider],
+          accountId: accountId.trim(),
+          model: nextModel,
+        },
       },
     }
     const result = await window.api.config.save({ llm: nextLlm })
@@ -195,6 +219,7 @@ export function SetupCenter({ state, onClose, onComplete, onToggleOverlay }: Set
             onSelectionChange={(key) => {
               const next = String(key) as LlmProviderId
               setProvider(next)
+              setAccountId(config?.llm.providers[next].accountId ?? '')
               setModel(config?.llm.providers[next].model ?? '')
               setModels([])
             }}
@@ -206,8 +231,20 @@ export function SetupCenter({ state, onClose, onComplete, onToggleOverlay }: Set
               </PickerItem>
             ))}
           </Picker>
+          {providerProfile?.requiresAccountId && (
+            <TextField
+              label={t('setup.ai.accountId')}
+              value={accountId}
+              autoComplete="off"
+              onChange={(value) => {
+                setAccountId(value)
+                setModels([])
+              }}
+              styles={fullWidth}
+            />
+          )}
           <TextField
-            label={t('setup.ai.apiKey')}
+            label={provider === 'cloudflare' ? t('setup.ai.apiToken') : t('setup.ai.apiKey')}
             type="password"
             value={apiKey}
             autoComplete="off"
@@ -217,14 +254,14 @@ export function SetupCenter({ state, onClose, onComplete, onToggleOverlay }: Set
           <div className="setup-actions">
             <Button
               variant="primary"
-              isDisabled={!apiKey.trim()}
+              isDisabled={!apiKey.trim() || !accountIdReady}
               isPending={aiAction === 'busy'}
               onPress={() => void saveCredential()}
             >
-              {t('setup.ai.saveKey')}
+              {provider === 'cloudflare' ? t('setup.ai.saveToken') : t('setup.ai.saveKey')}
             </Button>
             <ActionButton
-              isDisabled={!credentialConfigured}
+              isDisabled={!credentialConfigured || !accountIdReady}
               isPending={aiAction === 'busy'}
               onPress={() => observeRendererPromise(loadModels(), 'load Setup Center models')}
             >
@@ -245,6 +282,7 @@ export function SetupCenter({ state, onClose, onComplete, onToggleOverlay }: Set
                 ? 'positive'
                 : aiAction === 'error' ||
                     state.llmReadiness.reason === 'auth-error' ||
+                    state.llmReadiness.reason === 'access-error' ||
                     state.llmReadiness.reason === 'network-error'
                   ? 'negative'
                   : 'neutral'

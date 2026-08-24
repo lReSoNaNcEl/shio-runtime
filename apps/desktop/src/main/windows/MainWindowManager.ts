@@ -28,6 +28,7 @@ export class MainWindowManager {
         nodeIntegration: false,
         sandbox: true,
         webSecurity: true,
+        backgroundThrottling: false,
       },
     })
     this.health.reset()

@@ -2,7 +2,6 @@ import { type BrowserWindow, ipcMain } from 'electron'
 import { z } from 'zod'
 
 import { translate } from '../../shared/localization'
-import type { ActionRuntime } from '../action/ActionRuntime'
 import { getConfig, getRendererConfig } from '../config'
 import {
   createModelCatalog,
@@ -15,13 +14,13 @@ import {
   type ModelInfo,
   PROVIDER_PROFILES,
   type ProviderProfile,
+  resolveLlmProviderAccountId,
   resolveLlmReadiness,
 } from '../llm'
 import { mainLog } from '../logging/safeLogger'
 import { IPC_ONE_PAYLOAD, type IpcAuthorization } from './IpcAuthorization'
 
 interface RegisterLlmIpcOptions {
-  actions: ActionRuntime
   llm: () => LlmGateway
   credentials: () => LlmCredentialStore
   window: BrowserWindow
@@ -30,7 +29,6 @@ interface RegisterLlmIpcOptions {
 }
 
 export function registerLlmIpc({
-  actions,
   llm,
   credentials,
   window,
@@ -65,6 +63,23 @@ export function registerLlmIpc({
   const providerSchema = z
     .string()
     .refine((provider): provider is LlmProviderId => isLlmProviderId(provider))
+  const accountIdSchema = z
+    .string()
+    .trim()
+    .regex(/^[a-f0-9]{32}$/iu)
+    .optional()
+  const modelCatalogRequestSchema = z
+    .object({
+      provider: providerSchema,
+      accountId: accountIdSchema,
+    })
+    .strict()
+
+  const resolveAccountId = (provider: LlmProviderId, requested?: string): string =>
+    resolveLlmProviderAccountId(
+      provider,
+      requested ?? getConfig().llm.providers[provider].accountId,
+    )
 
   ipcMain.handle(
     'llm:fetch-models',
@@ -72,12 +87,26 @@ export function registerLlmIpc({
       'llm:fetch-models',
       IPC_ONE_PAYLOAD,
       async (_event, payload: unknown) => {
-        const provider = providerSchema.parse(payload)
-        const action = await actions.execute<
-          { provider: string },
-          { ok: boolean; models?: ModelInfo[]; error?: string; kind?: string }
-        >({ name: 'llm.fetchModels', payload: { provider } })
-        return action.status === 'success' ? action.result : { ok: false, error: action.error }
+        const { provider, accountId: requestedAccountId } = modelCatalogRequestSchema.parse(payload)
+        const { apiKey } = credentials().resolve(provider)
+        try {
+          const accountId = resolveAccountId(provider, requestedAccountId)
+          const catalog = createModelCatalog(provider, { accountId })
+          const models: ModelInfo[] = enrichModelCatalog(
+            provider,
+            await catalog.fetchModels(apiKey),
+          )
+          return { ok: true, models }
+        } catch (error) {
+          if (error instanceof ModelFetchError) {
+            return { ok: false, error: error.message, kind: error.kind }
+          }
+          return {
+            ok: false,
+            error: error instanceof Error ? error.message : String(error),
+            kind: 'unknown',
+          }
+        }
       },
     ),
   )
@@ -85,6 +114,7 @@ export function registerLlmIpc({
   const credentialSchema = z
     .object({
       provider: providerSchema,
+      accountId: accountIdSchema,
       apiKey: z
         .string()
         .trim()
@@ -134,9 +164,10 @@ export function registerLlmIpc({
       'llm:validate-credential',
       IPC_ONE_PAYLOAD,
       async (_event, payload: unknown) => {
-        const { provider, apiKey } = credentialSchema.parse(payload)
+        const { provider, apiKey, accountId: requestedAccountId } = credentialSchema.parse(payload)
         try {
-          const catalog = createModelCatalog(provider)
+          const accountId = resolveAccountId(provider, requestedAccountId)
+          const catalog = createModelCatalog(provider, { accountId })
           return {
             ok: true,
             models: enrichModelCatalog(provider, await catalog.fetchModels(apiKey)),

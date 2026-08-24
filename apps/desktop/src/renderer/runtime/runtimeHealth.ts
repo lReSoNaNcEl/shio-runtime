@@ -71,6 +71,7 @@ function llmSeverity(state: ControllerState): HealthSeverity {
     case 'ready':
       return state.llmHealth.state === 'ok' ? 'healthy' : 'notice'
     case 'auth-error':
+    case 'access-error':
     case 'network-error':
       return 'error'
     default:

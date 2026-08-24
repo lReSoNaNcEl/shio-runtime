@@ -43,8 +43,14 @@ export const githubModelsProvider: ProviderDefinition = {
       }))
     } catch (error) {
       if (axios.isAxiosError(error)) {
-        if (error.response?.status === 401 || error.response?.status === 403) {
+        if (error.response?.status === 401) {
           throw new ModelFetchError('auth', 'GitHub Models: аутентификация не пройдена.')
+        }
+        if (error.response?.status === 403) {
+          throw new ModelFetchError(
+            'access',
+            'GitHub Models: доступ запрещён политикой провайдера или правами аккаунта.',
+          )
         }
         if (error.response) {
           throw new ModelFetchError(

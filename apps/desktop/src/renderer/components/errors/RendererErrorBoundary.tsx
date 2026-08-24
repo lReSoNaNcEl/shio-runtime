@@ -47,7 +47,11 @@ export class RendererErrorBoundary extends Component<
           <section className="renderer-error-card" aria-live="assertive">
             <Heading>{translate(locale, 'rendererError.title')}</Heading>
             <Text>{translate(locale, 'rendererError.description')}</Text>
-            <Button variant="accent" onPress={() => window.location.reload()}>
+            <Button
+              variant="accent"
+              onPress={() => window.location.reload()}
+              UNSAFE_className="shio-accent-button"
+            >
               {translate(locale, 'rendererError.reload')}
             </Button>
           </section>

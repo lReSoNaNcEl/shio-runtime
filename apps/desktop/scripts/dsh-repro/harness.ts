@@ -259,6 +259,40 @@ async function main(): Promise<void> {
     assert.equal(harnessCreations, 2)
     await cancellable.close()
 
+    const versionPresentation = new DshHarnessAdapter({
+      resources: () => realResources,
+      model: () => model,
+      createHarness: async () => ({
+        start: async () => undefined,
+        run: async () => ({ finalResponse: '', notifications: [] }),
+        executeShell: async () => ({
+          exitCode: 0,
+          signal: null,
+          timedOut: false,
+          aborted: false,
+          timeoutMs: 60_000,
+          stdout: { text: 'v24.19.0\n', truncated: false },
+          stderr: { text: '', truncated: false },
+        }),
+        close: async () => undefined,
+      }),
+    })
+    const versionResult = await versionPresentation.execute(
+      'read runtime version',
+      new AbortController().signal,
+      'shell',
+      'node --version',
+    )
+    assert.deepEqual(versionResult.presentationFacts, [
+      {
+        kind: 'runtime-version',
+        label: 'Node.js',
+        value: '24.19.0',
+        sensitivity: 'safe',
+      },
+    ])
+    await versionPresentation.close()
+
     const missingTypedShellEndpoint = new DshHarnessAdapter({
       resources: () => realResources,
       model: () => model,

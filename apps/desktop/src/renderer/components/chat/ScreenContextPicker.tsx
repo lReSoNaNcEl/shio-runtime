@@ -176,7 +176,11 @@ export function ScreenContextPicker({ isOpen, onDismiss, onChangeModel, onAttach
                 <div className="screen-context-picker-state" role="status">
                   <Heading level={3}>{t('screenContext.unsupported.title')}</Heading>
                   <Text>{t('screenContext.unsupported.description')}</Text>
-                  <Button variant="accent" onPress={onChangeModel}>
+                  <Button
+                    variant="accent"
+                    onPress={onChangeModel}
+                    UNSAFE_className="shio-accent-button"
+                  >
                     {t('screenContext.unsupported.changeModel')}
                   </Button>
                 </div>
@@ -258,6 +262,7 @@ export function ScreenContextPicker({ isOpen, onDismiss, onChangeModel, onAttach
                   onPress={() =>
                     observeRendererPromise(attach(), 'attach selected Screen Context source')
                   }
+                  UNSAFE_className="shio-accent-button"
                 >
                   {t('screenContext.picker.attach')}
                 </Button>

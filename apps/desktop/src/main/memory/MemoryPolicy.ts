@@ -6,7 +6,6 @@ export class MemoryPolicyError extends Error {
       | 'MEMORY_DISABLED'
       | 'MEMORY_UNAVAILABLE'
       | 'INVALID_REQUEST'
-      | 'SOURCE_TURN_MISMATCH'
       | 'SENSITIVE_CONTENT'
       | 'NOT_FOUND'
       | 'NO_CHANGES',
@@ -41,6 +40,9 @@ export interface MemoryPolicyContext {
 
 export class MemoryPolicy {
   validate(request: MemoryToolRequest, context: MemoryPolicyContext): void {
+    if (!context.sourceTurnId.trim() || context.sourceTurnId.length > 200) {
+      throw new MemoryPolicyError('INVALID_REQUEST', 'The current Memory turn id is invalid.')
+    }
     if (!context.status.operational) {
       throw new MemoryPolicyError('MEMORY_UNAVAILABLE', 'Long-term memory is unavailable.')
     }
@@ -50,12 +52,6 @@ export class MemoryPolicy {
 
     if (request.name === 'memory.store') {
       for (const candidate of request.input.memories) {
-        if (candidate.sourceTurnId !== context.sourceTurnId) {
-          throw new MemoryPolicyError(
-            'SOURCE_TURN_MISMATCH',
-            'Memory source does not match the current user turn.',
-          )
-        }
         if (containsSensitiveMemoryContent(candidate.text)) {
           throw new MemoryPolicyError(
             'SENSITIVE_CONTENT',

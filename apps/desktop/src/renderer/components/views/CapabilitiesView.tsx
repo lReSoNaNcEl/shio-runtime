@@ -108,13 +108,8 @@ function CapabilityCard({
       {authority && (
         <Badge
           size="S"
-          variant={
-            capability.authority === 'full'
-              ? 'negative'
-              : capability.authority === 'read-only'
-                ? 'informative'
-                : 'gray'
-          }
+          variant="gray"
+          UNSAFE_className={`capability-authority capability-authority-${capability.authority}`}
         >
           {t(authority)}
         </Badge>
@@ -127,7 +122,9 @@ function CapabilityCard({
           size="S"
           variant={capability.availability === 'available' ? 'secondary' : 'accent'}
           onPress={() => onNavigate(navigationTarget)}
-          UNSAFE_className="capability-action"
+          UNSAFE_className={`capability-action${
+            capability.availability === 'available' ? '' : ' shio-accent-button'
+          }`}
         >
           {t(actionLabel(navigationTarget, capability.availability))}
         </Button>

@@ -9,23 +9,22 @@ import type { MicrophoneGateController } from '../../audio/MicrophoneGateControl
 import { isDefaultMicrophone, type StreamingModeId } from '../../audio/microphoneGateTypes'
 import { semanticEarTuning } from '../../avatar/tuning/motionTuning'
 import type { ChatMsg, ControllerState } from '../../controller/contracts'
+import { AttentionEngine } from '../../conversation/admission/AttentionEngine'
+import { BacklogSelector } from '../../conversation/admission/BacklogSelector'
+import {
+  ConversationAdmissionCoordinator,
+  type ConversationAdmissionOutcome,
+} from '../../conversation/admission/ConversationAdmissionCoordinator'
+import { RuleGate } from '../../conversation/admission/RuleGate'
 import { observeRendererPromise } from '../../reliability/observePromise'
-import type { AvatarRuntime } from '../../runtime/AvatarRuntime'
+import type { ConversationPresentationPort } from '../../runtime/ConversationPresentationPort'
 import type { ConversationRuntime } from '../../runtime/ConversationRuntime'
-import type { SyncedAvatarState } from '../../runtime/OverlayRuntime'
 import type {
   ContinuousPartialSpeech,
   ContinuousRecognizedSpeech,
   SpeechInputRuntime,
 } from '../../runtime/SpeechInputRuntime'
-import { AttentionEngine } from '../continuous-listening/AttentionEngine'
-import { BacklogSelector } from '../continuous-listening/BacklogSelector'
 import { BargeInPolicy } from '../continuous-listening/BargeInPolicy'
-import {
-  ConversationAdmissionCoordinator,
-  type ConversationAdmissionOutcome,
-} from '../continuous-listening/ConversationAdmissionCoordinator'
-import { RuleGate } from '../continuous-listening/RuleGate'
 import {
   CORRECTION_PATTERN,
   isExplicitBargeInPhrase,
@@ -56,7 +55,7 @@ export interface ConversationInputCoordinatorDependencies {
   speechInputRuntime: SpeechInputRuntime
   conversationRuntime: ConversationRuntime
   microphoneGate: MicrophoneGateController
-  avatarRuntime: AvatarRuntime
+  presentation: ConversationPresentationPort
 
   getControllerState(): ControllerState
   getCharacterState(): CharacterState
@@ -67,7 +66,6 @@ export interface ConversationInputCoordinatorDependencies {
   recordRuntimeEvent(label: string, detail?: string): void
   publishRuntimeEvent(type: RuntimeEventType, category: RuntimeEventCategory, detail?: string): void
 
-  publishAvatarState(state: SyncedAvatarState): void
   getConfig(): ReturnType<Window['api']['config']['get']>
   saveConfig(
     patch: Parameters<Window['api']['config']['save']>[0],
@@ -604,10 +602,10 @@ export class ConversationInputCoordinator {
       ['recognition-uncertain', attempt.semanticCues?.recognitionUncertain],
     ] as const) {
       if (!enabled) continue
-      const triggered = this.dependencies.avatarRuntime.triggerEarImpulse(impulse, attempt.turnId)
+      const triggered = this.dependencies.presentation.triggerEarImpulse(impulse, attempt.turnId)
       if (triggered) {
         const current = this.dependencies.getCharacterState()
-        this.dependencies.publishAvatarState({
+        this.dependencies.presentation.publishAvatarState({
           mode:
             current.mode === 'acting' ||
             current.mode === 'interrupted' ||
@@ -621,9 +619,9 @@ export class ConversationInputCoordinator {
       }
     }
     if (attempt.semanticCues?.directAddress)
-      this.dependencies.avatarRuntime.triggerReactionGesture('direct-address')
+      this.dependencies.presentation.triggerReactionGesture('direct-address')
     else if (attempt.semanticCues?.question)
-      this.dependencies.avatarRuntime.triggerReactionGesture('question')
+      this.dependencies.presentation.triggerReactionGesture('question')
     if (attempt.triggeredBargeIn) {
       this.dependencies.recordRuntimeEvent(
         'Barge In Conversation Admitted',

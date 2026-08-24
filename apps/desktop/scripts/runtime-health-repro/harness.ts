@@ -35,8 +35,7 @@ class HealthPlugin implements BundledPlugin {
   readonly manifest = PROJECT_AWARENESS_MANIFEST
   private health: PluginHealth = { state: 'healthy', checkedAt: Date.now() }
   private readonly provider: ProjectContextProvider = {
-    resolveRequirement: () => 'none',
-    buildContext: async () => null,
+    search: async () => null,
   }
 
   initialize(context: PluginInitializationContext): Promise<void> {

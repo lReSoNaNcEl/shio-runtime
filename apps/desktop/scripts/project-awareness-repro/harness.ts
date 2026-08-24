@@ -7,12 +7,10 @@ import { DatabaseSync } from 'node:sqlite'
 import {
   extractSource,
   isAllowedProjectPath,
-  isProjectRelevantRequest,
   isSafeTextContent,
   ProjectAwarenessRuntime,
   ProjectCredentialStore,
   ProjectKnowledgeStore,
-  projectContextRequirement,
 } from '../../src/main/project-awareness'
 import { normalizeGitHubProjectError } from '../../src/main/project-awareness/adapters/GitHubProjectAdapter'
 import type {
@@ -388,34 +386,6 @@ async function main(): Promise<void> {
     assert.equal(overlappingChunks.length, 1, `${method.name} must stay in one AST chunk`)
   }
   assert(longPythonExtracted.chunks.every((chunk) => chunk.endLine - chunk.startLine + 1 <= 220))
-  assert.equal(projectContextRequirement('Как работает ProjectRuntime?'), 'required')
-  assert.equal(projectContextRequirement('А бекенд?'), 'optional')
-  assert.equal(projectContextRequirement('А TTS и ASR?'), 'optional')
-  assert.equal(projectContextRequirement('Выполни node -v'), 'none')
-  assert.equal(
-    projectContextRequirement('Какая версия Node установлена? Проверь терминалом'),
-    'none',
-  )
-  assert.equal(
-    projectContextRequirement('Проверь терминалом, какая версия node.js установлена'),
-    'none',
-  )
-  assert.equal(projectContextRequirement('Какую версию Node требует этот проект?'), 'required')
-  assert.equal(projectContextRequirement('Запусти typecheck этого проекта'), 'required')
-  assert.equal(
-    projectContextRequirement('Посмотри package.json и запусти правильную build-команду'),
-    'required',
-  )
-  assert.equal(projectContextRequirement('Выполни npm run typecheck'), 'none')
-  assert.equal(
-    projectContextRequirement(
-      'Можешь открыть страничку https://www.npmjs.com/package/@deepseek-ai/dsh-sdk-client?activeTab=readme и кликнуть там на вкладку Code?',
-    ),
-    'none',
-  )
-  assert.equal(projectContextRequirement('Открой package.json и покажи scripts'), 'required')
-  assert.equal(isProjectRelevantRequest('Как Node.js используется в этом проекте?'), true)
-  assert.equal(isProjectRelevantRequest('Расскажи короткую шутку'), false)
   const privateRepositoryError = normalizeGitHubProjectError(
     { isAxiosError: true, response: { status: 404 } },
     'owner/repository',
@@ -578,7 +548,10 @@ async function main(): Promise<void> {
       inspection.close()
     }
 
-    const context = runtime.buildContextPacket('Почему ProjectRuntimeV3 синхронизирует проект?')
+    const context = runtime.buildContextPacket({
+      query: 'Why ProjectRuntimeV3 synchronizes the project',
+      hints: { symbols: ['ProjectRuntimeV3'] },
+    })
     assert(context)
     assert.equal(context.snapshotSha, adapter.head)
     assert(context.evidence.length > 0)

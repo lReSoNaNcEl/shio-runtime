@@ -225,6 +225,8 @@ async function startTestServer(): Promise<{ server: Server; baseUrl: string }> {
         <button type="button" onclick="location.href='/catalog'">Open catalog</button>
         <label for="message">Message</label>
         <input id="message" aria-label="Message" />
+        <label for="search">Search</label>
+        <input id="search" role="combobox" aria-label="Search" aria-expanded="false" />
         <label for="category">Category</label>
         <select id="category" aria-label="Category"><option value="films">Films</option><option value="series">Series</option></select>
         <button id="apply" type="button">Apply message</button>
@@ -569,14 +571,28 @@ async function main(): Promise<void> {
       )
       assert.equal(filled.evidence.operation, 'fill')
       assert(filled.evidence.after)
-      const categoryField = filled.observation?.interactiveElements.find(
+      const searchField = filled.observation?.interactiveElements.find(
+        (element) => element.role === 'combobox' && element.name === 'Search',
+      )
+      assert(searchField)
+      const searchFilled = await adapter.fill(
+        {
+          kind: 'semantic-ref',
+          observationId: filled.observation.observationId,
+          ref: searchField.ref,
+        },
+        'Editable combobox input',
+      )
+      assert.equal(searchFilled.evidence.operation, 'fill')
+      assert(searchFilled.evidence.after)
+      const categoryField = searchFilled.observation?.interactiveElements.find(
         (element) => element.role === 'combobox' && element.name === 'Category',
       )
       assert(categoryField)
       const selected = await adapter.select(
         {
           kind: 'semantic-ref',
-          observationId: filled.observation.observationId,
+          observationId: searchFilled.observation.observationId,
           ref: categoryField.ref,
         },
         ['series'],

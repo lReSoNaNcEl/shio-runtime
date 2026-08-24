@@ -27,6 +27,10 @@ export function LlmSettingsSection({
 }) {
   const { t } = useTranslation()
   const credential = state.providerSettings[state.activeProvider]?.credential
+  const activeProfile = state.providers.find((provider) => provider.id === state.activeProvider)
+  const accountId = state.providerSettings[state.activeProvider]?.accountId ?? ''
+  const usesApiToken = state.activeProvider === 'cloudflare'
+  const credentialLabel = usesApiToken ? t('settings.llm.apiToken') : t('settings.llm.apiKey')
   const showCredentialInput = !credential?.configured || state.editingKey
   return (
     <div className="settings-grid llm-settings-grid">
@@ -53,21 +57,30 @@ export function LlmSettingsSection({
             </PickerItem>
           ))}
         </Picker>
+        {activeProfile?.requiresAccountId && (
+          <TextField
+            label={t('settings.llm.accountId')}
+            value={accountId}
+            onChange={(value) => actions.updateProviderAccountId(state.activeProvider, value)}
+            autoComplete="off"
+            styles={fullWidth}
+          />
+        )}
         <div className="settings-field">
-          <span className="settings-label">{t('settings.llm.apiKey')}</span>
+          <span className="settings-label">{credentialLabel}</span>
           <div className="settings-row">
             {showCredentialInput ? (
               <TextField
-                aria-label={t('settings.llm.apiKey')}
+                aria-label={credentialLabel}
                 value={state.keyInput}
                 onChange={actions.setKeyInput}
                 type="password"
-                placeholder={t('settings.llm.newKey')}
+                placeholder={usesApiToken ? t('settings.llm.newToken') : t('settings.llm.newKey')}
                 UNSAFE_className="grow"
               />
             ) : (
               <TextField
-                aria-label={t('settings.llm.apiKey')}
+                aria-label={credentialLabel}
                 value="••••••••"
                 isReadOnly
                 UNSAFE_className="grow"
@@ -80,26 +93,32 @@ export function LlmSettingsSection({
                 }
                 isDisabled={!state.keyInput.trim() || credential?.secureStorageAvailable === false}
               >
-                <Text>{t('settings.llm.saveKey')}</Text>
+                <Text>
+                  {usesApiToken ? t('settings.llm.saveToken') : t('settings.llm.saveKey')}
+                </Text>
               </ActionButton>
             ) : (
               <>
                 <ActionButton onPress={() => actions.setEditingKey(true)}>
-                  <Text>{t('settings.llm.replaceKey')}</Text>
+                  <Text>
+                    {usesApiToken ? t('settings.llm.replaceToken') : t('settings.llm.replaceKey')}
+                  </Text>
                 </ActionButton>
                 <ActionButton
                   onPress={() =>
                     observeRendererPromise(actions.forgetCredential(), 'forget LLM credential')
                   }
                 >
-                  <Text>{t('settings.llm.deleteKey')}</Text>
+                  <Text>
+                    {usesApiToken ? t('settings.llm.deleteToken') : t('settings.llm.deleteKey')}
+                  </Text>
                 </ActionButton>
               </>
             )}
           </div>
           {credential?.configured && !state.editingKey && (
             <span className="settings-hint" role="status">
-              {t('settings.llm.keyConfigured')}
+              {usesApiToken ? t('settings.llm.tokenConfigured') : t('settings.llm.keyConfigured')}
             </span>
           )}
           {credential?.lastError && (
@@ -131,11 +150,15 @@ export function LlmSettingsSection({
               </>
             )}
             {state.modelsState === 'empty' && t('settings.llm.modelsEmpty')}
+            {state.modelsState === 'missing-account-id' && t('settings.llm.modelsMissingAccountId')}
             {state.modelsState === 'missing-key' && t('settings.llm.modelsMissingKey')}
             {state.modelsState === 'auth-error' && t('settings.llm.modelsAuthError')}
+            {state.modelsState === 'access-error' && t('settings.llm.modelsAccessError')}
             {state.modelsState === 'network-error' && t('settings.llm.modelsNetworkError')}
           </span>
-          {(state.modelsState === 'network-error' || state.modelsState === 'auth-error') && (
+          {(state.modelsState === 'network-error' ||
+            state.modelsState === 'auth-error' ||
+            state.modelsState === 'access-error') && (
             <ActionButton
               onPress={() =>
                 observeRendererPromise(

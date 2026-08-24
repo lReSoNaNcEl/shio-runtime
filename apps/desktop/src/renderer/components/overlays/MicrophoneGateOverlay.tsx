@@ -202,7 +202,7 @@ export function MicrophoneGateOverlay({
             variant="accent"
             isDisabled={!canContinue}
             onPress={onContinue}
-            UNSAFE_className="mic-gate-continue"
+            UNSAFE_className="mic-gate-continue shio-accent-button"
           >
             {validating && (
               <ProgressCircle

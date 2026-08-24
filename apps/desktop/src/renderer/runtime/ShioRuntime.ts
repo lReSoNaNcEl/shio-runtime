@@ -1,40 +1,10 @@
-import type { CharacterState, EventBus } from '../../shared/runtime'
-import {
-  cloneCharacterState,
-  INITIAL_CHARACTER_STATE,
-  normalizeCharacterState,
-} from '../../shared/runtime'
+import type { EventBus } from '../../shared/runtime'
+import { CharacterStateStore } from './CharacterStateStore'
 import { PassiveEventBus } from './EventBus'
 
-export type RuntimeRegistryEntry = object
-
-export class CharacterStateStore {
-  private state: CharacterState = cloneCharacterState(INITIAL_CHARACTER_STATE)
-
-  get(): CharacterState {
-    return cloneCharacterState(this.state)
-  }
-
-  update(updater: (current: CharacterState) => CharacterState): CharacterState {
-    this.state = normalizeCharacterState(updater(cloneCharacterState(this.state)))
-    return cloneCharacterState(this.state)
-  }
-}
-
-export class RuntimeRegistry {
-  private runtimes = new Map<string, RuntimeRegistryEntry>()
-
-  register(name: string, runtime: RuntimeRegistryEntry): void {
-    this.runtimes.set(name, runtime)
-  }
-
-  list(): readonly string[] {
-    return [...this.runtimes.keys()]
-  }
-}
+export { CharacterStateStore } from './CharacterStateStore'
 
 export class ShioRuntime {
-  readonly characterState = new CharacterStateStore()
   readonly events: EventBus = new PassiveEventBus()
-  readonly registry = new RuntimeRegistry()
+  readonly characterState = new CharacterStateStore(this.events)
 }

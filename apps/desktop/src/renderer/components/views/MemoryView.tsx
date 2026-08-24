@@ -45,7 +45,6 @@ const ERROR_KEYS: Record<MemoryErrorCode, TranslationKey> = {
   MEMORY_UNAVAILABLE: 'memory.error.unavailable',
   INVALID_REQUEST: 'memory.error.invalid',
   LIMIT_EXCEEDED: 'memory.error.limit',
-  SOURCE_TURN_MISMATCH: 'memory.error.invalid',
   SENSITIVE_CONTENT: 'memory.error.sensitive',
   NOT_FOUND: 'memory.error.notFound',
   NO_CHANGES: 'memory.error.invalid',
@@ -200,21 +199,23 @@ export function MemoryView() {
         >
           {status?.enabled ? t('common.enabled') : t('common.disabled')}
         </Switch>
-        <Button
-          variant="accent"
-          isDisabled={busy || !status?.operational}
-          onPress={() => setEditor({ mode: 'create', kind: 'fact', text: '' })}
-        >
-          <Add />
-          {t('memory.add')}
-        </Button>
-        <Button
-          variant="negative"
-          isDisabled={busy || items.length === 0 || !status?.operational}
-          onPress={() => setClearConfirmation(true)}
-        >
-          {t('memory.clearAll')}
-        </Button>
+        <ButtonGroup>
+          <Button
+            variant="primary"
+            isDisabled={busy || !status?.operational}
+            onPress={() => setEditor({ mode: 'create', kind: 'fact', text: '' })}
+          >
+            <Add />
+            <Text>{t('memory.add')}</Text>
+          </Button>
+          <Button
+            variant="negative"
+            isDisabled={busy || items.length === 0 || !status?.operational}
+            onPress={() => setClearConfirmation(true)}
+          >
+            {t('memory.clearAll')}
+          </Button>
+        </ButtonGroup>
       </div>
 
       {!status?.operational && (
@@ -357,6 +358,7 @@ export function MemoryView() {
                 variant="accent"
                 isDisabled={busy || !editor.text.trim()}
                 onPress={saveEditor}
+                UNSAFE_className="shio-accent-button"
               >
                 {t('common.save')}
               </Button>

@@ -273,9 +273,13 @@ function LlmCard({
 }) {
   const { t } = useTranslation()
   const readiness = state.llmReadiness.reason
-  const needsSetup = readiness === 'missing-credential' || readiness === 'model-missing'
+  const needsSetup =
+    readiness === 'missing-account-id' ||
+    readiness === 'missing-credential' ||
+    readiness === 'model-missing'
   const checking = readiness === 'checking' || state.llmHealth.state === 'checking'
-  const failed = readiness === 'auth-error' || readiness === 'network-error'
+  const failed =
+    readiness === 'auth-error' || readiness === 'access-error' || readiness === 'network-error'
   const tone: CardTone = failed
     ? 'negative'
     : needsSetup

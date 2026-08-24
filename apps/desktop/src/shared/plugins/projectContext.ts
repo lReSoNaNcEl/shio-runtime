@@ -1,21 +1,11 @@
-import type {
-  ActiveProjectContextRequirement,
-  ProjectContextPacket,
-  ProjectContextRequirement,
-} from '../project-awareness'
+import type { ProjectContextPacket, ProjectSearchInput } from '../project-awareness'
 
-export interface ProjectContextRequest {
-  userText: string
+export interface ProjectContextSearchRequest extends ProjectSearchInput {
   traceId?: string
 }
 
-export interface ProjectContextBuildRequest extends ProjectContextRequest {
-  requirement: ActiveProjectContextRequirement
-}
-
 export interface ProjectContextProvider {
-  resolveRequirement(request: ProjectContextRequest): ProjectContextRequirement
-  buildContext(request: ProjectContextBuildRequest): Promise<ProjectContextPacket | null>
+  search(request: ProjectContextSearchRequest): Promise<ProjectContextPacket | null>
 }
 
 export type ProjectContextProviderResolver = () => ProjectContextProvider | undefined

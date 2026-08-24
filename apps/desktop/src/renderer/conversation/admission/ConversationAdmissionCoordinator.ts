@@ -1,5 +1,4 @@
-import type { BacklogSelector, BacklogSelectorLlmConfig } from './BacklogSelector'
-import { backlogTuning } from './tuning'
+import { backlogTuning } from '../../speech/continuous-listening/tuning'
 import type {
   ActiveConversationExecution,
   AdmittedConversationTurn,
@@ -7,8 +6,9 @@ import type {
   ConversationCompletionResult,
   ConversationExecutionPhase,
   ConversationInput,
-} from './types'
-import type { UtteranceBacklog } from './UtteranceBacklog'
+} from '../../speech/continuous-listening/types'
+import type { UtteranceBacklog } from '../../speech/continuous-listening/UtteranceBacklog'
+import type { BacklogSelector, BacklogSelectorLlmConfig } from './BacklogSelector'
 
 export type ConversationAdmissionOutcome =
   | 'started'

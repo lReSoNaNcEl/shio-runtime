@@ -56,9 +56,11 @@ function llmAvailability(readiness: LlmReadiness): CapabilityAvailability {
     case 'checking':
       return 'degraded'
     case 'missing-credential':
+    case 'missing-account-id':
     case 'model-missing':
       return 'needs-setup'
     case 'auth-error':
+    case 'access-error':
     case 'network-error':
       return 'unavailable'
   }
@@ -72,10 +74,14 @@ function llmReason(readiness: LlmReadiness): ShioCapabilityDescriptor['reasonKey
       return 'capabilities.reason.llmChecking'
     case 'missing-credential':
       return 'capabilities.reason.llmCredential'
+    case 'missing-account-id':
+      return 'capabilities.reason.llmAccountId'
     case 'model-missing':
       return 'capabilities.reason.llmModel'
     case 'auth-error':
       return 'capabilities.reason.llmAuth'
+    case 'access-error':
+      return 'capabilities.reason.llmAccess'
     case 'network-error':
       return 'capabilities.reason.llmNetwork'
   }

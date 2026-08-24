@@ -2,15 +2,15 @@ import assert from 'node:assert/strict'
 
 import { AudioPlayer } from '../../src/renderer/audio/audioPlayer'
 import { HeadMotionRuntime } from '../../src/renderer/avatar/embodiment/gaze/HeadMotionRuntime'
+import { AttentionEngine } from '../../src/renderer/conversation/admission/AttentionEngine'
+import { BacklogSelector } from '../../src/renderer/conversation/admission/BacklogSelector'
+import { ConversationAdmissionCoordinator } from '../../src/renderer/conversation/admission/ConversationAdmissionCoordinator'
+import { RuleGate } from '../../src/renderer/conversation/admission/RuleGate'
 import {
   ConversationRuntime,
   type ConversationRuntimeDeps,
 } from '../../src/renderer/runtime/ConversationRuntime'
-import { AttentionEngine } from '../../src/renderer/speech/continuous-listening/AttentionEngine'
-import { BacklogSelector } from '../../src/renderer/speech/continuous-listening/BacklogSelector'
 import { BargeInPolicy } from '../../src/renderer/speech/continuous-listening/BargeInPolicy'
-import { ConversationAdmissionCoordinator } from '../../src/renderer/speech/continuous-listening/ConversationAdmissionCoordinator'
-import { RuleGate } from '../../src/renderer/speech/continuous-listening/RuleGate'
 import {
   isExplicitBargeInPhrase,
   textSimilarity,
@@ -190,34 +190,35 @@ async function main(): Promise<void> {
       },
     }
     const runtime = new ConversationRuntime({
-      speechRuntime: {
-        getCharacterState: () => ({}),
-        updateConversationPresence: () => undefined,
-        createAssistantReply: () => generation,
+      speechOutput: {
+        hasSpeakableContent: () => true,
         createDebugSpeechTurn: () =>
           new Promise<never>((_, reject) => {
             rejectSynthesis = reject
           }),
+        stopCurrent: () => undefined,
       },
-      conversationPresenceRuntime: {
+      characterResponse: { createReply: () => generation },
+      characterState: { get: () => ({}) },
+      conversationState: {
+        transition: () => ({}),
+        setPresence: () => ({}),
+      },
+      conversationPresence: {
         update: (patch: object) => patch,
       },
-      avatarRuntime: {
+      presentation: {
         applyCharacterState: () => undefined,
         interruptLipSync: () => true,
+        stopLipSync: () => undefined,
         triggerEarImpulse: () => false,
         triggerReactionGesture: () => false,
         triggerUserInterruption: () => true,
         setEmbodimentIntent: () => undefined,
-      },
-      overlayRuntime: {
         publishAvatarState: () => undefined,
       },
       events: {
         publish: () => undefined,
-      },
-      player: {
-        stopCurrent: () => undefined,
       },
       setStatus: () => undefined,
       pushMessage: (role: string, text: string) => {
@@ -230,7 +231,6 @@ async function main(): Promise<void> {
       setResponseInterruptionPending: (pending: boolean) => pendingStates.push(pending),
       recordRuntimeEvent: () => undefined,
       reportSpeechServiceError: () => undefined,
-      updateCharacterState: () => ({}),
       rememberSpeechMetadata: () => undefined,
       updateSpeechPlaybackProgress: () => undefined,
       isContinuousCaptureAlive: () => true,

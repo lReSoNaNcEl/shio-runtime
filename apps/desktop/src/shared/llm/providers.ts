@@ -5,7 +5,7 @@
  * neither side should redefine these.
  */
 
-export const LLM_PROVIDER_IDS = ['groq', 'cerebras', 'github', 'openrouter', 'mistral'] as const
+export const LLM_PROVIDER_IDS = ['groq', 'cloudflare', 'github', 'openrouter', 'mistral'] as const
 
 export type LlmProviderId = (typeof LLM_PROVIDER_IDS)[number]
 
@@ -28,9 +28,17 @@ export interface ProviderProfile {
   requiresApiKey: boolean
   /** Whether listing the model catalog needs an API key (independent of chat). */
   modelsRequireApiKey: boolean
+  /** Whether this provider needs an account-scoped identifier in addition to its credential. */
+  requiresAccountId?: boolean
 }
 
-export type ModelFetchErrorKind = 'network' | 'auth' | 'invalid_response' | 'unknown'
+export type ModelFetchErrorKind =
+  | 'network'
+  | 'auth'
+  | 'access'
+  | 'configuration'
+  | 'invalid_response'
+  | 'unknown'
 
 export interface FetchModelsResult {
   ok: boolean
@@ -50,8 +58,10 @@ export interface LlmCredentialStatus {
 
 export type LlmReadinessReason =
   | 'ready'
+  | 'missing-account-id'
   | 'missing-credential'
   | 'auth-error'
+  | 'access-error'
   | 'model-missing'
   | 'network-error'
   | 'checking'
@@ -64,6 +74,7 @@ export interface LlmReadiness {
 
 export interface LlmProviderPersistedSettings {
   model: string
+  accountId?: string
 }
 
 export interface LlmProviderPublicSettings extends LlmProviderPersistedSettings {

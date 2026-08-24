@@ -18,4 +18,3 @@ export {
   ProjectCredentialStore,
 } from './ProjectCredentialStore'
 export { ProjectKnowledgeStore } from './ProjectKnowledgeStore'
-export { isProjectRelevantRequest, projectContextRequirement } from './ProjectRelevanceGate'

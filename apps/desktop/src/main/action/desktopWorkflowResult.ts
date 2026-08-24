@@ -1,4 +1,5 @@
 import {
+  DESKTOP_WORKFLOW_SHELL_OUTPUT_MAX_CHARS,
   type DesktopWorkflowActionResult,
   type DesktopWorkflowExecution,
   desktopWorkflowActionResultSchema,
@@ -43,7 +44,30 @@ function buildExecutionProjection(
     verificationReason: action.verification?.reasonCode ?? action.execution?.errorCode,
     verificationSummary: action.verification?.summary,
     browser: evidence?.kind === 'browser' ? browserProjection(evidence, action) : undefined,
+    shell: evidence?.kind === 'shell' ? shellProjection(evidence) : undefined,
+    presentationFacts: adapterResult?.presentationFacts,
   })
+}
+
+function boundedShellOutput(value: string): { text: string; truncated: boolean } {
+  if (value.length <= DESKTOP_WORKFLOW_SHELL_OUTPUT_MAX_CHARS) {
+    return { text: value, truncated: false }
+  }
+  return {
+    text: value.slice(0, DESKTOP_WORKFLOW_SHELL_OUTPUT_MAX_CHARS),
+    truncated: true,
+  }
+}
+
+function shellProjection(evidence: Extract<DesktopWorkflowExecutionEvidence, { kind: 'shell' }>) {
+  const stdout = boundedShellOutput(evidence.stdout)
+  const stderr = boundedShellOutput(evidence.stderr)
+  return {
+    exitCode: evidence.exitCode,
+    stdout: stdout.text,
+    stderr: stderr.text,
+    truncated: evidence.truncated || stdout.truncated || stderr.truncated,
+  }
 }
 
 function executionErrorEvidence(value: unknown): DesktopWorkflowExecutionEvidence | undefined {

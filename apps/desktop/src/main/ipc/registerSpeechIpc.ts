@@ -1,76 +1,54 @@
 import { ipcMain } from 'electron'
 import { z } from 'zod'
 
-import type { SpeechOperation, SpeechServiceErrorCode } from '../../shared/speech'
-import type { ActionRuntime } from '../action/ActionRuntime'
-import type { Orchestrator } from '../orchestrator'
-import type { SpeechClientManager } from '../speech/SpeechClientManager'
-import {
-  DEFAULT_TTS_VOICE_ID,
-  deriveCapabilities,
-  type SpeechCapabilitiesProbe,
-} from '../speech/speechClient'
-import { logSpeechError, logSpeechRecovery } from '../speech/speechErrors'
+import type { SpeechOperation } from '../../shared/speech'
+import type { SpeechApplicationService } from '../app/SpeechApplicationService'
+import { deriveCapabilities, type SpeechCapabilitiesProbe } from '../speech/speechClient'
+import { logSpeechError, logSpeechRecovery, normalizeSpeechError } from '../speech/speechErrors'
 import type { IpcAuthorization } from './IpcAuthorization'
 
 interface RegisterSpeechIpcOptions {
-  actions: ActionRuntime
-  speech: () => SpeechClientManager
-  cancelSynthesis: (turnId: string) => Promise<void>
+  service: SpeechApplicationService
   onCapabilitiesProbe?: (probe: SpeechCapabilitiesProbe) => void
   authorization: IpcAuthorization
 }
 
 export function registerSpeechIpc({
-  actions,
-  speech,
-  cancelSynthesis,
+  service,
   onCapabilitiesProbe,
   authorization,
 }: RegisterSpeechIpcOptions): void {
-  const logFailure = (
-    operation: SpeechOperation,
-    action: { error?: string; errorCode?: string },
-  ): void => {
-    logSpeechError({
-      operation,
-      code: (action.errorCode as SpeechServiceErrorCode | undefined) ?? 'UNKNOWN',
-      recoverable: false,
-      technicalMessage: action.error,
-    })
+  const logFailure = (operation: SpeechOperation, error: unknown): void => {
+    logSpeechError(normalizeSpeechError(error, operation).toSerialized())
   }
 
   ipcMain.handle(
     'asr:get-streaming-connection',
     authorization.handle('asr:get-streaming-connection', () => ({
-      baseUrl: speech().getEndpoint(),
+      baseUrl: service.getEndpoint(),
     })),
   )
 
   ipcMain.handle(
     'health:check',
     authorization.handle('health:check', async () => {
-      const action = await actions.execute<
-        void,
-        Awaited<ReturnType<SpeechClientManager['health']>>
-      >({
-        name: 'speech.health',
-        payload: undefined,
-      })
-      if (action.status === 'success' && action.result) {
+      try {
+        const result = await service.health()
         logSpeechRecovery('health')
-        const capabilities = deriveCapabilities(action.result)
+        const capabilities = deriveCapabilities(result)
         onCapabilitiesProbe?.(capabilities)
-        return { ok: true, data: action.result, capabilities }
+        return { ok: true, data: result, capabilities }
+      } catch (error) {
+        onCapabilitiesProbe?.({
+          serviceReachable: false,
+          recognition: false,
+          synthesis: false,
+          streaming: false,
+        })
+        const normalized = normalizeSpeechError(error, 'health')
+        logFailure('health', normalized)
+        return { ok: false, error: normalized.message, errorCode: normalized.code }
       }
-      onCapabilitiesProbe?.({
-        serviceReachable: false,
-        recognition: false,
-        synthesis: false,
-        streaming: false,
-      })
-      logFailure('health', action)
-      return { ok: false, error: action.error, errorCode: action.errorCode }
     }),
   )
 
@@ -83,16 +61,15 @@ export function registerSpeechIpc({
       'asr:recognize',
       z.tuple([wavBufferSchema]),
       async (_event, wavBuffer) => {
-        const action = await actions.execute<ArrayBuffer, { text: string }>({
-          name: 'speech.recognize',
-          payload: wavBuffer,
-        })
-        if (action.status === 'success') {
+        try {
+          const result = await service.recognize(wavBuffer)
           logSpeechRecovery('recognition')
-          return { ok: true, text: action.result?.text }
+          return { ok: true, text: result.text }
+        } catch (error) {
+          const normalized = normalizeSpeechError(error, 'recognition')
+          logFailure('recognition', normalized)
+          return { ok: false, error: normalized.message, errorCode: normalized.code }
         }
-        logFailure('recognition', action)
-        return { ok: false, error: action.error, errorCode: action.errorCode }
       },
     ),
   )
@@ -108,16 +85,15 @@ export function registerSpeechIpc({
       'tts:synthesize-reply',
       synthesisSchema,
       async (_event, turnId, replyText, emotionKey) => {
-        const action = await actions.execute<
-          { turnId: string; replyText: string; emotionKey: string },
-          Awaited<ReturnType<Orchestrator['synthesizeReply']>>
-        >({ name: 'speech.synthesizeReply', payload: { turnId, replyText, emotionKey } })
-        if (action.status === 'success') {
+        try {
+          const result = await service.synthesize(turnId, replyText, emotionKey)
           logSpeechRecovery('synthesis')
-          return { ok: true, ...action.result }
+          return { ok: true, ...result }
+        } catch (error) {
+          const normalized = normalizeSpeechError(error, 'synthesis')
+          if (normalized.code !== 'CANCELLED') logFailure('synthesis', normalized)
+          return { ok: false, error: normalized.message, errorCode: normalized.code }
         }
-        if (action.errorCode !== 'CANCELLED') logFailure('synthesis', action)
-        return { ok: false, error: action.error, errorCode: action.errorCode }
       },
     ),
   )
@@ -128,11 +104,7 @@ export function registerSpeechIpc({
   ipcMain.handle(
     'tts:warmup',
     authorization.handlePayload('tts:warmup', z.tuple([warmupSchema.strict()]), (_event, input) =>
-      speech().warmupVoice({
-        engine: 'f5',
-        voiceId: DEFAULT_TTS_VOICE_ID,
-        ...input,
-      }),
+      service.warmup(input.language),
     ),
   )
   ipcMain.handle(
@@ -141,7 +113,7 @@ export function registerSpeechIpc({
       'tts:cancel-synthesis',
       z.tuple([z.string().trim().min(1).max(100)]),
       async (_event, turnId) => {
-        await cancelSynthesis(turnId)
+        await service.cancelSynthesis(turnId)
         return { ok: true }
       },
     ),

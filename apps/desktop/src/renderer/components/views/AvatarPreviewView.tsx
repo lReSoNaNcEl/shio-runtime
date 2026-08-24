@@ -137,7 +137,7 @@ export function AvatarPreviewView({ onOpenSettings }: { onOpenSettings: () => vo
       <section className="empty-state">
         <Heading level={2}>{t('avatarPreview.notConfigured.title')}</Heading>
         <Text>{t('avatarPreview.notConfigured.description')}</Text>
-        <Button variant="accent" onPress={onOpenSettings}>
+        <Button variant="accent" onPress={onOpenSettings} UNSAFE_className="shio-accent-button">
           {t('avatarPreview.openSettings')}
         </Button>
       </section>
@@ -338,6 +338,7 @@ export function AvatarPreviewView({ onOpenSettings }: { onOpenSettings: () => vo
                   variant="accent"
                   isDisabled={!animationId}
                   onPress={() => controller.previewAvatarAnimation(animationId)}
+                  UNSAFE_className="shio-accent-button"
                 >
                   {t('avatarPreview.play')}
                 </Button>

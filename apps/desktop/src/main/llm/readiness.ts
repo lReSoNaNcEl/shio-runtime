@@ -6,12 +6,17 @@ export function resolveLlmReadiness(config: LlmPublicConfig): LlmReadiness {
   const credentialReady =
     provider?.requiresApiKey === false ||
     config.providers[config.activeProvider].credential.configured
+  const accountReady =
+    provider?.requiresAccountId !== true ||
+    Boolean(config.providers[config.activeProvider].accountId?.trim())
   return {
-    reason: credentialReady
-      ? config.providers[config.activeProvider].model.trim()
-        ? 'ready'
-        : 'model-missing'
-      : 'missing-credential',
+    reason: !accountReady
+      ? 'missing-account-id'
+      : credentialReady
+        ? config.providers[config.activeProvider].model.trim()
+          ? 'ready'
+          : 'model-missing'
+        : 'missing-credential',
     providerId: config.activeProvider,
     providerDisplayName: provider?.displayName ?? config.activeProvider,
   }

@@ -6,6 +6,11 @@ import {
   EMBODIMENT_GESTURE_HINTS,
   EMBODIMENT_INTENSITIES,
 } from '../../shared/character-response'
+import {
+  TRANSITION_RECORDING_MAX_BYTES,
+  TRANSITION_RECORDING_MAX_FRAME_BYTES,
+  TRANSITION_RECORDING_MAX_FRAMES,
+} from '../../shared/diagnostics'
 
 function serializedSizeAtMost(value: unknown, maximumBytes: number): boolean {
   try {
@@ -141,7 +146,7 @@ const transitionRecordingFrameSchema = z
   })
   .strict()
   .refine(
-    (frame) => serializedSizeAtMost(frame, 750_000),
+    (frame) => serializedSizeAtMost(frame, TRANSITION_RECORDING_MAX_FRAME_BYTES),
     'Transition recording frame is too large',
   )
 
@@ -152,10 +157,10 @@ export const transitionRecordingSchema = z
     reason: z.string().min(1).max(500),
     startedAtFrame: z.number().int().nonnegative(),
     savedAt: z.string().datetime(),
-    frames: z.array(transitionRecordingFrameSchema).min(1).max(121),
+    frames: z.array(transitionRecordingFrameSchema).min(1).max(TRANSITION_RECORDING_MAX_FRAMES),
   })
   .strict()
   .refine(
-    (recording) => serializedSizeAtMost(recording, 5_000_000),
+    (recording) => serializedSizeAtMost(recording, TRANSITION_RECORDING_MAX_BYTES),
     'Transition recording is too large',
   )

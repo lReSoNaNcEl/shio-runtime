@@ -7,7 +7,8 @@ export function buildActionResultNarrationContext(result: DesktopWorkflowActionR
     execution: result.execution
       ? {
           runtimeCompleted: result.execution.runtimeCompleted,
-          observedResult: result.execution.reportedOutcome,
+          shell: result.execution.shell,
+          presentationFacts: result.execution.presentationFacts,
           verification: {
             status: result.execution.verification,
             reason: result.execution.verificationReason,

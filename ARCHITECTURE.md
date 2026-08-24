@@ -172,10 +172,10 @@ Architectural Invariants define properties of Shio Runtime that must never chang
     Project evidence attached to an assistant response remains bound to the immutable Project Context Packet used for that turn. Later synchronization or Plugin disablement cannot rewrite historical response provenance.
 38. **Staleness Is Not Failure**
     A stale Project Snapshot means newer remote knowledge exists; it does not by itself mean Project Awareness Runtime has failed. The last complete immutable snapshot remains usable until an atomic synchronization publishes a replacement.
-39. **Project Requirement Is Independent From Action Routing**
-    Every turn resolves an explicit Project Context Requirement of `none`, `optional`, or `required` from semantic project need. A terminal or Action request alone neither suppresses nor requires Project Awareness; an explicit literal command needs no project context unless selecting or planning the action depends on project knowledge.
+39. **Character Owns Semantic Tool Selection**
+    Character Response Generation is the single semantic owner that decides, from the meaning of the admitted turn, whether to answer directly or propose one or more currently available typed capabilities. No phrase, keyword, regular-expression, filename, or locale-alias router may classify natural-language Project, Browser, Shell, Desktop, or Memory intent. Absence of a tool call means that no additional capability is needed.
 40. **Turn Grounding Is Composable**
-    When one turn uses Project Context to select or plan an Action, the assistant response preserves both Project Reply Provenance from the exact original packet and Action Reply Grounding from the completed Action Runtime result. Post-action narration reuses that packet and never performs a second relevance decision, retrieval, or snapshot resolution.
+    When one turn calls Project Awareness and then uses that evidence to select or plan an Action, the assistant response preserves both Project Reply Provenance from the exact original packet and Action Reply Grounding from the completed Action Runtime result. Later tool rounds and post-action narration reuse that packet and never perform an implicit second retrieval or snapshot resolution.
 
 ## Part I - Architectural Philosophy
 
@@ -275,7 +275,7 @@ Architecture overview:
   Microphone | Keyboard / UI | APIs | Platforms | Local Services
 ```
 
-Conversation Runtime coordinates only one admitted conversational turn at a time; it is not depicted as a central controller of the application. Memory Layer is omitted from this diagram for brevity but continues to observe completed outcomes as described in [Chapter 21 - Memory Layer](#21-memory-layer). Project Awareness Runtime is also omitted from the primary character flow: it reads a configured repository through a Project Repository Adapter, builds a commit-scoped knowledge projection, and supplies grounded evidence to Character Response Generation only for project-relevant turns. See [Chapter 21A - Project Awareness Runtime](#21a-project-awareness-runtime).
+Conversation Runtime coordinates only one admitted conversational turn at a time; it is not depicted as a central controller of the application. Memory Layer is omitted from this diagram for brevity but continues to observe completed outcomes as described in [Chapter 21 - Memory Layer](#21-memory-layer). Project Awareness Runtime is also omitted from the primary character flow: it reads a configured repository through a Project Repository Adapter, builds a commit-scoped knowledge projection, and supplies grounded evidence only when Character Response Generation calls the available `project.search` tool. See [Chapter 21A - Project Awareness Runtime](#21a-project-awareness-runtime).
 
 #### Architectural Layers
 
@@ -330,6 +330,9 @@ Architectural rules:
 - Runtime systems exchange state, not implementation details.
 - A Runtime may contribute only within its own responsibility.
 - Character State represents what is true now, never historical events.
+- One `CharacterStateStore` owns the canonical renderer-side value. Consumers receive a read-only snapshot contract; contributors receive narrow domain writers rather than a generic patch API.
+- Conversation, Speech, Admission, and Avatar writers expose only the transitions or projections owned by that domain. In particular, Speech input cannot overwrite conversational emotion, and Avatar projection cannot overwrite semantic conversation state.
+- Controller UI state contains presentation concerns such as drafts, selected views, dialog visibility, and local loading state. It must not reconstruct a second Character State projection.
 
 Observable dimensions include:
 
@@ -479,11 +482,11 @@ The architecture follows a layered decision model. The simplest component capabl
 Decision layers:
 
 1. **Intent Router**  
-   Performs extremely lightweight classification such as conversation, command, ignored speech, background speech, or system request.
+   Performs extremely lightweight input-source and admission classification such as conversational candidate, ignored speech, background speech, or explicit system request. It never selects Character capabilities or tools from natural language.
 2. **Rule Gate**  
    Applies deterministic rules such as wake phrases, filler-word rejection, duplicate filtering, confidence thresholds, cooldown timers, and command prefixes.
 3. **Optional Intent LLM**  
-   Resolves ambiguous cases only, such as whether the character was actually addressed or whether a message should be ignored. Its output is intentionally simple, such as `RESPOND`, `IGNORE`, `SYSTEM_COMMAND`, or `TOOL_REQUEST`.
+   Resolves admission ambiguity only, such as whether the character was actually addressed or whether a message should be ignored. Its output is intentionally simple, such as `RESPOND`, `IGNORE`, or `SYSTEM_COMMAND`; it never chooses a Character tool.
 4. **Character LLM**  
    Handles personality, dialogue, humor, emotional tone, creativity, reasoning, and tool intentions.
 5. **Action Runtime**  
@@ -493,9 +496,9 @@ Decision layers:
 
 Architectural guarantees:
 
-- deterministic decisions are preferred over probabilistic reasoning
+- deterministic rules are preferred for admission, validation, and policy decisions that do not require understanding the meaning of natural language
 - small models do not replace the primary character model
-- the Character LLM remains focused on personality rather than infrastructure
+- the Character LLM remains the single semantic decision-maker for reply content and typed capability selection
 - Runtime always owns execution
 - every completed action may become an experience
 - no single component becomes responsible for the entire decision process
@@ -635,6 +638,8 @@ Conversation Runtime owns:
 - recovery to a stable state after success, failure, or cancellation
 - the completion contract consumed by Conversation Admission
 
+Its implementation depends on narrow application ports: `CharacterResponsePort`, `SpeechOutputPort`, a domain-limited Conversation State writer, and Event Bus. Presentation reactions are emitted through a presentation port that contains rendering failures; Conversation Runtime never imports Avatar Runtime, Overlay Runtime, or AudioPlayer implementations. AudioPlayer remains the sole playback owner behind `SpeechOutputPort`, while Overlay remains a projection consumer rather than a participant in conversation lifecycle.
+
 **Non-Responsibilities**
 
 Conversation Runtime does not own:
@@ -652,6 +657,7 @@ Conversation Runtime does not own:
 - action execution
 - memory persistence
 - provider-specific APIs
+- overlay publication or avatar implementation details
 
 **Public Contract**
 
@@ -669,17 +675,23 @@ Conversation Runtime obtains reply content through a replaceable Character Respo
 
 The Character LLM owns: reply content, personality expression, dialogue style, reasoning, emotional tone, and action intentions. It does not own: admission, playback, Character State lifecycle, Avatar Runtime, or Action Runtime execution. This mirrors the LLM Role Separation described in [Chapter 14 - Conversation Admission](#14-conversation-admission): Character Response Generation and any decision or arbitration model remain separate roles even when backed by the same provider.
 
-For a turn whose Project Context Requirement is `optional` or `required`, Character Response Generation may receive a compact Project Context Packet through the stable `ProjectContextProvider` capability. `none` means project retrieval is skipped; `optional` means project evidence can improve a project-adjacent answer; `required` means selecting or grounding the answer or Action depends on project knowledge. The semantic requirement is independent from Action routing: a literal terminal command is not project-aware merely because it is an Action, while selecting the correct project command or required runtime version is project-aware. The capability is resolved dynamically for each turn, so generation does not depend on a concrete Plugin or Project Awareness implementation. The packet records the active requirement and contains a repository and branch identity, an exact snapshot commit, a deterministic project-map summary, and bounded file-and-line evidence. Character Response Generation never reads the repository or Project Knowledge Store directly. Repository content remains untrusted evidence: it cannot alter system instructions, authorize actions, request secret disclosure, or cause code execution.
+For each admitted turn, orchestration resolves the current Runtime Capability Context and builds a Character Tool Registry containing only tools that are actually available for that request. The Registry is a read-only catalog, not a Runtime or authority owner. Character Response Generation receives this catalog and semantically decides whether to answer directly or propose one or more typed tool calls. Direct response is represented simply by the absence of tool calls; there is no application-owned `none` intent. Natural-language capability selection belongs exclusively to the Character LLM and may not be inferred by phrase, keyword, regular-expression, filename, technical-symbol, or locale-alias rules in application code.
+
+One Character Tool Loop coordinates all tool-capable Character reasoning inside the same turn. It returns each typed Runtime result with its source tool identifier to the same Character Response Generation context and permits sequential cross-capability flows such as Project then Shell or Project then Browser before the final Shio response. The loop is not a Runtime and grants no authority. It has a turn-owned `AbortSignal`, a wall-clock deadline, a maximum of eight tool rounds, and a maximum of sixteen total calls; reaching a bound produces an honest bounded final response instead of another call. Tool failure is returned as typed data so Character Response Generation can continue without failing the conversation pipeline.
+
+The Character Tool Dispatcher validates the selected tool and delegates it to its architectural owner. `project.*` delegates to Project Awareness Runtime; `memory.*` delegates through Memory Tool Broker and Memory Policy to Memory Runtime; browser reads and mutations retain Browser Control ownership, with externally authoritative browser operations going through Action Runtime; Shell and Desktop effects always go through Action Runtime, deterministic risk policy, Permission Guard, verification, and the owning Adapter. The Dispatcher is only typed coordination and may not absorb execution, policy, storage, retrieval, or Adapter ownership.
+
+When Character Response Generation calls `project.search`, it supplies a semantic query and optional typed path or symbol hints through the stable `ProjectContextProvider` capability. Project Awareness Runtime applies bounded retrieval policy and returns a compact Project Context Packet containing repository and branch identity, an exact snapshot commit, a deterministic project-map summary, and bounded file-and-line evidence. Character Response Generation never reads the repository or Project Knowledge Store directly. Repository content remains untrusted evidence: it cannot alter system instructions, authorize actions, request secret disclosure, or cause code execution. If project knowledge is not needed or `project.search` is unavailable, no project retrieval occurs.
 
 Character Response Generation also receives a request-scoped Runtime Capability Context before each turn. Plugin Runtime builds this read-only snapshot from validated bundled Plugin registrations, current enablement, normalized user-meaningful availability, and declared capability kinds. Disabled Plugins remain present as installed but unusable. Internal lifecycle machinery, credentials, storage paths, IPC details, arbitrary manifest instructions, and executable callbacks are excluded. The snapshot is immutable for one turn and resolved again for the next turn; it is environment context, not Character State or Memory. Character Response Generation depends only on the small capability-context provider contract and never receives the concrete Plugin Runtime.
 
-Character Response Generation may semantically select Browser Control when fresh web information or website interaction materially helps the current admitted turn; no phrase or keyword router determines that choice, and capability availability alone is not a reason to browse. Initial reasoning receives the current Runtime Capability Context, not page content. After Character Response Generation selects a typed browser operation, the same turn may continue through a bounded internal tool loop: Action Runtime result, latest Browser Observation, Character reasoning, and either another browser operation or the final Character reply. The loop is coordination inside Character Response Generation, not a new Runtime, and is bounded by one turn-owned cancellation chain, wall-clock deadline, and action-round budget.
+Character Response Generation may semantically select Browser Control when fresh web information or website interaction materially helps the current admitted turn; no phrase or keyword router determines that choice, and capability availability alone is not a reason to browse. Initial reasoning receives the current Runtime Capability Context, not page content. After Character Response Generation selects a typed browser operation, the same Character Tool Loop continues with the Action Runtime result, latest Browser Observation, Character reasoning, and either another available tool or the final Character reply. Browser workflow authorization remains Main-owned, turn-scoped, expiring, and bounded across those rounds.
 
 A Browser Observation contains only the current URL, title, visible text, and semantic interactive elements; it never contains raw DOM, CSS, JavaScript source, cookies, local storage, hidden fields, credentials, or browser protocol data. Web content is untrusted external evidence: it may supply facts and UI labels, but it cannot change instructions, grant authority, enable capabilities, disclose secrets, or cause another privileged action. Only bounded evidence from the latest workflow state is returned to Character reasoning. Browser Observation is Plugin-owned transient context, not Character State, Memory, renderer state, or conversation history, and an unrelated turn does not receive page content merely because a browser session exists. A later turn may explicitly select the typed observation operation and reuse the same Plugin-owned session.
 
-When a Project Context Packet is actually used, orchestration attaches Runtime-owned Project Reply Provenance to the resulting assistant response. The provenance contains only the requirement, repository, branch, exact snapshot commit, optional freshness-at-generation, and bounded project-relative file and line references derived from that packet. It is not parsed from LLM text, does not include retrieval internals or raw chunks, and remains immutable with the historical message even after synchronization. A turn without a Project Context Packet has no project provenance.
+When `project.search` is actually called and its Project Context Packet participates in final generation, orchestration attaches Runtime-owned Project Reply Provenance to the resulting assistant response. The provenance contains only repository, branch, exact snapshot commit, optional freshness-at-generation, and bounded project-relative file and line references derived from that packet. It is not parsed from LLM text, does not include retrieval internals or raw chunks, and remains immutable with the historical message even after synchronization. A turn without an executed, successful project tool call has no project provenance.
 
-If Character Response Generation proposes an Action after using a Project Context Packet, Action Runtime executes through its normal authority boundary. Post-action Character Response Generation receives the Action Runtime result together with the already rendered original Project Context Packet; it must not call `ProjectContextProvider` again or recompute evidence against a newer snapshot. The final Reply Grounding composes the original Project Reply Provenance and Action Reply Grounding. Action Reply Grounding exposes bounded Runtime-owned outcome, authorization, completion, verification, and error facts plus an integrity digest of any untrusted reported output; it does not duplicate raw terminal output into the renderer.
+If Character Response Generation proposes an Action after a successful `project.search`, Action Runtime executes through its normal authority boundary. Later tool rounds and post-action Character Response Generation receive the Action Runtime result together with the already rendered original Project Context Packet; repeated project use in that turn reuses the packet and must not silently recompute evidence against a newer snapshot. The final Reply Grounding composes the original Project Reply Provenance and Action Reply Grounding. Action Reply Grounding exposes bounded Runtime-owned outcome, authorization, completion, verification, and error facts plus an integrity digest of any untrusted reported output; it does not duplicate raw terminal output into the renderer.
 
 An explicit text-chat turn may also carry one user-selected, request-scoped Screen Context image. Screen Context is acquired through a read-only System Adapter and a short-lived main-process application service; it is not a Runtime, Tool Action, Character State field, conversational-memory entry, or Project Awareness input. The renderer may hold only a bounded preview and opaque capture identity. The full image remains in the main process under a turn-owned lease while Character Response Generation is in flight. A successful generation completes the lease and releases the image; a recoverable failure or cancellation rolls the lease back for explicit retry, while expiration, explicit release, renderer disposal, or application shutdown permanently removes it. Every failed Screen Context terminal result preserves its typed error independently of provider identity and reports the attachment disposition (`retained`, `released`, or `expired`) together with separate capabilities for retrying the same request and resubmitting the text without the image. Text remains the only durable conversation and memory representation.
 
@@ -687,7 +699,7 @@ AI provider selection and OpenAI-compatible transport remain External Adapter co
 
 Character Response Generation may receive a request-scoped internal Semantic Memory capability from Memory Layer. The Character LLM owns the semantic decision to search, store, update, forget, list, ask for clarification, or do nothing; no deterministic phrase, keyword, regex, or locale-alias parser may infer Memory intent from user language. When available, typed Memory operations execute through a bounded tool loop and return their Runtime result to the same Character Response Generation pipeline before the final persona response. A model may claim that a mutation succeeded only after the corresponding Runtime result reports success.
 
-Native provider tool calling is the preferred transport only when provider/model capability resolution explicitly confirms it. An OpenAI-compatible chat endpoint alone is not proof of tool support. Providers without confirmed native tools use a strict structured semantic directive produced by the same Character LLM and validated as a machine contract; this fallback does not move natural-language interpretation into the application and does not create a second Memory model. Both transports converge on the same Memory Tool Broker, Memory Policy, Memory Runtime, and Memory Store.
+Native provider tool calling is the preferred Character Tool Loop transport only when provider/model capability resolution explicitly confirms it. An OpenAI-compatible chat endpoint alone is not proof of tool support. Providers without confirmed native tools use a strict structured semantic directive produced by the same Character LLM and validated as a machine contract; this fallback does not move natural-language interpretation into the application or create a router model. Both transports converge on the same Character Tool Registry and Dispatcher, then delegate to the same Runtime owners and policy boundaries.
 
 **Conversation Presence**
 
@@ -822,7 +834,7 @@ A current implementation may use a local service, a persistent bidirectional tra
 
 **Character State Integration**
 
-Speech Runtime contributes to Runtime Mode, Speech State, Activity, and Attention. It never directly controls Avatar Runtime. See [Chapter 8 - Shared Character State](#8-shared-character-state).
+Speech Runtime contributes to Runtime Mode, Speech State, Activity, and Attention through its domain-limited Speech State writer. It cannot write conversational emotion and never directly controls Avatar Runtime. Speech input owns microphone capture, VAD/streaming transport, and ASR; speech output owns TTS coordination and delegates actual playback to the sole AudioPlayer owner. Character reply generation, response parsing, conversation history, and Character Tool Loop are outside Speech Runtime and remain behind Character Response Generation. See [Chapter 8 - Shared Character State](#8-shared-character-state).
 
 **Architectural Guarantees**
 
@@ -973,10 +985,13 @@ This distinction clarifies where Action Runtime's exclusive ownership applies; i
 - defining personality
 - performing reasoning that belongs to the Character LLM
 - rendering visual output
+- LLM generation, ASR, TTS, health checks, retrieval, internal Memory mutations, and ordinary application configuration persistence
 
 **Internal Model**
 
 Action Runtime acts as the controlled gateway between the internal world and the external world. The internal world includes personality, emotions, memory, conversation, animation, and speech. The external world includes the operating system, files, YouTube, Twitch, Discord, OBS, HTTP APIs, local services, smart home devices, and future integrations.
+
+Main composition creates Action Runtime and application services before IPC registration. IPC is only a transport boundary: it authorizes the sender, validates the payload at runtime, and delegates to the owning application service. It never constructs Action Runtime or registers internal Core operations as Actions. `MainConversationTurnService` owns one LLM turn and its cancellation/screen-context lease; Speech application services own ASR, TTS, health, and synthesis cancellation. A write enters Action Runtime because it is externally authoritative, not merely because it mutates any value: UI configuration persistence and internal Memory state stay with their owning application service or Runtime.
 
 Every action follows the same lifecycle:
 
@@ -1303,9 +1318,9 @@ Its responsibilities are:
 - expose bounded read-only search, file, symbol, project-map, and recent-change contracts
 - determine Project Snapshot Freshness by comparing the indexed snapshot commit with the observed remote branch head
 - produce a bounded deterministic changed-file projection for a stale snapshot through the existing repository comparison Adapter contract
-- resolve an explicit semantic Project Context Requirement (`none`, `optional`, or `required`) before supplying project context to Character Response Generation; Action routing alone is not a relevance decision
+- accept typed `project.search` requests containing a model-selected semantic query and optional path or symbol hints, then apply bounded retrieval policy without classifying the user's natural-language intent
 
-Project Awareness Runtime owns synchronization and retrieval policy. The Project Repository Adapter only translates provider APIs into read-only repository contracts. The Project Knowledge Store only persists derived snapshot data; it does not decide what to index or how evidence is ranked.
+Project Awareness Runtime owns synchronization and retrieval policy. A Project Retrieval Query Compiler turns the already model-selected semantic query and typed hints into a bounded storage query plan, including normalization and technical aliases; it does not classify the original user turn or decide whether retrieval is needed. Project Evidence Selector owns ranking and packet selection. The Project Repository Adapter only translates provider APIs into read-only repository contracts. Project Knowledge Store accepts prepared query plans and provides SQLite/FTS persistence and query primitives; it does not own stop-word policy, technical aliases, Character orchestration, what to index, or which evidence enters context.
 
 The configured GitHub repository and branch are Project Awareness Plugin settings, not implementation constants or Core application settings. Updating that target disconnects the previous repository before the Runtime may connect to the new target; commit-scoped snapshots remain keyed by repository and branch so knowledge from different targets is never merged.
 
@@ -1315,7 +1330,7 @@ Project Snapshot Freshness is a main-owned diagnostic fact distinct from Plugin 
 
 Synchronization builds and validates a candidate snapshot before atomically replacing the published snapshot. A fetch, indexing, validation, or rebuild failure leaves the previous immutable snapshot current and usable, including when rebuilding the same commit. In-flight and historical turns keep the exact snapshot identity they already received. A stale or temporarily unverified remote head does not by itself degrade Plugin health when a usable snapshot remains available.
 
-Project Reply Provenance is derived exclusively from the Project Context Packet actually supplied for one turn. Project Awareness Runtime owns the evidence facts, orchestration binds their safe projection to the assistant response, and the renderer owns presentation. The Character LLM may mention files in prose but cannot create authoritative provenance. When that packet participates in Action selection or planning, post-action narration reuses the same rendered packet without a second relevance decision or retrieval, and Reply Grounding preserves both the original project provenance and the Action Runtime result grounding.
+Project Reply Provenance is derived exclusively from the Project Context Packet returned by an actually executed `project.search` call and used for final generation. Project Awareness Runtime owns the evidence facts, orchestration binds their safe projection to the assistant response, and the renderer owns presentation. The Character LLM may mention files in prose but cannot create authoritative provenance. When that packet participates in Action selection or planning, later tool rounds and post-action narration reuse the same rendered packet without an implicit second retrieval, and Reply Grounding preserves both the original project provenance and the Action Runtime result grounding.
 
 Security guarantees:
 
@@ -1454,16 +1469,18 @@ Runtime systems communicate with architectural concepts. Adapters communicate wi
 - **Memory Tool Broker:** the internal Character Response Generation boundary that validates and normalizes typed model-produced Memory operations before delegating to Memory Runtime.
 - **Memory Policy:** the deterministic Memory-layer guard that enforces availability, provenance, bounds, secret rejection, and exact-id mutation invariants without interpreting natural-language intent.
 - **Memory Store:** the replaceable persistence implementation owned by Memory Runtime; it is never exposed directly to the Character LLM or renderer.
+- **Character Tool Registry:** the request-scoped, read-only catalog of typed tools currently available to Character Response Generation; it is neither a Runtime nor an authority owner.
+- **Character Tool Loop:** bounded, cancellable coordination inside one Character Response Generation turn that returns typed tool results to the same Character LLM and permits sequential calls before the final response.
+- **Character Tool Dispatcher:** the narrow typed delegation boundary from Character Tool Loop to the existing Runtime, policy, and Adapter owner for each tool; it does not execute every capability itself.
 - **Project Awareness Runtime:** the Runtime responsible for building and retrieving bounded, commit-scoped, read-only technical knowledge about a configured project repository.
 - **Project Knowledge Store:** application-owned persistence for derived project snapshots, files, symbols, chunks, maps, and recent-change caches; it is not Character State or conversational memory.
-- **Project Context Requirement:** the semantic project-knowledge need resolved once for a turn: `none` skips retrieval, `optional` permits useful project grounding, and `required` means answer or Action planning depends on project knowledge. It is independent from whether the turn contains an Action.
-- **Project Context Packet:** a bounded evidence packet identifying its active Project Context Requirement and an exact repository, branch, and commit for one Character Response Generation turn.
+- **Project Context Packet:** a bounded evidence packet identifying an exact repository, branch, commit, and file-and-line evidence returned by `project.search` for one Character Response Generation turn.
 - **Plugin Runtime:** the Runtime responsible only for bundled Plugin discovery, manifest validation, lifecycle, enablement, status, and typed capability registration.
 - **Plugin:** a bundled optional extension whose business logic retains its own ownership and may expose only capabilities declared by its validated manifest.
 - **Plugin Capability:** a narrow typed contract through which Core may consume optional functionality without depending on a concrete Plugin implementation.
 - **Browser Session:** the isolated, Shio-managed browser lifecycle owned by the Browser Control capability across related conversation turns; it is not Character State or the user's personal browser profile.
 - **Browser Observation:** a bounded, request-scoped, read-only semantic snapshot of the active Browser Session containing URL, title, visible text, and interactive elements. Its content is untrusted external evidence, and its element refs are valid only for that observation.
-- **ProjectContextProvider:** the optional capability that resolves one Project Context Requirement and, when active, produces a bounded Project Context Packet for that same conversation request.
+- **ProjectContextProvider:** the optional capability that accepts one typed `project.search` request and produces a bounded Project Context Packet for that same conversation turn.
 - **Runtime Capability Context:** a request-scoped, read-only projection of capabilities currently registered with Shio Runtime and their availability for the current Character Response Generation turn; it grants no authority.
 - **Character Capability Context:** the Character Response Generation view of Runtime Capability Context, containing only trusted Plugin identity, installed/enabled facts, normalized availability, and declared capability kinds.
 - **Project Snapshot:** one immutable, commit-scoped Project Awareness knowledge projection that is published atomically.
@@ -1635,9 +1652,9 @@ Use this checklist before implementing significant features, Runtime modificatio
 
 **Project-aware Actions**
 
-- Is Project Context Requirement based on semantic project need rather than the mere presence or absence of an Action?
-- Does an explicit literal command skip project retrieval unless selecting or planning it requires project knowledge?
-- If Project Context informed an Action, does post-action narration reuse the exact original packet without rerunning relevance, retrieval, or snapshot resolution?
+- Did Character Response Generation, rather than application phrase or regex routing, semantically select `project.search`?
+- Does an explicit literal command avoid project retrieval unless the Character LLM actually calls `project.search` to select or plan it?
+- If project evidence informed an Action, do later tool rounds and post-action narration reuse the exact original packet without implicit reretrieval or snapshot resolution?
 - Does final Reply Grounding preserve both the original Project Reply Provenance and bounded Action Reply Grounding?
 
 **External Adapters**

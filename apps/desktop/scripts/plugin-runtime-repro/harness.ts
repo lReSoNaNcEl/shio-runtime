@@ -32,8 +32,7 @@ import { PROJECT_AWARENESS_PLUGIN_ID } from '../../src/shared/plugins'
 
 class FakePlugin implements BundledPlugin {
   readonly provider: ProjectContextProvider = {
-    resolveRequirement: () => 'none',
-    buildContext: async () => null,
+    search: async () => null,
   }
   initializeCount = 0
   startCount = 0
@@ -259,6 +258,22 @@ async function conversationCapabilityContract(): Promise<void> {
   const llm: LLMProvider = {
     chat: async (messages) => {
       captured = messages
+      const userText = messages.findLast((message) => message.role === 'user')?.content
+      const hasToolResult = messages.some(
+        (message) =>
+          message.role === 'system' &&
+          typeof message.content === 'string' &&
+          message.content.includes('## Character Tool Results'),
+      )
+      const projectToolAvailable = messages.some(
+        (message) =>
+          message.role === 'system' &&
+          typeof message.content === 'string' &&
+          message.content.includes('"id":"project.search"'),
+      )
+      if (userText === 'Как устроен проект?' && projectToolAvailable && !hasToolResult) {
+        return '<shio-tools>{"calls":[{"tool":"project.search","arguments":{"query":"project architecture"}}]}</shio-tools>'
+      }
       return '[neutral]Проверено.'
     },
   }
@@ -268,7 +283,6 @@ async function conversationCapabilityContract(): Promise<void> {
     clear: async () => undefined,
   }
   const packet = {
-    requirement: 'required' as const,
     snapshotSha: 'abc1234',
     repository: 'owner/project',
     branch: 'main',
@@ -290,8 +304,7 @@ async function conversationCapabilityContract(): Promise<void> {
     },
   }
   let provider: ProjectContextProvider | undefined = {
-    resolveRequirement: () => 'required',
-    buildContext: async () => packet,
+    search: async () => packet,
   }
   const orchestrator = new Orchestrator(
     llm,
@@ -306,7 +319,7 @@ async function conversationCapabilityContract(): Promise<void> {
       (message) =>
         message.role === 'system' &&
         typeof message.content === 'string' &&
-        message.content.includes('Snapshot commit: abc1234'),
+        message.content.includes('abc1234'),
     ),
     true,
   )
@@ -324,8 +337,7 @@ async function conversationCapabilityContract(): Promise<void> {
   )
 
   provider = {
-    resolveRequirement: () => 'required',
-    buildContext: async () => Promise.reject(new Error('provider failure')),
+    search: async () => Promise.reject(new Error('provider failure')),
   }
   await orchestrator.createReply({ userText: 'Core still replies' })
   assert.equal(captured.at(-1)?.content, 'Core still replies')

@@ -51,10 +51,8 @@ export class ProjectAwarenessPlugin implements BundledPlugin {
   private disposed = false
   private readonly listeners = new Set<() => void>()
   private readonly contextProvider: ProjectContextProvider = {
-    resolveRequirement: ({ userText }) =>
-      this.requireRuntime().resolveProjectContextRequirement(userText),
-    buildContext: async ({ userText, traceId, requirement }) =>
-      this.requireRuntime().buildContextPacket(userText, traceId, requirement),
+    search: async ({ query, hints, limit, maxCharacters, traceId }) =>
+      this.requireRuntime().buildContextPacket({ query, hints, limit, maxCharacters }, traceId),
   }
 
   constructor(private readonly dependencies: ProjectAwarenessPluginDependencies) {}

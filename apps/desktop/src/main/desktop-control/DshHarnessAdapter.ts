@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { z } from 'zod'
 
 import {
+  type ActionPresentationFact,
   DESKTOP_WORKFLOW_REPORTED_OUTCOME_MAX_CHARS,
   type DesktopWorkflowCapability,
 } from '../../shared/actions'
@@ -375,6 +376,50 @@ function shellExecutionEvidence(
   }
 }
 
+const RUNTIME_VERSION_COMMANDS: ReadonlyMap<string, string> = new Map([
+  ['node -v', 'Node.js'],
+  ['node --version', 'Node.js'],
+  ['npm -v', 'npm'],
+  ['npm --version', 'npm'],
+  ['python --version', 'Python'],
+  ['python -V', 'Python'],
+  ['py --version', 'Python'],
+  ['py -V', 'Python'],
+  ['git --version', 'Git'],
+])
+
+function exactRuntimeVersion(label: string, output: string): string | undefined {
+  const escapedLabel =
+    label === 'Node.js' || label === 'npm' ? '' : `${label.replace('.', '\\.')}\\s+`
+  const match = output.match(
+    new RegExp(
+      `^${escapedLabel}${label === 'Git' ? 'version\\s+' : ''}v?(\\d+(?:\\.\\d+){1,4}(?:[-+.][0-9A-Za-z.-]+)?)$`,
+      'iu',
+    ),
+  )
+  return match?.[1]
+}
+
+function runtimeVersionPresentationFacts(
+  command: string,
+  evidence: ShellExecutionEvidence,
+): readonly ActionPresentationFact[] | undefined {
+  const normalizedCommand = command.trim().replace(/\s+/gu, ' ')
+  const separator = normalizedCommand.indexOf(' ')
+  const commandKey =
+    separator < 0
+      ? normalizedCommand.toLowerCase()
+      : `${normalizedCommand.slice(0, separator).toLowerCase()}${normalizedCommand.slice(separator)}`
+  const label = RUNTIME_VERSION_COMMANDS.get(commandKey)
+  if (!label || evidence.exitCode !== 0 || evidence.truncated) return undefined
+  const output = evidence.stdout.trim() || evidence.stderr.trim()
+  const version = exactRuntimeVersion(label, output)
+  if (!version) return undefined
+  return Object.freeze([
+    Object.freeze({ kind: 'runtime-version', label, value: version, sensitivity: 'safe' }),
+  ])
+}
+
 export class DshHarnessAdapter {
   private harness: HarnessRuntime | null = null
   private state: DesktopControlRuntimeState = 'stopped'
@@ -620,6 +665,7 @@ export class DshHarnessAdapter {
         return {
           runtimeCompleted: true,
           reportedOutcome: renderShellOutcome(result),
+          presentationFacts: runtimeVersionPresentationFacts(shellCommand, evidence),
           evidence,
         }
       }

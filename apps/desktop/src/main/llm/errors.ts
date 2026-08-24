@@ -104,7 +104,8 @@ export function classifyHttpFailure(status: number): {
   recoverable: boolean
 } {
   if (status === 408 || status === 504) return { code: 'TIMEOUT', recoverable: true }
-  if (status === 401 || status === 403) return { code: 'AUTH_ERROR', recoverable: false }
+  if (status === 401) return { code: 'AUTH_ERROR', recoverable: false }
+  if (status === 403) return { code: 'ACCESS_DENIED', recoverable: false }
   if (status === 413) return { code: 'REQUEST_TOO_LARGE', recoverable: false }
   if (status === 429) return { code: 'RATE_LIMITED', recoverable: true }
   if (status >= 500) return { code: 'PROVIDER_REJECTED', recoverable: true }

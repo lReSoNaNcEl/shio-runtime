@@ -14,9 +14,11 @@
  * no key is reported SKIPPED ("Missing API key"), not as a suite failure.
  */
 
-import { type ChatMessage, type LlmProviderId, LlmResponseError } from '../../src/main/llm'
+import { LlmResponseError } from '../../src/main/llm/errors'
 import { OpenAICompatibleClient } from '../../src/main/llm/openai-compatible/OpenAICompatibleClient'
 import { getProviderDefinition } from '../../src/main/llm/registry'
+import type { ChatMessage } from '../../src/main/llm/types'
+import type { LlmProviderId } from '../../src/shared/llm'
 
 // ---- Provider registry (data-driven) --------------------------------------
 
@@ -25,12 +27,15 @@ interface LiveProvider {
   displayName: string
   /** Env vars checked in order for the API key. */
   envKeys: string[]
+  accountIdEnv?: string
   /** Stable, deterministic chat model (env-overridable). */
   chatModel: string
   chatModelEnv: string
   /** Optional reasoning model for the reasoning category. */
   reasoningModel?: string
   reasoningModelEnv: string
+  /** When set, every dynamically discovered model must match this provider-owned namespace. */
+  catalogModelPattern?: RegExp
   /** Groq is optional: total failure -> SKIPPED, never a suite failure. */
   optional?: boolean
 }
@@ -47,13 +52,15 @@ const PROVIDERS: LiveProvider[] = [
     optional: true,
   },
   {
-    id: 'cerebras',
-    displayName: 'Cerebras',
-    envKeys: ['CEREBRAS_API_KEY'],
-    chatModel: 'gemma-4-31b',
-    chatModelEnv: 'LLM_LIVE_MODEL_CEREBRAS',
-    reasoningModel: 'zai-glm-4.7',
-    reasoningModelEnv: 'LLM_LIVE_REASONING_CEREBRAS',
+    id: 'cloudflare',
+    displayName: 'Cloudflare Workers AI',
+    envKeys: ['CLOUDFLARE_API_TOKEN'],
+    accountIdEnv: 'CLOUDFLARE_ACCOUNT_ID',
+    chatModel: '@cf/meta/llama-3.3-70b-instruct-fp8-fast',
+    chatModelEnv: 'LLM_LIVE_MODEL_CLOUDFLARE',
+    reasoningModel: '@cf/qwen/qwen3.8-27b',
+    reasoningModelEnv: 'LLM_LIVE_REASONING_CLOUDFLARE',
+    catalogModelPattern: /^@cf\//,
   },
   {
     id: 'github',
@@ -111,7 +118,7 @@ const FORBIDDEN_IDENTITY = [
   /\banthropic\b/i,
   /as an ai\b/i,
   /\bgroq\b/i,
-  /\bcerebras\b/i,
+  /\bcloudflare\b/i,
   /\bgithub\b/i,
   /\bopenrouter\b/i,
   /\bmistral\b/i,
@@ -151,11 +158,12 @@ function readApiKey(lp: LiveProvider): string | null {
   return null
 }
 
-function make(id: LlmProviderId, key: string, model: string): OpenAICompatibleClient {
+function make(lp: LiveProvider, key: string, model: string): OpenAICompatibleClient {
   return new OpenAICompatibleClient({
-    definition: getProviderDefinition(id),
+    definition: getProviderDefinition(lp.id),
     apiKey: key,
     model,
+    connection: { accountId: lp.accountIdEnv ? process.env[lp.accountIdEnv]?.trim() : undefined },
   })
 }
 
@@ -207,7 +215,7 @@ async function timedChat(
   opts?: { temperature?: number; maxTokens?: number },
 ): Promise<{ content: string; finishReason: string; hadReasoning: boolean }> {
   const key = readApiKey(lp) ?? ''
-  const provider = make(lp.id, key, model)
+  const provider = make(lp, key, model)
   if (PACE_MS > 0) await sleep(PACE_MS)
   // Free tiers occasionally return 429; retry transient overload a few times
   // with backoff (test-side only — the adapter itself stays retry-free).
@@ -263,11 +271,35 @@ async function runProviderConformance(lp: LiveProvider): Promise<ProviderReport>
       note: 'Missing API key',
     }
   }
+  if (lp.accountIdEnv && !process.env[lp.accountIdEnv]?.trim()) {
+    console.log(`  — SKIPPED: Missing ${lp.accountIdEnv}`)
+    return {
+      provider: lp.displayName,
+      status: 'SKIPPED',
+      categories: [],
+      score: null,
+      note: `Missing ${lp.accountIdEnv}`,
+    }
+  }
 
   const chatModel = process.env[lp.chatModelEnv] ?? lp.chatModel
   const reasoningModel = process.env[lp.reasoningModelEnv] ?? lp.reasoningModel
 
-  // 1. Connectivity — auth + endpoint + successful response.
+  // 1. Dynamic model catalog — auth + catalog endpoint + provider-owned namespace.
+  try {
+    const models = await make(lp, key, chatModel).fetchModels(key)
+    const exclusivelyProviderOwned =
+      !lp.catalogModelPattern || models.every((model) => lp.catalogModelPattern?.test(model.id))
+    add(
+      'Model Catalog',
+      models.length > 0 && exclusivelyProviderOwned ? 'PASS' : 'FAIL',
+      `${models.length} models`,
+    )
+  } catch (e) {
+    add('Model Catalog', 'FAIL', e instanceof Error ? e.message : String(e))
+  }
+
+  // 2. Connectivity — auth + endpoint + successful response.
   try {
     const r = await timedChat(lp, chatModel, [user('Say hi in one short word.')], { maxTokens: 64 })
     add('Connectivity', r.content.trim().length > 0 ? 'PASS' : 'FAIL', `model=${chatModel}`)
@@ -292,7 +324,8 @@ async function runProviderConformance(lp: LiveProvider): Promise<ProviderReport>
       lp,
       chatModel,
       [
-        sys('You are Shio. Always answer with exactly the single word APPLE and nothing else.'),
+        sys('You are Shio.'),
+        sys('Always answer with exactly the single word APPLE and nothing else.'),
         user('Say one word.'),
       ],
       { temperature: 0, maxTokens: 16 },
@@ -392,7 +425,7 @@ async function runProviderConformance(lp: LiveProvider): Promise<ProviderReport>
   // 9. Reasoning models — successful, non-empty completion, no Runtime error.
   if (reasoningModel) {
     try {
-      const cap = make(lp.id, key, reasoningModel).capabilities()
+      const cap = make(lp, key, reasoningModel).capabilities()
       if (!cap.supportsReasoning) {
         add('Reasoning', 'SKIP', `${reasoningModel} not detected as reasoning`)
       } else {
@@ -479,7 +512,7 @@ async function runProviderConformance(lp: LiveProvider): Promise<ProviderReport>
   try {
     let badKeyOk = false
     try {
-      await make(lp.id, 'sk-invalid-key-000000000000', chatModel).chatDetailed([user('hi')], {
+      await make(lp, 'sk-invalid-key-000000000000', chatModel).chatDetailed([user('hi')], {
         maxTokens: 16,
       })
     } catch (e) {
@@ -487,7 +520,7 @@ async function runProviderConformance(lp: LiveProvider): Promise<ProviderReport>
     }
     let badModelOk = false
     try {
-      await make(lp.id, key, 'this-model-does-not-exist-zzz').chatDetailed([user('hi')], {
+      await make(lp, key, 'this-model-does-not-exist-zzz').chatDetailed([user('hi')], {
         maxTokens: 16,
       })
     } catch (e) {

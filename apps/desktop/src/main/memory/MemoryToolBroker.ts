@@ -38,7 +38,7 @@ export const MEMORY_LLM_TOOLS: readonly LlmToolDefinition[] = Object.freeze([
   {
     name: 'memory_store',
     description:
-      'Persist separate atomic durable facts only when the user semantically and explicitly asks Shio to remember them for future conversations. Store normalized facts, never raw transcript. Do not use for facts merely mentioned without a persistence request.',
+      'Persist separate atomic durable facts only when the user semantically and explicitly asks Shio to remember them for future conversations. A question-form request containing the fact is explicit and needs no second confirmation. Invoke this tool in the same turn instead of only promising to remember or asking for different wording. Store normalized facts, never raw transcript. Do not use for facts merely mentioned without a persistence request.',
     parameters: {
       type: 'object',
       required: ['memories'],
@@ -47,11 +47,10 @@ export const MEMORY_LLM_TOOLS: readonly LlmToolDefinition[] = Object.freeze([
           type: 'array',
           items: {
             type: 'object',
-            required: ['kind', 'text', 'sourceTurnId'],
+            required: ['kind', 'text'],
             properties: {
               kind: KIND_SCHEMA,
               text: { type: 'string' },
-              sourceTurnId: { type: 'string' },
             },
           },
         },

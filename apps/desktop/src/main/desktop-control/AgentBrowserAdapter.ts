@@ -551,7 +551,7 @@ export class AgentBrowserAdapter {
     value: string,
     signal?: AbortSignal,
   ): Promise<BrowserInteractionResult> {
-    return this.mutateTarget('fill', target, ['textbox'], ['fill'], [value], signal)
+    return this.mutateTarget('fill', target, ['textbox', 'combobox'], ['fill'], [value], signal)
   }
 
   select(

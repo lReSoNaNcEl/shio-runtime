@@ -11,7 +11,11 @@ export type {
   ProviderProfile,
 } from '../../shared/llm'
 export { LLM_PROVIDER_IDS } from '../../shared/llm'
-export { defaultLlmConfig, normalizeLlmConfig } from './config'
+export {
+  defaultLlmConfig,
+  normalizeLlmConfig,
+  resolveLlmProviderAccountId,
+} from './config'
 export {
   classifyHttpFailure,
   LlmCapabilityError,
@@ -36,8 +40,10 @@ export {
   getProviderProfile,
   hasLoadedModelCatalog,
   isLlmProviderId,
+  normalizeProviderAccountId,
   PROVIDER_PROFILES,
   resolveModelCapabilities,
+  resolveProviderChatBaseUrl,
 } from './registry'
 export type {
   ChatMessage,
@@ -54,4 +60,5 @@ export type {
   LlmToolDefinition,
   ModelCatalogEntry,
   ModelCatalogProvider,
+  ProviderConnectionSettings,
 } from './types'

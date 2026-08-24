@@ -59,7 +59,7 @@ function buildFlows(files: StoredProjectFile[]): ProjectFlowSummary[] {
     {
       name: 'Conversation admission → response generation → speech',
       files: [
-        'apps/desktop/src/renderer/speech/continuous-listening/ConversationAdmissionCoordinator.ts',
+        'apps/desktop/src/renderer/conversation/admission/ConversationAdmissionCoordinator.ts',
         'apps/desktop/src/renderer/runtime/ConversationRuntime.ts',
         'apps/desktop/src/main/orchestrator.ts',
         'apps/desktop/src/renderer/runtime/SpeechRuntime.ts',

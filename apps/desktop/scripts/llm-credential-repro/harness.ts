@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -42,6 +42,27 @@ async function main(): Promise<void> {
     assert.equal(restarted.resolve('groq').apiKey, '')
     assert.equal(restarted.resolve('mistral').apiKey, 'secure-mistral-key')
 
+    const legacyCredentialPath = join(directory, 'legacy-cerebras.bin')
+    await writeFile(
+      legacyCredentialPath,
+      xor(
+        Buffer.from(
+          JSON.stringify({ cerebras: 'legacy-cerebras-key', groq: 'preserved-groq-key' }),
+          'utf8',
+        ),
+      ),
+    )
+    const migratedCredentials = new LlmCredentialStore(
+      legacyCredentialPath,
+      protector,
+      () => undefined,
+    )
+    await migratedCredentials.load()
+    assert.equal(migratedCredentials.resolve('groq').apiKey, 'preserved-groq-key')
+    const migratedCredentialPayload = xor(await readFile(legacyCredentialPath)).toString('utf8')
+    assert.equal(migratedCredentialPayload.includes('cerebras'), false)
+    assert.equal(migratedCredentialPayload.includes('legacy-cerebras-key'), false)
+
     const nested = resolveLlmPersistence({
       llm: {
         activeProvider: 'mistral',
@@ -66,6 +87,15 @@ async function main(): Promise<void> {
     })
     assert.equal(flat.plaintextCredentials.openrouter, 'flat-key')
     assert.equal(flat.llm.providers.openrouter.model, 'flat-model')
+
+    const legacyCerebrasFlat = resolveLlmPersistence({
+      provider: 'cerebras',
+      apiKey: 'must-not-migrate',
+      model: 'legacy-model',
+    })
+    assert.equal(legacyCerebrasFlat.llm.activeProvider, 'cloudflare')
+    assert.equal(legacyCerebrasFlat.llm.providers.cloudflare.model, '')
+    assert.equal(legacyCerebrasFlat.plaintextCredentials.cloudflare, undefined)
 
     const groqLegacy = resolveLlmPersistence({
       groqApiKey: 'old-groq-key',
@@ -96,6 +126,31 @@ async function main(): Promise<void> {
     assert.equal(JSON.stringify(publicConfig).includes('legacy-groq-key'), false)
     assert.equal(publicConfig.providers.groq.credential.configured, true)
     assert.equal('apiKey' in publicConfig.providers.groq, false)
+
+    const cloudflareMigrated = normalizeLlmConfig({
+      activeProvider: 'cerebras',
+      providers: { cerebras: { model: 'legacy-cerebras-model' } },
+      roles: {
+        backlogSelector: {
+          enabled: true,
+          providerId: 'cerebras',
+          model: 'legacy-cerebras-model',
+        },
+      },
+    })
+    assert.equal(cloudflareMigrated.activeProvider, 'cloudflare')
+    assert.equal(cloudflareMigrated.providers.cloudflare.model, '')
+    assert.equal(cloudflareMigrated.roles.backlogSelector.enabled, false)
+    assert.equal(cloudflareMigrated.roles.backlogSelector.providerId, '')
+    assert.equal(cloudflareMigrated.roles.backlogSelector.model, '')
+    const nestedCerebrasMigration = resolveLlmPersistence({
+      llm: {
+        activeProvider: 'cerebras',
+        providers: { cerebras: { model: 'legacy-cerebras-model' } },
+      },
+    })
+    assert.equal(nestedCerebrasMigration.migrated, true)
+    assert.equal(nestedCerebrasMigration.llm.activeProvider, 'cloudflare')
 
     const environmentPath = join(directory, 'environment-only.bin')
     const environmentOnly = new LlmCredentialStore(environmentPath, protector, (provider) =>

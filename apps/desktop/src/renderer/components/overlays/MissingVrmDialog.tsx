@@ -36,7 +36,11 @@ export function MissingVrmDialog({
               <Button variant="secondary" onPress={onDismiss}>
                 {t('common.cancel')}
               </Button>
-              <Button variant="accent" onPress={onOpenSettings}>
+              <Button
+                variant="accent"
+                onPress={onOpenSettings}
+                UNSAFE_className="shio-accent-button"
+              >
                 {t('camera.missingVrm.openSettings')}
               </Button>
             </ButtonGroup>

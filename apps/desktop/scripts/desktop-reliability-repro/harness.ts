@@ -5,8 +5,10 @@ import { join } from 'node:path'
 import { transitionRecordingSchema } from '../../src/main/ipc/payloadSchemas'
 import { RendererProcessHealthTracker } from '../../src/main/windows/RendererProcessHealthTracker'
 import { observeRendererPromise } from '../../src/renderer/reliability/observePromise'
+import type { AvatarRuntimeDebugState } from '../../src/renderer/runtime/AvatarRuntime'
 import { AvatarRuntimeHealthTracker } from '../../src/renderer/runtime/AvatarRuntimeHealthTracker'
 import { OverlayRuntime } from '../../src/renderer/runtime/OverlayRuntime'
+import { TransitionRecorder } from '../../src/renderer/runtime/TransitionRecorder'
 import { parseCharacterEmbodimentResponse } from '../../src/shared/character-response'
 
 const desktopRoot = process.cwd().endsWith('apps\\desktop')
@@ -69,6 +71,24 @@ function assertMalformedMarkerContainment(): void {
 }
 
 function assertStaticLifecycleWiring(): void {
+  const mainWindow = source('src/main/windows/MainWindowManager.ts')
+  assert.match(
+    mainWindow,
+    /backgroundThrottling:\s*false/,
+    'main renderer must keep the Avatar Runtime and LipSync tick alive while minimized',
+  )
+  const controller = source('src/renderer/Controller.ts')
+  const avatarTickStart = controller.indexOf('private startAvatarTickLoop')
+  const avatarTickEnd = controller.indexOf('applyOverlaySettings', avatarTickStart)
+  assert(avatarTickStart >= 0 && avatarTickEnd > avatarTickStart)
+  const avatarTick = controller.slice(avatarTickStart, avatarTickEnd)
+  assert.match(avatarTick, /window\.setInterval\(tick, AVATAR_RUNTIME_TICK_MS\)/)
+  assert.doesNotMatch(
+    avatarTick,
+    /requestAnimationFrame/,
+    'application-owned Avatar/LipSync updates must not depend on minimized-window paint cadence',
+  )
+
   for (const windowManager of [
     'src/main/windows/MainWindowManager.ts',
     'src/main/windows/OverlayWindowManager.ts',
@@ -138,6 +158,151 @@ function assertTransitionRecordingContract(): void {
   )
 }
 
+function realisticAvatarDebugState(frame: number, hipsDeltaY: number): AvatarRuntimeDebugState {
+  const actions = Array.from({ length: 8 }, (_, index) => ({
+    name: `action-${index}`,
+    actionInstanceId: index,
+    clipInstanceId: index,
+    weight: 0.5,
+    time: frame / 60,
+    duration: 4,
+    enabled: true,
+    running: true,
+    fadingOut: false,
+    current: index === 0,
+    previous: index === 1,
+  }))
+  const frameTrace = Array.from({ length: 140 }, (_, index) => ({
+    at: frame * 16 + index,
+    frame: frame - 140 + index,
+    label: 'transition-frame',
+    animationId: 'idle_soft',
+    previousAnimationId: 'idle_neutral',
+    mixerActionCount: actions.length,
+    bodyActionCount: actions.length,
+    weightedActionCount: actions.length,
+    totalEffectiveWeight: 1,
+    hasWeightGap: false,
+    hasZeroWeightedActions: false,
+    currentActionInfluential: true,
+    currentWeight: 0.8,
+    previousWeight: 0.2,
+    transitionRemaining: 0.2,
+    cleanupState: 'active',
+    localRootQuaternion: '0.000,0.000,0.000,1.000',
+    hipsQuaternion: '0.000,0.000,0.000,1.000',
+    firstBoneChangeAfterPlayFrame: frame,
+    framesSincePlayWithoutBoneChange: null,
+    hipsDeltaY,
+    rootDeltaY: 0,
+    mixerActions: actions,
+    actions,
+  }))
+  const requests = Array.from({ length: 40 }, (_, index) => ({
+    id: index,
+    frame: frame - 40 + index,
+    animationId: 'idle_soft',
+    behaviorId: 'ambient-idle',
+    source: 'idle-orchestrator' as const,
+    reason: 'scheduled ambient idle behavior',
+    accepted: true,
+    decision: 'play' as const,
+    rejectionReason: null,
+    currentAnimationId: 'idle_neutral',
+    requestedAnimationId: 'idle_soft',
+    transitionPolicy: 'soft-crossfade',
+    transitionPending: true,
+  }))
+  const behaviorTimeline = Array.from({ length: 40 }, (_, index) => ({
+    at: frame * 16 + index,
+    frame: frame - 40 + index,
+    fromBehaviorId: 'ambient-idle',
+    toBehaviorId: 'ambient-idle',
+    fromAnimationId: 'idle_neutral',
+    toAnimationId: 'idle_soft',
+    mode: 'idle' as const,
+    source: 'idle-orchestrator' as const,
+    reason: 'scheduled ambient idle behavior',
+    accepted: true,
+  }))
+
+  return {
+    mode: 'idle',
+    emotionKey: 'neutral',
+    currentBodyAnimation: 'idle_soft',
+    currentBodyAnimationFile: 'idle_soft.vrma',
+    currentBodyAnimationLoop: true,
+    currentBodyAnimationStatus: 'playing',
+    bodyActions: {
+      activeActionCount: actions.length,
+      weightedActionCount: actions.length,
+      currentClipName: 'idle_soft',
+      currentClipDuration: 4,
+      currentClipTime: frame / 60,
+      transitionRemaining: 0.2,
+      rootMotionPolicy: 'in-place',
+      hipsDeltaY,
+      rootDeltaY: 0,
+      maxHipsDeltaY: Math.abs(hipsDeltaY),
+      maxRootDeltaY: 0,
+      lastLoadSource: 'idle-orchestrator',
+      lastLoadReason: 'scheduled ambient idle behavior',
+      lastLoadAnimationId: 'idle_soft',
+      lastLoadFile: 'idle_soft.vrma',
+      restartCount: 0,
+      ownershipGapCount: 0,
+      lastTransitionEvent: 'crossfade',
+      clipCache: { loads: 1, reuses: 1, hits: 1, misses: 0, parses: 1 },
+      facialControlTracksDisabled: 0,
+      facialControlTrackNames: [],
+      frameTrace,
+      actions,
+    },
+    animationAssetCache: { fetches: 1, hits: 1, misses: 0 },
+    previousBodyAnimation: 'idle_neutral',
+    activeTransitionPolicy: 'soft-crossfade',
+    activeBlendDuration: 0.3,
+    playbackRequests: {
+      currentAnimation: 'idle_soft',
+      requestedAnimation: 'idle_soft',
+      currentTransition: 'soft-crossfade',
+      transitionPending: true,
+      replayCount: 0,
+      ignoredDuplicateRequests: 0,
+      requests,
+    },
+    behaviorTimeline,
+  } as unknown as AvatarRuntimeDebugState
+}
+
+function assertTransitionRecorderBounds(): void {
+  let recorded: unknown = null
+  const recorder = new TransitionRecorder(async (payload) => {
+    recorded = payload
+    return { ok: false }
+  })
+
+  for (let frame = 0; frame < 120; frame += 1) {
+    recorder.observe(frame, realisticAvatarDebugState(frame, frame === 59 ? 0.2 : 0), null)
+  }
+
+  const parsed = transitionRecordingSchema.parse(recorded)
+  assert.equal(parsed.frames.length, 120, 'capture must contain 60 history and 60 future frames')
+  assert.equal(
+    parsed.frames.filter((frame) => frame.reason).length,
+    1,
+    'the trigger frame must be recorded exactly once',
+  )
+  for (const frame of parsed.frames) {
+    const bodyActions = frame.avatar.bodyActions as { frameTrace?: unknown[] } | undefined
+    const playbackRequests = frame.avatar.playbackRequests as { requests?: unknown[] } | undefined
+    const behaviorTimeline = frame.avatar.behaviorTimeline as unknown[] | undefined
+    assert((bodyActions?.frameTrace?.length ?? 0) <= 1)
+    assert((playbackRequests?.requests?.length ?? 0) <= 1)
+    assert((behaviorTimeline?.length ?? 0) <= 1)
+  }
+}
+
 function assertOverlaySubscriptionCleanup(): void {
   let cleanupCount = 0
   const subscription = () => () => {
@@ -186,6 +351,7 @@ async function main(): Promise<void> {
   assertMalformedMarkerContainment()
   assertStaticLifecycleWiring()
   assertTransitionRecordingContract()
+  assertTransitionRecorderBounds()
   assertOverlaySubscriptionCleanup()
   await assertDetachedPromiseObserver()
   console.log('Desktop Reliability & Contract Cleanup focused repro: PASS')

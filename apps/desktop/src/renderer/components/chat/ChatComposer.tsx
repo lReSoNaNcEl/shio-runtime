@@ -117,6 +117,7 @@ export function ChatComposer({
           isDisabled={!text.trim()}
           onPress={onSubmit}
           aria-label={t('chat.send')}
+          UNSAFE_className="shio-accent-button"
         >
           <Send />
         </Button>

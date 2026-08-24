@@ -4,7 +4,7 @@ function check(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(`Speech banner repro failed: ${message}`)
 }
 
-const css = readFileSync('src/renderer/styles.css', 'utf8')
+const css = readFileSync('src/renderer/styles/chat.css', 'utf8')
 
 check(
   /#controls\s*\{[\s\S]*?container-name:\s*composer-controls;[\s\S]*?container-type:\s*inline-size;/u.test(

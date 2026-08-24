@@ -50,8 +50,14 @@ export const mistralProvider: ProviderDefinition = {
       }))
     } catch (error) {
       if (axios.isAxiosError(error)) {
-        if (error.response?.status === 401 || error.response?.status === 403) {
+        if (error.response?.status === 401) {
           throw new ModelFetchError('auth', 'Mistral: недействительный API ключ.')
+        }
+        if (error.response?.status === 403) {
+          throw new ModelFetchError(
+            'access',
+            'Mistral: доступ запрещён политикой провайдера или ограничениями аккаунта/региона.',
+          )
         }
         if (error.response) {
           throw new ModelFetchError(

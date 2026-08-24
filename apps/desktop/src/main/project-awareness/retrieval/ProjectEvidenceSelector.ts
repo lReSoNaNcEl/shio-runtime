@@ -66,8 +66,6 @@ function matchScore(kind: ProjectRetrievalMatchKind, ordinal: number): number {
       return 1
     case 'path':
       return 0.92
-    case 'technology-overview':
-      return 0.86
     case 'fts':
       return Math.max(0.56, 0.72 - ordinal * 0.008)
   }

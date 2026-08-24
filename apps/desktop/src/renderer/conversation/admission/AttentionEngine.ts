@@ -1,5 +1,5 @@
-import { attentionTuning } from './tuning'
-import type { AttentionDecision, UtteranceChunk } from './types'
+import { attentionTuning } from '../../speech/continuous-listening/tuning'
+import type { AttentionDecision, UtteranceChunk } from '../../speech/continuous-listening/types'
 
 export interface AttentionContext {
   isSpeaking: boolean

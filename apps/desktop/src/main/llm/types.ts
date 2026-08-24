@@ -30,6 +30,8 @@ export interface ChatMessage {
 export interface LlmRequestOptions {
   signal?: AbortSignal
   traceId?: string
+  maxTokens?: number
+  timeoutMs?: number
 }
 
 export interface LlmToolDefinition {
@@ -86,16 +88,26 @@ export interface ModelCatalogProvider {
   fetchModels(apiKey: string): Promise<ModelCatalogEntry[]>
 }
 
+export interface ProviderConnectionSettings {
+  accountId?: string
+}
+
 export interface ProviderDefinition {
   profile: ProviderProfile
   chat: {
     baseUrl: string
     path: string
     headers?: Record<string, string>
-    useEnvironmentProxy?: boolean
+    singleLeadingSystemMessage?: boolean
+    resolveBaseUrl?(connection: ProviderConnectionSettings): string
   }
+  normalizeAccountId?(accountId: string): string
   normalizeModelId?(modelId: string): string
-  fetchModels(http: AxiosInstance, apiKey: string): Promise<ModelCatalogEntry[]>
+  fetchModels(
+    http: AxiosInstance,
+    apiKey: string,
+    connection?: ProviderConnectionSettings,
+  ): Promise<ModelCatalogEntry[]>
   resolveCapabilities?(modelId: string, base: LlmCapabilities): LlmCapabilities
 }
 
@@ -103,4 +115,5 @@ export interface LlmGatewaySettings {
   provider: LlmProviderId
   apiKey: string
   model: string
+  accountId?: string
 }

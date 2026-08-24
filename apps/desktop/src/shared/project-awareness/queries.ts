@@ -44,6 +44,10 @@ export interface ProjectMap {
 
 export interface ProjectSearchInput {
   query: string
+  hints?: {
+    paths?: readonly string[]
+    symbols?: readonly string[]
+  }
   limit?: number
   maxCharacters?: number
 }

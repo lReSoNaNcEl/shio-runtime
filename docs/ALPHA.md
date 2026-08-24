@@ -23,7 +23,7 @@ Double-click `Start Shio Runtime.cmd`. The launcher checks the platform, Python 
 
 1. Run `Start Shio Runtime.cmd` and wait for Desktop.
 2. Open Settings and choose an LLM provider and model.
-3. Enter your own provider API key. Shio does not supply an LLM account or quota.
+3. Enter your own provider API key. Cloudflare Workers AI additionally requires the Cloudflare Account ID; its model list contains only models hosted on Cloudflare (`@cf/*`), not unified-catalog third-party models. Shio does not supply an LLM account or quota.
 4. Select a microphone and grant Windows microphone permission when prompted.
 5. Choose a `.vrm` avatar file.
 6. Confirm Speech API, LLM, avatar, and microphone state in Runtime Health.

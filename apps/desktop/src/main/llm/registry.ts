@@ -4,7 +4,7 @@ import {
   resolveBaseCapabilities,
 } from './openai-compatible/capabilities'
 import { OpenAICompatibleClient } from './openai-compatible/OpenAICompatibleClient'
-import { cerebrasProvider } from './providers/cerebras'
+import { cloudflareProvider } from './providers/cloudflare'
 import { githubModelsProvider } from './providers/githubModels'
 import { groqProvider } from './providers/groq'
 import { mistralProvider } from './providers/mistral'
@@ -14,12 +14,13 @@ import type {
   LlmCapabilities,
   ModelCatalogEntry,
   ModelCatalogProvider,
+  ProviderConnectionSettings,
   ProviderDefinition,
 } from './types'
 
 const PROVIDER_DEFINITIONS: Record<LlmProviderId, ProviderDefinition> = {
   groq: groqProvider,
-  cerebras: cerebrasProvider,
+  cloudflare: cloudflareProvider,
   github: githubModelsProvider,
   openrouter: openRouterProvider,
   mistral: mistralProvider,
@@ -49,6 +50,20 @@ export function normalizeProviderModelId(providerId: LlmProviderId, modelId: str
   return getProviderDefinition(providerId).normalizeModelId?.(normalized) ?? normalized
 }
 
+export function normalizeProviderAccountId(providerId: LlmProviderId, accountId: string): string {
+  const definition = getProviderDefinition(providerId)
+  if (!definition.profile.requiresAccountId) return ''
+  return definition.normalizeAccountId?.(accountId.trim()) ?? accountId.trim()
+}
+
+export function resolveProviderChatBaseUrl(
+  providerId: LlmProviderId,
+  connection: ProviderConnectionSettings = {},
+): string {
+  const definition = getProviderDefinition(providerId)
+  return definition.chat.resolveBaseUrl?.(connection) ?? definition.chat.baseUrl
+}
+
 export function isLlmProviderId(value: string): value is LlmProviderId {
   return LLM_PROVIDER_IDS.some((providerId) => providerId === value)
 }
@@ -57,20 +72,26 @@ export function createLLMProvider(config: {
   provider: LlmProviderId
   apiKey: string
   model: string
+  accountId?: string
 }): LLMProvider {
   return new OpenAICompatibleClient({
     definition: getProviderDefinition(config.provider),
     apiKey: config.apiKey,
     model: config.model,
+    connection: { accountId: config.accountId },
     capabilities: resolveModelCapabilities(config.provider, config.model),
   })
 }
 
-export function createModelCatalog(id: LlmProviderId): ModelCatalogProvider {
+export function createModelCatalog(
+  id: LlmProviderId,
+  connection: ProviderConnectionSettings = {},
+): ModelCatalogProvider {
   return new OpenAICompatibleClient({
     definition: getProviderDefinition(id),
     apiKey: '',
     model: '',
+    connection,
   })
 }
 

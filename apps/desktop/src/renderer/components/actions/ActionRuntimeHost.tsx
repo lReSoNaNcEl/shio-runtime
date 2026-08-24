@@ -245,6 +245,7 @@ export function ActionRuntimeHost() {
                 variant="accent"
                 onPress={() => answerAction('confirm')}
                 isDisabled={responding}
+                UNSAFE_className="shio-accent-button"
               >
                 {t('actions.confirm.execute')}
               </Button>

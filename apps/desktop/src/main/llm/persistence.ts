@@ -25,6 +25,8 @@ export function resolveLlmPersistence(saved: Record<string, unknown> & LegacyPer
       llmRecord.providers && typeof llmRecord.providers === 'object'
         ? (llmRecord.providers as Record<string, unknown>)
         : {}
+    const legacyCerebrasFound =
+      llmRecord.activeProvider === 'cerebras' || Object.hasOwn(providers, 'cerebras')
     for (const provider of LLM_PROVIDER_IDS) {
       const settings = providers[provider]
       if (!settings || typeof settings !== 'object') continue
@@ -42,22 +44,26 @@ export function resolveLlmPersistence(saved: Record<string, unknown> & LegacyPer
       llm: normalizeLlmConfig(saved.llm),
       plaintextCredentials,
       plaintextProviders: [...plaintextProviders],
-      migrated: plaintextProviders.size > 0,
+      migrated: plaintextProviders.size > 0 || legacyCerebrasFound,
     }
   }
 
   const llm = defaultLlmConfig()
   let migrated = false
-  if (typeof saved.provider === 'string' && isLlmProviderId(saved.provider)) {
+  const legacyCerebrasProvider = saved.provider === 'cerebras'
+  if (legacyCerebrasProvider) {
+    llm.activeProvider = 'cloudflare'
+    migrated = true
+  } else if (typeof saved.provider === 'string' && isLlmProviderId(saved.provider)) {
     llm.activeProvider = saved.provider
     migrated = true
   }
-  if (typeof saved.apiKey === 'string' && saved.apiKey) {
+  if (!legacyCerebrasProvider && typeof saved.apiKey === 'string' && saved.apiKey) {
     plaintextCredentials[llm.activeProvider] = saved.apiKey
     plaintextProviders.add(llm.activeProvider)
     migrated = true
   }
-  if (typeof saved.model === 'string' && saved.model) {
+  if (!legacyCerebrasProvider && typeof saved.model === 'string' && saved.model) {
     llm.providers[llm.activeProvider].model = saved.model
     migrated = true
   }

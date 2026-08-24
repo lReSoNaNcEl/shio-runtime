@@ -1,57 +1,60 @@
-import { type BrowserWindow, ipcMain } from 'electron'
+import { readFileSync } from 'node:fs'
 
-import type { ActionRuntime } from '../action/ActionRuntime'
-import { getRendererConfig } from '../config'
+import { type BrowserWindow, dialog, ipcMain } from 'electron'
+
+import { translate } from '../../shared/localization'
+import { vrmAssetRegistry } from '../assets/VrmAssetRegistry'
+import { getConfig, getRendererConfig, saveConfig } from '../config'
 import { IPC_ONE_PAYLOAD, type IpcAuthorization } from './IpcAuthorization'
 import { vrmAssetHandleSchema } from './payloadSchemas'
 
-export function registerAvatarIpc(
-  actions: ActionRuntime,
-  window: BrowserWindow,
-  authorization: IpcAuthorization,
-): void {
+export function registerAvatarIpc(window: BrowserWindow, authorization: IpcAuthorization): void {
   ipcMain.handle(
     'vrm:pick',
     authorization.handle('vrm:pick', async () => {
-      const action = await actions.execute<
-        void,
-        { ok: boolean; assetHandle?: string; displayName?: string }
-      >({
-        name: 'vrm.pick',
-        payload: undefined,
+      const result = await dialog.showOpenDialog(window, {
+        title: translate(getConfig().uiLocale, 'main.dialog.vrm.title'),
+        filters: [
+          { name: translate(getConfig().uiLocale, 'main.dialog.vrm.filter'), extensions: ['vrm'] },
+        ],
+        properties: ['openFile'],
       })
-      if (action.status !== 'success' || !action.result) {
-        return { ok: false, error: action.error }
-      }
-      if (action.result.ok) window.webContents.send('config:updated', getRendererConfig())
-      return action.result
+      if (result.canceled || result.filePaths.length === 0) return { ok: false }
+      const vrmPath = result.filePaths[0]
+      const asset = vrmAssetRegistry.registerSelectedAsset(vrmPath)
+      saveConfig({ vrmPath })
+      window.webContents.send('config:updated', getRendererConfig())
+      return { ok: true, ...asset }
     }),
   )
   ipcMain.handle(
     'vrm:read',
     authorization.handlePayload('vrm:read', IPC_ONE_PAYLOAD, (_event, payload: unknown) => {
       const assetHandle = vrmAssetHandleSchema.parse(payload)
-      return actions
-        .execute<string, { ok: boolean; buffer?: ArrayBuffer; error?: string }>({
-          name: 'vrm.read',
-          payload: assetHandle,
-        })
-        .then((action) =>
-          action.status === 'success' ? action.result : { ok: false, error: action.error },
-        )
+      return { ok: true, buffer: vrmAssetRegistry.readAsset(assetHandle) }
     }),
   )
   ipcMain.handle(
     'vrma:pick',
     authorization.handle('vrma:pick', async () => {
-      const action = await actions.execute<
-        void,
-        { ok: boolean; animPath?: string; buffer?: ArrayBuffer }
-      >({
-        name: 'vrma.pick',
-        payload: undefined,
+      const result = await dialog.showOpenDialog(window, {
+        title: translate(getConfig().uiLocale, 'main.dialog.vrma.title'),
+        filters: [
+          {
+            name: translate(getConfig().uiLocale, 'main.dialog.vrma.filter'),
+            extensions: ['vrma'],
+          },
+        ],
+        properties: ['openFile'],
       })
-      return action.status === 'success' ? action.result : { ok: false, error: action.error }
+      if (result.canceled || result.filePaths.length === 0) return { ok: false }
+      const animPath = result.filePaths[0]
+      const buffer = readFileSync(animPath)
+      return {
+        ok: true,
+        animPath,
+        buffer: buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength),
+      }
     }),
   )
 }

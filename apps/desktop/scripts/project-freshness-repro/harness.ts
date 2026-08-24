@@ -135,7 +135,7 @@ async function main(): Promise<void> {
     const lastSuccessfulCheckAt = staleWithoutChanges.freshness.checkedAt
     adapter.failCompare = false
 
-    const stalePacket = runtime.buildContextPacket('Как работает Runtime?')
+    const stalePacket = runtime.buildContextPacket({ query: 'Runtime architecture' })
     assert(stalePacket)
     assert.equal(stalePacket.snapshotSha, FIRST_HEAD)
     assert.equal(stalePacket.freshness, 'stale')
@@ -149,7 +149,7 @@ async function main(): Promise<void> {
     assert.equal(failedCheck.freshness.lastKnownRemoteRevision, SECOND_HEAD)
     assert.equal(failedCheck.freshness.lastKnownRemoteCheckedAt, lastSuccessfulCheckAt)
     assert.equal((await plugin.getHealth()).state, 'healthy')
-    const unknownPacket = runtime.buildContextPacket('Как работает Runtime?')
+    const unknownPacket = runtime.buildContextPacket({ query: 'Runtime architecture' })
     assert.equal(unknownPacket?.snapshotSha, FIRST_HEAD)
     assert.equal(unknownPacket?.freshness, 'unknown')
 

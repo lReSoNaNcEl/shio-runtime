@@ -188,7 +188,7 @@ function actionPrompt(messages: readonly ChatMessage[]): string {
       (message) =>
         message.role === 'system' &&
         typeof message.content === 'string' &&
-        message.content.includes('## Desktop Action Proposal'),
+        message.content.includes('## Character Tool Arbitration'),
     )?.content,
   )
 }
@@ -200,8 +200,8 @@ async function main(): Promise<void> {
   })
   assert.equal(noBrowse.requests.length, 0)
   assert.equal(noBrowse.calls.length, 1)
-  assert.match(actionPrompt(noBrowse.calls[0]), /Semantically decide/)
-  assert.match(actionPrompt(noBrowse.calls[0]), /do not browse merely because/)
+  assert.match(actionPrompt(noBrowse.calls[0]), /Use available tools only when/)
+  assert.match(actionPrompt(noBrowse.calls[0]), /current web information/)
   assert.equal(
     noBrowse.calls[0].some(
       (message) =>
@@ -241,24 +241,24 @@ async function main(): Promise<void> {
   assert.match(autonomous.replyText, /Blender 4\.5 LTS/)
   assert.match(
     autonomous.calls[1].map((message) => String(message.content)).join('\n'),
-    /UNTRUSTED EXTERNAL WEB CONTENT/,
+    /potentially untrusted external, project, or memory data/,
   )
-  assert.equal(autonomous.calls[1].at(-1)?.role, 'user')
-  assert.match(String(autonomous.calls[1].at(-1)?.content), /Browser Tool Continuation/)
+  assert.equal(autonomous.calls[1].at(-1)?.role, 'system')
+  assert.match(String(autonomous.calls[1].at(-1)?.content), /Character Tool Results/)
   assert.deepEqual(
     autonomous.calls[1].slice(-3).map((message) => message.role),
-    ['user', 'assistant', 'user'],
+    ['user', 'assistant', 'system'],
   )
   assert.equal(autonomous.calls[1].at(-3)?.content, 'Узнай актуальную стабильную версию Blender.')
   assert.match(String(autonomous.calls[1].at(-2)?.content), /<shio-action>/)
-  assert.match(String(autonomous.calls[1].at(-1)?.content), /truncated for prompt/)
-  assert(JSON.stringify(autonomous.calls[1]).length < 12_000)
+  assert.match(String(autonomous.calls[1].at(-1)?.content), /"truncated":true/)
+  assert(String(autonomous.calls[1].at(-1)?.content).length < 8_000)
   assert.match(
     autonomous.calls[1]
-      .slice(0, -1)
+      .slice(0, -2)
       .map((message) => String(message.content))
       .join('\n'),
-    /Browser Continuation Action Contract/,
+    /Structured Character Tool Transport/,
   )
 
   const retried = await scenario({
@@ -287,9 +287,11 @@ async function main(): Promise<void> {
       return browserResult(index, request.browserOperation)
     },
   })
-  assert.equal(retried.calls.length, 3)
+  // Once a browser mutation has executed, a failed continuation is contained
+  // without replaying provider generation and risking a duplicate action.
+  assert.equal(retried.calls.length, 2)
   assert.equal(retried.requests.length, 1)
-  assert.match(retried.replyText, /Blender 4\.5 LTS/)
+  assert.match(retried.replyText, /fixture\.test/)
 
   const home = observation(10, {
     title: 'Home',
@@ -323,12 +325,12 @@ async function main(): Promise<void> {
       return browserResult(index, request.browserOperation)
     },
   })
-  assert.equal(repairedMarker.calls.length, 4)
+  assert.equal(repairedMarker.calls.length, 2)
   assert.deepEqual(
     repairedMarker.requests.map((request) => request.browserOperation?.operation),
-    ['open', 'click'],
+    ['open'],
   )
-  assert.match(repairedMarker.replyText, /единственной коррекции/)
+  assert.match(repairedMarker.replyText, /fixture\.test/)
 
   const boundedMarkerRepair = await scenario({
     userText: 'Открой каталог.',
@@ -342,9 +344,9 @@ async function main(): Promise<void> {
       return browserResult(index, request.browserOperation)
     },
   })
-  assert.equal(boundedMarkerRepair.calls.length, 3)
+  assert.equal(boundedMarkerRepair.calls.length, 2)
   assert.equal(boundedMarkerRepair.requests.length, 1)
-  assert.match(boundedMarkerRepair.replyText, /безопасно оформить действие/)
+  assert.match(boundedMarkerRepair.replyText, /fixture\.test/)
 
   const multiStep = await scenario({
     userText: 'Найди продукт X и открой его.',
@@ -434,8 +436,8 @@ async function main(): Promise<void> {
   const denied = await scenario({
     userText: 'Посмотри текущую страницу.',
     replies: [
-      marker('Inspect page', { operation: 'observe' }),
-      marker('Try again after denial', { operation: 'observe' }),
+      marker('Open page', { operation: 'open', url: 'https://fixture.test/' }),
+      marker('Try again after denial', { operation: 'open', url: 'https://fixture.test/' }),
     ],
     initialObservation: home,
     onExecute: (request, index) => browserResult(index, request.browserOperation, 'cancelled'),
@@ -448,36 +450,52 @@ async function main(): Promise<void> {
     initialObservation: home,
   })
   assert.equal(bounded.requests.length, 8)
-  assert.match(bounded.replyText, /безопасного лимита/)
+  assert.equal(bounded.calls.length, 9)
+  assert.match(bounded.replyText, /пределах текущего лимита/)
 
   const staleTurnController = new AbortController()
   const staleScopes = new BrowserWorkflowScopeRegistry()
   let releaseStaleResult: ((result: DesktopWorkflowActionResult) => void) | undefined
   let staleScopeId = ''
-  let staleContinuationCalls = 0
-  const staleRun = new BrowserAgentCoordinator(staleScopes).run({
-    initialReply: marker('Inspect a slow page', { operation: 'observe' }),
-    userGoal: 'Turn A',
-    signal: staleTurnController.signal,
-    canExecute: () => true,
-    execute: (_request, _signal, authorizationScopeId) =>
+  let staleProviderCalls = 0
+  const staleLlm: LLMProvider = {
+    chat: async () => {
+      staleProviderCalls += 1
+      return staleProviderCalls === 1
+        ? marker('Open a slow page', { operation: 'open', url: 'https://fixture.test/slow' })
+        : '[calm]Stale result must not reach the Character.'
+    },
+  }
+  const staleMemory: MemoryStore = {
+    getHistory: async () => [],
+    appendTurn: async () => undefined,
+    clear: async () => undefined,
+  }
+  const staleOrchestrator = new Orchestrator(
+    staleLlm,
+    staleMemory,
+    {} as SpeechClient,
+    () => ({ uiLocale: 'ru' }) as AppSettings,
+    undefined,
+    { snapshot: async () => capabilities },
+    (_request, _signal, authorizationScopeId) =>
       new Promise<DesktopWorkflowActionResult>((resolve) => {
-        staleScopeId = authorizationScopeId
+        staleScopeId = authorizationScopeId ?? ''
         releaseStaleResult = resolve
       }),
-    continueConversation: async () => {
-      staleContinuationCalls += 1
-      return '[calm]Stale result must not reach the Character.'
-    },
-    rejectedReply: () => '[calm]Rejected.',
-    limitReply: () => '[calm]Limited.',
-  })
-  await Promise.resolve()
+    () => ({ currentObservation: () => home, observe: async () => home }),
+    new BrowserAgentCoordinator(staleScopes),
+  )
+  const staleRun = staleOrchestrator.createReply(
+    { userText: 'Turn A' },
+    { signal: staleTurnController.signal },
+  )
+  await new Promise<void>((resolve) => setImmediate(resolve))
   staleTurnController.abort(new Error('Turn A cancelled before Turn B'))
   assert(releaseStaleResult)
   releaseStaleResult(browserResult(99, { operation: 'observe' }))
-  await assert.rejects(staleRun, /Turn A cancelled before Turn B/)
-  assert.equal(staleContinuationCalls, 0)
+  await assert.rejects(staleRun, /cancelled/iu)
+  assert.equal(staleProviderCalls, 1)
   assert.throws(
     () => staleScopes.confirmationGoal(staleScopeId, 'fallback'),
     /authorization scope is no longer active/,

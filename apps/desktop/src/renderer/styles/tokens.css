@@ -13,6 +13,8 @@
   --surface-overlay: rgba(27, 26, 24, 0.94);
   --accent: #d97757;
   --accent2: #e58b6d;
+  --action-accent: #a95036;
+  --action-accent-hover: #8f402c;
   --text: #f2eee6;
   --text-dim: #aaa398;
   --text-muted: #817b72;
@@ -48,6 +50,8 @@
   --surface-overlay: rgba(248, 245, 238, 0.96);
   --accent: #b85f42;
   --accent2: #9e4e36;
+  --action-accent: #a95036;
+  --action-accent-hover: #8f402c;
   --text: #292621;
   --text-dim: #6e675e;
   --text-muted: #8c8479;

@@ -30,17 +30,21 @@ export class LlmGateway implements LLMProvider {
   }
 
   async refreshActiveCapabilities(): Promise<LlmCapabilities> {
-    const { provider, apiKey } = this.getSettings()
+    const { provider, apiKey, accountId } = this.getSettings()
     if (!hasLoadedModelCatalog(provider)) {
-      const catalog = createModelCatalog(provider)
+      const catalog = createModelCatalog(provider, { accountId })
       enrichModelCatalog(provider, await catalog.fetchModels(apiKey))
     }
     return this.getActiveCapabilities()
   }
 
   async chat(messages: readonly ChatMessage[], options: LlmRequestOptions = {}): Promise<string> {
-    const { provider, apiKey, model } = this.getSettings()
-    if (getProviderProfile(provider).requiresApiKey && !apiKey.trim()) {
+    const { provider, apiKey, model, accountId } = this.getSettings()
+    const profile = getProviderProfile(provider)
+    if (
+      (profile.requiresApiKey && !apiKey.trim()) ||
+      (profile.requiresAccountId && !accountId?.trim())
+    ) {
       throw new LlmCredentialMissingError()
     }
     const capabilities = resolveModelCapabilities(provider, model)
@@ -50,7 +54,7 @@ export class LlmGateway implements LLMProvider {
         message.content.some((part) => part.type === 'image'),
     )
     if (hasImage && !capabilities.supportsVision) throw new LlmCapabilityError()
-    const active = createLLMProvider({ provider, apiKey, model })
+    const active = createLLMProvider({ provider, apiKey, model, accountId })
     return active.chat(messages, options)
   }
 
@@ -58,8 +62,12 @@ export class LlmGateway implements LLMProvider {
     messages: readonly ChatMessage[],
     options: LlmCompletionOptions = {},
   ): Promise<LlmCompletion> {
-    const { provider, apiKey, model } = this.getSettings()
-    if (getProviderProfile(provider).requiresApiKey && !apiKey.trim()) {
+    const { provider, apiKey, model, accountId } = this.getSettings()
+    const profile = getProviderProfile(provider)
+    if (
+      (profile.requiresApiKey && !apiKey.trim()) ||
+      (profile.requiresAccountId && !accountId?.trim())
+    ) {
       throw new LlmCredentialMissingError()
     }
     const capabilities = resolveModelCapabilities(provider, model)
@@ -69,7 +77,7 @@ export class LlmGateway implements LLMProvider {
         message.content.some((part) => part.type === 'image'),
     )
     if (hasImage && !capabilities.supportsVision) throw new LlmCapabilityError()
-    const active = createLLMProvider({ provider, apiKey, model })
+    const active = createLLMProvider({ provider, apiKey, model, accountId })
     if (!active.complete) {
       return {
         content: await active.chat(messages, options),

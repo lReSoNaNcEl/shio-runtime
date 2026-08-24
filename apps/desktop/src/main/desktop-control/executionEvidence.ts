@@ -1,3 +1,4 @@
+import type { ActionPresentationFact } from '../../shared/actions'
 import type {
   BrowserObservation,
   BrowserSemanticRiskClass,
@@ -48,6 +49,7 @@ export type DesktopWorkflowExecutionEvidence = BrowserExecutionEvidence | ShellE
 export interface DesktopWorkflowAdapterResult {
   runtimeCompleted: boolean
   reportedOutcome?: string
+  presentationFacts?: readonly ActionPresentationFact[]
   evidence: DesktopWorkflowExecutionEvidence
 }
 

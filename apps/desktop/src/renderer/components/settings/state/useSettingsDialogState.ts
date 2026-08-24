@@ -41,6 +41,10 @@ interface SettingsDialogStateOptions {
   onToggleOverlay: (visible: boolean) => void | Promise<void>
 }
 
+function validAccountId(accountId: string): boolean {
+  return /^[a-f0-9]{32}$/iu.test(accountId.trim())
+}
+
 export function useSettingsDialogState({
   isOpen,
   initialSection,
@@ -197,6 +201,7 @@ export function useSettingsDialogState({
   }, [initialSection, isOpen])
 
   const selectedModel = providerSettings[activeProvider]?.model ?? ''
+  const activeAccountId = providerSettings[activeProvider]?.accountId ?? ''
   const activeCredentialConfigured =
     providerSettings[activeProvider]?.credential.configured ?? false
   const backlogCredentialConfigured = backlogRole.providerId
@@ -210,10 +215,27 @@ export function useSettingsDialogState({
     })
   }
 
+  const updateProviderAccountId = (id: LlmProviderId, accountId: string): void => {
+    modelRequestSequence.current += 1
+    setModelOptions([])
+    setModelsState(validAccountId(accountId) ? 'idle' : 'missing-account-id')
+    setProviderSettings((previous) => {
+      const base = previous[id]
+      return { ...previous, [id]: { ...base, accountId } }
+    })
+  }
+
   const loadModels = async (providerId: LlmProviderId): Promise<void> => {
+    const profile = providers.find((provider) => provider.id === providerId)
+    const accountId = providerSettings[providerId]?.accountId ?? ''
+    if (profile?.requiresAccountId && !validAccountId(accountId)) {
+      setModelOptions([])
+      setModelsState('missing-account-id')
+      return
+    }
     const requestSequence = ++modelRequestSequence.current
     setModelsState('loading')
-    const result = await window.api.llm.fetchModels(providerId)
+    const result = await window.api.llm.fetchModels(providerId, accountId)
     if (
       requestSequence !== modelRequestSequence.current ||
       activeProviderRef.current !== providerId
@@ -244,7 +266,11 @@ export function useSettingsDialogState({
         ? providerSettings[providerId]?.credential.configured
           ? 'auth-error'
           : 'missing-key'
-        : 'network-error',
+        : result.kind === 'access'
+          ? 'access-error'
+          : result.kind === 'configuration'
+            ? 'missing-account-id'
+            : 'network-error',
     )
   }
 
@@ -252,6 +278,12 @@ export function useSettingsDialogState({
   useEffect(() => {
     if (!isOpen) return
     const profile = providers.find((provider) => provider.id === activeProvider)
+    if (profile?.requiresAccountId && !validAccountId(activeAccountId)) {
+      modelRequestSequence.current += 1
+      setModelOptions([])
+      setModelsState('missing-account-id')
+      return
+    }
     if (profile?.modelsRequireApiKey && !activeCredentialConfigured) {
       modelRequestSequence.current += 1
       setModelOptions([])
@@ -265,7 +297,7 @@ export function useSettingsDialogState({
       modelRequestSequence.current += 1
       window.clearTimeout(timer)
     }
-  }, [isOpen, activeProvider, activeCredentialConfigured, providers])
+  }, [isOpen, activeProvider, activeAccountId, activeCredentialConfigured, providers])
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: AI domain setters are stable React state setters.
   useEffect(() => {
@@ -274,6 +306,11 @@ export function useSettingsDialogState({
       return
     }
     const profile = providers.find((provider) => provider.id === backlogRole.providerId)
+    const backlogAccountId = providerSettings[backlogRole.providerId]?.accountId ?? ''
+    if (profile?.requiresAccountId && !validAccountId(backlogAccountId)) {
+      setBacklogModels([])
+      return
+    }
     if (profile?.modelsRequireApiKey && !backlogCredentialConfigured) {
       setBacklogModels([])
       return
@@ -281,11 +318,13 @@ export function useSettingsDialogState({
     let current = true
     const timer = window.setTimeout(() => {
       observeRendererPromise(
-        window.api.llm.fetchModels(backlogRole.providerId as LlmProviderId).then((result) => {
-          if (current) {
-            setBacklogModels(result.ok ? deduplicateModelsById(result.models ?? []) : [])
-          }
-        }),
+        window.api.llm
+          .fetchModels(backlogRole.providerId as LlmProviderId, backlogAccountId)
+          .then((result) => {
+            if (current) {
+              setBacklogModels(result.ok ? deduplicateModelsById(result.models ?? []) : [])
+            }
+          }),
         'load backlog-selector models',
       )
     }, 400)
@@ -293,7 +332,14 @@ export function useSettingsDialogState({
       current = false
       window.clearTimeout(timer)
     }
-  }, [isOpen, backlogRole.enabled, backlogRole.providerId, backlogCredentialConfigured, providers])
+  }, [
+    isOpen,
+    backlogRole.enabled,
+    backlogRole.providerId,
+    backlogCredentialConfigured,
+    providerSettings,
+    providers,
+  ])
 
   const pickVrm = async (): Promise<void> => {
     const result = await window.api.vrm.pick()
@@ -596,6 +642,7 @@ export function useSettingsDialogState({
       actions: {
         setActiveProvider,
         updateProviderSettings,
+        updateProviderAccountId,
         setEditingKey,
         setKeyInput,
         saveCredential: saveLlmCredential,

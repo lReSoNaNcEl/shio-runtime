@@ -55,7 +55,6 @@ export interface MemorySearchResult {
 export interface MemoryCandidate {
   kind: MemoryKind
   text: string
-  sourceTurnId: string
 }
 
 export interface MemoryStoreInput {
@@ -116,7 +115,6 @@ export type MemoryErrorCode =
   | 'MEMORY_UNAVAILABLE'
   | 'INVALID_REQUEST'
   | 'LIMIT_EXCEEDED'
-  | 'SOURCE_TURN_MISMATCH'
   | 'SENSITIVE_CONTENT'
   | 'NOT_FOUND'
   | 'NO_CHANGES'
@@ -158,8 +156,6 @@ export interface MemoryManagementApi {
 
 const memoryIdSchema = z.string().uuid()
 const memoryTextSchema = z.string().trim().min(1).max(MEMORY_LIMITS.maxTextCharacters)
-const sourceTurnIdSchema = z.string().trim().min(1).max(200)
-
 export const memoryKindSchema = z.enum(MEMORY_KINDS)
 
 export const memorySearchInputSchema = z
@@ -173,7 +169,6 @@ export const memoryCandidateSchema = z
   .object({
     kind: memoryKindSchema,
     text: memoryTextSchema,
-    sourceTurnId: sourceTurnIdSchema,
   })
   .strict()
 

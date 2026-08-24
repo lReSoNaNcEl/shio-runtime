@@ -92,9 +92,17 @@ const api = {
     arbitrateBacklog: (payload: unknown) => ipcRenderer.invoke('llm:arbitrate-backlog', payload),
     providers: () => ipcRenderer.invoke('llm:providers'),
     getReadiness: () => ipcRenderer.invoke('llm:get-readiness'),
-    fetchModels: (provider: LlmProviderId) => ipcRenderer.invoke('llm:fetch-models', provider),
-    validateCredential: (provider: LlmProviderId, apiKey: string) =>
-      ipcRenderer.invoke('llm:validate-credential', { provider, apiKey }),
+    fetchModels: (provider: LlmProviderId, accountId?: string) =>
+      ipcRenderer.invoke('llm:fetch-models', {
+        provider,
+        accountId: accountId?.trim() || undefined,
+      }),
+    validateCredential: (provider: LlmProviderId, apiKey: string, accountId?: string) =>
+      ipcRenderer.invoke('llm:validate-credential', {
+        provider,
+        apiKey,
+        accountId: accountId?.trim() || undefined,
+      }),
     saveCredential: (provider: LlmProviderId, apiKey: string) =>
       ipcRenderer.invoke('llm:save-credential', { provider, apiKey }),
     forgetCredential: (provider: LlmProviderId) =>

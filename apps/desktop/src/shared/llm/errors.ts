@@ -4,6 +4,7 @@ export type LlmTurnErrorCode =
   | 'NETWORK_ERROR'
   | 'TIMEOUT'
   | 'AUTH_ERROR'
+  | 'ACCESS_DENIED'
   | 'RATE_LIMITED'
   | 'PROVIDER_REJECTED'
   | 'REQUEST_TOO_LARGE'

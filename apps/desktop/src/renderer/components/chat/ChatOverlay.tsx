@@ -256,9 +256,10 @@ export const ChatOverlay = forwardRef<ChatOverlayHandle, Props>(function ChatOve
             onDismiss={() => setDismissedIncidentId(capabilities.incidentId)}
           />
         )}
-        {state.llmReadiness.reason === 'missing-credential' && (
+        {shouldBlockChatSubmission(state.llmReadiness) && (
           <LlmSetupCard
             providerName={state.llmReadiness.providerDisplayName}
+            reason={state.llmReadiness.reason}
             highlight={llmSetupHighlight}
             onOpenSettings={() => onOpenLlmSettings?.()}
           />

@@ -1,4 +1,8 @@
-import type { AttentionDecision, RuleGateDecision, UtteranceChunk } from './types'
+import type {
+  AttentionDecision,
+  RuleGateDecision,
+  UtteranceChunk,
+} from '../../speech/continuous-listening/types'
 
 export interface RuleGateContext {
   isSpeaking: boolean

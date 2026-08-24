@@ -1239,18 +1239,53 @@
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 12px 14px;
-  border: 1px solid rgb(246 196 83 / 55%);
-  border-radius: 12px;
-  background: rgb(73 54 15 / 72%);
+  padding: 12px 14px 12px 12px;
+  border: 1px solid color-mix(in srgb, var(--warning-text) 28%, var(--border-subtle));
+  border-inline-start: 3px solid var(--accent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--warning-surface) 58%, var(--surface));
+  box-shadow: 0 1px 2px var(--shadow);
   transition:
     border-color 160ms ease,
     box-shadow 160ms ease;
 }
 
+.llm-setup-card-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.llm-setup-card-title {
+  color: var(--text);
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.llm-setup-card-description {
+  color: var(--text-dim);
+  font-size: 0.8rem;
+}
+
 .llm-setup-card-highlight {
-  border-color: rgb(255 215 113);
-  box-shadow: 0 0 0 3px rgb(255 215 113 / 22%);
+  border-color: var(--focus-ring);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--focus-ring) 24%, transparent);
+}
+
+.shio-accent-button {
+  --g: var(--action-accent);
+  outline-color: var(--focus-ring);
+}
+
+.shio-accent-button:is([data-hovered], [data-pressed], [data-focus-visible]) {
+  --g: var(--action-accent-hover);
+}
+
+.shio-accent-button[data-disabled] {
+  --g: color-mix(in srgb, var(--text-muted) 32%, var(--surface));
+  color: var(--text-muted);
 }
 
 .new-chat-action {

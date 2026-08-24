@@ -44,6 +44,7 @@ import type {
 } from '../avatar/rendering/three/VrmModel'
 import type { OverlayViewMode } from '../avatar/tuning/cameraTuning'
 import { AvatarRuntimeHealthTracker } from './AvatarRuntimeHealthTracker'
+import type { AvatarCharacterStateProjection } from './CharacterStateStore'
 
 export type { AvatarMode }
 
@@ -206,6 +207,29 @@ export class AvatarRuntime {
     return {
       loaded: this.controller.isLoaded(),
       lipsync: this.controller.getMouthWeights(),
+    }
+  }
+
+  getCharacterStateProjection(state: CharacterState): AvatarCharacterStateProjection {
+    const avatar = this.controller.getDebugState()
+    const mode = state.mode
+    return {
+      avatar: {
+        loaded: this.controller.isLoaded(),
+        lipsync: avatar.lipsyncWeights,
+      },
+      animation: {
+        behavior: avatar.currentBehaviorId,
+        animationId: avatar.currentBodyAnimation,
+        queueLength: avatar.animationQueue.length,
+      },
+      posture:
+        mode === 'thinking' || mode === 'awaitingSpeech'
+          ? 'thinking'
+          : mode === 'idle'
+            ? 'relaxed'
+            : state.posture,
+      behaviorReplyType: avatar.behaviorEngine?.replyType,
     }
   }
 

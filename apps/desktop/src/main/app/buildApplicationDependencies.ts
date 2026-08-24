@@ -34,7 +34,9 @@ import {
   LlmGateway,
   type LlmProviderId,
   LlmTurnCancelledError,
+  resolveLlmProviderAccountId,
   resolveLlmReadiness,
+  resolveProviderChatBaseUrl,
 } from '../llm'
 import { mainLog } from '../logging/safeLogger'
 import { createMemoryStore, createSemanticMemoryRuntime, MemoryToolBroker } from '../memory'
@@ -55,6 +57,9 @@ import { SpeechClientManager } from '../speech/SpeechClientManager'
 import { registerReleaseSupportHandlers } from '../system/releaseSupport'
 import { MainWindowManager } from '../windows/MainWindowManager'
 import { OverlayWindowManager } from '../windows/OverlayWindowManager'
+import { createActionRuntime } from './createActionRuntime'
+import { MainConversationTurnService } from './MainConversationTurnService'
+import { SpeechApplicationService } from './SpeechApplicationService'
 
 export interface ApplicationDependencies {
   createWindow(): Promise<void>
@@ -79,6 +84,8 @@ export function buildApplicationDependencies(): ApplicationDependencies {
   let projectKnowledgeStore: ProjectKnowledgeStore | null = null
   let rendererNetworkObserver: RendererNetworkObserver | null = null
   let actionRuntime: ActionRuntime | null = null
+  let conversationTurnService: MainConversationTurnService | null = null
+  let speechApplicationService: SpeechApplicationService | null = null
   let prepareForQuitTask: Promise<void> | null = null
   const conversationMemory = createMemoryStore()
   const semanticMemory = createSemanticMemoryRuntime(
@@ -119,7 +126,7 @@ export function buildApplicationDependencies(): ApplicationDependencies {
   const environmentCredential = (provider: LlmProviderId): string | undefined => {
     const variables: Record<LlmProviderId, string[]> = {
       groq: ['GROQ_API_KEY'],
-      cerebras: ['CEREBRAS_API_KEY'],
+      cloudflare: ['CLOUDFLARE_API_TOKEN'],
       github: ['GITHUB_MODELS_API_KEY', 'GITHUB_TOKEN'],
       openrouter: ['OPENROUTER_API_KEY'],
       mistral: ['MISTRAL_API_KEY'],
@@ -212,13 +219,19 @@ export function buildApplicationDependencies(): ApplicationDependencies {
             const definition = getProviderDefinition(activeProvider)
             const credential = getLlmCredentialStore().resolve(activeProvider)
             const chatPathPrefix = definition.chat.path.replace(/\/chat\/completions\/?$/, '')
+            const accountId = resolveLlmProviderAccountId(
+              activeProvider,
+              providers[activeProvider].accountId,
+            )
             return {
               provider: activeProvider,
               providerDisplayName: definition.profile.displayName,
               model: providers[activeProvider].model.trim(),
-              baseURL: `${definition.chat.baseUrl.replace(/\/$/, '')}${chatPathPrefix}`,
+              baseURL: `${resolveProviderChatBaseUrl(activeProvider, { accountId }).replace(/\/$/, '')}${chatPathPrefix}`,
               apiKey: credential.apiKey,
-              credentialConfigured: credential.status.configured,
+              credentialConfigured:
+                credential.status.configured &&
+                (!definition.profile.requiresAccountId || Boolean(accountId)),
               lastError: credential.status.lastError,
             }
           },
@@ -288,10 +301,15 @@ export function buildApplicationDependencies(): ApplicationDependencies {
     llmGateway = new LlmGateway(() => {
       const { activeProvider, providers } = getConfig().llm
       const credential = getLlmCredentialStore().resolve(activeProvider)
+      const accountId = resolveLlmProviderAccountId(
+        activeProvider,
+        providers[activeProvider].accountId,
+      )
       return {
         provider: activeProvider,
         apiKey: credential.apiKey,
         model: providers[activeProvider].model,
+        accountId,
       }
     })
     const speech = getSpeechClientManager()
@@ -328,8 +346,6 @@ export function buildApplicationDependencies(): ApplicationDependencies {
       overlayWindows.destroy()
       rendererNetworkObserver?.dispose()
       rendererNetworkObserver = null
-      screenContextService.dispose()
-      speechClientManager?.dispose()
       unsubscribePluginCapabilities?.()
       unsubscribePluginCapabilities = null
       unsubscribeProjectCapabilities?.()
@@ -340,18 +356,30 @@ export function buildApplicationDependencies(): ApplicationDependencies {
       unsubscribeMemoryCapabilities = null
       capabilityCatalog.dispose()
 
+      const cleanupOwners = [
+        'conversation-turn-service',
+        'speech-application-service',
+        'action-runtime',
+        'plugin-runtime',
+      ] as const
       const cleanupResults = await Promise.allSettled([
+        conversationTurnService?.dispose() ?? Promise.resolve(),
+        speechApplicationService?.dispose() ?? Promise.resolve(),
         actionRuntime?.emergencyStop() ?? Promise.resolve(),
         pluginRuntime?.dispose() ?? Promise.resolve(),
       ])
       for (const [index, result] of cleanupResults.entries()) {
         if (result.status === 'rejected') {
           mainLog.warn('[Application] shutdown cleanup failed', {
-            owner: index === 0 ? 'action-runtime' : 'plugin-runtime',
+            owner: cleanupOwners[index],
             error: result.reason instanceof Error ? result.reason.message : String(result.reason),
           })
         }
       }
+      conversationTurnService = null
+      speechApplicationService = null
+      screenContextService.dispose()
+      speechClientManager?.dispose()
       if (!pluginRuntime) {
         projectKnowledgeStore?.close()
         projectKnowledgeStore = null
@@ -395,26 +423,47 @@ export function buildApplicationDependencies(): ApplicationDependencies {
         error: error instanceof Error ? error.message : String(error),
       })
     }
+    const actionComposition = createActionRuntime({
+      window: win,
+      capabilityCatalog,
+      browserWorkflowScopes,
+      desktopControl: getDesktopControl,
+    })
+    actionRuntime = actionComposition.actions
     orchestrator = buildOrchestrator()
-    actionRuntime = registerIpcHandlers(
-      () => {
-        if (!orchestrator) orchestrator = buildOrchestrator()
-        return orchestrator
-      },
-      () => {
-        if (!llmGateway) orchestrator = buildOrchestrator()
-        if (!llmGateway) throw new Error('LLM gateway is unavailable')
-        return llmGateway
-      },
+    const resolveOrchestrator = (): Orchestrator => {
+      if (!orchestrator) orchestrator = buildOrchestrator()
+      return orchestrator
+    }
+    const resolveLlmGateway = (): LlmGateway => {
+      if (!llmGateway) orchestrator = buildOrchestrator()
+      if (!llmGateway) throw new Error('LLM gateway is unavailable')
+      return llmGateway
+    }
+    conversationTurnService = new MainConversationTurnService(
+      resolveOrchestrator,
+      resolveLlmGateway,
+      screenContextService,
+      () => getRendererConfig().llm,
+    )
+    speechApplicationService = new SpeechApplicationService(
+      getSpeechClientManager,
+      resolveOrchestrator,
+    )
+    registerIpcHandlers(
+      resolveOrchestrator,
+      resolveLlmGateway,
       getLlmCredentialStore,
       getPluginRuntime,
       getProjectAwareness,
       getDesktopControl,
-      getSpeechClientManager,
       screenContextService,
       semanticMemory,
       capabilityCatalog,
-      browserWorkflowScopes,
+      conversationTurnService,
+      speechApplicationService,
+      actionRuntime,
+      actionComposition.confirmations,
       win,
       ipcAuthorization,
     )

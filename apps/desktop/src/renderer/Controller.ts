@@ -39,7 +39,9 @@ import { isVrmConfigured } from './controller/firstRunState'
 import { RuntimeDiagnosticsProjection } from './controller/RuntimeDiagnosticsProjection'
 import { observeRendererPromise } from './reliability/observePromise'
 import { type AvatarMode, AvatarRuntime } from './runtime/AvatarRuntime'
+import { MainCharacterResponsePort } from './runtime/CharacterResponsePort'
 import { ConversationPresenceRuntime } from './runtime/ConversationPresenceRuntime'
+import { AvatarConversationPresentationPort } from './runtime/ConversationPresentationPort'
 import { ConversationRuntime } from './runtime/ConversationRuntime'
 import {
   OverlayRuntime,
@@ -49,6 +51,7 @@ import {
 import { ShioRuntime } from './runtime/ShioRuntime'
 import { SpeechCapabilitiesRuntime } from './runtime/SpeechCapabilitiesRuntime'
 import { SpeechInputRuntime } from './runtime/SpeechInputRuntime'
+import { RuntimeSpeechOutputPort } from './runtime/SpeechOutputPort'
 import { SpeechRuntime } from './runtime/SpeechRuntime'
 import {
   INITIAL_SPEECH_CAPABILITIES,
@@ -78,6 +81,7 @@ type SpeechReply = Awaited<ReturnType<Window['api']['tts']['synthesizeReply']>>
 
 let idSeq = 0
 const nextId = (): string => `m${++idSeq}`
+const AVATAR_RUNTIME_TICK_MS = 1000 / 60
 export class Controller {
   private uiLocale: UiLocale = DEFAULT_UI_LOCALE
   private shioRuntime = new ShioRuntime()
@@ -100,11 +104,19 @@ export class Controller {
     },
   })
   private player = new AudioPlayer()
-  private speechRuntime = new SpeechRuntime(
-    this.shioRuntime.characterState,
-    this.shioRuntime.events,
+  private speechRuntime = new SpeechRuntime(this.shioRuntime.events)
+  private speechOutput = new RuntimeSpeechOutputPort(this.speechRuntime, this.player)
+  private characterResponse = new MainCharacterResponsePort()
+  private unsubscribeCharacterState = this.shioRuntime.characterState.subscribe(
+    (previous, current) => this.speechRuntime.observeCharacterState(previous, current),
   )
   private conversationPresenceRuntime = new ConversationPresenceRuntime()
+  private conversationPresentation = new AvatarConversationPresentationPort(
+    this.avatarRuntime,
+    this.overlayRuntime,
+    (operation, error) =>
+      this.recordRuntimeEvent('Presentation Projection Failed', `${operation}: ${String(error)}`),
+  )
   private speechCapabilitiesRuntime = new SpeechCapabilitiesRuntime({
     events: this.shioRuntime.events,
     onChange: (capabilities) => this.handleSpeechCapabilitiesChange(capabilities),
@@ -112,8 +124,9 @@ export class Controller {
   })
   private speechInputRuntime = new SpeechInputRuntime({
     speechRuntime: this.speechRuntime,
-    avatarRuntime: this.avatarRuntime,
-    overlayRuntime: this.overlayRuntime,
+    characterState: this.shioRuntime.characterState,
+    speechState: this.shioRuntime.characterState.speech,
+    presentation: this.conversationPresentation,
     events: this.shioRuntime.events,
     setStatus: (status) => this.set({ status }),
     pushMessage: (role, text) => this.pushMessage(role, text),
@@ -121,7 +134,6 @@ export class Controller {
     emptyRecordingMessage: () => this.t('speechInput.emptyRecording'),
     recordRuntimeEvent: (label, detail) => this.recordRuntimeEvent(label, detail),
     reportSpeechServiceError: (error) => this.reportSpeechServiceError(error),
-    updateCharacterState: (patch) => this.updateCharacterState(patch),
   })
   private microphoneDeviceService = new MicrophoneDeviceService((index) =>
     this.t('microphone.fallback', { index }),
@@ -177,12 +189,13 @@ export class Controller {
     performanceNow: () => performance.now(),
   })
   private conversationRuntime = new ConversationRuntime({
-    speechRuntime: this.speechRuntime,
-    conversationPresenceRuntime: this.conversationPresenceRuntime,
-    avatarRuntime: this.avatarRuntime,
-    overlayRuntime: this.overlayRuntime,
+    speechOutput: this.speechOutput,
+    characterResponse: this.characterResponse,
+    characterState: this.shioRuntime.characterState,
+    conversationState: this.shioRuntime.characterState.conversation,
+    conversationPresence: this.conversationPresenceRuntime,
+    presentation: this.conversationPresentation,
     events: this.shioRuntime.events,
-    player: this.player,
     setStatus: (status) => this.set({ status }),
     pushMessage: (role, text, grounding) => this.pushMessage(role, text, grounding),
     formatUserError: (message) => this.formatConversationUserError(message),
@@ -190,16 +203,15 @@ export class Controller {
     setResponseInterruptionPending: (pending) => this.set({ responseInterruptionPending: pending }),
     recordRuntimeEvent: (label, detail) => this.recordRuntimeEvent(label, detail),
     reportSpeechServiceError: (error) => this.reportSpeechServiceError(error),
-    updateCharacterState: (patch) => this.updateCharacterState(patch),
     rememberSpeechMetadata: (speech) => this.rememberSpeechMetadata(speech),
     updateSpeechPlaybackProgress: (progress) => this.updateSpeechPlaybackProgress(progress),
     isContinuousCaptureAlive: () => this.speechInputRuntime.isContinuousCaptureAlive(),
-    handleLlmSetupRequired: (userText) => {
+    handleLlmSetupRequired: (userText, reason) => {
       this.store.removeLatestUserMessage(userText)
       const current = this.state.llmReadiness
       this.set({
         chatDraft: userText,
-        llmReadiness: { ...current, reason: 'missing-credential' },
+        llmReadiness: { ...current, reason },
       })
     },
   })
@@ -207,7 +219,7 @@ export class Controller {
     speechInputRuntime: this.speechInputRuntime,
     conversationRuntime: this.conversationRuntime,
     microphoneGate: this.microphoneGate,
-    avatarRuntime: this.avatarRuntime,
+    presentation: this.conversationPresentation,
     getControllerState: () => this.store.getState(),
     getCharacterState: () => this.shioRuntime.characterState.get(),
     patchControllerState: (patch) => this.set(patch),
@@ -215,7 +227,6 @@ export class Controller {
     recordRuntimeEvent: (label, detail) => this.recordRuntimeEvent(label, detail),
     publishRuntimeEvent: (type, category, detail) =>
       this.publishControllerRuntimeEvent(type, category, detail),
-    publishAvatarState: (state) => this.publishAvatarState(state),
     getConfig: () => window.api.config.get(),
     saveConfig: (patch) => window.api.config.save(patch),
     arbitrateBacklog: (request) => window.api.llm.arbitrateBacklog(request),
@@ -229,14 +240,13 @@ export class Controller {
   private newConversationCommand: Promise<void> | null = null
   private unsubscribeActionEvents: (() => void) | null = null
   private unsubscribeConfigUpdates: (() => void) | null = null
-  private actionRuntimeBoundary = { process: 'main', source: 'main.actionRuntime' }
   // Dedup for the one-per-incident "показан текстом" note while TTS is down.
   private lastSynthesisNoticeIncidentId = 0
   private frameCounter = 0
   private bootstrapped = false
   private bootstrapTask: Promise<void> | null = null
   private disposed = false
-  private avatarTickRafId: number | null = null
+  private avatarTickTimerId: number | null = null
   private avatarTickLastTime = 0
   private llmHealthDetailKey: TranslationKey | null = 'common.notChecked'
 
@@ -245,14 +255,6 @@ export class Controller {
   }
 
   constructor() {
-    this.shioRuntime.registry.register('speech', this.speechRuntime)
-    this.shioRuntime.registry.register('speechInput', this.speechInputRuntime)
-    this.shioRuntime.registry.register('speechCapabilities', this.speechCapabilitiesRuntime)
-    this.shioRuntime.registry.register('conversation', this.conversationRuntime)
-    this.shioRuntime.registry.register('conversationPresence', this.conversationPresenceRuntime)
-    this.shioRuntime.registry.register('avatar', this.avatarRuntime)
-    this.shioRuntime.registry.register('overlay', this.overlayRuntime)
-    this.shioRuntime.registry.register('action', this.actionRuntimeBoundary)
     this.speechInputRuntime.setStreamingServiceLostHandler((error) =>
       this.handleStreamingServiceLost(error),
     )
@@ -689,18 +691,19 @@ export class Controller {
   }
 
   // Avatar Runtime tick (LipSync, facial mixer, overlay mouth-weight publish) must
-  // stay alive independent of whether the main Preview canvas is mounted, so that
-  // closing/opening Preview never breaks the Overlay's LipSync feed.
+  // stay alive independent of both the Preview canvas and the main renderer's paint
+  // cadence. A minimized BrowserWindow may reduce compositor-driven RAF cadence even
+  // while audio keeps playing, so this application Runtime uses its own fixed clock.
   private startAvatarTickLoop(): void {
-    if (this.avatarTickRafId !== null) return
+    if (this.avatarTickTimerId !== null) return
     this.avatarTickLastTime = performance.now()
-    const loop = (): void => {
-      this.avatarTickRafId = requestAnimationFrame(loop)
+    const tick = (): void => {
       const now = performance.now()
       const delta = Math.min(0.1, Math.max(0, (now - this.avatarTickLastTime) / 1000))
       this.avatarTickLastTime = now
       this.frameCounter += 1
-      this.avatarRuntime.update(delta, this.speechRuntime.getCharacterState())
+      this.avatarRuntime.update(delta, this.shioRuntime.characterState.get())
+      this.syncAvatarStateProjection()
       this.updateOverlayAnimationHudFile()
       this.overlayRuntime.publishMouthWeightsFrame(
         delta,
@@ -712,7 +715,8 @@ export class Controller {
         now: performance.now(),
       })
     }
-    loop()
+    tick()
+    this.avatarTickTimerId = window.setInterval(tick, AVATAR_RUNTIME_TICK_MS)
   }
 
   applyOverlaySettings(cfg: OverlaySettingsView): void {
@@ -751,7 +755,7 @@ export class Controller {
   applyRemoteAvatarState(avatarState: SyncedAvatarState, allowReaction = false): void {
     if (!this.overlayRuntime.isOverlayWindow()) return
     const status = this.toAppStatus(avatarState.mode)
-    this.updateCharacterState({
+    this.transitionRemotePresentation({
       status,
       mode: avatarState.mode,
       emotion: avatarState.emotionKey ?? 'neutral',
@@ -782,15 +786,14 @@ export class Controller {
       this.set({ overlayAnimationFile: activeFileName })
   }
 
-  private updateCharacterState(patch: {
+  private transitionRemotePresentation(patch: {
     status: AppStatus
     mode: CharacterRuntimeMode
     emotion: string
     vrmEmotion?: string
-    avatar?: ReturnType<AvatarRuntime['getMirrorState']>
     conversationPresence?: CharacterState['conversationPresence']
   }): CharacterState {
-    const characterState = this.speechRuntime.transitionSpeechState({
+    const characterState = this.shioRuntime.characterState.conversation.transition({
       status: patch.status,
       mode: patch.mode,
       emotion: patch.emotion,
@@ -799,22 +802,18 @@ export class Controller {
         patch.status === 'speaking' ? (this.state.messages.at(-1)?.text ?? '') : undefined,
       conversationPresence: patch.conversationPresence,
     })
-    const avatarMirror = this.avatarRuntime.getMirrorState()
-    return this.speechRuntime.mirrorAvatarState({
-      ...avatarMirror,
-      ...patch.avatar,
-      loaded: patch.avatar?.loaded ?? avatarMirror.loaded ?? characterState.avatar.loaded,
-    })
+    const projection = this.avatarRuntime.getCharacterStateProjection(characterState)
+    return this.shioRuntime.characterState.avatar.sync(projection)
   }
 
   private updateSpeechPlaybackProgress(progress: number): void {
     const speechProgress = Math.max(0, Math.min(1, progress))
-    this.speechRuntime.updateSpeechPlaybackProgress(speechProgress)
+    this.shioRuntime.characterState.speech.setPlaybackProgress(speechProgress)
     this.set({ speechProgress })
   }
 
   private applyAvatarCharacterState(): void {
-    this.avatarRuntime.applyCharacterState(this.speechRuntime.getCharacterState())
+    this.avatarRuntime.applyCharacterState(this.shioRuntime.characterState.get())
     this.updateOverlayAnimationHudFile()
   }
 
@@ -838,46 +837,15 @@ export class Controller {
   }
 
   private getCharacterStateSnapshot(): CharacterState {
-    const avatar = this.avatarRuntime.getDebugState()
-    const characterState = this.speechRuntime.getCharacterState()
-    const mode = characterState.mode
-    const speech = characterState.speechState.status
-    return {
-      ...characterState,
-      speechState: {
-        ...characterState.speechState,
-        isSpeaking: speech === 'speaking',
-      },
-      animation: {
-        behavior: avatar.currentBehaviorId,
-        animationId: avatar.currentBodyAnimation,
-        queueLength: avatar.animationQueue.length,
-      },
-      posture:
-        mode === 'thinking' || mode === 'awaitingSpeech'
-          ? 'thinking'
-          : mode === 'idle'
-            ? 'relaxed'
-            : characterState.posture,
-      conversation: {
-        ...characterState.conversation,
-        replyType: avatar.behaviorEngine?.replyType ?? characterState.conversation.replyType,
-        conversationPhase:
-          speech === 'speaking'
-            ? 'replying'
-            : mode === 'thinking' || mode === 'awaitingSpeech'
-              ? 'thinking'
-              : characterState.conversation.conversationPhase,
-      },
-      avatar: {
-        ...characterState.avatar,
-        mode,
-        expression: characterState.emotion,
-        lipsync: avatar.lipsyncWeights,
-        loaded: this.avatarRuntime.isLoaded(),
-      },
-      updatedAt: Date.now(),
-    }
+    this.syncAvatarStateProjection()
+    return this.shioRuntime.characterState.get()
+  }
+
+  private syncAvatarStateProjection(): CharacterState {
+    const current = this.shioRuntime.characterState.get()
+    return this.shioRuntime.characterState.avatar.sync(
+      this.avatarRuntime.getCharacterStateProjection(current),
+    )
   }
 
   // ---- microphone device selection ----------------------------------------
@@ -985,12 +953,13 @@ export class Controller {
   dispose(): void {
     if (this.disposed) return
     this.disposed = true
+    this.unsubscribeCharacterState()
     this.unsubscribeActionEvents?.()
     this.unsubscribeActionEvents = null
     this.unsubscribeConfigUpdates?.()
     this.unsubscribeConfigUpdates = null
-    if (this.avatarTickRafId !== null) cancelAnimationFrame(this.avatarTickRafId)
-    this.avatarTickRafId = null
+    if (this.avatarTickTimerId !== null) window.clearInterval(this.avatarTickTimerId)
+    this.avatarTickTimerId = null
     this.detachCanvas()
     this.overlayRuntime.dispose()
     observeRendererPromise(this.player.dispose(), 'dispose output AudioContext')
@@ -1026,13 +995,7 @@ export class Controller {
         lookAtRequested ? scene.getLookAtTarget() : null,
       )
       this.set({ faceTrackingEnabled: lookAtRequested && ok })
-      this.updateCharacterState({
-        status: this.state.status,
-        mode: this.speechRuntime.getCharacterState().mode,
-        emotion: this.speechRuntime.getCharacterState().emotion,
-        vrmEmotion: this.speechRuntime.getCharacterState().avatar.vrmExpression,
-        avatar: { loaded: true },
-      })
+      this.syncAvatarStateProjection()
       this.set({ vrmLoaded: true })
       // Frame the model to a sensible full-body size in the local Avatar Preview.
       // The overlay window owns its own camera framing via overlay presets, so it
@@ -1231,7 +1194,13 @@ export class Controller {
         this.setLlmHealth('unknown', 'controller.llm.providerMissing')
         return
       }
-      const res = await window.api.llm.fetchModels(activeProvider)
+      const readiness = await window.api.llm.getReadiness()
+      if (readiness.reason === 'missing-account-id') {
+        this.set({ llmReadiness: readiness })
+        this.setLlmHealth('unknown', 'controller.llm.accountIdMissing')
+        return
+      }
+      const res = await window.api.llm.fetchModels(activeProvider, settings?.accountId)
       if (res.ok) {
         this.set({
           llmReadiness: {
@@ -1255,6 +1224,16 @@ export class Controller {
             ? 'controller.llm.authError'
             : 'controller.llm.keyMissing',
         )
+        return
+      }
+      if (res.kind === 'access') {
+        this.set({
+          llmReadiness: {
+            ...(await window.api.llm.getReadiness()),
+            reason: 'access-error',
+          },
+        })
+        this.setLlmHealth('error', 'controller.llm.accessError')
         return
       }
       this.set({

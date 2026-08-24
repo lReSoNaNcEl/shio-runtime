@@ -39,8 +39,10 @@ export type ModelsState =
   | 'loading'
   | 'ready'
   | 'empty'
+  | 'missing-account-id'
   | 'missing-key'
   | 'auth-error'
+  | 'access-error'
   | 'network-error'
 
 export interface GeneralSettingsState {
@@ -92,6 +94,7 @@ export interface LlmSettingsState {
 export interface LlmSettingsActions {
   setActiveProvider: (provider: LlmProviderId) => void
   updateProviderSettings: (id: LlmProviderId, model: string) => void
+  updateProviderAccountId: (id: LlmProviderId, accountId: string) => void
   setEditingKey: (editing: boolean) => void
   setKeyInput: (key: string) => void
   saveCredential: () => Promise<void>
