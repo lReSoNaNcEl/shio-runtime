@@ -12,6 +12,7 @@ import {
   isAutomaticSelectionEnabled,
   isConversationSpeechAnimation,
 } from './animationManifest'
+import type { AvatarBodyMotionLayer } from './embodiment/motion/AvatarMotionLayer'
 import type { OverlayViewMode } from './tuning/cameraTuning'
 
 export type AvatarBehaviorId =
@@ -55,6 +56,7 @@ export interface AvatarBehaviorResolution {
   candidates: AvatarBehaviorCandidate[]
   animationId: AnimationId
   loop: boolean
+  motionLayer: AvatarBodyMotionLayer
   fallbackAnimationId: AnimationId
   activeCooldowns: AnimationCooldownState[]
   /** Human-readable explanation of how the animation was chosen. */
@@ -90,6 +92,7 @@ export class AvatarBehaviorResolver {
       candidates,
       animationId: selection.animationId,
       loop: effect.loop,
+      motionLayer: 'base',
       fallbackAnimationId: this.getFallbackAnimationId(manifestState, excludedIds),
       activeCooldowns: this.cooldowns.getActiveCooldowns(now),
       selectionReason: `${behaviorId}: ${selection.reason}`,
@@ -116,6 +119,7 @@ export class AvatarBehaviorResolver {
       candidates,
       animationId: selection.animationId,
       loop: entry?.loop ?? effect.loop,
+      motionLayer: 'base',
       fallbackAnimationId: this.getFallbackAnimationId(manifestState, excludedIds),
       activeCooldowns: this.cooldowns.getActiveCooldowns(now),
       selectionReason: `${tag}: ${selection.reason}`,
@@ -152,6 +156,7 @@ export class AvatarBehaviorResolver {
       candidates,
       animationId: selection.animationId,
       loop: entry?.loop ?? effect.loop,
+      motionLayer: usage === 'reaction' ? 'reaction' : 'gesture',
       fallbackAnimationId: this.getFallbackAnimationId(manifestState, excludedIds),
       activeCooldowns: this.cooldowns.getActiveCooldowns(now),
       selectionReason: `${tags.join('|')}: ${selection.reason}`,
@@ -195,6 +200,7 @@ export class AvatarBehaviorResolver {
       candidates,
       animationId: selection.animationId,
       loop: entry?.loop ?? effect.loop,
+      motionLayer: usage === 'reaction' ? 'reaction' : 'gesture',
       fallbackAnimationId: this.getFallbackAnimationId(manifestState, excludedIds),
       activeCooldowns: this.cooldowns.getActiveCooldowns(now),
       selectionReason: `intent:${intent.gestureHint}/${intent.intensity}; ${selection.reason}`,

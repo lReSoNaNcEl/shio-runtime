@@ -2,6 +2,7 @@ import type { VRM } from '@pixiv/three-vrm'
 import * as THREE from 'three'
 
 import { avatarLookAtTuning } from '../../tuning/motionTuning'
+import { SeededRandom } from '../motion/SeededMotion'
 
 export type LookAtMode =
   | 'idle'
@@ -43,12 +44,16 @@ interface LookAtModeTuning {
   glanceAwayDurationMs: number
 }
 
+let lookTargetResolverSequence = 0
+
 export class LookTargetResolver {
   private nextSaccadeMs = 0
   private saccadeDurationMs = 0
   private saccadeElapsedMs = 0
   private saccadeYaw = 0
   private saccadePitch = 0
+  private saccadeBaseYaw = 0
+  private saccadeBasePitch = 0
   private glanceAwayMs = 0
   private focusHoldMs = 0
   private overshootElapsedMs = 0
@@ -56,6 +61,14 @@ export class LookTargetResolver {
   private overshootPitch = 0
   private thinkingTimerMs = 0
   private lastMode: LookAtMode = 'idle'
+  private readonly random: SeededRandom
+  private readonly basePosition = new THREE.Vector3()
+  private readonly right = new THREE.Vector3()
+  private readonly up = new THREE.Vector3()
+
+  constructor(seed = 0x7f4a7c + ++lookTargetResolverSequence * 15485863) {
+    this.random = new SeededRandom(seed)
+  }
 
   resolve(input: {
     deltaMs: number
@@ -164,11 +177,13 @@ export class LookTargetResolver {
     nextSaccadeMs: number
   } {
     if (baseTarget) {
-      const base = new THREE.Vector3()
-      const right = new THREE.Vector3(1, 0, 0).applyQuaternion(baseTarget.quaternion)
-      const up = new THREE.Vector3(0, 1, 0).applyQuaternion(baseTarget.quaternion)
-      baseTarget.getWorldPosition(base)
-      target.position.copy(base).addScaledVector(right, yaw).addScaledVector(up, pitch)
+      this.right.set(1, 0, 0).applyQuaternion(baseTarget.quaternion)
+      this.up.set(0, 1, 0).applyQuaternion(baseTarget.quaternion)
+      baseTarget.getWorldPosition(this.basePosition)
+      target.position
+        .copy(this.basePosition)
+        .addScaledVector(this.right, yaw)
+        .addScaledVector(this.up, pitch)
       target.updateMatrixWorld(true)
     }
 
@@ -186,11 +201,13 @@ export class LookTargetResolver {
     this.lastMode = mode
     this.glanceAwayMs = 0
     this.thinkingTimerMs = mode === 'thinking' ? 1 : 0
-    this.nextSaccadeMs = 120 + Math.random() * 220
+    this.nextSaccadeMs = this.random.range(120, 340)
     this.saccadeElapsedMs = 0
     this.saccadeDurationMs = 0
     this.saccadeYaw = 0
     this.saccadePitch = 0
+    this.saccadeBaseYaw = 0
+    this.saccadeBasePitch = 0
     this.focusHoldMs = 0
     this.overshootElapsedMs = 0
     this.overshootYaw = 0
@@ -203,12 +220,14 @@ export class LookTargetResolver {
       this.saccadeElapsedMs += deltaMs
       const progress = Math.min(1, this.saccadeElapsedMs / this.saccadeDurationMs)
       const envelope = Math.sin(Math.PI * progress)
-      this.saccadeYaw *= envelope
-      this.saccadePitch *= envelope
+      this.saccadeYaw = this.saccadeBaseYaw * envelope
+      this.saccadePitch = this.saccadeBasePitch * envelope
       if (progress >= 1) {
         this.saccadeDurationMs = 0
         this.saccadeYaw = 0
         this.saccadePitch = 0
+        this.saccadeBaseYaw = 0
+        this.saccadeBasePitch = 0
       }
       return
     }
@@ -216,8 +235,10 @@ export class LookTargetResolver {
     if (this.nextSaccadeMs > 0) return
     this.saccadeDurationMs = avatarLookAtTuning.saccadeDurationMs
     this.saccadeElapsedMs = 0
-    this.saccadeYaw = this.randomSigned(modeTuning.saccadeAmplitude.yaw)
-    this.saccadePitch = this.randomSigned(modeTuning.saccadeAmplitude.pitch)
+    this.saccadeBaseYaw = this.randomSigned(modeTuning.saccadeAmplitude.yaw)
+    this.saccadeBasePitch = this.randomSigned(modeTuning.saccadeAmplitude.pitch)
+    this.saccadeYaw = this.saccadeBaseYaw
+    this.saccadePitch = this.saccadeBasePitch
     this.nextSaccadeMs = this.randomRange(
       modeTuning.saccadeIntervalMs.min,
       modeTuning.saccadeIntervalMs.max,
@@ -230,7 +251,7 @@ export class LookTargetResolver {
     if (this.glanceAwayMs > 0 || mode === 'thinking') return
     if (this.focusHoldMs > 0) return
     const chance = modeTuning.glanceAwayChance * (deltaMs / 1000)
-    if (Math.random() < chance) {
+    if (this.random.next() < chance) {
       this.glanceAwayMs = modeTuning.glanceAwayDurationMs
       this.focusHoldMs = this.randomRange(modeTuning.focusHoldMs.min, modeTuning.focusHoldMs.max)
       this.startOvershoot(
@@ -270,11 +291,11 @@ export class LookTargetResolver {
   }
 
   private randomRange(min: number, max: number): number {
-    return min + Math.random() * Math.max(0, max - min)
+    return this.random.range(min, max)
   }
 
   private randomSigned(value: number): number {
-    return (Math.random() * 2 - 1) * value
+    return this.random.signed(value)
   }
 
   private easeInOut(value: number): number {

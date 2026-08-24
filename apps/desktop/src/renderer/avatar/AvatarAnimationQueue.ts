@@ -1,5 +1,6 @@
 import type { AvatarBehaviorId } from './AvatarBehaviorResolver'
 import type { AvatarMode } from './AvatarStateMachine'
+import type { AvatarBodyMotionLayer } from './embodiment/motion/AvatarMotionLayer'
 
 export interface AvatarAnimationQueueItem {
   id: number
@@ -7,6 +8,7 @@ export interface AvatarAnimationQueueItem {
   behaviorId: AvatarBehaviorId | string
   mode: AvatarMode
   loop: boolean
+  motionLayer: AvatarBodyMotionLayer
   enqueueTime: number
   interruptible: boolean
 }

@@ -16,6 +16,7 @@ import type { FacialDebugState } from '../avatar/embodiment/facial/AvatarExpress
 import type { HeadMotionDebugState } from '../avatar/embodiment/gaze/HeadMotionRuntime'
 import type { LookAtDebugState } from '../avatar/embodiment/gaze/LookAtRuntime'
 import type { EarBehaviorDebugState } from '../avatar/embodiment/secondary-motion/EarBehaviorRuntime'
+import type { TailBehaviorDebugState } from '../avatar/embodiment/secondary-motion/TailBehaviorRuntime'
 import type { MouthWeights } from '../avatar/embodiment/speech/LipSync'
 import type { VrmBodyActionDebugState } from '../avatar/rendering/three/VrmModel'
 import type { OverlayViewMode } from '../avatar/tuning/cameraTuning'
@@ -120,6 +121,7 @@ export interface RuntimeDebugSnapshot {
   lookAt: LookAtDebugState
   headMotion: HeadMotionDebugState
   earBehavior: EarBehaviorDebugState
+  tailBehavior: TailBehaviorDebugState
   performance: ReturnType<AvatarRuntime['getDebugState']>['performance']
   playbackRequests: AvatarPlaybackRequestDebugState
   speechTimeline: SpeechStateTimelineEntry[]

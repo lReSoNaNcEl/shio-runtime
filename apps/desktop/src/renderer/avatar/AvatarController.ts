@@ -169,6 +169,13 @@ export class AvatarController {
     this.animations.stop()
   }
 
+  dispose(): void {
+    this.stopAnimation()
+    this.lipSync.detach(undefined, true, true)
+    this.externalMouthWeights = null
+    this.vrmModel.dispose()
+  }
+
   setMode(mode: AvatarMode): void {
     this.applyStateEffect(this.stateMachine.setMode(mode))
   }
@@ -698,6 +705,7 @@ export class AvatarController {
       behaviorId: resolved.behaviorId,
       mode: effect.mode,
       loop: resolved.loop,
+      motionLayer: resolved.motionLayer,
       enqueueTime: Date.now(),
       interruptible: false,
     }

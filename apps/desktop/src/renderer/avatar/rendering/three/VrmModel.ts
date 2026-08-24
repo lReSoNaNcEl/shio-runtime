@@ -10,11 +10,13 @@ import type {
   HeadMotionProfile,
 } from '../../embodiment/gaze/HeadMotionRuntime'
 import type { LookAtDebugState, LookAtMode } from '../../embodiment/gaze/LookAtRuntime'
+import type { AvatarBodyMotionLayer } from '../../embodiment/motion/AvatarMotionLayer'
 import type {
   EarAxisOverride,
   EarBehaviorDebugState,
   EarImpulse,
 } from '../../embodiment/secondary-motion/EarBehaviorRuntime'
+import type { TailBehaviorDebugState } from '../../embodiment/secondary-motion/TailBehaviorRuntime'
 import type { SpeechPhrasePhase } from '../../embodiment/speech/PhraseEnvelopeController'
 import type { SpeechPhraseTimingPlan } from '../../embodiment/speech/SpeechPhraseTiming'
 import type { AvatarProceduralMode } from '../../embodiment/types'
@@ -34,6 +36,7 @@ export type { VrmAnimationLoadContext, VrmRootMotionPolicy } from './VrmAnimatio
 
 export class VrmModel {
   vrm: VRM | null = null
+  private scene: THREE.Scene | null = null
   private readonly facialRuntime = new AvatarFacialRuntime()
   private readonly modelLoader = new VrmModelLoader()
   private readonly performanceMonitor = new AvatarPerformanceMonitor()
@@ -42,14 +45,10 @@ export class VrmModel {
   )
 
   async load(scene: THREE.Scene, buffer: ArrayBuffer): Promise<void> {
-    this.facialRuntime.detach()
-    if (this.vrm) {
-      this.modelLoader.dispose(scene, this.vrm)
-      this.vrm = null
-    }
-    this.bodyPlayback.detach()
+    this.dispose()
 
     const vrm = await this.modelLoader.load(scene, buffer)
+    this.scene = scene
     this.vrm = vrm
     this.bodyPlayback.attach(vrm)
     this.facialRuntime.attach(vrm)
@@ -115,6 +114,18 @@ export class VrmModel {
 
   setProceduralMode(mode: AvatarProceduralMode): void {
     this.facialRuntime.setProceduralMode(mode)
+  }
+
+  dispose(): void {
+    this.facialRuntime.detach()
+    this.bodyPlayback.detach()
+    if (this.vrm && this.scene) this.modelLoader.dispose(this.scene, this.vrm)
+    this.vrm = null
+    this.scene = null
+  }
+
+  setBodyMotionLayer(layer: AvatarBodyMotionLayer): void {
+    this.facialRuntime.setBodyMotionLayer(layer)
   }
 
   applyEmotion(emotionKey: string, vrmEmotion?: string): void {
@@ -184,6 +195,10 @@ export class VrmModel {
 
   getEarBehaviorDebugState(): EarBehaviorDebugState {
     return this.facialRuntime.getEarBehaviorDebugState()
+  }
+
+  getTailBehaviorDebugState(): TailBehaviorDebugState {
+    return this.facialRuntime.getTailBehaviorDebugState()
   }
 
   syncEarState(mode: AvatarProceduralMode, emotion: string): void {

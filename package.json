@@ -35,6 +35,7 @@
     "desktop:project-evidence:repro": "npm --prefix apps/desktop run repro:project-evidence",
     "desktop:project-aware-actions:repro": "npm --prefix apps/desktop run repro:project-aware-actions",
     "desktop:plugins:repro": "npm --prefix apps/desktop run repro:plugin-runtime",
+    "desktop:avatar-visual-motion:repro": "npm --prefix apps/desktop run repro:avatar-visual-motion",
     "api:install": "node scripts/api-runner.mjs install",
     "api:install:dev": "node scripts/api-runner.mjs install-dev",
     "api:install:alpha": "node scripts/api-runner.mjs install-alpha",

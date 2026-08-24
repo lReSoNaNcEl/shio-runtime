@@ -29,6 +29,7 @@ import type { FacialDebugState } from './embodiment/facial/AvatarExpressionMixer
 import type { HeadMotionDebugState } from './embodiment/gaze/HeadMotionRuntime'
 import type { LookAtDebugState } from './embodiment/gaze/LookAtRuntime'
 import type { EarBehaviorDebugState } from './embodiment/secondary-motion/EarBehaviorRuntime'
+import type { TailBehaviorDebugState } from './embodiment/secondary-motion/TailBehaviorRuntime'
 import type { MouthWeights } from './embodiment/speech/LipSync'
 import type {
   VrmBodyActionDebugState,
@@ -80,6 +81,7 @@ export interface AvatarControllerDebugState {
   lookAt: LookAtDebugState
   headMotion: HeadMotionDebugState
   earBehavior: EarBehaviorDebugState
+  tailBehavior: TailBehaviorDebugState
   performance: VrmPerformanceDebugState
   playbackRequests: AvatarPlaybackRequestDebugState
   behaviorTimeline: AvatarBehaviorTransitionLogEntry[]
@@ -145,6 +147,7 @@ export class AvatarDebugSnapshotBuilder {
       lookAt: input.vrmModel.getLookAtDebugState(),
       headMotion: input.vrmModel.getHeadMotionDebugState(),
       earBehavior: input.vrmModel.getEarBehaviorDebugState(),
+      tailBehavior: input.vrmModel.getTailBehaviorDebugState(),
       performance: input.vrmModel.getPerformanceDebugState(),
       playbackRequests: input.playbackRequests.getDebugState({
         currentAnimation: animation.activeAnimationId,
