@@ -32,6 +32,7 @@ export interface HeadMotionDebugState {
   smoothing: number
   nextProceduralEventMs: number
   attentionImpulseActive: boolean
+  authorityWeight: number
 }
 
 interface HeadMotionGeneratorContribution {
@@ -261,6 +262,7 @@ export class HeadMotionRuntime {
   private appliedNeckPose: HeadMotionPose = zeroPose()
   private attentionImpulseMs = 0
   private attentionImpulseCooldownMs = 0
+  private authorityWeight = 1
   private emotionHeadProfile: EmotionEmbodimentProfile['head'] = {
     energyScale: 1,
     nodBias: 1,
@@ -278,6 +280,7 @@ export class HeadMotionRuntime {
     smoothing: headMotionTuning.smoothing,
     nextProceduralEventMs: 0,
     attentionImpulseActive: false,
+    authorityWeight: 1,
   }
 
   attach(vrm: VRM): void {
@@ -294,6 +297,10 @@ export class HeadMotionRuntime {
 
   setProfile(profile: HeadMotionProfile): void {
     this.profile = profile
+  }
+
+  setAuthorityWeight(weight: number): void {
+    this.authorityWeight = THREE.MathUtils.clamp(weight, 0, 1)
   }
 
   applyEmotionProfile(profile: EmotionEmbodimentProfile): void {
@@ -341,9 +348,12 @@ export class HeadMotionRuntime {
       roll:
         resolved.pose.roll * this.emotionHeadProfile.energyScale * this.emotionHeadProfile.tiltBias,
     }
-    const targetPose = addPose(
-      emotionPose,
-      scalePose(headMotionTuning.attentionImpulse.pose, this.attentionImpulseEnvelope()),
+    const targetPose = scalePose(
+      addPose(
+        emotionPose,
+        scalePose(headMotionTuning.attentionImpulse.pose, this.attentionImpulseEnvelope()),
+      ),
+      this.authorityWeight,
     )
     this.currentPose = smoothPose(this.currentPose, targetPose, delta, headMotionTuning.smoothing)
     this.currentPose = clampPose(this.currentPose)
@@ -369,6 +379,7 @@ export class HeadMotionRuntime {
       smoothing: headMotionTuning.smoothing,
       nextProceduralEventMs: resolved.nextEventMs,
       attentionImpulseActive: this.attentionImpulseMs > 0,
+      authorityWeight: this.authorityWeight,
     }
   }
 

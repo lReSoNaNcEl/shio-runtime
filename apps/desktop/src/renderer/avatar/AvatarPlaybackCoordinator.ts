@@ -19,6 +19,8 @@ interface PlaybackContext {
   animationId: string
   mode: AvatarMode
   behaviorId: string
+  motionLayer: AvatarAnimationQueueItem['motionLayer']
+  completionFallbackAnimationId?: AnimationId
 }
 
 interface PlaybackRequestInput {
@@ -57,6 +59,7 @@ export class AvatarPlaybackCoordinator {
   reset(): void {
     this.animationQueue.clear()
     this.currentPlaybackContext = null
+    this.vrmModel.setBodyMotionLayer('base')
   }
 
   clearPending(): void {
@@ -141,6 +144,7 @@ export class AvatarPlaybackCoordinator {
       behaviorId: input.resolved.behaviorId,
       mode: input.effect.mode,
       loop: input.resolved.loop,
+      motionLayer: input.resolved.motionLayer,
       interruptible: input.interruptible,
     })
     const requestReason = `${input.reason}; ${input.resolved.selectionReason}; queue: ${decision.reason}`
@@ -254,6 +258,7 @@ export class AvatarPlaybackCoordinator {
     const animation = this.animations.getDebugState()
     if (animation.isPlaybackActive || animation.playbackStatus === 'loading') return
 
+    const completedContext = this.currentPlaybackContext
     const next = this.animationQueue.completeCurrent()
     if (next) {
       this.playQueuedItem({
@@ -262,7 +267,37 @@ export class AvatarPlaybackCoordinator {
         reason: 'previous one-shot completed',
         frame,
       })
+      return
     }
+
+    const completionFallbackAnimationId = completedContext?.completionFallbackAnimationId
+    if (
+      completionFallbackAnimationId &&
+      completionFallbackAnimationId !== completedContext.animationId
+    ) {
+      const fallbackItem: AvatarAnimationQueueItem = {
+        id: 0,
+        animationId: completionFallbackAnimationId,
+        behaviorId: `${completedContext.mode}-completion-fallback`,
+        mode: completedContext.mode,
+        loop: true,
+        motionLayer: 'base',
+        enqueueTime: Date.now(),
+        interruptible: true,
+      }
+      this.animationQueue.replaceCurrent(fallbackItem)
+      this.playQueuedItem({
+        item: fallbackItem,
+        fallbackAnimationId: completionFallbackAnimationId,
+        source: 'queue',
+        reason: 'completed one-shot; immediate base-motion recovery',
+        frame,
+      })
+      return
+    }
+
+    this.currentPlaybackContext = null
+    this.vrmModel.setBodyMotionLayer('base')
   }
 
   previewAnimation(input: {
@@ -271,6 +306,7 @@ export class AvatarPlaybackCoordinator {
     mode: AvatarMode
     frame: number
   }): void {
+    this.vrmModel.setBodyMotionLayer('base')
     const decision = this.transitionPolicy.resolve({
       fromAnimationId: this.currentPlaybackContext?.animationId ?? null,
       toAnimationId: input.animationId,
@@ -329,7 +365,10 @@ export class AvatarPlaybackCoordinator {
       animationId: input.item.animationId,
       mode: input.item.mode,
       behaviorId: input.item.behaviorId,
+      motionLayer: input.item.motionLayer,
+      completionFallbackAnimationId: input.fallbackAnimationId,
     }
+    this.vrmModel.setBodyMotionLayer(input.item.motionLayer)
     void this.animations.playManifest(input.item.animationId, input.item.loop, {
       fallbackId: input.fallbackAnimationId,
       blendDuration: effectiveTransition.blendDuration,
@@ -339,6 +378,7 @@ export class AvatarPlaybackCoordinator {
       behaviorId: input.item.behaviorId,
       frame: input.frame,
       previousAnimationId,
+      motionLayer: input.item.motionLayer,
     })
   }
 

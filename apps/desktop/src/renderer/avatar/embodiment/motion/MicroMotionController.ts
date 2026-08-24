@@ -1,23 +1,40 @@
 import type { VRM } from '@pixiv/three-vrm'
 
+import { BoundedRandomMotionChannel, SeededRandom, smoothUnit } from './SeededMotion'
+
 export interface MicroMotionProfile {
   swayWeight?: number
-  eyeWeight?: number
-  headWeight?: number
-  headSpeed?: number
+  postureWeight?: number
+  shoulderWeight?: number
 }
+
+export interface MicroMotionDebugState {
+  spinePitch: number
+  spineRoll: number
+  chestYaw: number
+  shoulderLeft: number
+  shoulderRight: number
+  headPitch: number
+  headYaw: number
+  upperBodyAuthority: number
+  headAuthority: number
+}
+
+let microMotionInstanceSequence = 0
 
 export class MicroMotionController {
   private vrm: VRM | null = null
-  private swayPhase = 0
-  private eyePhase = 0
-  private headPhase = 0
   private swayWeight = 0.55
-  private eyeWeight = 0.55
-  private headWeight = 0.25
-  private headSpeed = 0.65
+  private postureWeight = 0.55
+  private shoulderWeight = 0.45
+  private upperBodyAuthority = 1
+  private headAuthority = 1
   private lookAtActive = false
-  private spineOffsetZ = 0
+  private spinePitch = 0
+  private spineRoll = 0
+  private chestYaw = 0
+  private shoulderLeft = 0
+  private shoulderRight = 0
   private headOffsetX = 0
   private headOffsetY = 0
   private leftEyeOffsetX = 0
@@ -30,27 +47,74 @@ export class MicroMotionController {
   private impulseHeadY = 0
   private impulseEyeX = 0
   private impulseEyeY = 0
+  private readonly spinePitchChannel: BoundedRandomMotionChannel
+  private readonly spineRollChannel: BoundedRandomMotionChannel
+  private readonly chestYawChannel: BoundedRandomMotionChannel
+  private readonly shoulderLeftChannel: BoundedRandomMotionChannel
+  private readonly shoulderRightChannel: BoundedRandomMotionChannel
+
+  constructor(seed = 0x9e3779 + ++microMotionInstanceSequence * 104729) {
+    this.spinePitchChannel = new BoundedRandomMotionChannel(new SeededRandom(seed ^ 0x21f0aaad), {
+      amplitude: 0.006,
+      intervalSeconds: { min: 2.8, max: 6.2 },
+      stiffness: 4.5,
+      damping: 4.4,
+    })
+    this.spineRollChannel = new BoundedRandomMotionChannel(new SeededRandom(seed ^ 0x735a2d97), {
+      amplitude: 0.007,
+      intervalSeconds: { min: 2.2, max: 5.4 },
+      stiffness: 5.2,
+      damping: 4.8,
+    })
+    this.chestYawChannel = new BoundedRandomMotionChannel(new SeededRandom(seed ^ 0x4c3b2a19), {
+      amplitude: 0.006,
+      intervalSeconds: { min: 3.1, max: 7.2 },
+      stiffness: 3.8,
+      damping: 4.1,
+    })
+    this.shoulderLeftChannel = new BoundedRandomMotionChannel(new SeededRandom(seed ^ 0x65d200ce), {
+      amplitude: 0.005,
+      intervalSeconds: { min: 1.8, max: 4.6 },
+      stiffness: 6,
+      damping: 5.1,
+    })
+    this.shoulderRightChannel = new BoundedRandomMotionChannel(
+      new SeededRandom(seed ^ 0x18b7f311),
+      {
+        amplitude: 0.005,
+        intervalSeconds: { min: 2.1, max: 5.1 },
+        stiffness: 5.5,
+        damping: 4.9,
+      },
+    )
+  }
 
   attach(vrm: VRM): void {
     this.detach()
     this.vrm = vrm
-    this.swayPhase = Math.random() * Math.PI * 2
-    this.eyePhase = Math.random() * Math.PI * 2
-    this.headPhase = Math.random() * Math.PI * 2
   }
 
   detach(): void {
     this.remove()
     this.vrm = null
+    this.spinePitchChannel.reset()
+    this.spineRollChannel.reset()
+    this.chestYawChannel.reset()
+    this.shoulderLeftChannel.reset()
+    this.shoulderRightChannel.reset()
     this.resetOffsets()
     this.clearImpulse()
   }
 
   setProfile(profile: MicroMotionProfile): void {
     this.swayWeight = profile.swayWeight ?? this.swayWeight
-    this.eyeWeight = profile.eyeWeight ?? this.eyeWeight
-    this.headWeight = profile.headWeight ?? this.headWeight
-    this.headSpeed = profile.headSpeed ?? this.headSpeed
+    this.postureWeight = profile.postureWeight ?? this.postureWeight
+    this.shoulderWeight = profile.shoulderWeight ?? this.shoulderWeight
+  }
+
+  setAuthority(upperBodyWeight: number, headWeight: number): void {
+    this.upperBodyAuthority = clamp01(upperBodyWeight)
+    this.headAuthority = clamp01(headWeight)
   }
 
   setLookAtActive(active: boolean): void {
@@ -65,10 +129,10 @@ export class MicroMotionController {
     eyeY?: number
     duration?: number
   }): void {
-    this.impulseHeadX = options.headX ?? 0
-    this.impulseHeadY = options.headY ?? 0
-    this.impulseEyeX = options.eyeX ?? 0
-    this.impulseEyeY = options.eyeY ?? 0
+    this.impulseHeadX = clampSigned(options.headX ?? 0, 0.045)
+    this.impulseHeadY = clampSigned(options.headY ?? 0, 0.045)
+    this.impulseEyeX = clampSigned(options.eyeX ?? 0, 0.04)
+    this.impulseEyeY = clampSigned(options.eyeY ?? 0, 0.04)
     this.impulseDuration = Math.max(0.4, options.duration ?? 1.6)
     this.impulseTime = this.impulseDuration
   }
@@ -77,7 +141,18 @@ export class MicroMotionController {
     if (!this.vrm?.humanoid) return
 
     const spine = this.vrm.humanoid.getNormalizedBoneNode('spine')
-    if (spine) spine.rotation.z -= this.spineOffsetZ
+    if (spine) {
+      spine.rotation.x -= this.spinePitch
+      spine.rotation.z -= this.spineRoll
+    }
+
+    const chest = this.vrm.humanoid.getNormalizedBoneNode('chest')
+    if (chest) chest.rotation.y -= this.chestYaw
+
+    const leftShoulder = this.vrm.humanoid.getNormalizedBoneNode('leftShoulder')
+    if (leftShoulder) leftShoulder.rotation.z -= this.shoulderLeft
+    const rightShoulder = this.vrm.humanoid.getNormalizedBoneNode('rightShoulder')
+    if (rightShoulder) rightShoulder.rotation.z -= this.shoulderRight
 
     const head = this.vrm.humanoid.getNormalizedBoneNode('head')
     if (head) {
@@ -86,81 +161,96 @@ export class MicroMotionController {
     }
 
     this.removeEyeOffsets()
-    this.spineOffsetZ = 0
-    this.headOffsetX = 0
-    this.headOffsetY = 0
+    this.resetAppliedBodyOffsets()
   }
 
   update(delta: number): void {
     if (!this.vrm?.humanoid) return
 
     this.updateImpulse(delta)
-    this.updateSway(delta)
-    this.updateHead(delta)
-    this.updateEyes(delta)
+    this.updateBody(delta)
+    this.updateHeadImpulse()
+    this.updateEyeImpulse()
   }
 
-  private updateSway(delta: number): void {
-    if (!this.vrm?.humanoid) return
+  getDebugState(): MicroMotionDebugState {
+    return {
+      spinePitch: this.spinePitch,
+      spineRoll: this.spineRoll,
+      chestYaw: this.chestYaw,
+      shoulderLeft: this.shoulderLeft,
+      shoulderRight: this.shoulderRight,
+      headPitch: this.headOffsetX,
+      headYaw: this.headOffsetY,
+      upperBodyAuthority: this.upperBodyAuthority,
+      headAuthority: this.headAuthority,
+    }
+  }
 
-    this.swayPhase += delta * 0.3
-    const target = Math.sin(this.swayPhase) * 0.006 * this.swayWeight
-    const next = this.lerp(this.spineOffsetZ, target, Math.min(1, delta * 3))
+  private updateBody(delta: number): void {
+    if (!this.vrm?.humanoid) return
+    const authority = this.upperBodyAuthority
+    const nextSpinePitch = this.spinePitchChannel.update(delta) * this.postureWeight * authority
+    const nextSpineRoll = this.spineRollChannel.update(delta) * this.swayWeight * authority
+    const nextChestYaw = this.chestYawChannel.update(delta) * this.postureWeight * authority
+    const nextShoulderLeft =
+      this.shoulderLeftChannel.update(delta) * this.shoulderWeight * authority
+    const nextShoulderRight =
+      this.shoulderRightChannel.update(delta) * this.shoulderWeight * authority
+
     const spine = this.vrm.humanoid.getNormalizedBoneNode('spine')
+    if (spine) {
+      spine.rotation.x += nextSpinePitch - this.spinePitch
+      spine.rotation.z += nextSpineRoll - this.spineRoll
+    }
+    const chest = this.vrm.humanoid.getNormalizedBoneNode('chest')
+    if (chest) chest.rotation.y += nextChestYaw - this.chestYaw
+    const leftShoulder = this.vrm.humanoid.getNormalizedBoneNode('leftShoulder')
+    if (leftShoulder) leftShoulder.rotation.z += nextShoulderLeft - this.shoulderLeft
+    const rightShoulder = this.vrm.humanoid.getNormalizedBoneNode('rightShoulder')
+    if (rightShoulder) rightShoulder.rotation.z += nextShoulderRight - this.shoulderRight
 
-    if (spine) spine.rotation.z += next - this.spineOffsetZ
-    this.spineOffsetZ = next
+    this.spinePitch = nextSpinePitch
+    this.spineRoll = nextSpineRoll
+    this.chestYaw = nextChestYaw
+    this.shoulderLeft = nextShoulderLeft
+    this.shoulderRight = nextShoulderRight
   }
 
-  private updateHead(delta: number): void {
+  private updateHeadImpulse(): void {
     if (!this.vrm?.humanoid) return
-
-    this.headPhase += delta * this.headSpeed
-    const impulse = this.getImpulseEnvelope()
-    const targetX =
-      Math.sin(this.headPhase * 0.7) * 0.012 * this.headWeight + this.impulseHeadX * impulse
-    const targetY = Math.sin(this.headPhase) * 0.018 * this.headWeight + this.impulseHeadY * impulse
-    const nextX = this.lerp(this.headOffsetX, targetX, Math.min(1, delta * 2.4))
-    const nextY = this.lerp(this.headOffsetY, targetY, Math.min(1, delta * 2.4))
+    const impulse = this.getImpulseEnvelope() * this.headAuthority
+    const nextX = this.impulseHeadX * impulse
+    const nextY = this.impulseHeadY * impulse
     const head = this.vrm.humanoid.getNormalizedBoneNode('head')
-
     if (head) {
       head.rotation.x += nextX - this.headOffsetX
       head.rotation.y += nextY - this.headOffsetY
     }
-
     this.headOffsetX = nextX
     this.headOffsetY = nextY
   }
 
-  private updateEyes(delta: number): void {
+  private updateEyeImpulse(): void {
     if (!this.vrm?.humanoid) return
     if (this.lookAtActive) {
       this.removeEyeOffsets()
       return
     }
 
-    this.eyePhase += delta * 0.45
     const impulse = this.getImpulseEnvelope()
-    const targetX =
-      Math.sin(this.eyePhase * 1.4) * 0.015 * this.eyeWeight + this.impulseEyeX * impulse
-    const targetY =
-      Math.sin(this.eyePhase * 0.9) * 0.025 * this.eyeWeight + this.impulseEyeY * impulse
-    const nextX = this.lerp(this.leftEyeOffsetX, targetX, Math.min(1, delta * 2))
-    const nextY = this.lerp(this.leftEyeOffsetY, targetY, Math.min(1, delta * 2))
+    const nextX = this.impulseEyeX * impulse
+    const nextY = this.impulseEyeY * impulse
     const leftEye = this.vrm.humanoid.getNormalizedBoneNode('leftEye')
     const rightEye = this.vrm.humanoid.getNormalizedBoneNode('rightEye')
-
     if (leftEye) {
       leftEye.rotation.x += nextX - this.leftEyeOffsetX
       leftEye.rotation.y += nextY - this.leftEyeOffsetY
     }
-
     if (rightEye) {
       rightEye.rotation.x += nextX - this.rightEyeOffsetX
       rightEye.rotation.y += nextY - this.rightEyeOffsetY
     }
-
     this.leftEyeOffsetX = nextX
     this.leftEyeOffsetY = nextY
     this.rightEyeOffsetX = nextX
@@ -168,36 +258,36 @@ export class MicroMotionController {
   }
 
   private removeEyeOffsets(): void {
-    if (!this.vrm?.humanoid) {
-      this.leftEyeOffsetX = 0
-      this.leftEyeOffsetY = 0
-      this.rightEyeOffsetX = 0
-      this.rightEyeOffsetY = 0
-      return
+    if (this.vrm?.humanoid) {
+      const leftEye = this.vrm.humanoid.getNormalizedBoneNode('leftEye')
+      if (leftEye) {
+        leftEye.rotation.x -= this.leftEyeOffsetX
+        leftEye.rotation.y -= this.leftEyeOffsetY
+      }
+      const rightEye = this.vrm.humanoid.getNormalizedBoneNode('rightEye')
+      if (rightEye) {
+        rightEye.rotation.x -= this.rightEyeOffsetX
+        rightEye.rotation.y -= this.rightEyeOffsetY
+      }
     }
-
-    const leftEye = this.vrm.humanoid.getNormalizedBoneNode('leftEye')
-    if (leftEye) {
-      leftEye.rotation.x -= this.leftEyeOffsetX
-      leftEye.rotation.y -= this.leftEyeOffsetY
-    }
-
-    const rightEye = this.vrm.humanoid.getNormalizedBoneNode('rightEye')
-    if (rightEye) {
-      rightEye.rotation.x -= this.rightEyeOffsetX
-      rightEye.rotation.y -= this.rightEyeOffsetY
-    }
-
     this.leftEyeOffsetX = 0
     this.leftEyeOffsetY = 0
     this.rightEyeOffsetX = 0
     this.rightEyeOffsetY = 0
   }
 
-  private resetOffsets(): void {
-    this.spineOffsetZ = 0
+  private resetAppliedBodyOffsets(): void {
+    this.spinePitch = 0
+    this.spineRoll = 0
+    this.chestYaw = 0
+    this.shoulderLeft = 0
+    this.shoulderRight = 0
     this.headOffsetX = 0
     this.headOffsetY = 0
+  }
+
+  private resetOffsets(): void {
+    this.resetAppliedBodyOffsets()
     this.leftEyeOffsetX = 0
     this.leftEyeOffsetY = 0
     this.rightEyeOffsetX = 0
@@ -206,14 +296,14 @@ export class MicroMotionController {
 
   private updateImpulse(delta: number): void {
     if (this.impulseTime <= 0) return
-    this.impulseTime = Math.max(0, this.impulseTime - delta)
+    this.impulseTime = Math.max(0, this.impulseTime - Math.max(0, delta))
     if (this.impulseTime === 0) this.clearImpulse()
   }
 
   private getImpulseEnvelope(): number {
     if (this.impulseTime <= 0) return 0
     const progress = 1 - this.impulseTime / this.impulseDuration
-    return Math.sin(Math.PI * Math.max(0, Math.min(1, progress)))
+    return progress < 0.35 ? smoothUnit(progress / 0.35) : 1 - smoothUnit((progress - 0.35) / 0.65)
   }
 
   private clearImpulse(): void {
@@ -223,8 +313,12 @@ export class MicroMotionController {
     this.impulseEyeX = 0
     this.impulseEyeY = 0
   }
+}
 
-  private lerp(a: number, b: number, t: number): number {
-    return a + (b - a) * t
-  }
+function clamp01(value: number): number {
+  return Math.max(0, Math.min(1, value))
+}
+
+function clampSigned(value: number, limit: number): number {
+  return Math.max(-limit, Math.min(limit, value))
 }

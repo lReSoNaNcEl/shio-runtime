@@ -6,7 +6,6 @@ import {
   resolveEmotionEmbodimentProfile,
 } from '../EmotionEmbodimentProfile'
 import { facialTuning } from '../tuning/facialTuning'
-import { breathProfiles, microMotionProfiles } from '../tuning/motionTuning'
 import { phraseLipSyncTuning } from '../tuning/speechTuning'
 import { AvatarExpressionMixer, type FacialDebugState } from './facial/AvatarExpressionMixer'
 import { BlinkController } from './facial/BlinkController'
@@ -22,14 +21,21 @@ import {
   HeadMotionRuntime,
 } from './gaze/HeadMotionRuntime'
 import { type LookAtDebugState, type LookAtMode, LookAtRuntime } from './gaze/LookAtRuntime'
-import { BreathController } from './motion/BreathController'
-import { MicroMotionController } from './motion/MicroMotionController'
+import {
+  type AvatarBodyMotionLayer,
+  resolveAvatarMotionAuthority,
+} from './motion/AvatarMotionLayer'
+import { ProceduralMotionController } from './motion/ProceduralMotionController'
 import {
   type EarAxisOverride,
   type EarBehaviorDebugState,
   EarBehaviorRuntime,
   type EarImpulse,
 } from './secondary-motion/EarBehaviorRuntime'
+import {
+  type TailBehaviorDebugState,
+  TailBehaviorRuntime,
+} from './secondary-motion/TailBehaviorRuntime'
 import { LipSyncVariationController } from './speech/LipSyncVariationController'
 import { PhraseEnvelopeController, type SpeechPhrasePhase } from './speech/PhraseEnvelopeController'
 import type { SpeechPhraseTimingPlan } from './speech/SpeechPhraseTiming'
@@ -37,18 +43,20 @@ import type { AvatarProceduralMode } from './types'
 
 export class AvatarFacialRuntime {
   private blinkController = new BlinkController()
-  private breathController = new BreathController()
   private expressionController = new ExpressionController()
   private expressionMixer = new AvatarExpressionMixer()
-  private microMotionController = new MicroMotionController()
+  private proceduralMotionController = new ProceduralMotionController()
   private lookAtRuntime = new LookAtRuntime()
   private headMotionRuntime = new HeadMotionRuntime()
   private earBehaviorRuntime = new EarBehaviorRuntime()
+  private tailBehaviorRuntime = new TailBehaviorRuntime()
   private speakingEyeController = new SpeakingEyeController()
   private mouthClosureController = new MouthClosureController()
   private lipSyncVariationController = new LipSyncVariationController()
   private phraseEnvelopeController = new PhraseEnvelopeController()
   private proceduralMode: AvatarProceduralMode = 'idle'
+  private bodyMotionLayer: AvatarBodyMotionLayer = 'base'
+  private lookAtMode: LookAtMode = 'idle'
   private speechEnergy = 0
   private antiStallActive = false
   private currentEmotionKey = 'neutral'
@@ -58,14 +66,14 @@ export class AvatarFacialRuntime {
   private externalMouthComposed = false
 
   detach(): void {
-    this.breathController.detach()
     this.blinkController.detach()
     this.expressionController.detach()
     this.expressionMixer.detach()
-    this.microMotionController.detach()
+    this.proceduralMotionController.detach()
     this.lookAtRuntime.detach()
     this.headMotionRuntime.detach()
     this.earBehaviorRuntime.detach()
+    this.tailBehaviorRuntime.detach()
     this.speakingEyeController.detach()
     this.mouthClosureController.detach()
     this.lipSyncVariationController.reset()
@@ -76,13 +84,13 @@ export class AvatarFacialRuntime {
 
   attach(vrm: VRM): void {
     this.blinkController.attach()
-    this.breathController.attach(vrm)
+    this.proceduralMotionController.attach(vrm)
     this.expressionController.attach(vrm)
     this.expressionMixer.attach(vrm)
-    this.microMotionController.attach(vrm)
     this.lookAtRuntime.attach(vrm)
     this.headMotionRuntime.attach(vrm)
     this.earBehaviorRuntime.attach(vrm)
+    this.tailBehaviorRuntime.attach(vrm)
     this.speakingEyeController.attach()
     this.mouthClosureController.attach()
     this.lipSyncVariationController.reset()
@@ -91,8 +99,11 @@ export class AvatarFacialRuntime {
     this.lipSyncVariationController.setEmotion(this.currentEmbodimentProfile.lipSyncProfile)
     this.updateEffectiveBlinkProfile()
     this.earBehaviorRuntime.setProfile(this.proceduralMode)
-    this.breathController.setProfile(breathProfiles[this.proceduralMode])
-    this.microMotionController.setProfile(microMotionProfiles[this.proceduralMode])
+    this.tailBehaviorRuntime.setProfile(this.proceduralMode)
+    this.proceduralMotionController.setMode(this.proceduralMode)
+    this.proceduralMotionController.setBodyMotionLayer(this.bodyMotionLayer)
+    this.proceduralMotionController.setLookAtMode(this.lookAtMode)
+    this.updateMotionAuthority()
   }
 
   update(delta: number): void {
@@ -150,18 +161,18 @@ export class AvatarFacialRuntime {
   }
 
   removeProceduralMotion(): void {
-    this.breathController.remove()
-    this.microMotionController.remove()
+    this.proceduralMotionController.remove()
     this.lookAtRuntime.remove()
     this.headMotionRuntime.remove()
+    this.tailBehaviorRuntime.remove()
   }
 
   updateProceduralMotion(delta: number): void {
-    this.breathController.update(delta)
-    this.microMotionController.update(delta)
+    this.proceduralMotionController.update(delta)
     this.lookAtRuntime.update(delta)
     this.headMotionRuntime.update(delta)
     this.earBehaviorRuntime.update(delta)
+    this.tailBehaviorRuntime.update(delta)
   }
 
   notifyVrmaFacialTracksDisabled(count: number): void {
@@ -179,17 +190,20 @@ export class AvatarFacialRuntime {
     eyeY?: number
     duration?: number
   }): void {
-    this.microMotionController.nudge(options)
+    this.proceduralMotionController.nudge(options)
   }
 
   setLookAtTarget(target: THREE.Object3D | null): boolean {
-    this.microMotionController.setLookAtActive(Boolean(target))
+    this.proceduralMotionController.setLookAtActive(Boolean(target))
     this.expressionMixer.setLookAtActive(Boolean(target))
     return this.lookAtRuntime.setBaseTarget(target)
   }
 
   setLookAtMode(mode: LookAtMode): void {
+    this.lookAtMode = mode
     this.lookAtRuntime.setMode(mode)
+    this.proceduralMotionController.setLookAtMode(mode)
+    this.updateMotionAuthority()
   }
 
   setHeadMotionProfile(profile: HeadMotionProfile): void {
@@ -207,9 +221,15 @@ export class AvatarFacialRuntime {
     if (!wasSpeaking && isSpeaking) this.lipSyncVariationController.startSpeechSegment()
     else if (wasSpeaking && !isSpeaking) this.lipSyncVariationController.endSpeech()
     this.updateEffectiveBlinkProfile()
-    this.breathController.setProfile(breathProfiles[mode])
-    this.microMotionController.setProfile(microMotionProfiles[mode])
+    this.proceduralMotionController.setMode(mode)
     this.earBehaviorRuntime.setProfile(mode)
+    this.tailBehaviorRuntime.setProfile(mode)
+  }
+
+  setBodyMotionLayer(layer: AvatarBodyMotionLayer): void {
+    this.bodyMotionLayer = layer
+    this.proceduralMotionController.setBodyMotionLayer(layer)
+    this.updateMotionAuthority()
   }
 
   applyEmotion(emotionKey: string, vrmEmotion?: string): void {
@@ -222,6 +242,7 @@ export class AvatarFacialRuntime {
     this.expressionMixer.setFacialProfile(profile)
     this.updateEffectiveBlinkProfile()
     this.earBehaviorRuntime.applyEmotion(embodiment)
+    this.tailBehaviorRuntime.applyEmotion(embodiment.id)
     this.headMotionRuntime.applyEmotionProfile(embodiment)
   }
 
@@ -237,6 +258,18 @@ export class AvatarFacialRuntime {
       proceduralMode: this.proceduralMode,
       emotion: this.currentEmotionKey,
     })
+  }
+
+  private updateMotionAuthority(): void {
+    const authority = resolveAvatarMotionAuthority({
+      bodyLayer: this.bodyMotionLayer,
+      directedGaze:
+        this.lookAtMode === 'userFocus' ||
+        this.lookAtMode === 'listening' ||
+        this.lookAtMode === 'speaking',
+      screenGaze: this.lookAtMode === 'screenFocus',
+    })
+    this.headMotionRuntime.setAuthorityWeight(authority.proceduralHeadWeight)
   }
 
   setMouthWeight(weight: number): void {
@@ -297,6 +330,10 @@ export class AvatarFacialRuntime {
     return this.earBehaviorRuntime.getDebugState()
   }
 
+  getTailBehaviorDebugState(): TailBehaviorDebugState {
+    return this.tailBehaviorRuntime.getDebugState()
+  }
+
   /**
    * Keep only the Ear Runtime's profile + emotion synced from the per-frame
    * render loop, without disturbing the blink / breath / expression profiles
@@ -306,11 +343,15 @@ export class AvatarFacialRuntime {
    */
   syncEarState(mode: AvatarProceduralMode, emotion: string): void {
     this.earBehaviorRuntime.setProfile(mode)
+    this.tailBehaviorRuntime.setProfile(mode)
     if (emotion === this.currentEmotionKey) {
       this.earBehaviorRuntime.applyEmotion(this.currentEmbodimentProfile)
+      this.tailBehaviorRuntime.applyEmotion(this.currentEmbodimentProfile.id)
       return
     }
-    this.earBehaviorRuntime.applyEmotion(resolveEmotionEmbodimentProfile(emotion))
+    const embodiment = resolveEmotionEmbodimentProfile(emotion)
+    this.earBehaviorRuntime.applyEmotion(embodiment)
+    this.tailBehaviorRuntime.applyEmotion(embodiment.id)
   }
 
   triggerEarImpulse(impulse: EarImpulse, identity?: string): boolean {

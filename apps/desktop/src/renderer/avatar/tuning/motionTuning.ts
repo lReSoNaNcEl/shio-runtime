@@ -10,17 +10,33 @@ import type {
 import type { AvatarProceduralMode } from '../embodiment/types'
 
 export const breathProfiles: Record<AvatarProceduralMode, BreathProfile> = {
-  idle: { speed: 0.38, intensity: 0.01, weight: 1, smoothing: 2.8 },
-  listening: { speed: 0.4, intensity: 0.009, weight: 0.95, smoothing: 3 },
-  thinking: { speed: 0.32, intensity: 0.008, weight: 0.82, smoothing: 2.6 },
-  speaking: { speed: 0.5, intensity: 0.009, weight: 1.05, smoothing: 3.2 },
+  idle: { speed: 0.2, intensity: 0.01, weight: 1, smoothing: 3.2 },
+  listening: { speed: 0.22, intensity: 0.009, weight: 0.95, smoothing: 3.4 },
+  thinking: { speed: 0.17, intensity: 0.008, weight: 0.82, smoothing: 3 },
+  speaking: { speed: 0.24, intensity: 0.009, weight: 1.05, smoothing: 3.6 },
 }
 
 export const microMotionProfiles: Record<AvatarProceduralMode, MicroMotionProfile> = {
-  idle: { swayWeight: 0.7, eyeWeight: 0, headWeight: 0.08, headSpeed: 0.55 },
-  listening: { swayWeight: 0.82, eyeWeight: 0, headWeight: 0.06, headSpeed: 0.5 },
-  thinking: { swayWeight: 0.5, eyeWeight: 0, headWeight: 0.07, headSpeed: 0.42 },
-  speaking: { swayWeight: 0.72, eyeWeight: 0, headWeight: 0.05, headSpeed: 1.05 },
+  idle: {
+    swayWeight: 0.7,
+    postureWeight: 0.7,
+    shoulderWeight: 0.52,
+  },
+  listening: {
+    swayWeight: 0.5,
+    postureWeight: 0.74,
+    shoulderWeight: 0.38,
+  },
+  thinking: {
+    swayWeight: 0.46,
+    postureWeight: 0.78,
+    shoulderWeight: 0.42,
+  },
+  speaking: {
+    swayWeight: 0.62,
+    postureWeight: 0.58,
+    shoulderWeight: 0.46,
+  },
 }
 
 export const avatarLookAtTuning = {
