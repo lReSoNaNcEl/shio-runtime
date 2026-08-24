@@ -99,6 +99,10 @@ Architecture and ownership:
   string is added in both Russian and English.
 - Preserve the existing HTTP contract with `apps/api` unless the task
   explicitly changes it.
+- The Desktop Speech API endpoint is immutable Main-owned environment configuration:
+  `SHIO_SPEECH_API_URL`, defaulting to `http://127.0.0.1:8000`. Renderer-editable
+  settings may not persist, mutate, or send an arbitrary endpoint; changing the
+  environment requires restarting Desktop.
 
 Desktop UI and UX:
 

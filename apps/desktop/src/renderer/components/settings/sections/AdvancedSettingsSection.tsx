@@ -1,12 +1,4 @@
-import {
-  ActionButton,
-  Heading,
-  Picker,
-  PickerItem,
-  Switch,
-  Text,
-  TextField,
-} from '@react-spectrum/s2'
+import { ActionButton, Heading, Picker, PickerItem, Switch, Text } from '@react-spectrum/s2'
 import FolderOpen from '@react-spectrum/s2/icons/FolderOpen'
 import { style } from '@react-spectrum/s2/style' with { type: 'macro' }
 
@@ -63,12 +55,6 @@ export function AdvancedSettingsSection({
               </Text>
             </div>
             <div className="developer-settings-fields">
-              <TextField
-                label={t('settings.speech.url')}
-                value={state.speechUrl}
-                onChange={actions.setSpeechUrl}
-                styles={fullWidth}
-              />
               <div className="developer-setting">
                 <Switch
                   isSelected={state.developerOverlayAnimationHudEnabled}

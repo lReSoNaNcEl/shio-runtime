@@ -285,10 +285,7 @@ export function registerIpcHandlers(
     description: 'Persist application configuration.',
     validate: (payload) => configSaveSchema.parse(payload) as Partial<AppSettings>,
     execute: (partial) => {
-      const previousSpeechUrl = getConfig().pythonSpeechUrl
       saveConfig(partial)
-      const currentSpeechUrl = getConfig().pythonSpeechUrl
-      if (currentSpeechUrl !== previousSpeechUrl) speech().reconfigure(currentSpeechUrl)
       win.webContents.send('config:updated', getRendererConfig())
       return { ok: true }
     },

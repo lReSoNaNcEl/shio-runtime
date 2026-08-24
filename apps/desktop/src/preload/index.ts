@@ -74,6 +74,7 @@ const api = {
     check: () => ipcRenderer.invoke('health:check'),
   },
   asr: {
+    getStreamingConnection: () => ipcRenderer.invoke('asr:get-streaming-connection'),
     recognize: (wavBuffer: ArrayBuffer) => ipcRenderer.invoke('asr:recognize', wavBuffer),
   },
   llm: {

@@ -706,7 +706,6 @@ export const ruMessages = {
   'settings.project.sync': 'Синхронизировать',
   'settings.project.rebuild': 'Перестроить индекс',
 
-  'settings.speech.url': 'URL ASR / TTS',
   'settings.speech.ttsLanguage': 'Язык TTS',
   'settings.speech.voiceWarmup.warming': 'Подготовка голоса',
   'settings.speech.voiceWarmup.ready': 'Голос готов',

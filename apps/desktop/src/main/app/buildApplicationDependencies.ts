@@ -18,6 +18,7 @@ import {
   resolveChromeExecutable,
 } from '../desktop-control'
 import { RendererNetworkObserver } from '../diagnostics/RendererNetworkObserver'
+import { resolveEnvironmentConfig } from '../environmentConfig'
 import { registerIpcHandlers } from '../ipc'
 import { IpcAuthorization } from '../ipc/IpcAuthorization'
 import { registerOverlayIpc } from '../ipc/registerOverlayIpc'
@@ -59,6 +60,7 @@ export interface ApplicationDependencies {
 }
 
 export function buildApplicationDependencies(): ApplicationDependencies {
+  const environmentConfig = resolveEnvironmentConfig()
   let win: BrowserWindow | null = null
   let quitting = false
   let orchestrator: Orchestrator | null = null
@@ -265,7 +267,7 @@ export function buildApplicationDependencies(): ApplicationDependencies {
   })
 
   const getSpeechClientManager = (): SpeechClientManager => {
-    speechClientManager ??= new SpeechClientManager(getConfig().pythonSpeechUrl)
+    speechClientManager ??= new SpeechClientManager(environmentConfig.speechApiUrl)
     return speechClientManager
   }
 

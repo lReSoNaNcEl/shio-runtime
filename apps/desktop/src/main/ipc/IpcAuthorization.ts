@@ -19,6 +19,7 @@ export const IPC_CHANNEL_CAPABILITIES = {
   'actions:respond-confirmation': mainOnly,
   'actions:snapshot': mainOnly,
   'asr:recognize': mainOnly,
+  'asr:get-streaming-connection': mainOnly,
   'avatar-mouth:get': overlayOnly,
   'avatar-mouth:publish': mainOnly,
   'avatar-runtime:publish-health': mainOnly,

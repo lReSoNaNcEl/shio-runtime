@@ -708,7 +708,6 @@ export const enMessages: Record<TranslationKey, string> = {
   'settings.project.sync': 'Sync now',
   'settings.project.rebuild': 'Rebuild index',
 
-  'settings.speech.url': 'ASR / TTS URL',
   'settings.speech.ttsLanguage': 'TTS language',
   'settings.speech.voiceWarmup.warming': 'Voice preparing',
   'settings.speech.voiceWarmup.ready': 'Voice ready',
