@@ -91,6 +91,7 @@ export class DshAdapterError extends Error {
       | 'DSH_TRANSPORT_CLOSED'
       | 'DSH_REMOTE_ERROR'
       | 'DSH_CANCELLED'
+      | 'DSH_ACTION_LIMIT'
       | 'DSH_RUNTIME_UNAVAILABLE'
       | 'DSH_MODEL_NOT_CONFIGURED',
     message: string,
@@ -115,6 +116,8 @@ const SAFE_OS_VARIABLES = [
 ] as const
 
 const SHELL_REQUEST_TIMEOUT_MS = 60_000
+const DSH_BROWSER_TOOL_CALL_MAX = 20
+const DSH_BROWSER_OBSERVATION_MAX = 30
 const shellOutputSchema = z
   .object({
     text: z.string().max(64_000),
@@ -327,6 +330,8 @@ function publicMessage(code: DshAdapterError['code']): string {
       return 'Desktop Control runtime rejected the request'
     case 'DSH_CANCELLED':
       return 'Desktop Control task was stopped'
+    case 'DSH_ACTION_LIMIT':
+      return 'Desktop Control reached the browser workflow action limit'
     case 'DSH_RUNTIME_UNAVAILABLE':
       return 'Desktop Control runtime is not installed correctly'
     case 'DSH_MODEL_NOT_CONFIGURED':
@@ -562,6 +567,7 @@ export class DshHarnessAdapter {
       calls: new Map(),
       successfulResults: new Set(),
     }
+    let browserBudgetExceeded = false
     const abort = (): void => {
       void this.close().catch((error) => {
         mainLog.warn('[DesktopControl] runtime close after cancellation failed', { error })
@@ -609,6 +615,19 @@ export class DshHarnessAdapter {
       const result = await harness.run(goal, {
         onNotification: (notification) => {
           observeBrowserToolNotification(notification, browserToolTrace)
+          const observationCalls = [...browserToolTrace.calls.values()].filter((name) =>
+            /__(?:agent_browser_snapshot|agent_browser_get_(?:text|url|title))$/u.test(name),
+          ).length
+          if (
+            !browserBudgetExceeded &&
+            (browserToolTrace.calls.size > DSH_BROWSER_TOOL_CALL_MAX ||
+              observationCalls > DSH_BROWSER_OBSERVATION_MAX)
+          ) {
+            browserBudgetExceeded = true
+            void harness.close().catch((error) => {
+              mainLog.warn('[DesktopControl] DSH close after browser budget failed', { error })
+            })
+          }
           notificationCount += 1
           if (!notification || typeof notification !== 'object') return
           const envelope = notification as {
@@ -620,6 +639,9 @@ export class DshHarnessAdapter {
           notificationTypes.add(typeof eventType === 'string' ? `${method}:${eventType}` : method)
         },
       })
+      if (browserBudgetExceeded) {
+        throw new DshAdapterError('DSH_ACTION_LIMIT', publicMessage('DSH_ACTION_LIMIT'))
+      }
       if (browserToolTrace.successfulResults.size === 0) {
         mainLog.warn('[DesktopControl] DSH browser workflow produced no successful browser tool', {
           notificationCount,
@@ -642,6 +664,9 @@ export class DshHarnessAdapter {
         verification: 'unverified',
       }
     } catch (error) {
+      if (browserBudgetExceeded) {
+        throw new DshAdapterError('DSH_ACTION_LIMIT', publicMessage('DSH_ACTION_LIMIT'))
+      }
       if (signal.aborted) {
         throw new DshAdapterError('DSH_CANCELLED', publicMessage('DSH_CANCELLED'))
       }

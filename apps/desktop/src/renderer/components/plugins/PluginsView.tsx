@@ -854,7 +854,7 @@ function DesktopControlDetails({
             </dd>
           </div>
           <div>
-            <dt>{t('capabilities.browser.title')}</dt>
+            <dt>{t('plugins.desktopControl.browserAgent')}</dt>
             <dd>{t(DESKTOP_CAPABILITY_KEY[status.browserControl])}</dd>
           </div>
           <div>

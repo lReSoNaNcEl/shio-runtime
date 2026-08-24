@@ -36,19 +36,38 @@ const CAPABILITY_LABELS: Record<DesktopWorkflowCapability, TranslationKey> = {
 }
 
 const BROWSER_OPERATION_LABELS: Record<BrowserOperation['operation'], TranslationKey> = {
+  observe: 'actions.confirm.browserObserve',
   open: 'actions.confirm.browserOpen',
   click: 'actions.confirm.browserClick',
+  fill: 'actions.confirm.browserFill',
+  select: 'actions.confirm.browserSelect',
+  scroll: 'actions.confirm.browserScroll',
+  back: 'actions.confirm.browserBack',
+  forward: 'actions.confirm.browserForward',
+  tabs: 'actions.confirm.browserTabs',
   'switch-tab': 'actions.confirm.browserSwitchTab',
 }
 
 function browserOperationDetail(operation: BrowserOperation): string {
   switch (operation.operation) {
+    case 'observe':
+    case 'tabs':
+    case 'back':
+    case 'forward':
+      return ''
     case 'open':
       return operation.url
     case 'click':
       return operation.target.kind === 'semantic-ref'
         ? `@${operation.target.ref}`
         : `${operation.target.role} “${operation.target.name}”`
+    case 'fill':
+    case 'select':
+      return operation.target.kind === 'semantic-ref'
+        ? `@${operation.target.ref}`
+        : `${operation.target.role} “${operation.target.name}”`
+    case 'scroll':
+      return `${operation.direction} ${operation.amount}px`
     case 'switch-tab':
       return operation.tabId
   }

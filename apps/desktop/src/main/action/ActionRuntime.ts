@@ -19,6 +19,7 @@ interface ActionRuntimeOptions {
   permissionGuard: ActionPermissionGuard
   authorityMode: () => DesktopAuthorityMode
   cancelPendingConfirmations: () => void
+  cancelConfirmation?: (actionId: string) => void
   onEvent?: ActionRuntimeEventListener
   onChanged?: (snapshot: ActionRuntimeSnapshot) => void
 }
@@ -129,16 +130,40 @@ export class ActionRuntime {
     }
 
     let authorization: ActionAuthorization
+    let detachAuthorizationAbort: (() => void) | undefined
     try {
-      const confirmation = tool.confirmation?.(actionId, payload)
-      if (confirmation) {
-        this.pendingConfirmation = confirmation
-        this.publishSnapshot()
-      }
-      authorization = await this.options.permissionGuard.authorize(
+      const confirmation = tool.confirmation?.(actionId, payload, request as ActionRequest<unknown>)
+      const authorizationTask = this.options.permissionGuard.authorize(
         tool.authority ?? 'implicit',
         confirmation,
+        request.authorizationScopeId,
+        (pending) => {
+          this.pendingConfirmation = pending
+          this.publishSnapshot()
+        },
       )
+      const authorizationAbort = request.signal
+        ? new Promise<never>((_resolve, reject) => {
+            const abort = (): void => {
+              this.options.cancelConfirmation?.(actionId)
+              reject(
+                new ActionError(
+                  'ACTION_CANCELLED',
+                  'Action cancelled before authorization',
+                  'cancelled',
+                  true,
+                ),
+              )
+            }
+            request.signal?.addEventListener('abort', abort, { once: true })
+            detachAuthorizationAbort = () => request.signal?.removeEventListener('abort', abort)
+            if (request.signal?.aborted) abort()
+          })
+        : null
+      authorization = authorizationAbort
+        ? await Promise.race([authorizationTask, authorizationAbort])
+        : await authorizationTask
+      detachAuthorizationAbort?.()
       this.pendingConfirmation = null
       this.advance(log, 'authorized')
       log.authorization = authorization
@@ -148,6 +173,7 @@ export class ActionRuntime {
         authorization,
       })
     } catch (error) {
+      detachAuthorizationAbort?.()
       this.pendingConfirmation = null
       const normalized = this.cancelledActionIds.has(actionId)
         ? {
@@ -179,6 +205,12 @@ export class ActionRuntime {
           ),
         ),
     })
+    const abortFromRequest = (): void => {
+      controller.abort(request.signal?.reason)
+      this.active.get(actionId)?.cancel()
+    }
+    request.signal?.addEventListener('abort', abortFromRequest, { once: true })
+    if (request.signal?.aborted) abortFromRequest()
     this.advance(log, 'executed')
     log.adapter = tool.adapter
     this.publishActionEvent('ToolStarted', request.name, {
@@ -202,6 +234,7 @@ export class ActionRuntime {
       )
       const result = (await Promise.race([execution, cancellation, timeoutPromise])) as TResult
       this.active.delete(actionId)
+      request.signal?.removeEventListener('abort', abortFromRequest)
       if (timeout) clearTimeout(timeout)
       this.complete(log, 'success')
       this.publishActionEvent('ToolCompleted', request.name, {
@@ -219,6 +252,7 @@ export class ActionRuntime {
       }
     } catch (error) {
       this.active.delete(actionId)
+      request.signal?.removeEventListener('abort', abortFromRequest)
       if (timeout) clearTimeout(timeout)
       this.cancelledActionIds.delete(actionId)
       return this.fail<TResult>(log, this.normalizeError(error), authorization)

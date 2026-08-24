@@ -17,6 +17,10 @@ import {
   resolveAgentBrowserCommand,
   resolveChromeExecutable,
 } from '../desktop-control'
+import {
+  BrowserAgentCoordinator,
+  BrowserWorkflowScopeRegistry,
+} from '../desktop-control/browser-agent'
 import { RendererNetworkObserver } from '../diagnostics/RendererNetworkObserver'
 import { resolveEnvironmentConfig } from '../environmentConfig'
 import { registerIpcHandlers } from '../ipc'
@@ -84,6 +88,7 @@ export function buildApplicationDependencies(): ApplicationDependencies {
   let lastAvatarRuntimeHealth: AvatarRuntimeHealth | null = null
   const screenContextService = new ScreenContextService(new ScreenCaptureAdapter())
   const pluginCapabilities = new PluginCapabilityRegistry()
+  const browserWorkflowScopes = new BrowserWorkflowScopeRegistry()
 
   const loadRenderer = async (target: BrowserWindow, overlay = false): Promise<void> => {
     if (process.env.NODE_ENV === 'development') {
@@ -290,24 +295,19 @@ export function buildApplicationDependencies(): ApplicationDependencies {
       getRendererConfig,
       () => pluginCapabilities.getProjectContextProvider(),
       capabilityCatalog,
-      async (request, signal) => {
+      async (request, signal, authorizationScopeId) => {
         const runtime = actionRuntime
         if (!runtime || signal.aborted) throw new LlmTurnCancelledError()
-        const abort = (): void => {
-          observeMainPromise(runtime.emergencyStop(), 'cancel conversation desktop workflow')
-        }
-        signal.addEventListener('abort', abort, { once: true })
-        try {
-          const action = await runtime.execute<DesktopWorkflowRequest, DesktopWorkflowExecution>({
-            name: 'desktop.workflow',
-            payload: request,
-          })
-          return toDesktopWorkflowActionResult(action)
-        } finally {
-          signal.removeEventListener('abort', abort)
-        }
+        const action = await runtime.execute<DesktopWorkflowRequest, DesktopWorkflowExecution>({
+          name: 'desktop.workflow',
+          payload: request,
+          authorizationScopeId,
+          signal,
+        })
+        return toDesktopWorkflowActionResult(action)
       },
       () => pluginCapabilities.getBrowserContextProvider(),
+      new BrowserAgentCoordinator(browserWorkflowScopes),
     )
   }
 
@@ -400,6 +400,7 @@ export function buildApplicationDependencies(): ApplicationDependencies {
       getSpeechClientManager,
       screenContextService,
       capabilityCatalog,
+      browserWorkflowScopes,
       win,
       ipcAuthorization,
     )

@@ -117,6 +117,7 @@ export const ruMessages = {
   'plugins.desktopControl.runtimeMissing': 'Сервис автоматизации не установлен',
   'plugins.desktopControl.stateTitle': 'Состояние',
   'plugins.desktopControl.automationEngine': 'Движок автоматизации',
+  'plugins.desktopControl.browserAgent': 'Browser Agent',
   'plugins.desktopControl.harnessRuntime': 'Сервис автоматизации',
   'plugins.desktopControl.capability.ready': 'Готов',
   'plugins.desktopControl.capability.needsSetup': 'Требует настройки',
@@ -130,7 +131,7 @@ export const ruMessages = {
   'plugins.desktopControl.accessTitle': 'Доступ к компьютеру',
   'plugins.desktopControl.fullAccess': 'Выполнять действия без подтверждения',
   'plugins.desktopControl.fullAccessDescription':
-    'Если выключено, Shio запрашивает подтверждение перед доступными действиями. Ограничения подключённых инструментов сохраняются в обоих режимах.',
+    'Если включено, Shio может выполнять обычные действия без подтверждения каждого задания. Критические действия и ограничения подключённых инструментов сохраняются.',
   'plugins.desktopControl.accessMode.confirm': 'С подтверждением',
   'plugins.desktopControl.accessMode.full': 'Без подтверждения',
   'plugins.desktopControl.runtimeTitle': 'Сервис автоматизации',
@@ -154,9 +155,10 @@ export const ruMessages = {
   'plugins.desktopControl.modelSettingsHint':
     'Чтобы изменить провайдера, модель или ключ, откройте раздел «Настройки» → «Основная модель».',
   'plugins.desktopControl.openModelSettings': 'Открыть настройки модели',
-  'plugins.desktopControl.fullAccessWarningTitle': 'Действия не будут запрашивать подтверждение',
+  'plugins.desktopControl.fullAccessWarningTitle':
+    'Обычные действия могут выполняться без подтверждения',
   'plugins.desktopControl.fullAccessWarningDescription':
-    'Shio сможет выполнять доступные действия в пределах подключённых инструментов без подтверждения каждого задания.',
+    'Shio сможет самостоятельно выполнять обычные действия в пределах текущей задачи. Отправка форм, изменение аккаунта, финансовые и разрушительные действия всё равно требуют явного подтверждения.',
   'plugins.desktopControl.technicalTitle': 'Технические сведения',
   'plugins.desktopControl.dshVersion': 'Версия DSH runtime',
   'plugins.desktopControl.browserBackend': 'Browser backend',
@@ -167,6 +169,13 @@ export const ruMessages = {
   'plugins.desktopControl.browserProfileIsolated': 'Изолированный профиль Shio',
   'plugins.desktopControl.resourceAvailable': 'Доступен',
   'plugins.desktopControl.resourceMissing': 'Не найден',
+  'actions.confirm.browserObserve': 'Прочитать текущую страницу',
+  'actions.confirm.browserFill': 'Заполнить поле',
+  'actions.confirm.browserSelect': 'Выбрать значение',
+  'actions.confirm.browserScroll': 'Прокрутить страницу',
+  'actions.confirm.browserBack': 'Вернуться назад',
+  'actions.confirm.browserForward': 'Перейти вперёд',
+  'actions.confirm.browserTabs': 'Посмотреть вкладки',
   'plugins.openDetails': 'Открыть',
   'plugins.backToCatalog': 'Назад к плагинам',
   'plugins.health.label': 'Состояние',
