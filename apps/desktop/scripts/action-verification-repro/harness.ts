@@ -23,6 +23,7 @@ import type {
   DesktopWorkflowAdapterResult,
   ShellExecutionEvidence,
 } from '../../src/main/desktop-control'
+import { LlmResponseError } from '../../src/main/llm'
 import { actionResultFallback } from '../../src/main/orchestrator'
 import { type DesktopWorkflowRequest, desktopWorkflowRequestSchema } from '../../src/shared/actions'
 import type { BrowserObservation } from '../../src/shared/desktop-control'
@@ -706,6 +707,38 @@ async function main(): Promise<void> {
   )
   assert.match(cancelledFallback, /отменена/iu)
   assert(!/(?:готово|успешно|сделано)/iu.test(cancelledFallback))
+
+  const llmTransportFailureRuntime = new ActionRuntime({
+    permissionGuard: new ActionPermissionGuard({
+      authorityMode: () => 'full',
+      requestConfirmation: async () => 'confirm',
+    }),
+    authorityMode: () => 'full',
+    cancelPendingConfirmations: () => undefined,
+  })
+  llmTransportFailureRuntime.register({
+    name: 'llm.transport-probe',
+    description: 'Preserve recoverable LLM transport failure metadata.',
+    validate: (payload) => String(payload),
+    execute: async () => {
+      throw new LlmResponseError({
+        provider: 'mistral',
+        code: 'NETWORK_ERROR',
+        recoverable: true,
+        message: 'Mistral network reset',
+      })
+    },
+  })
+  const llmTransportFailure = await llmTransportFailureRuntime.execute({
+    name: 'llm.transport-probe',
+    payload: 'request',
+  })
+  assert.equal(llmTransportFailure.status, 'failure')
+  assert.equal(llmTransportFailure.errorCode, 'NETWORK_ERROR')
+  assert.equal(llmTransportFailure.execution?.recoverable, true)
+  assert.equal(llmTransportFailure.execution?.providerId, 'mistral')
+  assert.equal(llmTransportFailure.recoverable, true)
+  assert.equal(llmTransportFailure.providerId, 'mistral')
 
   const audit = recoveryRuntime.snapshot().recentActions
   assert(audit.some((entry) => entry.lifecycle.includes('verification-started')))

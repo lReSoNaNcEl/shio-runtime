@@ -9,6 +9,8 @@ export interface ActionExecutionResult<TResult = unknown> {
   evidence?: unknown
   errorCode?: string
   error?: string
+  recoverable?: boolean
+  providerId?: string
 }
 
 export type ActionVerificationStatus = 'not-required' | 'verified' | 'unverified' | 'failed'

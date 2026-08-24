@@ -424,6 +424,8 @@ export class ActionRuntime {
         evidence: normalized.evidence,
         errorCode: normalized.code,
         error: normalized.message,
+        recoverable: normalized.recoverable,
+        providerId: normalized.providerId,
       }
     } finally {
       if (timeout) clearTimeout(timeout)
@@ -445,7 +447,8 @@ export class ActionRuntime {
       ...(execution.output !== undefined ? { result: execution.output } : {}),
       execution,
       verification,
-      recoverable: verification.status === 'unverified',
+      recoverable: execution.recoverable ?? verification.status === 'unverified',
+      providerId: execution.providerId,
     }
     const status = getActionCompletionStatus(candidate)
     return {
