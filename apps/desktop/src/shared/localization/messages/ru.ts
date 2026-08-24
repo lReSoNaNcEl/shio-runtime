@@ -56,6 +56,8 @@ export const ruMessages = {
   'actions.fullControl.enable': 'Включить полный доступ',
   'actions.activeTask': 'Выполняю задачу',
   'actions.awaitingConfirmation': 'Жду подтверждения',
+  'actions.verifying': 'Проверяю результат',
+  'actions.recovering': 'Исправляю действие',
   'actions.emergencyStop': 'Остановить Shio',
   'actions.fullAccessBadge': 'Полный доступ',
   'capabilities.textChat.title': 'Текстовый чат',

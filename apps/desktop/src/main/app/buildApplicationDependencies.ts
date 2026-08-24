@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { resolvePwshPath } from '@deepseek-ai/dsh-pwsh-local'
 import { app, type BrowserWindow, Menu, safeStorage } from 'electron'
 
-import type { DesktopWorkflowExecution, DesktopWorkflowRequest } from '../../shared/actions'
+import type { DesktopWorkflowRequest } from '../../shared/actions'
 import { translate } from '../../shared/localization'
 import type { AvatarRuntimeHealth } from '../../shared/runtime'
 import { type ActionRuntime, toDesktopWorkflowActionResult } from '../action'
@@ -13,6 +13,7 @@ import {
   AgentBrowserAdapter,
   DESKTOP_CONTROL_MANIFEST,
   DesktopControlPlugin,
+  type DesktopWorkflowAdapterResult,
   DshHarnessAdapter,
   resolveAgentBrowserCommand,
   resolveChromeExecutable,
@@ -296,7 +297,10 @@ export function buildApplicationDependencies(): ApplicationDependencies {
         }
         signal.addEventListener('abort', abort, { once: true })
         try {
-          const action = await runtime.execute<DesktopWorkflowRequest, DesktopWorkflowExecution>({
+          const action = await runtime.execute<
+            DesktopWorkflowRequest,
+            DesktopWorkflowAdapterResult
+          >({
             name: 'desktop.workflow',
             payload: request,
           })

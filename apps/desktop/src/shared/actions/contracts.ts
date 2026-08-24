@@ -154,6 +154,14 @@ export type ActionOutcome = z.infer<typeof actionOutcomeSchema>
 export const actionAuthorizationSchema = z.enum(['implicit', 'confirmed', 'full'])
 export type ActionAuthorization = z.infer<typeof actionAuthorizationSchema>
 
+export const actionVerificationStatusSchema = z.enum([
+  'not-required',
+  'verified',
+  'unverified',
+  'failed',
+])
+export type ActionVerificationStatus = z.infer<typeof actionVerificationStatusSchema>
+
 export interface ActionReplyGrounding {
   actionId: string
   tool: 'desktop.workflow'
@@ -173,7 +181,9 @@ export const desktopWorkflowExecutionSchema = z
   .object({
     runtimeCompleted: z.boolean(),
     reportedOutcome: z.string().max(DESKTOP_WORKFLOW_REPORTED_OUTCOME_MAX_CHARS).optional(),
-    verification: z.enum(['verified', 'unverified']),
+    verification: actionVerificationStatusSchema,
+    verificationReason: z.string().max(100).optional(),
+    verificationSummary: z.string().max(500).optional(),
     browser: browserActionExecutionSchema.optional(),
   })
   .strict()
@@ -196,12 +206,26 @@ export const actionLogEntrySchema = z
   .object({
     actionId: actionIdSchema,
     tool: z.string().min(1).max(100),
-    lifecycle: z.array(z.enum(['requested', 'validated', 'authorized', 'executed', 'completed'])),
+    lifecycle: z.array(
+      z.enum([
+        'requested',
+        'validated',
+        'authorized',
+        'executed',
+        'verification-started',
+        'verification-completed',
+        'completed',
+      ]),
+    ),
     requestedAt: z.number().int().nonnegative(),
     completedAt: z.number().int().nonnegative().optional(),
     durationMs: z.number().int().nonnegative().optional(),
     authorization: actionAuthorizationSchema.optional(),
     outcome: actionOutcomeSchema.optional(),
+    executionStatus: z.enum(['success', 'failure', 'timeout', 'cancelled']).optional(),
+    verificationStatus: actionVerificationStatusSchema.optional(),
+    verificationDurationMs: z.number().int().nonnegative().optional(),
+    recoveryAttempted: z.boolean().optional(),
     adapter: z.string().max(100).optional(),
     errorCode: z.string().max(100).optional(),
   })
@@ -215,6 +239,7 @@ export const actionRuntimeSnapshotSchema = z
     pendingConfirmation: actionConfirmationRequestSchema.nullable(),
     pendingAuthorityChange: authorityChangeRequestSchema.nullable(),
     activeActionId: actionIdSchema.nullable(),
+    activeActionPhase: z.enum(['executing', 'verifying', 'recovering']).nullable(),
     recentActions: z.array(actionLogEntrySchema).max(50),
   })
   .strict()

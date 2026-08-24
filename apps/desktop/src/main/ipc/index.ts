@@ -6,7 +6,6 @@ import { z } from 'zod'
 import {
   actionConfirmationRequestSchema,
   actionRuntimeSnapshotSchema,
-  type DesktopWorkflowExecution,
   type DesktopWorkflowRequest,
   desktopWorkflowRequestSchema,
 } from '../../shared/actions'
@@ -19,11 +18,21 @@ import type { LlmTurnErrorCode } from '../../shared/llm'
 import { translate } from '../../shared/localization'
 import type { RuntimeEventInput } from '../../shared/runtime'
 import type { ScreenContextErrorCode } from '../../shared/screen-context'
-import { ActionConfirmationBroker, ActionPermissionGuard, ActionRuntime } from '../action'
+import {
+  ActionConfirmationBroker,
+  ActionPermissionGuard,
+  ActionRuntime,
+  BrowserActiveTabVerifier,
+  BrowserInteractionVerifier,
+  BrowserNavigationVerifier,
+  desktopWorkflowVerificationPolicy,
+  ShellExecutionVerifier,
+  safeDesktopWorkflowRecovery,
+} from '../action'
 import { vrmAssetRegistry } from '../assets/VrmAssetRegistry'
 import type { CapabilityCatalog } from '../capabilities'
 import { getConfig, getRendererConfig, saveConfig } from '../config'
-import type { DesktopControlPlugin } from '../desktop-control'
+import type { DesktopControlPlugin, DesktopWorkflowAdapterResult } from '../desktop-control'
 import {
   createLLMProvider,
   createModelCatalog,
@@ -116,6 +125,13 @@ export function registerIpcHandlers(
         }),
       ),
   })
+  const browserObservationProvider = {
+    observe: (signal: AbortSignal) => desktopControl().observeBrowserForVerification(signal),
+  }
+  actions.registerVerifier(new BrowserNavigationVerifier(browserObservationProvider))
+  actions.registerVerifier(new BrowserInteractionVerifier(browserObservationProvider))
+  actions.registerVerifier(new BrowserActiveTabVerifier())
+  actions.registerVerifier(new ShellExecutionVerifier())
   let backlogArbitrationInFlight = false
   let activeCharacterGenerationTurnId: string | null = null
   let activeSynthesisTurnId: string | null = null
@@ -126,7 +142,7 @@ export function registerIpcHandlers(
   const synthesisSettlements = new Map<string, Promise<void>>()
   const visionTurns = new Set<string>()
 
-  actions.register<DesktopWorkflowRequest, DesktopWorkflowExecution>({
+  actions.register<DesktopWorkflowRequest, DesktopWorkflowAdapterResult>({
     name: 'desktop.workflow',
     description: 'Execute a validated, bounded desktop automation workflow.',
     validate: (payload) => desktopWorkflowRequestSchema.parse(payload),
@@ -146,6 +162,8 @@ export function registerIpcHandlers(
     timeoutMs: 120_000,
     singleFlight: true,
     adapter: 'desktop-control',
+    verification: desktopWorkflowVerificationPolicy,
+    recover: (request) => safeDesktopWorkflowRecovery(request),
     execute: (request, context) => desktopControl().executeWorkflow(request, context.signal),
   })
   actions.onEmergencyStop(() => desktopControl().emergencyStop())

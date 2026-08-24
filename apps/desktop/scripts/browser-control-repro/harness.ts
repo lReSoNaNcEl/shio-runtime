@@ -501,7 +501,8 @@ async function main(): Promise<void> {
     })
     try {
       const opened = await adapter.open(testServer.baseUrl)
-      assert.equal(opened.execution.verification, 'verified')
+      assert.equal(opened.evidence.operation, 'open')
+      assert.equal(opened.evidence.after?.url, `${testServer.baseUrl}/`)
       assert.equal(opened.observation?.title, 'Shio browser control test')
       assert.match(opened.observation?.content ?? '', /Controlled semantic browser fixture/)
       const sessionId = adapter.sessionSnapshot()?.sessionId
@@ -515,8 +516,8 @@ async function main(): Promise<void> {
         observationId: opened.observation.observationId,
         ref: details.ref,
       })
-      assert.equal(detailsResult.execution.verification, 'verified')
-      assert.match(detailsResult.execution.resultingUrl ?? '', /\/details$/)
+      assert.equal(detailsResult.evidence.operation, 'click')
+      assert.match(detailsResult.evidence.after?.url ?? '', /\/details$/)
       assert.match(detailsResult.observation?.content ?? '', /Fresh details observation/)
       assert.notEqual(detailsResult.observation?.observationId, opened.observation.observationId)
       await assert.rejects(
@@ -540,7 +541,7 @@ async function main(): Promise<void> {
         observationId: catalogPage.observation.observationId,
         ref: catalog.ref,
       })
-      assert.equal(catalogResult.execution.verification, 'verified')
+      assert.equal(catalogResult.evidence.operation, 'click')
       assert.equal(catalogResult.observation?.title, 'Catalog')
       const next = catalogResult.observation?.interactiveElements.find(
         (element) => element.role === 'button' && element.name === 'Next page',
@@ -588,7 +589,8 @@ async function main(): Promise<void> {
         observationId: noChange.observation.observationId,
         ref: noChangeButton.ref,
       })
-      assert.equal(unverified.execution.verification, 'unverified')
+      assert.equal(unverified.evidence.before?.url, unverified.evidence.after?.url)
+      assert.equal(unverified.evidence.before?.content, unverified.evidence.after?.content)
 
       const boundedControls = await adapter.open(`${testServer.baseUrl}/many`)
       assert.equal(
@@ -618,7 +620,7 @@ async function main(): Promise<void> {
       assert(firstTab, `Root tab missing from ${JSON.stringify(adapterTabs)}`)
       assert(secondAdapterTab, `Second tab missing from ${JSON.stringify(adapterTabs)}`)
       const switched = await adapter.switchTab(firstTab.tabId)
-      assert.equal(switched.execution.verification, 'verified')
+      assert.equal(switched.evidence.afterSession?.activeTabId, firstTab.tabId)
       assert.equal(switched.observation?.title, 'Shio browser control test')
     } finally {
       await adapter.close()
@@ -677,7 +679,8 @@ async function main(): Promise<void> {
         },
         new AbortController().signal,
       )
-      assert.equal(deterministicWithoutDsh.browser?.verification, 'verified')
+      assert.equal(deterministicWithoutDsh.evidence.kind, 'browser')
+      assert.equal(deterministicWithoutDsh.evidence.operation, 'open')
       const browserContext = plugin.getBrowserContextProvider()
       assert.equal(
         browserContext.resolveRequirement({

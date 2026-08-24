@@ -112,7 +112,7 @@ export const browserActionExecutionSchema = z
     kind: z.literal('browser'),
     operation: z.enum(['open', 'click', 'switch-tab']),
     status: z.enum(['success', 'failed', 'cancelled']),
-    verification: z.enum(['verified', 'unverified']).optional(),
+    verification: z.enum(['not-required', 'verified', 'unverified', 'failed']).optional(),
     resultingUrl: z.string().url().max(2_048).optional(),
     resultingTitle: z.string().max(1_000).optional(),
     targetName: z.string().max(500).optional(),
