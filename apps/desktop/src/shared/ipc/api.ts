@@ -15,6 +15,7 @@ import type {
   LlmReadiness,
   ProviderProfile,
 } from '../llm/providers'
+import type { MemoryManagementApi } from '../memory'
 import type { PluginManagementApi } from '../plugins'
 import type { ProjectAwarenessApi } from '../project-awareness'
 import type { AvatarRuntimeHealth, RuntimeEventInput } from '../runtime'
@@ -167,7 +168,7 @@ export interface ShioRuntimeApi {
     }>
     cancelSynthesis: (turnId: string) => Promise<{ ok: boolean }>
   }
-  memory: { clear: () => Promise<unknown> }
+  memory: MemoryManagementApi & { clear: () => Promise<unknown> }
   plugins: PluginManagementApi
   desktopControl: DesktopControlApi
   projectAwareness: ProjectAwarenessApi

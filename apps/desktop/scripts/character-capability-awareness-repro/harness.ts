@@ -63,6 +63,7 @@ const llmCapabilities: LlmCapabilities = {
   supportsStreaming: true,
   supportsTemperature: true,
   supportsSystemPrompt: true,
+  supportsToolCalling: false,
   supportsVision: true,
   recommendedMaxTokens: 4_096,
 }
@@ -169,7 +170,7 @@ async function main(): Promise<void> {
       streaming: true,
     })
     const disabled = await catalog.snapshot()
-    assert.equal(disabled.capabilities.length, 8)
+    assert.equal(disabled.capabilities.length, 9)
     assert.equal(
       disabled.capabilities.find((capability) => capability.id === 'project-awareness')
         ?.availability,

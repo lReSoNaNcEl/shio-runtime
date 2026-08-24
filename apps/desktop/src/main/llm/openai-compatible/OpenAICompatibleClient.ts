@@ -5,6 +5,8 @@ import type {
   ChatMessage,
   LLMProvider,
   LlmCapabilities,
+  LlmCompletion,
+  LlmCompletionOptions,
   LlmRequestOptions,
   ModelCatalogProvider,
   ProviderDefinition,
@@ -72,6 +74,36 @@ export class OpenAICompatibleClient implements LLMProvider, ModelCatalogProvider
       },
       options,
     )
+  }
+
+  async complete(
+    messages: readonly ChatMessage[],
+    options: LlmCompletionOptions = {},
+  ): Promise<LlmCompletion> {
+    if (!this.apiKey) {
+      throw new Error(
+        `${this.definition.profile.displayName}: API ключ не задан. Откройте Настройки и введите ключ.`,
+      )
+    }
+    const completion = await runChatCompletionDetailed(
+      {
+        provider: this.definition.profile.id,
+        displayName: this.definition.profile.displayName,
+        http: this.http,
+        chatPath: this.definition.chat.path,
+        apiKey: this.apiKey,
+        model: this.model,
+        capabilities: this.capabilities(),
+        messages,
+        extraHeaders: this.definition.chat.headers,
+      },
+      options,
+    )
+    return {
+      content: completion.content,
+      toolCalls: completion.toolCalls,
+      finishReason: completion.finishReason,
+    }
   }
 
   async chatDetailed(

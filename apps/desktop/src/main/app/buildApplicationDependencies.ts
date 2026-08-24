@@ -31,7 +31,7 @@ import {
   resolveLlmReadiness,
 } from '../llm'
 import { mainLog } from '../logging/safeLogger'
-import { createMemoryStore } from '../memory'
+import { createMemoryStore, createSemanticMemoryRuntime, MemoryToolBroker } from '../memory'
 import { Orchestrator } from '../orchestrator'
 import { PluginCapabilityRegistry, PluginRegistryStore, PluginRuntime } from '../plugins'
 import {
@@ -74,9 +74,14 @@ export function buildApplicationDependencies(): ApplicationDependencies {
   let actionRuntime: ActionRuntime | null = null
   let prepareForQuitTask: Promise<void> | null = null
   const conversationMemory = createMemoryStore()
+  const semanticMemory = createSemanticMemoryRuntime(
+    join(app.getPath('userData'), 'memory', 'semantic-memory.sqlite'),
+  )
+  const memoryToolBroker = new MemoryToolBroker(semanticMemory)
   let unsubscribePluginCapabilities: (() => void) | null = null
   let unsubscribeProjectCapabilities: (() => void) | null = null
   let unsubscribeDesktopCapabilities: (() => void) | null = null
+  let unsubscribeMemoryCapabilities: (() => void) | null = null
   let lastAvatarState: unknown = null
   let lastAvatarMouth: unknown = null
   let lastAvatarRuntimeHealth: AvatarRuntimeHealth | null = null
@@ -256,9 +261,11 @@ export function buildApplicationDependencies(): ApplicationDependencies {
         supportsStreaming: false,
         supportsTemperature: false,
         supportsSystemPrompt: true,
+        supportsToolCalling: false,
         supportsVision: false,
         recommendedMaxTokens: 1_024,
       },
+    memoryStatus: () => semanticMemory.status(),
     plugins: () => getPluginRuntime().list(),
     desktopControl: () => getDesktopControl().getCapabilityProjection(),
     avatarRuntimeHealth: () => lastAvatarRuntimeHealth,
@@ -306,6 +313,7 @@ export function buildApplicationDependencies(): ApplicationDependencies {
         }
       },
       () => pluginCapabilities.getBrowserContextProvider(),
+      memoryToolBroker,
     )
   }
 
@@ -325,6 +333,8 @@ export function buildApplicationDependencies(): ApplicationDependencies {
       unsubscribeProjectCapabilities = null
       unsubscribeDesktopCapabilities?.()
       unsubscribeDesktopCapabilities = null
+      unsubscribeMemoryCapabilities?.()
+      unsubscribeMemoryCapabilities = null
       capabilityCatalog.dispose()
 
       const cleanupResults = await Promise.allSettled([
@@ -343,6 +353,7 @@ export function buildApplicationDependencies(): ApplicationDependencies {
         projectKnowledgeStore?.close()
         projectKnowledgeStore = null
       }
+      semanticMemory.close()
     })()
     return prepareForQuitTask
   }
@@ -354,6 +365,7 @@ export function buildApplicationDependencies(): ApplicationDependencies {
 
   const createWindow = async (): Promise<void> => {
     await loadConfig(getLlmCredentialStore())
+    unsubscribeMemoryCapabilities ??= semanticMemory.onChanged(() => capabilityCatalog.invalidate())
     Menu.setApplicationMenu(null)
 
     lastAvatarRuntimeHealth = null
@@ -397,6 +409,7 @@ export function buildApplicationDependencies(): ApplicationDependencies {
       getDesktopControl,
       getSpeechClientManager,
       screenContextService,
+      semanticMemory,
       capabilityCatalog,
       win,
       ipcAuthorization,

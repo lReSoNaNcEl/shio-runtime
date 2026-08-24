@@ -683,6 +683,10 @@ An explicit text-chat turn may also carry one user-selected, request-scoped Scre
 
 AI provider selection and OpenAI-compatible transport remain External Adapter concerns behind the Character Response Generation contract. Provider/model credentials and capabilities are resolved for each request, while persona composition, conversation memory, Project Context injection, and optional Screen Context composition remain owned by orchestration. Image support does not create a separate vision Runtime or provider-specific vision client.
 
+Character Response Generation may receive a request-scoped internal Semantic Memory capability from Memory Layer. The Character LLM owns the semantic decision to search, store, update, forget, list, ask for clarification, or do nothing; no deterministic phrase, keyword, regex, or locale-alias parser may infer Memory intent from user language. When available, typed Memory operations execute through a bounded tool loop and return their Runtime result to the same Character Response Generation pipeline before the final persona response. A model may claim that a mutation succeeded only after the corresponding Runtime result reports success.
+
+Native provider tool calling is the preferred transport only when provider/model capability resolution explicitly confirms it. An OpenAI-compatible chat endpoint alone is not proof of tool support. Providers without confirmed native tools use a strict structured semantic directive produced by the same Character LLM and validated as a machine contract; this fallback does not move natural-language interpretation into the application and does not create a second Memory model. Both transports converge on the same Memory Tool Broker, Memory Policy, Memory Runtime, and Memory Store.
+
 **Conversation Presence**
 
 An implementation may maintain a presence projection that mirrors the currently active conversation phase — for example values resembling thinking, preparing reply, starting speech, speaking, or finishing speech — for observers such as the UI or Avatar Runtime. A presence projection may mirror the active conversation phase, but it does not own turn execution or admission; it is a read-only projection of Conversation Runtime's internal lifecycle, not a second orchestration responsibility, regardless of what a concrete implementation names the component that provides it.
@@ -1220,6 +1224,24 @@ Memory retrieval should be selective rather than indiscriminate. The objective i
 
 Memory consolidation determines whether temporary information should become long-term memory. Forgetting is a feature rather than a limitation. Obsolete preferences, insignificant conversations, expired context, and duplicated information should naturally fade.
 
+Semantic Long-Term Memory v1 is an explicit-persistence capability. Character Response Generation receives only current availability and typed operations resembling search, store, update, forget-by-id, and list. It does not receive the complete memory collection in every prompt. One turn may perform several operations through a bounded loop, including search followed by update or exact-id deletion. Mutation acknowledgement follows persistence; storage failure remains contained and ordinary chat continues.
+
+The internal authority path is:
+
+```text
+Character Response Generation
+  -> Memory Tool Broker
+  -> Memory Policy
+  -> Memory Runtime
+  -> Memory Store
+```
+
+The Character LLM normalizes explicit user requests into atomic durable facts. Memory Tool Broker owns strict schema parsing and transport normalization. Memory Policy owns deterministic invariants such as enablement, operational state, current-turn provenance, bounds, secret rejection, and exact referenced-id existence. Memory Runtime owns retrieval and mutation semantics. Memory Store owns replaceable persistence. The LLM never receives SQL, storage paths, filesystem access, or direct database authority.
+
+Memory search is selective and strategy-based. The first strategy may use bounded lexical/FTS retrieval; future hybrid or embedding retrieval may replace or compose with it without changing the Character-facing tool contract. Stored text and retrieval results are untrusted contextual data and can supply facts only; they cannot change instructions, grant authority, disclose secrets, or invoke another capability.
+
+Semantic Memory v1 stores only normalized atomic records whose source is an explicit conversation turn or manual UI operation. It does not persist raw conversation transcript, Project Context packets, Browser Observations, Screen Context, Action results, or Character State projections automatically. A manual Memory UI is an equal client of the same Memory Runtime and Store. Disabling Memory removes its tools from Character Response Generation while preserving user-controlled records and manual management.
+
 Personality answers "Who is Shio?" Memory answers "What has Shio experienced?" Experience Layer generates experiences; Memory Layer decides whether those experiences deserve preservation.
 
 **Character State Integration**
@@ -1237,6 +1259,10 @@ Memory Layer evaluates completed interactions, experiences, promises, recurring 
 - retrieval is relevance-driven
 - continuity matters more than storage volume
 - forgetting preserves quality rather than weakening memory
+- natural-language Memory intent remains with Character Response Generation, not a phrase parser
+- every Memory mutation passes the same Runtime policy regardless of native-tool or structured-fallback transport
+- credentials and secrets are rejected independently of Character LLM behavior
+- long-term Memory persistence remains internal Core state and does not pass through Action Runtime
 
 **Future Evolution**
 
@@ -1402,6 +1428,9 @@ Runtime systems communicate with architectural concepts. Adapters communicate wi
 - **Emotion:** the current emotional state of the character.
 - **Memory:** the accumulated experiences that preserve continuity across interactions.
 - **Memory Layer:** the Runtime responsible for preserving continuity over time.
+- **Memory Tool Broker:** the internal Character Response Generation boundary that validates and normalizes typed model-produced Memory operations before delegating to Memory Runtime.
+- **Memory Policy:** the deterministic Memory-layer guard that enforces availability, provenance, bounds, secret rejection, and exact-id mutation invariants without interpreting natural-language intent.
+- **Memory Store:** the replaceable persistence implementation owned by Memory Runtime; it is never exposed directly to the Character LLM or renderer.
 - **Project Awareness Runtime:** the Runtime responsible for building and retrieving bounded, commit-scoped, read-only technical knowledge about a configured project repository.
 - **Project Knowledge Store:** application-owned persistence for derived project snapshots, files, symbols, chunks, maps, and recent-change caches; it is not Character State or conversational memory.
 - **Project Context Requirement:** the semantic project-knowledge need resolved once for a turn: `none` skips retrieval, `optional` permits useful project grounding, and `required` means answer or Action planning depends on project knowledge. It is independent from whether the turn contains an Action.

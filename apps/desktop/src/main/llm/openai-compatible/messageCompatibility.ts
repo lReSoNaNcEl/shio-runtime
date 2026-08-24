@@ -1,4 +1,4 @@
-import type { ChatMessage, LlmCapabilities, LlmContentPart } from '../types'
+import type { ChatMessage, LlmCapabilities, LlmContentPart, LlmToolCall } from '../types'
 
 interface OpenAITextContentPart {
   type: 'text'
@@ -17,6 +17,21 @@ type OpenAIContentPart = OpenAITextContentPart | OpenAIImageContentPart
 export interface OpenAICompatibleMessage {
   role: ChatMessage['role']
   content: string | OpenAIContentPart[]
+  tool_calls?: readonly {
+    id: string
+    type: 'function'
+    function: { name: string; arguments: string }
+  }[]
+  tool_call_id?: string
+  name?: string
+}
+
+function toOpenAIToolCall(toolCall: LlmToolCall) {
+  return {
+    id: toolCall.id,
+    type: 'function' as const,
+    function: { name: toolCall.name, arguments: toolCall.argumentsJson },
+  }
 }
 
 function convertContentPart(part: LlmContentPart): OpenAIContentPart {
@@ -36,6 +51,9 @@ function toOpenAIMessage(message: ChatMessage): OpenAICompatibleMessage {
       typeof message.content === 'string'
         ? message.content
         : message.content.map(convertContentPart),
+    ...(message.toolCalls ? { tool_calls: message.toolCalls.map(toOpenAIToolCall) } : {}),
+    ...(message.toolCallId ? { tool_call_id: message.toolCallId } : {}),
+    ...(message.name ? { name: message.name } : {}),
   }
 }
 

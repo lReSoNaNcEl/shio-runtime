@@ -7,6 +7,7 @@ import { SHIO_CAPABILITY_SNAPSHOT_SCHEMA_VERSION } from '../../shared/capabiliti
 import type { AppSettings } from '../../shared/config'
 import type { DesktopControlCapabilityProjection } from '../../shared/desktop-control'
 import type { LlmCapabilities, LlmReadiness } from '../../shared/llm'
+import type { MemoryRuntimeStatus } from '../../shared/memory'
 import type { PluginStatus } from '../../shared/plugins'
 import { DESKTOP_CONTROL_PLUGIN_ID, PROJECT_AWARENESS_PLUGIN_ID } from '../../shared/plugins'
 import type { AvatarRuntimeHealth } from '../../shared/runtime'
@@ -17,6 +18,7 @@ export interface CapabilityCatalogSources {
   settings(): AppSettings
   llmReadiness(): LlmReadiness
   llmCapabilities(): LlmCapabilities
+  memoryStatus?(): MemoryRuntimeStatus
   plugins(): Promise<readonly PluginStatus[]>
   desktopControl(): Promise<DesktopControlCapabilityProjection>
   avatarRuntimeHealth(): AvatarRuntimeHealth | null
@@ -162,6 +164,12 @@ export class CapabilityCatalog {
     const settings = this.sources.settings()
     const readiness = this.sources.llmReadiness()
     const llmCapabilities = this.sources.llmCapabilities()
+    const memoryStatus = this.sources.memoryStatus?.() ?? {
+      enabled: false,
+      operational: false,
+      recordCount: 0,
+      lastErrorCode: 'MEMORY_UNAVAILABLE' as const,
+    }
     const plugins = await this.sources.plugins()
     const desktop = await this.sources.desktopControl()
     const avatarHealth = this.sources.avatarRuntimeHealth()
@@ -231,6 +239,24 @@ export class CapabilityCatalog {
           llmState === 'available' && !llmCapabilities.supportsVision
             ? 'capabilities.reason.visionUnsupported'
             : llmReason(readiness),
+      },
+      {
+        id: 'long-term-memory',
+        category: 'knowledge',
+        source: { kind: 'core' },
+        titleKey: 'capabilities.memory.title',
+        descriptionKey: 'capabilities.memory.description',
+        availability: !memoryStatus.operational
+          ? 'unavailable'
+          : memoryStatus.enabled
+            ? 'available'
+            : 'disabled',
+        navigationTarget: { kind: 'view', id: 'memory' },
+        reasonKey: !memoryStatus.operational
+          ? 'capabilities.reason.memoryUnavailable'
+          : !memoryStatus.enabled
+            ? 'capabilities.reason.memoryDisabled'
+            : undefined,
       },
       {
         id: PROJECT_AWARENESS_PLUGIN_ID,

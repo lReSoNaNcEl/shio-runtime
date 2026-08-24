@@ -55,6 +55,18 @@ Architecture and ownership:
 - Character LLM must never infer current Plugin availability from static prompt
   text. Current Plugin and capability state comes only from Runtime Capability
   Context resolved for the current turn.
+- Semantic long-term memory is owned by the main-process Memory Runtime. Character
+  LLM decides semantically when typed Memory tools are relevant; do not add
+  phrase-, keyword-, regex-, or locale-dictionary Memory intent parsers.
+- Memory Tool Broker validates model-produced typed operations and delegates them
+  to Memory Runtime and Memory Policy. The Character LLM never receives SQL,
+  database paths, filesystem authority, or direct storage access.
+- Memory tools are internal Core capabilities and do not pass through Action
+  Runtime. Long-term records are not Character State, Project Awareness,
+  Browser Context, Screen Context, or raw conversation transcript.
+- Semantic Memory v1 persists only when the user semantically and explicitly asks
+  to remember, update, or forget. Implicit durable-fact capture and Smart Memory
+  remain future work.
 - Plugin manifests may not inject arbitrary system prompt instructions into
   Character Response Generation.
 - Knowing a capability never authorizes enabling, configuration, invocation, or

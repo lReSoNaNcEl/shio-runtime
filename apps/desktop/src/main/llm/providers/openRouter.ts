@@ -38,6 +38,7 @@ export const openRouterProvider: ProviderDefinition = {
           supportsReasoning:
             model.supported_parameters?.includes('reasoning') ||
             model.supported_parameters?.includes('include_reasoning'),
+          supportsToolCalling: model.supported_parameters?.includes('tools'),
         },
       }))
     } catch (error) {

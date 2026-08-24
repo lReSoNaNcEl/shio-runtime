@@ -96,7 +96,8 @@ export function enrichModelCatalog(
     const key = modelCapabilityKey(providerId, model.id)
     if (
       model.capabilities?.supportsVision !== undefined ||
-      model.capabilities?.supportsReasoning !== undefined
+      model.capabilities?.supportsReasoning !== undefined ||
+      model.capabilities?.supportsToolCalling !== undefined
     ) {
       catalogCapabilityHints.set(key, model.capabilities)
     } else {
@@ -108,6 +109,7 @@ export function enrichModelCatalog(
       capabilities: {
         supportsVision: capabilities.supportsVision,
         supportsReasoning: capabilities.supportsReasoning,
+        supportsToolCalling: capabilities.supportsToolCalling,
       },
     }
   })

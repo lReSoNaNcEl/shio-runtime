@@ -25,6 +25,8 @@ export const cerebrasProvider: ProviderDefinition = {
         capabilities: {
           supportsVision: model.capabilities?.vision,
           supportsReasoning: model.capabilities?.reasoning,
+          supportsToolCalling:
+            model.capabilities?.tool_calling ?? model.capabilities?.function_calling,
         },
       }))
     } catch (error) {

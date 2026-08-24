@@ -70,6 +70,7 @@ export function resolveBaseCapabilities(
     supportsStreaming: true,
     supportsTemperature: !NO_TEMPERATURE_PATTERNS.some((pattern) => pattern.test(model)),
     supportsSystemPrompt: true,
+    supportsToolCalling: false,
     supportsVision: isVisionModel(model),
     recommendedMaxTokens: reasoning ? REASONING_BUDGET : NON_REASONING_BUDGET[providerId],
   }
@@ -82,6 +83,7 @@ export function applyCatalogCapabilityHints(
     | {
         supportsVision?: boolean
         supportsReasoning?: boolean
+        supportsToolCalling?: boolean
       }
     | undefined,
 ): LlmCapabilities {
@@ -90,6 +92,7 @@ export function applyCatalogCapabilityHints(
   return {
     ...capabilities,
     supportsReasoning,
+    supportsToolCalling: hints.supportsToolCalling ?? capabilities.supportsToolCalling,
     supportsVision: hints.supportsVision ?? capabilities.supportsVision,
     recommendedMaxTokens: supportsReasoning ? REASONING_BUDGET : NON_REASONING_BUDGET[providerId],
   }

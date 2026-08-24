@@ -31,6 +31,7 @@ import { type AppSection, AppShell, SectionHeading } from './shell/AppShell'
 import { AvatarPreviewView } from './views/AvatarPreviewView'
 import { CapabilitiesView } from './views/CapabilitiesView'
 import { DiagnosticsView } from './views/DiagnosticsView'
+import { MemoryView } from './views/MemoryView'
 import { RuntimeHealthView } from './views/RuntimeHealthView'
 
 export function App() {
@@ -158,6 +159,10 @@ export function App() {
       title: t('app.nav.capabilities'),
       subtitle: t('app.section.capabilities.subtitle'),
     },
+    memory: {
+      title: t('app.section.memory.title'),
+      subtitle: t('app.section.memory.subtitle'),
+    },
     avatar: {
       title: t('app.section.avatar.title'),
       subtitle: t('app.section.avatar.subtitle'),
@@ -224,7 +229,7 @@ export function App() {
       setSection('plugins')
       return
     }
-    const views: AppSection[] = ['chat', 'capabilities', 'plugins', 'health']
+    const views: AppSection[] = ['chat', 'capabilities', 'memory', 'plugins', 'health']
     if (views.includes(target.id as AppSection)) setSection(target.id as AppSection)
   }
 
@@ -362,6 +367,7 @@ export function App() {
             onNavigate={navigateToCapabilityTarget}
           />
         )}
+        {section === 'memory' && <MemoryView />}
         {section === 'health' && (
           <RuntimeHealthView
             state={state}

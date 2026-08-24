@@ -32,6 +32,13 @@ export const githubModelsProvider: ProviderDefinition = {
           supportsVision: model.supported_input_modalities?.includes('image'),
           supportsReasoning:
             model.capabilities?.includes('reasoning') || model.tags?.includes('reasoning'),
+          supportsToolCalling:
+            model.capabilities?.some((capability) =>
+              ['tools', 'tool-calling', 'function-calling'].includes(capability.toLowerCase()),
+            ) ||
+            model.tags?.some((tag) =>
+              ['tools', 'tool-calling', 'function-calling'].includes(tag.toLowerCase()),
+            ),
         },
       }))
     } catch (error) {

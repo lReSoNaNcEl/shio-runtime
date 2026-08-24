@@ -1,0 +1,96 @@
+.memory-view {
+  display: grid;
+  gap: 18px;
+}
+
+.memory-loading,
+.memory-empty {
+  min-height: 240px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  text-align: center;
+}
+
+.memory-toolbar,
+.memory-filters,
+.memory-card-heading,
+.memory-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.memory-toolbar {
+  flex-wrap: wrap;
+}
+
+.memory-toolbar > :first-child {
+  margin-inline-end: auto;
+}
+
+.memory-filters > :first-child {
+  flex: 1 1 320px;
+}
+
+.memory-filters > :last-child {
+  flex: 0 1 220px;
+}
+
+.memory-count,
+.memory-card-source {
+  color: var(--text-muted);
+}
+
+.memory-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 14px;
+}
+
+.memory-card {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 14px;
+  background: var(--surface);
+}
+
+.memory-card-heading {
+  justify-content: space-between;
+}
+
+.memory-card-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.memory-editor {
+  display: grid;
+  gap: 16px;
+}
+
+@media (max-width: 720px) {
+  .memory-toolbar,
+  .memory-filters {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .memory-toolbar > :first-child {
+    margin-inline-end: 0;
+  }
+
+  .memory-filters > :first-child,
+  .memory-filters > :last-child {
+    flex-basis: auto;
+  }
+
+  .memory-grid {
+    grid-template-columns: 1fr;
+  }
+}

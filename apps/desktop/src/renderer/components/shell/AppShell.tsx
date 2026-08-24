@@ -10,6 +10,7 @@ import {
   TooltipTrigger,
 } from '@react-spectrum/s2'
 import Apps from '@react-spectrum/s2/icons/Apps'
+import Archive from '@react-spectrum/s2/icons/Archive'
 import Bug from '@react-spectrum/s2/icons/Bug'
 import Chat from '@react-spectrum/s2/icons/Chat'
 import Discover from '@react-spectrum/s2/icons/Discover'
@@ -27,6 +28,7 @@ import { RuntimeStatusIndicator } from './RuntimeStatusIndicator'
 export type AppSection =
   | 'chat'
   | 'capabilities'
+  | 'memory'
   | 'avatar'
   | 'plugins'
   | 'health'
@@ -96,6 +98,7 @@ export function AppShell({
   const primary: NavigationItem[] = [
     { id: 'chat', label: t('app.nav.chat'), icon: <Chat /> },
     { id: 'capabilities', label: t('app.nav.capabilities'), icon: <Discover /> },
+    { id: 'memory', label: t('app.nav.memory'), icon: <Archive /> },
     ...(developerModeEnabled
       ? [
           {

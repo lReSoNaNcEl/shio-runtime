@@ -630,7 +630,11 @@ function testEnrichedModelCatalog(): void {
   const [metadataModel] = enrichModelCatalog('github', [
     {
       id: metadataModelId,
-      capabilities: { supportsVision: true, supportsReasoning: true },
+      capabilities: {
+        supportsVision: true,
+        supportsReasoning: true,
+        supportsToolCalling: true,
+      },
     },
   ])
   check(
