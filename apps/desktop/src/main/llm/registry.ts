@@ -44,6 +44,11 @@ export function getProviderProfile(id: LlmProviderId): ProviderDefinition['profi
   return getProviderDefinition(id).profile
 }
 
+export function normalizeProviderModelId(providerId: LlmProviderId, modelId: string): string {
+  const normalized = modelId.trim()
+  return getProviderDefinition(providerId).normalizeModelId?.(normalized) ?? normalized
+}
+
 export function isLlmProviderId(value: string): value is LlmProviderId {
   return LLM_PROVIDER_IDS.some((providerId) => providerId === value)
 }
@@ -74,12 +79,13 @@ export function resolveModelCapabilities(
   modelId: string,
 ): LlmCapabilities {
   const definition = getProviderDefinition(providerId)
-  const base = resolveBaseCapabilities(providerId, modelId)
-  const resolved = definition.resolveCapabilities?.(modelId, base) ?? base
+  const normalizedModelId = normalizeProviderModelId(providerId, modelId)
+  const base = resolveBaseCapabilities(providerId, normalizedModelId)
+  const resolved = definition.resolveCapabilities?.(normalizedModelId, base) ?? base
   return applyCatalogCapabilityHints(
     providerId,
     resolved,
-    catalogCapabilityHints.get(modelCapabilityKey(providerId, modelId)),
+    catalogCapabilityHints.get(modelCapabilityKey(providerId, normalizedModelId)),
   )
 }
 
@@ -92,8 +98,16 @@ export function enrichModelCatalog(
   models: readonly ModelCatalogEntry[],
 ): ModelInfo[] {
   loadedModelCatalogs.add(providerId)
-  return models.map((model) => {
-    const key = modelCapabilityKey(providerId, model.id)
+  const canonicalModels = new Map<string, ModelCatalogEntry>()
+  for (const model of models) {
+    const sourceId = model.id.trim()
+    const id = normalizeProviderModelId(providerId, sourceId)
+    const normalizedModel = id === sourceId ? model : { ...model, id }
+    if (!canonicalModels.has(id) || sourceId === id) canonicalModels.set(id, normalizedModel)
+  }
+  return [...canonicalModels.values()].map((model) => {
+    const id = model.id
+    const key = modelCapabilityKey(providerId, id)
     if (
       model.capabilities?.supportsVision !== undefined ||
       model.capabilities?.supportsReasoning !== undefined ||
@@ -103,7 +117,7 @@ export function enrichModelCatalog(
     } else {
       catalogCapabilityHints.delete(key)
     }
-    const capabilities = resolveModelCapabilities(providerId, model.id)
+    const capabilities = resolveModelCapabilities(providerId, id)
     return {
       ...model,
       capabilities: {

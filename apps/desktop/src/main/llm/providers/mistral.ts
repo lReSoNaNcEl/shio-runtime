@@ -4,6 +4,15 @@ import { ModelFetchError } from '../errors'
 import { MistralModelsResponseSchema } from '../openai-compatible/schemas'
 import type { ProviderDefinition } from '../types'
 
+const MISTRAL_MODEL_ID_ALIASES: Readonly<Record<string, string>> = {
+  'mistral-medium-3.5': 'mistral-medium-3-5',
+}
+
+function normalizeMistralModelId(modelId: string): string {
+  const normalized = modelId.trim()
+  return MISTRAL_MODEL_ID_ALIASES[normalized.toLowerCase()] ?? normalized
+}
+
 export const mistralProvider: ProviderDefinition = {
   profile: {
     id: 'mistral',
@@ -15,6 +24,7 @@ export const mistralProvider: ProviderDefinition = {
     baseUrl: 'https://api.mistral.ai/v1',
     path: '/chat/completions',
   },
+  normalizeModelId: normalizeMistralModelId,
   fetchModels: async (http, apiKey) => {
     const key = apiKey.trim()
     if (!key) {

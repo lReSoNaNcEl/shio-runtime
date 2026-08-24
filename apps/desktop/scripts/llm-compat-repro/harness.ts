@@ -14,6 +14,7 @@
 import axios, { type AxiosInstance } from 'axios'
 
 import type { ChatMessage, LlmProviderId } from '../../src/main/llm'
+import { normalizeLlmConfig } from '../../src/main/llm/config'
 import {
   LlmResponseError,
   ModelFetchError,
@@ -363,28 +364,52 @@ async function testMistralModelsApi(): Promise<void> {
 
   // Successful models list.
   {
-    const models = await withMockedMistralGet(
+    const rawModels = await withMockedMistralGet(
       () => ({
         object: 'list',
         data: [
           {
-            id: 'mistral-small-latest',
-            name: 'Mistral Small',
-            capabilities: { vision: true },
+            id: 'mistral-medium-3.5',
+            name: 'Mistral Medium 3.5',
+            capabilities: { vision: true, tool_calling: true },
+          },
+          {
+            id: 'mistral-medium-3-5',
+            name: 'Mistral Medium 3.5 Chat',
+            capabilities: { vision: true, tool_calling: true },
           },
           { id: 'mistral-large-latest' },
         ],
       }),
       (p) => p.fetchModels('test-key'),
     )
+    const models = enrichModelCatalog('mistral', rawModels)
     check(
-      'models API success returns parsed ids',
-      models.length === 2 && models[0].id === 'mistral-small-latest',
+      'models API canonicalizes and deduplicates Mistral Medium 3.5 chat id',
+      models.length === 2 && models[0].id === 'mistral-medium-3-5',
     )
-    check('models API preserves optional displayName', models[0].displayName === 'Mistral Small')
+    check(
+      'models API preserves optional displayName',
+      models[0].displayName === 'Mistral Medium 3.5 Chat',
+    )
     check(
       'models API preserves authoritative Vision metadata',
       models[0].capabilities?.supportsVision === true,
+    )
+  }
+
+  {
+    const provider = new OpenAICompatibleClient({
+      definition: getProviderDefinition('mistral'),
+      apiKey: 'test-key',
+      model: 'mistral-medium-3.5',
+    })
+    const { http, lastBody } = fakeHttp(() => okResponse('[calm]ok'))
+    ;(provider as unknown as { http: AxiosInstance }).http = http
+    await provider.chat(baseMessages('hi'))
+    check(
+      'chat request canonicalizes persisted dotted Mistral Medium 3.5 id',
+      lastBody().model === 'mistral-medium-3-5',
     )
   }
 
@@ -616,6 +641,26 @@ function testEnrichedModelCatalog(): void {
     !models[2].capabilities.supportsVision && !models[2].capabilities.supportsReasoning,
   )
   check('catalog preserves display name', models[0].displayName === 'Mistral Small 3.1')
+
+  const [canonicalMedium] = enrichModelCatalog('mistral', [
+    {
+      id: 'mistral-medium-3.5',
+      capabilities: { supportsToolCalling: true, supportsVision: true },
+    },
+  ])
+  check(
+    'catalog and persisted alias share canonical Mistral capabilities',
+    canonicalMedium.id === 'mistral-medium-3-5' &&
+      resolveCapabilities('mistral', 'mistral-medium-3.5').supportsToolCalling,
+  )
+  const normalizedConfig = normalizeLlmConfig({
+    activeProvider: 'mistral',
+    providers: { mistral: { model: 'mistral-medium-3.5' } },
+  })
+  check(
+    'persisted Mistral Medium 3.5 alias is canonicalized on config load',
+    normalizedConfig.providers.mistral.model === 'mistral-medium-3-5',
+  )
 
   check(
     'Mistral Medium 2508 fallback is Vision-capable',

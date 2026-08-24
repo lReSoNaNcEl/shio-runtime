@@ -94,6 +94,7 @@ export interface ProviderDefinition {
     headers?: Record<string, string>
     useEnvironmentProxy?: boolean
   }
+  normalizeModelId?(modelId: string): string
   fetchModels(http: AxiosInstance, apiKey: string): Promise<ModelCatalogEntry[]>
   resolveCapabilities?(modelId: string, base: LlmCapabilities): LlmCapabilities
 }

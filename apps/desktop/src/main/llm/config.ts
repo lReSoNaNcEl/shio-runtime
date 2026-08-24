@@ -6,6 +6,7 @@ import {
   type LlmProviderPersistedSettings,
   type LlmPublicConfig,
 } from '../../shared/llm'
+import { normalizeProviderModelId } from './registry'
 
 export function emptyProviderSettings(): LlmProviderPersistedSettings {
   return { model: '' }
@@ -33,11 +34,16 @@ export function defaultLlmConfig(): LlmPersistedConfig {
   }
 }
 
-function toProviderSettings(value: unknown): LlmProviderPersistedSettings {
+function toProviderSettings(
+  providerId: LlmProviderId,
+  value: unknown,
+): LlmProviderPersistedSettings {
   const base = emptyProviderSettings()
   if (value && typeof value === 'object') {
     const record = value as Record<string, unknown>
-    if (typeof record.model === 'string' && record.model) base.model = record.model
+    if (typeof record.model === 'string' && record.model) {
+      base.model = normalizeProviderModelId(providerId, record.model)
+    }
   }
   return base
 }
@@ -54,7 +60,7 @@ export function normalizeLlmConfig(value: unknown): LlmPersistedConfig {
   if (providers && typeof providers === 'object') {
     const providerRecord = providers as Record<string, unknown>
     for (const id of LLM_PROVIDER_IDS) {
-      result.providers[id] = toProviderSettings(providerRecord[id])
+      result.providers[id] = toProviderSettings(id, providerRecord[id])
     }
   }
   const roles = record.roles

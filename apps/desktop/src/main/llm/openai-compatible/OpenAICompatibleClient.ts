@@ -38,7 +38,8 @@ export class OpenAICompatibleClient implements LLMProvider, ModelCatalogProvider
   constructor(config: OpenAICompatibleClientConfig) {
     this.definition = config.definition
     this.apiKey = config.apiKey.trim()
-    this.model = config.model.trim()
+    const model = config.model.trim()
+    this.model = config.definition.normalizeModelId?.(model) ?? model
     this.resolvedCapabilities = config.capabilities
     this.http = axios.create({
       baseURL: config.definition.chat.baseUrl,

@@ -45,7 +45,7 @@ const VISION_MODEL_PATTERNS: readonly RegExp[] = [
   /(?:^|[-_/:])llama-4[^/:]*(?:scout|maverick)(?:$|[-_/:])/i,
   /(?:^|[/])qwen\/qwen3\.6-[^/:]+(?:$|[:/])/i,
   /(?:^|[/])mistral-small-(?:2503|2506|latest)(?:$|[:/])/i,
-  /(?:^|[/])mistral-medium-(?:2505|2508|latest)(?:$|[:/])/i,
+  /(?:^|[/])mistral-medium-(?:2505|2508|3-5|latest)(?:$|[:/])/i,
   /(?:^|[/])mistral-large-(?:2512|latest)(?:$|[:/])/i,
   /(?:^|[/])ministral-(?:3b|8b|14b)-2512(?:$|[:/])/i,
   /(?:^|[/])magistral-(?:small|medium)-(?:2509|latest)(?:$|[:/])/i,
