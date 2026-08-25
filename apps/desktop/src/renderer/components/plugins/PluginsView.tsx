@@ -169,6 +169,13 @@ const EMPTY_DESKTOP_STATUS: DesktopControlStatus = {
 const EMPTY_BROWSER_GAME_STATUS: BrowserGameDiagnostics = {
   state: 'idle',
   strategy: 'balanced',
+  reflex: {
+    backendId: 'observe-only',
+    mode: 'observe-only',
+    ready: false,
+    supportedInputs: [],
+    semanticPerception: false,
+  },
   telemetry: {
     capturedFrames: 0,
     droppedFrames: 0,
@@ -498,6 +505,30 @@ function BrowserGameDetails({
             <dt>{t('plugins.browserGame.backendTitle')}</dt>
             <dd>{t('plugins.browserGame.backendRealtime')}</dd>
           </div>
+          <div>
+            <dt>{t('plugins.browserGame.reflexTitle')}</dt>
+            <dd>{t(`plugins.browserGame.reflexMode.${status.reflex.mode}`)}</dd>
+          </div>
+          <div>
+            <dt>{t('plugins.browserGame.supportedInputs')}</dt>
+            <dd>
+              {status.reflex.supportedInputs.length > 0
+                ? status.reflex.supportedInputs
+                    .map((input) => t(`plugins.browserGame.input.${input}`))
+                    .join(', ')
+                : '—'}
+            </dd>
+          </div>
+          <div>
+            <dt>{t('plugins.browserGame.semanticTitle')}</dt>
+            <dd>
+              {t(
+                status.reflex.semanticPerception
+                  ? 'plugins.browserGame.semantic.available'
+                  : 'plugins.browserGame.semantic.unavailable',
+              )}
+            </dd>
+          </div>
         </dl>
       </section>
       <section className="plugin-detail-section">
@@ -552,6 +583,10 @@ function BrowserGameDetails({
               <div>
                 <dt>{t('plugins.browserGame.gameEvents')}</dt>
                 <dd>{status.telemetry.gameEvents}</dd>
+              </div>
+              <div>
+                <dt>{t('plugins.browserGame.reflexBackendId')}</dt>
+                <dd>{status.reflex.backendId}</dd>
               </div>
             </dl>
           </DisclosurePanel>

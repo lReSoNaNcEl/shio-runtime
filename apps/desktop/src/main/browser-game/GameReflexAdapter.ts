@@ -1,19 +1,11 @@
 import type {
   GameFrame,
   GameInputIntent,
+  GameReflexBackendStatus,
   GameSessionScope,
   GameStrategy,
 } from '../../shared/browser-game'
 import type { GameReflexState } from './GameReflexPolicy'
-
-export type GameReflexBackendMode = 'observe-only' | 'local-visual' | 'low-frequency-semantic'
-
-export interface GameReflexBackendStatus {
-  backendId: string
-  mode: GameReflexBackendMode
-  ready: boolean
-  detail?: string
-}
 
 export interface GameReflexAdapterInitialization {
   goal: string
@@ -39,7 +31,8 @@ export class ObservingGameReflexAdapter implements GameReflexAdapter {
       backendId: 'observe-only',
       mode: 'observe-only',
       ready: false,
-      detail: 'A calibrated game reflex backend is not configured.',
+      supportedInputs: [],
+      semanticPerception: false,
     }
   }
 

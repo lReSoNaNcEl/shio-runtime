@@ -5,6 +5,7 @@ import { join } from 'node:path'
 
 import { CapabilityCatalog } from '../../src/main/capabilities'
 import { parseLegacyCharacterActionDirective as parseCharacterActionResponse } from '../../src/main/character/compatibility/LegacyDirectiveContainment'
+import { characterCapabilityPrompt } from '../../src/main/character/prompting/CapabilityPromptProjection'
 import type { ChatMessage, LLMProvider } from '../../src/main/llm'
 import type { MemoryStore } from '../../src/main/memory'
 import { Orchestrator } from '../../src/main/orchestrator'
@@ -135,6 +136,13 @@ async function main(): Promise<void> {
     plugins: () => runtime.list(),
     desktopControl: async () => desktopControl,
     avatarRuntimeHealth: () => avatarHealth,
+    browserGame: () => ({
+      backendId: 'local-visual-targets-v1',
+      mode: 'local-visual',
+      ready: true,
+      supportedInputs: ['pointer'],
+      semanticPerception: false,
+    }),
   })
   const unsubscribeRuntime = runtime.onChanged(() => catalog.invalidate())
   try {
@@ -194,6 +202,19 @@ async function main(): Promise<void> {
       disabled.capabilities.find((capability) => capability.id === 'browser-game-control')?.source,
       { kind: 'plugin', pluginId: BROWSER_GAME_CONTROL_PLUGIN_ID },
     )
+    assert.deepEqual(
+      disabled.capabilities.find((capability) => capability.id === 'browser-game-control')?.details,
+      {
+        kind: 'browser-game-control',
+        reflexMode: 'local-visual',
+        supportedInputs: ['pointer'],
+        semanticPerception: false,
+      },
+    )
+    const compactCapabilityPrompt = characterCapabilityPrompt(disabled, 'ru', 'compact')
+    assert.match(compactCapabilityPrompt, /Локальное отслеживание визуальных целей/u)
+    assert.match(compactCapabilityPrompt, /Указатель/u)
+    assert.match(compactCapabilityPrompt, /Недоступно в этом бэкенде/u)
     const webDisabled = await waitForCapability(catalog, 'web-search', 'disabled', () =>
       runtime.disable(WEB_SEARCH_PLUGIN_ID),
     )

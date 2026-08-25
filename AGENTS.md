@@ -191,6 +191,9 @@ Architecture and ownership:
 - The bundled local visual reflex may select only bounded pointer intents from transient
   cropped frames. It may not inspect DOM, call Character/VLM per frame, persist images,
   bypass Game Session rate limits, or claim support for semantic/keyboard-heavy games.
+  Its typed Reflex status is the source for Capability Catalog detail, Character game-tool
+  input schemas, and bounded renderer diagnostics; reject any requested input class that
+  the active backend does not report as supported before preparing an Action scope.
 - Browser use inside a Character turn is a bounded provider-neutral tool loop, not
   a new Runtime. Character reasoning decides semantically whether web interaction
   materially helps the current goal; do not add a phrase or keyword browser router.

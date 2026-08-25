@@ -333,6 +333,7 @@ export function buildApplicationDependencies(): ApplicationDependencies {
       const snapshot = aliveRuntime?.snapshot()
       return snapshot ? { settings: snapshot.settings, health: snapshot.health } : null
     },
+    browserGame: () => getBrowserGame().getCapabilityProjection(),
   })
 
   const getSpeechClientManager = (): SpeechClientManager => {

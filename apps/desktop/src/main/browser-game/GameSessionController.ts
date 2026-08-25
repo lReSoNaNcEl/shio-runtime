@@ -18,6 +18,7 @@ import {
   type GameSessionTelemetry,
   type GameStartPreparation,
   type GameStrategy,
+  gameReflexBackendStatusSchema,
   gameSemanticEventSchema,
 } from '../../shared/browser-game'
 import type {
@@ -501,6 +502,7 @@ export class GameSessionController {
       state: status.state,
       ...(status.waitingReason ? { waitingReason: status.waitingReason } : {}),
       strategy: status.strategy,
+      reflex: gameReflexBackendStatusSchema.parse(this.options.reflex.status()),
       ...(this.active
         ? {
             session: {

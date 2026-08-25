@@ -1,12 +1,14 @@
-import type {
-  BrowserGameControlAction,
-  BrowserGameControlProvider,
-  BrowserGameDiagnostics,
-  BrowserGameStatus,
-  CharacterGameStartRequest,
-  GameSemanticEvent,
-  GameStartPreparation,
-  GameStrategy,
+import {
+  type BrowserGameControlAction,
+  type BrowserGameControlProvider,
+  type BrowserGameDiagnostics,
+  BrowserGameError,
+  type BrowserGameStatus,
+  type CharacterGameStartRequest,
+  type GameReflexBackendStatus,
+  type GameSemanticEvent,
+  type GameStartPreparation,
+  type GameStrategy,
 } from '../../shared/browser-game'
 import type { BrowserRealtimeControlProvider } from '../../shared/desktop-control'
 import type { PluginHealth, PluginManifest } from '../../shared/plugins'
@@ -48,22 +50,24 @@ export class BrowserGamePlugin implements BundledPlugin {
   private readonly listeners = new Set<() => void>()
   private readonly unsubscribeController: () => void
   private readonly reflexReady: () => boolean
+  private readonly reflexStatus: () => GameReflexBackendStatus
 
   constructor(private readonly options: BrowserGamePluginOptions) {
     const reflexAdapter = options.reflexAdapter ?? new LocalVisualTargetReflexAdapter()
+    const reflex = options.reflex ?? new AdapterBackedGameReflexPolicy(reflexAdapter)
     this.controller = new GameSessionController({
       realtime: options.realtime,
-      reflex: options.reflex ?? new AdapterBackedGameReflexPolicy(reflexAdapter),
+      reflex,
       eventExtractor: options.eventExtractor,
       onEvent: options.onGameEvent,
     })
-    this.reflexReady = () =>
-      options.reflexReady ?? (!options.reflex && reflexAdapter.status().ready)
+    this.reflexStatus = () => reflex.status()
+    this.reflexReady = () => options.reflexReady ?? this.reflexStatus().ready
     this.unsubscribeController = this.controller.onChanged(() => this.publishChanged())
     this.provider = {
       discoverSurfaces: (signal) => this.withActive(() => this.controller.discoverSurfaces(signal)),
       prepareStart: (request: CharacterGameStartRequest, signal: AbortSignal) =>
-        this.withActive(() => this.controller.prepareStart(request, signal)),
+        this.withActive(() => this.prepareStart(request, signal)),
       start: (preparationId: string, authorizationActionId: string, signal: AbortSignal) =>
         this.withActive(() => this.controller.start(preparationId, authorizationActionId, signal)),
       pause: () => this.withActive(() => this.controller.pause()),
@@ -158,6 +162,10 @@ export class BrowserGamePlugin implements BundledPlugin {
     return this.controller.diagnostics()
   }
 
+  getCapabilityProjection(): GameReflexBackendStatus {
+    return this.reflexStatus()
+  }
+
   getPreparedStart(preparationId: string): GameStartPreparation {
     this.assertActive()
     return this.controller.prepared(preparationId)
@@ -189,6 +197,21 @@ export class BrowserGamePlugin implements BundledPlugin {
   private withActive<T>(operation: () => T): T {
     this.assertActive()
     return operation()
+  }
+
+  private async prepareStart(
+    request: CharacterGameStartRequest,
+    signal: AbortSignal,
+  ): Promise<GameStartPreparation> {
+    const supportedInputs = new Set(this.reflexStatus().supportedInputs)
+    const unsupportedInputs = request.allowedInputs.filter((input) => !supportedInputs.has(input))
+    if (unsupportedInputs.length > 0) {
+      throw new BrowserGameError('GAME_REFLEX_UNSUPPORTED_INPUT', {
+        unsupportedInputs,
+        supportedInputs: [...supportedInputs],
+      })
+    }
+    return this.controller.prepareStart(request, signal)
   }
 
   private assertActive(): void {

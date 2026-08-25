@@ -1,6 +1,7 @@
 import type {
   GameFrame,
   GameInputIntent,
+  GameReflexBackendStatus,
   GameSessionScope,
   GameStrategy,
 } from '../../shared/browser-game'
@@ -21,6 +22,7 @@ export interface GameReflexState {
 
 /** A frame-local policy. Character Response Generation is never called from this contract. */
 export interface GameReflexPolicy {
+  status(): GameReflexBackendStatus
   initialize(context: GameCalibrationContext, signal: AbortSignal): Promise<void>
   decide(frame: GameFrame, state: GameReflexState, signal: AbortSignal): Promise<GameInputIntent>
   updateStrategy?(strategy: GameStrategy): void
@@ -29,6 +31,10 @@ export interface GameReflexPolicy {
 
 export class AdapterBackedGameReflexPolicy implements GameReflexPolicy {
   constructor(private readonly adapter: GameReflexAdapter) {}
+
+  status(): GameReflexBackendStatus {
+    return this.adapter.status()
+  }
 
   initialize(context: GameCalibrationContext, signal: AbortSignal): Promise<void> {
     return this.adapter.initialize(context, signal)

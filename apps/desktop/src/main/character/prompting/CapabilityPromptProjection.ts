@@ -37,18 +37,39 @@ function capabilityAuthorityLabel(
   return labels[locale][authority]
 }
 
+function capabilityDetailsLabel(
+  capability: ShioCapabilitySnapshot['capabilities'][number],
+  locale: UiLocale,
+): string | undefined {
+  if (capability.details?.kind !== 'browser-game-control') return undefined
+  const mode = translate(
+    locale,
+    `plugins.browserGame.reflexMode.${capability.details.reflexMode}` as TranslationKey,
+  )
+  const inputs = capability.details.supportedInputs
+    .map((input) => translate(locale, `plugins.browserGame.input.${input}` as TranslationKey))
+    .join(', ')
+  const semantic = translate(
+    locale,
+    capability.details.semanticPerception
+      ? 'plugins.browserGame.semantic.available'
+      : 'plugins.browserGame.semantic.unavailable',
+  )
+  return `${mode}; ${inputs || '—'}; ${semantic}`
+}
+
 export function characterCapabilityPrompt(
   context: ShioCapabilitySnapshot,
   locale: UiLocale,
   detail: 'compact' | 'full' = 'full',
 ): string {
   if (detail === 'compact') {
-    const capabilities = context.capabilities.map(
-      (capability) =>
-        `${translate(locale, capability.titleKey)}: ${translate(locale, CAPABILITY_AVAILABILITY_KEY[capability.availability])}${
-          capability.authority ? ` (${capabilityAuthorityLabel(capability.authority, locale)})` : ''
-        }`,
-    )
+    const capabilities = context.capabilities.map((capability) => {
+      const details = capabilityDetailsLabel(capability, locale)
+      return `${translate(locale, capability.titleKey)}: ${translate(locale, CAPABILITY_AVAILABILITY_KEY[capability.availability])}${
+        capability.authority ? ` (${capabilityAuthorityLabel(capability.authority, locale)})` : ''
+      }${details ? ` [${details}]` : ''}`
+    })
     return [
       '## Current Shio Capabilities',
       'Compact request-scoped availability facts. Tool definitions remain authoritative for invocation. Availability never grants permission.',
@@ -71,6 +92,9 @@ export function characterCapabilityPrompt(
           ]
         : []),
       ...(capability.reasonKey ? [`  note: ${translate(locale, capability.reasonKey)}`] : []),
+      ...(capabilityDetailsLabel(capability, locale)
+        ? [`  ${locale === 'ru' ? 'режим' : 'mode'}: ${capabilityDetailsLabel(capability, locale)}`]
+        : []),
     ].join('\n')
   })
   return [

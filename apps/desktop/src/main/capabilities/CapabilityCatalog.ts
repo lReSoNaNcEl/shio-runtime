@@ -1,4 +1,5 @@
 import type { AliveSnapshot } from '../../shared/alive'
+import type { GameReflexBackendStatus } from '../../shared/browser-game'
 import type {
   CapabilityAvailability,
   ShioCapabilityDescriptor,
@@ -29,6 +30,7 @@ export interface CapabilityCatalogSources {
   desktopControl(): Promise<DesktopControlCapabilityProjection>
   avatarRuntimeHealth(): AvatarRuntimeHealth | null
   aliveStatus?(): Pick<AliveSnapshot, 'settings' | 'health'> | null
+  browserGame?(): GameReflexBackendStatus
 }
 
 export type CapabilityCatalogListener = (snapshot: ShioCapabilitySnapshot) => void
@@ -36,6 +38,10 @@ export type CapabilityCatalogListener = (snapshot: ShioCapabilitySnapshot) => vo
 function freezeDescriptor(descriptor: ShioCapabilityDescriptor): ShioCapabilityDescriptor {
   Object.freeze(descriptor.source)
   if (descriptor.navigationTarget) Object.freeze(descriptor.navigationTarget)
+  if (descriptor.details) {
+    Object.freeze(descriptor.details.supportedInputs)
+    Object.freeze(descriptor.details)
+  }
   return Object.freeze(descriptor)
 }
 
@@ -188,6 +194,7 @@ export class CapabilityCatalog {
     const desktop = await this.sources.desktopControl()
     const avatarHealth = this.sources.avatarRuntimeHealth()
     const alive = this.sources.aliveStatus?.() ?? null
+    const browserGameReflex = this.sources.browserGame?.()
     const project = plugins.find((status) => status.manifest.id === PROJECT_AWARENESS_PLUGIN_ID)
     const webSearch = plugins.find((status) => status.manifest.id === WEB_SEARCH_PLUGIN_ID)
     const browserGame = plugins.find(
@@ -402,6 +409,16 @@ export class CapabilityCatalog {
         authority: desktop.authorityMode,
         navigationTarget: { kind: 'plugin', id: BROWSER_GAME_CONTROL_PLUGIN_ID },
         reasonKey: pluginReason(browserGame),
+        ...(browserGameReflex
+          ? {
+              details: {
+                kind: 'browser-game-control' as const,
+                reflexMode: browserGameReflex.mode,
+                supportedInputs: [...browserGameReflex.supportedInputs],
+                semanticPerception: browserGameReflex.semanticPerception,
+              },
+            }
+          : {}),
       },
     ]
 

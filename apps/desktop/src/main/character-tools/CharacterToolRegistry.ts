@@ -62,6 +62,18 @@ function availableCapability(
   )
 }
 
+function browserGameSupportedInputs(
+  context: ShioCapabilitySnapshot | null,
+): readonly ('pointer' | 'keyboard')[] {
+  const capability = context?.capabilities.find(
+    (candidate) =>
+      candidate.id === 'browser-game-control' && candidate.availability === 'available',
+  )
+  return capability?.details?.kind === 'browser-game-control'
+    ? capability.details.supportedInputs
+    : []
+}
+
 function definition(
   id: CharacterToolId,
   nativeName: string,
@@ -380,15 +392,16 @@ export class CharacterToolRegistry {
       }
     }
 
-    if (
-      options.browserGameAvailable &&
-      availableCapability(options.capabilityContext, 'browser-game-control')
-    ) {
+    const gameSupportedInputs = browserGameSupportedInputs(options.capabilityContext)
+    if (options.browserGameAvailable && gameSupportedInputs.length > 0) {
+      const reflexDescription = gameSupportedInputs.includes('keyboard')
+        ? 'The current reflex backend supports pointer and keyboard input.'
+        : 'The current reflex backend supports pointer input only.'
       tools.push(
         definition(
           'game.start',
           'game_start',
-          'Start one bounded delegated session for the current browser game. This selects only a high-level goal and approved surface; realtime frames and individual inputs remain internal. If multiple surfaces are reported, ask the user or retry with one returned surfaceId.',
+          `Start one bounded delegated session for the current browser game. ${reflexDescription} This selects only a high-level goal and approved surface; realtime frames and individual inputs remain internal. If multiple surfaces are reported, ask the user or retry with one returned surfaceId.`,
           {
             type: 'object',
             required: ['goal'],
@@ -398,8 +411,8 @@ export class CharacterToolRegistry {
               allowedInputs: {
                 type: 'array',
                 minItems: 1,
-                maxItems: 2,
-                items: { type: 'string', enum: ['pointer', 'keyboard'] },
+                maxItems: gameSupportedInputs.length,
+                items: { type: 'string', enum: gameSupportedInputs },
               },
               maxDurationMs: { type: 'integer', minimum: 30_000, maximum: 1_800_000 },
               maxInputEvents: { type: 'integer', minimum: 1, maximum: 20_000 },

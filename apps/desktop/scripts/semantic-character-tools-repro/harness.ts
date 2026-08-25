@@ -21,6 +21,7 @@ import type {
   BrowserGameControlAction,
   BrowserGameControlProvider,
   BrowserGameStatus,
+  CharacterGameStartRequest,
   GameStartPreparation,
 } from '../../src/shared/browser-game'
 import type { ShioCapabilitySnapshot } from '../../src/shared/capabilities'
@@ -110,6 +111,12 @@ const gameCapabilities: ShioCapabilitySnapshot = {
       descriptionKey: 'plugins.browserGame.description',
       availability: 'available',
       authority: 'confirm',
+      details: {
+        kind: 'browser-game-control',
+        reflexMode: 'local-visual',
+        supportedInputs: ['pointer'],
+        semanticPerception: false,
+      },
     },
   ],
 }
@@ -592,6 +599,17 @@ function browserGameToolsStayHighLevel(): void {
   for (const forbidden of ['game.click', 'game.keyDown', 'game.keyUp', 'game.frame']) {
     assert.equal(serialized.includes(forbidden), false)
   }
+  const startTool = enabled.definitions().find((tool) => tool.id === 'game.start')
+  assert(startTool)
+  assert.match(startTool.description, /supports pointer input only/u)
+  assert.deepEqual(
+    (
+      (startTool.inputSchema.properties as Record<string, unknown>).allowedInputs as {
+        items: { enum: readonly string[] }
+      }
+    ).items.enum,
+    ['pointer'],
+  )
 }
 
 async function browserGameStartUsesPreparedActionScope(): Promise<void> {
@@ -640,11 +658,11 @@ async function browserGameStartUsesPreparedActionScope(): Promise<void> {
     createdAt: 1,
     expiresAt: 10_001,
   }
-  const preparedGoals: string[] = []
+  const preparedRequests: CharacterGameStartRequest[] = []
   const provider: BrowserGameControlProvider = {
     discoverSurfaces: async () => [preparation.surface],
     prepareStart: async (request) => {
-      preparedGoals.push(request.goal)
+      preparedRequests.push(request)
       return preparation
     },
     start: async () => runningStatus,
@@ -675,7 +693,17 @@ async function browserGameStartUsesPreparedActionScope(): Promise<void> {
   })
   dispatcher.registerPlannedTools(['game.start', 'game.status'])
   const result = await dispatcher.execute('game.start', { goal: 'Win the fixture round' })
-  assert.deepEqual(preparedGoals, ['Win the fixture round'])
+  assert.deepEqual(preparedRequests, [
+    {
+      goal: 'Win the fixture round',
+      allowedInputs: ['pointer'],
+      maxDurationMs: 300_000,
+      maxInputEvents: 5_000,
+      maxInputEventsPerSecond: 15,
+      navigation: 'same-origin-only',
+      strategy: 'balanced',
+    },
+  ])
   assert.deepEqual(actions, [
     {
       operation: 'start',

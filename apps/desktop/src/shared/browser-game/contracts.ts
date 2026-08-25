@@ -56,6 +56,7 @@ export type BrowserGameErrorCode =
   | 'GAME_PREPARATION_EXPIRED'
   | 'GAME_SCOPE_CHANGED'
   | 'GAME_SCOPE_EXHAUSTED'
+  | 'GAME_REFLEX_UNSUPPORTED_INPUT'
   | 'GAME_INPUT_REJECTED'
   | 'GAME_LOOP_FAILED'
 
@@ -75,6 +76,32 @@ export class BrowserGameError extends Error {
 export const gameAllowedInputSchema = z.enum(['pointer', 'keyboard'])
 export type GameAllowedInput = z.infer<typeof gameAllowedInputSchema>
 
+export const gameReflexBackendModeSchema = z.enum([
+  'observe-only',
+  'local-visual',
+  'low-frequency-semantic',
+])
+export type GameReflexBackendMode = z.infer<typeof gameReflexBackendModeSchema>
+
+export const gameReflexBackendStatusSchema = z
+  .object({
+    backendId: z
+      .string()
+      .trim()
+      .min(1)
+      .max(100)
+      .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/u),
+    mode: gameReflexBackendModeSchema,
+    ready: z.boolean(),
+    supportedInputs: z
+      .array(gameAllowedInputSchema)
+      .max(2)
+      .refine((values) => new Set(values).size === values.length, 'Inputs must be unique'),
+    semanticPerception: z.boolean(),
+  })
+  .strict()
+export type GameReflexBackendStatus = z.infer<typeof gameReflexBackendStatusSchema>
+
 export const gameStrategySchema = z.enum(['careful', 'balanced', 'fast'])
 export type GameStrategy = z.infer<typeof gameStrategySchema>
 
@@ -93,7 +120,7 @@ export const characterGameStartRequestSchema = z
       .min(1)
       .max(2)
       .refine((values) => new Set(values).size === values.length, 'Inputs must be unique')
-      .default(['pointer', 'keyboard']),
+      .default(['pointer']),
     maxDurationMs: z
       .number()
       .int()
@@ -198,6 +225,7 @@ export const browserGameDiagnosticsSchema = z
     state: gameSessionStateSchema,
     waitingReason: z.enum(['captcha', 'anti-bot', 'authentication']).optional(),
     strategy: gameStrategySchema,
+    reflex: gameReflexBackendStatusSchema,
     session: z
       .object({
         title: z.string().trim().min(1).max(500),

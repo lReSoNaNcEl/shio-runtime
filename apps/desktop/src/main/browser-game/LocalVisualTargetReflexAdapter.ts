@@ -3,14 +3,11 @@ import sharp from 'sharp'
 import type {
   GameFrame,
   GameInputIntent,
+  GameReflexBackendStatus,
   GameSessionScope,
   GameStrategy,
 } from '../../shared/browser-game'
-import type {
-  GameReflexAdapter,
-  GameReflexAdapterInitialization,
-  GameReflexBackendStatus,
-} from './GameReflexAdapter'
+import type { GameReflexAdapter, GameReflexAdapterInitialization } from './GameReflexAdapter'
 import type { GameReflexState } from './GameReflexPolicy'
 
 const ANALYSIS_MAX_EDGE = 192
@@ -85,7 +82,8 @@ export class LocalVisualTargetReflexAdapter implements GameReflexAdapter {
       backendId: 'local-visual-targets-v1',
       mode: 'local-visual',
       ready: true,
-      detail: 'Local bounded pointer-target tracking; no per-frame cloud inference.',
+      supportedInputs: ['pointer'],
+      semanticPerception: false,
     }
   }
 

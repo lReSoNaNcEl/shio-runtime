@@ -9,10 +9,7 @@ import {
   GameEventExtractionLane,
   type GameEventExtractor,
 } from '../../src/main/browser-game/GameEventExtractor'
-import type {
-  GameReflexAdapter,
-  GameReflexBackendStatus,
-} from '../../src/main/browser-game/GameReflexAdapter'
+import type { GameReflexAdapter } from '../../src/main/browser-game/GameReflexAdapter'
 import type {
   GameCalibrationContext,
   GameReflexState,
@@ -24,6 +21,7 @@ import {
   BrowserGameError,
   type GameFrame,
   type GameInputIntent,
+  type GameReflexBackendStatus,
   type GameSemanticEvent,
   type GameSessionScope,
 } from '../../src/shared/browser-game'
@@ -45,7 +43,13 @@ class TestReflexAdapter implements GameReflexAdapter {
   onDecide: (() => void) | null = null
 
   status(): GameReflexBackendStatus {
-    return { backendId: 'fixture-reflex', mode: 'local-visual', ready: true }
+    return {
+      backendId: 'fixture-reflex',
+      mode: 'local-visual',
+      ready: true,
+      supportedInputs: ['pointer', 'keyboard'],
+      semanticPerception: true,
+    }
   }
 
   async initialize(context: GameCalibrationContext): Promise<void> {
@@ -300,6 +304,7 @@ async function main(): Promise<void> {
   assert.equal(controller.status().telemetry.inputEventsPerSecond, 2)
   assert(controller.status().telemetry.gameEvents >= 2)
   assert.equal(controller.diagnostics().session?.origin, 'https://game.example')
+  assert.deepEqual(controller.diagnostics().reflex, reflexAdapter.status())
   assert.equal(JSON.stringify(controller.diagnostics()).includes('authorizationActionId'), false)
   assert.equal(reflexAdapter.frames[0]?.width, 200)
   assert.equal(reflexAdapter.frames[0]?.height, 150)
@@ -578,6 +583,8 @@ async function main(): Promise<void> {
   )
   assert.equal(localReflex.status().mode, 'local-visual')
   assert.equal(localReflex.status().ready, true)
+  assert.deepEqual(localReflex.status().supportedInputs, ['pointer'])
+  assert.equal(localReflex.status().semanticPerception, false)
   const localState = { strategy: 'balanced' as const, elapsedMs: 0, inputEvents: 0 }
   const firstTarget = await localReflex.decide(
     await visualTargetFrame({ frameId: 1, capturedAt: 70_000, targetX: 160 }),
@@ -634,6 +641,23 @@ async function main(): Promise<void> {
   await bundledPlugin.initialize({ pluginId: 'browser-game-control' })
   await bundledPlugin.start()
   assert.equal(bundledPlugin.getHealth().state, 'healthy')
+  assert.deepEqual(bundledPlugin.getCapabilityProjection(), {
+    backendId: 'local-visual-targets-v1',
+    mode: 'local-visual',
+    ready: true,
+    supportedInputs: ['pointer'],
+    semanticPerception: false,
+  })
+  await assert.rejects(
+    bundledPlugin
+      .getBrowserGameControlProvider()
+      .prepareStart(
+        { goal: 'Play a keyboard-only fixture', allowedInputs: ['keyboard'] },
+        new AbortController().signal,
+      ),
+    (error: unknown) =>
+      error instanceof BrowserGameError && error.code === 'GAME_REFLEX_UNSUPPORTED_INPUT',
+  )
   await bundledPlugin.dispose()
   console.log('browser game controller repro passed')
 }
