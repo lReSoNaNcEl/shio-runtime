@@ -376,6 +376,7 @@ export function App() {
         {section === 'tasks' && (
           <TasksView
             snapshot={state.alive}
+            onOpenChat={() => setSection('chat')}
             onOpenAutonomySettings={() => {
               setSettingsInitialSection('autonomy')
               setSection('settings')

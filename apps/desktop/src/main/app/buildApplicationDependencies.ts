@@ -350,7 +350,12 @@ export function buildApplicationDependencies(): ApplicationDependencies {
       (input) => {
         const runtime = aliveRuntime
         if (!runtime) throw new Error('ALIVE_RUNTIME_UNAVAILABLE')
-        return runtime.reportGoalProgress(input)
+        return runtime.createGoalFromCharacter(input)
+      },
+      (input) => {
+        const runtime = aliveRuntime
+        if (!runtime) throw new Error('ALIVE_RUNTIME_UNAVAILABLE')
+        return runtime.reviseGoalFromCharacter(input)
       },
     )
   }

@@ -2,11 +2,16 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
 import { Readable } from 'node:stream'
 
 import { AliveRuntime } from '../../src/main/alive/AliveRuntime'
 import { AliveStore } from '../../src/main/alive/AliveStore'
 import { AutonomyEnvelope } from '../../src/main/alive/AutonomyEnvelope'
+import {
+  goalAwarenessPrompt,
+  unfinishedGoalSnapshot,
+} from '../../src/main/character/prompting/GoalAwarenessPrompt'
 import { CharacterToolDispatcher } from '../../src/main/character-tools/CharacterToolDispatcher'
 import { CharacterToolLoop } from '../../src/main/character-tools/CharacterToolLoop'
 import { CharacterToolRegistry } from '../../src/main/character-tools/CharacterToolRegistry'
@@ -295,7 +300,7 @@ async function testPersistenceAndEnvelope(): Promise<void> {
 
     const reopened = new AliveStore(databasePath)
     assert.equal(reopened.goals()[0]?.id, goal.id)
-    assert.equal(reopened.version(), 1)
+    assert.equal(reopened.version(), 2)
     reopened.close()
 
     const envelope = new AutonomyEnvelope()
@@ -392,6 +397,11 @@ async function testPersistentGoalTool(): Promise<void> {
     const runtime = new AliveRuntime(store, () => {
       throw new Error('Fast Brain is not used by this repro')
     })
+    const awareness = goalAwarenessPrompt(runtime.snapshot().goals)
+    assert.match(awareness, /Найти фотки с котиками в браузере/u)
+    assert.match(awareness, /Paused goal/u)
+    assert.match(awareness, /Goal Awareness Context/u)
+    assert.doesNotMatch(awareness, /progressPercent/u)
     const memoryRuntime = createSemanticMemoryRuntime(join(directory, 'memory.sqlite'))
     memoryRuntime.setEnabled(true)
     const memoryBroker = new MemoryToolBroker(memoryRuntime)
@@ -399,12 +409,14 @@ async function testPersistentGoalTool(): Promise<void> {
     const registry = new CharacterToolRegistry({
       projectAvailable: false,
       goalsAvailable: true,
+      goalCreatesAvailable: true,
       goalUpdatesAvailable: true,
       capabilityContext: null,
       browserObservation: null,
       memory: memoryBroker,
       actionsAvailable: false,
     })
+    assert.ok(registry.get('goal.create'))
     assert.ok(registry.get('goal.list'))
     assert.ok(registry.get('goal.update'))
 
@@ -415,14 +427,27 @@ async function testPersistentGoalTool(): Promise<void> {
       signal: new AbortController().signal,
       semanticMemory: memoryBroker,
       persistentGoals: () => runtime.snapshot().goals,
-      reportGoalProgress: (input) => runtime.reportGoalProgress(input),
+      goalAwareness: unfinishedGoalSnapshot(runtime.snapshot().goals),
+      createPersistentGoal: (input) => runtime.createGoalFromCharacter(input),
+      revisePersistentGoal: (input) => runtime.reviseGoalFromCharacter(input),
     })
     const rejected = await dispatcher.execute('goal.update', {
-      id: active.id,
-      progressPercent: 100,
+      id: 'unknown-goal',
+      status: 'paused',
     })
-    assert.match(rejected.content, /GOAL_NOT_LISTED_IN_TURN/u)
-    const result = await dispatcher.execute('goal.list', { status: 'active' })
+    assert.match(rejected.content, /GOAL_NOT_IN_TURN_CONTEXT/u)
+    const userReported = await dispatcher.execute('goal.update', {
+      id: active.id,
+      status: 'waiting_user',
+      lastNote: 'Пользователь выберет подходящий запрос',
+      progressPercent: 25,
+    })
+    assert.equal(userReported.verifiedOutcome?.kind, 'goal.update')
+    const revised = runtime.snapshot().goals.find((goal) => goal.id === active.id)
+    assert.equal(revised?.progress, 0.25)
+    assert.equal(revised?.measurable, true)
+    assert.equal(revised?.status, 'waiting_user')
+    const result = await dispatcher.execute('goal.list', { status: 'waiting_user' })
     const payload = JSON.parse(result.content) as {
       ok: boolean
       data: { source: string; count: number; goals: Array<{ id: string; title: string }> }
@@ -438,12 +463,14 @@ async function testPersistentGoalTool(): Promise<void> {
     })
     assert.match(rejectedMemory.content, /GOAL_DATA_CANNOT_AUTHORIZE_MEMORY_MUTATION/u)
     assert.equal(memoryRuntime.status().recordCount, 0)
-    const userReported = await dispatcher.execute('goal.update', {
-      id: active.id,
-      progressPercent: 25,
+    const createdResult = await dispatcher.execute('goal.create', {
+      title: 'Вместе подготовить релиз',
+      description: 'Хотим выпустить спокойную и понятную версию',
+      nextStep: 'Обсудить критерии готовности',
+      owner: 'shared',
     })
-    assert.equal(userReported.verifiedOutcome?.kind, 'goal.update')
-    assert.equal(runtime.snapshot().goals.find((goal) => goal.id === active.id)?.progress, 0.25)
+    assert.equal(createdResult.verifiedOutcome?.kind, 'goal.create')
+    assert.ok(runtime.snapshot().goals.some((goal) => goal.title === 'Вместе подготовить релиз'))
     dispatcher.dispose()
 
     const actionRegistry = new CharacterToolRegistry({
@@ -473,7 +500,8 @@ async function testPersistentGoalTool(): Promise<void> {
       userGoal: 'Начни выполнять цель сейчас',
       signal: new AbortController().signal,
       persistentGoals: () => runtime.snapshot().goals,
-      reportGoalProgress: (input) => runtime.reportGoalProgress(input),
+      goalAwareness: unfinishedGoalSnapshot(runtime.snapshot().goals),
+      revisePersistentGoal: (input) => runtime.reviseGoalFromCharacter(input),
       executeDesktopWorkflow: async () => ({
         actionId: 'action-1-00000000-0000-4000-8000-000000000000',
         tool: 'desktop.workflow',
@@ -482,7 +510,6 @@ async function testPersistentGoalTool(): Promise<void> {
         execution: { runtimeCompleted: true, verification: 'verified' },
       }),
     })
-    await actionDispatcher.execute('goal.list', { status: 'active' })
     const action = await actionDispatcher.execute('browser.open', {
       url: 'https://www.bing.com/images/search?q=cats',
       goal: 'Найти фотки с котиками в браузере',
@@ -490,7 +517,8 @@ async function testPersistentGoalTool(): Promise<void> {
     assert.match(action.content, /"ok":true/u)
     const updated = await actionDispatcher.execute('goal.update', {
       id: active.id,
-      progressPercent: 100,
+      status: 'completed',
+      lastNote: 'Проверенный поиск завершён',
     })
     assert.equal(updated.verifiedOutcome?.kind, 'goal.update')
     assert.match(updated.content, /"status":"completed"/u)
@@ -511,7 +539,8 @@ async function testPersistentGoalTool(): Promise<void> {
       userGoal: 'Выполни цель',
       signal: new AbortController().signal,
       persistentGoals: () => runtime.snapshot().goals,
-      reportGoalProgress: (input) => runtime.reportGoalProgress(input),
+      goalAwareness: unfinishedGoalSnapshot(runtime.snapshot().goals),
+      revisePersistentGoal: (input) => runtime.reviseGoalFromCharacter(input),
       executeDesktopWorkflow: async () => ({
         actionId: 'action-2-00000000-0000-4000-8000-000000000000',
         tool: 'desktop.workflow',
@@ -520,14 +549,13 @@ async function testPersistentGoalTool(): Promise<void> {
         execution: { runtimeCompleted: true, verification: 'unverified' },
       }),
     })
-    await unverifiedDispatcher.execute('goal.list', { status: 'active' })
     await unverifiedDispatcher.execute('browser.open', {
       url: 'https://example.com',
       goal: unverifiedGoal.title,
     })
     const unverifiedUpdate = await unverifiedDispatcher.execute('goal.update', {
       id: unverifiedGoal.id,
-      progressPercent: 100,
+      status: 'completed',
     })
     assert.match(unverifiedUpdate.content, /GOAL_UPDATE_REQUIRES_VERIFIED_ACTION/u)
     assert.equal(
@@ -537,6 +565,34 @@ async function testPersistentGoalTool(): Promise<void> {
     unverifiedDispatcher.dispose()
     memoryRuntime.close()
     runtime.dispose()
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
+}
+
+function testGoalSchemaMigration(): void {
+  const directory = mkdtempSync(join(tmpdir(), 'shio-goal-migration-'))
+  const databasePath = join(directory, 'alive.sqlite')
+  try {
+    const legacy = new DatabaseSync(databasePath)
+    legacy.exec(`
+      CREATE TABLE alive_goals (
+        id TEXT PRIMARY KEY, title TEXT NOT NULL, description TEXT NOT NULL,
+        status TEXT NOT NULL, progress REAL NOT NULL, created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      INSERT INTO alive_goals VALUES ('legacy-goal', 'Старая цель', '', 'active', 0, 1, 1);
+      PRAGMA user_version = 1;
+    `)
+    legacy.close()
+    const migrated = new AliveStore(databasePath)
+    const goal = migrated.goals()[0]
+    assert.equal(migrated.version(), 2)
+    assert.equal(goal?.owner, 'shared')
+    assert.equal(goal?.nextStep, '')
+    assert.equal(goal?.lastNote, '')
+    assert.equal(goal?.measurable, false)
+    migrated.close()
   } finally {
     rmSync(directory, { recursive: true, force: true })
   }
@@ -566,9 +622,16 @@ async function testLatencyAggregation(): Promise<void> {
 
 function testTasksLayoutUsesValidTokens(): void {
   const stylesheet = readFileSync(join(__dirname, '../src/renderer/styles/tasks.css'), 'utf8')
+  const view = readFileSync(
+    join(__dirname, '../src/renderer/components/views/TasksView.tsx'),
+    'utf8',
+  )
   assert.doesNotMatch(stylesheet, /--s2-(?:space|corner-radius)-/u)
   assert.match(stylesheet, /\.tasks-form-surface/u)
   assert.match(stylesheet, /\.tasks-create-actions/u)
+  assert.match(stylesheet, /\.tasks-conversation-first/u)
+  assert.match(view, /<Disclosure/u)
+  assert.match(view, /goal\.measurable &&/u)
 }
 
 async function main(): Promise<void> {
@@ -578,6 +641,7 @@ async function main(): Promise<void> {
   await testToolRoundContainment()
   await testStreamingSpeechQueue()
   await testPersistenceAndEnvelope()
+  testGoalSchemaMigration()
   await testPersistentGoalTool()
   await testLatencyAggregation()
   testTasksLayoutUsesValidTokens()

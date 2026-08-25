@@ -5,7 +5,12 @@ import type {
   DesktopWorkflowActionResult,
   DesktopWorkflowRequest,
 } from '../shared/actions'
-import type { PersistentGoalProgressReporter, PersistentGoalProvider } from '../shared/alive'
+import type {
+  CreatePersistentGoal,
+  PersistentGoal,
+  PersistentGoalProvider,
+  RevisePersistentGoal,
+} from '../shared/alive'
 import type { ShioCapabilityProvider, ShioCapabilitySnapshot } from '../shared/capabilities'
 import {
   type CharacterEmbodimentIntent,
@@ -42,6 +47,10 @@ import {
   emotionContractPrompt,
   SYSTEM_PROMPT,
 } from './character/prompting/CharacterPrompt'
+import {
+  goalAwarenessPrompt,
+  unfinishedGoalSnapshot,
+} from './character/prompting/GoalAwarenessPrompt'
 import { memoryCapabilityPrompt } from './character/prompting/MemoryPromptPolicy'
 import { responsePolicyPrompt } from './character/prompting/ResponsePolicyPrompt'
 import {
@@ -218,7 +227,8 @@ export class Orchestrator {
     private browserAgent?: BrowserAgentCoordinator,
     private semanticMemory?: MemoryToolBroker,
     private persistentGoals?: PersistentGoalProvider,
-    private reportGoalProgress?: PersistentGoalProgressReporter,
+    private createPersistentGoal?: CreatePersistentGoal,
+    private revisePersistentGoal?: RevisePersistentGoal,
   ) {}
 
   async createReply(
@@ -259,12 +269,26 @@ export class Orchestrator {
     const semanticMemoryPrompt = semanticMemoryStatus
       ? memoryCapabilityPrompt(semanticMemoryStatus)
       : null
+    let goalAwareness: readonly PersistentGoal[] = []
+    let persistentGoalPrompt: string | null = null
+    try {
+      if (this.persistentGoals) {
+        goalAwareness = unfinishedGoalSnapshot(this.persistentGoals())
+        persistentGoalPrompt = goalAwarenessPrompt(goalAwareness)
+      }
+    } catch (error) {
+      mainLog.warn('[AliveRuntime] goal awareness unavailable; continuing without it', {
+        traceId,
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
     const messages = [
       { role: 'system' as const, content: SYSTEM_PROMPT },
       { role: 'system' as const, content: responsePolicyPrompt() },
       { role: 'system' as const, content: emotionContractPrompt() },
       { role: 'system' as const, content: embodimentContractPrompt() },
       ...(semanticMemoryPrompt ? [{ role: 'system' as const, content: semanticMemoryPrompt }] : []),
+      ...(persistentGoalPrompt ? [{ role: 'system' as const, content: persistentGoalPrompt }] : []),
       ...(capabilityContext
         ? [
             {
@@ -310,7 +334,8 @@ export class Orchestrator {
         new CharacterToolRegistry({
           projectAvailable,
           goalsAvailable: Boolean(this.persistentGoals),
-          goalUpdatesAvailable: Boolean(this.reportGoalProgress),
+          goalCreatesAvailable: Boolean(this.createPersistentGoal),
+          goalUpdatesAvailable: Boolean(this.revisePersistentGoal),
           capabilityContext,
           browserObservation: dispatcher?.selectedBrowserObservation() ?? null,
           memory: this.semanticMemory,
@@ -336,7 +361,9 @@ export class Orchestrator {
             browserContext: this.browserContext,
             browserAgent: this.browserAgent,
             persistentGoals: this.persistentGoals,
-            reportGoalProgress: this.reportGoalProgress,
+            goalAwareness,
+            createPersistentGoal: this.createPersistentGoal,
+            revisePersistentGoal: this.revisePersistentGoal,
           })
           return dispatcher
         },

@@ -1,7 +1,11 @@
 import {
+  Badge,
   Button,
   ButtonGroup,
   Content,
+  Disclosure,
+  DisclosurePanel,
+  DisclosureTitle,
   Heading,
   InlineAlert,
   NumberField,
@@ -21,6 +25,7 @@ import { useState } from 'react'
 
 import {
   type AliveSnapshot,
+  type GoalOwner,
   type GoalStatus,
   type ScheduledTaskKind,
   type ScheduledTaskStatus,
@@ -29,10 +34,17 @@ import { useTranslation } from '../../localization/useTranslation'
 
 type TasksTab = 'goals' | 'schedule' | 'history'
 
+const EDITABLE_GOAL_STATES: readonly GoalStatus[] = [
+  'active',
+  'waiting_user',
+  'waiting_external',
+  'paused',
+]
+
 function goalStatusTone(status: GoalStatus): 'positive' | 'notice' | 'negative' {
   if (status === 'active' || status === 'completed') return 'positive'
-  if (status === 'paused') return 'notice'
-  return 'negative'
+  if (status === 'cancelled') return 'negative'
+  return 'notice'
 }
 
 function taskStatusTone(status: ScheduledTaskStatus): 'positive' | 'notice' {
@@ -42,13 +54,18 @@ function taskStatusTone(status: ScheduledTaskStatus): 'positive' | 'notice' {
 export function TasksView({
   snapshot,
   onOpenAutonomySettings,
+  onOpenChat,
 }: {
   snapshot: AliveSnapshot | null
   onOpenAutonomySettings: () => void
+  onOpenChat: () => void
 }) {
   const { intlLocale, t } = useTranslation()
   const [activeTab, setActiveTab] = useState<TasksTab>('goals')
   const [goalTitle, setGoalTitle] = useState('')
+  const [goalDescription, setGoalDescription] = useState('')
+  const [goalNextStep, setGoalNextStep] = useState('')
+  const [goalOwner, setGoalOwner] = useState<GoalOwner>('shared')
   const [taskTitle, setTaskTitle] = useState('')
   const [taskKind, setTaskKind] = useState<ScheduledTaskKind>('reminder')
   const [minutes, setMinutes] = useState(15)
@@ -77,8 +94,8 @@ export function TasksView({
     )
   }
 
-  const activeGoals = snapshot.goals.filter(
-    (goal) => goal.status === 'active' || goal.status === 'paused',
+  const currentGoals = snapshot.goals.filter(
+    (goal) => goal.status !== 'completed' && goal.status !== 'cancelled',
   )
   const archivedGoals = snapshot.goals.filter(
     (goal) => goal.status === 'completed' || goal.status === 'cancelled',
@@ -139,86 +156,154 @@ export function TasksView({
                 <Heading level={2}>{t('tasks.goals.title')}</Heading>
                 <Text>{t('tasks.goals.description')}</Text>
               </div>
-              <Text>{t('tasks.goals.count', { count: activeGoals.length })}</Text>
-            </div>
-            <div className="tasks-form-surface">
-              <div className="tasks-create-row">
-                <TextField
-                  label={t('tasks.goals.new')}
-                  placeholder={t('tasks.goals.placeholder')}
-                  value={goalTitle}
-                  isDisabled={busy}
-                  onChange={setGoalTitle}
-                />
-                <Button
-                  variant="primary"
-                  isDisabled={busy || !goalTitle.trim()}
-                  onPress={() =>
-                    void run(async () => {
-                      await window.api.alive.createGoal({ title: goalTitle.trim() })
-                      setGoalTitle('')
-                    })
-                  }
-                >
-                  {t('tasks.add')}
-                </Button>
-              </div>
+              <Text>{t('tasks.goals.count', { count: currentGoals.length })}</Text>
             </div>
 
-            {activeGoals.length === 0 ? (
+            <article className="tasks-conversation-first">
+              <div className="tasks-heading-copy">
+                <Heading level={3}>{t('tasks.goals.chatFirstTitle')}</Heading>
+                <Text>{t('tasks.goals.chatFirst')}</Text>
+              </div>
+              <Button variant="accent" onPress={onOpenChat}>
+                {t('tasks.goals.openChat')}
+              </Button>
+            </article>
+
+            <Disclosure isQuiet UNSAFE_className="tasks-manual-disclosure">
+              <DisclosureTitle level={3}>{t('tasks.goals.manual')}</DisclosureTitle>
+              <DisclosurePanel>
+                <div className="tasks-form-surface">
+                  <div className="tasks-goal-create-grid">
+                    <TextField
+                      label={t('tasks.goals.new')}
+                      placeholder={t('tasks.goals.placeholder')}
+                      value={goalTitle}
+                      isDisabled={busy}
+                      onChange={setGoalTitle}
+                    />
+                    <TextField
+                      label={t('tasks.goals.why')}
+                      placeholder={t('tasks.goals.whyPlaceholder')}
+                      value={goalDescription}
+                      isDisabled={busy}
+                      onChange={setGoalDescription}
+                    />
+                    <TextField
+                      label={t('tasks.goals.nextStep')}
+                      placeholder={t('tasks.goals.nextStepPlaceholder')}
+                      value={goalNextStep}
+                      isDisabled={busy}
+                      onChange={setGoalNextStep}
+                    />
+                    <Picker
+                      label={t('tasks.goals.owner')}
+                      selectedKey={goalOwner}
+                      isDisabled={busy}
+                      onSelectionChange={(key) => setGoalOwner(String(key) as GoalOwner)}
+                    >
+                      <PickerItem id="shared">{t('tasks.goal.owner.shared')}</PickerItem>
+                      <PickerItem id="user">{t('tasks.goal.owner.user')}</PickerItem>
+                      <PickerItem id="shio">{t('tasks.goal.owner.shio')}</PickerItem>
+                    </Picker>
+                    <div className="tasks-create-actions">
+                      <Button
+                        variant="primary"
+                        isDisabled={busy || !goalTitle.trim()}
+                        onPress={() =>
+                          void run(async () => {
+                            await window.api.alive.createGoal({
+                              title: goalTitle.trim(),
+                              description: goalDescription.trim() || undefined,
+                              nextStep: goalNextStep.trim() || undefined,
+                              owner: goalOwner,
+                            })
+                            setGoalTitle('')
+                            setGoalDescription('')
+                            setGoalNextStep('')
+                            setGoalOwner('shared')
+                          })
+                        }
+                      >
+                        {t('tasks.add')}
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              </DisclosurePanel>
+            </Disclosure>
+
+            {currentGoals.length === 0 ? (
               <div className="tasks-empty-state">
                 <Heading level={3}>{t('tasks.goals.emptyTitle')}</Heading>
                 <Text>{t('tasks.goals.empty')}</Text>
               </div>
             ) : (
               <div className="tasks-list">
-                {activeGoals.map((goal) => (
+                {currentGoals.map((goal) => (
                   <article className="tasks-item tasks-goal-card" key={goal.id}>
                     <div className="tasks-item-main">
                       <div className="tasks-item-heading">
                         <Text UNSAFE_className="tasks-item-title">{goal.title}</Text>
-                        <StatusLight variant={goalStatusTone(goal.status)} size="S">
-                          {t(`tasks.goal.status.${goal.status}`)}
-                        </StatusLight>
+                        <div className="tasks-goal-badges">
+                          <Badge size="S" variant="gray">
+                            {t(`tasks.goal.owner.${goal.owner}`)}
+                          </Badge>
+                          <StatusLight variant={goalStatusTone(goal.status)} size="S">
+                            {t(`tasks.goal.status.${goal.status}`)}
+                          </StatusLight>
+                        </div>
                       </div>
-                      {goal.description && <Text>{goal.description}</Text>}
-                      <ProgressBar
-                        label={t('tasks.goals.progress')}
-                        value={Math.round(goal.progress * 100)}
-                        minValue={0}
-                        maxValue={100}
-                      />
-                      <Text UNSAFE_className="tasks-item-meta">
-                        {t('tasks.goals.progressManaged')}
-                      </Text>
+                      {goal.description && (
+                        <div className="tasks-goal-context">
+                          <Text UNSAFE_className="tasks-context-label">{t('tasks.goals.why')}</Text>
+                          <Text>{goal.description}</Text>
+                        </div>
+                      )}
+                      {goal.nextStep && (
+                        <div className="tasks-goal-context">
+                          <Text UNSAFE_className="tasks-context-label">
+                            {t('tasks.goals.nextStep')}
+                          </Text>
+                          <Text>{goal.nextStep}</Text>
+                        </div>
+                      )}
+                      {goal.lastNote && (
+                        <div className="tasks-goal-context">
+                          <Text UNSAFE_className="tasks-context-label">
+                            {t('tasks.goals.lastNote')}
+                          </Text>
+                          <Text>{goal.lastNote}</Text>
+                        </div>
+                      )}
+                      {goal.measurable && (
+                        <ProgressBar
+                          label={t('tasks.goals.progress')}
+                          value={Math.round(goal.progress * 100)}
+                          minValue={0}
+                          maxValue={100}
+                        />
+                      )}
                     </div>
-                    <ButtonGroup>
-                      {goal.status === 'active' && (
-                        <Button
-                          variant="secondary"
-                          isDisabled={busy}
-                          onPress={() =>
-                            void run(() =>
-                              window.api.alive.updateGoal({ id: goal.id, status: 'paused' }),
-                            )
-                          }
-                        >
-                          {t('tasks.pause')}
-                        </Button>
-                      )}
-                      {goal.status === 'paused' && (
-                        <Button
-                          variant="secondary"
-                          isDisabled={busy}
-                          onPress={() =>
-                            void run(() =>
-                              window.api.alive.updateGoal({ id: goal.id, status: 'active' }),
-                            )
-                          }
-                        >
-                          {t('tasks.resume')}
-                        </Button>
-                      )}
+                    <div className="tasks-goal-actions">
+                      <Picker
+                        label={t('tasks.goals.state')}
+                        selectedKey={goal.status}
+                        isDisabled={busy}
+                        onSelectionChange={(key) =>
+                          void run(() =>
+                            window.api.alive.updateGoal({
+                              id: goal.id,
+                              status: String(key) as GoalStatus,
+                            }),
+                          )
+                        }
+                      >
+                        {EDITABLE_GOAL_STATES.map((status) => (
+                          <PickerItem id={status} key={status}>
+                            {t(`tasks.goal.status.${status}`)}
+                          </PickerItem>
+                        ))}
+                      </Picker>
                       <Button
                         variant="primary"
                         isDisabled={busy}
@@ -230,7 +315,7 @@ export function TasksView({
                       >
                         {t('tasks.complete')}
                       </Button>
-                    </ButtonGroup>
+                    </div>
                   </article>
                 ))}
               </div>
@@ -393,9 +478,14 @@ export function TasksView({
                         <article className="tasks-item" key={goal.id}>
                           <div className="tasks-item-main">
                             <Text UNSAFE_className="tasks-item-title">{goal.title}</Text>
-                            <StatusLight variant={goalStatusTone(goal.status)} size="S">
-                              {t(`tasks.goal.status.${goal.status}`)}
-                            </StatusLight>
+                            <div className="tasks-goal-badges">
+                              <Badge size="S" variant="gray">
+                                {t(`tasks.goal.owner.${goal.owner}`)}
+                              </Badge>
+                              <StatusLight variant={goalStatusTone(goal.status)} size="S">
+                                {t(`tasks.goal.status.${goal.status}`)}
+                              </StatusLight>
+                            </div>
                           </div>
                         </article>
                       ))}

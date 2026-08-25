@@ -12,7 +12,7 @@ import type {
   FastBrainAttentionInput,
   PersistentGoal,
   RendererWorldContextInput,
-  ReportGoalProgressInput,
+  ReviseGoalInput,
   ScheduledTask,
   UpdateGoalInput,
 } from '../../shared/alive'
@@ -118,52 +118,23 @@ export class AliveRuntime {
   }
 
   createGoal(input: CreateGoalInput): AliveSnapshot {
-    const goal = this.store.createGoal(input)
-    this.store.audit('goal', 'created', 'success', goal.id)
+    this.persistGoal(input)
     return this.publish()
+  }
+
+  createGoalFromCharacter(input: CreateGoalInput): PersistentGoal {
+    const goal = this.persistGoal(input)
+    this.publish()
+    return goal
   }
 
   updateGoal(input: UpdateGoalInput): AliveSnapshot {
-    const previous = this.store.goals().find((goal) => goal.id === input.id)
-    const goal = this.store.updateGoal({
-      ...input,
-      ...(input.status === 'completed' ? { progress: 1 } : {}),
-    })
-    if (!goal) throw new Error('GOAL_NOT_FOUND')
-    this.store.audit('goal', 'updated', 'success', goal.id)
-    if (goal.status === 'completed' && previous?.status !== 'completed') {
-      this.store.observeHabit('goal-follow-through', 'Доводить выбранные цели до завершения')
-    }
+    this.reviseGoal(input)
     return this.publish()
   }
 
-  reportGoalProgress(input: ReportGoalProgressInput): PersistentGoal {
-    if (
-      !Number.isInteger(input.progressPercent) ||
-      input.progressPercent < 0 ||
-      input.progressPercent > 100
-    ) {
-      throw new Error('INVALID_GOAL_PROGRESS')
-    }
-    const previous = this.store.goals().find((goal) => goal.id === input.id)
-    if (!previous) throw new Error('GOAL_NOT_FOUND')
-    const progress = Math.max(previous.progress, input.progressPercent / 100)
-    const goal = this.store.updateGoal({
-      id: input.id,
-      progress,
-      status: progress >= 1 ? 'completed' : previous.status,
-    })
-    if (!goal) throw new Error('GOAL_NOT_FOUND')
-    this.store.audit(
-      'goal',
-      'progress_updated',
-      'success',
-      goal.id,
-      `${Math.round(goal.progress * 100)}%`,
-    )
-    if (goal.status === 'completed' && previous.status !== 'completed') {
-      this.store.observeHabit('goal-follow-through', 'Доводить выбранные цели до завершения')
-    }
+  reviseGoalFromCharacter(input: ReviseGoalInput): PersistentGoal {
+    const goal = this.reviseGoal(input)
     this.publish()
     return goal
   }
@@ -264,7 +235,9 @@ export class AliveRuntime {
       databaseVersion: this.store.version(),
       lastTickAt: this.scheduler.lastTickAt(),
       pendingConfirmations: tasks.filter((task) => task.status === 'waiting_confirmation').length,
-      activeGoals: goals.filter((goal) => goal.status === 'active').length,
+      activeGoals: goals.filter(
+        (goal) => goal.status !== 'completed' && goal.status !== 'cancelled',
+      ).length,
       scheduledTasks: tasks.filter((task) => task.status === 'scheduled').length,
       pendingHabitSuggestions: habits.filter((habit) => habit.status === 'pending').length,
       lastErrorCode: this.lastErrorCode,
@@ -279,5 +252,48 @@ export class AliveRuntime {
 
   private emitBehavior(command: BehaviorCommand): void {
     for (const listener of this.behaviorListeners) listener(command)
+  }
+
+  private persistGoal(input: CreateGoalInput): PersistentGoal {
+    const goal = this.store.createGoal(input)
+    this.store.audit('goal', 'created', 'success', goal.id, goal.owner)
+    return goal
+  }
+
+  private reviseGoal(input: ReviseGoalInput): PersistentGoal {
+    const previous = this.store.goals().find((goal) => goal.id === input.id)
+    if (!previous) throw new Error('GOAL_NOT_FOUND')
+    if (
+      input.progressPercent !== undefined &&
+      (!Number.isInteger(input.progressPercent) ||
+        input.progressPercent < 0 ||
+        input.progressPercent > 100)
+    ) {
+      throw new Error('INVALID_GOAL_PROGRESS')
+    }
+    const progress =
+      input.progressPercent === undefined
+        ? input.status === 'completed'
+          ? 1
+          : previous.progress
+        : Math.max(previous.progress, input.progressPercent / 100)
+    const goal = this.store.updateGoal({
+      ...input,
+      progress,
+      measurable: input.progressPercent === undefined ? input.measurable : true,
+      status: input.progressPercent !== undefined && progress >= 1 ? 'completed' : input.status,
+    })
+    if (!goal) throw new Error('GOAL_NOT_FOUND')
+    this.store.audit(
+      'goal',
+      input.progressPercent === undefined ? 'updated' : 'progress_updated',
+      'success',
+      goal.id,
+      input.progressPercent === undefined ? goal.status : `${Math.round(goal.progress * 100)}%`,
+    )
+    if (goal.status === 'completed' && previous.status !== 'completed') {
+      this.store.observeHabit('goal-follow-through', 'Доводить выбранные цели до завершения')
+    }
+    return goal
   }
 }

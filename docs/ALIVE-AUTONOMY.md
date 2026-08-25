@@ -18,8 +18,9 @@ Version 1 includes:
 - Autonomy Envelope, durable Scheduler, Persistent Goals, and Smart Habit
   suggestions;
 - safe correlated latency traces with p50, p95, and maximum summaries;
-- a React Spectrum 2 Goals & Tasks UI in Russian and English, with Autonomy policy
-  in Settings and habit suggestions alongside Memory management.
+- a React Spectrum 2 "Between us" UI in Russian and English, with conversational
+  intentions, reminders and promises, Autonomy policy in Settings, and habit
+  suggestions alongside Memory management.
 
 The API speech service and its HTTP contract are unchanged.
 
@@ -32,13 +33,19 @@ through the existing secure Main credential store. The renderer owns the
 single Conversation Admission, Conversation Runtime coordination, and presentation.
 It reports only typed activity and experience facts.
 
-When the Character LLM semantically needs current goals, it selects the read-only
-`goal.list` Character tool. Main delegates the request to the same Goal and Task
-Store that backs the UI and returns a bounded goal projection. After the user reports
-progress or the same turn completes relevant verified work, the domain-limited
-`goal.update` tool may update only an exact goal returned by `goal.list` in that turn.
-Unverified Action or Browser results cannot update progress. Goals remain separate
-from Semantic Memory and are never duplicated into prompt text or Memory records.
+Each Character turn receives a bounded Goal Awareness Context built from the exact
+current unfinished-goal snapshot. This makes Shio aware of ongoing intentions without
+copying them to Semantic Memory, Character State, conversation history, or a static
+persona prompt. Goal values remain data rather than instructions, and their presence
+does not grant mutation authority or force an unrelated status report.
+
+The Character LLM may use `goal.create` only after an explicit user request or explicit
+confirmation of a conversational proposal. It may use the read-only `goal.list` tool
+for archived or broader listings. `goal.update` accepts an exact identity from current
+awareness, a list result, or a same-turn create result, and can revise ownership, why,
+next step, last note, semantic state, or optional measurable progress. Unverified Action
+or Browser results cannot claim work progress or completion. Goals remain separate from
+Semantic Memory and are never duplicated into Memory records.
 
 Safe response flow:
 
@@ -88,11 +95,15 @@ or arbitrary Plugin methods. Each occurrence is transactionally claimed using
 
 ## Persistence and migration
 
-The Main process stores `alive/alive.sqlite` below Electron `userData`. Schema v1
+The Main process stores `alive/alive.sqlite` below Electron `userData`. Schema v2
 uses WAL, foreign keys, `PRAGMA user_version`, transactional migrations, an
 idempotent task-run table, and a bounded UI audit query. Goals, tasks, habits, and
 audit entries are separate from Character State, semantic Memory, conversation
 history, Project Awareness, and Action Runtime logs.
+
+Schema v2 migrates existing goals in place and adds owner, next step, last note, and
+the optional measurable-progress flag. Existing title, description, state, progress,
+timestamps, task links, and audit records are preserved.
 
 Smart Habits count only typed, runtime-confirmed events. A suggestion appears after
 three observations and requires explicit approval or rejection. It never creates a

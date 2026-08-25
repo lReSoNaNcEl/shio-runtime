@@ -18,14 +18,26 @@ export interface AutonomySettings {
   }
 }
 
-export type GoalStatus = 'active' | 'paused' | 'completed' | 'cancelled'
+export type GoalStatus =
+  | 'active'
+  | 'waiting_user'
+  | 'waiting_external'
+  | 'paused'
+  | 'completed'
+  | 'cancelled'
+
+export type GoalOwner = 'user' | 'shio' | 'shared'
 
 export interface PersistentGoal {
   id: string
   title: string
   description: string
+  nextStep: string
+  lastNote: string
+  owner: GoalOwner
   status: GoalStatus
   progress: number
+  measurable: boolean
   createdAt: number
   updatedAt: number
 }
@@ -142,23 +154,29 @@ export interface FastBrainAttentionDecision {
 export interface CreateGoalInput {
   title: string
   description?: string
+  nextStep?: string
+  owner?: GoalOwner
+  measurable?: boolean
 }
 
 export interface UpdateGoalInput {
   id: string
   title?: string
   description?: string
+  nextStep?: string
+  lastNote?: string
+  owner?: GoalOwner
   status?: GoalStatus
+  measurable?: boolean
 }
 
 export type PersistentGoalProvider = () => readonly PersistentGoal[]
 
-export interface ReportGoalProgressInput {
-  id: string
-  progressPercent: number
-}
+export type CreatePersistentGoal = (input: CreateGoalInput) => PersistentGoal
 
-export type PersistentGoalProgressReporter = (input: ReportGoalProgressInput) => PersistentGoal
+export type ReviseGoalInput = UpdateGoalInput & { progressPercent?: number }
+
+export type RevisePersistentGoal = (input: ReviseGoalInput) => PersistentGoal
 
 export interface CreateScheduledTaskInput {
   title: string

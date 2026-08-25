@@ -5,7 +5,12 @@ import {
   type DesktopWorkflowRequest,
   desktopWorkflowRequestSchema,
 } from '../../shared/actions'
-import type { PersistentGoalProgressReporter, PersistentGoalProvider } from '../../shared/alive'
+import type {
+  CreatePersistentGoal,
+  PersistentGoal,
+  PersistentGoalProvider,
+  RevisePersistentGoal,
+} from '../../shared/alive'
 import type { CharacterToolId } from '../../shared/character-tools'
 import type {
   BrowserContextProviderResolver,
@@ -43,17 +48,41 @@ const SHELL_INPUT_SCHEMA = z
 
 const GOAL_LIST_INPUT_SCHEMA = z
   .object({
-    status: z.enum(['active', 'paused', 'completed', 'cancelled']).optional(),
+    status: z
+      .enum(['active', 'waiting_user', 'waiting_external', 'paused', 'completed', 'cancelled'])
+      .optional(),
     limit: z.number().int().min(1).max(20).optional(),
+  })
+  .strict()
+
+const GOAL_CREATE_INPUT_SCHEMA = z
+  .object({
+    title: z.string().trim().min(1).max(160),
+    description: z.string().trim().max(2_000).optional(),
+    nextStep: z.string().trim().max(1_000).optional(),
+    owner: z.enum(['user', 'shio', 'shared']).optional(),
+    measurable: z.boolean().optional(),
   })
   .strict()
 
 const GOAL_UPDATE_INPUT_SCHEMA = z
   .object({
     id: z.string().trim().min(1).max(100),
-    progressPercent: z.number().int().min(0).max(100),
+    title: z.string().trim().min(1).max(160).optional(),
+    description: z.string().trim().max(2_000).optional(),
+    nextStep: z.string().trim().max(1_000).optional(),
+    lastNote: z.string().trim().max(1_000).optional(),
+    owner: z.enum(['user', 'shio', 'shared']).optional(),
+    status: z
+      .enum(['active', 'waiting_user', 'waiting_external', 'paused', 'completed', 'cancelled'])
+      .optional(),
+    measurable: z.boolean().optional(),
+    progressPercent: z.number().int().min(0).max(100).optional(),
   })
   .strict()
+  .refine((input) => Object.keys(input).some((key) => key !== 'id'), {
+    message: 'At least one goal field must be revised',
+  })
 
 const BROWSER_GOAL_SCHEMA = z.string().trim().min(1).max(2_000).optional()
 
@@ -114,10 +143,15 @@ export type CharacterToolVerifiedOutcome =
   | { kind: 'memory.update' }
   | { kind: 'memory.forget' }
   | {
+      kind: 'goal.create'
+      title: string
+      status: PersistentGoal['status']
+    }
+  | {
       kind: 'goal.update'
       title: string
-      progressPercent: number
-      status: 'active' | 'paused' | 'completed' | 'cancelled'
+      status: PersistentGoal['status']
+      progressPercent?: number
     }
 
 interface CharacterToolDispatcherOptions {
@@ -128,7 +162,9 @@ interface CharacterToolDispatcherOptions {
   projectContext?: ProjectContextProviderResolver
   semanticMemory?: MemoryToolBroker
   persistentGoals?: PersistentGoalProvider
-  reportGoalProgress?: PersistentGoalProgressReporter
+  goalAwareness?: readonly PersistentGoal[]
+  createPersistentGoal?: CreatePersistentGoal
+  revisePersistentGoal?: RevisePersistentGoal
   executeDesktopWorkflow?: (
     request: DesktopWorkflowRequest,
     signal: AbortSignal,
@@ -167,6 +203,20 @@ function successfulContent(data: unknown): string {
   })
 }
 
+function goalProjection(goal: PersistentGoal): unknown {
+  return {
+    id: goal.id,
+    title: goal.title,
+    description: goal.description || undefined,
+    nextStep: goal.nextStep || undefined,
+    lastNote: goal.lastNote || undefined,
+    owner: goal.owner,
+    status: goal.status,
+    ...(goal.measurable ? { progressPercent: Math.round(goal.progress * 100) } : {}),
+    updatedAt: goal.updatedAt,
+  }
+}
+
 function failureContent(code: string): string {
   return JSON.stringify({
     ok: false,
@@ -202,9 +252,11 @@ export class CharacterToolDispatcher {
   private actionWorkflowClosed = false
   private projectContext: ProjectContextPacket | undefined
   private goalDataSelected = false
-  private readonly listedGoalIds = new Set<string>()
+  private readonly knownGoalIds = new Set<string>()
 
-  constructor(private readonly options: CharacterToolDispatcherOptions) {}
+  constructor(private readonly options: CharacterToolDispatcherOptions) {
+    for (const goal of options.goalAwareness ?? []) this.knownGoalIds.add(goal.id)
+  }
 
   currentBrowserObservation(): BrowserObservation | null {
     return this.options.browserContext?.()?.currentObservation() ?? null
@@ -231,6 +283,7 @@ export class CharacterToolDispatcher {
         return { content: failureContent('GOAL_DATA_CANNOT_AUTHORIZE_MEMORY_MUTATION') }
       }
       if (id === 'project.search') return await this.executeProject(input)
+      if (id === 'goal.create') return this.executeGoalCreate(input)
       if (id === 'goal.list') return this.executeGoalList(input)
       if (id === 'goal.update') return this.executeGoalUpdate(input)
       if (MEMORY_TOOL_IDS.has(id)) return this.executeMemory(id as MemoryToolName, input)
@@ -242,6 +295,7 @@ export class CharacterToolDispatcher {
           | 'project.search'
           | 'shell.execute'
           | 'browser.observe'
+          | 'goal.create'
           | 'goal.list'
           | 'goal.update'
           | MemoryToolName
@@ -365,15 +419,8 @@ export class CharacterToolDispatcher {
       .filter((goal) => !request.status || goal.status === request.status)
       .slice(0, request.limit ?? 20)
     this.goalDataSelected = true
-    for (const goal of selectedGoals) this.listedGoalIds.add(goal.id)
-    const goals = selectedGoals.map((goal) => ({
-      id: goal.id,
-      title: goal.title,
-      description: goal.description || undefined,
-      status: goal.status,
-      progressPercent: Math.round(goal.progress * 100),
-      updatedAt: goal.updatedAt,
-    }))
+    for (const goal of selectedGoals) this.knownGoalIds.add(goal.id)
+    const goals = selectedGoals.map(goalProjection)
     return {
       content: successfulContent({
         goals,
@@ -383,30 +430,46 @@ export class CharacterToolDispatcher {
     }
   }
 
+  private executeGoalCreate(input: Record<string, unknown>): CharacterToolDispatchResult {
+    const request = GOAL_CREATE_INPUT_SCHEMA.parse(input)
+    if (!this.options.createPersistentGoal) {
+      return { content: failureContent('GOAL_CREATION_UNAVAILABLE') }
+    }
+    const goal = this.options.createPersistentGoal(request)
+    this.knownGoalIds.add(goal.id)
+    this.goalDataSelected = true
+    return {
+      content: successfulContent({
+        goal: goalProjection(goal),
+        source: 'persistent-goal-store',
+      }),
+      verifiedOutcome: { kind: 'goal.create', title: goal.title, status: goal.status },
+    }
+  }
+
   private executeGoalUpdate(input: Record<string, unknown>): CharacterToolDispatchResult {
     const request = GOAL_UPDATE_INPUT_SCHEMA.parse(input)
-    if (!this.options.reportGoalProgress) {
+    if (!this.options.revisePersistentGoal) {
       return { content: failureContent('GOAL_UPDATES_UNAVAILABLE') }
     }
-    if (!this.listedGoalIds.has(request.id)) {
-      return { content: failureContent('GOAL_NOT_LISTED_IN_TURN') }
+    if (!this.knownGoalIds.has(request.id)) {
+      return { content: failureContent('GOAL_NOT_IN_TURN_CONTEXT') }
     }
+    const claimsCompletedWork =
+      request.progressPercent !== undefined || request.status === 'completed'
     if (
+      claimsCompletedWork &&
       (this.projectContext || this.browserSelected || this.actionSelected) &&
       !this.lastActionVerified
     ) {
       return { content: failureContent('GOAL_UPDATE_REQUIRES_VERIFIED_ACTION') }
     }
-    const goal = this.options.reportGoalProgress(request)
-    const progressPercent = Math.round(goal.progress * 100)
+    const goal = this.options.revisePersistentGoal(request)
+    this.goalDataSelected = true
+    const progressPercent = goal.measurable ? Math.round(goal.progress * 100) : undefined
     return {
       content: successfulContent({
-        goal: {
-          id: goal.id,
-          title: goal.title,
-          status: goal.status,
-          progressPercent,
-        },
+        goal: goalProjection(goal),
         source: 'persistent-goal-store',
       }),
       verifiedOutcome: {
@@ -454,6 +517,7 @@ export class CharacterToolDispatcher {
       | 'project.search'
       | 'shell.execute'
       | 'browser.observe'
+      | 'goal.create'
       | 'goal.list'
       | 'goal.update'
       | MemoryToolName

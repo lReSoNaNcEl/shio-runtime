@@ -15,6 +15,7 @@ export interface CharacterToolDefinition {
 interface CharacterToolRegistryOptions {
   projectAvailable: boolean
   goalsAvailable?: boolean
+  goalCreatesAvailable?: boolean
   goalUpdatesAvailable?: boolean
   capabilityContext: ShioCapabilitySnapshot | null
   browserObservation: BrowserObservation | null
@@ -102,6 +103,27 @@ export class CharacterToolRegistry {
     }
 
     if (options.goalsAvailable) {
+      if (options.goalCreatesAvailable) {
+        tools.push(
+          definition(
+            'goal.create',
+            'goal_create',
+            'Create one durable intention only when the user explicitly asks for it or explicitly confirms a conversational proposal. Never persist a vague wish or an unconfirmed Shio suggestion. Goals are not Semantic Memory.',
+            {
+              type: 'object',
+              required: ['title'],
+              properties: {
+                title: { type: 'string' },
+                description: { type: 'string' },
+                nextStep: { type: 'string' },
+                owner: { type: 'string', enum: ['user', 'shio', 'shared'] },
+                measurable: { type: 'boolean' },
+              },
+              additionalProperties: false,
+            },
+          ),
+        )
+      }
       tools.push(
         definition(
           'goal.list',
@@ -112,7 +134,14 @@ export class CharacterToolRegistry {
             properties: {
               status: {
                 type: 'string',
-                enum: ['active', 'paused', 'completed', 'cancelled'],
+                enum: [
+                  'active',
+                  'waiting_user',
+                  'waiting_external',
+                  'paused',
+                  'completed',
+                  'cancelled',
+                ],
               },
               limit: { type: 'integer', minimum: 1, maximum: 20 },
             },
@@ -125,14 +154,41 @@ export class CharacterToolRegistry {
           definition(
             'goal.update',
             'goal_update',
-            'Report bounded progress for one persistent goal. First call goal.list in this same turn and use its exact goal id. Use this only when the user explicitly reports progress or after the current turn has verified relevant work. Use 100 only when the goal is actually finished. Do not store goal status in Semantic Memory.',
+            'Revise one exact durable intention from the current Goal Awareness Context, goal.list, or a same-turn goal.create result. Use this for explicit conversational changes to its meaning, owner, next step, note, or state. Progress and completed claims after external work require a verified same-turn Action result. Numeric progress is only for genuinely measurable intentions. Never copy goals into Semantic Memory.',
             {
               type: 'object',
-              required: ['id', 'progressPercent'],
+              required: ['id'],
               properties: {
                 id: { type: 'string' },
+                title: { type: 'string' },
+                description: { type: 'string' },
+                nextStep: { type: 'string' },
+                lastNote: { type: 'string' },
+                owner: { type: 'string', enum: ['user', 'shio', 'shared'] },
+                status: {
+                  type: 'string',
+                  enum: [
+                    'active',
+                    'waiting_user',
+                    'waiting_external',
+                    'paused',
+                    'completed',
+                    'cancelled',
+                  ],
+                },
+                measurable: { type: 'boolean' },
                 progressPercent: { type: 'integer', minimum: 0, maximum: 100 },
               },
+              anyOf: [
+                { required: ['title'] },
+                { required: ['description'] },
+                { required: ['nextStep'] },
+                { required: ['lastNote'] },
+                { required: ['owner'] },
+                { required: ['status'] },
+                { required: ['measurable'] },
+                { required: ['progressPercent'] },
+              ],
               additionalProperties: false,
             },
           ),

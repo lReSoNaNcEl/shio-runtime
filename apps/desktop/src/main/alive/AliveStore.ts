@@ -16,7 +16,7 @@ import type {
 
 type GoalStoreUpdateInput = UpdateGoalInput & { progress?: number }
 
-const DATABASE_VERSION = 1
+const DATABASE_VERSION = 2
 
 export const DEFAULT_AUTONOMY_SETTINGS: AutonomySettings = Object.freeze({
   mode: 'suggest',
@@ -32,8 +32,12 @@ interface GoalRow {
   id: string
   title: string
   description: string
+  next_step: string
+  last_note: string
+  owner: PersistentGoal['owner']
   status: PersistentGoal['status']
   progress: number
+  measurable: number
   created_at: number
   updated_at: number
 }
@@ -110,7 +114,8 @@ export class AliveStore {
   goals(): readonly PersistentGoal[] {
     const rows = this.database
       .prepare(
-        `SELECT id, title, description, status, progress, created_at, updated_at
+        `SELECT id, title, description, next_step, last_note, owner, status, progress,
+                measurable, created_at, updated_at
          FROM alive_goals ORDER BY updated_at DESC`,
       )
       .all() as unknown as GoalRow[]
@@ -123,23 +128,32 @@ export class AliveStore {
       id: randomUUID(),
       title: input.title,
       description: input.description ?? '',
+      nextStep: input.nextStep ?? '',
+      lastNote: '',
+      owner: input.owner ?? 'shared',
       status: 'active',
       progress: 0,
+      measurable: input.measurable ?? false,
       createdAt: now,
       updatedAt: now,
     }
     this.database
       .prepare(
         `INSERT INTO alive_goals
-          (id, title, description, status, progress, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          (id, title, description, next_step, last_note, owner, status, progress,
+           measurable, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         goal.id,
         goal.title,
         goal.description,
+        goal.nextStep,
+        goal.lastNote,
+        goal.owner,
         goal.status,
         goal.progress,
+        goal.measurable ? 1 : 0,
         goal.createdAt,
         goal.updatedAt,
       )
@@ -153,16 +167,33 @@ export class AliveStore {
       ...current,
       title: input.title ?? current.title,
       description: input.description ?? current.description,
+      nextStep: input.nextStep ?? current.nextStep,
+      lastNote: input.lastNote ?? current.lastNote,
+      owner: input.owner ?? current.owner,
       status: input.status ?? current.status,
       progress: input.progress ?? current.progress,
+      measurable: input.measurable ?? current.measurable,
       updatedAt: Date.now(),
     }
     this.database
       .prepare(
-        `UPDATE alive_goals SET title = ?, description = ?, status = ?, progress = ?, updated_at = ?
+        `UPDATE alive_goals
+         SET title = ?, description = ?, next_step = ?, last_note = ?, owner = ?, status = ?,
+             progress = ?, measurable = ?, updated_at = ?
          WHERE id = ?`,
       )
-      .run(next.title, next.description, next.status, next.progress, next.updatedAt, next.id)
+      .run(
+        next.title,
+        next.description,
+        next.nextStep,
+        next.lastNote,
+        next.owner,
+        next.status,
+        next.progress,
+        next.measurable ? 1 : 0,
+        next.updatedAt,
+        next.id,
+      )
     return Object.freeze(next)
   }
 
@@ -333,8 +364,9 @@ export class AliveStore {
         CREATE TABLE alive_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
         CREATE TABLE alive_goals (
           id TEXT PRIMARY KEY, title TEXT NOT NULL, description TEXT NOT NULL,
-          status TEXT NOT NULL, progress REAL NOT NULL, created_at INTEGER NOT NULL,
-          updated_at INTEGER NOT NULL
+          next_step TEXT NOT NULL, last_note TEXT NOT NULL, owner TEXT NOT NULL,
+          status TEXT NOT NULL, progress REAL NOT NULL, measurable INTEGER NOT NULL,
+          created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
         );
         CREATE TABLE alive_tasks (
           id TEXT PRIMARY KEY, title TEXT NOT NULL, kind TEXT NOT NULL, due_at INTEGER NOT NULL,
@@ -358,10 +390,23 @@ export class AliveStore {
         );
         CREATE INDEX alive_tasks_due_idx ON alive_tasks(status, next_run_at);
         CREATE INDEX alive_audit_at_idx ON alive_audit(at DESC);
-        PRAGMA user_version = 1;
+        PRAGMA user_version = 2;
         COMMIT;
       `)
       this.saveSettings(DEFAULT_AUTONOMY_SETTINGS)
+      return
+    }
+    if (version === 1) {
+      this.database.exec(`
+        BEGIN IMMEDIATE;
+        ALTER TABLE alive_goals ADD COLUMN next_step TEXT NOT NULL DEFAULT '';
+        ALTER TABLE alive_goals ADD COLUMN last_note TEXT NOT NULL DEFAULT '';
+        ALTER TABLE alive_goals ADD COLUMN owner TEXT NOT NULL DEFAULT 'shared';
+        ALTER TABLE alive_goals ADD COLUMN measurable INTEGER NOT NULL DEFAULT 0;
+        UPDATE alive_goals SET measurable = 1 WHERE progress > 0 AND progress < 1;
+        PRAGMA user_version = 2;
+        COMMIT;
+      `)
     }
   }
 }
@@ -371,8 +416,12 @@ function toGoal(row: GoalRow): PersistentGoal {
     id: row.id,
     title: row.title,
     description: row.description,
+    nextStep: row.next_step,
+    lastNote: row.last_note,
+    owner: row.owner,
     status: row.status,
     progress: row.progress,
+    measurable: row.measurable === 1,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   })

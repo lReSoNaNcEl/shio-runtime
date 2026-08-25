@@ -88,6 +88,9 @@ export function registerAliveIpc(
           .object({
             title: z.string().trim().min(1).max(160),
             description: z.string().trim().max(2_000).optional(),
+            nextStep: z.string().trim().max(1_000).optional(),
+            owner: z.enum(['user', 'shio', 'shared']).optional(),
+            measurable: z.boolean().optional(),
           })
           .parse(input),
       ),
@@ -102,7 +105,20 @@ export function registerAliveIpc(
             id: z.string().uuid(),
             title: z.string().trim().min(1).max(160).optional(),
             description: z.string().trim().max(2_000).optional(),
-            status: z.enum(['active', 'paused', 'completed', 'cancelled']).optional(),
+            nextStep: z.string().trim().max(1_000).optional(),
+            lastNote: z.string().trim().max(1_000).optional(),
+            owner: z.enum(['user', 'shio', 'shared']).optional(),
+            status: z
+              .enum([
+                'active',
+                'waiting_user',
+                'waiting_external',
+                'paused',
+                'completed',
+                'cancelled',
+              ])
+              .optional(),
+            measurable: z.boolean().optional(),
           })
           .parse(input),
       ),
