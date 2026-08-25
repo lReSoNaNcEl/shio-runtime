@@ -257,7 +257,6 @@ export const ruMessages = {
   'capabilities.webSearch.title': 'Поиск в интернете',
   'capabilities.webSearch.description':
     'Shio может находить актуальные публичные источники без управления веб-сайтом.',
-  'capabilities.reason.webSearchCredential': 'Добавьте BRAVE_SEARCH_API_KEY в окружение Main.',
   'capabilities.reason.webSearchUnavailable': 'Адаптер веб-поиска сейчас недоступен.',
   'capabilities.reason.llmChecking': 'Проверяем подключение к модели.',
   'capabilities.reason.llmCredential': 'Добавьте API-ключ провайдера.',

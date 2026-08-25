@@ -1,7 +1,7 @@
 import { CharacterToolDispatcher } from '../../src/main/character-tools/CharacterToolDispatcher'
 import { CharacterToolRegistry } from '../../src/main/character-tools/CharacterToolRegistry'
 import { ToolInfluenceContext } from '../../src/main/character-tools/ToolInfluenceContext'
-import { BraveWebSearchAdapter } from '../../src/main/web-search/BraveWebSearchAdapter'
+import { DuckDuckGoWebSearchAdapter } from '../../src/main/web-search/DuckDuckGoWebSearchAdapter'
 import type { WebSearchAdapter } from '../../src/main/web-search/WebSearchAdapter'
 import { WebSearchRuntime } from '../../src/main/web-search/WebSearchRuntime'
 import type { DesktopWorkflowActionResult } from '../../src/shared/actions'
@@ -70,6 +70,68 @@ const actionResult: DesktopWorkflowActionResult = {
 }
 
 async function run(): Promise<void> {
+  let requestedUrl: URL | null = null
+  let requestedInit: RequestInit | undefined
+  const duckDuckGoHtml = `
+    <a rel="nofollow" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Frelease%3Fx%3D1&amp;rut=ignored" class='result-link'>
+      <b>Official</b> &amp; release
+    </a>
+    <td class='result-snippet'>Current <b>release</b> &quot;notes&quot;.</td>
+    <a class="result-link" href="https://docs.example.org/guide#section">Guide</a>
+    <td class="result-snippet">Documentation</td>
+    <a class="result-link" href="javascript:alert(1)">Unsafe</a>
+  `
+  const duckDuckGoFetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    requestedUrl = new URL(String(input))
+    requestedInit = init
+    return new Response(duckDuckGoHtml, {
+      status: 200,
+      headers: { 'Content-Type': 'text/html; charset=UTF-8' },
+    })
+  }) as typeof fetch
+  const duckDuckGo = new DuckDuckGoWebSearchAdapter(duckDuckGoFetch)
+  const duckDuckGoResult = await new WebSearchRuntime(duckDuckGo).search({
+    query: 'official release',
+    freshness: 'week',
+    domains: ['example.com', 'docs.example.org'],
+    limit: 1,
+  })
+  check(
+    'DuckDuckGo search is available without credentials',
+    duckDuckGo.status().availability === 'available',
+  )
+  check(
+    'DuckDuckGo Lite endpoint receives the query',
+    requestedUrl?.hostname === 'lite.duckduckgo.com',
+  )
+  check(
+    'DuckDuckGo query preserves bounded domain filters',
+    requestedUrl?.searchParams.get('q') ===
+      'official release (site:example.com OR site:docs.example.org)',
+  )
+  check(
+    'DuckDuckGo freshness maps to the Lite date filter',
+    requestedUrl?.searchParams.get('df') === 'w',
+  )
+  check(
+    'DuckDuckGo transport requests HTML only',
+    new Headers(requestedInit?.headers).get('Accept') === 'text/html',
+  )
+  check(
+    'DuckDuckGo result links are unwrapped and decoded',
+    duckDuckGoResult.results[0]?.url === 'https://example.com/release?x=1',
+  )
+  check(
+    'DuckDuckGo result text is normalized',
+    duckDuckGoResult.results[0]?.title === 'Official & release',
+  )
+  check(
+    'DuckDuckGo snippets remain bounded plain text',
+    duckDuckGoResult.results[0]?.snippet === 'Current release "notes".',
+  )
+  check('DuckDuckGo result limit reports truncation', duckDuckGoResult.truncated)
+  check('DuckDuckGo provider identity is explicit', duckDuckGoResult.provider === 'duckduckgo')
+
   const explicit = new CharacterToolDispatcher({
     registry,
     traceId: 'web-explicit',
@@ -115,10 +177,19 @@ async function run(): Promise<void> {
     explicitMemory.canInvoke('memory.store'),
   )
 
-  check(
-    'missing Brave credential is isolated as needs-setup',
-    new BraveWebSearchAdapter(() => undefined).status().availability === 'needs-setup',
-  )
+  if (process.env.SHIO_WEB_SEARCH_LIVE === '1') {
+    const liveResult = await new WebSearchRuntime(new DuckDuckGoWebSearchAdapter()).search({
+      query: 'Node.js official website',
+      domains: ['nodejs.org'],
+      limit: 3,
+    })
+    check('live DuckDuckGo search returns public results', liveResult.results.length > 0)
+    check(
+      'live DuckDuckGo domain search returns the requested origin',
+      liveResult.results.every((result) => new URL(result.url).hostname.endsWith('nodejs.org')),
+    )
+  }
+
   console.log('Web search repro passed.')
 }
 

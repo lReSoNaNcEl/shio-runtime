@@ -58,7 +58,7 @@ import { observeMainPromise } from '../reliability/observePromise'
 import { ScreenCaptureAdapter, ScreenContextService } from '../screen-context'
 import { SpeechClientManager } from '../speech/SpeechClientManager'
 import { registerReleaseSupportHandlers } from '../system/releaseSupport'
-import { BraveWebSearchAdapter, WebSearchRuntime } from '../web-search'
+import { DuckDuckGoWebSearchAdapter, WebSearchRuntime } from '../web-search'
 import { MainWindowManager } from '../windows/MainWindowManager'
 import { OverlayWindowManager } from '../windows/OverlayWindowManager'
 import { actionExperienceEvent } from './ActionExperienceBridge'
@@ -117,9 +117,7 @@ export function buildApplicationDependencies(): ApplicationDependencies {
   const screenContextService = new ScreenContextService(new ScreenCaptureAdapter())
   const pluginCapabilities = new PluginCapabilityRegistry()
   const browserWorkflowScopes = new BrowserWorkflowScopeRegistry()
-  const webSearch = new WebSearchRuntime(
-    new BraveWebSearchAdapter(() => process.env.BRAVE_SEARCH_API_KEY),
-  )
+  const webSearch = new WebSearchRuntime(new DuckDuckGoWebSearchAdapter())
 
   const loadRenderer = async (target: BrowserWindow, overlay = false): Promise<void> => {
     if (process.env.NODE_ENV === 'development') {

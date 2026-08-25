@@ -282,11 +282,9 @@ export class CapabilityCatalog {
         availability: webSearchStatus.availability,
         authority: 'read-only',
         reasonKey:
-          webSearchStatus.availability === 'needs-setup'
-            ? 'capabilities.reason.webSearchCredential'
-            : webSearchStatus.availability === 'unavailable'
-              ? 'capabilities.reason.webSearchUnavailable'
-              : undefined,
+          webSearchStatus.availability === 'unavailable'
+            ? 'capabilities.reason.webSearchUnavailable'
+            : undefined,
       },
       {
         id: 'alive-autonomy',

@@ -26,7 +26,6 @@ export interface WebSearchResult {
 
 export type WebSearchStatus =
   | { availability: 'available' }
-  | { availability: 'needs-setup'; reason: 'missing-credential' }
   | { availability: 'unavailable'; reason: 'adapter-unavailable' }
 
 const domainSchema = z

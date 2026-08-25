@@ -261,7 +261,6 @@ export const enMessages: Record<TranslationKey, string> = {
   'capabilities.webSearch.title': 'Web search',
   'capabilities.webSearch.description':
     'Shio can find current public sources without controlling a website.',
-  'capabilities.reason.webSearchCredential': 'Add BRAVE_SEARCH_API_KEY to the Main environment.',
   'capabilities.reason.webSearchUnavailable': 'The web search adapter is currently unavailable.',
   'capabilities.reason.llmChecking': 'Checking the model connection.',
   'capabilities.reason.llmCredential': 'Add a provider API key.',

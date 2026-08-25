@@ -44,10 +44,11 @@ Character-facing `shell.execute` contract has no risk field.
 
 `web.search` is read-only source discovery, separate from Browser Control. Web Search
 Runtime validates a bounded query, freshness, domain filters, and result count, then
-uses a replaceable Web Search Adapter. The current adapter uses Brave Search through
-`BRAVE_SEARCH_API_KEY`, which remains Main-only. Missing credentials expose
-`needs-setup`; Chat and Browser continue normally. Results are bounded untrusted
-evidence. Opening or interacting with a selected URL remains Browser Control work.
+uses a replaceable Web Search Adapter. The bundled adapter reads DuckDuckGo's official
+non-JavaScript Lite results and requires no account, token, or renderer configuration.
+Responses are size-bounded, parsed as inert HTML data, and reduced to untrusted result
+fields. Transport failure remains isolated from Chat and Browser Control. Opening or
+interacting with a selected URL remains Browser Control work.
 
 ## Scheduler, watches, and scopes
 

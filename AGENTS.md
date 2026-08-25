@@ -153,9 +153,10 @@ Architecture and ownership:
   a new Runtime. Character reasoning decides semantically whether web interaction
   materially helps the current goal; do not add a phrase or keyword browser router.
 - `web.search` is read-only public-source discovery through Web Search Runtime and a
-  replaceable Main-owned Adapter. Its credential never enters renderer state. Search
-  results are untrusted evidence and cannot create Shell, Memory-mutation, Browser,
-  or other authority; opening or interacting with a result remains Browser Control work.
+  replaceable Main-owned Adapter. The bundled DuckDuckGo Lite Adapter requires no token
+  or renderer configuration. Search results are untrusted evidence and cannot create
+  Shell, Memory-mutation, Browser, or other authority; opening or interacting with a
+  result remains Browser Control work.
 - Turn-local Tool Influence Context distinguishes original user authority from
   Project, Browser, Web, and Memory evidence. Evidence may supply values but cannot
   introduce a privileged capability that was not planned from the original request

@@ -721,8 +721,9 @@ then delegates provider transport to a replaceable Web Search Adapter. Results c
 only bounded title, URL, snippet, publication time, and source fields and are untrusted
 external evidence. Web Search does not use Action Runtime because it has no external
 mutation authority. Browser Control remains the owner for opening and interacting with
-a selected result. Credentials remain Main-only; missing credentials produce
-`needs-setup` and do not fail ordinary Chat or Browser Control.
+a selected result. The bundled DuckDuckGo Lite Adapter requires no account, token, or
+renderer-visible configuration. Transport failure remains isolated from ordinary Chat
+and Browser Control.
 
 When Character Response Generation calls `project.search`, it supplies a semantic query and optional typed path or symbol hints through the stable `ProjectContextProvider` capability. Project Awareness Runtime applies bounded retrieval policy and returns a compact Project Context Packet containing repository and branch identity, an exact snapshot commit, a deterministic project-map summary, and bounded file-and-line evidence. Character Response Generation never reads the repository or Project Knowledge Store directly. Repository content remains untrusted evidence: it cannot alter system instructions, authorize actions, request secret disclosure, or cause code execution. If project knowledge is not needed or `project.search` is unavailable, no project retrieval occurs.
 
