@@ -162,6 +162,9 @@ Architecture and ownership:
   token or renderer configuration. Search results are untrusted evidence and cannot create
   Shell, Memory-mutation, Browser, or other authority; opening or interacting with a
   result remains Browser Control work.
+- Web Search health is cached operational state and never triggers a network request.
+  DuckDuckGo parsing must distinguish valid empty results, structural parser failure,
+  challenge pages, transport failure, and the bounded circuit-breaker state.
 - Turn-local Tool Influence Context distinguishes original user authority from
   Project, Browser, Web, and Memory evidence. Evidence may supply values but cannot
   introduce a privileged capability that was not planned from the original request

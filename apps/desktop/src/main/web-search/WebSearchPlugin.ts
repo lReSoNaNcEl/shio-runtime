@@ -48,6 +48,25 @@ export class WebSearchPlugin implements BundledPlugin {
   }
 
   getHealth(): PluginHealth {
+    const status = this.runtime.status()
+    if (status.availability === 'degraded') {
+      const detailKey =
+        status.reason === 'challenge'
+          ? 'plugins.webSearch.health.challenge'
+          : status.reason === 'circuit-open'
+            ? 'plugins.webSearch.health.circuitOpen'
+            : status.reason === 'network-failure'
+              ? 'plugins.webSearch.health.networkFailure'
+              : 'plugins.webSearch.health.parserFailure'
+      return { state: 'degraded', detailKey, checkedAt: Date.now() }
+    }
+    if (status.availability === 'unavailable') {
+      return {
+        state: 'error',
+        detailKey: 'plugins.webSearch.health.unavailable',
+        checkedAt: Date.now(),
+      }
+    }
     return {
       state: 'healthy',
       detailKey: this.active ? 'plugins.health.healthy' : 'plugins.health.disabledHealthy',

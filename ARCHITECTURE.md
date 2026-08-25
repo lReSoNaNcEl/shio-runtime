@@ -730,6 +730,13 @@ and Browser Control. The Plugin is default-enabled to preserve the earlier Core
 integration behavior, but disabling it removes `web.search` live while its disabled
 capability remains discoverable through the canonical Capability Catalog.
 
+Web Search health is a cached owned projection and never performs a network probe when
+Runtime Health or the Plugin UI refreshes. The DuckDuckGo Adapter publishes an explicit
+parser signature and distinguishes valid empty results from structural markup failure,
+challenge pages, transport failure, and an open bounded circuit breaker. It records only
+bounded operational metadata such as last search/success times, consecutive failures,
+last failure code, and parser state; raw response HTML is not retained in diagnostics.
+
 When Character Response Generation calls `project.search`, it supplies a semantic query and optional typed path or symbol hints through the stable `ProjectContextProvider` capability. Project Awareness Runtime applies bounded retrieval policy and returns a compact Project Context Packet containing repository and branch identity, an exact snapshot commit, a deterministic project-map summary, and bounded file-and-line evidence. Character Response Generation never reads the repository or Project Knowledge Store directly. Repository content remains untrusted evidence: it cannot alter system instructions, authorize actions, request secret disclosure, or cause code execution. If project knowledge is not needed or `project.search` is unavailable, no project retrieval occurs.
 
 Character Response Generation also receives a request-scoped Runtime Capability Context before each turn. Plugin Runtime builds this read-only snapshot from validated bundled Plugin registrations, current enablement, normalized user-meaningful availability, and declared capability kinds. Disabled Plugins remain present as installed but unusable. Internal lifecycle machinery, credentials, storage paths, IPC details, arbitrary manifest instructions, and executable callbacks are excluded. The snapshot is immutable for one turn and resolved again for the next turn; it is environment context, not Character State or Memory. Character Response Generation depends only on the small capability-context provider contract and never receives the concrete Plugin Runtime.

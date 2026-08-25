@@ -1,8 +1,12 @@
 import { CharacterToolDispatcher } from '../../src/main/character-tools/CharacterToolDispatcher'
 import { CharacterToolRegistry } from '../../src/main/character-tools/CharacterToolRegistry'
 import { ToolInfluenceContext } from '../../src/main/character-tools/ToolInfluenceContext'
-import { DuckDuckGoWebSearchAdapter } from '../../src/main/web-search/DuckDuckGoWebSearchAdapter'
+import {
+  DuckDuckGoWebSearchAdapter,
+  WebSearchAdapterError,
+} from '../../src/main/web-search/DuckDuckGoWebSearchAdapter'
 import type { WebSearchAdapter } from '../../src/main/web-search/WebSearchAdapter'
+import { WebSearchPlugin } from '../../src/main/web-search/WebSearchPlugin'
 import { WebSearchRuntime } from '../../src/main/web-search/WebSearchRuntime'
 import type { DesktopWorkflowActionResult } from '../../src/shared/actions'
 import type { ShioCapabilitySnapshot } from '../../src/shared/capabilities'
@@ -11,6 +15,20 @@ import type { WebSearchProvider } from '../../src/shared/web-search'
 function check(label: string, condition: boolean): void {
   if (!condition) throw new Error(`FAIL: ${label}`)
   console.log(`PASS: ${label}`)
+}
+
+async function expectFailureCode(
+  label: string,
+  operation: Promise<unknown>,
+  code: WebSearchAdapterError['code'],
+): Promise<void> {
+  try {
+    await operation
+  } catch (error) {
+    check(label, error instanceof WebSearchAdapterError && error.code === code)
+    return
+  }
+  throw new Error(`FAIL: ${label}`)
 }
 
 const capabilityContext: ShioCapabilitySnapshot = {
@@ -39,7 +57,14 @@ const capabilityContext: ShioCapabilitySnapshot = {
 }
 
 const adapter: WebSearchAdapter = {
-  status: () => ({ availability: 'available' }),
+  status: () => ({
+    availability: 'available',
+    diagnostics: {
+      parserSignature: 'test/v1',
+      parserState: 'valid-results',
+      consecutiveFailureCount: 0,
+    },
+  }),
   search: async () => ({
     results: [
       {
@@ -133,6 +158,116 @@ async function run(): Promise<void> {
   )
   check('DuckDuckGo result limit reports truncation', duckDuckGoResult.truncated)
   check('DuckDuckGo provider identity is explicit', duckDuckGoResult.provider === 'duckduckgo')
+  check(
+    'parser signature is explicit',
+    duckDuckGo.status().diagnostics.parserSignature === 'duckduckgo-lite/result-link-v1',
+  )
+  check(
+    'successful result records parser state',
+    duckDuckGo.status().diagnostics.parserState === 'valid-results',
+  )
+
+  let emptyFetchCount = 0
+  const emptyNow = 1_000
+  const validEmpty = new DuckDuckGoWebSearchAdapter(
+    async () => {
+      emptyFetchCount += 1
+      return new Response(
+        '<html><title>DuckDuckGo</title><form action="/lite/"><input name="q"></form><p>No results found.</p></html>',
+        { status: 200, headers: { 'Content-Type': 'text/html' } },
+      )
+    },
+    () => emptyNow,
+  )
+  const emptyResult = await validEmpty.search({ query: 'no matching result' })
+  check('valid DuckDuckGo no-results is an empty success', emptyResult.results.length === 0)
+  check(
+    'valid empty result has a distinct parser state',
+    validEmpty.status().diagnostics.parserState === 'valid-empty',
+  )
+  check(
+    'successful empty result records search time',
+    validEmpty.status().diagnostics.lastSuccessfulSearchAt === emptyNow,
+  )
+  validEmpty.status()
+  validEmpty.status()
+  check('health status performs no network request', emptyFetchCount === 1)
+
+  let brokenFetchCount = 0
+  const broken = new DuckDuckGoWebSearchAdapter(async () => {
+    brokenFetchCount += 1
+    return new Response('<html><body>unexpected markup</body></html>', {
+      status: 200,
+      headers: { 'Content-Type': 'text/html' },
+    })
+  })
+  await expectFailureCode(
+    'broken HTML produces a typed parser failure',
+    broken.search({ query: 'parser failure' }),
+    'parser-structure',
+  )
+  check('broken HTML degrades parser health', broken.status().reason === 'parser-failure')
+  const degradedPlugin = new WebSearchPlugin(new WebSearchRuntime(broken))
+  await degradedPlugin.initialize({ pluginId: 'web-search' })
+  await degradedPlugin.start()
+  check(
+    'plugin health uses cached parser state without probing the network',
+    degradedPlugin.getHealth().state === 'degraded' && brokenFetchCount === 1,
+  )
+
+  const challenge = new DuckDuckGoWebSearchAdapter(
+    async () =>
+      new Response(
+        '<html><body><form class="challenge-form">Complete the following CAPTCHA</form></body></html>',
+        {
+          status: 202,
+          headers: { 'Content-Type': 'text/html' },
+        },
+      ),
+  )
+  await expectFailureCode(
+    'challenge HTML produces a typed blocker',
+    challenge.search({ query: 'challenge' }),
+    'challenge',
+  )
+  check(
+    'challenge has a distinct parser state',
+    challenge.status().diagnostics.parserState === 'challenge',
+  )
+
+  let circuitNow = 10_000
+  let networkAttempts = 0
+  const failing = new DuckDuckGoWebSearchAdapter(
+    async () => {
+      networkAttempts += 1
+      throw new TypeError('offline')
+    },
+    () => circuitNow,
+  )
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    await expectFailureCode(
+      `network failure ${attempt + 1} is typed`,
+      failing.search({ query: 'offline' }),
+      'network',
+    )
+  }
+  check(
+    'three consecutive failures open the bounded circuit',
+    failing.status().reason === 'circuit-open',
+  )
+  await expectFailureCode(
+    'open circuit rejects without transport',
+    failing.search({ query: 'offline' }),
+    'circuit-open',
+  )
+  check('open circuit does not call the network', networkAttempts === 3)
+  circuitNow += 30_001
+  await expectFailureCode(
+    'expired circuit permits a new probe',
+    failing.search({ query: 'offline' }),
+    'network',
+  )
+  check('circuit retry is bounded and observable', networkAttempts === 4)
 
   const explicit = new CharacterToolDispatcher({
     registry,

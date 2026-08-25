@@ -303,6 +303,11 @@ export const ruMessages = {
   'plugins.webSearch.providerName': 'DuckDuckGo',
   'plugins.webSearch.authentication': 'Авторизация',
   'plugins.webSearch.noApiKey': 'API-ключ не требуется',
+  'plugins.webSearch.health.parserFailure': 'Формат ответа DuckDuckGo изменился',
+  'plugins.webSearch.health.challenge': 'DuckDuckGo запросил ручную проверку',
+  'plugins.webSearch.health.networkFailure': 'Последний запрос к DuckDuckGo завершился ошибкой',
+  'plugins.webSearch.health.circuitOpen': 'Поиск временно приостановлен после повторных ошибок',
+  'plugins.webSearch.health.unavailable': 'Адаптер веб-поиска недоступен',
   'plugins.desktopControl.name': 'Desktop Control',
   'plugins.desktopControl.description':
     'Управляет автоматизацией компьютера через проверяемые задания и подключённые инструменты.',

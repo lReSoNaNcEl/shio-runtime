@@ -24,9 +24,46 @@ export interface WebSearchResult {
   provider: string
 }
 
+export type WebSearchParserState =
+  | 'not-observed'
+  | 'valid-results'
+  | 'valid-empty'
+  | 'structural-failure'
+  | 'challenge'
+
+export type WebSearchFailureCode =
+  | 'network'
+  | 'timeout'
+  | 'http-error'
+  | 'unexpected-origin'
+  | 'unexpected-content-type'
+  | 'response-too-large'
+  | 'parser-structure'
+  | 'challenge'
+  | 'circuit-open'
+
+export interface WebSearchDiagnostics {
+  parserSignature: string
+  parserState: WebSearchParserState
+  lastSearchAt?: number
+  lastSuccessfulSearchAt?: number
+  consecutiveFailureCount: number
+  lastFailureCode?: WebSearchFailureCode
+  circuitOpenUntil?: number
+}
+
 export type WebSearchStatus =
-  | { availability: 'available' }
-  | { availability: 'unavailable'; reason: 'adapter-unavailable' }
+  | { availability: 'available'; diagnostics: WebSearchDiagnostics }
+  | {
+      availability: 'degraded'
+      reason: 'parser-failure' | 'challenge' | 'network-failure' | 'circuit-open'
+      diagnostics: WebSearchDiagnostics
+    }
+  | {
+      availability: 'unavailable'
+      reason: 'adapter-unavailable'
+      diagnostics: WebSearchDiagnostics
+    }
 
 export interface WebSearchProvider {
   status(): WebSearchStatus

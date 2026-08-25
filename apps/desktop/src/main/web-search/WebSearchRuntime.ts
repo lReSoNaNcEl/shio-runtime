@@ -16,6 +16,11 @@ export class WebSearchRuntime {
       this.adapter?.status() ?? {
         availability: 'unavailable',
         reason: 'adapter-unavailable',
+        diagnostics: {
+          parserSignature: 'unavailable',
+          parserState: 'not-observed',
+          consecutiveFailureCount: 0,
+        },
       }
     )
   }

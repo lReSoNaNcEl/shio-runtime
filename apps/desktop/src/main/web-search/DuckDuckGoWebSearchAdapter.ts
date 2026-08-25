@@ -1,6 +1,8 @@
 import type {
+  WebSearchFailureCode,
   WebSearchFreshness,
   WebSearchInput,
+  WebSearchParserState,
   WebSearchResult,
   WebSearchResultItem,
   WebSearchStatus,
@@ -10,6 +12,9 @@ import type { WebSearchAdapter } from './WebSearchAdapter'
 const DUCKDUCKGO_LITE_ENDPOINT = 'https://lite.duckduckgo.com/lite/'
 const SEARCH_TIMEOUT_MS = 12_000
 const MAX_RESPONSE_BYTES = 1_000_000
+const PARSER_SIGNATURE = 'duckduckgo-lite/result-link-v1'
+const CIRCUIT_FAILURE_THRESHOLD = 3
+const CIRCUIT_OPEN_MS = 30_000
 const FRESHNESS: Record<WebSearchFreshness, string> = {
   day: 'd',
   week: 'w',
@@ -109,7 +114,31 @@ function externalResultUrl(value: string): URL | undefined {
   return parsed
 }
 
-function parsedResults(html: string): readonly WebSearchResultItem[] {
+interface ParsedDocument {
+  state: Extract<WebSearchParserState, 'valid-results' | 'valid-empty' | 'structural-failure'>
+  results: readonly WebSearchResultItem[]
+}
+
+function isChallengePage(html: string): boolean {
+  return /(?:class\s*=\s*['"][^'"]*(?:challenge-form|anomaly-modal)[^'"]*['"]|id\s*=\s*['"][^'"]*captcha[^'"]*['"]|cf-chl-|bots use duckduckgo|please complete the following challenge)/iu.test(
+    html,
+  )
+}
+
+function hasLitePageSignature(html: string): boolean {
+  return (
+    /duckduckgo/iu.test(html) &&
+    /<(?:form|input)\b[^>]*(?:action\s*=\s*['"][^'"]*\/lite\/?|name\s*=\s*['"]q['"])/iu.test(html)
+  )
+}
+
+function hasExplicitNoResults(html: string): boolean {
+  return /(?:no (?:more )?results(?: found)?|did not match any documents|no results\.)/iu.test(
+    plainText(html, 20_000) ?? '',
+  )
+}
+
+function parseDocument(html: string): ParsedDocument {
   const anchors = resultAnchors(html)
   const results: WebSearchResultItem[] = []
   for (const [index, anchor] of anchors.entries()) {
@@ -128,7 +157,16 @@ function parsedResults(html: string): readonly WebSearchResultItem[] {
       source: url.hostname,
     })
   }
-  return Object.freeze(results.map((result) => Object.freeze(result)))
+  if (results.length > 0) {
+    return {
+      state: 'valid-results',
+      results: Object.freeze(results.map((result) => Object.freeze(result))),
+    }
+  }
+  if (hasLitePageSignature(html) && hasExplicitNoResults(html)) {
+    return { state: 'valid-empty', results: Object.freeze([]) }
+  }
+  return { state: 'structural-failure', results: Object.freeze([]) }
 }
 
 function searchQuery(input: WebSearchInput): string {
@@ -139,7 +177,7 @@ function searchQuery(input: WebSearchInput): string {
 async function boundedHtml(response: Response): Promise<string> {
   const contentLength = Number(response.headers.get('content-length'))
   if (Number.isFinite(contentLength) && contentLength > MAX_RESPONSE_BYTES) {
-    throw new Error('WEB_SEARCH_RESPONSE_TOO_LARGE')
+    throw new WebSearchAdapterError('response-too-large')
   }
   if (!response.body) return ''
   const reader = response.body.getReader()
@@ -152,7 +190,7 @@ async function boundedHtml(response: Response): Promise<string> {
     bytes += value.byteLength
     if (bytes > MAX_RESPONSE_BYTES) {
       await reader.cancel()
-      throw new Error('WEB_SEARCH_RESPONSE_TOO_LARGE')
+      throw new WebSearchAdapterError('response-too-large')
     }
     html += decoder.decode(value, { stream: true })
   }
@@ -166,44 +204,130 @@ function validateResponseOrigin(value: string): void {
     url.protocol !== 'https:' ||
     !['duckduckgo.com', 'html.duckduckgo.com', 'lite.duckduckgo.com'].includes(url.hostname)
   ) {
-    throw new Error('WEB_SEARCH_UNEXPECTED_ORIGIN')
+    throw new WebSearchAdapterError('unexpected-origin')
+  }
+}
+
+export class WebSearchAdapterError extends Error {
+  constructor(
+    readonly code: WebSearchFailureCode,
+    message = `WEB_SEARCH_${code.toLocaleUpperCase().replaceAll('-', '_')}`,
+  ) {
+    super(message)
+    this.name = 'WebSearchAdapterError'
   }
 }
 
 export class DuckDuckGoWebSearchAdapter implements WebSearchAdapter {
-  constructor(private readonly fetchImpl: typeof fetch = fetch) {}
+  private parserState: WebSearchParserState = 'not-observed'
+  private lastSearchAt: number | undefined
+  private lastSuccessfulSearchAt: number | undefined
+  private consecutiveFailureCount = 0
+  private lastFailureCode: WebSearchFailureCode | undefined
+  private circuitOpenUntil: number | undefined
+
+  constructor(
+    private readonly fetchImpl: typeof fetch = fetch,
+    private readonly now: () => number = Date.now,
+  ) {}
 
   status(): WebSearchStatus {
-    return { availability: 'available' }
+    const diagnostics = Object.freeze({
+      parserSignature: PARSER_SIGNATURE,
+      parserState: this.parserState,
+      ...(this.lastSearchAt === undefined ? {} : { lastSearchAt: this.lastSearchAt }),
+      ...(this.lastSuccessfulSearchAt === undefined
+        ? {}
+        : { lastSuccessfulSearchAt: this.lastSuccessfulSearchAt }),
+      consecutiveFailureCount: this.consecutiveFailureCount,
+      ...(this.lastFailureCode === undefined ? {} : { lastFailureCode: this.lastFailureCode }),
+      ...(this.circuitOpenUntil === undefined ? {} : { circuitOpenUntil: this.circuitOpenUntil }),
+    })
+    if (this.circuitOpenUntil !== undefined && this.circuitOpenUntil > this.now()) {
+      return { availability: 'degraded', reason: 'circuit-open', diagnostics }
+    }
+    if (this.parserState === 'structural-failure') {
+      return { availability: 'degraded', reason: 'parser-failure', diagnostics }
+    }
+    if (this.parserState === 'challenge') {
+      return { availability: 'degraded', reason: 'challenge', diagnostics }
+    }
+    if (this.consecutiveFailureCount > 0) {
+      return { availability: 'degraded', reason: 'network-failure', diagnostics }
+    }
+    return { availability: 'available', diagnostics }
   }
 
   async search(input: WebSearchInput, signal?: AbortSignal): Promise<WebSearchResult> {
+    const searchStartedAt = this.now()
+    this.lastSearchAt = searchStartedAt
+    if (this.circuitOpenUntil !== undefined && this.circuitOpenUntil > searchStartedAt) {
+      this.lastFailureCode = 'circuit-open'
+      throw new WebSearchAdapterError('circuit-open')
+    }
+    if (this.circuitOpenUntil !== undefined) this.circuitOpenUntil = undefined
     const url = new URL(DUCKDUCKGO_LITE_ENDPOINT)
     url.searchParams.set('q', searchQuery(input))
     if (input.freshness) url.searchParams.set('df', FRESHNESS[input.freshness])
 
     const timeoutSignal = AbortSignal.timeout(SEARCH_TIMEOUT_MS)
-    const response = await this.fetchImpl(url, {
-      method: 'GET',
-      headers: {
-        Accept: 'text/html',
-        'Accept-Encoding': 'gzip, br',
-        'User-Agent': 'Shio-Runtime-WebSearch/1.0',
-      },
-      redirect: 'follow',
-      signal: signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal,
-    })
-    if (response.status !== 200) throw new Error(`WEB_SEARCH_HTTP_${response.status}`)
-    validateResponseOrigin(response.url)
-    if (!response.headers.get('content-type')?.toLocaleLowerCase().includes('text/html')) {
-      throw new Error('WEB_SEARCH_UNEXPECTED_CONTENT_TYPE')
+    try {
+      const response = await this.fetchImpl(url, {
+        method: 'GET',
+        headers: {
+          Accept: 'text/html',
+          'Accept-Encoding': 'gzip, br',
+          'User-Agent': 'Shio-Runtime-WebSearch/1.0',
+        },
+        redirect: 'follow',
+        signal: signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal,
+      })
+      validateResponseOrigin(response.url)
+      if (!response.headers.get('content-type')?.toLocaleLowerCase().includes('text/html')) {
+        throw new WebSearchAdapterError('unexpected-content-type')
+      }
+      const html = await boundedHtml(response)
+      if (isChallengePage(html)) {
+        this.parserState = 'challenge'
+        throw new WebSearchAdapterError('challenge')
+      }
+      if (response.status !== 200) throw new WebSearchAdapterError('http-error')
+      const parsed = parseDocument(html)
+      this.parserState = parsed.state
+      if (parsed.state === 'structural-failure') {
+        throw new WebSearchAdapterError('parser-structure')
+      }
+      this.recordSuccess()
+      const maximum = input.limit ?? 5
+      return Object.freeze({
+        results: Object.freeze(parsed.results.slice(0, maximum)),
+        truncated: parsed.results.length > maximum,
+        provider: 'duckduckgo',
+      })
+    } catch (error) {
+      if (signal?.aborted) throw signal.reason ?? error
+      const failure = this.normalizeFailure(error, timeoutSignal.aborted)
+      if (failure.code !== 'circuit-open') this.recordFailure(failure.code)
+      throw failure
     }
-    const rawResults = parsedResults(await boundedHtml(response))
-    const maximum = input.limit ?? 5
-    return Object.freeze({
-      results: Object.freeze(rawResults.slice(0, maximum)),
-      truncated: rawResults.length > maximum,
-      provider: 'duckduckgo',
-    })
+  }
+
+  private recordSuccess(): void {
+    this.lastSuccessfulSearchAt = this.now()
+    this.consecutiveFailureCount = 0
+    this.circuitOpenUntil = undefined
+  }
+
+  private recordFailure(code: WebSearchFailureCode): void {
+    this.lastFailureCode = code
+    this.consecutiveFailureCount += 1
+    if (this.consecutiveFailureCount >= CIRCUIT_FAILURE_THRESHOLD) {
+      this.circuitOpenUntil = this.now() + CIRCUIT_OPEN_MS
+    }
+  }
+
+  private normalizeFailure(error: unknown, timedOut: boolean): WebSearchAdapterError {
+    if (error instanceof WebSearchAdapterError) return error
+    return new WebSearchAdapterError(timedOut ? 'timeout' : 'network')
   }
 }

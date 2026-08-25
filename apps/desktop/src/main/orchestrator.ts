@@ -351,7 +351,8 @@ export class Orchestrator {
       const registry = (): CharacterToolRegistry =>
         new CharacterToolRegistry({
           projectAvailable,
-          webAvailable: this.webSearch?.()?.status().availability === 'available',
+          webAvailable:
+            (this.webSearch?.()?.status().availability ?? 'unavailable') !== 'unavailable',
           goalsAvailable: Boolean(this.persistentGoals),
           goalCreatesAvailable: Boolean(this.createPersistentGoal),
           goalUpdatesAvailable: Boolean(this.revisePersistentGoal),

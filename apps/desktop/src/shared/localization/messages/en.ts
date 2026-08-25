@@ -307,6 +307,11 @@ export const enMessages: Record<TranslationKey, string> = {
   'plugins.webSearch.providerName': 'DuckDuckGo',
   'plugins.webSearch.authentication': 'Authentication',
   'plugins.webSearch.noApiKey': 'No API key required',
+  'plugins.webSearch.health.parserFailure': 'DuckDuckGo response format changed',
+  'plugins.webSearch.health.challenge': 'DuckDuckGo requested manual verification',
+  'plugins.webSearch.health.networkFailure': 'The last DuckDuckGo request failed',
+  'plugins.webSearch.health.circuitOpen': 'Search is temporarily paused after repeated failures',
+  'plugins.webSearch.health.unavailable': 'The web search adapter is unavailable',
   'plugins.desktopControl.name': 'Desktop Control',
   'plugins.desktopControl.description':
     'Controls computer automation through validated workflows and connected tools.',
