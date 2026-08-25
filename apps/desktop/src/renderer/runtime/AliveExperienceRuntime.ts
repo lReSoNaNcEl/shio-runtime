@@ -91,20 +91,16 @@ export class AliveExperienceRuntime {
   }
 
   private applyBehavior(command: BehaviorCommand): void {
-    if (command.type === 'idle-reaction') {
-      this.deps.presentation.triggerEarImpulse('thinking-entry', command.id)
-      this.deps.recordEvent('Behavior Command Applied', `type=${command.type} id=${command.id}`)
-      return
+    if (command.intent.kind === 'embodiment') {
+      this.deps.presentation.setEmbodimentIntent(command.intent.intent)
+    } else if (command.intent.kind === 'conversation-candidate') {
+      this.deps.pushInitiative(command.intent.topic)
+    } else if (command.intent.kind === 'goal-suggestion') {
+      this.deps.pushInitiative(command.intent.objective)
     }
-    if (command.type === 'orient') {
-      this.deps.presentation.triggerEarImpulse('direct-address', command.id)
-      this.deps.recordEvent('Behavior Command Applied', `type=${command.type} id=${command.id}`)
-      return
-    }
-    this.deps.pushInitiative(command.title)
     this.deps.recordEvent(
-      'Autonomous Initiative Presented',
-      `taskId=${command.taskId} commandId=${command.id}`,
+      'Behavior Command Applied',
+      `intent=${command.intent.kind} id=${command.id}`,
     )
   }
 }

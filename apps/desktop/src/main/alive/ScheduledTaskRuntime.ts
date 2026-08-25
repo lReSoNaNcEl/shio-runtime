@@ -1,5 +1,3 @@
-import { randomUUID } from 'node:crypto'
-
 import type {
   AutonomySettings,
   BehaviorCommand,
@@ -9,6 +7,7 @@ import type {
 import { mainLog } from '../logging/safeLogger'
 import type { AliveStore } from './AliveStore'
 import type { AutonomyEnvelope } from './AutonomyEnvelope'
+import { BehaviorRuntime } from './BehaviorRuntime'
 import { SchedulerRuntime } from './SchedulerRuntime'
 import type { WorldContextRuntime } from './WorldContextRuntime'
 
@@ -23,6 +22,7 @@ interface ScheduledTaskRuntimeOptions {
 /** Owns typed scheduled-task occurrence semantics on top of the single-flight clock. */
 export class ScheduledTaskRuntime {
   private readonly clock = new SchedulerRuntime()
+  private readonly behavior = new BehaviorRuntime()
   private lastInitiativeAt: number | null = null
   private lastErrorCode: string | undefined
 
@@ -100,13 +100,7 @@ export class ScheduledTaskRuntime {
         } else if (decision.outcome === 'preview') {
           this.options.store.setTaskStatus(task.id, 'waiting_confirmation')
           this.options.store.audit('autonomy', 'initiative', 'previewed', task.id, decision.reason)
-          this.options.onBehavior({
-            type: 'initiative',
-            id: randomUUID(),
-            at: now,
-            taskId: task.id,
-            title: task.title,
-          })
+          this.options.onBehavior(this.behavior.scheduledInitiative(task.id, task.title, now))
         } else {
           this.execute(task, now, 'full-control')
         }
@@ -125,12 +119,6 @@ export class ScheduledTaskRuntime {
     if (!this.options.store.claimTaskRun(task, runKey, now)) return
     this.lastInitiativeAt = now
     this.options.store.audit('autonomy', 'initiative', 'executed', task.id, authority)
-    this.options.onBehavior({
-      type: 'initiative',
-      id: randomUUID(),
-      at: now,
-      taskId: task.id,
-      title: task.title,
-    })
+    this.options.onBehavior(this.behavior.scheduledInitiative(task.id, task.title, now))
   }
 }

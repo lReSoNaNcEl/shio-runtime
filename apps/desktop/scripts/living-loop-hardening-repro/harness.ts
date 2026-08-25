@@ -132,7 +132,10 @@ async function completedOnlyHabitEvidence(): Promise<void> {
       kind: 'check_in',
       dueAt: Date.now() - 1,
     })
-    const runtime = new AliveRuntime(store, () => ({}) as never)
+    const runtime = new AliveRuntime(store, () => ({}) as never, {
+      onCompletedExperienceFact: () =>
+        store.observeHabit('task-follow-through', 'Task follow-through'),
+    })
     runtime.start()
     await wait(30)
     const database = new DatabaseSync(databasePath)

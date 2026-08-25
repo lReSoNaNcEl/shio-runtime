@@ -1,3 +1,5 @@
+import type { CharacterEmbodimentIntent } from '../character-response'
+import type { EmotionKey } from '../emotion'
 import type { LlmProviderId } from '../llm'
 
 export type AutonomyMode = 'off' | 'suggest' | 'confirm' | 'full'
@@ -147,6 +149,8 @@ export interface AliveSnapshot {
   goals: readonly PersistentGoal[]
   tasks: readonly ScheduledTask[]
   habitSuggestions: readonly HabitSuggestion[]
+  mood: MoodState
+  lastExperience?: ExperienceAppraisal
   world: WorldContextSnapshot
   audit: readonly AliveAuditEntry[]
   health: AliveRuntimeHealth
@@ -161,15 +165,88 @@ export interface RendererWorldContextInput {
 }
 
 export type ExperienceEvent =
-  | { type: 'conversation-completed'; at: number; turnId: string }
-  | { type: 'conversation-interrupted'; at: number; turnId: string }
-  | { type: 'task-completed'; at: number; taskId: string }
-  | { type: 'silence-threshold'; at: number; silenceMs: number }
+  | { type: 'conversation-completed'; at: number; turnId: string; eventId?: string }
+  | { type: 'conversation-interrupted'; at: number; turnId: string; eventId?: string }
+  | { type: 'task-completed'; at: number; taskId: string; eventId?: string; verified?: boolean }
+  | { type: 'silence-threshold'; at: number; silenceMs: number; eventId?: string }
+  | { type: 'action-verified'; at: number; actionId: string; eventId?: string; novelty?: number }
+  | { type: 'action-failed'; at: number; actionId: string; eventId?: string; code?: string }
+  | { type: 'permission-denied'; at: number; actionId: string; eventId?: string }
+  | { type: 'browser-blocked'; at: number; eventId?: string; reason?: string }
+  | { type: 'browser-recovered'; at: number; eventId?: string }
+  | { type: 'goal-progressed'; at: number; goalId: string; eventId?: string }
+  | { type: 'goal-completed'; at: number; goalId: string; eventId?: string }
+  | { type: 'goal-failed'; at: number; goalId: string; eventId?: string }
+  | { type: 'scheduled-event-due'; at: number; taskId: string; eventId?: string }
+  | { type: 'runtime-recovered'; at: number; runtime: string; eventId?: string }
+  | { type: 'user-returned'; at: number; idleMs: number; eventId?: string }
+  | {
+      type: 'meaningful-world-context-changed'
+      at: number
+      change: 'foreground-application' | 'browser' | 'project' | 'media' | 'system'
+      eventId?: string
+    }
 
-export type BehaviorCommand =
-  | { type: 'orient'; id: string; at: number; direction: 'user' | 'screen' }
-  | { type: 'idle-reaction'; id: string; at: number; intensity: 'subtle' }
-  | { type: 'initiative'; id: string; at: number; taskId: string; title: string }
+export interface ExperienceAppraisal {
+  eventId: string
+  salience: number
+  valence: number
+  arousal: number
+  novelty: number
+  socialRelevance: number
+  emotionHint?: EmotionKey
+  embodimentHint?: CharacterEmbodimentIntent
+  conversationalImpulse?: { topic: string; priority: number }
+  memoryCandidate?: { kind: 'episodic' | 'decision' | 'relationship'; summary: string }
+  silence: boolean
+}
+
+export interface MoodState {
+  valence: number
+  arousal: number
+  confidence: number
+  playfulness: number
+  curiosity: number
+  frustration: number
+  updatedAt: number
+}
+
+export type BehaviorIntent =
+  | { kind: 'none' }
+  | { kind: 'embodiment'; intent: CharacterEmbodimentIntent }
+  | { kind: 'conversation-candidate'; topic: string; priority: number }
+  | { kind: 'goal-suggestion'; objective: string; reason: string }
+
+export interface BehaviorCommand {
+  id: string
+  at: number
+  sourceEventId?: string
+  intent: BehaviorIntent
+}
+
+export interface AttentionCandidate {
+  id: string
+  source: 'speech' | 'world' | 'experience' | 'scheduler' | 'goal' | 'behavior'
+  summary: string
+  salience: number
+  novelty: number
+  urgency: number
+  socialRelevance: number
+  interruptibility: 'never' | 'when-idle' | 'normal' | 'urgent'
+  createdAt: number
+  expiresAt?: number
+}
+
+export type AttentionDisposition = 'ignore' | 'observe' | 'admit'
+
+export interface AttentionDecision {
+  disposition: AttentionDisposition
+  candidateId?: string
+  confidence: number
+  source: 'deterministic' | 'model' | 'fallback'
+  reason: string
+  latencyMs: number
+}
 
 export interface FastBrainAttentionInput {
   utteranceId: string

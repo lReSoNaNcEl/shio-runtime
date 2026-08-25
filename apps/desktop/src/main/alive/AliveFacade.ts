@@ -1,6 +1,8 @@
 import type {
   AliveRuntimeHealth,
   AliveSnapshot,
+  AttentionCandidate,
+  AttentionDecision,
   AutonomySettings,
   BehaviorCommand,
   CreateGoalInput,
@@ -16,11 +18,13 @@ import type {
 } from '../../shared/alive'
 import type { LlmGateway } from '../llm'
 import type { AliveStore } from './AliveStore'
+import { AttentionArbiter } from './AttentionArbiter'
 import { AutonomyEnvelope } from './AutonomyEnvelope'
 import { BehaviorRuntime } from './BehaviorRuntime'
 import { ExperienceRuntime } from './ExperienceRuntime'
 import { FastBrainRuntime } from './FastBrainRuntime'
 import { GoalRuntime } from './GoalRuntime'
+import { MoodRuntime } from './MoodRuntime'
 import { ScheduledTaskRuntime } from './ScheduledTaskRuntime'
 import type { SystemContextAdapter } from './SystemContextAdapter'
 import { type WorldContextProviders, WorldContextRuntime } from './WorldContextRuntime'
@@ -28,6 +32,7 @@ import { type WorldContextProviders, WorldContextRuntime } from './WorldContextR
 export interface AliveFacadeOptions {
   systemContextAdapter?: SystemContextAdapter
   worldContext?: Omit<WorldContextProviders, 'activeGoal'>
+  onCompletedExperienceFact?: ConstructorParameters<typeof ExperienceRuntime>[3]
 }
 
 /** Narrow composition/IPC boundary. Domain decisions remain in the composed runtimes. */
@@ -36,7 +41,7 @@ export class AliveFacade {
   private readonly envelope = new AutonomyEnvelope()
   private readonly behavior = new BehaviorRuntime()
   private readonly experience: ExperienceRuntime
-  private readonly attention: FastBrainRuntime
+  private readonly attention: AttentionArbiter
   private readonly goals: GoalRuntime
   private readonly scheduler: ScheduledTaskRuntime
   private readonly listeners = new Set<(snapshot: AliveSnapshot) => void>()
@@ -58,8 +63,13 @@ export class AliveFacade {
           .snapshot()
           .find((goal) => goal.status !== 'completed' && goal.status !== 'cancelled') ?? null,
     })
-    this.experience = new ExperienceRuntime(store, this.behavior)
-    this.attention = new FastBrainRuntime(llm)
+    this.experience = new ExperienceRuntime(
+      store,
+      this.behavior,
+      new MoodRuntime(store),
+      options.onCompletedExperienceFact ?? (() => undefined),
+    )
+    this.attention = new AttentionArbiter(new FastBrainRuntime(llm))
     this.scheduler = new ScheduledTaskRuntime({
       store,
       envelope: this.envelope,
@@ -102,6 +112,8 @@ export class AliveFacade {
       goals,
       tasks,
       habitSuggestions: habits,
+      mood: this.experience.moodSnapshot(),
+      lastExperience: this.experience.latest(),
       world: this.world.snapshot(settings),
       audit: this.store.recentAudit(),
       health: this.health(goals, tasks, habits),
@@ -120,8 +132,8 @@ export class AliveFacade {
 
   reportExperience(event: ExperienceEvent): void {
     const settings = this.store.settings()
-    const command = this.experience.observe(event, settings, this.world.snapshot(settings))
-    if (command) this.emitBehavior(command)
+    const observation = this.experience.observe(event, settings, this.world.snapshot(settings))
+    if (observation.behavior.intent.kind !== 'none') this.emitBehavior(observation.behavior)
     this.publish()
   }
 
@@ -169,7 +181,13 @@ export class AliveFacade {
   }
 
   evaluateAttention(input: FastBrainAttentionInput): Promise<FastBrainAttentionDecision> {
-    return this.attention.evaluate(input, this.store.settings())
+    return this.attention.evaluateLegacy(input, this.store.settings())
+  }
+
+  arbitrateAttention(candidates: readonly AttentionCandidate[]): Promise<AttentionDecision> {
+    return this.attention.decide(candidates, this.store.settings(), {
+      busy: this.world.snapshot(this.store.settings()).conversationActive,
+    })
   }
 
   private health(

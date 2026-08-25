@@ -43,6 +43,7 @@
     "desktop:alive-autonomy:repro": "npm --prefix apps/desktop run repro:alive-autonomy",
     "desktop:living-loop-hardening:repro": "npm --prefix apps/desktop run repro:living-loop-hardening",
     "desktop:world-context:repro": "npm --prefix apps/desktop run repro:world-context",
+    "desktop:mind-layer:repro": "npm --prefix apps/desktop run repro:mind-layer",
     "desktop:plugins:repro": "npm --prefix apps/desktop run repro:plugin-runtime",
     "desktop:avatar-visual-motion:repro": "npm --prefix apps/desktop run repro:avatar-visual-motion",
     "api:install": "node scripts/api-runner.mjs install",

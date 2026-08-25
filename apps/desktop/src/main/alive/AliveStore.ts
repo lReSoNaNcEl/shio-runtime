@@ -9,6 +9,7 @@ import type {
   CreateGoalInput,
   CreateScheduledTaskInput,
   HabitSuggestion,
+  MoodState,
   PersistentGoal,
   ScheduledTask,
   UpdateGoalInput,
@@ -26,6 +27,16 @@ export const DEFAULT_AUTONOMY_SETTINGS: AutonomySettings = Object.freeze({
   cooldownMs: 15 * 60_000,
   maxDailyInitiatives: 6,
   fastBrain: Object.freeze({ enabled: false, timeoutMs: 1_200, maxTokens: 64 }),
+})
+
+export const DEFAULT_MOOD_STATE: MoodState = Object.freeze({
+  valence: 0,
+  arousal: 0,
+  confidence: 0.55,
+  playfulness: 0.5,
+  curiosity: 0.55,
+  frustration: 0,
+  updatedAt: 0,
 })
 
 interface GoalRow {
@@ -109,6 +120,39 @@ export class AliveStore {
          ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
       )
       .run(JSON.stringify(settings))
+  }
+
+  mood(): MoodState {
+    const row = this.database
+      .prepare("SELECT value FROM alive_settings WHERE key = 'mood'")
+      .get() as { value: string } | undefined
+    if (!row) return DEFAULT_MOOD_STATE
+    try {
+      const parsed = JSON.parse(row.value) as Partial<MoodState>
+      return {
+        valence: boundedMoodValue(parsed.valence, DEFAULT_MOOD_STATE.valence),
+        arousal: boundedMoodValue(parsed.arousal, DEFAULT_MOOD_STATE.arousal),
+        confidence: boundedUnitValue(parsed.confidence, DEFAULT_MOOD_STATE.confidence),
+        playfulness: boundedUnitValue(parsed.playfulness, DEFAULT_MOOD_STATE.playfulness),
+        curiosity: boundedUnitValue(parsed.curiosity, DEFAULT_MOOD_STATE.curiosity),
+        frustration: boundedUnitValue(parsed.frustration, DEFAULT_MOOD_STATE.frustration),
+        updatedAt:
+          typeof parsed.updatedAt === 'number' && Number.isFinite(parsed.updatedAt)
+            ? Math.max(0, parsed.updatedAt)
+            : 0,
+      }
+    } catch {
+      return DEFAULT_MOOD_STATE
+    }
+  }
+
+  saveMood(mood: MoodState): void {
+    this.database
+      .prepare(
+        `INSERT INTO alive_settings (key, value) VALUES ('mood', ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+      )
+      .run(JSON.stringify(mood))
   }
 
   goals(): readonly PersistentGoal[] {
@@ -453,4 +497,16 @@ function toHabit(row: HabitRow): HabitSuggestion {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   })
+}
+
+function boundedMoodValue(value: unknown, fallback: number): number {
+  return typeof value === 'number' && Number.isFinite(value)
+    ? Math.max(-1, Math.min(1, value))
+    : fallback
+}
+
+function boundedUnitValue(value: unknown, fallback: number): number {
+  return typeof value === 'number' && Number.isFinite(value)
+    ? Math.max(0, Math.min(1, value))
+    : fallback
 }
