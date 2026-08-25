@@ -8,7 +8,7 @@ export class MoodRuntime {
   constructor(private readonly store: AliveStore) {}
 
   snapshot(now = Date.now()): MoodState {
-    return this.decay(this.store.mood(), now)
+    return this.projectDecay(this.store.mood(), now)
   }
 
   apply(appraisal: ExperienceAppraisal, at = Date.now()): MoodState {
@@ -30,7 +30,7 @@ export class MoodRuntime {
     return next
   }
 
-  private decay(state: MoodState, now: number): MoodState {
+  private projectDecay(state: MoodState, now: number): MoodState {
     if (state.updatedAt <= 0 || now <= state.updatedAt) return state
     const retention = Math.exp(-(now - state.updatedAt) / MOOD_DECAY_MS)
     const decayed = Object.freeze({
@@ -42,7 +42,6 @@ export class MoodRuntime {
       frustration: boundedUnit(state.frustration * retention),
       updatedAt: now,
     })
-    this.store.saveMood(decayed)
     return decayed
   }
 }

@@ -38,8 +38,15 @@ const settings = {
 
 async function main(): Promise<void> {
   const directory = mkdtempSync(join(tmpdir(), 'shio-mind-layer-'))
+  let store: AliveStore | undefined
   try {
-    const store = new AliveStore(join(directory, 'alive.sqlite'))
+    store = new AliveStore(join(directory, 'alive.sqlite'))
+    const persistMood = store.saveMood.bind(store)
+    let moodWriteCount = 0
+    store.saveMood = (mood) => {
+      moodWriteCount += 1
+      persistMood(mood)
+    }
     const facts: string[] = []
     const experience = new ExperienceRuntime(
       store,
@@ -52,25 +59,31 @@ async function main(): Promise<void> {
       settings,
       world,
     )
+    assert.equal(success.appraisal.silence, true)
+    assert.equal(success.behavior.intent.kind, 'none')
+    assert.equal(moodWriteCount, 1, 'a new Experience should persist Mood exactly once')
     const failure = experience.observe(
       { type: 'action-failed', actionId: 'a2', eventId: 'failure', at: 20 },
       settings,
       world,
     )
-    assert.equal(success.appraisal.silence, true)
-    assert.equal(success.behavior.intent.kind, 'none')
     assert.ok(failure.appraisal.salience > success.appraisal.salience)
     assert.ok(failure.appraisal.valence < success.appraisal.valence)
     assert.equal(failure.behavior.intent.kind, 'conversation-candidate')
     assert.ok(Object.values(failure.mood).every((value) => typeof value === 'number'))
+    assert.equal(moodWriteCount, 2, 'decay projection must not add a second Experience write')
     experience.observe(
       { type: 'task-completed', taskId: crypto.randomUUID(), eventId: 'completed-once', at: 30 },
       settings,
       world,
     )
     assert.deepEqual(facts, ['success', 'completed-once'])
+    assert.equal(moodWriteCount, 3, 'each new Experience should add one Mood write')
+    const persistedBeforeSnapshot = store.mood()
     const decayed = experience.moodSnapshot(30 + 4 * 60 * 60_000)
     assert.ok(Math.abs(decayed.valence) < Math.abs(failure.mood.valence))
+    assert.equal(moodWriteCount, 3, 'reading a projected Mood snapshot must not persist it')
+    assert.deepEqual(store.mood(), persistedBeforeSnapshot)
 
     let modelCalls = 0
     let failModel = false
@@ -115,9 +128,9 @@ async function main(): Promise<void> {
       const text = readFileSync(join(process.cwd(), 'src/main/alive', source), 'utf8')
       assert.doesNotMatch(text, /ActionRuntime|ConversationRuntime|\.execute\s*\(/u)
     }
-    store.close()
     console.log('MIND LAYER REPRO PASS: appraisal, mood, attention, behavior ownership')
   } finally {
+    store?.close()
     rmSync(directory, { recursive: true, force: true })
   }
 }
