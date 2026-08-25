@@ -17,6 +17,7 @@ import {
 } from '../../src/main/plugins'
 import { PROJECT_AWARENESS_MANIFEST } from '../../src/main/project-awareness'
 import type { SpeechClient } from '../../src/main/speech/speechClient'
+import { WEB_SEARCH_MANIFEST, WebSearchPlugin } from '../../src/main/web-search'
 import type { ShioCapabilitySnapshot } from '../../src/shared/capabilities'
 import type { AppSettings } from '../../src/shared/config'
 import type {
@@ -25,6 +26,7 @@ import type {
 } from '../../src/shared/desktop-control'
 import type { LlmCapabilities, LlmReadiness } from '../../src/shared/llm'
 import type { PluginHealth, ProjectContextProvider } from '../../src/shared/plugins'
+import { WEB_SEARCH_PLUGIN_ID } from '../../src/shared/plugins'
 import type { AvatarRuntimeHealth } from '../../src/shared/runtime'
 
 class CapabilityPlugin implements BundledPlugin {
@@ -108,10 +110,14 @@ function waitForCapability(
 async function main(): Promise<void> {
   const directory = await mkdtemp(join(tmpdir(), 'shio-character-capabilities-'))
   const plugin = new CapabilityPlugin()
+  const pluginCapabilities = new PluginCapabilityRegistry()
   const runtime = new PluginRuntime(
-    [plugin],
-    new PluginRegistryStore(join(directory, 'registry.json'), [PROJECT_AWARENESS_MANIFEST]),
-    new PluginCapabilityRegistry(),
+    [plugin, new WebSearchPlugin()],
+    new PluginRegistryStore(join(directory, 'registry.json'), [
+      PROJECT_AWARENESS_MANIFEST,
+      WEB_SEARCH_MANIFEST,
+    ]),
+    pluginCapabilities,
   )
   let avatarHealth: AvatarRuntimeHealth = {
     contractVersion: 1,
@@ -172,7 +178,20 @@ async function main(): Promise<void> {
     assert.equal(disabled.capabilities.length, 11)
     assert.equal(
       disabled.capabilities.find((capability) => capability.id === 'web-search')?.availability,
-      'unavailable',
+      'available',
+    )
+    assert.deepEqual(
+      disabled.capabilities.find((capability) => capability.id === 'web-search')?.source,
+      { kind: 'plugin', pluginId: WEB_SEARCH_PLUGIN_ID },
+    )
+    assert(pluginCapabilities.getWebSearchProvider())
+    const webDisabled = await waitForCapability(catalog, 'web-search', 'disabled', () =>
+      runtime.disable(WEB_SEARCH_PLUGIN_ID),
+    )
+    assert.equal(pluginCapabilities.getWebSearchProvider(), undefined)
+    assert.equal(
+      webDisabled.capabilities.find((capability) => capability.id === 'web-search')?.availability,
+      'disabled',
     )
     const aliveStarting = disabled.capabilities.find(
       (capability) => capability.id === 'alive-autonomy',

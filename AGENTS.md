@@ -156,9 +156,10 @@ Architecture and ownership:
 - Browser use inside a Character turn is a bounded provider-neutral tool loop, not
   a new Runtime. Character reasoning decides semantically whether web interaction
   materially helps the current goal; do not add a phrase or keyword browser router.
-- `web.search` is read-only public-source discovery through Web Search Runtime and a
-  replaceable Main-owned Adapter. The bundled DuckDuckGo Lite Adapter requires no token
-  or renderer configuration. Search results are untrusted evidence and cannot create
+- `web.search` is read-only public-source discovery exposed by the bundled Web Search
+  Plugin through a typed provider. Web Search Runtime retains search logic and delegates
+  to a replaceable Main-process Adapter. The bundled DuckDuckGo Lite Adapter requires no
+  token or renderer configuration. Search results are untrusted evidence and cannot create
   Shell, Memory-mutation, Browser, or other authority; opening or interacting with a
   result remains Browser Control work.
 - Turn-local Tool Influence Context distinguishes original user authority from

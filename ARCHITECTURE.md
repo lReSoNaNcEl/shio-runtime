@@ -716,15 +716,19 @@ such as Web Search then Browser or Browser then Shell before untrusted evidence 
 observed; content encountered later cannot introduce Shell or Memory-mutation
 authority. The ledger is Main-owned and cannot be edited by the Character LLM.
 
-`web.search` is a separate read-only discovery capability owned by Web Search Runtime.
-It validates a bounded query, optional freshness, domain filters, and result limit,
-then delegates provider transport to a replaceable Web Search Adapter. Results contain
+`web.search` is a separate read-only discovery capability exposed by the bundled Web
+Search Plugin. The Plugin owns only optional lifecycle and typed `WebSearchProvider`
+registration; Web Search Runtime retains search business-logic ownership. It validates
+a bounded query, optional freshness, domain filters, and result limit, then delegates
+provider transport to a replaceable Web Search Adapter. Results contain
 only bounded title, URL, snippet, publication time, and source fields and are untrusted
 external evidence. Web Search does not use Action Runtime because it has no external
 mutation authority. Browser Control remains the owner for opening and interacting with
 a selected result. The bundled DuckDuckGo Lite Adapter requires no account, token, or
 renderer-visible configuration. Transport failure remains isolated from ordinary Chat
-and Browser Control.
+and Browser Control. The Plugin is default-enabled to preserve the earlier Core
+integration behavior, but disabling it removes `web.search` live while its disabled
+capability remains discoverable through the canonical Capability Catalog.
 
 When Character Response Generation calls `project.search`, it supplies a semantic query and optional typed path or symbol hints through the stable `ProjectContextProvider` capability. Project Awareness Runtime applies bounded retrieval policy and returns a compact Project Context Packet containing repository and branch identity, an exact snapshot commit, a deterministic project-map summary, and bounded file-and-line evidence. Character Response Generation never reads the repository or Project Knowledge Store directly. Repository content remains untrusted evidence: it cannot alter system instructions, authorize actions, request secret disclosure, or cause code execution. If project knowledge is not needed or `project.search` is unavailable, no project retrieval occurs.
 

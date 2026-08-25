@@ -58,7 +58,7 @@ import { observeMainPromise } from '../reliability/observePromise'
 import { ScreenCaptureAdapter, ScreenContextService } from '../screen-context'
 import { SpeechClientManager } from '../speech/SpeechClientManager'
 import { registerReleaseSupportHandlers } from '../system/releaseSupport'
-import { DuckDuckGoWebSearchAdapter, WebSearchRuntime } from '../web-search'
+import { WEB_SEARCH_MANIFEST, WebSearchPlugin } from '../web-search'
 import { MainWindowManager } from '../windows/MainWindowManager'
 import { OverlayWindowManager } from '../windows/OverlayWindowManager'
 import { actionExperienceEvent } from './ActionExperienceBridge'
@@ -85,6 +85,7 @@ export function buildApplicationDependencies(): ApplicationDependencies {
   let pluginRuntime: PluginRuntime | null = null
   let projectAwareness: ProjectAwarenessPlugin | null = null
   let desktopControl: DesktopControlPlugin | null = null
+  let webSearch: WebSearchPlugin | null = null
   let projectCredentialStore: ProjectCredentialStore | null = null
   let projectKnowledgeStore: ProjectKnowledgeStore | null = null
   let rendererNetworkObserver: RendererNetworkObserver | null = null
@@ -117,7 +118,6 @@ export function buildApplicationDependencies(): ApplicationDependencies {
   const screenContextService = new ScreenContextService(new ScreenCaptureAdapter())
   const pluginCapabilities = new PluginCapabilityRegistry()
   const browserWorkflowScopes = new BrowserWorkflowScopeRegistry()
-  const webSearch = new WebSearchRuntime(new DuckDuckGoWebSearchAdapter())
 
   const loadRenderer = async (target: BrowserWindow, overlay = false): Promise<void> => {
     if (process.env.NODE_ENV === 'development') {
@@ -273,13 +273,19 @@ export function buildApplicationDependencies(): ApplicationDependencies {
     return desktopControl
   }
 
+  const getWebSearch = (): WebSearchPlugin => {
+    webSearch ??= new WebSearchPlugin()
+    return webSearch
+  }
+
   const getPluginRuntime = (): PluginRuntime => {
     if (!pluginRuntime) {
       pluginRuntime = new PluginRuntime(
-        [getProjectAwareness(), getDesktopControl()],
+        [getProjectAwareness(), getDesktopControl(), getWebSearch()],
         new PluginRegistryStore(join(app.getPath('userData'), 'plugins', 'registry.json'), [
           PROJECT_AWARENESS_MANIFEST,
           DESKTOP_CONTROL_MANIFEST,
+          WEB_SEARCH_MANIFEST,
         ]),
         pluginCapabilities,
       )
@@ -302,7 +308,6 @@ export function buildApplicationDependencies(): ApplicationDependencies {
         recommendedMaxTokens: 1_024,
       },
     memoryStatus: () => semanticMemory.status(),
-    webSearchStatus: () => webSearch.status(),
     plugins: () => getPluginRuntime().list(),
     desktopControl: () => getDesktopControl().getCapabilityProjection(),
     avatarRuntimeHealth: () => lastAvatarRuntimeHealth,
@@ -376,7 +381,7 @@ export function buildApplicationDependencies(): ApplicationDependencies {
           habits: semanticMemory.relevantHabitMotifs(),
         }
       },
-      webSearch,
+      () => pluginCapabilities.getWebSearchProvider(),
     )
   }
 

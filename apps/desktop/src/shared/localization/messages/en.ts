@@ -299,6 +299,14 @@ export const enMessages: Record<TranslationKey, string> = {
   'plugins.projectAwareness.name': 'Project Awareness',
   'plugins.projectAwareness.description':
     'Read-only context from a selected GitHub repository for grounded answers.',
+  'plugins.webSearch.name': 'Web Search',
+  'plugins.webSearch.description': 'Search current information on the open web.',
+  'plugins.webSearch.providerTitle': 'Provider',
+  'plugins.webSearch.providerDescription':
+    'DuckDuckGo provides public web results without an API key.',
+  'plugins.webSearch.providerName': 'DuckDuckGo',
+  'plugins.webSearch.authentication': 'Authentication',
+  'plugins.webSearch.noApiKey': 'No API key required',
   'plugins.desktopControl.name': 'Desktop Control',
   'plugins.desktopControl.description':
     'Controls computer automation through validated workflows and connected tools.',

@@ -20,11 +20,10 @@ import { browserOperationSchema } from '../../shared/desktop-control'
 import type { MemoryToolName } from '../../shared/memory'
 import type { ProjectContextProviderResolver } from '../../shared/plugins'
 import type { ProjectContextPacket } from '../../shared/project-awareness'
-import type { WebSearchInput } from '../../shared/web-search'
+import type { WebSearchInput, WebSearchProviderResolver } from '../../shared/web-search'
 import { buildActionResultNarrationContext } from '../action'
 import type { BrowserAgentCoordinator } from '../desktop-control/browser-agent'
 import type { MemoryToolBroker } from '../memory'
-import type { WebSearchRuntime } from '../web-search'
 import type { CharacterToolRegistry } from './CharacterToolRegistry'
 import { ToolInfluenceContext } from './ToolInfluenceContext'
 
@@ -164,7 +163,7 @@ interface CharacterToolDispatcherOptions {
   userGoal: string
   signal: AbortSignal
   projectContext?: ProjectContextProviderResolver
-  webSearch?: WebSearchRuntime
+  webSearch?: WebSearchProviderResolver
   semanticMemory?: MemoryToolBroker
   persistentGoals?: PersistentGoalProvider
   goalAwareness?: readonly PersistentGoal[]
@@ -435,11 +434,9 @@ export class CharacterToolDispatcher {
   private async executeWebSearch(
     input: Record<string, unknown>,
   ): Promise<CharacterToolDispatchResult> {
-    if (!this.options.webSearch) return { content: failureContent('WEB_SEARCH_UNAVAILABLE') }
-    const result = await this.options.webSearch.search(
-      input as unknown as WebSearchInput,
-      this.options.signal,
-    )
+    const provider = this.options.webSearch?.()
+    if (!provider) return { content: failureContent('WEB_SEARCH_UNAVAILABLE') }
+    const result = await provider.search(input as unknown as WebSearchInput, this.options.signal)
     this.influence.observeEvidence('web')
     return {
       content: successfulContent({

@@ -6,6 +6,7 @@ import type { WebSearchAdapter } from '../../src/main/web-search/WebSearchAdapte
 import { WebSearchRuntime } from '../../src/main/web-search/WebSearchRuntime'
 import type { DesktopWorkflowActionResult } from '../../src/shared/actions'
 import type { ShioCapabilitySnapshot } from '../../src/shared/capabilities'
+import type { WebSearchProvider } from '../../src/shared/web-search'
 
 function check(label: string, condition: boolean): void {
   if (!condition) throw new Error(`FAIL: ${label}`)
@@ -53,10 +54,11 @@ const adapter: WebSearchAdapter = {
   }),
 }
 const runtime = new WebSearchRuntime(adapter)
+let webProvider: WebSearchProvider | undefined = runtime
 const registry = () =>
   new CharacterToolRegistry({
     projectAvailable: false,
-    webAvailable: true,
+    webAvailable: webProvider?.status().availability === 'available',
     capabilityContext,
     browserObservation: null,
     actionsAvailable: true,
@@ -137,7 +139,7 @@ async function run(): Promise<void> {
     traceId: 'web-explicit',
     userGoal: 'Find the official release page and open it in the browser.',
     signal: new AbortController().signal,
-    webSearch: runtime,
+    webSearch: () => runtime,
     executeDesktopWorkflow: async () => actionResult,
   })
   explicit.registerPlannedTools(['web.search', 'browser.open'])
@@ -154,7 +156,7 @@ async function run(): Promise<void> {
     traceId: 'web-injection',
     userGoal: 'Find the release notes.',
     signal: new AbortController().signal,
-    webSearch: runtime,
+    webSearch: () => runtime,
     executeDesktopWorkflow: async () => actionResult,
   })
   await injected.execute('web.search', { query: 'release notes' })
@@ -162,6 +164,21 @@ async function run(): Promise<void> {
   check(
     'search-result instructions cannot introduce shell authority',
     blockedShell.content.includes('BROWSER_EVIDENCE_CANNOT_AUTHORIZE_SHELL'),
+  )
+
+  webProvider = undefined
+  check('disabled Web Search removes web.search', registry().get('web.search') === undefined)
+  const disabled = new CharacterToolDispatcher({
+    registry,
+    traceId: 'web-disabled',
+    userGoal: 'Find current information.',
+    signal: new AbortController().signal,
+    webSearch: () => webProvider,
+  })
+  const unavailable = await disabled.execute('web.search', { query: 'current information' })
+  check(
+    'disabled Web Search returns typed tool absence',
+    unavailable.content.includes('TOOL_UNAVAILABLE'),
   )
 
   const influence = new ToolInfluenceContext('Find current sources')

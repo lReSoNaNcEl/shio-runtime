@@ -295,6 +295,14 @@ export const ruMessages = {
   'plugins.projectAwareness.name': 'Project Awareness',
   'plugins.projectAwareness.description':
     'Контекст выбранного GitHub-репозитория только для чтения — для обоснованных ответов.',
+  'plugins.webSearch.name': 'Веб-поиск',
+  'plugins.webSearch.description': 'Поиск актуальной информации в открытом интернете.',
+  'plugins.webSearch.providerTitle': 'Провайдер',
+  'plugins.webSearch.providerDescription':
+    'DuckDuckGo предоставляет результаты из открытого интернета без API-ключа.',
+  'plugins.webSearch.providerName': 'DuckDuckGo',
+  'plugins.webSearch.authentication': 'Авторизация',
+  'plugins.webSearch.noApiKey': 'API-ключ не требуется',
   'plugins.desktopControl.name': 'Desktop Control',
   'plugins.desktopControl.description':
     'Управляет автоматизацией компьютера через проверяемые задания и подключённые инструменты.',

@@ -10,9 +10,12 @@ import type { DesktopControlCapabilityProjection } from '../../shared/desktop-co
 import type { LlmCapabilities, LlmReadiness } from '../../shared/llm'
 import type { MemoryRuntimeStatus } from '../../shared/memory'
 import type { PluginStatus } from '../../shared/plugins'
-import { DESKTOP_CONTROL_PLUGIN_ID, PROJECT_AWARENESS_PLUGIN_ID } from '../../shared/plugins'
+import {
+  DESKTOP_CONTROL_PLUGIN_ID,
+  PROJECT_AWARENESS_PLUGIN_ID,
+  WEB_SEARCH_PLUGIN_ID,
+} from '../../shared/plugins'
 import type { AvatarRuntimeHealth } from '../../shared/runtime'
-import type { WebSearchStatus } from '../../shared/web-search'
 import { mainLog } from '../logging/safeLogger'
 import type { SpeechCapabilitiesProbe } from '../speech/speechClient'
 
@@ -21,7 +24,6 @@ export interface CapabilityCatalogSources {
   llmReadiness(): LlmReadiness
   llmCapabilities(): LlmCapabilities
   memoryStatus?(): MemoryRuntimeStatus
-  webSearchStatus?(): WebSearchStatus
   plugins(): Promise<readonly PluginStatus[]>
   desktopControl(): Promise<DesktopControlCapabilityProjection>
   avatarRuntimeHealth(): AvatarRuntimeHealth | null
@@ -181,15 +183,12 @@ export class CapabilityCatalog {
       recordCount: 0,
       lastErrorCode: 'MEMORY_UNAVAILABLE' as const,
     }
-    const webSearchStatus = this.sources.webSearchStatus?.() ?? {
-      availability: 'unavailable' as const,
-      reason: 'adapter-unavailable' as const,
-    }
     const plugins = await this.sources.plugins()
     const desktop = await this.sources.desktopControl()
     const avatarHealth = this.sources.avatarRuntimeHealth()
     const alive = this.sources.aliveStatus?.() ?? null
     const project = plugins.find((status) => status.manifest.id === PROJECT_AWARENESS_PLUGIN_ID)
+    const webSearch = plugins.find((status) => status.manifest.id === WEB_SEARCH_PLUGIN_ID)
     const llmState = llmAvailability(readiness)
     const speechState: CapabilityAvailability = !this.speechProbe
       ? 'degraded'
@@ -277,15 +276,13 @@ export class CapabilityCatalog {
       {
         id: 'web-search',
         category: 'knowledge',
-        source: { kind: 'core' },
+        source: { kind: 'plugin', pluginId: WEB_SEARCH_PLUGIN_ID },
         titleKey: 'capabilities.webSearch.title',
         descriptionKey: 'capabilities.webSearch.description',
-        availability: webSearchStatus.availability,
+        availability: pluginAvailability(webSearch),
         authority: 'read-only',
-        reasonKey:
-          webSearchStatus.availability === 'unavailable'
-            ? 'capabilities.reason.webSearchUnavailable'
-            : undefined,
+        navigationTarget: { kind: 'plugin', id: WEB_SEARCH_PLUGIN_ID },
+        reasonKey: pluginReason(webSearch),
       },
       {
         id: 'alive-autonomy',

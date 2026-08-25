@@ -22,6 +22,7 @@ import {
 } from '@react-spectrum/s2'
 import ChevronLeftIcon from '@react-spectrum/s2/icons/ChevronLeft'
 import DeviceDesktopIcon from '@react-spectrum/s2/icons/DeviceDesktop'
+import DiscoverIcon from '@react-spectrum/s2/icons/Discover'
 import ProjectIcon from '@react-spectrum/s2/icons/Project'
 import { type ReactNode, useEffect, useState } from 'react'
 
@@ -33,6 +34,7 @@ import {
   type PluginLifecycleState,
   type PluginStatus,
   PROJECT_AWARENESS_PLUGIN_ID,
+  WEB_SEARCH_PLUGIN_ID,
 } from '../../../shared/plugins'
 import {
   isValidProjectBranch,
@@ -283,6 +285,56 @@ function PluginCatalogCard({
         </Button>
       </div>
     </article>
+  )
+}
+
+function WebSearchDetails({
+  plugin,
+  onBack,
+  onPluginChange,
+}: {
+  plugin: PluginStatus
+  onBack: () => void
+  onPluginChange: (enabled: boolean) => void
+}) {
+  const { t } = useTranslation()
+  return (
+    <section className="plugin-detail page-container">
+      <ActionButton isQuiet onPress={onBack} UNSAFE_className="plugin-back-button">
+        <ChevronLeftIcon />
+        <Text>{t('plugins.backToCatalog')}</Text>
+      </ActionButton>
+      <div className="plugin-detail-heading">
+        <span className="plugin-icon" aria-hidden="true">
+          <DiscoverIcon />
+        </span>
+        <div>
+          <Heading level={2}>{t('plugins.webSearch.name')}</Heading>
+          <Text>{t('plugins.webSearch.description')}</Text>
+        </div>
+        <PluginToggle plugin={plugin} onChange={onPluginChange} />
+      </div>
+
+      <section className="plugin-detail-section">
+        <Heading level={3}>{t('plugins.desktopControl.stateTitle')}</Heading>
+        <PluginSummary plugin={plugin} />
+      </section>
+
+      <section className="plugin-detail-section">
+        <Heading level={3}>{t('plugins.webSearch.providerTitle')}</Heading>
+        <Text>{t('plugins.webSearch.providerDescription')}</Text>
+        <dl className="plugin-status-list">
+          <div>
+            <dt>{t('plugins.webSearch.providerTitle')}</dt>
+            <dd>{t('plugins.webSearch.providerName')}</dd>
+          </div>
+          <div>
+            <dt>{t('plugins.webSearch.authentication')}</dt>
+            <dd>{t('plugins.webSearch.noApiKey')}</dd>
+          </div>
+        </dl>
+      </section>
+    </section>
   )
 }
 
@@ -1139,6 +1191,7 @@ export function PluginsView({
 
   const projectPlugin = plugins.find((plugin) => plugin.manifest.id === PROJECT_AWARENESS_PLUGIN_ID)
   const desktopPlugin = plugins.find((plugin) => plugin.manifest.id === DESKTOP_CONTROL_PLUGIN_ID)
+  const webSearchPlugin = plugins.find((plugin) => plugin.manifest.id === WEB_SEARCH_PLUGIN_ID)
   const togglePlugin = (id: PluginId, enabled: boolean): void => {
     const target = plugins.find((plugin) => plugin.manifest.id === id)
     if (!target || target.busy) return
@@ -1231,6 +1284,33 @@ export function PluginsView({
     )
   }
 
+  if (detailPluginId === WEB_SEARCH_PLUGIN_ID) {
+    if (!webSearchPlugin) {
+      return (
+        <section className="plugin-detail page-container">
+          <ActionButton isQuiet onPress={onBack} UNSAFE_className="plugin-back-button">
+            <ChevronLeftIcon />
+            <Text>{t('plugins.backToCatalog')}</Text>
+          </ActionButton>
+          <InlineAlert variant="negative" fillStyle="subtleFill">
+            <Heading>{t('plugins.webSearch.name')}</Heading>
+            <Content>{t('plugins.catalog.unavailable')}</Content>
+            <Button variant="secondary" onPress={refresh}>
+              {t('common.retry')}
+            </Button>
+          </InlineAlert>
+        </section>
+      )
+    }
+    return (
+      <WebSearchDetails
+        plugin={webSearchPlugin}
+        onBack={onBack}
+        onPluginChange={(enabled) => togglePlugin(WEB_SEARCH_PLUGIN_ID, enabled)}
+      />
+    )
+  }
+
   return (
     <section className="plugins-catalog page-container">
       <Text>{t('plugins.catalog.description')}</Text>
@@ -1251,6 +1331,15 @@ export function PluginsView({
           descriptionKey="plugins.desktopControl.description"
           onToggle={(enabled) => togglePlugin(DESKTOP_CONTROL_PLUGIN_ID, enabled)}
           onOpen={() => onShowDetails(DESKTOP_CONTROL_PLUGIN_ID)}
+          onRetry={refresh}
+        />
+        <PluginCatalogCard
+          plugin={webSearchPlugin}
+          icon={<DiscoverIcon />}
+          nameKey="plugins.webSearch.name"
+          descriptionKey="plugins.webSearch.description"
+          onToggle={(enabled) => togglePlugin(WEB_SEARCH_PLUGIN_ID, enabled)}
+          onOpen={() => onShowDetails(WEB_SEARCH_PLUGIN_ID)}
           onRetry={refresh}
         />
       </div>

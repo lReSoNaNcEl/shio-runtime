@@ -36,6 +36,7 @@ import type {
   SpeechAudioBoundaryTelemetry,
   SpeechTextNormalizationTelemetry,
 } from '../shared/speech'
+import type { WebSearchProviderResolver } from '../shared/web-search'
 import { containsCharacterProtocol } from './character/compatibility/LegacyDirectiveContainment'
 import { presentActionResult } from './character/presentation/ActionResultPresenter'
 import {
@@ -69,7 +70,6 @@ import { mainLog } from './logging/safeLogger'
 import type { MemoryStore, MemoryToolBroker } from './memory'
 import type { SpeechSynthesisClient } from './speech/speechClient'
 import { classifySpeechUtterance, normalizeSpeechText } from './speech/text-normalization'
-import type { WebSearchRuntime } from './web-search'
 
 export { presentActionResult as actionResultFallback }
 
@@ -237,7 +237,7 @@ export class Orchestrator {
     private createPersistentGoal?: CreatePersistentGoal,
     private revisePersistentGoal?: RevisePersistentGoal,
     private livingContext?: () => CharacterLivingContext,
-    private webSearch?: WebSearchRuntime,
+    private webSearch?: WebSearchProviderResolver,
   ) {}
 
   async createReply(
@@ -351,7 +351,7 @@ export class Orchestrator {
       const registry = (): CharacterToolRegistry =>
         new CharacterToolRegistry({
           projectAvailable,
-          webAvailable: this.webSearch?.status().availability === 'available',
+          webAvailable: this.webSearch?.()?.status().availability === 'available',
           goalsAvailable: Boolean(this.persistentGoals),
           goalCreatesAvailable: Boolean(this.createPersistentGoal),
           goalUpdatesAvailable: Boolean(this.revisePersistentGoal),
