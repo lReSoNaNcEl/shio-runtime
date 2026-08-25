@@ -36,6 +36,11 @@
   - [21A. Project Awareness Runtime](#21a-project-awareness-runtime)
   - [21B. Plugin Runtime](#21b-plugin-runtime)
   - [21C. Shio Capability Catalog](#21c-shio-capability-catalog)
+  - [21D. Responsive Character Pipeline](#21d-responsive-character-pipeline)
+  - [21E. World Context, Experience, Attention, and Behavior](#21e-world-context-experience-attention-and-behavior)
+  - [21F. Autonomy, Scheduler, and Persistent Goals](#21f-autonomy-scheduler-and-persistent-goals)
+  - [21G. Smart Memory and Habit Suggestions](#21g-smart-memory-and-habit-suggestions)
+  - [21H. Latency Observability](#21h-latency-observability)
 - [Part V - External Integration](#part-v---external-integration)
   - [22. External Adapters](#22-external-adapters)
 - [Part VI - Reference](#part-vi---reference)
@@ -176,6 +181,18 @@ Architectural Invariants define properties of Shio Runtime that must never chang
     Character Response Generation is the single semantic owner that decides, from the meaning of the admitted turn, whether to answer directly or propose one or more currently available typed capabilities. No phrase, keyword, regular-expression, filename, or locale-alias router may classify natural-language Project, Browser, Shell, Desktop, or Memory intent. Absence of a tool call means that no additional capability is needed.
 40. **Turn Grounding Is Composable**
     When one turn calls Project Awareness and then uses that evidence to select or plan an Action, the assistant response preserves both Project Reply Provenance from the exact original packet and Action Reply Grounding from the completed Action Runtime result. Later tool rounds and post-action narration reuse that packet and never perform an implicit second retrieval or snapshot resolution.
+41. **Safe Stream Commit**
+    Provider stream bytes are untrusted protocol data. Internal tool, memory, action, embodiment, and emotion-control markers are incrementally contained before any text delta reaches chat, TTS, Memory, or another user-visible projection. A native tool round that begins with a tool call commits no visible or speakable text.
+42. **Conversation Admission Remains Singular**
+    Attention Evaluation, Fast Brain, Experience Runtime, Scheduler Runtime, Behavior Runtime, and autonomous initiative may request or enrich a turn, but none may directly start Conversation Runtime. The existing renderer-owned Conversation Admission remains the only grantor of conversational execution.
+43. **Autonomy Does Not Grant Authority**
+    Autonomy Envelope may defer, preview, or authorize an already allowlisted internal initiative according to user policy. It never bypasses Action Runtime, Permission Guard, validation, verification, cancellation, or logging for an externally authoritative side effect.
+44. **Future Intent Is Not Present State**
+    Persistent Goals, Scheduled Tasks, pending confirmations, habits, and checkpoints are durable future-oriented records owned by their Main-process Runtime and Store. They are not Character State, conversation history, or semantic Memory records.
+45. **World Context Is Bounded Metadata**
+    World Context contains typed, freshness-aware activity facts needed for decisions. It never stores raw DOM, screen pixels, ambient transcript, conversation text, Browser Observation, or repository content. Privacy Mode prevents optional model classification and autonomous initiatives.
+46. **Habits Require Confirmation**
+    Repeated runtime-confirmed evidence may create a habit suggestion, never a silent durable belief. A suggestion becomes approved or rejected only through an explicit user decision and does not weaken Semantic Memory v1's explicit remember/update/forget policy.
 
 ## Part I - Architectural Philosophy
 
@@ -1393,6 +1410,116 @@ availability, or `full` authority label is descriptive current context only. Eve
 externally authoritative action still enters Action Runtime, passes validation and
 Permission Guard policy, and executes through the owning Tool and Adapter.
 
+### 21D. Responsive Character Pipeline
+
+Character Response Generation is streaming-first when the resolved provider/model
+capability explicitly reports streaming support. The provider transport owns SSE
+framing, connection/first-byte/idle/total deadlines, upstream abort, usage parsing,
+and normalized terminal errors. Non-streaming completion remains a deterministic
+compatibility path for providers or semantic transports that cannot safely stream.
+
+Character Tool Loop is the safe semantic commit boundary. It incrementally contains
+provider control markers and emotion tags, and emits only normalized text deltas.
+When a native tool call is the first semantic event of a round, the whole round is
+internal: chat and TTS receive no text. A provider that mixes committed visible text
+and a later tool call violates the stream contract and the turn fails without
+duplicating committed output. One recoverable retry is permitted only before the
+first external text commit.
+
+The renderer consumes safe deltas for two coordinated projections:
+
+- one assistant message is appended once and updated in place;
+- Streaming Speech Segmentation creates ordered sentence or bounded-clause segments,
+  excluding fenced code and link destinations from speech boundaries;
+- a bounded producer/consumer queue synthesizes at most two prepared segments ahead;
+- AudioPlayer remains the sole playback owner, and Conversation Runtime retains the
+  single-flight lock until generation, queued synthesis, playback, and cleanup are
+  terminal.
+
+Cancellation propagates from Conversation Runtime to Main-owned LLM and TTS
+`AbortController` instances and invalidates the segment queue. Cancellation never
+creates a second playback owner or permits stale output to resume.
+
+### 21E. World Context, Experience, Attention, and Behavior
+
+World Context Runtime is Main-owned. The authorized main renderer reports only typed
+activity metadata: focus, bounded user-idle duration, conversation activity, audio
+activity, and observation time. Main adds Scheduler freshness and current autonomy
+privacy policy. Each field has explicit freshness; no raw content crosses this
+boundary.
+
+Attention Evaluation remains a pre-admission decision. Fast Brain is an optional,
+bounded decision-model role that accepts boolean semantic cues, has an independently
+selected provider/model plus independent token and wall-clock budgets, returns a narrow
+typed decision, and falls back to the deterministic evaluator. Provider/model identifiers
+are non-secret policy; credentials remain in the existing Main-owned secure LLM credential
+store. Fast Brain is not Character Response Generation and never grants admission itself.
+
+Experience Runtime consumes completed typed facts such as conversation completion,
+interruption, silence thresholds, and task completion. It records post-fact
+experience evidence and may request a bounded Behavior command. It does not execute
+Actions, mutate semantic Memory, or start Conversation Runtime.
+
+Behavior Runtime selects only typed embodiment or presentation commands such as a
+subtle idle reaction, orientation, or presentation of an approved initiative. Avatar
+Runtime remains the only visual embodiment owner; Behavior does not write VRM state
+directly. A conversational Behavior request must return to Conversation Admission.
+
+### 21F. Autonomy, Scheduler, and Persistent Goals
+
+Autonomy Envelope is the Main-owned policy boundary for proactive work. Its canonical
+user settings define `off`, `suggest`, `confirm`, and `full` modes, Global Suspend,
+Privacy Mode, quiet hours, cooldown, and a daily initiative cap. It produces exactly
+one of three results: defer with a retry time, create a user-visible preview awaiting
+confirmation, or execute an allowlisted internal initiative.
+
+`full` mode changes only this proactive policy. Any initiative that requests an
+externally authoritative side effect still becomes a new Action Runtime action and
+passes the normal permission, risk, execution, verification, cancellation, and audit
+boundaries. Scheduler and Autonomy never retry a non-idempotent external mutation.
+
+Scheduler Runtime is Main-owned, durable, restart-safe, and timer-driven. Version 1
+supports only typed reminder and progress-check tasks with one-shot or bounded
+interval schedules; there is no arbitrary cron expression or JavaScript execution.
+Every due occurrence has a stable idempotency key persisted transactionally with its
+run checkpoint. Startup processes an overdue occurrence at most once. Quiet hours,
+busy World Context, Global Suspend, Privacy Mode, cooldown, and daily caps defer the
+occurrence without losing it.
+
+Persistent Goals are Main-owned durable future intent. Goal and Task Store uses an
+application-owned SQLite schema with explicit migration versioning, foreign keys,
+WAL journaling, audit records, and transactional run claims. Goals and tasks are not
+Character State, Semantic Memory, or Action logs. The authorized renderer manages
+them only through validated typed IPC and renders a read-only Runtime snapshot plus
+explicit mutations.
+
+### 21G. Smart Memory and Habit Suggestions
+
+Smart Memory version 1 is a conservative proposal layer, not implicit fact capture.
+It observes only typed runtime-confirmed events, never raw transcript or generated
+assistant prose. Repeated evidence may accumulate under a bounded habit key. A habit
+appears in the UI only after at least three observations and remains a suggestion
+until the user explicitly approves or rejects it.
+
+Approved habits remain separate durable records for autonomous policy and UI. They
+do not silently enter Semantic Memory, Character State, Project Awareness, or the
+Character prompt. Semantic Memory v1 continues to persist facts only after an
+explicit semantic remember, update, or forget request or a manual Memory UI action.
+
+### 21H. Latency Observability
+
+Latency Telemetry is a bounded Main-owned diagnostic projection. Main and the
+authorized renderer publish named milestones with `turnId`, `requestId`, LLM round,
+optional tool/segment/goal correlation, provider/model identity, timestamp, and safe
+terminal status. The projection never contains prompt text, reply text, tool payload,
+credentials, audio, or screen content.
+
+The Runtime derives ASR-final, LLM connect, TTFT, first-sentence, total LLM,
+tool-round, TTS synthesis, first-audio, time-to-playback, and full-turn metrics. It
+retains bounded recent traces and samples and presents p50, p95, and maximum values in
+Diagnostics. These measurements are evidence for responsiveness, not a health proxy;
+individual Runtime owners still report their explicit health and failure state.
+
 ## Part V - External Integration
 
 ### 22. External Adapters
@@ -1458,6 +1585,14 @@ Runtime systems communicate with architectural concepts. Adapters communicate wi
 - **Tool:** a concrete executable capability exposed by Action Runtime.
 - **Action Runtime:** the only Runtime permitted to produce a non-character, externally authoritative side effect.
 - **Shio Capability Catalog:** the main-owned read-only projection of current Core and Plugin capabilities used by the Capabilities UI and Character Capability Context; it is not a Runtime and grants no authority.
+- **Autonomy Envelope:** the Main-owned proactive policy boundary that defers, previews, or authorizes an allowlisted initiative under user mode, suspend, privacy, quiet-hour, cooldown, and daily-cap constraints; it grants no external authority.
+- **Scheduler Runtime:** the Main-owned durable owner of typed reminder and progress-check schedules, idempotent occurrence claims, startup recovery, and checkpoints.
+- **Persistent Goal:** a durable future-oriented user objective owned by Goal and Task Store; it is neither Character State nor Semantic Memory.
+- **World Context Runtime:** the Main-owned bounded and freshness-aware projection of typed activity metadata used by attention, experience, autonomy, and scheduling decisions.
+- **Fast Brain:** an optional bounded decision-model role that classifies pre-admission attention from typed cues and always has deterministic fallback.
+- **Behavior Runtime:** the selector of typed character embodiment and initiative-presentation commands; Avatar Runtime remains the only final embodiment owner.
+- **Habit Suggestion:** a durable proposal derived from repeated runtime-confirmed evidence that requires an explicit approve or reject decision and is not an implicit Memory fact.
+- **Latency Telemetry:** the bounded safe milestone and percentile projection for conversation responsiveness; it contains correlation metadata but no user content.
 - **Delegated Automation Workflow:** one bounded action whose scope is validated and authorized by Action Runtime while an Automation Adapter may choose concrete implementation steps only within that scope.
 - **Full Control:** an explicit Permission Guard policy that automatically authorizes eligible actions without bypassing validation, Action Runtime, logging, cancellation, Tool scope, or Adapter boundaries.
 - **Experience:** the emotional interpretation of completed events.
@@ -1553,9 +1688,9 @@ Evolution rules:
 - new external platforms should integrate through Adapters, optional new Tools, and Action Runtime configuration
 - backward compatibility should be preserved while migration is in progress
 
-Possible future Runtime systems include Scheduler Runtime, Behavior Runtime, Collaboration Runtime, and Analytics Runtime. These examples illustrate possible directions rather than commitments.
+Scheduler Runtime and Behavior Runtime are current Core systems. Possible future Runtime systems include Collaboration Runtime and richer Analytics Runtime. These examples illustrate possible directions rather than commitments.
 
-Future character improvements may include richer emotional continuity, deeper relationships, long-term habits, more natural conversations, autonomous initiative, and improved contextual awareness.
+Future character improvements may include richer emotional continuity, deeper relationships, more capable approved habits, more natural conversations, broader safely authorized initiative, and richer privacy-preserving contextual awareness.
 
 Planned capabilities for continuous input and admission, not current guarantees:
 

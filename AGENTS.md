@@ -83,7 +83,28 @@ Architecture and ownership:
   Browser Context, Screen Context, or raw conversation transcript.
 - Semantic Memory v1 persists only when the user semantically and explicitly asks
   to remember, update, or forget. Implicit durable-fact capture and Smart Memory
-  remain future work.
+  remain prohibited. Smart Habits may observe only typed runtime-confirmed events,
+  require repeated evidence, and remain a pending suggestion until the user
+  explicitly approves or rejects them; they never silently create Memory records.
+- World Context, Scheduler, Persistent Goals, Autonomy Envelope, Smart Habits, and
+  latency aggregation are owned by Electron Main. Renderer reports to these owners
+  use typed, runtime-validated IPC and may expose only bounded activity metadata,
+  never raw screen, DOM, transcript, prompt, reply, tool payload, or credentials.
+- Conversation Admission remains the only entry into Conversation Runtime.
+  Experience, Attention/Fast Brain, Scheduler, Behavior, and autonomous initiative
+  may request admission or presentation but may never grant admission themselves.
+- Fast Brain provider/model selection is bounded non-secret policy. It reuses the
+  Main-owned LLM credential store and may never persist credentials in Alive storage
+  or expose them through World Context, renderer state, or diagnostics.
+- Autonomy modes, including Full, never bypass Action Runtime, Permission Guard,
+  validation, verification, cancellation, or logging for externally authoritative
+  side effects. Global Suspend and Privacy Mode are authoritative policy stops.
+- Scheduler v1 supports only typed reminder and check-in tasks with one-shot or
+  bounded interval schedules. Do not add renderer-defined cron, arbitrary JavaScript,
+  commands, executable paths, or unvalidated external actions.
+- Provider response streaming must pass through the safe incremental protocol
+  filter before chat or TTS. A tool-call-first round exposes no text; cancellation
+  must abort upstream LLM/TTS work and invalidate queued speech segments.
 - Plugin manifests may not inject arbitrary system prompt instructions into
   Character Response Generation.
 - Knowing a capability never authorizes enabling, configuration, invocation, or

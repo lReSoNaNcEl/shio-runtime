@@ -427,5 +427,5 @@ API service
 Desktop must not import API source code or read its internal files. The API must not
 depend on Desktop source code or control avatar playback, LipSync or UI state.
 
-See [ARCHITECTURE.md](./ARCHITECTURE.md), [AGENTS.md](./AGENTS.md), and the
-[third-party license inventory](./THIRD_PARTY_NOTICES.md).
+See [ARCHITECTURE.md](./ARCHITECTURE.md), [Alive & Autonomous v1](./docs/ALIVE-AUTONOMY.md),
+[AGENTS.md](./AGENTS.md), and the [third-party license inventory](./THIRD_PARTY_NOTICES.md).
