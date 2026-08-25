@@ -90,9 +90,12 @@ Architecture and ownership:
   latency aggregation are owned by Electron Main. Renderer reports to these owners
   use typed, runtime-validated IPC and may expose only bounded activity metadata,
   never raw screen, DOM, transcript, prompt, reply, tool payload, or credentials.
-- Character LLM reads current Persistent Goals only through typed read-only goal
-  tools delegated to the Goal and Task Store owner. Goals are not copied into
-  Semantic Memory or static prompts.
+- Character LLM accesses Persistent Goals only through domain-limited typed goal
+  tools delegated to the Goal and Task Store owner. `goal.list` is read-only;
+  `goal.update` may mutate only an exact goal returned in the same turn and remains
+  bounded by Goal Store validation. After an external Action or Browser observation,
+  progress mutation requires a successful, completed, verified Action Runtime result.
+  Goals are never copied into Semantic Memory or static prompts.
 - Conversation Admission remains the only entry into Conversation Runtime.
   Experience, Attention/Fast Brain, Scheduler, Behavior, and autonomous initiative
   may request admission or presentation but may never grant admission themselves.

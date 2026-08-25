@@ -1496,8 +1496,21 @@ explicit mutations.
 Character Response Generation may semantically select the read-only `goal.list`
 tool when the current turn requires Shio's goals or their progress. Character Tool
 Dispatcher delegates that request to the Goal and Task Store owner and returns a
-bounded projection. This read path grants no mutation authority and does not copy
-Persistent Goals into Semantic Memory or static prompt text.
+bounded projection containing the stable goal identity required by later typed work.
+This read path grants no mutation authority and does not copy Persistent Goals into
+Semantic Memory or static prompt text.
+
+The domain-limited `goal.update` tool may report bounded progress only for an exact
+goal identity returned by `goal.list` in the same turn. Goal and Task Store remains
+the mutation owner: it validates the goal, persists progress transactionally, forces
+completed goals to 100 percent, audits the mutation, and publishes the new Runtime
+snapshot. Character Tool Dispatcher grants no generic Store access. If the turn has
+selected an external Action or untrusted Browser observation, progress mutation is
+rejected unless the same turn contains a successful Action Runtime result whose
+execution is complete and whose verification is `verified` or `not-required`.
+Project evidence, Browser content, assistant narration, and Adapter success alone
+never authorize goal progress. Goal updates remain internal Core state and do not
+pass through Action Runtime or Semantic Memory.
 
 ### 21G. Smart Memory and Habit Suggestions
 
