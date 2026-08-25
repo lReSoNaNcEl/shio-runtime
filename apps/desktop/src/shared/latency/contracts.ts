@@ -16,6 +16,12 @@ export const LATENCY_MILESTONES = [
   'tool_round_started',
   'tool_round_completed',
   'tts_segment_requested',
+  'tts_queue_entered',
+  'tts_execution_started',
+  'tts_execution_completed',
+  'audio_preparation_started',
+  'audio_preparation_completed',
+  'audio_ready',
   'tts_segment_ready',
   'first_audio_ready',
   'playback_started',
@@ -41,6 +47,11 @@ export interface LatencyMilestone {
   status?: 'started' | 'success' | 'failure' | 'cancelled' | 'timeout'
   provider?: string
   model?: string
+  metadata?: Readonly<{
+    workerId?: string
+    characters?: number
+    words?: number
+  }>
 }
 
 export type LatencyMetricName =
@@ -51,6 +62,10 @@ export type LatencyMetricName =
   | 'llmTotal'
   | 'toolRound'
   | 'ttsSynthesis'
+  | 'ttsQueueWait'
+  | 'ttsExecution'
+  | 'audioPreparation'
+  | 'audioReadyToPlaybackStart'
   | 'firstAudio'
   | 'timeToPlayback'
   | 'fullTurn'

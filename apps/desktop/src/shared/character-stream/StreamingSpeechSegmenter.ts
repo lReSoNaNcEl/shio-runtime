@@ -1,5 +1,7 @@
 import type { SafeCharacterTextDelta, SpeechSegment } from './contracts'
 
+const FIRST_MIN_CLAUSE_CHARACTERS = 60
+const FIRST_MAX_SEGMENT_CHARACTERS = 140
 const MIN_CLAUSE_CHARACTERS = 140
 const MAX_SEGMENT_CHARACTERS = 360
 
@@ -78,10 +80,15 @@ export class StreamingSpeechSegmenter {
     if (this.inInlineCode) return
 
     const trimmed = this.buffer.trimEnd()
-    const sentenceBoundary = /(?:[.!?]["')\]]?|…)[\s\n]$/u.test(this.buffer)
+    const sentenceBoundary =
+      /(?:[.!?]["')\]]?|…)[\s\n]$/u.test(this.buffer) && safeSentenceBoundary(trimmed)
     const paragraphBoundary = /\n\s*\n$/u.test(this.buffer)
-    const clauseBoundary = trimmed.length >= MIN_CLAUSE_CHARACTERS && /[,;:]$/u.test(trimmed)
-    const forcedBoundary = trimmed.length >= MAX_SEGMENT_CHARACTERS && /\s$/u.test(this.buffer)
+    const minimumClause = this.sequence === 0 ? FIRST_MIN_CLAUSE_CHARACTERS : MIN_CLAUSE_CHARACTERS
+    const maximumSegment =
+      this.sequence === 0 ? FIRST_MAX_SEGMENT_CHARACTERS : MAX_SEGMENT_CHARACTERS
+    const clauseBoundary = trimmed.length >= minimumClause && /[,;:]$/u.test(trimmed)
+    const forcedBoundary =
+      trimmed.length >= maximumSegment && /\s$/u.test(this.buffer) && safeForcedBoundary(trimmed)
     if (sentenceBoundary || paragraphBoundary) this.emitBuffered('sentence')
     else if (clauseBoundary || forcedBoundary) this.emitBuffered('clause')
   }
@@ -120,4 +127,13 @@ export class StreamingSpeechSegmenter {
     )
     this.sequence += 1
   }
+}
+
+function safeSentenceBoundary(text: string): boolean {
+  return !/(?:\b(?:e\.g|i\.e|mr|mrs|dr|т\.д|т\.п|г|ул)\.|\b\d+[.,]\d+\.)$/iu.test(text)
+}
+
+function safeForcedBoundary(text: string): boolean {
+  const token = text.split(/\s+/u).at(-1) ?? ''
+  return !/^(?:https?:\/\/|www\.)/iu.test(token) && !/^\d{1,4}[./:-]\d/u.test(token)
 }

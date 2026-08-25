@@ -117,6 +117,27 @@ export class LatencyTelemetry {
       'ttsSegmentId',
       (value) => this.addSample('ttsSynthesis', value),
     )
+    pairByCorrelation(
+      all('tts_queue_entered'),
+      all('tts_execution_started'),
+      'ttsSegmentId',
+      (value) => this.addSample('ttsQueueWait', value),
+    )
+    pairByCorrelation(
+      all('tts_execution_started'),
+      all('tts_execution_completed'),
+      'ttsSegmentId',
+      (value) => this.addSample('ttsExecution', value),
+    )
+    pairByCorrelation(
+      all('audio_preparation_started'),
+      all('audio_preparation_completed'),
+      'ttsSegmentId',
+      (value) => this.addSample('audioPreparation', value),
+    )
+    pairByCorrelation(all('audio_ready'), all('playback_started'), 'ttsSegmentId', (value) =>
+      this.addSample('audioReadyToPlaybackStart', value),
+    )
   }
 
   private addSample(name: LatencyMetricName, value: number): void {
@@ -144,6 +165,7 @@ function freezeMilestone(milestone: LatencyMilestone): LatencyMilestone {
   return Object.freeze({
     ...milestone,
     correlation: Object.freeze({ ...milestone.correlation }),
+    metadata: milestone.metadata ? Object.freeze({ ...milestone.metadata }) : undefined,
   })
 }
 

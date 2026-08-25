@@ -120,6 +120,7 @@ export class ConversationRuntime {
   private playbackStartedAt: number | null = null
   private generationTurnId: string | null = null
   private synthesisTurnId: string | null = null
+  private activeSynthesisWorkers = 0
   private playbackTurnId: string | null = null
   private activeEmotionPipeline: { cancel(): void } | null = null
   private embodimentIntent: CharacterEmbodimentIntent | undefined
@@ -297,10 +298,12 @@ export class ConversationRuntime {
       let streamedSegmentCount = 0
       const streamingPipeline = new StreamingSpeechPipeline({
         turnId: turn.turnId,
-        synthesize: (segment) =>
-          this.runSynthesis(turn.turnId, () =>
+        synthesize: (segment, signal) => {
+          if (signal.aborted) throw signal.reason
+          return this.runSynthesis(turn.turnId, () =>
             this.deps.speechOutput.synthesizeSegment(turn.turnId, segment),
-          ),
+          )
+        },
         prepareAudio: (audioBuffer) => this.deps.speechOutput.prepare(audioBuffer),
         playPrepared: async (item, onStarted) => {
           this.rememberSpeech(item.speech, null)
@@ -324,6 +327,19 @@ export class ConversationRuntime {
         },
         isCurrentTurn: () => this.isCurrentTurn(turn.turnId),
         recordEvent: (label, detail) => this.deps.recordRuntimeEvent(label, detail),
+        recordTiming: (event) => {
+          const options = {
+            at: event.at,
+            ttsSegmentId: event.segment.id,
+            workerId: event.workerId,
+            characters: event.segment.text.length,
+            words: event.segment.text.trim().split(/\s+/u).filter(Boolean).length,
+          }
+          this.recordLatency(turn.turnId, event.name, 'success', options)
+          if (event.name === 'audio_ready' && event.segment.index === 0) {
+            this.recordLatency(turn.turnId, 'first_audio_ready', 'success', options)
+          }
+        },
       })
       this.activeEmotionPipeline = streamingPipeline
       const streamingExecution = streamingPipeline.execute()
@@ -713,19 +729,26 @@ export class ConversationRuntime {
   }
 
   private async runSynthesis<T>(turnId: string, operation: () => Promise<T>): Promise<T> {
-    if (this.synthesisTurnId)
+    if (this.synthesisTurnId && this.synthesisTurnId !== turnId)
       throw new Error(
         `Synthesis overlap: activeTurnId=${this.synthesisTurnId} requestedTurnId=${turnId}`,
       )
+    if (this.activeSynthesisWorkers >= 2)
+      throw new Error(`Synthesis worker limit exceeded turnId=${turnId}`)
     this.synthesisTurnId = turnId
-    console.debug(`[conversation] turnId=${turnId} synthesis=started`)
+    this.activeSynthesisWorkers += 1
+    console.debug(
+      `[conversation] turnId=${turnId} synthesis=started workers=${this.activeSynthesisWorkers}`,
+    )
     try {
       const result = await Promise.race([operation(), this.interruptionFor(turnId)])
       if (!this.isCurrentTurn(turnId)) throw new Error(`Stale synthesis result turnId=${turnId}`)
       console.debug(`[conversation] turnId=${turnId} synthesis=completed`)
       return result
     } finally {
-      if (this.synthesisTurnId === turnId) this.synthesisTurnId = null
+      this.activeSynthesisWorkers = Math.max(0, this.activeSynthesisWorkers - 1)
+      if (this.synthesisTurnId === turnId && this.activeSynthesisWorkers === 0)
+        this.synthesisTurnId = null
     }
   }
 
@@ -939,15 +962,32 @@ export class ConversationRuntime {
     turnId: string,
     name: LatencyMilestoneName,
     status: 'started' | 'success' | 'failure' | 'cancelled',
+    options: {
+      at?: number
+      ttsSegmentId?: string
+      workerId?: string
+      characters?: number
+      words?: number
+    } = {},
   ): void {
     const latency = window.api.latency
     if (!latency) return
     void latency
       .record({
         name,
-        at: Date.now(),
-        correlation: { turnId, requestId: characterRequestId(turnId), llmRound: 0 },
+        at: options.at ?? Date.now(),
+        correlation: {
+          turnId,
+          requestId: characterRequestId(turnId),
+          llmRound: 0,
+          ttsSegmentId: options.ttsSegmentId,
+        },
         status,
+        metadata: {
+          workerId: options.workerId,
+          characters: options.characters,
+          words: options.words,
+        },
       })
       .catch((error) =>
         this.deps.recordRuntimeEvent(

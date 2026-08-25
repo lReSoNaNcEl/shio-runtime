@@ -19,6 +19,14 @@ const milestoneSchema = z.object({
   status: z.enum(['started', 'success', 'failure', 'cancelled', 'timeout']).optional(),
   provider: z.string().max(100).optional(),
   model: z.string().max(500).optional(),
+  metadata: z
+    .object({
+      workerId: z.string().max(40).optional(),
+      characters: z.number().int().nonnegative().max(20_000).optional(),
+      words: z.number().int().nonnegative().max(10_000).optional(),
+    })
+    .strict()
+    .optional(),
 })
 
 export function registerLatencyIpc(

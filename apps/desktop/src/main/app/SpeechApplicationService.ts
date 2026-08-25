@@ -5,6 +5,8 @@ import type { SpeechClientManager } from '../speech/SpeechClientManager'
 import { DEFAULT_TTS_VOICE_ID } from '../speech/speechClient'
 import { SpeechServiceError } from '../speech/speechErrors'
 
+const MAX_SYNTHESIS_WORKERS = 2
+
 const synthesisCancelled = (turnId: string): SpeechServiceError =>
   new SpeechServiceError({
     code: 'CANCELLED',
@@ -13,11 +15,14 @@ const synthesisCancelled = (turnId: string): SpeechServiceError =>
     technicalMessage: `Conversation interrupted turnId=${turnId}`,
   })
 
+interface ActiveSynthesis {
+  abortController: AbortController
+  settlement: Promise<void>
+}
+
 export class SpeechApplicationService {
-  private activeSynthesisTurnId: string | null = null
   private readonly cancelledTurns = new Set<string>()
-  private readonly abortControllers = new Map<string, AbortController>()
-  private readonly settlements = new Map<string, Promise<void>>()
+  private readonly activeByTurn = new Map<string, Map<number, ActiveSynthesis>>()
   private readonly segmentCounters = new Map<string, number>()
 
   constructor(
@@ -34,11 +39,7 @@ export class SpeechApplicationService {
   }
 
   warmup(language: 'ru' | 'en') {
-    return this.speech().warmupVoice({
-      engine: 'f5',
-      voiceId: DEFAULT_TTS_VOICE_ID,
-      language,
-    })
+    return this.speech().warmupVoice({ engine: 'f5', voiceId: DEFAULT_TTS_VOICE_ID, language })
   }
 
   async recognize(wavBuffer: ArrayBuffer, signal?: AbortSignal): Promise<{ text: string }> {
@@ -47,44 +48,44 @@ export class SpeechApplicationService {
   }
 
   async synthesize(turnId: string, replyText: string, emotionKey: string) {
-    if (this.cancelledTurns.has(turnId)) {
-      this.cancelledTurns.delete(turnId)
-      throw synthesisCancelled(turnId)
-    }
-    if (this.activeSynthesisTurnId) {
+    if (this.cancelledTurns.has(turnId)) throw synthesisCancelled(turnId)
+    const otherActiveTurn = [...this.activeByTurn.keys()].find((active) => active !== turnId)
+    if (otherActiveTurn) {
       throw new Error(
-        `TTS synthesis overlap: activeTurnId=${this.activeSynthesisTurnId} requestedTurnId=${turnId}`,
+        `TTS synthesis overlap: activeTurnId=${otherActiveTurn} requestedTurnId=${turnId}`,
       )
     }
-    this.activeSynthesisTurnId = turnId
+    const active = this.activeByTurn.get(turnId) ?? new Map<number, ActiveSynthesis>()
+    if (active.size >= MAX_SYNTHESIS_WORKERS) {
+      throw new Error(`TTS worker limit exceeded turnId=${turnId}`)
+    }
+    this.activeByTurn.set(turnId, active)
     const segmentSequence = this.segmentCounters.get(turnId) ?? 0
     this.segmentCounters.set(turnId, segmentSequence + 1)
-    if (this.segmentCounters.size > 128) {
-      const oldest = this.segmentCounters.keys().next().value
-      if (oldest) this.segmentCounters.delete(oldest)
-    }
+    this.evictOldCounters()
     const ttsSegmentId = `${turnId}:tts:${segmentSequence}`
-    const correlation = {
-      turnId,
-      requestId: characterRequestId(turnId),
-      llmRound: 0,
-      ttsSegmentId,
-    }
+    const workerId = `worker-${segmentSequence % MAX_SYNTHESIS_WORKERS}`
+    const correlation = { turnId, requestId: characterRequestId(turnId), llmRound: 0, ttsSegmentId }
     latencyTelemetry.record({
       name: 'tts_segment_requested',
       at: Date.now(),
       correlation,
       status: 'started',
+      metadata: { workerId, characters: replyText.length, words: wordCount(replyText) },
     })
     const abortController = new AbortController()
-    this.abortControllers.set(turnId, abortController)
     let settle!: () => void
-    this.settlements.set(
-      turnId,
-      new Promise<void>((resolve) => {
-        settle = resolve
-      }),
-    )
+    const settlement = new Promise<void>((resolve) => {
+      settle = resolve
+    })
+    active.set(segmentSequence, { abortController, settlement })
+    latencyTelemetry.record({
+      name: 'tts_execution_started',
+      at: Date.now(),
+      correlation,
+      status: 'started',
+      metadata: { workerId },
+    })
     try {
       const result = await this.orchestrator().synthesizeReply(
         replyText,
@@ -94,39 +95,50 @@ export class SpeechApplicationService {
       if (this.cancelledTurns.has(turnId)) throw synthesisCancelled(turnId)
       const readyAt = Date.now()
       latencyTelemetry.record({
+        name: 'tts_execution_completed',
+        at: readyAt,
+        correlation,
+        status: 'success',
+        metadata: { workerId },
+      })
+      latencyTelemetry.record({
         name: 'tts_segment_ready',
         at: readyAt,
         correlation,
         status: 'success',
+        metadata: { workerId },
       })
-      if (segmentSequence === 0) {
-        latencyTelemetry.record({
-          name: 'first_audio_ready',
-          at: readyAt,
-          correlation,
-          status: 'success',
-        })
-      }
       return result
     } finally {
-      this.abortControllers.delete(turnId)
-      this.settlements.delete(turnId)
-      this.cancelledTurns.delete(turnId)
-      if (this.activeSynthesisTurnId === turnId) this.activeSynthesisTurnId = null
+      active.delete(segmentSequence)
+      if (active.size === 0) this.activeByTurn.delete(turnId)
       settle()
     }
   }
 
   async cancelSynthesis(turnId: string): Promise<void> {
     this.cancelledTurns.add(turnId)
-    this.abortControllers.get(turnId)?.abort(new Error('Conversation interrupted'))
-    await this.settlements.get(turnId)
+    const active = [...(this.activeByTurn.get(turnId)?.values() ?? [])]
+    for (const item of active) item.abortController.abort(new Error('Conversation interrupted'))
+    await Promise.allSettled(active.map((item) => item.settlement))
+    this.cancelledTurns.delete(turnId)
   }
 
   async dispose(): Promise<void> {
-    const activeTurnId = this.activeSynthesisTurnId
-    if (activeTurnId) await this.cancelSynthesis(activeTurnId)
+    await Promise.allSettled(
+      [...this.activeByTurn.keys()].map((turnId) => this.cancelSynthesis(turnId)),
+    )
     this.cancelledTurns.clear()
     this.segmentCounters.clear()
   }
+
+  private evictOldCounters(): void {
+    if (this.segmentCounters.size <= 128) return
+    const oldest = this.segmentCounters.keys().next().value
+    if (oldest) this.segmentCounters.delete(oldest)
+  }
+}
+
+function wordCount(text: string): number {
+  return text.trim().split(/\s+/u).filter(Boolean).length
 }
