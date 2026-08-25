@@ -133,7 +133,16 @@ class FakePlugin implements BundledPlugin {
       status: () => ({
         state: 'idle',
         strategy: 'balanced',
-        telemetry: { capturedFrames: 0, droppedFrames: 0, staleDecisions: 0, inputEvents: 0 },
+        telemetry: {
+          capturedFrames: 0,
+          droppedFrames: 0,
+          staleDecisions: 0,
+          inputEvents: 0,
+          gameEvents: 0,
+          captureFps: 0,
+          inputEventsPerSecond: 0,
+          sessionDurationMs: 0,
+        },
       }),
     }
   }

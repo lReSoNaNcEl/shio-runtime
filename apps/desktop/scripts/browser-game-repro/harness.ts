@@ -257,6 +257,10 @@ async function main(): Promise<void> {
   })
   await waitUntil(() => realtime.inputs.length === 1)
   await waitUntil(() => gameEvents.some((event) => event.type === 'checkpoint'))
+  assert.equal(controller.status().telemetry.inputEventsPerSecond, 2)
+  assert(controller.status().telemetry.gameEvents >= 2)
+  assert.equal(controller.diagnostics().session?.origin, 'https://game.example')
+  assert.equal(JSON.stringify(controller.diagnostics()).includes('authorizationActionId'), false)
   assert.equal(reflexAdapter.frames[0]?.width, 200)
   assert.equal(reflexAdapter.frames[0]?.height, 150)
   assert.deepEqual(realtime.inputs[0]?.events, [
@@ -405,6 +409,41 @@ async function main(): Promise<void> {
   })
   await waitUntil(() => failedInspectionController.status().state === 'error')
   assert(failedInspectionRealtime.releaseCount >= 1)
+
+  let telemetryNow = 50_000
+  const telemetryRealtime = new TestRealtime()
+  const telemetryController = new GameSessionController({
+    realtime: () => telemetryRealtime,
+    reflex: new AdapterBackedGameReflexPolicy(new TestReflexAdapter()),
+    now: () => telemetryNow,
+  })
+  const telemetryPreparation = await telemetryController.prepareStart(
+    { goal: 'Measure bounded local game telemetry' },
+    new AbortController().signal,
+  )
+  await telemetryController.start(
+    telemetryPreparation.preparationId,
+    'action-60000-66666666-6666-4666-8666-666666666666',
+    new AbortController().signal,
+  )
+  for (let frameId = 6; frameId <= 8; frameId += 1) {
+    await waitUntil(() => telemetryRealtime.capturePending())
+    telemetryNow += 100
+    telemetryRealtime.emit({
+      sessionId: telemetryRealtime.binding?.sessionId ?? '',
+      tabId: telemetryRealtime.binding?.tabId ?? '',
+      frameId,
+      capturedAt: telemetryNow,
+      width: 640,
+      height: 360,
+      viewport: { width: 1_280, height: 720, pageScaleFactor: 1 },
+      image: { mimeType: 'image/jpeg', bytes },
+    })
+  }
+  await waitUntil(() => telemetryController.status().telemetry.capturedFrames === 3)
+  assert.equal(telemetryController.status().telemetry.captureFps, 10)
+  assert.equal(telemetryController.status().telemetry.sessionDurationMs, 300)
+  await telemetryController.stop()
 
   let inspectionRaceNow = 40_000
   const inspectionRaceRealtime = new TestRealtime()

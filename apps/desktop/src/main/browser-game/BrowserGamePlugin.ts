@@ -1,6 +1,7 @@
 import type {
   BrowserGameControlAction,
   BrowserGameControlProvider,
+  BrowserGameDiagnostics,
   BrowserGameStatus,
   CharacterGameStartRequest,
   GameSemanticEvent,
@@ -151,6 +152,10 @@ export class BrowserGamePlugin implements BundledPlugin {
 
   getStatus(): BrowserGameStatus {
     return this.controller.status()
+  }
+
+  getDiagnostics(): BrowserGameDiagnostics {
+    return this.controller.diagnostics()
   }
 
   getPreparedStart(preparationId: string): GameStartPreparation {

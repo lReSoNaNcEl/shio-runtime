@@ -603,6 +603,10 @@ async function browserGameStartUsesPreparedActionScope(): Promise<void> {
       droppedFrames: 0,
       staleDecisions: 0,
       inputEvents: 0,
+      gameEvents: 0,
+      captureFps: 0,
+      inputEventsPerSecond: 0,
+      sessionDurationMs: 0,
     },
   }
   const runningStatus: BrowserGameStatus = {

@@ -231,6 +231,15 @@ function assertPluginBoundaries(): void {
   )
   assert(pluginIpc.includes('z.enum(PLUGIN_IDS)'))
   assert(pluginIpc.includes('pluginIdSchema.parse(id)'))
+  const browserGameIpc = readFileSync(
+    join(mainSourceRoot, 'ipc', 'registerBrowserGameIpc.ts'),
+    'utf8',
+  )
+  assert(browserGameIpc.includes("authorization.handle('browser-game:get-status'"))
+  assert(browserGameIpc.includes("authorization.handle('browser-game:pause'"))
+  assert(browserGameIpc.includes("authorization.handle('browser-game:stop'"))
+  assert(browserGameIpc.includes("name: 'browser.game-control'"))
+  assert(browserGameIpc.includes('browserGameDiagnosticsSchema.parse'))
   assert(projectIpc.includes('configSchema.strict().parse(input)'))
   assert(projectIpc.includes('credentialSchema.parse(token)'))
   assert(projectApi.includes('saveCredential(token: string): Promise<ProjectAwarenessStatus>'))

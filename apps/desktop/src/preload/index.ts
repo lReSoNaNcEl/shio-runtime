@@ -212,6 +212,11 @@ const api = {
     enable: (id) => ipcRenderer.invoke('plugins:enable', id),
     disable: (id) => ipcRenderer.invoke('plugins:disable', id),
   },
+  browserGame: {
+    getStatus: () => ipcRenderer.invoke('browser-game:get-status'),
+    pause: () => ipcRenderer.invoke('browser-game:pause'),
+    stop: () => ipcRenderer.invoke('browser-game:stop'),
+  },
   desktopControl: {
     getStatus: () => ipcRenderer.invoke('desktop-control:get-status'),
     startRuntime: () => ipcRenderer.invoke('desktop-control:start-runtime'),

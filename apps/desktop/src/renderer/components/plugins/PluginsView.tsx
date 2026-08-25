@@ -26,6 +26,7 @@ import DiscoverIcon from '@react-spectrum/s2/icons/Discover'
 import ProjectIcon from '@react-spectrum/s2/icons/Project'
 import { type ReactNode, useEffect, useState } from 'react'
 
+import { type BrowserGameDiagnostics, type GameSessionState } from '../../../shared/browser-game'
 import { type DesktopControlStatus } from '../../../shared/desktop-control'
 import {
   BROWSER_GAME_CONTROL_PLUGIN_ID,
@@ -163,6 +164,44 @@ const EMPTY_DESKTOP_STATUS: DesktopControlStatus = {
     model: '',
     configured: false,
   },
+}
+
+const EMPTY_BROWSER_GAME_STATUS: BrowserGameDiagnostics = {
+  state: 'idle',
+  strategy: 'balanced',
+  telemetry: {
+    capturedFrames: 0,
+    droppedFrames: 0,
+    staleDecisions: 0,
+    inputEvents: 0,
+    gameEvents: 0,
+    captureFps: 0,
+    inputEventsPerSecond: 0,
+    sessionDurationMs: 0,
+  },
+}
+
+const GAME_STATE: Record<
+  GameSessionState,
+  { key: Parameters<LocalizationContextValue['t']>[0]; tone: Tone }
+> = {
+  idle: { key: 'plugins.browserGame.state.idle', tone: 'neutral' },
+  starting: { key: 'plugins.browserGame.state.starting', tone: 'informative' },
+  running: { key: 'plugins.browserGame.state.running', tone: 'positive' },
+  paused: { key: 'plugins.browserGame.state.paused', tone: 'notice' },
+  'waiting-user': { key: 'plugins.browserGame.state.waitingUser', tone: 'notice' },
+  stopping: { key: 'plugins.browserGame.state.stopping', tone: 'informative' },
+  stopped: { key: 'plugins.browserGame.state.stopped', tone: 'neutral' },
+  error: { key: 'plugins.browserGame.state.error', tone: 'negative' },
+}
+
+const GAME_BLOCKER_KEY: Record<
+  NonNullable<BrowserGameDiagnostics['waitingReason']>,
+  Parameters<LocalizationContextValue['t']>[0]
+> = {
+  captcha: 'plugins.browserGame.blocker.captcha',
+  'anti-bot': 'plugins.browserGame.blocker.antiBot',
+  authentication: 'plugins.browserGame.blocker.authentication',
 }
 
 const DESKTOP_RUNTIME_KEY: Record<
@@ -341,14 +380,31 @@ function WebSearchDetails({
 
 function BrowserGameDetails({
   plugin,
+  status,
+  operation,
+  error,
   onBack,
   onPluginChange,
+  onPause,
+  onStop,
 }: {
   plugin: PluginStatus
+  status: BrowserGameDiagnostics
+  operation: 'pause' | 'stop' | null
+  error: string
   onBack: () => void
   onPluginChange: (enabled: boolean) => void
+  onPause: () => void
+  onStop: () => void
 }) {
-  const { t } = useTranslation()
+  const { intlLocale, t } = useTranslation()
+  const busy = operation !== null
+  const state = GAME_STATE[status.state]
+  const hasSession = Boolean(status.session)
+  const durationSeconds = Math.floor(status.telemetry.sessionDurationMs / 1_000)
+  const duration = `${Math.floor(durationSeconds / 60)}:${String(durationSeconds % 60).padStart(2, '0')}`
+  const number = new Intl.NumberFormat(intlLocale, { maximumFractionDigits: 1 })
+  const waitingReason = status.waitingReason ? t(GAME_BLOCKER_KEY[status.waitingReason]) : undefined
   return (
     <section className="plugin-detail page-container">
       <ActionButton isQuiet onPress={onBack} UNSAFE_className="plugin-back-button">
@@ -366,12 +422,140 @@ function BrowserGameDetails({
         <PluginToggle plugin={plugin} onChange={onPluginChange} />
       </div>
       <section className="plugin-detail-section">
-        <Heading level={3}>{t('plugins.desktopControl.stateTitle')}</Heading>
-        <PluginSummary plugin={plugin} />
+        <Heading level={3}>{t('plugins.browserGame.sessionTitle')}</Heading>
+        <StatusLight variant={state.tone} size="S">
+          {t(state.key)}
+          {waitingReason ? ` · ${waitingReason}` : ''}
+        </StatusLight>
+        {status.session ? (
+          <>
+            <dl className="plugin-status-list">
+              <div>
+                <dt>{t('plugins.browserGame.currentSession')}</dt>
+                <dd>{status.session.title}</dd>
+              </div>
+              <div>
+                <dt>{t('plugins.browserGame.origin')}</dt>
+                <dd>{status.session.origin}</dd>
+              </div>
+              <div>
+                <dt>{t('plugins.browserGame.sessionDuration')}</dt>
+                <dd>{duration}</dd>
+              </div>
+              <div>
+                <dt>{t('plugins.browserGame.frameRate')}</dt>
+                <dd>
+                  {t('plugins.browserGame.fpsValue', {
+                    value: number.format(status.telemetry.captureFps),
+                  })}
+                </dd>
+              </div>
+              <div>
+                <dt>{t('plugins.browserGame.decisionLatency')}</dt>
+                <dd>
+                  {status.telemetry.decisionLatencyMsP50 === undefined
+                    ? '—'
+                    : t('plugins.browserGame.latencyP50Value', {
+                        value: number.format(status.telemetry.decisionLatencyMsP50),
+                      })}
+                </dd>
+              </div>
+            </dl>
+            <ButtonGroup>
+              <Button
+                variant="secondary"
+                isDisabled={busy || status.state !== 'running'}
+                isPending={operation === 'pause'}
+                onPress={onPause}
+              >
+                {t('plugins.browserGame.pause')}
+              </Button>
+              <Button
+                variant="negative"
+                isDisabled={busy || !hasSession}
+                isPending={operation === 'stop'}
+                onPress={onStop}
+              >
+                {t('plugins.browserGame.stop')}
+              </Button>
+            </ButtonGroup>
+          </>
+        ) : (
+          <Text>{t('plugins.browserGame.noSession')}</Text>
+        )}
+        {error ? (
+          <InlineAlert variant="negative" fillStyle="subtleFill">
+            <Heading>{t('common.error')}</Heading>
+            <Content>{error}</Content>
+          </InlineAlert>
+        ) : null}
       </section>
       <section className="plugin-detail-section">
         <Heading level={3}>{t('plugins.browserGame.backendTitle')}</Heading>
         <Text>{t('plugins.browserGame.backendDescription')}</Text>
+        <dl className="plugin-status-list">
+          <div>
+            <dt>{t('plugins.browserGame.backendTitle')}</dt>
+            <dd>{t('plugins.browserGame.backendRealtime')}</dd>
+          </div>
+        </dl>
+      </section>
+      <section className="plugin-detail-section">
+        <Disclosure>
+          <DisclosureTitle level={3}>{t('plugins.browserGame.advanced')}</DisclosureTitle>
+          <DisclosurePanel>
+            <dl className="plugin-status-list">
+              <div>
+                <dt>{t('plugins.browserGame.captureLatency')}</dt>
+                <dd>
+                  {status.telemetry.captureLatencyMsP50 === undefined
+                    ? '—'
+                    : t('plugins.browserGame.latencyP50Value', {
+                        value: number.format(status.telemetry.captureLatencyMsP50),
+                      })}
+                </dd>
+              </div>
+              <div>
+                <dt>{t('plugins.browserGame.inputLatency')}</dt>
+                <dd>
+                  {status.telemetry.inputLatencyMsP50 === undefined
+                    ? '—'
+                    : t('plugins.browserGame.latencyP50Value', {
+                        value: number.format(status.telemetry.inputLatencyMsP50),
+                      })}
+                </dd>
+              </div>
+              <div>
+                <dt>{t('plugins.browserGame.inputRate')}</dt>
+                <dd>
+                  {t('plugins.browserGame.inputRateValue', {
+                    value: status.telemetry.inputEventsPerSecond,
+                  })}
+                </dd>
+              </div>
+              <div>
+                <dt>{t('plugins.browserGame.capturedFrames')}</dt>
+                <dd>{status.telemetry.capturedFrames}</dd>
+              </div>
+              <div>
+                <dt>{t('plugins.browserGame.droppedFrames')}</dt>
+                <dd>{status.telemetry.droppedFrames}</dd>
+              </div>
+              <div>
+                <dt>{t('plugins.browserGame.staleDecisions')}</dt>
+                <dd>{status.telemetry.staleDecisions}</dd>
+              </div>
+              <div>
+                <dt>{t('plugins.browserGame.inputEvents')}</dt>
+                <dd>{status.telemetry.inputEvents}</dd>
+              </div>
+              <div>
+                <dt>{t('plugins.browserGame.gameEvents')}</dt>
+                <dd>{status.telemetry.gameEvents}</dd>
+              </div>
+            </dl>
+          </DisclosurePanel>
+        </Disclosure>
       </section>
     </section>
   )
@@ -1174,6 +1358,10 @@ export function PluginsView({
   const { t } = useTranslation()
   const [plugins, setPlugins] = useState<PluginStatus[]>([])
   const [desktopStatus, setDesktopStatus] = useState<DesktopControlStatus>(EMPTY_DESKTOP_STATUS)
+  const [browserGameStatus, setBrowserGameStatus] =
+    useState<BrowserGameDiagnostics>(EMPTY_BROWSER_GAME_STATUS)
+  const [browserGameOperation, setBrowserGameOperation] = useState<'pause' | 'stop' | null>(null)
+  const [browserGameError, setBrowserGameError] = useState('')
   const [error, setError] = useState('')
   const [loaded, setLoaded] = useState(false)
 
@@ -1183,6 +1371,9 @@ export function PluginsView({
         setPlugins(items)
         if (detailPluginId === DESKTOP_CONTROL_PLUGIN_ID) {
           setDesktopStatus(await window.api.desktopControl.getStatus())
+        }
+        if (detailPluginId === BROWSER_GAME_CONTROL_PLUGIN_ID) {
+          setBrowserGameStatus(await window.api.browserGame.getStatus())
         }
         setError('')
         setLoaded(true)
@@ -1204,9 +1395,14 @@ export function PluginsView({
             detailPluginId === DESKTOP_CONTROL_PLUGIN_ID
               ? await window.api.desktopControl.getStatus()
               : null
+          const browserGameStatus =
+            detailPluginId === BROWSER_GAME_CONTROL_PLUGIN_ID
+              ? await window.api.browserGame.getStatus()
+              : null
           if (active) {
             setPlugins(items)
             if (desktopStatus) setDesktopStatus(desktopStatus)
+            if (browserGameStatus) setBrowserGameStatus(browserGameStatus)
             setError('')
             setLoaded(true)
           }
@@ -1221,7 +1417,10 @@ export function PluginsView({
       )
     }
     load()
-    const intervalId = window.setInterval(load, 3_000)
+    const intervalId = window.setInterval(
+      load,
+      detailPluginId === BROWSER_GAME_CONTROL_PLUGIN_ID ? 1_000 : 3_000,
+    )
     return () => {
       active = false
       window.clearInterval(intervalId)
@@ -1250,12 +1449,34 @@ export function PluginsView({
           if (id === DESKTOP_CONTROL_PLUGIN_ID) {
             setDesktopStatus(await window.api.desktopControl.getStatus())
           }
+          if (id === BROWSER_GAME_CONTROL_PLUGIN_ID) {
+            setBrowserGameStatus(await window.api.browserGame.getStatus())
+          }
         },
       ),
       'toggle Plugin',
       (reason) => {
         setError(rendererError(reason))
         refresh()
+      },
+    )
+  }
+
+  const controlBrowserGame = (operation: 'pause' | 'stop'): void => {
+    if (browserGameOperation) return
+    setBrowserGameOperation(operation)
+    setBrowserGameError('')
+    observeRendererPromise(
+      (operation === 'pause' ? window.api.browserGame.pause() : window.api.browserGame.stop()).then(
+        (status) => {
+          setBrowserGameStatus(status)
+          setBrowserGameOperation(null)
+        },
+      ),
+      `control Browser Game: ${operation}`,
+      (reason) => {
+        setBrowserGameOperation(null)
+        setBrowserGameError(rendererError(reason))
       },
     )
   }
@@ -1374,8 +1595,13 @@ export function PluginsView({
     return (
       <BrowserGameDetails
         plugin={browserGamePlugin}
+        status={browserGameStatus}
+        operation={browserGameOperation}
+        error={browserGameError}
         onBack={onBack}
         onPluginChange={(enabled) => togglePlugin(BROWSER_GAME_CONTROL_PLUGIN_ID, enabled)}
+        onPause={() => controlBrowserGame('pause')}
+        onStop={() => controlBrowserGame('stop')}
       />
     )
   }

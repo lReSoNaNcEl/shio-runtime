@@ -153,27 +153,36 @@ export interface GameSessionScope {
   expiresAt: number
 }
 
-export type GameSessionState =
-  | 'idle'
-  | 'starting'
-  | 'running'
-  | 'paused'
-  | 'waiting-user'
-  | 'stopping'
-  | 'stopped'
-  | 'error'
+export const gameSessionStateSchema = z.enum([
+  'idle',
+  'starting',
+  'running',
+  'paused',
+  'waiting-user',
+  'stopping',
+  'stopped',
+  'error',
+])
+export type GameSessionState = z.infer<typeof gameSessionStateSchema>
 
-export interface GameSessionTelemetry {
-  capturedFrames: number
-  droppedFrames: number
-  staleDecisions: number
-  inputEvents: number
-  captureLatencyMsP50?: number
-  decisionLatencyMsP50?: number
-  inputLatencyMsP50?: number
-  startedAt?: number
-  stoppedAt?: number
-}
+export const gameSessionTelemetrySchema = z
+  .object({
+    capturedFrames: z.number().int().nonnegative(),
+    droppedFrames: z.number().int().nonnegative(),
+    staleDecisions: z.number().int().nonnegative(),
+    inputEvents: z.number().int().nonnegative(),
+    gameEvents: z.number().int().nonnegative(),
+    captureFps: z.number().finite().nonnegative().max(60),
+    inputEventsPerSecond: z.number().int().nonnegative().max(60),
+    sessionDurationMs: z.number().int().nonnegative(),
+    captureLatencyMsP50: z.number().int().nonnegative().optional(),
+    decisionLatencyMsP50: z.number().int().nonnegative().optional(),
+    inputLatencyMsP50: z.number().int().nonnegative().optional(),
+    startedAt: z.number().int().nonnegative().optional(),
+    stoppedAt: z.number().int().nonnegative().optional(),
+  })
+  .strict()
+export type GameSessionTelemetry = z.infer<typeof gameSessionTelemetrySchema>
 
 export interface BrowserGameStatus {
   state: GameSessionState
@@ -182,6 +191,32 @@ export interface BrowserGameStatus {
   strategy: GameStrategy
   telemetry: GameSessionTelemetry
   lastErrorCode?: string
+}
+
+export const browserGameDiagnosticsSchema = z
+  .object({
+    state: gameSessionStateSchema,
+    waitingReason: z.enum(['captcha', 'anti-bot', 'authentication']).optional(),
+    strategy: gameStrategySchema,
+    session: z
+      .object({
+        title: z.string().trim().min(1).max(500),
+        origin: z.string().url().max(2_048),
+        startedAt: z.number().int().nonnegative(),
+        expiresAt: z.number().int().nonnegative(),
+      })
+      .strict()
+      .optional(),
+    telemetry: gameSessionTelemetrySchema,
+    lastErrorCode: z.string().trim().min(1).max(100).optional(),
+  })
+  .strict()
+export type BrowserGameDiagnostics = z.infer<typeof browserGameDiagnosticsSchema>
+
+export interface BrowserGameDiagnosticsApi {
+  getStatus(): Promise<BrowserGameDiagnostics>
+  pause(): Promise<BrowserGameDiagnostics>
+  stop(): Promise<BrowserGameDiagnostics>
 }
 
 export interface GameFrame {

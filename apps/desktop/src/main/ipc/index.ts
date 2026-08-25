@@ -5,6 +5,7 @@ import { translate } from '../../shared/localization'
 import type { ActionConfirmationBroker, ActionRuntime } from '../action'
 import type { MainConversationTurnService } from '../app/MainConversationTurnService'
 import type { SpeechApplicationService } from '../app/SpeechApplicationService'
+import type { BrowserGamePlugin } from '../browser-game'
 import type { CapabilityCatalog } from '../capabilities'
 import { getConfig } from '../config'
 import type { DesktopControlPlugin } from '../desktop-control'
@@ -24,6 +25,7 @@ import type { ScreenContextService } from '../screen-context'
 import { IPC_ONE_PAYLOAD, type IpcAuthorization } from './IpcAuthorization'
 import { registerActionIpc } from './registerActionIpc'
 import { registerAvatarIpc } from './registerAvatarIpc'
+import { registerBrowserGameIpc } from './registerBrowserGameIpc'
 import { registerCapabilitiesIpc } from './registerCapabilitiesIpc'
 import { registerConfigIpc } from './registerConfigIpc'
 import { registerDesktopControlIpc } from './registerDesktopControlIpc'
@@ -43,6 +45,7 @@ export function registerIpcHandlers(
   plugins: () => PluginRuntime,
   projectAwareness: () => ProjectAwarenessPlugin,
   desktopControl: () => DesktopControlPlugin,
+  browserGame: () => BrowserGamePlugin,
   screenContext: ScreenContextService,
   semanticMemory: MemoryRuntime,
   capabilityCatalog: CapabilityCatalog,
@@ -253,6 +256,7 @@ export function registerIpcHandlers(
   })
   registerMemoryIpc(semanticMemory, authorization)
   registerDesktopControlIpc(desktopControl, authorization)
+  registerBrowserGameIpc(browserGame, actions, authorization)
   registerPluginIpc(plugins, authorization)
   registerNetworkDiagnosticsIpc(authorization)
 

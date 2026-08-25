@@ -180,6 +180,10 @@ Architecture and ownership:
   selectors, scripts, or bypass instructions. A blocker moves the session to
   `waiting-user`, releases every held input, and requires a fresh scope inspection
   before resume; Shio never attempts automated CAPTCHA bypass.
+- Browser Game renderer diagnostics receive only the typed bounded session projection;
+  never expose frames, tab identifiers, authorization Action IDs, or raw page state.
+  Plugin UI Pause and Stop controls use the registered `browser.game-control` Action
+  path through narrow authorized IPC and may not call Game Session Controller directly.
 - Browser use inside a Character turn is a bounded provider-neutral tool loop, not
   a new Runtime. Character reasoning decides semantically whether web interaction
   materially helps the current goal; do not add a phrase or keyword browser router.

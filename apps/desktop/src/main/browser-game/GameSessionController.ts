@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import sharp from 'sharp'
 
 import {
+  type BrowserGameDiagnostics,
   BrowserGameError,
   type BrowserGameErrorCode,
   type BrowserGameStatus,
@@ -79,6 +80,7 @@ interface MutableTelemetry extends GameSessionTelemetry {
   captureLatencies: number[]
   decisionLatencies: number[]
   inputLatencies: number[]
+  captureTimestamps: number[]
 }
 
 function emptyTelemetry(): MutableTelemetry {
@@ -87,9 +89,14 @@ function emptyTelemetry(): MutableTelemetry {
     droppedFrames: 0,
     staleDecisions: 0,
     inputEvents: 0,
+    gameEvents: 0,
+    captureFps: 0,
+    inputEventsPerSecond: 0,
+    sessionDurationMs: 0,
     captureLatencies: [],
     decisionLatencies: [],
     inputLatencies: [],
+    captureTimestamps: [],
   }
 }
 
@@ -105,12 +112,30 @@ function recordSample(samples: number[], value: number): void {
     samples.splice(0, samples.length - LATENCY_SAMPLE_LIMIT)
 }
 
-function boundedStatusTelemetry(telemetry: MutableTelemetry): GameSessionTelemetry {
+function boundedStatusTelemetry(
+  telemetry: MutableTelemetry,
+  now: number,
+  inputTimestamps: readonly number[],
+): GameSessionTelemetry {
+  const recentCaptures = telemetry.captureTimestamps.filter((timestamp) => now - timestamp < 2_000)
+  const captureSpan =
+    recentCaptures.length > 1 ? (recentCaptures.at(-1) ?? now) - (recentCaptures[0] ?? now) : 0
+  const captureFps =
+    captureSpan > 0
+      ? Math.min(60, Math.round((((recentCaptures.length - 1) * 1_000) / captureSpan) * 10) / 10)
+      : 0
+  const startedAt = telemetry.startedAt
+  const sessionDurationMs =
+    startedAt === undefined ? 0 : Math.max(0, (telemetry.stoppedAt ?? now) - startedAt)
   return {
     capturedFrames: telemetry.capturedFrames,
     droppedFrames: telemetry.droppedFrames,
     staleDecisions: telemetry.staleDecisions,
     inputEvents: telemetry.inputEvents,
+    gameEvents: telemetry.gameEvents,
+    captureFps,
+    inputEventsPerSecond: inputTimestamps.filter((timestamp) => now - timestamp < 1_000).length,
+    sessionDurationMs,
     ...(percentile50(telemetry.captureLatencies) !== undefined
       ? { captureLatencyMsP50: percentile50(telemetry.captureLatencies) }
       : {}),
@@ -457,6 +482,7 @@ export class GameSessionController {
   }
 
   status(): BrowserGameStatus {
+    const now = this.now()
     return {
       state: this.state,
       ...(this.active ? { scope: this.copyScope(this.active.scope) } : {}),
@@ -464,8 +490,29 @@ export class GameSessionController {
         ? { waitingReason: this.waitingReason }
         : {}),
       strategy: this.strategy,
-      telemetry: boundedStatusTelemetry(this.telemetry),
+      telemetry: boundedStatusTelemetry(this.telemetry, now, this.active?.inputTimestamps ?? []),
       ...(this.lastErrorCode ? { lastErrorCode: this.lastErrorCode } : {}),
+    }
+  }
+
+  diagnostics(): BrowserGameDiagnostics {
+    const status = this.status()
+    return {
+      state: status.state,
+      ...(status.waitingReason ? { waitingReason: status.waitingReason } : {}),
+      strategy: status.strategy,
+      ...(this.active
+        ? {
+            session: {
+              title: (this.active.scope.gameSurface.label || this.active.goal).slice(0, 500),
+              origin: this.active.scope.origin,
+              startedAt: this.active.scope.startedAt,
+              expiresAt: this.active.scope.expiresAt,
+            },
+          }
+        : {}),
+      telemetry: status.telemetry,
+      ...(status.lastErrorCode ? { lastErrorCode: status.lastErrorCode } : {}),
     }
   }
 
@@ -495,6 +542,10 @@ export class GameSessionController {
       )
       recordSample(this.telemetry.captureLatencies, this.now() - captureStarted)
       this.telemetry.capturedFrames += 1
+      this.telemetry.captureTimestamps.push(this.now())
+      this.telemetry.captureTimestamps = this.telemetry.captureTimestamps.filter(
+        (timestamp) => this.now() - timestamp < 2_000,
+      )
       const frame = await this.cropFrame(source, active.scope)
       if (!frame) {
         this.telemetry.droppedFrames += 1
@@ -791,18 +842,17 @@ export class GameSessionController {
     details: Omit<ExtractedGameEvent, 'type' | 'importance'> = {},
     at = this.now(),
   ): void {
-    if (!this.options.onEvent) return
     try {
-      this.options.onEvent(
-        gameSemanticEventSchema.parse({
-          eventId: `game-event-${this.createId()}`,
-          sessionId: scope.sessionId,
-          type,
-          at,
-          importance,
-          ...details,
-        }),
-      )
+      const event = gameSemanticEventSchema.parse({
+        eventId: `game-event-${this.createId()}`,
+        sessionId: scope.sessionId,
+        type,
+        at,
+        importance,
+        ...details,
+      })
+      this.telemetry.gameEvents += 1
+      this.options.onEvent?.(event)
     } catch (error) {
       mainLog.warn('[BrowserGame] semantic event rejected', error)
     }

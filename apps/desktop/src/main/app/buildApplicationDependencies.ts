@@ -573,6 +573,7 @@ export function buildApplicationDependencies(): ApplicationDependencies {
       getPluginRuntime,
       getProjectAwareness,
       getDesktopControl,
+      getBrowserGame,
       screenContextService,
       semanticMemory,
       capabilityCatalog,
