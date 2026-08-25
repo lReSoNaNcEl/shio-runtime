@@ -11,10 +11,13 @@ import {
   GAME_FRAME_MAX_AGE_MS,
   type GameFrame,
   type GameInputIntent,
+  type GameSemanticEvent,
+  type GameSemanticEventType,
   type GameSessionScope,
   type GameSessionTelemetry,
   type GameStartPreparation,
   type GameStrategy,
+  gameSemanticEventSchema,
 } from '../../shared/browser-game'
 import type {
   BrowserGameSurfaceCandidate,
@@ -23,6 +26,12 @@ import type {
   BrowserRealtimeSession,
   BrowserRealtimeViewport,
 } from '../../shared/desktop-control'
+import { mainLog } from '../logging/safeLogger'
+import {
+  type ExtractedGameEvent,
+  GameEventExtractionLane,
+  type GameEventExtractor,
+} from './GameEventExtractor'
 import type { GameReflexPolicy } from './GameReflexPolicy'
 
 const PREPARATION_TTL_MS = 30_000
@@ -43,6 +52,8 @@ const ALLOWED_GAME_KEYS = new Set([
 export interface GameSessionControllerOptions {
   realtime(): BrowserRealtimeControlProvider | undefined
   reflex: GameReflexPolicy
+  eventExtractor?: GameEventExtractor
+  onEvent?: (event: GameSemanticEvent) => void
   now?: () => number
   createId?: () => string
 }
@@ -142,8 +153,17 @@ export class GameSessionController {
   private telemetry = emptyTelemetry()
   private lastErrorCode: string | undefined
   private readonly listeners = new Set<() => void>()
+  private readonly eventLane: GameEventExtractionLane | null
 
-  constructor(private readonly options: GameSessionControllerOptions) {}
+  constructor(private readonly options: GameSessionControllerOptions) {
+    this.eventLane = options.eventExtractor
+      ? new GameEventExtractionLane(
+          options.eventExtractor,
+          (events, frame) => this.publishExtractedEvents(events, frame),
+          (error) => mainLog.warn('[BrowserGame] event extraction failed', error),
+        )
+      : null
+  }
 
   onChanged(listener: () => void): () => void {
     this.listeners.add(listener)
@@ -268,6 +288,7 @@ export class GameSessionController {
     this.strategy = preparation.strategy
     this.lastErrorCode = undefined
     this.telemetry = { ...emptyTelemetry(), startedAt: now }
+    this.eventLane?.reset()
     this.publishChanged()
     const abortStart = (): void => controller.abort(signal.reason)
     signal.addEventListener('abort', abortStart, { once: true })
@@ -279,10 +300,12 @@ export class GameSessionController {
     } catch (error) {
       await realtime.releaseInputs()
       this.options.reflex.reset()
+      this.eventLane?.reset()
       this.active = null
       this.state = 'error'
       this.lastErrorCode = error instanceof BrowserGameError ? error.code : 'GAME_LOOP_FAILED'
       this.telemetry.stoppedAt = this.now()
+      this.publishGameEvent(scope, 'game-error', 'important', { reason: 'error' })
       this.publishChanged()
       throw error
     } finally {
@@ -290,6 +313,9 @@ export class GameSessionController {
     }
     if (controller.signal.aborted) {
       await realtime.releaseInputs()
+      this.options.reflex.reset()
+      this.eventLane?.reset()
+      this.publishGameEvent(scope, 'game-stopped', 'normal', { reason: 'user' })
       this.active = null
       this.state = 'stopped'
       this.telemetry.stoppedAt = this.now()
@@ -301,6 +327,7 @@ export class GameSessionController {
     active.loopTask = this.runLoop(active).catch(async (error) => {
       if (!active.controller.signal.aborted) await this.failSession(error)
     })
+    this.publishGameEvent(scope, 'game-started', 'normal')
     this.publishChanged()
     return this.status()
   }
@@ -312,6 +339,7 @@ export class GameSessionController {
     await active.loopTask
     active.loopTask = null
     await active.realtime.releaseInputs()
+    this.publishGameEvent(active.scope, 'game-paused', 'ambient', { reason: 'user' })
     this.publishChanged()
     return this.status()
   }
@@ -327,11 +355,14 @@ export class GameSessionController {
     active.loopTask = this.runLoop(active).catch(async (error) => {
       if (!active.controller.signal.aborted) await this.failSession(error)
     })
+    this.publishGameEvent(active.scope, 'game-resumed', 'ambient', { reason: 'user' })
     this.publishChanged()
     return this.status()
   }
 
-  async stop(): Promise<BrowserGameStatus> {
+  async stop(
+    reason: 'user' | 'expired' | 'scope-changed' | 'blocked' | 'error' | 'completed' = 'user',
+  ): Promise<BrowserGameStatus> {
     const active = this.active
     if (!active) {
       this.preparation = null
@@ -344,6 +375,8 @@ export class GameSessionController {
     await active.loopTask
     await active.realtime.releaseInputs()
     this.options.reflex.reset()
+    this.eventLane?.reset()
+    this.publishGameEvent(active.scope, 'game-stopped', 'normal', { reason })
     this.active = null
     this.state = 'stopped'
     this.telemetry.stoppedAt = this.now()
@@ -400,15 +433,13 @@ export class GameSessionController {
         continue
       }
       const decisionStarted = this.now()
-      const intent = await this.options.reflex.decide(
-        frame,
-        {
-          strategy: active.strategy,
-          elapsedMs: this.now() - active.scope.startedAt,
-          inputEvents: this.telemetry.inputEvents,
-        },
-        active.controller.signal,
-      )
+      const reflexState = {
+        strategy: active.strategy,
+        elapsedMs: this.now() - active.scope.startedAt,
+        inputEvents: this.telemetry.inputEvents,
+      }
+      this.eventLane?.offer(frame, reflexState, active.controller.signal)
+      const intent = await this.options.reflex.decide(frame, reflexState, active.controller.signal)
       recordSample(this.telemetry.decisionLatencies, this.now() - decisionStarted)
       if (this.now() - frame.capturedAt > GAME_FRAME_MAX_AGE_MS) {
         this.telemetry.staleDecisions += 1
@@ -538,7 +569,9 @@ export class GameSessionController {
     active.controller.abort()
     await active.realtime.releaseInputs()
     this.options.reflex.reset()
+    this.eventLane?.reset()
     if (this.active !== active) return
+    this.publishGameEvent(active.scope, 'game-stopped', 'normal', { reason: 'expired' })
     this.active = null
     this.state = 'stopped'
     this.telemetry.stoppedAt = this.now()
@@ -546,9 +579,12 @@ export class GameSessionController {
   }
 
   private async failSession(error: unknown): Promise<void> {
+    const active = this.active
     this.lastErrorCode = error instanceof BrowserGameError ? error.code : 'GAME_LOOP_FAILED'
-    await this.active?.realtime.releaseInputs()
+    await active?.realtime.releaseInputs()
     this.options.reflex.reset()
+    this.eventLane?.reset()
+    if (active) this.publishGameEvent(active.scope, 'game-error', 'important', { reason: 'error' })
     this.active = null
     this.state = 'error'
     this.telemetry.stoppedAt = this.now()
@@ -556,9 +592,13 @@ export class GameSessionController {
   }
 
   private async stopWithError(code: BrowserGameErrorCode): Promise<void> {
+    const scope = this.active?.scope
     this.lastErrorCode = code
-    await this.stop()
+    await this.stop('scope-changed')
     this.state = 'error'
+    if (scope) {
+      this.publishGameEvent(scope, 'game-error', 'blocking', { reason: 'scope-changed' })
+    }
     this.publishChanged()
   }
 
@@ -588,6 +628,39 @@ export class GameSessionController {
       ...scope,
       gameSurface: { ...scope.gameSurface, bounds: { ...scope.gameSurface.bounds } },
       allowedInputs: [...scope.allowedInputs],
+    }
+  }
+
+  private publishExtractedEvents(events: readonly ExtractedGameEvent[], frame: GameFrame): void {
+    const active = this.active
+    if (!active || active.scope.sessionId !== frame.sessionId) return
+    for (const event of events) {
+      const { type, importance, ...details } = event
+      this.publishGameEvent(active.scope, type, importance ?? 'normal', details, frame.capturedAt)
+    }
+  }
+
+  private publishGameEvent(
+    scope: GameSessionScope,
+    type: GameSemanticEventType,
+    importance: GameSemanticEvent['importance'],
+    details: Omit<ExtractedGameEvent, 'type' | 'importance'> = {},
+    at = this.now(),
+  ): void {
+    if (!this.options.onEvent) return
+    try {
+      this.options.onEvent(
+        gameSemanticEventSchema.parse({
+          eventId: `game-event-${this.createId()}`,
+          sessionId: scope.sessionId,
+          type,
+          at,
+          importance,
+          ...details,
+        }),
+      )
+    } catch (error) {
+      mainLog.warn('[BrowserGame] semantic event rejected', error)
     }
   }
 

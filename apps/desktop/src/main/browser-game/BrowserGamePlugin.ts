@@ -3,6 +3,7 @@ import type {
   BrowserGameControlProvider,
   BrowserGameStatus,
   CharacterGameStartRequest,
+  GameSemanticEvent,
   GameStartPreparation,
   GameStrategy,
 } from '../../shared/browser-game'
@@ -10,6 +11,7 @@ import type { BrowserRealtimeControlProvider } from '../../shared/desktop-contro
 import type { PluginHealth, PluginManifest } from '../../shared/plugins'
 import { BROWSER_GAME_CONTROL_PLUGIN_ID } from '../../shared/plugins'
 import type { BundledPlugin, PluginInitializationContext } from '../plugins/PluginRuntime'
+import type { GameEventExtractor } from './GameEventExtractor'
 import type { GameReflexAdapter } from './GameReflexAdapter'
 import { ObservingGameReflexAdapter } from './GameReflexAdapter'
 import type { GameReflexPolicy } from './GameReflexPolicy'
@@ -31,6 +33,8 @@ interface BrowserGamePluginOptions {
   reflex?: GameReflexPolicy
   reflexAdapter?: GameReflexAdapter
   reflexReady?: boolean
+  eventExtractor?: GameEventExtractor
+  onGameEvent?: (event: GameSemanticEvent) => void
 }
 
 export class BrowserGamePlugin implements BundledPlugin {
@@ -49,6 +53,8 @@ export class BrowserGamePlugin implements BundledPlugin {
     this.controller = new GameSessionController({
       realtime: options.realtime,
       reflex: options.reflex ?? new AdapterBackedGameReflexPolicy(reflexAdapter),
+      eventExtractor: options.eventExtractor,
+      onEvent: options.onGameEvent,
     })
     this.reflexReady = () =>
       options.reflexReady ?? (!options.reflex && reflexAdapter.status().ready)

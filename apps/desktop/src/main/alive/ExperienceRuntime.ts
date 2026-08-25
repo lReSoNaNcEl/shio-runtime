@@ -1,4 +1,5 @@
 import type { ExperienceAppraisal, ExperienceEvent, MoodState } from '../../shared/alive'
+import type { GameSemanticEvent } from '../../shared/browser-game'
 import type { AliveStore } from './AliveStore'
 import type { MoodRuntime } from './MoodRuntime'
 
@@ -213,6 +214,8 @@ function appraise(event: ExperienceEvent): ExperienceAppraisal {
         embodimentHint: { intensity: 'subtle', gazeHint: 'user' },
         silence: true,
       })
+    case 'game-event':
+      return appraiseGameEvent(event.gameEvent, eventId)
     case 'meaningful-world-context-changed':
       return bounded({
         ...base,
@@ -222,6 +225,173 @@ function appraise(event: ExperienceEvent): ExperienceAppraisal {
         novelty: 0.45,
         socialRelevance: 0.15,
         emotionHint: 'calm',
+        silence: true,
+      })
+  }
+}
+
+function appraiseGameEvent(event: GameSemanticEvent, eventId: string): ExperienceAppraisal {
+  const base = { eventId, origin: 'browser-game' as const, memoryCandidate: undefined }
+  switch (event.type) {
+    case 'game-started':
+    case 'round-started':
+    case 'game-resumed':
+      return bounded({
+        ...base,
+        salience: 0.35,
+        valence: 0.2,
+        arousal: 0.3,
+        novelty: event.type === 'game-started' ? 0.55 : 0.2,
+        socialRelevance: 0.25,
+        emotionHint: 'calm',
+        embodimentHint: { intensity: 'subtle', gazeHint: 'screen' },
+        silence: true,
+      })
+    case 'score-changed':
+      return bounded({
+        ...base,
+        salience: 0.35,
+        valence: 0.3,
+        arousal: 0.25,
+        novelty: 0.15,
+        socialRelevance: 0.15,
+        emotionHint: 'happy',
+        embodimentHint: { intensity: 'subtle', gazeHint: 'screen' },
+        silence: true,
+      })
+    case 'checkpoint':
+      return bounded({
+        ...base,
+        salience: 0.58,
+        valence: 0.48,
+        arousal: 0.35,
+        novelty: 0.4,
+        socialRelevance: 0.3,
+        emotionHint: 'happy',
+        embodimentHint: { intensity: 'subtle', gazeHint: 'screen' },
+        conversationalImpulse: { topic: 'A game checkpoint was reached', priority: 0.68 },
+        silence: false,
+      })
+    case 'level-completed':
+      return bounded({
+        ...base,
+        salience: 0.88,
+        valence: 0.85,
+        arousal: 0.7,
+        novelty: 0.65,
+        socialRelevance: 0.5,
+        emotionHint: 'happy',
+        embodimentHint: { intensity: 'normal', gestureHint: 'celebrate', gazeHint: 'screen' },
+        conversationalImpulse: { topic: 'The game level was completed', priority: 0.9 },
+        silence: false,
+      })
+    case 'new-record':
+      return bounded({
+        ...base,
+        salience: 0.95,
+        valence: 0.95,
+        arousal: 0.85,
+        novelty: 0.9,
+        socialRelevance: 0.6,
+        emotionHint: 'happy',
+        embodimentHint: { intensity: 'strong', gestureHint: 'celebrate', gazeHint: 'user' },
+        conversationalImpulse: { topic: 'A new game record was set', priority: 0.96 },
+        silence: false,
+      })
+    case 'life-lost':
+    case 'death':
+      return bounded({
+        ...base,
+        salience: event.type === 'death' ? 0.72 : 0.52,
+        valence: event.type === 'death' ? -0.55 : -0.35,
+        arousal: 0.55,
+        novelty: 0.3,
+        socialRelevance: 0.2,
+        emotionHint: 'sad',
+        embodimentHint: { intensity: 'subtle', gestureHint: 'disagree', gazeHint: 'screen' },
+        silence: true,
+      })
+    case 'retry':
+      return bounded({
+        ...base,
+        salience: 0.42,
+        valence: 0.15,
+        arousal: 0.4,
+        novelty: 0.2,
+        socialRelevance: 0.2,
+        emotionHint: 'calm',
+        embodimentHint: { intensity: 'subtle', gazeHint: 'screen' },
+        silence: true,
+      })
+    case 'stuck':
+      return bounded({
+        ...base,
+        salience: 0.78,
+        valence: -0.45,
+        arousal: 0.5,
+        novelty: 0.55,
+        socialRelevance: 0.4,
+        emotionHint: 'surprised',
+        embodimentHint: { intensity: 'subtle', gestureHint: 'think', gazeHint: 'screen' },
+        conversationalImpulse: { topic: 'The game appears to be stuck', priority: 0.78 },
+        silence: false,
+      })
+    case 'game-over':
+      return bounded({
+        ...base,
+        salience: 0.8,
+        valence: -0.5,
+        arousal: 0.55,
+        novelty: 0.45,
+        socialRelevance: 0.35,
+        emotionHint: 'sad',
+        embodimentHint: { intensity: 'normal', gestureHint: 'disagree', gazeHint: 'screen' },
+        conversationalImpulse: { topic: 'The game is over', priority: 0.76 },
+        silence: false,
+      })
+    case 'waiting-user':
+      return bounded({
+        ...base,
+        salience: 1,
+        valence: -0.2,
+        arousal: 0.65,
+        novelty: 0.7,
+        socialRelevance: 0.9,
+        emotionHint: 'calm',
+        embodimentHint: { intensity: 'normal', gazeHint: 'user' },
+        conversationalImpulse: {
+          topic: 'The game session needs user intervention before it can continue',
+          priority: 0.98,
+        },
+        silence: false,
+      })
+    case 'game-error':
+      return bounded({
+        ...base,
+        salience: 0.92,
+        valence: -0.7,
+        arousal: 0.7,
+        novelty: 0.65,
+        socialRelevance: 0.55,
+        emotionHint: 'sad',
+        embodimentHint: { intensity: 'normal', gestureHint: 'disagree', gazeHint: 'screen' },
+        conversationalImpulse: {
+          topic: 'The game session stopped because of an error',
+          priority: 0.9,
+        },
+        silence: false,
+      })
+    case 'game-paused':
+    case 'game-stopped':
+      return bounded({
+        ...base,
+        salience: 0.3,
+        valence: 0,
+        arousal: -0.2,
+        novelty: 0.15,
+        socialRelevance: 0.2,
+        emotionHint: 'calm',
+        embodimentHint: { intensity: 'subtle', gazeHint: 'user' },
         silence: true,
       })
   }
@@ -260,7 +430,9 @@ function eventIdentity(event: ExperienceEvent): string {
               ? event.runtime
               : 'change' in event
                 ? event.change
-                : 'world'
+                : 'gameEvent' in event
+                  ? event.gameEvent.sessionId
+                  : 'world'
   return `${event.type}:${entity}:${event.at}`.slice(0, 160)
 }
 

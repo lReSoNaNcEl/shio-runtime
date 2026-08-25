@@ -14,6 +14,7 @@ import {
   ProactiveInitiativeGate,
 } from '../../src/main/alive'
 import type { AttentionCandidate, WorldContextSnapshot } from '../../src/shared/alive'
+import type { GameSemanticEvent, GameSemanticEventType } from '../../src/shared/browser-game'
 
 const world: WorldContextSnapshot = {
   capturedAt: 1,
@@ -89,6 +90,49 @@ async function main(): Promise<void> {
     assert.ok(Math.abs(decayed.valence) < Math.abs(failure.mood.valence))
     assert.equal(moodWriteCount, 3, 'reading a projected Mood snapshot must not persist it')
     assert.deepEqual(store.mood(), persistedBeforeSnapshot)
+
+    const lifeLost = experience.observe(gameEvent('life-lost', 31, 'ambient'))
+    const lifeLostBehavior = behavior.decide({ ...lifeLost, settings, world, at: 31 })
+    assert.equal(lifeLostBehavior.intent.kind, 'embodiment')
+    const levelCompleted = experience.observe(gameEvent('level-completed', 40, 'important'))
+    const levelCompletedBehavior = behavior.decide({
+      ...levelCompleted,
+      settings,
+      world,
+      at: 40,
+    })
+    assert.equal(levelCompletedBehavior.intent.kind, 'conversation-candidate')
+    const checkpointSuppressed = experience.observe(gameEvent('checkpoint', 41, 'normal'))
+    const checkpointBehavior = behavior.decide({
+      ...checkpointSuppressed,
+      settings,
+      world,
+      at: 41,
+    })
+    assert.notEqual(checkpointBehavior.intent.kind, 'conversation-candidate')
+    const newRecord = experience.observe(gameEvent('new-record', 42, 'important'))
+    const newRecordBehavior = behavior.decide({ ...newRecord, settings, world, at: 42 })
+    assert.equal(newRecordBehavior.intent.kind, 'conversation-candidate')
+    const thirdCommentSuppressed = experience.observe(gameEvent('level-completed', 43, 'important'))
+    const thirdCommentBehavior = behavior.decide({
+      ...thirdCommentSuppressed,
+      settings,
+      world,
+      at: 43,
+    })
+    assert.notEqual(thirdCommentBehavior.intent.kind, 'conversation-candidate')
+    const waitingUser = experience.observe(gameEvent('waiting-user', 44, 'blocking'))
+    const waitingUserBehavior = behavior.decide({ ...waitingUser, settings, world, at: 44 })
+    assert.equal(waitingUserBehavior.intent.kind, 'conversation-candidate')
+    const userSpeechWins = experience.observe(gameEvent('waiting-user', 45, 'blocking'))
+    const userSpeechBehavior = behavior.decide({
+      ...userSpeechWins,
+      settings,
+      world: { ...world, conversationActive: true, audioActive: true },
+      at: 45,
+      conversationAllowed: false,
+    })
+    assert.notEqual(userSpeechBehavior.intent.kind, 'conversation-candidate')
 
     let modelCalls = 0
     let failModel = false
@@ -270,6 +314,21 @@ async function main(): Promise<void> {
     store?.close()
     rmSync(directory, { recursive: true, force: true })
   }
+}
+
+function gameEvent(
+  type: GameSemanticEventType,
+  at: number,
+  importance: GameSemanticEvent['importance'],
+): Parameters<ExperienceRuntime['observe']>[0] {
+  const event: GameSemanticEvent = {
+    eventId: `game-event-00000000-0000-4000-8000-${String(at).padStart(12, '0')}`,
+    sessionId: 'game-session-00000000-0000-4000-8000-000000000001',
+    type,
+    at,
+    importance,
+  }
+  return { type: 'game-event', at, eventId: event.eventId, gameEvent: event }
 }
 
 function candidate(

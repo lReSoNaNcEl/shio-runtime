@@ -1,3 +1,4 @@
+import type { GameSemanticEvent } from '../browser-game'
 import type { CharacterEmbodimentIntent } from '../character-response'
 import type { EmotionKey } from '../emotion'
 import type { LlmProviderId } from '../llm'
@@ -273,6 +274,7 @@ export type ExperienceEvent =
   | { type: 'scheduled-event-due'; at: number; taskId: string; eventId?: string }
   | { type: 'runtime-recovered'; at: number; runtime: string; eventId?: string }
   | { type: 'user-returned'; at: number; idleMs: number; eventId?: string }
+  | { type: 'game-event'; at: number; gameEvent: GameSemanticEvent; eventId?: string }
   | {
       type: 'meaningful-world-context-changed'
       at: number
@@ -282,6 +284,7 @@ export type ExperienceEvent =
 
 export interface ExperienceAppraisal {
   eventId: string
+  origin?: 'browser-game'
   salience: number
   valence: number
   arousal: number

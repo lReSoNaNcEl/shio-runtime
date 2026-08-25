@@ -2,6 +2,12 @@ import assert from 'node:assert/strict'
 
 import sharp from 'sharp'
 
+import {
+  type ExtractedGameEvent,
+  type GameEventExtractionContext,
+  GameEventExtractionLane,
+  type GameEventExtractor,
+} from '../../src/main/browser-game/GameEventExtractor'
 import type {
   GameReflexAdapter,
   GameReflexBackendStatus,
@@ -16,6 +22,7 @@ import {
   BrowserGameError,
   type GameFrame,
   type GameInputIntent,
+  type GameSemanticEvent,
 } from '../../src/shared/browser-game'
 import type {
   BrowserGameSurfaceCandidate,
@@ -49,6 +56,45 @@ class TestReflexAdapter implements GameReflexAdapter {
   reset(): void {
     this.resetCount += 1
   }
+}
+
+class TestEventExtractor implements GameEventExtractor {
+  readonly frames: GameFrame[] = []
+  events: ExtractedGameEvent[] = []
+  resetCount = 0
+
+  async extract(
+    frame: GameFrame,
+    _state: GameEventExtractionContext,
+  ): Promise<readonly ExtractedGameEvent[]> {
+    this.frames.push(frame)
+    return this.events.splice(0, this.events.length)
+  }
+
+  reset(): void {
+    this.resetCount += 1
+  }
+}
+
+class SlowEventExtractor implements GameEventExtractor {
+  readonly frameIds: number[] = []
+  private releaseFirstExtraction: (() => void) | null = null
+
+  async extract(frame: GameFrame): Promise<readonly ExtractedGameEvent[]> {
+    this.frameIds.push(frame.frameId)
+    if (this.frameIds.length === 1) {
+      await new Promise<void>((resolve) => {
+        this.releaseFirstExtraction = resolve
+      })
+    }
+    return [{ type: 'score-changed', value: frame.frameId }]
+  }
+
+  release(): void {
+    this.releaseFirstExtraction?.()
+  }
+
+  reset(): void {}
 }
 
 interface FrameWaiter {
@@ -134,10 +180,15 @@ async function main(): Promise<void> {
   let now = 10_000
   const realtime = new TestRealtime()
   const reflexAdapter = new TestReflexAdapter()
+  const eventExtractor = new TestEventExtractor()
+  const gameEvents: GameSemanticEvent[] = []
   reflexAdapter.intents.push({ type: 'pointer-tap', x: 100, y: 75 })
+  eventExtractor.events.push({ type: 'checkpoint', importance: 'normal', value: 1 })
   const controller = new GameSessionController({
     realtime: () => realtime,
     reflex: new AdapterBackedGameReflexPolicy(reflexAdapter),
+    eventExtractor,
+    onEvent: (event) => gameEvents.push(event),
     now: () => now,
     createId: (() => {
       let id = 0
@@ -161,6 +212,7 @@ async function main(): Promise<void> {
   assert.equal(running.state, 'running')
   assert.equal(running.scope?.origin, 'https://game.example')
   assert.equal(reflexAdapter.initialized?.scope.authorizationActionId.startsWith('action-'), true)
+  assert.equal(gameEvents[0]?.type, 'game-started')
 
   await waitUntil(() => realtime.capturePending())
   const bytes = await sharp({
@@ -179,6 +231,7 @@ async function main(): Promise<void> {
     image: { mimeType: 'image/jpeg', bytes },
   })
   await waitUntil(() => realtime.inputs.length === 1)
+  await waitUntil(() => gameEvents.some((event) => event.type === 'checkpoint'))
   assert.equal(reflexAdapter.frames[0]?.width, 200)
   assert.equal(reflexAdapter.frames[0]?.height, 150)
   assert.deepEqual(realtime.inputs[0]?.events, [
@@ -189,6 +242,7 @@ async function main(): Promise<void> {
   await waitUntil(() => realtime.capturePending())
   const paused = await controller.pause()
   assert.equal(paused.state, 'paused')
+  assert(gameEvents.some((event) => event.type === 'game-paused'))
   assert(realtime.releaseCount >= 1)
   assert.equal(realtime.inputs.length, 1)
 
@@ -202,12 +256,15 @@ async function main(): Promise<void> {
     (error) => error instanceof BrowserGameError && error.code === 'GAME_SCOPE_CHANGED',
   )
   assert.equal(controller.status().state, 'error')
+  assert(gameEvents.some((event) => event.type === 'game-error'))
+  assert(gameEvents.some((event) => event.type === 'game-stopped'))
   assert(realtime.releaseCount >= 2)
 
   now += 100
   await controller.stop()
   assert.equal(controller.status().scope, undefined)
   assert(reflexAdapter.resetCount >= 1)
+  assert(eventExtractor.resetCount >= 1)
 
   let staleNow = 20_000
   const staleRealtime = new TestRealtime()
@@ -245,6 +302,38 @@ async function main(): Promise<void> {
   assert.equal(staleRealtime.inputs.length, 0)
   await staleController.pause()
   assert(staleRealtime.releaseCount >= 1)
+
+  const slowExtractor = new SlowEventExtractor()
+  const extractedValues: number[] = []
+  const extractionErrors: unknown[] = []
+  const lane = new GameEventExtractionLane(
+    slowExtractor,
+    (events) => {
+      for (const event of events) {
+        if (event.value !== undefined) extractedValues.push(event.value)
+      }
+    },
+    (error) => extractionErrors.push(error),
+  )
+  const extractionSignal = new AbortController().signal
+  const extractionState = { strategy: 'balanced' as const, elapsedMs: 1, inputEvents: 0 }
+  const extractionFrame = (frameId: number): GameFrame => ({
+    sessionId: 'game-session-33333333-3333-4333-8333-333333333333',
+    frameId,
+    capturedAt: staleNow,
+    width: 100,
+    height: 100,
+    image: { mimeType: 'image/jpeg', bytes },
+  })
+  lane.offer(extractionFrame(10), extractionState, extractionSignal)
+  await waitUntil(() => slowExtractor.frameIds.length === 1)
+  lane.offer(extractionFrame(11), extractionState, extractionSignal)
+  lane.offer(extractionFrame(12), extractionState, extractionSignal)
+  slowExtractor.release()
+  await waitUntil(() => extractedValues.length === 2)
+  assert.deepEqual(slowExtractor.frameIds, [10, 12])
+  assert.deepEqual(extractedValues, [10, 12])
+  assert.deepEqual(extractionErrors, [])
   console.log('browser game controller repro passed')
 }
 

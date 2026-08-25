@@ -8,6 +8,45 @@ export const GAME_SESSION_DEFAULT_MAX_INPUT_EVENTS = 5_000
 export const GAME_SESSION_DEFAULT_MAX_INPUT_EVENTS_PER_SECOND = 15
 export const GAME_FRAME_MAX_AGE_MS = 500
 
+export const GAME_SEMANTIC_EVENT_TYPES = [
+  'game-started',
+  'round-started',
+  'score-changed',
+  'checkpoint',
+  'level-completed',
+  'life-lost',
+  'death',
+  'retry',
+  'stuck',
+  'game-over',
+  'new-record',
+  'game-paused',
+  'game-resumed',
+  'game-stopped',
+  'game-error',
+  'waiting-user',
+] as const
+
+export const gameSemanticEventTypeSchema = z.enum(GAME_SEMANTIC_EVENT_TYPES)
+export type GameSemanticEventType = z.infer<typeof gameSemanticEventTypeSchema>
+
+export const gameSemanticEventSchema = z
+  .object({
+    eventId: z.string().regex(/^game-event-[0-9a-f-]{36}$/iu),
+    sessionId: z.string().regex(/^game-session-[0-9a-f-]{36}$/iu),
+    type: gameSemanticEventTypeSchema,
+    at: z.number().int().nonnegative(),
+    importance: z.enum(['ambient', 'normal', 'important', 'blocking']),
+    value: z.number().finite().min(-1_000_000_000).max(1_000_000_000).optional(),
+    previousValue: z.number().finite().min(-1_000_000_000).max(1_000_000_000).optional(),
+    label: z.string().trim().min(1).max(120).optional(),
+    reason: z
+      .enum(['user', 'expired', 'scope-changed', 'blocked', 'error', 'completed'])
+      .optional(),
+  })
+  .strict()
+export type GameSemanticEvent = z.infer<typeof gameSemanticEventSchema>
+
 export type BrowserGameErrorCode =
   | 'GAME_CAPABILITY_UNAVAILABLE'
   | 'GAME_SESSION_ACTIVE'

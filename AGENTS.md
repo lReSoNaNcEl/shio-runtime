@@ -170,6 +170,11 @@ Architecture and ownership:
   Character tools remain high-level only;
   never expose frames, coordinates, key-down/up, pointer-down/up, CDP, or arbitrary
   page JavaScript to Character Response Generation.
+- Game Event extraction is single-flight/latest-frame and may never back-pressure
+  capture or input. Emit only bounded semantic events into Experience; raw frames
+  never enter renderer state, diagnostics, Memory, or conversation. Commentary
+  continues through Experience, Behavior, and Conversation Admission and may not
+  pause the game loop; active user conversation and audio remain authoritative.
 - Browser use inside a Character turn is a bounded provider-neutral tool loop, not
   a new Runtime. Character reasoning decides semantically whether web interaction
   materially helps the current goal; do not add a phrase or keyword browser router.

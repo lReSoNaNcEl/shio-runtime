@@ -9,9 +9,16 @@ import type {
 } from '../../shared/alive'
 
 const NONVERBAL_COOLDOWN_MS = 90_000
+const GAME_NONVERBAL_COOLDOWN_MS = 5_000
+const CONVERSATION_CANDIDATE_COOLDOWN_MS = 5 * 60_000
+const GAME_CONVERSATION_CANDIDATE_COOLDOWN_MS = 30_000
+const GAME_CONVERSATION_WINDOW_MS = 60_000
+const GAME_MAX_CONVERSATION_CANDIDATES_PER_WINDOW = 2
 
 export class BehaviorRuntime {
   private lastNonverbalAt: number | null = null
+  private lastConversationCandidateAt: number | null = null
+  private gameConversationCandidateAt: number[] = []
 
   decide(input: {
     appraisal: ExperienceAppraisal
@@ -22,6 +29,7 @@ export class BehaviorRuntime {
     conversationAllowed?: boolean
   }): BehaviorCommand {
     const { appraisal, settings, at } = input
+    const gameEvent = appraisal.origin === 'browser-game'
     if (
       settings.globallySuspended ||
       settings.privacyMode ||
@@ -33,8 +41,11 @@ export class BehaviorRuntime {
     if (
       appraisal.conversationalImpulse &&
       appraisal.conversationalImpulse.priority >= 0.65 &&
-      input.conversationAllowed !== false
+      input.conversationAllowed !== false &&
+      this.conversationCooldownAllows(appraisal, at, gameEvent)
     ) {
+      this.lastConversationCandidateAt = at
+      if (gameEvent) this.gameConversationCandidateAt.push(at)
       return command(at, appraisal.eventId, {
         kind: 'conversation-candidate',
         topic: appraisal.conversationalImpulse.topic.slice(0, 300),
@@ -43,7 +54,9 @@ export class BehaviorRuntime {
     }
     if (
       appraisal.embodimentHint &&
-      (this.lastNonverbalAt === null || at - this.lastNonverbalAt >= NONVERBAL_COOLDOWN_MS)
+      (this.lastNonverbalAt === null ||
+        at - this.lastNonverbalAt >=
+          (gameEvent ? GAME_NONVERBAL_COOLDOWN_MS : NONVERBAL_COOLDOWN_MS))
     ) {
       this.lastNonverbalAt = at
       return command(at, appraisal.eventId, {
@@ -74,6 +87,31 @@ export class BehaviorRuntime {
         priority: boundedUnit(priority),
       },
     }
+  }
+
+  private conversationCooldownAllows(
+    appraisal: ExperienceAppraisal,
+    at: number,
+    gameEvent: boolean,
+  ): boolean {
+    if (!gameEvent) {
+      return (
+        this.lastConversationCandidateAt === null ||
+        at - this.lastConversationCandidateAt >= CONVERSATION_CANDIDATE_COOLDOWN_MS
+      )
+    }
+    this.gameConversationCandidateAt = this.gameConversationCandidateAt.filter(
+      (candidateAt) => at - candidateAt < GAME_CONVERSATION_WINDOW_MS,
+    )
+    if ((appraisal.conversationalImpulse?.priority ?? 0) >= 0.98) return true
+    if (this.gameConversationCandidateAt.length >= GAME_MAX_CONVERSATION_CANDIDATES_PER_WINDOW) {
+      return false
+    }
+    if ((appraisal.conversationalImpulse?.priority ?? 0) >= 0.9) return true
+    return (
+      this.lastConversationCandidateAt === null ||
+      at - this.lastConversationCandidateAt >= GAME_CONVERSATION_CANDIDATE_COOLDOWN_MS
+    )
   }
 }
 

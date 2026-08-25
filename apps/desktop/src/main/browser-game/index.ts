@@ -1,4 +1,5 @@
 export * from './BrowserGamePlugin'
+export * from './GameEventExtractor'
 export * from './GameReflexAdapter'
 export * from './GameReflexPolicy'
 export * from './GameSessionController'
