@@ -11,6 +11,18 @@ import type {
   PersistentGoalProvider,
   RevisePersistentGoal,
 } from '../../shared/alive'
+import type {
+  BrowserGameActionResult,
+  BrowserGameControlAction,
+  BrowserGameControlProviderResolver,
+  BrowserGameStatus,
+  CharacterGameStartRequest,
+} from '../../shared/browser-game'
+import {
+  BrowserGameError,
+  characterGameStartRequestSchema,
+  gameStrategySchema,
+} from '../../shared/browser-game'
 import type { CharacterToolId } from '../../shared/character-tools'
 import type {
   BrowserContextProviderResolver,
@@ -88,6 +100,14 @@ const GOAL_UPDATE_INPUT_SCHEMA = z
   })
 
 const BROWSER_GOAL_SCHEMA = z.string().trim().min(1).max(2_000).optional()
+
+const GAME_INPUT_SCHEMAS = {
+  'game.start': characterGameStartRequestSchema,
+  'game.pause': z.object({}).strict(),
+  'game.resume': z.object({ strategy: gameStrategySchema.optional() }).strict(),
+  'game.stop': z.object({}).strict(),
+  'game.status': z.object({}).strict(),
+} as const
 
 const BROWSER_INPUT_SCHEMAS = {
   'browser.observe': z.object({}).strict(),
@@ -176,6 +196,11 @@ interface CharacterToolDispatcherOptions {
   ) => Promise<DesktopWorkflowActionResult>
   browserContext?: BrowserContextProviderResolver
   browserAgent?: BrowserAgentCoordinator
+  browserGame?: BrowserGameControlProviderResolver
+  executeBrowserGameAction?: (
+    action: BrowserGameControlAction,
+    signal: AbortSignal,
+  ) => Promise<BrowserGameActionResult>
 }
 
 function browserObservationProjection(observation: BrowserObservation | null): unknown {
@@ -196,6 +221,27 @@ function browserObservationProjection(observation: BrowserObservation | null): u
       observation.truncated ||
       observation.content.length > 1_200 ||
       observation.interactiveElements.length > 24,
+  }
+}
+
+function gameStatusProjection(status: BrowserGameStatus): unknown {
+  return {
+    state: status.state,
+    strategy: status.strategy,
+    ...(status.scope
+      ? {
+          origin: status.scope.origin,
+          surface: {
+            id: status.scope.gameSurface.id,
+            kind: status.scope.gameSurface.kind,
+            label: status.scope.gameSurface.label,
+          },
+          allowedInputs: status.scope.allowedInputs,
+          expiresAt: status.scope.expiresAt,
+        }
+      : {}),
+    telemetry: status.telemetry,
+    lastErrorCode: status.lastErrorCode,
   }
 }
 
@@ -298,6 +344,9 @@ export class CharacterToolDispatcher {
       if (this.goalDataSelected && MEMORY_MUTATION_TOOL_IDS.has(id)) {
         return { content: failureContent('GOAL_DATA_CANNOT_AUTHORIZE_MEMORY_MUTATION') }
       }
+      if (id.startsWith('game.') && !this.influence.canInvoke(id)) {
+        return { content: failureContent('BROWSER_EVIDENCE_CANNOT_AUTHORIZE_GAME_SESSION') }
+      }
       this.influence.select(id)
       if (id === 'project.search') return await this.executeProject(input)
       if (id === 'web.search') return await this.executeWebSearch(input)
@@ -307,6 +356,12 @@ export class CharacterToolDispatcher {
       if (MEMORY_TOOL_IDS.has(id)) return this.executeMemory(id as MemoryToolName, input)
       if (id === 'shell.execute') return await this.executeShell(input)
       if (id === 'browser.observe') return await this.executeBrowserObservation(input)
+      if (id.startsWith('game.')) {
+        return await this.executeGame(
+          id as 'game.start' | 'game.pause' | 'game.resume' | 'game.stop' | 'game.status',
+          input,
+        )
+      }
       return await this.executeBrowser(
         id as Exclude<
           CharacterToolId,
@@ -314,6 +369,11 @@ export class CharacterToolDispatcher {
           | 'web.search'
           | 'shell.execute'
           | 'browser.observe'
+          | 'game.start'
+          | 'game.pause'
+          | 'game.resume'
+          | 'game.stop'
+          | 'game.status'
           | 'goal.create'
           | 'goal.list'
           | 'goal.update'
@@ -576,6 +636,11 @@ export class CharacterToolDispatcher {
       | 'web.search'
       | 'shell.execute'
       | 'browser.observe'
+      | 'game.start'
+      | 'game.pause'
+      | 'game.resume'
+      | 'game.stop'
+      | 'game.status'
       | 'goal.create'
       | 'goal.list'
       | 'goal.update'
@@ -620,6 +685,76 @@ export class CharacterToolDispatcher {
         risk: 'normal',
       }),
     )
+  }
+
+  private async executeGame(
+    id: 'game.start' | 'game.pause' | 'game.resume' | 'game.stop' | 'game.status',
+    input: Record<string, unknown>,
+  ): Promise<CharacterToolDispatchResult> {
+    const provider = this.options.browserGame?.()
+    if (!provider) return { content: failureContent('BROWSER_GAME_UNAVAILABLE') }
+    if (id === 'game.status') {
+      GAME_INPUT_SCHEMAS[id].parse(input)
+      return { content: successfulContent({ game: gameStatusProjection(provider.status()) }) }
+    }
+    if (!this.options.executeBrowserGameAction) {
+      return { content: failureContent('ACTION_RUNTIME_UNAVAILABLE') }
+    }
+    let action: BrowserGameControlAction
+    if (id === 'game.start') {
+      const request = GAME_INPUT_SCHEMAS[id].parse(input) as CharacterGameStartRequest
+      try {
+        const preparation = await provider.prepareStart(request, this.options.signal)
+        action = { operation: 'start', preparationId: preparation.preparationId }
+      } catch (error) {
+        if (error instanceof BrowserGameError) {
+          const surfaces = Array.isArray(error.details)
+            ? error.details.flatMap((candidate): unknown[] =>
+                candidate && typeof candidate === 'object' && 'id' in candidate
+                  ? [
+                      {
+                        id: candidate.id,
+                        ...('kind' in candidate ? { kind: candidate.kind } : {}),
+                        ...('label' in candidate ? { label: candidate.label } : {}),
+                      },
+                    ]
+                  : [],
+              )
+            : undefined
+          return {
+            content: JSON.stringify({
+              ok: false,
+              error: { code: error.code, ...(surfaces ? { surfaces } : {}) },
+            }),
+          }
+        }
+        throw error
+      }
+    } else if (id === 'game.pause') {
+      GAME_INPUT_SCHEMAS[id].parse(input)
+      action = { operation: 'pause' }
+    } else if (id === 'game.stop') {
+      GAME_INPUT_SCHEMAS[id].parse(input)
+      action = { operation: 'stop' }
+    } else {
+      const request = GAME_INPUT_SCHEMAS[id].parse(input)
+      action =
+        provider.status().state === 'running' && request.strategy
+          ? { operation: 'strategy', strategy: request.strategy }
+          : { operation: 'resume', ...(request.strategy ? { strategy: request.strategy } : {}) }
+    }
+    this.actionSelected = true
+    const result = await this.options.executeBrowserGameAction(action, this.options.signal)
+    if (result.outcome === 'cancelled' || result.outcome === 'permission-denied') {
+      this.actionWorkflowClosed = true
+    }
+    return {
+      content: JSON.stringify({
+        ok: result.outcome === 'success',
+        data: result.status ? { game: gameStatusProjection(result.status) } : undefined,
+        ...(result.errorCode ? { error: { code: result.errorCode } } : {}),
+      }),
+    }
   }
 
   private async executeDesktopAction(

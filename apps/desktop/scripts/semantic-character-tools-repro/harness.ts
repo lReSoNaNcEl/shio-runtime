@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict'
 
-import { CHARACTER_TOOL_CONTINUATION_TIMEOUT_MS } from '../../src/main/character-tools'
+import {
+  CHARACTER_TOOL_CONTINUATION_TIMEOUT_MS,
+  CharacterToolDispatcher,
+  CharacterToolRegistry,
+} from '../../src/main/character-tools'
 import type {
   LLMProvider,
   LlmCapabilities,
@@ -13,6 +17,12 @@ import type { MemoryStore } from '../../src/main/memory'
 import { Orchestrator } from '../../src/main/orchestrator'
 import type { SpeechClient } from '../../src/main/speech/speechClient'
 import type { DesktopWorkflowActionResult, DesktopWorkflowRequest } from '../../src/shared/actions'
+import type {
+  BrowserGameControlAction,
+  BrowserGameControlProvider,
+  BrowserGameStatus,
+  GameStartPreparation,
+} from '../../src/shared/browser-game'
 import type { ShioCapabilitySnapshot } from '../../src/shared/capabilities'
 import { parseCharacterToolDirective } from '../../src/shared/character-tools'
 import type { AppSettings } from '../../src/shared/config'
@@ -82,6 +92,22 @@ const allCapabilities: ShioCapabilitySnapshot = {
       source: { kind: 'plugin', pluginId: 'desktop-control' },
       titleKey: 'capabilities.computer.title',
       descriptionKey: 'capabilities.computer.description',
+      availability: 'available',
+      authority: 'confirm',
+    },
+  ],
+}
+
+const gameCapabilities: ShioCapabilitySnapshot = {
+  schemaVersion: 1,
+  generatedAt: 1,
+  capabilities: [
+    {
+      id: 'browser-game-control',
+      category: 'action',
+      source: { kind: 'plugin', pluginId: 'browser-game-control' },
+      titleKey: 'plugins.browserGame.name',
+      descriptionKey: 'plugins.browserGame.description',
       availability: 'available',
       authority: 'confirm',
     },
@@ -535,6 +561,123 @@ function compactToolProtocolContainment(): void {
   assert.equal(parseCharacterToolDirective('[browser.open]{not-json}').kind, 'malformed')
 }
 
+function browserGameToolsStayHighLevel(): void {
+  const disabled = new CharacterToolRegistry({
+    projectAvailable: false,
+    capabilityContext: gameCapabilities,
+    browserObservation: null,
+    actionsAvailable: false,
+    browserGameAvailable: false,
+  })
+  assert.equal(
+    disabled.definitions().some((tool) => tool.id.startsWith('game.')),
+    false,
+  )
+
+  const enabled = new CharacterToolRegistry({
+    projectAvailable: false,
+    capabilityContext: gameCapabilities,
+    browserObservation: null,
+    actionsAvailable: false,
+    browserGameAvailable: true,
+  })
+  assert.deepEqual(
+    enabled
+      .definitions()
+      .filter((tool) => tool.id.startsWith('game.'))
+      .map((tool) => tool.id),
+    ['game.start', 'game.pause', 'game.resume', 'game.stop', 'game.status'],
+  )
+  const serialized = JSON.stringify(enabled.nativeDefinitions())
+  for (const forbidden of ['game.click', 'game.keyDown', 'game.keyUp', 'game.frame']) {
+    assert.equal(serialized.includes(forbidden), false)
+  }
+}
+
+async function browserGameStartUsesPreparedActionScope(): Promise<void> {
+  const idleStatus: BrowserGameStatus = {
+    state: 'idle',
+    strategy: 'balanced',
+    telemetry: {
+      capturedFrames: 0,
+      droppedFrames: 0,
+      staleDecisions: 0,
+      inputEvents: 0,
+    },
+  }
+  const runningStatus: BrowserGameStatus = {
+    ...idleStatus,
+    state: 'running',
+  }
+  const preparation: GameStartPreparation = {
+    preparationId: 'game-preparation-00000000-0000-4000-8000-000000000001',
+    goal: 'Win the fixture round',
+    browserSessionId: 'browser-session-00000000-0000-4000-8000-000000000001',
+    tabId: 'tab-1',
+    origin: 'https://game.example.test',
+    url: 'https://game.example.test/fixture',
+    surface: {
+      id: 'game-surface-0',
+      kind: 'canvas',
+      label: 'Fixture canvas',
+      bounds: { x: 20, y: 30, width: 640, height: 480 },
+    },
+    allowedInputs: ['pointer', 'keyboard'],
+    maxDurationMs: 300_000,
+    maxInputEvents: 5_000,
+    maxInputEventsPerSecond: 15,
+    navigation: 'same-origin-only',
+    strategy: 'balanced',
+    createdAt: 1,
+    expiresAt: 10_001,
+  }
+  const preparedGoals: string[] = []
+  const provider: BrowserGameControlProvider = {
+    discoverSurfaces: async () => [preparation.surface],
+    prepareStart: async (request) => {
+      preparedGoals.push(request.goal)
+      return preparation
+    },
+    start: async () => runningStatus,
+    pause: async () => ({ ...idleStatus, state: 'paused' }),
+    resume: async () => runningStatus,
+    stop: async () => ({ ...idleStatus, state: 'stopped' }),
+    updateStrategy: () => runningStatus,
+    status: () => idleStatus,
+  }
+  const registry = new CharacterToolRegistry({
+    projectAvailable: false,
+    capabilityContext: gameCapabilities,
+    browserObservation: null,
+    actionsAvailable: false,
+    browserGameAvailable: true,
+  })
+  const actions: BrowserGameControlAction[] = []
+  const dispatcher = new CharacterToolDispatcher({
+    registry: () => registry,
+    traceId: 'game-tool-repro',
+    userGoal: 'Сыграй за меня в эту браузерную игру.',
+    signal: new AbortController().signal,
+    browserGame: () => provider,
+    executeBrowserGameAction: async (action) => {
+      actions.push(action)
+      return { outcome: 'success', authorization: 'confirmed', status: runningStatus }
+    },
+  })
+  dispatcher.registerPlannedTools(['game.start'])
+  const result = await dispatcher.execute('game.start', { goal: 'Win the fixture round' })
+  assert.deepEqual(preparedGoals, ['Win the fixture round'])
+  assert.deepEqual(actions, [
+    {
+      operation: 'start',
+      preparationId: preparation.preparationId,
+    },
+  ])
+  assert.equal(JSON.parse(result.content).data.game.state, 'running')
+  assert.equal(result.content.includes('authorizationActionId'), false)
+  assert.equal(result.content.includes('bounds'), false)
+}
+
 async function main(): Promise<void> {
   const scenarios: readonly Scenario[] = [
     {
@@ -730,6 +873,8 @@ async function main(): Promise<void> {
   await noToolRequestOptionsPreserved()
   await completedActionContinuationIsBoundedAndNotRetried()
   compactToolProtocolContainment()
+  browserGameToolsStayHighLevel()
+  await browserGameStartUsesPreparedActionScope()
   console.log('Semantic Character Tool Arbitration matrix: PASS')
 }
 

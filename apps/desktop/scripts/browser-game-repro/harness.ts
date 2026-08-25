@@ -7,11 +7,12 @@ import type {
   GameReflexPolicy,
   GameReflexState,
 } from '../../src/main/browser-game/GameReflexPolicy'
+import { GameSessionController } from '../../src/main/browser-game/GameSessionController'
 import {
   BrowserGameError,
-  GameSessionController,
-} from '../../src/main/browser-game/GameSessionController'
-import type { GameFrame, GameInputIntent } from '../../src/shared/browser-game'
+  type GameFrame,
+  type GameInputIntent,
+} from '../../src/shared/browser-game'
 import type {
   BrowserGameSurfaceCandidate,
   BrowserRealtimeControlProvider,

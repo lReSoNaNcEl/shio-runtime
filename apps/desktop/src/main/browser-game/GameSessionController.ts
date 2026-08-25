@@ -3,6 +3,8 @@ import { randomUUID } from 'node:crypto'
 import sharp from 'sharp'
 
 import {
+  BrowserGameError,
+  type BrowserGameErrorCode,
   type BrowserGameStatus,
   type CharacterGameStartRequest,
   characterGameStartRequestSchema,
@@ -37,28 +39,6 @@ const ALLOWED_GAME_KEYS = new Set([
   's',
   'w',
 ])
-
-export type BrowserGameErrorCode =
-  | 'GAME_CAPABILITY_UNAVAILABLE'
-  | 'GAME_SESSION_ACTIVE'
-  | 'GAME_SESSION_NOT_RUNNING'
-  | 'GAME_SURFACE_NOT_FOUND'
-  | 'GAME_SURFACE_SELECTION_REQUIRED'
-  | 'GAME_PREPARATION_EXPIRED'
-  | 'GAME_SCOPE_CHANGED'
-  | 'GAME_SCOPE_EXHAUSTED'
-  | 'GAME_INPUT_REJECTED'
-  | 'GAME_LOOP_FAILED'
-
-export class BrowserGameError extends Error {
-  constructor(
-    readonly code: BrowserGameErrorCode,
-    readonly details?: unknown,
-  ) {
-    super(code)
-    this.name = 'BrowserGameError'
-  }
-}
 
 export interface GameSessionControllerOptions {
   realtime(): BrowserRealtimeControlProvider | undefined

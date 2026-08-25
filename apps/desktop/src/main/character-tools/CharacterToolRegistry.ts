@@ -22,6 +22,7 @@ interface CharacterToolRegistryOptions {
   browserObservation: BrowserObservation | null
   memory?: MemoryToolBroker
   actionsAvailable: boolean
+  browserGameAvailable?: boolean
 }
 
 const BROWSER_TARGET_SCHEMA = {
@@ -52,7 +53,7 @@ const BROWSER_TARGET_SCHEMA = {
 
 function availableCapability(
   context: ShioCapabilitySnapshot | null,
-  id: 'automation-engine' | 'browser-control' | 'computer-control',
+  id: 'automation-engine' | 'browser-control' | 'browser-game-control' | 'computer-control',
 ): boolean {
   return Boolean(
     context?.capabilities.some(
@@ -377,6 +378,81 @@ export class CharacterToolRegistry {
           ),
         )
       }
+    }
+
+    if (
+      options.browserGameAvailable &&
+      availableCapability(options.capabilityContext, 'browser-game-control')
+    ) {
+      tools.push(
+        definition(
+          'game.start',
+          'game_start',
+          'Start one bounded delegated session for the current browser game. This selects only a high-level goal and approved surface; realtime frames and individual inputs remain internal. If multiple surfaces are reported, ask the user or retry with one returned surfaceId.',
+          {
+            type: 'object',
+            required: ['goal'],
+            properties: {
+              goal: { type: 'string' },
+              surfaceId: { type: 'string' },
+              allowedInputs: {
+                type: 'array',
+                minItems: 1,
+                maxItems: 2,
+                items: { type: 'string', enum: ['pointer', 'keyboard'] },
+              },
+              maxDurationMs: { type: 'integer', minimum: 30_000, maximum: 1_800_000 },
+              maxInputEvents: { type: 'integer', minimum: 1, maximum: 20_000 },
+              maxInputEventsPerSecond: { type: 'integer', minimum: 1, maximum: 30 },
+              navigation: { type: 'string', enum: ['same-origin-only', 'none'] },
+              strategy: { type: 'string', enum: ['careful', 'balanced', 'fast'] },
+            },
+            additionalProperties: false,
+          },
+        ),
+        definition(
+          'game.pause',
+          'game_pause',
+          'Pause the current game session and release all held inputs.',
+          {
+            type: 'object',
+            properties: {},
+            additionalProperties: false,
+          },
+        ),
+        definition(
+          'game.resume',
+          'game_resume',
+          'Resume a paused game session, or update its high-level careful/balanced/fast strategy without exposing frame controls.',
+          {
+            type: 'object',
+            properties: {
+              strategy: { type: 'string', enum: ['careful', 'balanced', 'fast'] },
+            },
+            additionalProperties: false,
+          },
+        ),
+        definition(
+          'game.stop',
+          'game_stop',
+          'Stop the current game session and release all held inputs.',
+          {
+            type: 'object',
+            properties: {},
+            additionalProperties: false,
+          },
+        ),
+        definition(
+          'game.status',
+          'game_status',
+          'Read the bounded current game-session status and telemetry.',
+          {
+            type: 'object',
+            properties: {},
+            additionalProperties: false,
+          },
+        ),
+      )
     }
 
     this.tools = Object.freeze(tools)

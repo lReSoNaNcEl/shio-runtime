@@ -26,7 +26,7 @@ import type {
 } from '../../src/shared/desktop-control'
 import type { LlmCapabilities, LlmReadiness } from '../../src/shared/llm'
 import type { PluginHealth, ProjectContextProvider } from '../../src/shared/plugins'
-import { WEB_SEARCH_PLUGIN_ID } from '../../src/shared/plugins'
+import { BROWSER_GAME_CONTROL_PLUGIN_ID, WEB_SEARCH_PLUGIN_ID } from '../../src/shared/plugins'
 import type { AvatarRuntimeHealth } from '../../src/shared/runtime'
 
 class CapabilityPlugin implements BundledPlugin {
@@ -175,7 +175,7 @@ async function main(): Promise<void> {
       streaming: true,
     })
     const disabled = await catalog.snapshot()
-    assert.equal(disabled.capabilities.length, 11)
+    assert.equal(disabled.capabilities.length, 12)
     assert.equal(
       disabled.capabilities.find((capability) => capability.id === 'web-search')?.availability,
       'available',
@@ -185,6 +185,15 @@ async function main(): Promise<void> {
       { kind: 'plugin', pluginId: WEB_SEARCH_PLUGIN_ID },
     )
     assert(pluginCapabilities.getWebSearchProvider())
+    assert.equal(
+      disabled.capabilities.find((capability) => capability.id === 'browser-game-control')
+        ?.availability,
+      'unavailable',
+    )
+    assert.deepEqual(
+      disabled.capabilities.find((capability) => capability.id === 'browser-game-control')?.source,
+      { kind: 'plugin', pluginId: BROWSER_GAME_CONTROL_PLUGIN_ID },
+    )
     const webDisabled = await waitForCapability(catalog, 'web-search', 'disabled', () =>
       runtime.disable(WEB_SEARCH_PLUGIN_ID),
     )

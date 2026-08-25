@@ -162,7 +162,10 @@ Architecture and ownership:
 - Browser Game Control is a separate default-disabled bundled Plugin and depends
   only on the typed `browser-realtime-control` capability. Game Session Controller
   owns exact session/tab/origin/surface scope, duration and input budgets, frame
-  freshness, rate limiting, and teardown. Character tools remain high-level only;
+  freshness, rate limiting, and teardown. `game.start` creates one delegated
+  `browser.game-session` Action whose ID is bound into the exact prepared session
+  scope; Full Control may skip confirmation but never scope validation or limits.
+  Character tools remain high-level only;
   never expose frames, coordinates, key-down/up, pointer-down/up, CDP, or arbitrary
   page JavaScript to Character Response Generation.
 - Browser use inside a Character turn is a bounded provider-neutral tool loop, not

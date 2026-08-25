@@ -12,6 +12,7 @@ import {
   type EffectiveDesktopWorkflowRequest,
 } from '../../src/main/desktop-control/browser-agent'
 import {
+  actionRuntimeActivity,
   desktopWorkflowActivity,
   isDesktopWorkflowActive,
 } from '../../src/renderer/components/actions/actionRuntimePresentation'
@@ -262,6 +263,84 @@ async function main(): Promise<void> {
   const timeoutResult = await undefinedTool.execute({ name: 'timeout', payload: undefined })
   assert.equal(timeoutResult.status, 'timeout')
   assert.equal(timeoutResult.errorCode, 'ACTION_TIMEOUT')
+
+  mode = 'confirm'
+  const gameConfirmations: Parameters<ActionConfirmationBroker['requestAction']>[0][] = []
+  const gameBroker = new ActionConfirmationBroker(
+    (request) => gameConfirmations.push(request),
+    () => undefined,
+    1_000,
+  )
+  const gameRuntime = new ActionRuntime({
+    permissionGuard: new ActionPermissionGuard({
+      authorityMode: () => mode,
+      requestConfirmation: (request) => gameBroker.requestAction(request),
+    }),
+    authorityMode: () => mode,
+    cancelPendingConfirmations: () => gameBroker.cancelAll(),
+  })
+  let gameExecutionCount = 0
+  gameRuntime.register<{ preparationId: string }, { state: 'running'; actionId: string }>({
+    name: 'browser.game-session',
+    description: 'Delegated browser game session repro tool',
+    validate: (payload) =>
+      z
+        .object({ preparationId: z.string().min(1) })
+        .strict()
+        .parse(payload),
+    authority: 'delegated-session',
+    confirmation: (actionId) =>
+      actionConfirmationRequestSchema.parse({
+        schemaVersion: 1,
+        actionId,
+        tool: 'browser.game-session',
+        goal: 'Play the bounded fixture',
+        origin: 'https://game.example.test',
+        surfaceId: 'game-surface-0',
+        surfaceLabel: 'Fixture canvas',
+        allowedInputs: ['pointer', 'keyboard'],
+        maxDurationMs: 300_000,
+        maxInputEvents: 5_000,
+        maxInputEventsPerSecond: 15,
+        navigation: 'same-origin-only',
+        requestedCapabilities: ['browser-game-control'],
+        risk: 'normal',
+      }),
+    execute: (_payload, context) => {
+      gameExecutionCount += 1
+      return { state: 'running', actionId: context.actionId }
+    },
+  })
+  const gameStart = gameRuntime.execute({
+    name: 'browser.game-session',
+    payload: { preparationId: 'fixture-preparation' },
+  })
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  assert.equal(gameConfirmations.length, 1)
+  assert.equal(gameConfirmations[0].tool, 'browser.game-session')
+  assert.deepEqual(gameConfirmations[0].requestedCapabilities, ['browser-game-control'])
+  assert.equal(actionRuntimeActivity(gameRuntime.snapshot()), 'awaiting-confirmation')
+  assert.equal(gameExecutionCount, 0)
+  assert(
+    gameBroker.respondToAction({
+      actionId: gameConfirmations[0].actionId,
+      decision: 'confirm',
+    }),
+  )
+  const gameResult = await gameStart
+  assert.equal(gameResult.status, 'success')
+  assert.equal(gameResult.authorization, 'confirmed')
+  assert.equal(gameResult.result?.actionId, gameResult.actionId)
+  assert.equal(gameExecutionCount, 1)
+
+  mode = 'full'
+  const fullGameResult = await gameRuntime.execute({
+    name: 'browser.game-session',
+    payload: { preparationId: 'second-preparation' },
+  })
+  assert.equal(fullGameResult.authorization, 'full')
+  assert.equal(gameConfirmations.length, 1)
+  assert.equal(gameExecutionCount, 2)
 
   const scopedConfirmations: Parameters<ActionConfirmationBroker['requestAction']>[0][] = []
   const scopedBroker = new ActionConfirmationBroker(

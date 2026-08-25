@@ -8,6 +8,31 @@ export const GAME_SESSION_DEFAULT_MAX_INPUT_EVENTS = 5_000
 export const GAME_SESSION_DEFAULT_MAX_INPUT_EVENTS_PER_SECOND = 15
 export const GAME_FRAME_MAX_AGE_MS = 500
 
+export type BrowserGameErrorCode =
+  | 'GAME_CAPABILITY_UNAVAILABLE'
+  | 'GAME_SESSION_ACTIVE'
+  | 'GAME_SESSION_NOT_RUNNING'
+  | 'GAME_SURFACE_NOT_FOUND'
+  | 'GAME_SURFACE_SELECTION_REQUIRED'
+  | 'GAME_PREPARATION_EXPIRED'
+  | 'GAME_SCOPE_CHANGED'
+  | 'GAME_SCOPE_EXHAUSTED'
+  | 'GAME_INPUT_REJECTED'
+  | 'GAME_LOOP_FAILED'
+
+export class BrowserGameError extends Error {
+  readonly evidence: unknown
+
+  constructor(
+    readonly code: BrowserGameErrorCode,
+    readonly details?: unknown,
+  ) {
+    super(code)
+    this.name = 'BrowserGameError'
+    this.evidence = details
+  }
+}
+
 export const gameAllowedInputSchema = z.enum(['pointer', 'keyboard'])
 export type GameAllowedInput = z.infer<typeof gameAllowedInputSchema>
 
@@ -156,6 +181,27 @@ export interface BrowserGameControlProvider {
   stop(): Promise<BrowserGameStatus>
   updateStrategy(strategy: GameStrategy): BrowserGameStatus
   status(): BrowserGameStatus
+}
+
+export const browserGameControlActionSchema = z.discriminatedUnion('operation', [
+  z
+    .object({
+      operation: z.literal('start'),
+      preparationId: z.string().regex(/^game-preparation-[0-9a-f-]{36}$/iu),
+    })
+    .strict(),
+  z.object({ operation: z.literal('pause') }).strict(),
+  z.object({ operation: z.literal('resume'), strategy: gameStrategySchema.optional() }).strict(),
+  z.object({ operation: z.literal('stop') }).strict(),
+  z.object({ operation: z.literal('strategy'), strategy: gameStrategySchema }).strict(),
+])
+export type BrowserGameControlAction = z.infer<typeof browserGameControlActionSchema>
+
+export interface BrowserGameActionResult {
+  outcome: 'success' | 'failure' | 'permission-denied' | 'timeout' | 'cancelled'
+  authorization?: 'implicit' | 'confirmed' | 'full'
+  status?: BrowserGameStatus
+  errorCode?: string
 }
 
 export type BrowserGameControlProviderResolver = () => BrowserGameControlProvider | undefined

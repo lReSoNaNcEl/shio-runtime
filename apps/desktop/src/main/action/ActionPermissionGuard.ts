@@ -19,7 +19,7 @@ export class ActionPermissionGuard {
   constructor(private readonly options: ActionPermissionGuardOptions) {}
 
   async authorize(
-    authority: 'implicit' | 'desktop-workflow',
+    authority: 'implicit' | 'desktop-workflow' | 'delegated-session',
     confirmation?: ActionConfirmationRequest,
     authorizationScopeId?: string,
     onConfirmationPending?: (request: ActionConfirmationRequest | null) => void,

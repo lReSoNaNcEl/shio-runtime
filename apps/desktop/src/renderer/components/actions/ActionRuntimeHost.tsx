@@ -26,7 +26,7 @@ import { type BrowserOperation } from '../../../shared/desktop-control'
 import { type TranslationKey } from '../../../shared/localization'
 import { useTranslation } from '../../localization/useTranslation'
 import { observeRendererPromise } from '../../reliability/observePromise'
-import { desktopWorkflowActivity } from './actionRuntimePresentation'
+import { actionRuntimeActivity } from './actionRuntimePresentation'
 
 const CAPABILITY_LABELS: Record<DesktopWorkflowCapability, TranslationKey> = {
   browser: 'actions.capability.browser',
@@ -153,7 +153,7 @@ export function ActionRuntimeHost() {
     )
   }
 
-  const activity = desktopWorkflowActivity(snapshot)
+  const activity = actionRuntimeActivity(snapshot)
   const activityLabel = t(
     activity === 'awaiting-confirmation'
       ? 'actions.awaitingConfirmation'
@@ -200,7 +200,7 @@ export function ActionRuntimeHost() {
                   </InlineAlert>
                 )}
                 <Text>{confirmation.goal}</Text>
-                {confirmation.shellCommand && (
+                {confirmation.tool === 'desktop.workflow' && confirmation.shellCommand && (
                   <div>
                     <Text UNSAFE_className="action-confirmation-label">
                       {t('actions.confirm.command')}
@@ -208,7 +208,7 @@ export function ActionRuntimeHost() {
                     <code className="action-confirmation-command">{confirmation.shellCommand}</code>
                   </div>
                 )}
-                {confirmation.browserOperation && (
+                {confirmation.tool === 'desktop.workflow' && confirmation.browserOperation && (
                   <div>
                     <Text UNSAFE_className="action-confirmation-label">
                       {t(BROWSER_OPERATION_LABELS[confirmation.browserOperation.operation])}
@@ -218,13 +218,71 @@ export function ActionRuntimeHost() {
                     </code>
                   </div>
                 )}
+                {confirmation.tool === 'browser.game-session' && (
+                  <div>
+                    <Text UNSAFE_className="action-confirmation-label">
+                      {t('actions.confirm.gameSession')}
+                    </Text>
+                    <dl className="action-confirmation-capabilities">
+                      <div>
+                        <dt>{t('actions.confirm.gameOrigin')}</dt>
+                        <dd>{confirmation.origin}</dd>
+                      </div>
+                      <div>
+                        <dt>{t('actions.confirm.gameSurface')}</dt>
+                        <dd>{confirmation.surfaceLabel ?? confirmation.surfaceId}</dd>
+                      </div>
+                      <div>
+                        <dt>{t('actions.confirm.gameDuration')}</dt>
+                        <dd>
+                          {Math.ceil(confirmation.maxDurationMs / 60_000)}{' '}
+                          {t('actions.confirm.minutesShort')}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>{t('actions.confirm.gameInputBudget')}</dt>
+                        <dd>
+                          {confirmation.maxInputEvents} · {confirmation.maxInputEventsPerSecond}/s
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>{t('actions.confirm.gameInputs')}</dt>
+                        <dd>
+                          {confirmation.allowedInputs
+                            .map((input) =>
+                              t(
+                                input === 'pointer'
+                                  ? 'actions.confirm.gameInputPointer'
+                                  : 'actions.confirm.gameInputKeyboard',
+                              ),
+                            )
+                            .join(', ')}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>{t('actions.confirm.gameNavigation')}</dt>
+                        <dd>
+                          {t(
+                            confirmation.navigation === 'none'
+                              ? 'actions.confirm.gameNavigationNone'
+                              : 'actions.confirm.gameNavigationSameOrigin',
+                          )}
+                        </dd>
+                      </div>
+                    </dl>
+                  </div>
+                )}
                 <div>
                   <Text UNSAFE_className="action-confirmation-label">
                     {t('actions.confirm.scope')}
                   </Text>
                   <ul className="action-confirmation-capabilities">
                     {confirmation.requestedCapabilities.map((capability) => (
-                      <li key={capability}>{t(CAPABILITY_LABELS[capability])}</li>
+                      <li key={capability}>
+                        {capability === 'browser-game-control'
+                          ? t('actions.capability.browserGameControl')
+                          : t(CAPABILITY_LABELS[capability])}
+                      </li>
                     ))}
                   </ul>
                 </div>

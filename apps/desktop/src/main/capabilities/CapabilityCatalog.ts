@@ -11,6 +11,7 @@ import type { LlmCapabilities, LlmReadiness } from '../../shared/llm'
 import type { MemoryRuntimeStatus } from '../../shared/memory'
 import type { PluginStatus } from '../../shared/plugins'
 import {
+  BROWSER_GAME_CONTROL_PLUGIN_ID,
   DESKTOP_CONTROL_PLUGIN_ID,
   PROJECT_AWARENESS_PLUGIN_ID,
   WEB_SEARCH_PLUGIN_ID,
@@ -189,6 +190,9 @@ export class CapabilityCatalog {
     const alive = this.sources.aliveStatus?.() ?? null
     const project = plugins.find((status) => status.manifest.id === PROJECT_AWARENESS_PLUGIN_ID)
     const webSearch = plugins.find((status) => status.manifest.id === WEB_SEARCH_PLUGIN_ID)
+    const browserGame = plugins.find(
+      (status) => status.manifest.id === BROWSER_GAME_CONTROL_PLUGIN_ID,
+    )
     const llmState = llmAvailability(readiness)
     const speechState: CapabilityAvailability = !this.speechProbe
       ? 'degraded'
@@ -387,6 +391,17 @@ export class CapabilityCatalog {
           : desktop.computerControl !== 'ready'
             ? 'capabilities.reason.desktopSetup'
             : undefined,
+      },
+      {
+        id: 'browser-game-control',
+        category: 'action',
+        source: { kind: 'plugin', pluginId: BROWSER_GAME_CONTROL_PLUGIN_ID },
+        titleKey: 'plugins.browserGame.name',
+        descriptionKey: 'plugins.browserGame.description',
+        availability: pluginAvailability(browserGame),
+        authority: desktop.authorityMode,
+        navigationTarget: { kind: 'plugin', id: BROWSER_GAME_CONTROL_PLUGIN_ID },
+        reasonKey: pluginReason(browserGame),
       },
     ]
 

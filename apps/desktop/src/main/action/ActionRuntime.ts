@@ -1,12 +1,13 @@
 import { randomUUID } from 'node:crypto'
 
-import type {
-  ActionAuthorization,
-  ActionConfirmationRequest,
-  ActionLogEntry,
-  ActionOutcome,
-  ActionRuntimeSnapshot,
-  DesktopAuthorityMode,
+import {
+  type ActionAuthorization,
+  type ActionConfirmationRequest,
+  type ActionLogEntry,
+  type ActionOutcome,
+  type ActionRuntimeSnapshot,
+  actionConfirmationRequestSchema,
+  type DesktopAuthorityMode,
 } from '../../shared/actions'
 import type { RuntimeEventInput } from '../../shared/runtime'
 import { ActionError } from './ActionError'
@@ -85,10 +86,7 @@ export class ActionRuntime {
       schemaVersion: 1,
       authorityMode: this.options.authorityMode(),
       pendingConfirmation: this.pendingConfirmation
-        ? {
-            ...this.pendingConfirmation,
-            requestedCapabilities: [...this.pendingConfirmation.requestedCapabilities],
-          }
+        ? actionConfirmationRequestSchema.parse(this.pendingConfirmation)
         : null,
       pendingAuthorityChange: null,
       activeActionId: firstActive?.[0] ?? null,

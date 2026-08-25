@@ -1,4 +1,5 @@
 import type {
+  BrowserGameControlAction,
   BrowserGameControlProvider,
   BrowserGameStatus,
   CharacterGameStartRequest,
@@ -142,6 +143,29 @@ export class BrowserGamePlugin implements BundledPlugin {
   getPreparedStart(preparationId: string): GameStartPreparation {
     this.assertActive()
     return this.controller.prepared(preparationId)
+  }
+
+  executeControl(
+    action: Exclude<BrowserGameControlAction, { operation: 'start' }>,
+  ): Promise<BrowserGameStatus> | BrowserGameStatus {
+    this.assertActive()
+    switch (action.operation) {
+      case 'pause':
+        return this.controller.pause()
+      case 'resume':
+        if (action.strategy) this.controller.updateStrategy(action.strategy)
+        return this.controller.status().state === 'running'
+          ? this.controller.status()
+          : this.controller.resume()
+      case 'stop':
+        return this.controller.stop()
+      case 'strategy':
+        return this.controller.updateStrategy(action.strategy)
+    }
+  }
+
+  emergencyStop(): Promise<BrowserGameStatus> {
+    return this.controller.stop()
   }
 
   private withActive<T>(operation: () => T): T {

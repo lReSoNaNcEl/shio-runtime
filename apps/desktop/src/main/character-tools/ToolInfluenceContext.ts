@@ -1,6 +1,6 @@
 import type { CharacterToolId } from '../../shared/character-tools'
 
-export type ToolCapability = 'project' | 'browser' | 'shell' | 'memory' | 'goal' | 'web'
+export type ToolCapability = 'project' | 'browser' | 'game' | 'shell' | 'memory' | 'goal' | 'web'
 export type ToolEvidenceOrigin = 'project' | 'browser' | 'memory' | 'goal' | 'web'
 
 export interface ToolInfluenceSnapshot {
@@ -13,6 +13,7 @@ export interface ToolInfluenceSnapshot {
 function capabilityFor(id: CharacterToolId): ToolCapability {
   if (id === 'web.search') return 'web'
   if (id.startsWith('browser.')) return 'browser'
+  if (id.startsWith('game.')) return 'game'
   if (id.startsWith('memory.')) return 'memory'
   if (id.startsWith('goal.')) return 'goal'
   if (id === 'project.search') return 'project'
@@ -39,7 +40,7 @@ export class ToolInfluenceContext {
   canInvoke(id: CharacterToolId): boolean {
     const capability = capabilityFor(id)
     if (!this.origins.has('browser') && !this.origins.has('web')) return true
-    if (capability !== 'shell' && capability !== 'memory') return true
+    if (capability !== 'shell' && capability !== 'memory' && capability !== 'game') return true
     return this.plannedBeforeEvidence.has(capability)
   }
 

@@ -53,7 +53,7 @@ export interface ToolDefinition<TPayload = unknown, TResult = unknown> {
   name: string
   description: string
   validate: (payload: unknown) => TPayload
-  authority?: 'implicit' | 'desktop-workflow'
+  authority?: 'implicit' | 'desktop-workflow' | 'delegated-session'
   confirmation?: (
     actionId: string,
     payload: TPayload,

@@ -87,6 +87,13 @@ export class BrowserWorkflowScopeRegistry {
     options: BrowserWorkflowAuthorizationOptions,
   ): Promise<ActionAuthorization> {
     const scope = this.requireActive(workflowId)
+    if (confirmation.tool !== 'desktop.workflow') {
+      throw new ActionError(
+        'ACTION_SCOPE_VIOLATION',
+        'The browser workflow scope cannot authorize another action tool',
+        'permission-denied',
+      )
+    }
     if (
       confirmation.requestedCapabilities.length !== 1 ||
       confirmation.requestedCapabilities[0] !== 'browser'

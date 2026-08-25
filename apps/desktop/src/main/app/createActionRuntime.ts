@@ -1,6 +1,12 @@
 import type { BrowserWindow } from 'electron'
 
 import { actionConfirmationRequestSchema, actionRuntimeSnapshotSchema } from '../../shared/actions'
+import {
+  type BrowserGameControlAction,
+  type BrowserGameStatus,
+  browserGameControlActionSchema,
+  type GameStartPreparation,
+} from '../../shared/browser-game'
 import type { RuntimeEventInput } from '../../shared/runtime'
 import {
   ActionConfirmationBroker,
@@ -13,6 +19,7 @@ import {
   ShellExecutionVerifier,
   safeDesktopWorkflowRecovery,
 } from '../action'
+import type { BrowserGamePlugin } from '../browser-game'
 import type { CapabilityCatalog } from '../capabilities'
 import { getConfig } from '../config'
 import type { DesktopControlPlugin, DesktopWorkflowAdapterResult } from '../desktop-control'
@@ -31,6 +38,7 @@ interface CreateActionRuntimeOptions {
   capabilityCatalog: CapabilityCatalog
   browserWorkflowScopes: BrowserWorkflowScopeRegistry
   desktopControl: () => DesktopControlPlugin
+  browserGame: () => BrowserGamePlugin
   onEvent?: (event: RuntimeEventInput) => void
 }
 
@@ -39,6 +47,7 @@ export function createActionRuntime({
   capabilityCatalog,
   browserWorkflowScopes,
   desktopControl,
+  browserGame,
   onEvent,
 }: CreateActionRuntimeOptions): ActionRuntimeComposition {
   const sendToRenderer = (channel: string, payload: unknown): void => {
@@ -109,9 +118,60 @@ export function createActionRuntime({
     recover: (request) => safeDesktopWorkflowRecovery(request),
     execute: (request, context) => desktopControl().executeWorkflow(request, context.signal),
   })
+  actions.register<GameStartPreparation, BrowserGameStatus>({
+    name: 'browser.game-session',
+    description: 'Start one Action-authorized bounded browser game session.',
+    validate: (payload) => {
+      const action = browserGameControlActionSchema.parse(payload)
+      if (action.operation !== 'start') throw new Error('Expected a game start action')
+      return browserGame().getPreparedStart(action.preparationId)
+    },
+    authority: 'delegated-session',
+    confirmation: (actionId, preparation) =>
+      actionConfirmationRequestSchema.parse({
+        schemaVersion: 1,
+        actionId,
+        tool: 'browser.game-session',
+        goal: preparation.goal,
+        origin: preparation.origin,
+        surfaceId: preparation.surface.id,
+        surfaceLabel: preparation.surface.label,
+        allowedInputs: preparation.allowedInputs,
+        maxDurationMs: preparation.maxDurationMs,
+        maxInputEvents: preparation.maxInputEvents,
+        maxInputEventsPerSecond: preparation.maxInputEventsPerSecond,
+        navigation: preparation.navigation,
+        requestedCapabilities: ['browser-game-control'],
+        risk: 'normal',
+      }),
+    timeoutMs: 15_000,
+    singleFlight: true,
+    adapter: 'browser-game-control',
+    execute: (preparation, context) =>
+      browserGame()
+        .getBrowserGameControlProvider()
+        .start(preparation.preparationId, context.actionId, context.signal),
+  })
+  actions.register<Exclude<BrowserGameControlAction, { operation: 'start' }>, BrowserGameStatus>({
+    name: 'browser.game-control',
+    description: 'Pause, resume, stop, or tune one bounded browser game session.',
+    validate: (payload) => {
+      const action = browserGameControlActionSchema.parse(payload)
+      if (action.operation === 'start') throw new Error('Expected a game control action')
+      return action
+    },
+    authority: 'implicit',
+    timeoutMs: 10_000,
+    singleFlight: true,
+    adapter: 'browser-game-control',
+    execute: (action) => browserGame().executeControl(action),
+  })
   actions.onEmergencyStop(() => {
     browserWorkflowScopes.releaseAll()
     return desktopControl().emergencyStop()
+  })
+  actions.onEmergencyStop(async () => {
+    await browserGame().emergencyStop()
   })
   return { actions, confirmations }
 }

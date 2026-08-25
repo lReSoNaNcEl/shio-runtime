@@ -14,6 +14,11 @@ import type {
   RevisePersistentGoal,
   WorldContextSnapshot,
 } from '../shared/alive'
+import type {
+  BrowserGameActionResult,
+  BrowserGameControlAction,
+  BrowserGameControlProviderResolver,
+} from '../shared/browser-game'
 import type { ShioCapabilityProvider, ShioCapabilitySnapshot } from '../shared/capabilities'
 import {
   type CharacterEmbodimentIntent,
@@ -238,6 +243,11 @@ export class Orchestrator {
     private revisePersistentGoal?: RevisePersistentGoal,
     private livingContext?: () => CharacterLivingContext,
     private webSearch?: WebSearchProviderResolver,
+    private browserGame?: BrowserGameControlProviderResolver,
+    private executeBrowserGameAction?: (
+      action: BrowserGameControlAction,
+      signal: AbortSignal,
+    ) => Promise<BrowserGameActionResult>,
   ) {}
 
   async createReply(
@@ -360,6 +370,7 @@ export class Orchestrator {
           browserObservation: dispatcher?.selectedBrowserObservation() ?? null,
           memory: this.semanticMemory,
           actionsAvailable: Boolean(this.executeDesktopWorkflow),
+          browserGameAvailable: Boolean(this.browserGame && this.executeBrowserGameAction),
         })
       const toolResult = await new CharacterToolLoop().run({
         llm: this.llm,
@@ -381,6 +392,8 @@ export class Orchestrator {
             executeDesktopWorkflow: this.executeDesktopWorkflow,
             browserContext: this.browserContext,
             browserAgent: this.browserAgent,
+            browserGame: this.browserGame,
+            executeBrowserGameAction: this.executeBrowserGameAction,
             persistentGoals: this.persistentGoals,
             goalAwareness,
             createPersistentGoal: this.createPersistentGoal,

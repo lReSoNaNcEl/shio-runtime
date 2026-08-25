@@ -4,6 +4,7 @@ import { resolvePwshPath } from '@deepseek-ai/dsh-pwsh-local'
 import { app, type BrowserWindow, Menu, powerMonitor, safeStorage } from 'electron'
 
 import type { DesktopWorkflowRequest } from '../../shared/actions'
+import type { BrowserGameControlAction } from '../../shared/browser-game'
 import { translate } from '../../shared/localization'
 import type { AvatarRuntimeHealth } from '../../shared/runtime'
 import { type ActionRuntime, toDesktopWorkflowActionResult } from '../action'
@@ -392,6 +393,27 @@ export function buildApplicationDependencies(): ApplicationDependencies {
         }
       },
       () => pluginCapabilities.getWebSearchProvider(),
+      () => pluginCapabilities.getBrowserGameControlProvider(),
+      async (request: BrowserGameControlAction, signal: AbortSignal) => {
+        const runtime = actionRuntime
+        if (!runtime || signal.aborted) throw new LlmTurnCancelledError()
+        const actionName =
+          request.operation === 'start' ? 'browser.game-session' : 'browser.game-control'
+        const action = await runtime.execute<
+          BrowserGameControlAction,
+          ReturnType<BrowserGamePlugin['getStatus']>
+        >({
+          name: actionName,
+          payload: request,
+          signal,
+        })
+        return {
+          outcome: action.status,
+          ...(action.authorization ? { authorization: action.authorization } : {}),
+          ...(action.result ? { status: action.result } : {}),
+          ...(action.errorCode ? { errorCode: action.errorCode } : {}),
+        }
+      },
     )
   }
 
@@ -494,6 +516,7 @@ export function buildApplicationDependencies(): ApplicationDependencies {
       capabilityCatalog,
       browserWorkflowScopes,
       desktopControl: getDesktopControl,
+      browserGame: getBrowserGame,
       onEvent: (event) => {
         const experience = actionExperienceEvent(event)
         if (experience) aliveRuntime?.reportExperience(experience)
