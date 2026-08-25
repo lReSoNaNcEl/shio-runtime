@@ -146,11 +146,12 @@ function relativeTimeSemantics(): void {
 }
 
 async function staticUiContract(): Promise<void> {
-  const [view, css, app, shell] = await Promise.all([
+  const [view, css, app, shell, supportHook] = await Promise.all([
     source('src/renderer/components/views/RuntimeHealthView.tsx'),
     source('src/renderer/styles/health.css'),
     source('src/renderer/components/App.tsx'),
     source('src/renderer/components/shell/RuntimeStatusIndicator.tsx'),
+    source('src/renderer/hooks/useRuntimeSupportBundle.ts'),
   ])
   assert.doesNotMatch(view, /PROJECT_AWARENESS|projectAwareness|health\.project/)
   assert.doesNotMatch(view, /InlineAlert|health\.alert/)
@@ -163,6 +164,8 @@ async function staticUiContract(): Promise<void> {
   assert.match(css, /width: min\(100%, 1040px\)/)
   assert.match(app, /buildRuntimeHealthProjection/)
   assert.match(shell, /runtime-status-label/)
+  assert.match(supportHook, /const RUNTIME_SUPPORT_REFRESH_MS = 30_000/)
+  assert.match(supportHook, /setInterval\([\s\S]*?RUNTIME_SUPPORT_REFRESH_MS\)/)
 }
 
 async function main(): Promise<void> {

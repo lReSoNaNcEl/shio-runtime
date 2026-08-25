@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 import type { RuntimeSupportBundle } from '../../shared/system'
 
+const RUNTIME_SUPPORT_REFRESH_MS = 30_000
+
 export function useRuntimeSupportBundle(enabled: boolean) {
   const [bundle, setBundle] = useState<RuntimeSupportBundle | null>(null)
   const mounted = useRef(true)
@@ -30,7 +32,7 @@ export function useRuntimeSupportBundle(enabled: boolean) {
     void refresh().catch(() => undefined)
     const intervalId = window.setInterval(() => {
       void refresh().catch(() => undefined)
-    }, 3_000)
+    }, RUNTIME_SUPPORT_REFRESH_MS)
     return () => window.clearInterval(intervalId)
   }, [enabled, refresh])
 

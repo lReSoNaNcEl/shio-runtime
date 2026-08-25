@@ -156,7 +156,9 @@ export function TasksView({
                 <Heading level={2}>{t('tasks.goals.title')}</Heading>
                 <Text>{t('tasks.goals.description')}</Text>
               </div>
-              <Text>{t('tasks.goals.count', { count: currentGoals.length })}</Text>
+              <Badge size="S" variant="gray">
+                {t('tasks.goals.count', { count: currentGoals.length })}
+              </Badge>
             </div>
 
             <article className="tasks-conversation-first">
@@ -164,7 +166,7 @@ export function TasksView({
                 <Heading level={3}>{t('tasks.goals.chatFirstTitle')}</Heading>
                 <Text>{t('tasks.goals.chatFirst')}</Text>
               </div>
-              <Button variant="accent" onPress={onOpenChat}>
+              <Button variant="primary" onPress={onOpenChat}>
                 {t('tasks.goals.openChat')}
               </Button>
             </article>
@@ -420,7 +422,7 @@ export function TasksView({
                     <ButtonGroup>
                       {task.status === 'waiting_confirmation' && (
                         <Button
-                          variant="accent"
+                          variant="primary"
                           isDisabled={busy || snapshot.settings.globallySuspended}
                           onPress={() => void run(() => window.api.alive.approveTask(task.id))}
                         >

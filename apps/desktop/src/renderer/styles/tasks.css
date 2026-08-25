@@ -1,6 +1,6 @@
 .tasks-view {
   display: grid;
-  gap: 24px;
+  gap: 20px;
   width: 100%;
   max-width: 1040px;
 }
@@ -10,9 +10,9 @@
   align-items: center;
   justify-content: space-between;
   gap: 20px;
-  padding: 16px 18px;
+  padding: 14px 16px;
   border: 1px solid var(--border-subtle);
-  border-radius: 14px;
+  border-radius: 12px;
   background: var(--surface-subtle);
 }
 
@@ -26,16 +26,12 @@
 }
 
 .tasks-tabs {
-  margin-block-end: 18px;
+  margin-block-end: 16px;
 }
 
 .tasks-panel {
   display: grid;
-  gap: 24px;
-  padding: 22px;
-  border: 1px solid var(--border-subtle);
-  border-radius: 16px;
-  background: var(--surface-subtle);
+  gap: 18px;
 }
 
 .tasks-panel-heading,
@@ -50,10 +46,10 @@
 
 .tasks-conversation-first {
   align-items: center;
-  padding: 18px;
+  padding: 18px 20px;
   border: 1px solid var(--border-subtle);
-  border-radius: 14px;
-  background: var(--surface);
+  border-radius: 12px;
+  background: var(--surface-subtle);
 }
 
 .tasks-create-row {
@@ -66,9 +62,13 @@
 }
 
 .tasks-form-surface {
-  padding: 18px;
+  padding-block-start: 14px;
+}
+
+.tasks-manual-disclosure {
+  padding: 10px 16px 14px;
   border: 1px solid var(--border-subtle);
-  border-radius: 14px;
+  border-radius: 12px;
   background: var(--surface);
 }
 
@@ -108,10 +108,10 @@
 
 .tasks-item {
   align-items: center;
-  padding: 18px;
+  padding: 16px 18px;
   border: 1px solid var(--border-subtle);
-  border-radius: 14px;
-  background: var(--surface);
+  border-radius: 12px;
+  background: var(--surface-subtle);
 }
 
 .tasks-item-main {
@@ -170,8 +170,11 @@
   display: grid;
   place-items: center;
   gap: 8px;
-  min-height: 180px;
-  padding: 28px;
+  min-height: 112px;
+  padding: 20px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  background: var(--surface-subtle);
   color: var(--text-muted);
   text-align: center;
 }
@@ -202,9 +205,8 @@
     width: 100%;
   }
 
-  .tasks-form-surface,
-  .tasks-panel {
-    padding: 16px;
+  .tasks-form-surface {
+    padding-block-start: 12px;
   }
 
   .tasks-create-actions {

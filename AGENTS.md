@@ -179,6 +179,10 @@ Desktop UI and UX:
 
 - Build all new or changed Desktop UI/UX with React Spectrum 2
   (`@react-spectrum/s2`). This is mandatory, not a preference.
+- Every new or changed Desktop screen must support both the light and dark UI
+  themes. Use Spectrum components, Spectrum design tokens, or existing semantic
+  application tokens for color, border, elevation, and interaction states; do not
+  hardcode theme-specific colors or validate a UI change against only one theme.
 - Use React Spectrum 2 components for every available UI primitive, including
   buttons, action buttons, fields, pickers, switches, meters, progress
   indicators, status lights, text, headings, badges, tooltips, dialogs, and

@@ -108,7 +108,7 @@ export const enMessages: Record<TranslationKey, string> = {
   'capabilities.reason.aliveDisabled': 'Autonomy was disabled by the user.',
   'capabilities.reason.aliveSuspended': 'Global autonomy suspend is active.',
   'app.nav.memory': 'Memory',
-  'app.section.memory.title': 'Shio Memory',
+  'app.section.memory.title': 'Memory',
   'app.section.memory.subtitle':
     'Important facts, preferences, and decisions across conversations.',
   'capabilities.memory.title': 'Long-term memory',
@@ -130,6 +130,11 @@ export const enMessages: Record<TranslationKey, string> = {
     'All long-term memory records will be removed. This will not change the current conversation history.',
   'memory.search': 'Search memory',
   'memory.searchPlaceholder': 'Find a fact, preference, or decision',
+  'memory.overview.title': 'What Shio remembers',
+  'memory.overview.description':
+    'Manage long-term memory and keep only what will genuinely help across conversations.',
+  'memory.records.title': 'Records',
+  'memory.resultsCount': 'Found: {count}',
   'memory.category': 'Category',
   'memory.text': 'What Shio should remember',
   'memory.count': 'Total records: {count}',

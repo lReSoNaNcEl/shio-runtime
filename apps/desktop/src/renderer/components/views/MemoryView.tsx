@@ -209,32 +209,41 @@ export function MemoryView({ aliveSnapshot }: { aliveSnapshot: AliveSnapshot | n
 
   return (
     <section className="memory-view page-container" aria-label={t('app.nav.memory')}>
-      <div className="memory-toolbar">
-        <Switch
-          isSelected={status?.enabled ?? false}
-          isDisabled={busy || !status?.operational}
-          onChange={toggleEnabled}
-        >
-          {status?.enabled ? t('common.enabled') : t('common.disabled')}
-        </Switch>
-        <ButtonGroup>
-          <Button
-            variant="primary"
+      <section className="memory-overview" aria-labelledby="memory-overview-title">
+        <div className="memory-overview-copy">
+          <Heading id="memory-overview-title" level={2}>
+            {t('memory.overview.title')}
+          </Heading>
+          <Text>{t('memory.overview.description')}</Text>
+        </div>
+        <div className="memory-overview-actions">
+          <Switch
+            isSelected={status?.enabled ?? false}
             isDisabled={busy || !status?.operational}
-            onPress={() => setEditor({ mode: 'create', kind: 'fact', text: '' })}
+            onChange={toggleEnabled}
           >
-            <Add />
-            <Text>{t('memory.add')}</Text>
-          </Button>
-          <Button
-            variant="negative"
-            isDisabled={busy || items.length === 0 || !status?.operational}
-            onPress={() => setClearConfirmation(true)}
-          >
-            {t('memory.clearAll')}
-          </Button>
-        </ButtonGroup>
-      </div>
+            {status?.enabled ? t('common.enabled') : t('common.disabled')}
+          </Switch>
+          <ButtonGroup>
+            <Button
+              variant="primary"
+              isDisabled={busy || !status?.operational}
+              onPress={() => setEditor({ mode: 'create', kind: 'fact', text: '' })}
+            >
+              <Add />
+              <Text>{t('memory.add')}</Text>
+            </Button>
+            <Button
+              variant="secondary"
+              isDisabled={busy || (status?.recordCount ?? 0) === 0 || !status?.operational}
+              onPress={() => setClearConfirmation(true)}
+            >
+              <Delete />
+              <Text>{t('memory.clearAll')}</Text>
+            </Button>
+          </ButtonGroup>
+        </div>
+      </section>
 
       {!status?.operational && (
         <InlineAlert variant="negative" fillStyle="subtleFill">
@@ -255,85 +264,94 @@ export function MemoryView({ aliveSnapshot }: { aliveSnapshot: AliveSnapshot | n
         </InlineAlert>
       )}
 
-      <div className="memory-filters">
-        <SearchField
-          aria-label={t('memory.search')}
-          placeholder={t('memory.searchPlaceholder')}
-          value={query}
-          onChange={setQuery}
-        />
-        <Picker
-          aria-label={t('memory.category')}
-          selectedKey={kind}
-          onSelectionChange={(key) => setKind(String(key) as MemoryKind | 'all')}
-        >
-          <PickerItem id="all">{t('memory.kind.all')}</PickerItem>
-          {MEMORY_KINDS.map((item) => (
-            <PickerItem id={item} key={item}>
-              {t(KIND_KEYS[item])}
-            </PickerItem>
-          ))}
-        </Picker>
-      </div>
+      <section className="memory-library" aria-labelledby="memory-records-title">
+        <div className="memory-library-heading">
+          <Heading id="memory-records-title" level={2}>
+            {t('memory.records.title')}
+          </Heading>
+          <Text UNSAFE_className="memory-count">
+            {t(query.trim() || kind !== 'all' ? 'memory.resultsCount' : 'memory.count', {
+              count: query.trim() || kind !== 'all' ? items.length : (status?.recordCount ?? 0),
+            })}
+          </Text>
+        </div>
+        <div className="memory-filters">
+          <SearchField
+            aria-label={t('memory.search')}
+            placeholder={t('memory.searchPlaceholder')}
+            value={query}
+            onChange={setQuery}
+          />
+          <Picker
+            aria-label={t('memory.category')}
+            selectedKey={kind}
+            onSelectionChange={(key) => setKind(String(key) as MemoryKind | 'all')}
+          >
+            <PickerItem id="all">{t('memory.kind.all')}</PickerItem>
+            {MEMORY_KINDS.map((item) => (
+              <PickerItem id={item} key={item}>
+                {t(KIND_KEYS[item])}
+              </PickerItem>
+            ))}
+          </Picker>
+        </div>
 
-      <Text UNSAFE_className="memory-count">
-        {t('memory.count', { count: status?.recordCount ?? items.length })}
-      </Text>
-      {items.length === 0 ? (
-        <div className="memory-empty">
-          <Heading level={2}>{t('memory.empty.title')}</Heading>
-          <Text>{t(query.trim() ? 'memory.empty.search' : 'memory.empty.description')}</Text>
-        </div>
-      ) : (
-        <div className="memory-grid">
-          {items.map((item) => (
-            <article className="memory-card" key={item.id}>
-              <div className="memory-card-heading">
-                <Badge size="S" variant="informative">
-                  {t(KIND_KEYS[item.kind])}
-                </Badge>
-                <div className="memory-card-actions">
-                  <ActionButton
-                    isQuiet
-                    aria-label={t('memory.edit')}
-                    isDisabled={busy}
-                    onPress={() =>
-                      setEditor({
-                        mode: 'edit',
-                        id: item.id,
-                        kind: item.kind,
-                        text: item.text,
-                      })
-                    }
-                  >
-                    <Edit />
-                  </ActionButton>
-                  <ActionButton
-                    isQuiet
-                    aria-label={t('memory.forget')}
-                    isDisabled={busy}
-                    onPress={() => setForgetTarget(item)}
-                  >
-                    <Delete />
-                  </ActionButton>
+        {items.length === 0 ? (
+          <div className="memory-empty">
+            <Heading level={3}>{t('memory.empty.title')}</Heading>
+            <Text>{t(query.trim() ? 'memory.empty.search' : 'memory.empty.description')}</Text>
+          </div>
+        ) : (
+          <div className="memory-grid">
+            {items.map((item) => (
+              <article className="memory-card" key={item.id}>
+                <div className="memory-card-heading">
+                  <Badge size="S" variant="gray">
+                    {t(KIND_KEYS[item.kind])}
+                  </Badge>
+                  <div className="memory-card-actions">
+                    <ActionButton
+                      isQuiet
+                      aria-label={t('memory.edit')}
+                      isDisabled={busy}
+                      onPress={() =>
+                        setEditor({
+                          mode: 'edit',
+                          id: item.id,
+                          kind: item.kind,
+                          text: item.text,
+                        })
+                      }
+                    >
+                      <Edit />
+                    </ActionButton>
+                    <ActionButton
+                      isQuiet
+                      aria-label={t('memory.forget')}
+                      isDisabled={busy}
+                      onPress={() => setForgetTarget(item)}
+                    >
+                      <Delete />
+                    </ActionButton>
+                  </div>
                 </div>
-              </div>
-              <Text UNSAFE_className="memory-card-text">{item.text}</Text>
-              <Text UNSAFE_className="memory-card-source">
-                {t(
-                  item.source.type === 'conversation'
-                    ? 'memory.source.conversation'
-                    : 'memory.source.manual',
-                )}{' '}
-                ·{' '}
-                {new Intl.DateTimeFormat(intlLocale, { dateStyle: 'medium' }).format(
-                  new Date(item.updatedAt),
-                )}
-              </Text>
-            </article>
-          ))}
-        </div>
-      )}
+                <Text UNSAFE_className="memory-card-text">{item.text}</Text>
+                <Text UNSAFE_className="memory-card-source">
+                  {t(
+                    item.source.type === 'conversation'
+                      ? 'memory.source.conversation'
+                      : 'memory.source.manual',
+                  )}{' '}
+                  ·{' '}
+                  {new Intl.DateTimeFormat(intlLocale, { dateStyle: 'medium' }).format(
+                    new Date(item.updatedAt),
+                  )}
+                </Text>
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
 
       <section className="memory-habits" aria-labelledby="memory-habits-title">
         <div className="memory-habits-heading">
@@ -425,10 +443,9 @@ export function MemoryView({ aliveSnapshot }: { aliveSnapshot: AliveSnapshot | n
                 {t('common.cancel')}
               </Button>
               <Button
-                variant="accent"
+                variant="primary"
                 isDisabled={busy || !editor.text.trim()}
                 onPress={saveEditor}
-                UNSAFE_className="shio-accent-button"
               >
                 {t('common.save')}
               </Button>

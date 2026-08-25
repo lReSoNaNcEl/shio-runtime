@@ -107,7 +107,7 @@ export const ruMessages = {
   'capabilities.reason.aliveDisabled': 'Автономность отключена пользователем.',
   'capabilities.reason.aliveSuspended': 'Действует глобальная пауза автономности.',
   'app.nav.memory': 'Память',
-  'app.section.memory.title': 'Память Shio',
+  'app.section.memory.title': 'Память',
   'app.section.memory.subtitle': 'Важные факты, предпочтения и решения между разговорами.',
   'capabilities.memory.title': 'Долговременная память',
   'capabilities.memory.description':
@@ -128,6 +128,11 @@ export const ruMessages = {
     'Все записи долговременной памяти будут удалены. Историю текущего разговора это не изменит.',
   'memory.search': 'Поиск по памяти',
   'memory.searchPlaceholder': 'Найти факт, предпочтение или решение',
+  'memory.overview.title': 'Что Shio помнит',
+  'memory.overview.description':
+    'Управляй долговременной памятью и добавляй только то, что действительно пригодится между разговорами.',
+  'memory.records.title': 'Записи',
+  'memory.resultsCount': 'Найдено: {count}',
   'memory.category': 'Категория',
   'memory.text': 'Что должна помнить Shio',
   'memory.count': 'Всего записей: {count}',
