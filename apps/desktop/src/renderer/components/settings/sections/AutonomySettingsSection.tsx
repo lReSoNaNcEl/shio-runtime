@@ -240,6 +240,9 @@ export function AutonomySettingsSection({ snapshot }: { snapshot: AliveSnapshot 
               <Text UNSAFE_className="settings-hint">
                 {t('settings.autonomy.fastBrainDescription')}
               </Text>
+              <Text UNSAFE_className="settings-hint">
+                {t('settings.autonomy.fastBrainDifference')}
+              </Text>
             </div>
             {snapshot.settings.fastBrain.enabled && !snapshot.settings.privacyMode && (
               <div className="autonomy-settings-grid">

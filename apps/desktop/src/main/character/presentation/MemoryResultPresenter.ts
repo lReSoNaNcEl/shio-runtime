@@ -13,11 +13,19 @@ export function verifiedToolOutcomeFallback(
 ): string | null {
   if (!outcome) return null
   if (locale === 'ru') {
+    if (outcome.kind === 'goal.update') {
+      const completion = outcome.status === 'completed' ? ' Цель завершена.' : ''
+      return `[calm]Прогресс цели «${outcome.title}» обновлён до ${outcome.progressPercent}%.${completion}`
+    }
     if (outcome.kind === 'memory.store')
       return '[calm]Готово — сохранила это в долговременной памяти.'
     if (outcome.kind === 'memory.update')
       return '[calm]Готово — обновила запись в долговременной памяти.'
     return '[calm]Готово — удалила запись из долговременной памяти.'
+  }
+  if (outcome.kind === 'goal.update') {
+    const completion = outcome.status === 'completed' ? ' The goal is complete.' : ''
+    return `[calm]I updated “${outcome.title}” to ${outcome.progressPercent}%.${completion}`
   }
   if (outcome.kind === 'memory.store') return '[calm]Done — I saved this to long-term memory.'
   if (outcome.kind === 'memory.update') return '[calm]Done — I updated the long-term memory record.'

@@ -10,7 +10,9 @@ import type {
   ExperienceEvent,
   FastBrainAttentionDecision,
   FastBrainAttentionInput,
+  PersistentGoal,
   RendererWorldContextInput,
+  ReportGoalProgressInput,
   ScheduledTask,
   UpdateGoalInput,
 } from '../../shared/alive'
@@ -133,6 +135,37 @@ export class AliveRuntime {
       this.store.observeHabit('goal-follow-through', 'Доводить выбранные цели до завершения')
     }
     return this.publish()
+  }
+
+  reportGoalProgress(input: ReportGoalProgressInput): PersistentGoal {
+    if (
+      !Number.isInteger(input.progressPercent) ||
+      input.progressPercent < 0 ||
+      input.progressPercent > 100
+    ) {
+      throw new Error('INVALID_GOAL_PROGRESS')
+    }
+    const previous = this.store.goals().find((goal) => goal.id === input.id)
+    if (!previous) throw new Error('GOAL_NOT_FOUND')
+    const progress = Math.max(previous.progress, input.progressPercent / 100)
+    const goal = this.store.updateGoal({
+      id: input.id,
+      progress,
+      status: progress >= 1 ? 'completed' : previous.status,
+    })
+    if (!goal) throw new Error('GOAL_NOT_FOUND')
+    this.store.audit(
+      'goal',
+      'progress_updated',
+      'success',
+      goal.id,
+      `${Math.round(goal.progress * 100)}%`,
+    )
+    if (goal.status === 'completed' && previous.status !== 'completed') {
+      this.store.observeHabit('goal-follow-through', 'Доводить выбранные цели до завершения')
+    }
+    this.publish()
+    return goal
   }
 
   createTask(input: CreateScheduledTaskInput): AliveSnapshot {

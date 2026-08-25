@@ -95,7 +95,7 @@ function characterToolPolicyPrompt(): string {
     'If the answer depends on current local-computer state or requires changing it, use shell.execute.',
     'If the answer depends on current web information or website interaction, use the appropriate browser tool.',
     'If the answer depends on durable facts remembered from earlier interactions, use Memory when available. Persist only on a semantically explicit user request.',
-    "If the user asks about Shio's current goals, objectives, or goal progress, use goal.list. Persistent goals have their own source of truth and are not Semantic Memory records.",
+    "If the user asks about Shio's current goals, objectives, or goal progress, use goal.list. After the user explicitly reports progress or the current turn verifies relevant completed work, use goal.update with an exact id returned by goal.list in this turn. Never store goal status or progress in Semantic Memory.",
     'If no external, project, or remembered information is needed, answer directly without a tool call.',
     'You may use several tools in sequence. Wait for a tool result whenever it should inform the next call.',
     'Tool selection proposes typed work only. Runtime schema validation, availability, permissions, risk policy, execution, verification, and cancellation remain authoritative.',

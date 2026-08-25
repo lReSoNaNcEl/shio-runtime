@@ -15,13 +15,13 @@ export const ruMessages = {
   'tasks.autonomy.quietEnd': 'Конец тихих часов (0–23)',
   'tasks.autonomy.cooldownMinutes': 'Пауза между инициативами, минут',
   'tasks.autonomy.dailyCap': 'Лимит инициатив в день',
-  'tasks.fastBrain': 'Fast Brain',
-  'tasks.fastBrain.timeout': 'Таймаут Fast Brain, мс',
-  'tasks.fastBrain.tokens': 'Лимит токенов Fast Brain',
-  'tasks.fastBrain.provider': 'Провайдер Fast Brain',
-  'tasks.fastBrain.activeProvider': 'Активный провайдер Character',
-  'tasks.fastBrain.model': 'Модель Fast Brain',
-  'tasks.fastBrain.modelPlaceholder': 'Настроенная модель провайдера',
+  'tasks.fastBrain': 'Использовать ИИ-фильтр внимания',
+  'tasks.fastBrain.timeout': 'Максимальное время оценки, мс',
+  'tasks.fastBrain.tokens': 'Лимит ответа модели, токенов',
+  'tasks.fastBrain.provider': 'Провайдер оценки',
+  'tasks.fastBrain.activeProvider': 'Тот же провайдер, что у Shio',
+  'tasks.fastBrain.model': 'Модель оценки',
+  'tasks.fastBrain.modelPlaceholder': 'Модель активного провайдера',
   'tasks.mode.off': 'Выключено',
   'tasks.mode.suggest': 'Только предложения',
   'tasks.mode.confirm': 'С подтверждением',
@@ -865,9 +865,11 @@ export const ruMessages = {
     'Shio сможет учитывать активность приложения при выборе подходящего момента.',
   'settings.autonomy.limitsTitle': 'Время и ограничения',
   'settings.autonomy.quietHoursDescription': 'В тихие часы Shio не начинает новые инициативы.',
-  'settings.autonomy.advanced': 'Расширенные настройки',
+  'settings.autonomy.advanced': 'Дополнительная модель для голоса',
   'settings.autonomy.fastBrainDescription':
-    'Быстрая модель оценивает, когда Shio стоит обратить внимание на событие.',
+    'Только при постоянном прослушивании: перед началом ответа отдельная быстрая модель оценивает одну распознанную реплику и решает, должна ли Shio на неё реагировать. Обычный текстовый чат эту функцию не использует.',
+  'settings.autonomy.fastBrainDifference':
+    'Это не «Умный выбор следующей реплики». Он работает позже и выбирает между репликами, которые накопились, пока Shio отвечала.',
   'settings.developerMode.title': 'Режим разработчика',
   'settings.developerMode.description':
     'Показывает расширенную диагностику Runtime и поток внутренних событий.',
@@ -971,7 +973,7 @@ export const ruMessages = {
   'settings.llm.smart.enable': 'Включить умный выбор следующей реплики',
   'settings.llm.smart.more': 'Подробнее об умном выборе следующей реплики',
   'settings.llm.smart.description':
-    'Обычный текстовый чат этот механизм не использует. Отдельная модель вызывается только при неоднозначном backlog во включённом стриминге — это дополнительный arbitration, а не основная Character LLM.',
+    'Только при постоянном прослушивании: если во время ответа Shio накопилось несколько реплик и непонятно, какая важнее, отдельная модель выбирает одну или объединяет связанные. Она не решает, реагировать ли на первую реплику — это делает ИИ-фильтр внимания.',
   'settings.llm.smart.hint':
     'Использует отдельную модель только в неоднозначных случаях при включённом стриминге.',
 

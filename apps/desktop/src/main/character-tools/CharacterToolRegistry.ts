@@ -15,6 +15,7 @@ export interface CharacterToolDefinition {
 interface CharacterToolRegistryOptions {
   projectAvailable: boolean
   goalsAvailable?: boolean
+  goalUpdatesAvailable?: boolean
   capabilityContext: ShioCapabilitySnapshot | null
   browserObservation: BrowserObservation | null
   memory?: MemoryToolBroker
@@ -119,6 +120,24 @@ export class CharacterToolRegistry {
           },
         ),
       )
+      if (options.goalUpdatesAvailable) {
+        tools.push(
+          definition(
+            'goal.update',
+            'goal_update',
+            'Report bounded progress for one persistent goal. First call goal.list in this same turn and use its exact goal id. Use this only when the user explicitly reports progress or after the current turn has verified relevant work. Use 100 only when the goal is actually finished. Do not store goal status in Semantic Memory.',
+            {
+              type: 'object',
+              required: ['id', 'progressPercent'],
+              properties: {
+                id: { type: 'string' },
+                progressPercent: { type: 'integer', minimum: 0, maximum: 100 },
+              },
+              additionalProperties: false,
+            },
+          ),
+        )
+      }
     }
 
     for (const memoryTool of options.memory?.availableTools() ?? []) {

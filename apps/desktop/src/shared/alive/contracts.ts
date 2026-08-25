@@ -153,6 +153,13 @@ export interface UpdateGoalInput {
 
 export type PersistentGoalProvider = () => readonly PersistentGoal[]
 
+export interface ReportGoalProgressInput {
+  id: string
+  progressPercent: number
+}
+
+export type PersistentGoalProgressReporter = (input: ReportGoalProgressInput) => PersistentGoal
+
 export interface CreateScheduledTaskInput {
   title: string
   kind: ScheduledTaskKind

@@ -1,15 +1,17 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Readable } from 'node:stream'
 
+import { AliveRuntime } from '../../src/main/alive/AliveRuntime'
 import { AliveStore } from '../../src/main/alive/AliveStore'
 import { AutonomyEnvelope } from '../../src/main/alive/AutonomyEnvelope'
 import { CharacterToolDispatcher } from '../../src/main/character-tools/CharacterToolDispatcher'
 import { CharacterToolLoop } from '../../src/main/character-tools/CharacterToolLoop'
 import { CharacterToolRegistry } from '../../src/main/character-tools/CharacterToolRegistry'
 import { runChatCompletionStream } from '../../src/main/llm/openai-compatible/stream'
+import { createSemanticMemoryRuntime, MemoryToolBroker } from '../../src/main/memory'
 import { StreamingSpeechPipeline } from '../../src/renderer/runtime/StreamingSpeechPipeline'
 import {
   type CharacterStreamEvent,
@@ -382,40 +384,159 @@ async function testPersistentGoalTool(): Promise<void> {
   const directory = mkdtempSync(join(tmpdir(), 'shio-goal-tool-'))
   try {
     const store = new AliveStore(join(directory, 'alive.sqlite'))
-    store.createGoal({ title: 'Найти фотки с котиками в браузере' })
+    const active = store.createGoal({ title: 'Найти фотки с котиками в браузере' })
     store.createGoal({ title: 'Paused goal' })
     const paused = store.goals().find((goal) => goal.title === 'Paused goal')
     assert.ok(paused)
     store.updateGoal({ id: paused.id, status: 'paused' })
+    const runtime = new AliveRuntime(store, () => {
+      throw new Error('Fast Brain is not used by this repro')
+    })
+    const memoryRuntime = createSemanticMemoryRuntime(join(directory, 'memory.sqlite'))
+    memoryRuntime.setEnabled(true)
+    const memoryBroker = new MemoryToolBroker(memoryRuntime)
 
     const registry = new CharacterToolRegistry({
       projectAvailable: false,
       goalsAvailable: true,
+      goalUpdatesAvailable: true,
       capabilityContext: null,
       browserObservation: null,
+      memory: memoryBroker,
       actionsAvailable: false,
     })
     assert.ok(registry.get('goal.list'))
+    assert.ok(registry.get('goal.update'))
 
     const dispatcher = new CharacterToolDispatcher({
       registry: () => registry,
       traceId: 'goal-tool-repro',
       userGoal: 'Какие у тебя сейчас цели?',
       signal: new AbortController().signal,
-      persistentGoals: () => store.goals(),
+      semanticMemory: memoryBroker,
+      persistentGoals: () => runtime.snapshot().goals,
+      reportGoalProgress: (input) => runtime.reportGoalProgress(input),
     })
+    const rejected = await dispatcher.execute('goal.update', {
+      id: active.id,
+      progressPercent: 100,
+    })
+    assert.match(rejected.content, /GOAL_NOT_LISTED_IN_TURN/u)
     const result = await dispatcher.execute('goal.list', { status: 'active' })
     const payload = JSON.parse(result.content) as {
       ok: boolean
-      data: { source: string; count: number; goals: Array<{ title: string }> }
+      data: { source: string; count: number; goals: Array<{ id: string; title: string }> }
     }
     assert.equal(payload.ok, true)
     assert.equal(payload.data.source, 'persistent-goal-store')
     assert.equal(payload.data.count, 1)
+    assert.equal(payload.data.goals[0]?.id, active.id)
     assert.equal(payload.data.goals[0]?.title, 'Найти фотки с котиками в браузере')
     assert.doesNotMatch(result.content, /Paused goal/u)
+    const rejectedMemory = await dispatcher.execute('memory.store', {
+      memories: [{ kind: 'fact', text: 'Goal is complete' }],
+    })
+    assert.match(rejectedMemory.content, /GOAL_DATA_CANNOT_AUTHORIZE_MEMORY_MUTATION/u)
+    assert.equal(memoryRuntime.status().recordCount, 0)
+    const userReported = await dispatcher.execute('goal.update', {
+      id: active.id,
+      progressPercent: 25,
+    })
+    assert.equal(userReported.verifiedOutcome?.kind, 'goal.update')
+    assert.equal(runtime.snapshot().goals.find((goal) => goal.id === active.id)?.progress, 0.25)
     dispatcher.dispose()
-    store.close()
+
+    const actionRegistry = new CharacterToolRegistry({
+      projectAvailable: false,
+      goalsAvailable: true,
+      goalUpdatesAvailable: true,
+      capabilityContext: {
+        schemaVersion: 1,
+        generatedAt: 0,
+        capabilities: [
+          {
+            id: 'browser-control',
+            category: 'action',
+            source: { kind: 'plugin', pluginId: 'desktop-control' },
+            titleKey: 'capabilities.browser.title',
+            descriptionKey: 'capabilities.browser.description',
+            availability: 'available',
+          },
+        ],
+      },
+      browserObservation: null,
+      actionsAvailable: true,
+    })
+    const actionDispatcher = new CharacterToolDispatcher({
+      registry: () => actionRegistry,
+      traceId: 'goal-action-tool-repro',
+      userGoal: 'Начни выполнять цель сейчас',
+      signal: new AbortController().signal,
+      persistentGoals: () => runtime.snapshot().goals,
+      reportGoalProgress: (input) => runtime.reportGoalProgress(input),
+      executeDesktopWorkflow: async () => ({
+        actionId: 'action-1-00000000-0000-4000-8000-000000000000',
+        tool: 'desktop.workflow',
+        outcome: 'success',
+        authorization: 'full',
+        execution: { runtimeCompleted: true, verification: 'verified' },
+      }),
+    })
+    await actionDispatcher.execute('goal.list', { status: 'active' })
+    const action = await actionDispatcher.execute('browser.open', {
+      url: 'https://www.bing.com/images/search?q=cats',
+      goal: 'Найти фотки с котиками в браузере',
+    })
+    assert.match(action.content, /"ok":true/u)
+    const updated = await actionDispatcher.execute('goal.update', {
+      id: active.id,
+      progressPercent: 100,
+    })
+    assert.equal(updated.verifiedOutcome?.kind, 'goal.update')
+    assert.match(updated.content, /"status":"completed"/u)
+    assert.equal(runtime.snapshot().goals.find((goal) => goal.id === active.id)?.progress, 1)
+    assert.equal(
+      runtime.snapshot().goals.find((goal) => goal.id === active.id)?.status,
+      'completed',
+    )
+    actionDispatcher.dispose()
+
+    const unverifiedGoal = runtime
+      .createGoal({ title: 'Goal with unverified work' })
+      .goals.find((goal) => goal.title === 'Goal with unverified work')
+    assert.ok(unverifiedGoal)
+    const unverifiedDispatcher = new CharacterToolDispatcher({
+      registry: () => actionRegistry,
+      traceId: 'goal-unverified-action-repro',
+      userGoal: 'Выполни цель',
+      signal: new AbortController().signal,
+      persistentGoals: () => runtime.snapshot().goals,
+      reportGoalProgress: (input) => runtime.reportGoalProgress(input),
+      executeDesktopWorkflow: async () => ({
+        actionId: 'action-2-00000000-0000-4000-8000-000000000000',
+        tool: 'desktop.workflow',
+        outcome: 'success',
+        authorization: 'full',
+        execution: { runtimeCompleted: true, verification: 'unverified' },
+      }),
+    })
+    await unverifiedDispatcher.execute('goal.list', { status: 'active' })
+    await unverifiedDispatcher.execute('browser.open', {
+      url: 'https://example.com',
+      goal: unverifiedGoal.title,
+    })
+    const unverifiedUpdate = await unverifiedDispatcher.execute('goal.update', {
+      id: unverifiedGoal.id,
+      progressPercent: 100,
+    })
+    assert.match(unverifiedUpdate.content, /GOAL_UPDATE_REQUIRES_VERIFIED_ACTION/u)
+    assert.equal(
+      runtime.snapshot().goals.find((goal) => goal.id === unverifiedGoal.id)?.status,
+      'active',
+    )
+    unverifiedDispatcher.dispose()
+    memoryRuntime.close()
+    runtime.dispose()
   } finally {
     rmSync(directory, { recursive: true, force: true })
   }
@@ -443,6 +564,13 @@ async function testLatencyAggregation(): Promise<void> {
   })
 }
 
+function testTasksLayoutUsesValidTokens(): void {
+  const stylesheet = readFileSync(join(__dirname, '../src/renderer/styles/tasks.css'), 'utf8')
+  assert.doesNotMatch(stylesheet, /--s2-(?:space|corner-radius)-/u)
+  assert.match(stylesheet, /\.tasks-form-surface/u)
+  assert.match(stylesheet, /\.tasks-create-actions/u)
+}
+
 async function main(): Promise<void> {
   await testSafeStreamFilter()
   await testSentenceSegmentation()
@@ -452,6 +580,7 @@ async function main(): Promise<void> {
   await testPersistenceAndEnvelope()
   await testPersistentGoalTool()
   await testLatencyAggregation()
+  testTasksLayoutUsesValidTokens()
   console.log('Alive & Autonomous repro passed')
 }
 

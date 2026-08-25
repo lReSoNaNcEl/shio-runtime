@@ -5,7 +5,7 @@ import type {
   DesktopWorkflowActionResult,
   DesktopWorkflowRequest,
 } from '../shared/actions'
-import type { PersistentGoalProvider } from '../shared/alive'
+import type { PersistentGoalProgressReporter, PersistentGoalProvider } from '../shared/alive'
 import type { ShioCapabilityProvider, ShioCapabilitySnapshot } from '../shared/capabilities'
 import {
   type CharacterEmbodimentIntent,
@@ -218,6 +218,7 @@ export class Orchestrator {
     private browserAgent?: BrowserAgentCoordinator,
     private semanticMemory?: MemoryToolBroker,
     private persistentGoals?: PersistentGoalProvider,
+    private reportGoalProgress?: PersistentGoalProgressReporter,
   ) {}
 
   async createReply(
@@ -309,6 +310,7 @@ export class Orchestrator {
         new CharacterToolRegistry({
           projectAvailable,
           goalsAvailable: Boolean(this.persistentGoals),
+          goalUpdatesAvailable: Boolean(this.reportGoalProgress),
           capabilityContext,
           browserObservation: dispatcher?.selectedBrowserObservation() ?? null,
           memory: this.semanticMemory,
@@ -334,6 +336,7 @@ export class Orchestrator {
             browserContext: this.browserContext,
             browserAgent: this.browserAgent,
             persistentGoals: this.persistentGoals,
+            reportGoalProgress: this.reportGoalProgress,
           })
           return dispatcher
         },

@@ -34,8 +34,11 @@ It reports only typed activity and experience facts.
 
 When the Character LLM semantically needs current goals, it selects the read-only
 `goal.list` Character tool. Main delegates the request to the same Goal and Task
-Store that backs the UI and returns a bounded goal projection. Goals remain separate
-from Semantic Memory and are never duplicated into prompt text.
+Store that backs the UI and returns a bounded goal projection. After the user reports
+progress or the same turn completes relevant verified work, the domain-limited
+`goal.update` tool may update only an exact goal returned by `goal.list` in that turn.
+Unverified Action or Browser results cannot update progress. Goals remain separate
+from Semantic Memory and are never duplicated into prompt text or Memory records.
 
 Safe response flow:
 
@@ -71,6 +74,12 @@ Durable due task + World Context
 - Privacy Mode disables optional Fast Brain model calls and proactive initiatives.
 - Quiet hours, conversation/audio activity, cooldown, and the daily cap defer rather
   than drop work.
+
+Fast Brain is the optional AI attention filter for continuous listening. It evaluates
+one recognized utterance before a response starts and decides whether Shio should
+react. It is separate from Smart next-reply selection, which operates only after
+multiple utterances have accumulated while another response was busy and chooses or
+merges the next buffered utterance. Regular text chat uses neither mechanism.
 
 Scheduler v1 accepts only `reminder` and `check_in`, with a one-shot due time or a
 bounded interval. It cannot store or execute cron strings, scripts, commands, paths,

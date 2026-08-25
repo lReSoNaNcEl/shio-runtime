@@ -141,26 +141,28 @@ export function TasksView({
               </div>
               <Text>{t('tasks.goals.count', { count: activeGoals.length })}</Text>
             </div>
-            <div className="tasks-create-row">
-              <TextField
-                label={t('tasks.goals.new')}
-                placeholder={t('tasks.goals.placeholder')}
-                value={goalTitle}
-                isDisabled={busy}
-                onChange={setGoalTitle}
-              />
-              <Button
-                variant="primary"
-                isDisabled={busy || !goalTitle.trim()}
-                onPress={() =>
-                  void run(async () => {
-                    await window.api.alive.createGoal({ title: goalTitle.trim() })
-                    setGoalTitle('')
-                  })
-                }
-              >
-                {t('tasks.add')}
-              </Button>
+            <div className="tasks-form-surface">
+              <div className="tasks-create-row">
+                <TextField
+                  label={t('tasks.goals.new')}
+                  placeholder={t('tasks.goals.placeholder')}
+                  value={goalTitle}
+                  isDisabled={busy}
+                  onChange={setGoalTitle}
+                />
+                <Button
+                  variant="primary"
+                  isDisabled={busy || !goalTitle.trim()}
+                  onPress={() =>
+                    void run(async () => {
+                      await window.api.alive.createGoal({ title: goalTitle.trim() })
+                      setGoalTitle('')
+                    })
+                  }
+                >
+                  {t('tasks.add')}
+                </Button>
+              </div>
             </div>
 
             {activeGoals.length === 0 ? (
@@ -242,68 +244,74 @@ export function TasksView({
               <Heading level={2}>{t('tasks.schedule.title')}</Heading>
               <Text>{t('tasks.schedule.description')}</Text>
             </div>
-            <div className="tasks-create-grid">
-              <TextField
-                label={t('tasks.schedule.new')}
-                placeholder={t('tasks.schedule.placeholder')}
-                value={taskTitle}
-                isDisabled={busy}
-                onChange={setTaskTitle}
-              />
-              <NumberField
-                label={t('tasks.schedule.minutes')}
-                value={minutes}
-                minValue={1}
-                maxValue={43_200}
-                isDisabled={busy}
-                onChange={setMinutes}
-              />
-              <Picker
-                label={t('tasks.schedule.kind')}
-                selectedKey={taskKind}
-                isDisabled={busy}
-                onSelectionChange={(key) => setTaskKind(String(key) as ScheduledTaskKind)}
-              >
-                <PickerItem id="reminder">{t('tasks.kind.reminder')}</PickerItem>
-                <PickerItem id="check_in">{t('tasks.kind.checkIn')}</PickerItem>
-              </Picker>
-              <Picker
-                label={t('tasks.schedule.recurrence')}
-                selectedKey={scheduleMode}
-                isDisabled={busy}
-                onSelectionChange={(key) => setScheduleMode(String(key) as 'one-shot' | 'interval')}
-              >
-                <PickerItem id="one-shot">{t('tasks.schedule.oneShot')}</PickerItem>
-                <PickerItem id="interval">{t('tasks.schedule.interval')}</PickerItem>
-              </Picker>
-              {scheduleMode === 'interval' && (
-                <NumberField
-                  label={t('tasks.schedule.intervalMinutes')}
-                  value={intervalMinutes}
-                  minValue={1}
-                  maxValue={525_600}
+            <div className="tasks-form-surface">
+              <div className="tasks-create-grid">
+                <TextField
+                  label={t('tasks.schedule.new')}
+                  placeholder={t('tasks.schedule.placeholder')}
+                  value={taskTitle}
                   isDisabled={busy}
-                  onChange={setIntervalMinutes}
+                  onChange={setTaskTitle}
                 />
-              )}
-              <Button
-                variant="primary"
-                isDisabled={busy || !taskTitle.trim()}
-                onPress={() =>
-                  void run(async () => {
-                    await window.api.alive.createTask({
-                      title: taskTitle.trim(),
-                      kind: taskKind,
-                      dueAt: Date.now() + minutes * 60_000,
-                      intervalMs:
-                        scheduleMode === 'interval' ? intervalMinutes * 60_000 : undefined,
-                    })
-                    setTaskTitle('')
-                  })
-                }
-              >
-                {t('tasks.schedule.create')}
-              </Button>
+                <NumberField
+                  label={t('tasks.schedule.minutes')}
+                  value={minutes}
+                  minValue={1}
+                  maxValue={43_200}
+                  isDisabled={busy}
+                  onChange={setMinutes}
+                />
+                <Picker
+                  label={t('tasks.schedule.kind')}
+                  selectedKey={taskKind}
+                  isDisabled={busy}
+                  onSelectionChange={(key) => setTaskKind(String(key) as ScheduledTaskKind)}
+                >
+                  <PickerItem id="reminder">{t('tasks.kind.reminder')}</PickerItem>
+                  <PickerItem id="check_in">{t('tasks.kind.checkIn')}</PickerItem>
+                </Picker>
+                <Picker
+                  label={t('tasks.schedule.recurrence')}
+                  selectedKey={scheduleMode}
+                  isDisabled={busy}
+                  onSelectionChange={(key) =>
+                    setScheduleMode(String(key) as 'one-shot' | 'interval')
+                  }
+                >
+                  <PickerItem id="one-shot">{t('tasks.schedule.oneShot')}</PickerItem>
+                  <PickerItem id="interval">{t('tasks.schedule.interval')}</PickerItem>
+                </Picker>
+                {scheduleMode === 'interval' && (
+                  <NumberField
+                    label={t('tasks.schedule.intervalMinutes')}
+                    value={intervalMinutes}
+                    minValue={1}
+                    maxValue={525_600}
+                    isDisabled={busy}
+                    onChange={setIntervalMinutes}
+                  />
+                )}
+                <div className="tasks-create-actions">
+                  <Button
+                    variant="primary"
+                    isDisabled={busy || !taskTitle.trim()}
+                    onPress={() =>
+                      void run(async () => {
+                        await window.api.alive.createTask({
+                          title: taskTitle.trim(),
+                          kind: taskKind,
+                          dueAt: Date.now() + minutes * 60_000,
+                          intervalMs:
+                            scheduleMode === 'interval' ? intervalMinutes * 60_000 : undefined,
+                        })
+                        setTaskTitle('')
+                      })
+                    }
+                  >
+                    {t('tasks.schedule.create')}
+                  </Button>
+                </div>
+              </div>
             </div>
 
             {scheduledTasks.length === 0 ? (

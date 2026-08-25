@@ -347,6 +347,11 @@ export function buildApplicationDependencies(): ApplicationDependencies {
       new BrowserAgentCoordinator(browserWorkflowScopes),
       memoryToolBroker,
       () => aliveRuntime?.snapshot().goals ?? [],
+      (input) => {
+        const runtime = aliveRuntime
+        if (!runtime) throw new Error('ALIVE_RUNTIME_UNAVAILABLE')
+        return runtime.reportGoalProgress(input)
+      },
     )
   }
 

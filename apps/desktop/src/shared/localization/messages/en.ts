@@ -18,13 +18,13 @@ export const enMessages: Record<TranslationKey, string> = {
   'tasks.autonomy.quietEnd': 'Quiet hours end (0–23)',
   'tasks.autonomy.cooldownMinutes': 'Initiative cooldown, minutes',
   'tasks.autonomy.dailyCap': 'Daily initiative limit',
-  'tasks.fastBrain': 'Fast Brain',
-  'tasks.fastBrain.timeout': 'Fast Brain timeout, ms',
-  'tasks.fastBrain.tokens': 'Fast Brain token limit',
-  'tasks.fastBrain.provider': 'Fast Brain provider',
-  'tasks.fastBrain.activeProvider': 'Use active Character provider',
-  'tasks.fastBrain.model': 'Fast Brain model',
-  'tasks.fastBrain.modelPlaceholder': 'Configured provider model',
+  'tasks.fastBrain': 'Use the AI attention filter',
+  'tasks.fastBrain.timeout': 'Maximum evaluation time, ms',
+  'tasks.fastBrain.tokens': 'Model response limit, tokens',
+  'tasks.fastBrain.provider': 'Evaluation provider',
+  'tasks.fastBrain.activeProvider': "Use Shio's active provider",
+  'tasks.fastBrain.model': 'Evaluation model',
+  'tasks.fastBrain.modelPlaceholder': "Active provider's model",
   'tasks.mode.off': 'Off',
   'tasks.mode.suggest': 'Suggestions only',
   'tasks.mode.confirm': 'Require confirmation',
@@ -869,9 +869,11 @@ export const enMessages: Record<TranslationKey, string> = {
   'settings.autonomy.limitsTitle': 'Timing and limits',
   'settings.autonomy.quietHoursDescription':
     'Shio does not start new initiatives during quiet hours.',
-  'settings.autonomy.advanced': 'Advanced settings',
+  'settings.autonomy.advanced': 'Optional voice model',
   'settings.autonomy.fastBrainDescription':
-    'A fast model decides when an event deserves Shio attention.',
+    'Continuous listening only: before a response starts, a separate fast model evaluates one recognized utterance and decides whether Shio should react to it. Regular text chat does not use this feature.',
+  'settings.autonomy.fastBrainDifference':
+    'This is not Smart next-reply selection, which chooses among multiple utterances already queued while Shio was busy responding.',
   'settings.developerMode.title': 'Developer Mode',
   'settings.developerMode.description':
     'Shows advanced Runtime diagnostics and the internal event stream.',
@@ -972,7 +974,7 @@ export const enMessages: Record<TranslationKey, string> = {
   'settings.llm.smart.enable': 'Enable smart next-reply selection',
   'settings.llm.smart.more': 'Learn more about smart next-reply selection',
   'settings.llm.smart.description':
-    'Regular text chat does not use this mechanism. A separate model is called only for an ambiguous backlog while streaming is enabled; this is additional arbitration, not the primary Character LLM.',
+    'Continuous listening only: if several utterances accumulate while Shio is responding and their priority is ambiguous, a separate model chooses one or merges related utterances. It does not decide whether to react to the first utterance; the AI attention filter does that.',
   'settings.llm.smart.hint':
     'Uses a separate model only in ambiguous cases while streaming is enabled.',
 

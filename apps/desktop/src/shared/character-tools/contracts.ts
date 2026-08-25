@@ -21,6 +21,7 @@ export const CHARACTER_TOOL_IDS = [
   'memory.forget',
   'memory.list',
   'goal.list',
+  'goal.update',
 ] as const
 
 export type CharacterToolId = (typeof CHARACTER_TOOL_IDS)[number]
