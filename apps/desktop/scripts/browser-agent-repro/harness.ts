@@ -241,7 +241,7 @@ async function main(): Promise<void> {
   assert.match(autonomous.replyText, /Blender 4\.5 LTS/)
   assert.match(
     autonomous.calls[1].map((message) => String(message.content)).join('\n'),
-    /potentially untrusted external, project, or memory data/,
+    /potentially untrusted external, project, memory, or goal data/,
   )
   assert.equal(autonomous.calls[1].at(-1)?.role, 'system')
   assert.match(String(autonomous.calls[1].at(-1)?.content), /Character Tool Results/)
