@@ -240,7 +240,16 @@ export class GoalRuntime {
   }
 
   pauseAutonomousWork(reason: string, now = Date.now()): void {
+    const goals = new Map(this.snapshot().map((goal) => [goal.id, goal]))
     for (const state of this.executionSnapshot()) {
+      const goal = goals.get(state.goalId)
+      if (goal?.status === 'completed') {
+        if (state.phase !== 'completed') {
+          this.save({ ...state, phase: 'completed', updatedAt: now })
+        }
+        continue
+      }
+      if (goal?.status === 'cancelled') continue
       if (['completed', 'failed', 'paused'].includes(state.phase)) continue
       this.save({ ...state, phase: 'paused', updatedAt: now })
       this.store.updateGoal({ id: state.goalId, status: 'paused' })

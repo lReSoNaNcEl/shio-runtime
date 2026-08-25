@@ -78,6 +78,21 @@ function main(): void {
       'idle',
     )
 
+    const legacyCompleted = goals.create({ title: 'Legacy completed checkpoint' })
+    goals.plan(legacyCompleted.id, ['Already completed elsewhere'], { now: 220 })
+    store.updateGoal({ id: legacyCompleted.id, status: 'completed', progress: 1 })
+    goals.pauseAutonomousWork('application-exit', 221)
+    assert.equal(
+      goals.snapshot().find((item) => item.id === legacyCompleted.id)?.status,
+      'completed',
+      'Shutdown resurrected a completed goal as paused',
+    )
+    assert.equal(
+      goals.executionSnapshot().find((item) => item.goalId === legacyCompleted.id)?.phase,
+      'completed',
+      'Shutdown did not normalize a stale completed checkpoint',
+    )
+
     const scopes = new AutonomyScopeRuntime(store)
     scopes.approve(
       {
