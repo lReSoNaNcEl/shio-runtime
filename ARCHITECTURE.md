@@ -1621,7 +1621,7 @@ Runtime systems communicate with architectural concepts. Adapters communicate wi
 - **Shio Capability Catalog:** the main-owned read-only projection of current Core and Plugin capabilities used by the Capabilities UI and Character Capability Context; it is not a Runtime and grants no authority.
 - **Autonomy Envelope:** the Main-owned proactive policy boundary that defers, previews, or authorizes an allowlisted initiative under user mode, suspend, privacy, quiet-hour, cooldown, and daily-cap constraints; it grants no external authority.
 - **Scheduler Runtime:** the Main-owned durable owner of typed reminder and progress-check schedules, idempotent occurrence claims, startup recovery, and checkpoints.
-- **Persistent Goal:** a durable future-oriented user objective owned by Goal and Task Store; it is neither Character State nor Semantic Memory.
+- **Persistent Goal:** a durable future-oriented intention belonging primarily to the user, to Shio, or to both and owned by Goal and Task Store; it is neither Character State nor Semantic Memory.
 - **World Context Runtime:** the Main-owned bounded and freshness-aware projection of typed activity metadata used by attention, experience, autonomy, and scheduling decisions.
 - **Fast Brain:** an optional bounded decision-model role that classifies pre-admission attention from typed cues and always has deterministic fallback.
 - **Behavior Runtime:** the selector of typed character embodiment and initiative-presentation commands; Avatar Runtime remains the only final embodiment owner.
