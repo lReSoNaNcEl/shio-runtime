@@ -540,8 +540,10 @@ export function RuntimeHealthView({
       component.enabled &&
       component.category === 'runtime' &&
       component.id !== 'streaming' &&
+      component.id !== 'alive-runtime' &&
       component.severity !== 'healthy',
   )
+  const aliveRuntime = projection.components.find((component) => component.id === 'alive-runtime')
 
   return (
     <section className="health-dashboard">
@@ -594,6 +596,7 @@ export function RuntimeHealthView({
         ))}
         <LlmCard state={state} support={support} onOpenSettings={onOpenLlmSettings} />
         <StreamingCard state={state} />
+        {aliveRuntime ? <SystemIssueCard component={aliveRuntime} /> : null}
         {systemIssues.map((component) => (
           <SystemIssueCard key={component.id} component={component} />
         ))}

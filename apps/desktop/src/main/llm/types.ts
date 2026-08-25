@@ -1,5 +1,6 @@
 import type { AxiosInstance } from 'axios'
 
+import type { CharacterStreamDeadlines, CharacterStreamEvent } from '../../shared/character-stream'
 import type { LlmCapabilities, LlmProviderId, ProviderProfile } from '../../shared/llm'
 
 export type { LlmCapabilities } from '../../shared/llm'
@@ -65,12 +66,20 @@ export interface LlmCompletionOptions extends LlmRequestOptions {
   toolChoice?: 'auto' | 'none'
 }
 
+export interface LlmStreamOptions extends LlmCompletionOptions {
+  deadlines?: Partial<CharacterStreamDeadlines>
+}
+
 export interface LLMProvider {
   chat(messages: readonly ChatMessage[], options?: LlmRequestOptions): Promise<string>
   complete?(
     messages: readonly ChatMessage[],
     options?: LlmCompletionOptions,
   ): Promise<LlmCompletion>
+  stream?(
+    messages: readonly ChatMessage[],
+    options?: LlmStreamOptions,
+  ): AsyncIterable<CharacterStreamEvent>
   capabilities?(): LlmCapabilities
 }
 
@@ -80,6 +89,7 @@ export interface ModelCatalogEntry {
   capabilities?: {
     supportsVision?: boolean
     supportsReasoning?: boolean
+    supportsStreaming?: boolean
     supportsToolCalling?: boolean
   }
 }
@@ -97,6 +107,7 @@ export interface ProviderDefinition {
   chat: {
     baseUrl: string
     path: string
+    supportsStreaming: boolean
     headers?: Record<string, string>
     singleLeadingSystemMessage?: boolean
     resolveBaseUrl?(connection: ProviderConnectionSettings): string

@@ -28,11 +28,12 @@ import {
   type NetworkRequestOutcome,
   type NetworkRequestSource,
 } from '../../../shared/diagnostics'
+import { type LatencySnapshot } from '../../../shared/latency'
 import { controller, type RuntimeDebugSnapshot, type RuntimeTimelineEvent } from '../../Controller'
 import { useTranslation } from '../../localization/useTranslation'
 import { observeRendererPromise } from '../../reliability/observePromise'
 
-type DiagnosticsTab = 'events' | 'network' | 'snapshot'
+type DiagnosticsTab = 'events' | 'network' | 'latency' | 'snapshot'
 
 interface DisplayEvent {
   id: string
@@ -278,6 +279,7 @@ export function DiagnosticsView() {
   const { t } = useTranslation()
   const [snapshot, setSnapshot] = useState<RuntimeDebugSnapshot | null>(null)
   const [networkRequests, setNetworkRequests] = useState<NetworkRequestDiagnostic[]>([])
+  const [latency, setLatency] = useState<LatencySnapshot | null>(null)
   const [activeTab, setActiveTab] = useState<DiagnosticsTab>('events')
   const [search, setSearch] = useState('')
   const [domain, setDomain] = useState('')
@@ -350,6 +352,23 @@ export function DiagnosticsView() {
     },
     [],
   )
+
+  useEffect(() => {
+    let active = true
+    observeRendererPromise(
+      window.api.latency.snapshot().then((next) => {
+        if (active) setLatency(next)
+      }),
+      'load latency diagnostics',
+    )
+    const unsubscribe = window.api.latency.onChanged((next) => {
+      if (active) setLatency(next)
+    })
+    return () => {
+      active = false
+      unsubscribe()
+    }
+  }, [])
 
   const currentEvents = useMemo(() => collectEvents(snapshot), [snapshot])
   const presentedEvents = pausedEvents ?? currentEvents
@@ -538,13 +557,14 @@ export function DiagnosticsView() {
         aria-label={t('app.nav.diagnostics')}
         selectedKey={activeTab}
         onSelectionChange={(key) => {
-          if (key === 'network' || key === 'snapshot') setActiveTab(key)
+          if (key === 'network' || key === 'latency' || key === 'snapshot') setActiveTab(key)
           else setActiveTab('events')
         }}
       >
         <TabList UNSAFE_className="diagnostics-tabs">
           <Tab id="events">{t('diagnostics.tabs.events')}</Tab>
           <Tab id="network">{t('diagnostics.tabs.network')}</Tab>
+          <Tab id="latency">{t('diagnostics.tabs.latency')}</Tab>
           <Tab id="snapshot">{t('diagnostics.tabs.snapshot')}</Tab>
         </TabList>
         <TabPanel id="events">
@@ -845,6 +865,41 @@ export function DiagnosticsView() {
             {visibleNetworkRequests.length > 0 && filteredNetworkRequests.length === 0 && (
               <Text UNSAFE_className="diagnostics-empty">{t('diagnostics.network.noMatches')}</Text>
             )}
+          </div>
+        </TabPanel>
+        <TabPanel id="latency">
+          <div className="diagnostics-latency">
+            <Text UNSAFE_className="diagnostics-network-privacy">
+              {t('diagnostics.latency.description')}
+            </Text>
+            <div className="diagnostics-latency-grid">
+              {latency && Object.entries(latency.metrics).length > 0 ? (
+                Object.entries(latency.metrics).map(([name, metric]) => (
+                  <article className="diagnostics-latency-card" key={name}>
+                    <Text UNSAFE_className="diagnostics-latency-title">{name}</Text>
+                    <Text>
+                      p50 {metric.p50Ms} ms · p95 {metric.p95Ms} ms · max {metric.maxMs} ms
+                    </Text>
+                    <Text>{t('diagnostics.latency.samples', { count: metric.count })}</Text>
+                  </article>
+                ))
+              ) : (
+                <Text>{t('diagnostics.latency.empty')}</Text>
+              )}
+            </div>
+            <div className="diagnostics-latency-traces">
+              {latency?.recentTraces.map((trace) => (
+                <article className="diagnostics-latency-card" key={trace.turnId}>
+                  <Text UNSAFE_className="diagnostics-latency-title">
+                    {trace.turnId} · {trace.status ?? 'active'}
+                  </Text>
+                  <Text>
+                    {trace.provider ?? '—'} · {trace.model ?? '—'} · {trace.milestones.length}{' '}
+                    milestones
+                  </Text>
+                </article>
+              ))}
+            </div>
           </div>
         </TabPanel>
         <TabPanel id="snapshot">

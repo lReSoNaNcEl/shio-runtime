@@ -8,9 +8,23 @@ import type {
   AuthorityChangeResponse,
   DesktopAuthorityMode,
 } from '../shared/actions'
+import type {
+  AliveSnapshot,
+  AutonomySettings,
+  BehaviorCommand,
+  CreateGoalInput,
+  CreateScheduledTaskInput,
+  ExperienceEvent,
+  FastBrainAttentionInput,
+  RendererWorldContextInput,
+  ScheduledTaskStatus,
+  UpdateGoalInput,
+} from '../shared/alive'
 import type { ShioCapabilitySnapshot } from '../shared/capabilities'
+import type { CharacterReplyStreamEvent } from '../shared/character-stream'
 import type { AppSettings } from '../shared/config'
 import type { ShioRuntimeApi } from '../shared/ipc'
+import type { LatencyMilestone, LatencySnapshot } from '../shared/latency'
 import type { LlmProviderId } from '../shared/llm'
 import type {
   MemoryForgetInput,
@@ -27,6 +41,41 @@ import type {
 } from '../shared/screen-context'
 
 const api = {
+  alive: {
+    snapshot: () => ipcRenderer.invoke('alive:snapshot') as Promise<AliveSnapshot>,
+    updateSettings: (settings: AutonomySettings) =>
+      ipcRenderer.invoke('alive:update-settings', settings) as Promise<AliveSnapshot>,
+    updateWorld: (input: RendererWorldContextInput) =>
+      ipcRenderer.invoke('alive:update-world', input) as Promise<{ ok: true }>,
+    reportExperience: (event: ExperienceEvent) =>
+      ipcRenderer.invoke('alive:report-experience', event) as Promise<{ ok: true }>,
+    createGoal: (input: CreateGoalInput) =>
+      ipcRenderer.invoke('alive:create-goal', input) as Promise<AliveSnapshot>,
+    updateGoal: (input: UpdateGoalInput) =>
+      ipcRenderer.invoke('alive:update-goal', input) as Promise<AliveSnapshot>,
+    createTask: (input: CreateScheduledTaskInput) =>
+      ipcRenderer.invoke('alive:create-task', input) as Promise<AliveSnapshot>,
+    setTaskStatus: (id: string, status: ScheduledTaskStatus) =>
+      ipcRenderer.invoke('alive:set-task-status', { id, status }) as Promise<AliveSnapshot>,
+    approveTask: (id: string) =>
+      ipcRenderer.invoke('alive:approve-task', id) as Promise<AliveSnapshot>,
+    decideHabit: (id: string, status: 'approved' | 'rejected') =>
+      ipcRenderer.invoke('alive:decide-habit', { id, status }) as Promise<AliveSnapshot>,
+    evaluateAttention: (input: FastBrainAttentionInput) =>
+      ipcRenderer.invoke('alive:evaluate-attention', input),
+    onChanged: (callback: (snapshot: AliveSnapshot) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, snapshot: unknown): void =>
+        callback(snapshot as AliveSnapshot)
+      ipcRenderer.on('alive:changed', listener)
+      return () => ipcRenderer.removeListener('alive:changed', listener)
+    },
+    onBehavior: (callback: (command: BehaviorCommand) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, command: unknown): void =>
+        callback(command as BehaviorCommand)
+      ipcRenderer.on('alive:behavior', listener)
+      return () => ipcRenderer.removeListener('alive:behavior', listener)
+    },
+  },
   actions: {
     respondToConfirmation: (response: ActionConfirmationResponse) =>
       ipcRenderer.invoke('actions:respond-confirmation', response),
@@ -88,6 +137,12 @@ const api = {
     reply: (turnId: string, userText: string, screenContextId?: string) =>
       ipcRenderer.invoke('llm:reply', { turnId, userText, screenContextId }),
     cancelReply: (turnId: string) => ipcRenderer.invoke('llm:cancel-reply', turnId),
+    onReplyStreamEvent: (callback: (event: CharacterReplyStreamEvent) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, streamEvent: unknown): void =>
+        callback(streamEvent as CharacterReplyStreamEvent)
+      ipcRenderer.on('llm:reply-stream-event', listener)
+      return () => ipcRenderer.removeListener('llm:reply-stream-event', listener)
+    },
     getActiveCapabilities: () => ipcRenderer.invoke('llm:get-active-capabilities'),
     arbitrateBacklog: (payload: unknown) => ipcRenderer.invoke('llm:arbitrate-backlog', payload),
     providers: () => ipcRenderer.invoke('llm:providers'),
@@ -109,6 +164,17 @@ const api = {
       ipcRenderer.invoke('llm:forget-credential', provider),
     getCredentialStatus: (provider: LlmProviderId) =>
       ipcRenderer.invoke('llm:get-credential-status', provider),
+  },
+  latency: {
+    snapshot: () => ipcRenderer.invoke('latency:snapshot') as Promise<LatencySnapshot>,
+    record: (milestone: LatencyMilestone) =>
+      ipcRenderer.invoke('latency:record', milestone) as Promise<{ ok: true }>,
+    onChanged: (callback: (snapshot: LatencySnapshot) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, snapshot: unknown): void =>
+        callback(snapshot as LatencySnapshot)
+      ipcRenderer.on('latency:changed', listener)
+      return () => ipcRenderer.removeListener('latency:changed', listener)
+    },
   },
   screenContext: {
     listSources: () => ipcRenderer.invoke('screen-context:list-sources'),

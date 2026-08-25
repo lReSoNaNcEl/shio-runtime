@@ -1,4 +1,5 @@
 import type { CharacterEmbodimentIntent } from '../../shared/character-response'
+import type { CharacterReplyStreamEvent } from '../../shared/character-stream'
 import type { ConversationTurnFailure, ReplyGrounding } from '../../shared/conversation'
 import {
   type EmotionTextSegment,
@@ -42,6 +43,7 @@ export interface CharacterResponsePort {
     turnId: string,
     userText: string,
     screenContextId?: string,
+    onStreamEvent?: (event: CharacterReplyStreamEvent) => void,
   ): Promise<AssistantReplyDraft>
 }
 
@@ -51,8 +53,19 @@ export class MainCharacterResponsePort implements CharacterResponsePort {
     turnId: string,
     userText: string,
     screenContextId?: string,
+    onStreamEvent?: (event: CharacterReplyStreamEvent) => void,
   ): Promise<AssistantReplyDraft> {
-    const reply = await window.api.llm.reply(turnId, userText, screenContextId)
+    const unsubscribe = onStreamEvent
+      ? window.api.llm.onReplyStreamEvent((event) => {
+          if (event.turnId === turnId) onStreamEvent(event)
+        })
+      : undefined
+    let reply: Awaited<ReturnType<Window['api']['llm']['reply']>>
+    try {
+      reply = await window.api.llm.reply(turnId, userText, screenContextId)
+    } finally {
+      unsubscribe?.()
+    }
     if (!reply.ok || !reply.replyText) {
       if (reply.errorCode === 'LLM_CREDENTIAL_MISSING') throw new LlmCredentialMissingError()
       if (reply.errorCode === 'LLM_MODEL_MISSING') throw new LlmModelMissingError()

@@ -81,7 +81,9 @@ export function registerIpcHandlers(
     authorization.handlePayload('llm:reply', IPC_ONE_PAYLOAD, async (event, payload: unknown) => {
       const parsed = replyPayloadSchema.safeParse(payload)
       if (!parsed.success) return { ok: false, error: 'Invalid LLM reply request' }
-      return conversationTurns.createReply(event.sender.id, parsed.data)
+      return conversationTurns.createReply(event.sender.id, parsed.data, (streamEvent) => {
+        if (!event.sender.isDestroyed()) event.sender.send('llm:reply-stream-event', streamEvent)
+      })
     }),
   )
   ipcMain.handle(
@@ -190,26 +192,43 @@ export function registerIpcHandlers(
         ].join(' ')
         try {
           backlogArbitrationInFlight = true
+          const arbitrationController = new AbortController()
+          const arbitrationTimeout = setTimeout(
+            () => arbitrationController.abort(new Error('Backlog arbitration deadline exceeded')),
+            role.timeoutMs,
+          )
           const provider = createLLMProvider({
             provider: providerId,
             apiKey: credential.apiKey,
             model: role.model,
             accountId,
           })
-          const raw = await provider.chat([
-            { role: 'system', content: prompt },
-            {
-              role: 'user',
-              content: JSON.stringify({
-                backlogVersion: payload.backlogVersion,
-                items: payload.items,
-              }),
-            },
-          ])
-          const json = JSON.parse(
-            raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, ''),
-          ) as unknown
-          return { ok: true, result: backlogResultSchema.parse(json) }
+          try {
+            const raw = await provider.chat(
+              [
+                { role: 'system', content: prompt },
+                {
+                  role: 'user',
+                  content: JSON.stringify({
+                    backlogVersion: payload.backlogVersion,
+                    items: payload.items,
+                  }),
+                },
+              ],
+              {
+                signal: arbitrationController.signal,
+                timeoutMs: role.timeoutMs,
+                maxTokens: 300,
+                traceId: `backlog:${payload.backlogVersion}`,
+              },
+            )
+            const json = JSON.parse(
+              raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, ''),
+            ) as unknown
+            return { ok: true, result: backlogResultSchema.parse(json) }
+          } finally {
+            clearTimeout(arbitrationTimeout)
+          }
         } catch (error) {
           return { ok: false, error: error instanceof Error ? error.message : String(error) }
         } finally {

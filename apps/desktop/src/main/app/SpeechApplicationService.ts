@@ -1,3 +1,5 @@
+import { characterRequestId } from '../../shared/character-stream'
+import { latencyTelemetry } from '../diagnostics/latencyTelemetry'
 import type { Orchestrator } from '../orchestrator'
 import type { SpeechClientManager } from '../speech/SpeechClientManager'
 import { DEFAULT_TTS_VOICE_ID } from '../speech/speechClient'
@@ -16,6 +18,7 @@ export class SpeechApplicationService {
   private readonly cancelledTurns = new Set<string>()
   private readonly abortControllers = new Map<string, AbortController>()
   private readonly settlements = new Map<string, Promise<void>>()
+  private readonly segmentCounters = new Map<string, number>()
 
   constructor(
     private readonly speech: () => SpeechClientManager,
@@ -54,6 +57,25 @@ export class SpeechApplicationService {
       )
     }
     this.activeSynthesisTurnId = turnId
+    const segmentSequence = this.segmentCounters.get(turnId) ?? 0
+    this.segmentCounters.set(turnId, segmentSequence + 1)
+    if (this.segmentCounters.size > 128) {
+      const oldest = this.segmentCounters.keys().next().value
+      if (oldest) this.segmentCounters.delete(oldest)
+    }
+    const ttsSegmentId = `${turnId}:tts:${segmentSequence}`
+    const correlation = {
+      turnId,
+      requestId: characterRequestId(turnId),
+      llmRound: 0,
+      ttsSegmentId,
+    }
+    latencyTelemetry.record({
+      name: 'tts_segment_requested',
+      at: Date.now(),
+      correlation,
+      status: 'started',
+    })
     const abortController = new AbortController()
     this.abortControllers.set(turnId, abortController)
     let settle!: () => void
@@ -70,6 +92,21 @@ export class SpeechApplicationService {
         abortController.signal,
       )
       if (this.cancelledTurns.has(turnId)) throw synthesisCancelled(turnId)
+      const readyAt = Date.now()
+      latencyTelemetry.record({
+        name: 'tts_segment_ready',
+        at: readyAt,
+        correlation,
+        status: 'success',
+      })
+      if (segmentSequence === 0) {
+        latencyTelemetry.record({
+          name: 'first_audio_ready',
+          at: readyAt,
+          correlation,
+          status: 'success',
+        })
+      }
       return result
     } finally {
       this.abortControllers.delete(turnId)
@@ -90,5 +127,6 @@ export class SpeechApplicationService {
     const activeTurnId = this.activeSynthesisTurnId
     if (activeTurnId) await this.cancelSynthesis(activeTurnId)
     this.cancelledTurns.clear()
+    this.segmentCounters.clear()
   }
 }

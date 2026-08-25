@@ -1,3 +1,4 @@
+import type { AliveRuntimeHealth, AutonomyMode } from '../alive'
 import type { LlmProviderId } from '../llm'
 import type { RuntimePluginHealth } from '../plugins'
 import type { AvatarRuntimeHealth } from '../runtime'
@@ -55,6 +56,11 @@ export interface RuntimeSupportBundle {
     /** False when the renderer is not ready, so a previously reported snapshot is stale. */
     reportFresh: boolean
     health: AvatarRuntimeHealth | null
+  }
+  aliveRuntime: {
+    mode: AutonomyMode
+    globallySuspended: boolean
+    health: AliveRuntimeHealth
   }
   renderers: {
     main: RendererProcessHealth

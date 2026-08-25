@@ -7,6 +7,7 @@ import type { DesktopWorkflowRequest } from '../../shared/actions'
 import { translate } from '../../shared/localization'
 import type { AvatarRuntimeHealth } from '../../shared/runtime'
 import { type ActionRuntime, toDesktopWorkflowActionResult } from '../action'
+import { AliveRuntime, AliveStore } from '../alive'
 import { CapabilityCatalog } from '../capabilities'
 import { getConfig, getOverlayPresentationConfig, getRendererConfig, loadConfig } from '../config'
 import {
@@ -26,6 +27,8 @@ import { RendererNetworkObserver } from '../diagnostics/RendererNetworkObserver'
 import { resolveEnvironmentConfig } from '../environmentConfig'
 import { registerIpcHandlers } from '../ipc'
 import { IpcAuthorization } from '../ipc/IpcAuthorization'
+import { registerAliveIpc } from '../ipc/registerAliveIpc'
+import { registerLatencyIpc } from '../ipc/registerLatencyIpc'
 import { registerOverlayIpc } from '../ipc/registerOverlayIpc'
 import { registerRuntimeHealthIpc } from '../ipc/registerRuntimeHealthIpc'
 import {
@@ -86,11 +89,16 @@ export function buildApplicationDependencies(): ApplicationDependencies {
   let actionRuntime: ActionRuntime | null = null
   let conversationTurnService: MainConversationTurnService | null = null
   let speechApplicationService: SpeechApplicationService | null = null
+  let aliveRuntime: AliveRuntime | null = null
+  let unsubscribeAliveIpc: (() => void) | null = null
+  let unsubscribeAliveCapabilities: (() => void) | null = null
+  let unsubscribeLatencyIpc: (() => void) | null = null
   let prepareForQuitTask: Promise<void> | null = null
   const conversationMemory = createMemoryStore()
   const semanticMemory = createSemanticMemoryRuntime(
     join(app.getPath('userData'), 'memory', 'semantic-memory.sqlite'),
   )
+  const aliveStore = new AliveStore(join(app.getPath('userData'), 'alive', 'alive.sqlite'))
   const memoryToolBroker = new MemoryToolBroker(semanticMemory)
   let unsubscribePluginCapabilities: (() => void) | null = null
   let unsubscribeProjectCapabilities: (() => void) | null = null
@@ -289,6 +297,10 @@ export function buildApplicationDependencies(): ApplicationDependencies {
     plugins: () => getPluginRuntime().list(),
     desktopControl: () => getDesktopControl().getCapabilityProjection(),
     avatarRuntimeHealth: () => lastAvatarRuntimeHealth,
+    aliveStatus: () => {
+      const snapshot = aliveRuntime?.snapshot()
+      return snapshot ? { settings: snapshot.settings, health: snapshot.health } : null
+    },
   })
 
   const getSpeechClientManager = (): SpeechClientManager => {
@@ -360,12 +372,14 @@ export function buildApplicationDependencies(): ApplicationDependencies {
         'speech-application-service',
         'action-runtime',
         'plugin-runtime',
+        'alive-runtime',
       ] as const
       const cleanupResults = await Promise.allSettled([
         conversationTurnService?.dispose() ?? Promise.resolve(),
         speechApplicationService?.dispose() ?? Promise.resolve(),
         actionRuntime?.emergencyStop() ?? Promise.resolve(),
         pluginRuntime?.dispose() ?? Promise.resolve(),
+        Promise.resolve().then(() => aliveRuntime?.dispose()),
       ])
       for (const [index, result] of cleanupResults.entries()) {
         if (result.status === 'rejected') {
@@ -377,6 +391,13 @@ export function buildApplicationDependencies(): ApplicationDependencies {
       }
       conversationTurnService = null
       speechApplicationService = null
+      aliveRuntime = null
+      unsubscribeAliveIpc?.()
+      unsubscribeAliveIpc = null
+      unsubscribeAliveCapabilities?.()
+      unsubscribeAliveCapabilities = null
+      unsubscribeLatencyIpc?.()
+      unsubscribeLatencyIpc = null
       screenContextService.dispose()
       speechClientManager?.dispose()
       if (!pluginRuntime) {
@@ -439,6 +460,22 @@ export function buildApplicationDependencies(): ApplicationDependencies {
       if (!llmGateway) throw new Error('LLM gateway is unavailable')
       return llmGateway
     }
+    const buildFastBrainGateway = (selection: {
+      providerId?: LlmProviderId
+      model?: string
+    }): LlmGateway =>
+      new LlmGateway(() => {
+        const config = getConfig().llm
+        const provider = selection.providerId ?? config.activeProvider
+        const providerSettings = config.providers[provider]
+        const credential = getLlmCredentialStore().resolve(provider)
+        return {
+          provider,
+          apiKey: credential.apiKey,
+          model: selection.model?.trim() || providerSettings.model,
+          accountId: resolveLlmProviderAccountId(provider, providerSettings.accountId),
+        }
+      })
     conversationTurnService = new MainConversationTurnService(
       resolveOrchestrator,
       resolveLlmGateway,
@@ -466,6 +503,11 @@ export function buildApplicationDependencies(): ApplicationDependencies {
       win,
       ipcAuthorization,
     )
+    aliveRuntime = new AliveRuntime(aliveStore, buildFastBrainGateway)
+    unsubscribeAliveCapabilities = aliveRuntime.onChanged(() => capabilityCatalog.invalidate())
+    unsubscribeAliveIpc = registerAliveIpc(aliveRuntime, win, ipcAuthorization)
+    aliveRuntime.start()
+    unsubscribeLatencyIpc = registerLatencyIpc(win, ipcAuthorization)
     registerReleaseSupportHandlers(
       {
         llmCredentials: getLlmCredentialStore,
@@ -473,6 +515,15 @@ export function buildApplicationDependencies(): ApplicationDependencies {
         speech: getSpeechClientManager,
         isOverlayVisible: () => overlayWindows.isVisible(),
         avatarRuntimeHealth: () => lastAvatarRuntimeHealth,
+        aliveRuntime: () => {
+          const snapshot = aliveRuntime?.snapshot()
+          if (!snapshot) throw new Error('ALIVE_RUNTIME_NOT_INITIALIZED')
+          return {
+            mode: snapshot.settings.mode,
+            globallySuspended: snapshot.settings.globallySuspended,
+            health: snapshot.health,
+          }
+        },
         mainRendererHealth: () => mainWindows.getHealth(),
         overlayRendererHealth: () => overlayWindows.getHealth(),
       },

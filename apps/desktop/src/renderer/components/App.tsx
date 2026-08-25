@@ -33,6 +33,7 @@ import { CapabilitiesView } from './views/CapabilitiesView'
 import { DiagnosticsView } from './views/DiagnosticsView'
 import { MemoryView } from './views/MemoryView'
 import { RuntimeHealthView } from './views/RuntimeHealthView'
+import { TasksView } from './views/TasksView'
 
 export function App() {
   const { intlLocale, t } = useTranslation()
@@ -163,6 +164,10 @@ export function App() {
       title: t('app.section.memory.title'),
       subtitle: t('app.section.memory.subtitle'),
     },
+    tasks: {
+      title: t('app.section.tasks.title'),
+      subtitle: t('app.section.tasks.subtitle'),
+    },
     avatar: {
       title: t('app.section.avatar.title'),
       subtitle: t('app.section.avatar.subtitle'),
@@ -229,7 +234,7 @@ export function App() {
       setSection('plugins')
       return
     }
-    const views: AppSection[] = ['chat', 'capabilities', 'memory', 'plugins', 'health']
+    const views: AppSection[] = ['chat', 'capabilities', 'memory', 'tasks', 'plugins', 'health']
     if (views.includes(target.id as AppSection)) setSection(target.id as AppSection)
   }
 
@@ -368,6 +373,7 @@ export function App() {
           />
         )}
         {section === 'memory' && <MemoryView />}
+        {section === 'tasks' && <TasksView snapshot={state.alive} />}
         {section === 'health' && (
           <RuntimeHealthView
             state={state}

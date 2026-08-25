@@ -99,7 +99,10 @@ export function resolveModelCapabilities(
 ): LlmCapabilities {
   const definition = getProviderDefinition(providerId)
   const normalizedModelId = normalizeProviderModelId(providerId, modelId)
-  const base = resolveBaseCapabilities(providerId, normalizedModelId)
+  const base = {
+    ...resolveBaseCapabilities(providerId, normalizedModelId),
+    supportsStreaming: definition.chat.supportsStreaming,
+  }
   const resolved = definition.resolveCapabilities?.(normalizedModelId, base) ?? base
   return applyCatalogCapabilityHints(
     providerId,
@@ -130,6 +133,7 @@ export function enrichModelCatalog(
     if (
       model.capabilities?.supportsVision !== undefined ||
       model.capabilities?.supportsReasoning !== undefined ||
+      model.capabilities?.supportsStreaming !== undefined ||
       model.capabilities?.supportsToolCalling !== undefined
     ) {
       catalogCapabilityHints.set(key, model.capabilities)
@@ -142,6 +146,7 @@ export function enrichModelCatalog(
       capabilities: {
         supportsVision: capabilities.supportsVision,
         supportsReasoning: capabilities.supportsReasoning,
+        supportsStreaming: capabilities.supportsStreaming,
         supportsToolCalling: capabilities.supportsToolCalling,
       },
     }

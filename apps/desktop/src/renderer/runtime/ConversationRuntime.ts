@@ -1,5 +1,18 @@
+import type { ExperienceEvent } from '../../shared/alive'
 import type { CharacterEmbodimentIntent } from '../../shared/character-response'
+import {
+  characterRequestId,
+  type SpeechSegment,
+  StreamingSpeechSegmenter,
+} from '../../shared/character-stream'
 import type { ReplyGrounding } from '../../shared/conversation'
+import {
+  EMOTION_BOUNDARY_GAPS,
+  type EmotionSegmentBoundary,
+  type EmotionTextSegment,
+  emotionRegistry,
+} from '../../shared/emotion'
+import type { LatencyMilestoneName } from '../../shared/latency'
 import type {
   CharacterConversationPresenceState,
   CharacterRuntimeMode,
@@ -33,6 +46,7 @@ import type {
   SpeechPlaybackOptions,
   SpeechPlaybackSession,
 } from './SpeechOutputPort'
+import { StreamingSpeechPipeline } from './StreamingSpeechPipeline'
 import { isSpeechServiceError } from './speechCapabilities'
 
 export type ConversationStatus =
@@ -54,6 +68,23 @@ export class ConversationInterruptedError extends Error {
   }
 }
 
+function toEmotionTextSegment(segment: SpeechSegment, index: number): EmotionTextSegment {
+  const boundaryAfter: EmotionSegmentBoundary =
+    segment.boundary === 'clause'
+      ? 'clause'
+      : /(?:\.\.\.|…)$/u.test(segment.text.trimEnd())
+        ? 'expressive'
+        : 'sentence'
+  return {
+    id: segment.id,
+    index,
+    emotion: emotionRegistry.normalize(segment.emotion),
+    text: segment.text,
+    boundaryAfter,
+    targetMaxGapMs: EMOTION_BOUNDARY_GAPS[boundaryAfter],
+  }
+}
+
 type SpeechReply = Awaited<ReturnType<Window['api']['tts']['synthesizeReply']>>
 type SuccessfulSpeechReply = SpeechReply & { ok: true; audioBuffer: ArrayBuffer }
 
@@ -68,7 +99,8 @@ export interface ConversationRuntimeDeps {
   presentation: ConversationPresentationPort
   events: EventBus
   setStatus: (status: ConversationStatus) => void
-  pushMessage: (role: ChatMsg['role'], text: string, grounding?: ReplyGrounding) => void
+  pushMessage: (role: ChatMsg['role'], text: string, grounding?: ReplyGrounding) => string
+  updateMessage: (id: string, text: string, grounding?: ReplyGrounding) => void
   formatUserError: (message: string) => string
   markAssistantMessageInterrupted: () => void
   setResponseInterruptionPending: (pending: boolean) => void
@@ -79,6 +111,7 @@ export interface ConversationRuntimeDeps {
   updateSpeechPlaybackProgress: (progress: number) => void
   isContinuousCaptureAlive: () => boolean
   handleLlmSetupRequired: (userText: string, reason: 'missing-credential' | 'model-missing') => void
+  reportExperience?: (event: ExperienceEvent) => void
 }
 
 export class ConversationRuntime {
@@ -88,7 +121,7 @@ export class ConversationRuntime {
   private generationTurnId: string | null = null
   private synthesisTurnId: string | null = null
   private playbackTurnId: string | null = null
-  private activeEmotionPipeline: EmotionSpeechPipeline | null = null
+  private activeEmotionPipeline: { cancel(): void } | null = null
   private embodimentIntent: CharacterEmbodimentIntent | undefined
   private interruption: {
     turnId: string
@@ -125,17 +158,36 @@ export class ConversationRuntime {
     console.debug(
       `[conversation] turnId=${turn.turnId} source=${turn.source} cycleId=${turn.admissionCycleId} started`,
     )
+    this.recordLatency(turn.turnId, 'admission_requested', 'started')
+    this.recordLatency(turn.turnId, 'turn_admitted', 'success')
     try {
       const result =
         turn.source === 'debug'
           ? await this.executeDebug(turn, trackPhase)
           : await this.executeConversation(turn, trackPhase)
+      if (result.status === 'completed' && turn.source !== 'debug') {
+        this.deps.reportExperience?.({
+          type: 'conversation-completed',
+          at: Date.now(),
+          turnId: turn.turnId,
+        })
+      }
       this.deps.recordRuntimeEvent(
         'Conversation Terminal',
         `turnId=${turn.turnId} result=${result.status}${result.status === 'failed' ? ` phase=${result.phase} code=${result.failure?.code ?? 'UNCLASSIFIED'}` : ''}`,
       )
+      this.recordLatency(
+        turn.turnId,
+        'turn_terminal',
+        result.status === 'completed'
+          ? 'success'
+          : result.status === 'cancelled'
+            ? 'cancelled'
+            : 'failure',
+      )
       return result
     } catch (error) {
+      this.recordLatency(turn.turnId, 'turn_terminal', 'failure')
       this.deps.recordRuntimeEvent(
         'Conversation Terminal',
         `turnId=${turn.turnId} result=threw code=${error instanceof Error ? error.name : 'UNKNOWN'}`,
@@ -199,6 +251,7 @@ export class ConversationRuntime {
     this.deps.updateSpeechPlaybackProgress(0)
     this.deps.setStatus(status)
     this.deps.recordRuntimeEvent('Conversation Interrupted', `turnId=${turnId} source=${source}`)
+    this.deps.reportExperience?.({ type: 'conversation-interrupted', at: Date.now(), turnId })
     this.publishRuntimeEvent('ResponseInterrupted', 'speech', `turnId=${turnId} source=${source}`)
     await Promise.allSettled([
       window.api.llm.cancelReply(turnId),
@@ -236,8 +289,83 @@ export class ConversationRuntime {
       this.deps.conversationState.setPresence(thinkingPresence)
       this.deps.recordRuntimeEvent('Thinking', `turnId=${turn.turnId}`)
       reportPhase('generating')
+      const streamSegmenter = new StreamingSpeechSegmenter(turn.turnId)
+      let streamedDisplayText = ''
+      let streamedMessageId: string | null = null
+      let streamedSpeechPrepared = false
+      let streamedPlaybackStarted = false
+      let streamedSegmentCount = 0
+      const streamingPipeline = new StreamingSpeechPipeline({
+        turnId: turn.turnId,
+        synthesize: (segment) =>
+          this.runSynthesis(turn.turnId, () =>
+            this.deps.speechOutput.synthesizeSegment(turn.turnId, segment),
+          ),
+        prepareAudio: (audioBuffer) => this.deps.speechOutput.prepare(audioBuffer),
+        playPrepared: async (item, onStarted) => {
+          this.rememberSpeech(item.speech, null)
+          failurePhase = 'playback'
+          await this.deps.speechOutput.playPrepared(item.audio, {
+            turnId: turn.turnId,
+            onReady: (session) => {
+              if (!this.isCurrentTurn(turn.turnId))
+                throw new Error(`Stale playback ready turnId=${turn.turnId}`)
+              if (!streamedPlaybackStarted) {
+                streamedPlaybackStarted = true
+                reportPhase('playing')
+              }
+              this.startSpeech(session, item.speech, item.segment.emotion, item.segment.text)
+            },
+            onProgress: (progress) => {
+              if (this.isCurrentTurn(turn.turnId)) this.deps.updateSpeechPlaybackProgress(progress)
+            },
+            onStarted,
+          })
+        },
+        isCurrentTurn: () => this.isCurrentTurn(turn.turnId),
+        recordEvent: (label, detail) => this.deps.recordRuntimeEvent(label, detail),
+      })
+      this.activeEmotionPipeline = streamingPipeline
+      const streamingExecution = streamingPipeline.execute()
+      void streamingExecution.catch(() => undefined)
+      const enqueueSpeechSegments = (
+        segments: ReturnType<StreamingSpeechSegmenter['push']>,
+      ): void => {
+        for (const segment of segments) {
+          if (streamedSegmentCount === 0) {
+            this.recordLatency(turn.turnId, 'llm_first_sentence', 'success')
+          }
+          if (!streamedSpeechPrepared) {
+            streamedSpeechPrepared = true
+            failurePhase = 'synthesis'
+            this.playbackTurnId = turn.turnId
+            this.prepareSpeech(segment.emotion, `stream turnId=${turn.turnId}`, streamedDisplayText)
+            reportPhase('synthesizing')
+          }
+          streamingPipeline.enqueue(toEmotionTextSegment(segment, streamedSegmentCount))
+          streamedSegmentCount += 1
+        }
+      }
       const draft = await this.runGeneration(turn.turnId, () =>
-        this.deps.characterResponse.createReply(turn.turnId, turn.text, turn.screenContextId),
+        this.deps.characterResponse.createReply(
+          turn.turnId,
+          turn.text,
+          turn.screenContextId,
+          (event) => {
+            this.deps.recordRuntimeEvent(
+              `LLM Stream ${event.type}`,
+              `turnId=${turn.turnId} round=${event.llmRound}`,
+            )
+            if (event.type !== 'text-delta' || !this.isCurrentTurn(turn.turnId)) return
+            streamedDisplayText += event.delta.text
+            if (!streamedMessageId && streamedDisplayText.trim()) {
+              streamedMessageId = this.deps.pushMessage('assistant', streamedDisplayText)
+            } else if (streamedMessageId) {
+              this.deps.updateMessage(streamedMessageId, streamedDisplayText)
+            }
+            enqueueSpeechSegments(streamSegmenter.push(event.delta))
+          },
+        ),
       )
       if (!this.isCurrentTurn(turn.turnId)) return { status: 'cancelled', turnId: turn.turnId }
 
@@ -251,6 +379,28 @@ export class ConversationRuntime {
         emotionKey: draft.emotionKey,
       })
       this.deps.conversationState.setPresence(generatedPresence)
+      if (streamedMessageId) {
+        this.deps.updateMessage(streamedMessageId, draft.displayText, draft.grounding)
+        enqueueSpeechSegments(streamSegmenter.flush())
+        streamingPipeline.close()
+        await Promise.race([streamingExecution, this.interruptionFor(turn.turnId)])
+        if (this.activeEmotionPipeline === streamingPipeline) this.activeEmotionPipeline = null
+        if (this.playbackTurnId === turn.turnId) this.playbackTurnId = null
+        if (!this.isCurrentTurn(turn.turnId)) return { status: 'cancelled', turnId: turn.turnId }
+        reportPhase('cleaning_up')
+        if (streamedSpeechPrepared) await this.finishSpeechCleanup(turn.turnId)
+        else this.completeSilentReply(turn.turnId, draft.emotionKey, draft.displayText)
+        return {
+          status: 'completed',
+          turnId: turn.turnId,
+          playbackCompleted: streamedPlaybackStarted,
+          cleanupCompleted: true,
+        }
+      }
+
+      streamingPipeline.cancel()
+      await streamingExecution.catch(() => undefined)
+      if (this.activeEmotionPipeline === streamingPipeline) this.activeEmotionPipeline = null
       this.deps.pushMessage('assistant', draft.displayText, draft.grounding)
 
       if (!this.deps.speechOutput.hasSpeakableContent(draft.speechText)) {
@@ -371,6 +521,8 @@ export class ConversationRuntime {
         cleanupCompleted: true,
       }
     } catch (error) {
+      this.activeEmotionPipeline?.cancel()
+      this.activeEmotionPipeline = null
       if (this.playbackTurnId === turn.turnId) this.playbackTurnId = null
       const message = error instanceof Error ? error.message : String(error)
       if (
@@ -631,6 +783,7 @@ export class ConversationRuntime {
     if (!this.isCurrentTurn(session.turnId))
       throw new Error(`Stale LipSync start turnId=${session.turnId}`)
     this.playbackStartedAt = session.startedAt
+    this.recordLatency(session.turnId, 'playback_started', 'success')
     const emotionKey = speech.emotionKey ?? fallbackEmotion
     const embodiment = resolveEmotionEmbodimentProfile(emotionKey)
     const conversationPresence = this.deps.conversationPresence.update({
@@ -716,6 +869,7 @@ export class ConversationRuntime {
     this.publishAvatarState({ mode: 'idle', emotionKey: 'neutral' })
     this.deps.setStatus('idle')
     this.publishRuntimeEvent('SpeechFinished', 'speech', `turnId=${turnId}`)
+    this.recordLatency(turnId, 'playback_completed', 'success')
     this.deps.recordRuntimeEvent('Finished', `turnId=${turnId}`)
     this.deps.recordRuntimeEvent('Idle')
     if (extraEvent) this.deps.recordRuntimeEvent(extraEvent, `turnId=${turnId}`)
@@ -779,5 +933,27 @@ export class ConversationRuntime {
     detail?: string,
   ): void {
     this.deps.events.publish({ type, category, source: 'renderer.conversationRuntime', detail })
+  }
+
+  private recordLatency(
+    turnId: string,
+    name: LatencyMilestoneName,
+    status: 'started' | 'success' | 'failure' | 'cancelled',
+  ): void {
+    const latency = window.api.latency
+    if (!latency) return
+    void latency
+      .record({
+        name,
+        at: Date.now(),
+        correlation: { turnId, requestId: characterRequestId(turnId), llmRound: 0 },
+        status,
+      })
+      .catch((error) =>
+        this.deps.recordRuntimeEvent(
+          'Latency Telemetry Failed',
+          error instanceof Error ? error.name : 'UNKNOWN',
+        ),
+      )
   }
 }

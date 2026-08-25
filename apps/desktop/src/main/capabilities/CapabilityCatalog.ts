@@ -1,3 +1,4 @@
+import type { AliveSnapshot } from '../../shared/alive'
 import type {
   CapabilityAvailability,
   ShioCapabilityDescriptor,
@@ -22,6 +23,7 @@ export interface CapabilityCatalogSources {
   plugins(): Promise<readonly PluginStatus[]>
   desktopControl(): Promise<DesktopControlCapabilityProjection>
   avatarRuntimeHealth(): AvatarRuntimeHealth | null
+  aliveStatus?(): Pick<AliveSnapshot, 'settings' | 'health'> | null
 }
 
 export type CapabilityCatalogListener = (snapshot: ShioCapabilitySnapshot) => void
@@ -179,6 +181,7 @@ export class CapabilityCatalog {
     const plugins = await this.sources.plugins()
     const desktop = await this.sources.desktopControl()
     const avatarHealth = this.sources.avatarRuntimeHealth()
+    const alive = this.sources.aliveStatus?.() ?? null
     const project = plugins.find((status) => status.manifest.id === PROJECT_AWARENESS_PLUGIN_ID)
     const llmState = llmAvailability(readiness)
     const speechState: CapabilityAvailability = !this.speechProbe
@@ -263,6 +266,38 @@ export class CapabilityCatalog {
           : !memoryStatus.enabled
             ? 'capabilities.reason.memoryDisabled'
             : undefined,
+      },
+      {
+        id: 'alive-autonomy',
+        category: 'action',
+        source: { kind: 'core' },
+        titleKey: 'capabilities.alive.title',
+        descriptionKey: 'capabilities.alive.description',
+        availability: !alive
+          ? 'degraded'
+          : !alive.health.operational
+            ? 'unavailable'
+            : alive.settings.mode === 'off'
+              ? 'disabled'
+              : alive.settings.globallySuspended
+                ? 'degraded'
+                : 'available',
+        authority:
+          alive?.settings.mode === 'full'
+            ? 'full'
+            : alive?.settings.mode === 'confirm'
+              ? 'confirm'
+              : 'read-only',
+        navigationTarget: { kind: 'view', id: 'tasks' },
+        reasonKey: !alive
+          ? 'capabilities.reason.aliveStarting'
+          : !alive.health.operational
+            ? 'capabilities.reason.aliveUnavailable'
+            : alive.settings.mode === 'off'
+              ? 'capabilities.reason.aliveDisabled'
+              : alive.settings.globallySuspended
+                ? 'capabilities.reason.aliveSuspended'
+                : undefined,
       },
       {
         id: PROJECT_AWARENESS_PLUGIN_ID,

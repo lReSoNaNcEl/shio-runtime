@@ -12,6 +12,7 @@ export type LlmProviderId = (typeof LLM_PROVIDER_IDS)[number]
 export interface ModelCapabilitySummary {
   supportsVision: boolean
   supportsReasoning: boolean
+  supportsStreaming: boolean
   supportsToolCalling: boolean
 }
 

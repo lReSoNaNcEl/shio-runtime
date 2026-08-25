@@ -1,3 +1,4 @@
+import type { AliveSnapshot } from '../../shared/alive'
 import type { ReplyGrounding } from '../../shared/conversation'
 import type { LlmReadiness } from '../../shared/llm'
 import type { AvatarRuntimeHealth, CharacterState, RuntimeEvent } from '../../shared/runtime'
@@ -53,6 +54,7 @@ export interface ChatMsg {
 export type HealthState = 'checking' | 'ok' | 'warn' | 'err'
 
 export interface ControllerState {
+  alive: AliveSnapshot | null
   status: AppStatus
   responseInterruptionPending: boolean
   messages: ChatMsg[]

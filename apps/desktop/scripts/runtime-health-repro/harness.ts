@@ -157,6 +157,7 @@ async function staticUiContract(): Promise<void> {
   assert.doesNotMatch(view, /<(?:button|details|summary)(?:\s|>)/)
   assert.doesNotMatch(view, /<Heading level=\{1\}/)
   assert.match(view, /projection\.plugins\.map/)
+  assert.match(view, /alive-runtime/)
   assert.match(view, /@react-spectrum\/s2/)
   assert.match(css, /repeat\(auto-fit, minmax/)
   assert.match(css, /width: min\(100%, 1040px\)/)

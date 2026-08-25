@@ -80,6 +80,7 @@ export const cloudflareProvider: ProviderDefinition = {
   chat: {
     baseUrl: 'https://api.cloudflare.com',
     path: '/chat/completions',
+    supportsStreaming: true,
     singleLeadingSystemMessage: true,
     resolveBaseUrl: chatBaseUrl,
   },

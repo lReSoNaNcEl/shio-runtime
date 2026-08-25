@@ -29,6 +29,14 @@ export class ControllerStore {
     this.patch({ messages: [...this.state.messages, message] })
   }
 
+  updateMessage(id: string, patch: Pick<ChatMsg, 'text' | 'grounding'>): void {
+    const index = this.state.messages.findIndex((message) => message.id === id)
+    if (index < 0) return
+    const messages = [...this.state.messages]
+    messages[index] = { ...messages[index], ...patch }
+    this.patch({ messages })
+  }
+
   replaceMessages(messages: ChatMsg[]): void {
     this.patch({ messages })
   }

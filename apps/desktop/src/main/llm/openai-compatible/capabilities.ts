@@ -66,7 +66,7 @@ export function resolveBaseCapabilities(
   const reasoning = isReasoningModel(model)
   return {
     supportsReasoning: reasoning,
-    supportsStreaming: true,
+    supportsStreaming: false,
     supportsTemperature: !NO_TEMPERATURE_PATTERNS.some((pattern) => pattern.test(model)),
     supportsSystemPrompt: true,
     supportsToolCalling: false,
@@ -82,6 +82,7 @@ export function applyCatalogCapabilityHints(
     | {
         supportsVision?: boolean
         supportsReasoning?: boolean
+        supportsStreaming?: boolean
         supportsToolCalling?: boolean
       }
     | undefined,
@@ -91,6 +92,7 @@ export function applyCatalogCapabilityHints(
   return {
     ...capabilities,
     supportsReasoning,
+    supportsStreaming: hints.supportsStreaming ?? capabilities.supportsStreaming,
     supportsToolCalling: hints.supportsToolCalling ?? capabilities.supportsToolCalling,
     supportsVision: hints.supportsVision ?? capabilities.supportsVision,
     recommendedMaxTokens: supportsReasoning ? REASONING_BUDGET : NON_REASONING_BUDGET[providerId],

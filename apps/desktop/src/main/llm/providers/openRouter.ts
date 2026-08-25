@@ -24,6 +24,7 @@ export const openRouterProvider: ProviderDefinition = {
   chat: {
     baseUrl: 'https://openrouter.ai/api/v1',
     path: '/chat/completions',
+    supportsStreaming: true,
     headers: { 'HTTP-Referer': 'Shio Runtime', 'X-Title': 'Shio Runtime' },
   },
   fetchModels: async (http) => {

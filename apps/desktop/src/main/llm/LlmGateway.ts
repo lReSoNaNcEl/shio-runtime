@@ -15,6 +15,7 @@ import type {
   LlmCompletionOptions,
   LlmGatewaySettings,
   LlmRequestOptions,
+  LlmStreamOptions,
 } from './types'
 
 export class LlmGateway implements LLMProvider {
@@ -86,5 +87,27 @@ export class LlmGateway implements LLMProvider {
       }
     }
     return active.complete(messages, options)
+  }
+
+  stream(messages: readonly ChatMessage[], options: LlmStreamOptions = {}) {
+    const { provider, apiKey, model, accountId } = this.getSettings()
+    const profile = getProviderProfile(provider)
+    if (
+      (profile.requiresApiKey && !apiKey.trim()) ||
+      (profile.requiresAccountId && !accountId?.trim())
+    ) {
+      throw new LlmCredentialMissingError()
+    }
+    const capabilities = resolveModelCapabilities(provider, model)
+    if (!capabilities.supportsStreaming) throw new LlmCapabilityError()
+    const hasImage = messages.some(
+      (message) =>
+        typeof message.content !== 'string' &&
+        message.content.some((part) => part.type === 'image'),
+    )
+    if (hasImage && !capabilities.supportsVision) throw new LlmCapabilityError()
+    const active = createLLMProvider({ provider, apiKey, model, accountId })
+    if (!active.stream) throw new LlmCapabilityError()
+    return active.stream(messages, options)
   }
 }

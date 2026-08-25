@@ -73,6 +73,9 @@ export interface ConversationInputCoordinatorDependencies {
   arbitrateBacklog(
     request: Parameters<Window['api']['llm']['arbitrateBacklog']>[0],
   ): ReturnType<Window['api']['llm']['arbitrateBacklog']>
+  evaluateAttention(
+    request: Parameters<Window['api']['alive']['evaluateAttention']>[0],
+  ): ReturnType<Window['api']['alive']['evaluateAttention']>
   normalizeMicrophoneFailure(
     error: unknown,
   ): ReturnType<MicrophoneDeviceService['normalizeFailure']>
@@ -453,13 +456,36 @@ export class ConversationInputCoordinator {
     const state = this.dependencies.getControllerState()
     const isSpeaking = state.status === 'speaking'
     const conversationBusy = this.conversationAdmission.isBusy() || state.status !== 'idle'
-    const attention = this.attentionEngine.evaluate(chunk, {
+    const fallbackAttention = this.attentionEngine.evaluate(chunk, {
       isSpeaking,
       cooldownActive,
       recentConversation: followUpWindow,
       followUpWindow,
       curiosityChance: this.continuousSettings.curiosityChance,
     })
+    let attention = fallbackAttention
+    try {
+      const fastBrain = await this.dependencies.evaluateAttention({
+        utteranceId: chunk.id,
+        directAddress: fallbackAttention.directAddress,
+        question: QUESTION_PATTERN.test(chunk.text),
+        recentConversation: followUpWindow,
+        speaking: isSpeaking,
+        cooldownActive,
+      })
+      attention = {
+        shouldAttend: fastBrain.shouldAttend,
+        score: Math.round(fastBrain.confidence * 100),
+        threshold: 50,
+        reasons: [`fast_brain:${fastBrain.source}:${fastBrain.reason}`],
+        directAddress: fallbackAttention.directAddress,
+      }
+    } catch (error) {
+      this.dependencies.recordRuntimeEvent(
+        'Fast Brain Fallback',
+        error instanceof Error ? error.name : 'UNKNOWN',
+      )
+    }
     this.dependencies.recordRuntimeEvent(
       attention.shouldAttend ? 'Attention Accepted' : 'Attention Rejected',
       `${attention.score}/${Number.isFinite(attention.threshold) ? attention.threshold : '∞'} ${attention.reasons.join(',')}`,

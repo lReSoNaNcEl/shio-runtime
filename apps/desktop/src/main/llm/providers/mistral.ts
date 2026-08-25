@@ -23,6 +23,7 @@ export const mistralProvider: ProviderDefinition = {
   chat: {
     baseUrl: 'https://api.mistral.ai/v1',
     path: '/chat/completions',
+    supportsStreaming: true,
   },
   normalizeModelId: normalizeMistralModelId,
   fetchModels: async (http, apiKey) => {

@@ -20,6 +20,7 @@ interface ReleaseSupportDependencies {
   speech: () => SpeechClientManager
   isOverlayVisible: () => boolean
   avatarRuntimeHealth: () => AvatarRuntimeHealth | null
+  aliveRuntime: () => RuntimeSupportBundle['aliveRuntime']
   mainRendererHealth: () => RuntimeSupportBundle['renderers']['main']
   overlayRendererHealth: () => RuntimeSupportBundle['renderers']['overlay']
 }
@@ -133,6 +134,7 @@ export function registerReleaseSupportHandlers(
             reportFresh: mainRenderer.status === 'ready' && avatarRuntimeHealth !== null,
             health: avatarRuntimeHealth,
           },
+          aliveRuntime: dependencies.aliveRuntime(),
           renderers: {
             main: mainRenderer,
             overlay: dependencies.overlayRendererHealth(),

@@ -429,6 +429,31 @@
   margin-left: auto;
 }
 
+.diagnostics-latency,
+.diagnostics-latency-traces {
+  display: grid;
+  gap: 12px;
+}
+
+.diagnostics-latency-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.diagnostics-latency-card {
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-2);
+}
+
+.diagnostics-latency-title {
+  font-weight: 600;
+}
+
 @media (max-width: 760px) {
   .diagnostics-toolbar {
     align-items: stretch;

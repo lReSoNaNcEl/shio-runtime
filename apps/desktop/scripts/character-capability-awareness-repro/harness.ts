@@ -169,7 +169,13 @@ async function main(): Promise<void> {
       streaming: true,
     })
     const disabled = await catalog.snapshot()
-    assert.equal(disabled.capabilities.length, 9)
+    assert.equal(disabled.capabilities.length, 10)
+    const aliveStarting = disabled.capabilities.find(
+      (capability) => capability.id === 'alive-autonomy',
+    )
+    assert.equal(aliveStarting?.availability, 'degraded')
+    assert.deepEqual(aliveStarting?.source, { kind: 'core' })
+    assert.equal(aliveStarting?.authority, 'read-only')
     assert.equal(
       disabled.capabilities.find((capability) => capability.id === 'project-awareness')
         ?.availability,

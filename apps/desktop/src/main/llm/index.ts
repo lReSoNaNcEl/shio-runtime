@@ -55,6 +55,7 @@ export type {
   LlmImageContentPart,
   LlmMessageContent,
   LlmRequestOptions,
+  LlmStreamOptions,
   LlmTextContentPart,
   LlmToolCall,
   LlmToolDefinition,

@@ -163,6 +163,26 @@ export function buildRuntimeHealthProjection(
     summaryKey: avatar.reportFresh ? 'health.avatar.unavailable' : 'health.avatar.stale',
   })
 
+  const alive = support.aliveRuntime
+  components.push({
+    id: 'alive-runtime',
+    category: 'runtime',
+    severity: !alive.health.operational
+      ? 'error'
+      : alive.globallySuspended || alive.mode === 'off'
+        ? 'notice'
+        : 'healthy',
+    enabled: alive.mode !== 'off',
+    titleKey: 'health.alive.title',
+    summaryKey: !alive.health.operational
+      ? 'health.alive.unavailable'
+      : alive.globallySuspended
+        ? 'health.alive.suspended'
+        : alive.mode === 'off'
+          ? 'health.alive.off'
+          : 'health.alive.running',
+  })
+
   for (const plugin of support.plugins) {
     components.push({
       id: `plugin:${plugin.pluginId}`,

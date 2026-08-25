@@ -14,6 +14,7 @@ export const groqProvider: ProviderDefinition = {
   chat: {
     baseUrl: 'https://api.groq.com/openai/v1',
     path: '/chat/completions',
+    supportsStreaming: true,
   },
   resolveCapabilities: (modelId, base) => ({
     ...base,

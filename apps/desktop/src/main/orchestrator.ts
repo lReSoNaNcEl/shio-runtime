@@ -46,6 +46,7 @@ import { responsePolicyPrompt } from './character/prompting/ResponsePolicyPrompt
 import {
   CharacterToolDispatcher,
   CharacterToolLoop,
+  type CharacterToolLoopStreamEvent,
   CharacterToolRegistry,
 } from './character-tools'
 import type { BrowserAgentCoordinator } from './desktop-control/browser-agent'
@@ -74,6 +75,10 @@ export interface CharacterReplyInput {
     bytes: Uint8Array
     sourceName: string
   }
+}
+
+export interface CharacterReplyOptions extends LlmRequestOptions {
+  onStreamEvent?: (event: CharacterToolLoopStreamEvent) => void
 }
 
 function safeTraceId(value: string | undefined): string {
@@ -215,7 +220,7 @@ export class Orchestrator {
 
   async createReply(
     input: CharacterReplyInput,
-    options: LlmRequestOptions = {},
+    options: CharacterReplyOptions = {},
   ): Promise<{
     replyText: string
     emotionKey: string
@@ -308,6 +313,10 @@ export class Orchestrator {
         })
       const toolResult = await new CharacterToolLoop().run({
         llm: this.llm,
+        // Some bounded internal/test adapters intentionally expose only the
+        // legacy LLMProvider surface. Production settings always contain llm,
+        // while the fallback keeps those adapters on the non-streaming path.
+        providerId: this.settings().llm?.activeProvider ?? 'groq',
         messages,
         registry,
         createDispatcher: (signal) => {
@@ -328,6 +337,7 @@ export class Orchestrator {
         signal: options.signal,
         requestOptions: options,
         nativeToolsRejected: this.nativeCharacterToolsRejected,
+        onStreamEvent: options.onStreamEvent,
         failureReply: (latestActionResult, latestVerifiedOutcome) =>
           latestActionResult
             ? presentActionResult(

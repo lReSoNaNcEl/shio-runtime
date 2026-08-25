@@ -38,6 +38,7 @@ import type {
 import { isVrmConfigured } from './controller/firstRunState'
 import { RuntimeDiagnosticsProjection } from './controller/RuntimeDiagnosticsProjection'
 import { observeRendererPromise } from './reliability/observePromise'
+import { AliveExperienceRuntime } from './runtime/AliveExperienceRuntime'
 import { type AvatarMode, AvatarRuntime } from './runtime/AvatarRuntime'
 import { MainCharacterResponsePort } from './runtime/CharacterResponsePort'
 import { ConversationPresenceRuntime } from './runtime/ConversationPresenceRuntime'
@@ -145,6 +146,7 @@ export class Controller {
     recordEvent: (label, detail) => this.recordRuntimeEvent(label, detail),
   })
   private store = new ControllerStore({
+    alive: null,
     status: 'idle',
     responseInterruptionPending: false,
     messages: [],
@@ -188,6 +190,13 @@ export class Controller {
     now: () => Date.now(),
     performanceNow: () => performance.now(),
   })
+  private aliveExperience = new AliveExperienceRuntime({
+    getControllerState: () => this.store.getState(),
+    updateSnapshot: (alive) => this.set({ alive }),
+    pushInitiative: (title) => this.pushMessage('meta', this.t('alive.initiative', { title })),
+    presentation: this.conversationPresentation,
+    recordEvent: (label, detail) => this.recordRuntimeEvent(label, detail),
+  })
   private conversationRuntime = new ConversationRuntime({
     speechOutput: this.speechOutput,
     characterResponse: this.characterResponse,
@@ -198,6 +207,7 @@ export class Controller {
     events: this.shioRuntime.events,
     setStatus: (status) => this.set({ status }),
     pushMessage: (role, text, grounding) => this.pushMessage(role, text, grounding),
+    updateMessage: (id, text, grounding) => this.store.updateMessage(id, { text, grounding }),
     formatUserError: (message) => this.formatConversationUserError(message),
     markAssistantMessageInterrupted: () => this.markAssistantMessageInterrupted(),
     setResponseInterruptionPending: (pending) => this.set({ responseInterruptionPending: pending }),
@@ -214,6 +224,7 @@ export class Controller {
         llmReadiness: { ...current, reason },
       })
     },
+    reportExperience: (event) => this.aliveExperience.report(event),
   })
   private conversationInput = new ConversationInputCoordinator({
     speechInputRuntime: this.speechInputRuntime,
@@ -230,6 +241,7 @@ export class Controller {
     getConfig: () => window.api.config.get(),
     saveConfig: (patch) => window.api.config.save(patch),
     arbitrateBacklog: (request) => window.api.llm.arbitrateBacklog(request),
+    evaluateAttention: (request) => window.api.alive.evaluateAttention(request),
     normalizeMicrophoneFailure: (error) => this.microphoneDeviceService.normalizeFailure(error),
     getMicrophoneAccessFailedMessage: () => this.t('controller.microphoneAccessFailed'),
     createTurnId: (prefix) => `${prefix}-${nextId()}`,
@@ -425,8 +437,14 @@ export class Controller {
     this.store.patch(patch)
   }
 
-  private pushMessage(role: ChatMsg['role'], text: string, grounding?: ChatMsg['grounding']): void {
-    this.store.appendMessage({ id: nextId(), role, text, grounding })
+  private pushMessage(
+    role: ChatMsg['role'],
+    text: string,
+    grounding?: ChatMsg['grounding'],
+  ): string {
+    const id = nextId()
+    this.store.appendMessage({ id, role, text, grounding })
+    return id
   }
 
   setChatDraft(chatDraft: string): void {
@@ -498,6 +516,7 @@ export class Controller {
     }
 
     this.subscribeActionRuntimeEvents()
+    this.aliveExperience.start()
     this.avatarRuntime.reportHealth()
     const cfg = await window.api.config.get()
     if (this.disposed) return
@@ -958,6 +977,7 @@ export class Controller {
     this.unsubscribeActionEvents = null
     this.unsubscribeConfigUpdates?.()
     this.unsubscribeConfigUpdates = null
+    this.aliveExperience.dispose()
     if (this.avatarTickTimerId !== null) window.clearInterval(this.avatarTickTimerId)
     this.avatarTickTimerId = null
     this.detachCanvas()

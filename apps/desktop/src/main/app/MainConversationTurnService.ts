@@ -1,7 +1,9 @@
+import { type CharacterReplyStreamEvent, characterRequestId } from '../../shared/character-stream'
 import type { AppSettings } from '../../shared/config'
 import type { AttachmentDisposition } from '../../shared/conversation'
 import { deriveTurnRecoveryCapabilities } from '../../shared/conversation'
 import type { LlmTurnErrorCode } from '../../shared/llm'
+import { latencyTelemetry } from '../diagnostics/latencyTelemetry'
 import type { LlmGateway } from '../llm'
 import { LlmTurnCancelledError } from '../llm/errors'
 import { PROVIDER_PROFILES } from '../llm/registry'
@@ -71,7 +73,11 @@ export class MainConversationTurnService {
     private readonly llmSettings: () => AppSettings['llm'],
   ) {}
 
-  async createReply(rendererId: number, request: CharacterReplyRequest) {
+  async createReply(
+    rendererId: number,
+    request: CharacterReplyRequest,
+    emitStreamEvent?: (event: CharacterReplyStreamEvent) => void,
+  ) {
     const { turnId, userText, screenContextId } = request
     const llmConfig = this.llmSettings()
     const activeProfile = PROVIDER_PROFILES.find(
@@ -152,6 +158,27 @@ export class MainConversationTurnService {
       mainLog.info('Vision Request Started', { turnId })
     }
     const startedAt = Date.now()
+    const correlation = {
+      turnId,
+      requestId: characterRequestId(turnId),
+      llmRound: 0,
+    }
+    latencyTelemetry.record({
+      name: 'input_received',
+      at: startedAt,
+      correlation,
+      status: 'started',
+      provider: llmConfig.activeProvider,
+      model: llmConfig.providers[llmConfig.activeProvider].model,
+    })
+    latencyTelemetry.record({
+      name: 'llm_request_started',
+      at: startedAt,
+      correlation,
+      status: 'started',
+      provider: llmConfig.activeProvider,
+      model: llmConfig.providers[llmConfig.activeProvider].model,
+    })
     let terminalResult = 'failure'
     let terminalCode = 'UNKNOWN'
     try {
@@ -168,6 +195,31 @@ export class MainConversationTurnService {
       const result = await this.orchestrator().createReply(input, {
         signal: abortController.signal,
         traceId: turnId,
+        onStreamEvent: (event) => {
+          const milestone =
+            event.type === 'connected'
+              ? 'llm_connected'
+              : event.type === 'first-byte'
+                ? 'llm_first_byte'
+                : event.type === 'text-delta'
+                  ? 'llm_first_text_delta'
+                  : event.type === 'tool-round-started'
+                    ? 'tool_round_started'
+                    : 'tool_round_completed'
+          latencyTelemetry.record({
+            name: milestone,
+            at: event.at,
+            correlation: { ...correlation, llmRound: event.llmRound },
+            status: event.type.endsWith('completed') ? 'success' : 'started',
+            provider: llmConfig.activeProvider,
+            model: llmConfig.providers[llmConfig.activeProvider].model,
+          })
+          emitStreamEvent?.({
+            ...event,
+            turnId,
+            requestId: characterRequestId(turnId),
+          })
+        },
       })
       if (abortController.signal.aborted) throw new LlmTurnCancelledError()
       terminalResult = 'success'
@@ -177,6 +229,21 @@ export class MainConversationTurnService {
         mainLog.info('Vision Request Completed', { turnId })
       }
       const { replyText, emotionKey, embodimentIntent, grounding } = result
+      latencyTelemetry.record({
+        name: 'llm_completed',
+        at: Date.now(),
+        correlation,
+        status: 'success',
+        provider: llmConfig.activeProvider,
+        model: llmConfig.providers[llmConfig.activeProvider].model,
+      })
+      emitStreamEvent?.({
+        type: 'completed',
+        turnId,
+        requestId: characterRequestId(turnId),
+        at: Date.now(),
+        llmRound: 0,
+      })
       return { ok: true as const, replyText, emotionKey, embodimentIntent, grounding }
     } catch (error) {
       const failure = normalizeFailure(error, llmConfig.activeProvider)

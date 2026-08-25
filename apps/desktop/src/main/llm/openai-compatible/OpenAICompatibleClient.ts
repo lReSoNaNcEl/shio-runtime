@@ -8,6 +8,7 @@ import type {
   LlmCompletion,
   LlmCompletionOptions,
   LlmRequestOptions,
+  LlmStreamOptions,
   ModelCatalogProvider,
   ProviderConnectionSettings,
   ProviderDefinition,
@@ -16,6 +17,7 @@ import { resolveBaseCapabilities } from './capabilities'
 import { installLlmProxyResolver } from './proxy'
 import { runChatCompletion, runChatCompletionDetailed } from './request'
 import type { ParsedCompletion } from './response'
+import { runChatCompletionStream } from './stream'
 
 export interface OpenAICompatibleClientConfig {
   definition: ProviderDefinition
@@ -112,6 +114,32 @@ export class OpenAICompatibleClient implements LLMProvider, ModelCatalogProvider
       toolCalls: completion.toolCalls,
       finishReason: completion.finishReason,
     }
+  }
+
+  stream(messages: readonly ChatMessage[], options: LlmStreamOptions = {}) {
+    if (!this.apiKey) {
+      throw new Error(
+        `${this.definition.profile.displayName}: API ключ не задан. Откройте Настройки и введите ключ.`,
+      )
+    }
+    if (!this.capabilities().supportsStreaming) {
+      throw new Error(`${this.definition.profile.displayName}: streaming is not supported.`)
+    }
+    return runChatCompletionStream(
+      {
+        provider: this.definition.profile.id,
+        displayName: this.definition.profile.displayName,
+        http: this.http,
+        chatPath: this.definition.chat.path,
+        apiKey: this.apiKey,
+        model: this.model,
+        capabilities: this.capabilities(),
+        messages,
+        extraHeaders: this.definition.chat.headers,
+        singleLeadingSystemMessage: this.definition.chat.singleLeadingSystemMessage,
+      },
+      options,
+    )
   }
 
   async chatDetailed(

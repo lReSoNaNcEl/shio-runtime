@@ -1,12 +1,27 @@
 import type { ShioActionsApi } from '../actions'
+import type {
+  AliveSnapshot,
+  AutonomySettings,
+  BehaviorCommand,
+  CreateGoalInput,
+  CreateScheduledTaskInput,
+  ExperienceEvent,
+  FastBrainAttentionDecision,
+  FastBrainAttentionInput,
+  RendererWorldContextInput,
+  ScheduledTaskStatus,
+  UpdateGoalInput,
+} from '../alive'
 import type { ShioCapabilitiesApi } from '../capabilities'
 import type { CharacterEmbodimentIntent } from '../character-response'
+import type { CharacterReplyStreamEvent } from '../character-stream'
 import type { AppSettings } from '../config/appSettings'
 import type { BacklogSelectionResult, BufferedUtterance } from '../conversation/backlog'
 import type { ReplyGrounding } from '../conversation/grounding'
 import type { ConversationTurnFailure } from '../conversation/turnFailure'
 import type { DesktopControlApi } from '../desktop-control'
 import type { NetworkRequestDiagnostic, NetworkRequestDiagnosticDetails } from '../diagnostics'
+import type { LatencyMilestone, LatencySnapshot } from '../latency'
 import type { LlmCapabilities } from '../llm/capabilities'
 import type {
   FetchModelsResult,
@@ -68,6 +83,21 @@ export interface OverlayPresentationApi {
 }
 
 export interface ShioRuntimeApi {
+  alive: {
+    snapshot: () => Promise<AliveSnapshot>
+    updateSettings: (settings: AutonomySettings) => Promise<AliveSnapshot>
+    updateWorld: (input: RendererWorldContextInput) => Promise<{ ok: true }>
+    reportExperience: (event: ExperienceEvent) => Promise<{ ok: true }>
+    createGoal: (input: CreateGoalInput) => Promise<AliveSnapshot>
+    updateGoal: (input: UpdateGoalInput) => Promise<AliveSnapshot>
+    createTask: (input: CreateScheduledTaskInput) => Promise<AliveSnapshot>
+    setTaskStatus: (id: string, status: ScheduledTaskStatus) => Promise<AliveSnapshot>
+    approveTask: (id: string) => Promise<AliveSnapshot>
+    decideHabit: (id: string, status: 'approved' | 'rejected') => Promise<AliveSnapshot>
+    evaluateAttention: (input: FastBrainAttentionInput) => Promise<FastBrainAttentionDecision>
+    onChanged: (callback: (snapshot: AliveSnapshot) => void) => () => void
+    onBehavior: (callback: (command: BehaviorCommand) => void) => () => void
+  }
   actions: ShioActionsApi
   capabilities: ShioCapabilitiesApi
   diagnostics: {
@@ -111,6 +141,7 @@ export interface ShioRuntimeApi {
       failure?: ConversationTurnFailure
     }>
     cancelReply: (turnId: string) => Promise<{ ok: boolean }>
+    onReplyStreamEvent: (callback: (event: CharacterReplyStreamEvent) => void) => () => void
     getActiveCapabilities: () => Promise<LlmCapabilities>
     arbitrateBacklog: (payload: {
       items: readonly BufferedUtterance[]
@@ -129,6 +160,11 @@ export interface ShioRuntimeApi {
     saveCredential: (provider: LlmProviderId, apiKey: string) => Promise<LlmCredentialStatus>
     forgetCredential: (provider: LlmProviderId) => Promise<LlmCredentialStatus>
     getCredentialStatus: (provider: LlmProviderId) => Promise<LlmCredentialStatus>
+  }
+  latency: {
+    snapshot: () => Promise<LatencySnapshot>
+    record: (milestone: LatencyMilestone) => Promise<{ ok: true }>
+    onChanged: (callback: (snapshot: LatencySnapshot) => void) => () => void
   }
   screenContext: {
     listSources: () => Promise<ScreenContextResult<ScreenContextSource[]>>

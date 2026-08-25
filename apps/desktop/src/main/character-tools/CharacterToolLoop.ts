@@ -1,5 +1,10 @@
 import type { DesktopWorkflowActionResult } from '../../shared/actions'
+import {
+  SafeCharacterStreamFilter,
+  type SafeCharacterTextDelta,
+} from '../../shared/character-stream'
 import { type CharacterToolCall, parseCharacterToolDirective } from '../../shared/character-tools'
+import type { LlmProviderId } from '../../shared/llm'
 import type { ProjectContextPacket } from '../../shared/project-awareness'
 import {
   containsCharacterProtocol,
@@ -12,6 +17,7 @@ import {
   type LlmCompletion,
   type LlmRequestOptions,
   LlmResponseError,
+  type LlmStreamOptions,
   LlmTurnCancelledError,
 } from '../llm'
 import { mainLog } from '../logging/safeLogger'
@@ -36,6 +42,11 @@ export interface CharacterToolLoopResult {
   calls: number
 }
 
+export type CharacterToolLoopStreamEvent =
+  | { type: 'connected' | 'first-byte'; at: number; llmRound: number }
+  | { type: 'text-delta'; at: number; llmRound: number; delta: SafeCharacterTextDelta }
+  | { type: 'tool-round-started' | 'tool-round-completed'; at: number; llmRound: number }
+
 interface CharacterToolLoopOptions {
   llm: LLMProvider
   messages: readonly ChatMessage[]
@@ -45,6 +56,7 @@ interface CharacterToolLoopOptions {
   signal?: AbortSignal
   requestOptions: LlmRequestOptions
   nativeToolsRejected: boolean
+  providerId: LlmProviderId
   failureReply:
     | string
     | ((
@@ -52,6 +64,7 @@ interface CharacterToolLoopOptions {
         latestVerifiedOutcome?: CharacterToolVerifiedOutcome,
       ) => string)
   limitReply: string
+  onStreamEvent?: (event: CharacterToolLoopStreamEvent) => void
 }
 
 type ResolvedCharacterToolLoopOptions = CharacterToolLoopOptions & {
@@ -345,6 +358,115 @@ function forwardedRequestOptions(
   }
 }
 
+function streamingAvailable(options: CharacterToolLoopOptions): boolean {
+  return Boolean(options.llm.stream && options.llm.capabilities?.().supportsStreaming)
+}
+
+async function streamCompletion(
+  options: CharacterToolLoopOptions,
+  messages: readonly ChatMessage[],
+  _signal: AbortSignal,
+  llmRound: number,
+  requestOptions: LlmStreamOptions,
+  progress: { committedText: boolean },
+): Promise<LlmCompletion> {
+  const stream = options.llm.stream?.(messages, requestOptions)
+  if (!stream) throw new Error('LLM stream is unavailable')
+  const filter = new SafeCharacterStreamFilter()
+  const toolCalls: LlmCompletion['toolCalls'][number][] = []
+  let rawContent = ''
+  let finishReason: LlmCompletion['finishReason'] = 'unknown'
+  let semanticMode: 'unknown' | 'text' | 'tools' = 'unknown'
+
+  for await (const event of stream) {
+    if (event.type === 'connected' || event.type === 'first-byte') {
+      options.onStreamEvent?.({ type: event.type, at: event.at, llmRound })
+      continue
+    }
+    if (event.type === 'tool-call-start') {
+      if (semanticMode === 'text') {
+        throw new LlmResponseError({
+          provider: options.providerId,
+          code: 'PROVIDER_REJECTED',
+          recoverable: false,
+          message: 'Provider mixed visible text and a tool call in one streamed round.',
+        })
+      }
+      if (semanticMode === 'unknown') {
+        semanticMode = 'tools'
+        options.onStreamEvent?.({ type: 'tool-round-started', at: event.at, llmRound })
+      }
+      continue
+    }
+    if (event.type === 'tool-call-complete') {
+      toolCalls.push(event.call)
+      continue
+    }
+    if (event.type === 'text-delta') {
+      if (semanticMode === 'tools') {
+        if (event.text.trim()) {
+          throw new LlmResponseError({
+            provider: options.providerId,
+            code: 'PROVIDER_REJECTED',
+            recoverable: false,
+            message: 'Provider mixed a tool call and visible text in one streamed round.',
+          })
+        }
+        continue
+      }
+      semanticMode = 'text'
+      rawContent += event.text
+      for (const delta of filter.push(event.text)) {
+        progress.committedText = true
+        options.onStreamEvent?.({ type: 'text-delta', at: event.at, llmRound, delta })
+      }
+      continue
+    }
+    if (event.type === 'completed') finishReason = event.finishReason
+  }
+  if (semanticMode === 'text') {
+    for (const delta of filter.flush()) {
+      progress.committedText = true
+      options.onStreamEvent?.({ type: 'text-delta', at: Date.now(), llmRound, delta })
+    }
+  } else if (semanticMode === 'tools') {
+    options.onStreamEvent?.({ type: 'tool-round-completed', at: Date.now(), llmRound })
+  }
+  return { content: rawContent, toolCalls: Object.freeze(toolCalls), finishReason }
+}
+
+async function streamedCompletionWithSafeRetry(
+  options: CharacterToolLoopOptions,
+  phase: string,
+  messages: readonly ChatMessage[],
+  signal: AbortSignal,
+  llmRound: number,
+  requestOptions: LlmStreamOptions,
+  allowRetry: boolean,
+): Promise<LlmCompletion> {
+  const firstAttempt = { committedText: false }
+  try {
+    return await streamCompletion(options, messages, signal, llmRound, requestOptions, firstAttempt)
+  } catch (error) {
+    const retryable =
+      allowRetry &&
+      !firstAttempt.committedText &&
+      error instanceof LlmResponseError &&
+      error.recoverable &&
+      !signal.aborted
+    if (!retryable) throw error
+    mainLog.warn('[CharacterToolLoop] provider_stream_retry_started', {
+      traceId: options.traceId,
+      phase,
+      code: error.code,
+      nextAttempt: 2,
+    })
+    return streamCompletion(options, messages, signal, llmRound, requestOptions, {
+      committedText: false,
+    })
+  }
+}
+
 async function requestWithRetry<T>(
   options: CharacterToolLoopOptions,
   phase: string,
@@ -376,6 +498,24 @@ async function finalWithoutTools(
 ): Promise<string> {
   const finalMessages = [...messages, { role: 'system' as const, content: limitPrompt() }]
   const requestOptions = toolRequestOptions(options, signal, true)
+  if (native && streamingAvailable(options)) {
+    const completion = await streamedCompletionWithSafeRetry(
+      options,
+      'character-tools-final-stream',
+      finalMessages,
+      signal,
+      CHARACTER_TOOL_MAX_ROUNDS + 1,
+      {
+        ...requestOptions,
+        tools: options.registry().nativeDefinitions(),
+        toolChoice: 'none',
+      },
+      false,
+    )
+    return completion.toolCalls.length === 0 && !containsToolProtocol(completion.content)
+      ? completion.content
+      : options.limitReply
+  }
   if (native && options.llm.complete) {
     const completion = await requestWithRetry(
       options,
@@ -424,6 +564,23 @@ export class CharacterToolLoop {
     try {
       const initialRegistry = options.registry()
       if (initialRegistry.definitions().length === 0) {
+        if (streamingAvailable(options)) {
+          const completion = await streamedCompletionWithSafeRetry(
+            options,
+            'character-reply-stream',
+            options.messages,
+            controller.signal,
+            0,
+            forwardedRequestOptions(options, controller.signal),
+            true,
+          )
+          return {
+            replyText: completion.content,
+            nativeToolsRejected,
+            rounds: 0,
+            calls: 0,
+          }
+        }
         const replyText = await requestWithRetry(
           options,
           'character-reply',
@@ -522,18 +679,32 @@ export class CharacterToolLoop {
       const registry = options.registry()
       const continuation = state.calls > 0
       const requestOptions = toolRequestOptions(options, signal, continuation)
-      const completion = await requestWithRetry(
-        options,
-        'character-tools-native',
-        signal,
-        () =>
-          complete(working, {
-            ...requestOptions,
-            tools: registry.nativeDefinitions(),
-            toolChoice: 'auto',
-          }),
-        !continuation,
-      )
+      const completion = streamingAvailable(options)
+        ? await streamedCompletionWithSafeRetry(
+            options,
+            'character-tools-native-stream',
+            working,
+            signal,
+            state.rounds,
+            {
+              ...requestOptions,
+              tools: registry.nativeDefinitions(),
+              toolChoice: 'auto',
+            },
+            !continuation,
+          )
+        : await requestWithRetry(
+            options,
+            'character-tools-native',
+            signal,
+            () =>
+              complete(working, {
+                ...requestOptions,
+                tools: registry.nativeDefinitions(),
+                toolChoice: 'auto',
+              }),
+            !continuation,
+          )
       if (completion.toolCalls.length === 0) {
         return {
           replyText: containsToolProtocol(completion.content)
