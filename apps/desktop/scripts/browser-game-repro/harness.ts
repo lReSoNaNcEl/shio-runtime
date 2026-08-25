@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 
 import sharp from 'sharp'
 
+import { BrowserGamePlugin } from '../../src/main/browser-game/BrowserGamePlugin'
 import {
   type ExtractedGameEvent,
   type GameEventExtractionContext,
@@ -18,11 +19,13 @@ import type {
 } from '../../src/main/browser-game/GameReflexPolicy'
 import { AdapterBackedGameReflexPolicy } from '../../src/main/browser-game/GameReflexPolicy'
 import { GameSessionController } from '../../src/main/browser-game/GameSessionController'
+import { LocalVisualTargetReflexAdapter } from '../../src/main/browser-game/LocalVisualTargetReflexAdapter'
 import {
   BrowserGameError,
   type GameFrame,
   type GameInputIntent,
   type GameSemanticEvent,
+  type GameSessionScope,
 } from '../../src/shared/browser-game'
 import type {
   BrowserGameBlockerKind,
@@ -199,6 +202,43 @@ async function waitUntil(condition: () => boolean): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, 5))
   }
   assert.fail('condition did not become true')
+}
+
+async function visualTargetFrame(options: {
+  frameId: number
+  capturedAt: number
+  targetX?: number
+}): Promise<GameFrame> {
+  const image = sharp({
+    create: { width: 320, height: 180, channels: 3, background: '#101827' },
+  })
+  const overlays: sharp.OverlayOptions[] = [
+    {
+      input: Buffer.from(
+        '<svg width="120" height="6"><rect width="120" height="6" fill="#38bdf8"/></svg>',
+      ),
+      left: 0,
+      top: 174,
+    },
+  ]
+  if (options.targetX !== undefined) {
+    overlays.push({
+      input: Buffer.from(
+        '<svg width="48" height="48"><circle cx="24" cy="24" r="24" fill="#ff2fa8"/></svg>',
+      ),
+      left: options.targetX - 24,
+      top: 66,
+    })
+  }
+  const bytes = await image.composite(overlays).png().toBuffer()
+  return {
+    sessionId: 'game-session-77777777-7777-4777-8777-777777777777',
+    frameId: options.frameId,
+    capturedAt: options.capturedAt,
+    width: 320,
+    height: 180,
+    image: { mimeType: 'image/png', bytes },
+  }
 }
 
 async function main(): Promise<void> {
@@ -513,6 +553,88 @@ async function main(): Promise<void> {
   assert.deepEqual(slowExtractor.frameIds, [10, 12])
   assert.deepEqual(extractedValues, [10, 12])
   assert.deepEqual(extractionErrors, [])
+
+  const localReflex = new LocalVisualTargetReflexAdapter()
+  const localScope: GameSessionScope = {
+    sessionId: 'game-session-77777777-7777-4777-8777-777777777777',
+    authorizationActionId: 'action-70000-77777777-7777-4777-8777-777777777777',
+    browserSessionId: 'browser-session-77777777-7777-4777-8777-777777777777',
+    tabId: 'tab-local-target',
+    origin: 'https://game.example',
+    url: 'https://game.example/target',
+    gameSurface: realtime.surface,
+    allowedInputs: ['pointer'],
+    maxDurationMs: 300_000,
+    maxInputEvents: 5_000,
+    maxInputEventsPerSecond: 15,
+    navigation: 'same-origin-only',
+    startedAt: 70_000,
+    expiresAt: 370_000,
+  }
+  const localSignal = new AbortController().signal
+  await localReflex.initialize(
+    { goal: 'Track the bounded pointer target', strategy: 'balanced', scope: localScope },
+    localSignal,
+  )
+  assert.equal(localReflex.status().mode, 'local-visual')
+  assert.equal(localReflex.status().ready, true)
+  const localState = { strategy: 'balanced' as const, elapsedMs: 0, inputEvents: 0 }
+  const firstTarget = await localReflex.decide(
+    await visualTargetFrame({ frameId: 1, capturedAt: 70_000, targetX: 160 }),
+    localState,
+    localSignal,
+  )
+  assert.equal(firstTarget.type, 'pointer-tap')
+  if (firstTarget.type === 'pointer-tap') {
+    assert(Math.abs(firstTarget.x - 160) < 3)
+    assert(Math.abs(firstTarget.y - 90) < 3)
+  }
+  assert.deepEqual(
+    await localReflex.decide(
+      await visualTargetFrame({ frameId: 2, capturedAt: 70_200, targetX: 160 }),
+      localState,
+      localSignal,
+    ),
+    { type: 'none' },
+  )
+  const movedTarget = await localReflex.decide(
+    await visualTargetFrame({ frameId: 3, capturedAt: 70_400, targetX: 190 }),
+    localState,
+    localSignal,
+  )
+  assert.equal(movedTarget.type, 'pointer-tap')
+  assert.deepEqual(
+    await localReflex.decide(
+      await visualTargetFrame({ frameId: 4, capturedAt: 71_200 }),
+      localState,
+      localSignal,
+    ),
+    movedTarget,
+  )
+  assert.deepEqual(
+    await localReflex.decide(
+      await visualTargetFrame({ frameId: 5, capturedAt: 72_000 }),
+      localState,
+      localSignal,
+    ),
+    { type: 'none' },
+  )
+  const cancelled = new AbortController()
+  cancelled.abort()
+  await assert.rejects(
+    localReflex.decide(
+      await visualTargetFrame({ frameId: 6, capturedAt: 72_500, targetX: 220 }),
+      localState,
+      cancelled.signal,
+    ),
+    { name: 'AbortError' },
+  )
+  const bundledRealtime = new TestRealtime()
+  const bundledPlugin = new BrowserGamePlugin({ realtime: () => bundledRealtime })
+  await bundledPlugin.initialize({ pluginId: 'browser-game-control' })
+  await bundledPlugin.start()
+  assert.equal(bundledPlugin.getHealth().state, 'healthy')
+  await bundledPlugin.dispose()
   console.log('browser game controller repro passed')
 }
 

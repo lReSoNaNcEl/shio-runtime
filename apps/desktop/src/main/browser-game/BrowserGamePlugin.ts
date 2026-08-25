@@ -14,10 +14,10 @@ import { BROWSER_GAME_CONTROL_PLUGIN_ID } from '../../shared/plugins'
 import type { BundledPlugin, PluginInitializationContext } from '../plugins/PluginRuntime'
 import type { GameEventExtractor } from './GameEventExtractor'
 import type { GameReflexAdapter } from './GameReflexAdapter'
-import { ObservingGameReflexAdapter } from './GameReflexAdapter'
 import type { GameReflexPolicy } from './GameReflexPolicy'
 import { AdapterBackedGameReflexPolicy } from './GameReflexPolicy'
 import { GameSessionController } from './GameSessionController'
+import { LocalVisualTargetReflexAdapter } from './LocalVisualTargetReflexAdapter'
 
 export const BROWSER_GAME_CONTROL_MANIFEST: PluginManifest = {
   id: BROWSER_GAME_CONTROL_PLUGIN_ID,
@@ -50,7 +50,7 @@ export class BrowserGamePlugin implements BundledPlugin {
   private readonly reflexReady: () => boolean
 
   constructor(private readonly options: BrowserGamePluginOptions) {
-    const reflexAdapter = options.reflexAdapter ?? new ObservingGameReflexAdapter()
+    const reflexAdapter = options.reflexAdapter ?? new LocalVisualTargetReflexAdapter()
     this.controller = new GameSessionController({
       realtime: options.realtime,
       reflex: options.reflex ?? new AdapterBackedGameReflexPolicy(reflexAdapter),

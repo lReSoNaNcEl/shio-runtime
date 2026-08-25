@@ -13,13 +13,9 @@ import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 
 import BrowserToolPolicy from '../../resources/desktop-control/browser-policy.mjs'
-import type {
-  GameReflexAdapter,
-  GameReflexBackendStatus,
-} from '../../src/main/browser-game/GameReflexAdapter'
-import type { GameReflexState } from '../../src/main/browser-game/GameReflexPolicy'
 import { AdapterBackedGameReflexPolicy } from '../../src/main/browser-game/GameReflexPolicy'
 import { GameSessionController } from '../../src/main/browser-game/GameSessionController'
+import { LocalVisualTargetReflexAdapter } from '../../src/main/browser-game/LocalVisualTargetReflexAdapter'
 import {
   AgentBrowserAdapter,
   BrowserAutomationError,
@@ -32,7 +28,6 @@ import {
 } from '../../src/main/desktop-control/AgentBrowserResources'
 import { DesktopControlPlugin } from '../../src/main/desktop-control/DesktopControlPlugin'
 import { DshHarnessAdapter } from '../../src/main/desktop-control/DshHarnessAdapter'
-import type { GameFrame, GameInputIntent } from '../../src/shared/browser-game'
 import { BROWSER_OBSERVATION_MAX_INTERACTIVE_ELEMENTS } from '../../src/shared/desktop-control'
 
 interface McpTextBlock {
@@ -49,25 +44,23 @@ interface BrowserBridge {
 
 const execFileAsync = promisify(execFile)
 
-class TapOnceFixtureReflexAdapter implements GameReflexAdapter {
-  private pending = true
+class RecordingLocalVisualTargetReflexAdapter extends LocalVisualTargetReflexAdapter {
+  readonly intents: Array<{
+    type: string
+    x?: number
+    y?: number
+    frameWidth: number
+    frameHeight: number
+  }> = []
 
-  status(): GameReflexBackendStatus {
-    return { backendId: 'fixture-tap-once', mode: 'local-visual', ready: true }
-  }
-
-  async initialize(): Promise<void> {
-    this.pending = true
-  }
-
-  async decide(frame: GameFrame, _state: GameReflexState): Promise<GameInputIntent> {
-    if (!this.pending) return { type: 'none' }
-    this.pending = false
-    return { type: 'pointer-tap', x: frame.width / 2, y: frame.height / 2 }
-  }
-
-  reset(): void {
-    this.pending = true
+  override async decide(
+    ...args: Parameters<LocalVisualTargetReflexAdapter['decide']>
+  ): ReturnType<LocalVisualTargetReflexAdapter['decide']> {
+    const intent = await super.decide(...args)
+    if (intent.type !== 'none') {
+      this.intents.push({ ...intent, frameWidth: args[0].width, frameHeight: args[0].height })
+    }
+    return intent
   }
 }
 
@@ -683,13 +676,26 @@ async function main(): Promise<void> {
       const realtime = adapter.getRealtimeControlProvider()
       const realtimeSession = realtime.session()
       assert(realtimeSession)
+      const captureSamples: unknown[] = []
+      const captureFrame = realtime.captureFrame.bind(realtime)
+      realtime.captureFrame = async (...args) => {
+        const frame = await captureFrame(...args)
+        if (captureSamples.length < 2) {
+          captureSamples.push({
+            width: frame.width,
+            height: frame.height,
+            viewport: frame.viewport,
+          })
+        }
+        return frame
+      }
       const gameEnvironment = await realtime.inspectGameEnvironment(new AbortController().signal)
       const gameSurfaces = gameEnvironment.surfaces
       assert.equal(gameEnvironment.blocker, undefined)
       assert.equal(gameSurfaces.length, 1)
       assert.equal(gameSurfaces[0]?.kind, 'canvas')
       assert.equal(gameSurfaces[0]?.label, 'Fixture game')
-      const fixtureReflex = new TapOnceFixtureReflexAdapter()
+      const fixtureReflex = new RecordingLocalVisualTargetReflexAdapter()
       const gameController = new GameSessionController({
         realtime: () => realtime,
         reflex: new AdapterBackedGameReflexPolicy(fixtureReflex),
@@ -709,18 +715,23 @@ async function main(): Promise<void> {
       )
       assert.equal(startedGame.state, 'running')
       await waitForGameInput(gameController)
-      let firstScore: string
       try {
-        firstScore = await waitForObservedGameState(adapter, /Score: 1/u)
+        const firstScore = await waitForObservedGameState(adapter, /Score: 1/u)
+        assert.match(firstScore, /Released/u)
+        assert.match(await waitForObservedGameState(adapter, /Game over/u), /Score: 3/u)
+        assert.match(await waitForObservedGameState(adapter, /Retried/u), /Score: 0/u)
+        assert.match(await waitForObservedGameState(adapter, /Score: 1/u), /Released/u)
       } catch (error) {
         console.error('Browser game fixture controller status', gameController.status())
+        console.error('Browser game fixture reflex intents', fixtureReflex.intents)
+        console.error('Browser game fixture capture samples', captureSamples)
+        console.error('Browser game fixture surface', gameSurfaces[0])
         throw error
       }
-      assert.match(firstScore, /Released/u)
       const stoppedGame = await gameController.stop()
       assert.equal(stoppedGame.state, 'stopped')
       assert((stoppedGame.telemetry.capturedFrames ?? 0) >= 1)
-      assert.equal(stoppedGame.telemetry.inputEvents, 2)
+      assert(stoppedGame.telemetry.inputEvents >= 10)
 
       const surface = gameSurfaces[0]
       assert(surface)

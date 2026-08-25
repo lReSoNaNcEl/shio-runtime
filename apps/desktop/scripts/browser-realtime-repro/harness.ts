@@ -113,6 +113,7 @@ async function main(): Promise<void> {
           bounds: { x: 10, y: 20, width: 640, height: 360 },
         },
       ],
+      viewport: { width: 1_280, height: 633, pageScaleFactor: 1 },
     }),
     createSocket: (url) => {
       socket = new FakeStreamSocket(url)
@@ -140,7 +141,12 @@ async function main(): Promise<void> {
   assert.equal(captured.frameId, 41)
   assert.equal(captured.width, 640)
   assert.equal(captured.height, 360)
-  assert.deepEqual(captured.viewport, { width: 1_280, height: 720, pageScaleFactor: 1 })
+  assert.deepEqual(captured.viewport, { width: 1_280, height: 633, pageScaleFactor: 1 })
+  assert.deepEqual(await adapter.getViewport(), {
+    width: 1_280,
+    height: 633,
+    pageScaleFactor: 1,
+  })
   assert.deepEqual(JSON.parse(socket.sent[0] ?? ''), { type: 'ack', seq: 41 })
 
   socket.emit('message', frame(42, now))

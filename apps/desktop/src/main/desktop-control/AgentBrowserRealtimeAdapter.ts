@@ -290,9 +290,11 @@ export class AgentBrowserRealtimeAdapter implements BrowserRealtimeControlProvid
     return current
   }
 
-  inspectGameEnvironment(signal: AbortSignal): Promise<BrowserGameEnvironmentInspection> {
+  async inspectGameEnvironment(signal: AbortSignal): Promise<BrowserGameEnvironmentInspection> {
     if (!this.session()) return Promise.reject(new BrowserRealtimeError('NO_ACTIVE_SESSION'))
-    return this.options.inspectGameEnvironment(signal)
+    const environment = await this.options.inspectGameEnvironment(signal)
+    if (environment.viewport) this.viewport = { ...environment.viewport }
+    return environment
   }
 
   async captureFrame(
@@ -512,11 +514,13 @@ export class AgentBrowserRealtimeAdapter implements BrowserRealtimeControlProvid
     const image = decodeImage(message.data)
     const now = this.now()
     const capturedAt = message.metadata.timestamp <= now + 60_000 ? message.metadata.timestamp : now
-    const viewport = {
+    const metadataViewport = {
       width: message.metadata.deviceWidth,
       height: message.metadata.deviceHeight,
       pageScaleFactor: message.metadata.pageScaleFactor,
     }
+    // Fixed page inspection is authoritative when stream metadata reports a configured viewport.
+    const viewport = this.viewport ? { ...this.viewport } : metadataViewport
     const frame: BrowserRealtimeFrame = {
       sessionId: binding.sessionId,
       tabId: binding.tabId,

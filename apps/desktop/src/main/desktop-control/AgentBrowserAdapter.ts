@@ -76,7 +76,7 @@ interface JsonEnvelope {
   error?: unknown
 }
 
-const GAME_ENVIRONMENT_INSPECTION_SCRIPT = `(() => { const visible = (element) => { const rect = element.getBoundingClientRect(); const style = getComputedStyle(element); return rect.width > 0 && rect.height > 0 && rect.bottom > 0 && rect.right > 0 && rect.top < innerHeight && rect.left < innerWidth && style.visibility !== 'hidden' && style.display !== 'none'; }; const hasVisible = (selector) => Array.from(document.querySelectorAll(selector)).some(visible); const blocker = hasVisible('iframe[src*="recaptcha"],iframe[src*="hcaptcha"],.g-recaptcha,.h-captcha,textarea[name="g-recaptcha-response"],textarea[name="h-captcha-response"]') ? 'captcha' : hasVisible('iframe[src*="challenges.cloudflare.com"],.cf-turnstile,input[name="cf-turnstile-response"],form[action*="/challenge"]') ? 'anti-bot' : hasVisible('input[type="password"],input[autocomplete="current-password"],input[autocomplete="new-password"]') ? 'authentication' : undefined; const surfaces = Array.from(document.querySelectorAll('canvas,[role="application"],[data-game-root]')).slice(0, 8).map((element, index) => { const rect = element.getBoundingClientRect(); return { index, tag: element.tagName.toLowerCase(), role: element.getAttribute('role'), label: element.getAttribute('aria-label') || element.getAttribute('title') || element.id || undefined, x: rect.x, y: rect.y, width: rect.width, height: rect.height, visible: visible(element) }; }).filter((candidate) => candidate.visible); return JSON.stringify({ surfaces, blocker }); })()`
+const GAME_ENVIRONMENT_INSPECTION_SCRIPT = `(() => { const visible = (element) => { const rect = element.getBoundingClientRect(); const style = getComputedStyle(element); return rect.width > 0 && rect.height > 0 && rect.bottom > 0 && rect.right > 0 && rect.top < innerHeight && rect.left < innerWidth && style.visibility !== 'hidden' && style.display !== 'none'; }; const hasVisible = (selector) => Array.from(document.querySelectorAll(selector)).some(visible); const blocker = hasVisible('iframe[src*="recaptcha"],iframe[src*="hcaptcha"],.g-recaptcha,.h-captcha,textarea[name="g-recaptcha-response"],textarea[name="h-captcha-response"]') ? 'captcha' : hasVisible('iframe[src*="challenges.cloudflare.com"],.cf-turnstile,input[name="cf-turnstile-response"],form[action*="/challenge"]') ? 'anti-bot' : hasVisible('input[type="password"],input[autocomplete="current-password"],input[autocomplete="new-password"]') ? 'authentication' : undefined; const surfaces = Array.from(document.querySelectorAll('canvas,[role="application"],[data-game-root]')).slice(0, 8).map((element, index) => { const rect = element.getBoundingClientRect(); return { index, tag: element.tagName.toLowerCase(), role: element.getAttribute('role'), label: element.getAttribute('aria-label') || element.getAttribute('title') || element.id || undefined, x: rect.x, y: rect.y, width: rect.width, height: rect.height, visible: visible(element) }; }).filter((candidate) => candidate.visible); const viewport = { width: innerWidth, height: innerHeight, pageScaleFactor: window.visualViewport?.scale || 1 }; return JSON.stringify({ surfaces, blocker, viewport }); })()`
 
 const INTERACTIVE_ROLES = new Set<BrowserInteractiveRole>([
   'button',
@@ -173,6 +173,27 @@ function parseGameEnvironment(output: string): BrowserGameEnvironmentInspection 
   const blocker = blockerKinds.has(value.blocker as BrowserGameBlockerKind)
     ? (value.blocker as BrowserGameBlockerKind)
     : undefined
+  const viewport = isRecord(value.viewport)
+    ? {
+        width: Number(value.viewport.width),
+        height: Number(value.viewport.height),
+        pageScaleFactor: Number(value.viewport.pageScaleFactor),
+      }
+    : undefined
+  if (
+    !viewport ||
+    !Number.isInteger(viewport.width) ||
+    !Number.isInteger(viewport.height) ||
+    viewport.width < 1 ||
+    viewport.height < 1 ||
+    viewport.width > 32_768 ||
+    viewport.height > 32_768 ||
+    !Number.isFinite(viewport.pageScaleFactor) ||
+    viewport.pageScaleFactor < 0.1 ||
+    viewport.pageScaleFactor > 10
+  ) {
+    throw new BrowserAutomationError('OBSERVATION_FAILED', publicMessage('OBSERVATION_FAILED'))
+  }
   const surfaces = value.surfaces.flatMap((candidate): BrowserGameSurfaceCandidate[] => {
     if (!isRecord(candidate)) return []
     const index = typeof candidate.index === 'number' ? candidate.index : -1
@@ -202,7 +223,7 @@ function parseGameEnvironment(output: string): BrowserGameEnvironmentInspection 
       },
     ]
   })
-  return { surfaces, ...(blocker ? { blocker } : {}) }
+  return { surfaces, ...(blocker ? { blocker } : {}), viewport }
 }
 
 function findHttpUrl(value: unknown): string | undefined {

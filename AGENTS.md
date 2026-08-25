@@ -184,6 +184,13 @@ Architecture and ownership:
   never expose frames, tab identifiers, authorization Action IDs, or raw page state.
   Plugin UI Pause and Stop controls use the registered `browser.game-control` Action
   path through narrow authorized IPC and may not call Game Session Controller directly.
+- Browser realtime frame geometry uses the fixed Main-owned inspection of the actual CSS
+  content viewport. Do not trust configured or stream-advertised viewport dimensions when
+  they disagree with the inspected page viewport; surface crop and CDP input must share
+  one coordinate space.
+- The bundled local visual reflex may select only bounded pointer intents from transient
+  cropped frames. It may not inspect DOM, call Character/VLM per frame, persist images,
+  bypass Game Session rate limits, or claim support for semantic/keyboard-heavy games.
 - Browser use inside a Character turn is a bounded provider-neutral tool loop, not
   a new Runtime. Character reasoning decides semantically whether web interaction
   materially helps the current goal; do not add a phrase or keyword browser router.

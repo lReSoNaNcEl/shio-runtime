@@ -40,6 +40,8 @@ export type BrowserGameBlockerKind = 'captcha' | 'anti-bot' | 'authentication'
 export interface BrowserGameEnvironmentInspection {
   surfaces: readonly BrowserGameSurfaceCandidate[]
   blocker?: BrowserGameBlockerKind
+  /** Fixed Main-owned inspection of the real CSS content viewport. */
+  viewport?: BrowserRealtimeViewport
 }
 
 export interface BrowserRealtimeFrame {
