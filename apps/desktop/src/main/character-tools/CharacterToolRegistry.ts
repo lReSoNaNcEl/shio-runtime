@@ -216,7 +216,6 @@ export class CharacterToolRegistry {
             properties: {
               command: { type: 'string' },
               goal: { type: 'string' },
-              risk: { type: 'string', enum: ['normal', 'destructive'] },
             },
             additionalProperties: false,
           },

@@ -214,7 +214,6 @@ export class AliveRuntime {
     if (!this.store.claimTaskRun(task, runKey, now)) return
     this.lastInitiativeAt = now
     this.store.audit('autonomy', 'initiative', 'executed', task.id, authority)
-    this.store.observeHabit('task-follow-through', 'Регулярно завершать запланированные задачи')
     this.emitBehavior({
       type: 'initiative',
       id: randomUUID(),

@@ -1,30 +1,40 @@
 const DEFAULT_TICK_MS = 10_000
 
 export class SchedulerRuntime {
-  private timer: ReturnType<typeof setInterval> | null = null
+  private timer: ReturnType<typeof setTimeout> | null = null
   private observedAt: number | null = null
+  private running = false
+  private disposed = false
 
   constructor(private readonly tickMs = DEFAULT_TICK_MS) {}
 
   start(onTick: (now: number) => Promise<void>): void {
-    if (this.timer) return
-    const run = (): void => {
+    if (this.timer || this.running) return
+    this.disposed = false
+    const run = async (): Promise<void> => {
+      this.timer = null
+      this.running = true
       const now = Date.now()
       this.observedAt = now
-      void this.runTick(onTick, now)
+      await this.runTick(onTick, now)
+      this.running = false
+      if (this.disposed) return
+      this.timer = setTimeout(() => {
+        void run()
+      }, this.tickMs)
+      this.timer.unref()
     }
-    this.timer = setInterval(run, this.tickMs)
-    this.timer.unref()
-    run()
+    void run()
   }
 
   dispose(): void {
-    if (this.timer) clearInterval(this.timer)
+    this.disposed = true
+    if (this.timer) clearTimeout(this.timer)
     this.timer = null
   }
 
   isRunning(): boolean {
-    return this.timer !== null
+    return this.running || this.timer !== null
   }
 
   lastTickAt(): number | null {

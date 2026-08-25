@@ -42,7 +42,6 @@ const SHELL_INPUT_SCHEMA = z
   .object({
     command: z.string().trim().min(1).max(2_000),
     goal: z.string().trim().min(1).max(2_000).optional(),
-    risk: z.enum(['normal', 'destructive']).optional(),
   })
   .strict()
 
@@ -489,7 +488,9 @@ export class CharacterToolDispatcher {
         goal: parsed.goal ?? 'Execute the exact command required by the current user goal',
         shellCommand: parsed.command,
         requestedCapabilities: ['shell'],
-        risk: parsed.risk ?? 'normal',
+        // The shared transport contract requires a value, but Main-owned Desktop Control
+        // always replaces it with the deterministic ShellRiskPolicy assessment.
+        risk: 'destructive',
       }),
     )
   }

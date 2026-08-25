@@ -33,7 +33,9 @@ export class ActionPermissionGuard {
         this.requestDecision(request, onConfirmationPending),
       )
     }
-    if (this.options.authorityMode() === 'full') return 'full'
+    if (this.options.authorityMode() === 'full' && confirmation?.risk !== 'destructive') {
+      return 'full'
+    }
     if (!confirmation) {
       throw new ActionError(
         'ACTION_CONFIRMATION_MISSING',

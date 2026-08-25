@@ -5,6 +5,7 @@ import type {
   BrowserSemanticRiskClass,
   BrowserTarget,
 } from '../../../shared/desktop-control'
+import type { ShellRiskAssessment } from '../shell'
 
 const DESTRUCTIVE_TARGET =
   /(?:delete|destroy|erase|remove|wipe|unsubscribe|terminate|удал|стер|уничтож|отпис)/iu
@@ -60,4 +61,5 @@ export function requiresExplicitBrowserConfirmation(risk: BrowserSemanticRiskCla
 
 export type EffectiveDesktopWorkflowRequest = DesktopWorkflowRequest & {
   browserRiskClass?: BrowserSemanticRiskClass
+  shellRisk?: ShellRiskAssessment
 }

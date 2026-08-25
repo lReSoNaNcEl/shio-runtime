@@ -25,6 +25,7 @@ import {
 } from './browser-agent/BrowserAgentPolicy'
 import { DshAdapterError, type DshHarnessAdapter } from './DshHarnessAdapter'
 import type { BrowserExecutionEvidence, DesktopWorkflowAdapterResult } from './executionEvidence'
+import { ShellRiskPolicy } from './shell'
 
 export const DESKTOP_CONTROL_MANIFEST: PluginManifest = {
   id: DESKTOP_CONTROL_PLUGIN_ID,
@@ -55,6 +56,7 @@ export class DesktopControlPlugin implements BundledPlugin {
     executableAvailable: false,
   }
   private readonly listeners = new Set<() => void>()
+  private readonly shellRiskPolicy = new ShellRiskPolicy()
   private readonly unsubscribeAdapter: () => void
   private readonly browserContextProvider: BrowserContextProvider = {
     currentObservation: () => this.dependencies.browser.observationSnapshot(),
@@ -227,6 +229,18 @@ export class DesktopControlPlugin implements BundledPlugin {
 
   validateWorkflowRequest(payload: unknown): EffectiveDesktopWorkflowRequest {
     const request = desktopWorkflowRequestSchema.parse(payload)
+    if (
+      request.requestedCapabilities.length === 1 &&
+      request.requestedCapabilities[0] === 'shell' &&
+      request.shellCommand
+    ) {
+      const shellRisk = this.shellRiskPolicy.classify(request.shellCommand)
+      return {
+        ...request,
+        risk: shellRisk.effectiveRisk,
+        shellRisk,
+      }
+    }
     if (
       request.requestedCapabilities.length !== 1 ||
       request.requestedCapabilities[0] !== 'browser'

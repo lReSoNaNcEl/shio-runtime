@@ -64,6 +64,7 @@
     "repro:failed-llm-turn": "node node_modules/electron-vite/node_modules/esbuild/bin/esbuild scripts/failed-llm-turn-repro/harness.ts --bundle --platform=node --format=cjs --external:electron --external:sharp --outfile=out/failed-llm-turn-repro.cjs && node out/failed-llm-turn-repro.cjs",
     "repro:memory": "esbuild scripts/memory-repro/harness.ts --bundle --platform=node --format=cjs --external:electron --outfile=out/memory-repro.cjs && node out/memory-repro.cjs",
     "repro:alive-autonomy": "esbuild scripts/alive-autonomy-repro/harness.ts --bundle --platform=node --format=cjs --external:electron --outfile=out/alive-autonomy-repro.cjs && node out/alive-autonomy-repro.cjs",
+    "repro:living-loop-hardening": "esbuild scripts/living-loop-hardening-repro/harness.ts --bundle --platform=node --format=cjs --external:electron --outfile=out/living-loop-hardening-repro.cjs && node out/living-loop-hardening-repro.cjs",
     "test:llm-live": "npm run repro:llm-live"
   },
   "keywords": [],
