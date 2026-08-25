@@ -536,6 +536,9 @@ export function buildApplicationDependencies(): ApplicationDependencies {
         },
       },
     })
+    actionRuntime.onEmergencyStop(() => {
+      aliveRuntime?.emergencyStop()
+    })
     unsubscribeAliveCapabilities = aliveRuntime.onChanged(() => capabilityCatalog.invalidate())
     unsubscribeAliveIpc = registerAliveIpc(aliveRuntime, win, ipcAuthorization)
     aliveRuntime.start()

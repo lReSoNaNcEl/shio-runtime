@@ -300,7 +300,7 @@ async function testPersistenceAndEnvelope(): Promise<void> {
 
     const reopened = new AliveStore(databasePath)
     assert.equal(reopened.goals()[0]?.id, goal.id)
-    assert.equal(reopened.version(), 2)
+    assert.equal(reopened.version(), 3)
     reopened.close()
 
     const envelope = new AutonomyEnvelope()
@@ -589,7 +589,7 @@ function testGoalSchemaMigration(): void {
     legacy.close()
     const migrated = new AliveStore(databasePath)
     const goal = migrated.goals()[0]
-    assert.equal(migrated.version(), 2)
+    assert.equal(migrated.version(), 3)
     assert.equal(goal?.owner, 'shared')
     assert.equal(goal?.nextStep, '')
     assert.equal(goal?.lastNote, '')

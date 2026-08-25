@@ -3,6 +3,7 @@ import type {
   AliveSnapshot,
   AttentionCandidate,
   AttentionDecision,
+  AutonomyScope,
   AutonomySettings,
   BehaviorCommand,
   CreateGoalInput,
@@ -10,6 +11,10 @@ import type {
   ExperienceEvent,
   FastBrainAttentionDecision,
   FastBrainAttentionInput,
+  GoalExecutionBudget,
+  GoalExecutionState,
+  GoalWakeCondition,
+  GoalWakeEvent,
   PersistentGoal,
   RendererWorldContextInput,
   ReviseGoalInput,
@@ -17,10 +22,13 @@ import type {
   UpdateGoalInput,
 } from '../../shared/alive'
 import type { LlmGateway } from '../llm'
+import { observeMainPromise } from '../reliability/observePromise'
 import type { AliveStore } from './AliveStore'
 import { AttentionArbiter } from './AttentionArbiter'
 import { AutonomyEnvelope } from './AutonomyEnvelope'
+import { AutonomyScopeRuntime, type ScopedActionProposal } from './AutonomyScopeRuntime'
 import { BehaviorRuntime } from './BehaviorRuntime'
+import { EventWatchService } from './EventWatchService'
 import { ExperienceRuntime } from './ExperienceRuntime'
 import { FastBrainRuntime } from './FastBrainRuntime'
 import { GoalRuntime } from './GoalRuntime'
@@ -43,6 +51,8 @@ export class AliveFacade {
   private readonly experience: ExperienceRuntime
   private readonly attention: AttentionArbiter
   private readonly goals: GoalRuntime
+  private readonly watches: EventWatchService
+  private readonly scopes: AutonomyScopeRuntime
   private readonly scheduler: ScheduledTaskRuntime
   private readonly listeners = new Set<(snapshot: AliveSnapshot) => void>()
   private readonly behaviorListeners = new Set<(command: BehaviorCommand) => void>()
@@ -56,6 +66,8 @@ export class AliveFacade {
     options: AliveFacadeOptions = {},
   ) {
     this.goals = new GoalRuntime(store)
+    this.watches = new EventWatchService(store, this.goals)
+    this.scopes = new AutonomyScopeRuntime(store)
     this.world = new WorldContextRuntime(options.systemContextAdapter, {
       ...options.worldContext,
       activeGoal: () =>
@@ -76,10 +88,15 @@ export class AliveFacade {
       world: this.world,
       onBehavior: (command) => this.emitBehavior(command),
       onChanged: () => this.publish(),
+      onTick: (now) => {
+        const awakened = this.watches.tick(now)
+        if (awakened.length > 0) this.emitGoalAttention(now)
+      },
     })
   }
 
   start(): void {
+    this.goals.restore(this.store.settings())
     this.world.start()
     this.scheduler.start()
   }
@@ -110,6 +127,8 @@ export class AliveFacade {
     return Object.freeze({
       settings,
       goals,
+      goalExecutions: this.goals.executionSnapshot(),
+      goalWatches: this.watches.snapshot(),
       tasks,
       habitSuggestions: habits,
       mood: this.experience.moodSnapshot(),
@@ -122,6 +141,9 @@ export class AliveFacade {
 
   updateSettings(settings: AutonomySettings): AliveSnapshot {
     this.store.saveSettings(settings)
+    if (settings.globallySuspended || settings.mode === 'off') {
+      this.goals.pauseAutonomousWork(settings.globallySuspended ? 'global-suspend' : 'mode-off')
+    }
     this.store.audit('autonomy', 'settings_updated', 'success')
     return this.publish()
   }
@@ -190,6 +212,61 @@ export class AliveFacade {
     })
   }
 
+  planGoal(
+    goalId: string,
+    steps: readonly string[],
+    budget?: Partial<GoalExecutionBudget>,
+  ): GoalExecutionState {
+    const state = this.goals.plan(goalId, steps, { budget })
+    this.publish()
+    return state
+  }
+
+  admitGoalStep(goalId: string): GoalExecutionState {
+    const state = this.goals.admitStep(goalId)
+    this.publish()
+    return state
+  }
+
+  recordGoalActionResult(input: {
+    goalId: string
+    actionId: string
+    verified: boolean
+    summary?: string
+  }): GoalExecutionState {
+    const state = this.goals.recordVerifiedResult(input)
+    this.publish()
+    return state
+  }
+
+  waitForGoalEvent(goalId: string, condition: GoalWakeCondition): GoalExecutionState {
+    const state = this.goals.waitForEvent(goalId, condition)
+    this.publish()
+    return state
+  }
+
+  observeGoalEvent(event: GoalWakeEvent): void {
+    if (this.watches.observe(event).length > 0) {
+      this.emitGoalAttention(event.at)
+      this.publish()
+    }
+  }
+
+  approveAutonomyScope(
+    input: Omit<AutonomyScope, 'id' | 'actionsUsed' | 'approvedAt'>,
+  ): AutonomyScope {
+    return this.scopes.approve(input, 'explicit-user-approval')
+  }
+
+  consumeAutonomyScope(goalId: string, proposal: ScopedActionProposal): boolean {
+    return this.scopes.authorizeAndConsume(goalId, proposal)
+  }
+
+  emergencyStop(): AliveSnapshot {
+    this.goals.pauseAutonomousWork('emergency-stop')
+    return this.publish()
+  }
+
   private health(
     goals: AliveSnapshot['goals'],
     tasks: AliveSnapshot['tasks'],
@@ -219,5 +296,22 @@ export class AliveFacade {
 
   private emitBehavior(command: BehaviorCommand): void {
     for (const listener of this.behaviorListeners) listener(command)
+  }
+
+  private emitGoalAttention(now: number): void {
+    const candidates = this.goals.attentionCandidates(now)
+    if (candidates.length === 0) return
+    observeMainPromise(
+      this.attention.decide(candidates, this.store.settings()).then((decision) => {
+        if (decision.disposition !== 'admit' || !decision.candidateId) return
+        const goalId = decision.candidateId.split(':')[1]
+        const goal = this.goals.snapshot().find((candidate) => candidate.id === goalId)
+        if (goal)
+          this.emitBehavior(
+            this.behavior.scheduledInitiative(goal.id, goal.nextStep || goal.title, now),
+          )
+      }),
+      'arbitrate awakened goal attention',
+    )
   }
 }

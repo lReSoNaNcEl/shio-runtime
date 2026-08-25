@@ -44,6 +44,90 @@ export interface PersistentGoal {
   updatedAt: number
 }
 
+export type GoalExecutionPhase =
+  | 'idle'
+  | 'planning'
+  | 'running'
+  | 'waiting-user'
+  | 'waiting-event'
+  | 'verifying'
+  | 'paused'
+  | 'completed'
+  | 'failed'
+
+export interface GoalExecutionBudget {
+  maxSteps: number
+  maxToolCalls: number
+  maxElapsedMs: number
+  maxFailures: number
+}
+
+export interface GoalExecutionState {
+  goalId: string
+  phase: GoalExecutionPhase
+  currentStep?: string
+  plannedSteps: readonly string[]
+  completedSteps: readonly string[]
+  attempts: number
+  toolCalls: number
+  failures: number
+  startedAt?: number
+  lastProgressAt?: number
+  actionBudget: GoalExecutionBudget
+  updatedAt: number
+}
+
+export type GoalWorldEventType =
+  | 'user-returned'
+  | 'foreground-changed'
+  | 'network-restored'
+  | 'media-ended'
+
+export type GoalWakeCondition =
+  | { kind: 'time'; at: number }
+  | { kind: 'action-terminal'; actionId: string }
+  | { kind: 'process-exit'; processId: number }
+  | {
+      kind: 'browser-url'
+      sessionId: string
+      predicate: { operator: 'equals' | 'prefix' | 'origin'; value: string }
+    }
+  | {
+      kind: 'world-event'
+      eventType: GoalWorldEventType
+    }
+
+export type GoalWakeEvent =
+  | { kind: 'time'; at: number }
+  | { kind: 'action-terminal'; actionId: string; verified: boolean; at: number }
+  | { kind: 'process-exit'; processId: number; at: number }
+  | { kind: 'browser-url'; sessionId: string; url: string; at: number }
+  | { kind: 'world-event'; eventType: GoalWorldEventType; at: number }
+
+export interface GoalEventWatch {
+  id: string
+  goalId: string
+  condition: GoalWakeCondition
+  status: 'active' | 'satisfied' | 'cancelled'
+  createdAt: number
+  satisfiedAt?: number
+}
+
+export type AutonomyRiskClass = 'read-only' | 'mutating' | 'destructive' | 'unknown'
+
+export interface AutonomyScope {
+  id: string
+  goalId?: string
+  allowedApplications?: readonly string[]
+  allowedFilesystemRoots?: readonly string[]
+  allowedOrigins?: readonly string[]
+  maxActions?: number
+  actionsUsed: number
+  expiresAt?: number
+  allowedRiskClasses?: readonly AutonomyRiskClass[]
+  approvedAt: number
+}
+
 export type ScheduledTaskKind = 'reminder' | 'check_in'
 export type ScheduledTaskStatus = 'scheduled' | 'waiting_confirmation' | 'completed' | 'paused'
 
@@ -147,6 +231,8 @@ export interface AliveRuntimeHealth {
 export interface AliveSnapshot {
   settings: AutonomySettings
   goals: readonly PersistentGoal[]
+  goalExecutions: readonly GoalExecutionState[]
+  goalWatches: readonly GoalEventWatch[]
   tasks: readonly ScheduledTask[]
   habitSuggestions: readonly HabitSuggestion[]
   mood: MoodState

@@ -67,6 +67,7 @@
     "repro:living-loop-hardening": "esbuild scripts/living-loop-hardening-repro/harness.ts --bundle --platform=node --format=cjs --external:electron --outfile=out/living-loop-hardening-repro.cjs && node out/living-loop-hardening-repro.cjs",
     "repro:world-context": "esbuild scripts/world-context-repro/harness.ts --bundle --platform=node --format=cjs --external:electron --outfile=out/world-context-repro.cjs && node out/world-context-repro.cjs",
     "repro:mind-layer": "esbuild scripts/mind-layer-repro/harness.ts --bundle --platform=node --format=cjs --external:electron --outfile=out/mind-layer-repro.cjs && node out/mind-layer-repro.cjs",
+    "repro:goal-runtime": "esbuild scripts/goal-runtime-repro/harness.ts --bundle --platform=node --format=cjs --external:electron --outfile=out/goal-runtime-repro.cjs && node out/goal-runtime-repro.cjs",
     "test:llm-live": "npm run repro:llm-live"
   },
   "keywords": [],

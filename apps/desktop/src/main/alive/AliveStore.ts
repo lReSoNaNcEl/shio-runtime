@@ -5,9 +5,13 @@ import { DatabaseSync } from 'node:sqlite'
 
 import type {
   AliveAuditEntry,
+  AutonomyScope,
   AutonomySettings,
   CreateGoalInput,
   CreateScheduledTaskInput,
+  GoalEventWatch,
+  GoalExecutionState,
+  GoalWakeCondition,
   HabitSuggestion,
   MoodState,
   PersistentGoal,
@@ -17,7 +21,14 @@ import type {
 
 type GoalStoreUpdateInput = UpdateGoalInput & { progress?: number }
 
-const DATABASE_VERSION = 2
+const DATABASE_VERSION = 3
+
+const DEFAULT_GOAL_BUDGET = Object.freeze({
+  maxSteps: 12,
+  maxToolCalls: 24,
+  maxElapsedMs: 4 * 60 * 60_000,
+  maxFailures: 3,
+})
 
 export const DEFAULT_AUTONOMY_SETTINGS: AutonomySettings = Object.freeze({
   mode: 'suggest',
@@ -75,6 +86,38 @@ interface HabitRow {
   status: HabitSuggestion['status']
   created_at: number
   updated_at: number
+}
+
+interface GoalExecutionRow {
+  goal_id: string
+  phase: GoalExecutionState['phase']
+  current_step: string | null
+  planned_steps: string
+  completed_steps: string
+  attempts: number
+  tool_calls: number
+  failures: number
+  started_at: number | null
+  last_progress_at: number | null
+  action_budget: string
+  updated_at: number
+}
+
+interface GoalWatchRow {
+  id: string
+  goal_id: string
+  condition: string
+  status: GoalEventWatch['status']
+  created_at: number
+  satisfied_at: number | null
+}
+
+interface AutonomyScopeRow {
+  id: string
+  goal_id: string | null
+  scope: string
+  actions_used: number
+  approved_at: number
 }
 
 export class AliveStore {
@@ -201,7 +244,132 @@ export class AliveStore {
         goal.createdAt,
         goal.updatedAt,
       )
+    this.saveGoalExecution({
+      goalId: goal.id,
+      phase: 'idle',
+      plannedSteps: [],
+      completedSteps: [],
+      attempts: 0,
+      toolCalls: 0,
+      failures: 0,
+      actionBudget: DEFAULT_GOAL_BUDGET,
+      updatedAt: now,
+    })
     return Object.freeze(goal)
+  }
+
+  goalExecutions(): readonly GoalExecutionState[] {
+    const rows = this.database
+      .prepare(
+        `SELECT goal_id, phase, current_step, planned_steps, completed_steps, attempts,
+                tool_calls, failures, started_at, last_progress_at, action_budget, updated_at
+         FROM alive_goal_executions ORDER BY updated_at DESC`,
+      )
+      .all() as unknown as GoalExecutionRow[]
+    return Object.freeze(rows.map(toGoalExecution))
+  }
+
+  saveGoalExecution(state: GoalExecutionState): void {
+    this.database
+      .prepare(
+        `INSERT INTO alive_goal_executions
+          (goal_id, phase, current_step, planned_steps, completed_steps, attempts, tool_calls,
+           failures, started_at, last_progress_at, action_budget, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(goal_id) DO UPDATE SET
+           phase = excluded.phase, current_step = excluded.current_step,
+           planned_steps = excluded.planned_steps, completed_steps = excluded.completed_steps,
+           attempts = excluded.attempts, tool_calls = excluded.tool_calls,
+           failures = excluded.failures, started_at = excluded.started_at,
+           last_progress_at = excluded.last_progress_at,
+           action_budget = excluded.action_budget, updated_at = excluded.updated_at`,
+      )
+      .run(
+        state.goalId,
+        state.phase,
+        state.currentStep ?? null,
+        JSON.stringify(state.plannedSteps),
+        JSON.stringify(state.completedSteps),
+        state.attempts,
+        state.toolCalls,
+        state.failures,
+        state.startedAt ?? null,
+        state.lastProgressAt ?? null,
+        JSON.stringify(state.actionBudget),
+        state.updatedAt,
+      )
+  }
+
+  goalWatches(status?: GoalEventWatch['status']): readonly GoalEventWatch[] {
+    const rows = (status
+      ? this.database
+          .prepare(
+            `SELECT id, goal_id, condition, status, created_at, satisfied_at
+             FROM alive_goal_watches WHERE status = ? ORDER BY created_at`,
+          )
+          .all(status)
+      : this.database
+          .prepare(
+            `SELECT id, goal_id, condition, status, created_at, satisfied_at
+             FROM alive_goal_watches ORDER BY created_at`,
+          )
+          .all()) as unknown as GoalWatchRow[]
+    return Object.freeze(rows.map(toGoalWatch))
+  }
+
+  createGoalWatch(goalId: string, condition: GoalWakeCondition, now: number): GoalEventWatch {
+    const watch: GoalEventWatch = {
+      id: randomUUID(),
+      goalId,
+      condition,
+      status: 'active',
+      createdAt: now,
+    }
+    this.database
+      .prepare(
+        `INSERT INTO alive_goal_watches
+          (id, goal_id, condition, status, created_at, satisfied_at)
+         VALUES (?, ?, ?, 'active', ?, NULL)`,
+      )
+      .run(watch.id, goalId, JSON.stringify(condition), now)
+    return Object.freeze(watch)
+  }
+
+  satisfyGoalWatch(id: string, now: number): void {
+    this.database
+      .prepare(
+        `UPDATE alive_goal_watches SET status = 'satisfied', satisfied_at = ?
+         WHERE id = ? AND status = 'active'`,
+      )
+      .run(now, id)
+  }
+
+  autonomyScope(goalId: string): AutonomyScope | null {
+    const row = this.database
+      .prepare(
+        `SELECT id, goal_id, scope, actions_used, approved_at
+         FROM alive_autonomy_scopes WHERE goal_id = ?`,
+      )
+      .get(goalId) as AutonomyScopeRow | undefined
+    return row ? toAutonomyScope(row) : null
+  }
+
+  saveAutonomyScope(scope: AutonomyScope): void {
+    this.database
+      .prepare(
+        `INSERT INTO alive_autonomy_scopes (id, goal_id, scope, actions_used, approved_at)
+         VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(goal_id) DO UPDATE SET
+           id = excluded.id, scope = excluded.scope, actions_used = excluded.actions_used,
+           approved_at = excluded.approved_at`,
+      )
+      .run(
+        scope.id,
+        scope.goalId ?? null,
+        JSON.stringify(scope),
+        scope.actionsUsed,
+        scope.approvedAt,
+      )
   }
 
   updateGoal(input: GoalStoreUpdateInput): PersistentGoal | null {
@@ -428,13 +596,31 @@ export class AliveStore {
           evidence_count INTEGER NOT NULL, status TEXT NOT NULL, created_at INTEGER NOT NULL,
           updated_at INTEGER NOT NULL
         );
+        CREATE TABLE alive_goal_executions (
+          goal_id TEXT PRIMARY KEY, phase TEXT NOT NULL, current_step TEXT,
+          planned_steps TEXT NOT NULL, completed_steps TEXT NOT NULL, attempts INTEGER NOT NULL,
+          tool_calls INTEGER NOT NULL, failures INTEGER NOT NULL, started_at INTEGER,
+          last_progress_at INTEGER, action_budget TEXT NOT NULL, updated_at INTEGER NOT NULL,
+          FOREIGN KEY(goal_id) REFERENCES alive_goals(id) ON DELETE CASCADE
+        );
+        CREATE TABLE alive_goal_watches (
+          id TEXT PRIMARY KEY, goal_id TEXT NOT NULL, condition TEXT NOT NULL,
+          status TEXT NOT NULL, created_at INTEGER NOT NULL, satisfied_at INTEGER,
+          FOREIGN KEY(goal_id) REFERENCES alive_goals(id) ON DELETE CASCADE
+        );
+        CREATE TABLE alive_autonomy_scopes (
+          id TEXT PRIMARY KEY, goal_id TEXT UNIQUE, scope TEXT NOT NULL,
+          actions_used INTEGER NOT NULL, approved_at INTEGER NOT NULL,
+          FOREIGN KEY(goal_id) REFERENCES alive_goals(id) ON DELETE CASCADE
+        );
         CREATE TABLE alive_audit (
           id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, category TEXT NOT NULL,
           event TEXT NOT NULL, entity_id TEXT, outcome TEXT NOT NULL, detail TEXT
         );
         CREATE INDEX alive_tasks_due_idx ON alive_tasks(status, next_run_at);
         CREATE INDEX alive_audit_at_idx ON alive_audit(at DESC);
-        PRAGMA user_version = 2;
+        CREATE INDEX alive_goal_watches_status_idx ON alive_goal_watches(status, created_at);
+        PRAGMA user_version = 3;
         COMMIT;
       `)
       this.saveSettings(DEFAULT_AUTONOMY_SETTINGS)
@@ -449,6 +635,38 @@ export class AliveStore {
         ALTER TABLE alive_goals ADD COLUMN measurable INTEGER NOT NULL DEFAULT 0;
         UPDATE alive_goals SET measurable = 1 WHERE progress > 0 AND progress < 1;
         PRAGMA user_version = 2;
+        COMMIT;
+      `)
+    }
+    if (version <= 2) {
+      this.database.exec(`
+        BEGIN IMMEDIATE;
+        CREATE TABLE alive_goal_executions (
+          goal_id TEXT PRIMARY KEY, phase TEXT NOT NULL, current_step TEXT,
+          planned_steps TEXT NOT NULL, completed_steps TEXT NOT NULL, attempts INTEGER NOT NULL,
+          tool_calls INTEGER NOT NULL, failures INTEGER NOT NULL, started_at INTEGER,
+          last_progress_at INTEGER, action_budget TEXT NOT NULL, updated_at INTEGER NOT NULL,
+          FOREIGN KEY(goal_id) REFERENCES alive_goals(id) ON DELETE CASCADE
+        );
+        CREATE TABLE alive_goal_watches (
+          id TEXT PRIMARY KEY, goal_id TEXT NOT NULL, condition TEXT NOT NULL,
+          status TEXT NOT NULL, created_at INTEGER NOT NULL, satisfied_at INTEGER,
+          FOREIGN KEY(goal_id) REFERENCES alive_goals(id) ON DELETE CASCADE
+        );
+        CREATE TABLE alive_autonomy_scopes (
+          id TEXT PRIMARY KEY, goal_id TEXT UNIQUE, scope TEXT NOT NULL,
+          actions_used INTEGER NOT NULL, approved_at INTEGER NOT NULL,
+          FOREIGN KEY(goal_id) REFERENCES alive_goals(id) ON DELETE CASCADE
+        );
+        CREATE INDEX alive_goal_watches_status_idx ON alive_goal_watches(status, created_at);
+        INSERT INTO alive_goal_executions
+          (goal_id, phase, current_step, planned_steps, completed_steps, attempts, tool_calls,
+           failures, started_at, last_progress_at, action_budget, updated_at)
+        SELECT id, 'idle', NULL, '[]', '[]', 0, 0, 0, NULL, NULL,
+          '{"maxSteps":12,"maxToolCalls":24,"maxElapsedMs":14400000,"maxFailures":3}',
+          updated_at
+        FROM alive_goals;
+        PRAGMA user_version = 3;
         COMMIT;
       `)
     }
@@ -484,6 +702,47 @@ function toTask(row: TaskRow): ScheduledTask {
     nextRunAt: row.next_run_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+  })
+}
+
+function toGoalExecution(row: GoalExecutionRow): GoalExecutionState {
+  return Object.freeze({
+    goalId: row.goal_id,
+    phase: row.phase,
+    currentStep: row.current_step ?? undefined,
+    plannedSteps: Object.freeze(JSON.parse(row.planned_steps) as string[]),
+    completedSteps: Object.freeze(JSON.parse(row.completed_steps) as string[]),
+    attempts: row.attempts,
+    toolCalls: row.tool_calls,
+    failures: row.failures,
+    startedAt: row.started_at ?? undefined,
+    lastProgressAt: row.last_progress_at ?? undefined,
+    actionBudget: Object.freeze(
+      JSON.parse(row.action_budget) as GoalExecutionState['actionBudget'],
+    ),
+    updatedAt: row.updated_at,
+  })
+}
+
+function toGoalWatch(row: GoalWatchRow): GoalEventWatch {
+  return Object.freeze({
+    id: row.id,
+    goalId: row.goal_id,
+    condition: Object.freeze(JSON.parse(row.condition) as GoalWakeCondition),
+    status: row.status,
+    createdAt: row.created_at,
+    satisfiedAt: row.satisfied_at ?? undefined,
+  })
+}
+
+function toAutonomyScope(row: AutonomyScopeRow): AutonomyScope {
+  const parsed = JSON.parse(row.scope) as AutonomyScope
+  return Object.freeze({
+    ...parsed,
+    id: row.id,
+    goalId: row.goal_id ?? undefined,
+    actionsUsed: row.actions_used,
+    approvedAt: row.approved_at,
   })
 }
 

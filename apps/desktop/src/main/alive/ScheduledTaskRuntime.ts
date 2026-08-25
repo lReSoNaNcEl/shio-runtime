@@ -17,6 +17,7 @@ interface ScheduledTaskRuntimeOptions {
   world: WorldContextRuntime
   onBehavior(command: BehaviorCommand): void
   onChanged(): void
+  onTick?(now: number): void
 }
 
 /** Owns typed scheduled-task occurrence semantics on top of the single-flight clock. */
@@ -83,6 +84,7 @@ export class ScheduledTaskRuntime {
   private async tick(now: number): Promise<void> {
     this.options.world.markSchedulerObserved(now)
     try {
+      this.options.onTick?.(now)
       for (const task of this.options.store.tasks()) {
         if (task.status !== 'scheduled' || task.nextRunAt > now) continue
         const settings = this.options.store.settings()
