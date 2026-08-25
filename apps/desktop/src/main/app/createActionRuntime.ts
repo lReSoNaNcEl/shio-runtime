@@ -31,6 +31,7 @@ interface CreateActionRuntimeOptions {
   capabilityCatalog: CapabilityCatalog
   browserWorkflowScopes: BrowserWorkflowScopeRegistry
   desktopControl: () => DesktopControlPlugin
+  onEvent?: (event: RuntimeEventInput) => void
 }
 
 export function createActionRuntime({
@@ -38,12 +39,14 @@ export function createActionRuntime({
   capabilityCatalog,
   browserWorkflowScopes,
   desktopControl,
+  onEvent,
 }: CreateActionRuntimeOptions): ActionRuntimeComposition {
   const sendToRenderer = (channel: string, payload: unknown): void => {
     if (!window.isDestroyed()) window.webContents.send(channel, payload)
   }
   const sendActionEvent = (event: RuntimeEventInput): void => {
     sendToRenderer('action-runtime:event', event)
+    onEvent?.(event)
     if (event.type === 'ToolCompleted') capabilityCatalog.invalidate()
   }
   const confirmations = new ActionConfirmationBroker(

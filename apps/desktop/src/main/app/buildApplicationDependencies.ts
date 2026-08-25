@@ -61,6 +61,7 @@ import { registerReleaseSupportHandlers } from '../system/releaseSupport'
 import { BraveWebSearchAdapter, WebSearchRuntime } from '../web-search'
 import { MainWindowManager } from '../windows/MainWindowManager'
 import { OverlayWindowManager } from '../windows/OverlayWindowManager'
+import { actionExperienceEvent } from './ActionExperienceBridge'
 import { createActionRuntime } from './createActionRuntime'
 import { MainConversationTurnService } from './MainConversationTurnService'
 import { SpeechApplicationService } from './SpeechApplicationService'
@@ -480,6 +481,10 @@ export function buildApplicationDependencies(): ApplicationDependencies {
       capabilityCatalog,
       browserWorkflowScopes,
       desktopControl: getDesktopControl,
+      onEvent: (event) => {
+        const experience = actionExperienceEvent(event)
+        if (experience) aliveRuntime?.reportExperience(experience)
+      },
     })
     actionRuntime = actionComposition.actions
     orchestrator = buildOrchestrator()

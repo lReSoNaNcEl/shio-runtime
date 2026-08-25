@@ -6,6 +6,7 @@ import { DatabaseSync } from 'node:sqlite'
 
 import { ActionPermissionGuard } from '../../src/main/action'
 import { AliveRuntime, AliveStore, SchedulerRuntime } from '../../src/main/alive'
+import { actionExperienceEvent } from '../../src/main/app/ActionExperienceBridge'
 import { CharacterToolRegistry } from '../../src/main/character-tools/CharacterToolRegistry'
 import { DesktopControlPlugin, ShellRiskPolicy } from '../../src/main/desktop-control'
 import { createSemanticMemoryRuntime } from '../../src/main/memory'
@@ -13,6 +14,52 @@ import { actionConfirmationRequestSchema } from '../../src/shared/actions'
 
 const wait = (milliseconds: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, milliseconds))
+
+function actionExperienceBridge(): void {
+  assert.deepEqual(
+    actionExperienceEvent(
+      {
+        type: 'ToolCompleted',
+        category: 'action',
+        source: 'main.actionRuntime',
+        metadata: { actionId: 'action-verified', verificationStatus: 'verified' },
+      },
+      100,
+    ),
+    {
+      type: 'action-verified',
+      at: 100,
+      actionId: 'action-verified',
+      eventId: 'action-runtime:ToolCompleted:action-verified',
+    },
+  )
+  assert.equal(
+    actionExperienceEvent({
+      type: 'ToolCompleted',
+      category: 'action',
+      source: 'main.actionRuntime',
+      metadata: { actionId: 'action-unverified', verificationStatus: 'not-required' },
+    }),
+    null,
+  )
+  assert.deepEqual(
+    actionExperienceEvent(
+      {
+        type: 'PermissionDenied',
+        category: 'action',
+        source: 'main.actionRuntime',
+        metadata: { actionId: 'action-denied' },
+      },
+      101,
+    ),
+    {
+      type: 'permission-denied',
+      at: 101,
+      actionId: 'action-denied',
+      eventId: 'action-runtime:PermissionDenied:action-denied',
+    },
+  )
+}
 
 function shellPolicy(): void {
   const policy = new ShellRiskPolicy()
@@ -183,11 +230,14 @@ async function completedOnlyHabitEvidence(): Promise<void> {
 }
 
 async function main(): Promise<void> {
+  actionExperienceBridge()
   shellPolicy()
   await fullControlDestructiveConfirmation()
   await nonOverlappingScheduler()
   await completedOnlyHabitEvidence()
-  console.log('LIVING LOOP HARDENING REPRO PASS: shell policy, permission, scheduler, habits')
+  console.log(
+    'LIVING LOOP HARDENING REPRO PASS: action experience, shell policy, permission, scheduler, habits',
+  )
 }
 
 void main()
