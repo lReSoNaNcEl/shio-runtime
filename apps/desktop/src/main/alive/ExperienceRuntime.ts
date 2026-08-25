@@ -23,6 +23,8 @@ export class ExperienceRuntime {
       this.store.observeHabit('task-follow-through', 'Регулярно завершать запланированные задачи')
       this.store.audit('habit', 'evidence_observed', 'success', event.taskId)
     }
-    return this.behavior.observe(event, settings, world)
+    const command = this.behavior.observe(event, settings, world)
+    if (command) this.store.audit('behavior', 'silence_reaction', 'executed')
+    return command
   }
 }
