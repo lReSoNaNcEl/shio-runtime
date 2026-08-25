@@ -229,7 +229,7 @@ function assertPluginBoundaries(): void {
     join(desktopRoot, 'src', 'shared', 'project-awareness', 'api.ts'),
     'utf8',
   )
-  assert(pluginIpc.includes('z.enum([PROJECT_AWARENESS_PLUGIN_ID, DESKTOP_CONTROL_PLUGIN_ID])'))
+  assert(pluginIpc.includes('z.enum(PLUGIN_IDS)'))
   assert(pluginIpc.includes('pluginIdSchema.parse(id)'))
   assert(projectIpc.includes('configSchema.strict().parse(input)'))
   assert(projectIpc.includes('credentialSchema.parse(token)'))

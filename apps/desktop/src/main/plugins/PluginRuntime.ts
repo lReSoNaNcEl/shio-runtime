@@ -15,13 +15,7 @@ import type {
   RuntimePluginHealth,
   RuntimePluginHealthPresentation,
 } from '../../shared/plugins'
-import {
-  BROWSER_GAME_CONTROL_PLUGIN_ID,
-  DESKTOP_CONTROL_PLUGIN_ID,
-  PLUGIN_CAPABILITY_KINDS,
-  PROJECT_AWARENESS_PLUGIN_ID,
-  WEB_SEARCH_PLUGIN_ID,
-} from '../../shared/plugins'
+import { PLUGIN_CAPABILITY_KINDS, PLUGIN_IDS } from '../../shared/plugins'
 import type { WebSearchProvider } from '../../shared/web-search'
 import type { PluginCapabilityRegistry } from './PluginCapabilityRegistry'
 import type { PluginRegistryStore } from './PluginRegistryStore'
@@ -50,12 +44,7 @@ export interface BundledPlugin {
 const capabilitySchema = z.enum(PLUGIN_CAPABILITY_KINDS)
 const manifestSchema = z
   .object({
-    id: z.enum([
-      PROJECT_AWARENESS_PLUGIN_ID,
-      DESKTOP_CONTROL_PLUGIN_ID,
-      WEB_SEARCH_PLUGIN_ID,
-      BROWSER_GAME_CONTROL_PLUGIN_ID,
-    ]),
+    id: z.enum(PLUGIN_IDS),
     version: z.string().regex(/^\d+\.\d+\.\d+$/),
     nameKey: z.string().trim().min(1).max(160),
     descriptionKey: z.string().trim().min(1).max(160),

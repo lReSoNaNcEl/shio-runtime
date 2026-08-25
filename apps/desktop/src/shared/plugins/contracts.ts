@@ -5,11 +5,14 @@ export const DESKTOP_CONTROL_PLUGIN_ID = 'desktop-control' as const
 export const WEB_SEARCH_PLUGIN_ID = 'web-search' as const
 export const BROWSER_GAME_CONTROL_PLUGIN_ID = 'browser-game-control' as const
 
-export type PluginId =
-  | typeof PROJECT_AWARENESS_PLUGIN_ID
-  | typeof DESKTOP_CONTROL_PLUGIN_ID
-  | typeof WEB_SEARCH_PLUGIN_ID
-  | typeof BROWSER_GAME_CONTROL_PLUGIN_ID
+export const PLUGIN_IDS = [
+  PROJECT_AWARENESS_PLUGIN_ID,
+  DESKTOP_CONTROL_PLUGIN_ID,
+  WEB_SEARCH_PLUGIN_ID,
+  BROWSER_GAME_CONTROL_PLUGIN_ID,
+] as const
+
+export type PluginId = (typeof PLUGIN_IDS)[number]
 export type PluginLifecycleState =
   | 'registered'
   | 'initializing'
