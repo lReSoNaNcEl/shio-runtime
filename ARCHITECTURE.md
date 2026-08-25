@@ -1486,31 +1486,46 @@ run checkpoint. Startup processes an overdue occurrence at most once. Quiet hour
 busy World Context, Global Suspend, Privacy Mode, cooldown, and daily caps defer the
 occurrence without losing it.
 
-Persistent Goals are Main-owned durable future intent. Goal and Task Store uses an
-application-owned SQLite schema with explicit migration versioning, foreign keys,
-WAL journaling, audit records, and transactional run claims. Goals and tasks are not
-Character State, Semantic Memory, or Action logs. The authorized renderer manages
-them only through validated typed IPC and renders a read-only Runtime snapshot plus
-explicit mutations.
+Persistent Goals are Main-owned durable future intent and shared continuity. A goal
+may belong primarily to the user, to Shio, or to both of them. Its durable record may
+contain why it matters, the next natural step, a semantic state such as active,
+waiting for the user, waiting for an external event, paused, completed, or cancelled,
+and optional numeric progress only when the goal is genuinely measurable. Goal and
+Task Store uses an application-owned SQLite schema with explicit migration versioning,
+foreign keys, WAL journaling, audit records, and transactional run claims. Goals and
+tasks are not Character State, Semantic Memory, or Action logs. The authorized
+renderer manages them only through validated typed IPC and renders a read-only Runtime
+snapshot plus explicit mutations.
 
-Character Response Generation may semantically select the read-only `goal.list`
-tool when the current turn requires Shio's goals or their progress. Character Tool
-Dispatcher delegates that request to the Goal and Task Store owner and returns a
-bounded projection containing the stable goal identity required by later typed work.
-This read path grants no mutation authority and does not copy Persistent Goals into
-Semantic Memory or static prompt text.
+Every Character Response Generation turn may receive one bounded, request-scoped Goal
+Awareness Context built from the exact current Goal and Task Store snapshot. It contains
+only a compact projection of unfinished goals and their stable identities, ownership,
+semantic state, why/next-step context, and optional measurable progress. It is trusted
+Runtime context but its user- or model-authored field values remain data, never
+instructions or authority. The context is resolved again for the next turn, is not
+Character State, does not copy goals into Semantic Memory or conversation history, and
+grants no mutation authority. Character Response Generation may still select the
+read-only `goal.list` tool when it needs archived goals or a broader/current listing.
 
-The domain-limited `goal.update` tool may report bounded progress only for an exact
-goal identity returned by `goal.list` in the same turn. Goal and Task Store remains
-the mutation owner: it validates the goal, persists progress transactionally, forces
-completed goals to 100 percent, audits the mutation, and publishes the new Runtime
-snapshot. Character Tool Dispatcher grants no generic Store access. If the turn has
-selected an external Action or untrusted Browser observation, progress mutation is
-rejected unless the same turn contains a successful Action Runtime result whose
-execution is complete and whose verification is `verified` or `not-required`.
-Project evidence, Browser content, assistant narration, and Adapter success alone
-never authorize goal progress. Goal updates remain internal Core state and do not
-pass through Action Runtime or Semantic Memory.
+The domain-limited `goal.create` tool may persist a goal only when the current user turn
+explicitly requests it or explicitly confirms Shio's conversational proposal. A vague
+wish or Shio's unconfirmed suggestion remains dialogue and is not durable state. The
+domain-limited `goal.update` tool may revise an exact goal identity supplied by the
+current Goal Awareness Context, by `goal.list`, or by a successful `goal.create` result
+in the same turn. Bounded revisions may update title, why, next step, ownership,
+semantic state, and optional measurable progress. Goal and Task Store remains the
+mutation owner: it validates and persists the change transactionally, audits the
+mutation, and publishes the new Runtime snapshot. Character Tool Dispatcher grants no
+generic Store access.
+
+If the turn has selected an external Action or untrusted Browser observation, a goal
+revision that claims work progress or completion is rejected unless the same turn
+contains a successful Action Runtime result whose execution is complete and whose
+verification is `verified` or `not-required`. Direct user-authored changes such as
+renaming, pausing, cancelling, or reporting their own progress remain internal goal
+mutations. Project evidence, Browser content, assistant narration, and Adapter success
+alone never authorize a claim of completed work. Goal mutations remain internal Core
+state and do not pass through Action Runtime or Semantic Memory.
 
 ### 21G. Smart Memory and Habit Suggestions
 
