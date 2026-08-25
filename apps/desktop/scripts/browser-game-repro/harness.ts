@@ -3,10 +3,14 @@ import assert from 'node:assert/strict'
 import sharp from 'sharp'
 
 import type {
+  GameReflexAdapter,
+  GameReflexBackendStatus,
+} from '../../src/main/browser-game/GameReflexAdapter'
+import type {
   GameCalibrationContext,
-  GameReflexPolicy,
   GameReflexState,
 } from '../../src/main/browser-game/GameReflexPolicy'
+import { AdapterBackedGameReflexPolicy } from '../../src/main/browser-game/GameReflexPolicy'
 import { GameSessionController } from '../../src/main/browser-game/GameSessionController'
 import {
   BrowserGameError,
@@ -21,11 +25,16 @@ import type {
   BrowserRealtimeSession,
 } from '../../src/shared/desktop-control'
 
-class TestReflex implements GameReflexPolicy {
+class TestReflexAdapter implements GameReflexAdapter {
   initialized: GameCalibrationContext | null = null
   readonly frames: GameFrame[] = []
   intents: GameInputIntent[] = []
   resetCount = 0
+  onDecide: (() => void) | null = null
+
+  status(): GameReflexBackendStatus {
+    return { backendId: 'fixture-reflex', mode: 'local-visual', ready: true }
+  }
 
   async initialize(context: GameCalibrationContext): Promise<void> {
     this.initialized = context
@@ -33,6 +42,7 @@ class TestReflex implements GameReflexPolicy {
 
   async decide(frame: GameFrame, _state: GameReflexState): Promise<GameInputIntent> {
     this.frames.push(frame)
+    this.onDecide?.()
     return this.intents.shift() ?? { type: 'none' }
   }
 
@@ -123,11 +133,11 @@ async function waitUntil(condition: () => boolean): Promise<void> {
 async function main(): Promise<void> {
   let now = 10_000
   const realtime = new TestRealtime()
-  const reflex = new TestReflex()
-  reflex.intents.push({ type: 'pointer-tap', x: 100, y: 75 })
+  const reflexAdapter = new TestReflexAdapter()
+  reflexAdapter.intents.push({ type: 'pointer-tap', x: 100, y: 75 })
   const controller = new GameSessionController({
     realtime: () => realtime,
-    reflex,
+    reflex: new AdapterBackedGameReflexPolicy(reflexAdapter),
     now: () => now,
     createId: (() => {
       let id = 0
@@ -150,7 +160,7 @@ async function main(): Promise<void> {
   )
   assert.equal(running.state, 'running')
   assert.equal(running.scope?.origin, 'https://game.example')
-  assert.equal(reflex.initialized?.scope.authorizationActionId.startsWith('action-'), true)
+  assert.equal(reflexAdapter.initialized?.scope.authorizationActionId.startsWith('action-'), true)
 
   await waitUntil(() => realtime.capturePending())
   const bytes = await sharp({
@@ -169,8 +179,8 @@ async function main(): Promise<void> {
     image: { mimeType: 'image/jpeg', bytes },
   })
   await waitUntil(() => realtime.inputs.length === 1)
-  assert.equal(reflex.frames[0]?.width, 200)
-  assert.equal(reflex.frames[0]?.height, 150)
+  assert.equal(reflexAdapter.frames[0]?.width, 200)
+  assert.equal(reflexAdapter.frames[0]?.height, 150)
   assert.deepEqual(realtime.inputs[0]?.events, [
     { type: 'pointer-down', x: 300, y: 200, button: 'left' },
     { type: 'pointer-up', x: 300, y: 200, button: 'left' },
@@ -197,6 +207,44 @@ async function main(): Promise<void> {
   now += 100
   await controller.stop()
   assert.equal(controller.status().scope, undefined)
+  assert(reflexAdapter.resetCount >= 1)
+
+  let staleNow = 20_000
+  const staleRealtime = new TestRealtime()
+  const staleReflex = new TestReflexAdapter()
+  staleReflex.intents.push({ type: 'pointer-tap', x: 20, y: 20 })
+  staleReflex.onDecide = () => {
+    staleNow += 501
+  }
+  const staleController = new GameSessionController({
+    realtime: () => staleRealtime,
+    reflex: new AdapterBackedGameReflexPolicy(staleReflex),
+    now: () => staleNow,
+  })
+  const stalePreparation = await staleController.prepareStart(
+    { goal: 'Discard stale fixture decisions' },
+    new AbortController().signal,
+  )
+  await staleController.start(
+    stalePreparation.preparationId,
+    'action-20000-22222222-2222-4222-8222-222222222222',
+    new AbortController().signal,
+  )
+  await waitUntil(() => staleRealtime.capturePending())
+  staleRealtime.emit({
+    sessionId: staleRealtime.binding?.sessionId ?? '',
+    tabId: staleRealtime.binding?.tabId ?? '',
+    frameId: 2,
+    capturedAt: staleNow,
+    width: 640,
+    height: 360,
+    viewport: { width: 1_280, height: 720, pageScaleFactor: 1 },
+    image: { mimeType: 'image/jpeg', bytes },
+  })
+  await waitUntil(() => staleController.status().telemetry.staleDecisions === 1)
+  assert.equal(staleRealtime.inputs.length, 0)
+  await staleController.pause()
+  assert(staleRealtime.releaseCount >= 1)
   console.log('browser game controller repro passed')
 }
 

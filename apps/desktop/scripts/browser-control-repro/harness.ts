@@ -13,6 +13,13 @@ import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 
 import BrowserToolPolicy from '../../resources/desktop-control/browser-policy.mjs'
+import type {
+  GameReflexAdapter,
+  GameReflexBackendStatus,
+} from '../../src/main/browser-game/GameReflexAdapter'
+import type { GameReflexState } from '../../src/main/browser-game/GameReflexPolicy'
+import { AdapterBackedGameReflexPolicy } from '../../src/main/browser-game/GameReflexPolicy'
+import { GameSessionController } from '../../src/main/browser-game/GameSessionController'
 import {
   AgentBrowserAdapter,
   BrowserAutomationError,
@@ -25,6 +32,7 @@ import {
 } from '../../src/main/desktop-control/AgentBrowserResources'
 import { DesktopControlPlugin } from '../../src/main/desktop-control/DesktopControlPlugin'
 import { DshHarnessAdapter } from '../../src/main/desktop-control/DshHarnessAdapter'
+import type { GameFrame, GameInputIntent } from '../../src/shared/browser-game'
 import { BROWSER_OBSERVATION_MAX_INTERACTIVE_ELEMENTS } from '../../src/shared/desktop-control'
 
 interface McpTextBlock {
@@ -40,6 +48,28 @@ interface BrowserBridge {
 }
 
 const execFileAsync = promisify(execFile)
+
+class TapOnceFixtureReflexAdapter implements GameReflexAdapter {
+  private pending = true
+
+  status(): GameReflexBackendStatus {
+    return { backendId: 'fixture-tap-once', mode: 'local-visual', ready: true }
+  }
+
+  async initialize(): Promise<void> {
+    this.pending = true
+  }
+
+  async decide(frame: GameFrame, _state: GameReflexState): Promise<GameInputIntent> {
+    if (!this.pending) return { type: 'none' }
+    this.pending = false
+    return { type: 'pointer-tap', x: frame.width / 2, y: frame.height / 2 }
+  }
+
+  reset(): void {
+    this.pending = true
+  }
+}
 
 function agentBrowserEnvironment(options: {
   executablePath: string
@@ -221,7 +251,10 @@ async function startTestServer(): Promise<{ server: Server; baseUrl: string }> {
       <main>
         <h1>Browser Control Test</h1>
         <p>Controlled semantic browser fixture</p>
-        <canvas id="fixture-game" aria-label="Fixture game" width="320" height="180"></canvas>
+        <canvas id="fixture-game" aria-label="Fixture game" tabindex="0" width="320" height="180"></canvas>
+        <p id="game-score">Score: 0</p>
+        <p id="game-state">Round ready</p>
+        <p id="game-key-position">Keyboard position: 0</p>
         <a href="/details">More details</a>
         <button type="button" onclick="location.href='/catalog'">Open catalog</button>
         <label for="message">Message</label>
@@ -234,6 +267,82 @@ async function startTestServer(): Promise<{ server: Server; baseUrl: string }> {
         <p id="result">Waiting for input</p>
       </main>
       <script>
+        const fixtureCanvas = document.querySelector('#fixture-game')
+        const fixtureContext = fixtureCanvas.getContext('2d')
+        const gameScore = document.querySelector('#game-score')
+        const gameState = document.querySelector('#game-state')
+        const gameKeyPosition = document.querySelector('#game-key-position')
+        let fixtureScore = 0
+        let fixtureHolding = false
+        let fixtureGameOver = false
+        let fixtureKeyPosition = 0
+        let fixtureFrame = 0
+        const fixtureTarget = () => ({ x: 160 + fixtureScore * 30, y: 90, radius: 24 })
+        const setGameState = (value) => {
+          gameState.textContent = value
+          fixtureCanvas.setAttribute('aria-label', 'Fixture game · ' + value)
+        }
+        const renderFixture = () => {
+          fixtureContext.fillStyle = '#101827'
+          fixtureContext.fillRect(0, 0, fixtureCanvas.width, fixtureCanvas.height)
+          const target = fixtureTarget()
+          fixtureContext.fillStyle = fixtureGameOver ? '#64748b' : '#ff2fa8'
+          fixtureContext.beginPath()
+          fixtureContext.arc(target.x, target.y, target.radius, 0, Math.PI * 2)
+          fixtureContext.fill()
+          fixtureContext.fillStyle = '#38bdf8'
+          fixtureContext.fillRect(0, 174, fixtureFrame % fixtureCanvas.width, 6)
+          gameScore.textContent = 'Score: ' + fixtureScore
+          gameKeyPosition.textContent = 'Keyboard position: ' + fixtureKeyPosition
+        }
+        const canvasPoint = (event) => {
+          const bounds = fixtureCanvas.getBoundingClientRect()
+          return {
+            x: (event.clientX - bounds.left) * (fixtureCanvas.width / bounds.width),
+            y: (event.clientY - bounds.top) * (fixtureCanvas.height / bounds.height),
+          }
+        }
+        fixtureCanvas.addEventListener('pointerdown', (event) => {
+          fixtureCanvas.focus()
+          if (fixtureGameOver) {
+            fixtureScore = 0
+            fixtureGameOver = false
+            setGameState('Retried')
+            renderFixture()
+            return
+          }
+          const point = canvasPoint(event)
+          const target = fixtureTarget()
+          if (Math.hypot(point.x - target.x, point.y - target.y) > target.radius) {
+            setGameState('Miss')
+            return
+          }
+          fixtureHolding = true
+          setGameState('Holding')
+        })
+        fixtureCanvas.addEventListener('pointerup', () => {
+          if (!fixtureHolding) return
+          fixtureHolding = false
+          fixtureScore += 1
+          fixtureGameOver = fixtureScore >= 3
+          setGameState(fixtureGameOver ? 'Game over' : 'Released')
+          renderFixture()
+        })
+        fixtureCanvas.addEventListener('keydown', (event) => {
+          if (event.key !== 'ArrowRight') return
+          fixtureKeyPosition += 1
+          setGameState('Keyboard moving')
+          renderFixture()
+        })
+        fixtureCanvas.addEventListener('keyup', (event) => {
+          if (event.key === 'ArrowRight') setGameState('Key released')
+        })
+        const animateFixture = () => {
+          fixtureFrame += 2
+          renderFixture()
+          requestAnimationFrame(animateFixture)
+        }
+        animateFixture()
         document.querySelector('#apply').addEventListener('click', () => {
           document.querySelector('#result').textContent = document.querySelector('#message').value
         })
@@ -252,6 +361,33 @@ function closeServer(server: Server): Promise<void> {
   return new Promise((resolveClose, reject) => {
     server.close((error) => (error ? reject(error) : resolveClose()))
   })
+}
+
+async function waitForObservedGameState(
+  adapter: AgentBrowserAdapter,
+  expected: RegExp,
+): Promise<string> {
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    const observation = await adapter.observe()
+    if (expected.test(observation.content)) return observation.content
+    await new Promise((resolveWait) => setTimeout(resolveWait, 50))
+  }
+  assert.fail(`Game fixture did not reach ${expected}`)
+}
+
+async function waitForGameInput(controller: GameSessionController): Promise<void> {
+  for (let attempt = 0; attempt < 300; attempt += 1) {
+    const status = controller.status()
+    if (status.telemetry.inputEvents >= 2) return
+    if (status.state === 'error') {
+      assert.fail(`Game controller failed before input: ${status.lastErrorCode ?? 'unknown'}`)
+    }
+    await new Promise((resolveWait) => setTimeout(resolveWait, 25))
+  }
+  const status = controller.status()
+  assert.fail(
+    `Game controller did not dispatch its first intent (${status.state}:${status.lastErrorCode ?? 'none'})`,
+  )
 }
 
 async function createBrowserBridge(options: {
@@ -533,13 +669,143 @@ async function main(): Promise<void> {
       assert.equal(gameSurfaces.length, 1)
       assert.equal(gameSurfaces[0]?.kind, 'canvas')
       assert.equal(gameSurfaces[0]?.label, 'Fixture game')
-      const realtimeFrame = await realtime.captureFrame(
-        { sessionId: realtimeSession.sessionId, tabId: realtimeSession.tabId },
+      const fixtureReflex = new TapOnceFixtureReflexAdapter()
+      const gameController = new GameSessionController({
+        realtime: () => realtime,
+        reflex: new AdapterBackedGameReflexPolicy(fixtureReflex),
+      })
+      const gamePreparation = await gameController.prepareStart(
+        {
+          goal: 'Tap the visible fixture target once',
+          surfaceId: gameSurfaces[0]?.id,
+          allowedInputs: ['pointer'],
+        },
         new AbortController().signal,
       )
-      assert(realtimeFrame.width <= 768)
-      assert(realtimeFrame.height <= 768)
-      assert(realtimeFrame.image.bytes.length > 0)
+      const startedGame = await gameController.start(
+        gamePreparation.preparationId,
+        'action-10000-11111111-1111-4111-8111-111111111111',
+        new AbortController().signal,
+      )
+      assert.equal(startedGame.state, 'running')
+      await waitForGameInput(gameController)
+      let firstScore: string
+      try {
+        firstScore = await waitForObservedGameState(adapter, /Score: 1/u)
+      } catch (error) {
+        console.error('Browser game fixture controller status', gameController.status())
+        throw error
+      }
+      assert.match(firstScore, /Released/u)
+      const stoppedGame = await gameController.stop()
+      assert.equal(stoppedGame.state, 'stopped')
+      assert((stoppedGame.telemetry.capturedFrames ?? 0) >= 1)
+      assert.equal(stoppedGame.telemetry.inputEvents, 2)
+
+      const surface = gameSurfaces[0]
+      assert(surface)
+      const fixturePoint = (score: number): { x: number; y: number } => ({
+        x: surface.bounds.x + ((160 + score * 30) / 320) * surface.bounds.width,
+        y: surface.bounds.y + 0.5 * surface.bounds.height,
+      })
+      await realtime.dispatchInput(
+        {
+          sessionId: realtimeSession.sessionId,
+          tabId: realtimeSession.tabId,
+          events: [
+            {
+              type: 'pointer-down',
+              x: surface.bounds.x + 4,
+              y: surface.bounds.y + 4,
+              button: 'left',
+            },
+            {
+              type: 'pointer-up',
+              x: surface.bounds.x + 4,
+              y: surface.bounds.y + 4,
+              button: 'left',
+            },
+          ],
+        },
+        new AbortController().signal,
+      )
+      assert.match(await waitForObservedGameState(adapter, /Miss/u), /Score: 1/u)
+
+      await realtime.dispatchInput(
+        {
+          sessionId: realtimeSession.sessionId,
+          tabId: realtimeSession.tabId,
+          events: [{ type: 'key-down', key: 'ArrowRight', code: 'ArrowRight' }],
+        },
+        new AbortController().signal,
+      )
+      assert.match(await waitForObservedGameState(adapter, /Keyboard moving/u), /position: 1/u)
+      await realtime.dispatchInput(
+        {
+          sessionId: realtimeSession.sessionId,
+          tabId: realtimeSession.tabId,
+          events: [{ type: 'key-up', key: 'ArrowRight', code: 'ArrowRight' }],
+        },
+        new AbortController().signal,
+      )
+      await waitForObservedGameState(adapter, /Key released/u)
+
+      const secondTarget = fixturePoint(1)
+      await realtime.dispatchInput(
+        {
+          sessionId: realtimeSession.sessionId,
+          tabId: realtimeSession.tabId,
+          events: [{ type: 'pointer-down', ...secondTarget, button: 'left' }],
+        },
+        new AbortController().signal,
+      )
+      await waitForObservedGameState(adapter, /Holding/u)
+      await realtime.dispatchInput(
+        {
+          sessionId: realtimeSession.sessionId,
+          tabId: realtimeSession.tabId,
+          events: [{ type: 'pointer-up', ...secondTarget, button: 'left' }],
+        },
+        new AbortController().signal,
+      )
+      assert.match(await waitForObservedGameState(adapter, /Score: 2/u), /Released/u)
+
+      const thirdTarget = fixturePoint(2)
+      await realtime.dispatchInput(
+        {
+          sessionId: realtimeSession.sessionId,
+          tabId: realtimeSession.tabId,
+          events: [
+            { type: 'pointer-down', ...thirdTarget, button: 'left' },
+            { type: 'pointer-up', ...thirdTarget, button: 'left' },
+          ],
+        },
+        new AbortController().signal,
+      )
+      assert.match(await waitForObservedGameState(adapter, /Game over/u), /Score: 3/u)
+
+      await realtime.dispatchInput(
+        {
+          sessionId: realtimeSession.sessionId,
+          tabId: realtimeSession.tabId,
+          events: [
+            {
+              type: 'pointer-down',
+              x: surface.bounds.x + 8,
+              y: surface.bounds.y + 8,
+              button: 'left',
+            },
+            {
+              type: 'pointer-up',
+              x: surface.bounds.x + 8,
+              y: surface.bounds.y + 8,
+              button: 'left',
+            },
+          ],
+        },
+        new AbortController().signal,
+      )
+      assert.match(await waitForObservedGameState(adapter, /Retried/u), /Score: 0/u)
       await realtime.dispatchInput(
         {
           sessionId: realtimeSession.sessionId,
@@ -549,13 +815,14 @@ async function main(): Promise<void> {
         new AbortController().signal,
       )
       await realtime.releaseInputs()
-      const details = opened.observation?.interactiveElements.find(
+      const postGameObservation = await adapter.observe()
+      const details = postGameObservation.interactiveElements.find(
         (element) => element.role === 'link' && element.name === 'More details',
       )
       assert(details)
       const detailsResult = await adapter.click({
         kind: 'semantic-ref',
-        observationId: opened.observation.observationId,
+        observationId: postGameObservation.observationId,
         ref: details.ref,
       })
       assert.equal(detailsResult.evidence.operation, 'click')

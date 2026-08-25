@@ -4,6 +4,8 @@ import type {
   GameSessionScope,
   GameStrategy,
 } from '../../shared/browser-game'
+import type { GameReflexAdapter } from './GameReflexAdapter'
+import { ObservingGameReflexAdapter } from './GameReflexAdapter'
 
 export interface GameCalibrationContext {
   goal: string
@@ -25,17 +27,29 @@ export interface GameReflexPolicy {
   reset(): void
 }
 
-/** Safe infrastructure backend used until a calibrated policy selects an input. */
-export class ObservingGameReflexPolicy implements GameReflexPolicy {
-  async initialize(_context: GameCalibrationContext, _signal: AbortSignal): Promise<void> {}
+export class AdapterBackedGameReflexPolicy implements GameReflexPolicy {
+  constructor(private readonly adapter: GameReflexAdapter) {}
 
-  async decide(
-    _frame: GameFrame,
-    _state: GameReflexState,
-    _signal: AbortSignal,
-  ): Promise<GameInputIntent> {
-    return { type: 'none' }
+  initialize(context: GameCalibrationContext, signal: AbortSignal): Promise<void> {
+    return this.adapter.initialize(context, signal)
   }
 
-  reset(): void {}
+  decide(frame: GameFrame, state: GameReflexState, signal: AbortSignal): Promise<GameInputIntent> {
+    return this.adapter.decide(frame, state, signal)
+  }
+
+  updateStrategy(strategy: GameStrategy): void {
+    this.adapter.updateStrategy?.(strategy)
+  }
+
+  reset(): void {
+    this.adapter.reset()
+  }
+}
+
+/** Safe infrastructure backend used until a calibrated Adapter selects an input. */
+export class ObservingGameReflexPolicy extends AdapterBackedGameReflexPolicy {
+  constructor() {
+    super(new ObservingGameReflexAdapter())
+  }
 }

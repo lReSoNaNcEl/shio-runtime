@@ -165,6 +165,8 @@ Architecture and ownership:
   freshness, rate limiting, and teardown. `game.start` creates one delegated
   `browser.game-session` Action whose ID is bound into the exact prepared session
   scope; Full Control may skip confirmation but never scope validation or limits.
+  Reflex technology stays behind a typed `GameReflexAdapter`; an observe-only or
+  test-only backend may not advertise the production capability as ready.
   Character tools remain high-level only;
   never expose frames, coordinates, key-down/up, pointer-down/up, CDP, or arbitrary
   page JavaScript to Character Response Generation.

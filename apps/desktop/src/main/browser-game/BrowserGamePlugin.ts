@@ -10,8 +10,10 @@ import type { BrowserRealtimeControlProvider } from '../../shared/desktop-contro
 import type { PluginHealth, PluginManifest } from '../../shared/plugins'
 import { BROWSER_GAME_CONTROL_PLUGIN_ID } from '../../shared/plugins'
 import type { BundledPlugin, PluginInitializationContext } from '../plugins/PluginRuntime'
+import type { GameReflexAdapter } from './GameReflexAdapter'
+import { ObservingGameReflexAdapter } from './GameReflexAdapter'
 import type { GameReflexPolicy } from './GameReflexPolicy'
-import { ObservingGameReflexPolicy } from './GameReflexPolicy'
+import { AdapterBackedGameReflexPolicy } from './GameReflexPolicy'
 import { GameSessionController } from './GameSessionController'
 
 export const BROWSER_GAME_CONTROL_MANIFEST: PluginManifest = {
@@ -27,6 +29,7 @@ export const BROWSER_GAME_CONTROL_MANIFEST: PluginManifest = {
 interface BrowserGamePluginOptions {
   realtime(): BrowserRealtimeControlProvider | undefined
   reflex?: GameReflexPolicy
+  reflexAdapter?: GameReflexAdapter
   reflexReady?: boolean
 }
 
@@ -39,12 +42,16 @@ export class BrowserGamePlugin implements BundledPlugin {
   private disposed = false
   private readonly listeners = new Set<() => void>()
   private readonly unsubscribeController: () => void
+  private readonly reflexReady: () => boolean
 
   constructor(private readonly options: BrowserGamePluginOptions) {
+    const reflexAdapter = options.reflexAdapter ?? new ObservingGameReflexAdapter()
     this.controller = new GameSessionController({
       realtime: options.realtime,
-      reflex: options.reflex ?? new ObservingGameReflexPolicy(),
+      reflex: options.reflex ?? new AdapterBackedGameReflexPolicy(reflexAdapter),
     })
+    this.reflexReady = () =>
+      options.reflexReady ?? (!options.reflex && reflexAdapter.status().ready)
     this.unsubscribeController = this.controller.onChanged(() => this.publishChanged())
     this.provider = {
       discoverSurfaces: (signal) => this.withActive(() => this.controller.discoverSurfaces(signal)),
@@ -118,7 +125,7 @@ export class BrowserGamePlugin implements BundledPlugin {
     if (status.state === 'error') {
       return { state: 'degraded', detail: status.lastErrorCode, checkedAt: Date.now() }
     }
-    if (this.active && !this.options.reflexReady) {
+    if (this.active && !this.reflexReady()) {
       return {
         state: 'needs-setup',
         detailKey: 'plugins.browserGame.reflexNeedsSetup',

@@ -138,6 +138,17 @@ async function main(): Promise<void> {
   assert.deepEqual(captured.viewport, { width: 1_280, height: 720, pageScaleFactor: 1 })
   assert.deepEqual(JSON.parse(socket.sent[0] ?? ''), { type: 'ack', seq: 41 })
 
+  socket.emit('message', frame(42, now))
+  socket.emit('message', frame(43, now))
+  const latestCapture = await adapter.captureFrame(
+    { sessionId: binding.sessionId, tabId: binding.tabId },
+    new AbortController().signal,
+  )
+  assert.equal(latestCapture.frameId, 43)
+  const raceAcks = socket.sent.map((message) => JSON.parse(message) as Record<string, unknown>)
+  assert(raceAcks.some((message) => message.type === 'ack' && message.seq === 42))
+  assert(raceAcks.some((message) => message.type === 'ack' && message.seq === 43))
+
   const beforeInvalidBatch = socket.sent.length
   await assert.rejects(
     () =>

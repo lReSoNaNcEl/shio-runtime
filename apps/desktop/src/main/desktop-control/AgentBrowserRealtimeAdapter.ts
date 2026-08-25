@@ -543,6 +543,7 @@ export class AgentBrowserRealtimeAdapter implements BrowserRealtimeControlProvid
       this.acknowledge(frame.frameId)
       return
     }
+    if (this.pendingFrame) this.acknowledge(this.pendingFrame.frameId)
     this.pendingFrame = frame
   }
 
