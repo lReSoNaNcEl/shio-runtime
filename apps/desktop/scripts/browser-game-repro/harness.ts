@@ -25,6 +25,8 @@ import {
   type GameSemanticEvent,
 } from '../../src/shared/browser-game'
 import type {
+  BrowserGameBlockerKind,
+  BrowserGameEnvironmentInspection,
   BrowserGameSurfaceCandidate,
   BrowserRealtimeControlProvider,
   BrowserRealtimeFrame,
@@ -118,14 +120,37 @@ class TestRealtime implements BrowserRealtimeControlProvider {
   }
   readonly inputs: BrowserRealtimeInputBatch[] = []
   releaseCount = 0
+  blocker: BrowserGameBlockerKind | undefined
+  environmentError: Error | undefined
+  deferNextEnvironmentInspection = false
+  private environmentResolver: ((inspection: BrowserGameEnvironmentInspection) => void) | null =
+    null
   private waiter: FrameWaiter | null = null
 
   session(): BrowserRealtimeSession | null {
     return this.binding ? { ...this.binding } : null
   }
 
-  async inspectGameSurfaces(): Promise<readonly BrowserGameSurfaceCandidate[]> {
-    return [this.surface]
+  async inspectGameEnvironment() {
+    if (this.environmentError) throw this.environmentError
+    if (this.deferNextEnvironmentInspection) {
+      this.deferNextEnvironmentInspection = false
+      return new Promise<BrowserGameEnvironmentInspection>((resolve) => {
+        this.environmentResolver = resolve
+      })
+    }
+    return { surfaces: [this.surface], ...(this.blocker ? { blocker: this.blocker } : {}) }
+  }
+
+  environmentInspectionPending(): boolean {
+    return this.environmentResolver !== null
+  }
+
+  resolveEnvironmentInspection(blocker?: BrowserGameBlockerKind): void {
+    assert(this.environmentResolver, 'environment inspection must be pending')
+    const resolve = this.environmentResolver
+    this.environmentResolver = null
+    resolve({ surfaces: [this.surface], ...(blocker ? { blocker } : {}) })
   }
 
   captureFrame(_request: unknown, signal: AbortSignal): Promise<BrowserRealtimeFrame> {
@@ -249,6 +274,26 @@ async function main(): Promise<void> {
   const resumed = await controller.resume()
   assert.equal(resumed.state, 'running')
   await waitUntil(() => realtime.capturePending())
+  now += 2_001
+  realtime.blocker = 'authentication'
+  realtime.emit({
+    sessionId: realtime.binding?.sessionId ?? '',
+    tabId: realtime.binding?.tabId ?? '',
+    frameId: 2,
+    capturedAt: now,
+    width: 640,
+    height: 360,
+    viewport: { width: 1_280, height: 720, pageScaleFactor: 1 },
+    image: { mimeType: 'image/jpeg', bytes },
+  })
+  await waitUntil(() => controller.status().state === 'waiting-user')
+  assert.equal(controller.status().waitingReason, 'authentication')
+  assert(gameEvents.some((event) => event.type === 'waiting-user'))
+  realtime.blocker = undefined
+  const resumedAfterIntervention = await controller.resume()
+  assert.equal(resumedAfterIntervention.state, 'running')
+  assert.equal(resumedAfterIntervention.waitingReason, undefined)
+  await waitUntil(() => realtime.capturePending())
   realtime.binding = realtime.binding ? { ...realtime.binding, tabId: 'tab-other' } : null
   await controller.pause()
   await assert.rejects(
@@ -302,6 +347,101 @@ async function main(): Promise<void> {
   assert.equal(staleRealtime.inputs.length, 0)
   await staleController.pause()
   assert(staleRealtime.releaseCount >= 1)
+
+  const blockedRealtime = new TestRealtime()
+  blockedRealtime.blocker = 'captcha'
+  const blockedReflex = new TestReflexAdapter()
+  const blockedController = new GameSessionController({
+    realtime: () => blockedRealtime,
+    reflex: new AdapterBackedGameReflexPolicy(blockedReflex),
+  })
+  const blockedPreparation = await blockedController.prepareStart(
+    { goal: 'Wait for manual CAPTCHA completion' },
+    new AbortController().signal,
+  )
+  const blockedStart = await blockedController.start(
+    blockedPreparation.preparationId,
+    'action-30000-33333333-3333-4333-8333-333333333333',
+    new AbortController().signal,
+  )
+  assert.equal(blockedStart.state, 'waiting-user')
+  assert.equal(blockedStart.waitingReason, 'captcha')
+  assert.equal(blockedReflex.initialized, null)
+  assert(blockedRealtime.releaseCount >= 1)
+  blockedRealtime.blocker = undefined
+  assert.equal((await blockedController.resume()).state, 'running')
+  assert(blockedReflex.initialized)
+  await waitUntil(() => blockedRealtime.capturePending())
+  await blockedController.stop()
+
+  let failedInspectionNow = 30_000
+  const failedInspectionRealtime = new TestRealtime()
+  const failedInspectionController = new GameSessionController({
+    realtime: () => failedInspectionRealtime,
+    reflex: new AdapterBackedGameReflexPolicy(new TestReflexAdapter()),
+    now: () => failedInspectionNow,
+  })
+  const failedInspectionPreparation = await failedInspectionController.prepareStart(
+    { goal: 'Stop safely when environment trust is lost' },
+    new AbortController().signal,
+  )
+  await failedInspectionController.start(
+    failedInspectionPreparation.preparationId,
+    'action-40000-44444444-4444-4444-8444-444444444444',
+    new AbortController().signal,
+  )
+  await waitUntil(() => failedInspectionRealtime.capturePending())
+  failedInspectionNow += 2_001
+  failedInspectionRealtime.environmentError = new Error('inspection unavailable')
+  failedInspectionRealtime.emit({
+    sessionId: failedInspectionRealtime.binding?.sessionId ?? '',
+    tabId: failedInspectionRealtime.binding?.tabId ?? '',
+    frameId: 4,
+    capturedAt: failedInspectionNow,
+    width: 640,
+    height: 360,
+    viewport: { width: 1_280, height: 720, pageScaleFactor: 1 },
+    image: { mimeType: 'image/jpeg', bytes },
+  })
+  await waitUntil(() => failedInspectionController.status().state === 'error')
+  assert(failedInspectionRealtime.releaseCount >= 1)
+
+  let inspectionRaceNow = 40_000
+  const inspectionRaceRealtime = new TestRealtime()
+  const inspectionRaceController = new GameSessionController({
+    realtime: () => inspectionRaceRealtime,
+    reflex: new AdapterBackedGameReflexPolicy(new TestReflexAdapter()),
+    now: () => inspectionRaceNow,
+  })
+  const inspectionRacePreparation = await inspectionRaceController.prepareStart(
+    { goal: 'Ignore obsolete environment inspection generations' },
+    new AbortController().signal,
+  )
+  await inspectionRaceController.start(
+    inspectionRacePreparation.preparationId,
+    'action-50000-55555555-5555-4555-8555-555555555555',
+    new AbortController().signal,
+  )
+  await waitUntil(() => inspectionRaceRealtime.capturePending())
+  inspectionRaceNow += 2_001
+  inspectionRaceRealtime.deferNextEnvironmentInspection = true
+  inspectionRaceRealtime.emit({
+    sessionId: inspectionRaceRealtime.binding?.sessionId ?? '',
+    tabId: inspectionRaceRealtime.binding?.tabId ?? '',
+    frameId: 5,
+    capturedAt: inspectionRaceNow,
+    width: 640,
+    height: 360,
+    viewport: { width: 1_280, height: 720, pageScaleFactor: 1 },
+    image: { mimeType: 'image/jpeg', bytes },
+  })
+  await waitUntil(() => inspectionRaceRealtime.environmentInspectionPending())
+  await inspectionRaceController.pause()
+  assert.equal((await inspectionRaceController.resume()).state, 'running')
+  inspectionRaceRealtime.resolveEnvironmentInspection('authentication')
+  await new Promise((resolve) => setImmediate(resolve))
+  assert.equal(inspectionRaceController.status().state, 'running')
+  await inspectionRaceController.stop()
 
   const slowExtractor = new SlowEventExtractor()
   const extractedValues: number[] = []

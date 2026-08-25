@@ -1,6 +1,6 @@
 import { z } from 'zod'
 
-import type { BrowserGameSurfaceCandidate } from '../desktop-control'
+import type { BrowserGameBlockerKind, BrowserGameSurfaceCandidate } from '../desktop-control'
 
 export const GAME_SESSION_DEFAULT_DURATION_MS = 5 * 60 * 1_000
 export const GAME_SESSION_MAX_DURATION_MS = 30 * 60 * 1_000
@@ -178,6 +178,7 @@ export interface GameSessionTelemetry {
 export interface BrowserGameStatus {
   state: GameSessionState
   scope?: GameSessionScope
+  waitingReason?: BrowserGameBlockerKind
   strategy: GameStrategy
   telemetry: GameSessionTelemetry
   lastErrorCode?: string

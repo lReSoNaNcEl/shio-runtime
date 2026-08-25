@@ -5,6 +5,8 @@ import { mkdir } from 'node:fs/promises'
 import {
   BROWSER_OBSERVATION_CONTENT_MAX_CHARS,
   BROWSER_OBSERVATION_MAX_INTERACTIVE_ELEMENTS,
+  type BrowserGameBlockerKind,
+  type BrowserGameEnvironmentInspection,
   type BrowserGameSurfaceCandidate,
   type BrowserInteractiveElement,
   type BrowserInteractiveRole,
@@ -74,7 +76,7 @@ interface JsonEnvelope {
   error?: unknown
 }
 
-const GAME_SURFACE_INSPECTION_SCRIPT = `(() => JSON.stringify(Array.from(document.querySelectorAll('canvas,[role="application"],[data-game-root]')).slice(0, 8).map((element, index) => { const rect = element.getBoundingClientRect(); return { index, tag: element.tagName.toLowerCase(), role: element.getAttribute('role'), label: element.getAttribute('aria-label') || element.getAttribute('title') || element.id || undefined, x: rect.x, y: rect.y, width: rect.width, height: rect.height, visible: rect.width > 0 && rect.height > 0 && rect.bottom > 0 && rect.right > 0 && rect.top < innerHeight && rect.left < innerWidth }; }).filter((candidate) => candidate.visible)))()`
+const GAME_ENVIRONMENT_INSPECTION_SCRIPT = `(() => { const visible = (element) => { const rect = element.getBoundingClientRect(); const style = getComputedStyle(element); return rect.width > 0 && rect.height > 0 && rect.bottom > 0 && rect.right > 0 && rect.top < innerHeight && rect.left < innerWidth && style.visibility !== 'hidden' && style.display !== 'none'; }; const hasVisible = (selector) => Array.from(document.querySelectorAll(selector)).some(visible); const blocker = hasVisible('iframe[src*="recaptcha"],iframe[src*="hcaptcha"],.g-recaptcha,.h-captcha,textarea[name="g-recaptcha-response"],textarea[name="h-captcha-response"]') ? 'captcha' : hasVisible('iframe[src*="challenges.cloudflare.com"],.cf-turnstile,input[name="cf-turnstile-response"],form[action*="/challenge"]') ? 'anti-bot' : hasVisible('input[type="password"],input[autocomplete="current-password"],input[autocomplete="new-password"]') ? 'authentication' : undefined; const surfaces = Array.from(document.querySelectorAll('canvas,[role="application"],[data-game-root]')).slice(0, 8).map((element, index) => { const rect = element.getBoundingClientRect(); return { index, tag: element.tagName.toLowerCase(), role: element.getAttribute('role'), label: element.getAttribute('aria-label') || element.getAttribute('title') || element.id || undefined, x: rect.x, y: rect.y, width: rect.width, height: rect.height, visible: visible(element) }; }).filter((candidate) => candidate.visible); return JSON.stringify({ surfaces, blocker }); })()`
 
 const INTERACTIVE_ROLES = new Set<BrowserInteractiveRole>([
   'button',
@@ -150,17 +152,28 @@ function findString(value: unknown, keys: readonly string[]): string | undefined
   return undefined
 }
 
-function parseGameSurfaceCandidates(output: string): readonly BrowserGameSurfaceCandidate[] {
+function parseGameEnvironment(output: string): BrowserGameEnvironmentInspection {
   const serialized = findString(parseEnvelope(output).data, ['value', 'result'])
-  if (!serialized || serialized.length > 20_000) return []
+  if (!serialized || serialized.length > 20_000) {
+    throw new BrowserAutomationError('OBSERVATION_FAILED', publicMessage('OBSERVATION_FAILED'))
+  }
   let value: unknown
   try {
     value = JSON.parse(serialized) as unknown
   } catch {
-    return []
+    throw new BrowserAutomationError('OBSERVATION_FAILED', publicMessage('OBSERVATION_FAILED'))
   }
-  if (!Array.isArray(value)) return []
-  return value.flatMap((candidate): BrowserGameSurfaceCandidate[] => {
+  if (!isRecord(value) || !Array.isArray(value.surfaces)) {
+    throw new BrowserAutomationError('OBSERVATION_FAILED', publicMessage('OBSERVATION_FAILED'))
+  }
+  const blockerKinds = new Set<BrowserGameBlockerKind>(['captcha', 'anti-bot', 'authentication'])
+  if (value.blocker !== undefined && !blockerKinds.has(value.blocker as BrowserGameBlockerKind)) {
+    throw new BrowserAutomationError('OBSERVATION_FAILED', publicMessage('OBSERVATION_FAILED'))
+  }
+  const blocker = blockerKinds.has(value.blocker as BrowserGameBlockerKind)
+    ? (value.blocker as BrowserGameBlockerKind)
+    : undefined
+  const surfaces = value.surfaces.flatMap((candidate): BrowserGameSurfaceCandidate[] => {
     if (!isRecord(candidate)) return []
     const index = typeof candidate.index === 'number' ? candidate.index : -1
     const x = typeof candidate.x === 'number' ? candidate.x : Number.NaN
@@ -189,6 +202,7 @@ function parseGameSurfaceCandidates(output: string): readonly BrowserGameSurface
       },
     ]
   })
+  return { surfaces, ...(blocker ? { blocker } : {}) }
 }
 
 function findHttpUrl(value: unknown): string | undefined {
@@ -347,7 +361,7 @@ export class AgentBrowserAdapter {
     this.realtime = new AgentBrowserRealtimeAdapter({
       session: () => this.sessionSnapshot(),
       runStreamCommand: (args, signal) => this.command('stream', args, 5_000, signal),
-      inspectGameSurfaces: (signal) => this.inspectGameSurfaces(signal),
+      inspectGameEnvironment: (signal) => this.inspectGameEnvironment(signal),
     })
   }
 
@@ -365,12 +379,12 @@ export class AgentBrowserAdapter {
     return this.realtime
   }
 
-  inspectGameSurfaces(signal: AbortSignal): Promise<readonly BrowserGameSurfaceCandidate[]> {
+  inspectGameEnvironment(signal: AbortSignal): Promise<BrowserGameEnvironmentInspection> {
     return this.enqueue(async () => {
       this.assertActiveSession()
-      const encoded = Buffer.from(GAME_SURFACE_INSPECTION_SCRIPT, 'utf8').toString('base64')
-      return parseGameSurfaceCandidates(
-        await this.command('inspect-game-surfaces', ['eval', '-b', encoded], 15_000, signal),
+      const encoded = Buffer.from(GAME_ENVIRONMENT_INSPECTION_SCRIPT, 'utf8').toString('base64')
+      return parseGameEnvironment(
+        await this.command('inspect-game-environment', ['eval', '-b', encoded], 15_000, signal),
       )
     })
   }

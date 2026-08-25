@@ -227,6 +227,7 @@ function browserObservationProjection(observation: BrowserObservation | null): u
 function gameStatusProjection(status: BrowserGameStatus): unknown {
   return {
     state: status.state,
+    waitingReason: status.waitingReason,
     strategy: status.strategy,
     ...(status.scope
       ? {

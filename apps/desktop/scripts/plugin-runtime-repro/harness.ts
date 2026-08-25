@@ -95,7 +95,7 @@ class FakePlugin implements BundledPlugin {
   getBrowserRealtimeControlProvider(): BrowserRealtimeControlProvider {
     return {
       session: () => null,
-      inspectGameSurfaces: async () => [],
+      inspectGameEnvironment: async () => ({ surfaces: [] }),
       captureFrame: async () => {
         throw new Error('TEST_BROWSER_REALTIME_UNAVAILABLE')
       },

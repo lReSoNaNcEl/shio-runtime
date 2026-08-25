@@ -4,7 +4,7 @@ import {
   BROWSER_REALTIME_MAX_FRAME_BYTES,
   BROWSER_REALTIME_MAX_FRAME_EDGE,
   BROWSER_REALTIME_MAX_INPUT_BATCH_SIZE,
-  type BrowserGameSurfaceCandidate,
+  type BrowserGameEnvironmentInspection,
   type BrowserRealtimeControlProvider,
   type BrowserRealtimeFrame,
   type BrowserRealtimeFrameCaptureRequest,
@@ -50,7 +50,7 @@ interface StreamSocket {
 export interface AgentBrowserRealtimeAdapterOptions {
   session(): BrowserSessionState | null
   runStreamCommand(args: readonly string[], signal?: AbortSignal): Promise<string>
-  inspectGameSurfaces(signal: AbortSignal): Promise<readonly BrowserGameSurfaceCandidate[]>
+  inspectGameEnvironment(signal: AbortSignal): Promise<BrowserGameEnvironmentInspection>
   createSocket?: (url: string) => StreamSocket
   now?: () => number
 }
@@ -290,9 +290,9 @@ export class AgentBrowserRealtimeAdapter implements BrowserRealtimeControlProvid
     return current
   }
 
-  inspectGameSurfaces(signal: AbortSignal): Promise<readonly BrowserGameSurfaceCandidate[]> {
+  inspectGameEnvironment(signal: AbortSignal): Promise<BrowserGameEnvironmentInspection> {
     if (!this.session()) return Promise.reject(new BrowserRealtimeError('NO_ACTIVE_SESSION'))
-    return this.options.inspectGameSurfaces(signal)
+    return this.options.inspectGameEnvironment(signal)
   }
 
   async captureFrame(

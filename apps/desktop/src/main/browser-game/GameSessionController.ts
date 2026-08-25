@@ -20,6 +20,8 @@ import {
   gameSemanticEventSchema,
 } from '../../shared/browser-game'
 import type {
+  BrowserGameBlockerKind,
+  BrowserGameEnvironmentInspection,
   BrowserGameSurfaceCandidate,
   BrowserRealtimeControlProvider,
   BrowserRealtimeInputEvent,
@@ -36,6 +38,7 @@ import type { GameReflexPolicy } from './GameReflexPolicy'
 
 const PREPARATION_TTL_MS = 30_000
 const LATENCY_SAMPLE_LIMIT = 240
+const GAME_ENVIRONMENT_INSPECTION_INTERVAL_MS = 2_000
 const ALLOWED_GAME_KEYS = new Set([
   'ArrowDown',
   'ArrowLeft',
@@ -66,6 +69,10 @@ interface ActiveGameSession {
   realtime: BrowserRealtimeControlProvider
   loopTask: Promise<void> | null
   inputTimestamps: number[]
+  reflexInitialized: boolean
+  hasRun: boolean
+  environmentInspectionInFlight: boolean
+  nextEnvironmentInspectionAt: number
 }
 
 interface MutableTelemetry extends GameSessionTelemetry {
@@ -145,6 +152,15 @@ function visibleSurface(
   return { ...candidate, bounds: { x: left, y: top, width: right - left, height: bottom - top } }
 }
 
+function sameBounds(
+  current: BrowserGameSurfaceCandidate['bounds'],
+  expected: BrowserGameSurfaceCandidate['bounds'],
+): boolean {
+  return (['x', 'y', 'width', 'height'] as const).every(
+    (key) => Math.abs(current[key] - expected[key]) <= 1,
+  )
+}
+
 export class GameSessionController {
   private preparation: GameStartPreparation | null = null
   private active: ActiveGameSession | null = null
@@ -152,6 +168,7 @@ export class GameSessionController {
   private strategy: GameStrategy = 'balanced'
   private telemetry = emptyTelemetry()
   private lastErrorCode: string | undefined
+  private waitingReason: BrowserGameBlockerKind | undefined
   private readonly listeners = new Set<() => void>()
   private readonly eventLane: GameEventExtractionLane | null
 
@@ -176,7 +193,7 @@ export class GameSessionController {
     if (!session) throw new BrowserGameError('GAME_CAPABILITY_UNAVAILABLE')
     const viewport = await realtime.getViewport()
     if (signal.aborted) throw signal.reason ?? new BrowserGameError('GAME_CAPABILITY_UNAVAILABLE')
-    return (await realtime.inspectGameSurfaces(signal)).flatMap(
+    return (await realtime.inspectGameEnvironment(signal)).surfaces.flatMap(
       (candidate): BrowserGameSurfaceCandidate[] => {
         const visible = visibleSurface(candidate, viewport)
         return visible ? [visible] : []
@@ -283,20 +300,33 @@ export class GameSessionController {
       realtime,
       loopTask: null,
       inputTimestamps: [],
+      reflexInitialized: false,
+      hasRun: false,
+      environmentInspectionInFlight: false,
+      nextEnvironmentInspectionAt: now + GAME_ENVIRONMENT_INSPECTION_INTERVAL_MS,
     }
+    const active = this.active
     this.state = 'starting'
     this.strategy = preparation.strategy
     this.lastErrorCode = undefined
+    this.waitingReason = undefined
     this.telemetry = { ...emptyTelemetry(), startedAt: now }
     this.eventLane?.reset()
     this.publishChanged()
     const abortStart = (): void => controller.abort(signal.reason)
     signal.addEventListener('abort', abortStart, { once: true })
     try {
+      const environment = await realtime.inspectGameEnvironment(controller.signal)
+      if (environment.blocker) {
+        await this.enterWaitingUser(active, environment.blocker)
+        return this.status()
+      }
+      this.assertEnvironmentScope(environment, scope)
       await this.options.reflex.initialize(
         { goal: preparation.goal, strategy: preparation.strategy, scope },
         controller.signal,
       )
+      active.reflexInitialized = true
     } catch (error) {
       await realtime.releaseInputs()
       this.options.reflex.reset()
@@ -323,19 +353,22 @@ export class GameSessionController {
       throw controller.signal.reason ?? new BrowserGameError('GAME_LOOP_FAILED')
     }
     this.state = 'running'
-    const active = this.active
     active.loopTask = this.runLoop(active).catch(async (error) => {
       if (!active.controller.signal.aborted) await this.failSession(error)
     })
+    active.hasRun = true
     this.publishGameEvent(scope, 'game-started', 'normal')
     this.publishChanged()
     return this.status()
   }
 
   async pause(): Promise<BrowserGameStatus> {
-    const active = this.requireActive(['running'])
+    const active = this.requireActive(['running', 'waiting-user'])
     this.state = 'paused'
-    active.controller.abort(new BrowserGameError('GAME_SESSION_NOT_RUNNING'))
+    this.waitingReason = undefined
+    if (!active.controller.signal.aborted) {
+      active.controller.abort(new BrowserGameError('GAME_SESSION_NOT_RUNNING'))
+    }
     await active.loopTask
     active.loopTask = null
     await active.realtime.releaseInputs()
@@ -351,11 +384,41 @@ export class GameSessionController {
       throw new BrowserGameError('GAME_SCOPE_CHANGED')
     }
     active.controller = new AbortController()
+    active.environmentInspectionInFlight = false
+    this.state = 'starting'
+    this.waitingReason = undefined
+    this.publishChanged()
+    try {
+      const environment = await active.realtime.inspectGameEnvironment(active.controller.signal)
+      if (environment.blocker) {
+        await this.enterWaitingUser(active, environment.blocker)
+        return this.status()
+      }
+      this.assertEnvironmentScope(environment, active.scope)
+      if (!active.reflexInitialized) {
+        await this.options.reflex.initialize(
+          { goal: active.goal, strategy: active.strategy, scope: active.scope },
+          active.controller.signal,
+        )
+        active.reflexInitialized = true
+      }
+    } catch (error) {
+      await this.failSession(error)
+      throw error
+    }
+    active.nextEnvironmentInspectionAt = this.now() + GAME_ENVIRONMENT_INSPECTION_INTERVAL_MS
     this.state = 'running'
     active.loopTask = this.runLoop(active).catch(async (error) => {
       if (!active.controller.signal.aborted) await this.failSession(error)
     })
-    this.publishGameEvent(active.scope, 'game-resumed', 'ambient', { reason: 'user' })
+    const resumed = active.hasRun
+    this.publishGameEvent(
+      active.scope,
+      resumed ? 'game-resumed' : 'game-started',
+      resumed ? 'ambient' : 'normal',
+      { reason: 'user' },
+    )
+    active.hasRun = true
     this.publishChanged()
     return this.status()
   }
@@ -379,6 +442,7 @@ export class GameSessionController {
     this.publishGameEvent(active.scope, 'game-stopped', 'normal', { reason })
     this.active = null
     this.state = 'stopped'
+    this.waitingReason = undefined
     this.telemetry.stoppedAt = this.now()
     this.publishChanged()
     return this.status()
@@ -396,6 +460,9 @@ export class GameSessionController {
     return {
       state: this.state,
       ...(this.active ? { scope: this.copyScope(this.active.scope) } : {}),
+      ...(this.state === 'waiting-user' && this.waitingReason
+        ? { waitingReason: this.waitingReason }
+        : {}),
       strategy: this.strategy,
       telemetry: boundedStatusTelemetry(this.telemetry),
       ...(this.lastErrorCode ? { lastErrorCode: this.lastErrorCode } : {}),
@@ -416,6 +483,7 @@ export class GameSessionController {
       if (!sameBinding(realtime.session(), active.scope)) {
         throw new BrowserGameError('GAME_SCOPE_CHANGED')
       }
+      this.scheduleEnvironmentInspection(active)
       const captureStarted = this.now()
       const source = await realtime.captureFrame(
         {
@@ -459,6 +527,79 @@ export class GameSessionController {
       recordSample(this.telemetry.inputLatencies, this.now() - inputStarted)
       this.telemetry.inputEvents += events.length
       this.publishChanged()
+    }
+  }
+
+  private scheduleEnvironmentInspection(active: ActiveGameSession): void {
+    const now = this.now()
+    if (active.environmentInspectionInFlight || now < active.nextEnvironmentInspectionAt) return
+    active.environmentInspectionInFlight = true
+    active.nextEnvironmentInspectionAt = now + GAME_ENVIRONMENT_INSPECTION_INTERVAL_MS
+    void this.inspectEnvironment(active)
+  }
+
+  private async inspectEnvironment(active: ActiveGameSession): Promise<void> {
+    const controller = active.controller
+    try {
+      const environment = await active.realtime.inspectGameEnvironment(controller.signal)
+      if (
+        this.active !== active ||
+        active.controller !== controller ||
+        this.state !== 'running' ||
+        controller.signal.aborted
+      ) {
+        return
+      }
+      if (environment.blocker) {
+        await this.enterWaitingUser(active, environment.blocker)
+        return
+      }
+      this.assertEnvironmentScope(environment, active.scope)
+    } catch (error) {
+      if (
+        this.active !== active ||
+        active.controller !== controller ||
+        this.state !== 'running' ||
+        controller.signal.aborted
+      ) {
+        return
+      }
+      await this.failSession(error)
+    } finally {
+      if (active.controller === controller) active.environmentInspectionInFlight = false
+    }
+  }
+
+  private async enterWaitingUser(
+    active: ActiveGameSession,
+    reason: BrowserGameBlockerKind,
+  ): Promise<void> {
+    if (this.active !== active) return
+    this.state = 'waiting-user'
+    this.waitingReason = reason
+    active.controller.abort(new BrowserGameError('GAME_SESSION_NOT_RUNNING'))
+    await active.loopTask
+    active.loopTask = null
+    active.inputTimestamps = []
+    await active.realtime.releaseInputs()
+    this.eventLane?.reset()
+    this.publishGameEvent(active.scope, 'waiting-user', 'blocking', {
+      label: reason,
+      reason: 'blocked',
+    })
+    this.publishChanged()
+  }
+
+  private assertEnvironmentScope(
+    environment: BrowserGameEnvironmentInspection,
+    scope: GameSessionScope,
+  ): void {
+    const current = environment.surfaces.find(
+      (candidate) =>
+        candidate.id === scope.gameSurface.id && candidate.kind === scope.gameSurface.kind,
+    )
+    if (!current || !sameBounds(current.bounds, scope.gameSurface.bounds)) {
+      throw new BrowserGameError('GAME_SCOPE_CHANGED')
     }
   }
 
@@ -574,6 +715,7 @@ export class GameSessionController {
     this.publishGameEvent(active.scope, 'game-stopped', 'normal', { reason: 'expired' })
     this.active = null
     this.state = 'stopped'
+    this.waitingReason = undefined
     this.telemetry.stoppedAt = this.now()
     this.publishChanged()
   }
@@ -581,12 +723,14 @@ export class GameSessionController {
   private async failSession(error: unknown): Promise<void> {
     const active = this.active
     this.lastErrorCode = error instanceof BrowserGameError ? error.code : 'GAME_LOOP_FAILED'
+    active?.controller.abort(error)
     await active?.realtime.releaseInputs()
     this.options.reflex.reset()
     this.eventLane?.reset()
     if (active) this.publishGameEvent(active.scope, 'game-error', 'important', { reason: 'error' })
     this.active = null
     this.state = 'error'
+    this.waitingReason = undefined
     this.telemetry.stoppedAt = this.now()
     this.publishChanged()
   }

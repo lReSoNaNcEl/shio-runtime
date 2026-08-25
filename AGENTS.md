@@ -175,6 +175,11 @@ Architecture and ownership:
   never enter renderer state, diagnostics, Memory, or conversation. Commentary
   continues through Experience, Behavior, and Conversation Admission and may not
   pause the game loop; active user conversation and audio remain authoritative.
+- CAPTCHA, anti-bot, and authentication-wall detection for a Game Session uses only
+  fixed Main-owned structural inspection. Page or Character text may not supply
+  selectors, scripts, or bypass instructions. A blocker moves the session to
+  `waiting-user`, releases every held input, and requires a fresh scope inspection
+  before resume; Shio never attempts automated CAPTCHA bypass.
 - Browser use inside a Character turn is a bounded provider-neutral tool loop, not
   a new Runtime. Character reasoning decides semantically whether web interaction
   materially helps the current goal; do not add a phrase or keyword browser router.

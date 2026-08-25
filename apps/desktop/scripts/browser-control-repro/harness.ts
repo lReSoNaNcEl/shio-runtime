@@ -213,6 +213,24 @@ async function startTestServer(): Promise<{ server: Server; baseUrl: string }> {
       response.end('<!doctype html><title>Second tab</title><h1>Second tab verified</h1>')
       return
     }
+    if (request.url === '/captcha') {
+      response.end(
+        '<!doctype html><title>CAPTCHA fixture</title><div class="g-recaptcha" style="width:320px;height:100px"></div>',
+      )
+      return
+    }
+    if (request.url === '/anti-bot') {
+      response.end(
+        '<!doctype html><title>Anti-bot fixture</title><div class="cf-turnstile" style="width:320px;height:100px"></div>',
+      )
+      return
+    }
+    if (request.url === '/authentication') {
+      response.end(
+        '<!doctype html><title>Authentication fixture</title><label>Password <input type="password" /></label>',
+      )
+      return
+    }
     if (request.url === '/redirect') {
       const address = server.address()
       assert(address && typeof address === 'object')
@@ -665,7 +683,9 @@ async function main(): Promise<void> {
       const realtime = adapter.getRealtimeControlProvider()
       const realtimeSession = realtime.session()
       assert(realtimeSession)
-      const gameSurfaces = await realtime.inspectGameSurfaces(new AbortController().signal)
+      const gameEnvironment = await realtime.inspectGameEnvironment(new AbortController().signal)
+      const gameSurfaces = gameEnvironment.surfaces
+      assert.equal(gameEnvironment.blocker, undefined)
       assert.equal(gameSurfaces.length, 1)
       assert.equal(gameSurfaces[0]?.kind, 'canvas')
       assert.equal(gameSurfaces[0]?.label, 'Fixture game')
@@ -815,6 +835,18 @@ async function main(): Promise<void> {
         new AbortController().signal,
       )
       await realtime.releaseInputs()
+      for (const [path, blocker] of [
+        ['/captcha', 'captcha'],
+        ['/anti-bot', 'anti-bot'],
+        ['/authentication', 'authentication'],
+      ] as const) {
+        await adapter.open(`${testServer.baseUrl}${path}`)
+        assert.equal(
+          (await realtime.inspectGameEnvironment(new AbortController().signal)).blocker,
+          blocker,
+        )
+      }
+      await adapter.open(testServer.baseUrl)
       const postGameObservation = await adapter.observe()
       const details = postGameObservation.interactiveElements.find(
         (element) => element.role === 'link' && element.name === 'More details',

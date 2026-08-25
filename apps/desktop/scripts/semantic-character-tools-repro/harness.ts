@@ -609,6 +609,11 @@ async function browserGameStartUsesPreparedActionScope(): Promise<void> {
     ...idleStatus,
     state: 'running',
   }
+  const waitingStatus: BrowserGameStatus = {
+    ...idleStatus,
+    state: 'waiting-user',
+    waitingReason: 'captcha',
+  }
   const preparation: GameStartPreparation = {
     preparationId: 'game-preparation-00000000-0000-4000-8000-000000000001',
     goal: 'Win the fixture round',
@@ -643,7 +648,7 @@ async function browserGameStartUsesPreparedActionScope(): Promise<void> {
     resume: async () => runningStatus,
     stop: async () => ({ ...idleStatus, state: 'stopped' }),
     updateStrategy: () => runningStatus,
-    status: () => idleStatus,
+    status: () => waitingStatus,
   }
   const registry = new CharacterToolRegistry({
     projectAvailable: false,
@@ -664,7 +669,7 @@ async function browserGameStartUsesPreparedActionScope(): Promise<void> {
       return { outcome: 'success', authorization: 'confirmed', status: runningStatus }
     },
   })
-  dispatcher.registerPlannedTools(['game.start'])
+  dispatcher.registerPlannedTools(['game.start', 'game.status'])
   const result = await dispatcher.execute('game.start', { goal: 'Win the fixture round' })
   assert.deepEqual(preparedGoals, ['Win the fixture round'])
   assert.deepEqual(actions, [
@@ -676,6 +681,9 @@ async function browserGameStartUsesPreparedActionScope(): Promise<void> {
   assert.equal(JSON.parse(result.content).data.game.state, 'running')
   assert.equal(result.content.includes('authorizationActionId'), false)
   assert.equal(result.content.includes('bounds'), false)
+  const statusResult = await dispatcher.execute('game.status', {})
+  assert.equal(JSON.parse(statusResult.content).data.game.state, 'waiting-user')
+  assert.equal(JSON.parse(statusResult.content).data.game.waitingReason, 'captcha')
 }
 
 async function main(): Promise<void> {

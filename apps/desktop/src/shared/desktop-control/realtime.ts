@@ -35,6 +35,13 @@ export interface BrowserGameSurfaceCandidate {
   }
 }
 
+export type BrowserGameBlockerKind = 'captcha' | 'anti-bot' | 'authentication'
+
+export interface BrowserGameEnvironmentInspection {
+  surfaces: readonly BrowserGameSurfaceCandidate[]
+  blocker?: BrowserGameBlockerKind
+}
+
 export interface BrowserRealtimeFrame {
   sessionId: string
   tabId: string
@@ -82,7 +89,7 @@ export interface BrowserRealtimeInputBatch {
  */
 export interface BrowserRealtimeControlProvider {
   session(): BrowserRealtimeSession | null
-  inspectGameSurfaces(signal: AbortSignal): Promise<readonly BrowserGameSurfaceCandidate[]>
+  inspectGameEnvironment(signal: AbortSignal): Promise<BrowserGameEnvironmentInspection>
   captureFrame(
     request: BrowserRealtimeFrameCaptureRequest,
     signal: AbortSignal,
