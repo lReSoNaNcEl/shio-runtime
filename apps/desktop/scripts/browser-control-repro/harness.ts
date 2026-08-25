@@ -43,6 +43,9 @@ interface BrowserBridge {
 }
 
 const execFileAsync = promisify(execFile)
+const BROWSER_GAME_QUALIFICATION_MS = process.argv.includes('--browser-game-qualification')
+  ? 5 * 60 * 1_000
+  : 0
 
 class RecordingLocalVisualTargetReflexAdapter extends LocalVisualTargetReflexAdapter {
   readonly intents: Array<{
@@ -401,6 +404,12 @@ async function waitForGameInput(controller: GameSessionController): Promise<void
   )
 }
 
+async function waitForAutonomousFixtureCycle(adapter: AgentBrowserAdapter): Promise<void> {
+  assert.match(await waitForObservedGameState(adapter, /Game over/u), /Score: 3/u)
+  assert.match(await waitForObservedGameState(adapter, /Retried/u), /Score: 0/u)
+  assert.match(await waitForObservedGameState(adapter, /Score: 1/u), /Released/u)
+}
+
 async function createBrowserBridge(options: {
   command: string
   cwd: string
@@ -705,6 +714,9 @@ async function main(): Promise<void> {
           goal: 'Tap the visible fixture target once',
           surfaceId: gameSurfaces[0]?.id,
           allowedInputs: ['pointer'],
+          ...(BROWSER_GAME_QUALIFICATION_MS > 0
+            ? { maxDurationMs: 6 * 60 * 1_000, maxInputEvents: 20_000 }
+            : {}),
         },
         new AbortController().signal,
       )
@@ -714,13 +726,32 @@ async function main(): Promise<void> {
         new AbortController().signal,
       )
       assert.equal(startedGame.state, 'running')
+      const qualificationStartedAt = Date.now()
       await waitForGameInput(gameController)
+      let completedCycles = 0
       try {
         const firstScore = await waitForObservedGameState(adapter, /Score: 1/u)
         assert.match(firstScore, /Released/u)
-        assert.match(await waitForObservedGameState(adapter, /Game over/u), /Score: 3/u)
-        assert.match(await waitForObservedGameState(adapter, /Retried/u), /Score: 0/u)
-        assert.match(await waitForObservedGameState(adapter, /Score: 1/u), /Released/u)
+        await waitForAutonomousFixtureCycle(adapter)
+        completedCycles += 1
+        let nextProgressAt = 30_000
+        while (Date.now() - qualificationStartedAt < BROWSER_GAME_QUALIFICATION_MS) {
+          await waitForAutonomousFixtureCycle(adapter)
+          completedCycles += 1
+          const elapsedMs = Date.now() - qualificationStartedAt
+          if (elapsedMs >= nextProgressAt) {
+            const status = gameController.status()
+            console.log('Browser game qualification progress', {
+              elapsedMs,
+              completedCycles,
+              capturedFrames: status.telemetry.capturedFrames,
+              inputEvents: status.telemetry.inputEvents,
+              captureFps: status.telemetry.captureFps,
+              decisionLatencyMsP50: status.telemetry.decisionLatencyMsP50,
+            })
+            nextProgressAt += 30_000
+          }
+        }
       } catch (error) {
         console.error('Browser game fixture controller status', gameController.status())
         console.error('Browser game fixture reflex intents', fixtureReflex.intents)
@@ -732,6 +763,14 @@ async function main(): Promise<void> {
       assert.equal(stoppedGame.state, 'stopped')
       assert((stoppedGame.telemetry.capturedFrames ?? 0) >= 1)
       assert(stoppedGame.telemetry.inputEvents >= 10)
+      if (BROWSER_GAME_QUALIFICATION_MS > 0) {
+        assert(stoppedGame.telemetry.sessionDurationMs >= BROWSER_GAME_QUALIFICATION_MS)
+        assert(completedCycles >= 2)
+        console.log('Browser game five-minute qualification passed', {
+          completedCycles,
+          telemetry: stoppedGame.telemetry,
+        })
+      }
 
       const surface = gameSurfaces[0]
       assert(surface)

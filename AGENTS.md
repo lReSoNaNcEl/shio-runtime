@@ -330,6 +330,9 @@ Desktop quality and validation:
   renderer changes, rebuild, restart Electron, and confirm the client starts.
 - Any Electron main, preload, native executable, or subprocess integration change
   requires a live Electron smoke check in addition to static checks and builds.
+- Browser Game capture, reflex, session-loop, or input changes require the focused
+  Browser Game and Browser Realtime repros plus the opt-in five-minute real-CDP
+  qualification (`npm run desktop:browser-game:qualification`) before commit.
 - When live validation is explicitly requested after Avatar Runtime changes,
   verify VRM loading, idle animation, `loadAnimation`, Debug Preview, Speaking,
   LipSync, Overlay, absence of A-pose, and Runtime Health. Animation Runtime
