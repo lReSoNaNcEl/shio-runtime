@@ -71,7 +71,15 @@ export class GoalRuntime {
       input.progressPercent === undefined ? goal.status : `${Math.round(goal.progress * 100)}%`,
     )
     if (goal.status === 'completed') this.finishExecution(goal.id, 'completed', Date.now())
-    if (goal.status === 'cancelled') this.finishExecution(goal.id, 'paused', Date.now())
+    if (goal.status === 'cancelled' || goal.status === 'paused') {
+      this.finishExecution(goal.id, 'paused', Date.now())
+    }
+    if (goal.status === 'active' && previous.status === 'paused') {
+      const execution = this.store.goalExecutions().find((state) => state.goalId === goal.id)
+      if (execution?.phase === 'paused') {
+        this.store.saveGoalExecution({ ...execution, phase: 'idle', updatedAt: Date.now() })
+      }
+    }
     return goal
   }
 

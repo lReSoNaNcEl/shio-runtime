@@ -34,13 +34,6 @@ import { useTranslation } from '../../localization/useTranslation'
 
 type TasksTab = 'goals' | 'schedule' | 'history'
 
-const EDITABLE_GOAL_STATES: readonly GoalStatus[] = [
-  'active',
-  'waiting_user',
-  'waiting_external',
-  'paused',
-]
-
 function goalStatusTone(status: GoalStatus): 'positive' | 'notice' | 'negative' {
   if (status === 'active' || status === 'completed') return 'positive'
   if (status === 'cancelled') return 'negative'
@@ -243,81 +236,161 @@ export function TasksView({
               <div className="tasks-list">
                 {currentGoals.map((goal) => (
                   <article className="tasks-item tasks-goal-card" key={goal.id}>
-                    <div className="tasks-item-main">
-                      <div className="tasks-item-heading">
-                        <Text UNSAFE_className="tasks-item-title">{goal.title}</Text>
-                        <div className="tasks-goal-badges">
-                          <Badge size="S" variant="gray">
-                            {t(`tasks.goal.owner.${goal.owner}`)}
-                          </Badge>
-                          <StatusLight variant={goalStatusTone(goal.status)} size="S">
-                            {t(`tasks.goal.status.${goal.status}`)}
-                          </StatusLight>
-                        </div>
-                      </div>
-                      {goal.description && (
-                        <div className="tasks-goal-context">
-                          <Text UNSAFE_className="tasks-context-label">{t('tasks.goals.why')}</Text>
-                          <Text>{goal.description}</Text>
-                        </div>
-                      )}
-                      {goal.nextStep && (
-                        <div className="tasks-goal-context">
-                          <Text UNSAFE_className="tasks-context-label">
-                            {t('tasks.goals.nextStep')}
-                          </Text>
-                          <Text>{goal.nextStep}</Text>
-                        </div>
-                      )}
-                      {goal.lastNote && (
-                        <div className="tasks-goal-context">
-                          <Text UNSAFE_className="tasks-context-label">
-                            {t('tasks.goals.lastNote')}
-                          </Text>
-                          <Text>{goal.lastNote}</Text>
-                        </div>
-                      )}
-                      {goal.measurable && (
-                        <ProgressBar
-                          label={t('tasks.goals.progress')}
-                          value={Math.round(goal.progress * 100)}
-                          minValue={0}
-                          maxValue={100}
-                        />
-                      )}
-                    </div>
-                    <div className="tasks-goal-actions">
-                      <Picker
-                        label={t('tasks.goals.state')}
-                        selectedKey={goal.status}
-                        isDisabled={busy}
-                        onSelectionChange={(key) =>
-                          void run(() =>
-                            window.api.alive.updateGoal({
-                              id: goal.id,
-                              status: String(key) as GoalStatus,
-                            }),
-                          )
-                        }
-                      >
-                        {EDITABLE_GOAL_STATES.map((status) => (
-                          <PickerItem id={status} key={status}>
-                            {t(`tasks.goal.status.${status}`)}
-                          </PickerItem>
-                        ))}
-                      </Picker>
-                      <Button
-                        variant="primary"
-                        isDisabled={busy}
-                        onPress={() =>
-                          void run(() =>
-                            window.api.alive.updateGoal({ id: goal.id, status: 'completed' }),
-                          )
-                        }
-                      >
-                        {t('tasks.complete')}
-                      </Button>
-                    </div>
+                    {(() => {
+                      const execution = snapshot.goalExecutions.find(
+                        (candidate) => candidate.goalId === goal.id,
+                      )
+                      const completedSteps = execution?.completedSteps.length ?? 0
+                      const plannedSteps = execution?.plannedSteps.length ?? 0
+                      const executionPercent =
+                        plannedSteps > 0 ? Math.round((completedSteps / plannedSteps) * 100) : 0
+                      return (
+                        <>
+                          <div className="tasks-item-main">
+                            <div className="tasks-item-heading">
+                              <Text UNSAFE_className="tasks-item-title">{goal.title}</Text>
+                              <div className="tasks-goal-badges">
+                                <Badge size="S" variant="gray">
+                                  {t(`tasks.goal.owner.${goal.owner}`)}
+                                </Badge>
+                                <StatusLight variant={goalStatusTone(goal.status)} size="S">
+                                  {t(`tasks.goal.status.${goal.status}`)}
+                                </StatusLight>
+                              </div>
+                            </div>
+                            {goal.description && (
+                              <div className="tasks-goal-context">
+                                <Text UNSAFE_className="tasks-context-label">
+                                  {t('tasks.goals.why')}
+                                </Text>
+                                <Text>{goal.description}</Text>
+                              </div>
+                            )}
+                            {goal.nextStep && (
+                              <div className="tasks-goal-context">
+                                <Text UNSAFE_className="tasks-context-label">
+                                  {t('tasks.goals.nextStep')}
+                                </Text>
+                                <Text>{goal.nextStep}</Text>
+                              </div>
+                            )}
+                            {goal.lastNote && (
+                              <div className="tasks-goal-context">
+                                <Text UNSAFE_className="tasks-context-label">
+                                  {t('tasks.goals.lastNote')}
+                                </Text>
+                                <Text>{goal.lastNote}</Text>
+                              </div>
+                            )}
+                            {execution && (
+                              <div className="tasks-goal-execution">
+                                <StatusLight
+                                  variant={
+                                    execution.phase === 'completed'
+                                      ? 'positive'
+                                      : execution.phase === 'failed'
+                                        ? 'negative'
+                                        : execution.phase === 'paused'
+                                          ? 'notice'
+                                          : 'informative'
+                                  }
+                                  size="S"
+                                >
+                                  {t(`tasks.execution.phase.${execution.phase}`)}
+                                </StatusLight>
+                                {execution.currentStep && (
+                                  <div className="tasks-goal-context">
+                                    <Text UNSAFE_className="tasks-context-label">
+                                      {t('tasks.execution.currentStep')}
+                                    </Text>
+                                    <Text>{execution.currentStep}</Text>
+                                  </div>
+                                )}
+                                {plannedSteps > 0 && (
+                                  <ProgressBar
+                                    label={t('tasks.execution.steps', {
+                                      completed: completedSteps,
+                                      total: plannedSteps,
+                                    })}
+                                    value={executionPercent}
+                                    minValue={0}
+                                    maxValue={100}
+                                  />
+                                )}
+                              </div>
+                            )}
+                            {!execution && goal.measurable && (
+                              <ProgressBar
+                                label={t('tasks.goals.progress')}
+                                value={Math.round(goal.progress * 100)}
+                                minValue={0}
+                                maxValue={100}
+                              />
+                            )}
+                          </div>
+                          <div className="tasks-goal-actions">
+                            <ButtonGroup>
+                              {goal.status === 'paused' ? (
+                                <Button
+                                  variant="secondary"
+                                  isDisabled={busy || snapshot.settings.globallySuspended}
+                                  onPress={() =>
+                                    void run(() =>
+                                      window.api.alive.updateGoal({
+                                        id: goal.id,
+                                        status: 'active',
+                                      }),
+                                    )
+                                  }
+                                >
+                                  {t('tasks.resume')}
+                                </Button>
+                              ) : (
+                                <Button
+                                  variant="secondary"
+                                  isDisabled={busy}
+                                  onPress={() =>
+                                    void run(() =>
+                                      window.api.alive.updateGoal({
+                                        id: goal.id,
+                                        status: 'paused',
+                                      }),
+                                    )
+                                  }
+                                >
+                                  {t('tasks.pause')}
+                                </Button>
+                              )}
+                              <Button
+                                variant="secondary"
+                                isDisabled={busy}
+                                onPress={() =>
+                                  void run(() =>
+                                    window.api.alive.updateGoal({
+                                      id: goal.id,
+                                      status: 'cancelled',
+                                    }),
+                                  )
+                                }
+                              >
+                                {t('tasks.stop')}
+                              </Button>
+                            </ButtonGroup>
+                            <Button
+                              variant="primary"
+                              isDisabled={busy}
+                              onPress={() =>
+                                void run(() =>
+                                  window.api.alive.updateGoal({ id: goal.id, status: 'completed' }),
+                                )
+                              }
+                            >
+                              {t('tasks.complete')}
+                            </Button>
+                          </div>
+                        </>
+                      )
+                    })()}
                   </article>
                 ))}
               </div>

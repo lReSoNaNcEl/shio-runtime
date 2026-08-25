@@ -65,6 +65,19 @@ function main(): void {
       'failed',
     )
 
+    const pausable = goals.create({ title: 'Pause and resume safely' })
+    goals.plan(pausable.id, ['Wait for explicit resume'], { now: 210 })
+    goals.update({ id: pausable.id, status: 'paused' })
+    assert.equal(
+      goals.executionSnapshot().find((item) => item.goalId === pausable.id)?.phase,
+      'paused',
+    )
+    goals.update({ id: pausable.id, status: 'active' })
+    assert.equal(
+      goals.executionSnapshot().find((item) => item.goalId === pausable.id)?.phase,
+      'idle',
+    )
+
     const scopes = new AutonomyScopeRuntime(store)
     scopes.approve(
       {

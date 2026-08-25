@@ -56,16 +56,16 @@
   gap: 14px;
 }
 
+.memory-tabs {
+  margin-block-end: 16px;
+}
+
 .memory-library-heading {
   justify-content: space-between;
 }
 
 .memory-filters > :first-child {
   flex: 1 1 320px;
-}
-
-.memory-filters > :last-child {
-  flex: 0 1 220px;
 }
 
 .memory-count,
