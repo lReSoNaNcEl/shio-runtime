@@ -202,7 +202,14 @@ export interface WorldContextSnapshot {
   freshness: {
     rendererMs: number | null
     schedulerMs: number | null
+    /** Maximum age among the available System Context source observations. */
     systemMs: number | null
+    systemSources?: {
+      globalIdleMs: number | null
+      foregroundApplicationMs: number | null
+      runningApplicationsMs: number | null
+      systemLoadMs: number | null
+    }
   }
 }
 

@@ -1,59 +1,18 @@
-import { execFile } from 'node:child_process'
-import { promisify } from 'node:util'
+import {
+  SYSTEM_CONTEXT_PROBES,
+  type SystemContextAdapter,
+  type SystemContextObservation,
+  type SystemContextObservationRequest,
+  type SystemContextProbe,
+} from './SystemContextAdapter'
+import {
+  WindowsSystemContextWorker,
+  type WindowsSystemContextWorkerClient,
+} from './WindowsSystemContextWorker'
 
-import type { SystemContextAdapter, SystemContextObservation } from './SystemContextAdapter'
-
-const execFileAsync = promisify(execFile)
-const OBSERVATION_TIMEOUT_MS = 4_000
 const MAX_RUNNING_APPLICATIONS = 20
-
-const WINDOWS_CONTEXT_SCRIPT = `
-$ErrorActionPreference = 'Stop'
-Add-Type @'
-using System;
-using System.Runtime.InteropServices;
-public static class ShioForegroundWindow {
-  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
-  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
-}
-'@
-$handle = [ShioForegroundWindow]::GetForegroundWindow()
-$foreground = $null
-if ($handle -ne [IntPtr]::Zero) {
-  [uint32]$processId = 0
-  [void][ShioForegroundWindow]::GetWindowThreadProcessId($handle, [ref]$processId)
-  if ($processId -gt 0) {
-    $process = Get-Process -Id $processId -ErrorAction SilentlyContinue
-    if ($process) {
-      $foreground = [ordered]@{
-        processName = [string]$process.ProcessName
-        displayName = [string]$process.MainModule.FileVersionInfo.FileDescription
-        windowTitle = [string]$process.MainWindowTitle
-      }
-    }
-  }
-}
-$applications = @(Get-Process | Where-Object { $_.MainWindowHandle -ne 0 } |
-  Sort-Object ProcessName -Unique | Select-Object -First 20 | ForEach-Object {
-    [ordered]@{
-      processName = [string]$_.ProcessName
-      displayName = [string]$_.MainModule.FileVersionInfo.FileDescription
-    }
-  })
-$os = Get-CimInstance Win32_OperatingSystem
-$processor = Get-CimInstance Win32_Processor | Measure-Object -Property LoadPercentage -Average
-$memoryLoad = if ($os.TotalVisibleMemorySize -gt 0) {
-  [math]::Round((1 - ($os.FreePhysicalMemory / $os.TotalVisibleMemorySize)) * 100, 1)
-} else { $null }
-[ordered]@{
-  foregroundApplication = $foreground
-  runningApplications = $applications
-  system = [ordered]@{
-    cpuLoad = if ($null -ne $processor.Average) { [math]::Round($processor.Average, 1) } else { $null }
-    memoryLoad = $memoryLoad
-  }
-} | ConvertTo-Json -Depth 5 -Compress
-`
+const WORKER_RETRY_BASE_MS = 5_000
+const WORKER_RETRY_MAX_MS = 60_000
 
 interface WindowsObservationPayload {
   foregroundApplication?: {
@@ -71,49 +30,88 @@ interface WindowsObservationPayload {
 export interface WindowsSystemContextAdapterOptions {
   getGlobalIdleSeconds(): number
   pwshPath: string
+  now?(): number
+  worker?: WindowsSystemContextWorkerClient
 }
 
 export class WindowsSystemContextAdapter implements SystemContextAdapter {
-  constructor(private readonly options: WindowsSystemContextAdapterOptions) {}
+  private readonly worker: WindowsSystemContextWorkerClient
+  private workerStatus: SystemContextObservation['status'] = 'degraded'
+  private consecutiveFailures = 0
+  private retryAfter = 0
+  private disposed = false
 
-  async observe(): Promise<SystemContextObservation> {
-    const capturedAt = Date.now()
-    const globalUserIdleMs = Math.max(0, Math.round(this.options.getGlobalIdleSeconds() * 1_000))
-    try {
-      const { stdout } = await execFileAsync(
-        this.options.pwshPath,
-        ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', WINDOWS_CONTEXT_SCRIPT],
-        {
-          timeout: OBSERVATION_TIMEOUT_MS,
-          windowsHide: true,
-          maxBuffer: 256 * 1_024,
-          env: credentialMinimalEnvironment(),
-        },
-      )
-      const payload = JSON.parse(stdout) as WindowsObservationPayload
-      return {
-        capturedAt,
-        globalUserIdleMs,
-        foregroundApplication: foreground(payload.foregroundApplication),
-        runningApplications: Object.freeze(
-          (payload.runningApplications ?? [])
-            .flatMap((application) => {
-              const processName = boundedString(application.processName, 120)
-              if (!processName) return []
-              const displayName = boundedString(application.displayName, 160)
-              return [{ processName, ...(displayName ? { displayName } : {}) }]
-            })
-            .slice(0, MAX_RUNNING_APPLICATIONS),
-        ),
-        system: {
-          cpuLoad: boundedLoad(payload.system?.cpuLoad),
-          memoryLoad: boundedLoad(payload.system?.memoryLoad),
-        },
-        status: 'available',
+  constructor(private readonly options: WindowsSystemContextAdapterOptions) {
+    this.worker = options.worker ?? new WindowsSystemContextWorker(options.pwshPath)
+  }
+
+  async observe(
+    request: SystemContextObservationRequest = { probes: SYSTEM_CONTEXT_PROBES },
+  ): Promise<SystemContextObservation> {
+    const now = this.options.now?.() ?? Date.now()
+    const probes = uniqueProbes(request.probes)
+    let payload: WindowsObservationPayload = {}
+    let sampledProbes: readonly SystemContextProbe[] = Object.freeze([])
+    if (!this.disposed && probes.length > 0 && now >= this.retryAfter) {
+      try {
+        payload = parsePayload(await this.worker.request(probes))
+        sampledProbes = Object.freeze(probes)
+        this.workerStatus = 'available'
+        this.consecutiveFailures = 0
+        this.retryAfter = 0
+      } catch {
+        this.workerStatus = 'degraded'
+        this.consecutiveFailures += 1
+        this.retryAfter = now + retryDelay(this.consecutiveFailures)
       }
-    } catch {
-      return { capturedAt, globalUserIdleMs, status: 'degraded' }
     }
+    const capturedAt = this.options.now?.() ?? Date.now()
+    const idle = globalIdle(this.options.getGlobalIdleSeconds)
+    const status = idle.available ? this.workerStatus : 'degraded'
+    return {
+      capturedAt,
+      globalUserIdleMs: idle.milliseconds,
+      sampledProbes,
+      ...(sampledProbes.includes('foreground-application')
+        ? { foregroundApplication: foreground(payload.foregroundApplication) }
+        : {}),
+      ...(sampledProbes.includes('running-applications')
+        ? { runningApplications: runningApplications(payload.runningApplications) }
+        : {}),
+      ...(sampledProbes.includes('system-load') ? { system: systemLoad(payload.system) } : {}),
+      status,
+    }
+  }
+
+  dispose(): void {
+    if (this.disposed) return
+    this.disposed = true
+    this.worker.dispose()
+  }
+}
+
+function uniqueProbes(probes: readonly SystemContextProbe[]): SystemContextProbe[] {
+  const requested = new Set(probes)
+  return SYSTEM_CONTEXT_PROBES.filter((probe) => requested.has(probe))
+}
+
+function parsePayload(value: unknown): WindowsObservationPayload {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('SYSTEM_CONTEXT_WORKER_INVALID_PAYLOAD')
+  }
+  return value as WindowsObservationPayload
+}
+
+function globalIdle(getGlobalIdleSeconds: () => number): {
+  milliseconds: number
+  available: boolean
+} {
+  try {
+    const seconds = getGlobalIdleSeconds()
+    if (!Number.isFinite(seconds)) throw new Error('SYSTEM_CONTEXT_IDLE_INVALID')
+    return { milliseconds: Math.max(0, Math.round(seconds * 1_000)), available: true }
+  } catch {
+    return { milliseconds: 0, available: false }
   }
 }
 
@@ -131,6 +129,30 @@ function foreground(
   }
 }
 
+function runningApplications(
+  value: WindowsObservationPayload['runningApplications'],
+): NonNullable<SystemContextObservation['runningApplications']> {
+  return Object.freeze(
+    (Array.isArray(value) ? value : [])
+      .flatMap((application) => {
+        const processName = boundedString(application.processName, 120)
+        if (!processName) return []
+        const displayName = boundedString(application.displayName, 160)
+        return [{ processName, ...(displayName ? { displayName } : {}) }]
+      })
+      .slice(0, MAX_RUNNING_APPLICATIONS),
+  )
+}
+
+function systemLoad(
+  value: WindowsObservationPayload['system'],
+): NonNullable<SystemContextObservation['system']> {
+  return {
+    cpuLoad: boundedLoad(value?.cpuLoad),
+    memoryLoad: boundedLoad(value?.memoryLoad),
+  }
+}
+
 function boundedString(value: unknown, maximum: number): string | undefined {
   return typeof value === 'string' && value.trim() ? value.trim().slice(0, maximum) : undefined
 }
@@ -141,9 +163,6 @@ function boundedLoad(value: unknown): number | undefined {
     : undefined
 }
 
-function credentialMinimalEnvironment(): NodeJS.ProcessEnv {
-  const keys = ['SystemRoot', 'WINDIR', 'PATH', 'PATHEXT', 'TEMP', 'TMP', 'PSModulePath'] as const
-  return Object.fromEntries(
-    keys.flatMap((key) => (process.env[key] === undefined ? [] : [[key, process.env[key]]])),
-  )
+function retryDelay(consecutiveFailures: number): number {
+  return Math.min(WORKER_RETRY_MAX_MS, WORKER_RETRY_BASE_MS * 2 ** (consecutiveFailures - 1))
 }

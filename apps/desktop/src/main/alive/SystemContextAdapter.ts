@@ -1,6 +1,20 @@
+export const SYSTEM_CONTEXT_PROBES = [
+  'foreground-application',
+  'running-applications',
+  'system-load',
+] as const
+
+export type SystemContextProbe = (typeof SYSTEM_CONTEXT_PROBES)[number]
+
+export interface SystemContextObservationRequest {
+  probes: readonly SystemContextProbe[]
+}
+
 export interface SystemContextObservation {
   capturedAt: number
   globalUserIdleMs: number
+  /** Probes completed in this observation. Omitted by legacy/test adapters. */
+  sampledProbes?: readonly SystemContextProbe[]
   foregroundApplication?: {
     processName: string
     displayName?: string
@@ -24,7 +38,8 @@ export interface SystemContextObservation {
 }
 
 export interface SystemContextAdapter {
-  observe(): Promise<SystemContextObservation>
+  observe(request?: SystemContextObservationRequest): Promise<SystemContextObservation>
+  dispose?(): void
 }
 
 export class UnavailableSystemContextAdapter implements SystemContextAdapter {
