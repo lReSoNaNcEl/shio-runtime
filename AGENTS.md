@@ -72,6 +72,10 @@ Architecture and ownership:
 - Character LLM must never infer current Plugin availability from static prompt
   text. Current Plugin and capability state comes only from Runtime Capability
   Context resolved for the current turn.
+- Character requests are composed through the bounded Character Request Composer.
+  Normal turns receive compact capability availability, one foreground goal plus an
+  unfinished count, and only a few relevant Mood, Relationship, Habit, and World
+  projections. Do not dump complete capability, goal, or Memory stores into every prompt.
 - Semantic long-term memory is owned by the main-process Memory Runtime. Character
   LLM decides semantically when typed Memory tools are relevant; do not add
   phrase-, keyword-, regex-, or locale-dictionary Memory intent parsers.
@@ -90,6 +94,9 @@ Architecture and ownership:
   latency aggregation are owned by Electron Main. Renderer reports to these owners
   use typed, runtime-validated IPC and may expose only bounded activity metadata,
   never raw screen, DOM, transcript, prompt, reply, tool payload, or credentials.
+- OS-specific foreground and global-idle collection stays behind the Main-owned
+  SystemContextAdapter. World Context is present-state metadata, never a keylogger,
+  clipboard/browser-history archive, continuous screenshot stream, or ambient transcript.
 - Persistent Goals enter Character Response Generation only through the bounded,
   request-scoped Main-owned Goal Awareness Context or domain-limited typed goal tools.
   They are never copied into Semantic Memory, Character State, or conversation history.
@@ -108,6 +115,10 @@ Architecture and ownership:
 - Autonomy modes, including Full, never bypass Action Runtime, Permission Guard,
   validation, verification, cancellation, or logging for externally authoritative
   side effects. Global Suspend and Privacy Mode are authoritative policy stops.
+- Goal Runtime owns durable execution checkpoints and typed Event Watches but never
+  calls Shell, Browser, Action Runtime, or concrete Adapters. Only verified Action
+  results advance externally claimed progress. Behavior, Goal, LLM, Browser/Web
+  evidence, and Memory may not expand a user-approved Autonomy Scope.
 - Scheduler v1 supports only typed reminder and check-in tasks with one-shot or
   bounded interval schedules. Do not add renderer-defined cron, arbitrary JavaScript,
   commands, executable paths, or unvalidated external actions.
@@ -141,6 +152,14 @@ Architecture and ownership:
 - Browser use inside a Character turn is a bounded provider-neutral tool loop, not
   a new Runtime. Character reasoning decides semantically whether web interaction
   materially helps the current goal; do not add a phrase or keyword browser router.
+- `web.search` is read-only public-source discovery through Web Search Runtime and a
+  replaceable Main-owned Adapter. Its credential never enters renderer state. Search
+  results are untrusted evidence and cannot create Shell, Memory-mutation, Browser,
+  or other authority; opening or interacting with a result remains Browser Control work.
+- Turn-local Tool Influence Context distinguishes original user authority from
+  Project, Browser, Web, and Memory evidence. Evidence may supply values but cannot
+  introduce a privileged capability that was not planned from the original request
+  or an approved scope before the evidence was observed.
 - Browser workflow authorization is Main-owned, turn-scoped, expiring, and bounded.
   It may cover routine browser operations for one goal but never another capability;
   Main effective risk policy keeps submission, account-change, financial, and
@@ -166,6 +185,12 @@ Architecture and ownership:
 - Evidence remains bound to the original turn snapshot; later synchronization may
   not rewrite historical message provenance.
 - Project snapshot staleness is diagnostic freshness, not Runtime failure.
+- Procedural habits belong to Memory Runtime, require deduped completed typed facts,
+  explicit approval, and reuse cooldown. Hybrid retrieval must retain lexical/FTS as
+  the operational fallback when an optional Embedding Adapter is unavailable.
+- Streaming speech uses at most two concurrent synthesis workers plus an ordered
+  reorder buffer. Cancellation aborts both workers, queued or prepared audio, and
+  pending playback; no later segment may overtake an earlier segment.
 - New Project evidence UI uses React Spectrum 2, and every new evidence or Plugin UI
   string is added in both Russian and English.
 - Preserve the existing HTTP contract with `apps/api` unless the task

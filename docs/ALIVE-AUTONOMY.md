@@ -1,5 +1,9 @@
 # Shio Alive & Autonomous v1
 
+> Living Loop 2.0 extends this v1 operational record. See
+> [LIVING-LOOP-2.md](./LIVING-LOOP-2.md) for the current World, Experience, Attention,
+> Goal Runtime, procedural Memory, Web Search, and streaming-speech behavior.
+
 This document is the operational guide for the responsive and autonomous Core
 implemented by the `Alive & Autonomous v1` work item. `ARCHITECTURE.md` remains the
 canonical source of architectural meaning.
@@ -27,7 +31,8 @@ The API speech service and its HTTP contract are unchanged.
 ## Ownership and data flow
 
 Electron Main owns SQLite persistence, World Context, Autonomy policy, Scheduler,
-Goals, habits, Fast Brain transport, and latency aggregation. Fast Brain can use a
+Goals, Fast Brain transport, and latency aggregation. Procedural habits are now owned
+by Memory Runtime. Fast Brain can use a
 separately selected low-cost provider/model while credentials continue to resolve only
 through the existing secure Main credential store. The renderer owns the
 single Conversation Admission, Conversation Runtime coordination, and presentation.

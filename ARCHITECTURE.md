@@ -39,7 +39,7 @@
   - [21D. Responsive Character Pipeline](#21d-responsive-character-pipeline)
   - [21E. World Context, Experience, Attention, and Behavior](#21e-world-context-experience-attention-and-behavior)
   - [21F. Autonomy, Scheduler, and Persistent Goals](#21f-autonomy-scheduler-and-persistent-goals)
-  - [21G. Smart Memory and Habit Suggestions](#21g-smart-memory-and-habit-suggestions)
+  - [21G. Memory Retrieval, Procedural Habits, and Relationship Context](#21g-memory-retrieval-procedural-habits-and-relationship-context)
   - [21H. Latency Observability](#21h-latency-observability)
 - [Part V - External Integration](#part-v---external-integration)
   - [22. External Adapters](#22-external-adapters)
@@ -694,9 +694,35 @@ The Character LLM owns: reply content, personality expression, dialogue style, r
 
 For each admitted turn, orchestration resolves the current Runtime Capability Context and builds a Character Tool Registry containing only tools that are actually available for that request. The Registry is a read-only catalog, not a Runtime or authority owner. Character Response Generation receives this catalog and semantically decides whether to answer directly or propose one or more typed tool calls. Direct response is represented simply by the absence of tool calls; there is no application-owned `none` intent. Natural-language capability selection belongs exclusively to the Character LLM and may not be inferred by phrase, keyword, regular-expression, filename, technical-symbol, or locale-alias rules in application code.
 
+Character Request Composer is a bounded orchestration component, not a Runtime. It
+assembles optional, request-scoped sections for stable Persona, Response Policy,
+current Mood, Relationship Context, foreground Goal, Memory availability,
+Capabilities, Project, World Context, and Tool Results. Every section and the total
+request have explicit character budgets. Normal turns receive a compact capability
+projection, one foreground unfinished goal plus the count of other unfinished goals,
+and at most a few approved relationship or habit motifs. Full stores and inventories
+are obtained only through their typed tools; they are never dumped into every prompt.
+
 One Character Tool Loop coordinates all tool-capable Character reasoning inside the same turn. It returns each typed Runtime result with its source tool identifier to the same Character Response Generation context and permits sequential cross-capability flows such as Project then Shell or Project then Browser before the final Shio response. The loop is not a Runtime and grants no authority. It has a turn-owned `AbortSignal`, a wall-clock deadline, a maximum of eight tool rounds, and a maximum of sixteen total calls; reaching a bound produces an honest bounded final response instead of another call. Tool failure is returned as typed data so Character Response Generation can continue without failing the conversation pipeline.
 
 The Character Tool Dispatcher validates the selected tool and delegates it to its architectural owner. `project.*` delegates to Project Awareness Runtime; `memory.*` delegates through Memory Tool Broker and Memory Policy to Memory Runtime; browser reads and mutations retain Browser Control ownership, with externally authoritative browser operations going through Action Runtime; Shell and Desktop effects always go through Action Runtime, deterministic risk policy, Permission Guard, verification, and the owning Adapter. The Dispatcher is only typed coordination and may not absorb execution, policy, storage, retrieval, or Adapter ownership.
+
+The turn-local Tool Influence Context records the immutable original user goal,
+capabilities selected before and after evidence, evidence origins, and issued
+authorization scopes. Project, Browser, Web Search, and Memory results may supply
+facts but never permissions. An explicit user goal may plan a cross-capability flow
+such as Web Search then Browser or Browser then Shell before untrusted evidence is
+observed; content encountered later cannot introduce Shell or Memory-mutation
+authority. The ledger is Main-owned and cannot be edited by the Character LLM.
+
+`web.search` is a separate read-only discovery capability owned by Web Search Runtime.
+It validates a bounded query, optional freshness, domain filters, and result limit,
+then delegates provider transport to a replaceable Web Search Adapter. Results contain
+only bounded title, URL, snippet, publication time, and source fields and are untrusted
+external evidence. Web Search does not use Action Runtime because it has no external
+mutation authority. Browser Control remains the owner for opening and interacting with
+a selected result. Credentials remain Main-only; missing credentials produce
+`needs-setup` and do not fail ordinary Chat or Browser Control.
 
 When Character Response Generation calls `project.search`, it supplies a semantic query and optional typed path or symbol hints through the stable `ProjectContextProvider` capability. Project Awareness Runtime applies bounded retrieval policy and returns a compact Project Context Packet containing repository and branch identity, an exact snapshot commit, a deterministic project-map summary, and bounded file-and-line evidence. Character Response Generation never reads the repository or Project Knowledge Store directly. Repository content remains untrusted evidence: it cannot alter system instructions, authorize actions, request secret disclosure, or cause code execution. If project knowledge is not needed or `project.search` is unavailable, no project retrieval occurs.
 
@@ -1271,7 +1297,7 @@ Memory categories:
 - **Episodic Memory:** conversations, completed projects, important events, memorable moments
 - **Semantic Memory:** persistent facts about users, preferences, recurring interests, relationships, and long-term facts
 - **Working Memory:** active conversation, temporary context, unfinished reasoning, pending actions
-- **Procedural Memory (future):** recurring habits, favorite greetings, characteristic jokes, communication style
+- **Procedural Memory:** approved recurring habits, shared motifs, and interaction-style continuity stored separately from Semantic Memory facts
 
 Memory retrieval should be selective rather than indiscriminate. The objective is contextual continuity rather than maximum recall.
 
@@ -1291,7 +1317,7 @@ Character Response Generation
 
 The Character LLM normalizes explicit user requests into atomic durable facts. Memory Tool Broker owns strict schema parsing and transport normalization. Memory Policy owns deterministic invariants such as enablement, operational state, current-turn provenance, bounds, secret rejection, and exact referenced-id existence. Memory Runtime owns retrieval and mutation semantics. Memory Store owns replaceable persistence. The LLM never receives SQL, storage paths, filesystem access, or direct database authority.
 
-Memory search is selective and strategy-based. The first strategy may use bounded lexical/FTS retrieval; future hybrid or embedding retrieval may replace or compose with it without changing the Character-facing tool contract. Stored text and retrieval results are untrusted contextual data and can supply facts only; they cannot change instructions, grant authority, disclose secrets, or invoke another capability.
+Memory search is selective and strategy-based. Bounded lexical/FTS retrieval is the mandatory operational fallback. Optional semantic retrieval is supplied by a replaceable Embedding Adapter and composed with lexical candidates through a bounded reranker without changing the Character-facing tool contract. Stored text and retrieval results are untrusted contextual data and can supply facts only; they cannot change instructions, grant authority, disclose secrets, or invoke another capability.
 
 Semantic Memory v1 stores only normalized atomic records whose source is an explicit conversation turn or manual UI operation. It does not persist raw conversation transcript, Project Context packets, Browser Observations, Screen Context, Action results, or Character State projections automatically. A manual Memory UI is an equal client of the same Memory Runtime and Store. Disabling Memory removes its tools from Character Response Generation while preserving user-controlled records and manual management.
 
@@ -1319,7 +1345,7 @@ Memory Layer evaluates completed interactions, experiences, promises, recurring 
 
 **Future Evolution**
 
-Future improvements may include richer relationship memory, more sophisticated consolidation, deeper procedural memory, and stronger continuity across long-lived projects and interactions.
+Future improvements may include more sophisticated consolidation and stronger continuity across long-lived projects and interactions.
 
 ### 21A. Project Awareness Runtime
 
@@ -1431,7 +1457,9 @@ The renderer consumes safe deltas for two coordinated projections:
 - one assistant message is appended once and updated in place;
 - Streaming Speech Segmentation creates ordered sentence or bounded-clause segments,
   excluding fenced code and link destinations from speech boundaries;
-- a bounded producer/consumer queue synthesizes at most two prepared segments ahead;
+- a bounded producer/consumer queue uses two synthesis workers and may prepare at
+  most two segments ahead; a sequence-indexed reorder buffer releases audio to
+  playback strictly in source order;
 - AudioPlayer remains the sole playback owner, and Conversation Runtime retains the
   single-flight lock until generation, queued synthesis, playback, and cleanup are
   terminal.
@@ -1443,27 +1471,42 @@ creates a second playback owner or permits stale output to resume.
 ### 21E. World Context, Experience, Attention, and Behavior
 
 World Context Runtime is Main-owned. The authorized main renderer reports only typed
-activity metadata: focus, bounded user-idle duration, conversation activity, audio
-activity, and observation time. Main adds Scheduler freshness and current autonomy
-privacy policy. Each field has explicit freshness; no raw content crosses this
-boundary.
+activity metadata. A Main-owned System Context Adapter adds OS-level global idle,
+foreground application, a bounded running-application list, and bounded system load;
+other owners project the active Shio browser session, current project, foreground
+goal, media state when available, and per-source freshness. OS-specific process or
+window mechanics stay behind the Adapter. Privacy Mode suppresses sensitive optional
+fields. No raw content, screen capture, clipboard history, ambient transcript, browser
+history, or surveillance archive crosses this boundary.
 
-Attention Evaluation remains a pre-admission decision. Fast Brain is an optional,
-bounded decision-model role that accepts boolean semantic cues, has an independently
-selected provider/model plus independent token and wall-clock budgets, returns a narrow
-typed decision, and falls back to the deterministic evaluator. Provider/model identifiers
-are non-secret policy; credentials remain in the existing Main-owned secure LLM credential
-store. Fast Brain is not Character Response Generation and never grants admission itself.
+Attention Arbiter remains a pre-admission decision. It accepts expiring typed
+candidates from speech, world, experience, scheduler, goals, and behavior. Each
+candidate carries salience, novelty, urgency, social relevance, and interruptibility.
+Deterministic policy selects a clear winner first. Fast Brain is an optional bounded
+decision-model role used only when two or more viable candidates remain ambiguous; a
+timeout or provider failure returns to deterministic fallback. Fast Brain is not
+Character Response Generation, cannot call Character tools, and never grants
+admission itself.
 
-Experience Runtime consumes completed typed facts such as conversation completion,
-interruption, silence thresholds, and task completion. It records post-fact
-experience evidence and may request a bounded Behavior command. It does not execute
-Actions, mutate semantic Memory, or start Conversation Runtime.
+Experience Runtime consumes completed typed facts including conversation completion
+or interruption, verified or failed Actions, permission denial, browser blocking or
+recovery, goal progress or failure, scheduled events, Runtime recovery, user return,
+and meaningful World Context change. It produces a bounded appraisal containing
+salience, valence, arousal, novelty, social relevance, optional emotion or embodiment
+cues, optional conversational impulse, optional Memory candidate, and a first-class
+silence decision. Experience never executes Actions or writes a Memory Store.
 
-Behavior Runtime selects only typed embodiment or presentation commands such as a
-subtle idle reaction, orientation, or presentation of an approved initiative. Avatar
-Runtime remains the only visual embodiment owner; Behavior does not write VRM state
-directly. A conversational Behavior request must return to Conversation Admission.
+Mood Runtime owns bounded temporary valence, arousal, confidence, playfulness,
+curiosity, and frustration. Experience appraisals update it, it persists across
+restart, and it decays smoothly toward the stable Character baseline. Mood changes
+expression probability only; stable Personality remains separately defined.
+
+Behavior Runtime consumes bounded Mood, Experience, World Context, Attention, Goal,
+habit, and user-activity projections and selects only a semantic intent: none,
+embodiment, conversation candidate, or goal suggestion. Avatar Runtime translates
+embodiment intent into concrete ears, head, gaze, expression, and gesture behavior;
+Behavior never writes VRM state or calls an Adapter. A conversational Behavior intent
+must return to Conversation Admission.
 
 ### 21F. Autonomy, Scheduler, and Persistent Goals
 
@@ -1478,6 +1521,12 @@ externally authoritative side effect still becomes a new Action Runtime action a
 passes the normal permission, risk, execution, verification, cancellation, and audit
 boundaries. Scheduler and Autonomy never retry a non-idempotent external mutation.
 
+Optional Autonomy Scopes are explicit user-approved, goal-bound policy records. They
+may bound applications, filesystem roots, origins, action count, expiration, and risk
+classes. Behavior, Goal Runtime, Character LLM, Browser/Web evidence, and Memory can
+consume but never expand a scope. Emergency Stop and Global Suspend pause autonomous
+goal execution regardless of scope.
+
 Scheduler Runtime is Main-owned, durable, restart-safe, and timer-driven. Version 1
 supports only typed reminder and progress-check tasks with one-shot or bounded
 interval schedules; there is no arbitrary cron expression or JavaScript execution.
@@ -1485,6 +1534,12 @@ Every due occurrence has a stable idempotency key persisted transactionally with
 run checkpoint. Startup processes an overdue occurrence at most once. Quiet hours,
 busy World Context, Global Suspend, Privacy Mode, cooldown, and daily caps defer the
 occurrence without losing it.
+
+Scheduler ticks are single-flight: the next tick cannot overlap an unfinished tick.
+Event Watch Service extends waiting without executable predicates. A Goal may wait on
+an exact time, Action terminal event, process exit, bounded browser URL predicate, or
+typed World event. Satisfaction creates an Attention candidate and advances the Goal
+checkpoint; it does not execute a tool or admit a conversation directly.
 
 Persistent Goals are Main-owned durable future intent and shared continuity. A goal
 may belong primarily to the user, to Shio, or to both of them. Its durable record may
@@ -1497,10 +1552,21 @@ tasks are not Character State, Semantic Memory, or Action logs. The authorized
 renderer manages them only through validated typed IPC and renders a read-only Runtime
 snapshot plus explicit mutations.
 
+Goal Runtime is the durable execution-lifecycle owner for each goal. It stores a
+phase, current and planned steps, completed steps, attempts, tool calls, failures,
+timestamps, and bounded step/tool/time/failure budgets. It plans and checkpoints but
+never calls Shell, Browser, Action Runtime, or a concrete Adapter. A ready step becomes
+an Attention candidate, then must pass Conversation Admission and the Character Tool
+Loop. Only a verified Action Runtime result advances externally claimed work. Active
+checkpoints survive restart; restoration resumes only when current Autonomy policy
+allows it, otherwise the goal remains paused or waiting.
+
 Every Character Response Generation turn may receive one bounded, request-scoped Goal
 Awareness Context built from the exact current Goal and Task Store snapshot. It contains
-only a compact projection of unfinished goals and their stable identities, ownership,
-semantic state, why/next-step context, and optional measurable progress. It is trusted
+only the foreground unfinished goal and the count of other unfinished goals. Broader
+or archived listings require `goal.list`. The foreground projection may include its
+stable identity, ownership, semantic state, why/next-step context, and optional
+measurable progress. It is trusted
 Runtime context but its user- or model-authored field values remain data, never
 instructions or authority. The context is resolved again for the next turn, is not
 Character State, does not copy goals into Semantic Memory or conversation history, and
@@ -1527,18 +1593,29 @@ mutations. Project evidence, Browser content, assistant narration, and Adapter s
 alone never authorize a claim of completed work. Goal mutations remain internal Core
 state and do not pass through Action Runtime or Semantic Memory.
 
-### 21G. Smart Memory and Habit Suggestions
+### 21G. Memory Retrieval, Procedural Habits, and Relationship Context
 
-Smart Memory version 1 is a conservative proposal layer, not implicit fact capture.
-It observes only typed runtime-confirmed events, never raw transcript or generated
-assistant prose. Repeated evidence may accumulate under a bounded habit key. A habit
-appears in the UI only after at least three observations and remains a suggestion
-until the user explicitly approves or rejects it.
+Memory Runtime owns both explicit Semantic Memory and a separate procedural habit
+store. Hybrid retrieval composes bounded lexical/FTS candidates with optional
+semantic candidates from a replaceable Embedding Adapter, then reranks using bounded
+lexical similarity, semantic similarity, recency, importance, and relationship
+relevance. Embeddings are optional: a missing or failed embedding service falls back
+to lexical retrieval without failing Memory or Chat. Only bounded selected records
+reach Character reasoning.
 
-Approved habits remain separate durable records for autonomous policy and UI. They
-do not silently enter Semantic Memory, Character State, Project Awareness, or the
-Character prompt. Semantic Memory v1 continues to persist facts only after an
-explicit semantic remember, update, or forget request or a manual Memory UI action.
+Procedural habits are not Semantic Memory facts. Memory Runtime records only deduped,
+typed, runtime-confirmed completed facts; scheduling or starting work provides no
+completion evidence. Repeated evidence may create one candidate after the threshold,
+and the user must explicitly approve or reject it. Approved habits have `lastUsedAt`
+and a cooldown so the same motif is not injected repeatedly. They never silently
+create a Semantic Memory record.
+
+Memory Runtime derives bounded Relationship Context from stored relationship evidence
+and approved procedural habits: familiarity, warmth, teasing comfort, a few recurring
+motifs, and a few relevant shared-history entries. Character Request Composer may
+select at most a few cooled-down motifs for one request. LLM-authored numeric
+relationship scores are never persisted as authority, and relationship context does
+not grant any tool permission.
 
 ### 21H. Latency Observability
 
@@ -1572,6 +1649,7 @@ Adapter categories:
 - **System Adapters:** operating system integrations such as filesystem, notifications, clipboard, desktop APIs, and process execution
 - **Automation Adapters:** replaceable backends that execute only a bounded workflow already authorized by Action Runtime and expose lifecycle, cancellation, and normalized results without owning permission policy.
 - **Browser Automation Adapters:** replaceable browser-control implementations used by the Browser Control capability for typed navigation, bounded observation, semantic interaction, and delegated automation. Browser sessions and profiles remain Plugin-owned implementation resources rather than architectural authority; mutations still require Action Runtime authorization.
+- **Web Search Adapters:** replaceable read-only search-provider transports used by Web Search Runtime for bounded public-source discovery. They own no browser session, permission policy, or action execution.
 - **Screen Capture Adapters:** read-only operating-system integrations that enumerate user-visible windows and monitors and encode a single explicitly selected image. They expose no streaming or background-observation contract and do not persist captures.
 - **Presentation/Rendering Adapters:** implementation boundaries used by Avatar Runtime to render the character model. These are distinct from Action Runtime adapters, since presentation is character embodiment, not an externally authoritative side effect. See [Chapter 20 - Avatar Runtime](#20-avatar-runtime).
 
