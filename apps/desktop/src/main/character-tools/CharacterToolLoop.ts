@@ -32,6 +32,8 @@ export const CHARACTER_TOOL_MAX_ROUNDS = 8
 export const CHARACTER_TOOL_MAX_CALLS = 16
 export const CHARACTER_TOOL_TIMEOUT_MS = 120_000
 export const CHARACTER_TOOL_CONTINUATION_TIMEOUT_MS = 30_000
+const PROJECT_TURN_MAX_EVIDENCE = 20
+const PROJECT_TURN_MAX_EVIDENCE_CHARACTERS = 24_000
 
 export interface CharacterToolLoopResult {
   replyText: string
@@ -322,9 +324,51 @@ function safeArguments(argumentsJson: string): Record<string, unknown> | null {
 }
 
 function recordResult(state: LoopState, result: CharacterToolDispatchResult): void {
-  if (result.projectContext && !state.projectContext) state.projectContext = result.projectContext
+  if (result.projectContext) {
+    state.projectContext = mergeProjectContext(state.projectContext, result.projectContext)
+  }
   if (result.actionResult) state.latestActionResult = result.actionResult
   if (result.verifiedOutcome) state.latestVerifiedOutcome = result.verifiedOutcome
+}
+
+function mergeProjectContext(
+  current: ProjectContextPacket | undefined,
+  incoming: ProjectContextPacket,
+): ProjectContextPacket {
+  if (!current) return boundedProjectContext(incoming)
+  if (
+    current.repository !== incoming.repository ||
+    current.branch !== incoming.branch ||
+    current.snapshotSha !== incoming.snapshotSha
+  ) {
+    return current
+  }
+  return boundedProjectContext({
+    ...current,
+    freshness:
+      current.freshness === 'stale' || incoming.freshness === 'stale' ? 'stale' : current.freshness,
+    evidence: [...current.evidence, ...incoming.evidence],
+  })
+}
+
+function boundedProjectContext(packet: ProjectContextPacket): ProjectContextPacket {
+  const seen = new Set<string>()
+  let characters = 0
+  const evidence: ProjectContextPacket['evidence'] = []
+  for (const item of packet.evidence) {
+    const key = `${item.path}:${item.startLine}:${item.endLine}:${item.symbol ?? ''}`
+    if (seen.has(key) || evidence.length >= PROJECT_TURN_MAX_EVIDENCE) continue
+    if (characters + item.content.length > PROJECT_TURN_MAX_EVIDENCE_CHARACTERS) continue
+    seen.add(key)
+    characters += item.content.length
+    evidence.push(item)
+  }
+  return Object.freeze({
+    ...packet,
+    mapSummary: packet.mapSummary?.slice(0, 4_000),
+    evidence,
+    instructions: Object.freeze({ ...packet.instructions }),
+  })
 }
 
 function failureReply(options: CharacterToolLoopOptions, state: LoopState): string {
@@ -735,6 +779,12 @@ export class CharacterToolLoop {
         content: completion.content,
         toolCalls: completion.toolCalls,
       })
+      options.dispatcher.registerPlannedTools?.(
+        completion.toolCalls.flatMap((call) => {
+          const id = registry.fromNativeName(call.name)?.id
+          return id ? [id] : []
+        }),
+      )
       for (const call of completion.toolCalls) {
         const tool = registry.fromNativeName(call.name)
         const input = safeArguments(call.argumentsJson)
@@ -837,11 +887,17 @@ export class CharacterToolLoop {
       }
       const results: { tool: string; content: string }[] = []
       if (parsed.legacyAction) {
+        options.dispatcher.registerPlannedTools?.([
+          parsed.legacyAction.request.requestedCapabilities[0] === 'shell'
+            ? 'shell.execute'
+            : 'browser.workflow',
+        ])
         const result = await options.dispatcher.executeLegacyAction(parsed.legacyAction.request)
         if (signal.aborted) throw signal.reason ?? new LlmTurnCancelledError()
         recordResult(state, result)
         results.push({ tool: 'desktop.workflow', content: result.content })
       } else {
+        options.dispatcher.registerPlannedTools?.(parsed.calls.map((call) => call.tool))
         for (const call of parsed.calls) {
           const result = await options.dispatcher.execute(call.tool, call.arguments)
           if (signal.aborted) throw signal.reason ?? new LlmTurnCancelledError()

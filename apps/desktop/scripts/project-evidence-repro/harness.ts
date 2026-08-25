@@ -198,11 +198,14 @@ async function main(): Promise<void> {
     join(process.cwd(), 'src/renderer/runtime/ConversationRuntime.ts'),
     'utf8',
   )
-  assert(
-    conversationRuntimeSource.indexOf(
-      "pushMessage('assistant', draft.displayText, draft.grounding)",
-    ) < conversationRuntimeSource.indexOf('synthesizeSegment(turn.turnId, segment)'),
+  const fallbackMessageIndex = conversationRuntimeSource.indexOf(
+    "pushMessage('assistant', draft.displayText, draft.grounding)",
   )
+  const fallbackSynthesisIndex = conversationRuntimeSource.indexOf(
+    'synthesizeSegment(turn.turnId, segment)',
+    fallbackMessageIndex,
+  )
+  assert(fallbackMessageIndex >= 0 && fallbackSynthesisIndex > fallbackMessageIndex)
   const chatSource = readFileSync(
     join(process.cwd(), 'src/renderer/components/chat/ChatMessageList.tsx'),
     'utf8',

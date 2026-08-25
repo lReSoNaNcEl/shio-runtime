@@ -24,6 +24,9 @@ import { buildActionResultNarrationContext } from '../action'
 import type { BrowserAgentCoordinator } from '../desktop-control/browser-agent'
 import type { MemoryToolBroker } from '../memory'
 import type { CharacterToolRegistry } from './CharacterToolRegistry'
+import { ToolInfluenceContext } from './ToolInfluenceContext'
+
+const MAX_PROJECT_PACKETS_PER_TURN = 4
 
 const PROJECT_SEARCH_INPUT_SCHEMA = z
   .object({
@@ -250,11 +253,23 @@ export class CharacterToolDispatcher {
   private lastActionVerified = false
   private actionWorkflowClosed = false
   private projectContext: ProjectContextPacket | undefined
+  private readonly projectCache = new Map<string, ProjectContextPacket>()
+  private readonly projectFingerprintByRequest = new Map<string, string>()
   private goalDataSelected = false
   private readonly knownGoalIds = new Set<string>()
+  private readonly influence: ToolInfluenceContext
 
   constructor(private readonly options: CharacterToolDispatcherOptions) {
+    this.influence = new ToolInfluenceContext(options.userGoal)
     for (const goal of options.goalAwareness ?? []) this.knownGoalIds.add(goal.id)
+  }
+
+  registerPlannedTools(ids: readonly CharacterToolId[]): void {
+    this.influence.registerPlannedTools(ids)
+  }
+
+  influenceSnapshot(): ReturnType<ToolInfluenceContext['snapshot']> {
+    return this.influence.snapshot()
   }
 
   currentBrowserObservation(): BrowserObservation | null {
@@ -272,15 +287,16 @@ export class CharacterToolDispatcher {
     if (!this.options.registry().get(id)) return { content: failureContent('TOOL_UNAVAILABLE') }
     if (this.options.signal.aborted) throw this.options.signal.reason ?? new Error('Turn cancelled')
     try {
-      if (id === 'shell.execute' && this.browserSelected) {
+      if (id === 'shell.execute' && !this.influence.canInvoke(id)) {
         return { content: failureContent('BROWSER_EVIDENCE_CANNOT_AUTHORIZE_SHELL') }
       }
-      if (this.browserSelected && MEMORY_MUTATION_TOOL_IDS.has(id)) {
+      if (MEMORY_MUTATION_TOOL_IDS.has(id) && !this.influence.canInvoke(id)) {
         return { content: failureContent('BROWSER_EVIDENCE_CANNOT_AUTHORIZE_MEMORY_MUTATION') }
       }
       if (this.goalDataSelected && MEMORY_MUTATION_TOOL_IDS.has(id)) {
         return { content: failureContent('GOAL_DATA_CANNOT_AUTHORIZE_MEMORY_MUTATION') }
       }
+      this.influence.select(id)
       if (id === 'project.search') return await this.executeProject(input)
       if (id === 'goal.create') return this.executeGoalCreate(input)
       if (id === 'goal.list') return this.executeGoalList(input)
@@ -315,9 +331,11 @@ export class CharacterToolDispatcher {
     try {
       const validated = desktopWorkflowRequestSchema.parse(request)
       const requested = validated.requestedCapabilities[0]
-      if (requested === 'shell' && this.browserSelected) {
+      const legacyId: CharacterToolId = requested === 'shell' ? 'shell.execute' : 'browser.workflow'
+      if (requested === 'shell' && !this.influence.canInvoke(legacyId)) {
         return { content: failureContent('BROWSER_EVIDENCE_CANNOT_AUTHORIZE_SHELL') }
       }
+      this.influence.select(legacyId)
       const browserToolId: Partial<
         Record<
           NonNullable<DesktopWorkflowRequest['browserOperation']>['operation'],
@@ -361,25 +379,41 @@ export class CharacterToolDispatcher {
     input: Record<string, unknown>,
   ): Promise<CharacterToolDispatchResult> {
     const request = PROJECT_SEARCH_INPUT_SCHEMA.parse(input)
-    if (this.projectContext) {
+    const requestFingerprint = projectRequestFingerprint(request)
+    const cachedFingerprint = this.projectFingerprintByRequest.get(requestFingerprint)
+    const cached = cachedFingerprint ? this.projectCache.get(cachedFingerprint) : undefined
+    if (cached) {
       return {
         content: successfulContent({
           reused: true,
-          repository: this.projectContext.repository,
-          branch: this.projectContext.branch,
-          snapshotSha: this.projectContext.snapshotSha,
-          freshness: this.projectContext.freshness,
-          mapSummary: this.projectContext.mapSummary,
-          evidence: this.projectContext.evidence,
+          repository: cached.repository,
+          branch: cached.branch,
+          snapshotSha: cached.snapshotSha,
+          freshness: cached.freshness,
+          mapSummary: cached.mapSummary,
+          evidence: cached.evidence,
         }),
-        projectContext: this.projectContext,
+        projectContext: cached,
       }
+    }
+    if (this.projectCache.size >= MAX_PROJECT_PACKETS_PER_TURN) {
+      return { content: failureContent('PROJECT_SEARCH_LIMIT_REACHED') }
     }
     const provider = this.options.projectContext?.()
     if (!provider) return { content: failureContent('PROJECT_UNAVAILABLE') }
     const packet = await provider.search({ ...request, traceId: this.options.traceId })
     if (!packet) return { content: failureContent('PROJECT_EVIDENCE_UNAVAILABLE') }
+    if (
+      this.projectContext &&
+      projectSnapshotIdentity(this.projectContext) !== projectSnapshotIdentity(packet)
+    ) {
+      return { content: failureContent('PROJECT_SNAPSHOT_CHANGED_DURING_TURN') }
+    }
+    const fingerprint = `${requestFingerprint}\u0000${projectSnapshotIdentity(packet)}`
+    this.projectCache.set(fingerprint, packet)
+    this.projectFingerprintByRequest.set(requestFingerprint, fingerprint)
     this.projectContext = packet
+    this.influence.observeEvidence('project')
     return {
       content: successfulContent({
         repository: packet.repository,
@@ -402,6 +436,7 @@ export class CharacterToolDispatcher {
       { name: id, input } as Parameters<MemoryToolBroker['executeDirective']>[0],
       { sourceTurnId: this.options.traceId },
     )
+    if (id === 'memory.search' || id === 'memory.list') this.influence.observeEvidence('memory')
     return {
       content: JSON.stringify(result),
       verifiedOutcome: verifiedMemoryOutcome(id, result.ok),
@@ -418,6 +453,7 @@ export class CharacterToolDispatcher {
       .filter((goal) => !request.status || goal.status === request.status)
       .slice(0, request.limit ?? 20)
     this.goalDataSelected = true
+    this.influence.observeEvidence('goal')
     for (const goal of selectedGoals) this.knownGoalIds.add(goal.id)
     const goals = selectedGoals.map(goalProjection)
     return {
@@ -507,6 +543,7 @@ export class CharacterToolDispatcher {
       traceId: this.options.traceId,
       signal: this.options.signal,
     })
+    this.influence.observeEvidence('browser')
     return {
       content: successfulContent({ observation: browserObservationProjection(observation) }),
     }
@@ -582,6 +619,7 @@ export class CharacterToolDispatcher {
         this.options.userGoal,
         this.options.signal,
       )
+      this.influence.addAuthorizationScope(this.browserAuthorizationScopeId)
     }
     const result = await this.options.executeDesktopWorkflow(
       request,
@@ -597,6 +635,7 @@ export class CharacterToolDispatcher {
       this.actionWorkflowClosed = true
     }
     const observation = browserAction ? this.currentBrowserObservation() : null
+    if (browserAction) this.influence.observeEvidence('browser')
     return {
       content: JSON.stringify({
         ok: result.outcome === 'success',
@@ -609,4 +648,18 @@ export class CharacterToolDispatcher {
       actionResult: result,
     }
   }
+}
+
+function normalizeFingerprintPart(value: string): string {
+  return value.normalize('NFKC').trim().replace(/\s+/gu, ' ').toLocaleLowerCase()
+}
+
+function projectRequestFingerprint(request: z.infer<typeof PROJECT_SEARCH_INPUT_SCHEMA>): string {
+  const paths = [...new Set((request.hints?.paths ?? []).map(normalizeFingerprintPart))].sort()
+  const symbols = [...new Set((request.hints?.symbols ?? []).map(normalizeFingerprintPart))].sort()
+  return JSON.stringify({ query: normalizeFingerprintPart(request.query), paths, symbols })
+}
+
+function projectSnapshotIdentity(packet: ProjectContextPacket): string {
+  return `${packet.repository}\u0000${packet.branch}\u0000${packet.snapshotSha}`
 }

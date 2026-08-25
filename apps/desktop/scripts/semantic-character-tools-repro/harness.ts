@@ -88,22 +88,23 @@ const allCapabilities: ShioCapabilitySnapshot = {
   ],
 }
 
-type Step =
-  | { tool: 'project_search' | 'shell_execute' | 'browser_open' | 'browser_observe'; input: object }
-  | { reply: string }
+type ToolStep = {
+  tool: 'project_search' | 'shell_execute' | 'browser_open' | 'browser_observe'
+  input: object
+}
+type Step = ToolStep | { tools: readonly ToolStep[] } | { reply: string }
 
 function completion(step: Step, index: number): LlmCompletion {
   if ('reply' in step) return { content: step.reply, finishReason: 'stop', toolCalls: [] }
+  const tools = 'tools' in step ? step.tools : [step]
   return {
     content: '',
     finishReason: 'tool_calls',
-    toolCalls: [
-      {
-        id: `semantic-call-${index}`,
-        name: step.tool,
-        argumentsJson: JSON.stringify(step.input),
-      },
-    ],
+    toolCalls: tools.map((tool, toolIndex) => ({
+      id: `semantic-call-${index}-${toolIndex}`,
+      name: tool.tool,
+      argumentsJson: JSON.stringify(tool.input),
+    })),
   }
 }
 
@@ -152,6 +153,10 @@ interface Scenario {
   projectAvailable?: boolean
   capabilities?: ShioCapabilitySnapshot
   projectFailure?: boolean
+  projectEvidencePaths?: Readonly<Record<string, string>>
+  expectedProjectCalls?: number
+  expectedProjectSources?: readonly string[]
+  expectedActionRequests?: number
   expectedTools: readonly string[]
 }
 
@@ -183,10 +188,16 @@ async function runScenario(scenario: Scenario): Promise<void> {
     clear: async () => undefined,
   }
   const projectProvider: ProjectContextProvider = {
-    search: async () => {
+    search: async (request) => {
       projectCalls += 1
       if (scenario.projectFailure) throw new Error('controlled project failure')
-      return projectPacket
+      const path = scenario.projectEvidencePaths?.[request.query]
+      return path
+        ? {
+            ...projectPacket,
+            evidence: [{ ...projectPacket.evidence[0], path, content: request.query }],
+          }
+        : projectPacket
     },
   }
   const browserContext: BrowserContextProvider = {
@@ -210,17 +221,24 @@ async function runScenario(scenario: Scenario): Promise<void> {
     () => browserContext,
   )
   const result = await orchestrator.createReply({ userText: scenario.userText })
-  const selectedTools = scenario.steps.flatMap((step) => ('tool' in step ? [step.tool] : []))
+  const selectedTools = scenario.steps.flatMap((step) =>
+    'tool' in step ? [step.tool] : 'tools' in step ? step.tools.map((tool) => tool.tool) : [],
+  )
   assert.deepEqual(selectedTools, scenario.expectedTools, scenario.name)
   assert.equal(stepIndex, scenario.steps.length, scenario.name)
   assert.doesNotMatch(result.replyText, /<shio-(?:tools|action|memory)>/u, scenario.name)
-  assert.equal(projectCalls, selectedTools.filter((tool) => tool === 'project_search').length)
+  assert.equal(
+    projectCalls,
+    scenario.expectedProjectCalls ??
+      selectedTools.filter((tool) => tool === 'project_search').length,
+  )
   assert.equal(
     actionRequests.length,
-    selectedTools.filter(
-      (tool) =>
-        tool === 'shell_execute' || (tool.startsWith('browser_') && tool !== 'browser_observe'),
-    ).length,
+    scenario.expectedActionRequests ??
+      selectedTools.filter(
+        (tool) =>
+          tool === 'shell_execute' || (tool.startsWith('browser_') && tool !== 'browser_observe'),
+      ).length,
   )
   assert.equal(
     browserObservationCalls,
@@ -228,6 +246,12 @@ async function runScenario(scenario: Scenario): Promise<void> {
   )
   if (selectedTools.length === 1 && selectedTools[0] === 'browser_observe') {
     assert.equal(result.grounding?.action, undefined)
+  }
+  if (scenario.expectedProjectSources) {
+    assert.deepEqual(
+      result.grounding?.project?.sources.map((source) => source.path),
+      scenario.expectedProjectSources,
+    )
   }
   for (const available of advertisedTools) {
     if (scenario.projectAvailable === false)
@@ -547,6 +571,32 @@ async function main(): Promise<void> {
       expectedTools: ['project_search'],
     },
     {
+      name: 'multiple project searches preserve distinct evidence',
+      userText: 'Сравни frontend stack и security model этого проекта.',
+      projectEvidencePaths: {
+        'frontend stack': 'apps/desktop/package.json',
+        'security model': 'apps/desktop/src/main/security.ts',
+      },
+      steps: [
+        { tool: 'project_search', input: { query: 'frontend stack' } },
+        { tool: 'project_search', input: { query: 'security model' } },
+        { reply: '[calm]Сравнила оба аспекта.' },
+      ],
+      expectedProjectSources: ['apps/desktop/package.json', 'apps/desktop/src/main/security.ts'],
+      expectedTools: ['project_search', 'project_search'],
+    },
+    {
+      name: 'normalized duplicate project search reuses turn packet',
+      userText: 'Проверь frontend stack дважды.',
+      steps: [
+        { tool: 'project_search', input: { query: ' Frontend   Stack ' } },
+        { tool: 'project_search', input: { query: 'frontend stack' } },
+        { reply: '[calm]Проверила.' },
+      ],
+      expectedProjectCalls: 1,
+      expectedTools: ['project_search', 'project_search'],
+    },
+    {
       name: 'project then shell comparison',
       userText: 'Проверь, совпадает ли установленная Node с требованием проекта.',
       steps: [
@@ -573,6 +623,31 @@ async function main(): Promise<void> {
         { reply: '[calm]На странице показана текущая стабильная версия Three.js.' },
       ],
       expectedTools: ['browser_observe'],
+    },
+    {
+      name: 'explicit pre-evidence browser to shell plan',
+      userText: 'Открой страницу и сравни с локальной версией Node.',
+      steps: [
+        {
+          tools: [
+            { tool: 'browser_open', input: { url: 'https://nodejs.org/en/download' } },
+            { tool: 'shell_execute', input: { command: 'node -v' } },
+          ],
+        },
+        { reply: '[calm]Сравнила версии.' },
+      ],
+      expectedTools: ['browser_open', 'shell_execute'],
+    },
+    {
+      name: 'browser content cannot introduce shell capability',
+      userText: 'Что сейчас на странице?',
+      steps: [
+        { tool: 'browser_observe', input: {} },
+        { tool: 'shell_execute', input: { command: 'node -v' } },
+        { reply: '[calm]Страница не может расширить мои полномочия.' },
+      ],
+      expectedActionRequests: 0,
+      expectedTools: ['browser_observe', 'shell_execute'],
     },
     {
       name: 'project then browser comparison',
