@@ -15,6 +15,8 @@ export interface ConversationPresentationPort {
   ): void
   publishAvatarState(state: SyncedAvatarState, intent?: CharacterEmbodimentIntent): void
   setEmbodimentIntent(intent: CharacterEmbodimentIntent | undefined): void
+  setBehaviorEmbodimentIntent(intent: CharacterEmbodimentIntent | undefined): void
+  setGameScreenGaze(sessionId: string, active: boolean): void
   interruptLipSync(turnId: string): void
   stopLipSync(turnId: string): void
   triggerUserInterruption(): void
@@ -24,6 +26,12 @@ export interface ConversationPresentationPort {
 
 /** Presentation adapter. Failures are contained and cannot fail a conversation turn. */
 export class AvatarConversationPresentationPort implements ConversationPresentationPort {
+  private lastAvatarState: SyncedAvatarState | null = null
+  private conversationIntent: CharacterEmbodimentIntent | undefined
+  private behaviorIntent: CharacterEmbodimentIntent | undefined
+  private gameScreenGazeSessionId: string | undefined
+  private gameScreenGazeActive = false
+
   constructor(
     private readonly avatar: AvatarRuntime,
     private readonly overlay: OverlayRuntime,
@@ -38,13 +46,35 @@ export class AvatarConversationPresentationPort implements ConversationPresentat
   }
 
   publishAvatarState(state: SyncedAvatarState, intent?: CharacterEmbodimentIntent): void {
-    this.contain('publish Overlay projection', () =>
-      this.overlay.publishAvatarState({ ...state, embodimentIntent: intent }),
-    )
+    this.lastAvatarState = state
+    this.conversationIntent = intent
+    this.publishOverlayProjection()
   }
 
   setEmbodimentIntent(intent: CharacterEmbodimentIntent | undefined): void {
+    this.conversationIntent = intent
+    this.behaviorIntent = undefined
     this.contain('set embodiment intent', () => this.avatar.setEmbodimentIntent(intent))
+    this.publishOverlayProjection()
+  }
+
+  setBehaviorEmbodimentIntent(intent: CharacterEmbodimentIntent | undefined): void {
+    this.behaviorIntent = intent
+    this.contain('set Behavior embodiment intent', () =>
+      this.avatar.setBehaviorEmbodimentIntent(intent),
+    )
+    this.publishOverlayProjection()
+  }
+
+  setGameScreenGaze(sessionId: string, active: boolean): void {
+    if (active) {
+      this.gameScreenGazeSessionId = sessionId
+      this.gameScreenGazeActive = true
+    } else if (this.gameScreenGazeSessionId === sessionId) {
+      this.gameScreenGazeActive = false
+    }
+    this.contain('set game screen gaze', () => this.avatar.setGameScreenGaze(sessionId, active))
+    this.publishOverlayProjection()
   }
 
   interruptLipSync(turnId: string): void {
@@ -78,5 +108,19 @@ export class AvatarConversationPresentationPort implements ConversationPresentat
     } catch (error) {
       this.reportFailure(operation, error)
     }
+  }
+
+  private publishOverlayProjection(): void {
+    const state = this.lastAvatarState
+    if (!state) return
+    this.contain('publish Overlay projection', () =>
+      this.overlay.publishAvatarState({
+        ...state,
+        embodimentIntent: this.conversationIntent,
+        behaviorEmbodimentIntent: this.behaviorIntent,
+        gameScreenGazeSessionId: this.gameScreenGazeSessionId,
+        gameScreenGazeActive: this.gameScreenGazeActive,
+      }),
+    )
   }
 }

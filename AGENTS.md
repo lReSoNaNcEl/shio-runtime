@@ -175,6 +175,11 @@ Architecture and ownership:
   never enter renderer state, diagnostics, Memory, or conversation. Commentary
   continues through Experience, Behavior, and Conversation Admission and may not
   pause the game loop; active user conversation and audio remain authoritative.
+- Active Game Session gaze is a typed Behavior presence projection, not Character
+  State. Avatar Runtime arbitrates conversation intent, Behavior intent, and the
+  session-scoped screen-gaze lease; listening to the user wins temporarily, while
+  pause, stop, waiting-user, and error release only the matching game session lease.
+  Mirror Overlay receives the same bounded presentation projection.
 - CAPTCHA, anti-bot, and authentication-wall detection for a Game Session uses only
   fixed Main-owned structural inspection. Page or Character text may not supply
   selectors, scripts, or bypass instructions. A blocker moves the session to

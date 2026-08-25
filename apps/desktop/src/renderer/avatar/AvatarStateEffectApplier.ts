@@ -21,9 +21,7 @@ export class AvatarStateEffectApplier {
   }): void {
     const { effect, vrmEmotion, lipSyncStart, stopLipSyncTurnId, state, gazeHint } = input
     this.vrmModel.setProceduralMode(effect.proceduralMode)
-    const lookAtMode = toLookAtMode(effect, state, gazeHint)
-    this.vrmModel.setLookAtMode(lookAtMode)
-    this.vrmModel.setHeadMotionProfile(toHeadMotionProfile(lookAtMode))
+    this.applyGaze(effect.mode, state, gazeHint)
     this.vrmModel.applyEmotion(effect.emotionKey, vrmEmotion)
 
     if (effect.detachLipSync) this.lipSync.detach(stopLipSyncTurnId)
@@ -34,5 +32,15 @@ export class AvatarStateEffectApplier {
         emotionKey: lipSyncStart.emotionKey || effect.emotionKey,
       })
     else if (effect.attachLipSync) this.lipSync.setEmotion(effect.emotionKey)
+  }
+
+  applyGaze(
+    mode: AvatarStateEffect['mode'],
+    state?: CharacterState,
+    gazeHint?: EmbodimentGazeHint,
+  ): void {
+    const lookAtMode = toLookAtMode({ mode }, state, gazeHint)
+    this.vrmModel.setLookAtMode(lookAtMode)
+    this.vrmModel.setHeadMotionProfile(toHeadMotionProfile(lookAtMode))
   }
 }

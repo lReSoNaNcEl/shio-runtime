@@ -8,6 +8,7 @@ import { AvatarAnimationQueue } from '../../src/renderer/avatar/AvatarAnimationQ
 import type { AvatarBehaviorResolution } from '../../src/renderer/avatar/AvatarBehaviorResolver'
 import { AvatarPlaybackCoordinator } from '../../src/renderer/avatar/AvatarPlaybackCoordinator'
 import type { AvatarStateEffect } from '../../src/renderer/avatar/AvatarStateMachine'
+import { AvatarGazeArbiter } from '../../src/renderer/avatar/embodiment/gaze/AvatarGazeArbiter'
 import { LookTargetResolver } from '../../src/renderer/avatar/embodiment/gaze/LookAtRuntime'
 import {
   AVATAR_MOTION_LAYERS,
@@ -58,6 +59,24 @@ assert.ok(gestureAuthority.proceduralUpperBodyWeight < baseAuthority.proceduralU
 assert.ok(reactionAuthority.proceduralUpperBodyWeight < gestureAuthority.proceduralUpperBodyWeight)
 assert.ok(screenAuthority.proceduralHeadWeight < gestureAuthority.proceduralHeadWeight)
 console.log('Motion layer contract and priorities: PASS')
+
+const gazeArbiter = new AvatarGazeArbiter()
+gazeArbiter.setGameScreenGaze('game-session-a', true)
+assert.equal(gazeArbiter.resolve('idle'), 'screen')
+assert.equal(gazeArbiter.resolve('listening'), undefined, 'user speech must win over game gaze')
+gazeArbiter.setConversationIntent({ intensity: 'subtle', gazeHint: 'user' })
+assert.equal(gazeArbiter.resolve('speaking'), 'user')
+gazeArbiter.setConversationIntent(undefined)
+assert.equal(gazeArbiter.resolve('speaking'), 'screen', 'game gaze must resume after commentary')
+gazeArbiter.setGameScreenGaze('stale-game-session', false)
+assert.equal(
+  gazeArbiter.resolve('idle'),
+  'screen',
+  'stale release must not clear the active session',
+)
+gazeArbiter.setGameScreenGaze('game-session-a', false)
+assert.equal(gazeArbiter.resolve('idle'), undefined)
+console.log('Conversation, user speech, and bounded game gaze arbitration: PASS')
 
 function makeHumanoidVrm(): {
   vrm: VRM

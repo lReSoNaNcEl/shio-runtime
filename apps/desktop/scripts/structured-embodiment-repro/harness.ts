@@ -4,6 +4,8 @@ import * as THREE from 'three'
 
 import { LookTargetResolver } from '../../src/renderer/avatar/embodiment/gaze/LookAtRuntime'
 import { avatarLookAtTuning } from '../../src/renderer/avatar/tuning/motionTuning'
+import { AvatarConversationPresentationPort } from '../../src/renderer/runtime/ConversationPresentationPort'
+import type { SyncedAvatarState } from '../../src/renderer/runtime/OverlayRuntime'
 import {
   normalizeCharacterEmbodimentIntent,
   parseCharacterEmbodimentResponse,
@@ -62,6 +64,30 @@ const normal = screenResolver.resolve({
 })
 assert.notEqual(normal.targetKind, 'screenContext')
 console.log('Screen gaze ownership and normal-turn release: PASS')
+
+const mirrored: SyncedAvatarState[] = []
+const presentation = new AvatarConversationPresentationPort(
+  {
+    setEmbodimentIntent: () => undefined,
+    setBehaviorEmbodimentIntent: () => undefined,
+    setGameScreenGaze: () => undefined,
+  } as never,
+  { publishAvatarState: (state: SyncedAvatarState) => mirrored.push(state) } as never,
+  () => undefined,
+)
+presentation.publishAvatarState({ mode: 'idle' })
+presentation.setGameScreenGaze('game-session-a', true)
+assert.equal(mirrored.at(-1)?.gameScreenGazeActive, true)
+presentation.setGameScreenGaze('game-session-b', true)
+presentation.setGameScreenGaze('game-session-a', false)
+assert.equal(mirrored.at(-1)?.gameScreenGazeSessionId, 'game-session-b')
+assert.equal(mirrored.at(-1)?.gameScreenGazeActive, true)
+presentation.setBehaviorEmbodimentIntent({ intensity: 'subtle', gazeHint: 'screen' })
+presentation.setEmbodimentIntent({ intensity: 'subtle', gazeHint: 'user' })
+assert.equal(mirrored.at(-1)?.behaviorEmbodimentIntent, undefined)
+presentation.setGameScreenGaze('game-session-b', false)
+assert.equal(mirrored.at(-1)?.gameScreenGazeActive, false)
+console.log('Mirror Overlay game gaze projection and stale release: PASS')
 
 const migrated = migrateLegacyDesktopSettings({ ttsVoice: 'legacy-user-voice' })
 assert.equal('ttsVoice' in migrated, false)

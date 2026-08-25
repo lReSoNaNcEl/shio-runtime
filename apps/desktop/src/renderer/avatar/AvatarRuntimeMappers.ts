@@ -19,7 +19,7 @@ export function toAvatarMode(mode: CharacterState['mode']): AvatarMode {
 }
 
 export function toLookAtMode(
-  effect: AvatarStateEffect,
+  effect: Pick<AvatarStateEffect, 'mode'>,
   state?: CharacterState,
   gazeHint?: EmbodimentGazeHint,
 ): LookAtMode {

@@ -373,7 +373,7 @@ export class AliveFacade {
     command: BehaviorCommand,
     authority?: ProactiveInitiativeApproval | 'explicit-user',
   ): boolean {
-    if (command.intent.kind === 'none') return false
+    if (command.intent.kind === 'none' && !command.embodimentPresence) return false
     if (['conversation-candidate', 'goal-suggestion'].includes(command.intent.kind) && !authority) {
       this.store.audit('behavior', command.intent.kind, 'blocked', command.id, 'initiative-gate')
       return false

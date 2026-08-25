@@ -94,6 +94,7 @@ async function main(): Promise<void> {
     const lifeLost = experience.observe(gameEvent('life-lost', 31, 'ambient'))
     const lifeLostBehavior = behavior.decide({ ...lifeLost, settings, world, at: 31 })
     assert.equal(lifeLostBehavior.intent.kind, 'embodiment')
+    assert.equal(lifeLostBehavior.embodimentPresence?.screenGazeActive, true)
     const levelCompleted = experience.observe(gameEvent('level-completed', 40, 'important'))
     const levelCompletedBehavior = behavior.decide({
       ...levelCompleted,
@@ -124,6 +125,7 @@ async function main(): Promise<void> {
     const waitingUser = experience.observe(gameEvent('waiting-user', 44, 'blocking'))
     const waitingUserBehavior = behavior.decide({ ...waitingUser, settings, world, at: 44 })
     assert.equal(waitingUserBehavior.intent.kind, 'conversation-candidate')
+    assert.equal(waitingUserBehavior.embodimentPresence?.screenGazeActive, false)
     const userSpeechWins = experience.observe(gameEvent('waiting-user', 45, 'blocking'))
     const userSpeechBehavior = behavior.decide({
       ...userSpeechWins,
@@ -133,6 +135,26 @@ async function main(): Promise<void> {
       conversationAllowed: false,
     })
     assert.notEqual(userSpeechBehavior.intent.kind, 'conversation-candidate')
+    assert.equal(
+      userSpeechBehavior.embodimentPresence?.screenGazeActive,
+      false,
+      'session gaze release must survive conversation suppression',
+    )
+    const resumed = experience.observe(gameEvent('game-resumed', 46, 'ambient'))
+    const resumedBehavior = behavior.decide({ ...resumed, settings, world, at: 46 })
+    assert.equal(resumedBehavior.embodimentPresence?.screenGazeActive, true)
+    const paused = experience.observe(gameEvent('game-paused', 47, 'ambient'))
+    const pausedBehavior = behavior.decide({ ...paused, settings, world, at: 47 })
+    assert.equal(pausedBehavior.embodimentPresence?.screenGazeActive, false)
+    const errored = experience.observe(gameEvent('game-error', 48, 'blocking'))
+    const erroredBehavior = behavior.decide({
+      ...errored,
+      settings,
+      world,
+      at: 48,
+      conversationAllowed: false,
+    })
+    assert.equal(erroredBehavior.embodimentPresence?.screenGazeActive, false)
 
     let modelCalls = 0
     let failModel = false

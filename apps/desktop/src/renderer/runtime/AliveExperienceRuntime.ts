@@ -91,8 +91,19 @@ export class AliveExperienceRuntime {
   }
 
   private applyBehavior(command: BehaviorCommand): void {
+    if (command.embodimentPresence?.source === 'browser-game') {
+      this.deps.presentation.setBehaviorEmbodimentIntent(
+        command.intent.kind === 'embodiment' ? command.intent.intent : undefined,
+      )
+      this.deps.presentation.setGameScreenGaze(
+        command.embodimentPresence.sessionId,
+        command.embodimentPresence.screenGazeActive,
+      )
+    }
     if (command.intent.kind === 'embodiment') {
-      this.deps.presentation.setEmbodimentIntent(command.intent.intent)
+      if (!command.embodimentPresence) {
+        this.deps.presentation.setBehaviorEmbodimentIntent(command.intent.intent)
+      }
     } else if (command.intent.kind === 'conversation-candidate') {
       this.deps.pushInitiative(command.intent.topic)
     } else if (command.intent.kind === 'goal-suggestion') {

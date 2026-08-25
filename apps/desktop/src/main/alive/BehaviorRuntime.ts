@@ -36,7 +36,7 @@ export class BehaviorRuntime {
       settings.mode === 'off' ||
       insideQuietHours(settings, at)
     ) {
-      return command(at, appraisal.eventId, { kind: 'none' })
+      return command(at, appraisal.eventId, { kind: 'none' }, appraisal.embodimentPresence)
     }
     if (
       appraisal.conversationalImpulse &&
@@ -46,11 +46,16 @@ export class BehaviorRuntime {
     ) {
       this.lastConversationCandidateAt = at
       if (gameEvent) this.gameConversationCandidateAt.push(at)
-      return command(at, appraisal.eventId, {
-        kind: 'conversation-candidate',
-        topic: appraisal.conversationalImpulse.topic.slice(0, 300),
-        priority: boundedUnit(appraisal.conversationalImpulse.priority),
-      })
+      return command(
+        at,
+        appraisal.eventId,
+        {
+          kind: 'conversation-candidate',
+          topic: appraisal.conversationalImpulse.topic.slice(0, 300),
+          priority: boundedUnit(appraisal.conversationalImpulse.priority),
+        },
+        appraisal.embodimentPresence,
+      )
     }
     if (
       appraisal.embodimentHint &&
@@ -59,12 +64,17 @@ export class BehaviorRuntime {
           (gameEvent ? GAME_NONVERBAL_COOLDOWN_MS : NONVERBAL_COOLDOWN_MS))
     ) {
       this.lastNonverbalAt = at
-      return command(at, appraisal.eventId, {
-        kind: 'embodiment',
-        intent: appraisal.embodimentHint,
-      })
+      return command(
+        at,
+        appraisal.eventId,
+        {
+          kind: 'embodiment',
+          intent: appraisal.embodimentHint,
+        },
+        appraisal.embodimentPresence,
+      )
     }
-    return command(at, appraisal.eventId, { kind: 'none' })
+    return command(at, appraisal.eventId, { kind: 'none' }, appraisal.embodimentPresence)
   }
 
   scheduledInitiative(taskId: string, title: string, at: number): BehaviorCommand {
@@ -119,8 +129,9 @@ function command(
   at: number,
   sourceEventId: string,
   intent: BehaviorCommand['intent'],
+  embodimentPresence?: BehaviorCommand['embodimentPresence'],
 ): BehaviorCommand {
-  return { id: randomUUID(), at, sourceEventId, intent }
+  return { id: randomUUID(), at, sourceEventId, embodimentPresence, intent }
 }
 
 function boundedUnit(value: number): number {

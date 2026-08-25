@@ -18,6 +18,9 @@ export interface SyncedAvatarState {
   earImpulse?: EarImpulse
   earImpulseId?: string
   embodimentIntent?: CharacterEmbodimentIntent
+  behaviorEmbodimentIntent?: CharacterEmbodimentIntent
+  gameScreenGazeSessionId?: string
+  gameScreenGazeActive?: boolean
 }
 
 /**
@@ -184,6 +187,13 @@ export class OverlayRuntime {
           : undefined,
       earImpulseId: typeof value.earImpulseId === 'string' ? value.earImpulseId : undefined,
       embodimentIntent: normalizeCharacterEmbodimentIntent(value.embodimentIntent),
+      behaviorEmbodimentIntent: normalizeCharacterEmbodimentIntent(value.behaviorEmbodimentIntent),
+      gameScreenGazeSessionId:
+        typeof value.gameScreenGazeSessionId === 'string'
+          ? value.gameScreenGazeSessionId
+          : undefined,
+      gameScreenGazeActive:
+        typeof value.gameScreenGazeActive === 'boolean' ? value.gameScreenGazeActive : undefined,
     }
   }
 

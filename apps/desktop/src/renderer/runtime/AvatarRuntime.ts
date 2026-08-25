@@ -203,6 +203,18 @@ export class AvatarRuntime {
     this.controller.setEmbodimentIntent(intent)
   }
 
+  setBehaviorEmbodimentIntent(intent: CharacterEmbodimentIntent | undefined): void {
+    this.controller.setBehaviorEmbodimentIntent(intent)
+  }
+
+  setGameScreenGaze(sessionId: string, active: boolean): void {
+    this.controller.setGameScreenGaze(sessionId, active)
+  }
+
+  isGameScreenGazeActive(): boolean {
+    return this.controller.isGameScreenGazeActive()
+  }
+
   getMirrorState(): AvatarRuntimeMirrorState {
     return {
       loaded: this.controller.isLoaded(),

@@ -285,6 +285,7 @@ export type ExperienceEvent =
 export interface ExperienceAppraisal {
   eventId: string
   origin?: 'browser-game'
+  embodimentPresence?: BehaviorEmbodimentPresence
   salience: number
   valence: number
   arousal: number
@@ -313,10 +314,17 @@ export type BehaviorIntent =
   | { kind: 'conversation-candidate'; topic: string; priority: number }
   | { kind: 'goal-suggestion'; objective: string; reason: string }
 
+export interface BehaviorEmbodimentPresence {
+  source: 'browser-game'
+  sessionId: string
+  screenGazeActive: boolean
+}
+
 export interface BehaviorCommand {
   id: string
   at: number
   sourceEventId?: string
+  embodimentPresence?: BehaviorEmbodimentPresence
   intent: BehaviorIntent
 }
 

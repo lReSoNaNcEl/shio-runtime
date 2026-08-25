@@ -27,6 +27,7 @@ import { type AvatarMode, type AvatarStateEffect, AvatarStateMachine } from './A
 import { getAnimation } from './animationManifest'
 import type { DebugAvatarMode } from './avatarAnimations'
 import { resolveEmotionEmbodimentProfile } from './EmotionEmbodimentProfile'
+import { AvatarGazeArbiter } from './embodiment/gaze/AvatarGazeArbiter'
 import type { EarAxisOverride, EarImpulse } from './embodiment/secondary-motion/EarBehaviorRuntime'
 import { LipSync, type LipSyncStartRequest, type MouthWeights } from './embodiment/speech/LipSync'
 import type { SpeechPhrasePhase } from './embodiment/speech/PhraseEnvelopeController'
@@ -58,6 +59,7 @@ export class AvatarController {
   private lipSync = new LipSync(this.vrmModel)
   private stateEffects = new AvatarStateEffectApplier(this.vrmModel, this.lipSync)
   private stateMachine = new AvatarStateMachine()
+  private gaze = new AvatarGazeArbiter()
   private lastEffect: AvatarStateEffect | null = null
   private lastBehaviorEngineDecision: AvatarBehaviorEngineDecision | null = null
   private lastBehaviorResolution: AvatarBehaviorResolution | null = null
@@ -65,13 +67,16 @@ export class AvatarController {
   private frame = 0
   private lastCharacterStateKey: string | null = null
   private overlayAnimationPolicy: OverlayAnimationPolicy | null = null
-  private embodimentIntent: CharacterEmbodimentIntent | undefined
+  private conversationEmbodimentIntent: CharacterEmbodimentIntent | undefined
+  private behaviorEmbodimentIntent: CharacterEmbodimentIntent | undefined
+  private lastCharacterState: CharacterState | undefined
 
   constructor(options: { overlayMode?: boolean } = {}) {
     this.overlayAnimationPolicy = options.overlayMode ? new OverlayAnimationPolicy() : null
   }
 
   update(delta: number, state?: CharacterState): void {
+    if (state) this.lastCharacterState = state
     this.frame += 1
     const mode = this.stateMachine.getMode()
     this.idleBehaviors.update(delta, mode)
@@ -184,10 +189,11 @@ export class AvatarController {
     state: CharacterState,
     options: { lipSyncStart?: LipSyncStartRequest; stopLipSyncTurnId?: string } = {},
   ): void {
+    this.lastCharacterState = state
     const mode = toAvatarMode(state.mode)
     const emotionKey = state.emotion || state.avatar.expression || 'neutral'
     const vrmEmotion = state.avatar.vrmExpression
-    const semanticKey = `${mode}|${emotionKey}|${vrmEmotion ?? ''}|${JSON.stringify(this.embodimentIntent) ?? ''}|${options.lipSyncStart?.session.playbackId ?? ''}`
+    const semanticKey = `${mode}|${emotionKey}|${vrmEmotion ?? ''}|${JSON.stringify(this.effectiveEmbodimentIntent()) ?? ''}|game=${this.gaze.gameScreenGazeActive()}|${options.lipSyncStart?.session.playbackId ?? ''}`
 
     if (semanticKey === this.lastCharacterStateKey) {
       this.vrmModel.applyEmotion(emotionKey || 'neutral', vrmEmotion)
@@ -237,8 +243,29 @@ export class AvatarController {
   }
 
   setEmbodimentIntent(intent: CharacterEmbodimentIntent | undefined): void {
-    this.embodimentIntent = intent
+    this.conversationEmbodimentIntent = intent
+    this.behaviorEmbodimentIntent = undefined
+    this.gaze.setConversationIntent(intent)
+    this.gaze.setBehaviorIntent(undefined)
     this.lastCharacterStateKey = null
+    this.applyCurrentGaze()
+  }
+
+  setBehaviorEmbodimentIntent(intent: CharacterEmbodimentIntent | undefined): void {
+    this.behaviorEmbodimentIntent = intent
+    this.gaze.setBehaviorIntent(intent)
+    this.lastCharacterStateKey = null
+    this.applyCurrentGaze()
+  }
+
+  setGameScreenGaze(sessionId: string, active: boolean): void {
+    this.gaze.setGameScreenGaze(sessionId, active)
+    this.lastCharacterStateKey = null
+    this.applyCurrentGaze()
+  }
+
+  isGameScreenGazeActive(): boolean {
+    return this.gaze.gameScreenGazeActive()
   }
 
   prepareSpeaking(emotionKey?: string, vrmEmotion?: string, state?: CharacterState): void {
@@ -533,7 +560,7 @@ export class AvatarController {
       lipSyncStart,
       stopLipSyncTurnId,
       state,
-      gazeHint: this.embodimentIntent?.gazeHint,
+      gazeHint: this.gaze.resolve(effect.mode),
     })
 
     if (effect.mode === 'speaking') {
@@ -622,18 +649,19 @@ export class AvatarController {
       ...this.getOverlayExcludedAnimationIds(effect),
     ]
     const embodiment = resolveEmotionEmbodimentProfile(effect.emotionKey)
+    const embodimentIntent = this.effectiveEmbodimentIntent()
     const intentResolution =
-      decision.phase === 'opening' && this.embodimentIntent?.gestureHint
+      decision.phase === 'opening' && embodimentIntent?.gestureHint
         ? this.behaviorResolver.resolveEmbodimentIntent(
             effect,
-            this.embodimentIntent,
+            embodimentIntent,
             'speaking',
             excluded,
           )
         : null
     const resolved =
       intentResolution ??
-      (this.embodimentIntent?.gestureHint && decision.phase === 'opening'
+      (embodimentIntent?.gestureHint && decision.phase === 'opening'
         ? this.behaviorResolver.resolveBehaviorTag(effect, 'behavior:neutral', 'neutral', excluded)
         : this.behaviorResolver.resolveAnimationTags(
             effect,
@@ -726,6 +754,15 @@ export class AvatarController {
       selectionReason: resolved.selectionReason,
       phase: decision.phase,
     })
+  }
+
+  private effectiveEmbodimentIntent(): CharacterEmbodimentIntent | undefined {
+    return this.conversationEmbodimentIntent ?? this.behaviorEmbodimentIntent
+  }
+
+  private applyCurrentGaze(): void {
+    const mode = this.stateMachine.getMode()
+    this.stateEffects.applyGaze(mode, this.lastCharacterState, this.gaze.resolve(mode))
   }
 
   private advanceAnimationQueue(): void {

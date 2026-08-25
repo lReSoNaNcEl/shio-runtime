@@ -781,6 +781,16 @@ export class Controller {
       vrmEmotion: avatarState.vrmEmotion,
     })
     this.avatarRuntime.setEmbodimentIntent(avatarState.embodimentIntent)
+    this.avatarRuntime.setBehaviorEmbodimentIntent(avatarState.behaviorEmbodimentIntent)
+    if (
+      avatarState.gameScreenGazeSessionId &&
+      typeof avatarState.gameScreenGazeActive === 'boolean'
+    ) {
+      this.avatarRuntime.setGameScreenGaze(
+        avatarState.gameScreenGazeSessionId,
+        avatarState.gameScreenGazeActive,
+      )
+    }
     this.applyAvatarCharacterState()
     if (allowReaction && avatarState.reaction === 'user-interruption')
       this.avatarRuntime.triggerUserInterruption()

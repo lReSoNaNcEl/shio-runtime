@@ -98,8 +98,22 @@ export const avatarStateSchema = z
       })
       .strict()
       .optional(),
+    behaviorEmbodimentIntent: z
+      .object({
+        intensity: z.enum(EMBODIMENT_INTENSITIES),
+        gestureHint: z.enum(EMBODIMENT_GESTURE_HINTS).optional(),
+        gazeHint: z.enum(EMBODIMENT_GAZE_HINTS).optional(),
+      })
+      .strict()
+      .optional(),
+    gameScreenGazeSessionId: z.string().max(100).optional(),
+    gameScreenGazeActive: z.boolean().optional(),
   })
   .strict()
+  .refine(
+    (state) => !state.gameScreenGazeActive || Boolean(state.gameScreenGazeSessionId),
+    'Active game screen gaze requires a session id',
+  )
 
 const mouthWeight = z.number().finite().min(0).max(1)
 export const avatarMouthSchema = z

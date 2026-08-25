@@ -231,7 +231,16 @@ function appraise(event: ExperienceEvent): ExperienceAppraisal {
 }
 
 function appraiseGameEvent(event: GameSemanticEvent, eventId: string): ExperienceAppraisal {
-  const base = { eventId, origin: 'browser-game' as const, memoryCandidate: undefined }
+  const base = {
+    eventId,
+    origin: 'browser-game' as const,
+    memoryCandidate: undefined,
+    embodimentPresence: {
+      source: 'browser-game' as const,
+      sessionId: event.sessionId,
+      screenGazeActive: keepsScreenGaze(event.type),
+    },
+  }
   switch (event.type) {
     case 'game-started':
     case 'round-started':
@@ -374,7 +383,7 @@ function appraiseGameEvent(event: GameSemanticEvent, eventId: string): Experienc
         novelty: 0.65,
         socialRelevance: 0.55,
         emotionHint: 'sad',
-        embodimentHint: { intensity: 'normal', gestureHint: 'disagree', gazeHint: 'screen' },
+        embodimentHint: { intensity: 'normal', gestureHint: 'disagree', gazeHint: 'user' },
         conversationalImpulse: {
           topic: 'The game session stopped because of an error',
           priority: 0.9,
@@ -395,6 +404,10 @@ function appraiseGameEvent(event: GameSemanticEvent, eventId: string): Experienc
         silence: true,
       })
   }
+}
+
+function keepsScreenGaze(type: GameSemanticEvent['type']): boolean {
+  return !['game-paused', 'game-stopped', 'game-error', 'waiting-user'].includes(type)
 }
 
 function bounded(appraisal: ExperienceAppraisal): ExperienceAppraisal {
