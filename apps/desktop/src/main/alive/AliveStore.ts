@@ -14,6 +14,8 @@ import type {
   UpdateGoalInput,
 } from '../../shared/alive'
 
+type GoalStoreUpdateInput = UpdateGoalInput & { progress?: number }
+
 const DATABASE_VERSION = 1
 
 export const DEFAULT_AUTONOMY_SETTINGS: AutonomySettings = Object.freeze({
@@ -144,7 +146,7 @@ export class AliveStore {
     return Object.freeze(goal)
   }
 
-  updateGoal(input: UpdateGoalInput): PersistentGoal | null {
+  updateGoal(input: GoalStoreUpdateInput): PersistentGoal | null {
     const current = this.goals().find((goal) => goal.id === input.id)
     if (!current) return null
     const next: PersistentGoal = {

@@ -5,6 +5,7 @@ import {
   type DesktopWorkflowRequest,
   desktopWorkflowRequestSchema,
 } from '../../shared/actions'
+import type { PersistentGoalProvider } from '../../shared/alive'
 import type { CharacterToolId } from '../../shared/character-tools'
 import type {
   BrowserContextProviderResolver,
@@ -37,6 +38,13 @@ const SHELL_INPUT_SCHEMA = z
     command: z.string().trim().min(1).max(2_000),
     goal: z.string().trim().min(1).max(2_000).optional(),
     risk: z.enum(['normal', 'destructive']).optional(),
+  })
+  .strict()
+
+const GOAL_LIST_INPUT_SCHEMA = z
+  .object({
+    status: z.enum(['active', 'paused', 'completed', 'cancelled']).optional(),
+    limit: z.number().int().min(1).max(20).optional(),
   })
   .strict()
 
@@ -106,6 +114,7 @@ interface CharacterToolDispatcherOptions {
   signal: AbortSignal
   projectContext?: ProjectContextProviderResolver
   semanticMemory?: MemoryToolBroker
+  persistentGoals?: PersistentGoalProvider
   executeDesktopWorkflow?: (
     request: DesktopWorkflowRequest,
     signal: AbortSignal,
@@ -201,13 +210,14 @@ export class CharacterToolDispatcher {
         return { content: failureContent('BROWSER_EVIDENCE_CANNOT_AUTHORIZE_MEMORY_MUTATION') }
       }
       if (id === 'project.search') return await this.executeProject(input)
+      if (id === 'goal.list') return this.executeGoalList(input)
       if (MEMORY_TOOL_IDS.has(id)) return this.executeMemory(id as MemoryToolName, input)
       if (id === 'shell.execute') return await this.executeShell(input)
       if (id === 'browser.observe') return await this.executeBrowserObservation(input)
       return await this.executeBrowser(
         id as Exclude<
           CharacterToolId,
-          'project.search' | 'shell.execute' | 'browser.observe' | MemoryToolName
+          'project.search' | 'shell.execute' | 'browser.observe' | 'goal.list' | MemoryToolName
         >,
         input,
       )
@@ -318,6 +328,31 @@ export class CharacterToolDispatcher {
     }
   }
 
+  private executeGoalList(input: Record<string, unknown>): CharacterToolDispatchResult {
+    const request = GOAL_LIST_INPUT_SCHEMA.parse(input)
+    if (!this.options.persistentGoals) {
+      return { content: failureContent('GOALS_UNAVAILABLE') }
+    }
+    const goals = this.options
+      .persistentGoals()
+      .filter((goal) => !request.status || goal.status === request.status)
+      .slice(0, request.limit ?? 20)
+      .map((goal) => ({
+        title: goal.title,
+        description: goal.description || undefined,
+        status: goal.status,
+        progressPercent: Math.round(goal.progress * 100),
+        updatedAt: goal.updatedAt,
+      }))
+    return {
+      content: successfulContent({
+        goals,
+        count: goals.length,
+        source: 'persistent-goal-store',
+      }),
+    }
+  }
+
   private async executeShell(input: Record<string, unknown>): Promise<CharacterToolDispatchResult> {
     const parsed = SHELL_INPUT_SCHEMA.parse(input)
     return this.executeDesktopAction(
@@ -351,7 +386,7 @@ export class CharacterToolDispatcher {
   private async executeBrowser(
     id: Exclude<
       CharacterToolId,
-      'project.search' | 'shell.execute' | 'browser.observe' | MemoryToolName
+      'project.search' | 'shell.execute' | 'browser.observe' | 'goal.list' | MemoryToolName
     >,
     input: Record<string, unknown>,
   ): Promise<CharacterToolDispatchResult> {

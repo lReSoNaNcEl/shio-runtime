@@ -14,6 +14,7 @@ export interface CharacterToolDefinition {
 
 interface CharacterToolRegistryOptions {
   projectAvailable: boolean
+  goalsAvailable?: boolean
   capabilityContext: ShioCapabilitySnapshot | null
   browserObservation: BrowserObservation | null
   memory?: MemoryToolBroker
@@ -92,6 +93,27 @@ export class CharacterToolRegistry {
                 },
                 additionalProperties: false,
               },
+            },
+            additionalProperties: false,
+          },
+        ),
+      )
+    }
+
+    if (options.goalsAvailable) {
+      tools.push(
+        definition(
+          'goal.list',
+          'goal_list',
+          "List Shio's persistent goals from the Goal Store. Use this whenever the user asks about Shio's current goals, objectives, or goal progress, even if they casually call those goals memory. Persistent goals are not Semantic Memory records.",
+          {
+            type: 'object',
+            properties: {
+              status: {
+                type: 'string',
+                enum: ['active', 'paused', 'completed', 'cancelled'],
+              },
+              limit: { type: 'integer', minimum: 1, maximum: 20 },
             },
             additionalProperties: false,
           },

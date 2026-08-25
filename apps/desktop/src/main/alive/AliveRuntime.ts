@@ -123,7 +123,10 @@ export class AliveRuntime {
 
   updateGoal(input: UpdateGoalInput): AliveSnapshot {
     const previous = this.store.goals().find((goal) => goal.id === input.id)
-    const goal = this.store.updateGoal(input)
+    const goal = this.store.updateGoal({
+      ...input,
+      ...(input.status === 'completed' ? { progress: 1 } : {}),
+    })
     if (!goal) throw new Error('GOAL_NOT_FOUND')
     this.store.audit('goal', 'updated', 'success', goal.id)
     if (goal.status === 'completed' && previous?.status !== 'completed') {

@@ -6,7 +6,9 @@ import { Readable } from 'node:stream'
 
 import { AliveStore } from '../../src/main/alive/AliveStore'
 import { AutonomyEnvelope } from '../../src/main/alive/AutonomyEnvelope'
+import { CharacterToolDispatcher } from '../../src/main/character-tools/CharacterToolDispatcher'
 import { CharacterToolLoop } from '../../src/main/character-tools/CharacterToolLoop'
+import { CharacterToolRegistry } from '../../src/main/character-tools/CharacterToolRegistry'
 import { runChatCompletionStream } from '../../src/main/llm/openai-compatible/stream'
 import { StreamingSpeechPipeline } from '../../src/renderer/runtime/StreamingSpeechPipeline'
 import {
@@ -376,6 +378,49 @@ async function testPersistenceAndEnvelope(): Promise<void> {
   }
 }
 
+async function testPersistentGoalTool(): Promise<void> {
+  const directory = mkdtempSync(join(tmpdir(), 'shio-goal-tool-'))
+  try {
+    const store = new AliveStore(join(directory, 'alive.sqlite'))
+    store.createGoal({ title: 'Найти фотки с котиками в браузере' })
+    store.createGoal({ title: 'Paused goal' })
+    const paused = store.goals().find((goal) => goal.title === 'Paused goal')
+    assert.ok(paused)
+    store.updateGoal({ id: paused.id, status: 'paused' })
+
+    const registry = new CharacterToolRegistry({
+      projectAvailable: false,
+      goalsAvailable: true,
+      capabilityContext: null,
+      browserObservation: null,
+      actionsAvailable: false,
+    })
+    assert.ok(registry.get('goal.list'))
+
+    const dispatcher = new CharacterToolDispatcher({
+      registry: () => registry,
+      traceId: 'goal-tool-repro',
+      userGoal: 'Какие у тебя сейчас цели?',
+      signal: new AbortController().signal,
+      persistentGoals: () => store.goals(),
+    })
+    const result = await dispatcher.execute('goal.list', { status: 'active' })
+    const payload = JSON.parse(result.content) as {
+      ok: boolean
+      data: { source: string; count: number; goals: Array<{ title: string }> }
+    }
+    assert.equal(payload.ok, true)
+    assert.equal(payload.data.source, 'persistent-goal-store')
+    assert.equal(payload.data.count, 1)
+    assert.equal(payload.data.goals[0]?.title, 'Найти фотки с котиками в браузере')
+    assert.doesNotMatch(result.content, /Paused goal/u)
+    dispatcher.dispose()
+    store.close()
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
+}
+
 async function testLatencyAggregation(): Promise<void> {
   const telemetry = new LatencyTelemetry()
   for (const [index, duration] of [100, 200, 300].entries()) {
@@ -405,6 +450,7 @@ async function main(): Promise<void> {
   await testToolRoundContainment()
   await testStreamingSpeechQueue()
   await testPersistenceAndEnvelope()
+  await testPersistentGoalTool()
   await testLatencyAggregation()
   console.log('Alive & Autonomous repro passed')
 }

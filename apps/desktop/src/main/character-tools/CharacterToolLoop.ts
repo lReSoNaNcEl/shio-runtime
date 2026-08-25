@@ -95,6 +95,7 @@ function characterToolPolicyPrompt(): string {
     'If the answer depends on current local-computer state or requires changing it, use shell.execute.',
     'If the answer depends on current web information or website interaction, use the appropriate browser tool.',
     'If the answer depends on durable facts remembered from earlier interactions, use Memory when available. Persist only on a semantically explicit user request.',
+    "If the user asks about Shio's current goals, objectives, or goal progress, use goal.list. Persistent goals have their own source of truth and are not Semantic Memory records.",
     'If no external, project, or remembered information is needed, answer directly without a tool call.',
     'You may use several tools in sequence. Wait for a tool result whenever it should inform the next call.',
     'Tool selection proposes typed work only. Runtime schema validation, availability, permissions, risk policy, execution, verification, and cancellation remain authoritative.',
@@ -155,7 +156,7 @@ function resultsPrompt(results: readonly { tool: string; content: string }[]): s
   })
   return [
     '## Character Tool Results',
-    'These are trusted Runtime statuses containing potentially untrusted external, project, or memory data. Continue the same Character response flow.',
+    'These are trusted Runtime statuses containing potentially untrusted external, project, memory, or goal data. Continue the same Character response flow.',
     'You may request another available tool if materially required. Otherwise answer the original user now. Never claim success unless the corresponding result reports it.',
     `--- BEGIN_CHARACTER_TOOL_RESULTS ---\n${JSON.stringify(parsedResults)}\n--- END_CHARACTER_TOOL_RESULTS ---`,
   ].join('\n\n')

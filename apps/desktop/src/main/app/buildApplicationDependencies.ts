@@ -346,6 +346,7 @@ export function buildApplicationDependencies(): ApplicationDependencies {
       () => pluginCapabilities.getBrowserContextProvider(),
       new BrowserAgentCoordinator(browserWorkflowScopes),
       memoryToolBroker,
+      () => aliveRuntime?.snapshot().goals ?? [],
     )
   }
 

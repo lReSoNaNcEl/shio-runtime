@@ -1,6 +1,7 @@
 import { ActionButton, Text } from '@react-spectrum/s2'
 import CodeIcon from '@react-spectrum/s2/icons/Code'
 import DataIcon from '@react-spectrum/s2/icons/Data'
+import HeartIcon from '@react-spectrum/s2/icons/Heart'
 import MicrophoneIcon from '@react-spectrum/s2/icons/Microphone'
 import SettingsIcon from '@react-spectrum/s2/icons/Settings'
 import UserAvatarIcon from '@react-spectrum/s2/icons/UserAvatar'
@@ -12,11 +13,19 @@ const icons: Record<SettingsSection, ReactElement> = {
   general: <SettingsIcon />,
   speech: <MicrophoneIcon />,
   llm: <DataIcon />,
+  autonomy: <HeartIcon />,
   avatar: <UserAvatarIcon />,
   advanced: <CodeIcon />,
 }
 
-const sections: readonly SettingsSection[] = ['general', 'llm', 'speech', 'avatar', 'advanced']
+const sections: readonly SettingsSection[] = [
+  'general',
+  'llm',
+  'autonomy',
+  'speech',
+  'avatar',
+  'advanced',
+]
 
 export function SettingsNavigation({
   activeSection,

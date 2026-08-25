@@ -1493,6 +1493,12 @@ Character State, Semantic Memory, or Action logs. The authorized renderer manage
 them only through validated typed IPC and renders a read-only Runtime snapshot plus
 explicit mutations.
 
+Character Response Generation may semantically select the read-only `goal.list`
+tool when the current turn requires Shio's goals or their progress. Character Tool
+Dispatcher delegates that request to the Goal and Task Store owner and returns a
+bounded projection. This read path grants no mutation authority and does not copy
+Persistent Goals into Semantic Memory or static prompt text.
+
 ### 21G. Smart Memory and Habit Suggestions
 
 Smart Memory version 1 is a conservative proposal layer, not implicit fact capture.

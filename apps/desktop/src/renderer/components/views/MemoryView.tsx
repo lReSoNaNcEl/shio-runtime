@@ -21,6 +21,7 @@ import Delete from '@react-spectrum/s2/icons/Delete'
 import Edit from '@react-spectrum/s2/icons/Edit'
 import { useEffect, useState } from 'react'
 
+import { type AliveSnapshot } from '../../../shared/alive'
 import { type TranslationKey } from '../../../shared/localization'
 import {
   MEMORY_KINDS,
@@ -58,7 +59,7 @@ function errorMessage(code: MemoryErrorCode, t: (key: TranslationKey) => string)
   return t(ERROR_KEYS[code])
 }
 
-export function MemoryView() {
+export function MemoryView({ aliveSnapshot }: { aliveSnapshot: AliveSnapshot | null }) {
   const { intlLocale, t } = useTranslation()
   const [status, setStatus] = useState<MemoryRuntimeStatus | null>(null)
   const [items, setItems] = useState<readonly MemoryRecord[]>([])
@@ -70,6 +71,8 @@ export function MemoryView() {
   const [editor, setEditor] = useState<EditorState | null>(null)
   const [forgetTarget, setForgetTarget] = useState<MemoryRecord | null>(null)
   const [clearConfirmation, setClearConfirmation] = useState(false)
+  const [habitBusyId, setHabitBusyId] = useState<string | null>(null)
+  const [habitError, setHabitError] = useState<string | null>(null)
 
   useEffect(() => {
     let active = true
@@ -179,6 +182,21 @@ export function MemoryView() {
       setClearConfirmation(false)
       await refresh()
     })
+  }
+
+  const decideHabit = (id: string, decision: 'approved' | 'rejected'): void => {
+    if (habitBusyId) return
+    setHabitBusyId(id)
+    setHabitError(null)
+    observeRendererPromise(
+      window.api.alive
+        .decideHabit(id, decision)
+        .catch((reason) => {
+          setHabitError(reason instanceof Error ? reason.message : String(reason))
+        })
+        .finally(() => setHabitBusyId(null)),
+      'decide habit suggestion',
+    )
   }
 
   if (loading) {
@@ -316,6 +334,58 @@ export function MemoryView() {
           ))}
         </div>
       )}
+
+      <section className="memory-habits" aria-labelledby="memory-habits-title">
+        <div className="memory-habits-heading">
+          <Heading id="memory-habits-title" level={2}>
+            {t('tasks.habits.title')}
+          </Heading>
+          <Text>{t('tasks.habits.description')}</Text>
+        </div>
+        {habitError && (
+          <InlineAlert variant="negative" fillStyle="subtleFill">
+            <Heading>{t('common.error')}</Heading>
+            <Content>{habitError}</Content>
+          </InlineAlert>
+        )}
+        {(aliveSnapshot?.habitSuggestions.filter((habit) => habit.status === 'pending').length ??
+          0) === 0 ? (
+          <div className="memory-habits-empty">
+            <Text>{t('tasks.habits.empty')}</Text>
+          </div>
+        ) : (
+          <div className="memory-habit-list">
+            {aliveSnapshot?.habitSuggestions
+              .filter((habit) => habit.status === 'pending')
+              .map((habit) => (
+                <article className="memory-habit-item" key={habit.id}>
+                  <div className="memory-habit-copy">
+                    <Text UNSAFE_className="memory-card-text">{habit.title}</Text>
+                    <Text UNSAFE_className="memory-card-source">
+                      {t('tasks.habits.evidence', { count: habit.evidenceCount })}
+                    </Text>
+                  </div>
+                  <ButtonGroup>
+                    <Button
+                      variant="secondary"
+                      isDisabled={habitBusyId !== null}
+                      onPress={() => decideHabit(habit.id, 'rejected')}
+                    >
+                      {t('tasks.reject')}
+                    </Button>
+                    <Button
+                      variant="primary"
+                      isDisabled={habitBusyId !== null}
+                      onPress={() => decideHabit(habit.id, 'approved')}
+                    >
+                      {t('tasks.approve')}
+                    </Button>
+                  </ButtonGroup>
+                </article>
+              ))}
+          </div>
+        )}
+      </section>
 
       <DialogContainer onDismiss={() => !busy && setEditor(null)}>
         {editor && (

@@ -74,6 +74,40 @@
   gap: 16px;
 }
 
+.memory-habits {
+  display: grid;
+  gap: 14px;
+  padding-block-start: 18px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.memory-habits-heading,
+.memory-habit-copy {
+  display: grid;
+  gap: 6px;
+}
+
+.memory-habit-list {
+  display: grid;
+  gap: 10px;
+}
+
+.memory-habit-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px 16px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 14px;
+  background: var(--surface);
+}
+
+.memory-habits-empty {
+  padding: 14px 16px;
+  color: var(--text-muted);
+}
+
 @media (max-width: 720px) {
   .memory-toolbar,
   .memory-filters {
@@ -92,5 +126,10 @@
 
   .memory-grid {
     grid-template-columns: 1fr;
+  }
+
+  .memory-habit-item {
+    align-items: stretch;
+    flex-direction: column;
   }
 }

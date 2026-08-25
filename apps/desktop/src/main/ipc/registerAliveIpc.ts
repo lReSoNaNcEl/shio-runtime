@@ -103,7 +103,6 @@ export function registerAliveIpc(
             title: z.string().trim().min(1).max(160).optional(),
             description: z.string().trim().max(2_000).optional(),
             status: z.enum(['active', 'paused', 'completed', 'cancelled']).optional(),
-            progress: z.number().min(0).max(1).optional(),
           })
           .parse(input),
       ),

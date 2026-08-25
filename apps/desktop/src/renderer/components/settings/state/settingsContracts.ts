@@ -1,5 +1,6 @@
 import type { Dispatch, SetStateAction } from 'react'
 
+import type { AliveSnapshot } from '../../../../shared/alive'
 import type { UiTheme } from '../../../../shared/config'
 import type {
   BacklogSelectorRoleConfig,
@@ -12,11 +13,12 @@ import type { UiLocale } from '../../../../shared/localization'
 import type { OverlayViewMode } from '../../../avatar/tuning/cameraTuning'
 import type { ControllerState } from '../../../Controller'
 
-export type SettingsSection = 'general' | 'speech' | 'llm' | 'avatar' | 'advanced'
+export type SettingsSection = 'general' | 'speech' | 'llm' | 'autonomy' | 'avatar' | 'advanced'
 
 export interface SettingsDialogProps {
   isOpen: boolean
   initialSection?: SettingsSection
+  aliveSnapshot: AliveSnapshot | null
   uiTheme: UiTheme
   onThemeChange: (theme: UiTheme) => void
   vrmLoaded: boolean

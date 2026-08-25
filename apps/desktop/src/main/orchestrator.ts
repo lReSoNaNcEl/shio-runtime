@@ -5,6 +5,7 @@ import type {
   DesktopWorkflowActionResult,
   DesktopWorkflowRequest,
 } from '../shared/actions'
+import type { PersistentGoalProvider } from '../shared/alive'
 import type { ShioCapabilityProvider, ShioCapabilitySnapshot } from '../shared/capabilities'
 import {
   type CharacterEmbodimentIntent,
@@ -216,6 +217,7 @@ export class Orchestrator {
     private browserContext?: BrowserContextProviderResolver,
     private browserAgent?: BrowserAgentCoordinator,
     private semanticMemory?: MemoryToolBroker,
+    private persistentGoals?: PersistentGoalProvider,
   ) {}
 
   async createReply(
@@ -306,6 +308,7 @@ export class Orchestrator {
       const registry = (): CharacterToolRegistry =>
         new CharacterToolRegistry({
           projectAvailable,
+          goalsAvailable: Boolean(this.persistentGoals),
           capabilityContext,
           browserObservation: dispatcher?.selectedBrowserObservation() ?? null,
           memory: this.semanticMemory,
@@ -330,6 +333,7 @@ export class Orchestrator {
             executeDesktopWorkflow: this.executeDesktopWorkflow,
             browserContext: this.browserContext,
             browserAgent: this.browserAgent,
+            persistentGoals: this.persistentGoals,
           })
           return dispatcher
         },

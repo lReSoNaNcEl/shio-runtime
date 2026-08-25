@@ -1,5 +1,4 @@
 import {
-  Badge,
   Button,
   ButtonGroup,
   Content,
@@ -8,8 +7,13 @@ import {
   NumberField,
   Picker,
   PickerItem,
+  ProgressBar,
   ProgressCircle,
-  Switch,
+  StatusLight,
+  Tab,
+  TabList,
+  TabPanel,
+  Tabs,
   Text,
   TextField,
 } from '@react-spectrum/s2'
@@ -17,14 +21,33 @@ import { useState } from 'react'
 
 import {
   type AliveSnapshot,
-  type AutonomyMode,
+  type GoalStatus,
   type ScheduledTaskKind,
+  type ScheduledTaskStatus,
 } from '../../../shared/alive'
-import { LLM_PROVIDER_IDS, type LlmProviderId } from '../../../shared/llm'
 import { useTranslation } from '../../localization/useTranslation'
 
-export function TasksView({ snapshot }: { snapshot: AliveSnapshot | null }) {
-  const { t } = useTranslation()
+type TasksTab = 'goals' | 'schedule' | 'history'
+
+function goalStatusTone(status: GoalStatus): 'positive' | 'notice' | 'negative' {
+  if (status === 'active' || status === 'completed') return 'positive'
+  if (status === 'paused') return 'notice'
+  return 'negative'
+}
+
+function taskStatusTone(status: ScheduledTaskStatus): 'positive' | 'notice' {
+  return status === 'scheduled' || status === 'completed' ? 'positive' : 'notice'
+}
+
+export function TasksView({
+  snapshot,
+  onOpenAutonomySettings,
+}: {
+  snapshot: AliveSnapshot | null
+  onOpenAutonomySettings: () => void
+}) {
+  const { intlLocale, t } = useTranslation()
+  const [activeTab, setActiveTab] = useState<TasksTab>('goals')
   const [goalTitle, setGoalTitle] = useState('')
   const [taskTitle, setTaskTitle] = useState('')
   const [taskKind, setTaskKind] = useState<ScheduledTaskKind>('reminder')
@@ -54,8 +77,25 @@ export function TasksView({ snapshot }: { snapshot: AliveSnapshot | null }) {
     )
   }
 
-  const updateSettings = (patch: Partial<AliveSnapshot['settings']>): Promise<unknown> =>
-    window.api.alive.updateSettings({ ...snapshot.settings, ...patch })
+  const activeGoals = snapshot.goals.filter(
+    (goal) => goal.status === 'active' || goal.status === 'paused',
+  )
+  const archivedGoals = snapshot.goals.filter(
+    (goal) => goal.status === 'completed' || goal.status === 'cancelled',
+  )
+  const scheduledTasks = snapshot.tasks.filter((task) => task.status !== 'completed')
+  const completedTasks = snapshot.tasks.filter((task) => task.status === 'completed')
+  const autonomyState =
+    snapshot.settings.mode === 'off'
+      ? 'off'
+      : snapshot.settings.globallySuspended
+        ? 'paused'
+        : 'active'
+  const formatTime = (value: number): string =>
+    new Intl.DateTimeFormat(intlLocale, {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+    }).format(new Date(value))
 
   return (
     <section className="tasks-view page-container" aria-label={t('app.nav.tasks')}>
@@ -66,437 +106,316 @@ export function TasksView({ snapshot }: { snapshot: AliveSnapshot | null }) {
         </InlineAlert>
       )}
 
-      <article className="tasks-panel tasks-autonomy-panel">
-        <div className="tasks-panel-heading">
-          <div>
-            <Heading level={2}>{t('tasks.autonomy.title')}</Heading>
-            <Text>{t('tasks.autonomy.description')}</Text>
-          </div>
-          <Badge variant={snapshot.health.operational ? 'positive' : 'negative'}>
-            {snapshot.health.operational ? t('common.ready') : t('common.error')}
-          </Badge>
+      <article className="tasks-autonomy-summary">
+        <div className="tasks-summary-copy">
+          <StatusLight variant={autonomyState === 'active' ? 'positive' : 'notice'}>
+            {t(`settings.autonomy.status.${autonomyState}`)}
+          </StatusLight>
+          <Text>{t('tasks.autonomy.summary')}</Text>
         </div>
-        <div className="tasks-controls">
-          <Picker
-            label={t('tasks.autonomy.mode')}
-            selectedKey={snapshot.settings.mode}
-            isDisabled={busy}
-            onSelectionChange={(key) =>
-              void run(() => updateSettings({ mode: String(key) as AutonomyMode }))
-            }
-          >
-            <PickerItem id="off">{t('tasks.mode.off')}</PickerItem>
-            <PickerItem id="suggest">{t('tasks.mode.suggest')}</PickerItem>
-            <PickerItem id="confirm">{t('tasks.mode.confirm')}</PickerItem>
-            <PickerItem id="full">{t('tasks.mode.full')}</PickerItem>
-          </Picker>
-          <Switch
-            isSelected={snapshot.settings.globallySuspended}
-            isDisabled={busy}
-            onChange={(globallySuspended) => void run(() => updateSettings({ globallySuspended }))}
-          >
-            {t('tasks.autonomy.suspend')}
-          </Switch>
-          <Switch
-            isSelected={snapshot.settings.privacyMode}
-            isDisabled={busy}
-            onChange={(privacyMode) => void run(() => updateSettings({ privacyMode }))}
-          >
-            {t('tasks.autonomy.privacy')}
-          </Switch>
-          <Switch
-            isSelected={snapshot.settings.fastBrain.enabled}
-            isDisabled={busy || snapshot.settings.privacyMode}
-            onChange={(enabled) =>
-              void run(() =>
-                updateSettings({ fastBrain: { ...snapshot.settings.fastBrain, enabled } }),
-              )
-            }
-          >
-            {t('tasks.fastBrain')}
-          </Switch>
-          <Switch
-            isSelected={snapshot.settings.quietHours.enabled}
-            isDisabled={busy}
-            onChange={(enabled) =>
-              void run(() =>
-                updateSettings({
-                  quietHours: { ...snapshot.settings.quietHours, enabled },
-                }),
-              )
-            }
-          >
-            {t('tasks.autonomy.quietHours')}
-          </Switch>
-          <NumberField
-            label={t('tasks.autonomy.quietStart')}
-            value={snapshot.settings.quietHours.startHour}
-            minValue={0}
-            maxValue={23}
-            isDisabled={busy || !snapshot.settings.quietHours.enabled}
-            onChange={(startHour) =>
-              void run(() =>
-                updateSettings({
-                  quietHours: { ...snapshot.settings.quietHours, startHour },
-                }),
-              )
-            }
-          />
-          <Picker
-            label={t('tasks.fastBrain.provider')}
-            selectedKey={snapshot.settings.fastBrain.providerId ?? 'active'}
-            isDisabled={busy || !snapshot.settings.fastBrain.enabled}
-            onSelectionChange={(key) =>
-              void run(() =>
-                updateSettings({
-                  fastBrain: {
-                    ...snapshot.settings.fastBrain,
-                    providerId:
-                      String(key) === 'active' ? undefined : (String(key) as LlmProviderId),
-                  },
-                }),
-              )
-            }
-          >
-            <PickerItem id="active">{t('tasks.fastBrain.activeProvider')}</PickerItem>
-            {LLM_PROVIDER_IDS.map((providerId) => (
-              <PickerItem id={providerId} key={providerId}>
-                {providerId}
-              </PickerItem>
-            ))}
-          </Picker>
-          <TextField
-            label={t('tasks.fastBrain.model')}
-            placeholder={t('tasks.fastBrain.modelPlaceholder')}
-            value={snapshot.settings.fastBrain.model ?? ''}
-            isDisabled={busy || !snapshot.settings.fastBrain.enabled}
-            onChange={(model) =>
-              void run(() =>
-                updateSettings({
-                  fastBrain: {
-                    ...snapshot.settings.fastBrain,
-                    model: model.trim() || undefined,
-                  },
-                }),
-              )
-            }
-          />
-          <NumberField
-            label={t('tasks.autonomy.quietEnd')}
-            value={snapshot.settings.quietHours.endHour}
-            minValue={0}
-            maxValue={23}
-            isDisabled={busy || !snapshot.settings.quietHours.enabled}
-            onChange={(endHour) =>
-              void run(() =>
-                updateSettings({
-                  quietHours: { ...snapshot.settings.quietHours, endHour },
-                }),
-              )
-            }
-          />
-          <NumberField
-            label={t('tasks.autonomy.cooldownMinutes')}
-            value={Math.round(snapshot.settings.cooldownMs / 60_000)}
-            minValue={1}
-            maxValue={1_440}
-            isDisabled={busy}
-            onChange={(cooldownMinutes) =>
-              void run(() => updateSettings({ cooldownMs: cooldownMinutes * 60_000 }))
-            }
-          />
-          <NumberField
-            label={t('tasks.autonomy.dailyCap')}
-            value={snapshot.settings.maxDailyInitiatives}
-            minValue={0}
-            maxValue={100}
-            isDisabled={busy}
-            onChange={(maxDailyInitiatives) =>
-              void run(() => updateSettings({ maxDailyInitiatives }))
-            }
-          />
-          <NumberField
-            label={t('tasks.fastBrain.timeout')}
-            value={snapshot.settings.fastBrain.timeoutMs}
-            minValue={250}
-            maxValue={5_000}
-            step={250}
-            isDisabled={busy || !snapshot.settings.fastBrain.enabled}
-            onChange={(timeoutMs) =>
-              void run(() =>
-                updateSettings({
-                  fastBrain: { ...snapshot.settings.fastBrain, timeoutMs },
-                }),
-              )
-            }
-          />
-          <NumberField
-            label={t('tasks.fastBrain.tokens')}
-            value={snapshot.settings.fastBrain.maxTokens}
-            minValue={16}
-            maxValue={256}
-            step={16}
-            isDisabled={busy || !snapshot.settings.fastBrain.enabled}
-            onChange={(maxTokens) =>
-              void run(() =>
-                updateSettings({
-                  fastBrain: { ...snapshot.settings.fastBrain, maxTokens },
-                }),
-              )
-            }
-          />
-        </div>
-        <Text>
-          {t('tasks.autonomy.limits', {
-            count: snapshot.settings.maxDailyInitiatives,
-            minutes: Math.round(snapshot.settings.cooldownMs / 60_000),
-          })}
-        </Text>
+        <Button variant="secondary" onPress={onOpenAutonomySettings}>
+          {t('tasks.autonomy.configure')}
+        </Button>
       </article>
 
-      <div className="tasks-columns">
-        <article className="tasks-panel">
-          <Heading level={2}>{t('tasks.goals.title')}</Heading>
-          <div className="tasks-create-row">
-            <TextField
-              label={t('tasks.goals.new')}
-              placeholder={t('tasks.goals.placeholder')}
-              value={goalTitle}
-              isDisabled={busy}
-              onChange={setGoalTitle}
-            />
-            <Button
-              variant="primary"
-              isDisabled={busy || !goalTitle.trim()}
-              onPress={() =>
-                void run(async () => {
-                  await window.api.alive.createGoal({ title: goalTitle.trim() })
-                  setGoalTitle('')
-                })
-              }
-            >
-              {t('tasks.add')}
-            </Button>
-          </div>
-          <div className="tasks-list">
-            {snapshot.goals.length === 0 ? (
-              <Text>{t('tasks.goals.empty')}</Text>
+      <Tabs
+        aria-label={t('app.nav.tasks')}
+        selectedKey={activeTab}
+        onSelectionChange={(key) => {
+          if (key === 'schedule' || key === 'history') setActiveTab(key)
+          else setActiveTab('goals')
+        }}
+      >
+        <TabList UNSAFE_className="tasks-tabs">
+          <Tab id="goals">{t('tasks.tabs.goals')}</Tab>
+          <Tab id="schedule">{t('tasks.tabs.schedule')}</Tab>
+          <Tab id="history">{t('tasks.tabs.history')}</Tab>
+        </TabList>
+
+        <TabPanel id="goals">
+          <article className="tasks-panel">
+            <div className="tasks-panel-heading">
+              <div className="tasks-heading-copy">
+                <Heading level={2}>{t('tasks.goals.title')}</Heading>
+                <Text>{t('tasks.goals.description')}</Text>
+              </div>
+              <Text>{t('tasks.goals.count', { count: activeGoals.length })}</Text>
+            </div>
+            <div className="tasks-create-row">
+              <TextField
+                label={t('tasks.goals.new')}
+                placeholder={t('tasks.goals.placeholder')}
+                value={goalTitle}
+                isDisabled={busy}
+                onChange={setGoalTitle}
+              />
+              <Button
+                variant="primary"
+                isDisabled={busy || !goalTitle.trim()}
+                onPress={() =>
+                  void run(async () => {
+                    await window.api.alive.createGoal({ title: goalTitle.trim() })
+                    setGoalTitle('')
+                  })
+                }
+              >
+                {t('tasks.add')}
+              </Button>
+            </div>
+
+            {activeGoals.length === 0 ? (
+              <div className="tasks-empty-state">
+                <Heading level={3}>{t('tasks.goals.emptyTitle')}</Heading>
+                <Text>{t('tasks.goals.empty')}</Text>
+              </div>
             ) : (
-              snapshot.goals.map((goal) => (
-                <div className="tasks-item" key={goal.id}>
-                  <div>
-                    <Text UNSAFE_className="tasks-item-title">{goal.title}</Text>
-                    <Text>{t(`tasks.goal.status.${goal.status}`)}</Text>
-                    <NumberField
-                      label={t('tasks.goals.progress')}
-                      value={Math.round(goal.progress * 100)}
-                      minValue={0}
-                      maxValue={100}
-                      isDisabled={
-                        busy || goal.status === 'completed' || goal.status === 'cancelled'
-                      }
-                      onChange={(progress) =>
-                        void run(() =>
-                          window.api.alive.updateGoal({ id: goal.id, progress: progress / 100 }),
-                        )
-                      }
-                    />
-                  </div>
-                  <ButtonGroup>
-                    {goal.status === 'active' && (
-                      <Button
-                        variant="secondary"
-                        isDisabled={busy}
-                        onPress={() =>
-                          void run(() =>
-                            window.api.alive.updateGoal({ id: goal.id, status: 'paused' }),
-                          )
-                        }
-                      >
-                        {t('tasks.pause')}
-                      </Button>
-                    )}
-                    {goal.status !== 'completed' && goal.status !== 'cancelled' && (
+              <div className="tasks-list">
+                {activeGoals.map((goal) => (
+                  <article className="tasks-item tasks-goal-card" key={goal.id}>
+                    <div className="tasks-item-main">
+                      <div className="tasks-item-heading">
+                        <Text UNSAFE_className="tasks-item-title">{goal.title}</Text>
+                        <StatusLight variant={goalStatusTone(goal.status)} size="S">
+                          {t(`tasks.goal.status.${goal.status}`)}
+                        </StatusLight>
+                      </div>
+                      {goal.description && <Text>{goal.description}</Text>}
+                      <ProgressBar
+                        label={t('tasks.goals.progress')}
+                        value={Math.round(goal.progress * 100)}
+                        minValue={0}
+                        maxValue={100}
+                      />
+                      <Text UNSAFE_className="tasks-item-meta">
+                        {t('tasks.goals.progressManaged')}
+                      </Text>
+                    </div>
+                    <ButtonGroup>
+                      {goal.status === 'active' && (
+                        <Button
+                          variant="secondary"
+                          isDisabled={busy}
+                          onPress={() =>
+                            void run(() =>
+                              window.api.alive.updateGoal({ id: goal.id, status: 'paused' }),
+                            )
+                          }
+                        >
+                          {t('tasks.pause')}
+                        </Button>
+                      )}
+                      {goal.status === 'paused' && (
+                        <Button
+                          variant="secondary"
+                          isDisabled={busy}
+                          onPress={() =>
+                            void run(() =>
+                              window.api.alive.updateGoal({ id: goal.id, status: 'active' }),
+                            )
+                          }
+                        >
+                          {t('tasks.resume')}
+                        </Button>
+                      )}
                       <Button
                         variant="primary"
                         isDisabled={busy}
                         onPress={() =>
                           void run(() =>
-                            window.api.alive.updateGoal({
-                              id: goal.id,
-                              status: 'completed',
-                              progress: 1,
-                            }),
+                            window.api.alive.updateGoal({ id: goal.id, status: 'completed' }),
                           )
                         }
                       >
                         {t('tasks.complete')}
                       </Button>
-                    )}
-                  </ButtonGroup>
-                </div>
-              ))
+                    </ButtonGroup>
+                  </article>
+                ))}
+              </div>
             )}
-          </div>
-        </article>
+          </article>
+        </TabPanel>
 
-        <article className="tasks-panel">
-          <Heading level={2}>{t('tasks.schedule.title')}</Heading>
-          <div className="tasks-create-grid">
-            <TextField
-              label={t('tasks.schedule.new')}
-              placeholder={t('tasks.schedule.placeholder')}
-              value={taskTitle}
-              isDisabled={busy}
-              onChange={setTaskTitle}
-            />
-            <Picker
-              label={t('tasks.schedule.kind')}
-              selectedKey={taskKind}
-              isDisabled={busy}
-              onSelectionChange={(key) => setTaskKind(String(key) as ScheduledTaskKind)}
-            >
-              <PickerItem id="reminder">{t('tasks.kind.reminder')}</PickerItem>
-              <PickerItem id="check_in">{t('tasks.kind.checkIn')}</PickerItem>
-            </Picker>
-            <NumberField
-              label={t('tasks.schedule.minutes')}
-              value={minutes}
-              minValue={1}
-              maxValue={43_200}
-              isDisabled={busy}
-              onChange={setMinutes}
-            />
-            <Picker
-              label={t('tasks.schedule.recurrence')}
-              selectedKey={scheduleMode}
-              isDisabled={busy}
-              onSelectionChange={(key) => setScheduleMode(String(key) as 'one-shot' | 'interval')}
-            >
-              <PickerItem id="one-shot">{t('tasks.schedule.oneShot')}</PickerItem>
-              <PickerItem id="interval">{t('tasks.schedule.interval')}</PickerItem>
-            </Picker>
-            {scheduleMode === 'interval' && (
-              <NumberField
-                label={t('tasks.schedule.intervalMinutes')}
-                value={intervalMinutes}
-                minValue={1}
-                maxValue={525_600}
+        <TabPanel id="schedule">
+          <article className="tasks-panel">
+            <div className="tasks-heading-copy">
+              <Heading level={2}>{t('tasks.schedule.title')}</Heading>
+              <Text>{t('tasks.schedule.description')}</Text>
+            </div>
+            <div className="tasks-create-grid">
+              <TextField
+                label={t('tasks.schedule.new')}
+                placeholder={t('tasks.schedule.placeholder')}
+                value={taskTitle}
                 isDisabled={busy}
-                onChange={setIntervalMinutes}
+                onChange={setTaskTitle}
               />
-            )}
-            <Button
-              variant="primary"
-              isDisabled={busy || !taskTitle.trim()}
-              onPress={() =>
-                void run(async () => {
-                  await window.api.alive.createTask({
-                    title: taskTitle.trim(),
-                    kind: taskKind,
-                    dueAt: Date.now() + minutes * 60_000,
-                    intervalMs: scheduleMode === 'interval' ? intervalMinutes * 60_000 : undefined,
+              <NumberField
+                label={t('tasks.schedule.minutes')}
+                value={minutes}
+                minValue={1}
+                maxValue={43_200}
+                isDisabled={busy}
+                onChange={setMinutes}
+              />
+              <Picker
+                label={t('tasks.schedule.kind')}
+                selectedKey={taskKind}
+                isDisabled={busy}
+                onSelectionChange={(key) => setTaskKind(String(key) as ScheduledTaskKind)}
+              >
+                <PickerItem id="reminder">{t('tasks.kind.reminder')}</PickerItem>
+                <PickerItem id="check_in">{t('tasks.kind.checkIn')}</PickerItem>
+              </Picker>
+              <Picker
+                label={t('tasks.schedule.recurrence')}
+                selectedKey={scheduleMode}
+                isDisabled={busy}
+                onSelectionChange={(key) => setScheduleMode(String(key) as 'one-shot' | 'interval')}
+              >
+                <PickerItem id="one-shot">{t('tasks.schedule.oneShot')}</PickerItem>
+                <PickerItem id="interval">{t('tasks.schedule.interval')}</PickerItem>
+              </Picker>
+              {scheduleMode === 'interval' && (
+                <NumberField
+                  label={t('tasks.schedule.intervalMinutes')}
+                  value={intervalMinutes}
+                  minValue={1}
+                  maxValue={525_600}
+                  isDisabled={busy}
+                  onChange={setIntervalMinutes}
+                />
+              )}
+              <Button
+                variant="primary"
+                isDisabled={busy || !taskTitle.trim()}
+                onPress={() =>
+                  void run(async () => {
+                    await window.api.alive.createTask({
+                      title: taskTitle.trim(),
+                      kind: taskKind,
+                      dueAt: Date.now() + minutes * 60_000,
+                      intervalMs:
+                        scheduleMode === 'interval' ? intervalMinutes * 60_000 : undefined,
+                    })
+                    setTaskTitle('')
                   })
-                  setTaskTitle('')
-                })
-              }
-            >
-              {t('tasks.schedule.create')}
-            </Button>
-          </div>
-          <div className="tasks-list">
-            {snapshot.tasks.length === 0 ? (
-              <Text>{t('tasks.schedule.empty')}</Text>
-            ) : (
-              snapshot.tasks.map((task) => (
-                <div className="tasks-item" key={task.id}>
-                  <div>
-                    <Text UNSAFE_className="tasks-item-title">{task.title}</Text>
-                    <Text>
-                      {t(`tasks.task.status.${task.status}`)} ·{' '}
-                      {new Date(task.nextRunAt).toLocaleString()}
-                    </Text>
-                  </div>
-                  <ButtonGroup>
-                    {task.status === 'waiting_confirmation' && (
-                      <Button
-                        variant="accent"
-                        isDisabled={busy || snapshot.settings.globallySuspended}
-                        onPress={() => void run(() => window.api.alive.approveTask(task.id))}
-                      >
-                        {t('tasks.approve')}
-                      </Button>
-                    )}
-                    {task.status === 'scheduled' && (
-                      <Button
-                        variant="secondary"
-                        isDisabled={busy}
-                        onPress={() =>
-                          void run(() => window.api.alive.setTaskStatus(task.id, 'paused'))
-                        }
-                      >
-                        {t('tasks.pause')}
-                      </Button>
-                    )}
-                    {task.status === 'paused' && (
-                      <Button
-                        variant="secondary"
-                        isDisabled={busy}
-                        onPress={() =>
-                          void run(() => window.api.alive.setTaskStatus(task.id, 'scheduled'))
-                        }
-                      >
-                        {t('tasks.resume')}
-                      </Button>
-                    )}
-                  </ButtonGroup>
-                </div>
-              ))
-            )}
-          </div>
-        </article>
-      </div>
+                }
+              >
+                {t('tasks.schedule.create')}
+              </Button>
+            </div>
 
-      <article className="tasks-panel">
-        <Heading level={2}>{t('tasks.habits.title')}</Heading>
-        <Text>{t('tasks.habits.description')}</Text>
-        <div className="tasks-list">
-          {snapshot.habitSuggestions.length === 0 ? (
-            <Text>{t('tasks.habits.empty')}</Text>
-          ) : (
-            snapshot.habitSuggestions.map((habit) => (
-              <div className="tasks-item" key={habit.id}>
-                <div>
-                  <Text UNSAFE_className="tasks-item-title">{habit.title}</Text>
-                  <Text>{t('tasks.habits.evidence', { count: habit.evidenceCount })}</Text>
-                </div>
-                {habit.status === 'pending' && (
-                  <ButtonGroup>
-                    <Button
-                      variant="primary"
-                      isDisabled={busy}
-                      onPress={() =>
-                        void run(() => window.api.alive.decideHabit(habit.id, 'approved'))
-                      }
-                    >
-                      {t('tasks.approve')}
-                    </Button>
-                    <Button
-                      variant="secondary"
-                      isDisabled={busy}
-                      onPress={() =>
-                        void run(() => window.api.alive.decideHabit(habit.id, 'rejected'))
-                      }
-                    >
-                      {t('tasks.reject')}
-                    </Button>
-                  </ButtonGroup>
+            {scheduledTasks.length === 0 ? (
+              <div className="tasks-empty-state">
+                <Heading level={3}>{t('tasks.schedule.emptyTitle')}</Heading>
+                <Text>{t('tasks.schedule.empty')}</Text>
+              </div>
+            ) : (
+              <div className="tasks-list">
+                {scheduledTasks.map((task) => (
+                  <article className="tasks-item" key={task.id}>
+                    <div className="tasks-item-main">
+                      <div className="tasks-item-heading">
+                        <Text UNSAFE_className="tasks-item-title">{task.title}</Text>
+                        <StatusLight variant={taskStatusTone(task.status)} size="S">
+                          {t(`tasks.task.status.${task.status}`)}
+                        </StatusLight>
+                      </div>
+                      <Text UNSAFE_className="tasks-item-meta">{formatTime(task.nextRunAt)}</Text>
+                    </div>
+                    <ButtonGroup>
+                      {task.status === 'waiting_confirmation' && (
+                        <Button
+                          variant="accent"
+                          isDisabled={busy || snapshot.settings.globallySuspended}
+                          onPress={() => void run(() => window.api.alive.approveTask(task.id))}
+                        >
+                          {t('tasks.approve')}
+                        </Button>
+                      )}
+                      {task.status === 'scheduled' && (
+                        <Button
+                          variant="secondary"
+                          isDisabled={busy}
+                          onPress={() =>
+                            void run(() => window.api.alive.setTaskStatus(task.id, 'paused'))
+                          }
+                        >
+                          {t('tasks.pause')}
+                        </Button>
+                      )}
+                      {task.status === 'paused' && (
+                        <Button
+                          variant="secondary"
+                          isDisabled={busy}
+                          onPress={() =>
+                            void run(() => window.api.alive.setTaskStatus(task.id, 'scheduled'))
+                          }
+                        >
+                          {t('tasks.resume')}
+                        </Button>
+                      )}
+                    </ButtonGroup>
+                  </article>
+                ))}
+              </div>
+            )}
+          </article>
+        </TabPanel>
+
+        <TabPanel id="history">
+          <article className="tasks-panel">
+            <div className="tasks-heading-copy">
+              <Heading level={2}>{t('tasks.history.title')}</Heading>
+              <Text>{t('tasks.history.description')}</Text>
+            </div>
+            {archivedGoals.length === 0 && completedTasks.length === 0 ? (
+              <div className="tasks-empty-state">
+                <Heading level={3}>{t('tasks.history.emptyTitle')}</Heading>
+                <Text>{t('tasks.history.empty')}</Text>
+              </div>
+            ) : (
+              <div className="tasks-history-groups">
+                {archivedGoals.length > 0 && (
+                  <section className="tasks-history-group">
+                    <Heading level={3}>{t('tasks.tabs.goals')}</Heading>
+                    <div className="tasks-list">
+                      {archivedGoals.map((goal) => (
+                        <article className="tasks-item" key={goal.id}>
+                          <div className="tasks-item-main">
+                            <Text UNSAFE_className="tasks-item-title">{goal.title}</Text>
+                            <StatusLight variant={goalStatusTone(goal.status)} size="S">
+                              {t(`tasks.goal.status.${goal.status}`)}
+                            </StatusLight>
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+                  </section>
+                )}
+                {completedTasks.length > 0 && (
+                  <section className="tasks-history-group">
+                    <Heading level={3}>{t('tasks.tabs.schedule')}</Heading>
+                    <div className="tasks-list">
+                      {completedTasks.map((task) => (
+                        <article className="tasks-item" key={task.id}>
+                          <div className="tasks-item-main">
+                            <Text UNSAFE_className="tasks-item-title">{task.title}</Text>
+                            <Text UNSAFE_className="tasks-item-meta">
+                              {formatTime(task.updatedAt)}
+                            </Text>
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+                  </section>
                 )}
               </div>
-            ))
-          )}
-        </div>
-      </article>
+            )}
+          </article>
+        </TabPanel>
+      </Tabs>
     </section>
   )
 }

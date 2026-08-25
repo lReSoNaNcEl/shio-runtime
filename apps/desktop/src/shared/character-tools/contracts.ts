@@ -20,6 +20,7 @@ export const CHARACTER_TOOL_IDS = [
   'memory.update',
   'memory.forget',
   'memory.list',
+  'goal.list',
 ] as const
 
 export type CharacterToolId = (typeof CHARACTER_TOOL_IDS)[number]
@@ -47,7 +48,7 @@ const CHARACTER_TOOLS_MARKER = /<shio-tools>([\s\S]*?)<\/shio-tools>/iu
 const CHARACTER_TOOLS_MARKER_OPEN = /<shio-tools\b/iu
 const CHARACTER_TOOLS_MARKER_LIKE = /<\/?shio-tools\b/iu
 const CHARACTER_TOOLS_MARKER_TOKEN = /<\/?shio-tools\b[^>]*>?/giu
-const COMPACT_TOOL_MARKER = /\[(?:project|browser|shell|memory)\.[A-Za-z][A-Za-z0-9]*\]/u
+const COMPACT_TOOL_MARKER = /\[(?:project|browser|shell|memory|goal)\.[A-Za-z][A-Za-z0-9]*\]/u
 const PROTOCOL_FENCE = /^\s*```(?:json|xml|text)?\s*([\s\S]*?)\s*```\s*$/iu
 
 export type CharacterToolDirective =
@@ -160,7 +161,9 @@ function parseCompactToolDirective(text: string): CharacterToolDirective | null 
     while (cursor < text.length) {
       while (/\s/u.test(text[cursor] ?? '')) cursor += 1
       if (cursor >= text.length) break
-      const marker = text.slice(cursor).match(/^\[((?:project|browser|shell|memory)\.[^\]]+)\]/u)
+      const marker = text
+        .slice(cursor)
+        .match(/^\[((?:project|browser|shell|memory|goal)\.[^\]]+)\]/u)
       if (!marker) {
         if (calls.length > 0) break
         throw new Error('missing compact tool marker')

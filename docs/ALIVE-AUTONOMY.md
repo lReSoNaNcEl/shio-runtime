@@ -18,7 +18,8 @@ Version 1 includes:
 - Autonomy Envelope, durable Scheduler, Persistent Goals, and Smart Habit
   suggestions;
 - safe correlated latency traces with p50, p95, and maximum summaries;
-- a React Spectrum 2 Goals & Tasks UI in Russian and English.
+- a React Spectrum 2 Goals & Tasks UI in Russian and English, with Autonomy policy
+  in Settings and habit suggestions alongside Memory management.
 
 The API speech service and its HTTP contract are unchanged.
 
@@ -30,6 +31,11 @@ separately selected low-cost provider/model while credentials continue to resolv
 through the existing secure Main credential store. The renderer owns the
 single Conversation Admission, Conversation Runtime coordination, and presentation.
 It reports only typed activity and experience facts.
+
+When the Character LLM semantically needs current goals, it selects the read-only
+`goal.list` Character tool. Main delegates the request to the same Goal and Task
+Store that backs the UI and returns a bounded goal projection. Goals remain separate
+from Semantic Memory and are never duplicated into prompt text.
 
 Safe response flow:
 
@@ -118,7 +124,8 @@ npm run desktop:alive-autonomy:repro
 
 The repro covers normal SSE, upstream first-byte timeout abort, split internal
 markers, emotion stripping, sentence/code/link segmentation, tool-round containment,
-ordered bounded speech playback, SQLite restart/migration/idempotency, Autonomy
+ordered bounded speech playback, typed Persistent Goal retrieval, SQLite
+restart/migration/idempotency, Autonomy
 Suspend, habit evidence thresholds, and latency percentile aggregation.
 
 Required Desktop qualification before commit:

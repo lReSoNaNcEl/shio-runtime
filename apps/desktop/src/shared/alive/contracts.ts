@@ -149,8 +149,9 @@ export interface UpdateGoalInput {
   title?: string
   description?: string
   status?: GoalStatus
-  progress?: number
 }
+
+export type PersistentGoalProvider = () => readonly PersistentGoal[]
 
 export interface CreateScheduledTaskInput {
   title: string

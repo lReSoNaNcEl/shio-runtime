@@ -372,8 +372,16 @@ export function App() {
             onNavigate={navigateToCapabilityTarget}
           />
         )}
-        {section === 'memory' && <MemoryView />}
-        {section === 'tasks' && <TasksView snapshot={state.alive} />}
+        {section === 'memory' && <MemoryView aliveSnapshot={state.alive} />}
+        {section === 'tasks' && (
+          <TasksView
+            snapshot={state.alive}
+            onOpenAutonomySettings={() => {
+              setSettingsInitialSection('autonomy')
+              setSection('settings')
+            }}
+          />
+        )}
         {section === 'health' && (
           <RuntimeHealthView
             state={state}
@@ -414,6 +422,7 @@ export function App() {
           <SettingsDialog
             isOpen
             initialSection={settingsInitialSection}
+            aliveSnapshot={state.alive}
             uiTheme={uiTheme}
             onThemeChange={changeUiTheme}
             vrmLoaded={state.vrmLoaded}
