@@ -153,6 +153,12 @@ Architecture and ownership:
   evidence. Browser mutations use typed operations and snapshot-scoped semantic
   targets, always pass through Action Runtime and Permission Guard, invalidate the
   old observation, capture a fresh observation, and report honest verification.
+- Browser Control may expose browser-relative frames and input only through the
+  typed main-internal `browser-realtime-control` provider backed by the existing
+  isolated session. It is not a Character tool. Bind every request to the exact
+  session, active tab, and origin; keep frames bounded and transient; and release
+  all pressed inputs on pause/stop/error, Plugin disable, Emergency Stop, browser
+  close, and application shutdown.
 - Browser use inside a Character turn is a bounded provider-neutral tool loop, not
   a new Runtime. Character reasoning decides semantically whether web interaction
   materially helps the current goal; do not add a phrase or keyword browser router.

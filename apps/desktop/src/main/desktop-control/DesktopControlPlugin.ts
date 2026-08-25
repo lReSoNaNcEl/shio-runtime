@@ -5,6 +5,7 @@ import {
 } from '../../shared/actions'
 import type {
   BrowserContextProvider,
+  BrowserRealtimeControlProvider,
   DesktopControlCapabilityProjection,
   DesktopControlStatus,
 } from '../../shared/desktop-control'
@@ -29,11 +30,16 @@ import { ShellRiskPolicy } from './shell'
 
 export const DESKTOP_CONTROL_MANIFEST: PluginManifest = {
   id: DESKTOP_CONTROL_PLUGIN_ID,
-  version: '1.0.0',
+  version: '1.1.0',
   nameKey: 'plugins.desktopControl.name',
   descriptionKey: 'plugins.desktopControl.description',
   defaultEnabled: false,
-  capabilities: ['automation-engine', 'browser-control', 'computer-control'],
+  capabilities: [
+    'automation-engine',
+    'browser-control',
+    'browser-realtime-control',
+    'computer-control',
+  ],
 }
 
 export interface DesktopControlPluginDependencies {
@@ -63,6 +69,23 @@ export class DesktopControlPlugin implements BundledPlugin {
     observe: async ({ signal }) => {
       this.assertActive()
       return this.dependencies.browser.observe(signal)
+    },
+  }
+  private readonly browserRealtimeControlProvider: BrowserRealtimeControlProvider = {
+    session: () =>
+      this.active ? this.dependencies.browser.getRealtimeControlProvider().session() : null,
+    captureFrame: (request, signal) => {
+      this.assertActive()
+      return this.dependencies.browser.getRealtimeControlProvider().captureFrame(request, signal)
+    },
+    dispatchInput: (input, signal) => {
+      this.assertActive()
+      return this.dependencies.browser.getRealtimeControlProvider().dispatchInput(input, signal)
+    },
+    releaseInputs: () => this.dependencies.browser.getRealtimeControlProvider().releaseInputs(),
+    getViewport: () => {
+      this.assertActive()
+      return this.dependencies.browser.getRealtimeControlProvider().getViewport()
     },
   }
 
@@ -225,6 +248,10 @@ export class DesktopControlPlugin implements BundledPlugin {
 
   getBrowserContextProvider(): BrowserContextProvider {
     return this.browserContextProvider
+  }
+
+  getBrowserRealtimeControlProvider(): BrowserRealtimeControlProvider {
+    return this.browserRealtimeControlProvider
   }
 
   validateWorkflowRequest(payload: unknown): EffectiveDesktopWorkflowRequest {

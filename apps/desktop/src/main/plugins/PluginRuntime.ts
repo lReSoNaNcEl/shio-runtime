@@ -1,6 +1,9 @@
 import { z } from 'zod'
 
-import type { BrowserContextProvider } from '../../shared/desktop-control'
+import type {
+  BrowserContextProvider,
+  BrowserRealtimeControlProvider,
+} from '../../shared/desktop-control'
 import type {
   PluginCapabilityKind,
   PluginHealth,
@@ -38,6 +41,7 @@ export interface BundledPlugin {
     | RuntimePluginHealthPresentation
   getProjectContextProvider?(): ProjectContextProvider
   getBrowserContextProvider?(): BrowserContextProvider
+  getBrowserRealtimeControlProvider?(): BrowserRealtimeControlProvider
   getWebSearchProvider?(): WebSearchProvider
 }
 
@@ -396,6 +400,12 @@ export class PluginRuntime {
         const provider = record.plugin.getWebSearchProvider?.()
         if (!provider) throw new Error(`${manifest.id} did not provide web-search capability`)
         this.capabilities.registerWebSearch(manifest.id, provider)
+      } else if (capability === 'browser-realtime-control') {
+        const provider = record.plugin.getBrowserRealtimeControlProvider?.()
+        if (!provider) {
+          throw new Error(`${manifest.id} did not provide browser-realtime-control capability`)
+        }
+        this.capabilities.registerBrowserRealtimeControl(manifest.id, provider)
       } else {
         this.capabilities.registerOwnedCapability(manifest.id, capability)
       }

@@ -1,4 +1,7 @@
-import type { BrowserContextProvider } from '../../shared/desktop-control'
+import type {
+  BrowserContextProvider,
+  BrowserRealtimeControlProvider,
+} from '../../shared/desktop-control'
 import type { PluginCapabilityKind, PluginId, ProjectContextProvider } from '../../shared/plugins'
 import type { WebSearchProvider } from '../../shared/web-search'
 
@@ -11,6 +14,7 @@ export class PluginCapabilityRegistry {
   private readonly owners = new Map<PluginCapabilityKind, PluginId>()
   private projectContext: ProviderRegistration<ProjectContextProvider> | null = null
   private browserContext: ProviderRegistration<BrowserContextProvider> | null = null
+  private browserRealtimeControl: ProviderRegistration<BrowserRealtimeControlProvider> | null = null
   private webSearch: ProviderRegistration<WebSearchProvider> | null = null
 
   registerProjectContext(owner: PluginId, provider: ProjectContextProvider): void {
@@ -37,6 +41,19 @@ export class PluginCapabilityRegistry {
 
   hasBrowserContext(owner: PluginId): boolean {
     return this.browserContext?.owner === owner
+  }
+
+  registerBrowserRealtimeControl(owner: PluginId, provider: BrowserRealtimeControlProvider): void {
+    this.claim(owner, 'browser-realtime-control')
+    this.browserRealtimeControl = { owner, provider }
+  }
+
+  getBrowserRealtimeControlProvider(): BrowserRealtimeControlProvider | undefined {
+    return this.browserRealtimeControl?.provider
+  }
+
+  hasBrowserRealtimeControl(owner: PluginId): boolean {
+    return this.browserRealtimeControl?.owner === owner
   }
 
   registerWebSearch(owner: PluginId, provider: WebSearchProvider): void {
@@ -70,6 +87,7 @@ export class PluginCapabilityRegistry {
     }
     if (this.projectContext?.owner === owner) this.projectContext = null
     if (this.browserContext?.owner === owner) this.browserContext = null
+    if (this.browserRealtimeControl?.owner === owner) this.browserRealtimeControl = null
     if (this.webSearch?.owner === owner) this.webSearch = null
   }
 

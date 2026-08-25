@@ -8,11 +8,13 @@ import {
   type BrowserInteractiveElement,
   type BrowserInteractiveRole,
   type BrowserObservation,
+  type BrowserRealtimeControlProvider,
   type BrowserSessionState,
   type BrowserTab,
   type BrowserTarget,
 } from '../../shared/desktop-control'
 import { mainLog } from '../logging/safeLogger'
+import { AgentBrowserRealtimeAdapter } from './AgentBrowserRealtimeAdapter'
 import {
   AGENT_BROWSER_SESSION_IDLE_TIMEOUT_ARGUMENT,
   type AgentBrowserRuntimeResources,
@@ -295,8 +297,14 @@ export class AgentBrowserAdapter {
   private session: BrowserSessionState | null = null
   private observation: BrowserObservation | null = null
   private queue: Promise<void> = Promise.resolve()
+  private readonly realtime: AgentBrowserRealtimeAdapter
 
-  constructor(private readonly options: AgentBrowserAdapterOptions) {}
+  constructor(private readonly options: AgentBrowserAdapterOptions) {
+    this.realtime = new AgentBrowserRealtimeAdapter({
+      session: () => this.sessionSnapshot(),
+      runStreamCommand: (args, signal) => this.command('stream', args, 5_000, signal),
+    })
+  }
 
   sessionSnapshot(): BrowserSessionState | null {
     return this.session ? { ...this.session } : null
@@ -306,6 +314,10 @@ export class AgentBrowserAdapter {
     return this.observation
       ? { ...this.observation, interactiveElements: [...this.observation.interactiveElements] }
       : null
+  }
+
+  getRealtimeControlProvider(): BrowserRealtimeControlProvider {
+    return this.realtime
   }
 
   prepareForDelegation(signal?: AbortSignal): Promise<void> {
@@ -605,6 +617,7 @@ export class AgentBrowserAdapter {
     return this.enqueue(async () => {
       const resources = this.options.resources()
       try {
+        await this.realtime.close()
         if (resources) {
           await this.command('close', ['close'], 5_000)
           await new Promise((resolveWait) => setTimeout(resolveWait, 500))

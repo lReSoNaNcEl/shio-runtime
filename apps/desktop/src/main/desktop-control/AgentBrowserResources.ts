@@ -40,6 +40,9 @@ export function buildAgentBrowserChildEnvironment(
     AGENT_BROWSER_MAX_OUTPUT: '20000',
     AGENT_BROWSER_IDLE_TIMEOUT_MS: String(AGENT_BROWSER_SESSION_IDLE_TIMEOUT_MS),
     AGENT_BROWSER_HEADED: '1',
+    AGENT_BROWSER_STREAM_QUALITY: '65',
+    AGENT_BROWSER_STREAM_MAX_WIDTH: '768',
+    AGENT_BROWSER_STREAM_MAX_HEIGHT: '768',
   }
   for (const name of SAFE_BROWSER_OS_VARIABLES) {
     const value = hostEnvironment[name]

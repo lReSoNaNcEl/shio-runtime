@@ -525,6 +525,25 @@ async function main(): Promise<void> {
       assert.match(opened.observation?.content ?? '', /Controlled semantic browser fixture/)
       const sessionId = adapter.sessionSnapshot()?.sessionId
       assert(sessionId)
+      const realtime = adapter.getRealtimeControlProvider()
+      const realtimeSession = realtime.session()
+      assert(realtimeSession)
+      const realtimeFrame = await realtime.captureFrame(
+        { sessionId: realtimeSession.sessionId, tabId: realtimeSession.tabId },
+        new AbortController().signal,
+      )
+      assert(realtimeFrame.width <= 768)
+      assert(realtimeFrame.height <= 768)
+      assert(realtimeFrame.image.bytes.length > 0)
+      await realtime.dispatchInput(
+        {
+          sessionId: realtimeSession.sessionId,
+          tabId: realtimeSession.tabId,
+          events: [{ type: 'pointer-move', x: 1, y: 1 }],
+        },
+        new AbortController().signal,
+      )
+      await realtime.releaseInputs()
       const details = opened.observation?.interactiveElements.find(
         (element) => element.role === 'link' && element.name === 'More details',
       )

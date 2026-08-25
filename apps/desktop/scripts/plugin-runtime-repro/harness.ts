@@ -22,7 +22,10 @@ import {
 import type { SpeechClient } from '../../src/main/speech/speechClient'
 import type { AppSettings } from '../../src/shared/config'
 import { migrateLegacyDesktopSettings } from '../../src/shared/config'
-import type { BrowserContextProvider } from '../../src/shared/desktop-control'
+import type {
+  BrowserContextProvider,
+  BrowserRealtimeControlProvider,
+} from '../../src/shared/desktop-control'
 import type {
   PluginHealth,
   PluginId,
@@ -84,6 +87,22 @@ class FakePlugin implements BundledPlugin {
       currentObservation: () => null,
       observe: async () => {
         throw new Error('TEST_BROWSER_OBSERVATION_UNAVAILABLE')
+      },
+    }
+  }
+
+  getBrowserRealtimeControlProvider(): BrowserRealtimeControlProvider {
+    return {
+      session: () => null,
+      captureFrame: async () => {
+        throw new Error('TEST_BROWSER_REALTIME_UNAVAILABLE')
+      },
+      dispatchInput: async () => {
+        throw new Error('TEST_BROWSER_REALTIME_UNAVAILABLE')
+      },
+      releaseInputs: async () => undefined,
+      getViewport: async () => {
+        throw new Error('TEST_BROWSER_REALTIME_UNAVAILABLE')
       },
     }
   }
@@ -229,6 +248,8 @@ async function runtimeContract(directory: string): Promise<void> {
 
   await dependencyRuntime.enable(DESKTOP_CONTROL_PLUGIN_ID)
   assert.equal((await dependencyRuntime.get(BROWSER_GAME_CONTROL_PLUGIN_ID)).lifecycle, 'active')
+  assert(dependencyCapabilities.getBrowserRealtimeControlProvider())
+  assert.equal(dependencyCapabilities.hasBrowserRealtimeControl(DESKTOP_CONTROL_PLUGIN_ID), true)
   assert.equal(dependencyCapabilities.hasCapability('browser-game-control'), true)
   let releaseStop = (): void => undefined
   let stopStarted = (): void => undefined
