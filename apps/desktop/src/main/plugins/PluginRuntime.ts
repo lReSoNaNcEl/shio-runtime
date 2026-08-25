@@ -1,5 +1,6 @@
 import { z } from 'zod'
 
+import type { BrowserGameControlProvider } from '../../shared/browser-game'
 import type {
   BrowserContextProvider,
   BrowserRealtimeControlProvider,
@@ -42,6 +43,7 @@ export interface BundledPlugin {
   getProjectContextProvider?(): ProjectContextProvider
   getBrowserContextProvider?(): BrowserContextProvider
   getBrowserRealtimeControlProvider?(): BrowserRealtimeControlProvider
+  getBrowserGameControlProvider?(): BrowserGameControlProvider
   getWebSearchProvider?(): WebSearchProvider
 }
 
@@ -406,6 +408,12 @@ export class PluginRuntime {
           throw new Error(`${manifest.id} did not provide browser-realtime-control capability`)
         }
         this.capabilities.registerBrowserRealtimeControl(manifest.id, provider)
+      } else if (capability === 'browser-game-control') {
+        const provider = record.plugin.getBrowserGameControlProvider?.()
+        if (!provider) {
+          throw new Error(`${manifest.id} did not provide browser-game-control capability`)
+        }
+        this.capabilities.registerBrowserGameControl(manifest.id, provider)
       } else {
         this.capabilities.registerOwnedCapability(manifest.id, capability)
       }

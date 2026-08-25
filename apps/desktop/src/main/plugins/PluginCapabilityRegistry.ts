@@ -1,3 +1,4 @@
+import type { BrowserGameControlProvider } from '../../shared/browser-game'
 import type {
   BrowserContextProvider,
   BrowserRealtimeControlProvider,
@@ -15,6 +16,7 @@ export class PluginCapabilityRegistry {
   private projectContext: ProviderRegistration<ProjectContextProvider> | null = null
   private browserContext: ProviderRegistration<BrowserContextProvider> | null = null
   private browserRealtimeControl: ProviderRegistration<BrowserRealtimeControlProvider> | null = null
+  private browserGameControl: ProviderRegistration<BrowserGameControlProvider> | null = null
   private webSearch: ProviderRegistration<WebSearchProvider> | null = null
 
   registerProjectContext(owner: PluginId, provider: ProjectContextProvider): void {
@@ -56,6 +58,19 @@ export class PluginCapabilityRegistry {
     return this.browserRealtimeControl?.owner === owner
   }
 
+  registerBrowserGameControl(owner: PluginId, provider: BrowserGameControlProvider): void {
+    this.claim(owner, 'browser-game-control')
+    this.browserGameControl = { owner, provider }
+  }
+
+  getBrowserGameControlProvider(): BrowserGameControlProvider | undefined {
+    return this.browserGameControl?.provider
+  }
+
+  hasBrowserGameControl(owner: PluginId): boolean {
+    return this.browserGameControl?.owner === owner
+  }
+
   registerWebSearch(owner: PluginId, provider: WebSearchProvider): void {
     this.claim(owner, 'web-search')
     this.webSearch = { owner, provider }
@@ -88,6 +103,7 @@ export class PluginCapabilityRegistry {
     if (this.projectContext?.owner === owner) this.projectContext = null
     if (this.browserContext?.owner === owner) this.browserContext = null
     if (this.browserRealtimeControl?.owner === owner) this.browserRealtimeControl = null
+    if (this.browserGameControl?.owner === owner) this.browserGameControl = null
     if (this.webSearch?.owner === owner) this.webSearch = null
   }
 

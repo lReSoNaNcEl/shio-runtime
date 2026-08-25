@@ -28,6 +28,7 @@ import { type ReactNode, useEffect, useState } from 'react'
 
 import { type DesktopControlStatus } from '../../../shared/desktop-control'
 import {
+  BROWSER_GAME_CONTROL_PLUGIN_ID,
   DESKTOP_CONTROL_PLUGIN_ID,
   type PluginHealthState,
   type PluginId,
@@ -333,6 +334,44 @@ function WebSearchDetails({
             <dd>{t('plugins.webSearch.noApiKey')}</dd>
           </div>
         </dl>
+      </section>
+    </section>
+  )
+}
+
+function BrowserGameDetails({
+  plugin,
+  onBack,
+  onPluginChange,
+}: {
+  plugin: PluginStatus
+  onBack: () => void
+  onPluginChange: (enabled: boolean) => void
+}) {
+  const { t } = useTranslation()
+  return (
+    <section className="plugin-detail page-container">
+      <ActionButton isQuiet onPress={onBack} UNSAFE_className="plugin-back-button">
+        <ChevronLeftIcon />
+        <Text>{t('plugins.backToCatalog')}</Text>
+      </ActionButton>
+      <div className="plugin-detail-heading">
+        <span className="plugin-icon" aria-hidden="true">
+          <DeviceDesktopIcon />
+        </span>
+        <div>
+          <Heading level={2}>{t('plugins.browserGame.name')}</Heading>
+          <Text>{t('plugins.browserGame.description')}</Text>
+        </div>
+        <PluginToggle plugin={plugin} onChange={onPluginChange} />
+      </div>
+      <section className="plugin-detail-section">
+        <Heading level={3}>{t('plugins.desktopControl.stateTitle')}</Heading>
+        <PluginSummary plugin={plugin} />
+      </section>
+      <section className="plugin-detail-section">
+        <Heading level={3}>{t('plugins.browserGame.backendTitle')}</Heading>
+        <Text>{t('plugins.browserGame.backendDescription')}</Text>
       </section>
     </section>
   )
@@ -1192,6 +1231,9 @@ export function PluginsView({
   const projectPlugin = plugins.find((plugin) => plugin.manifest.id === PROJECT_AWARENESS_PLUGIN_ID)
   const desktopPlugin = plugins.find((plugin) => plugin.manifest.id === DESKTOP_CONTROL_PLUGIN_ID)
   const webSearchPlugin = plugins.find((plugin) => plugin.manifest.id === WEB_SEARCH_PLUGIN_ID)
+  const browserGamePlugin = plugins.find(
+    (plugin) => plugin.manifest.id === BROWSER_GAME_CONTROL_PLUGIN_ID,
+  )
   const togglePlugin = (id: PluginId, enabled: boolean): void => {
     const target = plugins.find((plugin) => plugin.manifest.id === id)
     if (!target || target.busy) return
@@ -1311,6 +1353,33 @@ export function PluginsView({
     )
   }
 
+  if (detailPluginId === BROWSER_GAME_CONTROL_PLUGIN_ID) {
+    if (!browserGamePlugin) {
+      return (
+        <section className="plugin-detail page-container">
+          <ActionButton isQuiet onPress={onBack} UNSAFE_className="plugin-back-button">
+            <ChevronLeftIcon />
+            <Text>{t('plugins.backToCatalog')}</Text>
+          </ActionButton>
+          <InlineAlert variant="negative" fillStyle="subtleFill">
+            <Heading>{t('plugins.browserGame.name')}</Heading>
+            <Content>{t('plugins.catalog.unavailable')}</Content>
+            <Button variant="secondary" onPress={refresh}>
+              {t('common.retry')}
+            </Button>
+          </InlineAlert>
+        </section>
+      )
+    }
+    return (
+      <BrowserGameDetails
+        plugin={browserGamePlugin}
+        onBack={onBack}
+        onPluginChange={(enabled) => togglePlugin(BROWSER_GAME_CONTROL_PLUGIN_ID, enabled)}
+      />
+    )
+  }
+
   return (
     <section className="plugins-catalog page-container">
       <Text>{t('plugins.catalog.description')}</Text>
@@ -1340,6 +1409,15 @@ export function PluginsView({
           descriptionKey="plugins.webSearch.description"
           onToggle={(enabled) => togglePlugin(WEB_SEARCH_PLUGIN_ID, enabled)}
           onOpen={() => onShowDetails(WEB_SEARCH_PLUGIN_ID)}
+          onRetry={refresh}
+        />
+        <PluginCatalogCard
+          plugin={browserGamePlugin}
+          icon={<DeviceDesktopIcon />}
+          nameKey="plugins.browserGame.name"
+          descriptionKey="plugins.browserGame.description"
+          onToggle={(enabled) => togglePlugin(BROWSER_GAME_CONTROL_PLUGIN_ID, enabled)}
+          onOpen={() => onShowDetails(BROWSER_GAME_CONTROL_PLUGIN_ID)}
           onRetry={refresh}
         />
       </div>

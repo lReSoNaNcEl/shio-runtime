@@ -8,6 +8,7 @@ import { translate } from '../../shared/localization'
 import type { AvatarRuntimeHealth } from '../../shared/runtime'
 import { type ActionRuntime, toDesktopWorkflowActionResult } from '../action'
 import { AliveRuntime, AliveStore, WindowsSystemContextAdapter } from '../alive'
+import { BROWSER_GAME_CONTROL_MANIFEST, BrowserGamePlugin } from '../browser-game'
 import { CapabilityCatalog } from '../capabilities'
 import { getConfig, getOverlayPresentationConfig, getRendererConfig, loadConfig } from '../config'
 import {
@@ -86,6 +87,7 @@ export function buildApplicationDependencies(): ApplicationDependencies {
   let projectAwareness: ProjectAwarenessPlugin | null = null
   let desktopControl: DesktopControlPlugin | null = null
   let webSearch: WebSearchPlugin | null = null
+  let browserGame: BrowserGamePlugin | null = null
   let projectCredentialStore: ProjectCredentialStore | null = null
   let projectKnowledgeStore: ProjectKnowledgeStore | null = null
   let rendererNetworkObserver: RendererNetworkObserver | null = null
@@ -278,14 +280,22 @@ export function buildApplicationDependencies(): ApplicationDependencies {
     return webSearch
   }
 
+  const getBrowserGame = (): BrowserGamePlugin => {
+    browserGame ??= new BrowserGamePlugin({
+      realtime: () => pluginCapabilities.getBrowserRealtimeControlProvider(),
+    })
+    return browserGame
+  }
+
   const getPluginRuntime = (): PluginRuntime => {
     if (!pluginRuntime) {
       pluginRuntime = new PluginRuntime(
-        [getProjectAwareness(), getDesktopControl(), getWebSearch()],
+        [getProjectAwareness(), getDesktopControl(), getWebSearch(), getBrowserGame()],
         new PluginRegistryStore(join(app.getPath('userData'), 'plugins', 'registry.json'), [
           PROJECT_AWARENESS_MANIFEST,
           DESKTOP_CONTROL_MANIFEST,
           WEB_SEARCH_MANIFEST,
+          BROWSER_GAME_CONTROL_MANIFEST,
         ]),
         pluginCapabilities,
       )

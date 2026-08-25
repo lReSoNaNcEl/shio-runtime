@@ -105,6 +105,13 @@ async function main(): Promise<void> {
       commands.push([...args])
       return JSON.stringify({ success: true, data: { enabled: true, port: 43_210 } })
     },
+    inspectGameSurfaces: async () => [
+      {
+        id: 'game-surface-0',
+        kind: 'canvas',
+        bounds: { x: 10, y: 20, width: 640, height: 360 },
+      },
+    ],
     createSocket: (url) => {
       socket = new FakeStreamSocket(url)
       return socket
@@ -114,6 +121,7 @@ async function main(): Promise<void> {
   const binding = adapter.session()
   assert(binding)
   assert.equal(binding.origin, 'https://game.example')
+  assert.equal((await adapter.inspectGameSurfaces(new AbortController().signal))[0]?.kind, 'canvas')
   const firstCapture = adapter.captureFrame(
     { sessionId: binding.sessionId, tabId: binding.tabId },
     new AbortController().signal,

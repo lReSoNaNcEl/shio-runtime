@@ -5,6 +5,7 @@ import { mkdir } from 'node:fs/promises'
 import {
   BROWSER_OBSERVATION_CONTENT_MAX_CHARS,
   BROWSER_OBSERVATION_MAX_INTERACTIVE_ELEMENTS,
+  type BrowserGameSurfaceCandidate,
   type BrowserInteractiveElement,
   type BrowserInteractiveRole,
   type BrowserObservation,
@@ -72,6 +73,8 @@ interface JsonEnvelope {
   data?: unknown
   error?: unknown
 }
+
+const GAME_SURFACE_INSPECTION_SCRIPT = `(() => JSON.stringify(Array.from(document.querySelectorAll('canvas,[role="application"],[data-game-root]')).slice(0, 8).map((element, index) => { const rect = element.getBoundingClientRect(); return { index, tag: element.tagName.toLowerCase(), role: element.getAttribute('role'), label: element.getAttribute('aria-label') || element.getAttribute('title') || element.id || undefined, x: rect.x, y: rect.y, width: rect.width, height: rect.height, visible: rect.width > 0 && rect.height > 0 && rect.bottom > 0 && rect.right > 0 && rect.top < innerHeight && rect.left < innerWidth }; }).filter((candidate) => candidate.visible)))()`
 
 const INTERACTIVE_ROLES = new Set<BrowserInteractiveRole>([
   'button',
@@ -145,6 +148,47 @@ function findString(value: unknown, keys: readonly string[]): string | undefined
     if (found !== undefined) return found
   }
   return undefined
+}
+
+function parseGameSurfaceCandidates(output: string): readonly BrowserGameSurfaceCandidate[] {
+  const serialized = findString(parseEnvelope(output).data, ['value', 'result'])
+  if (!serialized || serialized.length > 20_000) return []
+  let value: unknown
+  try {
+    value = JSON.parse(serialized) as unknown
+  } catch {
+    return []
+  }
+  if (!Array.isArray(value)) return []
+  return value.flatMap((candidate): BrowserGameSurfaceCandidate[] => {
+    if (!isRecord(candidate)) return []
+    const index = typeof candidate.index === 'number' ? candidate.index : -1
+    const x = typeof candidate.x === 'number' ? candidate.x : Number.NaN
+    const y = typeof candidate.y === 'number' ? candidate.y : Number.NaN
+    const width = typeof candidate.width === 'number' ? candidate.width : Number.NaN
+    const height = typeof candidate.height === 'number' ? candidate.height : Number.NaN
+    if (
+      !Number.isInteger(index) ||
+      index < 0 ||
+      index > 7 ||
+      ![x, y, width, height].every(Number.isFinite) ||
+      width < 32 ||
+      height < 32 ||
+      width > 32_768 ||
+      height > 32_768
+    ) {
+      return []
+    }
+    const rawLabel = typeof candidate.label === 'string' ? sanitizeText(candidate.label) : ''
+    return [
+      {
+        id: `game-surface-${index}`,
+        kind: candidate.tag === 'canvas' ? 'canvas' : 'game-root',
+        ...(rawLabel ? { label: rawLabel.slice(0, 120) } : {}),
+        bounds: { x, y, width, height },
+      },
+    ]
+  })
 }
 
 function findHttpUrl(value: unknown): string | undefined {
@@ -303,6 +347,7 @@ export class AgentBrowserAdapter {
     this.realtime = new AgentBrowserRealtimeAdapter({
       session: () => this.sessionSnapshot(),
       runStreamCommand: (args, signal) => this.command('stream', args, 5_000, signal),
+      inspectGameSurfaces: (signal) => this.inspectGameSurfaces(signal),
     })
   }
 
@@ -318,6 +363,16 @@ export class AgentBrowserAdapter {
 
   getRealtimeControlProvider(): BrowserRealtimeControlProvider {
     return this.realtime
+  }
+
+  inspectGameSurfaces(signal: AbortSignal): Promise<readonly BrowserGameSurfaceCandidate[]> {
+    return this.enqueue(async () => {
+      this.assertActiveSession()
+      const encoded = Buffer.from(GAME_SURFACE_INSPECTION_SCRIPT, 'utf8').toString('base64')
+      return parseGameSurfaceCandidates(
+        await this.command('inspect-game-surfaces', ['eval', '-b', encoded], 15_000, signal),
+      )
+    })
   }
 
   prepareForDelegation(signal?: AbortSignal): Promise<void> {

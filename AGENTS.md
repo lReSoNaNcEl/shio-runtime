@@ -159,6 +159,12 @@ Architecture and ownership:
   session, active tab, and origin; keep frames bounded and transient; and release
   all pressed inputs on pause/stop/error, Plugin disable, Emergency Stop, browser
   close, and application shutdown.
+- Browser Game Control is a separate default-disabled bundled Plugin and depends
+  only on the typed `browser-realtime-control` capability. Game Session Controller
+  owns exact session/tab/origin/surface scope, duration and input budgets, frame
+  freshness, rate limiting, and teardown. Character tools remain high-level only;
+  never expose frames, coordinates, key-down/up, pointer-down/up, CDP, or arbitrary
+  page JavaScript to Character Response Generation.
 - Browser use inside a Character turn is a bounded provider-neutral tool loop, not
   a new Runtime. Character reasoning decides semantically whether web interaction
   materially helps the current goal; do not add a phrase or keyword browser router.

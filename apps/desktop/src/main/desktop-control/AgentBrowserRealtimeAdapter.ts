@@ -4,6 +4,7 @@ import {
   BROWSER_REALTIME_MAX_FRAME_BYTES,
   BROWSER_REALTIME_MAX_FRAME_EDGE,
   BROWSER_REALTIME_MAX_INPUT_BATCH_SIZE,
+  type BrowserGameSurfaceCandidate,
   type BrowserRealtimeControlProvider,
   type BrowserRealtimeFrame,
   type BrowserRealtimeFrameCaptureRequest,
@@ -49,6 +50,7 @@ interface StreamSocket {
 export interface AgentBrowserRealtimeAdapterOptions {
   session(): BrowserSessionState | null
   runStreamCommand(args: readonly string[], signal?: AbortSignal): Promise<string>
+  inspectGameSurfaces(signal: AbortSignal): Promise<readonly BrowserGameSurfaceCandidate[]>
   createSocket?: (url: string) => StreamSocket
   now?: () => number
 }
@@ -283,9 +285,14 @@ export class AgentBrowserRealtimeAdapter implements BrowserRealtimeControlProvid
       this.binding.tabId === current.tabId &&
       this.binding.origin === current.origin
     ) {
-      return { ...this.binding, url: current.url }
+      return { ...this.binding }
     }
     return current
+  }
+
+  inspectGameSurfaces(signal: AbortSignal): Promise<readonly BrowserGameSurfaceCandidate[]> {
+    if (!this.session()) return Promise.reject(new BrowserRealtimeError('NO_ACTIVE_SESSION'))
+    return this.options.inspectGameSurfaces(signal)
   }
 
   async captureFrame(
@@ -486,9 +493,12 @@ export class AgentBrowserRealtimeAdapter implements BrowserRealtimeControlProvid
       return
     }
     const url = parseStreamUrl(message)
-    if (url && this.binding && new URL(url).origin !== this.binding.origin) {
-      this.invalidate('SESSION_MISMATCH')
-      return
+    if (url && this.binding) {
+      if (new URL(url).origin !== this.binding.origin) {
+        this.invalidate('SESSION_MISMATCH')
+        return
+      }
+      this.binding = { ...this.binding, url }
     }
     const activeTabId = parseActiveTabId(message)
     if (activeTabId && this.binding && activeTabId !== this.binding.tabId) {

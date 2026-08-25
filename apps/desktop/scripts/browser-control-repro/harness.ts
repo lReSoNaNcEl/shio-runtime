@@ -221,6 +221,7 @@ async function startTestServer(): Promise<{ server: Server; baseUrl: string }> {
       <main>
         <h1>Browser Control Test</h1>
         <p>Controlled semantic browser fixture</p>
+        <canvas id="fixture-game" aria-label="Fixture game" width="320" height="180"></canvas>
         <a href="/details">More details</a>
         <button type="button" onclick="location.href='/catalog'">Open catalog</button>
         <label for="message">Message</label>
@@ -528,6 +529,10 @@ async function main(): Promise<void> {
       const realtime = adapter.getRealtimeControlProvider()
       const realtimeSession = realtime.session()
       assert(realtimeSession)
+      const gameSurfaces = await realtime.inspectGameSurfaces(new AbortController().signal)
+      assert.equal(gameSurfaces.length, 1)
+      assert.equal(gameSurfaces[0]?.kind, 'canvas')
+      assert.equal(gameSurfaces[0]?.label, 'Fixture game')
       const realtimeFrame = await realtime.captureFrame(
         { sessionId: realtimeSession.sessionId, tabId: realtimeSession.tabId },
         new AbortController().signal,

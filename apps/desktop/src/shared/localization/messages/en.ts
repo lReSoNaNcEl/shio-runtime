@@ -312,6 +312,12 @@ export const enMessages: Record<TranslationKey, string> = {
   'plugins.webSearch.health.networkFailure': 'The last DuckDuckGo request failed',
   'plugins.webSearch.health.circuitOpen': 'Search is temporarily paused after repeated failures',
   'plugins.webSearch.health.unavailable': 'The web search adapter is unavailable',
+  'plugins.browserGame.name': 'Browser Game Control',
+  'plugins.browserGame.description': 'Bounded realtime vision and input for browser games.',
+  'plugins.browserGame.reflexNeedsSetup': 'A game reflex backend is not ready yet',
+  'plugins.browserGame.backendTitle': 'Backend',
+  'plugins.browserGame.backendDescription':
+    'Uses the isolated Browser Control session and its browser-relative realtime provider.',
   'plugins.desktopControl.name': 'Desktop Control',
   'plugins.desktopControl.description':
     'Controls computer automation through validated workflows and connected tools.',

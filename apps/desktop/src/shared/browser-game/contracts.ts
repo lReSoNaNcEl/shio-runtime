@@ -1,0 +1,161 @@
+import { z } from 'zod'
+
+import type { BrowserGameSurfaceCandidate } from '../desktop-control'
+
+export const GAME_SESSION_DEFAULT_DURATION_MS = 5 * 60 * 1_000
+export const GAME_SESSION_MAX_DURATION_MS = 30 * 60 * 1_000
+export const GAME_SESSION_DEFAULT_MAX_INPUT_EVENTS = 5_000
+export const GAME_SESSION_DEFAULT_MAX_INPUT_EVENTS_PER_SECOND = 15
+export const GAME_FRAME_MAX_AGE_MS = 500
+
+export const gameAllowedInputSchema = z.enum(['pointer', 'keyboard'])
+export type GameAllowedInput = z.infer<typeof gameAllowedInputSchema>
+
+export const gameStrategySchema = z.enum(['careful', 'balanced', 'fast'])
+export type GameStrategy = z.infer<typeof gameStrategySchema>
+
+export const gameNavigationPolicySchema = z.enum(['same-origin-only', 'none'])
+export type GameNavigationPolicy = z.infer<typeof gameNavigationPolicySchema>
+
+export const characterGameStartRequestSchema = z
+  .object({
+    goal: z.string().trim().min(1).max(500),
+    surfaceId: z
+      .string()
+      .regex(/^game-surface-[0-7]$/u)
+      .optional(),
+    allowedInputs: z
+      .array(gameAllowedInputSchema)
+      .min(1)
+      .max(2)
+      .refine((values) => new Set(values).size === values.length, 'Inputs must be unique')
+      .default(['pointer', 'keyboard']),
+    maxDurationMs: z
+      .number()
+      .int()
+      .min(30_000)
+      .max(GAME_SESSION_MAX_DURATION_MS)
+      .default(GAME_SESSION_DEFAULT_DURATION_MS),
+    maxInputEvents: z
+      .number()
+      .int()
+      .min(1)
+      .max(20_000)
+      .default(GAME_SESSION_DEFAULT_MAX_INPUT_EVENTS),
+    maxInputEventsPerSecond: z
+      .number()
+      .int()
+      .min(1)
+      .max(30)
+      .default(GAME_SESSION_DEFAULT_MAX_INPUT_EVENTS_PER_SECOND),
+    navigation: gameNavigationPolicySchema.default('same-origin-only'),
+    strategy: gameStrategySchema.default('balanced'),
+  })
+  .strict()
+export type CharacterGameStartRequest = z.infer<typeof characterGameStartRequestSchema>
+
+export interface GameStartPreparation {
+  preparationId: string
+  goal: string
+  browserSessionId: string
+  tabId: string
+  origin: string
+  url: string
+  surface: BrowserGameSurfaceCandidate
+  allowedInputs: readonly GameAllowedInput[]
+  maxDurationMs: number
+  maxInputEvents: number
+  maxInputEventsPerSecond: number
+  navigation: GameNavigationPolicy
+  strategy: GameStrategy
+  createdAt: number
+  expiresAt: number
+}
+
+export interface GameSessionScope {
+  sessionId: string
+  authorizationActionId: string
+  browserSessionId: string
+  tabId: string
+  origin: string
+  url: string
+  gameSurface: BrowserGameSurfaceCandidate
+  allowedInputs: readonly GameAllowedInput[]
+  maxDurationMs: number
+  maxInputEvents: number
+  maxInputEventsPerSecond: number
+  navigation: GameNavigationPolicy
+  startedAt: number
+  expiresAt: number
+}
+
+export type GameSessionState =
+  | 'idle'
+  | 'starting'
+  | 'running'
+  | 'paused'
+  | 'waiting-user'
+  | 'stopping'
+  | 'stopped'
+  | 'error'
+
+export interface GameSessionTelemetry {
+  capturedFrames: number
+  droppedFrames: number
+  staleDecisions: number
+  inputEvents: number
+  captureLatencyMsP50?: number
+  decisionLatencyMsP50?: number
+  inputLatencyMsP50?: number
+  startedAt?: number
+  stoppedAt?: number
+}
+
+export interface BrowserGameStatus {
+  state: GameSessionState
+  scope?: GameSessionScope
+  strategy: GameStrategy
+  telemetry: GameSessionTelemetry
+  lastErrorCode?: string
+}
+
+export interface GameFrame {
+  sessionId: string
+  frameId: number
+  capturedAt: number
+  width: number
+  height: number
+  image: {
+    mimeType: 'image/jpeg' | 'image/png'
+    bytes: Uint8Array
+  }
+}
+
+export type GameInputIntent =
+  | { type: 'none' }
+  | { type: 'pointer-tap'; x: number; y: number }
+  | { type: 'pointer-down'; x: number; y: number }
+  | { type: 'pointer-up'; x: number; y: number }
+  | { type: 'key-tap'; key: string }
+  | { type: 'key-down'; key: string }
+  | { type: 'key-up'; key: string }
+
+export interface BrowserGameControlProvider {
+  discoverSurfaces(signal: AbortSignal): Promise<readonly BrowserGameSurfaceCandidate[]>
+  prepareStart(
+    request: CharacterGameStartRequest,
+    signal: AbortSignal,
+  ): Promise<GameStartPreparation>
+  start(
+    preparationId: string,
+    authorizationActionId: string,
+    signal: AbortSignal,
+  ): Promise<BrowserGameStatus>
+  pause(): Promise<BrowserGameStatus>
+  resume(): Promise<BrowserGameStatus>
+  stop(): Promise<BrowserGameStatus>
+  updateStrategy(strategy: GameStrategy): BrowserGameStatus
+  status(): BrowserGameStatus
+}
+
+export type BrowserGameControlProviderResolver = () => BrowserGameControlProvider | undefined

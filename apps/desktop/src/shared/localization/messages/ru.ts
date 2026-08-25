@@ -308,6 +308,13 @@ export const ruMessages = {
   'plugins.webSearch.health.networkFailure': 'Последний запрос к DuckDuckGo завершился ошибкой',
   'plugins.webSearch.health.circuitOpen': 'Поиск временно приостановлен после повторных ошибок',
   'plugins.webSearch.health.unavailable': 'Адаптер веб-поиска недоступен',
+  'plugins.browserGame.name': 'Управление браузерными играми',
+  'plugins.browserGame.description':
+    'Ограниченное управление браузерными играми через зрение и ввод в реальном времени.',
+  'plugins.browserGame.reflexNeedsSetup': 'Движок игровых реакций пока не готов',
+  'plugins.browserGame.backendTitle': 'Бэкенд',
+  'plugins.browserGame.backendDescription':
+    'Использует изолированную сессию Browser Control и браузерный realtime provider.',
   'plugins.desktopControl.name': 'Desktop Control',
   'plugins.desktopControl.description':
     'Управляет автоматизацией компьютера через проверяемые задания и подключённые инструменты.',

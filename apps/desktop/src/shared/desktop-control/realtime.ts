@@ -23,6 +23,18 @@ export interface BrowserRealtimeViewport {
   pageScaleFactor: number
 }
 
+export interface BrowserGameSurfaceCandidate {
+  id: string
+  kind: 'canvas' | 'game-root'
+  label?: string
+  bounds: {
+    x: number
+    y: number
+    width: number
+    height: number
+  }
+}
+
 export interface BrowserRealtimeFrame {
   sessionId: string
   tabId: string
@@ -70,6 +82,7 @@ export interface BrowserRealtimeInputBatch {
  */
 export interface BrowserRealtimeControlProvider {
   session(): BrowserRealtimeSession | null
+  inspectGameSurfaces(signal: AbortSignal): Promise<readonly BrowserGameSurfaceCandidate[]>
   captureFrame(
     request: BrowserRealtimeFrameCaptureRequest,
     signal: AbortSignal,

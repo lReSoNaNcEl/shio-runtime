@@ -74,6 +74,10 @@ export class DesktopControlPlugin implements BundledPlugin {
   private readonly browserRealtimeControlProvider: BrowserRealtimeControlProvider = {
     session: () =>
       this.active ? this.dependencies.browser.getRealtimeControlProvider().session() : null,
+    inspectGameSurfaces: (signal) => {
+      this.assertActive()
+      return this.dependencies.browser.getRealtimeControlProvider().inspectGameSurfaces(signal)
+    },
     captureFrame: (request, signal) => {
       this.assertActive()
       return this.dependencies.browser.getRealtimeControlProvider().captureFrame(request, signal)

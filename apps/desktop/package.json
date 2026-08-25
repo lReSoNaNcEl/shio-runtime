@@ -47,6 +47,7 @@
     "repro:dsh": "esbuild scripts/dsh-repro/harness.ts --bundle --platform=node --format=cjs --external:electron --external:@deepseek-ai/dsh-sdk-client --outfile=out/dsh-repro.cjs && node out/dsh-repro.cjs",
     "repro:browser-control": "esbuild scripts/browser-control-repro/harness.ts --bundle --platform=node --format=esm --packages=external --outfile=out/browser-control-repro.mjs && node out/browser-control-repro.mjs",
     "repro:browser-realtime": "esbuild scripts/browser-realtime-repro/harness.ts --bundle --platform=node --format=cjs --outfile=out/browser-realtime-repro.cjs && node out/browser-realtime-repro.cjs",
+    "repro:browser-game": "esbuild scripts/browser-game-repro/harness.ts --bundle --platform=node --format=cjs --external:sharp --outfile=out/browser-game-repro.cjs && node out/browser-game-repro.cjs",
     "repro:browser-agent": "esbuild scripts/browser-agent-repro/harness.ts --bundle --platform=node --format=cjs --external:electron --outfile=out/browser-agent-repro.cjs && node out/browser-agent-repro.cjs",
     "repro:project-freshness": "esbuild scripts/project-freshness-repro/harness.ts --bundle --platform=node --format=cjs --external:electron --outfile=out/project-freshness-repro.cjs && node out/project-freshness-repro.cjs",
     "repro:project-evidence": "esbuild scripts/project-evidence-repro/harness.ts --bundle --platform=node --format=cjs --external:electron --outfile=out/project-evidence-repro.cjs && node out/project-evidence-repro.cjs",

@@ -20,6 +20,7 @@ import {
   PROJECT_AWARENESS_MANIFEST,
 } from '../../src/main/project-awareness'
 import type { SpeechClient } from '../../src/main/speech/speechClient'
+import type { BrowserGameControlProvider } from '../../src/shared/browser-game'
 import type { AppSettings } from '../../src/shared/config'
 import { migrateLegacyDesktopSettings } from '../../src/shared/config'
 import type {
@@ -94,6 +95,7 @@ class FakePlugin implements BundledPlugin {
   getBrowserRealtimeControlProvider(): BrowserRealtimeControlProvider {
     return {
       session: () => null,
+      inspectGameSurfaces: async () => [],
       captureFrame: async () => {
         throw new Error('TEST_BROWSER_REALTIME_UNAVAILABLE')
       },
@@ -104,6 +106,35 @@ class FakePlugin implements BundledPlugin {
       getViewport: async () => {
         throw new Error('TEST_BROWSER_REALTIME_UNAVAILABLE')
       },
+    }
+  }
+
+  getBrowserGameControlProvider(): BrowserGameControlProvider {
+    return {
+      discoverSurfaces: async () => [],
+      prepareStart: async () => {
+        throw new Error('TEST_BROWSER_GAME_UNAVAILABLE')
+      },
+      start: async () => {
+        throw new Error('TEST_BROWSER_GAME_UNAVAILABLE')
+      },
+      pause: async () => {
+        throw new Error('TEST_BROWSER_GAME_UNAVAILABLE')
+      },
+      resume: async () => {
+        throw new Error('TEST_BROWSER_GAME_UNAVAILABLE')
+      },
+      stop: async () => {
+        throw new Error('TEST_BROWSER_GAME_UNAVAILABLE')
+      },
+      updateStrategy: () => {
+        throw new Error('TEST_BROWSER_GAME_UNAVAILABLE')
+      },
+      status: () => ({
+        state: 'idle',
+        strategy: 'balanced',
+        telemetry: { capturedFrames: 0, droppedFrames: 0, staleDecisions: 0, inputEvents: 0 },
+      }),
     }
   }
 }
@@ -250,6 +281,7 @@ async function runtimeContract(directory: string): Promise<void> {
   assert.equal((await dependencyRuntime.get(BROWSER_GAME_CONTROL_PLUGIN_ID)).lifecycle, 'active')
   assert(dependencyCapabilities.getBrowserRealtimeControlProvider())
   assert.equal(dependencyCapabilities.hasBrowserRealtimeControl(DESKTOP_CONTROL_PLUGIN_ID), true)
+  assert(dependencyCapabilities.getBrowserGameControlProvider())
   assert.equal(dependencyCapabilities.hasCapability('browser-game-control'), true)
   let releaseStop = (): void => undefined
   let stopStarted = (): void => undefined

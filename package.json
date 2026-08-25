@@ -35,6 +35,7 @@
     "desktop:dsh:repro": "npm --prefix apps/desktop run repro:dsh",
     "desktop:browser-control:repro": "npm --prefix apps/desktop run repro:browser-control",
     "desktop:browser-realtime:repro": "npm --prefix apps/desktop run repro:browser-realtime",
+    "desktop:browser-game:repro": "npm --prefix apps/desktop run repro:browser-game",
     "desktop:browser-agent:repro": "npm --prefix apps/desktop run repro:browser-agent",
     "desktop:project-freshness:repro": "npm --prefix apps/desktop run repro:project-freshness",
     "desktop:project-evidence:repro": "npm --prefix apps/desktop run repro:project-evidence",
