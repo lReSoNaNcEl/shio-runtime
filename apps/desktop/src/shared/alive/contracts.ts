@@ -72,14 +72,51 @@ export interface HabitSuggestion {
 export interface WorldContextSnapshot {
   capturedAt: number
   appFocused: boolean
+  globalUserIdleMs: number
+  /** @deprecated Renderer-local compatibility projection. */
   userIdleMs: number
   conversationActive: boolean
   audioActive: boolean
   privacyMode: boolean
   lastUserActivityAt: number
+  foregroundApplication?: {
+    processName: string
+    displayName?: string
+    windowTitle?: string
+  }
+  runningApplications?: readonly {
+    processName: string
+    displayName?: string
+  }[]
+  activeBrowser?: {
+    sessionActive: boolean
+    url?: string
+    title?: string
+  }
+  activeProject?: {
+    name?: string
+    branch?: string
+  }
+  activeGoal?: {
+    id: string
+    title: string
+    state: string
+  }
+  media?: {
+    playing: boolean
+    title?: string
+    application?: string
+  }
+  system?: {
+    cpuLoad?: number
+    memoryLoad?: number
+    gpuLoad?: number
+  }
+  systemAdapter: 'available' | 'degraded' | 'unavailable'
   freshness: {
     rendererMs: number | null
     schedulerMs: number | null
+    systemMs: number | null
   }
 }
 

@@ -316,12 +316,14 @@ async function testPersistenceAndEnvelope(): Promise<void> {
     const world = {
       capturedAt: 1,
       appFocused: true,
+      globalUserIdleMs: 0,
       userIdleMs: 0,
       conversationActive: false,
       audioActive: false,
       privacyMode: false,
       lastUserActivityAt: 1,
-      freshness: { rendererMs: 0, schedulerMs: 0 },
+      systemAdapter: 'available' as const,
+      freshness: { rendererMs: 0, schedulerMs: 0, systemMs: 0 },
     }
     const baseInput = {
       task,

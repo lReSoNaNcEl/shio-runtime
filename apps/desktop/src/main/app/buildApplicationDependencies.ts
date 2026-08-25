@@ -1,13 +1,13 @@
 import { join } from 'node:path'
 
 import { resolvePwshPath } from '@deepseek-ai/dsh-pwsh-local'
-import { app, type BrowserWindow, Menu, safeStorage } from 'electron'
+import { app, type BrowserWindow, Menu, powerMonitor, safeStorage } from 'electron'
 
 import type { DesktopWorkflowRequest } from '../../shared/actions'
 import { translate } from '../../shared/localization'
 import type { AvatarRuntimeHealth } from '../../shared/runtime'
 import { type ActionRuntime, toDesktopWorkflowActionResult } from '../action'
-import { AliveRuntime, AliveStore } from '../alive'
+import { AliveRuntime, AliveStore, WindowsSystemContextAdapter } from '../alive'
 import { CapabilityCatalog } from '../capabilities'
 import { getConfig, getOverlayPresentationConfig, getRendererConfig, loadConfig } from '../config'
 import {
@@ -514,7 +514,28 @@ export function buildApplicationDependencies(): ApplicationDependencies {
       win,
       ipcAuthorization,
     )
-    aliveRuntime = new AliveRuntime(aliveStore, buildFastBrainGateway)
+    aliveRuntime = new AliveRuntime(aliveStore, buildFastBrainGateway, {
+      systemContextAdapter:
+        process.platform === 'win32'
+          ? new WindowsSystemContextAdapter({
+              getGlobalIdleSeconds: () => powerMonitor.getSystemIdleTime(),
+              pwshPath: resolvePwshPath(undefined, process.env, process.platform),
+            })
+          : undefined,
+      worldContext: {
+        browser: () => desktopControl?.getBrowserContextProvider().currentObservation() ?? null,
+        project: () => {
+          try {
+            const status = projectAwareness?.getStatus()
+            return status?.enabled
+              ? { name: status.repository || undefined, branch: status.branch || undefined }
+              : null
+          } catch {
+            return null
+          }
+        },
+      },
+    })
     unsubscribeAliveCapabilities = aliveRuntime.onChanged(() => capabilityCatalog.invalidate())
     unsubscribeAliveIpc = registerAliveIpc(aliveRuntime, win, ipcAuthorization)
     aliveRuntime.start()

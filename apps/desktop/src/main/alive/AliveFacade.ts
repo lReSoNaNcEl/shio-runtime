@@ -22,11 +22,17 @@ import { ExperienceRuntime } from './ExperienceRuntime'
 import { FastBrainRuntime } from './FastBrainRuntime'
 import { GoalRuntime } from './GoalRuntime'
 import { ScheduledTaskRuntime } from './ScheduledTaskRuntime'
-import { WorldContextRuntime } from './WorldContextRuntime'
+import type { SystemContextAdapter } from './SystemContextAdapter'
+import { type WorldContextProviders, WorldContextRuntime } from './WorldContextRuntime'
+
+export interface AliveFacadeOptions {
+  systemContextAdapter?: SystemContextAdapter
+  worldContext?: Omit<WorldContextProviders, 'activeGoal'>
+}
 
 /** Narrow composition/IPC boundary. Domain decisions remain in the composed runtimes. */
 export class AliveFacade {
-  private readonly world = new WorldContextRuntime()
+  private readonly world: WorldContextRuntime
   private readonly envelope = new AutonomyEnvelope()
   private readonly behavior = new BehaviorRuntime()
   private readonly experience: ExperienceRuntime
@@ -42,10 +48,18 @@ export class AliveFacade {
       providerId?: AutonomySettings['fastBrain']['providerId']
       model?: string
     }) => LlmGateway,
+    options: AliveFacadeOptions = {},
   ) {
+    this.goals = new GoalRuntime(store)
+    this.world = new WorldContextRuntime(options.systemContextAdapter, {
+      ...options.worldContext,
+      activeGoal: () =>
+        this.goals
+          .snapshot()
+          .find((goal) => goal.status !== 'completed' && goal.status !== 'cancelled') ?? null,
+    })
     this.experience = new ExperienceRuntime(store, this.behavior)
     this.attention = new FastBrainRuntime(llm)
-    this.goals = new GoalRuntime(store)
     this.scheduler = new ScheduledTaskRuntime({
       store,
       envelope: this.envelope,
@@ -56,10 +70,12 @@ export class AliveFacade {
   }
 
   start(): void {
+    this.world.start()
     this.scheduler.start()
   }
 
   dispose(): void {
+    this.world.dispose()
     this.scheduler.dispose()
     this.listeners.clear()
     this.behaviorListeners.clear()
