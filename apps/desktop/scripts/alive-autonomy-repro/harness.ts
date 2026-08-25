@@ -292,15 +292,12 @@ async function testPersistenceAndEnvelope(): Promise<void> {
     const task = store.createTask({ title: 'Check', kind: 'check_in', dueAt: 100 })
     assert.equal(store.claimTaskRun(task, `${task.id}:100`, 200), true)
     assert.equal(store.claimTaskRun(task, `${task.id}:100`, 200), false)
-    store.observeHabit('repeat', 'Repeat')
-    store.observeHabit('repeat', 'Repeat')
-    store.observeHabit('repeat', 'Repeat')
-    assert.equal(store.habits()[0]?.evidenceCount, 3)
+    assert.deepEqual(store.legacyHabitRecords(), [])
     store.close()
 
     const reopened = new AliveStore(databasePath)
     assert.equal(reopened.goals()[0]?.id, goal.id)
-    assert.equal(reopened.version(), 3)
+    assert.equal(reopened.version(), 4)
     reopened.close()
 
     const envelope = new AutonomyEnvelope()
@@ -589,7 +586,7 @@ function testGoalSchemaMigration(): void {
     legacy.close()
     const migrated = new AliveStore(databasePath)
     const goal = migrated.goals()[0]
-    assert.equal(migrated.version(), 3)
+    assert.equal(migrated.version(), 4)
     assert.equal(goal?.owner, 'shared')
     assert.equal(goal?.nextStep, '')
     assert.equal(goal?.lastNote, '')

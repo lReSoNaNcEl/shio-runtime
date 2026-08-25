@@ -8,6 +8,7 @@ import { ActionPermissionGuard } from '../../src/main/action'
 import { AliveRuntime, AliveStore, SchedulerRuntime } from '../../src/main/alive'
 import { CharacterToolRegistry } from '../../src/main/character-tools/CharacterToolRegistry'
 import { DesktopControlPlugin, ShellRiskPolicy } from '../../src/main/desktop-control'
+import { createSemanticMemoryRuntime } from '../../src/main/memory'
 import { actionConfirmationRequestSchema } from '../../src/shared/actions'
 
 const wait = (milliseconds: number): Promise<void> =>
@@ -121,6 +122,8 @@ async function completedOnlyHabitEvidence(): Promise<void> {
   const databasePath = join(directory, 'alive.sqlite')
   try {
     const store = new AliveStore(databasePath)
+    const memoryPath = join(directory, 'memory.sqlite')
+    const memory = createSemanticMemoryRuntime(memoryPath)
     store.saveSettings({
       ...store.settings(),
       mode: 'full',
@@ -133,27 +136,47 @@ async function completedOnlyHabitEvidence(): Promise<void> {
       dueAt: Date.now() - 1,
     })
     const runtime = new AliveRuntime(store, () => ({}) as never, {
-      onCompletedExperienceFact: () =>
-        store.observeHabit('task-follow-through', 'Task follow-through'),
+      proceduralMemory: {
+        observeCompletedFact: (fact) => {
+          memory.observeCompletedFact(fact)
+        },
+        habitSuggestions: () => [],
+        decideHabit: () => undefined,
+      },
     })
     runtime.start()
     await wait(30)
-    const database = new DatabaseSync(databasePath)
+    const database = new DatabaseSync(memoryPath)
     const countEvidence = (): number =>
       Number(
         (
           database
             .prepare(
-              "SELECT evidence_count FROM alive_habits WHERE habit_key = 'task-follow-through'",
+              "SELECT evidence_count FROM memory_habits WHERE habit_key = 'task-follow-through'",
             )
             .get() as { evidence_count?: number } | undefined
         )?.evidence_count ?? 0,
       )
     assert.equal(countEvidence(), 0, 'Starting a task created completion evidence')
-    runtime.reportExperience({ type: 'task-completed', at: Date.now(), taskId: task.id })
+    runtime.reportExperience({
+      type: 'task-completed',
+      at: Date.now(),
+      taskId: task.id,
+      eventId: 'verified-task-completion-1',
+      verified: true,
+    })
     assert.equal(countEvidence(), 1)
+    runtime.reportExperience({
+      type: 'task-completed',
+      at: Date.now(),
+      taskId: task.id,
+      eventId: 'verified-task-completion-1',
+      verified: true,
+    })
+    assert.equal(countEvidence(), 1, 'Duplicate completed event created evidence twice')
     database.close()
     runtime.dispose()
+    memory.close()
   } finally {
     rmSync(directory, { recursive: true, force: true })
   }

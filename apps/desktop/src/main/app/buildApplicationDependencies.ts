@@ -99,6 +99,11 @@ export function buildApplicationDependencies(): ApplicationDependencies {
     join(app.getPath('userData'), 'memory', 'semantic-memory.sqlite'),
   )
   const aliveStore = new AliveStore(join(app.getPath('userData'), 'alive', 'alive.sqlite'))
+  const legacyHabits = aliveStore.legacyHabitRecords()
+  if (semanticMemory.status().operational) {
+    if (legacyHabits.length > 0) semanticMemory.importLegacyHabits(legacyHabits)
+    aliveStore.completeLegacyHabitMigration()
+  }
   const memoryToolBroker = new MemoryToolBroker(semanticMemory)
   let unsubscribePluginCapabilities: (() => void) | null = null
   let unsubscribeProjectCapabilities: (() => void) | null = null
@@ -515,6 +520,29 @@ export function buildApplicationDependencies(): ApplicationDependencies {
       ipcAuthorization,
     )
     aliveRuntime = new AliveRuntime(aliveStore, buildFastBrainGateway, {
+      proceduralMemory: {
+        observeCompletedFact: (fact) => {
+          semanticMemory.observeCompletedFact(fact)
+        },
+        habitSuggestions: () =>
+          semanticMemory.habitSuggestions().map((habit) => ({
+            id: habit.id,
+            key: habit.key,
+            title: habit.summary,
+            evidenceCount: habit.evidenceCount,
+            status:
+              habit.status === 'candidate'
+                ? 'pending'
+                : habit.status === 'disabled'
+                  ? 'rejected'
+                  : habit.status,
+            createdAt: habit.firstObservedAt,
+            updatedAt: habit.lastObservedAt,
+          })),
+        decideHabit: (id, status) => {
+          semanticMemory.decideHabit(id, status)
+        },
+      },
       systemContextAdapter:
         process.platform === 'win32'
           ? new WindowsSystemContextAdapter({

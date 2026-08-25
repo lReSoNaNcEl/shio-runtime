@@ -12,7 +12,6 @@ import type {
   GoalEventWatch,
   GoalExecutionState,
   GoalWakeCondition,
-  HabitSuggestion,
   MoodState,
   PersistentGoal,
   ScheduledTask,
@@ -21,7 +20,7 @@ import type {
 
 type GoalStoreUpdateInput = UpdateGoalInput & { progress?: number }
 
-const DATABASE_VERSION = 3
+const DATABASE_VERSION = 4
 
 const DEFAULT_GOAL_BUDGET = Object.freeze({
   maxSteps: 12,
@@ -78,14 +77,13 @@ interface TaskRow {
   updated_at: number
 }
 
-interface HabitRow {
-  id: string
-  habit_key: string
-  title: string
-  evidence_count: number
-  status: HabitSuggestion['status']
-  created_at: number
-  updated_at: number
+export interface LegacyAliveHabitRecord {
+  key: string
+  summary: string
+  evidenceCount: number
+  status: 'pending' | 'approved' | 'rejected'
+  createdAt: number
+  updatedAt: number
 }
 
 interface GoalExecutionRow {
@@ -496,35 +494,25 @@ export class AliveStore {
     }
   }
 
-  observeHabit(key: string, title: string): void {
-    const now = Date.now()
-    this.database
+  legacyHabitRecords(): readonly LegacyAliveHabitRecord[] {
+    const exists = this.database
       .prepare(
-        `INSERT INTO alive_habits
-          (id, habit_key, title, evidence_count, status, created_at, updated_at)
-         VALUES (?, ?, ?, 1, 'pending', ?, ?)
-         ON CONFLICT(habit_key) DO UPDATE SET
-           evidence_count = evidence_count + 1,
-           title = excluded.title,
-           updated_at = excluded.updated_at`,
+        "SELECT 1 AS found FROM sqlite_master WHERE type = 'table' AND name = 'alive_habits'",
       )
-      .run(randomUUID(), key, title, now, now)
+      .get() as { found: number } | undefined
+    if (!exists) return Object.freeze([])
+    return Object.freeze(
+      this.database
+        .prepare(
+          `SELECT habit_key AS key, title AS summary, evidence_count AS evidenceCount,
+                  status, created_at AS createdAt, updated_at AS updatedAt FROM alive_habits`,
+        )
+        .all() as unknown as LegacyAliveHabitRecord[],
+    )
   }
 
-  habits(): readonly HabitSuggestion[] {
-    const rows = this.database
-      .prepare(
-        `SELECT id, habit_key, title, evidence_count, status, created_at, updated_at
-         FROM alive_habits WHERE evidence_count >= 3 ORDER BY updated_at DESC`,
-      )
-      .all() as unknown as HabitRow[]
-    return Object.freeze(rows.map(toHabit))
-  }
-
-  decideHabit(id: string, status: 'approved' | 'rejected'): void {
-    this.database
-      .prepare('UPDATE alive_habits SET status = ?, updated_at = ? WHERE id = ?')
-      .run(status, Date.now(), id)
+  completeLegacyHabitMigration(): void {
+    this.database.exec('DROP TABLE IF EXISTS alive_habits')
   }
 
   audit(
@@ -591,11 +579,6 @@ export class AliveStore {
           PRIMARY KEY(task_id, run_key),
           FOREIGN KEY(task_id) REFERENCES alive_tasks(id) ON DELETE CASCADE
         );
-        CREATE TABLE alive_habits (
-          id TEXT PRIMARY KEY, habit_key TEXT NOT NULL UNIQUE, title TEXT NOT NULL,
-          evidence_count INTEGER NOT NULL, status TEXT NOT NULL, created_at INTEGER NOT NULL,
-          updated_at INTEGER NOT NULL
-        );
         CREATE TABLE alive_goal_executions (
           goal_id TEXT PRIMARY KEY, phase TEXT NOT NULL, current_step TEXT,
           planned_steps TEXT NOT NULL, completed_steps TEXT NOT NULL, attempts INTEGER NOT NULL,
@@ -620,7 +603,7 @@ export class AliveStore {
         CREATE INDEX alive_tasks_due_idx ON alive_tasks(status, next_run_at);
         CREATE INDEX alive_audit_at_idx ON alive_audit(at DESC);
         CREATE INDEX alive_goal_watches_status_idx ON alive_goal_watches(status, created_at);
-        PRAGMA user_version = 3;
+        PRAGMA user_version = 4;
         COMMIT;
       `)
       this.saveSettings(DEFAULT_AUTONOMY_SETTINGS)
@@ -670,6 +653,7 @@ export class AliveStore {
         COMMIT;
       `)
     }
+    if (version <= 3) this.database.exec('PRAGMA user_version = 4;')
   }
 }
 
@@ -743,18 +727,6 @@ function toAutonomyScope(row: AutonomyScopeRow): AutonomyScope {
     goalId: row.goal_id ?? undefined,
     actionsUsed: row.actions_used,
     approvedAt: row.approved_at,
-  })
-}
-
-function toHabit(row: HabitRow): HabitSuggestion {
-  return Object.freeze({
-    id: row.id,
-    key: row.habit_key,
-    title: row.title,
-    evidenceCount: row.evidence_count,
-    status: row.status,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
   })
 }
 

@@ -3,7 +3,14 @@ import { mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 
-import type { MemoryKind, MemoryRecord, MemorySource } from '../../shared/memory'
+import type {
+  CompletedMemoryFact,
+  HabitRecord,
+  HabitType,
+  MemoryKind,
+  MemoryRecord,
+  MemorySource,
+} from '../../shared/memory'
 
 interface MemoryRow {
   id: string
@@ -13,6 +20,19 @@ interface MemoryRow {
   source_turn_id: string | null
   created_at: number
   updated_at: number
+}
+
+interface HabitRow {
+  id: string
+  habit_key: string
+  type: HabitType
+  summary: string
+  evidence_count: number
+  confidence: number
+  first_observed_at: number
+  last_observed_at: number
+  last_used_at: number | null
+  status: HabitRecord['status']
 }
 
 export interface NewMemoryRecord {
@@ -36,6 +56,20 @@ export interface SemanticMemoryStore {
   list(kind: MemoryKind | undefined, limit: number): readonly MemoryRecord[]
   searchLexical(expression: string, limit: number): readonly MemoryRecord[]
   clear(): void
+  observeCompletedFact?(fact: CompletedMemoryFact): HabitRecord | null
+  habits?(minimumEvidence?: number): readonly HabitRecord[]
+  decideHabit?(id: string, status: 'approved' | 'rejected'): HabitRecord | null
+  markHabitUsed?(id: string, at: number): void
+  importLegacyHabits?(
+    records: readonly {
+      key: string
+      summary: string
+      evidenceCount: number
+      status: 'pending' | 'approved' | 'rejected'
+      createdAt: number
+      updatedAt: number
+    }[],
+  ): void
 }
 
 function toRecord(row: MemoryRow): MemoryRecord {
@@ -214,6 +248,109 @@ export class SqliteSemanticMemoryStore implements SemanticMemoryStore {
     this.database.exec('DELETE FROM memory_records;')
   }
 
+  observeCompletedFact(fact: CompletedMemoryFact): HabitRecord | null {
+    const descriptor = habitDescriptor(fact)
+    this.database.exec('BEGIN IMMEDIATE')
+    try {
+      const inserted = this.database
+        .prepare('INSERT OR IGNORE INTO memory_habit_events (event_id, observed_at) VALUES (?, ?)')
+        .run(fact.eventId, fact.at)
+      if (Number(inserted.changes) === 0) {
+        this.database.exec('ROLLBACK')
+        return this.habitByKey(descriptor.key)
+      }
+      this.database
+        .prepare(
+          `INSERT INTO memory_habits
+            (id, habit_key, type, summary, evidence_count, confidence, first_observed_at,
+             last_observed_at, last_used_at, status)
+           VALUES (?, ?, ?, ?, 1, 0.2, ?, ?, NULL, 'candidate')
+           ON CONFLICT(habit_key) DO UPDATE SET
+             summary = excluded.summary,
+             evidence_count = memory_habits.evidence_count + 1,
+             confidence = MIN(1.0, (memory_habits.evidence_count + 1) / 5.0),
+             last_observed_at = excluded.last_observed_at`,
+        )
+        .run(randomUUID(), descriptor.key, descriptor.type, descriptor.summary, fact.at, fact.at)
+      this.database.exec('COMMIT')
+      return this.habitByKey(descriptor.key)
+    } catch (error) {
+      this.database.exec('ROLLBACK')
+      throw error
+    }
+  }
+
+  habits(minimumEvidence = 1): readonly HabitRecord[] {
+    const rows = this.database
+      .prepare(
+        `SELECT id, habit_key, type, summary, evidence_count, confidence, first_observed_at,
+                last_observed_at, last_used_at, status
+         FROM memory_habits WHERE evidence_count >= ? ORDER BY last_observed_at DESC`,
+      )
+      .all(minimumEvidence) as unknown as HabitRow[]
+    return Object.freeze(rows.map(toHabit))
+  }
+
+  decideHabit(id: string, status: 'approved' | 'rejected'): HabitRecord | null {
+    this.database.prepare('UPDATE memory_habits SET status = ? WHERE id = ?').run(status, id)
+    return this.habits().find((habit) => habit.id === id) ?? null
+  }
+
+  markHabitUsed(id: string, at: number): void {
+    this.database.prepare('UPDATE memory_habits SET last_used_at = ? WHERE id = ?').run(at, id)
+  }
+
+  importLegacyHabits(
+    records: readonly {
+      key: string
+      summary: string
+      evidenceCount: number
+      status: 'pending' | 'approved' | 'rejected'
+      createdAt: number
+      updatedAt: number
+    }[],
+  ): void {
+    const insert = this.database.prepare(
+      `INSERT INTO memory_habits
+        (id, habit_key, type, summary, evidence_count, confidence, first_observed_at,
+         last_observed_at, last_used_at, status)
+       VALUES (?, ?, 'routine', ?, ?, ?, ?, ?, NULL, ?)
+       ON CONFLICT(habit_key) DO UPDATE SET
+         evidence_count = MAX(memory_habits.evidence_count, excluded.evidence_count),
+         confidence = MAX(memory_habits.confidence, excluded.confidence),
+         last_observed_at = MAX(memory_habits.last_observed_at, excluded.last_observed_at)`,
+    )
+    this.database.exec('BEGIN IMMEDIATE')
+    try {
+      for (const record of records) {
+        insert.run(
+          randomUUID(),
+          record.key,
+          record.summary.slice(0, 300),
+          Math.max(1, record.evidenceCount),
+          Math.min(1, record.evidenceCount / 5),
+          record.createdAt,
+          record.updatedAt,
+          record.status === 'pending' ? 'candidate' : record.status,
+        )
+      }
+      this.database.exec('COMMIT')
+    } catch (error) {
+      this.database.exec('ROLLBACK')
+      throw error
+    }
+  }
+
+  private habitByKey(key: string): HabitRecord | null {
+    const row = this.database
+      .prepare(
+        `SELECT id, habit_key, type, summary, evidence_count, confidence, first_observed_at,
+                last_observed_at, last_used_at, status FROM memory_habits WHERE habit_key = ?`,
+      )
+      .get(key) as HabitRow | undefined
+    return row ? toHabit(row) : null
+  }
+
   private migrate(): void {
     this.database.exec(`
       CREATE TABLE IF NOT EXISTS memory_settings (
@@ -247,10 +384,63 @@ export class SqliteSemanticMemoryStore implements SemanticMemoryStore {
       CREATE TRIGGER IF NOT EXISTS memory_records_after_delete AFTER DELETE ON memory_records BEGIN
         DELETE FROM memory_records_fts WHERE id = old.id;
       END;
+      CREATE TABLE IF NOT EXISTS memory_habits (
+        id TEXT PRIMARY KEY, habit_key TEXT NOT NULL UNIQUE, type TEXT NOT NULL,
+        summary TEXT NOT NULL, evidence_count INTEGER NOT NULL, confidence REAL NOT NULL,
+        first_observed_at INTEGER NOT NULL, last_observed_at INTEGER NOT NULL,
+        last_used_at INTEGER, status TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS memory_habit_events (
+        event_id TEXT PRIMARY KEY, observed_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS memory_habits_status_observed
+        ON memory_habits(status, last_observed_at DESC);
       DELETE FROM memory_records_fts WHERE id NOT IN (SELECT id FROM memory_records);
       INSERT INTO memory_records_fts(id, text)
       SELECT r.id, r.text FROM memory_records r
       WHERE r.id NOT IN (SELECT id FROM memory_records_fts);
     `)
   }
+}
+
+function habitDescriptor(fact: CompletedMemoryFact): {
+  key: string
+  type: HabitType
+  summary: string
+} {
+  switch (fact.kind) {
+    case 'task-completed':
+      return {
+        key: 'task-follow-through',
+        type: 'routine',
+        summary: 'Доводить начатые задачи до проверенного завершения',
+      }
+    case 'goal-completed':
+      return {
+        key: 'goal-follow-through',
+        type: 'routine',
+        summary: 'Доводить выбранные цели до завершения',
+      }
+    case 'action-verified':
+      return {
+        key: 'verified-action-follow-through',
+        type: 'interaction-style',
+        summary: 'Проверять результат внешнего действия до сообщения об успехе',
+      }
+  }
+}
+
+function toHabit(row: HabitRow): HabitRecord {
+  return Object.freeze({
+    id: row.id,
+    key: row.habit_key,
+    type: row.type,
+    summary: row.summary,
+    evidenceCount: row.evidence_count,
+    confidence: Math.max(0, Math.min(1, row.confidence)),
+    firstObservedAt: row.first_observed_at,
+    lastObservedAt: row.last_observed_at,
+    lastUsedAt: row.last_used_at ?? undefined,
+    status: row.status,
+  })
 }

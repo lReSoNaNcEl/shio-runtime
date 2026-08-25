@@ -15,6 +15,7 @@ import type {
   GoalExecutionState,
   GoalWakeCondition,
   GoalWakeEvent,
+  HabitSuggestion,
   PersistentGoal,
   RendererWorldContextInput,
   ReviseGoalInput,
@@ -29,6 +30,7 @@ import { AutonomyEnvelope } from './AutonomyEnvelope'
 import { AutonomyScopeRuntime, type ScopedActionProposal } from './AutonomyScopeRuntime'
 import { BehaviorRuntime } from './BehaviorRuntime'
 import { EventWatchService } from './EventWatchService'
+import type { CompletedExperienceFact } from './ExperienceRuntime'
 import { ExperienceRuntime } from './ExperienceRuntime'
 import { FastBrainRuntime } from './FastBrainRuntime'
 import { GoalRuntime } from './GoalRuntime'
@@ -41,6 +43,11 @@ export interface AliveFacadeOptions {
   systemContextAdapter?: SystemContextAdapter
   worldContext?: Omit<WorldContextProviders, 'activeGoal'>
   onCompletedExperienceFact?: ConstructorParameters<typeof ExperienceRuntime>[3]
+  proceduralMemory?: {
+    observeCompletedFact(fact: CompletedExperienceFact): void
+    habitSuggestions(): readonly HabitSuggestion[]
+    decideHabit(id: string, status: 'approved' | 'rejected'): void
+  }
 }
 
 /** Narrow composition/IPC boundary. Domain decisions remain in the composed runtimes. */
@@ -63,7 +70,7 @@ export class AliveFacade {
       providerId?: AutonomySettings['fastBrain']['providerId']
       model?: string
     }) => LlmGateway,
-    options: AliveFacadeOptions = {},
+    private readonly options: AliveFacadeOptions = {},
   ) {
     this.goals = new GoalRuntime(store)
     this.watches = new EventWatchService(store, this.goals)
@@ -79,7 +86,10 @@ export class AliveFacade {
       store,
       this.behavior,
       new MoodRuntime(store),
-      options.onCompletedExperienceFact ?? (() => undefined),
+      (fact) => {
+        options.proceduralMemory?.observeCompletedFact(fact)
+        options.onCompletedExperienceFact?.(fact)
+      },
     )
     this.attention = new AttentionArbiter(new FastBrainRuntime(llm))
     this.scheduler = new ScheduledTaskRuntime({
@@ -123,7 +133,7 @@ export class AliveFacade {
     const settings = this.store.settings()
     const goals = this.goals.snapshot()
     const tasks = this.scheduler.snapshot()
-    const habits = this.store.habits()
+    const habits = this.options.proceduralMemory?.habitSuggestions() ?? Object.freeze([])
     return Object.freeze({
       settings,
       goals,
@@ -197,7 +207,8 @@ export class AliveFacade {
   }
 
   decideHabit(id: string, status: 'approved' | 'rejected'): AliveSnapshot {
-    this.store.decideHabit(id, status)
+    if (!this.options.proceduralMemory) throw new Error('PROCEDURAL_MEMORY_UNAVAILABLE')
+    this.options.proceduralMemory.decideHabit(id, status)
     this.store.audit('habit', 'suggestion_decided', status, id)
     return this.publish()
   }

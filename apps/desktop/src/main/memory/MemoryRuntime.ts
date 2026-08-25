@@ -1,4 +1,6 @@
 import type {
+  CompletedMemoryFact,
+  HabitRecord,
   MemoryForgetInput,
   MemoryForgetResult,
   MemoryKind,
@@ -14,6 +16,7 @@ import type {
   MemoryToolResult,
   MemoryUpdateInput,
   MemoryUpdateResult,
+  RelationshipContext,
 } from '../../shared/memory'
 import {
   MEMORY_LIMITS,
@@ -59,6 +62,7 @@ export class MemoryRuntime {
         enabled: false,
         operational: false,
         recordCount: 0,
+        retrievalMode: 'lexical',
         lastErrorCode: this.lastErrorCode ?? 'MEMORY_UNAVAILABLE',
       })
     }
@@ -67,6 +71,7 @@ export class MemoryRuntime {
         enabled: this.store.getEnabled(),
         operational: true,
         recordCount: this.store.count(),
+        retrievalMode: this.retrieval?.mode ?? 'lexical',
       })
     } catch {
       this.markUnavailable()
@@ -74,6 +79,7 @@ export class MemoryRuntime {
         enabled: false,
         operational: false,
         recordCount: 0,
+        retrievalMode: 'lexical',
         lastErrorCode: 'MEMORY_UNAVAILABLE',
       })
     }
@@ -193,6 +199,59 @@ export class MemoryRuntime {
   clearManual(): void {
     this.requireStore().clear()
     this.publish(this.status())
+  }
+
+  observeCompletedFact(fact: CompletedMemoryFact): HabitRecord | null {
+    return this.requireStore().observeCompletedFact?.(fact) ?? null
+  }
+
+  habitSuggestions(): readonly HabitRecord[] {
+    return this.requireStore().habits?.(3) ?? Object.freeze([])
+  }
+
+  decideHabit(id: string, status: 'approved' | 'rejected'): HabitRecord {
+    const habit = this.requireStore().decideHabit?.(id, status) ?? null
+    if (!habit) throw new MemoryPolicyError('NOT_FOUND', 'The referenced habit does not exist.')
+    return habit
+  }
+
+  relevantHabitMotifs(now = Date.now(), limit = 3): readonly HabitRecord[] {
+    const cooldownMs = 6 * 60 * 60_000
+    const habits = (this.requireStore().habits?.(3) ?? [])
+      .filter((habit) => habit.status === 'approved')
+      .filter((habit) => habit.lastUsedAt === undefined || now - habit.lastUsedAt >= cooldownMs)
+      .slice(0, Math.max(0, Math.min(5, limit)))
+    for (const habit of habits) this.requireStore().markHabitUsed?.(habit.id, now)
+    return Object.freeze(habits)
+  }
+
+  relationshipContext(): RelationshipContext {
+    const store = this.requireStore()
+    const sharedHistory = store.list('relationship', 4)
+    const approvedHabits = (store.habits?.(3) ?? []).filter((habit) => habit.status === 'approved')
+    const relationshipEvidence = sharedHistory.length
+    return Object.freeze({
+      familiarity: boundedUnit((store.count() + approvedHabits.length * 2) / 24),
+      warmth: boundedUnit(0.35 + relationshipEvidence * 0.1 + approvedHabits.length * 0.03),
+      teasingComfort: boundedUnit(
+        approvedHabits.filter((habit) => habit.type === 'shared-joke').length / 4,
+      ),
+      recurringMotifs: Object.freeze(approvedHabits.slice(0, 4).map((habit) => habit.summary)),
+      relevantSharedHistory: Object.freeze(sharedHistory.map((record) => record.text).slice(0, 4)),
+    })
+  }
+
+  importLegacyHabits(
+    records: readonly {
+      key: string
+      summary: string
+      evidenceCount: number
+      status: 'pending' | 'approved' | 'rejected'
+      createdAt: number
+      updatedAt: number
+    }[],
+  ): void {
+    this.requireStore().importLegacyHabits?.(records)
   }
 
   close(): void {
@@ -326,4 +385,8 @@ export class MemoryRuntime {
   private publish(status: MemoryRuntimeStatus): void {
     for (const listener of this.listeners) listener(status)
   }
+}
+
+function boundedUnit(value: number): number {
+  return Math.max(0, Math.min(1, value))
 }
