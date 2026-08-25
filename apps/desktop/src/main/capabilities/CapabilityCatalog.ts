@@ -12,6 +12,7 @@ import type { MemoryRuntimeStatus } from '../../shared/memory'
 import type { PluginStatus } from '../../shared/plugins'
 import { DESKTOP_CONTROL_PLUGIN_ID, PROJECT_AWARENESS_PLUGIN_ID } from '../../shared/plugins'
 import type { AvatarRuntimeHealth } from '../../shared/runtime'
+import type { WebSearchStatus } from '../../shared/web-search'
 import { mainLog } from '../logging/safeLogger'
 import type { SpeechCapabilitiesProbe } from '../speech/speechClient'
 
@@ -20,6 +21,7 @@ export interface CapabilityCatalogSources {
   llmReadiness(): LlmReadiness
   llmCapabilities(): LlmCapabilities
   memoryStatus?(): MemoryRuntimeStatus
+  webSearchStatus?(): WebSearchStatus
   plugins(): Promise<readonly PluginStatus[]>
   desktopControl(): Promise<DesktopControlCapabilityProjection>
   avatarRuntimeHealth(): AvatarRuntimeHealth | null
@@ -178,6 +180,10 @@ export class CapabilityCatalog {
       recordCount: 0,
       lastErrorCode: 'MEMORY_UNAVAILABLE' as const,
     }
+    const webSearchStatus = this.sources.webSearchStatus?.() ?? {
+      availability: 'unavailable' as const,
+      reason: 'adapter-unavailable' as const,
+    }
     const plugins = await this.sources.plugins()
     const desktop = await this.sources.desktopControl()
     const avatarHealth = this.sources.avatarRuntimeHealth()
@@ -266,6 +272,21 @@ export class CapabilityCatalog {
           : !memoryStatus.enabled
             ? 'capabilities.reason.memoryDisabled'
             : undefined,
+      },
+      {
+        id: 'web-search',
+        category: 'knowledge',
+        source: { kind: 'core' },
+        titleKey: 'capabilities.webSearch.title',
+        descriptionKey: 'capabilities.webSearch.description',
+        availability: webSearchStatus.availability,
+        authority: 'read-only',
+        reasonKey:
+          webSearchStatus.availability === 'needs-setup'
+            ? 'capabilities.reason.webSearchCredential'
+            : webSearchStatus.availability === 'unavailable'
+              ? 'capabilities.reason.webSearchUnavailable'
+              : undefined,
       },
       {
         id: 'alive-autonomy',

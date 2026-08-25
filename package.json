@@ -48,6 +48,8 @@
     "desktop:memory-2:repro": "npm --prefix apps/desktop run repro:memory-2",
     "desktop:streaming-tts-2:repro": "npm --prefix apps/desktop run repro:streaming-tts-2",
     "desktop:latency-benchmark": "npm --prefix apps/desktop run benchmark:latency-30",
+    "desktop:prompt-budget:repro": "npm --prefix apps/desktop run repro:prompt-budget",
+    "desktop:web-search:repro": "npm --prefix apps/desktop run repro:web-search",
     "desktop:plugins:repro": "npm --prefix apps/desktop run repro:plugin-runtime",
     "desktop:avatar-visual-motion:repro": "npm --prefix apps/desktop run repro:avatar-visual-motion",
     "api:install": "node scripts/api-runner.mjs install",

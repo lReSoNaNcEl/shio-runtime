@@ -242,6 +242,11 @@ export const enMessages: Record<TranslationKey, string> = {
   'capabilities.computer.title': 'Computer control',
   'capabilities.computer.description':
     'Shio can run authorized PowerShell commands and system actions.',
+  'capabilities.webSearch.title': 'Web search',
+  'capabilities.webSearch.description':
+    'Shio can find current public sources without controlling a website.',
+  'capabilities.reason.webSearchCredential': 'Add BRAVE_SEARCH_API_KEY to the Main environment.',
+  'capabilities.reason.webSearchUnavailable': 'The web search adapter is currently unavailable.',
   'capabilities.reason.llmChecking': 'Checking the model connection.',
   'capabilities.reason.llmCredential': 'Add a provider API key.',
   'capabilities.reason.llmAccountId': 'Add a Cloudflare Account ID.',

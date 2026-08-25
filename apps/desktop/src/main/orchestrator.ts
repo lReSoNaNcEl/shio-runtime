@@ -7,9 +7,12 @@ import type {
 } from '../shared/actions'
 import type {
   CreatePersistentGoal,
+  ExperienceAppraisal,
+  MoodState,
   PersistentGoal,
   PersistentGoalProvider,
   RevisePersistentGoal,
+  WorldContextSnapshot,
 } from '../shared/alive'
 import type { ShioCapabilityProvider, ShioCapabilitySnapshot } from '../shared/capabilities'
 import {
@@ -21,6 +24,7 @@ import type { ReplyGrounding } from '../shared/conversation'
 import type { BrowserContextProviderResolver } from '../shared/desktop-control'
 import { normalizeEmotionTag, parseEmotionalReply, parseLeadingEmotionTag } from '../shared/emotion'
 import { normalizeUiLocale } from '../shared/localization'
+import type { HabitRecord, RelationshipContext } from '../shared/memory'
 import type { ProjectContextProviderResolver } from '../shared/plugins'
 import type {
   ProjectContextPacket,
@@ -39,18 +43,12 @@ import {
   verifiedToolOutcomeFallback,
 } from './character/presentation/MemoryResultPresenter'
 import {
-  CAPABILITY_CONTEXT_UNAVAILABLE_PROMPT,
-  characterCapabilityPrompt,
-} from './character/prompting/CapabilityPromptProjection'
-import {
   embodimentContractPrompt,
   emotionContractPrompt,
   SYSTEM_PROMPT,
 } from './character/prompting/CharacterPrompt'
-import {
-  goalAwarenessPrompt,
-  unfinishedGoalSnapshot,
-} from './character/prompting/GoalAwarenessPrompt'
+import { CharacterRequestComposer } from './character/prompting/CharacterRequestComposer'
+import { unfinishedGoalSnapshot } from './character/prompting/GoalAwarenessPrompt'
 import { memoryCapabilityPrompt } from './character/prompting/MemoryPromptPolicy'
 import { responsePolicyPrompt } from './character/prompting/ResponsePolicyPrompt'
 import {
@@ -71,8 +69,17 @@ import { mainLog } from './logging/safeLogger'
 import type { MemoryStore, MemoryToolBroker } from './memory'
 import type { SpeechSynthesisClient } from './speech/speechClient'
 import { classifySpeechUtterance, normalizeSpeechText } from './speech/text-normalization'
+import type { WebSearchRuntime } from './web-search'
 
 export { presentActionResult as actionResultFallback }
+
+interface CharacterLivingContext {
+  mood?: MoodState
+  experience?: ExperienceAppraisal
+  world?: WorldContextSnapshot
+  relationship?: RelationshipContext
+  habits?: readonly HabitRecord[]
+}
 
 const SESSION_ID = 'default'
 const TTS_VOICE_ID = 'animevox_makima'
@@ -229,6 +236,8 @@ export class Orchestrator {
     private persistentGoals?: PersistentGoalProvider,
     private createPersistentGoal?: CreatePersistentGoal,
     private revisePersistentGoal?: RevisePersistentGoal,
+    private livingContext?: () => CharacterLivingContext,
+    private webSearch?: WebSearchRuntime,
   ) {}
 
   async createReply(
@@ -270,11 +279,9 @@ export class Orchestrator {
       ? memoryCapabilityPrompt(semanticMemoryStatus)
       : null
     let goalAwareness: readonly PersistentGoal[] = []
-    let persistentGoalPrompt: string | null = null
     try {
       if (this.persistentGoals) {
         goalAwareness = unfinishedGoalSnapshot(this.persistentGoals())
-        persistentGoalPrompt = goalAwarenessPrompt(goalAwareness)
       }
     } catch (error) {
       mainLog.warn('[AliveRuntime] goal awareness unavailable; continuing without it', {
@@ -282,24 +289,35 @@ export class Orchestrator {
         error: error instanceof Error ? error.message : String(error),
       })
     }
-    const messages = [
-      { role: 'system' as const, content: SYSTEM_PROMPT },
-      { role: 'system' as const, content: responsePolicyPrompt() },
-      { role: 'system' as const, content: emotionContractPrompt() },
-      { role: 'system' as const, content: embodimentContractPrompt() },
-      ...(semanticMemoryPrompt ? [{ role: 'system' as const, content: semanticMemoryPrompt }] : []),
-      ...(persistentGoalPrompt ? [{ role: 'system' as const, content: persistentGoalPrompt }] : []),
-      ...(capabilityContext
-        ? [
-            {
-              role: 'system' as const,
-              content: characterCapabilityPrompt(capabilityContext, locale),
-            },
-          ]
-        : []),
-      ...(capabilityContextUnavailable
-        ? [{ role: 'system' as const, content: CAPABILITY_CONTEXT_UNAVAILABLE_PROMPT }]
-        : []),
+    let livingContext: CharacterLivingContext = {}
+    try {
+      livingContext = this.livingContext?.() ?? {}
+    } catch (error) {
+      mainLog.warn('[CharacterRequestComposer] living context unavailable', {
+        traceId,
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
+    const messages: ChatMessage[] = [
+      ...new CharacterRequestComposer().compose({
+        persona: SYSTEM_PROMPT,
+        responsePolicy: [
+          responsePolicyPrompt(),
+          emotionContractPrompt(),
+          embodimentContractPrompt(),
+        ].join('\n\n'),
+        mood: livingContext.mood,
+        relationship: livingContext.relationship,
+        habits: livingContext.habits,
+        experience: livingContext.experience,
+        goals: goalAwareness,
+        foregroundGoalId: livingContext.world?.activeGoal?.id,
+        memory: semanticMemoryPrompt,
+        capabilities: capabilityContext,
+        capabilityContextUnavailable,
+        world: livingContext.world,
+        locale,
+      }),
       ...history,
       {
         role: 'user' as const,
@@ -333,6 +351,7 @@ export class Orchestrator {
       const registry = (): CharacterToolRegistry =>
         new CharacterToolRegistry({
           projectAvailable,
+          webAvailable: this.webSearch?.status().availability === 'available',
           goalsAvailable: Boolean(this.persistentGoals),
           goalCreatesAvailable: Boolean(this.createPersistentGoal),
           goalUpdatesAvailable: Boolean(this.revisePersistentGoal),
@@ -356,6 +375,7 @@ export class Orchestrator {
             userGoal: userText,
             signal,
             projectContext: this.projectContext,
+            webSearch: this.webSearch,
             semanticMemory: this.semanticMemory,
             executeDesktopWorkflow: this.executeDesktopWorkflow,
             browserContext: this.browserContext,

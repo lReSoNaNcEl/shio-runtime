@@ -40,7 +40,21 @@ function capabilityAuthorityLabel(
 export function characterCapabilityPrompt(
   context: ShioCapabilitySnapshot,
   locale: UiLocale,
+  detail: 'compact' | 'full' = 'full',
 ): string {
+  if (detail === 'compact') {
+    const capabilities = context.capabilities.map(
+      (capability) =>
+        `${translate(locale, capability.titleKey)}: ${translate(locale, CAPABILITY_AVAILABILITY_KEY[capability.availability])}${
+          capability.authority ? ` (${capabilityAuthorityLabel(capability.authority, locale)})` : ''
+        }`,
+    )
+    return [
+      '## Current Shio Capabilities',
+      'Compact request-scoped availability facts. Tool definitions remain authoritative for invocation. Availability never grants permission.',
+      capabilities.length > 0 ? capabilities.join('; ') : 'Current capabilities: none.',
+    ].join('\n\n')
+  }
   const capabilities = context.capabilities.map((capability) => {
     return [
       `- ${translate(locale, capability.titleKey)}: ${translate(locale, CAPABILITY_AVAILABILITY_KEY[capability.availability])}`,

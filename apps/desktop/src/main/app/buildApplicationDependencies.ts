@@ -58,6 +58,7 @@ import { observeMainPromise } from '../reliability/observePromise'
 import { ScreenCaptureAdapter, ScreenContextService } from '../screen-context'
 import { SpeechClientManager } from '../speech/SpeechClientManager'
 import { registerReleaseSupportHandlers } from '../system/releaseSupport'
+import { BraveWebSearchAdapter, WebSearchRuntime } from '../web-search'
 import { MainWindowManager } from '../windows/MainWindowManager'
 import { OverlayWindowManager } from '../windows/OverlayWindowManager'
 import { createActionRuntime } from './createActionRuntime'
@@ -115,6 +116,9 @@ export function buildApplicationDependencies(): ApplicationDependencies {
   const screenContextService = new ScreenContextService(new ScreenCaptureAdapter())
   const pluginCapabilities = new PluginCapabilityRegistry()
   const browserWorkflowScopes = new BrowserWorkflowScopeRegistry()
+  const webSearch = new WebSearchRuntime(
+    new BraveWebSearchAdapter(() => process.env.BRAVE_SEARCH_API_KEY),
+  )
 
   const loadRenderer = async (target: BrowserWindow, overlay = false): Promise<void> => {
     if (process.env.NODE_ENV === 'development') {
@@ -299,6 +303,7 @@ export function buildApplicationDependencies(): ApplicationDependencies {
         recommendedMaxTokens: 1_024,
       },
     memoryStatus: () => semanticMemory.status(),
+    webSearchStatus: () => webSearch.status(),
     plugins: () => getPluginRuntime().list(),
     desktopControl: () => getDesktopControl().getCapabilityProjection(),
     avatarRuntimeHealth: () => lastAvatarRuntimeHealth,
@@ -362,6 +367,17 @@ export function buildApplicationDependencies(): ApplicationDependencies {
         if (!runtime) throw new Error('ALIVE_RUNTIME_UNAVAILABLE')
         return runtime.reviseGoalFromCharacter(input)
       },
+      () => {
+        const alive = aliveRuntime?.snapshot()
+        return {
+          mood: alive?.mood,
+          experience: alive?.lastExperience,
+          world: alive?.world,
+          relationship: semanticMemory.relationshipContext(),
+          habits: semanticMemory.relevantHabitMotifs(),
+        }
+      },
+      webSearch,
     )
   }
 

@@ -71,6 +71,8 @@
     "repro:memory-2": "esbuild scripts/memory-2-repro/harness.ts --bundle --platform=node --format=cjs --external:electron --outfile=out/memory-2-repro.cjs && node out/memory-2-repro.cjs",
     "repro:streaming-tts-2": "esbuild scripts/streaming-tts-2-repro/harness.ts --bundle --platform=node --format=cjs --external:electron --outfile=out/streaming-tts-2-repro.cjs && node out/streaming-tts-2-repro.cjs",
     "benchmark:latency-30": "esbuild scripts/latency-30-benchmark/harness.ts --bundle --platform=node --format=cjs --outfile=out/latency-30-benchmark.cjs && node out/latency-30-benchmark.cjs",
+    "repro:prompt-budget": "esbuild scripts/prompt-budget-repro/harness.ts --bundle --platform=node --format=cjs --external:electron --outfile=out/prompt-budget-repro.cjs && node out/prompt-budget-repro.cjs",
+    "repro:web-search": "esbuild scripts/web-search-repro/harness.ts --bundle --platform=node --format=cjs --external:electron --outfile=out/web-search-repro.cjs && node out/web-search-repro.cjs",
     "test:llm-live": "npm run repro:llm-live"
   },
   "keywords": [],

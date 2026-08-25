@@ -3,6 +3,7 @@ import { z } from 'zod'
 
 export const CHARACTER_TOOL_IDS = [
   'project.search',
+  'web.search',
   'browser.observe',
   'browser.open',
   'browser.click',
@@ -50,7 +51,7 @@ const CHARACTER_TOOLS_MARKER = /<shio-tools>([\s\S]*?)<\/shio-tools>/iu
 const CHARACTER_TOOLS_MARKER_OPEN = /<shio-tools\b/iu
 const CHARACTER_TOOLS_MARKER_LIKE = /<\/?shio-tools\b/iu
 const CHARACTER_TOOLS_MARKER_TOKEN = /<\/?shio-tools\b[^>]*>?/giu
-const COMPACT_TOOL_MARKER = /\[(?:project|browser|shell|memory|goal)\.[A-Za-z][A-Za-z0-9]*\]/u
+const COMPACT_TOOL_MARKER = /\[(?:project|web|browser|shell|memory|goal)\.[A-Za-z][A-Za-z0-9]*\]/u
 const PROTOCOL_FENCE = /^\s*```(?:json|xml|text)?\s*([\s\S]*?)\s*```\s*$/iu
 
 export type CharacterToolDirective =
@@ -165,7 +166,7 @@ function parseCompactToolDirective(text: string): CharacterToolDirective | null 
       if (cursor >= text.length) break
       const marker = text
         .slice(cursor)
-        .match(/^\[((?:project|browser|shell|memory|goal)\.[^\]]+)\]/u)
+        .match(/^\[((?:project|web|browser|shell|memory|goal)\.[^\]]+)\]/u)
       if (!marker) {
         if (calls.length > 0) break
         throw new Error('missing compact tool marker')

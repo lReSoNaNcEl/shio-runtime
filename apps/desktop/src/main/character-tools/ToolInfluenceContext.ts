@@ -11,6 +11,7 @@ export interface ToolInfluenceSnapshot {
 }
 
 function capabilityFor(id: CharacterToolId): ToolCapability {
+  if (id === 'web.search') return 'web'
   if (id.startsWith('browser.')) return 'browser'
   if (id.startsWith('memory.')) return 'memory'
   if (id.startsWith('goal.')) return 'goal'

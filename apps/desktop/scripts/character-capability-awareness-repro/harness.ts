@@ -169,7 +169,11 @@ async function main(): Promise<void> {
       streaming: true,
     })
     const disabled = await catalog.snapshot()
-    assert.equal(disabled.capabilities.length, 10)
+    assert.equal(disabled.capabilities.length, 11)
+    assert.equal(
+      disabled.capabilities.find((capability) => capability.id === 'web-search')?.availability,
+      'unavailable',
+    )
     const aliveStarting = disabled.capabilities.find(
       (capability) => capability.id === 'alive-autonomy',
     )
@@ -287,7 +291,7 @@ async function main(): Promise<void> {
     )?.content
     assert.equal(typeof prompt, 'string')
     assert.match(String(prompt), /Project Awareness: Отключено/)
-    assert.match(String(prompt), /дополнительная возможность установлена/)
+    assert.doesNotMatch(String(prompt), /дополнительная возможность установлена/)
     assert.match(String(prompt), /Движок автоматизации: Отключено/)
     assert.match(String(prompt), /Управление браузером: Отключено/)
     assert.doesNotMatch(String(prompt), /project-context|project-index|SQLite|IPC|npm|JSON-RPC/)
