@@ -22,13 +22,18 @@ import {
 import type { SpeechClient } from '../../src/main/speech/speechClient'
 import type { AppSettings } from '../../src/shared/config'
 import { migrateLegacyDesktopSettings } from '../../src/shared/config'
+import type { BrowserContextProvider } from '../../src/shared/desktop-control'
 import type {
   PluginHealth,
   PluginId,
   PluginManifest,
   ProjectContextProvider,
 } from '../../src/shared/plugins'
-import { PROJECT_AWARENESS_PLUGIN_ID } from '../../src/shared/plugins'
+import {
+  BROWSER_GAME_CONTROL_PLUGIN_ID,
+  DESKTOP_CONTROL_PLUGIN_ID,
+  PROJECT_AWARENESS_PLUGIN_ID,
+} from '../../src/shared/plugins'
 
 class FakePlugin implements BundledPlugin {
   readonly provider: ProjectContextProvider = {
@@ -38,6 +43,8 @@ class FakePlugin implements BundledPlugin {
   startCount = 0
   stopCount = 0
   disposeCount = 0
+  stopBarrier: Promise<void> | undefined
+  onStopStarted: (() => void) | undefined
 
   constructor(
     readonly manifest: PluginManifest = PROJECT_AWARENESS_MANIFEST,
@@ -56,6 +63,8 @@ class FakePlugin implements BundledPlugin {
 
   async stop(): Promise<void> {
     this.stopCount += 1
+    this.onStopStarted?.()
+    await this.stopBarrier
   }
 
   async dispose(): Promise<void> {
@@ -68,6 +77,15 @@ class FakePlugin implements BundledPlugin {
 
   getProjectContextProvider(): ProjectContextProvider {
     return this.provider
+  }
+
+  getBrowserContextProvider(): BrowserContextProvider {
+    return {
+      currentObservation: () => null,
+      observe: async () => {
+        throw new Error('TEST_BROWSER_OBSERVATION_UNAVAILABLE')
+      },
+    }
   }
 }
 
@@ -171,6 +189,85 @@ async function runtimeContract(directory: string): Promise<void> {
         new PluginCapabilityRegistry(),
       ),
     /Invalid string|invalid_format/,
+  )
+
+  const realtimeManifest: PluginManifest = {
+    id: DESKTOP_CONTROL_PLUGIN_ID,
+    version: '1.1.0',
+    nameKey: 'plugins.desktopControl.name',
+    descriptionKey: 'plugins.desktopControl.description',
+    defaultEnabled: false,
+    capabilities: ['browser-realtime-control'],
+  }
+  const gameManifest: PluginManifest = {
+    id: BROWSER_GAME_CONTROL_PLUGIN_ID,
+    version: '1.0.0',
+    nameKey: 'plugins.desktopControl.name',
+    descriptionKey: 'plugins.desktopControl.description',
+    defaultEnabled: true,
+    capabilities: ['browser-game-control'],
+    requiresCapabilities: ['browser-realtime-control'],
+  }
+  const realtime = new FakePlugin(realtimeManifest)
+  const game = new FakePlugin(gameManifest)
+  const dependencyCapabilities = new PluginCapabilityRegistry()
+  const dependencyRuntime = new PluginRuntime(
+    [realtime, game],
+    new PluginRegistryStore(join(directory, 'dependency-registry.json'), [
+      realtimeManifest,
+      gameManifest,
+    ]),
+    dependencyCapabilities,
+  )
+  await dependencyRuntime.initialize()
+  const waiting = await dependencyRuntime.get(BROWSER_GAME_CONTROL_PLUGIN_ID)
+  assert.equal(waiting.enabled, true)
+  assert.equal(waiting.lifecycle, 'waiting-dependencies')
+  assert.equal(waiting.health.state, 'needs-setup')
+  assert.match(waiting.health.detail ?? '', /browser-realtime-control/u)
+  assert.equal(dependencyCapabilities.hasCapability('browser-game-control'), false)
+
+  await dependencyRuntime.enable(DESKTOP_CONTROL_PLUGIN_ID)
+  assert.equal((await dependencyRuntime.get(BROWSER_GAME_CONTROL_PLUGIN_ID)).lifecycle, 'active')
+  assert.equal(dependencyCapabilities.hasCapability('browser-game-control'), true)
+  let releaseStop = (): void => undefined
+  let stopStarted = (): void => undefined
+  const stopStartedSignal = new Promise<void>((resolve) => {
+    stopStarted = resolve
+  })
+  realtime.onStopStarted = stopStarted
+  realtime.stopBarrier = new Promise<void>((resolve) => {
+    releaseStop = resolve
+  })
+  const disablingDependency = dependencyRuntime.disable(DESKTOP_CONTROL_PLUGIN_ID)
+  await stopStartedSignal
+  assert.equal(dependencyCapabilities.hasCapability('browser-realtime-control'), false)
+  assert.equal(dependencyCapabilities.hasCapability('browser-game-control'), false)
+  releaseStop()
+  await disablingDependency
+  assert.equal(
+    (await dependencyRuntime.get(BROWSER_GAME_CONTROL_PLUGIN_ID)).lifecycle,
+    'waiting-dependencies',
+  )
+  assert.equal(dependencyCapabilities.hasCapability('browser-game-control'), false)
+  assert.equal(game.stopCount, 1)
+  await dependencyRuntime.dispose()
+
+  assert.throws(
+    () =>
+      new PluginRuntime(
+        [
+          new FakePlugin({
+            ...gameManifest,
+            capabilities: ['browser-game-control', 'browser-realtime-control'],
+          }),
+        ],
+        new PluginRegistryStore(join(directory, 'invalid-dependency-registry.json'), [
+          gameManifest,
+        ]),
+        new PluginCapabilityRegistry(),
+      ),
+    /cannot require a capability that it provides/u,
   )
 }
 

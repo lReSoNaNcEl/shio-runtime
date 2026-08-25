@@ -78,6 +78,7 @@ const LIFECYCLE_KEY: Record<PluginLifecycleState, TranslationKey> = {
   registered: 'plugins.lifecycle.registered',
   initializing: 'plugins.lifecycle.initializing',
   disabled: 'plugins.lifecycle.disabled',
+  'waiting-dependencies': 'plugins.lifecycle.waitingDependencies',
   starting: 'plugins.lifecycle.starting',
   active: 'plugins.lifecycle.active',
   stopping: 'plugins.lifecycle.stopping',

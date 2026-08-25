@@ -28,6 +28,13 @@ export type WebSearchStatus =
   | { availability: 'available' }
   | { availability: 'unavailable'; reason: 'adapter-unavailable' }
 
+export interface WebSearchProvider {
+  status(): WebSearchStatus
+  search(input: WebSearchInput, signal?: AbortSignal): Promise<WebSearchResult>
+}
+
+export type WebSearchProviderResolver = () => WebSearchProvider | undefined
+
 const domainSchema = z
   .string()
   .trim()

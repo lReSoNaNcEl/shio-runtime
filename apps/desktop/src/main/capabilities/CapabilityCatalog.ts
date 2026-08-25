@@ -40,6 +40,7 @@ function pluginAvailability(status: PluginStatus | undefined): CapabilityAvailab
   if (!status) return 'unavailable'
   if (!status.enabled) return 'disabled'
   if (status.lifecycle === 'error' || status.lifecycle === 'disposed') return 'unavailable'
+  if (status.lifecycle === 'waiting-dependencies') return 'needs-setup'
   if (status.lifecycle !== 'active') return 'degraded'
   switch (status.health.state) {
     case 'healthy':

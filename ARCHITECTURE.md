@@ -1393,7 +1393,7 @@ Project Awareness is packaged as the first bundled first-party Plugin. The Plugi
 
 ### 21B. Plugin Runtime
 
-Plugin Runtime is an optional-extension Runtime inside the existing Runtime architecture. It is not a new layer between Core Runtime systems and Adapters. Version 1 discovers only compile-time bundled first-party Plugins; it does not load external JavaScript, scan arbitrary directories, install packages, or provide a marketplace.
+Plugin Runtime is an optional-extension Runtime inside the existing Runtime architecture. It is not a new layer between Core Runtime systems and Adapters. Version 1.1 discovers only compile-time bundled first-party Plugins; it does not load external JavaScript, scan arbitrary directories, install packages, or provide a marketplace.
 
 Plugin Runtime owns:
 
@@ -1403,11 +1403,12 @@ Plugin Runtime owns:
 - contribution of validated bundled Plugin identity, enablement, lifecycle, health, and declared capability facts to the canonical capability projection, including disabled Plugins
 - assembly of data-only health projections for enabled Plugins; disabled Plugins are absent and cannot degrade aggregate application health
 - registration and removal of narrow typed capabilities declared by each manifest
+- capability-only dependency resolution from validated `requiresCapabilities` declarations
 - race-safe, idempotent lifecycle transitions and per-Plugin failure containment
 
 Plugin Runtime does not own Plugin business logic, project knowledge, Character State, conversational memory, actions, permissions, Avatar Runtime, Speech Runtime, credentials, or concrete external technologies. A Plugin-specific external technology remains behind the owning Plugin's Adapter, and every externally authoritative side effect still passes through Action Runtime and Permission Guard.
 
-Core consumes optional functionality only through stable capability contracts. Version 1 defines narrow providers such as `ProjectContextProvider` and the read-only Browser Context provider; it does not define generic invocation. There is no `plugin.invoke`, arbitrary method dispatch, or renderer-controlled module loading. Enabling a Plugin permits only its declared capability registrations to become discoverable. Disabling unregisters them without requiring application restart, and the next consumer resolution observes their absence.
+Core consumes optional functionality only through stable typed capability contracts. Version 1.1 defines provider-specific registry slots such as `ProjectContextProvider`, the read-only Browser Context provider, and `WebSearchProvider`; it does not define a generic provider map or generic invocation. There is no `plugin.invoke`, arbitrary method dispatch, direct dependency on another Plugin module, or renderer-controlled module loading. A Plugin may require another capability by kind, but never another Plugin implementation. An enabled Plugin whose required capability is absent remains installed and enabled with `waiting-dependencies` / `needs-setup` status and registers none of its declared capabilities. Dependency appearance activates the Plugin without restart. Dependency disappearance synchronously unregisters the dependent capabilities before asynchronous shutdown, including transitively, and the Plugin becomes operational again only after its requirements return.
 
 The bundled Browser Control capability owns the lifecycle of one isolated Shio-managed browser session and its latest bounded semantic observation. It does not attach to the user's personal Chrome profile. The owned session survives ordinary conversational idle periods; a bounded long idle timeout is only a safety backstop, while Plugin stop, disable, Emergency Stop, and application exit remain the authoritative teardown paths. Read-only current-observation access is exposed to Core through a narrow request-scoped provider only after Character reasoning selects Browser Control. Browser mutations remain Action Runtime Tools and therefore pass validation and Permission Guard before the Plugin invokes its Browser Automation Adapter. Semantic element refs belong to exactly one observation; navigation or page-state change invalidates them. Every completed mutation invalidates the previous observation and captures a fresh normalized URL/title/semantic-state observation. Action Runtime interprets that evidence and reports `verified`, `unverified`, or `failed`; a successful Adapter process exit is never proof of user-visible success by itself.
 

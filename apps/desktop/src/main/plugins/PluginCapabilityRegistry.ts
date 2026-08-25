@@ -1,19 +1,21 @@
 import type { BrowserContextProvider } from '../../shared/desktop-control'
-import type { PluginId, ProjectContextProvider } from '../../shared/plugins'
+import type { PluginCapabilityKind, PluginId, ProjectContextProvider } from '../../shared/plugins'
+import type { WebSearchProvider } from '../../shared/web-search'
+
+interface ProviderRegistration<T> {
+  owner: PluginId
+  provider: T
+}
 
 export class PluginCapabilityRegistry {
-  private projectContext: { owner: PluginId; provider: ProjectContextProvider } | null = null
-  private browserContext: { owner: PluginId; provider: BrowserContextProvider } | null = null
+  private readonly owners = new Map<PluginCapabilityKind, PluginId>()
+  private projectContext: ProviderRegistration<ProjectContextProvider> | null = null
+  private browserContext: ProviderRegistration<BrowserContextProvider> | null = null
+  private webSearch: ProviderRegistration<WebSearchProvider> | null = null
 
   registerProjectContext(owner: PluginId, provider: ProjectContextProvider): void {
-    if (this.projectContext && this.projectContext.owner !== owner) {
-      throw new Error(`Project context capability is already owned by ${this.projectContext.owner}`)
-    }
+    this.claim(owner, 'project-context')
     this.projectContext = { owner, provider }
-  }
-
-  unregisterProjectContext(owner: PluginId): void {
-    if (this.projectContext?.owner === owner) this.projectContext = null
   }
 
   getProjectContextProvider(): ProjectContextProvider | undefined {
@@ -25,14 +27,8 @@ export class PluginCapabilityRegistry {
   }
 
   registerBrowserContext(owner: PluginId, provider: BrowserContextProvider): void {
-    if (this.browserContext && this.browserContext.owner !== owner) {
-      throw new Error(`Browser context capability is already owned by ${this.browserContext.owner}`)
-    }
+    this.claim(owner, 'browser-control')
     this.browserContext = { owner, provider }
-  }
-
-  unregisterBrowserContext(owner: PluginId): void {
-    if (this.browserContext?.owner === owner) this.browserContext = null
   }
 
   getBrowserContextProvider(): BrowserContextProvider | undefined {
@@ -41,5 +37,47 @@ export class PluginCapabilityRegistry {
 
   hasBrowserContext(owner: PluginId): boolean {
     return this.browserContext?.owner === owner
+  }
+
+  registerWebSearch(owner: PluginId, provider: WebSearchProvider): void {
+    this.claim(owner, 'web-search')
+    this.webSearch = { owner, provider }
+  }
+
+  getWebSearchProvider(): WebSearchProvider | undefined {
+    return this.webSearch?.provider
+  }
+
+  hasWebSearch(owner: PluginId): boolean {
+    return this.webSearch?.owner === owner
+  }
+
+  registerOwnedCapability(owner: PluginId, capability: PluginCapabilityKind): void {
+    this.claim(owner, capability)
+  }
+
+  hasCapability(capability: PluginCapabilityKind): boolean {
+    return this.owners.has(capability)
+  }
+
+  ownerOf(capability: PluginCapabilityKind): PluginId | undefined {
+    return this.owners.get(capability)
+  }
+
+  unregisterOwner(owner: PluginId): void {
+    for (const [capability, currentOwner] of this.owners) {
+      if (currentOwner === owner) this.owners.delete(capability)
+    }
+    if (this.projectContext?.owner === owner) this.projectContext = null
+    if (this.browserContext?.owner === owner) this.browserContext = null
+    if (this.webSearch?.owner === owner) this.webSearch = null
+  }
+
+  private claim(owner: PluginId, capability: PluginCapabilityKind): void {
+    const currentOwner = this.owners.get(capability)
+    if (currentOwner && currentOwner !== owner) {
+      throw new Error(`${capability} capability is already owned by ${currentOwner}`)
+    }
+    this.owners.set(capability, owner)
   }
 }

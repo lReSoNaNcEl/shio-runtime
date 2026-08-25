@@ -45,6 +45,9 @@ Architecture and ownership:
 - No dynamic external JavaScript loading is allowed for Plugins.
 - Plugin enablement never grants authority outside the capabilities declared by
   the validated Plugin manifest.
+- Plugin dependencies are declared and resolved only through typed capabilities.
+  An enabled Plugin with an unavailable requirement registers no capabilities;
+  dependency appearance or disappearance is reconciled live without restart.
 - Every externally authoritative side effect passes through Action Runtime,
   including side effects requested through Plugins or delegated automation.
 - Electron Main composition owns Action Runtime and application services. IPC

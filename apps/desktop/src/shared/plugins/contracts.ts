@@ -2,23 +2,37 @@ import type { TranslationKey } from '../localization'
 
 export const PROJECT_AWARENESS_PLUGIN_ID = 'project-awareness' as const
 export const DESKTOP_CONTROL_PLUGIN_ID = 'desktop-control' as const
+export const WEB_SEARCH_PLUGIN_ID = 'web-search' as const
+export const BROWSER_GAME_CONTROL_PLUGIN_ID = 'browser-game-control' as const
 
-export type PluginId = typeof PROJECT_AWARENESS_PLUGIN_ID | typeof DESKTOP_CONTROL_PLUGIN_ID
+export type PluginId =
+  | typeof PROJECT_AWARENESS_PLUGIN_ID
+  | typeof DESKTOP_CONTROL_PLUGIN_ID
+  | typeof WEB_SEARCH_PLUGIN_ID
+  | typeof BROWSER_GAME_CONTROL_PLUGIN_ID
 export type PluginLifecycleState =
   | 'registered'
   | 'initializing'
   | 'disabled'
+  | 'waiting-dependencies'
   | 'starting'
   | 'active'
   | 'stopping'
   | 'error'
   | 'disposed'
 export type PluginHealthState = 'healthy' | 'needs-setup' | 'degraded' | 'error'
-export type PluginCapability =
-  | 'project-context'
-  | 'automation-engine'
-  | 'browser-control'
-  | 'computer-control'
+export const PLUGIN_CAPABILITY_KINDS = [
+  'project-context',
+  'browser-control',
+  'automation-engine',
+  'computer-control',
+  'web-search',
+  'browser-realtime-control',
+  'browser-game-control',
+] as const
+
+export type PluginCapabilityKind = (typeof PLUGIN_CAPABILITY_KINDS)[number]
+export type PluginCapability = PluginCapabilityKind
 
 export interface PluginManifest {
   id: PluginId
@@ -26,7 +40,8 @@ export interface PluginManifest {
   nameKey: TranslationKey
   descriptionKey: TranslationKey
   defaultEnabled: boolean
-  capabilities: readonly PluginCapability[]
+  capabilities: readonly PluginCapabilityKind[]
+  requiresCapabilities?: readonly PluginCapabilityKind[]
 }
 
 export interface PluginHealth {
