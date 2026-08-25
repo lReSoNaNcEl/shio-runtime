@@ -1,4 +1,4 @@
-import type { AutonomySettings, ScheduledTask, WorldContextSnapshot } from '../../shared/alive'
+import type { AutonomySettings, WorldContextSnapshot } from '../../shared/alive'
 
 export type AutonomyDecision =
   | { outcome: 'execute' }
@@ -11,7 +11,6 @@ export type AutonomyDecision =
 
 export class AutonomyEnvelope {
   decide(input: {
-    task: ScheduledTask
     settings: AutonomySettings
     world: WorldContextSnapshot
     now: number

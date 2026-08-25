@@ -185,6 +185,7 @@ Architectural Invariants define properties of Shio Runtime that must never chang
     Provider stream bytes are untrusted protocol data. Internal tool, memory, action, embodiment, and emotion-control markers are incrementally contained before any text delta reaches chat, TTS, Memory, or another user-visible projection. A native tool round that begins with a tool call commits no visible or speakable text.
 42. **Conversation Admission Remains Singular**
     Attention Evaluation, Fast Brain, Experience Runtime, Scheduler Runtime, Behavior Runtime, and autonomous initiative may request or enrich a turn, but none may directly start Conversation Runtime. The existing renderer-owned Conversation Admission remains the only grantor of conversational execution.
+    Autonomous conversation initiatives first pass the Main-owned Proactive Initiative Gate; explicit user input does not.
 43. **Autonomy Does Not Grant Authority**
     Autonomy Envelope may defer, preview, or authorize an already allowlisted internal initiative according to user policy. It never bypasses Action Runtime, Permission Guard, validation, verification, cancellation, or logging for an externally authoritative side effect.
 44. **Future Intent Is Not Present State**
@@ -1511,11 +1512,19 @@ must return to Conversation Admission.
 
 ### 21F. Autonomy, Scheduler, and Persistent Goals
 
-Autonomy Envelope is the Main-owned policy boundary for proactive work. Its canonical
-user settings define `off`, `suggest`, `confirm`, and `full` modes, Global Suspend,
-Privacy Mode, quiet hours, cooldown, and a daily initiative cap. It produces exactly
+Proactive Initiative Gate is the single Main-owned admission path for autonomous
+conversation initiatives originating from Experience, Scheduler, Goal wake, World,
+or Behavior. It serializes candidate evaluation, applies Autonomy Envelope policy,
+passes eligible candidates through Attention, and only then allows Behavior to emit a
+semantic conversation candidate toward renderer-owned Conversation Admission. The
+gate accounts for origin and urgency while enforcing Global Suspend, Privacy Mode,
+quiet hours, conversation or audio activity, cooldown, and the daily initiative cap.
+
+Autonomy Envelope is the gate's policy evaluator for proactive work. Its canonical
+user settings define `off`, `suggest`, `confirm`, and `full` modes. It produces exactly
 one of three results: defer with a retry time, create a user-visible preview awaiting
-confirmation, or execute an allowlisted internal initiative.
+confirmation, or execute an allowlisted internal initiative. Explicit user input does
+not pass through this proactive gate and retains priority in Conversation Admission.
 
 `full` mode changes only this proactive policy. Any initiative that requests an
 externally authoritative side effect still becomes a new Action Runtime action and

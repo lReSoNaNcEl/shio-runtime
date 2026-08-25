@@ -8,6 +8,7 @@ import type {
   BehaviorCommand,
   CreateGoalInput,
   CreateScheduledTaskInput,
+  ExperienceAppraisal,
   ExperienceEvent,
   FastBrainAttentionDecision,
   FastBrainAttentionInput,
@@ -35,6 +36,10 @@ import { ExperienceRuntime } from './ExperienceRuntime'
 import { FastBrainRuntime } from './FastBrainRuntime'
 import { GoalRuntime } from './GoalRuntime'
 import { MoodRuntime } from './MoodRuntime'
+import {
+  type ProactiveInitiativeApproval,
+  ProactiveInitiativeGate,
+} from './ProactiveInitiativeGate'
 import { ScheduledTaskRuntime } from './ScheduledTaskRuntime'
 import type { SystemContextAdapter } from './SystemContextAdapter'
 import { type WorldContextProviders, WorldContextRuntime } from './WorldContextRuntime'
@@ -42,7 +47,7 @@ import { type WorldContextProviders, WorldContextRuntime } from './WorldContextR
 export interface AliveFacadeOptions {
   systemContextAdapter?: SystemContextAdapter
   worldContext?: Omit<WorldContextProviders, 'activeGoal'>
-  onCompletedExperienceFact?: ConstructorParameters<typeof ExperienceRuntime>[3]
+  onCompletedExperienceFact?: ConstructorParameters<typeof ExperienceRuntime>[2]
   proceduralMemory?: {
     observeCompletedFact(fact: CompletedExperienceFact): void
     habitSuggestions(): readonly HabitSuggestion[]
@@ -57,6 +62,7 @@ export class AliveFacade {
   private readonly behavior = new BehaviorRuntime()
   private readonly experience: ExperienceRuntime
   private readonly attention: AttentionArbiter
+  private readonly initiativeGate: ProactiveInitiativeGate
   private readonly goals: GoalRuntime
   private readonly watches: EventWatchService
   private readonly scopes: AutonomyScopeRuntime
@@ -82,21 +88,23 @@ export class AliveFacade {
           .snapshot()
           .find((goal) => goal.status !== 'completed' && goal.status !== 'cancelled') ?? null,
     })
-    this.experience = new ExperienceRuntime(
-      store,
-      this.behavior,
-      new MoodRuntime(store),
-      (fact) => {
-        options.proceduralMemory?.observeCompletedFact(fact)
-        options.onCompletedExperienceFact?.(fact)
-      },
-    )
+    this.experience = new ExperienceRuntime(store, new MoodRuntime(store), (fact) => {
+      options.proceduralMemory?.observeCompletedFact(fact)
+      options.onCompletedExperienceFact?.(fact)
+    })
     this.attention = new AttentionArbiter(new FastBrainRuntime(llm))
-    this.scheduler = new ScheduledTaskRuntime({
+    this.initiativeGate = new ProactiveInitiativeGate({
       store,
       envelope: this.envelope,
-      world: this.world,
-      onBehavior: (command) => this.emitBehavior(command),
+      attention: this.attention,
+      settings: () => this.store.settings(),
+      world: (settings, now) => this.world.snapshot(settings, now),
+    })
+    this.scheduler = new ScheduledTaskRuntime({
+      store,
+      initiativeGate: this.initiativeGate,
+      markSchedulerObserved: (now) => this.world.markSchedulerObserved(now),
+      onBehavior: (command, authority) => this.emitBehavior(command, authority),
       onChanged: () => this.publish(),
       onTick: (now) => {
         const awakened = this.watches.tick(now)
@@ -112,6 +120,7 @@ export class AliveFacade {
   }
 
   dispose(): void {
+    this.initiativeGate.dispose()
     this.world.dispose()
     this.scheduler.dispose()
     this.listeners.clear()
@@ -164,8 +173,61 @@ export class AliveFacade {
 
   reportExperience(event: ExperienceEvent): void {
     const settings = this.store.settings()
-    const observation = this.experience.observe(event, settings, this.world.snapshot(settings))
-    if (observation.behavior.intent.kind !== 'none') this.emitBehavior(observation.behavior)
+    const world = this.world.snapshot(settings)
+    const observation = this.experience.observe(event)
+    const impulse = observation.appraisal.conversationalImpulse
+    if (!impulse) {
+      this.emitBehavior(
+        this.behavior.decide({
+          ...observation,
+          settings,
+          world,
+          at: event.at,
+          conversationAllowed: false,
+        }),
+      )
+      this.publish()
+      return
+    }
+    const origin = experienceOrigin(event)
+    observeMainPromise(
+      this.initiativeGate
+        .submit(
+          {
+            origin,
+            entityId: observation.appraisal.eventId,
+            candidates: [experienceAttentionCandidate(event, observation.appraisal)],
+          },
+          (approval) => {
+            const currentSettings = this.store.settings()
+            const command = this.behavior.decide({
+              ...observation,
+              settings: currentSettings,
+              world: this.world.snapshot(currentSettings),
+              at: event.at,
+              conversationAllowed: true,
+            })
+            if (command.intent.kind !== 'conversation-candidate') return false
+            return this.emitBehavior(command, approval)
+          },
+        )
+        .then((decision) => {
+          if (!['admit', 'preview'].includes(decision.outcome)) {
+            const currentSettings = this.store.settings()
+            this.emitBehavior(
+              this.behavior.decide({
+                ...observation,
+                settings: currentSettings,
+                world: this.world.snapshot(currentSettings),
+                at: event.at,
+                conversationAllowed: false,
+              }),
+            )
+          }
+          this.publish()
+        }),
+      `gate ${origin} initiative`,
+    )
     this.publish()
   }
 
@@ -218,8 +280,10 @@ export class AliveFacade {
   }
 
   arbitrateAttention(candidates: readonly AttentionCandidate[]): Promise<AttentionDecision> {
-    return this.attention.decide(candidates, this.store.settings(), {
-      busy: this.world.snapshot(this.store.settings()).conversationActive,
+    const settings = this.store.settings()
+    const world = this.world.snapshot(settings)
+    return this.attention.decide(candidates, settings, {
+      busy: world.conversationActive || world.audioActive,
     })
   }
 
@@ -305,24 +369,79 @@ export class AliveFacade {
     return snapshot
   }
 
-  private emitBehavior(command: BehaviorCommand): void {
+  private emitBehavior(
+    command: BehaviorCommand,
+    authority?: ProactiveInitiativeApproval | 'explicit-user',
+  ): boolean {
+    if (command.intent.kind === 'none') return false
+    if (['conversation-candidate', 'goal-suggestion'].includes(command.intent.kind) && !authority) {
+      this.store.audit('behavior', command.intent.kind, 'blocked', command.id, 'initiative-gate')
+      return false
+    }
+    this.store.audit(
+      'behavior',
+      command.intent.kind,
+      'selected',
+      command.id,
+      authority === 'explicit-user' ? authority : authority?.authority,
+    )
     for (const listener of this.behaviorListeners) listener(command)
+    return true
   }
 
   private emitGoalAttention(now: number): void {
     const candidates = this.goals.attentionCandidates(now)
     if (candidates.length === 0) return
     observeMainPromise(
-      this.attention.decide(candidates, this.store.settings()).then((decision) => {
-        if (decision.disposition !== 'admit' || !decision.candidateId) return
-        const goalId = decision.candidateId.split(':')[1]
-        const goal = this.goals.snapshot().find((candidate) => candidate.id === goalId)
-        if (goal)
-          this.emitBehavior(
-            this.behavior.scheduledInitiative(goal.id, goal.nextStep || goal.title, now),
+      this.initiativeGate.submit(
+        {
+          origin: 'goal',
+          entityId: 'awakened-goal',
+          candidates,
+        },
+        (approval) => {
+          if (!approval.attention.candidateId) return false
+          const goalId = approval.attention.candidateId.split(':')[1]
+          const goal = this.goals.snapshot().find((candidate) => candidate.id === goalId)
+          if (!goal) return false
+          return this.emitBehavior(
+            this.behavior.proactiveInitiative(
+              `goal-awakened:${goal.id}:${now}`,
+              goal.nextStep || goal.title,
+              0.78,
+              now,
+            ),
+            approval,
           )
-      }),
+        },
+      ),
       'arbitrate awakened goal attention',
     )
   }
+}
+
+function experienceOrigin(event: ExperienceEvent): 'experience' | 'world' {
+  return ['meaningful-world-context-changed', 'user-returned'].includes(event.type)
+    ? 'world'
+    : 'experience'
+}
+
+function experienceAttentionCandidate(
+  event: ExperienceEvent,
+  appraisal: ExperienceAppraisal,
+): AttentionCandidate {
+  const impulse = appraisal.conversationalImpulse
+  if (!impulse) throw new Error('EXPERIENCE_HAS_NO_CONVERSATIONAL_IMPULSE')
+  return Object.freeze({
+    id: `${experienceOrigin(event)}:${appraisal.eventId}`.slice(0, 220),
+    source: experienceOrigin(event),
+    summary: impulse.topic.slice(0, 300),
+    salience: appraisal.salience,
+    novelty: appraisal.novelty,
+    urgency: impulse.priority,
+    socialRelevance: appraisal.socialRelevance,
+    interruptibility: impulse.priority >= 0.9 ? 'urgent' : 'when-idle',
+    createdAt: event.at,
+    expiresAt: event.at + 5 * 60_000,
+  })
 }

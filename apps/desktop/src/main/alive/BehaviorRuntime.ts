@@ -9,11 +9,9 @@ import type {
 } from '../../shared/alive'
 
 const NONVERBAL_COOLDOWN_MS = 90_000
-const CONVERSATION_CANDIDATE_COOLDOWN_MS = 5 * 60_000
 
 export class BehaviorRuntime {
   private lastNonverbalAt: number | null = null
-  private lastConversationCandidateAt: number | null = null
 
   decide(input: {
     appraisal: ExperienceAppraisal
@@ -21,8 +19,9 @@ export class BehaviorRuntime {
     settings: AutonomySettings
     world: WorldContextSnapshot
     at: number
+    conversationAllowed?: boolean
   }): BehaviorCommand {
-    const { appraisal, settings, world, at } = input
+    const { appraisal, settings, at } = input
     if (
       settings.globallySuspended ||
       settings.privacyMode ||
@@ -34,12 +33,8 @@ export class BehaviorRuntime {
     if (
       appraisal.conversationalImpulse &&
       appraisal.conversationalImpulse.priority >= 0.65 &&
-      !world.conversationActive &&
-      !world.audioActive &&
-      (this.lastConversationCandidateAt === null ||
-        at - this.lastConversationCandidateAt >= CONVERSATION_CANDIDATE_COOLDOWN_MS)
+      input.conversationAllowed !== false
     ) {
-      this.lastConversationCandidateAt = at
       return command(at, appraisal.eventId, {
         kind: 'conversation-candidate',
         topic: appraisal.conversationalImpulse.topic.slice(0, 300),
@@ -60,11 +55,24 @@ export class BehaviorRuntime {
   }
 
   scheduledInitiative(taskId: string, title: string, at: number): BehaviorCommand {
+    return this.proactiveInitiative(`scheduled-event-due:${taskId}:${at}`, title, 0.75, at)
+  }
+
+  proactiveInitiative(
+    sourceEventId: string,
+    topic: string,
+    priority: number,
+    at: number,
+  ): BehaviorCommand {
     return {
       id: randomUUID(),
       at,
-      sourceEventId: `scheduled-event-due:${taskId}:${at}`,
-      intent: { kind: 'conversation-candidate', topic: title.slice(0, 300), priority: 0.75 },
+      sourceEventId: sourceEventId.slice(0, 160),
+      intent: {
+        kind: 'conversation-candidate',
+        topic: topic.slice(0, 300),
+        priority: boundedUnit(priority),
+      },
     }
   }
 }

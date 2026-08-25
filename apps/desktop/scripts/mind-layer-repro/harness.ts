@@ -6,10 +6,12 @@ import { join } from 'node:path'
 import {
   AliveStore,
   AttentionArbiter,
+  AutonomyEnvelope,
   BehaviorRuntime,
   ExperienceRuntime,
   FastBrainRuntime,
   MoodRuntime,
+  ProactiveInitiativeGate,
 } from '../../src/main/alive'
 import type { AttentionCandidate, WorldContextSnapshot } from '../../src/shared/alive'
 
@@ -48,35 +50,38 @@ async function main(): Promise<void> {
       persistMood(mood)
     }
     const facts: string[] = []
-    const experience = new ExperienceRuntime(
-      store,
-      new BehaviorRuntime(),
-      new MoodRuntime(store),
-      (fact) => facts.push(fact.eventId),
+    const behavior = new BehaviorRuntime()
+    const experience = new ExperienceRuntime(store, new MoodRuntime(store), (fact) =>
+      facts.push(fact.eventId),
     )
-    const success = experience.observe(
-      { type: 'action-verified', actionId: 'a1', eventId: 'success', novelty: 0.1, at: 10 },
-      settings,
-      world,
-    )
+    const success = experience.observe({
+      type: 'action-verified',
+      actionId: 'a1',
+      eventId: 'success',
+      novelty: 0.1,
+      at: 10,
+    })
+    const failure = experience.observe({
+      type: 'action-failed',
+      actionId: 'a2',
+      eventId: 'failure',
+      at: 20,
+    })
+    const successBehavior = behavior.decide({ ...success, settings, world, at: 10 })
+    const failureBehavior = behavior.decide({ ...failure, settings, world, at: 20 })
     assert.equal(success.appraisal.silence, true)
-    assert.equal(success.behavior.intent.kind, 'none')
-    assert.equal(moodWriteCount, 1, 'a new Experience should persist Mood exactly once')
-    const failure = experience.observe(
-      { type: 'action-failed', actionId: 'a2', eventId: 'failure', at: 20 },
-      settings,
-      world,
-    )
+    assert.equal(successBehavior.intent.kind, 'none')
+    assert.equal(moodWriteCount, 2, 'each new Experience should persist Mood exactly once')
     assert.ok(failure.appraisal.salience > success.appraisal.salience)
     assert.ok(failure.appraisal.valence < success.appraisal.valence)
-    assert.equal(failure.behavior.intent.kind, 'conversation-candidate')
+    assert.equal(failureBehavior.intent.kind, 'conversation-candidate')
     assert.ok(Object.values(failure.mood).every((value) => typeof value === 'number'))
-    assert.equal(moodWriteCount, 2, 'decay projection must not add a second Experience write')
-    experience.observe(
-      { type: 'task-completed', taskId: crypto.randomUUID(), eventId: 'completed-once', at: 30 },
-      settings,
-      world,
-    )
+    experience.observe({
+      type: 'task-completed',
+      taskId: crypto.randomUUID(),
+      eventId: 'completed-once',
+      at: 30,
+    })
     assert.deepEqual(facts, ['success', 'completed-once'])
     assert.equal(moodWriteCount, 3, 'each new Experience should add one Mood write')
     const persistedBeforeSnapshot = store.mood()
@@ -124,10 +129,142 @@ async function main(): Promise<void> {
     assert.equal(fallback.source, 'fallback')
     assert.ok(fallback.candidateId)
 
+    const gateSettings = {
+      ...settings,
+      fastBrain: { ...settings.fastBrain, enabled: false },
+    }
+    let currentSettings = gateSettings
+    let currentWorld = world
+    let gateNow = Date.now()
+    const gate = new ProactiveInitiativeGate({
+      store,
+      envelope: new AutonomyEnvelope(),
+      attention: arbiter,
+      settings: () => currentSettings,
+      world: () => currentWorld,
+      now: () => gateNow,
+    })
+    const firstAt = gateNow
+    const firstCandidate = candidate('experience:first', 'experience', 0.9, 0.85, 0.8, firstAt)
+    let deliveries = 0
+    currentWorld = { ...world, audioActive: true }
+    const audioBusy = await gate.submit(
+      {
+        origin: 'experience',
+        entityId: 'first',
+        candidates: [firstCandidate],
+      },
+      () => {
+        deliveries += 1
+        return true
+      },
+    )
+    assert.equal(audioBusy.outcome, 'defer')
+    assert.equal(audioBusy.outcome === 'defer' ? audioBusy.reason : '', 'busy')
+    assert.equal(deliveries, 0, 'audio-active initiative reached Behavior delivery')
+
+    currentWorld = world
+    currentSettings = { ...gateSettings, cooldownMs: 60_000 }
+    gateNow = firstAt + 1
+    const simultaneous = await Promise.all([
+      gate.submit(
+        {
+          origin: 'experience',
+          entityId: 'first',
+          candidates: [firstCandidate],
+        },
+        () => {
+          deliveries += 1
+          return true
+        },
+      ),
+      gate.submit(
+        {
+          origin: 'goal',
+          entityId: 'second',
+          candidates: [candidate('goal:second', 'goal', 0.9, 0.85, 0.8, firstAt + 2)],
+        },
+        () => {
+          deliveries += 1
+          return true
+        },
+      ),
+    ])
+    assert.equal(simultaneous[0].outcome, 'admit')
+    assert.equal(simultaneous[1].outcome, 'defer')
+    assert.equal(deliveries, 1, 'serialized gate admitted more than one initiative in cooldown')
+    assert.equal(store.dailyInitiativeCount(firstAt + 2), 1)
+
+    currentSettings = { ...gateSettings, mode: 'confirm', cooldownMs: 0 }
+    const previewAt = firstAt + 3
+    gateNow = previewAt
+    const preview = await gate.submit(
+      {
+        origin: 'scheduler',
+        entityId: 'preview',
+        candidates: [candidate('scheduler:preview', 'scheduler', 0.9, 0.85, 0.8, previewAt)],
+      },
+      (approval) => {
+        assert.equal(approval.outcome, 'preview')
+        deliveries += 1
+        return true
+      },
+    )
+    assert.equal(preview.outcome, 'preview')
+    assert.equal(store.dailyInitiativeCount(previewAt), 2)
+
+    currentSettings = { ...gateSettings, cooldownMs: 0 }
+    gateNow = previewAt + 1_000
+    const stale = await gate.submit(
+      {
+        origin: 'behavior',
+        entityId: 'stale',
+        candidates: [
+          {
+            ...candidate('behavior:stale', 'behavior', 0.9, 0.85, 0.8, previewAt),
+            expiresAt: gateNow - 1,
+          },
+        ],
+      },
+      () => {
+        deliveries += 1
+        return true
+      },
+    )
+    assert.equal(stale.outcome, 'ignore')
+    assert.equal(deliveries, 2, 'expired initiative reached Behavior delivery')
+    gate.dispose()
+    const afterDispose = await gate.submit(
+      {
+        origin: 'world',
+        entityId: 'disposed',
+        candidates: [candidate('world:disposed', 'world', 0.9, 0.85, 0.8, gateNow)],
+      },
+      () => {
+        deliveries += 1
+        return true
+      },
+    )
+    assert.equal(afterDispose.outcome, 'ignore')
+    assert.equal(deliveries, 2, 'disposed gate delivered an initiative')
+
     for (const source of ['BehaviorRuntime.ts', 'ExperienceRuntime.ts', 'FastBrainRuntime.ts']) {
       const text = readFileSync(join(process.cwd(), 'src/main/alive', source), 'utf8')
       assert.doesNotMatch(text, /ActionRuntime|ConversationRuntime|\.execute\s*\(/u)
     }
+    const behaviorSource = readFileSync(
+      join(process.cwd(), 'src/main/alive/BehaviorRuntime.ts'),
+      'utf8',
+    )
+    assert.doesNotMatch(behaviorSource, /conversationActive|audioActive/u)
+    const facadeSource = readFileSync(join(process.cwd(), 'src/main/alive/AliveFacade.ts'), 'utf8')
+    assert.match(facadeSource, /world\.conversationActive\s*\|\|\s*world\.audioActive/u)
+    assert.match(facadeSource, /'initiative-gate'/u)
+    const schedulerSource = readFileSync(
+      join(process.cwd(), 'src/main/alive/ScheduledTaskRuntime.ts'),
+      'utf8',
+    )
+    assert.doesNotMatch(schedulerSource, /AutonomyEnvelope/u)
     console.log('MIND LAYER REPRO PASS: appraisal, mood, attention, behavior ownership')
   } finally {
     store?.close()
@@ -141,6 +278,7 @@ function candidate(
   salience: number,
   urgency: number,
   socialRelevance: number,
+  createdAt = 1,
 ): AttentionCandidate {
   return {
     id,
@@ -151,7 +289,7 @@ function candidate(
     urgency,
     socialRelevance,
     interruptibility: 'normal',
-    createdAt: 1,
+    createdAt,
   }
 }
 

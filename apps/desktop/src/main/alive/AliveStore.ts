@@ -547,10 +547,22 @@ export class AliveStore {
     const row = this.database
       .prepare(
         `SELECT COUNT(*) AS count FROM alive_audit
-         WHERE category = 'autonomy' AND event = 'initiative' AND outcome = 'executed' AND at >= ?`,
+         WHERE category = 'autonomy' AND event = 'initiative'
+           AND outcome IN ('executed', 'previewed') AND at >= ?`,
       )
       .get(start.getTime()) as { count: number }
     return Number(row.count)
+  }
+
+  lastInitiativeAt(): number | null {
+    const row = this.database
+      .prepare(
+        `SELECT MAX(at) AS at FROM alive_audit
+         WHERE category = 'autonomy' AND event = 'initiative'
+           AND outcome IN ('executed', 'previewed')`,
+      )
+      .get() as { at: number | null }
+    return row.at === null ? null : Number(row.at)
   }
 
   private migrate(): void {

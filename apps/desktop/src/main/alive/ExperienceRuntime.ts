@@ -1,13 +1,5 @@
-import type {
-  AutonomySettings,
-  BehaviorCommand,
-  ExperienceAppraisal,
-  ExperienceEvent,
-  MoodState,
-  WorldContextSnapshot,
-} from '../../shared/alive'
+import type { ExperienceAppraisal, ExperienceEvent, MoodState } from '../../shared/alive'
 import type { AliveStore } from './AliveStore'
-import type { BehaviorRuntime } from './BehaviorRuntime'
 import type { MoodRuntime } from './MoodRuntime'
 
 export interface CompletedExperienceFact {
@@ -20,7 +12,6 @@ export interface CompletedExperienceFact {
 export interface ExperienceObservation {
   appraisal: ExperienceAppraisal
   mood: MoodState
-  behavior: BehaviorCommand
 }
 
 export class ExperienceRuntime {
@@ -28,27 +19,18 @@ export class ExperienceRuntime {
 
   constructor(
     private readonly store: AliveStore,
-    private readonly behavior: BehaviorRuntime,
     private readonly mood: MoodRuntime,
     private readonly onCompletedFact: (fact: CompletedExperienceFact) => void,
   ) {}
 
-  observe(
-    event: ExperienceEvent,
-    settings: AutonomySettings,
-    world: WorldContextSnapshot,
-  ): ExperienceObservation {
+  observe(event: ExperienceEvent): ExperienceObservation {
     const appraisal = appraise(event)
     const mood = this.mood.apply(appraisal, event.at)
-    const behavior = this.behavior.decide({ appraisal, mood, settings, world, at: event.at })
     this.lastAppraisal = appraisal
     this.store.audit('experience', event.type, appraisal.silence ? 'silence' : 'appraised')
-    if (behavior.intent.kind !== 'none') {
-      this.store.audit('behavior', behavior.intent.kind, 'selected', behavior.id)
-    }
     const completed = completedFact(event, appraisal.eventId)
     if (completed) this.onCompletedFact(completed)
-    return { appraisal, mood, behavior }
+    return { appraisal, mood }
   }
 
   moodSnapshot(now = Date.now()): MoodState {

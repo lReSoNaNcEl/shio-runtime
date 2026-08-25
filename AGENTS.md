@@ -106,9 +106,10 @@ Architecture and ownership:
   Store remains the mutation owner. Externally claimed progress or completion still
   requires a successful, completed, verified Action Runtime result. Numeric progress
   is optional and used only for genuinely measurable goals.
-- Conversation Admission remains the only entry into Conversation Runtime.
-  Experience, Attention/Fast Brain, Scheduler, Behavior, and autonomous initiative
-  may request admission or presentation but may never grant admission themselves.
+- Conversation Admission remains the only entry into Conversation Runtime. Every
+  autonomous conversation initiative from Experience, Scheduler, Goal wake, World,
+  or Behavior first passes the Main-owned Proactive Initiative Gate and Attention;
+  none of those owners may grant conversation admission themselves.
 - Fast Brain provider/model selection is bounded non-secret policy. It reuses the
   Main-owned LLM credential store and may never persist credentials in Alive storage
   or expose them through World Context, renderer state, or diagnostics.
