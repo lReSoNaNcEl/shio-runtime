@@ -45,11 +45,17 @@
 }
 
 .tasks-conversation-first {
-  align-items: center;
+  display: grid;
+  justify-items: start;
   padding: 18px 20px;
   border: 1px solid var(--border-subtle);
   border-radius: 12px;
   background: var(--surface-subtle);
+}
+
+.tasks-conversation-first > button {
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 
 .tasks-create-row {
@@ -204,7 +210,6 @@
   .tasks-item,
   .tasks-panel-heading,
   .tasks-create-row,
-  .tasks-conversation-first,
   .tasks-autonomy-summary {
     align-items: stretch;
     flex-direction: column;
@@ -223,6 +228,10 @@
   }
 
   .tasks-create-actions > * {
+    width: 100%;
+  }
+
+  .tasks-conversation-first > button {
     width: 100%;
   }
 }

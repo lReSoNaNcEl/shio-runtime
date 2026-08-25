@@ -21,6 +21,7 @@ import {
   Text,
   TextField,
 } from '@react-spectrum/s2'
+import Chat from '@react-spectrum/s2/icons/Chat'
 import { useState } from 'react'
 
 import {
@@ -160,7 +161,8 @@ export function TasksView({
                 <Text>{t('tasks.goals.chatFirst')}</Text>
               </div>
               <Button variant="primary" onPress={onOpenChat}>
-                {t('tasks.goals.openChat')}
+                <Chat aria-hidden />
+                <Text>{t('tasks.goals.openChat')}</Text>
               </Button>
             </article>
 

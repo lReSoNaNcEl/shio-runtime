@@ -34,8 +34,8 @@ export const ruMessages = {
   'tasks.goals.count': 'Сейчас: {count}',
   'tasks.goals.chatFirstTitle': 'Начните с разговора',
   'tasks.goals.chatFirst':
-    'Расскажи Shio, чего тебе хочется добиться. Она уточнит смысл и сохранит намерение только после твоего согласия.',
-  'tasks.goals.openChat': 'Обсудить с Shio',
+    'Расскажите, чего хотите добиться. Мы уточним смысл и сохраним намерение только после вашего согласия.',
+  'tasks.goals.openChat': 'Открыть чат',
   'tasks.goals.manual': 'Добавить вручную',
   'tasks.goals.new': 'О чём договоримся',
   'tasks.goals.placeholder': 'Например, вместе подготовить релиз',

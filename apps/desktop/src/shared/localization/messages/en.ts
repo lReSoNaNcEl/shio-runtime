@@ -36,8 +36,8 @@ export const enMessages: Record<TranslationKey, string> = {
   'tasks.goals.count': 'Now: {count}',
   'tasks.goals.chatFirstTitle': 'Start with a conversation',
   'tasks.goals.chatFirst':
-    'Tell Shio what you would like to achieve. She will clarify the meaning and save the intention only after you agree.',
-  'tasks.goals.openChat': 'Talk with Shio',
+    'Tell us what you would like to achieve. We will clarify the meaning and save the intention only after you agree.',
+  'tasks.goals.openChat': 'Open chat',
   'tasks.goals.manual': 'Add manually',
   'tasks.goals.new': 'What are we agreeing on?',
   'tasks.goals.placeholder': 'For example, prepare the release together',
