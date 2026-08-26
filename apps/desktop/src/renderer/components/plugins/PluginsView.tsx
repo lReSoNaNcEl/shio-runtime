@@ -176,6 +176,13 @@ const EMPTY_BROWSER_GAME_STATUS: BrowserGameDiagnostics = {
     supportedInputs: [],
     semanticPerception: false,
   },
+  eventExtractor: {
+    backendId: 'none',
+    mode: 'none',
+    ready: false,
+    sampleRateHz: 0,
+    semanticPerception: false,
+  },
   telemetry: {
     capturedFrames: 0,
     droppedFrames: 0,
@@ -523,10 +530,22 @@ function BrowserGameDetails({
             <dt>{t('plugins.browserGame.semanticTitle')}</dt>
             <dd>
               {t(
-                status.reflex.semanticPerception
+                status.reflex.semanticPerception || status.eventExtractor.semanticPerception
                   ? 'plugins.browserGame.semantic.available'
                   : 'plugins.browserGame.semantic.unavailable',
               )}
+            </dd>
+          </div>
+          <div>
+            <dt>{t('plugins.browserGame.eventExtractorTitle')}</dt>
+            <dd>{t(`plugins.browserGame.eventExtractorMode.${status.eventExtractor.mode}`)}</dd>
+          </div>
+          <div>
+            <dt>{t('plugins.browserGame.eventExtractorRate')}</dt>
+            <dd>
+              {t('plugins.browserGame.eventExtractorRateValue', {
+                value: number.format(status.eventExtractor.sampleRateHz),
+              })}
             </dd>
           </div>
         </dl>
@@ -587,6 +606,10 @@ function BrowserGameDetails({
               <div>
                 <dt>{t('plugins.browserGame.reflexBackendId')}</dt>
                 <dd>{status.reflex.backendId}</dd>
+              </div>
+              <div>
+                <dt>{t('plugins.browserGame.eventExtractorBackendId')}</dt>
+                <dd>{status.eventExtractor.backendId}</dd>
               </div>
             </dl>
           </DisclosurePanel>

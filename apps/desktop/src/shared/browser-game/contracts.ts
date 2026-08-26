@@ -102,6 +102,29 @@ export const gameReflexBackendStatusSchema = z
   .strict()
 export type GameReflexBackendStatus = z.infer<typeof gameReflexBackendStatusSchema>
 
+export const gameEventExtractorModeSchema = z.enum([
+  'none',
+  'local-temporal',
+  'low-frequency-semantic',
+])
+export type GameEventExtractorMode = z.infer<typeof gameEventExtractorModeSchema>
+
+export const gameEventExtractorStatusSchema = z
+  .object({
+    backendId: z
+      .string()
+      .trim()
+      .min(1)
+      .max(100)
+      .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/u),
+    mode: gameEventExtractorModeSchema,
+    ready: z.boolean(),
+    sampleRateHz: z.number().finite().nonnegative().max(10),
+    semanticPerception: z.boolean(),
+  })
+  .strict()
+export type GameEventExtractorStatus = z.infer<typeof gameEventExtractorStatusSchema>
+
 export const gameStrategySchema = z.enum(['careful', 'balanced', 'fast'])
 export type GameStrategy = z.infer<typeof gameStrategySchema>
 
@@ -226,6 +249,7 @@ export const browserGameDiagnosticsSchema = z
     waitingReason: z.enum(['captcha', 'anti-bot', 'authentication']).optional(),
     strategy: gameStrategySchema,
     reflex: gameReflexBackendStatusSchema,
+    eventExtractor: gameEventExtractorStatusSchema,
     session: z
       .object({
         title: z.string().trim().min(1).max(500),

@@ -73,6 +73,16 @@ class TestEventExtractor implements GameEventExtractor {
   events: ExtractedGameEvent[] = []
   resetCount = 0
 
+  status() {
+    return {
+      backendId: 'fixture-events',
+      mode: 'low-frequency-semantic' as const,
+      ready: true,
+      sampleRateHz: 1,
+      semanticPerception: true,
+    }
+  }
+
   async extract(
     frame: GameFrame,
     _state: GameEventExtractionContext,
@@ -89,6 +99,16 @@ class TestEventExtractor implements GameEventExtractor {
 class SlowEventExtractor implements GameEventExtractor {
   readonly frameIds: number[] = []
   private releaseFirstExtraction: (() => void) | null = null
+
+  status() {
+    return {
+      backendId: 'slow-fixture-events',
+      mode: 'low-frequency-semantic' as const,
+      ready: true,
+      sampleRateHz: 1,
+      semanticPerception: true,
+    }
+  }
 
   async extract(frame: GameFrame): Promise<readonly ExtractedGameEvent[]> {
     this.frameIds.push(frame.frameId)
@@ -306,6 +326,7 @@ async function main(): Promise<void> {
   assert(controller.status().telemetry.gameEvents >= 2)
   assert.equal(controller.diagnostics().session?.origin, 'https://game.example')
   assert.deepEqual(controller.diagnostics().reflex, reflexAdapter.status())
+  assert.deepEqual(controller.diagnostics().eventExtractor, eventExtractor.status())
   assert.equal(JSON.stringify(controller.diagnostics()).includes('authorizationActionId'), false)
   assert.equal(reflexAdapter.frames[0]?.width, 200)
   assert.equal(reflexAdapter.frames[0]?.height, 150)
@@ -561,6 +582,13 @@ async function main(): Promise<void> {
   assert.deepEqual(extractionErrors, [])
 
   const localEvents = new LocalVisualGameEventExtractor()
+  assert.deepEqual(localEvents.status(), {
+    backendId: 'local-temporal-events-v1',
+    mode: 'local-temporal',
+    ready: true,
+    sampleRateHz: 2,
+    semanticPerception: false,
+  })
   const localEventSignal = new AbortController().signal
   const detected: ExtractedGameEvent[] = []
   for (let second = 0; second <= 8; second += 1) {

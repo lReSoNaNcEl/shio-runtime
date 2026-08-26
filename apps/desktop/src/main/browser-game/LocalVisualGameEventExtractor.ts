@@ -1,6 +1,6 @@
 import sharp from 'sharp'
 
-import type { GameFrame } from '../../shared/browser-game'
+import type { GameEventExtractorStatus, GameFrame } from '../../shared/browser-game'
 import type {
   ExtractedGameEvent,
   GameEventExtractionContext,
@@ -30,6 +30,16 @@ export class LocalVisualGameEventExtractor implements GameEventExtractor {
   private stableInputEvents = 0
   private stableSignature: Uint8Array | null = null
   private stuckReported = false
+
+  status(): GameEventExtractorStatus {
+    return {
+      backendId: 'local-temporal-events-v1',
+      mode: 'local-temporal',
+      ready: true,
+      sampleRateHz: 1_000 / SAMPLE_INTERVAL_MS,
+      semanticPerception: false,
+    }
+  }
 
   async extract(
     frame: GameFrame,

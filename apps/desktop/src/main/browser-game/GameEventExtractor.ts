@@ -1,4 +1,9 @@
-import type { GameFrame, GameSemanticEventType, GameStrategy } from '../../shared/browser-game'
+import type {
+  GameEventExtractorStatus,
+  GameFrame,
+  GameSemanticEventType,
+  GameStrategy,
+} from '../../shared/browser-game'
 
 const MAX_EVENTS_PER_FRAME = 4
 
@@ -18,6 +23,7 @@ export interface GameEventExtractionContext {
 }
 
 export interface GameEventExtractor {
+  status(): GameEventExtractorStatus
   extract(
     frame: GameFrame,
     state: GameEventExtractionContext,
