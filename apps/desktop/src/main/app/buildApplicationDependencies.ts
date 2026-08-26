@@ -600,6 +600,7 @@ export function buildApplicationDependencies(): ApplicationDependencies {
       ipcAuthorization,
     )
     aliveRuntime = new AliveRuntime(aliveStore, buildFastBrainGateway, {
+      experienceContext: () => semanticMemory.relationshipContext(),
       proceduralMemory: {
         observeCompletedFact: (fact) => {
           semanticMemory.observeCompletedFact(fact)

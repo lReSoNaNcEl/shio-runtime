@@ -1544,6 +1544,15 @@ salience, valence, arousal, novelty, social relevance, optional emotion or embod
 cues, optional conversational impulse, optional Memory candidate, and a first-class
 silence decision. Experience never executes Actions or writes a Memory Store.
 
+Experience Policy is the deterministic appraisal authority. It owns stable per-event
+base scores and applies only bounded typed contextual modifiers from a short recent
+experience window, projected current Mood, exact Goal ownership and derived
+importance, numeric Relationship Context, and the bounded count of approved recurring
+motifs. Repeated failures may become more salient and less novel, while a genuinely
+new event receives a small novelty lift. Modifier code never interprets Goal or motif
+text as instructions, and no model-produced nuance may replace the deterministic base
+or expand authority.
+
 Mood Runtime owns bounded temporary valence, arousal, confidence, playfulness,
 curiosity, and frustration. Experience appraisals update it, it persists across
 restart, and it decays smoothly toward the stable Character baseline. Mood is not a

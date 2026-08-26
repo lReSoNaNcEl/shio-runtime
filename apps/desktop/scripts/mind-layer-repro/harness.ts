@@ -9,6 +9,7 @@ import {
   AttentionArbiter,
   AutonomyEnvelope,
   BehaviorRuntime,
+  ExperiencePolicy,
   ExperienceRuntime,
   FastBrainRuntime,
   MoodRuntime,
@@ -19,6 +20,7 @@ import type {
   AttentionCandidate,
   ExperienceAppraisal,
   MoodState,
+  PersistentGoal,
   WorldContextSnapshot,
 } from '../../src/shared/alive'
 import type { GameSemanticEvent, GameSemanticEventType } from '../../src/shared/browser-game'
@@ -97,6 +99,7 @@ async function main(): Promise<void> {
     assert.ok(Math.abs(decayed.valence) < Math.abs(failure.mood.valence))
     assert.equal(moodWriteCount, 3, 'reading a projected Mood snapshot must not persist it')
     assert.deepEqual(store.mood(), persistedBeforeSnapshot)
+    testExperiencePolicy(store)
 
     const lifeLost = experience.observe(gameEvent('life-lost', 31, 'ambient'))
     const lifeLostBehavior = behavior.decide({ ...lifeLost, settings, world, at: 31 })
@@ -665,6 +668,91 @@ function appraisal(
     silence: true,
     ...overrides,
   }
+}
+
+function testExperiencePolicy(store: AliveStore): void {
+  const baselineMood: MoodState = mood()
+  const repeatedPolicy = new ExperiencePolicy()
+  const firstFailure = repeatedPolicy.appraise(
+    { type: 'action-failed', actionId: 'repeat-1', eventId: 'repeat-1', at: 100 },
+    { currentMood: baselineMood },
+  )
+  const secondFailure = repeatedPolicy.appraise(
+    { type: 'action-failed', actionId: 'repeat-2', eventId: 'repeat-2', at: 200 },
+    { currentMood: baselineMood },
+  )
+  const thirdFailure = repeatedPolicy.appraise(
+    { type: 'action-failed', actionId: 'repeat-3', eventId: 'repeat-3', at: 300 },
+    { currentMood: { ...baselineMood, frustration: 0.8, arousal: 0.7 } },
+  )
+  assert.ok(secondFailure.salience > firstFailure.salience)
+  assert.ok(secondFailure.novelty < firstFailure.novelty)
+  assert.match(secondFailure.conversationalImpulse?.topic ?? '', /repeated attempts/u)
+  assert.equal(thirdFailure.emotionHint, 'angry')
+
+  const sharedGoal = store.createGoal({
+    title: 'Shared qualification',
+    owner: 'shared',
+    measurable: true,
+  })
+  store.updateGoal({ id: sharedGoal.id, progress: 0.8 })
+  const isolatedGoalAppraisal = new ExperiencePolicy().appraise(
+    { type: 'goal-completed', goalId: sharedGoal.id, eventId: 'isolated-goal', at: 400 },
+    { currentMood: baselineMood },
+  )
+  const contextualGoalAppraisal = new ExperiencePolicy().appraise(
+    { type: 'goal-completed', goalId: sharedGoal.id, eventId: 'contextual-goal', at: 400 },
+    {
+      currentMood: baselineMood,
+      goal: { ...sharedGoal, progress: 0.8 },
+      relationship: {
+        familiarity: 0.9,
+        warmth: 0.85,
+        teasingComfort: 0.4,
+        recurringMotifs: ['qualification', 'verified follow-through'],
+        relevantSharedHistory: [],
+      },
+    },
+  )
+  assert.ok(contextualGoalAppraisal.salience > isolatedGoalAppraisal.salience)
+  assert.ok(contextualGoalAppraisal.socialRelevance > isolatedGoalAppraisal.socialRelevance)
+  assert.ok(contextualGoalAppraisal.novelty < isolatedGoalAppraisal.novelty)
+
+  const userGoal: PersistentGoal = { ...sharedGoal, owner: 'user' }
+  const userGoalAppraisal = new ExperiencePolicy().appraise(
+    { type: 'goal-completed', goalId: userGoal.id, eventId: 'user-goal', at: 500 },
+    { currentMood: baselineMood, goal: userGoal },
+  )
+  assert.equal(userGoalAppraisal.conversationalImpulse?.topic, "The user's goal was completed")
+
+  const deterministicEvent = {
+    type: 'browser-blocked' as const,
+    eventId: 'deterministic',
+    at: 600,
+  }
+  assert.deepEqual(
+    new ExperiencePolicy().appraise(deterministicEvent, { currentMood: baselineMood }),
+    new ExperiencePolicy().appraise(deterministicEvent, { currentMood: baselineMood }),
+  )
+
+  const gamePolicy = new ExperiencePolicy()
+  const firstGameFailure = gamePolicy.appraise(gameEvent('life-lost', 700, 'ambient'), {
+    currentMood: baselineMood,
+  })
+  const differentGameFailure = gamePolicy.appraise(gameEvent('death', 701, 'normal'), {
+    currentMood: baselineMood,
+  })
+  const repeatedGameFailure = gamePolicy.appraise(gameEvent('death', 702, 'normal'), {
+    currentMood: baselineMood,
+  })
+  assert.equal(firstGameFailure.novelty, differentGameFailure.novelty)
+  assert.ok(repeatedGameFailure.novelty < differentGameFailure.novelty)
+  assert.equal(differentGameFailure.origin, 'browser-game')
+  assert.deepEqual(differentGameFailure.embodimentPresence, {
+    source: 'browser-game',
+    sessionId: 'game-session-00000000-0000-4000-8000-000000000001',
+    screenGazeActive: true,
+  })
 }
 
 function candidate(

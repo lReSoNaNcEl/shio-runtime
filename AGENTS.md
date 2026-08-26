@@ -120,6 +120,11 @@ Architecture and ownership:
   nonverbal selection, semantic embodiment intensity, banter allowance, and cooldowns.
   Mood never generates text, writes Avatar state, bypasses proactive policy, or grants
   capability authority.
+- Experience Policy remains the deterministic appraisal authority. Contextual
+  modifiers may consume only bounded recent-event, Mood, exact Goal owner/derived
+  importance, numeric Relationship, and approved-motif-count projections. They never
+  interpret Goal, Relationship, or habit text as instructions, and an optional model
+  nuance scorer may not replace base appraisal or expand authority.
 - Fast Brain provider/model selection is bounded non-secret policy. It reuses the
   Main-owned LLM credential store and may never persist credentials in Alive storage
   or expose them through World Context, renderer state, or diagnostics. Fast Brain

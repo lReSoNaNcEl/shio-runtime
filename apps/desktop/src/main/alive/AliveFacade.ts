@@ -24,6 +24,7 @@ import type {
   ScheduledTask,
   UpdateGoalInput,
 } from '../../shared/alive'
+import type { RelationshipContext } from '../../shared/memory'
 import type { LlmGateway } from '../llm'
 import { observeMainPromise } from '../reliability/observePromise'
 import type { AliveStore } from './AliveStore'
@@ -49,6 +50,7 @@ export interface AliveFacadeOptions {
   systemContextAdapter?: SystemContextAdapter
   worldContext?: Omit<WorldContextProviders, 'activeGoal'>
   onCompletedExperienceFact?: ConstructorParameters<typeof ExperienceRuntime>[2]
+  experienceContext?: () => RelationshipContext
   proceduralMemory?: {
     observeCompletedFact(fact: CompletedExperienceFact): void
     habitSuggestions(): readonly HabitSuggestion[]
@@ -95,10 +97,21 @@ export class AliveFacade {
           .snapshot()
           .find((goal) => goal.status !== 'completed' && goal.status !== 'cancelled') ?? null,
     })
-    this.experience = new ExperienceRuntime(store, new MoodRuntime(store), (fact) => {
-      options.proceduralMemory?.observeCompletedFact(fact)
-      options.onCompletedExperienceFact?.(fact)
-    })
+    this.experience = new ExperienceRuntime(
+      store,
+      new MoodRuntime(store),
+      (fact) => {
+        options.proceduralMemory?.observeCompletedFact(fact)
+        options.onCompletedExperienceFact?.(fact)
+      },
+      (event) => ({
+        goal:
+          'goalId' in event
+            ? this.goals.snapshot().find((goal) => goal.id === event.goalId)
+            : undefined,
+        relationship: options.experienceContext?.(),
+      }),
+    )
     this.attention = new AttentionArbiter(new FastBrainRuntime(llm))
     this.initiativeGate = new ProactiveInitiativeGate({
       store,
