@@ -268,6 +268,7 @@ async function startTestServer(): Promise<{ server: Server; baseUrl: string }> {
         <canvas id="fixture-game" aria-label="Fixture game" tabindex="0" width="320" height="180"></canvas>
         <p id="game-score">Score: 0</p>
         <p id="game-state">Round ready</p>
+        <p id="game-cycles">Completed cycles: 0</p>
         <p id="game-key-position">Keyboard position: 0</p>
         <a href="/details">More details</a>
         <button type="button" onclick="location.href='/catalog'">Open catalog</button>
@@ -285,8 +286,10 @@ async function startTestServer(): Promise<{ server: Server; baseUrl: string }> {
         const fixtureContext = fixtureCanvas.getContext('2d')
         const gameScore = document.querySelector('#game-score')
         const gameState = document.querySelector('#game-state')
+        const gameCycles = document.querySelector('#game-cycles')
         const gameKeyPosition = document.querySelector('#game-key-position')
         let fixtureScore = 0
+        let fixtureCompletedCycles = 0
         let fixtureHolding = false
         let fixtureGameOver = false
         let fixtureKeyPosition = 0
@@ -307,6 +310,7 @@ async function startTestServer(): Promise<{ server: Server; baseUrl: string }> {
           fixtureContext.fillStyle = '#38bdf8'
           fixtureContext.fillRect(0, 174, fixtureFrame % fixtureCanvas.width, 6)
           gameScore.textContent = 'Score: ' + fixtureScore
+          gameCycles.textContent = 'Completed cycles: ' + fixtureCompletedCycles
           gameKeyPosition.textContent = 'Keyboard position: ' + fixtureKeyPosition
         }
         const canvasPoint = (event) => {
@@ -319,6 +323,7 @@ async function startTestServer(): Promise<{ server: Server; baseUrl: string }> {
         fixtureCanvas.addEventListener('pointerdown', (event) => {
           fixtureCanvas.focus()
           if (fixtureGameOver) {
+            fixtureCompletedCycles += 1
             fixtureScore = 0
             fixtureGameOver = false
             setGameState('Retried')
@@ -727,29 +732,36 @@ async function main(): Promise<void> {
       )
       assert.equal(startedGame.state, 'running')
       const qualificationStartedAt = Date.now()
-      await waitForGameInput(gameController)
       let completedCycles = 0
+      let gameRunError: unknown
       try {
-        const firstScore = await waitForObservedGameState(adapter, /Score: 1/u)
-        assert.match(firstScore, /Released/u)
-        await waitForAutonomousFixtureCycle(adapter)
-        completedCycles += 1
-        let nextProgressAt = 30_000
-        while (Date.now() - qualificationStartedAt < BROWSER_GAME_QUALIFICATION_MS) {
+        await waitForGameInput(gameController)
+        if (BROWSER_GAME_QUALIFICATION_MS === 0) {
+          const firstScore = await waitForObservedGameState(adapter, /Score: 1/u)
+          assert.match(firstScore, /Released/u)
           await waitForAutonomousFixtureCycle(adapter)
           completedCycles += 1
-          const elapsedMs = Date.now() - qualificationStartedAt
-          if (elapsedMs >= nextProgressAt) {
+        } else {
+          let nextProgressAt = 30_000
+          while (Date.now() - qualificationStartedAt < BROWSER_GAME_QUALIFICATION_MS) {
+            await new Promise((resolveWait) => setTimeout(resolveWait, 250))
             const status = gameController.status()
-            console.log('Browser game qualification progress', {
-              elapsedMs,
-              completedCycles,
-              capturedFrames: status.telemetry.capturedFrames,
-              inputEvents: status.telemetry.inputEvents,
-              captureFps: status.telemetry.captureFps,
-              decisionLatencyMsP50: status.telemetry.decisionLatencyMsP50,
-            })
-            nextProgressAt += 30_000
+            assert.equal(
+              status.state,
+              'running',
+              `Browser game qualification stopped early: ${status.lastErrorCode ?? status.state}`,
+            )
+            const elapsedMs = Date.now() - qualificationStartedAt
+            if (elapsedMs >= nextProgressAt) {
+              console.log('Browser game qualification progress', {
+                elapsedMs,
+                capturedFrames: status.telemetry.capturedFrames,
+                inputEvents: status.telemetry.inputEvents,
+                captureFps: status.telemetry.captureFps,
+                decisionLatencyMsP50: status.telemetry.decisionLatencyMsP50,
+              })
+              nextProgressAt += 30_000
+            }
           }
         }
       } catch (error) {
@@ -757,13 +769,19 @@ async function main(): Promise<void> {
         console.error('Browser game fixture reflex intents', fixtureReflex.intents)
         console.error('Browser game fixture capture samples', captureSamples)
         console.error('Browser game fixture surface', gameSurfaces[0])
-        throw error
+        gameRunError = error
       }
       const stoppedGame = await gameController.stop()
+      if (gameRunError) throw gameRunError
       assert.equal(stoppedGame.state, 'stopped')
       assert((stoppedGame.telemetry.capturedFrames ?? 0) >= 1)
       assert(stoppedGame.telemetry.inputEvents >= 10)
       if (BROWSER_GAME_QUALIFICATION_MS > 0) {
+        const completedCyclesMatch = (await adapter.observe()).content.match(
+          /Completed cycles: (\d+)/u,
+        )
+        assert(completedCyclesMatch, 'Fixture did not expose its completed-cycle counter')
+        completedCycles = Number(completedCyclesMatch[1])
         assert(stoppedGame.telemetry.sessionDurationMs >= BROWSER_GAME_QUALIFICATION_MS)
         assert(completedCycles >= 2)
         console.log('Browser game five-minute qualification passed', {
@@ -774,6 +792,31 @@ async function main(): Promise<void> {
 
       const surface = gameSurfaces[0]
       assert(surface)
+      if (BROWSER_GAME_QUALIFICATION_MS > 0) {
+        await adapter.open(testServer.baseUrl)
+        await realtime.dispatchInput(
+          {
+            sessionId: realtimeSession.sessionId,
+            tabId: realtimeSession.tabId,
+            events: [
+              {
+                type: 'pointer-down',
+                x: surface.bounds.x + 0.5 * surface.bounds.width,
+                y: surface.bounds.y + 0.5 * surface.bounds.height,
+                button: 'left',
+              },
+              {
+                type: 'pointer-up',
+                x: surface.bounds.x + 0.5 * surface.bounds.width,
+                y: surface.bounds.y + 0.5 * surface.bounds.height,
+                button: 'left',
+              },
+            ],
+          },
+          new AbortController().signal,
+        )
+        assert.match(await waitForObservedGameState(adapter, /Score: 1/u), /Released/u)
+      }
       const fixturePoint = (score: number): { x: number; y: number } => ({
         x: surface.bounds.x + ((160 + score * 30) / 320) * surface.bounds.width,
         y: surface.bounds.y + 0.5 * surface.bounds.height,
