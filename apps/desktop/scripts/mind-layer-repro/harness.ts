@@ -96,32 +96,35 @@ async function main(): Promise<void> {
     assert.equal(lifeLostBehavior.intent.kind, 'embodiment')
     assert.equal(lifeLostBehavior.embodimentPresence?.screenGazeActive, true)
     const levelCompleted = experience.observe(gameEvent('level-completed', 40, 'important'))
-    const levelCompletedBehavior = behavior.decide({
+    const levelCompletedDecision = behavior.decideWithDiagnostics({
       ...levelCompleted,
       settings,
       world,
       at: 40,
     })
-    assert.equal(levelCompletedBehavior.intent.kind, 'conversation-candidate')
+    assert.equal(levelCompletedDecision.command.intent.kind, 'conversation-candidate')
+    assert.equal(levelCompletedDecision.conversationCandidate, 'selected')
     const checkpointSuppressed = experience.observe(gameEvent('checkpoint', 41, 'normal'))
-    const checkpointBehavior = behavior.decide({
+    const checkpointDecision = behavior.decideWithDiagnostics({
       ...checkpointSuppressed,
       settings,
       world,
       at: 41,
     })
-    assert.notEqual(checkpointBehavior.intent.kind, 'conversation-candidate')
+    assert.notEqual(checkpointDecision.command.intent.kind, 'conversation-candidate')
+    assert.equal(checkpointDecision.conversationCandidate, 'suppressed-cooldown')
     const newRecord = experience.observe(gameEvent('new-record', 42, 'important'))
     const newRecordBehavior = behavior.decide({ ...newRecord, settings, world, at: 42 })
     assert.equal(newRecordBehavior.intent.kind, 'conversation-candidate')
     const thirdCommentSuppressed = experience.observe(gameEvent('level-completed', 43, 'important'))
-    const thirdCommentBehavior = behavior.decide({
+    const thirdCommentDecision = behavior.decideWithDiagnostics({
       ...thirdCommentSuppressed,
       settings,
       world,
       at: 43,
     })
-    assert.notEqual(thirdCommentBehavior.intent.kind, 'conversation-candidate')
+    assert.notEqual(thirdCommentDecision.command.intent.kind, 'conversation-candidate')
+    assert.equal(thirdCommentDecision.conversationCandidate, 'suppressed-budget')
     const waitingUser = experience.observe(gameEvent('waiting-user', 44, 'blocking'))
     const waitingUserBehavior = behavior.decide({ ...waitingUser, settings, world, at: 44 })
     assert.equal(waitingUserBehavior.intent.kind, 'conversation-candidate')

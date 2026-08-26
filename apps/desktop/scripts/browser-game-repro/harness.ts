@@ -278,7 +278,15 @@ async function main(): Promise<void> {
     realtime: () => realtime,
     reflex: new AdapterBackedGameReflexPolicy(reflexAdapter),
     eventExtractor,
-    onEvent: (event) => gameEvents.push(event),
+    onEvent: (event) => {
+      gameEvents.push(event)
+      if (event.type === 'checkpoint') return 'candidate'
+      if (event.type === 'game-started') return 'suppressed-policy'
+      if (event.type === 'game-paused') return 'suppressed-busy'
+      if (event.type === 'game-resumed') return 'suppressed-cooldown'
+      if (event.type === 'waiting-user') return 'suppressed-budget'
+      return 'not-requested'
+    },
     now: () => now,
     createId: (() => {
       let id = 0
@@ -324,6 +332,10 @@ async function main(): Promise<void> {
   await waitUntil(() => gameEvents.some((event) => event.type === 'checkpoint'))
   assert.equal(controller.status().telemetry.inputEventsPerSecond, 2)
   assert(controller.status().telemetry.gameEvents >= 2)
+  assert.equal(controller.status().telemetry.commentCandidates, 1)
+  assert.equal(controller.status().telemetry.commentCooldownSuppressions, 0)
+  assert.equal(controller.status().telemetry.commentBusySuppressions, 0)
+  assert.equal(controller.status().telemetry.commentPolicySuppressions, 1)
   assert.equal(controller.diagnostics().session?.origin, 'https://game.example')
   assert.deepEqual(controller.diagnostics().reflex, reflexAdapter.status())
   assert.deepEqual(controller.diagnostics().eventExtractor, eventExtractor.status())
@@ -358,6 +370,8 @@ async function main(): Promise<void> {
     image: { mimeType: 'image/jpeg', bytes },
   })
   await waitUntil(() => controller.status().state === 'waiting-user')
+  assert.equal(controller.status().telemetry.commentCooldownSuppressions, 2)
+  assert.equal(controller.status().telemetry.commentBusySuppressions, 1)
   assert.equal(controller.status().waitingReason, 'authentication')
   assert(gameEvents.some((event) => event.type === 'waiting-user'))
   realtime.blocker = undefined

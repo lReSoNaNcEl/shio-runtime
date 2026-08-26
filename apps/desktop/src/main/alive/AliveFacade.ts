@@ -29,9 +29,9 @@ import type { AliveStore } from './AliveStore'
 import { AttentionArbiter } from './AttentionArbiter'
 import { AutonomyEnvelope } from './AutonomyEnvelope'
 import { AutonomyScopeRuntime, type ScopedActionProposal } from './AutonomyScopeRuntime'
-import { BehaviorRuntime } from './BehaviorRuntime'
+import { BehaviorRuntime, type ConversationCandidateDisposition } from './BehaviorRuntime'
 import { EventWatchService } from './EventWatchService'
-import type { CompletedExperienceFact } from './ExperienceRuntime'
+import type { CompletedExperienceFact, ExperienceObservation } from './ExperienceRuntime'
 import { ExperienceRuntime } from './ExperienceRuntime'
 import { FastBrainRuntime } from './FastBrainRuntime'
 import { GoalRuntime } from './GoalRuntime'
@@ -53,6 +53,10 @@ export interface AliveFacadeOptions {
     habitSuggestions(): readonly HabitSuggestion[]
     decideHabit(id: string, status: 'approved' | 'rejected'): void
   }
+}
+
+export interface ExperienceReport extends ExperienceObservation {
+  conversationCandidate: ConversationCandidateDisposition
 }
 
 /** Narrow composition/IPC boundary. Domain decisions remain in the composed runtimes. */
@@ -171,11 +175,23 @@ export class AliveFacade {
     this.world.updateRenderer(input)
   }
 
-  reportExperience(event: ExperienceEvent): void {
+  reportExperience(event: ExperienceEvent): ExperienceReport {
     const settings = this.store.settings()
     const world = this.world.snapshot(settings)
     const observation = this.experience.observe(event)
     const impulse = observation.appraisal.conversationalImpulse
+    const conversationCandidate: ConversationCandidateDisposition = !impulse
+      ? 'not-requested'
+      : world.conversationActive || world.audioActive
+        ? 'suppressed-busy'
+        : this.behavior.assessConversationCandidate({
+            ...observation,
+            settings,
+            world,
+            at: event.at,
+            conversationAllowed: true,
+          })
+    const report = { ...observation, conversationCandidate }
     if (!impulse) {
       this.emitBehavior(
         this.behavior.decide({
@@ -187,7 +203,7 @@ export class AliveFacade {
         }),
       )
       this.publish()
-      return
+      return report
     }
     const origin = experienceOrigin(event)
     observeMainPromise(
@@ -229,6 +245,7 @@ export class AliveFacade {
       `gate ${origin} initiative`,
     )
     this.publish()
+    return report
   }
 
   createGoal(input: CreateGoalInput): AliveSnapshot {

@@ -59,10 +59,19 @@ export interface GameSessionControllerOptions {
   realtime(): BrowserRealtimeControlProvider | undefined
   reflex: GameReflexPolicy
   eventExtractor?: GameEventExtractor
-  onEvent?: (event: GameSemanticEvent) => void
+  onEvent?: (event: GameSemanticEvent) => GameCommentaryPolicyOutcome | undefined
   now?: () => number
   createId?: () => string
 }
+
+export type GameCommentaryPolicyOutcome =
+  | 'not-requested'
+  | 'candidate'
+  | 'suppressed-policy'
+  | 'suppressed-threshold'
+  | 'suppressed-busy'
+  | 'suppressed-cooldown'
+  | 'suppressed-budget'
 
 interface ActiveGameSession {
   goal: string
@@ -92,6 +101,10 @@ function emptyTelemetry(): MutableTelemetry {
     staleDecisions: 0,
     inputEvents: 0,
     gameEvents: 0,
+    commentCandidates: 0,
+    commentCooldownSuppressions: 0,
+    commentBusySuppressions: 0,
+    commentPolicySuppressions: 0,
     captureFps: 0,
     inputEventsPerSecond: 0,
     sessionDurationMs: 0,
@@ -135,6 +148,10 @@ function boundedStatusTelemetry(
     staleDecisions: telemetry.staleDecisions,
     inputEvents: telemetry.inputEvents,
     gameEvents: telemetry.gameEvents,
+    commentCandidates: telemetry.commentCandidates,
+    commentCooldownSuppressions: telemetry.commentCooldownSuppressions,
+    commentBusySuppressions: telemetry.commentBusySuppressions,
+    commentPolicySuppressions: telemetry.commentPolicySuppressions,
     captureFps,
     inputEventsPerSecond: inputTimestamps.filter((timestamp) => now - timestamp < 1_000).length,
     sessionDurationMs,
@@ -865,9 +882,21 @@ export class GameSessionController {
         ...details,
       })
       this.telemetry.gameEvents += 1
-      this.options.onEvent?.(event)
+      this.recordCommentaryPolicy(this.options.onEvent?.(event))
     } catch (error) {
       mainLog.warn('[BrowserGame] semantic event rejected', error)
+    }
+  }
+
+  private recordCommentaryPolicy(outcome: GameCommentaryPolicyOutcome | undefined): void {
+    if (outcome === 'candidate') {
+      this.telemetry.commentCandidates += 1
+    } else if (outcome === 'suppressed-cooldown' || outcome === 'suppressed-budget') {
+      this.telemetry.commentCooldownSuppressions += 1
+    } else if (outcome === 'suppressed-busy') {
+      this.telemetry.commentBusySuppressions += 1
+    } else if (outcome === 'suppressed-policy' || outcome === 'suppressed-threshold') {
+      this.telemetry.commentPolicySuppressions += 1
     }
   }
 

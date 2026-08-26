@@ -191,6 +191,9 @@ Architecture and ownership:
   `waiting-user`, releases every held input, and requires a fresh scope inspection
   before resume; Shio never attempts automated CAPTCHA bypass.
 - Browser Game renderer diagnostics receive only the typed bounded session projection;
+  commentary policy telemetry distinguishes selected candidates from cooldown/budget,
+  busy, and policy suppressions. A candidate is not a completed Character comment;
+  only Conversation Admission and terminal conversation feedback may establish that.
   never expose frames, tab identifiers, authorization Action IDs, or raw page state.
   Plugin UI Pause and Stop controls use the registered `browser.game-control` Action
   path through narrow authorized IPC and may not call Game Session Controller directly.

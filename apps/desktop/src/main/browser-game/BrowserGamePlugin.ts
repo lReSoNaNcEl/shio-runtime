@@ -18,7 +18,7 @@ import type { GameEventExtractor } from './GameEventExtractor'
 import type { GameReflexAdapter } from './GameReflexAdapter'
 import type { GameReflexPolicy } from './GameReflexPolicy'
 import { AdapterBackedGameReflexPolicy } from './GameReflexPolicy'
-import { GameSessionController } from './GameSessionController'
+import { type GameCommentaryPolicyOutcome, GameSessionController } from './GameSessionController'
 import { LocalVisualGameEventExtractor } from './LocalVisualGameEventExtractor'
 import { LocalVisualTargetReflexAdapter } from './LocalVisualTargetReflexAdapter'
 
@@ -38,7 +38,7 @@ interface BrowserGamePluginOptions {
   reflexAdapter?: GameReflexAdapter
   reflexReady?: boolean
   eventExtractor?: GameEventExtractor
-  onGameEvent?: (event: GameSemanticEvent) => void
+  onGameEvent?: (event: GameSemanticEvent) => GameCommentaryPolicyOutcome | undefined
 }
 
 export class BrowserGamePlugin implements BundledPlugin {

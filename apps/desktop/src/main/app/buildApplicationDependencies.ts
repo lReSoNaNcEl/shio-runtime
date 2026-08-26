@@ -284,13 +284,17 @@ export function buildApplicationDependencies(): ApplicationDependencies {
   const getBrowserGame = (): BrowserGamePlugin => {
     browserGame ??= new BrowserGamePlugin({
       realtime: () => pluginCapabilities.getBrowserRealtimeControlProvider(),
-      onGameEvent: (event) =>
-        aliveRuntime?.reportExperience({
+      onGameEvent: (event) => {
+        const observation = aliveRuntime?.reportExperience({
           type: 'game-event',
           at: event.at,
           eventId: event.eventId,
           gameEvent: event,
-        }),
+        })
+        return observation?.conversationCandidate === 'selected'
+          ? 'candidate'
+          : observation?.conversationCandidate
+      },
     })
     return browserGame
   }
