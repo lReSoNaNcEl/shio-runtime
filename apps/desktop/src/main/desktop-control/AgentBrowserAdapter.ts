@@ -76,7 +76,7 @@ interface JsonEnvelope {
   error?: unknown
 }
 
-const GAME_ENVIRONMENT_INSPECTION_SCRIPT = `(() => { const visible = (element) => { const rect = element.getBoundingClientRect(); const style = getComputedStyle(element); return rect.width > 0 && rect.height > 0 && rect.bottom > 0 && rect.right > 0 && rect.top < innerHeight && rect.left < innerWidth && style.visibility !== 'hidden' && style.display !== 'none'; }; const hasVisible = (selector) => Array.from(document.querySelectorAll(selector)).some(visible); const blocker = hasVisible('iframe[src*="recaptcha"],iframe[src*="hcaptcha"],.g-recaptcha,.h-captcha,textarea[name="g-recaptcha-response"],textarea[name="h-captcha-response"]') ? 'captcha' : hasVisible('iframe[src*="challenges.cloudflare.com"],.cf-turnstile,input[name="cf-turnstile-response"],form[action*="/challenge"]') ? 'anti-bot' : hasVisible('input[type="password"],input[autocomplete="current-password"],input[autocomplete="new-password"]') ? 'authentication' : undefined; const surfaces = Array.from(document.querySelectorAll('canvas,[role="application"],[data-game-root]')).slice(0, 8).map((element, index) => { const rect = element.getBoundingClientRect(); return { index, tag: element.tagName.toLowerCase(), role: element.getAttribute('role'), label: element.getAttribute('aria-label') || element.getAttribute('title') || element.id || undefined, x: rect.x, y: rect.y, width: rect.width, height: rect.height, visible: visible(element) }; }).filter((candidate) => candidate.visible); const viewport = { width: innerWidth, height: innerHeight, pageScaleFactor: window.visualViewport?.scale || 1 }; return JSON.stringify({ surfaces, blocker, viewport }); })()`
+const GAME_ENVIRONMENT_INSPECTION_SCRIPT = `(() => { const visible = (element) => { const rect = element.getBoundingClientRect(); const style = getComputedStyle(element); return rect.width > 0 && rect.height > 0 && rect.bottom > 0 && rect.right > 0 && rect.top < innerHeight && rect.left < innerWidth && style.visibility !== 'hidden' && style.display !== 'none'; }; const hasVisible = (selector) => Array.from(document.querySelectorAll(selector)).some(visible); const explicitGameFrame = (element) => { if (element.tagName !== 'IFRAME') return false; const rect = element.getBoundingClientRect(); const identity = [element.id, element.getAttribute('name'), element.getAttribute('title'), element.getAttribute('aria-label')].filter(Boolean).join(' ').toLowerCase(); const permissions = (element.getAttribute('allow') || '').toLowerCase(); return rect.width >= 160 && rect.height >= 90 && /(?:^|[^a-z])game(?:frame|element|player)?(?:$|[^a-z])/u.test(identity) && /(?:gamepad|keyboard-map)/u.test(permissions); }; const blocker = hasVisible('iframe[src*="recaptcha"],iframe[src*="hcaptcha"],.g-recaptcha,.h-captcha,textarea[name="g-recaptcha-response"],textarea[name="h-captcha-response"]') ? 'captcha' : hasVisible('iframe[src*="challenges.cloudflare.com"],.cf-turnstile,input[name="cf-turnstile-response"],form[action*="/challenge"]') ? 'anti-bot' : hasVisible('input[type="password"],input[autocomplete="current-password"],input[autocomplete="new-password"]') ? 'authentication' : undefined; const elements = Array.from(document.querySelectorAll('canvas,[role="application"],[data-game-root],iframe')).filter((element) => visible(element) && (element.tagName !== 'IFRAME' || explicitGameFrame(element))).slice(0, 8); const surfaces = elements.map((element, index) => { const rect = element.getBoundingClientRect(); return { index, tag: element.tagName.toLowerCase(), role: element.getAttribute('role'), explicitRoot: element.hasAttribute('data-game-root'), label: element.getAttribute('aria-label') || element.getAttribute('title') || element.id || undefined, source: element.tagName === 'IFRAME' ? element.src : undefined, x: rect.x, y: rect.y, width: rect.width, height: rect.height }; }); const viewport = { width: innerWidth, height: innerHeight, pageScaleFactor: window.visualViewport?.scale || 1 }; return JSON.stringify({ surfaces, blocker, viewport }); })()`
 
 const INTERACTIVE_ROLES = new Set<BrowserInteractiveRole>([
   'button',
@@ -213,11 +213,36 @@ function parseGameEnvironment(output: string): BrowserGameEnvironmentInspection 
     ) {
       return []
     }
+    const tag = typeof candidate.tag === 'string' ? candidate.tag : ''
+    if (
+      !['canvas', 'iframe'].includes(tag) &&
+      candidate.role !== 'application' &&
+      candidate.explicitRoot !== true
+    ) {
+      return []
+    }
+    let frameIdentity = ''
+    if (tag === 'iframe') {
+      const rawSource = typeof candidate.source === 'string' ? candidate.source : ''
+      if (!rawSource || rawSource.length > 4_096) return []
+      try {
+        const source = new URL(rawSource)
+        if (!['http:', 'https:'].includes(source.protocol) || source.username || source.password) {
+          return []
+        }
+        frameIdentity = createHash('sha256').update(source.href).digest('hex').slice(0, 12)
+      } catch {
+        return []
+      }
+    }
     const rawLabel = typeof candidate.label === 'string' ? sanitizeText(candidate.label) : ''
     return [
       {
-        id: `game-surface-${index}`,
-        kind: candidate.tag === 'canvas' ? 'canvas' : 'game-root',
+        id:
+          tag === 'iframe'
+            ? `game-surface-${index}-frame-${frameIdentity}`
+            : `game-surface-${index}`,
+        kind: tag === 'canvas' ? 'canvas' : 'game-root',
         ...(rawLabel ? { label: rawLabel.slice(0, 120) } : {}),
         bounds: { x, y, width, height },
       },

@@ -36,6 +36,7 @@ import type { ProjectContextPacket } from '../../shared/project-awareness'
 import type { WebSearchInput, WebSearchProviderResolver } from '../../shared/web-search'
 import { buildActionResultNarrationContext } from '../action'
 import type { BrowserAgentCoordinator } from '../desktop-control/browser-agent'
+import { mainLog } from '../logging/safeLogger'
 import type { MemoryToolBroker } from '../memory'
 import type { CharacterToolRegistry } from './CharacterToolRegistry'
 import { ToolInfluenceContext } from './ToolInfluenceContext'
@@ -187,6 +188,13 @@ export type CharacterToolVerifiedOutcome =
       title: string
       status: PersistentGoal['status']
       progressPercent?: number
+    }
+  | {
+      kind: 'game.start' | 'game.pause' | 'game.resume' | 'game.stop' | 'game.status'
+      outcome: BrowserGameActionResult['outcome']
+      state?: BrowserGameStatus['state']
+      waitingReason?: BrowserGameStatus['waitingReason']
+      errorCode?: string
     }
 
 interface CharacterToolDispatcherOptions {
@@ -708,13 +716,39 @@ export class CharacterToolDispatcher {
     input: Record<string, unknown>,
   ): Promise<CharacterToolDispatchResult> {
     const provider = this.options.browserGame?.()
-    if (!provider) return { content: failureContent('BROWSER_GAME_UNAVAILABLE') }
+    if (!provider) {
+      return {
+        content: failureContent('BROWSER_GAME_UNAVAILABLE'),
+        verifiedOutcome: {
+          kind: id,
+          outcome: 'failure',
+          errorCode: 'BROWSER_GAME_UNAVAILABLE',
+        },
+      }
+    }
     if (id === 'game.status') {
       GAME_INPUT_SCHEMAS[id].parse(input)
-      return { content: successfulContent({ game: gameStatusProjection(provider.status()) }) }
+      const status = provider.status()
+      return {
+        content: successfulContent({ game: gameStatusProjection(status) }),
+        verifiedOutcome: {
+          kind: id,
+          outcome: 'success',
+          state: status.state,
+          waitingReason: status.waitingReason,
+          errorCode: status.lastErrorCode,
+        },
+      }
     }
     if (!this.options.executeBrowserGameAction) {
-      return { content: failureContent('ACTION_RUNTIME_UNAVAILABLE') }
+      return {
+        content: failureContent('ACTION_RUNTIME_UNAVAILABLE'),
+        verifiedOutcome: {
+          kind: id,
+          outcome: 'failure',
+          errorCode: 'ACTION_RUNTIME_UNAVAILABLE',
+        },
+      }
     }
     let action: BrowserGameControlAction
     if (id === 'game.start') {
@@ -737,11 +771,17 @@ export class CharacterToolDispatcher {
                   : [],
               )
             : undefined
+          mainLog.info('[BrowserGame] character tool preparation rejected', {
+            operation: id,
+            code: error.code,
+            surfaceCandidates: surfaces?.length ?? 0,
+          })
           return {
             content: JSON.stringify({
               ok: false,
               error: { code: error.code, ...(surfaces ? { surfaces } : {}) },
             }),
+            verifiedOutcome: { kind: id, outcome: 'failure', errorCode: error.code },
           }
         }
         throw error
@@ -764,12 +804,25 @@ export class CharacterToolDispatcher {
     if (result.outcome === 'cancelled' || result.outcome === 'permission-denied') {
       this.actionWorkflowClosed = true
     }
+    mainLog.info('[BrowserGame] character tool completed', {
+      operation: id,
+      outcome: result.outcome,
+      state: result.status?.state,
+      errorCode: result.errorCode,
+    })
     return {
       content: JSON.stringify({
         ok: result.outcome === 'success',
         data: result.status ? { game: gameStatusProjection(result.status) } : undefined,
         ...(result.errorCode ? { error: { code: result.errorCode } } : {}),
       }),
+      verifiedOutcome: {
+        kind: id,
+        outcome: result.outcome,
+        state: result.status?.state,
+        waitingReason: result.status?.waitingReason,
+        errorCode: result.errorCode,
+      },
     }
   }
 

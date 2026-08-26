@@ -269,6 +269,22 @@ async function startTestServer(): Promise<{ server: Server; baseUrl: string }> {
       )
       return
     }
+    if (request.url === '/iframe-game') {
+      response.end(
+        '<!doctype html><title>Embedded game</title><canvas aria-label="Embedded fixture game" width="640" height="360"></canvas>',
+      )
+      return
+    }
+    if (request.url === '/iframe-wrapper') {
+      response.end(`<!doctype html><title>Game portal wrapper</title>
+        <iframe id="game-element" name="gameFrame" title="Game" allow="autoplay; fullscreen; gamepad; keyboard-map *" src="/iframe-game" style="width:640px;height:360px;border:0"></iframe>`)
+      return
+    }
+    if (request.url === '/advertisement-wrapper') {
+      response.end(`<!doctype html><title>Advertisement wrapper</title>
+        <iframe title="Advertisement" src="/iframe-game" style="width:640px;height:360px;border:0"></iframe>`)
+      return
+    }
     response.end(`<!doctype html>
       <title>Shio browser control test</title>
       <main>
@@ -732,6 +748,18 @@ async function main(): Promise<void> {
       assert.equal(gameSurfaces.length, 1)
       assert.equal(gameSurfaces[0]?.kind, 'canvas')
       assert.equal(gameSurfaces[0]?.label, 'Fixture game')
+      await adapter.open(`${testServer.baseUrl}/iframe-wrapper`)
+      const iframeEnvironment = await realtime.inspectGameEnvironment(new AbortController().signal)
+      assert.equal(iframeEnvironment.surfaces.length, 1)
+      assert.equal(iframeEnvironment.surfaces[0]?.kind, 'game-root')
+      assert.equal(iframeEnvironment.surfaces[0]?.label, 'Game')
+      assert.match(iframeEnvironment.surfaces[0]?.id ?? '', /^game-surface-0-frame-[0-9a-f]{12}$/u)
+      await adapter.open(`${testServer.baseUrl}/advertisement-wrapper`)
+      const advertisementEnvironment = await realtime.inspectGameEnvironment(
+        new AbortController().signal,
+      )
+      assert.equal(advertisementEnvironment.surfaces.length, 0)
+      await adapter.open(testServer.baseUrl)
       const fixtureReflex = new RecordingLocalVisualTargetReflexAdapter()
       const gameController = new GameSessionController({
         realtime: () => realtime,

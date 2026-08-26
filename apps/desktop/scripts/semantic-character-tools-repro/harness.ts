@@ -826,11 +826,122 @@ async function browserGameStartUsesPreparedActionScope(): Promise<void> {
     },
   ])
   assert.equal(JSON.parse(result.content).data.game.state, 'running')
+  assert.deepEqual(result.verifiedOutcome, {
+    kind: 'game.start',
+    outcome: 'success',
+    state: 'running',
+    waitingReason: undefined,
+    errorCode: undefined,
+  })
   assert.equal(result.content.includes('authorizationActionId'), false)
   assert.equal(result.content.includes('bounds'), false)
   const statusResult = await dispatcher.execute('game.status', {})
   assert.equal(JSON.parse(statusResult.content).data.game.state, 'waiting-user')
   assert.equal(JSON.parse(statusResult.content).data.game.waitingReason, 'captcha')
+}
+
+async function browserGameResultSurvivesContinuationRateLimit(): Promise<void> {
+  let chatCalls = 0
+  const status: BrowserGameStatus = {
+    state: 'running',
+    strategy: 'balanced',
+    telemetry: {
+      capturedFrames: 1,
+      droppedFrames: 0,
+      staleDecisions: 0,
+      inputEvents: 0,
+      gameEvents: 1,
+      commentCandidates: 0,
+      commentCooldownSuppressions: 0,
+      commentBusySuppressions: 0,
+      commentPolicySuppressions: 0,
+      commentsCompleted: 0,
+      commentAdmissionSuppressions: 0,
+      commentFailures: 0,
+      captureFps: 10,
+      inputEventsPerSecond: 0,
+      sessionDurationMs: 100,
+    },
+  }
+  const preparation: GameStartPreparation = {
+    preparationId: 'game-preparation-00000000-0000-4000-8000-000000000002',
+    goal: 'Play the current game',
+    browserSessionId: 'browser-session-00000000-0000-4000-8000-000000000002',
+    tabId: 'tab-2',
+    origin: 'https://game.example.test',
+    url: 'https://game.example.test/play',
+    surface: {
+      id: 'game-surface-0-frame-0123456789ab',
+      kind: 'game-root',
+      label: 'Game',
+      bounds: { x: 100, y: 20, width: 800, height: 600 },
+    },
+    allowedInputs: ['pointer'],
+    maxDurationMs: 300_000,
+    maxInputEvents: 5_000,
+    maxInputEventsPerSecond: 15,
+    navigation: 'same-origin-only',
+    strategy: 'balanced',
+    createdAt: 1,
+    expiresAt: 10_001,
+  }
+  const provider: BrowserGameControlProvider = {
+    discoverSurfaces: async () => [preparation.surface],
+    prepareStart: async () => preparation,
+    start: async () => status,
+    pause: async () => ({ ...status, state: 'paused' }),
+    resume: async () => status,
+    stop: async () => ({ ...status, state: 'stopped' }),
+    updateStrategy: () => status,
+    status: () => status,
+  }
+  const llm: LLMProvider = {
+    capabilities: () => ({ ...nativeCapabilities, supportsReasoning: true }),
+    chat: async () => {
+      chatCalls += 1
+      if (chatCalls === 1) {
+        return '<shio-tools>{"calls":[{"tool":"game.start","arguments":{"goal":"Play the current game"}}]}</shio-tools>'
+      }
+      throw new LlmResponseError({
+        provider: 'mistral',
+        code: 'RATE_LIMITED',
+        recoverable: true,
+        message: 'controlled post-game continuation rate limit',
+      })
+    },
+  }
+  const memory: MemoryStore = {
+    getHistory: async () => [],
+    appendTurn: async () => undefined,
+    clear: async () => undefined,
+  }
+  const orchestrator = new Orchestrator(
+    llm,
+    memory,
+    {} as SpeechClient,
+    () => ({ uiLocale: 'ru' }) as AppSettings,
+    undefined,
+    { snapshot: async () => gameCapabilities },
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    () => provider,
+    async () => ({ outcome: 'success', authorization: 'confirmed', status }),
+  )
+
+  const result = await orchestrator.createReply({
+    userText: 'А поиграть в игрушку на этой странице?',
+  })
+
+  assert.equal(chatCalls, 2)
+  assert.match(result.replyText, /уже играю/u)
+  assert.doesNotMatch(result.replyText, /Не смогла безопасно завершить/u)
 }
 
 async function main(): Promise<void> {
@@ -1031,6 +1142,7 @@ async function main(): Promise<void> {
   compactToolProtocolContainment()
   browserGameToolsStayHighLevel()
   await browserGameStartUsesPreparedActionScope()
+  await browserGameResultSurvivesContinuationRateLimit()
   console.log('Semantic Character Tool Arbitration matrix: PASS')
 }
 
