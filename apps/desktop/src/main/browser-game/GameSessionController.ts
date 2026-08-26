@@ -885,8 +885,14 @@ export class GameSessionController {
     const active = this.active
     if (!active || active.scope.sessionId !== frame.sessionId) return
     for (const event of events) {
-      const { type, importance, ...details } = event
-      this.publishGameEvent(active.scope, type, importance ?? 'normal', details, frame.capturedAt)
+      const { type, importance, observedAt, ...details } = event
+      this.publishGameEvent(
+        active.scope,
+        type,
+        importance ?? 'normal',
+        details,
+        observedAt ?? frame.capturedAt,
+      )
     }
   }
 
@@ -894,7 +900,7 @@ export class GameSessionController {
     scope: GameSessionScope,
     type: GameSemanticEventType,
     importance: GameSemanticEvent['importance'],
-    details: Omit<ExtractedGameEvent, 'type' | 'importance'> = {},
+    details: Omit<ExtractedGameEvent, 'type' | 'importance' | 'observedAt'> = {},
     at = this.now(),
   ): void {
     try {

@@ -9,7 +9,11 @@ import { translate } from '../../shared/localization'
 import type { AvatarRuntimeHealth } from '../../shared/runtime'
 import { type ActionRuntime, toDesktopWorkflowActionResult } from '../action'
 import { AliveRuntime, AliveStore, WindowsSystemContextAdapter } from '../alive'
-import { BROWSER_GAME_CONTROL_MANIFEST, BrowserGamePlugin } from '../browser-game'
+import {
+  BROWSER_GAME_CONTROL_MANIFEST,
+  BrowserGamePlugin,
+  LlmGameSemanticPerceptionAdapter,
+} from '../browser-game'
 import { CapabilityCatalog } from '../capabilities'
 import { getConfig, getOverlayPresentationConfig, getRendererConfig, loadConfig } from '../config'
 import {
@@ -284,6 +288,12 @@ export function buildApplicationDependencies(): ApplicationDependencies {
   const getBrowserGame = (): BrowserGamePlugin => {
     browserGame ??= new BrowserGamePlugin({
       realtime: () => pluginCapabilities.getBrowserRealtimeControlProvider(),
+      semanticPerceptionAdapter: new LlmGameSemanticPerceptionAdapter({
+        provider: () =>
+          resolveLlmReadiness(getRendererConfig().llm).reason === 'ready'
+            ? (llmGateway ?? undefined)
+            : undefined,
+      }),
       onGameEvent: (event) => {
         const observation = aliveRuntime?.reportExperience({
           type: 'game-event',

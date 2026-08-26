@@ -19,7 +19,9 @@ import type { GameEventExtractor } from './GameEventExtractor'
 import type { GameReflexAdapter } from './GameReflexAdapter'
 import type { GameReflexPolicy } from './GameReflexPolicy'
 import { AdapterBackedGameReflexPolicy } from './GameReflexPolicy'
+import type { GameSemanticPerceptionAdapter } from './GameSemanticPerceptionAdapter'
 import { type GameCommentaryPolicyOutcome, GameSessionController } from './GameSessionController'
+import { HybridGameEventExtractor } from './HybridGameEventExtractor'
 import { LocalVisualGameEventExtractor } from './LocalVisualGameEventExtractor'
 import { LocalVisualTargetReflexAdapter } from './LocalVisualTargetReflexAdapter'
 
@@ -39,6 +41,7 @@ interface BrowserGamePluginOptions {
   reflexAdapter?: GameReflexAdapter
   reflexReady?: boolean
   eventExtractor?: GameEventExtractor
+  semanticPerceptionAdapter?: GameSemanticPerceptionAdapter
   onGameEvent?: (event: GameSemanticEvent) => GameCommentaryPolicyOutcome | undefined
 }
 
@@ -57,10 +60,18 @@ export class BrowserGamePlugin implements BundledPlugin {
   constructor(private readonly options: BrowserGamePluginOptions) {
     const reflexAdapter = options.reflexAdapter ?? new LocalVisualTargetReflexAdapter()
     const reflex = options.reflex ?? new AdapterBackedGameReflexPolicy(reflexAdapter)
+    const eventExtractor =
+      options.eventExtractor ??
+      (options.semanticPerceptionAdapter
+        ? new HybridGameEventExtractor(
+            new LocalVisualGameEventExtractor(),
+            options.semanticPerceptionAdapter,
+          )
+        : new LocalVisualGameEventExtractor())
     this.controller = new GameSessionController({
       realtime: options.realtime,
       reflex,
-      eventExtractor: options.eventExtractor ?? new LocalVisualGameEventExtractor(),
+      eventExtractor,
       onEvent: options.onGameEvent,
     })
     this.reflexStatus = () => reflex.status()

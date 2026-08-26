@@ -15,9 +15,16 @@ import type {
   GameReflexState,
 } from '../../src/main/browser-game/GameReflexPolicy'
 import { AdapterBackedGameReflexPolicy } from '../../src/main/browser-game/GameReflexPolicy'
+import type {
+  GameSemanticPerceptionAdapter,
+  GameSemanticPerceptionSnapshot,
+} from '../../src/main/browser-game/GameSemanticPerceptionAdapter'
 import { GameSessionController } from '../../src/main/browser-game/GameSessionController'
+import { HybridGameEventExtractor } from '../../src/main/browser-game/HybridGameEventExtractor'
+import { LlmGameSemanticPerceptionAdapter } from '../../src/main/browser-game/LlmGameSemanticPerceptionAdapter'
 import { LocalVisualGameEventExtractor } from '../../src/main/browser-game/LocalVisualGameEventExtractor'
 import { LocalVisualTargetReflexAdapter } from '../../src/main/browser-game/LocalVisualTargetReflexAdapter'
+import type { ChatMessage, LLMProvider, LlmRequestOptions } from '../../src/main/llm'
 import {
   BrowserGameError,
   type GameFrame,
@@ -125,6 +132,62 @@ class SlowEventExtractor implements GameEventExtractor {
   }
 
   reset(): void {}
+}
+
+class TestSemanticPerceptionAdapter implements GameSemanticPerceptionAdapter {
+  ready = true
+  readonly snapshots: GameSemanticPerceptionSnapshot[] = []
+  readonly calls: Array<{ previous: GameSemanticPerceptionSnapshot | null; signal: AbortSignal }> =
+    []
+  deferNext = false
+  resetCount = 0
+
+  status() {
+    return { backendId: 'fixture-semantic', ready: this.ready, sampleRateHz: 0.2 }
+  }
+
+  async analyze(
+    _frame: GameFrame,
+    _state: GameEventExtractionContext,
+    previous: GameSemanticPerceptionSnapshot | null,
+    signal: AbortSignal,
+  ): Promise<GameSemanticPerceptionSnapshot | null> {
+    this.calls.push({ previous, signal })
+    if (this.deferNext) {
+      this.deferNext = false
+      return new Promise((_resolve, reject) => {
+        signal.addEventListener('abort', () => reject(signal.reason), { once: true })
+      })
+    }
+    return this.snapshots.shift() ?? null
+  }
+
+  reset(): void {
+    this.resetCount += 1
+  }
+}
+
+class TestVisionProvider implements LLMProvider {
+  supportsVision = true
+  response = ''
+  calls: Array<{ messages: readonly ChatMessage[]; options?: LlmRequestOptions }> = []
+
+  capabilities() {
+    return {
+      supportsReasoning: false,
+      supportsStreaming: false,
+      supportsTemperature: false,
+      supportsSystemPrompt: true,
+      supportsToolCalling: false,
+      supportsVision: this.supportsVision,
+      recommendedMaxTokens: 1_024,
+    }
+  }
+
+  async chat(messages: readonly ChatMessage[], options?: LlmRequestOptions): Promise<string> {
+    this.calls.push({ messages, options })
+    return this.response
+  }
 }
 
 interface FrameWaiter {
@@ -273,7 +336,12 @@ async function main(): Promise<void> {
   const eventExtractor = new TestEventExtractor()
   const gameEvents: GameSemanticEvent[] = []
   reflexAdapter.intents.push({ type: 'pointer-tap', x: 100, y: 75 })
-  eventExtractor.events.push({ type: 'checkpoint', importance: 'normal', value: 1 })
+  eventExtractor.events.push({
+    type: 'checkpoint',
+    importance: 'normal',
+    value: 1,
+    observedAt: 9_999,
+  })
   const controller = new GameSessionController({
     realtime: () => realtime,
     reflex: new AdapterBackedGameReflexPolicy(reflexAdapter),
@@ -338,6 +406,8 @@ async function main(): Promise<void> {
   await waitUntil(() => gameEvents.some((event) => event.type === 'checkpoint'))
   const checkpointEvent = gameEvents.find((event) => event.type === 'checkpoint')
   assert(checkpointEvent)
+  assert.equal(checkpointEvent.at, 9_999)
+  assert.equal('observedAt' in checkpointEvent, false)
   assert.throws(() =>
     controller.recordCommentaryOutcome({
       eventId: checkpointEvent.eventId,
@@ -696,6 +766,203 @@ async function main(): Promise<void> {
     [],
     'a static passive scene must not be called stuck without repeated input',
   )
+
+  const semantic = new TestSemanticPerceptionAdapter()
+  const hybridEvents = new HybridGameEventExtractor(new LocalVisualGameEventExtractor(), semantic)
+  assert.deepEqual(hybridEvents.status(), {
+    backendId: 'hybrid-fixture-semantic',
+    mode: 'low-frequency-semantic',
+    ready: true,
+    sampleRateHz: 0.2,
+    semanticPerception: true,
+  })
+  const semanticState = { strategy: 'balanced' as const, elapsedMs: 30_000, inputEvents: 10 }
+  semantic.snapshots.push({
+    phase: 'playing',
+    score: 0,
+    lives: 3,
+    checkpoint: null,
+    levelCompleted: false,
+    newRecord: false,
+    label: 'Round active',
+    confidence: 0.95,
+  })
+  assert.deepEqual(
+    await hybridEvents.extract(
+      await visualTargetFrame({ frameId: 20, capturedAt: 30_000, targetX: 160 }),
+      semanticState,
+      localEventSignal,
+    ),
+    [],
+  )
+  await new Promise((resolve) => setImmediate(resolve))
+  assert.deepEqual(
+    await hybridEvents.extract(
+      await visualTargetFrame({ frameId: 21, capturedAt: 30_100, targetX: 160 }),
+      semanticState,
+      localEventSignal,
+    ),
+    [],
+    'the first semantic sample establishes a baseline without inventing events',
+  )
+  semantic.snapshots.push({
+    phase: 'game-over',
+    score: 1,
+    lives: 2,
+    checkpoint: 'gate-1',
+    levelCompleted: false,
+    newRecord: false,
+    label: 'Round failed',
+    confidence: 0.91,
+  })
+  assert.deepEqual(
+    await hybridEvents.extract(
+      await visualTargetFrame({ frameId: 22, capturedAt: 35_000, targetX: 190 }),
+      semanticState,
+      localEventSignal,
+    ),
+    [],
+    'slow semantic analysis must not back-pressure local extraction',
+  )
+  await new Promise((resolve) => setImmediate(resolve))
+  assert.deepEqual(
+    await hybridEvents.extract(
+      await visualTargetFrame({ frameId: 23, capturedAt: 35_100, targetX: 190 }),
+      semanticState,
+      localEventSignal,
+    ),
+    [
+      {
+        type: 'score-changed',
+        importance: 'ambient',
+        previousValue: 0,
+        value: 1,
+        label: 'Round failed',
+        observedAt: 35_000,
+      },
+      {
+        type: 'life-lost',
+        importance: 'normal',
+        previousValue: 3,
+        value: 2,
+        label: 'Round failed',
+        observedAt: 35_000,
+      },
+      {
+        type: 'checkpoint',
+        importance: 'normal',
+        label: 'Round failed',
+        observedAt: 35_000,
+      },
+      {
+        type: 'game-over',
+        importance: 'important',
+        label: 'Round failed',
+        observedAt: 35_000,
+      },
+    ],
+  )
+  semantic.snapshots.push({
+    phase: 'playing',
+    score: 1,
+    lives: 2,
+    checkpoint: 'gate-1',
+    levelCompleted: false,
+    newRecord: false,
+    label: 'Retry active',
+    confidence: 0.9,
+  })
+  await hybridEvents.extract(
+    await visualTargetFrame({ frameId: 24, capturedAt: 40_000, targetX: 160 }),
+    semanticState,
+    localEventSignal,
+  )
+  await new Promise((resolve) => setImmediate(resolve))
+  assert.deepEqual(
+    await hybridEvents.extract(
+      await visualTargetFrame({ frameId: 25, capturedAt: 40_100, targetX: 160 }),
+      semanticState,
+      localEventSignal,
+    ),
+    [{ type: 'retry', importance: 'ambient', label: 'Retry active', observedAt: 40_000 }],
+  )
+  semantic.snapshots.push({
+    phase: 'playing',
+    score: 999,
+    lives: 2,
+    checkpoint: 'gate-1',
+    levelCompleted: false,
+    newRecord: false,
+    label: 'Uncertain score',
+    confidence: 0.4,
+  })
+  await hybridEvents.extract(
+    await visualTargetFrame({ frameId: 26, capturedAt: 45_000, targetX: 160 }),
+    semanticState,
+    localEventSignal,
+  )
+  await new Promise((resolve) => setImmediate(resolve))
+  assert.deepEqual(
+    await hybridEvents.extract(
+      await visualTargetFrame({ frameId: 27, capturedAt: 45_100, targetX: 160 }),
+      semanticState,
+      localEventSignal,
+    ),
+    [],
+    'low-confidence model output must neither emit nor replace the trusted baseline',
+  )
+  semantic.deferNext = true
+  await hybridEvents.extract(
+    await visualTargetFrame({ frameId: 28, capturedAt: 50_000, targetX: 160 }),
+    semanticState,
+    localEventSignal,
+  )
+  await waitUntil(() => semantic.calls.length === 5)
+  const deferredSignal = semantic.calls.at(-1)?.signal
+  hybridEvents.reset()
+  assert.equal(deferredSignal?.aborted, true)
+  assert.equal(semantic.resetCount, 1)
+  semantic.ready = false
+  assert.equal(hybridEvents.status().mode, 'local-temporal')
+  assert.equal(hybridEvents.status().semanticPerception, false)
+
+  const visionProvider = new TestVisionProvider()
+  visionProvider.response =
+    '```json\n{"phase":"playing","score":7,"lives":3,"checkpoint":null,"levelCompleted":false,"newRecord":false,"label":"Score seven","confidence":0.88}\n```'
+  const visionAdapter = new LlmGameSemanticPerceptionAdapter({ provider: () => visionProvider })
+  assert.equal(visionAdapter.status().ready, true)
+  const visionFrame = await visualTargetFrame({ frameId: 30, capturedAt: 60_000, targetX: 160 })
+  assert.deepEqual(
+    await visionAdapter.analyze(visionFrame, semanticState, null, localEventSignal),
+    {
+      phase: 'playing',
+      score: 7,
+      lives: 3,
+      checkpoint: null,
+      levelCompleted: false,
+      newRecord: false,
+      label: 'Score seven',
+      confidence: 0.88,
+    },
+  )
+  assert.equal(visionProvider.calls.length, 1)
+  assert.equal(visionProvider.calls[0]?.options?.timeoutMs, 5_000)
+  assert.equal(visionProvider.calls[0]?.options?.signal, localEventSignal)
+  const visionContent = visionProvider.calls[0]?.messages[1]?.content
+  assert(Array.isArray(visionContent))
+  const imagePart = visionContent.find((part) => part.type === 'image')
+  assert(imagePart?.type === 'image')
+  assert.equal(imagePart.bytes, visionFrame.image.bytes)
+  visionProvider.response =
+    '{"phase":"playing","score":7,"lives":3,"checkpoint":null,"levelCompleted":false,"newRecord":false,"label":null,"confidence":0.88,"extra":"rejected"}'
+  await assert.rejects(visionAdapter.analyze(visionFrame, semanticState, null, localEventSignal))
+  visionProvider.supportsVision = false
+  assert.equal(visionAdapter.status().ready, false)
+  assert.equal(
+    await visionAdapter.analyze(visionFrame, semanticState, null, localEventSignal),
+    null,
+  )
+  assert.equal(visionProvider.calls.length, 2)
 
   const localReflex = new LocalVisualTargetReflexAdapter()
   const localScope: GameSessionScope = {

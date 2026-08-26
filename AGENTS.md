@@ -177,9 +177,15 @@ Architecture and ownership:
   pause the game loop; active user conversation and audio remain authoritative.
   The bundled local extractor may report `stuck` only from a bounded low-frequency
   visual signature plus repeated input evidence; it may not infer score, death,
-  retry, checkpoint, or completion without a semantic perception Adapter. Its typed
-  status is the canonical source for the current event-detection mode, bounded
-  sample rate, readiness, and semantic-perception availability in diagnostics.
+  retry, checkpoint, or completion without a semantic perception Adapter. The
+  bundled semantic lane may inspect only the transient cropped game surface at a
+  bounded low frequency through the ready vision-capable Main-owned LLM, validates
+  a strict present-state schema, and deterministically derives events from
+  confidence-qualified snapshot changes. It runs independently of local extraction
+  and the reflex/input loop; pause, stop, disable, error, and shutdown abort any
+  provider request. Its typed status is the canonical source for the current
+  event-detection mode, bounded sample rate, readiness, and semantic-perception
+  availability in diagnostics.
 - Active Game Session gaze is a typed Behavior presence projection, not Character
   State. Avatar Runtime arbitrates conversation intent, Behavior intent, and the
   session-scoped screen-gaze lease; listening to the user wins temporarily, while

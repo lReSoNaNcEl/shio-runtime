@@ -10,6 +10,7 @@ const MAX_EVENTS_PER_FRAME = 4
 export interface ExtractedGameEvent {
   type: GameSemanticEventType
   importance?: 'ambient' | 'normal' | 'important' | 'blocking'
+  observedAt?: number
   value?: number
   previousValue?: number
   label?: string
