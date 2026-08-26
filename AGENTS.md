@@ -116,6 +116,10 @@ Architecture and ownership:
   autonomous conversation initiative from Experience, Scheduler, Goal wake, World,
   or Behavior first passes the Main-owned Proactive Initiative Gate and Attention;
   none of those owners may grant conversation admission themselves.
+- Mood may only modulate bounded Behavior thresholds, deterministic initiative versus
+  nonverbal selection, semantic embodiment intensity, banter allowance, and cooldowns.
+  Mood never generates text, writes Avatar state, bypasses proactive policy, or grants
+  capability authority.
 - Fast Brain provider/model selection is bounded non-secret policy. It reuses the
   Main-owned LLM credential store and may never persist credentials in Alive storage
   or expose them through World Context, renderer state, or diagnostics. Fast Brain

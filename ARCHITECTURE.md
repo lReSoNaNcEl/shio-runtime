@@ -1546,15 +1546,20 @@ silence decision. Experience never executes Actions or writes a Memory Store.
 
 Mood Runtime owns bounded temporary valence, arousal, confidence, playfulness,
 curiosity, and frustration. Experience appraisals update it, it persists across
-restart, and it decays smoothly toward the stable Character baseline. Mood changes
-expression probability only; stable Personality remains separately defined.
+restart, and it decays smoothly toward the stable Character baseline. Mood is not a
+text generator or an authority source. It may only modulate bounded Behavior policy:
+reaction thresholds, deterministic initiative versus nonverbal selection probability,
+semantic embodiment intensity, banter allowance, and cooldown duration. Stable
+Personality remains separately defined.
 
 Behavior Runtime consumes bounded Mood, Experience, World Context, Attention, Goal,
 habit, and user-activity projections and selects only a semantic intent: none,
 embodiment, conversation candidate, or goal suggestion. Avatar Runtime translates
 embodiment intent into concrete ears, head, gaze, expression, and gesture behavior;
 Behavior never writes VRM state or calls an Adapter. A conversational Behavior intent
-must return to Conversation Admission.
+must return to Conversation Admission. Mood modulation is deterministic for the same
+event and state, bounded around the base Experience appraisal, and cannot invent
+speech content, override quiet/suspend/privacy policy, or expand capability authority.
 
 ### 21F. Autonomy, Scheduler, and Persistent Goals
 

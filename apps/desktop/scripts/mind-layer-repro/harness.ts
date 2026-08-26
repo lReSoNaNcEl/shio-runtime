@@ -15,7 +15,12 @@ import {
   ProactiveInitiativeGate,
 } from '../../src/main/alive'
 import type { LlmRequestOptions } from '../../src/main/llm'
-import type { AttentionCandidate, WorldContextSnapshot } from '../../src/shared/alive'
+import type {
+  AttentionCandidate,
+  ExperienceAppraisal,
+  MoodState,
+  WorldContextSnapshot,
+} from '../../src/shared/alive'
 import type { GameSemanticEvent, GameSemanticEventType } from '../../src/shared/browser-game'
 
 const world: WorldContextSnapshot = {
@@ -160,6 +165,8 @@ async function main(): Promise<void> {
       conversationAllowed: false,
     })
     assert.equal(erroredBehavior.embodimentPresence?.screenGazeActive, false)
+
+    testMoodBehaviorModulation()
 
     let modelCalls = 0
     let failModel = false
@@ -440,6 +447,224 @@ async function waitUntil(condition: () => boolean): Promise<void> {
     await new Promise((resolve) => setImmediate(resolve))
   }
   assert.fail('condition did not become true')
+}
+
+function testMoodBehaviorModulation(): void {
+  const neutralMood = mood()
+  const curiousMood = mood({ curiosity: 1 })
+  const playfulMood = mood({ playfulness: 1, curiosity: 1 })
+  const frustratedMood = mood({ frustration: 0.9, arousal: 0.8 })
+
+  const worldChange = appraisal('curious-world', {
+    salience: 0.32,
+    novelty: 0.65,
+  })
+  assert.equal(
+    new BehaviorRuntime().decide({
+      appraisal: worldChange,
+      mood: neutralMood,
+      settings,
+      world,
+      at: 1_000,
+    }).intent.kind,
+    'none',
+  )
+  const curiousReaction = new BehaviorRuntime().decide({
+    appraisal: worldChange,
+    mood: curiousMood,
+    settings,
+    world,
+    at: 1_000,
+  })
+  assert.equal(curiousReaction.intent.kind, 'embodiment')
+  if (curiousReaction.intent.kind === 'embodiment') {
+    assert.equal(curiousReaction.intent.intent.gestureHint, 'think')
+  }
+
+  const playfulImpulse = appraisal('playful-comment', {
+    salience: 0.55,
+    valence: 0.4,
+    novelty: 0.45,
+    conversationalImpulse: { topic: 'A light moment', priority: 0.6 },
+  })
+  assert.equal(
+    new BehaviorRuntime().decide({
+      appraisal: playfulImpulse,
+      mood: neutralMood,
+      settings,
+      world,
+      at: 2_000,
+    }).intent.kind,
+    'none',
+  )
+  const playfulReaction = new BehaviorRuntime().decide({
+    appraisal: playfulImpulse,
+    mood: playfulMood,
+    settings,
+    world,
+    at: 2_000,
+  })
+  assert.equal(playfulReaction.intent.kind, 'conversation-candidate')
+  if (playfulReaction.intent.kind === 'conversation-candidate') {
+    assert.equal(playfulReaction.intent.priority, 0.63)
+  }
+  assert.equal(
+    new BehaviorRuntime().decide({
+      appraisal: playfulImpulse,
+      mood: playfulMood,
+      settings: { ...settings, globallySuspended: true },
+      world,
+      at: 2_000,
+    }).intent.kind,
+    'none',
+    'Mood modulation bypassed Global Suspend',
+  )
+
+  const celebration = appraisal('frustrated-celebration', {
+    salience: 0.8,
+    valence: 0.8,
+    arousal: 0.6,
+    novelty: 0.5,
+    embodimentHint: { intensity: 'normal', gestureHint: 'celebrate', gazeHint: 'user' },
+  })
+  const softened = new BehaviorRuntime().decide({
+    appraisal: celebration,
+    mood: frustratedMood,
+    settings,
+    world,
+    at: 3_000,
+  })
+  assert.equal(softened.intent.kind, 'embodiment')
+  if (softened.intent.kind === 'embodiment') {
+    assert.equal(softened.intent.intent.intensity, 'subtle')
+  }
+
+  const failure = appraisal('frustrated-failure', {
+    salience: 0.82,
+    valence: -0.7,
+    arousal: 0.65,
+    novelty: 0.6,
+    embodimentHint: { intensity: 'normal', gestureHint: 'disagree', gazeHint: 'screen' },
+  })
+  const sharpened = new BehaviorRuntime().decide({
+    appraisal: failure,
+    mood: frustratedMood,
+    settings,
+    world,
+    at: 4_000,
+  })
+  assert.equal(sharpened.intent.kind, 'embodiment')
+  if (sharpened.intent.kind === 'embodiment') {
+    assert.equal(sharpened.intent.intent.intensity, 'strong')
+  }
+
+  const neutralCooldown = new BehaviorRuntime()
+  const playfulCooldown = new BehaviorRuntime()
+  const first = appraisal('cooldown-first', {
+    valence: 0.3,
+    conversationalImpulse: { topic: 'First', priority: 0.75 },
+  })
+  const second = appraisal('cooldown-second', {
+    valence: 0.3,
+    conversationalImpulse: { topic: 'Second', priority: 0.75 },
+  })
+  assert.equal(
+    neutralCooldown.decide({ appraisal: first, mood: neutralMood, settings, world, at: 10_000 })
+      .intent.kind,
+    'conversation-candidate',
+  )
+  assert.equal(
+    playfulCooldown.decide({ appraisal: first, mood: playfulMood, settings, world, at: 10_000 })
+      .intent.kind,
+    'conversation-candidate',
+  )
+  assert.equal(
+    neutralCooldown.decide({
+      appraisal: second,
+      mood: neutralMood,
+      settings,
+      world,
+      at: 260_000,
+    }).intent.kind,
+    'none',
+  )
+  assert.equal(
+    playfulCooldown.decide({
+      appraisal: second,
+      mood: playfulMood,
+      settings,
+      world,
+      at: 260_000,
+    }).intent.kind,
+    'conversation-candidate',
+  )
+
+  let playfulSpeech = 0
+  let inhibitedSpeech = 0
+  let inhibitedNonverbal = 0
+  for (let index = 0; index < 32; index += 1) {
+    const mixed = appraisal(`speech-probability-${index}`, {
+      salience: 0.8,
+      valence: -0.3,
+      arousal: 0.5,
+      novelty: 0.5,
+      embodimentHint: { intensity: 'subtle', gestureHint: 'disagree', gazeHint: 'screen' },
+      conversationalImpulse: { topic: 'Bounded reaction', priority: 0.74 },
+    })
+    if (
+      new BehaviorRuntime().decide({
+        appraisal: mixed,
+        mood: playfulMood,
+        settings,
+        world,
+        at: index,
+      }).intent.kind === 'conversation-candidate'
+    ) {
+      playfulSpeech += 1
+    }
+    const inhibited = new BehaviorRuntime().decide({
+      appraisal: mixed,
+      mood: mood({ playfulness: 0, curiosity: 0, frustration: 1, arousal: 0.8 }),
+      settings,
+      world,
+      at: index,
+    })
+    if (inhibited.intent.kind === 'conversation-candidate') inhibitedSpeech += 1
+    if (inhibited.intent.kind === 'embodiment') inhibitedNonverbal += 1
+  }
+  assert.equal(playfulSpeech, 32)
+  assert.ok(inhibitedSpeech > 0)
+  assert.ok(inhibitedNonverbal > 0)
+  assert.ok(inhibitedSpeech < playfulSpeech)
+}
+
+function mood(overrides: Partial<MoodState> = {}): MoodState {
+  return {
+    valence: 0,
+    arousal: 0,
+    confidence: 0.55,
+    playfulness: 0.5,
+    curiosity: 0.55,
+    frustration: 0,
+    updatedAt: 0,
+    ...overrides,
+  }
+}
+
+function appraisal(
+  eventId: string,
+  overrides: Partial<ExperienceAppraisal> = {},
+): ExperienceAppraisal {
+  return {
+    eventId,
+    salience: 0.5,
+    valence: 0,
+    arousal: 0,
+    novelty: 0.2,
+    socialRelevance: 0.4,
+    silence: true,
+    ...overrides,
+  }
 }
 
 function candidate(
