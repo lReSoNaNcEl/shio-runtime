@@ -78,7 +78,10 @@ Architecture and ownership:
 - Character requests are composed through the bounded Character Request Composer.
   Normal turns receive compact capability availability, one foreground goal plus an
   unfinished count, and only a few relevant Mood, Relationship, Habit, and World
-  projections. Do not dump complete capability, goal, or Memory stores into every prompt.
+  projections. Context allocation reserves a bounded minimum for every present section
+  before distributing the remainder by priority tier; never restore sequential
+  first-come allocation that can starve lower sections. Do not dump complete capability,
+  goal, or Memory stores into every prompt.
 - Semantic long-term memory is owned by the main-process Memory Runtime. Character
   LLM decides semantically when typed Memory tools are relevant; do not add
   phrase-, keyword-, regex-, or locale-dictionary Memory intent parsers.

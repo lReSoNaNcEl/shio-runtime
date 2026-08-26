@@ -699,10 +699,16 @@ Character Request Composer is a bounded orchestration component, not a Runtime. 
 assembles optional, request-scoped sections for stable Persona, Response Policy,
 current Mood, Relationship Context, foreground Goal, Memory availability,
 Capabilities, Project, World Context, and Tool Results. Every section and the total
-request have explicit character budgets. Normal turns receive a compact capability
-projection, one foreground unfinished goal plus the count of other unfinished goals,
-and at most a few approved relationship or habit motifs. Full stores and inventories
-are obtained only through their typed tools; they are never dumped into every prompt.
+request have explicit character budgets. Allocation is not first-come-first-served:
+before any section expands, every present section receives a bounded minimum reservation.
+The remaining budget is distributed in priority tiers: stable Persona, Response Policy,
+and current Tool Results; then foreground Goal, Project evidence, and World evidence;
+then Memory availability, Relationship continuity, and Mood; then compact Capability
+explanation. Expansion is fair among sections in one tier and never changes the fixed
+total cap. Normal turns receive a compact capability projection, one foreground
+unfinished goal plus the count of other unfinished goals, and at most a few approved
+relationship or habit motifs. Full stores and inventories are obtained only through
+their typed tools; they are never dumped into every prompt.
 
 One Character Tool Loop coordinates all tool-capable Character reasoning inside the same turn. It returns each typed Runtime result with its source tool identifier to the same Character Response Generation context and permits sequential cross-capability flows such as Project then Shell or Project then Browser before the final Shio response. The loop is not a Runtime and grants no authority. It has a turn-owned `AbortSignal`, a wall-clock deadline, a maximum of eight tool rounds, and a maximum of sixteen total calls; reaching a bound produces an honest bounded final response instead of another call. Tool failure is returned as typed data so Character Response Generation can continue without failing the conversation pipeline.
 

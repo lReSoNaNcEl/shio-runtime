@@ -31,6 +31,29 @@ export const CHARACTER_CONTEXT_BUDGET = Object.freeze({
 
 export type CharacterContextSection = keyof typeof CHARACTER_CONTEXT_BUDGET.sections
 
+export const CHARACTER_CONTEXT_ALLOCATION = Object.freeze({
+  tiers: Object.freeze({
+    0: Object.freeze(['persona', 'responsePolicy', 'toolResults'] as const),
+    1: Object.freeze(['goals', 'project', 'world'] as const),
+    2: Object.freeze(['memory', 'relationship', 'mood'] as const),
+    3: Object.freeze(['capabilities'] as const),
+  }),
+  minimumCharacters: Object.freeze({
+    persona: 3_000,
+    responsePolicy: 1_200,
+    toolResults: 1_600,
+    goals: 500,
+    project: 900,
+    world: 450,
+    memory: 500,
+    relationship: 350,
+    mood: 250,
+    capabilities: 350,
+  } satisfies Readonly<Record<CharacterContextSection, number>>),
+})
+
+type CharacterContextTier = keyof typeof CHARACTER_CONTEXT_ALLOCATION.tiers
+
 export interface CharacterRequestContext {
   persona: string
   responsePolicy: string
@@ -50,9 +73,12 @@ export interface CharacterRequestContext {
 }
 
 function bounded(value: string, maximum: number): string {
+  if (maximum <= 0) return ''
   const normalized = value.trim()
   if (normalized.length <= maximum) return normalized
-  return `${normalized.slice(0, Math.max(0, maximum - 15)).trimEnd()}\n[truncated]`
+  const marker = '[truncated]'
+  if (maximum <= marker.length) return marker.slice(0, maximum)
+  return `${normalized.slice(0, maximum - marker.length - 1).trimEnd()}\n${marker}`
 }
 
 function safeStrings(values: readonly string[], limit: number, maximum: number): readonly string[] {
@@ -165,18 +191,81 @@ export class CharacterRequestComposer {
       ['world', worldPrompt(context.world)],
       ['toolResults', context.toolResults],
     ]
-    let remaining = CHARACTER_CONTEXT_BUDGET.totalCharacters
+    const active = candidates.flatMap(([section, value]) => {
+      const normalized = value?.trim()
+      return normalized ? [{ section, value: normalized }] : []
+    })
+    const allocations = allocateCharacters(active)
     const messages: ChatMessage[] = []
-    for (const [section, value] of candidates) {
-      if (!value || remaining <= 0) continue
-      const content = bounded(
-        value,
-        Math.min(remaining, CHARACTER_CONTEXT_BUDGET.sections[section]),
-      )
+    for (const { section, value } of active) {
+      const content = bounded(value, allocations.get(section) ?? 0)
       if (!content) continue
-      remaining -= content.length
       messages.push({ role: 'system', content })
     }
     return Object.freeze(messages)
+  }
+}
+
+function allocateCharacters(
+  active: readonly { section: CharacterContextSection; value: string }[],
+): ReadonlyMap<CharacterContextSection, number> {
+  const allocations = new Map<CharacterContextSection, number>()
+  let remaining = CHARACTER_CONTEXT_BUDGET.totalCharacters
+
+  for (const { section, value } of active) {
+    const reserved = Math.min(
+      value.length,
+      CHARACTER_CONTEXT_BUDGET.sections[section],
+      CHARACTER_CONTEXT_ALLOCATION.minimumCharacters[section],
+      remaining,
+    )
+    allocations.set(section, reserved)
+    remaining -= reserved
+  }
+
+  for (const tier of [0, 1, 2, 3] as const satisfies readonly CharacterContextTier[]) {
+    if (remaining <= 0) break
+    const tierSections = new Set<CharacterContextSection>(CHARACTER_CONTEXT_ALLOCATION.tiers[tier])
+    const expandable = active
+      .filter(({ section }) => tierSections.has(section))
+      .map(({ section, value }) => ({
+        section,
+        capacity:
+          Math.min(value.length, CHARACTER_CONTEXT_BUDGET.sections[section]) -
+          (allocations.get(section) ?? 0),
+      }))
+      .filter(({ capacity }) => capacity > 0)
+    distributeTierRemainder(
+      expandable,
+      allocations,
+      () => remaining,
+      (used) => {
+        remaining -= used
+      },
+    )
+  }
+
+  return allocations
+}
+
+function distributeTierRemainder(
+  sections: Array<{ section: CharacterContextSection; capacity: number }>,
+  allocations: Map<CharacterContextSection, number>,
+  remainingCharacters: () => number,
+  consume: (characters: number) => void,
+): void {
+  let expandable = sections
+  while (expandable.length > 0 && remainingCharacters() > 0) {
+    const fairShare = Math.max(1, Math.floor(remainingCharacters() / expandable.length))
+    const next: typeof expandable = []
+    for (const entry of expandable) {
+      const granted = Math.min(entry.capacity, fairShare, remainingCharacters())
+      allocations.set(entry.section, (allocations.get(entry.section) ?? 0) + granted)
+      entry.capacity -= granted
+      consume(granted)
+      if (entry.capacity > 0) next.push(entry)
+      if (remainingCharacters() <= 0) break
+    }
+    expandable = next
   }
 }
