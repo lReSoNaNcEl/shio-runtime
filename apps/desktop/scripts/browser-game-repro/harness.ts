@@ -262,7 +262,11 @@ class TestRealtime implements BrowserRealtimeControlProvider {
           this.waiter = null
           resolve(frame)
         },
-        reject,
+        reject: (error) => {
+          signal.removeEventListener('abort', abort)
+          this.waiter = null
+          reject(error)
+        },
       }
     })
   }
@@ -282,6 +286,11 @@ class TestRealtime implements BrowserRealtimeControlProvider {
   emit(frame: BrowserRealtimeFrame): void {
     assert(this.waiter, 'frame capture must be pending')
     this.waiter.resolve(frame)
+  }
+
+  failCapture(error: unknown): void {
+    assert(this.waiter, 'frame capture must be pending')
+    this.waiter.reject(error)
   }
 
   capturePending(): boolean {
@@ -635,6 +644,51 @@ async function main(): Promise<void> {
   assert.equal(telemetryController.status().telemetry.captureFps, 10)
   assert.equal(telemetryController.status().telemetry.sessionDurationMs, 300)
   await telemetryController.stop()
+
+  const timeoutRealtime = new TestRealtime()
+  const timeoutController = new GameSessionController({
+    realtime: () => timeoutRealtime,
+    reflex: new AdapterBackedGameReflexPolicy(new TestReflexAdapter()),
+  })
+  const timeoutPreparation = await timeoutController.prepareStart(
+    { goal: 'Recover from transient frame capture gaps' },
+    new AbortController().signal,
+  )
+  await timeoutController.start(
+    timeoutPreparation.preparationId,
+    'action-70000-77777777-7777-4777-8777-777777777777',
+    new AbortController().signal,
+  )
+  await waitUntil(() => timeoutRealtime.capturePending())
+  timeoutRealtime.failCapture(
+    Object.assign(new Error('fixture timeout'), { code: 'FRAME_TIMEOUT' }),
+  )
+  await waitUntil(
+    () =>
+      timeoutController.status().telemetry.droppedFrames === 1 && timeoutRealtime.capturePending(),
+  )
+  assert.equal(timeoutController.status().state, 'running')
+  timeoutRealtime.emit({
+    sessionId: timeoutRealtime.binding?.sessionId ?? '',
+    tabId: timeoutRealtime.binding?.tabId ?? '',
+    frameId: 9,
+    capturedAt: 70_000,
+    width: 640,
+    height: 360,
+    viewport: { width: 1_280, height: 720, pageScaleFactor: 1 },
+    image: { mimeType: 'image/jpeg', bytes },
+  })
+  await waitUntil(() => timeoutController.status().telemetry.capturedFrames === 1)
+  for (let timeout = 0; timeout < 3; timeout += 1) {
+    await waitUntil(() => timeoutRealtime.capturePending())
+    timeoutRealtime.failCapture(
+      Object.assign(new Error('fixture timeout'), { code: 'FRAME_TIMEOUT' }),
+    )
+  }
+  await waitUntil(() => timeoutController.status().state === 'error')
+  assert.equal(timeoutController.status().lastErrorCode, 'GAME_LOOP_FAILED')
+  assert.equal(timeoutController.status().telemetry.droppedFrames, 4)
+  assert(timeoutRealtime.releaseCount >= 1)
 
   let inspectionRaceNow = 40_000
   const inspectionRaceRealtime = new TestRealtime()

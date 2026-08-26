@@ -189,6 +189,15 @@ function contentText(content: unknown): string {
     .join('\n')
 }
 
+function diagnosticError(error: unknown): { name: string; code?: string } {
+  if (!(error instanceof Error)) return { name: typeof error }
+  const code = (error as Error & { code?: unknown }).code
+  return {
+    name: error.name,
+    ...(typeof code === 'string' ? { code } : {}),
+  }
+}
+
 async function startTestServer(): Promise<{ server: Server; baseUrl: string }> {
   const server = createServer((request, response) => {
     response.setHeader('Content-Type', 'text/html; charset=utf-8')
@@ -693,15 +702,29 @@ async function main(): Promise<void> {
       const captureSamples: unknown[] = []
       const captureFrame = realtime.captureFrame.bind(realtime)
       realtime.captureFrame = async (...args) => {
-        const frame = await captureFrame(...args)
-        if (captureSamples.length < 2) {
-          captureSamples.push({
-            width: frame.width,
-            height: frame.height,
-            viewport: frame.viewport,
-          })
+        try {
+          const frame = await captureFrame(...args)
+          if (captureSamples.length < 2) {
+            captureSamples.push({
+              width: frame.width,
+              height: frame.height,
+              viewport: frame.viewport,
+            })
+          }
+          return frame
+        } catch (error) {
+          console.error('Browser game fixture capture failed', diagnosticError(error))
+          throw error
         }
-        return frame
+      }
+      const dispatchInput = realtime.dispatchInput.bind(realtime)
+      realtime.dispatchInput = async (...args) => {
+        try {
+          await dispatchInput(...args)
+        } catch (error) {
+          console.error('Browser game fixture input failed', diagnosticError(error))
+          throw error
+        }
       }
       const gameEnvironment = await realtime.inspectGameEnvironment(new AbortController().signal)
       const gameSurfaces = gameEnvironment.surfaces

@@ -29,6 +29,7 @@ import type {
   BrowserGameEnvironmentInspection,
   BrowserGameSurfaceCandidate,
   BrowserRealtimeControlProvider,
+  BrowserRealtimeFrame,
   BrowserRealtimeInputEvent,
   BrowserRealtimeSession,
   BrowserRealtimeViewport,
@@ -44,6 +45,7 @@ import type { GameReflexPolicy } from './GameReflexPolicy'
 const PREPARATION_TTL_MS = 30_000
 const LATENCY_SAMPLE_LIMIT = 240
 const GAME_ENVIRONMENT_INSPECTION_INTERVAL_MS = 2_000
+const MAX_CONSECUTIVE_FRAME_TIMEOUTS = 3
 const ALLOWED_GAME_KEYS = new Set([
   'ArrowDown',
   'ArrowLeft',
@@ -85,6 +87,7 @@ interface ActiveGameSession {
   inputTimestamps: number[]
   reflexInitialized: boolean
   hasRun: boolean
+  consecutiveFrameTimeouts: number
   environmentInspectionInFlight: boolean
   nextEnvironmentInspectionAt: number
 }
@@ -130,6 +133,10 @@ function recordSample(samples: number[], value: number): void {
   samples.push(Math.max(0, Math.round(value)))
   if (samples.length > LATENCY_SAMPLE_LIMIT)
     samples.splice(0, samples.length - LATENCY_SAMPLE_LIMIT)
+}
+
+function hasErrorCode(error: unknown, code: string): boolean {
+  return typeof error === 'object' && error !== null && 'code' in error && error.code === code
 }
 
 function boundedStatusTelemetry(
@@ -355,6 +362,7 @@ export class GameSessionController {
       inputTimestamps: [],
       reflexInitialized: false,
       hasRun: false,
+      consecutiveFrameTimeouts: 0,
       environmentInspectionInFlight: false,
       nextEnvironmentInspectionAt: now + GAME_ENVIRONMENT_INSPECTION_INTERVAL_MS,
     }
@@ -440,6 +448,7 @@ export class GameSessionController {
       throw new BrowserGameError('GAME_SCOPE_CHANGED')
     }
     active.controller = new AbortController()
+    active.consecutiveFrameTimeouts = 0
     active.environmentInspectionInFlight = false
     this.state = 'starting'
     this.waitingReason = undefined
@@ -588,14 +597,27 @@ export class GameSessionController {
       }
       this.scheduleEnvironmentInspection(active)
       const captureStarted = this.now()
-      const source = await realtime.captureFrame(
-        {
-          sessionId: active.scope.browserSessionId,
-          tabId: active.scope.tabId,
-          maxFrameAgeMs: GAME_FRAME_MAX_AGE_MS,
-        },
-        active.controller.signal,
-      )
+      let source: BrowserRealtimeFrame
+      try {
+        source = await realtime.captureFrame(
+          {
+            sessionId: active.scope.browserSessionId,
+            tabId: active.scope.tabId,
+            maxFrameAgeMs: GAME_FRAME_MAX_AGE_MS,
+          },
+          active.controller.signal,
+        )
+      } catch (error) {
+        if (!hasErrorCode(error, 'FRAME_TIMEOUT')) throw error
+        active.consecutiveFrameTimeouts += 1
+        this.telemetry.droppedFrames += 1
+        this.publishChanged()
+        if (active.consecutiveFrameTimeouts >= MAX_CONSECUTIVE_FRAME_TIMEOUTS) {
+          throw new BrowserGameError('GAME_LOOP_FAILED')
+        }
+        continue
+      }
+      active.consecutiveFrameTimeouts = 0
       recordSample(this.telemetry.captureLatencies, this.now() - captureStarted)
       this.telemetry.capturedFrames += 1
       this.telemetry.captureTimestamps.push(this.now())
