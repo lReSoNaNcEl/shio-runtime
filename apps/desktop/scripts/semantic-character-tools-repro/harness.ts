@@ -379,7 +379,7 @@ async function reasoningModelBrowserContinuation(): Promise<void> {
       assert.equal(typeof structuredPrompt, 'string')
       structuredPrompts.push(structuredPrompt as string)
       if (chatCalls === 1) {
-        return '<shio-tools>{"calls":[{"tool":"browser.observe","arguments":{}}]}</shio-tools>'
+        return '<shio-tools>{"calls":[{"tool":"browser.observe","arguments":{}}]}'
       }
       if (chatCalls === 2) {
         return `<shio-tools>{"calls":[{"tool":"browser.fill","arguments":{"target":{"kind":"semantic-ref","observationId":"${searchObservation.observationId}","ref":"e1"},"value":"что-то"}}]}</shio-tools>`
@@ -641,6 +641,36 @@ function compactToolProtocolContainment(): void {
       ['browser.open', 'browser.observe'],
     )
   }
+  const unclosedTrailingMarker = parseCharacterToolDirective(
+    '[happy]Сейчас выберу игру.\n<shio-tools>{"calls":[{"tool":"web.search","arguments":{"query":"браузерная игра canvas"}}]}',
+  )
+  assert.equal(unclosedTrailingMarker.kind, 'calls')
+  if (unclosedTrailingMarker.kind === 'calls') {
+    assert.equal(unclosedTrailingMarker.recovered, 'unclosed-marker')
+    assert.equal(unclosedTrailingMarker.replyText, '[happy]Сейчас выберу игру.')
+    assert.deepEqual(
+      unclosedTrailingMarker.calls.map((call) => call.tool),
+      ['web.search'],
+    )
+  }
+  assert.equal(
+    parseCharacterToolDirective(
+      '<shio-tools>{"calls":[{"tool":"web.search","arguments":{"query":"браузерная игра"}}',
+    ).kind,
+    'malformed',
+  )
+  assert.equal(
+    parseCharacterToolDirective(
+      '<shio-tools>{"calls":[{"tool":"web.search","arguments":{"query":"браузерная игра"}}]}\n[calm]Готово.',
+    ).kind,
+    'malformed',
+  )
+  assert.equal(
+    parseCharacterToolDirective(
+      '<shio-tools>{"calls":[{"tool":"web.search","arguments":{"query":"a"}}]}<shio-tools>{"calls":[{"tool":"web.search","arguments":{"query":"b"}}]}',
+    ).kind,
+    'malformed',
+  )
   assert.equal(parseCharacterToolDirective('[calm]Обычный ответ.').kind, 'none')
   assert.equal(parseCharacterToolDirective('[browser.unknown]{"value":1}').kind, 'malformed')
   assert.equal(parseCharacterToolDirective('[browser.open]{not-json}').kind, 'malformed')

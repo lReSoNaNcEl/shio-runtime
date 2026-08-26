@@ -84,6 +84,7 @@ interface LoopState {
 interface StructuredCalls {
   replyText: string
   calls: readonly CharacterToolCall[]
+  recovered?: 'unclosed-marker'
   legacyKind?: 'action' | 'memory'
   legacyAction?: ReturnType<typeof parseLegacyCharacterActionDirective> & { kind: 'action' }
 }
@@ -187,7 +188,13 @@ function withToolPrompts(
 
 function parseStructuredCalls(text: string): StructuredCalls | 'malformed' | null {
   const directive = parseCharacterToolDirective(text)
-  if (directive.kind === 'calls') return { replyText: directive.replyText, calls: directive.calls }
+  if (directive.kind === 'calls') {
+    return {
+      replyText: directive.replyText,
+      calls: directive.calls,
+      recovered: directive.recovered,
+    }
+  }
   if (directive.kind === 'malformed') return 'malformed'
 
   // Compatibility containment for already persisted/provider-cached structured protocols.
@@ -867,6 +874,14 @@ export class CharacterToolLoop {
           rounds: state.rounds,
           calls: state.calls,
         }
+      }
+      if (parsed.recovered) {
+        mainLog.warn('[CharacterToolLoop] unclosed_protocol_recovered', {
+          traceId: options.traceId,
+          recovery: parsed.recovered,
+          responseCharacters: response.length,
+          calls: parsed.calls.length,
+        })
       }
       if (parsed.legacyKind) {
         mainLog.warn('[CharacterToolLoop] legacy_directive_used', {

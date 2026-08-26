@@ -53,6 +53,7 @@ const NATIVE_CHARACTER_TOOL_IDS: Readonly<Record<string, CharacterToolId>> = Obj
 )
 
 const CHARACTER_TOOLS_MARKER = /<shio-tools>([\s\S]*?)<\/shio-tools>/iu
+const CHARACTER_TOOLS_UNCLOSED_MARKER = /<shio-tools>([\s\S]*)$/iu
 const CHARACTER_TOOLS_MARKER_OPEN = /<shio-tools\b/iu
 const CHARACTER_TOOLS_MARKER_LIKE = /<\/?shio-tools\b/iu
 const CHARACTER_TOOLS_MARKER_TOKEN = /<\/?shio-tools\b[^>]*>?/giu
@@ -62,7 +63,12 @@ const PROTOCOL_FENCE = /^\s*```(?:json|xml|text)?\s*([\s\S]*?)\s*```\s*$/iu
 
 export type CharacterToolDirective =
   | { kind: 'none'; replyText: string }
-  | { kind: 'calls'; replyText: string; calls: readonly CharacterToolCall[] }
+  | {
+      kind: 'calls'
+      replyText: string
+      calls: readonly CharacterToolCall[]
+      recovered?: 'unclosed-marker'
+    }
   | { kind: 'malformed'; replyText: string }
 
 function containMalformedMarker(text: string): string {
@@ -218,6 +224,22 @@ export function parseCharacterToolDirective(text: string): CharacterToolDirectiv
   const match = candidate.match(CHARACTER_TOOLS_MARKER)
   if (!match) {
     if (CHARACTER_TOOLS_MARKER_LIKE.test(candidate)) {
+      const unclosed = candidate.match(CHARACTER_TOOLS_UNCLOSED_MARKER)
+      const markerCount = candidate.match(/<shio-tools\b/giu)?.length ?? 0
+      const closingMarkerCount = candidate.match(/<\/shio-tools>/giu)?.length ?? 0
+      if (unclosed && markerCount === 1 && closingMarkerCount === 0) {
+        const replyText = candidate.slice(0, unclosed.index).trim()
+        try {
+          return {
+            kind: 'calls',
+            replyText,
+            calls: parseDirectivePayload(unclosed[1]),
+            recovered: 'unclosed-marker',
+          }
+        } catch {
+          return { kind: 'malformed', replyText }
+        }
+      }
       return { kind: 'malformed', replyText: containMalformedMarker(candidate) }
     }
     return parseCompactToolDirective(candidate) ?? { kind: 'none', replyText: text }
