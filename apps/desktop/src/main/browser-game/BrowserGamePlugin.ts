@@ -19,6 +19,7 @@ import type { GameReflexAdapter } from './GameReflexAdapter'
 import type { GameReflexPolicy } from './GameReflexPolicy'
 import { AdapterBackedGameReflexPolicy } from './GameReflexPolicy'
 import { GameSessionController } from './GameSessionController'
+import { LocalVisualGameEventExtractor } from './LocalVisualGameEventExtractor'
 import { LocalVisualTargetReflexAdapter } from './LocalVisualTargetReflexAdapter'
 
 export const BROWSER_GAME_CONTROL_MANIFEST: PluginManifest = {
@@ -58,7 +59,7 @@ export class BrowserGamePlugin implements BundledPlugin {
     this.controller = new GameSessionController({
       realtime: options.realtime,
       reflex,
-      eventExtractor: options.eventExtractor,
+      eventExtractor: options.eventExtractor ?? new LocalVisualGameEventExtractor(),
       onEvent: options.onGameEvent,
     })
     this.reflexStatus = () => reflex.status()

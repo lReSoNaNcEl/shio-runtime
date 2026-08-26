@@ -398,6 +398,7 @@ export class GameSessionController {
     await active.loopTask
     active.loopTask = null
     await active.realtime.releaseInputs()
+    this.eventLane?.reset()
     this.publishGameEvent(active.scope, 'game-paused', 'ambient', { reason: 'user' })
     this.publishChanged()
     return this.status()

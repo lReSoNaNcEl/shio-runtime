@@ -76,7 +76,13 @@ export class GameEventExtractionLane {
     while (this.pending) {
       const job = this.pending
       this.pending = null
-      const events = await this.extractor.extract(job.frame, job.state, job.signal)
+      let events: readonly ExtractedGameEvent[]
+      try {
+        events = await this.extractor.extract(job.frame, job.state, job.signal)
+      } catch (error) {
+        if (job.signal.aborted || job.generation !== this.generation) continue
+        throw error
+      }
       if (job.signal.aborted || job.generation !== this.generation) continue
       this.onEvents(events.slice(0, MAX_EVENTS_PER_FRAME), job.frame)
     }

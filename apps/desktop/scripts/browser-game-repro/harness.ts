@@ -16,6 +16,7 @@ import type {
 } from '../../src/main/browser-game/GameReflexPolicy'
 import { AdapterBackedGameReflexPolicy } from '../../src/main/browser-game/GameReflexPolicy'
 import { GameSessionController } from '../../src/main/browser-game/GameSessionController'
+import { LocalVisualGameEventExtractor } from '../../src/main/browser-game/LocalVisualGameEventExtractor'
 import { LocalVisualTargetReflexAdapter } from '../../src/main/browser-game/LocalVisualTargetReflexAdapter'
 import {
   BrowserGameError,
@@ -558,6 +559,68 @@ async function main(): Promise<void> {
   assert.deepEqual(slowExtractor.frameIds, [10, 12])
   assert.deepEqual(extractedValues, [10, 12])
   assert.deepEqual(extractionErrors, [])
+
+  const localEvents = new LocalVisualGameEventExtractor()
+  const localEventSignal = new AbortController().signal
+  const detected: ExtractedGameEvent[] = []
+  for (let second = 0; second <= 8; second += 1) {
+    detected.push(
+      ...(await localEvents.extract(
+        await visualTargetFrame({ frameId: second + 1, capturedAt: second * 1_000 }),
+        { strategy: 'balanced', elapsedMs: second * 1_000, inputEvents: second * 2 },
+        localEventSignal,
+      )),
+    )
+  }
+  assert.deepEqual(detected, [
+    { type: 'stuck', importance: 'normal', label: 'visual-state-stable' },
+  ])
+  assert.deepEqual(
+    await localEvents.extract(
+      await visualTargetFrame({ frameId: 10, capturedAt: 9_000 }),
+      { strategy: 'balanced', elapsedMs: 9_000, inputEvents: 18 },
+      localEventSignal,
+    ),
+    [],
+    'stable state must emit stuck only once',
+  )
+  assert.deepEqual(
+    await localEvents.extract(
+      await visualTargetFrame({ frameId: 11, capturedAt: 10_000, targetX: 220 }),
+      { strategy: 'balanced', elapsedMs: 10_000, inputEvents: 20 },
+      localEventSignal,
+    ),
+    [],
+    'visual change must open a fresh observation window',
+  )
+  const cancelledExtraction = new AbortController()
+  cancelledExtraction.abort()
+  await assert.rejects(
+    localEvents.extract(
+      await visualTargetFrame({ frameId: 12, capturedAt: 11_000, targetX: 220 }),
+      { strategy: 'balanced', elapsedMs: 11_000, inputEvents: 22 },
+      cancelledExtraction.signal,
+    ),
+    { name: 'AbortError' },
+  )
+  localEvents.reset()
+  assert.deepEqual(
+    await localEvents.extract(
+      await visualTargetFrame({ frameId: 13, capturedAt: 20_000 }),
+      { strategy: 'balanced', elapsedMs: 20_000, inputEvents: 100 },
+      localEventSignal,
+    ),
+    [],
+  )
+  assert.deepEqual(
+    await localEvents.extract(
+      await visualTargetFrame({ frameId: 14, capturedAt: 29_000 }),
+      { strategy: 'balanced', elapsedMs: 29_000, inputEvents: 100 },
+      localEventSignal,
+    ),
+    [],
+    'a static passive scene must not be called stuck without repeated input',
+  )
 
   const localReflex = new LocalVisualTargetReflexAdapter()
   const localScope: GameSessionScope = {

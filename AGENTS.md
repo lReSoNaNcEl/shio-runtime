@@ -175,6 +175,9 @@ Architecture and ownership:
   never enter renderer state, diagnostics, Memory, or conversation. Commentary
   continues through Experience, Behavior, and Conversation Admission and may not
   pause the game loop; active user conversation and audio remain authoritative.
+  The bundled local extractor may report `stuck` only from a bounded low-frequency
+  visual signature plus repeated input evidence; it may not infer score, death,
+  retry, checkpoint, or completion without a semantic perception Adapter.
 - Active Game Session gaze is a typed Behavior presence projection, not Character
   State. Avatar Runtime arbitrates conversation intent, Behavior intent, and the
   session-scoped screen-gaze lease; listening to the user wins temporarily, while
