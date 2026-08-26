@@ -297,7 +297,7 @@ async function testPersistenceAndEnvelope(): Promise<void> {
 
     const reopened = new AliveStore(databasePath)
     assert.equal(reopened.goals()[0]?.id, goal.id)
-    assert.equal(reopened.version(), 4)
+    assert.equal(reopened.version(), 5)
     reopened.close()
 
     const envelope = new AutonomyEnvelope()
@@ -441,12 +441,32 @@ async function testPersistentGoalTool(): Promise<void> {
       status: 'waiting_user',
       lastNote: 'Пользователь выберет подходящий запрос',
       progressPercent: 25,
+      progressBasis: 'user-report',
     })
     assert.equal(userReported.verifiedOutcome?.kind, 'goal.update')
     const revised = runtime.snapshot().goals.find((goal) => goal.id === active.id)
     assert.equal(revised?.progress, 0.25)
     assert.equal(revised?.measurable, true)
     assert.equal(revised?.status, 'waiting_user')
+    const missingBasis = await dispatcher.execute('goal.update', {
+      id: active.id,
+      progressPercent: 30,
+    })
+    assert.match(missingBasis.content, /INVALID_REQUEST/u)
+    const unverifiedBasis = await dispatcher.execute('goal.update', {
+      id: active.id,
+      progressPercent: 30,
+      progressBasis: 'verified-result',
+    })
+    assert.match(unverifiedBasis.content, /GOAL_UPDATE_REQUIRES_VERIFIED_ACTION/u)
+    assert.equal(runtime.snapshot().goals.find((goal) => goal.id === active.id)?.progress, 0.25)
+    const correctedResult = await dispatcher.execute('goal.update', {
+      id: active.id,
+      progressPercent: 10,
+      progressBasis: 'explicit-user-correction',
+    })
+    assert.equal(correctedResult.verifiedOutcome?.kind, 'goal.update')
+    assert.equal(runtime.snapshot().goals.find((goal) => goal.id === active.id)?.progress, 0.1)
     const result = await dispatcher.execute('goal.list', { status: 'waiting_user' })
     const payload = JSON.parse(result.content) as {
       ok: boolean
@@ -519,6 +539,8 @@ async function testPersistentGoalTool(): Promise<void> {
       id: active.id,
       status: 'completed',
       lastNote: 'Проверенный поиск завершён',
+      progressPercent: 100,
+      progressBasis: 'verified-result',
     })
     assert.equal(updated.verifiedOutcome?.kind, 'goal.update')
     assert.match(updated.content, /"status":"completed"/u)
@@ -587,7 +609,7 @@ function testGoalSchemaMigration(): void {
     legacy.close()
     const migrated = new AliveStore(databasePath)
     const goal = migrated.goals()[0]
-    assert.equal(migrated.version(), 4)
+    assert.equal(migrated.version(), 5)
     assert.equal(goal?.owner, 'shared')
     assert.equal(goal?.nextStep, '')
     assert.equal(goal?.lastNote, '')

@@ -1640,6 +1640,16 @@ mutation owner: it validates and persists the change transactionally, audits the
 mutation, and publishes the new Runtime snapshot. Character Tool Dispatcher grants no
 generic Store access.
 
+Every numeric progress revision carries a typed basis. Verified Action progress and
+ordinary user-reported progress are monotonic. An `explicit-user-correction` may move
+backward when the user corrects an earlier number; a backward correction invalidates
+the autonomous execution plan so stale completed-step checkpoints cannot restore the
+superseded progress. Goal Runtime advances a logical planned step only from a durable
+`GoalStepOutcome` that identifies its verified Action results, states whether the step
+expectation is satisfied, and explicitly marks the whole step complete. A successful
+Action result alone may remain a partial checkpoint and never implies completion of
+the logical step.
+
 If the turn has selected an external Action or untrusted Browser observation, a goal
 revision that claims work progress or completion is rejected unless the same turn
 contains a successful Action Runtime result whose execution is complete and whose

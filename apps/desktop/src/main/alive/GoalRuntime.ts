@@ -4,6 +4,7 @@ import type {
   CreateGoalInput,
   GoalExecutionBudget,
   GoalExecutionState,
+  GoalStepOutcome,
   GoalWakeCondition,
   PersistentGoal,
   ReviseGoalInput,
@@ -50,26 +51,52 @@ export class GoalRuntime {
     ) {
       throw new Error('INVALID_GOAL_PROGRESS')
     }
+    if ((input.progressPercent === undefined) !== (input.progressBasis === undefined)) {
+      throw new Error('GOAL_PROGRESS_BASIS_REQUIRED')
+    }
+    const requestedProgress =
+      input.progressPercent === undefined ? undefined : input.progressPercent / 100
+    const correction = input.progressBasis === 'explicit-user-correction'
     const progress =
-      input.progressPercent === undefined
+      requestedProgress === undefined
         ? input.status === 'completed'
           ? 1
           : previous.progress
-        : Math.max(previous.progress, input.progressPercent / 100)
+        : correction
+          ? requestedProgress
+          : Math.max(previous.progress, requestedProgress)
+    if (input.status === 'completed' && progress < 1) {
+      throw new Error('GOAL_PROGRESS_STATUS_CONFLICT')
+    }
+    const correctedBackward = correction && progress < previous.progress
+    const status =
+      progress >= 1
+        ? 'completed'
+        : previous.status === 'completed' && correctedBackward
+          ? (input.status ?? 'active')
+          : input.status
+    const { progressBasis: _progressBasis, progressPercent: _progressPercent, ...update } = input
     const goal = this.store.updateGoal({
-      ...input,
+      ...update,
       progress,
       measurable: input.progressPercent === undefined ? input.measurable : true,
-      status: input.progressPercent !== undefined && progress >= 1 ? 'completed' : input.status,
+      status,
     })
     if (!goal) throw new Error('GOAL_NOT_FOUND')
     this.store.audit(
       'goal',
-      input.progressPercent === undefined ? 'updated' : 'progress_updated',
+      input.progressPercent === undefined
+        ? 'updated'
+        : correctedBackward
+          ? 'progress_corrected'
+          : 'progress_updated',
       'success',
       goal.id,
-      input.progressPercent === undefined ? goal.status : `${Math.round(goal.progress * 100)}%`,
+      input.progressPercent === undefined
+        ? goal.status
+        : `${input.progressBasis}:${Math.round(goal.progress * 100)}%`,
     )
+    if (correctedBackward) this.resetExecution(goal.id, goal.status, Date.now())
     if (goal.status === 'completed') this.finishExecution(goal.id, 'completed', Date.now())
     if (goal.status === 'cancelled' || goal.status === 'paused') {
       this.finishExecution(goal.id, 'paused', Date.now())
@@ -173,6 +200,7 @@ export class GoalRuntime {
     goalId: string
     actionId: string
     verified: boolean
+    outcome?: GoalStepOutcome
     summary?: string
     at?: number
   }): GoalExecutionState {
@@ -187,8 +215,28 @@ export class GoalRuntime {
       if (phase === 'failed') this.store.updateGoal({ id: input.goalId, status: 'paused' })
       return failed
     }
+    const outcome = validateStepOutcome(input.actionId, input.outcome)
     const step = current.currentStep ?? nextStep(current)
     if (!step) return this.finishExecution(input.goalId, 'completed', now)
+    const currentStepOutcome = mergeStepOutcomes(current.currentStepOutcome, outcome)
+    if (!currentStepOutcome.stepCompleted) {
+      const pending = this.save({
+        ...current,
+        phase: 'planning',
+        currentStep: step,
+        currentStepOutcome,
+        lastProgressAt: now,
+        updatedAt: now,
+      })
+      this.store.audit(
+        'goal',
+        'verified_step',
+        currentStepOutcome.expectationSatisfied ? 'expectation-satisfied' : 'partial',
+        input.goalId,
+        input.actionId,
+      )
+      return pending
+    }
     const completedSteps = Object.freeze([...current.completedSteps, step])
     const done = completedSteps.length >= current.plannedSteps.length
     const next = this.save({
@@ -196,10 +244,14 @@ export class GoalRuntime {
       phase: done ? 'completed' : 'planning',
       currentStep: done ? undefined : current.plannedSteps[completedSteps.length],
       completedSteps,
+      currentStepOutcome: undefined,
       lastProgressAt: now,
       updatedAt: now,
     })
-    const progress = completedSteps.length / current.plannedSteps.length
+    const progress = Math.max(
+      this.requireGoal(input.goalId).progress,
+      completedSteps.length / current.plannedSteps.length,
+    )
     this.store.updateGoal({
       id: input.goalId,
       progress,
@@ -274,9 +326,29 @@ export class GoalRuntime {
       ...current,
       phase,
       currentStep: undefined,
+      currentStepOutcome: phase === 'completed' ? undefined : current.currentStepOutcome,
       lastProgressAt: phase === 'completed' ? now : current.lastProgressAt,
       updatedAt: now,
     })
+  }
+
+  private resetExecution(goalId: string, status: PersistentGoal['status'], now: number): void {
+    const current = this.requireExecution(goalId)
+    this.save({
+      ...current,
+      phase: status === 'paused' ? 'paused' : 'idle',
+      currentStep: undefined,
+      plannedSteps: Object.freeze([]),
+      completedSteps: Object.freeze([]),
+      currentStepOutcome: undefined,
+      attempts: 0,
+      toolCalls: 0,
+      failures: 0,
+      startedAt: undefined,
+      lastProgressAt: now,
+      updatedAt: now,
+    })
+    this.store.audit('goal', 'execution_reset', 'success', goalId, 'progress-correction')
   }
 
   private requireGoal(id: string): PersistentGoal {
@@ -296,6 +368,12 @@ export class GoalRuntime {
       ...state,
       plannedSteps: Object.freeze([...state.plannedSteps]),
       completedSteps: Object.freeze([...state.completedSteps]),
+      currentStepOutcome: state.currentStepOutcome
+        ? Object.freeze({
+            ...state.currentStepOutcome,
+            verifiedActionIds: Object.freeze([...state.currentStepOutcome.verifiedActionIds]),
+          })
+        : undefined,
       actionBudget: Object.freeze({ ...state.actionBudget }),
     })
     this.store.saveGoalExecution(frozen)
@@ -339,4 +417,42 @@ function budgetExceeded(state: GoalExecutionState, now: number): boolean {
 
 function nextStep(state: GoalExecutionState): string | undefined {
   return state.plannedSteps[state.completedSteps.length] ?? state.currentStep
+}
+
+function validateStepOutcome(
+  actionId: string,
+  outcome: GoalStepOutcome | undefined,
+): GoalStepOutcome {
+  if (!outcome) throw new Error('GOAL_STEP_OUTCOME_REQUIRED')
+  if (outcome.stepCompleted && !outcome.expectationSatisfied) {
+    throw new Error('GOAL_STEP_OUTCOME_INVALID')
+  }
+  if (
+    outcome.verifiedActionIds.length === 0 ||
+    outcome.verifiedActionIds.length > 64 ||
+    outcome.verifiedActionIds.some(
+      (id) => typeof id !== 'string' || id.trim().length === 0 || id.length > 200,
+    ) ||
+    !outcome.verifiedActionIds.includes(actionId)
+  ) {
+    throw new Error('GOAL_STEP_VERIFIED_ACTIONS_INVALID')
+  }
+  return Object.freeze({
+    verifiedActionIds: Object.freeze([...new Set(outcome.verifiedActionIds)]),
+    expectationSatisfied: outcome.expectationSatisfied,
+    stepCompleted: outcome.stepCompleted,
+  })
+}
+
+function mergeStepOutcomes(
+  previous: GoalStepOutcome | undefined,
+  current: GoalStepOutcome,
+): GoalStepOutcome {
+  return Object.freeze({
+    verifiedActionIds: Object.freeze([
+      ...new Set([...(previous?.verifiedActionIds ?? []), ...current.verifiedActionIds]),
+    ]),
+    expectationSatisfied: current.expectationSatisfied,
+    stepCompleted: current.stepCompleted,
+  })
 }

@@ -20,7 +20,7 @@ import type {
 
 type GoalStoreUpdateInput = UpdateGoalInput & { progress?: number }
 
-const DATABASE_VERSION = 4
+const DATABASE_VERSION = 5
 
 const DEFAULT_GOAL_BUDGET = Object.freeze({
   maxSteps: 12,
@@ -92,6 +92,7 @@ interface GoalExecutionRow {
   current_step: string | null
   planned_steps: string
   completed_steps: string
+  current_step_outcome: string | null
   attempts: number
   tool_calls: number
   failures: number
@@ -259,8 +260,9 @@ export class AliveStore {
   goalExecutions(): readonly GoalExecutionState[] {
     const rows = this.database
       .prepare(
-        `SELECT goal_id, phase, current_step, planned_steps, completed_steps, attempts,
-                tool_calls, failures, started_at, last_progress_at, action_budget, updated_at
+        `SELECT goal_id, phase, current_step, planned_steps, completed_steps,
+                current_step_outcome, attempts, tool_calls, failures, started_at,
+                last_progress_at, action_budget, updated_at
          FROM alive_goal_executions ORDER BY updated_at DESC`,
       )
       .all() as unknown as GoalExecutionRow[]
@@ -271,12 +273,13 @@ export class AliveStore {
     this.database
       .prepare(
         `INSERT INTO alive_goal_executions
-          (goal_id, phase, current_step, planned_steps, completed_steps, attempts, tool_calls,
-           failures, started_at, last_progress_at, action_budget, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          (goal_id, phase, current_step, planned_steps, completed_steps, current_step_outcome,
+           attempts, tool_calls, failures, started_at, last_progress_at, action_budget, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(goal_id) DO UPDATE SET
            phase = excluded.phase, current_step = excluded.current_step,
            planned_steps = excluded.planned_steps, completed_steps = excluded.completed_steps,
+           current_step_outcome = excluded.current_step_outcome,
            attempts = excluded.attempts, tool_calls = excluded.tool_calls,
            failures = excluded.failures, started_at = excluded.started_at,
            last_progress_at = excluded.last_progress_at,
@@ -288,6 +291,7 @@ export class AliveStore {
         state.currentStep ?? null,
         JSON.stringify(state.plannedSteps),
         JSON.stringify(state.completedSteps),
+        state.currentStepOutcome ? JSON.stringify(state.currentStepOutcome) : null,
         state.attempts,
         state.toolCalls,
         state.failures,
@@ -593,8 +597,9 @@ export class AliveStore {
         );
         CREATE TABLE alive_goal_executions (
           goal_id TEXT PRIMARY KEY, phase TEXT NOT NULL, current_step TEXT,
-          planned_steps TEXT NOT NULL, completed_steps TEXT NOT NULL, attempts INTEGER NOT NULL,
-          tool_calls INTEGER NOT NULL, failures INTEGER NOT NULL, started_at INTEGER,
+          planned_steps TEXT NOT NULL, completed_steps TEXT NOT NULL,
+          current_step_outcome TEXT, attempts INTEGER NOT NULL, tool_calls INTEGER NOT NULL,
+          failures INTEGER NOT NULL, started_at INTEGER,
           last_progress_at INTEGER, action_budget TEXT NOT NULL, updated_at INTEGER NOT NULL,
           FOREIGN KEY(goal_id) REFERENCES alive_goals(id) ON DELETE CASCADE
         );
@@ -615,7 +620,7 @@ export class AliveStore {
         CREATE INDEX alive_tasks_due_idx ON alive_tasks(status, next_run_at);
         CREATE INDEX alive_audit_at_idx ON alive_audit(at DESC);
         CREATE INDEX alive_goal_watches_status_idx ON alive_goal_watches(status, created_at);
-        PRAGMA user_version = 4;
+        PRAGMA user_version = 5;
         COMMIT;
       `)
       this.saveSettings(DEFAULT_AUTONOMY_SETTINGS)
@@ -666,6 +671,14 @@ export class AliveStore {
       `)
     }
     if (version <= 3) this.database.exec('PRAGMA user_version = 4;')
+    if (version <= 4) {
+      this.database.exec(`
+        BEGIN IMMEDIATE;
+        ALTER TABLE alive_goal_executions ADD COLUMN current_step_outcome TEXT;
+        PRAGMA user_version = 5;
+        COMMIT;
+      `)
+    }
   }
 }
 
@@ -708,6 +721,13 @@ function toGoalExecution(row: GoalExecutionRow): GoalExecutionState {
     currentStep: row.current_step ?? undefined,
     plannedSteps: Object.freeze(JSON.parse(row.planned_steps) as string[]),
     completedSteps: Object.freeze(JSON.parse(row.completed_steps) as string[]),
+    currentStepOutcome: row.current_step_outcome
+      ? freezeGoalStepOutcome(
+          JSON.parse(row.current_step_outcome) as NonNullable<
+            GoalExecutionState['currentStepOutcome']
+          >,
+        )
+      : undefined,
     attempts: row.attempts,
     toolCalls: row.tool_calls,
     failures: row.failures,
@@ -717,6 +737,16 @@ function toGoalExecution(row: GoalExecutionRow): GoalExecutionState {
       JSON.parse(row.action_budget) as GoalExecutionState['actionBudget'],
     ),
     updatedAt: row.updated_at,
+  })
+}
+
+function freezeGoalStepOutcome(
+  outcome: NonNullable<GoalExecutionState['currentStepOutcome']>,
+): NonNullable<GoalExecutionState['currentStepOutcome']> {
+  return Object.freeze({
+    verifiedActionIds: Object.freeze([...outcome.verifiedActionIds]),
+    expectationSatisfied: outcome.expectationSatisfied,
+    stepCompleted: outcome.stepCompleted,
   })
 }
 

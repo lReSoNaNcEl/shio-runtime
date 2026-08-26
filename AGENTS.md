@@ -127,7 +127,11 @@ Architecture and ownership:
   side effects. Global Suspend and Privacy Mode are authoritative policy stops.
 - Goal Runtime owns durable execution checkpoints and typed Event Watches but never
   calls Shell, Browser, Action Runtime, or concrete Adapters. Only verified Action
-  results advance externally claimed progress. Behavior, Goal, LLM, Browser/Web
+  results advance externally claimed progress. Numeric progress carries a typed basis:
+  verified and ordinary user-reported progress are monotonic, while only an explicit
+  user correction may move backward. A verified Action result does not complete a
+  logical goal step unless its durable GoalStepOutcome explicitly says that the step
+  expectation is satisfied and the step is complete. Behavior, Goal, LLM, Browser/Web
   evidence, and Memory may not expand a user-approved Autonomy Scope.
 - Scheduler v1 supports only typed reminder and check-in tasks with one-shot or
   bounded interval schedules. Do not add renderer-defined cron, arbitrary JavaScript,

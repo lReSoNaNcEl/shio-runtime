@@ -63,12 +63,19 @@ export interface GoalExecutionBudget {
   maxFailures: number
 }
 
+export interface GoalStepOutcome {
+  verifiedActionIds: readonly string[]
+  expectationSatisfied: boolean
+  stepCompleted: boolean
+}
+
 export interface GoalExecutionState {
   goalId: string
   phase: GoalExecutionPhase
   currentStep?: string
   plannedSteps: readonly string[]
   completedSteps: readonly string[]
+  currentStepOutcome?: GoalStepOutcome
   attempts: number
   toolCalls: number
   failures: number
@@ -392,7 +399,13 @@ export type PersistentGoalProvider = () => readonly PersistentGoal[]
 
 export type CreatePersistentGoal = (input: CreateGoalInput) => PersistentGoal
 
-export type ReviseGoalInput = UpdateGoalInput & { progressPercent?: number }
+export type GoalProgressBasis = 'verified-result' | 'user-report' | 'explicit-user-correction'
+
+export type ReviseGoalInput = UpdateGoalInput &
+  (
+    | { progressPercent?: undefined; progressBasis?: undefined }
+    | { progressPercent: number; progressBasis: GoalProgressBasis }
+  )
 
 export type RevisePersistentGoal = (input: ReviseGoalInput) => PersistentGoal
 

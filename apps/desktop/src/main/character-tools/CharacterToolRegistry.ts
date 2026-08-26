@@ -193,7 +193,7 @@ export class CharacterToolRegistry {
           definition(
             'goal.update',
             'goal_update',
-            'Revise one exact durable intention from the current Goal Awareness Context, goal.list, or a same-turn goal.create result. Use this for explicit conversational changes to its meaning, owner, next step, note, or state. Progress and completed claims after external work require a verified same-turn Action result. Numeric progress is only for genuinely measurable intentions. Never copy goals into Semantic Memory.',
+            'Revise one exact durable intention from the current Goal Awareness Context, goal.list, or a same-turn goal.create result. Use this for explicit conversational changes to its meaning, owner, next step, note, or state. Numeric progress requires progressBasis: verified-result after a verified same-turn Action, user-report for monotonic user-reported progress, or explicit-user-correction when the user explicitly corrects an earlier number and it may move backward. Numeric progress is only for genuinely measurable intentions. Never copy goals into Semantic Memory.',
             {
               type: 'object',
               required: ['id'],
@@ -217,6 +217,10 @@ export class CharacterToolRegistry {
                 },
                 measurable: { type: 'boolean' },
                 progressPercent: { type: 'integer', minimum: 0, maximum: 100 },
+                progressBasis: {
+                  type: 'string',
+                  enum: ['verified-result', 'user-report', 'explicit-user-correction'],
+                },
               },
               anyOf: [
                 { required: ['title'] },

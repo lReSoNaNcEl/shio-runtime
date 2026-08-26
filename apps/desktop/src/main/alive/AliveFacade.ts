@@ -14,6 +14,7 @@ import type {
   FastBrainAttentionInput,
   GoalExecutionBudget,
   GoalExecutionState,
+  GoalStepOutcome,
   GoalWakeCondition,
   GoalWakeEvent,
   HabitSuggestion,
@@ -355,6 +356,7 @@ export class AliveFacade {
     goalId: string
     actionId: string
     verified: boolean
+    outcome?: GoalStepOutcome
     summary?: string
   }): GoalExecutionState {
     const state = this.goals.recordVerifiedResult(input)

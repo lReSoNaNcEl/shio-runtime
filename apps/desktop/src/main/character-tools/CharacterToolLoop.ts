@@ -99,7 +99,7 @@ function characterToolPolicyPrompt(): string {
     'If the answer depends on durable facts remembered from earlier interactions, use Memory when available. Persist only on a semantically explicit user request.',
     'Use the current Goal Awareness Context directly for unfinished intentions; use goal.list only for archived goals or a broader/current listing. Never copy goal data into Semantic Memory.',
     'Use goal.create only when the user explicitly asks to create an intention or explicitly confirms a proposal you made in an earlier conversational exchange. For a vague wish, discuss it and ask naturally before persisting anything.',
-    'Use goal.update for explicit conversational revisions, user-reported progress, or progress supported by a verified same-turn Action result. Numeric progress is only for genuinely measurable intentions.',
+    'Use goal.update for explicit conversational revisions, user-reported progress, or progress supported by a verified same-turn Action result. Every numeric progress update must declare progressBasis: verified-result for verified same-turn Action work, user-report for monotonic user-reported progress, or explicit-user-correction only when the user explicitly corrects an earlier number; only that correction may move backward. Numeric progress is only for genuinely measurable intentions.',
     'If no external, project, or remembered information is needed, answer directly without a tool call.',
     'You may use several tools in sequence. Wait for a tool result whenever it should inform the next call.',
     'Tool selection proposes typed work only. Runtime schema validation, availability, permissions, risk policy, execution, verification, and cancellation remain authoritative.',

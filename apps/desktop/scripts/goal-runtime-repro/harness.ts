@@ -26,15 +26,23 @@ function main(): void {
       goalId: goal.id,
       actionId: 'web-1',
       verified: true,
+      outcome: {
+        verifiedActionIds: ['web-1'],
+        expectationSatisfied: true,
+        stepCompleted: false,
+      },
       at: 120,
     })
     assert.equal(state.phase, 'planning')
-    assert.equal(store.goals()[0]?.progress, 0.5)
+    assert.equal(state.currentStep, 'Find current release')
+    assert.deepEqual(state.currentStepOutcome?.verifiedActionIds, ['web-1'])
+    assert.equal(store.goals()[0]?.progress, 0)
     goals.waitForEvent(goal.id, { kind: 'world-event', eventType: 'network-restored' }, 130)
     store.close()
 
     store = new AliveStore(path)
     goals = new GoalRuntime(store)
+    assert.deepEqual(goals.executionSnapshot()[0]?.currentStepOutcome?.verifiedActionIds, ['web-1'])
     goals.restore({ ...store.settings(), mode: 'full', globallySuspended: false }, 140)
     assert.equal(goals.executionSnapshot()[0]?.phase, 'waiting-event')
     const watches = new EventWatchService(store, goals)
@@ -47,9 +55,30 @@ function main(): void {
     goals.awaitVerification(goal.id, 161)
     state = goals.recordVerifiedResult({
       goalId: goal.id,
+      actionId: 'web-2',
+      verified: true,
+      outcome: {
+        verifiedActionIds: ['web-1', 'web-2'],
+        expectationSatisfied: true,
+        stepCompleted: true,
+      },
+      at: 170,
+    })
+    assert.equal(state.phase, 'planning')
+    assert.equal(state.currentStep, 'Inspect installed version')
+    assert.equal(store.goals()[0]?.progress, 0.5)
+    goals.admitStep(goal.id, 180)
+    goals.awaitVerification(goal.id, 181)
+    state = goals.recordVerifiedResult({
+      goalId: goal.id,
       actionId: 'shell-1',
       verified: true,
-      at: 170,
+      outcome: {
+        verifiedActionIds: ['shell-1'],
+        expectationSatisfied: true,
+        stepCompleted: true,
+      },
+      at: 190,
     })
     assert.equal(state.phase, 'completed')
     assert.equal(store.goals()[0]?.progress, 1)
@@ -91,6 +120,58 @@ function main(): void {
       goals.executionSnapshot().find((item) => item.goalId === legacyCompleted.id)?.phase,
       'completed',
       'Shutdown did not normalize a stale completed checkpoint',
+    )
+
+    const corrected = goals.create({ title: 'Correctable progress', measurable: true })
+    goals.revise({
+      id: corrected.id,
+      progressPercent: 80,
+      progressBasis: 'user-report',
+    })
+    goals.revise({
+      id: corrected.id,
+      progressPercent: 40,
+      progressBasis: 'user-report',
+    })
+    assert.equal(
+      goals.snapshot().find((item) => item.id === corrected.id)?.progress,
+      0.8,
+      'Ordinary reported progress moved backward',
+    )
+    goals.plan(corrected.id, ['One', 'Two', 'Three', 'Four'], { now: 225 })
+    goals.admitStep(corrected.id, 226)
+    goals.awaitVerification(corrected.id, 227)
+    goals.recordVerifiedResult({
+      goalId: corrected.id,
+      actionId: 'verified-monotonic-1',
+      verified: true,
+      outcome: {
+        verifiedActionIds: ['verified-monotonic-1'],
+        expectationSatisfied: true,
+        stepCompleted: true,
+      },
+      at: 228,
+    })
+    assert.equal(
+      goals.snapshot().find((item) => item.id === corrected.id)?.progress,
+      0.8,
+      'Verified plan progress moved a higher persisted value backward',
+    )
+    goals.plan(corrected.id, ['Recheck the actual state'], { now: 230 })
+    goals.revise({
+      id: corrected.id,
+      progressPercent: 40,
+      progressBasis: 'explicit-user-correction',
+    })
+    assert.equal(goals.snapshot().find((item) => item.id === corrected.id)?.progress, 0.4)
+    assert.deepEqual(
+      goals.executionSnapshot().find((item) => item.goalId === corrected.id)?.plannedSteps,
+      [],
+      'Backward correction retained stale execution checkpoints',
+    )
+    assert.throws(
+      () => goals.revise({ id: corrected.id, progressPercent: 50 } as never),
+      /GOAL_PROGRESS_BASIS_REQUIRED/u,
     )
 
     const scopes = new AutonomyScopeRuntime(store)

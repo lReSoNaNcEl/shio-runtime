@@ -9,6 +9,7 @@ import type {
   CreatePersistentGoal,
   PersistentGoal,
   PersistentGoalProvider,
+  ReviseGoalInput,
   RevisePersistentGoal,
 } from '../../shared/alive'
 import type {
@@ -93,8 +94,19 @@ const GOAL_UPDATE_INPUT_SCHEMA = z
       .optional(),
     measurable: z.boolean().optional(),
     progressPercent: z.number().int().min(0).max(100).optional(),
+    progressBasis: z
+      .enum(['verified-result', 'user-report', 'explicit-user-correction'])
+      .optional(),
   })
   .strict()
+  .superRefine((input, context) => {
+    if ((input.progressPercent === undefined) !== (input.progressBasis === undefined)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'progressPercent and progressBasis must be supplied together',
+      })
+    }
+  })
   .refine((input) => Object.keys(input).some((key) => key !== 'id'), {
     message: 'At least one goal field must be revised',
   })
@@ -564,7 +576,7 @@ export class CharacterToolDispatcher {
   }
 
   private executeGoalUpdate(input: Record<string, unknown>): CharacterToolDispatchResult {
-    const request = GOAL_UPDATE_INPUT_SCHEMA.parse(input)
+    const request = GOAL_UPDATE_INPUT_SCHEMA.parse(input) as ReviseGoalInput
     if (!this.options.revisePersistentGoal) {
       return { content: failureContent('GOAL_UPDATES_UNAVAILABLE') }
     }
@@ -573,6 +585,9 @@ export class CharacterToolDispatcher {
     }
     const claimsCompletedWork =
       request.progressPercent !== undefined || request.status === 'completed'
+    if (request.progressBasis === 'verified-result' && !this.lastActionVerified) {
+      return { content: failureContent('GOAL_UPDATE_REQUIRES_VERIFIED_ACTION') }
+    }
     if (
       claimsCompletedWork &&
       (this.projectContext || this.browserSelected || this.actionSelected) &&
