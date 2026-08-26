@@ -8,7 +8,7 @@ import type { AvatarMode } from '../../AvatarStateMachine'
 export class AvatarGazeArbiter {
   private conversationHint: EmbodimentGazeHint | undefined
   private behaviorHint: EmbodimentGazeHint | undefined
-  private gameSessionId: string | null = null
+  private browserSessionId: string | null = null
 
   setConversationIntent(intent: CharacterEmbodimentIntent | undefined): void {
     this.conversationHint = intent?.gazeHint
@@ -18,12 +18,12 @@ export class AvatarGazeArbiter {
     this.behaviorHint = intent?.gazeHint
   }
 
-  setGameScreenGaze(sessionId: string, active: boolean): void {
+  setBrowserScreenGaze(sessionId: string, active: boolean): void {
     if (active) {
-      this.gameSessionId = sessionId
+      this.browserSessionId = sessionId
       return
     }
-    if (this.gameSessionId === sessionId) this.gameSessionId = null
+    if (this.browserSessionId === sessionId) this.browserSessionId = null
   }
 
   resolve(mode: AvatarMode): EmbodimentGazeHint | undefined {
@@ -31,11 +31,11 @@ export class AvatarGazeArbiter {
     return (
       this.conversationHint ??
       this.behaviorHint ??
-      (this.gameSessionId ? ('screen' as const) : undefined)
+      (this.browserSessionId ? ('screen' as const) : undefined)
     )
   }
 
-  gameScreenGazeActive(): boolean {
-    return this.gameSessionId !== null
+  browserScreenGazeActive(): boolean {
+    return this.browserSessionId !== null
   }
 }

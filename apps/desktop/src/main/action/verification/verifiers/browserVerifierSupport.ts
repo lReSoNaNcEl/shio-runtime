@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 
-import type { BrowserObservation } from '../../../../shared/desktop-control'
+import type { BrowserObservation } from '../../../../shared/browser-control'
 
 export interface BrowserObservationProvider {
   observe(signal: AbortSignal): Promise<BrowserObservation>

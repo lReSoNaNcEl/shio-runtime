@@ -74,6 +74,10 @@ export class MainConversationTurnService {
     private readonly llmSettings: () => AppSettings['llm'],
   ) {}
 
+  isIdle(): boolean {
+    return this.activeTurnId === null
+  }
+
   async createReply(
     rendererId: number,
     request: CharacterReplyRequest,

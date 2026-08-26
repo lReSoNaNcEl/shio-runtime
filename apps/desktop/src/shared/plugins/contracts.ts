@@ -3,13 +3,13 @@ import type { TranslationKey } from '../localization'
 export const PROJECT_AWARENESS_PLUGIN_ID = 'project-awareness' as const
 export const DESKTOP_CONTROL_PLUGIN_ID = 'desktop-control' as const
 export const WEB_SEARCH_PLUGIN_ID = 'web-search' as const
-export const BROWSER_GAME_CONTROL_PLUGIN_ID = 'browser-game-control' as const
+export const BROWSER_CONTROL_PLUGIN_ID = 'browser-control' as const
 
 export const PLUGIN_IDS = [
   PROJECT_AWARENESS_PLUGIN_ID,
   DESKTOP_CONTROL_PLUGIN_ID,
   WEB_SEARCH_PLUGIN_ID,
-  BROWSER_GAME_CONTROL_PLUGIN_ID,
+  BROWSER_CONTROL_PLUGIN_ID,
 ] as const
 
 export type PluginId = (typeof PLUGIN_IDS)[number]
@@ -30,8 +30,7 @@ export const PLUGIN_CAPABILITY_KINDS = [
   'automation-engine',
   'computer-control',
   'web-search',
-  'browser-realtime-control',
-  'browser-game-control',
+  'browser-computer-use',
 ] as const
 
 export type PluginCapabilityKind = (typeof PLUGIN_CAPABILITY_KINDS)[number]

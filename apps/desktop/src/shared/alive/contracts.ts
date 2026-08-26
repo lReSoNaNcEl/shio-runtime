@@ -1,4 +1,4 @@
-import type { GameSemanticEvent } from '../browser-game'
+import type { ComputerUseNotableObservation } from '../browser-computer-use'
 import type { CharacterEmbodimentIntent } from '../character-response'
 import type { EmotionKey } from '../emotion'
 import type { LlmProviderId } from '../llm'
@@ -281,7 +281,22 @@ export type ExperienceEvent =
   | { type: 'scheduled-event-due'; at: number; taskId: string; eventId?: string }
   | { type: 'runtime-recovered'; at: number; runtime: string; eventId?: string }
   | { type: 'user-returned'; at: number; idleMs: number; eventId?: string }
-  | { type: 'game-event'; at: number; gameEvent: GameSemanticEvent; eventId?: string }
+  | {
+      type: 'browser-computer-use-event'
+      at: number
+      sessionId: string
+      phase:
+        | 'started'
+        | 'progress'
+        | 'notable-observation'
+        | 'blocked'
+        | 'completed'
+        | 'failed'
+        | 'stopped'
+      observation?: ComputerUseNotableObservation
+      errorCode?: string
+      eventId?: string
+    }
   | {
       type: 'meaningful-world-context-changed'
       at: number
@@ -291,7 +306,7 @@ export type ExperienceEvent =
 
 export interface ExperienceAppraisal {
   eventId: string
-  origin?: 'browser-game'
+  origin?: 'browser-computer-use'
   embodimentPresence?: BehaviorEmbodimentPresence
   salience: number
   valence: number
@@ -315,6 +330,13 @@ export interface MoodState {
   updatedAt: number
 }
 
+export interface AmbientPresenceIntent {
+  attention: 'user' | 'screen' | 'foreground-change' | 'relaxed'
+  energy: 'low' | 'normal' | 'engaged'
+  curiosity: number
+  embodiment?: CharacterEmbodimentIntent
+}
+
 export type BehaviorIntent =
   | { kind: 'none' }
   | { kind: 'embodiment'; intent: CharacterEmbodimentIntent }
@@ -322,7 +344,7 @@ export type BehaviorIntent =
   | { kind: 'goal-suggestion'; objective: string; reason: string }
 
 export interface BehaviorEmbodimentPresence {
-  source: 'browser-game'
+  source: 'browser-computer-use'
   sessionId: string
   screenGazeActive: boolean
 }

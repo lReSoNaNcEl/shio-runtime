@@ -115,12 +115,43 @@ async function main(): Promise<void> {
           maskedKey: 'must-not-serialize',
         },
       },
-      roles: { backlogSelector: {} },
+      roles: {
+        backlogSelector: {},
+        computerUseVision: {
+          providerId: 'openrouter',
+          model: 'google/gemini-2.5-flash',
+          timeoutMs: 120_000,
+          maxSteps: 999,
+        },
+      },
     })
     const serialized = JSON.stringify(persisted)
     for (const forbidden of ['apiKey', 'token', 'secret', 'credentialValue', 'maskedKey']) {
       assert.equal(serialized.includes(forbidden), false)
     }
+    assert.deepEqual(persisted.roles.computerUseVision, {
+      providerId: 'openrouter',
+      model: 'google/gemini-2.5-flash',
+      timeoutMs: 60_000,
+      maxSteps: 300,
+    })
+
+    const automaticVisual = normalizeLlmConfig({
+      roles: {
+        computerUseVision: {
+          providerId: '',
+          model: 'must-not-select-a-model-in-auto-mode',
+          timeoutMs: 100,
+          maxSteps: 0,
+        },
+      },
+    })
+    assert.deepEqual(automaticVisual.roles.computerUseVision, {
+      providerId: '',
+      model: '',
+      timeoutMs: 5_000,
+      maxSteps: 1,
+    })
 
     const publicConfig = toPublicLlmConfig(persisted, (provider) => restarted.getStatus(provider))
     assert.equal(JSON.stringify(publicConfig).includes('legacy-groq-key'), false)

@@ -176,8 +176,12 @@ export async function runChatCompletionDetailed(
       throw error
     }
     if (axios.isAxiosError(error) && error.response) {
-      const message = normalizeHttpErrorMessage(config.displayName, error.response.status)
-      const failure = classifyHttpFailure(error.response.status)
+      const message = normalizeHttpErrorMessage(
+        config.displayName,
+        error.response.status,
+        error.response.data,
+      )
+      const failure = classifyHttpFailure(error.response.status, error.response.data)
       terminalCode = failure.code
       llmDebug({
         provider: config.provider,

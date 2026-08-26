@@ -71,7 +71,31 @@ export class LlmTurnCancelledError extends Error {
   }
 }
 
-export function normalizeHttpErrorMessage(displayName: string, status: number): string {
+function providerErrorCode(responseData: unknown): string | undefined {
+  if (!responseData || typeof responseData !== 'object' || Array.isArray(responseData)) {
+    return undefined
+  }
+  const root = responseData as Record<string, unknown>
+  const error = root.error
+  if (!error || typeof error !== 'object' || Array.isArray(error)) return undefined
+  const code = (error as Record<string, unknown>).code
+  return typeof code === 'string' ? code.trim().toLowerCase() : undefined
+}
+
+function isRateLimitFailure(status: number, responseData?: unknown): boolean {
+  return (
+    status === 429 || (status === 413 && providerErrorCode(responseData) === 'rate_limit_exceeded')
+  )
+}
+
+export function normalizeHttpErrorMessage(
+  displayName: string,
+  status: number,
+  responseData?: unknown,
+): string {
+  if (isRateLimitFailure(status, responseData)) {
+    return `${displayName}: модель временно перегружена, попробуйте позже.`
+  }
   switch (status) {
     case 400:
       return `${displayName}: некорректный запрос к модели.`
@@ -99,15 +123,18 @@ export function networkErrorMessage(displayName: string): string {
   return `${displayName}: не удалось соединиться с провайдером (сетевая ошибка).`
 }
 
-export function classifyHttpFailure(status: number): {
+export function classifyHttpFailure(
+  status: number,
+  responseData?: unknown,
+): {
   code: LlmTurnErrorCode
   recoverable: boolean
 } {
+  if (isRateLimitFailure(status, responseData)) return { code: 'RATE_LIMITED', recoverable: true }
   if (status === 408 || status === 504) return { code: 'TIMEOUT', recoverable: true }
   if (status === 401) return { code: 'AUTH_ERROR', recoverable: false }
   if (status === 403) return { code: 'ACCESS_DENIED', recoverable: false }
   if (status === 413) return { code: 'REQUEST_TOO_LARGE', recoverable: false }
-  if (status === 429) return { code: 'RATE_LIMITED', recoverable: true }
   if (status >= 500) return { code: 'PROVIDER_REJECTED', recoverable: true }
   return { code: 'PROVIDER_REJECTED', recoverable: false }
 }

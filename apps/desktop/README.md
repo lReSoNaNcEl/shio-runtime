@@ -29,17 +29,18 @@ in `.env` (copy from `.env.example`).
 - **Desktop Control** delegates a validated workflow only after Action Runtime has
   authorized its bounded scope. Its DeepSeek Harness backend is replaceable and is
   not a permission owner.
-- **Browser Control** runs through the official DSH MCP client and the pinned native
-  `agent-browser` package. Browser state is isolated below Shio `userData`; the
-  user's regular Chrome profile is not reused.
+- **Browser Control** is the sole owner of a headed Google Chrome persistent context
+  launched through pinned `playwright-core`. Browser state is isolated below Shio
+  `userData`; the user's regular Chrome profile is not reused.
 - **Computer Control** runs bounded foreground PowerShell commands through the
-  official DSH PowerShell executor and tool. Browser and shell tools are mounted in
-  separate task-scoped DSH processes.
+  official DSH PowerShell executor and tool. DSH has no browser, page, screenshot,
+  mouse, or keyboard ownership.
 - **Full Computer Access** changes Permission Guard from per-workflow confirmation
   to automatic authorization for eligible actions. Validation, lifecycle logging,
   cancellation, and Adapter boundaries remain active.
-- **Emergency Stop** cancels confirmations and work, closes the DSH/browser session,
-  and allows the next action to start cleanly.
+- **Emergency Stop** cancels confirmations and work, releases held browser input,
+  closes the isolated browser context and DSH shell process, and allows the next
+  action to start cleanly.
 - **Diagnostics** shows bounded Runtime/action status and technical resource
   availability without credentials or complete browser snapshots.
 
@@ -47,8 +48,8 @@ in `.env` (copy from `.env.example`).
 
 Development requires the locked Desktop dependencies installed with `npm install`
 in this directory (or `npm run desktop:install` at the repository root). The Windows
-package bundles the pinned DSH family, MCP client, and native `agent-browser`
-executable. Both environments still require:
+package bundles the pinned DSH shell family and `playwright-core`. Both environments
+still require:
 
 - an active OpenAI-compatible provider, model, and API key in Shio Settings;
 - a supported local Google Chrome executable for Browser Control;

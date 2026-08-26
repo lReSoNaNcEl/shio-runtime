@@ -1,6 +1,8 @@
 import { createHash } from 'node:crypto'
 
 import type {
+  ActionAuthorization,
+  ActionOutcome,
   ActionReplyGrounding,
   DesktopWorkflowActionResult,
   DesktopWorkflowRequest,
@@ -15,10 +17,12 @@ import type {
   WorldContextSnapshot,
 } from '../shared/alive'
 import type {
-  BrowserGameActionResult,
-  BrowserGameControlAction,
-  BrowserGameControlProviderResolver,
-} from '../shared/browser-game'
+  BrowserComputerUseControlAction,
+  BrowserComputerUseProvider,
+  BrowserComputerUseSession,
+  BrowserComputerUseStartRequest,
+} from '../shared/browser-computer-use'
+import type { BrowserContextProviderResolver } from '../shared/browser-control'
 import type { ShioCapabilityProvider, ShioCapabilitySnapshot } from '../shared/capabilities'
 import {
   type CharacterEmbodimentIntent,
@@ -26,9 +30,12 @@ import {
 } from '../shared/character-response'
 import type { AppSettings } from '../shared/config'
 import type { CharacterReplyOrigin, ReplyGrounding } from '../shared/conversation'
-import type { BrowserContextProviderResolver } from '../shared/desktop-control'
+import type {
+  ConversationThread,
+  ConversationThreadRuntimePort,
+} from '../shared/conversation-threads'
 import { normalizeEmotionTag, parseEmotionalReply, parseLeadingEmotionTag } from '../shared/emotion'
-import { normalizeUiLocale } from '../shared/localization'
+import { normalizeUiLocale, type UiLocale } from '../shared/localization'
 import type { HabitRecord, RelationshipContext } from '../shared/memory'
 import type { ProjectContextProviderResolver } from '../shared/plugins'
 import type {
@@ -42,6 +49,7 @@ import type {
   SpeechTextNormalizationTelemetry,
 } from '../shared/speech'
 import type { WebSearchProviderResolver } from '../shared/web-search'
+import type { BrowserWorkflowCoordinator } from './browser-control/workflow'
 import { containsCharacterProtocol } from './character/compatibility/LegacyDirectiveContainment'
 import { presentActionResult } from './character/presentation/ActionResultPresenter'
 import {
@@ -63,7 +71,6 @@ import {
   type CharacterToolLoopStreamEvent,
   CharacterToolRegistry,
 } from './character-tools'
-import type { BrowserAgentCoordinator } from './desktop-control/browser-agent'
 import {
   type ChatMessage,
   type LLMProvider,
@@ -130,6 +137,29 @@ function messageSize(messages: readonly ChatMessage[]): {
 function errorCode(error: unknown): string {
   if (error instanceof LlmResponseError || error instanceof LlmTurnCancelledError) return error.code
   return 'UNKNOWN'
+}
+
+function presentRecoverableProviderFailure(error: LlmResponseError, locale: UiLocale): string {
+  if (locale === 'ru') {
+    if (error.code === 'PROVIDER_REJECTED')
+      return '[calm]Провайдер модели отклонил продолжение ответа. Попробуй ещё раз или выбери другую модель.'
+    if (error.code === 'RATE_LIMITED')
+      return '[calm]Я тебя слышу. Провайдер модели сейчас ограничил запросы — попробуй ещё раз через минуту.'
+    if (error.code === 'TIMEOUT')
+      return '[calm]Я тебя слышу, но ответ модели не успел прийти вовремя. Попробуй ещё раз.'
+    if (error.code === 'NETWORK_ERROR')
+      return '[calm]Я тебя слышу, но сейчас не могу связаться с моделью. Попробуй ещё раз чуть позже.'
+    return '[calm]Я тебя слышу, но провайдер модели временно не отвечает. Попробуй ещё раз чуть позже.'
+  }
+  if (error.code === 'PROVIDER_REJECTED')
+    return '[calm]The model provider rejected the continuation. Try again or select another model.'
+  if (error.code === 'RATE_LIMITED')
+    return '[calm]I hear you. The model provider is rate-limiting requests right now—try again in a minute.'
+  if (error.code === 'TIMEOUT')
+    return '[calm]I hear you, but the model reply did not arrive in time. Please try again.'
+  if (error.code === 'NETWORK_ERROR')
+    return '[calm]I hear you, but I cannot reach the model right now. Please try again shortly.'
+  return '[calm]I hear you, but the model provider is temporarily unavailable. Please try again shortly.'
 }
 
 function safeEvidenceSource(
@@ -237,18 +267,24 @@ export class Orchestrator {
       authorizationScopeId?: string,
     ) => Promise<DesktopWorkflowActionResult>,
     private browserContext?: BrowserContextProviderResolver,
-    private browserAgent?: BrowserAgentCoordinator,
+    private browserWorkflow?: BrowserWorkflowCoordinator,
     private semanticMemory?: MemoryToolBroker,
     private persistentGoals?: PersistentGoalProvider,
     private createPersistentGoal?: CreatePersistentGoal,
     private revisePersistentGoal?: RevisePersistentGoal,
     private livingContext?: () => CharacterLivingContext,
     private webSearch?: WebSearchProviderResolver,
-    private browserGame?: BrowserGameControlProviderResolver,
-    private executeBrowserGameAction?: (
-      action: BrowserGameControlAction,
+    private browserComputerUse?: () => BrowserComputerUseProvider | undefined,
+    private executeBrowserComputerUseAction?: (
+      action: BrowserComputerUseStartRequest | BrowserComputerUseControlAction,
       signal: AbortSignal,
-    ) => Promise<BrowserGameActionResult>,
+    ) => Promise<{
+      outcome: ActionOutcome
+      authorization?: ActionAuthorization
+      session?: BrowserComputerUseSession
+      errorCode?: string
+    }>,
+    private conversationThreads?: ConversationThreadRuntimePort,
   ) {}
 
   async createReply(
@@ -310,6 +346,17 @@ export class Orchestrator {
         })
       }
     }
+    let threadAwareness: readonly ConversationThread[] = []
+    if (!autonomous) {
+      try {
+        threadAwareness = this.conversationThreads?.awareness() ?? []
+      } catch (error) {
+        mainLog.warn('[ConversationThreads] awareness unavailable; continuing without it', {
+          traceId,
+          error: error instanceof Error ? error.message : String(error),
+        })
+      }
+    }
     let livingContext: CharacterLivingContext = {}
     try {
       livingContext = this.livingContext?.() ?? {}
@@ -343,6 +390,7 @@ export class Orchestrator {
         experience: livingContext.experience,
         goals: goalAwareness,
         foregroundGoalId: livingContext.world?.activeGoal?.id,
+        thread: threadAwareness[0],
         memory: semanticMemoryPrompt,
         capabilities: capabilityContext,
         capabilityContextUnavailable,
@@ -388,12 +436,13 @@ export class Orchestrator {
           goalsAvailable: !autonomous && Boolean(this.persistentGoals),
           goalCreatesAvailable: !autonomous && Boolean(this.createPersistentGoal),
           goalUpdatesAvailable: !autonomous && Boolean(this.revisePersistentGoal),
+          conversationThreadsAvailable: !autonomous && Boolean(this.conversationThreads),
           capabilityContext,
           browserObservation: dispatcher?.selectedBrowserObservation() ?? null,
           memory: autonomous ? undefined : this.semanticMemory,
           actionsAvailable: !autonomous && Boolean(this.executeDesktopWorkflow),
-          browserGameAvailable:
-            !autonomous && Boolean(this.browserGame && this.executeBrowserGameAction),
+          browserComputerUseAvailable:
+            !autonomous && Boolean(this.browserComputerUse && this.executeBrowserComputerUseAction),
         })
       const toolResult = await new CharacterToolLoop().run({
         llm: this.llm,
@@ -414,13 +463,17 @@ export class Orchestrator {
             semanticMemory: autonomous ? undefined : this.semanticMemory,
             executeDesktopWorkflow: autonomous ? undefined : this.executeDesktopWorkflow,
             browserContext: autonomous ? undefined : this.browserContext,
-            browserAgent: autonomous ? undefined : this.browserAgent,
-            browserGame: autonomous ? undefined : this.browserGame,
-            executeBrowserGameAction: autonomous ? undefined : this.executeBrowserGameAction,
+            browserWorkflow: autonomous ? undefined : this.browserWorkflow,
+            browserComputerUse: autonomous ? undefined : this.browserComputerUse,
+            executeBrowserComputerUseAction: autonomous
+              ? undefined
+              : this.executeBrowserComputerUseAction,
             persistentGoals: autonomous ? undefined : this.persistentGoals,
             goalAwareness,
             createPersistentGoal: autonomous ? undefined : this.createPersistentGoal,
             revisePersistentGoal: autonomous ? undefined : this.revisePersistentGoal,
+            conversationThreads: autonomous ? undefined : this.conversationThreads,
+            threadAwareness,
           })
           return dispatcher
         },
@@ -440,6 +493,9 @@ export class Orchestrator {
               (locale === 'ru'
                 ? '[calm]Не смогла безопасно завершить работу с инструментами в этом запросе.'
                 : '[calm]I could not safely finish the tool work for this request.')),
+        providerFailureReply: autonomous
+          ? undefined
+          : (error) => presentRecoverableProviderFailure(error, locale),
         limitReply:
           locale === 'ru'
             ? '[calm]Не смогла закончить задачу в пределах текущего лимита действий.'

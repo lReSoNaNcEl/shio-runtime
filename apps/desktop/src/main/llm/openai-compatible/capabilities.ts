@@ -30,7 +30,14 @@ const NON_REASONING_BUDGET: Record<LlmProviderId, number> = {
   mistral: 1024,
 }
 
-const REASONING_BUDGET = 4096
+const REASONING_BUDGET: Record<LlmProviderId, number> = {
+  // Groq includes the reserved completion budget in its TPM admission check.
+  // Keep enough headroom for Shio's bounded character context on lower TPM tiers.
+  groq: 2048,
+  cloudflare: 4096,
+  openrouter: 4096,
+  mistral: 4096,
+}
 
 const VISION_MODEL_PATTERNS: readonly RegExp[] = [
   /(?:^|[-_/:])vision(?:$|[-_/:])/i,
@@ -71,7 +78,9 @@ export function resolveBaseCapabilities(
     supportsSystemPrompt: true,
     supportsToolCalling: false,
     supportsVision: isVisionModel(model),
-    recommendedMaxTokens: reasoning ? REASONING_BUDGET : NON_REASONING_BUDGET[providerId],
+    recommendedMaxTokens: reasoning
+      ? REASONING_BUDGET[providerId]
+      : NON_REASONING_BUDGET[providerId],
   }
 }
 
@@ -95,6 +104,8 @@ export function applyCatalogCapabilityHints(
     supportsStreaming: hints.supportsStreaming ?? capabilities.supportsStreaming,
     supportsToolCalling: hints.supportsToolCalling ?? capabilities.supportsToolCalling,
     supportsVision: hints.supportsVision ?? capabilities.supportsVision,
-    recommendedMaxTokens: supportsReasoning ? REASONING_BUDGET : NON_REASONING_BUDGET[providerId],
+    recommendedMaxTokens: supportsReasoning
+      ? REASONING_BUDGET[providerId]
+      : NON_REASONING_BUDGET[providerId],
   }
 }

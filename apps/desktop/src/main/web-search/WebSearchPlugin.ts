@@ -1,4 +1,4 @@
-import type { PluginHealth, PluginManifest } from '../../shared/plugins'
+import type { PluginCapabilityProviders, PluginHealth, PluginManifest } from '../../shared/plugins'
 import { WEB_SEARCH_PLUGIN_ID } from '../../shared/plugins'
 import type { WebSearchProvider } from '../../shared/web-search'
 import type { BundledPlugin, PluginInitializationContext } from '../plugins/PluginRuntime'
@@ -76,6 +76,10 @@ export class WebSearchPlugin implements BundledPlugin {
 
   getWebSearchProvider(): WebSearchProvider {
     return this.provider
+  }
+
+  getCapabilityProviders(): PluginCapabilityProviders {
+    return { 'web-search': this.provider }
   }
 
   private requireActive(): WebSearchRuntime {

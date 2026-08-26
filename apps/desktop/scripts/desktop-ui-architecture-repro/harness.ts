@@ -113,15 +113,22 @@ function assertViewHierarchy(): void {
 
   const settings = source('src/renderer/components/settings/SettingsDialog.tsx')
   const shell = source('src/renderer/components/shell/AppShell.tsx')
-  const plugins = source('src/renderer/components/plugins/PluginsView.tsx')
+  const pluginCatalog = source('src/renderer/components/plugins/PluginsView.tsx')
+  const plugins =
+    pluginCatalog +
+    source('src/renderer/components/plugins/PluginSummary.tsx') +
+    source('src/renderer/components/plugins/project-awareness/ProjectAwarenessPluginView.tsx') +
+    source('src/renderer/components/plugins/desktop-control/DesktopControlPluginView.tsx') +
+    source('src/renderer/components/plugins/web-search/WebSearchPluginView.tsx') +
+    source('src/renderer/components/plugins/browser-control/BrowserControlPluginView.tsx')
   assert.doesNotMatch(settings, /ProjectSettings|activeSection === 'project'/)
   assert.match(shell, /id: 'plugins'/)
   assert.match(shell, /id: 'capabilities'/)
   assert.match(plugins, /@react-spectrum\/s2/)
-  assert.match(plugins, /window\.api\.plugins\.(?:enable|disable)/)
-  assert.match(plugins, /plugin-card plugin-card-compact/)
-  assert.match(plugins, /plugin-card-title/)
-  assert.match(plugins, /PluginCatalogStatus/)
+  assert.match(pluginCatalog, /window\.api\.plugins\.(?:enable|disable)/)
+  assert.match(pluginCatalog, /plugin-card plugin-card-compact/)
+  assert.match(pluginCatalog, /plugin-card-title/)
+  assert.match(pluginCatalog, /PluginCatalogStatus/)
   assert.match(plugins, /plugin\.enabled \? t\('common\.enabled'\) : t\('common\.disabled'\)/)
   assert.match(plugins, /plugin-section-heading/)
   assert.match(plugins, /plugins\.project\.projectTitle/)
@@ -194,11 +201,19 @@ function assertMicrophoneGateLayout(): void {
   assert.doesNotMatch(chatStyles, /\.mic-gate-empty \{[^}]*border: 1px dashed/)
 }
 
+function assertMicrophoneRecordingControl(): void {
+  const composer = source('src/renderer/components/chat/ChatComposer.tsx')
+
+  assert.match(composer, /aria-pressed=\{listening\}/)
+  assert.match(composer, /\{listening \? <Stop \/> : <Microphone \/>\}/)
+}
+
 assertSemanticAppShell()
 assertSpectrumInteractiveSurface()
 assertCssOwnership()
 assertViewHierarchy()
 assertScreenContextPickerLayout()
 assertMicrophoneGateLayout()
+assertMicrophoneRecordingControl()
 
 console.log('Desktop UI Architecture Cleanup focused repro: PASS')

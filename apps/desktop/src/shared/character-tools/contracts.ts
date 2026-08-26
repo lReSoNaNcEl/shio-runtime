@@ -14,12 +14,11 @@ export const CHARACTER_TOOL_IDS = [
   'browser.forward',
   'browser.tabs',
   'browser.switchTab',
-  'browser.workflow',
-  'game.start',
-  'game.pause',
-  'game.resume',
-  'game.stop',
-  'game.status',
+  'browser.use',
+  'browser.useStatus',
+  'browser.usePause',
+  'browser.useResume',
+  'browser.useStop',
   'shell.execute',
   'memory.search',
   'memory.store',
@@ -29,6 +28,8 @@ export const CHARACTER_TOOL_IDS = [
   'goal.create',
   'goal.list',
   'goal.update',
+  'thread.open',
+  'thread.resolve',
 ] as const
 
 export type CharacterToolId = (typeof CHARACTER_TOOL_IDS)[number]
@@ -44,6 +45,12 @@ export type CharacterToolCall = z.infer<typeof characterToolCallSchema>
 
 export const characterToolDirectiveSchema = z
   .object({
+    plannedTools: z
+      .array(z.enum(CHARACTER_TOOL_IDS))
+      .min(1)
+      .max(16)
+      .refine((values) => new Set(values).size === values.length, 'Planned tools must be unique')
+      .optional(),
     calls: z.array(characterToolCallSchema).min(1).max(16),
   })
   .strict()
@@ -58,7 +65,7 @@ const CHARACTER_TOOLS_MARKER_OPEN = /<shio-tools\b/iu
 const CHARACTER_TOOLS_MARKER_LIKE = /<\/?shio-tools\b/iu
 const CHARACTER_TOOLS_MARKER_TOKEN = /<\/?shio-tools\b[^>]*>?/giu
 const COMPACT_TOOL_MARKER =
-  /\[(?:project|web|browser|game|shell|memory|goal)\.[A-Za-z][A-Za-z0-9]*\]/u
+  /\[(?:project|web|browser|shell|memory|goal|thread)\.[A-Za-z][A-Za-z0-9]*\]/u
 const PROTOCOL_FENCE = /^\s*```(?:json|xml|text)?\s*([\s\S]*?)\s*```\s*$/iu
 
 export type CharacterToolDirective =
@@ -67,6 +74,7 @@ export type CharacterToolDirective =
       kind: 'calls'
       replyText: string
       calls: readonly CharacterToolCall[]
+      plannedTools?: readonly CharacterToolId[]
       recovered?: 'unclosed-marker'
     }
   | { kind: 'malformed'; replyText: string }
@@ -153,7 +161,10 @@ function normalizedToolCall(value: unknown): CharacterToolCall {
   })
 }
 
-function parseDirectivePayload(value: string): readonly CharacterToolCall[] {
+function parseDirectivePayload(value: string): {
+  calls: readonly CharacterToolCall[]
+  plannedTools?: readonly CharacterToolId[]
+} {
   const parsed = parseProtocolJson(value)
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
     throw new Error('tool directive must be an object')
@@ -163,7 +174,14 @@ function parseDirectivePayload(value: string): readonly CharacterToolCall[] {
   if (!Array.isArray(calls) || calls.length < 1 || calls.length > 16) {
     throw new Error('tool directive calls are invalid')
   }
-  return Object.freeze(calls.map(normalizedToolCall))
+  const normalizedCalls = Object.freeze(calls.map(normalizedToolCall))
+  const planned = record.plannedTools ?? record.planned_tools
+  if (planned === undefined) return { calls: normalizedCalls }
+  if (!Array.isArray(planned)) throw new Error('tool directive planned tools are invalid')
+  const plannedTools = characterToolDirectiveSchema.shape.plannedTools
+    .unwrap()
+    .parse(planned.map(normalizedToolId))
+  return { calls: normalizedCalls, plannedTools: Object.freeze(plannedTools) }
 }
 
 function parseCompactToolDirective(text: string): CharacterToolDirective | null {
@@ -178,7 +196,7 @@ function parseCompactToolDirective(text: string): CharacterToolDirective | null 
       if (cursor >= text.length) break
       const marker = text
         .slice(cursor)
-        .match(/^\[((?:project|web|browser|game|shell|memory|goal)\.[^\]]+)\]/u)
+        .match(/^\[((?:project|web|browser|shell|memory|goal|thread)\.[^\]]+)\]/u)
       if (!marker) {
         if (calls.length > 0) break
         throw new Error('missing compact tool marker')
@@ -230,10 +248,12 @@ export function parseCharacterToolDirective(text: string): CharacterToolDirectiv
       if (unclosed && markerCount === 1 && closingMarkerCount === 0) {
         const replyText = candidate.slice(0, unclosed.index).trim()
         try {
+          const payload = parseDirectivePayload(unclosed[1])
           return {
             kind: 'calls',
             replyText,
-            calls: parseDirectivePayload(unclosed[1]),
+            calls: payload.calls,
+            ...(payload.plannedTools ? { plannedTools: payload.plannedTools } : {}),
             recovered: 'unclosed-marker',
           }
         } catch {
@@ -249,7 +269,13 @@ export function parseCharacterToolDirective(text: string): CharacterToolDirectiv
   const replyText = candidate.slice(0, match.index).trim()
   try {
     if (markerCount !== 1 || closingMarkerCount !== 1) throw new Error('ambiguous tool markers')
-    return { kind: 'calls', replyText, calls: parseDirectivePayload(match[1]) }
+    const payload = parseDirectivePayload(match[1])
+    return {
+      kind: 'calls',
+      replyText,
+      calls: payload.calls,
+      ...(payload.plannedTools ? { plannedTools: payload.plannedTools } : {}),
+    }
   } catch {
     return { kind: 'malformed', replyText }
   }

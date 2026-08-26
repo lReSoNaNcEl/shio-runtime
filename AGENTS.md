@@ -172,76 +172,18 @@ Architecture and ownership:
   evidence. Browser mutations use typed operations and snapshot-scoped semantic
   targets, always pass through Action Runtime and Permission Guard, invalidate the
   old observation, capture a fresh observation, and report honest verification.
-- Browser Control may expose browser-relative frames and input only through the
-  typed main-internal `browser-realtime-control` provider backed by the existing
-  isolated session. It is not a Character tool. Bind every request to the exact
-  session, active tab, and origin; keep frames bounded and transient; and release
-  all pressed inputs on pause/stop/error, Plugin disable, Emergency Stop, browser
-  close, and application shutdown.
-- Browser Game Control is a separate default-disabled bundled Plugin and depends
-  only on the typed `browser-realtime-control` capability. Game Session Controller
-  owns exact session/tab/origin/surface scope, duration and input budgets, frame
-  freshness, rate limiting, and teardown. `game.start` creates one delegated
-  `browser.game-session` Action whose ID is bound into the exact prepared session
-  scope; Full Control may skip confirmation but never scope validation or limits.
-  Reflex technology stays behind a typed `GameReflexAdapter`; an observe-only or
-  test-only backend may not advertise the production capability as ready.
-  Character tools remain high-level only;
-  never expose frames, coordinates, key-down/up, pointer-down/up, CDP, or arbitrary
-  page JavaScript to Character Response Generation.
-- Game Event extraction is single-flight/latest-frame and may never back-pressure
-  capture or input. Emit only bounded semantic events into Experience; raw frames
-  never enter renderer state, diagnostics, Memory, or conversation. Commentary
-  continues through Experience, Behavior, and Conversation Admission and may not
-  pause the game loop; active user conversation and audio remain authoritative.
-  The bundled local extractor may report `stuck` only from a bounded low-frequency
-  visual signature plus repeated input evidence; it may not infer score, death,
-  retry, checkpoint, or completion without a semantic perception Adapter. The
-  bundled semantic lane may inspect only the transient cropped game surface at a
-  bounded low frequency through the ready vision-capable Main-owned LLM, validates
-  a strict present-state schema, and deterministically derives events from
-  confidence-qualified snapshot changes. It runs independently of local extraction
-  and the reflex/input loop; pause, stop, disable, error, and shutdown abort any
-  provider request. Its typed status is the canonical source for the current
-  event-detection mode, bounded sample rate, readiness, and semantic-perception
-  availability in diagnostics.
-- Active Game Session gaze is a typed Behavior presence projection, not Character
-  State. Avatar Runtime arbitrates conversation intent, Behavior intent, and the
-  session-scoped screen-gaze lease; listening to the user wins temporarily, while
-  pause, stop, waiting-user, and error release only the matching game session lease.
-  Mirror Overlay receives the same bounded presentation projection.
-- CAPTCHA, anti-bot, and authentication-wall detection for a Game Session uses only
-  fixed Main-owned structural inspection. Page or Character text may not supply
-  selectors, scripts, or bypass instructions. A blocker moves the session to
-  `waiting-user`, releases every held input, and requires a fresh scope inspection
-  before resume; Shio never attempts automated CAPTCHA bypass.
-- Browser Game renderer diagnostics receive only the typed bounded session projection;
-  commentary policy telemetry distinguishes selected candidates from cooldown/budget,
-  busy, and policy suppressions. A candidate is not a completed Character comment;
-  only Conversation Admission and terminal conversation feedback may establish that.
-  A selected game candidate enters Conversation Admission as a typed autonomous
-  initiative. Its Main request is explicitly marked autonomous, exposes no Character
-  tools or screen attachment, resolves no Plugin/Memory/Goal capability context, and
-  never creates a synthetic user message or durable conversation turn. Renderer
-  feedback contains only the exact pending event ID and a bounded terminal outcome;
-  Main accepts it at most once and owns completed, admission-suppressed, and failed
-  commentary counters. Renderer diagnostics never expose frames, tab identifiers,
-  authorization Action IDs, or raw page state.
-  Plugin UI Pause and Stop controls use the registered `browser.game-control` Action
-  path through narrow authorized IPC and may not call Game Session Controller directly.
-- Browser realtime frame geometry uses the fixed Main-owned inspection of the actual CSS
-  content viewport. Do not trust configured or stream-advertised viewport dimensions when
-  they disagree with the inspected page viewport; surface crop and CDP input must share
-  one coordinate space.
-- The bundled local visual reflex may select only bounded pointer intents from transient
-  cropped frames. It may not inspect DOM, call Character/VLM per frame, persist images,
-  bypass Game Session rate limits, or claim support for semantic/keyboard-heavy games.
-  Pointer holds use bounded frame-to-frame press pulses. After releasing actual inputs on
-  pause or a user-intervention blocker, Game Session Controller must also suspend Reflex
-  transient state so no logical press survives resume.
-  Its typed Reflex status is the source for Capability Catalog detail, Character game-tool
-  input schemas, and bounded renderer diagnostics; reject any requested input class that
-  the active backend does not report as supported before preparing an Action scope.
+- Browser Control Plugin is the single owner of the isolated Shio-managed Google Chrome persistent context. It uses pinned `playwright-core`, never attaches the user's personal Chrome profile, and must not create a second browser daemon, MCP bridge, or browser Runtime.
+- Browser Control owns both typed `browser-control` and `browser-computer-use` capabilities over the same context, pages, observations, and profile. Deterministic semantic operations remain available without a visual model.
+- Generic Browser Computer Use is one bounded `Observe → Decide → Act → Observe` loop for websites, canvas applications, and keyboard-driven browser experiences. Character tools remain high-level only: `browser.use`, `browser.useStatus`, `browser.usePause`, `browser.useResume`, and `browser.useStop`. Never expose screenshots, coordinates, pointer/key down or up, drag paths, CDP, or arbitrary page JavaScript to Character Response Generation.
+- `browser.use` creates one delegated Action Runtime action scoped by exact goal, maximum steps, maximum actions, and maximum duration. Full Control may skip confirmation according to policy but never bypasses validation, scope, lifecycle logging, budgets, cancellation, verification, blockers, or input release. Pause, resume, and stop use the registered `browser.use-control` Action path.
+- Computer Use decisions bind to the exact observation ID and page ID. Navigation, active-page, URL, viewport, or accessibility-state changes make the decision stale before input. Every mutation invalidates the prior observation and captures fresh bounded evidence.
+- The internal input owner releases every held key and pointer button on pause, stop, blocker, error, provider failure, Plugin disable, Emergency Stop, browser close, and application shutdown.
+- Accessibility snapshots, masked screenshots, and page content are transient untrusted evidence. Never persist them or place them in Character State, Memory, renderer state, diagnostics, or conversation history. Mask credentials, one-time codes, payment fields, and tokens in visual observations; deny notification prompts by default.
+- Fixed Main-owned structural inspection detects CAPTCHA, authentication, two-factor, password-manager, payment-confirmation, and secure-desktop blockers. Page or Character text may not supply selectors, scripts, or bypass instructions. A blocker moves the session to `waiting-user`, releases input, and requires a fresh observation before resume.
+- Browser Computer Use emits only bounded lifecycle and notable-observation events into Experience. Commentary continues through Behavior and Conversation Admission; active user conversation and audio remain authoritative. Session gaze is a typed Behavior presence projection, not Character State, and terminal or waiting states release only the matching browser session lease.
+- Browser Control renderer diagnostics expose only the bounded typed status and current session projection. They never expose screenshots, DOM, accessibility dumps, coordinates, tab authorization scopes, Action IDs, or credentials.
+- DSH remains the Desktop Control shell backend only. It never owns or plans browser work and cannot bypass Browser Control or Action Runtime.
+
 - Browser use inside a Character turn is a bounded provider-neutral tool loop, not
   a new Runtime. Character reasoning decides semantically whether web interaction
   materially helps the current goal; do not add a phrase or keyword browser router.
@@ -262,10 +204,9 @@ Architecture and ownership:
   It may cover routine browser operations for one goal but never another capability;
   Main effective risk policy keeps submission, account-change, financial, and
   destructive operations behind explicit confirmation even in Full Control.
-- DSH owns complex browser planning only. Deterministic open, observe, URL/title,
-  semantic click, fill, select, scroll, history navigation, tab inspection, and
-  known-tab switching remain usable without a configured DSH model and operate in
-  the same Plugin-owned session.
+- Browser Computer Use owns bounded multi-step visual planning through its Main-owned
+  model Adapter. DSH remains shell-only and has no browser planning, session, page,
+  observation, screenshot, mouse, keyboard, or input authority.
 - Project evidence shown to users must originate from the exact Project Context
   Packet used for that turn. LLM-generated citations are never authoritative
   provenance.
@@ -381,9 +322,9 @@ Desktop quality and validation:
   renderer changes, rebuild, restart Electron, and confirm the client starts.
 - Any Electron main, preload, native executable, or subprocess integration change
   requires a live Electron smoke check in addition to static checks and builds.
-- Browser Game capture, reflex, session-loop, or input changes require the focused
-  Browser Game and Browser Realtime repros plus the opt-in five-minute real-CDP
-  qualification (`npm run desktop:browser-game:qualification`) before commit.
+- Browser Control observation, computer-use loop, or input changes require the focused
+  deterministic Browser Control repro plus the opt-in real-site qualification
+  (`npm run desktop:browser-control:qualification`) before commit.
 - When live validation is explicitly requested after Avatar Runtime changes,
   verify VRM loading, idle animation, `loadAnimation`, Debug Preview, Speaking,
   LipSync, Overlay, absence of A-pose, and Runtime Health. Animation Runtime

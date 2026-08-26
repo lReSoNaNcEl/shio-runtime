@@ -231,15 +231,16 @@ function assertPluginBoundaries(): void {
   )
   assert(pluginIpc.includes('z.enum(PLUGIN_IDS)'))
   assert(pluginIpc.includes('pluginIdSchema.parse(id)'))
-  const browserGameIpc = readFileSync(
-    join(mainSourceRoot, 'ipc', 'registerBrowserGameIpc.ts'),
+  const browserControlIpc = readFileSync(
+    join(mainSourceRoot, 'ipc', 'registerBrowserControlIpc.ts'),
     'utf8',
   )
-  assert(browserGameIpc.includes("authorization.handle('browser-game:get-status'"))
-  assert(browserGameIpc.includes("authorization.handle('browser-game:pause'"))
-  assert(browserGameIpc.includes("authorization.handle('browser-game:stop'"))
-  assert(browserGameIpc.includes("name: 'browser.game-control'"))
-  assert(browserGameIpc.includes('browserGameDiagnosticsSchema.parse'))
+  assert(browserControlIpc.includes("authorization.handle('browser-control:get-status'"))
+  assert(browserControlIpc.includes("authorization.handle('browser-control:pause'"))
+  assert(browserControlIpc.includes("authorization.handle('browser-control:resume'"))
+  assert(browserControlIpc.includes("authorization.handle('browser-control:stop'"))
+  assert(browserControlIpc.includes("name: 'browser.use-control'"))
+  assert(browserControlIpc.includes('browserControlStatusSchema.parse'))
   assert(projectIpc.includes('configSchema.strict().parse(input)'))
   assert(projectIpc.includes('credentialSchema.parse(token)'))
   assert(projectApi.includes('saveCredential(token: string): Promise<ProjectAwarenessStatus>'))

@@ -2,13 +2,14 @@ import { useState } from 'react'
 
 import type {
   BacklogSelectorRoleConfig,
+  ComputerUseVisionRoleConfig,
   LlmProviderId,
   LlmProviderPublicSettings,
   ModelInfo,
   ProviderProfile,
 } from '../../../../shared/llm'
 import type { ModelsState } from './settingsContracts'
-import { defaultBacklogSelectorRole } from './settingsDefaults'
+import { defaultBacklogSelectorRole, defaultComputerUseVisionRole } from './settingsDefaults'
 
 export function useAiSettings() {
   const [editingKey, setEditingKey] = useState(false)
@@ -24,11 +25,15 @@ export function useAiSettings() {
     defaultBacklogSelectorRole,
   )
   const [backlogModels, setBacklogModels] = useState<ModelInfo[]>([])
+  const [computerUseVisionRole, setComputerUseVisionRole] = useState<ComputerUseVisionRoleConfig>(
+    defaultComputerUseVisionRole,
+  )
 
   return {
     activeProvider,
     backlogModels,
     backlogRole,
+    computerUseVisionRole,
     editingKey,
     keyInput,
     modelOptions,
@@ -38,6 +43,7 @@ export function useAiSettings() {
     setActiveProvider,
     setBacklogModels,
     setBacklogRole,
+    setComputerUseVisionRole,
     setEditingKey,
     setKeyInput,
     setModelOptions,

@@ -1,4 +1,4 @@
-export const DESKTOP_CONFIG_SCHEMA_VERSION = 7
+export const DESKTOP_CONFIG_SCHEMA_VERSION = 8
 
 export function migrateLegacyDesktopSettings(
   input: Record<string, unknown>,

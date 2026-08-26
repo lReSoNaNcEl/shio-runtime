@@ -19,15 +19,18 @@ import {
 import { PROJECT_AWARENESS_MANIFEST } from '../../src/main/project-awareness'
 import type { SpeechClient } from '../../src/main/speech/speechClient'
 import { WEB_SEARCH_MANIFEST, WebSearchPlugin } from '../../src/main/web-search'
+import type { BrowserObservation } from '../../src/shared/browser-control'
 import type { ShioCapabilitySnapshot } from '../../src/shared/capabilities'
 import type { AppSettings } from '../../src/shared/config'
-import type {
-  BrowserObservation,
-  DesktopControlCapabilityProjection,
-} from '../../src/shared/desktop-control'
+import type { DesktopControlCapabilityProjection } from '../../src/shared/desktop-control'
 import type { LlmCapabilities, LlmReadiness } from '../../src/shared/llm'
-import type { PluginHealth, ProjectContextProvider } from '../../src/shared/plugins'
-import { BROWSER_GAME_CONTROL_PLUGIN_ID, WEB_SEARCH_PLUGIN_ID } from '../../src/shared/plugins'
+import type {
+  PluginCapabilityProviders,
+  PluginHealth,
+  PluginManifest,
+  ProjectContextProvider,
+} from '../../src/shared/plugins'
+import { BROWSER_CONTROL_PLUGIN_ID, WEB_SEARCH_PLUGIN_ID } from '../../src/shared/plugins'
 import type { AvatarRuntimeHealth } from '../../src/shared/runtime'
 
 class CapabilityPlugin implements BundledPlugin {
@@ -47,12 +50,24 @@ class CapabilityPlugin implements BundledPlugin {
   getProjectContextProvider(): ProjectContextProvider {
     return this.projectContext
   }
+  getCapabilityProviders(): PluginCapabilityProviders {
+    return { 'project-context': this.getProjectContextProvider() }
+  }
 }
 
 const settings = {
   uiLocale: 'ru',
   vrmAssetHandle: 'vrm:configured',
 } as AppSettings
+
+const browserControlManifest: PluginManifest = {
+  id: BROWSER_CONTROL_PLUGIN_ID,
+  version: '1.0.0',
+  nameKey: 'plugins.browserControl.name',
+  descriptionKey: 'plugins.browserControl.description',
+  defaultEnabled: true,
+  capabilities: ['browser-control', 'browser-computer-use'],
+}
 
 const llmReadiness: LlmReadiness = {
   reason: 'ready',
@@ -73,7 +88,6 @@ const llmCapabilities: LlmCapabilities = {
 const desktopControl: DesktopControlCapabilityProjection = {
   enabled: false,
   automationEngine: 'needs-setup',
-  browserControl: 'needs-setup',
   computerControl: 'needs-setup',
   authorityMode: 'confirm',
 }
@@ -136,12 +150,17 @@ async function main(): Promise<void> {
     plugins: () => runtime.list(),
     desktopControl: async () => desktopControl,
     avatarRuntimeHealth: () => avatarHealth,
-    browserGame: () => ({
-      backendId: 'local-visual-targets-v1',
-      mode: 'local-visual',
-      ready: true,
-      supportedInputs: ['pointer'],
-      semanticPerception: false,
+    browserControl: () => ({
+      enabled: false,
+      browserName: 'Google Chrome',
+      backend: 'playwright',
+      backendVersion: '1.62.1',
+      executableAvailable: true,
+      isolatedProfile: true,
+      semanticControl: 'ready',
+      visualControl: 'ready',
+      visualModel: 'fixture-vision',
+      session: null,
     }),
   })
   const unsubscribeRuntime = runtime.onChanged(() => catalog.invalidate())
@@ -192,33 +211,78 @@ async function main(): Promise<void> {
       disabled.capabilities.find((capability) => capability.id === 'web-search')?.source,
       { kind: 'plugin', pluginId: WEB_SEARCH_PLUGIN_ID },
     )
-    assert(pluginCapabilities.getWebSearchProvider())
+    assert(pluginCapabilities.get('web-search'))
     assert.equal(
-      disabled.capabilities.find((capability) => capability.id === 'browser-game-control')
+      disabled.capabilities.find((capability) => capability.id === 'browser-computer-use')
         ?.availability,
       'unavailable',
     )
     assert.deepEqual(
-      disabled.capabilities.find((capability) => capability.id === 'browser-game-control')?.source,
-      { kind: 'plugin', pluginId: BROWSER_GAME_CONTROL_PLUGIN_ID },
+      disabled.capabilities.find((capability) => capability.id === 'browser-computer-use')?.source,
+      { kind: 'plugin', pluginId: BROWSER_CONTROL_PLUGIN_ID },
     )
     assert.deepEqual(
-      disabled.capabilities.find((capability) => capability.id === 'browser-game-control')?.details,
+      disabled.capabilities.find((capability) => capability.id === 'browser-computer-use')?.details,
       {
-        kind: 'browser-game-control',
-        reflexMode: 'local-visual',
-        supportedInputs: ['pointer'],
-        semanticPerception: false,
+        kind: 'browser-computer-use',
+        semanticControl: 'ready',
+        visualControl: 'ready',
+        isolatedProfile: true,
       },
     )
+    const visualSetupCatalog = new CapabilityCatalog({
+      settings: () => settings,
+      llmReadiness: () => llmReadiness,
+      llmCapabilities: () => llmCapabilities,
+      plugins: async () => [
+        {
+          manifest: browserControlManifest,
+          enabled: true,
+          lifecycle: 'active',
+          health: { state: 'healthy', checkedAt: 1 },
+          busy: false,
+        },
+      ],
+      desktopControl: async () => desktopControl,
+      avatarRuntimeHealth: () => avatarHealth,
+      browserControl: () => ({
+        enabled: true,
+        browserName: 'Google Chrome',
+        backend: 'playwright',
+        backendVersion: '1.62.1',
+        executableAvailable: true,
+        isolatedProfile: true,
+        semanticControl: 'ready',
+        visualControl: 'needs-setup',
+        visualModel: 'Auto · openrouter/text-only-model',
+        session: null,
+      }),
+    })
+    const visualSetup = await visualSetupCatalog.snapshot()
+    assert.equal(
+      visualSetup.capabilities.find((capability) => capability.id === 'browser-control')
+        ?.availability,
+      'available',
+    )
+    assert.equal(
+      visualSetup.capabilities.find((capability) => capability.id === 'browser-computer-use')
+        ?.availability,
+      'needs-setup',
+    )
+    assert.equal(
+      visualSetup.capabilities.find((capability) => capability.id === 'browser-computer-use')
+        ?.reasonKey,
+      'capabilities.reason.browserVisualSetup',
+    )
+    visualSetupCatalog.dispose()
     const compactCapabilityPrompt = characterCapabilityPrompt(disabled, 'ru', 'compact')
-    assert.match(compactCapabilityPrompt, /Локальное отслеживание визуальных целей/u)
-    assert.match(compactCapabilityPrompt, /Указатель/u)
-    assert.match(compactCapabilityPrompt, /Недоступно в этом бэкенде/u)
+    assert.match(compactCapabilityPrompt, /семантическое управление: готово/u)
+    assert.match(compactCapabilityPrompt, /визуальное управление: готово/u)
+    assert.match(compactCapabilityPrompt, /изолированный профиль/u)
     const webDisabled = await waitForCapability(catalog, 'web-search', 'disabled', () =>
       runtime.disable(WEB_SEARCH_PLUGIN_ID),
     )
-    assert.equal(pluginCapabilities.getWebSearchProvider(), undefined)
+    assert.equal(pluginCapabilities.get('web-search'), undefined)
     assert.equal(
       webDisabled.capabilities.find((capability) => capability.id === 'web-search')?.availability,
       'disabled',
@@ -236,7 +300,7 @@ async function main(): Promise<void> {
     )
     assert.equal(
       disabled.capabilities.find((capability) => capability.id === 'browser-control')?.availability,
-      'disabled',
+      'unavailable',
     )
     assert(Object.isFrozen(disabled))
     assert(Object.isFrozen(disabled.capabilities))
@@ -342,7 +406,7 @@ async function main(): Promise<void> {
     assert.match(String(prompt), /Project Awareness: Отключено/)
     assert.doesNotMatch(String(prompt), /дополнительная возможность установлена/)
     assert.match(String(prompt), /Движок автоматизации: Отключено/)
-    assert.match(String(prompt), /Управление браузером: Отключено/)
+    assert.match(String(prompt), /Управление браузером: Недоступно/)
     assert.doesNotMatch(String(prompt), /project-context|project-index|SQLite|IPC|npm|JSON-RPC/)
     const responsePolicy = captured.find(
       (message) =>
@@ -359,7 +423,6 @@ async function main(): Promise<void> {
 
     desktopControl.enabled = true
     desktopControl.automationEngine = 'ready'
-    desktopControl.browserControl = 'ready'
     desktopControl.computerControl = 'ready'
     const actionCapabilities = await catalog.snapshot()
     const actionMessages: readonly ChatMessage[][] = []
@@ -501,7 +564,9 @@ async function main(): Promise<void> {
       capabilities: actionCapabilities.capabilities.map((capability) =>
         capability.id === 'automation-engine'
           ? { ...capability, availability: 'needs-setup' as const }
-          : capability,
+          : capability.id === 'browser-control' || capability.id === 'browser-computer-use'
+            ? { ...capability, availability: 'available' as const }
+            : capability,
       ),
     }
     let currentObservation: BrowserObservation = {

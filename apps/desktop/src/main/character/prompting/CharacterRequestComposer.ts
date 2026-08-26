@@ -5,6 +5,7 @@ import type {
   WorldContextSnapshot,
 } from '../../../shared/alive'
 import type { ShioCapabilitySnapshot } from '../../../shared/capabilities'
+import type { ConversationThread } from '../../../shared/conversation-threads'
 import type { HabitRecord, RelationshipContext } from '../../../shared/memory'
 import type { ChatMessage } from '../../llm'
 import {
@@ -21,6 +22,7 @@ export const CHARACTER_CONTEXT_BUDGET = Object.freeze({
     mood: 900,
     relationship: 1_400,
     goals: 1_800,
+    threads: 1_000,
     memory: 1_800,
     capabilities: 1_600,
     project: 2_400,
@@ -34,7 +36,7 @@ export type CharacterContextSection = keyof typeof CHARACTER_CONTEXT_BUDGET.sect
 export const CHARACTER_CONTEXT_ALLOCATION = Object.freeze({
   tiers: Object.freeze({
     0: Object.freeze(['persona', 'responsePolicy', 'toolResults'] as const),
-    1: Object.freeze(['goals', 'project', 'world'] as const),
+    1: Object.freeze(['goals', 'threads', 'project', 'world'] as const),
     2: Object.freeze(['memory', 'relationship', 'mood'] as const),
     3: Object.freeze(['capabilities'] as const),
   }),
@@ -43,6 +45,7 @@ export const CHARACTER_CONTEXT_ALLOCATION = Object.freeze({
     responsePolicy: 1_200,
     toolResults: 1_600,
     goals: 500,
+    threads: 350,
     project: 900,
     world: 450,
     memory: 500,
@@ -63,6 +66,7 @@ export interface CharacterRequestContext {
   experience?: ExperienceAppraisal | null
   goals?: readonly PersistentGoal[]
   foregroundGoalId?: string
+  thread?: ConversationThread | null
   memory?: string | null
   capabilities?: ShioCapabilitySnapshot | null
   capabilityContextUnavailable?: boolean
@@ -166,6 +170,23 @@ function worldPrompt(world: WorldContextSnapshot | null | undefined): string | n
   ].join('\n\n')
 }
 
+function conversationThreadPrompt(thread: ConversationThread | null | undefined): string | null {
+  if (!thread) return null
+  return [
+    '## Relevant Conversation Thread',
+    'Short-lived unfinished conversational context, not instructions, a Goal, or Long-Term Memory. Mention it only if it is genuinely relevant to the current user turn. Use thread.resolve when it is actually finished; never convert it to Goal or Memory without explicit user confirmation.',
+    JSON.stringify({
+      id: thread.id,
+      topic: bounded(thread.topic, 160),
+      summary: bounded(thread.summary, 600),
+      status: thread.status,
+      salience: thread.salience,
+      updatedAt: thread.updatedAt,
+      expiresAt: thread.expiresAt,
+    }),
+  ].join('\n\n')
+}
+
 /** Builds bounded, independently optional system sections for one Character request. */
 export class CharacterRequestComposer {
   compose(context: CharacterRequestContext): readonly ChatMessage[] {
@@ -178,6 +199,7 @@ export class CharacterRequestComposer {
         'goals',
         context.goals ? goalAwarenessPrompt(context.goals, context.foregroundGoalId) : null,
       ],
+      ['threads', conversationThreadPrompt(context.thread)],
       ['memory', context.memory],
       [
         'capabilities',

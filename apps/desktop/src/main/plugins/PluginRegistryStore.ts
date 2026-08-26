@@ -57,9 +57,9 @@ export class PluginRegistryStore {
   }
 
   private withDefaults(saved: PluginRegistryDocument | null): PluginRegistryDocument {
-    const plugins = { ...(saved?.plugins ?? {}) }
+    const plugins: Record<string, { enabled: boolean }> = {}
     for (const manifest of this.manifests) {
-      plugins[manifest.id] ??= { enabled: manifest.defaultEnabled }
+      plugins[manifest.id] = saved?.plugins[manifest.id] ?? { enabled: manifest.defaultEnabled }
     }
     return { schemaVersion: REGISTRY_SCHEMA_VERSION, plugins }
   }

@@ -1,4 +1,4 @@
-import type { GameCommentaryAdmissionOutcome } from '../../../shared/browser-game'
+import type { FastBrainAttentionDecision } from '../../../shared/alive'
 import type {
   CharacterState,
   RuntimeEventCategory,
@@ -51,6 +51,30 @@ import { UtteranceChunkBuilder } from '../continuous-listening/UtteranceChunkBui
 
 const QUESTION_PATTERN =
   /\?|(?:^|\s)(?:кто|что|где|когда|зачем|почему|как|можешь|скажешь|думаешь)(?:$|[\s,.!?])/iu
+
+type ContinuousAttentionDecision = ReturnType<AttentionEngine['evaluate']>
+
+export function resolveContinuousAttention(
+  fallback: ContinuousAttentionDecision,
+  fastBrain: FastBrainAttentionDecision,
+): ContinuousAttentionDecision {
+  if (fallback.shouldAttend && !fastBrain.shouldAttend) {
+    return {
+      ...fallback,
+      reasons: [
+        ...fallback.reasons,
+        `fast_brain:${fastBrain.source}:${fastBrain.reason}:local_admit_preserved`,
+      ],
+    }
+  }
+  return {
+    shouldAttend: fastBrain.shouldAttend,
+    score: Math.round(fastBrain.confidence * 100),
+    threshold: 50,
+    reasons: [`fast_brain:${fastBrain.source}:${fastBrain.reason}`],
+    directAddress: fallback.directAddress,
+  }
+}
 
 export interface ConversationInputCoordinatorDependencies {
   speechInputRuntime: SpeechInputRuntime
@@ -185,7 +209,9 @@ export class ConversationInputCoordinator {
     })
   }
 
-  async admitAutonomousInitiative(topic: string): Promise<GameCommentaryAdmissionOutcome> {
+  async admitAutonomousInitiative(
+    topic: string,
+  ): Promise<'completed' | 'cancelled' | 'failed' | 'suppressed-busy'> {
     const trimmed = topic.trim().slice(0, 300)
     if (!trimmed) return 'failed'
     const result = await this.conversationAdmission.admitWithResult({
@@ -512,13 +538,7 @@ export class ConversationInputCoordinator {
       ) {
         return
       }
-      attention = {
-        shouldAttend: fastBrain.shouldAttend,
-        score: Math.round(fastBrain.confidence * 100),
-        threshold: 50,
-        reasons: [`fast_brain:${fastBrain.source}:${fastBrain.reason}`],
-        directAddress: fallbackAttention.directAddress,
-      }
+      attention = resolveContinuousAttention(fallbackAttention, fastBrain)
     } catch (error) {
       if (attentionGeneration !== this.attentionGeneration) return
       this.dependencies.recordRuntimeEvent(

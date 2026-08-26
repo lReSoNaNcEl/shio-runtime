@@ -5,7 +5,11 @@ import { getRendererConfig, saveConfig } from '../config'
 import { IPC_ONE_PAYLOAD, type IpcAuthorization } from './IpcAuthorization'
 import { configSaveSchema } from './payloadSchemas'
 
-export function registerConfigIpc(window: BrowserWindow, authorization: IpcAuthorization): void {
+export function registerConfigIpc(
+  window: BrowserWindow,
+  authorization: IpcAuthorization,
+  onConfigChanged?: () => void,
+): void {
   ipcMain.handle(
     'config:get',
     authorization.handle('config:get', () => getRendererConfig()),
@@ -16,6 +20,7 @@ export function registerConfigIpc(window: BrowserWindow, authorization: IpcAutho
       const partial = configSaveSchema.parse(payload) as Partial<AppSettings>
       saveConfig(partial)
       window.webContents.send('config:updated', getRendererConfig())
+      onConfigChanged?.()
       return { ok: true }
     }),
   )

@@ -194,9 +194,8 @@ export class Controller {
     getControllerState: () => this.store.getState(),
     updateSnapshot: (alive) => this.set({ alive }),
     pushInitiative: (title) => this.pushMessage('meta', this.t('alive.initiative', { title })),
-    runGameCommentary: async (topic, eventId) => {
-      const outcome = await this.conversationInput.admitAutonomousInitiative(topic)
-      await window.api.browserGame.reportCommentaryOutcome({ eventId, outcome })
+    runBrowserInitiative: async (topic) => {
+      await this.conversationInput.admitAutonomousInitiative(topic)
     },
     presentation: this.conversationPresentation,
     recordEvent: (label, detail) => this.recordRuntimeEvent(label, detail),
@@ -788,12 +787,12 @@ export class Controller {
     this.avatarRuntime.setEmbodimentIntent(avatarState.embodimentIntent)
     this.avatarRuntime.setBehaviorEmbodimentIntent(avatarState.behaviorEmbodimentIntent)
     if (
-      avatarState.gameScreenGazeSessionId &&
-      typeof avatarState.gameScreenGazeActive === 'boolean'
+      avatarState.browserScreenGazeSessionId &&
+      typeof avatarState.browserScreenGazeActive === 'boolean'
     ) {
-      this.avatarRuntime.setGameScreenGaze(
-        avatarState.gameScreenGazeSessionId,
-        avatarState.gameScreenGazeActive,
+      this.avatarRuntime.setBrowserScreenGaze(
+        avatarState.browserScreenGazeSessionId,
+        avatarState.browserScreenGazeActive,
       )
     }
     this.applyAvatarCharacterState()

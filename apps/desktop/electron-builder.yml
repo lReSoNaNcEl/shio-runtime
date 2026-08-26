@@ -18,7 +18,6 @@ extraResources:
     filter:
       - cordis.yml
       - dsh-runtime.mjs
-      - browser-policy.mjs
       - workflow-tools.mjs
       - sdk-jsonrpc-server.mjs
   - from: ../../THIRD_PARTY_NOTICES.md

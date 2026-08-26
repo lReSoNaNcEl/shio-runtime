@@ -1,50 +1,30 @@
-import {
-  type DesktopAuthorityMode,
-  type DesktopWorkflowRequest,
-  desktopWorkflowRequestSchema,
-} from '../../shared/actions'
+import { type DesktopAuthorityMode, desktopWorkflowRequestSchema } from '../../shared/actions'
 import type {
-  BrowserContextProvider,
-  BrowserRealtimeControlProvider,
   DesktopControlCapabilityProjection,
   DesktopControlStatus,
 } from '../../shared/desktop-control'
-import { AGENT_BROWSER_VERSION } from '../../shared/desktop-control'
-import type { PluginHealth, PluginManifest } from '../../shared/plugins'
+import type { PluginCapabilityProviders, PluginHealth, PluginManifest } from '../../shared/plugins'
 import { DESKTOP_CONTROL_PLUGIN_ID } from '../../shared/plugins'
-import { ActionError } from '../action'
-import type { BundledPlugin, PluginInitializationContext } from '../plugins/PluginRuntime'
 import {
-  type AgentBrowserAdapter,
-  BrowserAutomationError,
-  type BrowserInteractionResult,
-} from './AgentBrowserAdapter'
-import {
-  classifyBrowserOperationRisk,
+  ActionError,
+  type DesktopWorkflowAdapterResult,
   type EffectiveDesktopWorkflowRequest,
-  requiresExplicitBrowserConfirmation,
-} from './browser-agent/BrowserAgentPolicy'
+} from '../action'
+import type { BundledPlugin, PluginInitializationContext } from '../plugins/PluginRuntime'
 import { DshAdapterError, type DshHarnessAdapter } from './DshHarnessAdapter'
-import type { BrowserExecutionEvidence, DesktopWorkflowAdapterResult } from './executionEvidence'
 import { ShellRiskPolicy } from './shell'
 
 export const DESKTOP_CONTROL_MANIFEST: PluginManifest = {
   id: DESKTOP_CONTROL_PLUGIN_ID,
-  version: '1.1.0',
+  version: '1.2.0',
   nameKey: 'plugins.desktopControl.name',
   descriptionKey: 'plugins.desktopControl.description',
   defaultEnabled: false,
-  capabilities: [
-    'automation-engine',
-    'browser-control',
-    'browser-realtime-control',
-    'computer-control',
-  ],
+  capabilities: ['automation-engine', 'computer-control'],
 }
 
 export interface DesktopControlPluginDependencies {
   adapter: DshHarnessAdapter
-  browser: AgentBrowserAdapter
   authorityMode(): DesktopAuthorityMode
 }
 
@@ -54,44 +34,10 @@ export class DesktopControlPlugin implements BundledPlugin {
   private initialized = false
   private disposed = false
   private packagedRuntimeAvailable = false
-  private browserAvailability = {
-    packagedBinaryAvailable: false,
-    executableAvailable: false,
-  }
-  private shellAvailability = {
-    executableAvailable: false,
-  }
+  private shellAvailability = { executableAvailable: false }
   private readonly listeners = new Set<() => void>()
   private readonly shellRiskPolicy = new ShellRiskPolicy()
   private readonly unsubscribeAdapter: () => void
-  private readonly browserContextProvider: BrowserContextProvider = {
-    currentObservation: () => this.dependencies.browser.observationSnapshot(),
-    observe: async ({ signal }) => {
-      this.assertActive()
-      return this.dependencies.browser.observe(signal)
-    },
-  }
-  private readonly browserRealtimeControlProvider: BrowserRealtimeControlProvider = {
-    session: () =>
-      this.active ? this.dependencies.browser.getRealtimeControlProvider().session() : null,
-    inspectGameEnvironment: (signal) => {
-      this.assertActive()
-      return this.dependencies.browser.getRealtimeControlProvider().inspectGameEnvironment(signal)
-    },
-    captureFrame: (request, signal) => {
-      this.assertActive()
-      return this.dependencies.browser.getRealtimeControlProvider().captureFrame(request, signal)
-    },
-    dispatchInput: (input, signal) => {
-      this.assertActive()
-      return this.dependencies.browser.getRealtimeControlProvider().dispatchInput(input, signal)
-    },
-    releaseInputs: () => this.dependencies.browser.getRealtimeControlProvider().releaseInputs(),
-    getViewport: () => {
-      this.assertActive()
-      return this.dependencies.browser.getRealtimeControlProvider().getViewport()
-    },
-  }
 
   constructor(private readonly dependencies: DesktopControlPluginDependencies) {
     this.unsubscribeAdapter = dependencies.adapter.onChanged(() => this.publishChanged())
@@ -104,9 +50,7 @@ export class DesktopControlPlugin implements BundledPlugin {
 
   async initialize(_context: PluginInitializationContext): Promise<void> {
     if (this.initialized) return
-    this.packagedRuntimeAvailable = await this.dependencies.adapter.checkAvailability()
-    this.browserAvailability = await this.dependencies.adapter.checkBrowserAvailability()
-    this.shellAvailability = await this.dependencies.adapter.checkShellAvailability()
+    await this.refreshAvailability()
     this.initialized = true
     this.publishChanged()
   }
@@ -114,15 +58,13 @@ export class DesktopControlPlugin implements BundledPlugin {
   async start(): Promise<void> {
     this.assertInitialized()
     this.active = true
-    this.packagedRuntimeAvailable = await this.dependencies.adapter.checkAvailability()
-    this.browserAvailability = await this.dependencies.adapter.checkBrowserAvailability()
-    this.shellAvailability = await this.dependencies.adapter.checkShellAvailability()
+    await this.refreshAvailability()
     this.publishChanged()
   }
 
   async stop(): Promise<void> {
     this.active = false
-    await Promise.allSettled([this.dependencies.adapter.close(), this.dependencies.browser.close()])
+    await this.dependencies.adapter.close()
     this.publishChanged()
   }
 
@@ -138,46 +80,25 @@ export class DesktopControlPlugin implements BundledPlugin {
     if (!this.initialized) {
       return { state: 'needs-setup', detailKey: 'plugins.health.needsSetup', checkedAt: Date.now() }
     }
-    this.packagedRuntimeAvailable = await this.dependencies.adapter.checkAvailability()
-    this.browserAvailability = await this.dependencies.adapter.checkBrowserAvailability()
-    this.shellAvailability = await this.dependencies.adapter.checkShellAvailability()
+    await this.refreshAvailability()
     const runtime = this.dependencies.adapter.snapshot()
     const model = this.dependencies.adapter.modelSnapshot()
-    const browserReady =
-      this.browserAvailability.packagedBinaryAvailable &&
-      this.browserAvailability.executableAvailable
     if (!this.packagedRuntimeAvailable) {
       return {
-        state: browserReady ? 'degraded' : 'needs-setup',
+        state: 'needs-setup',
         detailKey: 'plugins.desktopControl.runtimeMissing',
         checkedAt: Date.now(),
       }
     }
     if (runtime.state === 'error') {
-      return {
-        state: browserReady ? 'degraded' : 'error',
-        detail: runtime.lastError,
-        checkedAt: Date.now(),
-      }
+      return { state: 'error', detail: runtime.lastError, checkedAt: Date.now() }
     }
-    if (this.active && this.dependencies.browser.sessionSnapshot()?.status === 'error') {
-      return {
-        state: 'degraded',
-        detailKey: 'plugins.desktopControl.browserSessionError',
-        checkedAt: Date.now(),
-      }
-    }
-    if (this.active && !model.configured) {
-      return {
-        state: browserReady ? 'degraded' : 'needs-setup',
-        detailKey: 'plugins.desktopControl.modelNeedsSetup',
-        checkedAt: Date.now(),
-      }
-    }
-    if (this.active && !browserReady && !this.shellAvailability.executableAvailable) {
+    if (this.active && (!model.configured || !this.shellAvailability.executableAvailable)) {
       return {
         state: 'needs-setup',
-        detailKey: 'plugins.desktopControl.controlNeedsSetup',
+        detailKey: model.configured
+          ? 'plugins.desktopControl.controlNeedsSetup'
+          : 'plugins.desktopControl.modelNeedsSetup',
         checkedAt: Date.now(),
       }
     }
@@ -190,19 +111,11 @@ export class DesktopControlPlugin implements BundledPlugin {
 
   async getStatus(): Promise<DesktopControlStatus> {
     this.assertInitialized()
-    this.packagedRuntimeAvailable = await this.dependencies.adapter.checkAvailability()
-    this.browserAvailability = await this.dependencies.adapter.checkBrowserAvailability()
-    this.shellAvailability = await this.dependencies.adapter.checkShellAvailability()
+    await this.refreshAvailability()
     const runtime = this.dependencies.adapter.snapshot()
     const model = this.dependencies.adapter.modelSnapshot()
     const automationEngine =
       this.active && this.packagedRuntimeAvailable && model.configured ? 'ready' : 'needs-setup'
-    const browserControl =
-      this.active &&
-      this.browserAvailability.packagedBinaryAvailable &&
-      this.browserAvailability.executableAvailable
-        ? 'ready'
-        : 'needs-setup'
     const computerControl =
       this.active &&
       this.packagedRuntimeAvailable &&
@@ -212,18 +125,9 @@ export class DesktopControlPlugin implements BundledPlugin {
         : 'needs-setup'
     return {
       enabled: this.active,
-      runtime: {
-        ...runtime,
-        packagedRuntimeAvailable: this.packagedRuntimeAvailable,
-      },
+      runtime: { ...runtime, packagedRuntimeAvailable: this.packagedRuntimeAvailable },
       automationEngine,
-      browserControl,
       computerControl,
-      browser: {
-        version: AGENT_BROWSER_VERSION,
-        ...this.browserAvailability,
-        isolatedProfile: true,
-      },
       shell: this.shellAvailability,
       authorityMode: this.dependencies.authorityMode(),
       model,
@@ -235,7 +139,6 @@ export class DesktopControlPlugin implements BundledPlugin {
     return {
       enabled: status.enabled,
       automationEngine: status.automationEngine,
-      browserControl: status.browserControl,
       computerControl: status.computerControl,
       authorityMode: status.authorityMode,
     }
@@ -243,19 +146,17 @@ export class DesktopControlPlugin implements BundledPlugin {
 
   async startRuntime(): Promise<DesktopControlStatus> {
     this.assertActive()
-    this.shellAvailability = await this.dependencies.adapter.checkShellAvailability()
-    await this.dependencies.adapter.start(
-      this.shellAvailability.executableAvailable ? 'shell' : 'browser',
-    )
+    await this.dependencies.adapter.start('shell')
     return this.getStatus()
   }
 
-  getBrowserContextProvider(): BrowserContextProvider {
-    return this.browserContextProvider
+  async stopRuntime(): Promise<DesktopControlStatus> {
+    await this.dependencies.adapter.close()
+    return this.getStatus()
   }
 
-  getBrowserRealtimeControlProvider(): BrowserRealtimeControlProvider {
-    return this.browserRealtimeControlProvider
+  getCapabilityProviders(): PluginCapabilityProviders {
+    return {}
   }
 
   validateWorkflowRequest(payload: unknown): EffectiveDesktopWorkflowRequest {
@@ -266,35 +167,9 @@ export class DesktopControlPlugin implements BundledPlugin {
       request.shellCommand
     ) {
       const shellRisk = this.shellRiskPolicy.classify(request.shellCommand)
-      return {
-        ...request,
-        risk: shellRisk.effectiveRisk,
-        shellRisk,
-      }
+      return { ...request, risk: shellRisk.effectiveRisk, shellRisk }
     }
-    if (
-      request.requestedCapabilities.length !== 1 ||
-      request.requestedCapabilities[0] !== 'browser'
-    ) {
-      return request
-    }
-    const operation =
-      request.browserOperation ??
-      (request.browserUrl ? { operation: 'open' as const, url: request.browserUrl } : undefined)
-    const browserRiskClass = classifyBrowserOperationRisk(
-      operation,
-      this.dependencies.browser.observationSnapshot(),
-    )
-    return {
-      ...request,
-      risk: requiresExplicitBrowserConfirmation(browserRiskClass) ? 'destructive' : 'normal',
-      browserRiskClass,
-    }
-  }
-
-  async stopRuntime(): Promise<DesktopControlStatus> {
-    await this.dependencies.adapter.close()
-    return this.getStatus()
+    return request
   }
 
   async executeWorkflow(
@@ -302,181 +177,49 @@ export class DesktopControlPlugin implements BundledPlugin {
     signal: AbortSignal,
   ): Promise<DesktopWorkflowAdapterResult> {
     this.assertActive()
-    if (request.requestedCapabilities.length !== 1) {
+    if (
+      request.requestedCapabilities.length !== 1 ||
+      request.requestedCapabilities[0] !== 'shell'
+    ) {
       throw new ActionError(
         'DESKTOP_CAPABILITY_UNAVAILABLE',
-        `Desktop capability is not connected: ${request.requestedCapabilities.join(', ')}`,
-        'failure',
-        true,
-        'desktop-control',
-      )
-    }
-    const capability = request.requestedCapabilities[0]
-    if (capability !== 'browser' && capability !== 'shell') {
-      throw new ActionError(
-        'DESKTOP_CAPABILITY_UNAVAILABLE',
-        `Desktop capability is not connected: ${capability}`,
-        'failure',
-        true,
-        'desktop-control',
-      )
-    }
-    const status = await this.getStatus()
-    if (capability === 'browser' && status.browserControl !== 'ready') {
-      throw new ActionError(
-        'BROWSER_CONTROL_NEEDS_SETUP',
-        'Browser Control requires the bundled browser bridge and Chrome',
-        'failure',
-        true,
-        'desktop-control',
-      )
-    }
-    if (capability === 'shell' && status.computerControl !== 'ready') {
-      throw new ActionError(
-        'SHELL_CONTROL_NEEDS_SETUP',
-        'Computer Control requires PowerShell and an active model in Settings',
+        'Desktop Control accepts only the shell capability',
         'failure',
         true,
         'desktop-control',
       )
     }
     try {
-      if (capability === 'browser') {
-        const operation =
-          request.browserOperation ??
-          (request.browserUrl
-            ? { operation: 'open' as const, url: request.browserUrl }
-            : (() => {
-                const url = singleHttpUrl(request.goal)
-                return url ? { operation: 'open' as const, url } : undefined
-              })())
-        if (operation) {
-          const result = await this.executeBrowserOperation(operation, signal)
-          const riskClass = classifyBrowserOperationRisk(
-            operation,
-            result.observation ?? this.dependencies.browser.observationSnapshot(),
-          )
-          return {
-            runtimeCompleted: true,
-            evidence: {
-              ...result.evidence,
-              riskClass: request.browserRiskClass ?? riskClass,
-            },
-          }
-        }
-        if (status.automationEngine !== 'ready') {
-          throw new ActionError(
-            'DSH_MODEL_NOT_CONFIGURED',
-            'Automatic browser planning is unavailable',
-            'failure',
-            true,
-            'desktop-control',
-          )
-        }
-        await this.dependencies.browser.prepareForDelegation(signal)
-        const observationBeforeDelegation = await this.dependencies.browser
-          .observe(signal)
-          .catch(() => undefined)
-        try {
-          const delegated = await this.dependencies.adapter.execute(
-            request.goal,
-            signal,
-            capability,
-            request.shellCommand,
-          )
-          const observationAfterDelegation = await this.dependencies.browser
-            .observe(signal)
-            .catch(() => undefined)
-          return {
-            ...delegated,
-            evidence: mergeBrowserEvidence(
-              delegated.evidence,
-              observationBeforeDelegation,
-              observationAfterDelegation,
-            ),
-          }
-        } catch (error) {
-          const observationAfterDelegation = await this.dependencies.browser
-            .observe(signal)
-            .catch(() => undefined)
-          if (error instanceof DshAdapterError) {
-            throw mapDshAdapterError(
-              error,
-              mergeBrowserEvidence(
-                error.evidence,
-                observationBeforeDelegation,
-                observationAfterDelegation,
-              ),
-            )
-          }
-          throw error
-        }
-      }
       return await this.dependencies.adapter.execute(
         request.goal,
         signal,
-        capability,
+        'shell',
         request.shellCommand,
       )
     } catch (error) {
       if (signal.aborted) {
         throw new ActionError(
           'ACTION_CANCELLED',
-          'Browser action was cancelled',
+          'Desktop action was cancelled',
           'cancelled',
           true,
           'desktop-control',
         )
       }
       if (error instanceof ActionError) throw error
-      if (error instanceof BrowserAutomationError) {
-        throw new ActionError(
-          error.code,
-          error.message,
-          'failure',
-          error.recoverable,
-          'desktop-control',
-        )
-      }
       throw mapDshAdapterError(error)
     }
   }
 
-  async emergencyStop(): Promise<void> {
-    await Promise.allSettled([this.dependencies.adapter.close(), this.dependencies.browser.close()])
+  emergencyStop(): Promise<void> {
+    return this.dependencies.adapter.close()
   }
 
-  async observeBrowserForVerification(signal: AbortSignal) {
-    this.assertActive()
-    return this.dependencies.browser.observe(signal)
-  }
-
-  private executeBrowserOperation(
-    operation: NonNullable<DesktopWorkflowRequest['browserOperation']>,
-    signal: AbortSignal,
-  ): Promise<BrowserInteractionResult> {
-    switch (operation.operation) {
-      case 'observe':
-        return this.dependencies.browser.observePage(signal)
-      case 'open':
-        return this.dependencies.browser.open(operation.url, signal)
-      case 'click':
-        return this.dependencies.browser.click(operation.target, signal)
-      case 'fill':
-        return this.dependencies.browser.fill(operation.target, operation.value, signal)
-      case 'select':
-        return this.dependencies.browser.select(operation.target, operation.values, signal)
-      case 'scroll':
-        return this.dependencies.browser.scroll(operation.direction, operation.amount, signal)
-      case 'back':
-        return this.dependencies.browser.back(signal)
-      case 'forward':
-        return this.dependencies.browser.forward(signal)
-      case 'tabs':
-        return this.dependencies.browser.inspectTabs(signal)
-      case 'switch-tab':
-        return this.dependencies.browser.switchTab(operation.tabId, signal)
-    }
+  private async refreshAvailability(): Promise<void> {
+    ;[this.packagedRuntimeAvailable, this.shellAvailability] = await Promise.all([
+      this.dependencies.adapter.checkAvailability(),
+      this.dependencies.adapter.checkShellAvailability(),
+    ])
   }
 
   private assertInitialized(): void {
@@ -501,25 +244,7 @@ export class DesktopControlPlugin implements BundledPlugin {
   }
 }
 
-function singleHttpUrl(text: string): string | undefined {
-  const candidates = text.match(/https?:\/\/[^\s<>"']+/gi) ?? []
-  const urls = new Set<string>()
-  for (const candidate of candidates) {
-    const trimmed = candidate.replace(/[),.;!?]+$/, '')
-    try {
-      const parsed = new URL(trimmed)
-      if (!parsed.username && !parsed.password) urls.add(parsed.href)
-    } catch {
-      // Goals without one exact valid URL remain delegated to the bounded planner.
-    }
-  }
-  return urls.size === 1 ? urls.values().next().value : undefined
-}
-
-export function mapDshAdapterError(
-  error: unknown,
-  evidence?: BrowserExecutionEvidence,
-): ActionError {
+export function mapDshAdapterError(error: unknown): ActionError {
   if (!(error instanceof DshAdapterError)) {
     return new ActionError('DESKTOP_CONTROL_FAILED', 'Desktop Control failed', 'failure', true)
   }
@@ -533,22 +258,6 @@ export function mapDshAdapterError(
         : 'failure',
     error.recoverable,
     'desktop-control',
-    evidence ?? error.evidence,
+    error.evidence,
   )
-}
-
-function mergeBrowserEvidence(
-  evidence: unknown,
-  before: BrowserExecutionEvidence['before'],
-  after: BrowserExecutionEvidence['after'],
-): BrowserExecutionEvidence {
-  const browserEvidence =
-    evidence && typeof evidence === 'object' && 'kind' in evidence && evidence.kind === 'browser'
-      ? (evidence as BrowserExecutionEvidence)
-      : ({ kind: 'browser', operation: 'workflow' } as const)
-  return {
-    ...browserEvidence,
-    ...(before ? { before } : {}),
-    ...(after ? { after } : {}),
-  }
 }

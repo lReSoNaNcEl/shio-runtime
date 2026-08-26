@@ -2,23 +2,12 @@ import {
   ActionButton,
   Badge,
   Button,
-  ButtonGroup,
   Content,
-  Dialog,
-  DialogContainer,
-  Disclosure,
-  DisclosurePanel,
-  DisclosureTitle,
-  Divider,
-  Footer,
   Heading,
   InlineAlert,
-  ProgressBar,
   ProgressCircle,
   StatusLight,
-  Switch,
   Text,
-  TextField,
 } from '@react-spectrum/s2'
 import ChevronLeftIcon from '@react-spectrum/s2/icons/ChevronLeft'
 import DeviceDesktopIcon from '@react-spectrum/s2/icons/DeviceDesktop'
@@ -26,32 +15,25 @@ import DiscoverIcon from '@react-spectrum/s2/icons/Discover'
 import ProjectIcon from '@react-spectrum/s2/icons/Project'
 import { type ReactNode, useEffect, useState } from 'react'
 
-import { type BrowserGameDiagnostics, type GameSessionState } from '../../../shared/browser-game'
+import { type BrowserControlStatus } from '../../../shared/browser-control'
 import { type DesktopControlStatus } from '../../../shared/desktop-control'
 import {
-  BROWSER_GAME_CONTROL_PLUGIN_ID,
+  BROWSER_CONTROL_PLUGIN_ID,
   DESKTOP_CONTROL_PLUGIN_ID,
   type PluginHealthState,
   type PluginId,
-  type PluginLifecycleState,
   type PluginStatus,
   PROJECT_AWARENESS_PLUGIN_ID,
   WEB_SEARCH_PLUGIN_ID,
 } from '../../../shared/plugins'
-import {
-  isValidProjectBranch,
-  isValidProjectRepository,
-  type ProjectAwarenessPublicConfig,
-  type ProjectAwarenessStatus,
-  type ProjectFreshnessFailureReason,
-  type ProjectFreshnessState,
-  type ProjectSnapshotDelta,
-  type ProjectSyncStage,
-} from '../../../shared/project-awareness'
 import { type LocalizationContextValue } from '../../localization/LocalizationProvider'
 import { useTranslation } from '../../localization/useTranslation'
 import { observeRendererPromise } from '../../reliability/observePromise'
-import { formatRelativeTime } from '../../runtime/runtimeHealth'
+import { BrowserControlPluginView } from './browser-control/BrowserControlPluginView'
+import { DesktopControlPluginView } from './desktop-control/DesktopControlPluginView'
+import { PluginToggle } from './PluginSummary'
+import { ProjectAwarenessPluginView } from './project-awareness/ProjectAwarenessPluginView'
+import { WebSearchPluginView } from './web-search/WebSearchPluginView'
 
 type Tone = 'positive' | 'informative' | 'neutral' | 'notice' | 'negative'
 
@@ -65,231 +47,32 @@ const HEALTH: Record<
   error: { key: 'plugins.health.error', tone: 'negative' },
 }
 
-const LIFECYCLE_KEY: Record<PluginLifecycleState, Parameters<LocalizationContextValue['t']>[0]> = {
-  registered: 'plugins.lifecycle.registered',
-  initializing: 'plugins.lifecycle.initializing',
-  disabled: 'plugins.lifecycle.disabled',
-  'waiting-dependencies': 'plugins.lifecycle.waitingDependencies',
-  starting: 'plugins.lifecycle.starting',
-  active: 'plugins.lifecycle.active',
-  stopping: 'plugins.lifecycle.stopping',
-  error: 'plugins.lifecycle.error',
-  disposed: 'plugins.lifecycle.disposed',
-}
-
-const PROJECT_STATE_KEY: Record<
-  ProjectAwarenessStatus['state'],
-  Parameters<LocalizationContextValue['t']>[0]
-> = {
-  disconnected: 'health.project.state.disconnected',
-  connecting: 'health.project.state.connecting',
-  ready: 'health.project.state.ready',
-  syncing: 'health.project.state.syncing',
-  indexing: 'health.project.state.indexing',
-  stale: 'health.project.state.stale',
-  error: 'common.error',
-}
-
-const PROJECT_FRESHNESS: Record<
-  ProjectFreshnessState,
-  { key: Parameters<LocalizationContextValue['t']>[0]; tone: Tone }
-> = {
-  unknown: { key: 'plugins.project.freshness.unknown', tone: 'neutral' },
-  checking: { key: 'plugins.project.freshness.checking', tone: 'informative' },
-  current: { key: 'plugins.project.freshness.fresh', tone: 'positive' },
-  stale: { key: 'plugins.project.freshness.stale', tone: 'notice' },
-  'check-failed': { key: 'plugins.project.freshness.checkFailed', tone: 'notice' },
-}
-
-const PROJECT_SYNC_STAGE_KEY: Record<
-  ProjectSyncStage,
-  Parameters<LocalizationContextValue['t']>[0]
-> = {
-  fetching: 'plugins.project.syncStage.fetching',
-  indexing: 'plugins.project.syncStage.indexing',
-  validating: 'plugins.project.syncStage.validating',
-}
-
-const PROJECT_FRESHNESS_REASON_KEY: Record<
-  ProjectFreshnessFailureReason,
-  Parameters<LocalizationContextValue['t']>[0]
-> = {
-  credential: 'plugins.project.freshness.reason.credential',
-  network: 'plugins.project.freshness.reason.network',
-  'rate-limit': 'plugins.project.freshness.reason.rateLimit',
-  'github-unavailable': 'plugins.project.freshness.reason.githubUnavailable',
-  unknown: 'plugins.project.freshness.reason.unknown',
-}
-
-const EMPTY_PROJECT_STATUS: ProjectAwarenessStatus = {
-  enabled: false,
-  state: 'disconnected',
-  provider: 'github',
-  repository: '',
-  branch: 'main',
-  freshness: { state: 'unknown' },
-  sync: { state: 'idle' },
-  indexState: 'not_built',
-  access: 'read-only',
-  credential: {
-    configured: false,
-    source: 'none',
-    secureStorageAvailable: false,
-  },
-}
-
 const EMPTY_DESKTOP_STATUS: DesktopControlStatus = {
   enabled: false,
-  runtime: {
-    state: 'stopped',
-    packagedRuntimeAvailable: false,
-    version: '0.1.1-rc.2',
-  },
+  runtime: { state: 'stopped', packagedRuntimeAvailable: false, version: '0.1.1-rc.2' },
   automationEngine: 'needs-setup',
-  browserControl: 'needs-setup',
   computerControl: 'needs-setup',
-  browser: {
-    version: '0.34.0',
-    packagedBinaryAvailable: false,
-    executableAvailable: false,
-    isolatedProfile: true,
-  },
-  shell: {
-    executableAvailable: false,
-  },
+  shell: { executableAvailable: false },
   authorityMode: 'confirm',
-  model: {
-    provider: 'groq',
-    providerDisplayName: 'Groq',
-    model: '',
-    configured: false,
-  },
+  model: { provider: 'groq', providerDisplayName: 'Groq', model: '', configured: false },
 }
 
-const EMPTY_BROWSER_GAME_STATUS: BrowserGameDiagnostics = {
-  state: 'idle',
-  strategy: 'balanced',
-  reflex: {
-    backendId: 'observe-only',
-    mode: 'observe-only',
-    ready: false,
-    supportedInputs: [],
-    semanticPerception: false,
-  },
-  eventExtractor: {
-    backendId: 'none',
-    mode: 'none',
-    ready: false,
-    sampleRateHz: 0,
-    semanticPerception: false,
-  },
-  telemetry: {
-    capturedFrames: 0,
-    droppedFrames: 0,
-    staleDecisions: 0,
-    inputEvents: 0,
-    gameEvents: 0,
-    commentCandidates: 0,
-    commentCooldownSuppressions: 0,
-    commentBusySuppressions: 0,
-    commentPolicySuppressions: 0,
-    commentsCompleted: 0,
-    commentAdmissionSuppressions: 0,
-    commentFailures: 0,
-    captureFps: 0,
-    inputEventsPerSecond: 0,
-    sessionDurationMs: 0,
-  },
-}
-
-const GAME_STATE: Record<
-  GameSessionState,
-  { key: Parameters<LocalizationContextValue['t']>[0]; tone: Tone }
-> = {
-  idle: { key: 'plugins.browserGame.state.idle', tone: 'neutral' },
-  starting: { key: 'plugins.browserGame.state.starting', tone: 'informative' },
-  running: { key: 'plugins.browserGame.state.running', tone: 'positive' },
-  paused: { key: 'plugins.browserGame.state.paused', tone: 'notice' },
-  'waiting-user': { key: 'plugins.browserGame.state.waitingUser', tone: 'notice' },
-  stopping: { key: 'plugins.browserGame.state.stopping', tone: 'informative' },
-  stopped: { key: 'plugins.browserGame.state.stopped', tone: 'neutral' },
-  error: { key: 'plugins.browserGame.state.error', tone: 'negative' },
-}
-
-const GAME_BLOCKER_KEY: Record<
-  NonNullable<BrowserGameDiagnostics['waitingReason']>,
-  Parameters<LocalizationContextValue['t']>[0]
-> = {
-  captcha: 'plugins.browserGame.blocker.captcha',
-  'anti-bot': 'plugins.browserGame.blocker.antiBot',
-  authentication: 'plugins.browserGame.blocker.authentication',
-}
-
-const DESKTOP_RUNTIME_KEY: Record<
-  DesktopControlStatus['runtime']['state'],
-  Parameters<LocalizationContextValue['t']>[0]
-> = {
-  stopped: 'plugins.desktopControl.runtime.stopped',
-  starting: 'plugins.desktopControl.runtime.starting',
-  ready: 'plugins.desktopControl.runtime.ready',
-  running: 'plugins.desktopControl.runtime.running',
-  stopping: 'plugins.desktopControl.runtime.stopping',
-  error: 'plugins.desktopControl.runtime.error',
-}
-
-const DESKTOP_CAPABILITY_KEY: Record<
-  DesktopControlStatus['automationEngine'],
-  Parameters<LocalizationContextValue['t']>[0]
-> = {
-  ready: 'plugins.desktopControl.capability.ready',
-  'needs-setup': 'plugins.desktopControl.capability.needsSetup',
-  unavailable: 'plugins.desktopControl.capability.unavailable',
+const EMPTY_BROWSER_STATUS: BrowserControlStatus = {
+  enabled: false,
+  browserName: 'Google Chrome',
+  backend: 'playwright',
+  backendVersion: '1.62.1',
+  executableAvailable: false,
+  isolatedProfile: true,
+  semanticControl: 'unavailable',
+  visualControl: 'needs-setup',
+  visualModel: 'Auto',
+  session: null,
 }
 
 function rendererError(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error)
   return message.replace(/^Error invoking remote method '[^']+': Error: /, '')
-}
-
-function PluginSummary({ plugin }: { plugin: PluginStatus }) {
-  const { t } = useTranslation()
-  const health = HEALTH[plugin.health.state]
-  const detail = plugin.health.detailKey ? t(plugin.health.detailKey) : plugin.health.detail
-  return (
-    <dl className="plugin-status-list">
-      <div>
-        <dt>{t('common.enabled')}</dt>
-        <dd>{plugin.enabled ? t('common.yes') : t('common.no')}</dd>
-      </div>
-      <div>
-        <dt>{t('plugins.health.label')}</dt>
-        <dd>
-          <StatusLight variant={health.tone} size="S">
-            {detail || t(health.key)}
-          </StatusLight>
-        </dd>
-      </div>
-      <div>
-        <dt>{t('plugins.lifecycle.label')}</dt>
-        <dd>{t(LIFECYCLE_KEY[plugin.lifecycle])}</dd>
-      </div>
-    </dl>
-  )
-}
-
-function PluginToggle({
-  plugin,
-  onChange,
-}: {
-  plugin: PluginStatus
-  onChange: (enabled: boolean) => void
-}) {
-  const { t } = useTranslation()
-  return (
-    <Switch size="S" isSelected={plugin.enabled} isDisabled={plugin.busy} onChange={onChange}>
-      {plugin.enabled ? t('common.enabled') : t('common.disabled')}
-    </Switch>
-  )
 }
 
 function PluginCatalogStatus({ plugin }: { plugin: PluginStatus }) {
@@ -316,9 +99,9 @@ function PluginCatalogCard({
   icon: ReactNode
   nameKey: Parameters<LocalizationContextValue['t']>[0]
   descriptionKey: Parameters<LocalizationContextValue['t']>[0]
-  onToggle: (enabled: boolean) => void
-  onOpen: () => void
-  onRetry: () => void
+  onToggle(enabled: boolean): void
+  onOpen(): void
+  onRetry(): void
 }) {
   const { t } = useTranslation()
   return (
@@ -349,14 +132,14 @@ function PluginCatalogCard({
   )
 }
 
-function WebSearchDetails({
-  plugin,
+function MissingPlugin({
+  nameKey,
   onBack,
-  onPluginChange,
+  onRetry,
 }: {
-  plugin: PluginStatus
-  onBack: () => void
-  onPluginChange: (enabled: boolean) => void
+  nameKey: Parameters<LocalizationContextValue['t']>[0]
+  onBack(): void
+  onRetry(): void
 }) {
   const { t } = useTranslation()
   return (
@@ -365,1074 +148,13 @@ function WebSearchDetails({
         <ChevronLeftIcon />
         <Text>{t('plugins.backToCatalog')}</Text>
       </ActionButton>
-      <div className="plugin-detail-heading">
-        <span className="plugin-icon" aria-hidden="true">
-          <DiscoverIcon />
-        </span>
-        <div>
-          <Heading level={2}>{t('plugins.webSearch.name')}</Heading>
-          <Text>{t('plugins.webSearch.description')}</Text>
-        </div>
-        <PluginToggle plugin={plugin} onChange={onPluginChange} />
-      </div>
-
-      <section className="plugin-detail-section">
-        <Heading level={3}>{t('plugins.desktopControl.stateTitle')}</Heading>
-        <PluginSummary plugin={plugin} />
-      </section>
-
-      <section className="plugin-detail-section">
-        <Heading level={3}>{t('plugins.webSearch.providerTitle')}</Heading>
-        <Text>{t('plugins.webSearch.providerDescription')}</Text>
-        <dl className="plugin-status-list">
-          <div>
-            <dt>{t('plugins.webSearch.providerTitle')}</dt>
-            <dd>{t('plugins.webSearch.providerName')}</dd>
-          </div>
-          <div>
-            <dt>{t('plugins.webSearch.authentication')}</dt>
-            <dd>{t('plugins.webSearch.noApiKey')}</dd>
-          </div>
-        </dl>
-      </section>
-    </section>
-  )
-}
-
-function BrowserGameDetails({
-  plugin,
-  status,
-  operation,
-  error,
-  onBack,
-  onPluginChange,
-  onPause,
-  onStop,
-}: {
-  plugin: PluginStatus
-  status: BrowserGameDiagnostics
-  operation: 'pause' | 'stop' | null
-  error: string
-  onBack: () => void
-  onPluginChange: (enabled: boolean) => void
-  onPause: () => void
-  onStop: () => void
-}) {
-  const { intlLocale, t } = useTranslation()
-  const busy = operation !== null
-  const state = GAME_STATE[status.state]
-  const hasSession = Boolean(status.session)
-  const durationSeconds = Math.floor(status.telemetry.sessionDurationMs / 1_000)
-  const duration = `${Math.floor(durationSeconds / 60)}:${String(durationSeconds % 60).padStart(2, '0')}`
-  const number = new Intl.NumberFormat(intlLocale, { maximumFractionDigits: 1 })
-  const waitingReason = status.waitingReason ? t(GAME_BLOCKER_KEY[status.waitingReason]) : undefined
-  return (
-    <section className="plugin-detail page-container">
-      <ActionButton isQuiet onPress={onBack} UNSAFE_className="plugin-back-button">
-        <ChevronLeftIcon />
-        <Text>{t('plugins.backToCatalog')}</Text>
-      </ActionButton>
-      <div className="plugin-detail-heading">
-        <span className="plugin-icon" aria-hidden="true">
-          <DeviceDesktopIcon />
-        </span>
-        <div>
-          <Heading level={2}>{t('plugins.browserGame.name')}</Heading>
-          <Text>{t('plugins.browserGame.description')}</Text>
-        </div>
-        <PluginToggle plugin={plugin} onChange={onPluginChange} />
-      </div>
-      <section className="plugin-detail-section">
-        <Heading level={3}>{t('plugins.browserGame.sessionTitle')}</Heading>
-        <StatusLight variant={state.tone} size="S">
-          {t(state.key)}
-          {waitingReason ? ` · ${waitingReason}` : ''}
-        </StatusLight>
-        {status.session ? (
-          <>
-            <dl className="plugin-status-list">
-              <div>
-                <dt>{t('plugins.browserGame.currentSession')}</dt>
-                <dd>{status.session.title}</dd>
-              </div>
-              <div>
-                <dt>{t('plugins.browserGame.origin')}</dt>
-                <dd>{status.session.origin}</dd>
-              </div>
-              <div>
-                <dt>{t('plugins.browserGame.sessionDuration')}</dt>
-                <dd>{duration}</dd>
-              </div>
-              <div>
-                <dt>{t('plugins.browserGame.frameRate')}</dt>
-                <dd>
-                  {t('plugins.browserGame.fpsValue', {
-                    value: number.format(status.telemetry.captureFps),
-                  })}
-                </dd>
-              </div>
-              <div>
-                <dt>{t('plugins.browserGame.decisionLatency')}</dt>
-                <dd>
-                  {status.telemetry.decisionLatencyMsP50 === undefined
-                    ? '—'
-                    : t('plugins.browserGame.latencyP50Value', {
-                        value: number.format(status.telemetry.decisionLatencyMsP50),
-                      })}
-                </dd>
-              </div>
-            </dl>
-            <ButtonGroup>
-              <Button
-                variant="secondary"
-                isDisabled={busy || status.state !== 'running'}
-                isPending={operation === 'pause'}
-                onPress={onPause}
-              >
-                {t('plugins.browserGame.pause')}
-              </Button>
-              <Button
-                variant="negative"
-                isDisabled={busy || !hasSession}
-                isPending={operation === 'stop'}
-                onPress={onStop}
-              >
-                {t('plugins.browserGame.stop')}
-              </Button>
-            </ButtonGroup>
-          </>
-        ) : (
-          <Text>{t('plugins.browserGame.noSession')}</Text>
-        )}
-        {error ? (
-          <InlineAlert variant="negative" fillStyle="subtleFill">
-            <Heading>{t('common.error')}</Heading>
-            <Content>{error}</Content>
-          </InlineAlert>
-        ) : null}
-      </section>
-      <section className="plugin-detail-section">
-        <Heading level={3}>{t('plugins.browserGame.backendTitle')}</Heading>
-        <Text>{t('plugins.browserGame.backendDescription')}</Text>
-        <dl className="plugin-status-list">
-          <div>
-            <dt>{t('plugins.browserGame.backendTitle')}</dt>
-            <dd>{t('plugins.browserGame.backendRealtime')}</dd>
-          </div>
-          <div>
-            <dt>{t('plugins.browserGame.reflexTitle')}</dt>
-            <dd>{t(`plugins.browserGame.reflexMode.${status.reflex.mode}`)}</dd>
-          </div>
-          <div>
-            <dt>{t('plugins.browserGame.supportedInputs')}</dt>
-            <dd>
-              {status.reflex.supportedInputs.length > 0
-                ? status.reflex.supportedInputs
-                    .map((input) => t(`plugins.browserGame.input.${input}`))
-                    .join(', ')
-                : '—'}
-            </dd>
-          </div>
-          <div>
-            <dt>{t('plugins.browserGame.semanticTitle')}</dt>
-            <dd>
-              {t(
-                status.reflex.semanticPerception || status.eventExtractor.semanticPerception
-                  ? 'plugins.browserGame.semantic.available'
-                  : 'plugins.browserGame.semantic.unavailable',
-              )}
-            </dd>
-          </div>
-          <div>
-            <dt>{t('plugins.browserGame.eventExtractorTitle')}</dt>
-            <dd>{t(`plugins.browserGame.eventExtractorMode.${status.eventExtractor.mode}`)}</dd>
-          </div>
-          <div>
-            <dt>{t('plugins.browserGame.eventExtractorRate')}</dt>
-            <dd>
-              {t('plugins.browserGame.eventExtractorRateValue', {
-                value: number.format(status.eventExtractor.sampleRateHz),
-              })}
-            </dd>
-          </div>
-        </dl>
-      </section>
-      <section className="plugin-detail-section">
-        <Disclosure>
-          <DisclosureTitle level={3}>{t('plugins.browserGame.advanced')}</DisclosureTitle>
-          <DisclosurePanel>
-            <dl className="plugin-status-list">
-              <div>
-                <dt>{t('plugins.browserGame.captureLatency')}</dt>
-                <dd>
-                  {status.telemetry.captureLatencyMsP50 === undefined
-                    ? '—'
-                    : t('plugins.browserGame.latencyP50Value', {
-                        value: number.format(status.telemetry.captureLatencyMsP50),
-                      })}
-                </dd>
-              </div>
-              <div>
-                <dt>{t('plugins.browserGame.inputLatency')}</dt>
-                <dd>
-                  {status.telemetry.inputLatencyMsP50 === undefined
-                    ? '—'
-                    : t('plugins.browserGame.latencyP50Value', {
-                        value: number.format(status.telemetry.inputLatencyMsP50),
-                      })}
-                </dd>
-              </div>
-              <div>
-                <dt>{t('plugins.browserGame.inputRate')}</dt>
-                <dd>
-                  {t('plugins.browserGame.inputRateValue', {
-                    value: status.telemetry.inputEventsPerSecond,
-                  })}
-                </dd>
-              </div>
-              <div>
-                <dt>{t('plugins.browserGame.capturedFrames')}</dt>
-                <dd>{status.telemetry.capturedFrames}</dd>
-              </div>
-              <div>
-                <dt>{t('plugins.browserGame.droppedFrames')}</dt>
-                <dd>{status.telemetry.droppedFrames}</dd>
-              </div>
-              <div>
-                <dt>{t('plugins.browserGame.staleDecisions')}</dt>
-                <dd>{status.telemetry.staleDecisions}</dd>
-              </div>
-              <div>
-                <dt>{t('plugins.browserGame.inputEvents')}</dt>
-                <dd>{status.telemetry.inputEvents}</dd>
-              </div>
-              <div>
-                <dt>{t('plugins.browserGame.gameEvents')}</dt>
-                <dd>{status.telemetry.gameEvents}</dd>
-              </div>
-              <div>
-                <dt>{t('plugins.browserGame.commentCandidates')}</dt>
-                <dd>{status.telemetry.commentCandidates}</dd>
-              </div>
-              <div>
-                <dt>{t('plugins.browserGame.commentCooldownSuppressions')}</dt>
-                <dd>{status.telemetry.commentCooldownSuppressions}</dd>
-              </div>
-              <div>
-                <dt>{t('plugins.browserGame.commentBusySuppressions')}</dt>
-                <dd>{status.telemetry.commentBusySuppressions}</dd>
-              </div>
-              <div>
-                <dt>{t('plugins.browserGame.commentPolicySuppressions')}</dt>
-                <dd>{status.telemetry.commentPolicySuppressions}</dd>
-              </div>
-              <div>
-                <dt>{t('plugins.browserGame.commentsCompleted')}</dt>
-                <dd>{status.telemetry.commentsCompleted}</dd>
-              </div>
-              <div>
-                <dt>{t('plugins.browserGame.commentAdmissionSuppressions')}</dt>
-                <dd>{status.telemetry.commentAdmissionSuppressions}</dd>
-              </div>
-              <div>
-                <dt>{t('plugins.browserGame.commentFailures')}</dt>
-                <dd>{status.telemetry.commentFailures}</dd>
-              </div>
-              <div>
-                <dt>{t('plugins.browserGame.reflexBackendId')}</dt>
-                <dd>{status.reflex.backendId}</dd>
-              </div>
-              <div>
-                <dt>{t('plugins.browserGame.eventExtractorBackendId')}</dt>
-                <dd>{status.eventExtractor.backendId}</dd>
-              </div>
-            </dl>
-          </DisclosurePanel>
-        </Disclosure>
-      </section>
-    </section>
-  )
-}
-
-function relativeTime(timestamp: number | undefined, intlLocale: string, justNow: string): string {
-  return timestamp ? formatRelativeTime(timestamp, intlLocale, justNow) : '—'
-}
-
-function ChangedFilesSummary({ delta }: { delta: ProjectSnapshotDelta }) {
-  const { t } = useTranslation()
-  const marker = {
-    added: '+',
-    modified: '~',
-    deleted: '−',
-    renamed: '↪',
-  } as const
-  return (
-    <Disclosure UNSAFE_className="plugin-project-delta">
-      <DisclosureTitle level={4}>
-        {t('plugins.project.delta.total', { count: delta.total })}
-      </DisclosureTitle>
-      <DisclosurePanel>
-        <div className="plugin-project-delta-counts">
-          <Badge size="S" variant="positive">
-            + {delta.added}
-          </Badge>
-          <Badge size="S" variant="informative">
-            ~ {delta.modified}
-          </Badge>
-          <Badge size="S" variant="negative">
-            − {delta.deleted}
-          </Badge>
-          {delta.renamed > 0 && (
-            <Badge size="S" variant="gray">
-              ↪ {delta.renamed}
-            </Badge>
-          )}
-        </div>
-        <ul className="plugin-project-delta-files">
-          {delta.files.map((file) => (
-            <li key={`${file.status}:${file.path}`}>
-              <span aria-hidden="true">{marker[file.status]}</span>
-              <span>{file.path}</span>
-            </li>
-          ))}
-        </ul>
-        {delta.omitted > 0 && (
-          <Text>{t('plugins.project.delta.more', { count: delta.omitted })}</Text>
-        )}
-      </DisclosurePanel>
-    </Disclosure>
-  )
-}
-
-function ProjectFreshnessPanel({
-  status,
-  busy,
-  onSync,
-  onRefresh,
-  disabledReason,
-}: {
-  status: ProjectAwarenessStatus
-  busy: boolean
-  onSync: () => void
-  onRefresh?: () => void
-  disabledReason?: string
-}) {
-  const { intlLocale, t } = useTranslation()
-  const freshness = PROJECT_FRESHNESS[status.freshness.state]
-  const justNow = t('health.time.justNow')
-  const syncStage = status.sync.stage
-    ? t(PROJECT_SYNC_STAGE_KEY[status.sync.stage])
-    : t('plugins.project.syncStage.fetching')
-  return (
-    <section className="plugin-project-knowledge">
-      <Heading level={3}>{t('plugins.project.freshnessTitle')}</Heading>
-      <StatusLight variant={freshness.tone} size="S">
-        {status.snapshot ? t(freshness.key) : t('plugins.project.freshness.notApplicable')}
-      </StatusLight>
-      {status.freshness.state === 'check-failed' && (
-        <InlineAlert variant="notice" fillStyle="subtleFill">
-          <Heading>{t('plugins.project.freshness.checkFailed')}</Heading>
-          <Content>
-            {`${t(PROJECT_FRESHNESS_REASON_KEY[status.freshness.reasonCode ?? 'unknown'])} ${t(
-              status.snapshot
-                ? 'plugins.project.freshness.checkFailedDescription'
-                : 'plugins.project.freshness.checkFailedNoSnapshot',
-            )}`}
-          </Content>
-        </InlineAlert>
-      )}
-      <dl className="plugin-status-list plugin-project-knowledge-grid">
-        {status.freshness.state === 'stale' ? (
-          <>
-            <div>
-              <dt>{t('plugins.project.indexedRevision')}</dt>
-              <dd className="plugin-project-code">{status.freshness.indexedRevision ?? '—'}</dd>
-            </div>
-            <div>
-              <dt>{t('plugins.project.remoteRevision')}</dt>
-              <dd className="plugin-project-code">{status.freshness.remoteRevision ?? '—'}</dd>
-            </div>
-          </>
-        ) : (
-          <div>
-            <dt>{t('plugins.project.snapshot')}</dt>
-            <dd className="plugin-project-code">{status.snapshot?.revision ?? '—'}</dd>
-          </div>
-        )}
-        {(status.freshness.state === 'unknown' || status.freshness.state === 'check-failed') &&
-          status.freshness.lastKnownRemoteRevision && (
-            <div>
-              <dt>{t('plugins.project.lastKnownRemoteRevision')}</dt>
-              <dd className="plugin-project-code">{status.freshness.lastKnownRemoteRevision}</dd>
-            </div>
-          )}
-        <div>
-          <dt>{t('plugins.project.lastCheckLabel')}</dt>
-          <dd>
-            {relativeTime(
-              status.freshness.checkedAt ?? status.freshness.lastKnownRemoteCheckedAt,
-              intlLocale,
-              justNow,
-            )}
-          </dd>
-        </div>
-      </dl>
-      {status.sync.state === 'syncing' && (
-        <ProgressBar isIndeterminate label={syncStage} valueLabel={syncStage} />
-      )}
-      {status.sync.state === 'failed' && (
-        <InlineAlert variant="negative" fillStyle="subtleFill">
-          <Heading>{t('plugins.project.syncFailed')}</Heading>
-          <Content>
-            {status.snapshot
-              ? t('plugins.project.syncFailedPreserved')
-              : status.sync.lastError || t('plugins.project.syncFailedNoSnapshot')}
-          </Content>
-        </InlineAlert>
-      )}
-      <div className="plugin-action-row">
-        <Button variant="secondary" onPress={onSync} isDisabled={busy}>
-          {status.snapshot ? t('plugins.project.sync') : t('plugins.project.createIndex')}
+      <InlineAlert variant="negative" fillStyle="subtleFill">
+        <Heading>{t(nameKey)}</Heading>
+        <Content>{t('plugins.catalog.unavailable')}</Content>
+        <Button variant="secondary" onPress={onRetry}>
+          {t('common.retry')}
         </Button>
-        {onRefresh && (
-          <ActionButton onPress={onRefresh} isDisabled={busy}>
-            {t('plugins.project.refreshFreshness')}
-          </ActionButton>
-        )}
-      </div>
-      {busy && disabledReason ? (
-        <Text UNSAFE_className="plugin-action-hint">{disabledReason}</Text>
-      ) : null}
-      {status.freshness.state === 'stale' && status.changedFiles && (
-        <ChangedFilesSummary delta={status.changedFiles} />
-      )}
-      {status.freshness.state === 'stale' && !status.changedFiles && (
-        <Text>{t('plugins.project.delta.unavailable')}</Text>
-      )}
-    </section>
-  )
-}
-
-function ProjectIndexPanel({
-  status,
-  busy,
-  onRebuild,
-}: {
-  status: ProjectAwarenessStatus
-  busy: boolean
-  onRebuild: () => void
-}) {
-  const { intlLocale, t } = useTranslation()
-  const justNow = t('health.time.justNow')
-  return (
-    <section className="plugin-detail-section">
-      <Heading level={3}>{t('plugins.project.indexTitle')}</Heading>
-      {status.snapshot ? (
-        <>
-          <dl className="plugin-status-list plugin-project-knowledge-grid">
-            <div>
-              <dt>{t('plugins.project.snapshot')}</dt>
-              <dd className="plugin-project-code">{status.snapshot.revision}</dd>
-            </div>
-            <div>
-              <dt>{t('plugins.project.indexedFiles')}</dt>
-              <dd>{status.snapshot.fileCount}</dd>
-            </div>
-            <div>
-              <dt>{t('plugins.project.indexedAt')}</dt>
-              <dd>{relativeTime(status.snapshot.indexedAt, intlLocale, justNow)}</dd>
-            </div>
-            <div>
-              <dt>{t('plugins.project.lastSyncLabel')}</dt>
-              <dd>{relativeTime(status.lastSyncAt, intlLocale, justNow)}</dd>
-            </div>
-          </dl>
-          <ActionButton onPress={onRebuild} isDisabled={busy}>
-            {t('plugins.project.rebuild')}
-          </ActionButton>
-        </>
-      ) : (
-        <Text>{t('plugins.project.indexEmpty')}</Text>
-      )}
-    </section>
-  )
-}
-
-function ProjectAwarenessDetails({
-  plugin,
-  onBack,
-  onPluginChange,
-}: {
-  plugin: PluginStatus
-  onBack: () => void
-  onPluginChange: (enabled: boolean) => void
-}) {
-  const { t } = useTranslation()
-  const [config, setConfig] = useState<ProjectAwarenessPublicConfig>({
-    provider: 'github',
-    repository: '',
-    branch: 'main',
-  })
-  const [status, setStatus] = useState<ProjectAwarenessStatus>(EMPTY_PROJECT_STATUS)
-  const [credential, setCredential] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [message, setMessage] = useState('')
-  const [error, setError] = useState('')
-  const [forgetDialogOpen, setForgetDialogOpen] = useState(false)
-
-  useEffect(() => {
-    let active = true
-    observeRendererPromise(
-      Promise.all([
-        window.api.projectAwareness.getConfig(),
-        window.api.projectAwareness.getStatus(),
-      ]).then(([nextConfig, nextStatus]) => {
-        if (!active) return
-        setConfig(nextConfig)
-        setStatus(nextStatus)
-      }),
-      'load Project Awareness plugin details',
-      (reason) => {
-        if (active) setError(rendererError(reason))
-      },
-    )
-    const intervalId = window.setInterval(() => {
-      observeRendererPromise(
-        window.api.projectAwareness.getStatus().then((nextStatus) => {
-          if (active) setStatus(nextStatus)
-        }),
-        'refresh Project Awareness plugin status',
-      )
-    }, 3_000)
-    return () => {
-      active = false
-      window.clearInterval(intervalId)
-    }
-  }, [])
-
-  const run = async (
-    operation: () => Promise<unknown>,
-    successMessage = '',
-    surfaceError = true,
-  ): Promise<void> => {
-    setBusy(true)
-    setError('')
-    setMessage('')
-    try {
-      await operation()
-      setStatus(await window.api.projectAwareness.getStatus())
-      setMessage(successMessage)
-    } catch (reason) {
-      const nextStatus = await window.api.projectAwareness.getStatus().catch(() => null)
-      if (nextStatus) setStatus(nextStatus)
-      if (surfaceError) setError(rendererError(reason))
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  const saveConfig = async (): Promise<void> => {
-    await run(async () => {
-      const next = await window.api.projectAwareness.configure({
-        ...config,
-        repository: config.repository.trim(),
-        branch: config.branch.trim(),
-      })
-      setStatus(next)
-      setConfig({ provider: next.provider, repository: next.repository, branch: next.branch })
-    }, t('plugins.project.applied'))
-  }
-
-  const saveCredential = async (): Promise<void> => {
-    await run(async () => {
-      setStatus(await window.api.projectAwareness.saveCredential(credential))
-      setCredential('')
-      setForgetDialogOpen(false)
-    }, t('common.saved'))
-  }
-
-  const forgetCredential = async (): Promise<void> => {
-    await run(async () => {
-      setStatus(await window.api.projectAwareness.forgetCredential())
-      setCredential('')
-      setForgetDialogOpen(false)
-    })
-  }
-
-  const validTarget =
-    isValidProjectRepository(config.repository) && isValidProjectBranch(config.branch)
-  const savedTarget =
-    validTarget &&
-    status.repository === config.repository.trim() &&
-    status.branch === config.branch.trim()
-  const runtimeDisabled = busy || plugin.busy || !plugin.enabled
-  const projectActionsDisabled = runtimeDisabled || !status.credential.configured || !savedTarget
-  const connected = ['ready', 'syncing', 'indexing', 'stale'].includes(status.state)
-  const projectActionDisabledReason = !plugin.enabled
-    ? t('plugins.project.requirement.enable')
-    : !status.credential.configured
-      ? t('plugins.project.requirement.credential')
-      : !savedTarget
-        ? t('plugins.project.requirement.repository')
-        : ''
-
-  return (
-    <section className="plugin-detail page-container">
-      <ActionButton isQuiet onPress={onBack} UNSAFE_className="plugin-back-button">
-        <ChevronLeftIcon />
-        <Text>{t('plugins.backToCatalog')}</Text>
-      </ActionButton>
-      <div className="plugin-detail-heading">
-        <span className="plugin-icon" aria-hidden="true">
-          <ProjectIcon />
-        </span>
-        <div>
-          <Heading level={2}>{t(plugin.manifest.nameKey)}</Heading>
-          <Text>{t(plugin.manifest.descriptionKey)}</Text>
-        </div>
-        <PluginToggle plugin={plugin} onChange={onPluginChange} />
-      </div>
-      <PluginSummary plugin={plugin} />
-      <Divider />
-
-      {(error || plugin.lastError || status.lastError || message) && (
-        <div className="plugin-feedback">
-          {error || plugin.lastError || status.lastError ? (
-            <InlineAlert variant="negative" fillStyle="subtleFill">
-              <Heading>{t('common.error')}</Heading>
-              <Content>{error || plugin.lastError || status.lastError}</Content>
-            </InlineAlert>
-          ) : (
-            <StatusLight variant="positive" role="status">
-              {message}
-            </StatusLight>
-          )}
-        </div>
-      )}
-
-      <section className="plugin-detail-section">
-        <Heading level={3}>{t('plugins.project.projectTitle')}</Heading>
-        <Text>{t('plugins.project.configDescription')}</Text>
-        <div className="plugin-project-fields">
-          <TextField
-            label={t('common.repository')}
-            value={config.repository}
-            onChange={(repository) => setConfig((current) => ({ ...current, repository }))}
-            isDisabled={busy}
-            isInvalid={config.repository.length > 0 && !isValidProjectRepository(config.repository)}
-            errorMessage={t('plugins.project.repositoryInvalid')}
-            description={t('plugins.project.repositoryHint')}
-          />
-          <TextField
-            label={t('common.branch')}
-            value={config.branch}
-            onChange={(branch) => setConfig((current) => ({ ...current, branch }))}
-            isDisabled={busy}
-            isInvalid={config.branch.length > 0 && !isValidProjectBranch(config.branch)}
-            errorMessage={t('plugins.project.branchInvalid')}
-          />
-        </div>
-        <Button
-          variant="secondary"
-          onPress={() => void saveConfig()}
-          isDisabled={!validTarget || busy}
-        >
-          {busy ? t('plugins.project.applying') : t('plugins.project.apply')}
-        </Button>
-        {!plugin.enabled && <Text>{t('plugins.project.disabledDataAvailable')}</Text>}
-        {!savedTarget && <Text>{t('plugins.project.projectNotConfigured')}</Text>}
-      </section>
-
-      <ProjectFreshnessPanel
-        status={status}
-        busy={projectActionsDisabled}
-        disabledReason={projectActionDisabledReason}
-        onSync={() => void run(() => window.api.projectAwareness.sync(), '', false)}
-        onRefresh={() => void run(() => window.api.projectAwareness.refreshSnapshotStatus(true))}
-      />
-
-      <ProjectIndexPanel
-        status={status}
-        busy={projectActionsDisabled || !status.snapshot}
-        onRebuild={() => void run(() => window.api.projectAwareness.rebuildIndex(), '', false)}
-      />
-
-      <section className="plugin-detail-section">
-        <Heading level={3}>{t('plugins.project.connectionTitle')}</Heading>
-        {!plugin.enabled && <Text>{t('plugins.project.disabledHint')}</Text>}
-        <dl className="plugin-status-list plugin-runtime-status">
-          <div>
-            <dt>{t('plugins.lifecycle.label')}</dt>
-            <dd>{t(PROJECT_STATE_KEY[status.state])}</dd>
-          </div>
-          <div>
-            <dt>{t('plugins.project.credentialTitle')}</dt>
-            <dd>{status.credential.configured ? t('common.saved') : t('common.notConfigured')}</dd>
-          </div>
-          <div>
-            <dt>{t('health.project.access')}</dt>
-            <dd>{t('common.readOnly')}</dd>
-          </div>
-        </dl>
-        <Text>{t('plugins.project.credentialDescription')}</Text>
-        <TextField
-          label={t('plugins.project.credentialTitle')}
-          aria-label={t('plugins.project.credentialTitle')}
-          placeholder={t('plugins.project.credentialPlaceholder')}
-          type="password"
-          value={credential}
-          onChange={setCredential}
-          isDisabled={busy}
-        />
-        <div className="plugin-action-row">
-          <Button
-            variant="secondary"
-            onPress={() => void saveCredential()}
-            isDisabled={credential.trim().length < 20 || busy}
-          >
-            {t('plugins.project.saveCredential')}
-          </Button>
-          <ActionButton
-            onPress={() => setForgetDialogOpen(true)}
-            isDisabled={!status.credential.configured || busy}
-          >
-            {t('plugins.project.forgetCredential')}
-          </ActionButton>
-          <ActionButton
-            onPress={() =>
-              observeRendererPromise(
-                window.api.projectAwareness.openTokenSettings(),
-                'open GitHub token settings',
-              )
-            }
-          >
-            {t('plugins.project.openTokenSettings')}
-          </ActionButton>
-          <Button
-            variant="secondary"
-            onPress={() => void run(() => window.api.projectAwareness.connect())}
-            isDisabled={
-              runtimeDisabled || connected || !savedTarget || !status.credential.configured
-            }
-          >
-            {t('common.connect')}
-          </Button>
-          <ActionButton
-            onPress={() => void run(() => window.api.projectAwareness.disconnect())}
-            isDisabled={runtimeDisabled || !connected}
-          >
-            {t('common.disconnect')}
-          </ActionButton>
-        </div>
-        {projectActionDisabledReason ? (
-          <Text UNSAFE_className="plugin-action-hint">{projectActionDisabledReason}</Text>
-        ) : null}
-      </section>
-
-      <DialogContainer
-        onDismiss={() => {
-          if (!busy) setForgetDialogOpen(false)
-        }}
-      >
-        {forgetDialogOpen && (
-          <Dialog>
-            <Heading>{t('plugins.project.forgetDialog.title')}</Heading>
-            <Content>{t('plugins.project.forgetDialog.description')}</Content>
-            <Footer>
-              <ButtonGroup>
-                <Button
-                  variant="secondary"
-                  isDisabled={busy}
-                  onPress={() => setForgetDialogOpen(false)}
-                >
-                  {t('common.cancel')}
-                </Button>
-                <Button variant="negative" isPending={busy} onPress={() => void forgetCredential()}>
-                  {t('plugins.project.forgetCredential')}
-                </Button>
-              </ButtonGroup>
-            </Footer>
-          </Dialog>
-        )}
-      </DialogContainer>
-    </section>
-  )
-}
-
-function DesktopControlDetails({
-  plugin,
-  status,
-  onBack,
-  onPluginChange,
-  onStatusChange,
-  onOpenLlmSettings,
-}: {
-  plugin: PluginStatus
-  status: DesktopControlStatus
-  onBack: () => void
-  onPluginChange: (enabled: boolean) => void
-  onStatusChange: (status: DesktopControlStatus) => void
-  onOpenLlmSettings: () => void
-}) {
-  const { t } = useTranslation()
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
-  const [message, setMessage] = useState('')
-
-  const run = (
-    operation: () => Promise<DesktopControlStatus>,
-    successKey?: Parameters<LocalizationContextValue['t']>[0],
-  ): void => {
-    if (busy) return
-    setBusy(true)
-    setError('')
-    setMessage('')
-    observeRendererPromise(
-      operation()
-        .then((next) => {
-          onStatusChange(next)
-          if (successKey) setMessage(t(successKey))
-        })
-        .finally(() => setBusy(false)),
-      'update Desktop Control',
-      (reason) => setError(rendererError(reason)),
-    )
-  }
-
-  const changeAuthority = (full: boolean): void => {
-    if (busy) return
-    setBusy(true)
-    setError('')
-    observeRendererPromise(
-      window.api.actions
-        .requestAuthorityMode(full ? 'full' : 'confirm')
-        .then(() => window.api.desktopControl.getStatus())
-        .then(onStatusChange)
-        .finally(() => setBusy(false)),
-      'change Desktop Control authority',
-      (reason) => setError(rendererError(reason)),
-    )
-  }
-
-  const runtimeTone: Tone =
-    status.runtime.state === 'ready'
-      ? 'positive'
-      : status.runtime.state === 'error'
-        ? 'negative'
-        : status.runtime.state === 'running' || status.runtime.state === 'starting'
-          ? 'informative'
-          : 'neutral'
-
-  return (
-    <section className="plugin-detail page-container">
-      <ActionButton isQuiet onPress={onBack} UNSAFE_className="plugin-back-button">
-        <ChevronLeftIcon />
-        <Text>{t('plugins.backToCatalog')}</Text>
-      </ActionButton>
-      <div className="plugin-detail-heading">
-        <span className="plugin-icon" aria-hidden="true">
-          <DeviceDesktopIcon />
-        </span>
-        <div>
-          <Heading level={2}>{t(plugin.manifest.nameKey)}</Heading>
-          <Text>{t(plugin.manifest.descriptionKey)}</Text>
-        </div>
-        <PluginToggle plugin={plugin} onChange={onPluginChange} />
-      </div>
-      <PluginSummary plugin={plugin} />
-      <Divider size="S" />
-
-      {(error ||
-        plugin.lastError ||
-        status.runtime.lastError ||
-        status.model.lastError ||
-        message) && (
-        <div className="plugin-feedback">
-          {error || plugin.lastError || status.runtime.lastError || status.model.lastError ? (
-            <InlineAlert variant="negative" fillStyle="subtleFill">
-              <Heading>{t('common.error')}</Heading>
-              <Content>
-                {error || plugin.lastError || status.runtime.lastError || status.model.lastError}
-              </Content>
-            </InlineAlert>
-          ) : (
-            <StatusLight variant="positive" role="status">
-              {message}
-            </StatusLight>
-          )}
-        </div>
-      )}
-
-      <section className="plugin-detail-section">
-        <Heading level={3}>{t('plugins.desktopControl.stateTitle')}</Heading>
-        <dl className="plugin-status-list plugin-runtime-status">
-          <div>
-            <dt>{t('plugins.desktopControl.automationEngine')}</dt>
-            <dd>{t(DESKTOP_CAPABILITY_KEY[status.automationEngine])}</dd>
-          </div>
-          <div>
-            <dt>{t('plugins.desktopControl.harnessRuntime')}</dt>
-            <dd>
-              <StatusLight variant={runtimeTone} size="S">
-                {t(DESKTOP_RUNTIME_KEY[status.runtime.state])}
-              </StatusLight>
-            </dd>
-          </div>
-          <div>
-            <dt>{t('plugins.desktopControl.browserAgent')}</dt>
-            <dd>{t(DESKTOP_CAPABILITY_KEY[status.browserControl])}</dd>
-          </div>
-          <div>
-            <dt>{t('capabilities.computer.title')}</dt>
-            <dd>{t(DESKTOP_CAPABILITY_KEY[status.computerControl])}</dd>
-          </div>
-        </dl>
-      </section>
-
-      <section className="plugin-detail-section">
-        <Heading level={3}>{t('plugins.desktopControl.modelTitle')}</Heading>
-        <Text>{t('plugins.desktopControl.modelDescription')}</Text>
-        <StatusLight variant={status.model.configured ? 'positive' : 'notice'} size="S">
-          {status.model.configured
-            ? t('plugins.desktopControl.modelReady')
-            : t('plugins.desktopControl.modelNeedsSetup')}
-        </StatusLight>
-        <dl className="plugin-status-list plugin-model-status">
-          <div>
-            <dt>{t('plugins.desktopControl.modelProvider')}</dt>
-            <dd>{status.model.providerDisplayName}</dd>
-          </div>
-          <div>
-            <dt>{t('common.model')}</dt>
-            <dd>{status.model.model || t('common.notConfigured')}</dd>
-          </div>
-        </dl>
-        <Text>{t('plugins.desktopControl.modelSettingsHint')}</Text>
-        {!status.model.configured && (
-          <Button variant="secondary" onPress={onOpenLlmSettings}>
-            {t('plugins.desktopControl.openModelSettings')}
-          </Button>
-        )}
-      </section>
-
-      <section className="plugin-detail-section">
-        <Heading level={3}>{t('plugins.desktopControl.accessTitle')}</Heading>
-        <div className="plugin-access-control">
-          <div className="plugin-access-copy">
-            <Switch
-              isSelected={status.authorityMode === 'full'}
-              isDisabled={busy}
-              onChange={changeAuthority}
-            >
-              {t('plugins.desktopControl.fullAccess')}
-            </Switch>
-            <Text>{t('plugins.desktopControl.fullAccessDescription')}</Text>
-          </div>
-          <StatusLight variant={status.authorityMode === 'full' ? 'notice' : 'positive'} size="S">
-            {status.authorityMode === 'full'
-              ? t('plugins.desktopControl.accessMode.full')
-              : t('plugins.desktopControl.accessMode.confirm')}
-          </StatusLight>
-        </div>
-        {status.authorityMode === 'full' && (
-          <InlineAlert variant="notice" fillStyle="subtleFill">
-            <Heading>{t('plugins.desktopControl.fullAccessWarningTitle')}</Heading>
-            <Content>{t('plugins.desktopControl.fullAccessWarningDescription')}</Content>
-          </InlineAlert>
-        )}
-      </section>
-
-      <section className="plugin-detail-section">
-        <div className="plugin-section-heading">
-          <Heading level={3}>{t('plugins.desktopControl.runtimeTitle')}</Heading>
-          <StatusLight variant={runtimeTone} size="S">
-            {t(DESKTOP_RUNTIME_KEY[status.runtime.state])}
-          </StatusLight>
-        </div>
-        <Text>{t('plugins.desktopControl.runtimeDescription')}</Text>
-        <div className="plugin-action-row">
-          <Button
-            variant="secondary"
-            onPress={() => run(() => window.api.desktopControl.startRuntime())}
-            isDisabled={
-              busy ||
-              !plugin.enabled ||
-              !status.model.configured ||
-              !status.runtime.packagedRuntimeAvailable ||
-              ['ready', 'running', 'starting'].includes(status.runtime.state)
-            }
-          >
-            {t('plugins.desktopControl.startRuntime')}
-          </Button>
-          <ActionButton
-            onPress={() => run(() => window.api.desktopControl.stopRuntime())}
-            isDisabled={busy || ['stopped', 'stopping'].includes(status.runtime.state)}
-          >
-            {t('plugins.desktopControl.stopRuntime')}
-          </ActionButton>
-        </div>
-        {status.runtime.state === 'running' && (
-          <InlineAlert variant="notice" fillStyle="subtleFill">
-            <Heading>{t('plugins.desktopControl.activeTask')}</Heading>
-            <Content>{t('plugins.desktopControl.activeTaskDescription')}</Content>
-            <Button
-              variant="negative"
-              onPress={() => {
-                observeRendererPromise(
-                  window.api.actions.emergencyStop(),
-                  'stop active Desktop Control task',
-                )
-              }}
-            >
-              {t('actions.emergencyStop')}
-            </Button>
-          </InlineAlert>
-        )}
-      </section>
-
-      <Disclosure UNSAFE_className="plugin-technical-details">
-        <DisclosureTitle level={3}>{t('plugins.desktopControl.technicalTitle')}</DisclosureTitle>
-        <DisclosurePanel>
-          <dl className="plugin-status-list plugin-runtime-status">
-            <div>
-              <dt>{t('plugins.desktopControl.dshVersion')}</dt>
-              <dd>{status.runtime.version}</dd>
-            </div>
-            <div>
-              <dt>{t('plugins.desktopControl.browserBackend')}</dt>
-              <dd>agent-browser {status.browser.version}</dd>
-            </div>
-            <div>
-              <dt>{t('plugins.desktopControl.browserBinary')}</dt>
-              <dd>
-                {status.browser.packagedBinaryAvailable
-                  ? t('plugins.desktopControl.resourceAvailable')
-                  : t('plugins.desktopControl.resourceMissing')}
-              </dd>
-            </div>
-            <div>
-              <dt>{t('plugins.desktopControl.chromeExecutable')}</dt>
-              <dd>
-                {status.browser.executableAvailable
-                  ? t('plugins.desktopControl.resourceAvailable')
-                  : t('plugins.desktopControl.resourceMissing')}
-              </dd>
-            </div>
-            <div>
-              <dt>{t('plugins.desktopControl.browserProfile')}</dt>
-              <dd>{t('plugins.desktopControl.browserProfileIsolated')}</dd>
-            </div>
-            <div>
-              <dt>{t('plugins.desktopControl.powerShell')}</dt>
-              <dd>
-                {status.shell.executableAvailable
-                  ? t('plugins.desktopControl.resourceAvailable')
-                  : t('plugins.desktopControl.resourceMissing')}
-              </dd>
-            </div>
-          </dl>
-        </DisclosurePanel>
-      </Disclosure>
+      </InlineAlert>
     </section>
   )
 }
@@ -1444,17 +166,16 @@ export function PluginsView({
   onOpenLlmSettings,
 }: {
   detailPluginId: PluginId | null
-  onShowDetails: (id: PluginId) => void
-  onBack: () => void
-  onOpenLlmSettings: () => void
+  onShowDetails(id: PluginId): void
+  onBack(): void
+  onOpenLlmSettings(): void
 }) {
   const { t } = useTranslation()
   const [plugins, setPlugins] = useState<PluginStatus[]>([])
-  const [desktopStatus, setDesktopStatus] = useState<DesktopControlStatus>(EMPTY_DESKTOP_STATUS)
-  const [browserGameStatus, setBrowserGameStatus] =
-    useState<BrowserGameDiagnostics>(EMPTY_BROWSER_GAME_STATUS)
-  const [browserGameOperation, setBrowserGameOperation] = useState<'pause' | 'stop' | null>(null)
-  const [browserGameError, setBrowserGameError] = useState('')
+  const [desktopStatus, setDesktopStatus] = useState(EMPTY_DESKTOP_STATUS)
+  const [browserStatus, setBrowserStatus] = useState(EMPTY_BROWSER_STATUS)
+  const [browserOperation, setBrowserOperation] = useState<'pause' | 'resume' | 'stop' | null>(null)
+  const [browserError, setBrowserError] = useState('')
   const [error, setError] = useState('')
   const [loaded, setLoaded] = useState(false)
 
@@ -1465,8 +186,8 @@ export function PluginsView({
         if (detailPluginId === DESKTOP_CONTROL_PLUGIN_ID) {
           setDesktopStatus(await window.api.desktopControl.getStatus())
         }
-        if (detailPluginId === BROWSER_GAME_CONTROL_PLUGIN_ID) {
-          setBrowserGameStatus(await window.api.browserGame.getStatus())
+        if (detailPluginId === BROWSER_CONTROL_PLUGIN_ID) {
+          setBrowserStatus(await window.api.browserControl.getStatus())
         }
         setError('')
         setLoaded(true)
@@ -1483,22 +204,21 @@ export function PluginsView({
     let active = true
     const load = (): void => {
       observeRendererPromise(
-        window.api.plugins.list().then(async (items) => {
-          const desktopStatus =
-            detailPluginId === DESKTOP_CONTROL_PLUGIN_ID
-              ? await window.api.desktopControl.getStatus()
-              : null
-          const browserGameStatus =
-            detailPluginId === BROWSER_GAME_CONTROL_PLUGIN_ID
-              ? await window.api.browserGame.getStatus()
-              : null
-          if (active) {
-            setPlugins(items)
-            if (desktopStatus) setDesktopStatus(desktopStatus)
-            if (browserGameStatus) setBrowserGameStatus(browserGameStatus)
-            setError('')
-            setLoaded(true)
-          }
+        Promise.all([
+          window.api.plugins.list(),
+          detailPluginId === DESKTOP_CONTROL_PLUGIN_ID
+            ? window.api.desktopControl.getStatus()
+            : Promise.resolve(null),
+          detailPluginId === BROWSER_CONTROL_PLUGIN_ID
+            ? window.api.browserControl.getStatus()
+            : Promise.resolve(null),
+        ]).then(([items, desktop, browser]) => {
+          if (!active) return
+          setPlugins(items)
+          if (desktop) setDesktopStatus(desktop)
+          if (browser) setBrowserStatus(browser)
+          setError('')
+          setLoaded(true)
         }),
         'load Plugin catalog',
         (reason) => {
@@ -1512,7 +232,7 @@ export function PluginsView({
     load()
     const intervalId = window.setInterval(
       load,
-      detailPluginId === BROWSER_GAME_CONTROL_PLUGIN_ID ? 1_000 : 3_000,
+      detailPluginId === BROWSER_CONTROL_PLUGIN_ID ? 1_000 : 3_000,
     )
     return () => {
       active = false
@@ -1520,33 +240,27 @@ export function PluginsView({
     }
   }, [detailPluginId])
 
-  const projectPlugin = plugins.find((plugin) => plugin.manifest.id === PROJECT_AWARENESS_PLUGIN_ID)
-  const desktopPlugin = plugins.find((plugin) => plugin.manifest.id === DESKTOP_CONTROL_PLUGIN_ID)
-  const webSearchPlugin = plugins.find((plugin) => plugin.manifest.id === WEB_SEARCH_PLUGIN_ID)
-  const browserGamePlugin = plugins.find(
-    (plugin) => plugin.manifest.id === BROWSER_GAME_CONTROL_PLUGIN_ID,
-  )
+  const byId = (id: PluginId): PluginStatus | undefined =>
+    plugins.find((plugin) => plugin.manifest.id === id)
+  const projectPlugin = byId(PROJECT_AWARENESS_PLUGIN_ID)
+  const desktopPlugin = byId(DESKTOP_CONTROL_PLUGIN_ID)
+  const webSearchPlugin = byId(WEB_SEARCH_PLUGIN_ID)
+  const browserPlugin = byId(BROWSER_CONTROL_PLUGIN_ID)
+
   const togglePlugin = (id: PluginId, enabled: boolean): void => {
-    const target = plugins.find((plugin) => plugin.manifest.id === id)
+    const target = byId(id)
     if (!target || target.busy) return
-    setError('')
     setPlugins((items) =>
       items.map((item) => (item.manifest.id === id ? { ...item, busy: true } : item)),
     )
     observeRendererPromise(
-      (enabled ? window.api.plugins.enable(id) : window.api.plugins.disable(id)).then(
-        async (next) => {
-          setPlugins((items) =>
-            items.map((item) => (item.manifest.id === next.manifest.id ? next : item)),
-          )
-          if (id === DESKTOP_CONTROL_PLUGIN_ID) {
-            setDesktopStatus(await window.api.desktopControl.getStatus())
-          }
-          if (id === BROWSER_GAME_CONTROL_PLUGIN_ID) {
-            setBrowserGameStatus(await window.api.browserGame.getStatus())
-          }
-        },
-      ),
+      (enabled ? window.api.plugins.enable(id) : window.api.plugins.disable(id)).then((next) => {
+        setPlugins((items) => items.map((item) => (item.manifest.id === id ? next : item)))
+        if (id === BROWSER_CONTROL_PLUGIN_ID)
+          return window.api.browserControl.getStatus().then(setBrowserStatus)
+        if (id === DESKTOP_CONTROL_PLUGIN_ID)
+          return window.api.desktopControl.getStatus().then(setDesktopStatus)
+      }),
       'toggle Plugin',
       (reason) => {
         setError(rendererError(reason))
@@ -1555,81 +269,44 @@ export function PluginsView({
     )
   }
 
-  const controlBrowserGame = (operation: 'pause' | 'stop'): void => {
-    if (browserGameOperation) return
-    setBrowserGameOperation(operation)
-    setBrowserGameError('')
+  const controlBrowser = (operation: 'pause' | 'resume' | 'stop'): void => {
+    if (browserOperation) return
+    setBrowserOperation(operation)
+    setBrowserError('')
     observeRendererPromise(
-      (operation === 'pause' ? window.api.browserGame.pause() : window.api.browserGame.stop()).then(
-        (status) => {
-          setBrowserGameStatus(status)
-          setBrowserGameOperation(null)
-        },
-      ),
-      `control Browser Game: ${operation}`,
+      window.api.browserControl[operation]().then((status) => {
+        setBrowserStatus(status)
+        setBrowserOperation(null)
+      }),
+      `control Browser: ${operation}`,
       (reason) => {
-        setBrowserGameOperation(null)
-        setBrowserGameError(rendererError(reason))
+        setBrowserOperation(null)
+        setBrowserError(rendererError(reason))
       },
     )
   }
 
-  if (!loaded) {
+  if (!loaded)
     return (
       <div className="plugins-loading page-container">
         <ProgressCircle isIndeterminate aria-label={t('common.loading')} />
-        {error && <Text>{error}</Text>}
       </div>
     )
-  }
 
   if (detailPluginId === PROJECT_AWARENESS_PLUGIN_ID) {
-    if (!projectPlugin) {
-      return (
-        <section className="plugin-detail page-container">
-          <ActionButton isQuiet onPress={onBack} UNSAFE_className="plugin-back-button">
-            <ChevronLeftIcon />
-            <Text>{t('plugins.backToCatalog')}</Text>
-          </ActionButton>
-          <InlineAlert variant="negative" fillStyle="subtleFill">
-            <Heading>{t('plugins.projectAwareness.name')}</Heading>
-            <Content>{t('plugins.catalog.unavailable')}</Content>
-            <Button variant="secondary" onPress={refresh}>
-              {t('common.retry')}
-            </Button>
-          </InlineAlert>
-        </section>
-      )
-    }
-    return (
-      <ProjectAwarenessDetails
+    return projectPlugin ? (
+      <ProjectAwarenessPluginView
         plugin={projectPlugin}
         onBack={onBack}
         onPluginChange={(enabled) => togglePlugin(PROJECT_AWARENESS_PLUGIN_ID, enabled)}
       />
+    ) : (
+      <MissingPlugin nameKey="plugins.projectAwareness.name" onBack={onBack} onRetry={refresh} />
     )
   }
-
   if (detailPluginId === DESKTOP_CONTROL_PLUGIN_ID) {
-    if (!desktopPlugin) {
-      return (
-        <section className="plugin-detail page-container">
-          <ActionButton isQuiet onPress={onBack} UNSAFE_className="plugin-back-button">
-            <ChevronLeftIcon />
-            <Text>{t('plugins.backToCatalog')}</Text>
-          </ActionButton>
-          <InlineAlert variant="negative" fillStyle="subtleFill">
-            <Heading>{t('plugins.desktopControl.name')}</Heading>
-            <Content>{t('plugins.catalog.unavailable')}</Content>
-            <Button variant="secondary" onPress={refresh}>
-              {t('common.retry')}
-            </Button>
-          </InlineAlert>
-        </section>
-      )
-    }
-    return (
-      <DesktopControlDetails
+    return desktopPlugin ? (
+      <DesktopControlPluginView
         plugin={desktopPlugin}
         status={desktopStatus}
         onBack={onBack}
@@ -1637,65 +314,36 @@ export function PluginsView({
         onStatusChange={setDesktopStatus}
         onOpenLlmSettings={onOpenLlmSettings}
       />
+    ) : (
+      <MissingPlugin nameKey="plugins.desktopControl.name" onBack={onBack} onRetry={refresh} />
     )
   }
-
   if (detailPluginId === WEB_SEARCH_PLUGIN_ID) {
-    if (!webSearchPlugin) {
-      return (
-        <section className="plugin-detail page-container">
-          <ActionButton isQuiet onPress={onBack} UNSAFE_className="plugin-back-button">
-            <ChevronLeftIcon />
-            <Text>{t('plugins.backToCatalog')}</Text>
-          </ActionButton>
-          <InlineAlert variant="negative" fillStyle="subtleFill">
-            <Heading>{t('plugins.webSearch.name')}</Heading>
-            <Content>{t('plugins.catalog.unavailable')}</Content>
-            <Button variant="secondary" onPress={refresh}>
-              {t('common.retry')}
-            </Button>
-          </InlineAlert>
-        </section>
-      )
-    }
-    return (
-      <WebSearchDetails
+    return webSearchPlugin ? (
+      <WebSearchPluginView
         plugin={webSearchPlugin}
         onBack={onBack}
         onPluginChange={(enabled) => togglePlugin(WEB_SEARCH_PLUGIN_ID, enabled)}
       />
+    ) : (
+      <MissingPlugin nameKey="plugins.webSearch.name" onBack={onBack} onRetry={refresh} />
     )
   }
-
-  if (detailPluginId === BROWSER_GAME_CONTROL_PLUGIN_ID) {
-    if (!browserGamePlugin) {
-      return (
-        <section className="plugin-detail page-container">
-          <ActionButton isQuiet onPress={onBack} UNSAFE_className="plugin-back-button">
-            <ChevronLeftIcon />
-            <Text>{t('plugins.backToCatalog')}</Text>
-          </ActionButton>
-          <InlineAlert variant="negative" fillStyle="subtleFill">
-            <Heading>{t('plugins.browserGame.name')}</Heading>
-            <Content>{t('plugins.catalog.unavailable')}</Content>
-            <Button variant="secondary" onPress={refresh}>
-              {t('common.retry')}
-            </Button>
-          </InlineAlert>
-        </section>
-      )
-    }
-    return (
-      <BrowserGameDetails
-        plugin={browserGamePlugin}
-        status={browserGameStatus}
-        operation={browserGameOperation}
-        error={browserGameError}
+  if (detailPluginId === BROWSER_CONTROL_PLUGIN_ID) {
+    return browserPlugin ? (
+      <BrowserControlPluginView
+        plugin={browserPlugin}
+        status={browserStatus}
+        operation={browserOperation}
+        error={browserError}
         onBack={onBack}
-        onPluginChange={(enabled) => togglePlugin(BROWSER_GAME_CONTROL_PLUGIN_ID, enabled)}
-        onPause={() => controlBrowserGame('pause')}
-        onStop={() => controlBrowserGame('stop')}
+        onPluginChange={(enabled) => togglePlugin(BROWSER_CONTROL_PLUGIN_ID, enabled)}
+        onPause={() => controlBrowser('pause')}
+        onResume={() => controlBrowser('resume')}
+        onStop={() => controlBrowser('stop')}
       />
+    ) : (
+      <MissingPlugin nameKey="plugins.browserControl.name" onBack={onBack} onRetry={refresh} />
     )
   }
 
@@ -1731,21 +379,21 @@ export function PluginsView({
           onRetry={refresh}
         />
         <PluginCatalogCard
-          plugin={browserGamePlugin}
+          plugin={browserPlugin}
           icon={<DeviceDesktopIcon />}
-          nameKey="plugins.browserGame.name"
-          descriptionKey="plugins.browserGame.description"
-          onToggle={(enabled) => togglePlugin(BROWSER_GAME_CONTROL_PLUGIN_ID, enabled)}
-          onOpen={() => onShowDetails(BROWSER_GAME_CONTROL_PLUGIN_ID)}
+          nameKey="plugins.browserControl.name"
+          descriptionKey="plugins.browserControl.description"
+          onToggle={(enabled) => togglePlugin(BROWSER_CONTROL_PLUGIN_ID, enabled)}
+          onOpen={() => onShowDetails(BROWSER_CONTROL_PLUGIN_ID)}
           onRetry={refresh}
         />
       </div>
-      {error && (
+      {error ? (
         <InlineAlert variant="negative" fillStyle="subtleFill">
           <Heading>{t('common.error')}</Heading>
           <Content>{error}</Content>
         </InlineAlert>
-      )}
+      ) : null}
     </section>
   )
 }

@@ -30,6 +30,12 @@ export function defaultLlmConfig(): LlmPersistedConfig {
         timeoutMs: 2_000,
         minimumConfidence: 0.72,
       },
+      computerUseVision: {
+        providerId: '',
+        model: '',
+        timeoutMs: 15_000,
+        maxSteps: 30,
+      },
     },
   }
 }
@@ -73,7 +79,8 @@ export function normalizeLlmConfig(value: unknown): LlmPersistedConfig {
   }
   const roles = record.roles
   if (roles && typeof roles === 'object') {
-    const selector = (roles as Record<string, unknown>).backlogSelector
+    const roleRecord = roles as Record<string, unknown>
+    const selector = roleRecord.backlogSelector
     if (selector && typeof selector === 'object') {
       const selectorValue = selector as Record<string, unknown>
       result.roles.backlogSelector.enabled = selectorValue.enabled === true
@@ -105,6 +112,30 @@ export function normalizeLlmConfig(value: unknown): LlmPersistedConfig {
         result.roles.backlogSelector.minimumConfidence = Math.max(
           0,
           Math.min(1, selectorValue.minimumConfidence),
+        )
+      }
+    }
+    const computerUseVision = roleRecord.computerUseVision
+    if (computerUseVision && typeof computerUseVision === 'object') {
+      const visualValue = computerUseVision as Record<string, unknown>
+      if (typeof visualValue.providerId === 'string' && isKnownProviderId(visualValue.providerId)) {
+        result.roles.computerUseVision.providerId = visualValue.providerId
+      }
+      if (typeof visualValue.model === 'string') {
+        result.roles.computerUseVision.model = result.roles.computerUseVision.providerId
+          ? normalizeProviderModelId(result.roles.computerUseVision.providerId, visualValue.model)
+          : ''
+      }
+      if (typeof visualValue.timeoutMs === 'number' && Number.isFinite(visualValue.timeoutMs)) {
+        result.roles.computerUseVision.timeoutMs = Math.max(
+          5_000,
+          Math.min(60_000, Math.round(visualValue.timeoutMs)),
+        )
+      }
+      if (typeof visualValue.maxSteps === 'number' && Number.isFinite(visualValue.maxSteps)) {
+        result.roles.computerUseVision.maxSteps = Math.max(
+          1,
+          Math.min(300, Math.round(visualValue.maxSteps)),
         )
       }
     }

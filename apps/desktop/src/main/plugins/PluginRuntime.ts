@@ -1,22 +1,21 @@
 import { z } from 'zod'
 
-import type { BrowserGameControlProvider } from '../../shared/browser-game'
-import type {
-  BrowserContextProvider,
-  BrowserRealtimeControlProvider,
-} from '../../shared/desktop-control'
 import type {
   PluginCapabilityKind,
+  PluginCapabilityProviders,
   PluginHealth,
   PluginId,
   PluginManifest,
+  PluginProviderCapability,
   PluginStatus,
-  ProjectContextProvider,
   RuntimePluginHealth,
   RuntimePluginHealthPresentation,
 } from '../../shared/plugins'
-import { PLUGIN_CAPABILITY_KINDS, PLUGIN_IDS } from '../../shared/plugins'
-import type { WebSearchProvider } from '../../shared/web-search'
+import {
+  PLUGIN_CAPABILITY_KINDS,
+  PLUGIN_IDS,
+  PLUGIN_PROVIDER_CAPABILITIES,
+} from '../../shared/plugins'
 import type { PluginCapabilityRegistry } from './PluginCapabilityRegistry'
 import type { PluginRegistryStore } from './PluginRegistryStore'
 
@@ -34,11 +33,7 @@ export interface BundledPlugin {
   getHealthPresentation?():
     | Promise<RuntimePluginHealthPresentation>
     | RuntimePluginHealthPresentation
-  getProjectContextProvider?(): ProjectContextProvider
-  getBrowserContextProvider?(): BrowserContextProvider
-  getBrowserRealtimeControlProvider?(): BrowserRealtimeControlProvider
-  getBrowserGameControlProvider?(): BrowserGameControlProvider
-  getWebSearchProvider?(): WebSearchProvider
+  getCapabilityProviders?(): PluginCapabilityProviders
 }
 
 const capabilitySchema = z.enum(PLUGIN_CAPABILITY_KINDS)
@@ -378,35 +373,27 @@ export class PluginRuntime {
 
   private registerCapabilities(record: PluginRecord): void {
     const { manifest } = record
-    for (const capability of manifest.capabilities) {
-      if (capability === 'project-context') {
-        const provider = record.plugin.getProjectContextProvider?.()
-        if (!provider) throw new Error(`${manifest.id} did not provide project-context capability`)
-        this.capabilities.registerProjectContext(manifest.id, provider)
-      } else if (capability === 'browser-control') {
-        const provider = record.plugin.getBrowserContextProvider?.()
-        if (!provider) throw new Error(`${manifest.id} did not provide browser-control capability`)
-        this.capabilities.registerBrowserContext(manifest.id, provider)
-      } else if (capability === 'web-search') {
-        const provider = record.plugin.getWebSearchProvider?.()
-        if (!provider) throw new Error(`${manifest.id} did not provide web-search capability`)
-        this.capabilities.registerWebSearch(manifest.id, provider)
-      } else if (capability === 'browser-realtime-control') {
-        const provider = record.plugin.getBrowserRealtimeControlProvider?.()
-        if (!provider) {
-          throw new Error(`${manifest.id} did not provide browser-realtime-control capability`)
-        }
-        this.capabilities.registerBrowserRealtimeControl(manifest.id, provider)
-      } else if (capability === 'browser-game-control') {
-        const provider = record.plugin.getBrowserGameControlProvider?.()
-        if (!provider) {
-          throw new Error(`${manifest.id} did not provide browser-game-control capability`)
-        }
-        this.capabilities.registerBrowserGameControl(manifest.id, provider)
-      } else {
-        this.capabilities.registerOwnedCapability(manifest.id, capability)
+    const providers = record.plugin.getCapabilityProviders?.() ?? {}
+    for (const capability of Object.keys(providers) as PluginProviderCapability[]) {
+      if (!manifest.capabilities.includes(capability)) {
+        throw new Error(`${manifest.id} provided undeclared ${capability} capability`)
       }
     }
+    for (const capability of manifest.capabilities) {
+      if (isProviderCapability(capability)) {
+        this.registerProvider(manifest.id, capability, providers)
+      } else this.capabilities.registerOwnedCapability(manifest.id, capability)
+    }
+  }
+
+  private registerProvider<Capability extends PluginProviderCapability>(
+    owner: PluginId,
+    capability: Capability,
+    providers: PluginCapabilityProviders,
+  ): void {
+    const provider = providers[capability]
+    if (!provider) throw new Error(`${owner} did not provide ${capability} capability`)
+    this.capabilities.register(owner, capability, provider)
   }
 
   private async initializeRecord(record: PluginRecord): Promise<void> {
@@ -461,4 +448,10 @@ export class PluginRuntime {
   private publishChanged(): void {
     for (const listener of this.listeners) listener()
   }
+}
+
+function isProviderCapability(
+  capability: PluginCapabilityKind,
+): capability is PluginProviderCapability {
+  return (PLUGIN_PROVIDER_CAPABILITIES as readonly PluginCapabilityKind[]).includes(capability)
 }

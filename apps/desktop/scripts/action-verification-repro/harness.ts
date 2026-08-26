@@ -9,24 +9,22 @@ import {
   type ActionVerificationResult,
   type ActionVerifier,
   BrowserActiveTabVerifier,
+  type BrowserExecutionEvidence,
   BrowserInteractionVerifier,
   BrowserNavigationVerifier,
   buildActionResultNarrationContext,
+  type DesktopWorkflowAdapterResult,
   desktopWorkflowVerificationPolicy,
   isVerifiedSuccess,
+  type ShellExecutionEvidence,
   ShellExecutionVerifier,
   safeDesktopWorkflowRecovery,
   toDesktopWorkflowActionResult,
 } from '../../src/main/action'
-import type {
-  BrowserExecutionEvidence,
-  DesktopWorkflowAdapterResult,
-  ShellExecutionEvidence,
-} from '../../src/main/desktop-control'
 import { LlmResponseError } from '../../src/main/llm'
 import { actionResultFallback } from '../../src/main/orchestrator'
 import { type DesktopWorkflowRequest, desktopWorkflowRequestSchema } from '../../src/shared/actions'
-import type { BrowserObservation } from '../../src/shared/desktop-control'
+import type { BrowserObservation } from '../../src/shared/browser-control'
 
 type Executor = (
   request: DesktopWorkflowRequest,
@@ -319,7 +317,7 @@ async function main(): Promise<void> {
     name: 'desktop.workflow',
     payload: {
       type: 'desktop.workflow',
-      goal: 'DSH says Done without browser tools',
+      goal: 'Browser provider says Done without browser tools',
       requestedCapabilities: ['browser'],
       risk: 'normal',
     },
@@ -344,7 +342,7 @@ async function main(): Promise<void> {
     name: 'desktop.workflow',
     payload: {
       type: 'desktop.workflow',
-      goal: 'DSH browser workflow with observed change',
+      goal: 'Browser workflow with observed change',
       requestedCapabilities: ['browser'],
       risk: 'normal',
     },

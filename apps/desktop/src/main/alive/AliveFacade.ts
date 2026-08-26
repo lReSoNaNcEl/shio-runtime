@@ -78,6 +78,8 @@ export class AliveFacade {
   private readonly behaviorListeners = new Set<(command: BehaviorCommand) => void>()
   private readonly lifecycleController = new AbortController()
   private readonly attentionRequests = new Map<string, AbortController>()
+  private previousAmbientWorld: AliveSnapshot['world'] | null = null
+  private browserComputerUseScreenFocusActive = false
 
   constructor(
     private readonly store: AliveStore,
@@ -194,9 +196,24 @@ export class AliveFacade {
 
   updateWorld(input: RendererWorldContextInput): void {
     this.world.updateRenderer(input)
+    const settings = this.store.settings()
+    const current = this.world.snapshot(settings, input.observedAt)
+    const previous = this.previousAmbientWorld
+    this.previousAmbientWorld = current
+    if (!previous) return
+    const selected = this.behavior.observeAmbientPresence({
+      previous,
+      current,
+      settings,
+      mood: this.experience.moodSnapshot(),
+      browserComputerUseScreenFocusActive: this.browserComputerUseScreenFocusActive,
+      at: input.observedAt,
+    })
+    if (selected && this.emitBehavior(selected.command)) this.publish()
   }
 
   reportExperience(event: ExperienceEvent): ExperienceReport {
+    if (event.type === 'browser-computer-use-event') this.trackBrowserComputerUsePresence(event)
     const settings = this.store.settings()
     const world = this.world.snapshot(settings)
     const observation = this.experience.observe(event)
@@ -480,6 +497,16 @@ export class AliveFacade {
       ),
       'arbitrate awakened goal attention',
     )
+  }
+
+  private trackBrowserComputerUsePresence(
+    event: Extract<ExperienceEvent, { type: 'browser-computer-use-event' }>,
+  ): void {
+    this.browserComputerUseScreenFocusActive = [
+      'started',
+      'progress',
+      'notable-observation',
+    ].includes(event.phase)
   }
 }
 

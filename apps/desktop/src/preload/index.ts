@@ -20,7 +20,6 @@ import type {
   ScheduledTaskStatus,
   UpdateGoalInput,
 } from '../shared/alive'
-import type { GameCommentaryFeedback } from '../shared/browser-game'
 import type { ShioCapabilitySnapshot } from '../shared/capabilities'
 import type { CharacterReplyStreamEvent } from '../shared/character-stream'
 import type { AppSettings } from '../shared/config'
@@ -220,12 +219,11 @@ const api = {
     enable: (id) => ipcRenderer.invoke('plugins:enable', id),
     disable: (id) => ipcRenderer.invoke('plugins:disable', id),
   },
-  browserGame: {
-    getStatus: () => ipcRenderer.invoke('browser-game:get-status'),
-    pause: () => ipcRenderer.invoke('browser-game:pause'),
-    stop: () => ipcRenderer.invoke('browser-game:stop'),
-    reportCommentaryOutcome: (feedback: GameCommentaryFeedback) =>
-      ipcRenderer.invoke('browser-game:report-commentary', feedback),
+  browserControl: {
+    getStatus: () => ipcRenderer.invoke('browser-control:get-status'),
+    pause: () => ipcRenderer.invoke('browser-control:pause'),
+    resume: () => ipcRenderer.invoke('browser-control:resume'),
+    stop: () => ipcRenderer.invoke('browser-control:stop'),
   },
   desktopControl: {
     getStatus: () => ipcRenderer.invoke('desktop-control:get-status'),

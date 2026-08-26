@@ -388,11 +388,15 @@ function normalizeStreamError(
     })
   }
   if (axios.isAxiosError(error) && error.response) {
-    const failure = classifyHttpFailure(error.response.status)
+    const failure = classifyHttpFailure(error.response.status, error.response.data)
     return new LlmResponseError({
       provider: config.provider,
       ...failure,
-      message: normalizeHttpErrorMessage(config.displayName, error.response.status),
+      message: normalizeHttpErrorMessage(
+        config.displayName,
+        error.response.status,
+        error.response.data,
+      ),
     })
   }
   if (axios.isAxiosError(error) && ['ECONNABORTED', 'ETIMEDOUT'].includes(error.code ?? '')) {

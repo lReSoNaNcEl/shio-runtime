@@ -233,6 +233,56 @@ function assertMainCompositionOwnership(): void {
   })
 }
 
+function assertBrowserControlLivingPresenceOwnership(): void {
+  for (const file of files) {
+    assert.ok(
+      !normalize(file).includes(
+        `${normalize(join('src', 'main', 'browser-game'))}${process.platform === 'win32' ? '\\' : '/'}`,
+      ),
+      `${relative(desktopRoot, file)} reintroduces the removed browser-specific gameplay runtime`,
+    )
+  }
+  for (const file of sourceFilesBelow(join(sourceRoot, 'main', 'browser-control'))) {
+    walk(parseFile(file), (node) => {
+      const specifier = importedSource(node)
+      if (!specifier) return
+      assert.ok(
+        !specifier.includes('renderer/avatar') && !specifier.includes('AvatarRuntime'),
+        `${relative(desktopRoot, file)} imports concrete Avatar internals: ${specifier}`,
+      )
+      assert.ok(
+        !specifier.includes('/memory'),
+        `${relative(desktopRoot, file)} crosses from Browser Control into Memory: ${specifier}`,
+      )
+      assert.ok(
+        !specifier.includes('desktop-control') && !specifier.includes('DshHarnessAdapter'),
+        `${relative(desktopRoot, file)} crosses from Browser Control into Desktop Control: ${specifier}`,
+      )
+    })
+  }
+  for (const file of sourceFilesBelow(
+    join(sourceRoot, 'main', 'browser-control', 'computer-use'),
+  )) {
+    assertForbiddenImports(relative(sourceRoot, file), ['CharacterTool', 'orchestrator'])
+  }
+  assertForbiddenImports('main/alive/ExperienceRuntime.ts', [
+    'PlaywrightBrowserAdapter',
+    'BrowserComputerUseRuntime',
+  ])
+  for (const file of sourceFilesBelow(join(sourceRoot, 'main', 'conversation-threads'))) {
+    walk(parseFile(file), (node) => {
+      const specifier = importedSource(node)
+      if (!specifier) return
+      assert.ok(
+        !specifier.includes('/memory') &&
+          !specifier.includes('/goals') &&
+          !specifier.includes('/alive'),
+        `${relative(desktopRoot, file)} crosses ephemeral Thread ownership: ${specifier}`,
+      )
+    })
+  }
+}
+
 function assertCharacterStateWriterBehavior(): void {
   const store = new CharacterStateStore(new PassiveEventBus())
   store.conversation.transition({ status: 'thinking', mode: 'thinking', emotion: 'happy' })
@@ -269,6 +319,7 @@ assertNoApplicationSemanticRouters(files)
 assertNoGenericPluginInvoke(files)
 assertRendererRuntimeOwnership(files)
 assertMainCompositionOwnership()
+assertBrowserControlLivingPresenceOwnership()
 assertCharacterStateWriterBehavior()
 
 console.log('Architecture Ownership Guards: PASS')

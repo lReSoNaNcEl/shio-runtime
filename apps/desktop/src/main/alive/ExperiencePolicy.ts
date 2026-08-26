@@ -4,7 +4,6 @@ import type {
   MoodState,
   PersistentGoal,
 } from '../../shared/alive'
-import type { GameSemanticEvent } from '../../shared/browser-game'
 import type { RelationshipContext } from '../../shared/memory'
 
 const RECENT_EXPERIENCE_WINDOW_MS = 30 * 60_000
@@ -291,8 +290,8 @@ function baseAppraisal(event: ExperienceEvent): ExperienceAppraisal {
         embodimentHint: { intensity: 'subtle', gazeHint: 'user' },
         silence: true,
       }
-    case 'game-event':
-      return appraiseGameEvent(event.gameEvent, eventId)
+    case 'browser-computer-use-event':
+      return appraiseBrowserComputerUseEvent(event, eventId)
     case 'meaningful-world-context-changed':
       return {
         ...base,
@@ -307,184 +306,101 @@ function baseAppraisal(event: ExperienceEvent): ExperienceAppraisal {
   }
 }
 
-function appraiseGameEvent(event: GameSemanticEvent, eventId: string): ExperienceAppraisal {
+function appraiseBrowserComputerUseEvent(
+  event: Extract<ExperienceEvent, { type: 'browser-computer-use-event' }>,
+  eventId: string,
+): ExperienceAppraisal {
+  const active = ['started', 'progress', 'notable-observation'].includes(event.phase)
   const base = {
     eventId,
-    origin: 'browser-game' as const,
+    origin: 'browser-computer-use' as const,
     memoryCandidate: undefined,
     embodimentPresence: {
-      source: 'browser-game' as const,
+      source: 'browser-computer-use' as const,
       sessionId: event.sessionId,
-      screenGazeActive: keepsScreenGaze(event.type),
+      screenGazeActive: active,
     },
   }
-  switch (event.type) {
-    case 'game-started':
-    case 'round-started':
-    case 'game-resumed':
-      return {
-        ...base,
-        salience: 0.35,
-        valence: 0.2,
-        arousal: 0.3,
-        novelty: event.type === 'game-started' ? 0.55 : 0.2,
-        socialRelevance: 0.25,
-        emotionHint: 'calm',
-        embodimentHint: { intensity: 'subtle', gazeHint: 'screen' },
-        silence: true,
-      }
-    case 'score-changed':
-      return {
-        ...base,
-        salience: 0.35,
-        valence: 0.3,
-        arousal: 0.25,
-        novelty: 0.15,
-        socialRelevance: 0.15,
-        emotionHint: 'happy',
-        embodimentHint: { intensity: 'subtle', gazeHint: 'screen' },
-        silence: true,
-      }
-    case 'checkpoint':
-      return {
-        ...base,
-        salience: 0.58,
-        valence: 0.48,
-        arousal: 0.35,
-        novelty: 0.4,
-        socialRelevance: 0.3,
-        emotionHint: 'happy',
-        embodimentHint: { intensity: 'subtle', gazeHint: 'screen' },
-        conversationalImpulse: { topic: 'A game checkpoint was reached', priority: 0.68 },
-        silence: false,
-      }
-    case 'level-completed':
-      return {
-        ...base,
-        salience: 0.88,
-        valence: 0.85,
-        arousal: 0.7,
-        novelty: 0.65,
-        socialRelevance: 0.5,
-        emotionHint: 'happy',
-        embodimentHint: { intensity: 'normal', gestureHint: 'celebrate', gazeHint: 'screen' },
-        conversationalImpulse: { topic: 'The game level was completed', priority: 0.9 },
-        silence: false,
-      }
-    case 'new-record':
-      return {
-        ...base,
-        salience: 0.95,
-        valence: 0.95,
-        arousal: 0.85,
-        novelty: 0.9,
-        socialRelevance: 0.6,
-        emotionHint: 'happy',
-        embodimentHint: { intensity: 'strong', gestureHint: 'celebrate', gazeHint: 'user' },
-        conversationalImpulse: { topic: 'A new game record was set', priority: 0.96 },
-        silence: false,
-      }
-    case 'life-lost':
-    case 'death':
-      return {
-        ...base,
-        salience: event.type === 'death' ? 0.72 : 0.52,
-        valence: event.type === 'death' ? -0.55 : -0.35,
-        arousal: 0.55,
-        novelty: 0.3,
-        socialRelevance: 0.2,
-        emotionHint: 'sad',
-        embodimentHint: { intensity: 'subtle', gestureHint: 'disagree', gazeHint: 'screen' },
-        silence: true,
-      }
-    case 'retry':
-      return {
-        ...base,
-        salience: 0.42,
-        valence: 0.15,
-        arousal: 0.4,
-        novelty: 0.2,
-        socialRelevance: 0.2,
-        emotionHint: 'calm',
-        embodimentHint: { intensity: 'subtle', gazeHint: 'screen' },
-        silence: true,
-      }
-    case 'stuck':
-      return {
-        ...base,
-        salience: 0.78,
-        valence: -0.45,
-        arousal: 0.5,
-        novelty: 0.55,
-        socialRelevance: 0.4,
-        emotionHint: 'surprised',
-        embodimentHint: { intensity: 'subtle', gestureHint: 'think', gazeHint: 'screen' },
-        conversationalImpulse: { topic: 'The game appears to be stuck', priority: 0.78 },
-        silence: false,
-      }
-    case 'game-over':
-      return {
-        ...base,
-        salience: 0.8,
-        valence: -0.5,
-        arousal: 0.55,
-        novelty: 0.45,
-        socialRelevance: 0.35,
-        emotionHint: 'sad',
-        embodimentHint: { intensity: 'normal', gestureHint: 'disagree', gazeHint: 'screen' },
-        conversationalImpulse: { topic: 'The game is over', priority: 0.76 },
-        silence: false,
-      }
-    case 'waiting-user':
-      return {
-        ...base,
-        salience: 1,
-        valence: -0.2,
-        arousal: 0.65,
-        novelty: 0.7,
-        socialRelevance: 0.9,
-        emotionHint: 'calm',
-        embodimentHint: { intensity: 'normal', gazeHint: 'user' },
-        conversationalImpulse: {
-          topic: 'The game session needs user intervention before it can continue',
-          priority: 0.98,
-        },
-        silence: false,
-      }
-    case 'game-error':
-      return {
-        ...base,
-        salience: 0.92,
-        valence: -0.7,
-        arousal: 0.7,
-        novelty: 0.65,
-        socialRelevance: 0.55,
-        emotionHint: 'sad',
-        embodimentHint: { intensity: 'normal', gestureHint: 'disagree', gazeHint: 'user' },
-        conversationalImpulse: {
-          topic: 'The game session stopped because of an error',
-          priority: 0.9,
-        },
-        silence: false,
-      }
-    case 'game-paused':
-    case 'game-stopped':
-      return {
-        ...base,
-        salience: 0.3,
-        valence: 0,
-        arousal: -0.2,
-        novelty: 0.15,
-        socialRelevance: 0.2,
-        emotionHint: 'calm',
-        embodimentHint: { intensity: 'subtle', gazeHint: 'user' },
-        silence: true,
-      }
+  if (event.phase === 'blocked') {
+    return {
+      ...base,
+      salience: 0.95,
+      valence: -0.2,
+      arousal: 0.6,
+      novelty: 0.65,
+      socialRelevance: 0.9,
+      emotionHint: 'calm',
+      embodimentHint: { intensity: 'normal', gazeHint: 'user' },
+      conversationalImpulse: {
+        topic: 'Browser control needs user intervention before it can continue',
+        priority: 0.96,
+      },
+      silence: false,
+    }
   }
-}
-
-function keepsScreenGaze(type: GameSemanticEvent['type']): boolean {
-  return !['game-paused', 'game-stopped', 'game-error', 'waiting-user'].includes(type)
+  if (event.phase === 'failed') {
+    return {
+      ...base,
+      salience: 0.85,
+      valence: -0.65,
+      arousal: 0.55,
+      novelty: 0.5,
+      socialRelevance: 0.55,
+      emotionHint: 'sad',
+      embodimentHint: { intensity: 'normal', gazeHint: 'user' },
+      conversationalImpulse: {
+        topic: 'Browser control stopped because of an error',
+        priority: 0.86,
+      },
+      silence: false,
+    }
+  }
+  if (event.phase === 'completed') {
+    return {
+      ...base,
+      salience: 0.72,
+      valence: 0.65,
+      arousal: 0.4,
+      novelty: 0.4,
+      socialRelevance: 0.45,
+      emotionHint: 'happy',
+      embodimentHint: { intensity: 'subtle', gazeHint: 'user' },
+      conversationalImpulse: {
+        topic: event.observation?.summary ?? 'The browser task was completed',
+        priority: 0.74,
+      },
+      silence: false,
+    }
+  }
+  if (event.phase === 'notable-observation' && event.observation) {
+    const failure = event.observation.kind === 'failure' || event.observation.kind === 'blocked'
+    return {
+      ...base,
+      salience: 0.35 + event.observation.confidence * 0.45,
+      valence: failure ? -0.4 : event.observation.kind === 'success' ? 0.55 : 0.15,
+      arousal: 0.25 + event.observation.confidence * 0.3,
+      novelty: 0.45,
+      socialRelevance: 0.3,
+      emotionHint: failure ? 'surprised' : event.observation.kind === 'success' ? 'happy' : 'calm',
+      embodimentHint: { intensity: 'subtle', gazeHint: 'screen' },
+      conversationalImpulse:
+        event.observation.confidence >= 0.8
+          ? { topic: event.observation.summary, priority: 0.62 }
+          : undefined,
+      silence: event.observation.confidence < 0.8,
+    }
+  }
+  return {
+    ...base,
+    salience: event.phase === 'started' ? 0.35 : 0.25,
+    valence: 0.1,
+    arousal: active ? 0.25 : -0.15,
+    novelty: event.phase === 'started' ? 0.45 : 0.15,
+    socialRelevance: 0.2,
+    emotionHint: 'calm',
+    embodimentHint: { intensity: 'subtle', gazeHint: active ? 'screen' : 'user' },
+    silence: true,
+  }
 }
 
 function bounded(appraisal: ExperienceAppraisal): ExperienceAppraisal {
@@ -527,13 +443,12 @@ function isFailureEvent(event: ExperienceEvent): boolean {
     event.type === 'action-failed' ||
     event.type === 'goal-failed' ||
     event.type === 'browser-blocked' ||
-    (event.type === 'game-event' &&
-      ['life-lost', 'death', 'stuck', 'game-over', 'game-error'].includes(event.gameEvent.type))
+    (event.type === 'browser-computer-use-event' && event.phase === 'failed')
   )
 }
 
 function similarityKey(event: ExperienceEvent): string {
-  return event.type === 'game-event' ? `${event.type}:${event.gameEvent.type}` : event.type
+  return event.type === 'browser-computer-use-event' ? `${event.type}:${event.phase}` : event.type
 }
 
 function eventIdentity(event: ExperienceEvent): string {
@@ -549,8 +464,8 @@ function eventEntity(event: ExperienceEvent): string {
         ? event.actionId
         : 'goalId' in event
           ? event.goalId
-          : 'gameEvent' in event
-            ? event.gameEvent.sessionId
+          : 'sessionId' in event
+            ? event.sessionId
             : 'runtime' in event
               ? event.runtime
               : 'change' in event

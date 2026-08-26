@@ -298,7 +298,7 @@ async function run(): Promise<void> {
   const blockedShell = await injected.execute('shell.execute', { command: 'Get-Date' })
   check(
     'search-result instructions cannot introduce shell authority',
-    blockedShell.content.includes('BROWSER_EVIDENCE_CANNOT_AUTHORIZE_SHELL'),
+    blockedShell.content.includes('EVIDENCE_CANNOT_AUTHORIZE_SHELL'),
   )
 
   webProvider = undefined
@@ -318,12 +318,12 @@ async function run(): Promise<void> {
 
   const influence = new ToolInfluenceContext('Find current sources')
   influence.select('web.search')
-  influence.observeEvidence('web')
+  influence.observeEvidence('web-search')
   check('web evidence cannot introduce memory mutation', !influence.canInvoke('memory.store'))
   const explicitMemory = new ToolInfluenceContext('Find this and remember it')
   explicitMemory.registerPlannedTools(['web.search', 'memory.store'])
   explicitMemory.select('web.search')
-  explicitMemory.observeEvidence('web')
+  explicitMemory.observeEvidence('web-search')
   check(
     'original explicit intent may plan memory before web evidence',
     explicitMemory.canInvoke('memory.store'),

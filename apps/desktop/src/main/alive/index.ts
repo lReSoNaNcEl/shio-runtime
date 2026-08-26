@@ -1,6 +1,7 @@
 export * from './AliveFacade'
 export * from './AliveRuntime'
 export * from './AliveStore'
+export * from './AmbientPresencePolicy'
 export * from './AttentionArbiter'
 export * from './AutonomyEnvelope'
 export * from './AutonomyScopeRuntime'

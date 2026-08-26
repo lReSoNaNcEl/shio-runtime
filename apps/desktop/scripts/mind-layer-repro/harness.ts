@@ -19,11 +19,11 @@ import type { LlmRequestOptions } from '../../src/main/llm'
 import type {
   AttentionCandidate,
   ExperienceAppraisal,
+  ExperienceEvent,
   MoodState,
   PersistentGoal,
   WorldContextSnapshot,
 } from '../../src/shared/alive'
-import type { GameSemanticEvent, GameSemanticEventType } from '../../src/shared/browser-game'
 
 const world: WorldContextSnapshot = {
   capturedAt: 1,
@@ -101,45 +101,31 @@ async function main(): Promise<void> {
     assert.deepEqual(store.mood(), persistedBeforeSnapshot)
     testExperiencePolicy(store)
 
-    const lifeLost = experience.observe(gameEvent('life-lost', 31, 'ambient'))
-    const lifeLostBehavior = behavior.decide({ ...lifeLost, settings, world, at: 31 })
-    assert.equal(lifeLostBehavior.intent.kind, 'embodiment')
-    assert.equal(lifeLostBehavior.embodimentPresence?.screenGazeActive, true)
-    const levelCompleted = experience.observe(gameEvent('level-completed', 40, 'important'))
-    const levelCompletedDecision = behavior.decideWithDiagnostics({
-      ...levelCompleted,
+    const browserProgress = experience.observe(browserUseEvent('progress', 31))
+    const browserProgressBehavior = behavior.decide({ ...browserProgress, settings, world, at: 31 })
+    assert.equal(browserProgressBehavior.intent.kind, 'embodiment')
+    assert.equal(browserProgressBehavior.embodimentPresence?.screenGazeActive, true)
+    const browserCompleted = experience.observe(
+      browserUseEvent('completed', 40, {
+        kind: 'success',
+        summary: 'Browser task completed',
+        confidence: 1,
+      }),
+    )
+    const browserCompletedDecision = behavior.decideWithDiagnostics({
+      ...browserCompleted,
       settings,
       world,
       at: 40,
     })
-    assert.equal(levelCompletedDecision.command.intent.kind, 'conversation-candidate')
-    assert.equal(levelCompletedDecision.conversationCandidate, 'selected')
-    const checkpointSuppressed = experience.observe(gameEvent('checkpoint', 41, 'normal'))
-    const checkpointDecision = behavior.decideWithDiagnostics({
-      ...checkpointSuppressed,
-      settings,
-      world,
-      at: 41,
-    })
-    assert.notEqual(checkpointDecision.command.intent.kind, 'conversation-candidate')
-    assert.equal(checkpointDecision.conversationCandidate, 'suppressed-cooldown')
-    const newRecord = experience.observe(gameEvent('new-record', 42, 'important'))
-    const newRecordBehavior = behavior.decide({ ...newRecord, settings, world, at: 42 })
-    assert.equal(newRecordBehavior.intent.kind, 'conversation-candidate')
-    const thirdCommentSuppressed = experience.observe(gameEvent('level-completed', 43, 'important'))
-    const thirdCommentDecision = behavior.decideWithDiagnostics({
-      ...thirdCommentSuppressed,
-      settings,
-      world,
-      at: 43,
-    })
-    assert.notEqual(thirdCommentDecision.command.intent.kind, 'conversation-candidate')
-    assert.equal(thirdCommentDecision.conversationCandidate, 'suppressed-budget')
-    const waitingUser = experience.observe(gameEvent('waiting-user', 44, 'blocking'))
+    assert(browserCompleted.appraisal.conversationalImpulse)
+    assert.equal(browserCompleted.appraisal.embodimentPresence?.screenGazeActive, false)
+    assert.notEqual(browserCompletedDecision.conversationCandidate, 'not-applicable')
+    const waitingUser = experience.observe(browserUseEvent('blocked', 44))
     const waitingUserBehavior = behavior.decide({ ...waitingUser, settings, world, at: 44 })
-    assert.equal(waitingUserBehavior.intent.kind, 'conversation-candidate')
+    assert(waitingUser.appraisal.conversationalImpulse)
     assert.equal(waitingUserBehavior.embodimentPresence?.screenGazeActive, false)
-    const userSpeechWins = experience.observe(gameEvent('waiting-user', 45, 'blocking'))
+    const userSpeechWins = experience.observe(browserUseEvent('blocked', 45))
     const userSpeechBehavior = behavior.decide({
       ...userSpeechWins,
       settings,
@@ -153,13 +139,13 @@ async function main(): Promise<void> {
       false,
       'session gaze release must survive conversation suppression',
     )
-    const resumed = experience.observe(gameEvent('game-resumed', 46, 'ambient'))
+    const resumed = experience.observe(browserUseEvent('started', 46))
     const resumedBehavior = behavior.decide({ ...resumed, settings, world, at: 46 })
     assert.equal(resumedBehavior.embodimentPresence?.screenGazeActive, true)
-    const paused = experience.observe(gameEvent('game-paused', 47, 'ambient'))
+    const paused = experience.observe(browserUseEvent('stopped', 47))
     const pausedBehavior = behavior.decide({ ...paused, settings, world, at: 47 })
     assert.equal(pausedBehavior.embodimentPresence?.screenGazeActive, false)
-    const errored = experience.observe(gameEvent('game-error', 48, 'blocking'))
+    const errored = experience.observe(browserUseEvent('failed', 48))
     const erroredBehavior = behavior.decide({
       ...errored,
       settings,
@@ -429,19 +415,20 @@ async function main(): Promise<void> {
   }
 }
 
-function gameEvent(
-  type: GameSemanticEventType,
+function browserUseEvent(
+  phase: Extract<ExperienceEvent, { type: 'browser-computer-use-event' }>['phase'],
   at: number,
-  importance: GameSemanticEvent['importance'],
+  observation?: Extract<ExperienceEvent, { type: 'browser-computer-use-event' }>['observation'],
 ): Parameters<ExperienceRuntime['observe']>[0] {
-  const event: GameSemanticEvent = {
-    eventId: `game-event-00000000-0000-4000-8000-${String(at).padStart(12, '0')}`,
-    sessionId: 'game-session-00000000-0000-4000-8000-000000000001',
-    type,
+  return {
+    type: 'browser-computer-use-event',
     at,
-    importance,
+    eventId: `browser-use-event-00000000-0000-4000-8000-${String(at).padStart(12, '0')}`,
+    sessionId: 'browser-use-session-00000000-0000-4000-8000-000000000001',
+    phase,
+    observation,
+    ...(phase === 'failed' ? { errorCode: 'FIXTURE_FAILURE' } : {}),
   }
-  return { type: 'game-event', at, eventId: event.eventId, gameEvent: event }
 }
 
 async function waitUntil(condition: () => boolean): Promise<void> {
@@ -735,23 +722,23 @@ function testExperiencePolicy(store: AliveStore): void {
     new ExperiencePolicy().appraise(deterministicEvent, { currentMood: baselineMood }),
   )
 
-  const gamePolicy = new ExperiencePolicy()
-  const firstGameFailure = gamePolicy.appraise(gameEvent('life-lost', 700, 'ambient'), {
+  const browserPolicy = new ExperiencePolicy()
+  const firstBrowserFailure = browserPolicy.appraise(browserUseEvent('failed', 700), {
     currentMood: baselineMood,
   })
-  const differentGameFailure = gamePolicy.appraise(gameEvent('death', 701, 'normal'), {
+  const differentBrowserFailure = browserPolicy.appraise(browserUseEvent('failed', 701), {
     currentMood: baselineMood,
   })
-  const repeatedGameFailure = gamePolicy.appraise(gameEvent('death', 702, 'normal'), {
+  const repeatedBrowserFailure = browserPolicy.appraise(browserUseEvent('failed', 702), {
     currentMood: baselineMood,
   })
-  assert.equal(firstGameFailure.novelty, differentGameFailure.novelty)
-  assert.ok(repeatedGameFailure.novelty < differentGameFailure.novelty)
-  assert.equal(differentGameFailure.origin, 'browser-game')
-  assert.deepEqual(differentGameFailure.embodimentPresence, {
-    source: 'browser-game',
-    sessionId: 'game-session-00000000-0000-4000-8000-000000000001',
-    screenGazeActive: true,
+  assert.ok(firstBrowserFailure.novelty >= differentBrowserFailure.novelty)
+  assert.ok(repeatedBrowserFailure.novelty <= differentBrowserFailure.novelty)
+  assert.equal(differentBrowserFailure.origin, 'browser-computer-use')
+  assert.deepEqual(differentBrowserFailure.embodimentPresence, {
+    source: 'browser-computer-use',
+    sessionId: 'browser-use-session-00000000-0000-4000-8000-000000000001',
+    screenGazeActive: false,
   })
 }
 

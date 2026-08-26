@@ -22,7 +22,7 @@ import {
   type AuthorityChangeRequest,
   type DesktopWorkflowCapability,
 } from '../../../shared/actions'
-import { type BrowserOperation } from '../../../shared/desktop-control'
+import { type BrowserOperation } from '../../../shared/browser-control'
 import { type TranslationKey } from '../../../shared/localization'
 import { useTranslation } from '../../localization/useTranslation'
 import { observeRendererPromise } from '../../reliability/observePromise'
@@ -34,6 +34,11 @@ const CAPABILITY_LABELS: Record<DesktopWorkflowCapability, TranslationKey> = {
   filesystem: 'actions.capability.filesystem',
   shell: 'actions.capability.shell',
 }
+
+const actionCapabilityLabel = (capability: string): TranslationKey =>
+  capability === 'browser-computer-use'
+    ? 'actions.capability.browserComputerUse'
+    : CAPABILITY_LABELS[capability as DesktopWorkflowCapability]
 
 const BROWSER_OPERATION_LABELS: Record<BrowserOperation['operation'], TranslationKey> = {
   observe: 'actions.confirm.browserObserve',
@@ -218,55 +223,25 @@ export function ActionRuntimeHost() {
                     </code>
                   </div>
                 )}
-                {confirmation.tool === 'browser.game-session' && (
+                {confirmation.tool === 'browser.use' && (
                   <div>
                     <Text UNSAFE_className="action-confirmation-label">
-                      {t('actions.confirm.gameSession')}
+                      {t('actions.confirm.browserUseSession')}
                     </Text>
                     <dl className="action-confirmation-capabilities">
                       <div>
-                        <dt>{t('actions.confirm.gameOrigin')}</dt>
-                        <dd>{confirmation.origin}</dd>
+                        <dt>{t('actions.confirm.browserUseSteps')}</dt>
+                        <dd>{confirmation.maxSteps}</dd>
                       </div>
                       <div>
-                        <dt>{t('actions.confirm.gameSurface')}</dt>
-                        <dd>{confirmation.surfaceLabel ?? confirmation.surfaceId}</dd>
+                        <dt>{t('actions.confirm.browserUseActions')}</dt>
+                        <dd>{confirmation.maxActions}</dd>
                       </div>
                       <div>
-                        <dt>{t('actions.confirm.gameDuration')}</dt>
+                        <dt>{t('actions.confirm.browserUseDuration')}</dt>
                         <dd>
                           {Math.ceil(confirmation.maxDurationMs / 60_000)}{' '}
                           {t('actions.confirm.minutesShort')}
-                        </dd>
-                      </div>
-                      <div>
-                        <dt>{t('actions.confirm.gameInputBudget')}</dt>
-                        <dd>
-                          {confirmation.maxInputEvents} · {confirmation.maxInputEventsPerSecond}/s
-                        </dd>
-                      </div>
-                      <div>
-                        <dt>{t('actions.confirm.gameInputs')}</dt>
-                        <dd>
-                          {confirmation.allowedInputs
-                            .map((input) =>
-                              t(
-                                input === 'pointer'
-                                  ? 'actions.confirm.gameInputPointer'
-                                  : 'actions.confirm.gameInputKeyboard',
-                              ),
-                            )
-                            .join(', ')}
-                        </dd>
-                      </div>
-                      <div>
-                        <dt>{t('actions.confirm.gameNavigation')}</dt>
-                        <dd>
-                          {t(
-                            confirmation.navigation === 'none'
-                              ? 'actions.confirm.gameNavigationNone'
-                              : 'actions.confirm.gameNavigationSameOrigin',
-                          )}
                         </dd>
                       </div>
                     </dl>
@@ -278,11 +253,7 @@ export function ActionRuntimeHost() {
                   </Text>
                   <ul className="action-confirmation-capabilities">
                     {confirmation.requestedCapabilities.map((capability) => (
-                      <li key={capability}>
-                        {capability === 'browser-game-control'
-                          ? t('actions.capability.browserGameControl')
-                          : t(CAPABILITY_LABELS[capability])}
-                      </li>
+                      <li key={capability}>{t(actionCapabilityLabel(capability))}</li>
                     ))}
                   </ul>
                 </div>

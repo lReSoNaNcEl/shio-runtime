@@ -1,4 +1,3 @@
-import { spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { access, mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -12,17 +11,12 @@ import {
 } from '../../shared/actions'
 import { type DesktopControlRuntimeState, DSH_RUNTIME_VERSION } from '../../shared/desktop-control'
 import type { LlmProviderId } from '../../shared/llm'
-import { mainLog } from '../logging/safeLogger'
-import {
-  AGENT_BROWSER_SESSION_IDLE_TIMEOUT_ARGUMENT,
-  type AgentBrowserRuntimeResources,
-  buildAgentBrowserChildEnvironment,
-} from './AgentBrowserResources'
 import type {
   DesktopWorkflowAdapterResult,
   DesktopWorkflowExecutionEvidence,
   ShellExecutionEvidence,
-} from './executionEvidence'
+} from '../action/executionEvidence'
+import { mainLog } from '../logging/safeLogger'
 
 export interface DshLaunchResources {
   command: string
@@ -34,10 +28,9 @@ export interface DshLaunchResources {
   shell?: {
     command: string
   }
-  browser?: AgentBrowserRuntimeResources
 }
 
-export type DshWorkflowCapability = Extract<DesktopWorkflowCapability, 'browser' | 'shell'>
+export type DshWorkflowCapability = Extract<DesktopWorkflowCapability, 'shell'>
 
 export interface DshAdapterSnapshot {
   state: DesktopControlRuntimeState
@@ -122,8 +115,6 @@ const SAFE_OS_VARIABLES = [
 ] as const
 
 const SHELL_REQUEST_TIMEOUT_MS = 60_000
-const DSH_BROWSER_TOOL_CALL_MAX = 20
-const DSH_BROWSER_OBSERVATION_MAX = 30
 const shellOutputSchema = z
   .object({
     text: z.string().max(64_000),
@@ -143,58 +134,11 @@ const shellExecutionResultSchema = z
   .strict()
 type ShellExecutionResult = z.infer<typeof shellExecutionResultSchema>
 
-interface BrowserToolTrace {
-  calls: Map<string, string>
-  successfulResults: Set<string>
-}
-
-function observeBrowserToolNotification(notification: unknown, trace: BrowserToolTrace): void {
-  if (!notification || typeof notification !== 'object') return
-  const envelope = notification as {
-    method?: unknown
-    params?: {
-      event?: {
-        type?: unknown
-        data?: {
-          callId?: unknown
-          name?: unknown
-          error?: unknown
-          message?: { source?: { callId?: unknown }; content?: unknown }
-        }
-      }
-    }
-  }
-  if (envelope.method !== 'session.event') return
-  const event = envelope.params?.event
-  const data = event?.data
-  if (!event || !data) return
-  if (
-    event.type === 'tool/call' &&
-    typeof data.callId === 'string' &&
-    typeof data.name === 'string' &&
-    data.name.startsWith('mcp__agent-browser__')
-  ) {
-    trace.calls.set(data.callId, data.name)
-    return
-  }
-  if (event.type !== 'tool/result') return
-  const callId = data.message?.source?.callId
-  if (typeof callId !== 'string' || !trace.calls.has(callId) || data.error !== undefined) return
-  const content = data.message?.content
-  const failedContent =
-    Array.isArray(content) &&
-    content.some(
-      (block) =>
-        typeof block === 'object' && block !== null && 'isError' in block && block.isError === true,
-    )
-  if (!failedContent) trace.successfulResults.add(callId)
-}
-
 export function buildDshChildEnvironment(
   hostEnvironment: NodeJS.ProcessEnv,
   resources: Pick<
     DshLaunchResources,
-    'workspaceDirectory' | 'sessionDirectory' | 'homeDirectory' | 'browser' | 'shell'
+    'workspaceDirectory' | 'sessionDirectory' | 'homeDirectory' | 'shell'
   >,
   model: Pick<DshModelConfiguration, 'apiKey' | 'baseURL' | 'model'>,
   capability: DshWorkflowCapability,
@@ -218,74 +162,7 @@ export function buildDshChildEnvironment(
   if (capability === 'shell' && resources.shell) {
     environment.SHIO_PWSH_COMMAND = resources.shell.command
   }
-  const browser = capability === 'browser' ? resources.browser : undefined
-  if (browser) {
-    environment.SHIO_AGENT_BROWSER_COMMAND = browser.command
-    environment.SHIO_AGENT_BROWSER_NAMESPACE = browser.namespace
-    environment.SHIO_AGENT_BROWSER_SESSION = browser.namespace
-    environment.SHIO_AGENT_BROWSER_PROFILE = browser.profileDirectory
-    environment.SHIO_AGENT_BROWSER_SOCKET_DIR = browser.socketDirectory
-    if (browser.executablePath) {
-      environment.SHIO_AGENT_BROWSER_EXECUTABLE_PATH = browser.executablePath
-    }
-  }
   return environment
-}
-
-function runAgentBrowserCommand(
-  browser: AgentBrowserRuntimeResources,
-  hostEnvironment: NodeJS.ProcessEnv,
-  args: string[],
-  timeoutMs: number,
-  signal?: AbortSignal,
-): Promise<string> {
-  return new Promise((resolveRun, reject) => {
-    const child = spawn(browser.command, args, {
-      cwd: browser.socketDirectory,
-      env: buildAgentBrowserChildEnvironment(hostEnvironment, browser),
-      stdio: ['ignore', 'pipe', 'pipe'],
-      windowsHide: true,
-    })
-    let stdout = ''
-    let stderr = ''
-    child.stdout.setEncoding('utf8')
-    child.stderr.setEncoding('utf8')
-    child.stdout.on('data', (chunk: string) => {
-      if (stdout.length < 32_000) stdout += chunk.slice(0, 32_000 - stdout.length)
-    })
-    child.stderr.on('data', (chunk: string) => {
-      if (stderr.length < 4_000) stderr += chunk.slice(0, 4_000 - stderr.length)
-    })
-    let settled = false
-    const finish = (error?: Error): void => {
-      if (settled) return
-      settled = true
-      clearTimeout(timer)
-      signal?.removeEventListener('abort', abort)
-      if (error) reject(error)
-      else resolveRun(stdout)
-    }
-    const abort = (): void => {
-      child.kill()
-      finish(new DshAdapterError('DSH_CANCELLED', publicMessage('DSH_CANCELLED')))
-    }
-    const timer = setTimeout(() => {
-      child.kill()
-      finish(new Error('agent-browser command timed out'))
-    }, timeoutMs)
-    signal?.addEventListener('abort', abort, { once: true })
-    if (signal?.aborted) abort()
-    child.once('error', (error) => finish(error))
-    child.once('exit', (code) => {
-      if (code === 0) finish()
-      else
-        finish(
-          new Error(
-            `agent-browser command failed with exit code ${code}: ${stderr.trim().slice(0, 500)}`,
-          ),
-        )
-    })
-  })
 }
 
 async function defaultCreateHarness({
@@ -337,7 +214,7 @@ function publicMessage(code: DshAdapterError['code']): string {
     case 'DSH_CANCELLED':
       return 'Desktop Control task was stopped'
     case 'DSH_ACTION_LIMIT':
-      return 'Desktop Control reached the browser workflow action limit'
+      return 'Desktop Control reached its action limit'
     case 'DSH_RUNTIME_UNAVAILABLE':
       return 'Desktop Control runtime is not installed correctly'
     case 'DSH_MODEL_NOT_CONFIGURED':
@@ -473,29 +350,6 @@ export class DshHarnessAdapter {
     }
   }
 
-  async checkBrowserAvailability(): Promise<{
-    packagedBinaryAvailable: boolean
-    executableAvailable: boolean
-  }> {
-    const browser = this.options.resources().browser
-    if (!browser) {
-      return { packagedBinaryAvailable: false, executableAvailable: false }
-    }
-    const [packagedBinaryAvailable, executableAvailable] = await Promise.all([
-      access(browser.command).then(
-        () => true,
-        () => false,
-      ),
-      browser.executablePath
-        ? access(browser.executablePath).then(
-            () => true,
-            () => false,
-          )
-        : Promise.resolve(false),
-    ])
-    return { packagedBinaryAvailable, executableAvailable }
-  }
-
   async checkShellAvailability(): Promise<{ executableAvailable: boolean }> {
     const shell = this.options.resources().shell
     if (!shell) return { executableAvailable: false }
@@ -507,7 +361,7 @@ export class DshHarnessAdapter {
     }
   }
 
-  start(capability: DshWorkflowCapability = 'browser'): Promise<void> {
+  start(capability: DshWorkflowCapability = 'shell'): Promise<void> {
     const model = this.options.model()
     const modelSignature = this.modelSignature(model, capability)
     if (this.harness && ['ready', 'running'].includes(this.state)) {
@@ -542,12 +396,6 @@ export class DshHarnessAdapter {
       mkdir(resources.workspaceDirectory, { recursive: true }),
       mkdir(resources.sessionDirectory, { recursive: true }),
       mkdir(resources.homeDirectory, { recursive: true }),
-      ...(resources.browser
-        ? [
-            mkdir(resources.browser.profileDirectory, { recursive: true }),
-            mkdir(resources.browser.socketDirectory, { recursive: true }),
-          ]
-        : []),
     ])
     this.setState('starting')
     const hostEnvironment = this.options.environment ?? process.env
@@ -555,13 +403,6 @@ export class DshHarnessAdapter {
     const createHarness = this.options.createHarness ?? defaultCreateHarness
     let harness: HarnessRuntime | null = null
     try {
-      if (
-        capability === 'browser' &&
-        resources.browser &&
-        (await this.browserResourcesAvailable(resources.browser))
-      ) {
-        await this.prewarmBrowser(resources.browser, hostEnvironment)
-      }
       harness = await createHarness({
         resources,
         model,
@@ -590,7 +431,7 @@ export class DshHarnessAdapter {
   }
 
   async execute(
-    goal: string,
+    _goal: string,
     signal: AbortSignal,
     capability: DshWorkflowCapability,
     shellCommand?: string,
@@ -608,13 +449,6 @@ export class DshHarnessAdapter {
     }
     this.running = true
     this.setState('running')
-    let notificationCount = 0
-    const notificationTypes = new Set<string>()
-    const browserToolTrace: BrowserToolTrace = {
-      calls: new Map(),
-      successfulResults: new Set(),
-    }
-    let browserBudgetExceeded = false
     const abort = (): void => {
       void this.close().catch((error) => {
         mainLog.warn('[DesktopControl] runtime close after cancellation failed', { error })
@@ -622,112 +456,52 @@ export class DshHarnessAdapter {
     }
     signal.addEventListener('abort', abort, { once: true })
     try {
-      if (capability === 'shell') {
-        if (!shellCommand?.trim() || !harness.executeShell) {
-          throw new DshAdapterError('DSH_PROTOCOL_ERROR', publicMessage('DSH_PROTOCOL_ERROR'))
-        }
-        const shellStartedAt = Date.now()
-        const parsedResult = shellExecutionResultSchema.safeParse(
-          await harness.executeShell(shellCommand.trim(), SHELL_REQUEST_TIMEOUT_MS),
-        )
-        if (!parsedResult.success) {
-          throw new DshAdapterError('DSH_PROTOCOL_ERROR', publicMessage('DSH_PROTOCOL_ERROR'))
-        }
-        const result = parsedResult.data
-        const evidence = shellExecutionEvidence(result, Date.now() - shellStartedAt)
-        if (result.timedOut) {
-          throw new DshAdapterError(
-            'DSH_REQUEST_TIMEOUT',
-            publicMessage('DSH_REQUEST_TIMEOUT'),
-            true,
-            evidence,
-          )
-        }
-        if (result.aborted || signal.aborted) {
-          throw new DshAdapterError('DSH_CANCELLED', publicMessage('DSH_CANCELLED'), true, evidence)
-        }
-        mainLog.info('[DesktopControl] DSH PowerShell command completed', {
-          exitCode: result.exitCode,
-          timedOut: result.timedOut,
-          stdoutCharacters: result.stdout.text.length,
-          stdoutTruncated: result.stdout.truncated,
-          stderrCharacters: result.stderr.text.length,
-          stderrTruncated: result.stderr.truncated,
-        })
-        if (result.exitCode !== 0) {
-          throw new DshAdapterError(
-            'DSH_REMOTE_ERROR',
-            `PowerShell command failed with exit code ${result.exitCode ?? 'unknown'}`,
-            true,
-            evidence,
-          )
-        }
-        return {
-          runtimeCompleted: true,
-          reportedOutcome: renderShellOutcome(result),
-          presentationFacts: runtimeVersionPresentationFacts(shellCommand, evidence),
+      if (!shellCommand?.trim() || !harness.executeShell) {
+        throw new DshAdapterError('DSH_PROTOCOL_ERROR', publicMessage('DSH_PROTOCOL_ERROR'))
+      }
+      const shellStartedAt = Date.now()
+      const parsedResult = shellExecutionResultSchema.safeParse(
+        await harness.executeShell(shellCommand.trim(), SHELL_REQUEST_TIMEOUT_MS),
+      )
+      if (!parsedResult.success) {
+        throw new DshAdapterError('DSH_PROTOCOL_ERROR', publicMessage('DSH_PROTOCOL_ERROR'))
+      }
+      const result = parsedResult.data
+      const evidence = shellExecutionEvidence(result, Date.now() - shellStartedAt)
+      if (result.timedOut) {
+        throw new DshAdapterError(
+          'DSH_REQUEST_TIMEOUT',
+          publicMessage('DSH_REQUEST_TIMEOUT'),
+          true,
           evidence,
-        }
+        )
       }
-      const result = await harness.run(goal, {
-        onNotification: (notification) => {
-          observeBrowserToolNotification(notification, browserToolTrace)
-          const observationCalls = [...browserToolTrace.calls.values()].filter((name) =>
-            /__(?:agent_browser_snapshot|agent_browser_get_(?:text|url|title))$/u.test(name),
-          ).length
-          if (
-            !browserBudgetExceeded &&
-            (browserToolTrace.calls.size > DSH_BROWSER_TOOL_CALL_MAX ||
-              observationCalls > DSH_BROWSER_OBSERVATION_MAX)
-          ) {
-            browserBudgetExceeded = true
-            void harness.close().catch((error) => {
-              mainLog.warn('[DesktopControl] DSH close after browser budget failed', { error })
-            })
-          }
-          notificationCount += 1
-          if (!notification || typeof notification !== 'object') return
-          const envelope = notification as {
-            method?: unknown
-            params?: { event?: { type?: unknown } }
-          }
-          const method = typeof envelope.method === 'string' ? envelope.method : 'unknown'
-          const eventType = envelope.params?.event?.type
-          notificationTypes.add(typeof eventType === 'string' ? `${method}:${eventType}` : method)
-        },
+      if (result.aborted || signal.aborted) {
+        throw new DshAdapterError('DSH_CANCELLED', publicMessage('DSH_CANCELLED'), true, evidence)
+      }
+      mainLog.info('[DesktopControl] DSH PowerShell command completed', {
+        exitCode: result.exitCode,
+        timedOut: result.timedOut,
+        stdoutCharacters: result.stdout.text.length,
+        stdoutTruncated: result.stdout.truncated,
+        stderrCharacters: result.stderr.text.length,
+        stderrTruncated: result.stderr.truncated,
       })
-      if (browserBudgetExceeded) {
-        throw new DshAdapterError('DSH_ACTION_LIMIT', publicMessage('DSH_ACTION_LIMIT'))
+      if (result.exitCode !== 0) {
+        throw new DshAdapterError(
+          'DSH_REMOTE_ERROR',
+          `PowerShell command failed with exit code ${result.exitCode ?? 'unknown'}`,
+          true,
+          evidence,
+        )
       }
-      if (browserToolTrace.successfulResults.size === 0) {
-        mainLog.warn('[DesktopControl] DSH browser workflow produced no successful browser tool', {
-          notificationCount,
-          browserToolCalls: browserToolTrace.calls.size,
-        })
-      }
-      mainLog.info('[DesktopControl] DSH task completed', {
-        notificationCount,
-        runtimeCompleted: true,
-        capability,
-        notificationTypes: [...notificationTypes].slice(0, 20),
-        browserToolCalls: browserToolTrace.calls.size,
-        successfulBrowserToolResults: browserToolTrace.successfulResults.size,
-      })
       return {
         runtimeCompleted: true,
-        reportedOutcome:
-          result.finalResponse.slice(0, DESKTOP_WORKFLOW_REPORTED_OUTCOME_MAX_CHARS) || undefined,
-        evidence: {
-          kind: 'browser',
-          operation: 'workflow',
-          browserToolCalls: browserToolTrace.calls.size,
-          successfulBrowserToolResults: browserToolTrace.successfulResults.size,
-        },
+        reportedOutcome: renderShellOutcome(result),
+        presentationFacts: runtimeVersionPresentationFacts(shellCommand, evidence),
+        evidence,
       }
     } catch (error) {
-      if (browserBudgetExceeded) {
-        throw new DshAdapterError('DSH_ACTION_LIMIT', publicMessage('DSH_ACTION_LIMIT'))
-      }
       if (signal.aborted) {
         throw new DshAdapterError('DSH_CANCELLED', publicMessage('DSH_CANCELLED'))
       }
@@ -735,13 +509,7 @@ export class DshHarnessAdapter {
       if (normalized.code === 'DSH_TRANSPORT_CLOSED' || normalized.code === 'DSH_PROTOCOL_ERROR') {
         await this.close()
       }
-      if (capability !== 'browser' || normalized.evidence) throw normalized
-      throw new DshAdapterError(normalized.code, normalized.message, normalized.recoverable, {
-        kind: 'browser',
-        operation: 'workflow',
-        browserToolCalls: browserToolTrace.calls.size,
-        successfulBrowserToolResults: browserToolTrace.successfulResults.size,
-      })
+      throw normalized
     } finally {
       signal.removeEventListener('abort', abort)
       this.running = false
@@ -777,35 +545,6 @@ export class DshHarnessAdapter {
       this.running = false
       this.setState('stopped')
     }
-  }
-
-  private async browserResourcesAvailable(browser: AgentBrowserRuntimeResources): Promise<boolean> {
-    if (!browser.executablePath) return false
-    const results = await Promise.allSettled([
-      access(browser.command),
-      access(browser.executablePath),
-    ])
-    return results.every((result) => result.status === 'fulfilled')
-  }
-
-  private async prewarmBrowser(
-    browser: AgentBrowserRuntimeResources,
-    hostEnvironment: NodeJS.ProcessEnv,
-  ): Promise<void> {
-    await runAgentBrowserCommand(
-      browser,
-      hostEnvironment,
-      [
-        '--json',
-        '--session',
-        browser.namespace,
-        '--idle-timeout',
-        AGENT_BROWSER_SESSION_IDLE_TIMEOUT_ARGUMENT,
-        'get',
-        'url',
-      ],
-      15_000,
-    )
   }
 
   private async normalizeError(

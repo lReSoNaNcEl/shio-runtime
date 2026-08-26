@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 
 import type {
+  AmbientPresenceIntent,
   AutonomySettings,
   BehaviorCommand,
   ExperienceAppraisal,
@@ -8,13 +9,14 @@ import type {
   WorldContextSnapshot,
 } from '../../shared/alive'
 import type { CharacterEmbodimentIntent } from '../../shared/character-response'
+import { AmbientPresencePolicy } from './AmbientPresencePolicy'
 
 const BASE_NONVERBAL_COOLDOWN_MS = 90_000
-const GAME_NONVERBAL_COOLDOWN_MS = 5_000
+const BROWSER_USE_NONVERBAL_COOLDOWN_MS = 5_000
 const BASE_CONVERSATION_CANDIDATE_COOLDOWN_MS = 5 * 60_000
-const GAME_CONVERSATION_CANDIDATE_COOLDOWN_MS = 30_000
-const GAME_CONVERSATION_WINDOW_MS = 60_000
-const GAME_MAX_CONVERSATION_CANDIDATES_PER_WINDOW = 2
+const BROWSER_USE_CONVERSATION_CANDIDATE_COOLDOWN_MS = 30_000
+const BROWSER_USE_CONVERSATION_WINDOW_MS = 60_000
+const BROWSER_USE_MAX_CONVERSATION_CANDIDATES_PER_WINDOW = 2
 const IMPORTANT_INITIATIVE_PRIORITY = 0.75
 
 export type ConversationCandidateDisposition =
@@ -51,9 +53,10 @@ interface MoodBehaviorProfile {
 }
 
 export class BehaviorRuntime {
+  private readonly ambientPresence = new AmbientPresencePolicy()
   private lastNonverbalAt: number | null = null
   private lastConversationCandidateAt: number | null = null
-  private gameConversationCandidateAt: number[] = []
+  private browserUseConversationCandidateAt: number[] = []
 
   decide(input: BehaviorDecisionInput): BehaviorCommand {
     return this.decideWithDiagnostics(input).command
@@ -79,14 +82,19 @@ export class BehaviorRuntime {
     ) {
       return 'suppressed-threshold'
     }
-    const gate = this.conversationGate(appraisal, at, appraisal.origin === 'browser-game', profile)
+    const gate = this.conversationGate(
+      appraisal,
+      at,
+      appraisal.origin === 'browser-computer-use',
+      profile,
+    )
     if (gate === 'budget') return 'suppressed-budget'
     return gate === 'cooldown' ? 'suppressed-cooldown' : 'selected'
   }
 
   decideWithDiagnostics(input: BehaviorDecisionInput): BehaviorDecision {
     const { appraisal, mood, settings, at } = input
-    const gameEvent = appraisal.origin === 'browser-game'
+    const browserUseEvent = appraisal.origin === 'browser-computer-use'
     const conversationCandidate = this.assessConversationCandidate(input)
     if (
       settings.globallySuspended ||
@@ -103,9 +111,9 @@ export class BehaviorRuntime {
     const conversationalImpulse = appraisal.conversationalImpulse
     if (conversationalImpulse && conversationCandidate === 'selected') {
       this.lastConversationCandidateAt = at
-      if (gameEvent) {
-        this.gameConversationCandidateAt = this.recentGameConversationCandidates(at)
-        this.gameConversationCandidateAt.push(at)
+      if (browserUseEvent) {
+        this.browserUseConversationCandidateAt = this.recentBrowserUseConversationCandidates(at)
+        this.browserUseConversationCandidateAt.push(at)
       }
       return decision(
         command(
@@ -124,9 +132,9 @@ export class BehaviorRuntime {
       )
     }
     const embodimentHint = moodModulatedEmbodiment(appraisal, mood)
-    const nonverbalCooldownMs = gameEvent
+    const nonverbalCooldownMs = browserUseEvent
       ? Math.round(
-          GAME_NONVERBAL_COOLDOWN_MS *
+          BROWSER_USE_NONVERBAL_COOLDOWN_MS *
             bounded(profile.nonverbalCooldownMs / BASE_NONVERBAL_COOLDOWN_MS, 0.6, 1.25),
         )
       : profile.nonverbalCooldownMs
@@ -176,13 +184,32 @@ export class BehaviorRuntime {
     }
   }
 
+  observeAmbientPresence(input: {
+    previous: WorldContextSnapshot
+    current: WorldContextSnapshot
+    settings: AutonomySettings
+    mood: MoodState
+    browserComputerUseScreenFocusActive: boolean
+    at: number
+  }): { command: BehaviorCommand; presence: AmbientPresenceIntent } | null {
+    const presence = this.ambientPresence.decide(input)
+    if (!presence?.embodiment) return null
+    return {
+      presence,
+      command: command(input.at, `ambient-presence:${presence.attention}:${input.at}`, {
+        kind: 'embodiment',
+        intent: presence.embodiment,
+      }),
+    }
+  }
+
   private conversationGate(
     appraisal: ExperienceAppraisal,
     at: number,
-    gameEvent: boolean,
+    browserUseEvent: boolean,
     profile: MoodBehaviorProfile,
   ): 'allow' | 'cooldown' | 'budget' {
-    if (!gameEvent) {
+    if (!browserUseEvent) {
       return this.lastConversationCandidateAt === null ||
         at - this.lastConversationCandidateAt >= profile.conversationCooldownMs
         ? 'allow'
@@ -190,14 +217,14 @@ export class BehaviorRuntime {
     }
     if ((appraisal.conversationalImpulse?.priority ?? 0) >= 0.98) return 'allow'
     if (
-      this.recentGameConversationCandidates(at).length >=
-      GAME_MAX_CONVERSATION_CANDIDATES_PER_WINDOW
+      this.recentBrowserUseConversationCandidates(at).length >=
+      BROWSER_USE_MAX_CONVERSATION_CANDIDATES_PER_WINDOW
     ) {
       return 'budget'
     }
     if ((appraisal.conversationalImpulse?.priority ?? 0) >= 0.9) return 'allow'
-    const gameCooldownMs = Math.round(
-      GAME_CONVERSATION_CANDIDATE_COOLDOWN_MS *
+    const browserUseCooldownMs = Math.round(
+      BROWSER_USE_CONVERSATION_CANDIDATE_COOLDOWN_MS *
         bounded(
           profile.conversationCooldownMs / BASE_CONVERSATION_CANDIDATE_COOLDOWN_MS,
           0.65,
@@ -205,14 +232,14 @@ export class BehaviorRuntime {
         ),
     )
     return this.lastConversationCandidateAt === null ||
-      at - this.lastConversationCandidateAt >= gameCooldownMs
+      at - this.lastConversationCandidateAt >= browserUseCooldownMs
       ? 'allow'
       : 'cooldown'
   }
 
-  private recentGameConversationCandidates(at: number): number[] {
-    return this.gameConversationCandidateAt.filter(
-      (candidateAt) => at - candidateAt < GAME_CONVERSATION_WINDOW_MS,
+  private recentBrowserUseConversationCandidates(at: number): number[] {
+    return this.browserUseConversationCandidateAt.filter(
+      (candidateAt) => at - candidateAt < BROWSER_USE_CONVERSATION_WINDOW_MS,
     )
   }
 }

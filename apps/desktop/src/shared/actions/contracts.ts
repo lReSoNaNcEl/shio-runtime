@@ -1,12 +1,16 @@
 import { z } from 'zod'
 
-import { gameAllowedInputSchema, gameNavigationPolicySchema } from '../browser-game'
+import {
+  BROWSER_COMPUTER_USE_MAX_ACTIONS,
+  BROWSER_COMPUTER_USE_MAX_DURATION_MS,
+  BROWSER_COMPUTER_USE_MAX_STEPS,
+} from '../browser-computer-use'
 import {
   BROWSER_SEMANTIC_RISK_CLASSES,
   type BrowserActionExecution,
   browserActionExecutionSchema,
   browserOperationSchema,
-} from '../desktop-control/browser'
+} from '../browser-control'
 
 export const DESKTOP_WORKFLOW_CAPABILITIES = [
   'browser',
@@ -121,32 +125,23 @@ const desktopActionConfirmationRequestSchema = z
   .strict()
   .superRefine(validateDesktopWorkflowContract)
 
-const gameSessionActionConfirmationRequestSchema = z
+const browserComputerUseActionConfirmationRequestSchema = z
   .object({
     schemaVersion: z.literal(1),
     actionId: actionIdSchema,
-    tool: z.literal('browser.game-session'),
-    goal: z.string().min(1).max(500),
-    origin: z.string().url().max(2_048),
-    surfaceId: z.string().regex(/^game-surface-[0-7]$/u),
-    surfaceLabel: z.string().max(120).optional(),
-    allowedInputs: z.array(gameAllowedInputSchema).min(1).max(2),
-    maxDurationMs: z
-      .number()
-      .int()
-      .min(30_000)
-      .max(30 * 60 * 1_000),
-    maxInputEvents: z.number().int().min(1).max(20_000),
-    maxInputEventsPerSecond: z.number().int().min(1).max(30),
-    navigation: gameNavigationPolicySchema,
-    requestedCapabilities: z.tuple([z.literal('browser-game-control')]),
+    tool: z.literal('browser.use'),
+    goal: z.string().min(1).max(1_000),
+    maxSteps: z.number().int().min(1).max(BROWSER_COMPUTER_USE_MAX_STEPS),
+    maxActions: z.number().int().min(1).max(BROWSER_COMPUTER_USE_MAX_ACTIONS),
+    maxDurationMs: z.number().int().min(5_000).max(BROWSER_COMPUTER_USE_MAX_DURATION_MS),
+    requestedCapabilities: z.tuple([z.literal('browser-computer-use')]),
     risk: z.literal('normal'),
   })
   .strict()
 
 export const actionConfirmationRequestSchema = z.union([
   desktopActionConfirmationRequestSchema,
-  gameSessionActionConfirmationRequestSchema,
+  browserComputerUseActionConfirmationRequestSchema,
 ])
 export type ActionConfirmationRequest = z.infer<typeof actionConfirmationRequestSchema>
 

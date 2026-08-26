@@ -48,18 +48,18 @@ method dispatch.
 
 The Desktop Control Plugin runs validated, bounded automation workflows through
 Action Runtime. Computer Control executes foreground PowerShell commands through
-the pinned DSH PowerShell tool, while Browser Control uses the Shio-owned
-automation backend, bundled MCP client, and bundled `agent-browser` executable. It
-uses an isolated browser profile below Shio application data; it does not reuse the
-user's normal Chrome profile, cookies, or signed-in sessions.
+the pinned DSH PowerShell tool. Browser Control is a separate Plugin and the sole
+owner of one headed Google Chrome persistent context launched through pinned
+`playwright-core`. It uses an isolated browser profile below Shio application data;
+it does not reuse the user's normal Chrome profile, cookies, or signed-in sessions.
 
 Desktop Control reuses the active OpenAI-compatible provider, model, and encrypted
 API key from Shio Settings through the provider-neutral `dsh-llm-pi-ai` Adapter; it
 does not keep a second DSH credential. Browser Control additionally needs a
-compatible local Google Chrome installation. The packaged Windows build contains
-the pinned automation libraries and native `agent-browser` executable; development
-builds obtain the same exact versions through the Desktop lockfile. Each workflow
-mounts only its authorized tool family: browser or PowerShell, never both.
+compatible local Google Chrome installation. The packaged Windows build and
+development environment use the exact `playwright-core` version pinned by the
+Desktop lockfile. Browser input remains behind Action Runtime and the Plugin's
+bounded semantic or Computer Use providers; DSH has no browser ownership.
 
 ### Full Computer Access and Emergency Stop
 

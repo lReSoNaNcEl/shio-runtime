@@ -1,87 +1,37 @@
-import type { BrowserGameControlProvider } from '../../shared/browser-game'
 import type {
-  BrowserContextProvider,
-  BrowserRealtimeControlProvider,
-} from '../../shared/desktop-control'
-import type { PluginCapabilityKind, PluginId, ProjectContextProvider } from '../../shared/plugins'
-import type { WebSearchProvider } from '../../shared/web-search'
+  PluginCapabilityKind,
+  PluginId,
+  PluginProviderCapability,
+  PluginProviderMap,
+} from '../../shared/plugins'
 
-interface ProviderRegistration<T> {
+interface ProviderRegistration {
   owner: PluginId
-  provider: T
+  provider: unknown
 }
 
+/** Typed provider lookup. It does not expose arbitrary Plugin method dispatch. */
 export class PluginCapabilityRegistry {
   private readonly owners = new Map<PluginCapabilityKind, PluginId>()
-  private projectContext: ProviderRegistration<ProjectContextProvider> | null = null
-  private browserContext: ProviderRegistration<BrowserContextProvider> | null = null
-  private browserRealtimeControl: ProviderRegistration<BrowserRealtimeControlProvider> | null = null
-  private browserGameControl: ProviderRegistration<BrowserGameControlProvider> | null = null
-  private webSearch: ProviderRegistration<WebSearchProvider> | null = null
+  private readonly providers = new Map<PluginProviderCapability, ProviderRegistration>()
 
-  registerProjectContext(owner: PluginId, provider: ProjectContextProvider): void {
-    this.claim(owner, 'project-context')
-    this.projectContext = { owner, provider }
+  register<Capability extends PluginProviderCapability>(
+    owner: PluginId,
+    capability: Capability,
+    provider: PluginProviderMap[Capability],
+  ): void {
+    this.claim(owner, capability)
+    this.providers.set(capability, { owner, provider })
   }
 
-  getProjectContextProvider(): ProjectContextProvider | undefined {
-    return this.projectContext?.provider
+  get<Capability extends PluginProviderCapability>(
+    capability: Capability,
+  ): PluginProviderMap[Capability] | undefined {
+    return this.providers.get(capability)?.provider as PluginProviderMap[Capability] | undefined
   }
 
-  hasProjectContext(owner: PluginId): boolean {
-    return this.projectContext?.owner === owner
-  }
-
-  registerBrowserContext(owner: PluginId, provider: BrowserContextProvider): void {
-    this.claim(owner, 'browser-control')
-    this.browserContext = { owner, provider }
-  }
-
-  getBrowserContextProvider(): BrowserContextProvider | undefined {
-    return this.browserContext?.provider
-  }
-
-  hasBrowserContext(owner: PluginId): boolean {
-    return this.browserContext?.owner === owner
-  }
-
-  registerBrowserRealtimeControl(owner: PluginId, provider: BrowserRealtimeControlProvider): void {
-    this.claim(owner, 'browser-realtime-control')
-    this.browserRealtimeControl = { owner, provider }
-  }
-
-  getBrowserRealtimeControlProvider(): BrowserRealtimeControlProvider | undefined {
-    return this.browserRealtimeControl?.provider
-  }
-
-  hasBrowserRealtimeControl(owner: PluginId): boolean {
-    return this.browserRealtimeControl?.owner === owner
-  }
-
-  registerBrowserGameControl(owner: PluginId, provider: BrowserGameControlProvider): void {
-    this.claim(owner, 'browser-game-control')
-    this.browserGameControl = { owner, provider }
-  }
-
-  getBrowserGameControlProvider(): BrowserGameControlProvider | undefined {
-    return this.browserGameControl?.provider
-  }
-
-  hasBrowserGameControl(owner: PluginId): boolean {
-    return this.browserGameControl?.owner === owner
-  }
-
-  registerWebSearch(owner: PluginId, provider: WebSearchProvider): void {
-    this.claim(owner, 'web-search')
-    this.webSearch = { owner, provider }
-  }
-
-  getWebSearchProvider(): WebSearchProvider | undefined {
-    return this.webSearch?.provider
-  }
-
-  hasWebSearch(owner: PluginId): boolean {
-    return this.webSearch?.owner === owner
+  hasProvider(owner: PluginId, capability: PluginProviderCapability): boolean {
+    return this.providers.get(capability)?.owner === owner
   }
 
   registerOwnedCapability(owner: PluginId, capability: PluginCapabilityKind): void {
@@ -100,11 +50,9 @@ export class PluginCapabilityRegistry {
     for (const [capability, currentOwner] of this.owners) {
       if (currentOwner === owner) this.owners.delete(capability)
     }
-    if (this.projectContext?.owner === owner) this.projectContext = null
-    if (this.browserContext?.owner === owner) this.browserContext = null
-    if (this.browserRealtimeControl?.owner === owner) this.browserRealtimeControl = null
-    if (this.browserGameControl?.owner === owner) this.browserGameControl = null
-    if (this.webSearch?.owner === owner) this.webSearch = null
+    for (const [capability, registration] of this.providers) {
+      if (registration.owner === owner) this.providers.delete(capability)
+    }
   }
 
   private claim(owner: PluginId, capability: PluginCapabilityKind): void {

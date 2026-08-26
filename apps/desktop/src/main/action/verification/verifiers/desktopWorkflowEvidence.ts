@@ -2,7 +2,7 @@ import {
   type DesktopWorkflowAdapterResult,
   type DesktopWorkflowExecutionEvidence,
   isDesktopWorkflowAdapterResult,
-} from '../../../desktop-control/executionEvidence'
+} from '../../executionEvidence'
 import type { ActionExecutionResult } from '../contracts'
 
 export function desktopWorkflowEvidence(

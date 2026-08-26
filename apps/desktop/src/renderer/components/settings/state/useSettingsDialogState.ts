@@ -12,6 +12,7 @@ import type {
 } from './settingsContracts'
 import {
   defaultBacklogSelectorRole,
+  defaultComputerUseVisionRole,
   defaultSettingsForm,
   overlayDefaults,
 } from './settingsDefaults'
@@ -111,6 +112,7 @@ export function useSettingsDialogState({
     activeProvider,
     backlogModels,
     backlogRole,
+    computerUseVisionRole,
     editingKey,
     keyInput,
     modelOptions,
@@ -120,6 +122,7 @@ export function useSettingsDialogState({
     setActiveProvider,
     setBacklogModels,
     setBacklogRole,
+    setComputerUseVisionRole,
     setEditingKey,
     setKeyInput,
     setModelOptions,
@@ -174,6 +177,7 @@ export function useSettingsDialogState({
         setActiveProvider(cfg.llm?.activeProvider ?? 'groq')
         setProviderSettings(cfg.llm.providers)
         setBacklogRole(cfg.llm?.roles?.backlogSelector ?? defaultBacklogSelectorRole)
+        setComputerUseVisionRole(cfg.llm?.roles?.computerUseVision ?? defaultComputerUseVisionRole)
         setVrmName(cfg.vrmAssetName)
         setOverlayWidth(parseNumberSetting(cfg.overlayWidth, overlayDefaults.width, 250, 2000))
         setOverlayHeight(parseNumberSetting(cfg.overlayHeight, overlayDefaults.height, 250, 2000))
@@ -511,12 +515,15 @@ export function useSettingsDialogState({
         llm: {
           activeProvider,
           providers: providerSettings,
-          roles: { backlogSelector: backlogRole },
+          roles: {
+            backlogSelector: backlogRole,
+            computerUseVision: computerUseVisionRole,
+          },
         },
       }).catch(() => setSaveState('error'))
     }, 650)
     return () => window.clearTimeout(timer)
-  }, [activeProvider, providerSettings, backlogRole, isOpen, persistPatch])
+  }, [activeProvider, providerSettings, backlogRole, computerUseVisionRole, isOpen, persistPatch])
 
   useEffect(() => {
     if (!hydrated.current || !isOpen) return

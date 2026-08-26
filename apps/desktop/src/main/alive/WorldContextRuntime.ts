@@ -4,7 +4,7 @@ import type {
   RendererWorldContextInput,
   WorldContextSnapshot,
 } from '../../shared/alive'
-import type { BrowserObservation } from '../../shared/desktop-control'
+import type { BrowserObservation } from '../../shared/browser-control'
 import {
   SYSTEM_CONTEXT_PROBES,
   type SystemContextAdapter,

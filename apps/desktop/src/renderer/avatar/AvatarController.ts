@@ -193,7 +193,7 @@ export class AvatarController {
     const mode = toAvatarMode(state.mode)
     const emotionKey = state.emotion || state.avatar.expression || 'neutral'
     const vrmEmotion = state.avatar.vrmExpression
-    const semanticKey = `${mode}|${emotionKey}|${vrmEmotion ?? ''}|${JSON.stringify(this.effectiveEmbodimentIntent()) ?? ''}|game=${this.gaze.gameScreenGazeActive()}|${options.lipSyncStart?.session.playbackId ?? ''}`
+    const semanticKey = `${mode}|${emotionKey}|${vrmEmotion ?? ''}|${JSON.stringify(this.effectiveEmbodimentIntent()) ?? ''}|browser=${this.gaze.browserScreenGazeActive()}|${options.lipSyncStart?.session.playbackId ?? ''}`
 
     if (semanticKey === this.lastCharacterStateKey) {
       this.vrmModel.applyEmotion(emotionKey || 'neutral', vrmEmotion)
@@ -258,14 +258,14 @@ export class AvatarController {
     this.applyCurrentGaze()
   }
 
-  setGameScreenGaze(sessionId: string, active: boolean): void {
-    this.gaze.setGameScreenGaze(sessionId, active)
+  setBrowserScreenGaze(sessionId: string, active: boolean): void {
+    this.gaze.setBrowserScreenGaze(sessionId, active)
     this.lastCharacterStateKey = null
     this.applyCurrentGaze()
   }
 
-  isGameScreenGazeActive(): boolean {
-    return this.gaze.gameScreenGazeActive()
+  isBrowserScreenGazeActive(): boolean {
+    return this.gaze.browserScreenGazeActive()
   }
 
   prepareSpeaking(emotionKey?: string, vrmEmotion?: string, state?: CharacterState): void {

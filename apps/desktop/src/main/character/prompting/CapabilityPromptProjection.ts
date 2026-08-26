@@ -41,21 +41,12 @@ function capabilityDetailsLabel(
   capability: ShioCapabilitySnapshot['capabilities'][number],
   locale: UiLocale,
 ): string | undefined {
-  if (capability.details?.kind !== 'browser-game-control') return undefined
-  const mode = translate(
-    locale,
-    `plugins.browserGame.reflexMode.${capability.details.reflexMode}` as TranslationKey,
-  )
-  const inputs = capability.details.supportedInputs
-    .map((input) => translate(locale, `plugins.browserGame.input.${input}` as TranslationKey))
-    .join(', ')
-  const semantic = translate(
-    locale,
-    capability.details.semanticPerception
-      ? 'plugins.browserGame.semantic.available'
-      : 'plugins.browserGame.semantic.unavailable',
-  )
-  return `${mode}; ${inputs || '—'}; ${semantic}`
+  if (capability.details?.kind !== 'browser-computer-use') return undefined
+  const semantic = capability.details.semanticControl === 'ready'
+  const visual = capability.details.visualControl === 'ready'
+  return locale === 'ru'
+    ? `семантическое управление: ${semantic ? 'готово' : 'недоступно'}; визуальное управление: ${visual ? 'готово' : 'нужна настройка'}; изолированный профиль`
+    : `semantic control: ${semantic ? 'ready' : 'unavailable'}; visual control: ${visual ? 'ready' : 'setup required'}; isolated profile`
 }
 
 export function characterCapabilityPrompt(

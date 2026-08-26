@@ -21,6 +21,7 @@ import type {
 } from '../../src/renderer/speech/continuous-listening/types'
 import { UtteranceBacklog } from '../../src/renderer/speech/continuous-listening/UtteranceBacklog'
 import { UtteranceChunkBuilder } from '../../src/renderer/speech/continuous-listening/UtteranceChunkBuilder'
+import { resolveContinuousAttention } from '../../src/renderer/speech/conversation/ConversationInputCoordinator'
 
 let now = Date.now()
 const flush = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0))
@@ -326,6 +327,35 @@ async function main(): Promise<void> {
     }).type,
     'backlog',
   )
+
+  // Main-owned attention may promote ambiguous ambient speech, but it must not
+  // veto a phrase already accepted by the deterministic local hearing policy.
+  const addressedQuestion = engine.evaluate(
+    {
+      ...first,
+      id: 'session:addressed-question',
+      segmentId: 'addressed-question',
+      text: 'Ты меня слышишь?',
+    },
+    {
+      isSpeaking: false,
+      cooldownActive: false,
+      recentConversation: false,
+      followUpWindow: false,
+      curiosityChance: 0,
+    },
+  )
+  assert.equal(addressedQuestion.shouldAttend, true)
+  const reconciledAttention = resolveContinuousAttention(addressedQuestion, {
+    shouldAttend: false,
+    confidence: 0.62,
+    source: 'deterministic',
+    reason: 'deterministic_score',
+    latencyMs: 0,
+  })
+  assert.equal(reconciledAttention.shouldAttend, true)
+  assert.equal(reconciledAttention.score, addressedQuestion.score)
+  assert.match(reconciledAttention.reasons.at(-1) ?? '', /local_admit_preserved/u)
 
   // Bounded backlog rejects ids, self-echo and lower-priority overflow.
   const bounded = new UtteranceBacklog()

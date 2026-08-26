@@ -1,4 +1,4 @@
-import type { BacklogSelectorRoleConfig } from '../../../../shared/llm'
+import type { BacklogSelectorRoleConfig, ComputerUseVisionRoleConfig } from '../../../../shared/llm'
 import type { OverlayViewMode } from '../../../avatar/tuning/cameraTuning'
 
 export const overlayViewModes: readonly OverlayViewMode[] = ['bust', 'face', 'portrait']
@@ -21,6 +21,13 @@ export const defaultBacklogSelectorRole: BacklogSelectorRoleConfig = {
   model: '',
   timeoutMs: 2_000,
   minimumConfidence: 0.72,
+}
+
+export const defaultComputerUseVisionRole: ComputerUseVisionRoleConfig = {
+  providerId: '',
+  model: '',
+  timeoutMs: 15_000,
+  maxSteps: 30,
 }
 
 export const defaultSettingsForm = {

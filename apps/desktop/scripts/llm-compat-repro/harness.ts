@@ -81,7 +81,7 @@ function hangingHttp(): AxiosInstance {
   } as unknown as AxiosInstance
 }
 
-function axiosErr(status: number): Error {
+function axiosErr(status: number, data?: unknown): Error {
   return new axios.AxiosError(
     `HTTP ${status}`,
     'ERR_BAD_RESPONSE',
@@ -89,7 +89,7 @@ function axiosErr(status: number): Error {
     {},
     {
       status,
-      data: { error: { message: 'raw provider json', code: status } },
+      data: data ?? { error: { message: 'raw provider json', code: status } },
       statusText: '',
       headers: {},
       config: {} as never,
@@ -102,6 +102,7 @@ interface ProviderCase {
   reasoningModel: string
   plainModel: string
   expectedPlainBudget: number
+  expectedReasoningBudget: number
 }
 
 const PROVIDERS: ProviderCase[] = [
@@ -110,24 +111,28 @@ const PROVIDERS: ProviderCase[] = [
     reasoningModel: 'openai/gpt-oss-20b',
     plainModel: 'llama-3.3-70b-versatile',
     expectedPlainBudget: 512,
+    expectedReasoningBudget: 2048,
   },
   {
     id: 'cloudflare',
     reasoningModel: '@cf/qwen/qwen3.8-27b',
     plainModel: '@cf/meta/llama-3.3-70b-instruct-fp8-fast',
     expectedPlainBudget: 1024,
+    expectedReasoningBudget: 4096,
   },
   {
     id: 'openrouter',
     reasoningModel: 'deepseek/deepseek-r1:free',
     plainModel: 'meta-llama/llama-3.3-70b-instruct:free',
     expectedPlainBudget: 1024,
+    expectedReasoningBudget: 4096,
   },
   {
     id: 'mistral',
     reasoningModel: 'magistral-medium-2509',
     plainModel: 'mistral-small-latest',
     expectedPlainBudget: 1024,
+    expectedReasoningBudget: 4096,
   },
 ]
 
@@ -225,7 +230,7 @@ async function runProviderBattery(pc: ProviderCase): Promise<void> {
     check('supportsSystemPrompt true', caps.supportsSystemPrompt === true)
   }
 
-  // 3. Reasoning model detection + 4096 budget without provider-specific code.
+  // 3. Reasoning model detection + provider-safe completion budget.
   {
     const { http, lastBody } = fakeHttp(() => okResponse('[calm] думаю'))
     const caps = resolveCapabilities(pc.id, pc.reasoningModel)
@@ -240,7 +245,11 @@ async function runProviderBattery(pc: ProviderCase): Promise<void> {
       messages: baseMessages('hi'),
     })
     check('reasoning model detected', caps.supportsReasoning === true, pc.reasoningModel)
-    check('reasoning budget = 4096', lastBody().max_tokens === 4096, `got ${lastBody().max_tokens}`)
+    check(
+      `reasoning budget = ${pc.expectedReasoningBudget}`,
+      lastBody().max_tokens === pc.expectedReasoningBudget,
+      `got ${lastBody().max_tokens}`,
+    )
   }
 
   // 4. Internal callers may apply a smaller latency budget to bounded tool rounds.
@@ -389,6 +398,38 @@ async function runProviderBattery(pc: ProviderCase): Promise<void> {
           err.code === (status === 401 ? 'AUTH_ERROR' : 'ACCESS_DENIED'),
       )
     }
+  }
+  if (pc.id === 'groq') {
+    const responseData = {
+      error: {
+        message: 'Request too large for model: requested 9395 tokens, limit 8000',
+        code: 'rate_limit_exceeded',
+      },
+    }
+    const { http } = fakeHttp(() => axiosErr(413, responseData))
+    let err: unknown
+    try {
+      await runChatCompletion({
+        provider: pc.id,
+        displayName,
+        http,
+        chatPath: '/c',
+        apiKey: 'k',
+        model: pc.reasoningModel,
+        capabilities: resolveCapabilities(pc.id, pc.reasoningModel),
+        messages: baseMessages('x'),
+      })
+    } catch (caught) {
+      err = caught
+    }
+    check(
+      'Groq HTTP 413 rate_limit_exceeded is classified as recoverable rate limiting',
+      err instanceof LlmResponseError && err.code === 'RATE_LIMITED' && err.recoverable,
+    )
+    check(
+      'Groq HTTP 413 rate-limit response remains provider-safe',
+      err instanceof Error && !err.message.includes('9395') && !err.message.includes('raw'),
+    )
   }
 }
 
@@ -619,6 +660,14 @@ async function testProxyResolution(): Promise<void> {
 
   check('401 classifies as AUTH_ERROR', classifyHttpFailure(401).code === 'AUTH_ERROR')
   check('403 classifies as ACCESS_DENIED', classifyHttpFailure(403).code === 'ACCESS_DENIED')
+  check(
+    'ordinary HTTP 413 remains REQUEST_TOO_LARGE',
+    classifyHttpFailure(413).code === 'REQUEST_TOO_LARGE',
+  )
+  check(
+    'HTTP 413 with structured provider rate-limit code becomes RATE_LIMITED',
+    classifyHttpFailure(413, { error: { code: 'rate_limit_exceeded' } }).code === 'RATE_LIMITED',
+  )
 }
 
 async function testProviderModelAccessErrors(): Promise<void> {
@@ -824,6 +873,10 @@ async function testCatalogCapabilityMetadata(): Promise<void> {
     ],
   })
   check('Groq modality metadata maps Vision', groq.capabilities?.supportsVision === true)
+  check(
+    'Groq Qwen reasoning budget leaves TPM headroom for character context',
+    resolveCapabilities('groq', 'qwen/qwen3.8-27b').recommendedMaxTokens === 2048,
+  )
 
   let groqMissingKeyError: unknown
   try {

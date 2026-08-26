@@ -17,6 +17,7 @@ import {
   pluginHealthSeverity,
 } from '../../src/renderer/runtime/runtimeHealth'
 import type {
+  PluginCapabilityProviders,
   PluginHealth,
   ProjectContextProvider,
   RuntimePluginHealthPresentation,
@@ -65,6 +66,10 @@ class HealthPlugin implements BundledPlugin {
 
   getProjectContextProvider(): ProjectContextProvider {
     return this.provider
+  }
+
+  getCapabilityProviders(): PluginCapabilityProviders {
+    return { 'project-context': this.getProjectContextProvider() }
   }
 
   setHealth(state: PluginHealth['state']): void {

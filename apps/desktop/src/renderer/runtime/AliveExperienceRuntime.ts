@@ -10,7 +10,7 @@ interface AliveExperienceRuntimeDeps {
   getControllerState: () => ControllerState
   updateSnapshot: (snapshot: AliveSnapshot) => void
   pushInitiative: (title: string) => void
-  runGameCommentary: (topic: string, eventId: string) => Promise<void>
+  runBrowserInitiative: (topic: string) => Promise<void>
   presentation: ConversationPresentationPort
   recordEvent: (label: string, detail?: string) => void
 }
@@ -92,11 +92,11 @@ export class AliveExperienceRuntime {
   }
 
   private applyBehavior(command: BehaviorCommand): void {
-    if (command.embodimentPresence?.source === 'browser-game') {
+    if (command.embodimentPresence?.source === 'browser-computer-use') {
       this.deps.presentation.setBehaviorEmbodimentIntent(
         command.intent.kind === 'embodiment' ? command.intent.intent : undefined,
       )
-      this.deps.presentation.setGameScreenGaze(
+      this.deps.presentation.setBrowserScreenGaze(
         command.embodimentPresence.sessionId,
         command.embodimentPresence.screenGazeActive,
       )
@@ -106,10 +106,10 @@ export class AliveExperienceRuntime {
         this.deps.presentation.setBehaviorEmbodimentIntent(command.intent.intent)
       }
     } else if (command.intent.kind === 'conversation-candidate') {
-      if (command.embodimentPresence?.source === 'browser-game' && command.sourceEventId) {
+      if (command.embodimentPresence?.source === 'browser-computer-use') {
         observeRendererPromise(
-          this.deps.runGameCommentary(command.intent.topic, command.sourceEventId),
-          `run game commentary ${command.sourceEventId}`,
+          this.deps.runBrowserInitiative(command.intent.topic),
+          'run browser computer-use initiative',
         )
       } else {
         this.deps.pushInitiative(command.intent.topic)

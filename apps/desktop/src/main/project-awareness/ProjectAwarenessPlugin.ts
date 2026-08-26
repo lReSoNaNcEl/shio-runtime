@@ -1,4 +1,5 @@
 import type {
+  PluginCapabilityProviders,
   PluginHealth,
   PluginManifest,
   ProjectContextProvider,
@@ -103,6 +104,10 @@ export class ProjectAwarenessPlugin implements BundledPlugin {
 
   getProjectContextProvider(): ProjectContextProvider {
     return this.contextProvider
+  }
+
+  getCapabilityProviders(): PluginCapabilityProviders {
+    return { 'project-context': this.getProjectContextProvider() }
   }
 
   async getHealth(): Promise<PluginHealth> {

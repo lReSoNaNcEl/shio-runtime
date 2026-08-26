@@ -1,6 +1,6 @@
+import type { BrowserObservation } from '../../shared/browser-control'
 import type { ShioCapabilitySnapshot } from '../../shared/capabilities'
 import type { CharacterToolId } from '../../shared/character-tools'
-import type { BrowserObservation } from '../../shared/desktop-control'
 import type { LlmToolDefinition } from '../llm'
 import type { MemoryToolBroker } from '../memory'
 
@@ -18,11 +18,12 @@ interface CharacterToolRegistryOptions {
   goalsAvailable?: boolean
   goalCreatesAvailable?: boolean
   goalUpdatesAvailable?: boolean
+  conversationThreadsAvailable?: boolean
   capabilityContext: ShioCapabilitySnapshot | null
   browserObservation: BrowserObservation | null
   memory?: MemoryToolBroker
   actionsAvailable: boolean
-  browserGameAvailable?: boolean
+  browserComputerUseAvailable?: boolean
 }
 
 const BROWSER_TARGET_SCHEMA = {
@@ -53,25 +54,13 @@ const BROWSER_TARGET_SCHEMA = {
 
 function availableCapability(
   context: ShioCapabilitySnapshot | null,
-  id: 'automation-engine' | 'browser-control' | 'browser-game-control' | 'computer-control',
+  id: 'automation-engine' | 'browser-control' | 'browser-computer-use' | 'computer-control',
 ): boolean {
   return Boolean(
     context?.capabilities.some(
       (capability) => capability.id === id && capability.availability === 'available',
     ),
   )
-}
-
-function browserGameSupportedInputs(
-  context: ShioCapabilitySnapshot | null,
-): readonly ('pointer' | 'keyboard')[] {
-  const capability = context?.capabilities.find(
-    (candidate) =>
-      candidate.id === 'browser-game-control' && candidate.availability === 'available',
-  )
-  return capability?.details?.kind === 'browser-game-control'
-    ? capability.details.supportedInputs
-    : []
 }
 
 function definition(
@@ -239,6 +228,41 @@ export class CharacterToolRegistry {
       }
     }
 
+    if (options.conversationThreadsAvailable) {
+      tools.push(
+        definition(
+          'thread.open',
+          'thread_open',
+          'Open one short-lived conversation thread only for a typed unfinished conversational fact: a substantive interruption, an explicit request to return later, waiting for user information, or a temporary branch away from an unfinished topic. It is not a Goal or Long-Term Memory record.',
+          {
+            type: 'object',
+            required: ['topic', 'summary'],
+            properties: {
+              topic: { type: 'string' },
+              summary: { type: 'string' },
+              status: {
+                type: 'string',
+                enum: ['active', 'interrupted', 'waiting-user', 'dormant'],
+              },
+              salience: { type: 'number', minimum: 0, maximum: 1 },
+            },
+            additionalProperties: false,
+          },
+        ),
+        definition(
+          'thread.resolve',
+          'thread_resolve',
+          'Resolve the exact short-lived conversation thread supplied in current Thread Awareness or opened in this turn. Never convert it to a Goal or Memory record automatically.',
+          {
+            type: 'object',
+            required: ['id'],
+            properties: { id: { type: 'string' } },
+            additionalProperties: false,
+          },
+        ),
+      )
+    }
+
     for (const memoryTool of options.memory?.availableTools() ?? []) {
       const id = memoryTool.name.replace('_', '.') as CharacterToolId
       tools.push(definition(id, memoryTool.name, memoryTool.description, memoryTool.parameters))
@@ -379,97 +403,53 @@ export class CharacterToolRegistry {
           },
         ),
       )
-      if (availableCapability(options.capabilityContext, 'automation-engine')) {
+      if (
+        options.browserComputerUseAvailable &&
+        availableCapability(options.capabilityContext, 'browser-computer-use')
+      ) {
         tools.push(
           definition(
-            'browser.workflow',
-            'browser_workflow',
-            'Delegate one genuinely complex or ambiguous bounded browser goal. Deterministic browser operations should use the specific browser tools instead.',
+            'browser.use',
+            'browser_use',
+            'Start one bounded autonomous browser-only session for a high-level goal. The internal controller may use semantic targets or visual pointer/keyboard actions, but low-level input is never exposed to Character Response Generation. CAPTCHA, authentication, 2FA, payment, password-manager, and secure-desktop blockers require the user.',
             {
               type: 'object',
               required: ['goal'],
-              properties: { goal: { type: 'string' } },
+              properties: {
+                goal: { type: 'string' },
+                maxSteps: { type: 'integer', minimum: 1, maximum: 300 },
+                maxActions: { type: 'integer', minimum: 1, maximum: 1000 },
+                maxDurationMs: { type: 'integer', minimum: 10000, maximum: 1800000 },
+              },
               additionalProperties: false,
             },
           ),
+          definition(
+            'browser.useStatus',
+            'browser_use_status',
+            'Read the bounded status of the current browser computer-use session.',
+            { type: 'object', properties: {}, additionalProperties: false },
+          ),
+          definition(
+            'browser.usePause',
+            'browser_use_pause',
+            'Pause the current browser computer-use session and release all held inputs.',
+            { type: 'object', properties: {}, additionalProperties: false },
+          ),
+          definition(
+            'browser.useResume',
+            'browser_use_resume',
+            'Resume a paused browser computer-use session after the page is ready.',
+            { type: 'object', properties: {}, additionalProperties: false },
+          ),
+          definition(
+            'browser.useStop',
+            'browser_use_stop',
+            'Stop the current browser computer-use session and release all held inputs.',
+            { type: 'object', properties: {}, additionalProperties: false },
+          ),
         )
       }
-    }
-
-    const gameSupportedInputs = browserGameSupportedInputs(options.capabilityContext)
-    if (options.browserGameAvailable && gameSupportedInputs.length > 0) {
-      const reflexDescription = gameSupportedInputs.includes('keyboard')
-        ? 'The current reflex backend supports pointer and keyboard input.'
-        : 'The current reflex backend supports pointer input only.'
-      tools.push(
-        definition(
-          'game.start',
-          'game_start',
-          `Start one bounded delegated session for the current browser game. ${reflexDescription} This selects only a high-level goal and approved surface; realtime frames and individual inputs remain internal. If multiple surfaces are reported, ask the user or retry with one returned surfaceId.`,
-          {
-            type: 'object',
-            required: ['goal'],
-            properties: {
-              goal: { type: 'string' },
-              surfaceId: { type: 'string' },
-              allowedInputs: {
-                type: 'array',
-                minItems: 1,
-                maxItems: gameSupportedInputs.length,
-                items: { type: 'string', enum: gameSupportedInputs },
-              },
-              maxDurationMs: { type: 'integer', minimum: 30_000, maximum: 1_800_000 },
-              maxInputEvents: { type: 'integer', minimum: 1, maximum: 20_000 },
-              maxInputEventsPerSecond: { type: 'integer', minimum: 1, maximum: 30 },
-              navigation: { type: 'string', enum: ['same-origin-only', 'none'] },
-              strategy: { type: 'string', enum: ['careful', 'balanced', 'fast'] },
-            },
-            additionalProperties: false,
-          },
-        ),
-        definition(
-          'game.pause',
-          'game_pause',
-          'Pause the current game session and release all held inputs.',
-          {
-            type: 'object',
-            properties: {},
-            additionalProperties: false,
-          },
-        ),
-        definition(
-          'game.resume',
-          'game_resume',
-          'Resume a paused game session, or update its high-level careful/balanced/fast strategy without exposing frame controls.',
-          {
-            type: 'object',
-            properties: {
-              strategy: { type: 'string', enum: ['careful', 'balanced', 'fast'] },
-            },
-            additionalProperties: false,
-          },
-        ),
-        definition(
-          'game.stop',
-          'game_stop',
-          'Stop the current game session and release all held inputs.',
-          {
-            type: 'object',
-            properties: {},
-            additionalProperties: false,
-          },
-        ),
-        definition(
-          'game.status',
-          'game_status',
-          'Read the bounded current game-session status and telemetry.',
-          {
-            type: 'object',
-            properties: {},
-            additionalProperties: false,
-          },
-        ),
-      )
     }
 
     this.tools = Object.freeze(tools)

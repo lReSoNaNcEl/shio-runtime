@@ -12,7 +12,7 @@ import type {
   ScheduledTaskStatus,
   UpdateGoalInput,
 } from '../alive'
-import type { BrowserGameDiagnosticsApi } from '../browser-game'
+import type { BrowserControlApi } from '../browser-control'
 import type { ShioCapabilitiesApi } from '../capabilities'
 import type { CharacterEmbodimentIntent } from '../character-response'
 import type { CharacterReplyStreamEvent } from '../character-stream'
@@ -215,7 +215,7 @@ export interface ShioRuntimeApi {
   }
   memory: MemoryManagementApi & { clear: () => Promise<unknown> }
   plugins: PluginManagementApi
-  browserGame: BrowserGameDiagnosticsApi
+  browserControl: BrowserControlApi
   desktopControl: DesktopControlApi
   projectAwareness: ProjectAwarenessApi
   config: {

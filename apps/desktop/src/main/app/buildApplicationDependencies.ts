@@ -4,31 +4,39 @@ import { resolvePwshPath } from '@deepseek-ai/dsh-pwsh-local'
 import { app, type BrowserWindow, Menu, powerMonitor, safeStorage } from 'electron'
 
 import type { DesktopWorkflowRequest } from '../../shared/actions'
-import type { BrowserGameControlAction } from '../../shared/browser-game'
+import type {
+  BrowserComputerUseControlAction,
+  BrowserComputerUseSession,
+  BrowserComputerUseStartRequest,
+} from '../../shared/browser-computer-use'
 import { translate } from '../../shared/localization'
 import type { AvatarRuntimeHealth } from '../../shared/runtime'
-import { type ActionRuntime, toDesktopWorkflowActionResult } from '../action'
+import {
+  type ActionRuntime,
+  type DesktopWorkflowAdapterResult,
+  toDesktopWorkflowActionResult,
+} from '../action'
 import { AliveRuntime, AliveStore, WindowsSystemContextAdapter } from '../alive'
 import {
-  BROWSER_GAME_CONTROL_MANIFEST,
-  BrowserGamePlugin,
-  LlmGameSemanticPerceptionAdapter,
-} from '../browser-game'
+  BROWSER_CONTROL_MANIFEST,
+  BrowserComputerUseRuntime,
+  type BrowserControlPlugin,
+  LlmBrowserVisualActionAdapter,
+  PlaywrightBrowserAdapter,
+  resolveChromeExecutable,
+} from '../browser-control'
+import {
+  BrowserWorkflowCoordinator,
+  BrowserWorkflowScopeRegistry,
+} from '../browser-control/workflow'
 import { CapabilityCatalog } from '../capabilities'
 import { getConfig, getOverlayPresentationConfig, getRendererConfig, loadConfig } from '../config'
+import { ConversationThreadRuntime } from '../conversation-threads'
 import {
-  AgentBrowserAdapter,
   DESKTOP_CONTROL_MANIFEST,
-  DesktopControlPlugin,
-  type DesktopWorkflowAdapterResult,
+  type DesktopControlPlugin,
   DshHarnessAdapter,
-  resolveAgentBrowserCommand,
-  resolveChromeExecutable,
 } from '../desktop-control'
-import {
-  BrowserAgentCoordinator,
-  BrowserWorkflowScopeRegistry,
-} from '../desktop-control/browser-agent'
 import { RendererNetworkObserver } from '../diagnostics/RendererNetworkObserver'
 import { resolveEnvironmentConfig } from '../environmentConfig'
 import { registerIpcHandlers } from '../ipc'
@@ -54,7 +62,7 @@ import { PluginCapabilityRegistry, PluginRegistryStore, PluginRuntime } from '..
 import {
   PROJECT_AWARENESS_MANIFEST,
   ProjectAwarenessConfigStore,
-  ProjectAwarenessPlugin,
+  type ProjectAwarenessPlugin,
   ProjectAwarenessRuntime,
   ProjectCredentialStore,
   ProjectKnowledgeStore,
@@ -64,12 +72,19 @@ import { observeMainPromise } from '../reliability/observePromise'
 import { ScreenCaptureAdapter, ScreenContextService } from '../screen-context'
 import { SpeechClientManager } from '../speech/SpeechClientManager'
 import { registerReleaseSupportHandlers } from '../system/releaseSupport'
-import { WEB_SEARCH_MANIFEST, WebSearchPlugin } from '../web-search'
+import { WEB_SEARCH_MANIFEST, type WebSearchPlugin } from '../web-search'
 import { MainWindowManager } from '../windows/MainWindowManager'
 import { OverlayWindowManager } from '../windows/OverlayWindowManager'
 import { actionExperienceEvent } from './ActionExperienceBridge'
 import { createActionRuntime } from './createActionRuntime'
 import { MainConversationTurnService } from './MainConversationTurnService'
+import {
+  buildBrowserControlPlugin,
+  buildBundledPlugins,
+  buildDesktopControlPlugin,
+  buildProjectAwarenessPlugin,
+  buildWebSearchPlugin,
+} from './plugins'
 import { SpeechApplicationService } from './SpeechApplicationService'
 
 export interface ApplicationDependencies {
@@ -91,8 +106,8 @@ export function buildApplicationDependencies(): ApplicationDependencies {
   let pluginRuntime: PluginRuntime | null = null
   let projectAwareness: ProjectAwarenessPlugin | null = null
   let desktopControl: DesktopControlPlugin | null = null
+  let browserControl: BrowserControlPlugin | null = null
   let webSearch: WebSearchPlugin | null = null
-  let browserGame: BrowserGamePlugin | null = null
   let projectCredentialStore: ProjectCredentialStore | null = null
   let projectKnowledgeStore: ProjectKnowledgeStore | null = null
   let rendererNetworkObserver: RendererNetworkObserver | null = null
@@ -108,6 +123,9 @@ export function buildApplicationDependencies(): ApplicationDependencies {
   const semanticMemory = createSemanticMemoryRuntime(
     join(app.getPath('userData'), 'memory', 'semantic-memory.sqlite'),
   )
+  const conversationThreads = new ConversationThreadRuntime(
+    join(app.getPath('userData'), 'conversation', 'threads.sqlite'),
+  )
   const aliveStore = new AliveStore(join(app.getPath('userData'), 'alive', 'alive.sqlite'))
   const legacyHabits = aliveStore.legacyHabitRecords()
   if (semanticMemory.status().operational) {
@@ -118,6 +136,7 @@ export function buildApplicationDependencies(): ApplicationDependencies {
   let unsubscribePluginCapabilities: (() => void) | null = null
   let unsubscribeProjectCapabilities: (() => void) | null = null
   let unsubscribeDesktopCapabilities: (() => void) | null = null
+  let unsubscribeBrowserCapabilities: (() => void) | null = null
   let unsubscribeMemoryCapabilities: (() => void) | null = null
   let lastAvatarState: unknown = null
   let lastAvatarMouth: unknown = null
@@ -187,7 +206,7 @@ export function buildApplicationDependencies(): ApplicationDependencies {
     const knowledgeStore = projectKnowledgeStore
     const credentialStore = projectCredentialStore
     const configStore = new ProjectAwarenessConfigStore(join(directory, 'config.json'))
-    return new ProjectAwarenessPlugin({
+    return buildProjectAwarenessPlugin({
       config: configStore,
       credentials: credentialStore,
       createRuntime: (config) =>
@@ -223,18 +242,7 @@ export function buildApplicationDependencies(): ApplicationDependencies {
       const profileDirectory = app.isPackaged
         ? join(process.resourcesPath, 'app.asar.unpacked', 'desktop-control')
         : join(app.getAppPath(), 'resources', 'desktop-control')
-      const modulesDirectory = app.isPackaged
-        ? join(process.resourcesPath, 'app.asar.unpacked', 'node_modules')
-        : join(app.getAppPath(), 'node_modules')
-      const browserResources = {
-        command: resolveAgentBrowserCommand(modulesDirectory),
-        executablePath: resolveChromeExecutable(),
-        namespace: 'shio-desktop-control',
-        profileDirectory: join(directory, 'browser-profile'),
-        socketDirectory: join(directory, 'browser-runtime'),
-      }
-      const browser = new AgentBrowserAdapter({ resources: () => browserResources })
-      desktopControl = new DesktopControlPlugin({
+      desktopControl = buildDesktopControlPlugin({
         adapter: new DshHarnessAdapter({
           model: () => {
             const { activeProvider, providers } = getConfig().llm
@@ -267,10 +275,8 @@ export function buildApplicationDependencies(): ApplicationDependencies {
             shell: {
               command: resolvePwshPath(undefined, process.env, process.platform),
             },
-            browser: browserResources,
           }),
         }),
-        browser,
         authorityMode: () => getConfig().desktopAuthorityMode,
       })
       unsubscribeDesktopCapabilities = desktopControl.onChanged(() =>
@@ -281,43 +287,110 @@ export function buildApplicationDependencies(): ApplicationDependencies {
   }
 
   const getWebSearch = (): WebSearchPlugin => {
-    webSearch ??= new WebSearchPlugin()
+    webSearch ??= buildWebSearchPlugin()
     return webSearch
   }
 
-  const getBrowserGame = (): BrowserGamePlugin => {
-    browserGame ??= new BrowserGamePlugin({
-      realtime: () => pluginCapabilities.getBrowserRealtimeControlProvider(),
-      semanticPerceptionAdapter: new LlmGameSemanticPerceptionAdapter({
-        provider: () =>
-          resolveLlmReadiness(getRendererConfig().llm).reason === 'ready'
-            ? (llmGateway ?? undefined)
-            : undefined,
-      }),
-      onGameEvent: (event) => {
-        const observation = aliveRuntime?.reportExperience({
-          type: 'game-event',
-          at: event.at,
-          eventId: event.eventId,
-          gameEvent: event,
-        })
-        return observation?.conversationCandidate === 'selected'
-          ? 'candidate'
-          : observation?.conversationCandidate
-      },
-    })
-    return browserGame
+  const getBrowserControl = (): BrowserControlPlugin => {
+    if (!browserControl) {
+      const browser = new PlaywrightBrowserAdapter({
+        executablePath: resolveChromeExecutable(),
+        profileDirectory: join(
+          app.getPath('userData'),
+          'plugins',
+          BROWSER_CONTROL_MANIFEST.id,
+          'profile',
+        ),
+      })
+      const resolveVisualModel = () => {
+        const config = getConfig().llm
+        const role = config.roles.computerUseVision
+        const automatic = !role.providerId
+        const provider = role.providerId || config.activeProvider
+        const providerSettings = config.providers[provider]
+        const credential = getLlmCredentialStore().resolve(provider)
+        const accountId = resolveLlmProviderAccountId(provider, providerSettings.accountId)
+        return {
+          automatic,
+          provider,
+          apiKey: credential.apiKey,
+          model: automatic ? providerSettings.model.trim() : role.model.trim(),
+          accountId,
+        }
+      }
+      const visualGateway = new LlmGateway(resolveVisualModel)
+      const visualProvider = (): LlmGateway | undefined => {
+        const selection = resolveVisualModel()
+        const profile = getProviderDefinition(selection.provider).profile
+        if (
+          !selection.model ||
+          (profile.requiresApiKey && !selection.apiKey.trim()) ||
+          (profile.requiresAccountId && !selection.accountId.trim())
+        ) {
+          return undefined
+        }
+        return visualGateway
+      }
+      const visual = new LlmBrowserVisualActionAdapter({
+        provider: visualProvider,
+        modelLabel: () => {
+          const selection = resolveVisualModel()
+          const label = `${selection.provider}/${selection.model || 'not configured'}`
+          return selection.automatic ? `Auto · ${label}` : label
+        },
+        timeoutMs: () => getConfig().llm.roles.computerUseVision.timeoutMs,
+      })
+      browserControl = buildBrowserControlPlugin({
+        browser,
+        computerUse: new BrowserComputerUseRuntime({
+          browser,
+          visual,
+          maximumSteps: () => getConfig().llm.roles.computerUseVision.maxSteps,
+          onEvent: (event) => {
+            const phase = event.type.replace('computer-use-', '') as
+              | 'started'
+              | 'progress'
+              | 'notable-observation'
+              | 'blocked'
+              | 'completed'
+              | 'failed'
+              | 'stopped'
+            aliveRuntime?.reportExperience({
+              type: 'browser-computer-use-event',
+              at: event.at,
+              sessionId: event.sessionId,
+              phase,
+              ...(event.observation ? { observation: event.observation } : {}),
+              ...(event.errorCode ? { errorCode: event.errorCode } : {}),
+            })
+          },
+        }),
+        authorityMode: () => getConfig().desktopAuthorityMode,
+        refreshVisualModel: async () => {
+          if (visualProvider()) await visualGateway.refreshActiveCapabilities()
+        },
+      })
+      unsubscribeBrowserCapabilities = browserControl.onChanged(() =>
+        capabilityCatalog.invalidate(),
+      )
+    }
+    return browserControl
   }
 
   const getPluginRuntime = (): PluginRuntime => {
     if (!pluginRuntime) {
       pluginRuntime = new PluginRuntime(
-        [getProjectAwareness(), getDesktopControl(), getWebSearch(), getBrowserGame()],
+        buildBundledPlugins(
+          getProjectAwareness(),
+          getDesktopControl(),
+          getWebSearch(),
+          getBrowserControl(),
+        ),
         new PluginRegistryStore(join(app.getPath('userData'), 'plugins', 'registry.json'), [
           PROJECT_AWARENESS_MANIFEST,
           DESKTOP_CONTROL_MANIFEST,
           WEB_SEARCH_MANIFEST,
-          BROWSER_GAME_CONTROL_MANIFEST,
+          BROWSER_CONTROL_MANIFEST,
         ]),
         pluginCapabilities,
       )
@@ -342,12 +415,12 @@ export function buildApplicationDependencies(): ApplicationDependencies {
     memoryStatus: () => semanticMemory.status(),
     plugins: () => getPluginRuntime().list(),
     desktopControl: () => getDesktopControl().getCapabilityProjection(),
+    browserControl: () => getBrowserControl().getStatus(),
     avatarRuntimeHealth: () => lastAvatarRuntimeHealth,
     aliveStatus: () => {
       const snapshot = aliveRuntime?.snapshot()
       return snapshot ? { settings: snapshot.settings, health: snapshot.health } : null
     },
-    browserGame: () => getBrowserGame().getCapabilityProjection(),
   })
 
   const getSpeechClientManager = (): SpeechClientManager => {
@@ -377,7 +450,7 @@ export function buildApplicationDependencies(): ApplicationDependencies {
       conversationMemory,
       speech,
       getRendererConfig,
-      () => pluginCapabilities.getProjectContextProvider(),
+      () => pluginCapabilities.get('project-context'),
       capabilityCatalog,
       async (request, signal, authorizationScopeId) => {
         const runtime = actionRuntime
@@ -390,8 +463,8 @@ export function buildApplicationDependencies(): ApplicationDependencies {
         })
         return toDesktopWorkflowActionResult(action)
       },
-      () => pluginCapabilities.getBrowserContextProvider(),
-      new BrowserAgentCoordinator(browserWorkflowScopes),
+      () => pluginCapabilities.get('browser-control'),
+      new BrowserWorkflowCoordinator(browserWorkflowScopes),
       memoryToolBroker,
       () => aliveRuntime?.snapshot().goals ?? [],
       (input) => {
@@ -414,28 +487,31 @@ export function buildApplicationDependencies(): ApplicationDependencies {
           habits: semanticMemory.relevantHabitMotifs(),
         }
       },
-      () => pluginCapabilities.getWebSearchProvider(),
-      () => pluginCapabilities.getBrowserGameControlProvider(),
-      async (request: BrowserGameControlAction, signal: AbortSignal) => {
+      () => pluginCapabilities.get('web-search'),
+      () => pluginCapabilities.get('browser-computer-use'),
+      async (
+        request: BrowserComputerUseStartRequest | BrowserComputerUseControlAction,
+        signal: AbortSignal,
+      ) => {
         const runtime = actionRuntime
         if (!runtime || signal.aborted) throw new LlmTurnCancelledError()
-        const actionName =
-          request.operation === 'start' ? 'browser.game-session' : 'browser.game-control'
+        const control = 'operation' in request
         const action = await runtime.execute<
-          BrowserGameControlAction,
-          ReturnType<BrowserGamePlugin['getStatus']>
+          BrowserComputerUseStartRequest | BrowserComputerUseControlAction,
+          BrowserComputerUseSession
         >({
-          name: actionName,
+          name: control ? 'browser.use-control' : 'browser.use',
           payload: request,
           signal,
         })
         return {
           outcome: action.status,
           ...(action.authorization ? { authorization: action.authorization } : {}),
-          ...(action.result ? { status: action.result } : {}),
+          ...(action.result ? { session: action.result } : {}),
           ...(action.errorCode ? { errorCode: action.errorCode } : {}),
         }
       },
+      conversationThreads,
     )
   }
 
@@ -453,6 +529,8 @@ export function buildApplicationDependencies(): ApplicationDependencies {
       unsubscribeProjectCapabilities = null
       unsubscribeDesktopCapabilities?.()
       unsubscribeDesktopCapabilities = null
+      unsubscribeBrowserCapabilities?.()
+      unsubscribeBrowserCapabilities = null
       unsubscribeMemoryCapabilities?.()
       unsubscribeMemoryCapabilities = null
       capabilityCatalog.dispose()
@@ -463,6 +541,7 @@ export function buildApplicationDependencies(): ApplicationDependencies {
         'action-runtime',
         'plugin-runtime',
         'alive-runtime',
+        'conversation-threads',
       ] as const
       const cleanupResults = await Promise.allSettled([
         conversationTurnService?.dispose() ?? Promise.resolve(),
@@ -470,6 +549,7 @@ export function buildApplicationDependencies(): ApplicationDependencies {
         actionRuntime?.emergencyStop() ?? Promise.resolve(),
         pluginRuntime?.dispose() ?? Promise.resolve(),
         Promise.resolve().then(() => aliveRuntime?.dispose()),
+        Promise.resolve().then(() => conversationThreads.close()),
       ])
       for (const [index, result] of cleanupResults.entries()) {
         if (result.status === 'rejected') {
@@ -538,7 +618,7 @@ export function buildApplicationDependencies(): ApplicationDependencies {
       capabilityCatalog,
       browserWorkflowScopes,
       desktopControl: getDesktopControl,
-      browserGame: getBrowserGame,
+      browserControl: getBrowserControl,
       onEvent: (event) => {
         const experience = actionExperienceEvent(event)
         if (experience) aliveRuntime?.reportExperience(experience)
@@ -588,7 +668,7 @@ export function buildApplicationDependencies(): ApplicationDependencies {
       getPluginRuntime,
       getProjectAwareness,
       getDesktopControl,
-      getBrowserGame,
+      getBrowserControl,
       screenContextService,
       semanticMemory,
       capabilityCatalog,
@@ -632,7 +712,7 @@ export function buildApplicationDependencies(): ApplicationDependencies {
             })
           : undefined,
       worldContext: {
-        browser: () => desktopControl?.getBrowserContextProvider().currentObservation() ?? null,
+        browser: () => browserControl?.getBrowserContextProvider().currentObservation() ?? null,
         project: () => {
           try {
             const status = projectAwareness?.getStatus()

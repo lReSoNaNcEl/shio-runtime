@@ -1,11 +1,9 @@
 import { z } from 'zod'
 
 import {
-  type GameAllowedInput,
-  type GameReflexBackendMode,
-  gameAllowedInputSchema,
-  gameReflexBackendModeSchema,
-} from '../browser-game'
+  type BrowserVisualControlState,
+  browserVisualControlStateSchema,
+} from '../browser-computer-use'
 import type { TranslationKey } from '../localization'
 
 export const SHIO_CAPABILITY_SNAPSHOT_SCHEMA_VERSION = 1 as const
@@ -31,14 +29,14 @@ export interface CapabilityNavigationTarget {
   id: string
 }
 
-export interface BrowserGameCapabilityDetails {
-  kind: 'browser-game-control'
-  reflexMode: GameReflexBackendMode
-  supportedInputs: readonly GameAllowedInput[]
-  semanticPerception: boolean
+export interface BrowserComputerUseCapabilityDetails {
+  kind: 'browser-computer-use'
+  semanticControl: 'ready' | 'unavailable'
+  visualControl: BrowserVisualControlState
+  isolatedProfile: true
 }
 
-export type ShioCapabilityDetails = BrowserGameCapabilityDetails
+export type ShioCapabilityDetails = BrowserComputerUseCapabilityDetails
 
 export interface ShioCapabilityDescriptor {
   id: string
@@ -78,13 +76,10 @@ const translationKeySchema = z.string().trim().min(1).max(160)
 const shioCapabilityDetailsSchema = z.discriminatedUnion('kind', [
   z
     .object({
-      kind: z.literal('browser-game-control'),
-      reflexMode: gameReflexBackendModeSchema,
-      supportedInputs: z
-        .array(gameAllowedInputSchema)
-        .max(2)
-        .refine((values) => new Set(values).size === values.length, 'Inputs must be unique'),
-      semanticPerception: z.boolean(),
+      kind: z.literal('browser-computer-use'),
+      semanticControl: z.enum(['ready', 'unavailable']),
+      visualControl: browserVisualControlStateSchema,
+      isolatedProfile: z.literal(true),
     })
     .strict(),
 ])

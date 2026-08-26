@@ -8,12 +8,12 @@ import {
 import {
   type BrowserActionExecution,
   browserActionExecutionSchema,
-} from '../../shared/desktop-control'
+} from '../../shared/browser-control'
 import type {
   BrowserExecutionEvidence,
   DesktopWorkflowAdapterResult,
   DesktopWorkflowExecutionEvidence,
-} from '../desktop-control'
+} from './executionEvidence'
 import type { ActionResult } from './types'
 
 export function toDesktopWorkflowActionResult(

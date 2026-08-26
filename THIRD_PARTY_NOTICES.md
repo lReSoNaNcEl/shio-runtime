@@ -10,7 +10,7 @@ bundle.
 | --- | ---: | --- | --- |
 | `streamdown` | 2.5.0 | Apache-2.0 | <https://github.com/vercel/streamdown> |
 | `rehype-harden` | 1.1.8 | MIT | <https://github.com/vercel-labs/markdown-sanitizers> |
-| `agent-browser` | 0.34.0 | Apache-2.0 | <https://github.com/vercel-labs/agent-browser> |
+| `playwright-core` | 1.62.1 | Apache-2.0 | <https://github.com/microsoft/playwright> |
 | `@deepseek-ai/cordis` | 4.0.1 | MIT | <https://github.com/deepseek-ai/deepseek-harness> |
 | `@deepseek-ai/cordis-plugin-include` | 1.0.6 | MIT | <https://github.com/deepseek-ai/deepseek-harness> |
 | `@deepseek-ai/cordis-plugin-loader` | 1.0.2 | MIT | <https://github.com/deepseek-ai/deepseek-harness> |

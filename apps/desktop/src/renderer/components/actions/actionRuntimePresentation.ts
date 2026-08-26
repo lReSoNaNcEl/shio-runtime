@@ -3,8 +3,8 @@ import type { ActionRuntimeSnapshot } from '../../../shared/actions'
 const DESKTOP_WORKFLOW_TOOL = 'desktop.workflow'
 const PRESENTED_ACTION_TOOLS = new Set([
   DESKTOP_WORKFLOW_TOOL,
-  'browser.game-session',
-  'browser.game-control',
+  'browser.use',
+  'browser.use-control',
 ])
 
 export type DesktopWorkflowActivity =

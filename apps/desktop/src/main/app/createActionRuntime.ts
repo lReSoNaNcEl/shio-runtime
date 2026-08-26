@@ -2,11 +2,12 @@ import type { BrowserWindow } from 'electron'
 
 import { actionConfirmationRequestSchema, actionRuntimeSnapshotSchema } from '../../shared/actions'
 import {
-  type BrowserGameControlAction,
-  type BrowserGameStatus,
-  browserGameControlActionSchema,
-  type GameStartPreparation,
-} from '../../shared/browser-game'
+  type BrowserComputerUseControlAction,
+  type BrowserComputerUseSession,
+  type BrowserComputerUseStartRequest,
+  browserComputerUseControlActionSchema,
+  browserComputerUseStartRequestSchema,
+} from '../../shared/browser-computer-use'
 import type { RuntimeEventInput } from '../../shared/runtime'
 import {
   ActionConfirmationBroker,
@@ -15,18 +16,17 @@ import {
   BrowserActiveTabVerifier,
   BrowserInteractionVerifier,
   BrowserNavigationVerifier,
+  type DesktopWorkflowAdapterResult,
   desktopWorkflowVerificationPolicy,
+  type EffectiveDesktopWorkflowRequest,
   ShellExecutionVerifier,
   safeDesktopWorkflowRecovery,
 } from '../action'
-import type { BrowserGamePlugin } from '../browser-game'
+import type { BrowserControlPlugin } from '../browser-control'
+import type { BrowserWorkflowScopeRegistry } from '../browser-control/workflow'
 import type { CapabilityCatalog } from '../capabilities'
 import { getConfig } from '../config'
-import type { DesktopControlPlugin, DesktopWorkflowAdapterResult } from '../desktop-control'
-import type {
-  BrowserWorkflowScopeRegistry,
-  EffectiveDesktopWorkflowRequest,
-} from '../desktop-control/browser-agent'
+import type { DesktopControlPlugin } from '../desktop-control'
 
 export interface ActionRuntimeComposition {
   actions: ActionRuntime
@@ -38,7 +38,7 @@ interface CreateActionRuntimeOptions {
   capabilityCatalog: CapabilityCatalog
   browserWorkflowScopes: BrowserWorkflowScopeRegistry
   desktopControl: () => DesktopControlPlugin
-  browserGame: () => BrowserGamePlugin
+  browserControl: () => BrowserControlPlugin
   onEvent?: (event: RuntimeEventInput) => void
 }
 
@@ -47,7 +47,7 @@ export function createActionRuntime({
   capabilityCatalog,
   browserWorkflowScopes,
   desktopControl,
-  browserGame,
+  browserControl,
   onEvent,
 }: CreateActionRuntimeOptions): ActionRuntimeComposition {
   const sendToRenderer = (channel: string, payload: unknown): void => {
@@ -87,7 +87,7 @@ export function createActionRuntime({
       ),
   })
   const browserObservationProvider = {
-    observe: (signal: AbortSignal) => desktopControl().observeBrowserForVerification(signal),
+    observe: (signal: AbortSignal) => browserControl().observeForVerification(signal),
   }
   actions.registerVerifier(new BrowserNavigationVerifier(browserObservationProvider))
   actions.registerVerifier(new BrowserInteractionVerifier(browserObservationProvider))
@@ -95,8 +95,13 @@ export function createActionRuntime({
   actions.registerVerifier(new ShellExecutionVerifier())
   actions.register<EffectiveDesktopWorkflowRequest, DesktopWorkflowAdapterResult>({
     name: 'desktop.workflow',
-    description: 'Execute a validated, bounded desktop automation workflow.',
-    validate: (payload) => desktopControl().validateWorkflowRequest(payload),
+    description: 'Execute one validated browser or shell operation.',
+    validate: (payload) => {
+      const request = desktopControl().validateWorkflowRequest(payload)
+      return request.requestedCapabilities[0] === 'browser'
+        ? browserControl().validateWorkflowRequest(request)
+        : request
+    },
     authority: 'desktop-workflow',
     confirmation: (actionId, payload, request) =>
       actionConfirmationRequestSchema.parse({
@@ -116,62 +121,49 @@ export function createActionRuntime({
     adapter: 'desktop-control',
     verification: desktopWorkflowVerificationPolicy,
     recover: (request) => safeDesktopWorkflowRecovery(request),
-    execute: (request, context) => desktopControl().executeWorkflow(request, context.signal),
+    execute: (request, context) =>
+      request.requestedCapabilities[0] === 'browser'
+        ? browserControl().executeWorkflow(request, context.signal)
+        : desktopControl().executeWorkflow(request, context.signal),
   })
-  actions.register<GameStartPreparation, BrowserGameStatus>({
-    name: 'browser.game-session',
-    description: 'Start one Action-authorized bounded browser game session.',
-    validate: (payload) => {
-      const action = browserGameControlActionSchema.parse(payload)
-      if (action.operation !== 'start') throw new Error('Expected a game start action')
-      return browserGame().getPreparedStart(action.preparationId)
-    },
+  actions.register<BrowserComputerUseStartRequest, BrowserComputerUseSession>({
+    name: 'browser.use',
+    description: 'Authorize and start one bounded browser computer-use session.',
+    validate: (payload) => browserComputerUseStartRequestSchema.parse(payload),
     authority: 'delegated-session',
-    confirmation: (actionId, preparation) =>
+    confirmation: (actionId, request) =>
       actionConfirmationRequestSchema.parse({
         schemaVersion: 1,
         actionId,
-        tool: 'browser.game-session',
-        goal: preparation.goal,
-        origin: preparation.origin,
-        surfaceId: preparation.surface.id,
-        surfaceLabel: preparation.surface.label,
-        allowedInputs: preparation.allowedInputs,
-        maxDurationMs: preparation.maxDurationMs,
-        maxInputEvents: preparation.maxInputEvents,
-        maxInputEventsPerSecond: preparation.maxInputEventsPerSecond,
-        navigation: preparation.navigation,
-        requestedCapabilities: ['browser-game-control'],
+        tool: 'browser.use',
+        goal: request.goal,
+        maxSteps: request.maxSteps,
+        maxActions: request.maxActions,
+        maxDurationMs: request.maxDurationMs,
+        requestedCapabilities: ['browser-computer-use'],
         risk: 'normal',
       }),
-    timeoutMs: 15_000,
+    timeoutMs: 30_000,
     singleFlight: true,
-    adapter: 'browser-game-control',
-    execute: (preparation, context) =>
-      browserGame()
-        .getBrowserGameControlProvider()
-        .start(preparation.preparationId, context.actionId, context.signal),
+    adapter: 'browser-control',
+    execute: (request, context) =>
+      browserControl().startComputerUse(request, context.actionId, context.signal),
   })
-  actions.register<Exclude<BrowserGameControlAction, { operation: 'start' }>, BrowserGameStatus>({
-    name: 'browser.game-control',
-    description: 'Pause, resume, stop, or tune one bounded browser game session.',
-    validate: (payload) => {
-      const action = browserGameControlActionSchema.parse(payload)
-      if (action.operation === 'start') throw new Error('Expected a game control action')
-      return action
-    },
+  actions.register<BrowserComputerUseControlAction, BrowserComputerUseSession>({
+    name: 'browser.use-control',
+    description: 'Pause, resume, or stop the active browser computer-use session.',
+    validate: (payload) => browserComputerUseControlActionSchema.parse(payload),
     authority: 'implicit',
     timeoutMs: 10_000,
     singleFlight: true,
-    adapter: 'browser-game-control',
-    execute: (action) => browserGame().executeControl(action),
+    adapter: 'browser-control',
+    execute: (action, context) =>
+      browserControl().executeComputerUseControl(action.operation, context.signal),
   })
   actions.onEmergencyStop(() => {
     browserWorkflowScopes.releaseAll()
     return desktopControl().emergencyStop()
   })
-  actions.onEmergencyStop(async () => {
-    await browserGame().emergencyStop()
-  })
+  actions.onEmergencyStop(() => browserControl().emergencyStop())
   return { actions, confirmations }
 }

@@ -90,6 +90,14 @@ export interface BacklogSelectorRoleConfig {
   minimumConfidence: number
 }
 
+export interface ComputerUseVisionRoleConfig {
+  /** Empty means: use the active Character provider/model when it supports vision. */
+  providerId: LlmProviderId | ''
+  model: string
+  timeoutMs: number
+  maxSteps: number
+}
+
 /**
  * Persisted, provider-independent LLM configuration. `activeProvider` selects
  * which entry of `providers` the Runtime uses. Switching provider never
@@ -100,6 +108,7 @@ export interface LlmPersistedConfig {
   providers: Record<LlmProviderId, LlmProviderPersistedSettings>
   roles: {
     backlogSelector: BacklogSelectorRoleConfig
+    computerUseVision: ComputerUseVisionRoleConfig
   }
 }
 
@@ -108,5 +117,6 @@ export interface LlmPublicConfig {
   providers: Record<LlmProviderId, LlmProviderPublicSettings>
   roles: {
     backlogSelector: BacklogSelectorRoleConfig
+    computerUseVision: ComputerUseVisionRoleConfig
   }
 }

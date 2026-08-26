@@ -70,24 +70,24 @@ const presentation = new AvatarConversationPresentationPort(
   {
     setEmbodimentIntent: () => undefined,
     setBehaviorEmbodimentIntent: () => undefined,
-    setGameScreenGaze: () => undefined,
+    setBrowserScreenGaze: () => undefined,
   } as never,
   { publishAvatarState: (state: SyncedAvatarState) => mirrored.push(state) } as never,
   () => undefined,
 )
 presentation.publishAvatarState({ mode: 'idle' })
-presentation.setGameScreenGaze('game-session-a', true)
-assert.equal(mirrored.at(-1)?.gameScreenGazeActive, true)
-presentation.setGameScreenGaze('game-session-b', true)
-presentation.setGameScreenGaze('game-session-a', false)
-assert.equal(mirrored.at(-1)?.gameScreenGazeSessionId, 'game-session-b')
-assert.equal(mirrored.at(-1)?.gameScreenGazeActive, true)
+presentation.setBrowserScreenGaze('browser-session-a', true)
+assert.equal(mirrored.at(-1)?.browserScreenGazeActive, true)
+presentation.setBrowserScreenGaze('browser-session-b', true)
+presentation.setBrowserScreenGaze('browser-session-a', false)
+assert.equal(mirrored.at(-1)?.browserScreenGazeSessionId, 'browser-session-b')
+assert.equal(mirrored.at(-1)?.browserScreenGazeActive, true)
 presentation.setBehaviorEmbodimentIntent({ intensity: 'subtle', gazeHint: 'screen' })
 presentation.setEmbodimentIntent({ intensity: 'subtle', gazeHint: 'user' })
 assert.equal(mirrored.at(-1)?.behaviorEmbodimentIntent, undefined)
-presentation.setGameScreenGaze('game-session-b', false)
-assert.equal(mirrored.at(-1)?.gameScreenGazeActive, false)
-console.log('Mirror Overlay game gaze projection and stale release: PASS')
+presentation.setBrowserScreenGaze('browser-session-b', false)
+assert.equal(mirrored.at(-1)?.browserScreenGazeActive, false)
+console.log('Mirror Overlay browser gaze projection and stale release: PASS')
 
 const migrated = migrateLegacyDesktopSettings({ ttsVoice: 'legacy-user-voice' })
 assert.equal('ttsVoice' in migrated, false)

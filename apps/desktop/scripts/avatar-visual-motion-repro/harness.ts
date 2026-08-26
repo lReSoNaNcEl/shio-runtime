@@ -61,22 +61,22 @@ assert.ok(screenAuthority.proceduralHeadWeight < gestureAuthority.proceduralHead
 console.log('Motion layer contract and priorities: PASS')
 
 const gazeArbiter = new AvatarGazeArbiter()
-gazeArbiter.setGameScreenGaze('game-session-a', true)
+gazeArbiter.setBrowserScreenGaze('browser-session-a', true)
 assert.equal(gazeArbiter.resolve('idle'), 'screen')
-assert.equal(gazeArbiter.resolve('listening'), undefined, 'user speech must win over game gaze')
+assert.equal(gazeArbiter.resolve('listening'), undefined, 'user speech must win over browser gaze')
 gazeArbiter.setConversationIntent({ intensity: 'subtle', gazeHint: 'user' })
 assert.equal(gazeArbiter.resolve('speaking'), 'user')
 gazeArbiter.setConversationIntent(undefined)
-assert.equal(gazeArbiter.resolve('speaking'), 'screen', 'game gaze must resume after commentary')
-gazeArbiter.setGameScreenGaze('stale-game-session', false)
+assert.equal(gazeArbiter.resolve('speaking'), 'screen', 'browser gaze must resume after commentary')
+gazeArbiter.setBrowserScreenGaze('stale-browser-session', false)
 assert.equal(
   gazeArbiter.resolve('idle'),
   'screen',
   'stale release must not clear the active session',
 )
-gazeArbiter.setGameScreenGaze('game-session-a', false)
+gazeArbiter.setBrowserScreenGaze('browser-session-a', false)
 assert.equal(gazeArbiter.resolve('idle'), undefined)
-console.log('Conversation, user speech, and bounded game gaze arbitration: PASS')
+console.log('Conversation, user speech, and bounded browser gaze arbitration: PASS')
 
 function makeHumanoidVrm(): {
   vrm: VRM

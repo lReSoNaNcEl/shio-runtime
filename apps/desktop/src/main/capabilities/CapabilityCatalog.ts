@@ -1,5 +1,5 @@
 import type { AliveSnapshot } from '../../shared/alive'
-import type { GameReflexBackendStatus } from '../../shared/browser-game'
+import type { BrowserControlStatus } from '../../shared/browser-control'
 import type {
   CapabilityAvailability,
   ShioCapabilityDescriptor,
@@ -12,7 +12,7 @@ import type { LlmCapabilities, LlmReadiness } from '../../shared/llm'
 import type { MemoryRuntimeStatus } from '../../shared/memory'
 import type { PluginStatus } from '../../shared/plugins'
 import {
-  BROWSER_GAME_CONTROL_PLUGIN_ID,
+  BROWSER_CONTROL_PLUGIN_ID,
   DESKTOP_CONTROL_PLUGIN_ID,
   PROJECT_AWARENESS_PLUGIN_ID,
   WEB_SEARCH_PLUGIN_ID,
@@ -30,7 +30,7 @@ export interface CapabilityCatalogSources {
   desktopControl(): Promise<DesktopControlCapabilityProjection>
   avatarRuntimeHealth(): AvatarRuntimeHealth | null
   aliveStatus?(): Pick<AliveSnapshot, 'settings' | 'health'> | null
-  browserGame?(): GameReflexBackendStatus
+  browserControl(): BrowserControlStatus
 }
 
 export type CapabilityCatalogListener = (snapshot: ShioCapabilitySnapshot) => void
@@ -39,7 +39,6 @@ function freezeDescriptor(descriptor: ShioCapabilityDescriptor): ShioCapabilityD
   Object.freeze(descriptor.source)
   if (descriptor.navigationTarget) Object.freeze(descriptor.navigationTarget)
   if (descriptor.details) {
-    Object.freeze(descriptor.details.supportedInputs)
     Object.freeze(descriptor.details)
   }
   return Object.freeze(descriptor)
@@ -194,12 +193,17 @@ export class CapabilityCatalog {
     const desktop = await this.sources.desktopControl()
     const avatarHealth = this.sources.avatarRuntimeHealth()
     const alive = this.sources.aliveStatus?.() ?? null
-    const browserGameReflex = this.sources.browserGame?.()
+    const browserControlStatus = this.sources.browserControl()
     const project = plugins.find((status) => status.manifest.id === PROJECT_AWARENESS_PLUGIN_ID)
     const webSearch = plugins.find((status) => status.manifest.id === WEB_SEARCH_PLUGIN_ID)
-    const browserGame = plugins.find(
-      (status) => status.manifest.id === BROWSER_GAME_CONTROL_PLUGIN_ID,
+    const browserControl = plugins.find(
+      (status) => status.manifest.id === BROWSER_CONTROL_PLUGIN_ID,
     )
+    const browserPluginState = pluginAvailability(browserControl)
+    const browserComputerUseState: CapabilityAvailability =
+      browserPluginState === 'available' && browserControlStatus.visualControl !== 'ready'
+        ? 'needs-setup'
+        : browserPluginState
     const llmState = llmAvailability(readiness)
     const speechState: CapabilityAvailability = !this.speechProbe
       ? 'degraded'
@@ -372,17 +376,13 @@ export class CapabilityCatalog {
       {
         id: 'browser-control',
         category: 'action',
-        source: { kind: 'plugin', pluginId: DESKTOP_CONTROL_PLUGIN_ID },
+        source: { kind: 'plugin', pluginId: BROWSER_CONTROL_PLUGIN_ID },
         titleKey: 'capabilities.browser.title',
         descriptionKey: 'capabilities.browser.description',
-        availability: desktopAvailability(desktop.enabled, desktop.browserControl),
+        availability: browserPluginState,
         authority: desktop.authorityMode,
-        navigationTarget: { kind: 'plugin', id: DESKTOP_CONTROL_PLUGIN_ID },
-        reasonKey: !desktop.enabled
-          ? 'capabilities.reason.pluginDisabled'
-          : desktop.browserControl !== 'ready'
-            ? 'capabilities.reason.desktopSetup'
-            : undefined,
+        navigationTarget: { kind: 'plugin', id: BROWSER_CONTROL_PLUGIN_ID },
+        reasonKey: pluginReason(browserControl),
       },
       {
         id: 'computer-control',
@@ -400,25 +400,24 @@ export class CapabilityCatalog {
             : undefined,
       },
       {
-        id: 'browser-game-control',
+        id: 'browser-computer-use',
         category: 'action',
-        source: { kind: 'plugin', pluginId: BROWSER_GAME_CONTROL_PLUGIN_ID },
-        titleKey: 'plugins.browserGame.name',
-        descriptionKey: 'plugins.browserGame.description',
-        availability: pluginAvailability(browserGame),
+        source: { kind: 'plugin', pluginId: BROWSER_CONTROL_PLUGIN_ID },
+        titleKey: 'plugins.browserControl.name',
+        descriptionKey: 'plugins.browserControl.description',
+        availability: browserComputerUseState,
         authority: desktop.authorityMode,
-        navigationTarget: { kind: 'plugin', id: BROWSER_GAME_CONTROL_PLUGIN_ID },
-        reasonKey: pluginReason(browserGame),
-        ...(browserGameReflex
-          ? {
-              details: {
-                kind: 'browser-game-control' as const,
-                reflexMode: browserGameReflex.mode,
-                supportedInputs: [...browserGameReflex.supportedInputs],
-                semanticPerception: browserGameReflex.semanticPerception,
-              },
-            }
-          : {}),
+        navigationTarget: { kind: 'plugin', id: BROWSER_CONTROL_PLUGIN_ID },
+        reasonKey:
+          browserPluginState === 'available' && browserControlStatus.visualControl !== 'ready'
+            ? 'capabilities.reason.browserVisualSetup'
+            : pluginReason(browserControl),
+        details: {
+          kind: 'browser-computer-use',
+          semanticControl: browserControlStatus.semanticControl,
+          visualControl: browserControlStatus.visualControl,
+          isolatedProfile: true,
+        },
       },
     ]
 

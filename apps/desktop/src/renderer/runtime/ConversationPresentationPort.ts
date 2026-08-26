@@ -16,7 +16,7 @@ export interface ConversationPresentationPort {
   publishAvatarState(state: SyncedAvatarState, intent?: CharacterEmbodimentIntent): void
   setEmbodimentIntent(intent: CharacterEmbodimentIntent | undefined): void
   setBehaviorEmbodimentIntent(intent: CharacterEmbodimentIntent | undefined): void
-  setGameScreenGaze(sessionId: string, active: boolean): void
+  setBrowserScreenGaze(sessionId: string, active: boolean): void
   interruptLipSync(turnId: string): void
   stopLipSync(turnId: string): void
   triggerUserInterruption(): void
@@ -29,8 +29,8 @@ export class AvatarConversationPresentationPort implements ConversationPresentat
   private lastAvatarState: SyncedAvatarState | null = null
   private conversationIntent: CharacterEmbodimentIntent | undefined
   private behaviorIntent: CharacterEmbodimentIntent | undefined
-  private gameScreenGazeSessionId: string | undefined
-  private gameScreenGazeActive = false
+  private browserScreenGazeSessionId: string | undefined
+  private browserScreenGazeActive = false
 
   constructor(
     private readonly avatar: AvatarRuntime,
@@ -66,14 +66,16 @@ export class AvatarConversationPresentationPort implements ConversationPresentat
     this.publishOverlayProjection()
   }
 
-  setGameScreenGaze(sessionId: string, active: boolean): void {
+  setBrowserScreenGaze(sessionId: string, active: boolean): void {
     if (active) {
-      this.gameScreenGazeSessionId = sessionId
-      this.gameScreenGazeActive = true
-    } else if (this.gameScreenGazeSessionId === sessionId) {
-      this.gameScreenGazeActive = false
+      this.browserScreenGazeSessionId = sessionId
+      this.browserScreenGazeActive = true
+    } else if (this.browserScreenGazeSessionId === sessionId) {
+      this.browserScreenGazeActive = false
     }
-    this.contain('set game screen gaze', () => this.avatar.setGameScreenGaze(sessionId, active))
+    this.contain('set browser screen gaze', () =>
+      this.avatar.setBrowserScreenGaze(sessionId, active),
+    )
     this.publishOverlayProjection()
   }
 
@@ -118,8 +120,8 @@ export class AvatarConversationPresentationPort implements ConversationPresentat
         ...state,
         embodimentIntent: this.conversationIntent,
         behaviorEmbodimentIntent: this.behaviorIntent,
-        gameScreenGazeSessionId: this.gameScreenGazeSessionId,
-        gameScreenGazeActive: this.gameScreenGazeActive,
+        browserScreenGazeSessionId: this.browserScreenGazeSessionId,
+        browserScreenGazeActive: this.browserScreenGazeActive,
       }),
     )
   }

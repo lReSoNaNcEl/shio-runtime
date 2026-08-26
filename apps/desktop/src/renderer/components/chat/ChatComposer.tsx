@@ -100,13 +100,14 @@ export function ChatComposer({
           <ActionButton
             isQuiet
             aria-label={microphoneLabel}
+            aria-pressed={listening}
             isDisabled={!microphoneUnavailable && microphoneDisabled}
             onPress={onToggleMicrophone}
             UNSAFE_className={
               microphoneUnavailable ? 'mic-unavailable' : listening ? 'mic-recording' : undefined
             }
           >
-            <Microphone />
+            {listening ? <Stop /> : <Microphone />}
           </ActionButton>
           <Tooltip>{microphoneLabel}</Tooltip>
         </TooltipTrigger>

@@ -106,13 +106,13 @@ export const avatarStateSchema = z
       })
       .strict()
       .optional(),
-    gameScreenGazeSessionId: z.string().max(100).optional(),
-    gameScreenGazeActive: z.boolean().optional(),
+    browserScreenGazeSessionId: z.string().max(100).optional(),
+    browserScreenGazeActive: z.boolean().optional(),
   })
   .strict()
   .refine(
-    (state) => !state.gameScreenGazeActive || Boolean(state.gameScreenGazeSessionId),
-    'Active game screen gaze requires a session id',
+    (state) => !state.browserScreenGazeActive || Boolean(state.browserScreenGazeSessionId),
+    'Active browser screen gaze requires a session id',
   )
 
 const mouthWeight = z.number().finite().min(0).max(1)

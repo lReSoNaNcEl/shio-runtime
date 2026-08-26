@@ -67,25 +67,22 @@ async function testTransactionalMemory(): Promise<void> {
   )
 
   provider.enqueue(networkFailure(), networkFailure(), networkFailure(), networkFailure())
-  await assert.rejects(orchestrator.createReply({ userText: 'failed-one' }))
-  await assert.rejects(
-    orchestrator.createReply({
-      userText: 'failed-vision',
-      screenContext: {
-        mimeType: 'image/png',
-        bytes: new Uint8Array([1, 2, 3]),
-        sourceName: 'synthetic',
-      },
-    }),
-  )
-  assert.deepEqual(await memory.getHistory('default'), [])
+  const failedOne = await orchestrator.createReply({ userText: 'failed-one' })
+  const failedVision = await orchestrator.createReply({
+    userText: 'failed-vision',
+    screenContext: {
+      mimeType: 'image/png',
+      bytes: new Uint8Array([1, 2, 3]),
+      sourceName: 'synthetic',
+    },
+  })
+  assert.match(failedOne.replyText, /не могу связаться с моделью/u)
+  assert.match(failedVision.replyText, /не могу связаться с моделью/u)
+  assert.equal((await memory.getHistory('default')).length, 4)
 
   provider.enqueue('[happy]success')
   await orchestrator.createReply({ userText: 'works-without-new-conversation' })
-  assert.deepEqual(await memory.getHistory('default'), [
-    { role: 'user', content: 'works-without-new-conversation' },
-    { role: 'assistant', content: 'success' },
-  ])
+  assert.equal((await memory.getHistory('default')).length, 6)
   const successfulRequest = provider.requests.at(-1) ?? []
   assert.equal(
     successfulRequest.some(
@@ -94,13 +91,25 @@ async function testTransactionalMemory(): Promise<void> {
         typeof message.content === 'string' &&
         message.content.includes('failed'),
     ),
-    false,
+    true,
   )
 
   provider.enqueue(networkFailure(), networkFailure(), '[warm]next')
-  await assert.rejects(orchestrator.createReply({ userText: 'failed-after-success' }))
+  const failedAfterSuccess = await orchestrator.createReply({ userText: 'failed-after-success' })
+  assert.match(failedAfterSuccess.replyText, /не могу связаться с моделью/u)
   await orchestrator.createReply({ userText: 'next' })
-  assert.equal((await memory.getHistory('default')).length, 4)
+  assert.equal((await memory.getHistory('default')).length, 10)
+
+  provider.enqueue(
+    new LlmResponseError({
+      provider: 'mistral',
+      code: 'REQUEST_TOO_LARGE',
+      recoverable: false,
+      message: 'too large',
+    }),
+  )
+  await assert.rejects(orchestrator.createReply({ userText: 'hidden-terminal-failure' }))
+  assert.equal((await memory.getHistory('default')).length, 10)
 
   provider.enqueue('[calm]cancelled')
   const abortController = new AbortController()
@@ -109,7 +118,7 @@ async function testTransactionalMemory(): Promise<void> {
     orchestrator.createReply({ userText: 'cancelled' }, { signal: abortController.signal }),
     (error) => error instanceof Error && error.message === 'CANCELLED',
   )
-  assert.equal((await memory.getHistory('default')).length, 4)
+  assert.equal((await memory.getHistory('default')).length, 10)
 }
 
 async function testConversationAlwaysLeavesThinking(): Promise<void> {

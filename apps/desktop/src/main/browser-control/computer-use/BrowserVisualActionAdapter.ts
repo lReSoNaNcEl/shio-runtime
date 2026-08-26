@@ -1,0 +1,28 @@
+import type {
+  BrowserComputerUseDecision,
+  BrowserComputerUseObservation,
+  BrowserVisualControlState,
+} from '../../../shared/browser-computer-use'
+
+export interface BrowserVisualActionStatus {
+  state: BrowserVisualControlState
+  model: string
+  supportsVision: boolean
+}
+
+export interface BrowserComputerUseDecisionContext {
+  goal: string
+  observation: BrowserComputerUseObservation
+  recentAction?: {
+    type: BrowserComputerUseDecision['type']
+    outcome: 'executed' | 'stale' | 'failed'
+  }
+}
+
+export interface BrowserVisualActionAdapter {
+  status(): BrowserVisualActionStatus
+  decide(
+    context: BrowserComputerUseDecisionContext,
+    signal: AbortSignal,
+  ): Promise<BrowserComputerUseDecision>
+}
