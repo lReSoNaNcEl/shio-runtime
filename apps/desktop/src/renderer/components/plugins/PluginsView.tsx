@@ -193,6 +193,9 @@ const EMPTY_BROWSER_GAME_STATUS: BrowserGameDiagnostics = {
     commentCooldownSuppressions: 0,
     commentBusySuppressions: 0,
     commentPolicySuppressions: 0,
+    commentsCompleted: 0,
+    commentAdmissionSuppressions: 0,
+    commentFailures: 0,
     captureFps: 0,
     inputEventsPerSecond: 0,
     sessionDurationMs: 0,
@@ -622,6 +625,18 @@ function BrowserGameDetails({
               <div>
                 <dt>{t('plugins.browserGame.commentPolicySuppressions')}</dt>
                 <dd>{status.telemetry.commentPolicySuppressions}</dd>
+              </div>
+              <div>
+                <dt>{t('plugins.browserGame.commentsCompleted')}</dt>
+                <dd>{status.telemetry.commentsCompleted}</dd>
+              </div>
+              <div>
+                <dt>{t('plugins.browserGame.commentAdmissionSuppressions')}</dt>
+                <dd>{status.telemetry.commentAdmissionSuppressions}</dd>
+              </div>
+              <div>
+                <dt>{t('plugins.browserGame.commentFailures')}</dt>
+                <dd>{status.telemetry.commentFailures}</dd>
               </div>
               <div>
                 <dt>{t('plugins.browserGame.reflexBackendId')}</dt>

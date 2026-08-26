@@ -194,6 +194,10 @@ export class Controller {
     getControllerState: () => this.store.getState(),
     updateSnapshot: (alive) => this.set({ alive }),
     pushInitiative: (title) => this.pushMessage('meta', this.t('alive.initiative', { title })),
+    runGameCommentary: async (topic, eventId) => {
+      const outcome = await this.conversationInput.admitAutonomousInitiative(topic)
+      await window.api.browserGame.reportCommentaryOutcome({ eventId, outcome })
+    },
     presentation: this.conversationPresentation,
     recordEvent: (label, detail) => this.recordRuntimeEvent(label, detail),
   })

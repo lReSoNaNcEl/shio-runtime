@@ -381,6 +381,7 @@ export class ConversationRuntime {
             }
             enqueueSpeechSegments(streamSegmenter.push(event.delta))
           },
+          turn.source === 'autonomous_initiative' ? 'autonomous' : 'user',
         ),
       )
       if (!this.isCurrentTurn(turn.turnId)) return { status: 'cancelled', turnId: turn.turnId }

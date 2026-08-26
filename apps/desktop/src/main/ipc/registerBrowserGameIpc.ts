@@ -4,10 +4,11 @@ import {
   type BrowserGameControlAction,
   type BrowserGameDiagnostics,
   browserGameDiagnosticsSchema,
+  gameCommentaryFeedbackSchema,
 } from '../../shared/browser-game'
 import type { ActionRuntime } from '../action'
 import type { BrowserGamePlugin } from '../browser-game'
-import type { IpcAuthorization } from './IpcAuthorization'
+import { IPC_ONE_PAYLOAD, type IpcAuthorization } from './IpcAuthorization'
 
 export function registerBrowserGameIpc(
   plugin: () => BrowserGamePlugin,
@@ -41,5 +42,16 @@ export function registerBrowserGameIpc(
   ipcMain.handle(
     'browser-game:stop',
     authorization.handle('browser-game:stop', () => executeControl('stop')),
+  )
+  ipcMain.handle(
+    'browser-game:report-commentary',
+    authorization.handlePayload(
+      'browser-game:report-commentary',
+      IPC_ONE_PAYLOAD,
+      (_event, payload: unknown) => {
+        plugin().recordCommentaryOutcome(gameCommentaryFeedbackSchema.parse(payload))
+        return { ok: true as const }
+      },
+    ),
   )
 }

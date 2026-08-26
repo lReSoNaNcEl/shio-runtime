@@ -280,11 +280,11 @@ async function main(): Promise<void> {
     eventExtractor,
     onEvent: (event) => {
       gameEvents.push(event)
-      if (event.type === 'checkpoint') return 'candidate'
-      if (event.type === 'game-started') return 'suppressed-policy'
-      if (event.type === 'game-paused') return 'suppressed-busy'
-      if (event.type === 'game-resumed') return 'suppressed-cooldown'
+      if (event.type === 'game-started' || event.type === 'checkpoint') return 'candidate'
+      if (event.type === 'game-paused') return 'suppressed-policy'
+      if (event.type === 'game-resumed') return 'suppressed-busy'
       if (event.type === 'waiting-user') return 'suppressed-budget'
+      if (event.type === 'game-error') return 'candidate'
       return 'not-requested'
     },
     now: () => now,
@@ -311,6 +311,12 @@ async function main(): Promise<void> {
   assert.equal(running.scope?.origin, 'https://game.example')
   assert.equal(reflexAdapter.initialized?.scope.authorizationActionId.startsWith('action-'), true)
   assert.equal(gameEvents[0]?.type, 'game-started')
+  const gameStartedEvent = gameEvents.find((event) => event.type === 'game-started')
+  assert(gameStartedEvent)
+  controller.recordCommentaryOutcome({
+    eventId: gameStartedEvent.eventId,
+    outcome: 'suppressed-busy',
+  })
 
   await waitUntil(() => realtime.capturePending())
   const bytes = await sharp({
@@ -330,12 +336,33 @@ async function main(): Promise<void> {
   })
   await waitUntil(() => realtime.inputs.length === 1)
   await waitUntil(() => gameEvents.some((event) => event.type === 'checkpoint'))
+  const checkpointEvent = gameEvents.find((event) => event.type === 'checkpoint')
+  assert(checkpointEvent)
+  assert.throws(() =>
+    controller.recordCommentaryOutcome({
+      eventId: checkpointEvent.eventId,
+      outcome: 'completed',
+      unexpected: true,
+    } as never),
+  )
+  controller.recordCommentaryOutcome({ eventId: checkpointEvent.eventId, outcome: 'completed' })
+  assert.throws(
+    () =>
+      controller.recordCommentaryOutcome({
+        eventId: checkpointEvent.eventId,
+        outcome: 'completed',
+      }),
+    (error) => error instanceof BrowserGameError && error.code === 'GAME_COMMENTARY_NOT_PENDING',
+  )
   assert.equal(controller.status().telemetry.inputEventsPerSecond, 2)
   assert(controller.status().telemetry.gameEvents >= 2)
-  assert.equal(controller.status().telemetry.commentCandidates, 1)
+  assert.equal(controller.status().telemetry.commentCandidates, 2)
   assert.equal(controller.status().telemetry.commentCooldownSuppressions, 0)
   assert.equal(controller.status().telemetry.commentBusySuppressions, 0)
-  assert.equal(controller.status().telemetry.commentPolicySuppressions, 1)
+  assert.equal(controller.status().telemetry.commentPolicySuppressions, 0)
+  assert.equal(controller.status().telemetry.commentsCompleted, 1)
+  assert.equal(controller.status().telemetry.commentAdmissionSuppressions, 1)
+  assert.equal(controller.status().telemetry.commentFailures, 0)
   assert.equal(controller.diagnostics().session?.origin, 'https://game.example')
   assert.deepEqual(controller.diagnostics().reflex, reflexAdapter.status())
   assert.deepEqual(controller.diagnostics().eventExtractor, eventExtractor.status())
@@ -370,8 +397,9 @@ async function main(): Promise<void> {
     image: { mimeType: 'image/jpeg', bytes },
   })
   await waitUntil(() => controller.status().state === 'waiting-user')
-  assert.equal(controller.status().telemetry.commentCooldownSuppressions, 2)
+  assert.equal(controller.status().telemetry.commentCooldownSuppressions, 1)
   assert.equal(controller.status().telemetry.commentBusySuppressions, 1)
+  assert.equal(controller.status().telemetry.commentPolicySuppressions, 1)
   assert.equal(controller.status().waitingReason, 'authentication')
   assert(gameEvents.some((event) => event.type === 'waiting-user'))
   realtime.blocker = undefined
@@ -388,6 +416,11 @@ async function main(): Promise<void> {
   assert.equal(controller.status().state, 'error')
   assert(gameEvents.some((event) => event.type === 'game-error'))
   assert(gameEvents.some((event) => event.type === 'game-stopped'))
+  const gameErrorEvent = gameEvents.find((event) => event.type === 'game-error')
+  assert(gameErrorEvent)
+  controller.recordCommentaryOutcome({ eventId: gameErrorEvent.eventId, outcome: 'failed' })
+  assert.equal(controller.status().telemetry.commentCandidates, 3)
+  assert.equal(controller.status().telemetry.commentFailures, 1)
   assert(realtime.releaseCount >= 2)
 
   now += 100

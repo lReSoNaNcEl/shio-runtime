@@ -10,6 +10,7 @@ import {
   type CharacterGameStartRequest,
   characterGameStartRequestSchema,
   GAME_FRAME_MAX_AGE_MS,
+  type GameCommentaryFeedback,
   type GameFrame,
   type GameInputIntent,
   type GameSemanticEvent,
@@ -18,6 +19,7 @@ import {
   type GameSessionTelemetry,
   type GameStartPreparation,
   type GameStrategy,
+  gameCommentaryFeedbackSchema,
   gameEventExtractorStatusSchema,
   gameReflexBackendStatusSchema,
   gameSemanticEventSchema,
@@ -105,6 +107,9 @@ function emptyTelemetry(): MutableTelemetry {
     commentCooldownSuppressions: 0,
     commentBusySuppressions: 0,
     commentPolicySuppressions: 0,
+    commentsCompleted: 0,
+    commentAdmissionSuppressions: 0,
+    commentFailures: 0,
     captureFps: 0,
     inputEventsPerSecond: 0,
     sessionDurationMs: 0,
@@ -152,6 +157,9 @@ function boundedStatusTelemetry(
     commentCooldownSuppressions: telemetry.commentCooldownSuppressions,
     commentBusySuppressions: telemetry.commentBusySuppressions,
     commentPolicySuppressions: telemetry.commentPolicySuppressions,
+    commentsCompleted: telemetry.commentsCompleted,
+    commentAdmissionSuppressions: telemetry.commentAdmissionSuppressions,
+    commentFailures: telemetry.commentFailures,
     captureFps,
     inputEventsPerSecond: inputTimestamps.filter((timestamp) => now - timestamp < 1_000).length,
     sessionDurationMs,
@@ -213,6 +221,7 @@ export class GameSessionController {
   private telemetry = emptyTelemetry()
   private lastErrorCode: string | undefined
   private waitingReason: BrowserGameBlockerKind | undefined
+  private readonly pendingCommentary = new Set<string>()
   private readonly listeners = new Set<() => void>()
   private readonly eventLane: GameEventExtractionLane | null
 
@@ -355,6 +364,7 @@ export class GameSessionController {
     this.lastErrorCode = undefined
     this.waitingReason = undefined
     this.telemetry = { ...emptyTelemetry(), startedAt: now }
+    this.pendingCommentary.clear()
     this.eventLane?.reset()
     this.publishChanged()
     const abortStart = (): void => controller.abort(signal.reason)
@@ -544,6 +554,21 @@ export class GameSessionController {
       telemetry: status.telemetry,
       ...(status.lastErrorCode ? { lastErrorCode: status.lastErrorCode } : {}),
     }
+  }
+
+  recordCommentaryOutcome(feedback: GameCommentaryFeedback): void {
+    const parsed = gameCommentaryFeedbackSchema.parse(feedback)
+    if (!this.pendingCommentary.delete(parsed.eventId)) {
+      throw new BrowserGameError('GAME_COMMENTARY_NOT_PENDING')
+    }
+    if (parsed.outcome === 'completed') {
+      this.telemetry.commentsCompleted += 1
+    } else if (parsed.outcome === 'suppressed-busy') {
+      this.telemetry.commentAdmissionSuppressions += 1
+    } else {
+      this.telemetry.commentFailures += 1
+    }
+    this.publishChanged()
   }
 
   private async runLoop(active: ActiveGameSession): Promise<void> {
@@ -882,15 +907,24 @@ export class GameSessionController {
         ...details,
       })
       this.telemetry.gameEvents += 1
-      this.recordCommentaryPolicy(this.options.onEvent?.(event))
+      this.recordCommentaryPolicy(event.eventId, this.options.onEvent?.(event))
     } catch (error) {
       mainLog.warn('[BrowserGame] semantic event rejected', error)
     }
   }
 
-  private recordCommentaryPolicy(outcome: GameCommentaryPolicyOutcome | undefined): void {
+  private recordCommentaryPolicy(
+    eventId: string,
+    outcome: GameCommentaryPolicyOutcome | undefined,
+  ): void {
     if (outcome === 'candidate') {
       this.telemetry.commentCandidates += 1
+      this.pendingCommentary.add(eventId)
+      while (this.pendingCommentary.size > 64) {
+        const oldest = this.pendingCommentary.values().next().value
+        if (oldest) this.pendingCommentary.delete(oldest)
+        else break
+      }
     } else if (outcome === 'suppressed-cooldown' || outcome === 'suppressed-budget') {
       this.telemetry.commentCooldownSuppressions += 1
     } else if (outcome === 'suppressed-busy') {

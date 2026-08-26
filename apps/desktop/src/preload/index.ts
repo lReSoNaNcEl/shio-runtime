@@ -20,9 +20,11 @@ import type {
   ScheduledTaskStatus,
   UpdateGoalInput,
 } from '../shared/alive'
+import type { GameCommentaryFeedback } from '../shared/browser-game'
 import type { ShioCapabilitySnapshot } from '../shared/capabilities'
 import type { CharacterReplyStreamEvent } from '../shared/character-stream'
 import type { AppSettings } from '../shared/config'
+import type { CharacterReplyOrigin } from '../shared/conversation'
 import type { ShioRuntimeApi } from '../shared/ipc'
 import type { LatencyMilestone, LatencySnapshot } from '../shared/latency'
 import type { LlmProviderId } from '../shared/llm'
@@ -134,8 +136,12 @@ const api = {
     recognize: (wavBuffer: ArrayBuffer) => ipcRenderer.invoke('asr:recognize', wavBuffer),
   },
   llm: {
-    reply: (turnId: string, userText: string, screenContextId?: string) =>
-      ipcRenderer.invoke('llm:reply', { turnId, userText, screenContextId }),
+    reply: (
+      turnId: string,
+      userText: string,
+      screenContextId?: string,
+      origin?: CharacterReplyOrigin,
+    ) => ipcRenderer.invoke('llm:reply', { turnId, userText, screenContextId, origin }),
     cancelReply: (turnId: string) => ipcRenderer.invoke('llm:cancel-reply', turnId),
     onReplyStreamEvent: (callback: (event: CharacterReplyStreamEvent) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, streamEvent: unknown): void =>
@@ -216,6 +222,8 @@ const api = {
     getStatus: () => ipcRenderer.invoke('browser-game:get-status'),
     pause: () => ipcRenderer.invoke('browser-game:pause'),
     stop: () => ipcRenderer.invoke('browser-game:stop'),
+    reportCommentaryOutcome: (feedback: GameCommentaryFeedback) =>
+      ipcRenderer.invoke('browser-game:report-commentary', feedback),
   },
   desktopControl: {
     getStatus: () => ipcRenderer.invoke('desktop-control:get-status'),

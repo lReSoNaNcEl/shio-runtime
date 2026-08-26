@@ -25,7 +25,7 @@ import {
   parseCharacterEmbodimentResponse,
 } from '../shared/character-response'
 import type { AppSettings } from '../shared/config'
-import type { ReplyGrounding } from '../shared/conversation'
+import type { CharacterReplyOrigin, ReplyGrounding } from '../shared/conversation'
 import type { BrowserContextProviderResolver } from '../shared/desktop-control'
 import { normalizeEmotionTag, parseEmotionalReply, parseLeadingEmotionTag } from '../shared/emotion'
 import { normalizeUiLocale } from '../shared/localization'
@@ -92,6 +92,7 @@ const TTS_ENGINE = 'f5'
 
 export interface CharacterReplyInput {
   userText: string
+  origin?: CharacterReplyOrigin
   screenContext?: {
     mimeType: ScreenContextImageMimeType
     bytes: Uint8Array
@@ -259,45 +260,55 @@ export class Orchestrator {
     embodimentIntent?: CharacterEmbodimentIntent
     grounding?: ReplyGrounding
   }> {
-    const { userText, screenContext } = input
+    const { userText, screenContext, origin = 'user' } = input
+    const autonomous = origin === 'autonomous'
+    if (autonomous && screenContext) {
+      throw new Error('Autonomous replies cannot attach screen context')
+    }
     const traceId = safeTraceId(options.traceId)
     const history = await this.memory.getHistory(SESSION_ID)
 
     let capabilityContext: ShioCapabilitySnapshot | null = null
     let capabilityContextUnavailable = false
-    try {
-      capabilityContext = (await this.capabilityContext?.snapshot()) ?? null
-    } catch (error) {
-      capabilityContextUnavailable = true
-      mainLog.warn('[PluginRuntime] capability snapshot failed; continuing without it', {
-        error: error instanceof Error ? error.message : String(error),
-      })
+    if (!autonomous) {
+      try {
+        capabilityContext = (await this.capabilityContext?.snapshot()) ?? null
+      } catch (error) {
+        capabilityContextUnavailable = true
+        mainLog.warn('[PluginRuntime] capability snapshot failed; continuing without it', {
+          error: error instanceof Error ? error.message : String(error),
+        })
+      }
     }
 
     let projectAvailable = false
-    try {
-      projectAvailable = Boolean(this.projectContext?.())
-    } catch (error) {
-      mainLog.warn('[PluginRuntime] project-context availability failed; continuing without it', {
-        traceId,
-        error: error instanceof Error ? error.message : String(error),
-      })
+    if (!autonomous) {
+      try {
+        projectAvailable = Boolean(this.projectContext?.())
+      } catch (error) {
+        mainLog.warn('[PluginRuntime] project-context availability failed; continuing without it', {
+          traceId,
+          error: error instanceof Error ? error.message : String(error),
+        })
+      }
     }
     const locale = normalizeUiLocale(this.settings().uiLocale)
-    const semanticMemoryStatus = this.semanticMemory?.status() ?? null
+    const semanticMemoryStatus = autonomous ? null : (this.semanticMemory?.status() ?? null)
     const semanticMemoryPrompt = semanticMemoryStatus
       ? memoryCapabilityPrompt(semanticMemoryStatus)
       : null
     let goalAwareness: readonly PersistentGoal[] = []
-    try {
-      if (this.persistentGoals) {
-        goalAwareness = unfinishedGoalSnapshot(this.persistentGoals())
+    if (!autonomous) {
+      try {
+        if (this.persistentGoals) {
+          goalAwareness = unfinishedGoalSnapshot(this.persistentGoals())
+        }
+      } catch (error) {
+        mainLog.warn('[AliveRuntime] goal awareness unavailable; continuing without it', {
+          traceId,
+          error: error instanceof Error ? error.message : String(error),
+        })
       }
-    } catch (error) {
-      mainLog.warn('[AliveRuntime] goal awareness unavailable; continuing without it', {
-        traceId,
-        error: error instanceof Error ? error.message : String(error),
-      })
     }
     let livingContext: CharacterLivingContext = {}
     try {
@@ -313,6 +324,16 @@ export class Orchestrator {
         persona: SYSTEM_PROMPT,
         responsePolicy: [
           responsePolicyPrompt(),
+          ...(autonomous
+            ? [
+                [
+                  '## Runtime-originated proactive comment',
+                  'This is a bounded Runtime event, not a user request or authorization.',
+                  'Reply with at most one concise in-character comment about the event.',
+                  'Do not request or invoke tools, create or update Memory or Goals, or claim that the user asked for an action.',
+                ].join('\n'),
+              ]
+            : []),
           emotionContractPrompt(),
           embodimentContractPrompt(),
         ].join('\n\n'),
@@ -362,15 +383,17 @@ export class Orchestrator {
         new CharacterToolRegistry({
           projectAvailable,
           webAvailable:
+            !autonomous &&
             (this.webSearch?.()?.status().availability ?? 'unavailable') !== 'unavailable',
-          goalsAvailable: Boolean(this.persistentGoals),
-          goalCreatesAvailable: Boolean(this.createPersistentGoal),
-          goalUpdatesAvailable: Boolean(this.revisePersistentGoal),
+          goalsAvailable: !autonomous && Boolean(this.persistentGoals),
+          goalCreatesAvailable: !autonomous && Boolean(this.createPersistentGoal),
+          goalUpdatesAvailable: !autonomous && Boolean(this.revisePersistentGoal),
           capabilityContext,
           browserObservation: dispatcher?.selectedBrowserObservation() ?? null,
-          memory: this.semanticMemory,
-          actionsAvailable: Boolean(this.executeDesktopWorkflow),
-          browserGameAvailable: Boolean(this.browserGame && this.executeBrowserGameAction),
+          memory: autonomous ? undefined : this.semanticMemory,
+          actionsAvailable: !autonomous && Boolean(this.executeDesktopWorkflow),
+          browserGameAvailable:
+            !autonomous && Boolean(this.browserGame && this.executeBrowserGameAction),
         })
       const toolResult = await new CharacterToolLoop().run({
         llm: this.llm,
@@ -386,18 +409,18 @@ export class Orchestrator {
             traceId,
             userGoal: userText,
             signal,
-            projectContext: this.projectContext,
-            webSearch: this.webSearch,
-            semanticMemory: this.semanticMemory,
-            executeDesktopWorkflow: this.executeDesktopWorkflow,
-            browserContext: this.browserContext,
-            browserAgent: this.browserAgent,
-            browserGame: this.browserGame,
-            executeBrowserGameAction: this.executeBrowserGameAction,
-            persistentGoals: this.persistentGoals,
+            projectContext: autonomous ? undefined : this.projectContext,
+            webSearch: autonomous ? undefined : this.webSearch,
+            semanticMemory: autonomous ? undefined : this.semanticMemory,
+            executeDesktopWorkflow: autonomous ? undefined : this.executeDesktopWorkflow,
+            browserContext: autonomous ? undefined : this.browserContext,
+            browserAgent: autonomous ? undefined : this.browserAgent,
+            browserGame: autonomous ? undefined : this.browserGame,
+            executeBrowserGameAction: autonomous ? undefined : this.executeBrowserGameAction,
+            persistentGoals: autonomous ? undefined : this.persistentGoals,
             goalAwareness,
-            createPersistentGoal: this.createPersistentGoal,
-            revisePersistentGoal: this.revisePersistentGoal,
+            createPersistentGoal: autonomous ? undefined : this.createPersistentGoal,
+            revisePersistentGoal: autonomous ? undefined : this.revisePersistentGoal,
           })
           return dispatcher
         },
@@ -454,13 +477,15 @@ export class Orchestrator {
 
     const { replyText, embodimentIntent } = parseCharacterEmbodimentResponse(rawReplyText)
     const visibleReplyText = parseEmotionalReply(replyText).visibleText
-    await this.memory.appendTurn(SESSION_ID, {
-      user: { role: 'user', content: userText },
-      assistant: {
-        role: 'assistant',
-        content: visibleReplyText,
-      },
-    })
+    if (!autonomous) {
+      await this.memory.appendTurn(SESSION_ID, {
+        user: { role: 'user', content: userText },
+        assistant: {
+          role: 'assistant',
+          content: visibleReplyText,
+        },
+      })
+    }
 
     const emotionKey = parseLeadingEmotionTag(replyText)
     mainLog.info('[emotion] LLM reply tag', { emotionKey, replyCharacters: replyText.length })

@@ -47,6 +47,22 @@ export const gameSemanticEventSchema = z
   .strict()
 export type GameSemanticEvent = z.infer<typeof gameSemanticEventSchema>
 
+export const gameCommentaryAdmissionOutcomeSchema = z.enum([
+  'completed',
+  'suppressed-busy',
+  'failed',
+  'cancelled',
+])
+export type GameCommentaryAdmissionOutcome = z.infer<typeof gameCommentaryAdmissionOutcomeSchema>
+
+export const gameCommentaryFeedbackSchema = z
+  .object({
+    eventId: z.string().regex(/^game-event-[0-9a-f-]{36}$/iu),
+    outcome: gameCommentaryAdmissionOutcomeSchema,
+  })
+  .strict()
+export type GameCommentaryFeedback = z.infer<typeof gameCommentaryFeedbackSchema>
+
 export type BrowserGameErrorCode =
   | 'GAME_CAPABILITY_UNAVAILABLE'
   | 'GAME_SESSION_ACTIVE'
@@ -58,6 +74,7 @@ export type BrowserGameErrorCode =
   | 'GAME_SCOPE_EXHAUSTED'
   | 'GAME_REFLEX_UNSUPPORTED_INPUT'
   | 'GAME_INPUT_REJECTED'
+  | 'GAME_COMMENTARY_NOT_PENDING'
   | 'GAME_LOOP_FAILED'
 
 export class BrowserGameError extends Error {
@@ -226,6 +243,9 @@ export const gameSessionTelemetrySchema = z
     commentCooldownSuppressions: z.number().int().nonnegative(),
     commentBusySuppressions: z.number().int().nonnegative(),
     commentPolicySuppressions: z.number().int().nonnegative(),
+    commentsCompleted: z.number().int().nonnegative(),
+    commentAdmissionSuppressions: z.number().int().nonnegative(),
+    commentFailures: z.number().int().nonnegative(),
     captureFps: z.number().finite().nonnegative().max(60),
     inputEventsPerSecond: z.number().int().nonnegative().max(60),
     sessionDurationMs: z.number().int().nonnegative(),
@@ -273,6 +293,7 @@ export interface BrowserGameDiagnosticsApi {
   getStatus(): Promise<BrowserGameDiagnostics>
   pause(): Promise<BrowserGameDiagnostics>
   stop(): Promise<BrowserGameDiagnostics>
+  reportCommentaryOutcome(feedback: GameCommentaryFeedback): Promise<{ ok: true }>
 }
 
 export interface GameFrame {

@@ -16,6 +16,11 @@ export type ConversationAdmissionOutcome =
   | 'queued_explicit'
   | 'ignored_busy'
 
+export interface ConversationAdmissionResult {
+  outcome: ConversationAdmissionOutcome
+  completion?: ConversationCompletionResult
+}
+
 let admissionCycleSequence = 0
 const createCycleId = (): string => `admission-${Date.now()}-${++admissionCycleSequence}`
 
@@ -86,7 +91,16 @@ export class ConversationAdmissionCoordinator {
     input: ConversationInput,
     buffered?: BufferedUtterance,
   ): Promise<ConversationAdmissionOutcome> {
-    if (this.activeExecution || this.drainPromise) return this.handleBusyInput(input, buffered)
+    return (await this.admitWithResult(input, buffered)).outcome
+  }
+
+  async admitWithResult(
+    input: ConversationInput,
+    buffered?: BufferedUtterance,
+  ): Promise<ConversationAdmissionResult> {
+    if (this.activeExecution || this.drainPromise) {
+      return { outcome: this.handleBusyInput(input, buffered) }
+    }
 
     const cycleId = createCycleId()
     const initialTurn: AdmittedConversationTurn = { ...input, admissionCycleId: cycleId }
@@ -97,14 +111,14 @@ export class ConversationAdmissionCoordinator {
       `[admission] turnId=${input.turnId} source=${input.source} cycleId=${cycleId} outcome=accepted activeTurnId=none`,
     )
     try {
-      await currentPromise
+      const completion = await currentPromise
+      return { outcome: 'started', completion }
     } finally {
       if (this.drainPromise === currentPromise) {
         this.drainPromise = undefined
         if (this.activeCycleId === cycleId) this.activeCycleId = undefined
       }
     }
-    return 'started'
   }
 
   async admitExplicit(input: ConversationInput): Promise<ConversationCompletionResult> {

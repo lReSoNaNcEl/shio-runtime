@@ -194,7 +194,14 @@ Architecture and ownership:
   commentary policy telemetry distinguishes selected candidates from cooldown/budget,
   busy, and policy suppressions. A candidate is not a completed Character comment;
   only Conversation Admission and terminal conversation feedback may establish that.
-  never expose frames, tab identifiers, authorization Action IDs, or raw page state.
+  A selected game candidate enters Conversation Admission as a typed autonomous
+  initiative. Its Main request is explicitly marked autonomous, exposes no Character
+  tools or screen attachment, resolves no Plugin/Memory/Goal capability context, and
+  never creates a synthetic user message or durable conversation turn. Renderer
+  feedback contains only the exact pending event ID and a bounded terminal outcome;
+  Main accepts it at most once and owns completed, admission-suppressed, and failed
+  commentary counters. Renderer diagnostics never expose frames, tab identifiers,
+  authorization Action IDs, or raw page state.
   Plugin UI Pause and Stop controls use the registered `browser.game-control` Action
   path through narrow authorized IPC and may not call Game Session Controller directly.
 - Browser realtime frame geometry uses the fixed Main-owned inspection of the actual CSS

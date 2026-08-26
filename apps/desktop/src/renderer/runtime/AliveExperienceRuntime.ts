@@ -10,6 +10,7 @@ interface AliveExperienceRuntimeDeps {
   getControllerState: () => ControllerState
   updateSnapshot: (snapshot: AliveSnapshot) => void
   pushInitiative: (title: string) => void
+  runGameCommentary: (topic: string, eventId: string) => Promise<void>
   presentation: ConversationPresentationPort
   recordEvent: (label: string, detail?: string) => void
 }
@@ -105,7 +106,14 @@ export class AliveExperienceRuntime {
         this.deps.presentation.setBehaviorEmbodimentIntent(command.intent.intent)
       }
     } else if (command.intent.kind === 'conversation-candidate') {
-      this.deps.pushInitiative(command.intent.topic)
+      if (command.embodimentPresence?.source === 'browser-game' && command.sourceEventId) {
+        observeRendererPromise(
+          this.deps.runGameCommentary(command.intent.topic, command.sourceEventId),
+          `run game commentary ${command.sourceEventId}`,
+        )
+      } else {
+        this.deps.pushInitiative(command.intent.topic)
+      }
     } else if (command.intent.kind === 'goal-suggestion') {
       this.deps.pushInitiative(command.intent.objective)
     }

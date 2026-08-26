@@ -6,6 +6,7 @@ import {
   CharacterToolRegistry,
 } from '../../src/main/character-tools'
 import type {
+  ChatMessage,
   LLMProvider,
   LlmCapabilities,
   LlmCompletion,
@@ -463,6 +464,83 @@ async function noToolRequestOptionsPreserved(): Promise<void> {
   assert(receivedOptions?.signal)
 }
 
+async function autonomousCommentHasNoToolsOrDurableTurn(): Promise<void> {
+  let capabilitySnapshotCalls = 0
+  let projectResolverCalls = 0
+  let actionCalls = 0
+  let appendCalls = 0
+  let requestMessages: readonly ChatMessage[] = []
+  let requestOptions: LlmRequestOptions | undefined
+  const llm: LLMProvider = {
+    capabilities: () => nativeCapabilities,
+    chat: async (messages, options) => {
+      requestMessages = messages
+      requestOptions = options
+      return '[happy]Вот это было красиво!'
+    },
+  }
+  const memory: MemoryStore = {
+    getHistory: async () => [
+      { role: 'user', content: 'Предыдущий реальный запрос.' },
+      { role: 'assistant', content: 'Предыдущий ответ.' },
+    ],
+    appendTurn: async () => {
+      appendCalls += 1
+    },
+    clear: async () => undefined,
+  }
+  const orchestrator = new Orchestrator(
+    llm,
+    memory,
+    {} as SpeechClient,
+    () => ({ uiLocale: 'ru' }) as AppSettings,
+    () => {
+      projectResolverCalls += 1
+      return { search: async () => projectPacket }
+    },
+    {
+      snapshot: async () => {
+        capabilitySnapshotCalls += 1
+        return allCapabilities
+      },
+    },
+    async (request) => {
+      actionCalls += 1
+      return actionResult(actionCalls, request)
+    },
+  )
+
+  const result = await orchestrator.createReply({
+    userText: 'Checkpoint reached: 3',
+    origin: 'autonomous',
+  })
+
+  const systemText = requestMessages
+    .filter((message) => message.role === 'system' && typeof message.content === 'string')
+    .map((message) => message.content)
+    .join('\n')
+  assert.match(systemText, /Runtime event, not a user request or authorization/u)
+  assert.doesNotMatch(systemText, /project_search|shell_execute|browser_open|game_start/u)
+  assert.equal(requestOptions?.tools, undefined)
+  assert.equal(capabilitySnapshotCalls, 0)
+  assert.equal(projectResolverCalls, 0)
+  assert.equal(actionCalls, 0)
+  assert.equal(appendCalls, 0)
+  assert.equal(result.grounding, undefined)
+  await assert.rejects(
+    orchestrator.createReply({
+      userText: 'Forbidden autonomous image',
+      origin: 'autonomous',
+      screenContext: {
+        mimeType: 'image/png',
+        bytes: new Uint8Array([1, 2, 3]),
+        sourceName: 'forbidden.png',
+      },
+    }),
+    /Autonomous replies cannot attach screen context/u,
+  )
+}
+
 async function completedActionContinuationIsBoundedAndNotRetried(): Promise<void> {
   let chatCalls = 0
   const requestOptions: LlmRequestOptions[] = []
@@ -626,6 +704,9 @@ async function browserGameStartUsesPreparedActionScope(): Promise<void> {
       commentCooldownSuppressions: 0,
       commentBusySuppressions: 0,
       commentPolicySuppressions: 0,
+      commentsCompleted: 0,
+      commentAdmissionSuppressions: 0,
+      commentFailures: 0,
       captureFps: 0,
       inputEventsPerSecond: 0,
       sessionDurationMs: 0,
@@ -915,6 +996,7 @@ async function main(): Promise<void> {
   await structuredFallback()
   await reasoningModelBrowserContinuation()
   await noToolRequestOptionsPreserved()
+  await autonomousCommentHasNoToolsOrDurableTurn()
   await completedActionContinuationIsBoundedAndNotRetried()
   compactToolProtocolContainment()
   browserGameToolsStayHighLevel()

@@ -5,6 +5,7 @@ import {
   BrowserGameError,
   type BrowserGameStatus,
   type CharacterGameStartRequest,
+  type GameCommentaryFeedback,
   type GameReflexBackendStatus,
   type GameSemanticEvent,
   type GameStartPreparation,
@@ -165,6 +166,10 @@ export class BrowserGamePlugin implements BundledPlugin {
 
   getCapabilityProjection(): GameReflexBackendStatus {
     return this.reflexStatus()
+  }
+
+  recordCommentaryOutcome(feedback: GameCommentaryFeedback): void {
+    this.controller.recordCommentaryOutcome(feedback)
   }
 
   getPreparedStart(preparationId: string): GameStartPreparation {

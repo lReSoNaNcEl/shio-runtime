@@ -1,6 +1,7 @@
 import { type BrowserWindow, ipcMain } from 'electron'
 import { z } from 'zod'
 
+import { characterReplyOriginSchema } from '../../shared/conversation'
 import { translate } from '../../shared/localization'
 import type { ActionConfirmationBroker, ActionRuntime } from '../action'
 import type { MainConversationTurnService } from '../app/MainConversationTurnService'
@@ -74,11 +75,23 @@ export function registerIpcHandlers(
   registerCapabilitiesIpc(capabilityCatalog, win, authorization)
   registerScreenContextIpc(screenContext, authorization)
 
-  const replyPayloadSchema = z.object({
-    turnId: z.string().trim().min(1).max(100),
-    userText: z.string().trim().min(1).max(20_000),
-    screenContextId: z.string().trim().min(1).max(100).optional(),
-  })
+  const replyPayloadSchema = z
+    .object({
+      turnId: z.string().trim().min(1).max(100),
+      userText: z.string().trim().min(1).max(20_000),
+      screenContextId: z.string().trim().min(1).max(100).optional(),
+      origin: characterReplyOriginSchema.optional(),
+    })
+    .strict()
+    .superRefine((value, context) => {
+      if (value.origin === 'autonomous' && value.screenContextId) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['screenContextId'],
+          message: 'Autonomous replies cannot attach screen context',
+        })
+      }
+    })
   ipcMain.handle(
     'llm:reply',
     authorization.handlePayload('llm:reply', IPC_ONE_PAYLOAD, async (event, payload: unknown) => {

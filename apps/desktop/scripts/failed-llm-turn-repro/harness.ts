@@ -21,6 +21,17 @@ import {
 import type { AppSettings } from '../../src/shared/config'
 import { deriveTurnRecoveryCapabilities } from '../../src/shared/conversation'
 
+Object.defineProperty(globalThis, 'window', {
+  configurable: true,
+  value: {
+    api: {
+      latency: {
+        record: async () => ({ ok: true as const }),
+      },
+    },
+  },
+})
+
 class FakeProvider implements LLMProvider {
   readonly requests: readonly ChatMessage[][] = []
   private outcomes: Array<string | Error> = []

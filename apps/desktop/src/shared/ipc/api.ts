@@ -19,6 +19,7 @@ import type { CharacterReplyStreamEvent } from '../character-stream'
 import type { AppSettings } from '../config/appSettings'
 import type { BacklogSelectionResult, BufferedUtterance } from '../conversation/backlog'
 import type { ReplyGrounding } from '../conversation/grounding'
+import type { CharacterReplyOrigin } from '../conversation/replyOrigin'
 import type { ConversationTurnFailure } from '../conversation/turnFailure'
 import type { DesktopControlApi } from '../desktop-control'
 import type { NetworkRequestDiagnostic, NetworkRequestDiagnosticDetails } from '../diagnostics'
@@ -132,6 +133,7 @@ export interface ShioRuntimeApi {
       turnId: string,
       text: string,
       screenContextId?: string,
+      origin?: CharacterReplyOrigin,
     ) => Promise<{
       ok: boolean
       replyText?: string

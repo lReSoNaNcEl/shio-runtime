@@ -1,3 +1,4 @@
+import type { GameCommentaryAdmissionOutcome } from '../../../shared/browser-game'
 import type {
   CharacterState,
   RuntimeEventCategory,
@@ -177,6 +178,20 @@ export class ConversationInputCoordinator {
       source: 'debug',
       createdAt: this.nextConversationTimestamp(),
     })
+  }
+
+  async admitAutonomousInitiative(topic: string): Promise<GameCommentaryAdmissionOutcome> {
+    const trimmed = topic.trim().slice(0, 300)
+    if (!trimmed) return 'failed'
+    const result = await this.conversationAdmission.admitWithResult({
+      turnId: this.dependencies.createTurnId('initiative'),
+      text: trimmed,
+      source: 'autonomous_initiative',
+      createdAt: this.nextConversationTimestamp(),
+    })
+    if (result.outcome === 'ignored_busy') return 'suppressed-busy'
+    if (!result.completion) return 'failed'
+    return result.completion.status
   }
 
   resetConversationSession(): void {
@@ -659,7 +674,9 @@ export class ConversationInputCoordinator {
         `turn=${attempt.turnId}`,
       )
     }
-    if (attempt.source !== 'debug') this.dependencies.pushMessage('user', attempt.text)
+    if (attempt.source !== 'debug' && attempt.source !== 'autonomous_initiative') {
+      this.dependencies.pushMessage('user', attempt.text)
+    }
     try {
       const result = await this.dependencies.conversationRuntime.execute(attempt, reportPhase)
       if (attempt.source === 'continuous_listening' || attempt.source === 'backlog_selected')

@@ -383,6 +383,36 @@ async function main(): Promise<void> {
     assert.equal(coordinator.getActiveExecution(), undefined)
   }
 
+  // Runtime-originated commentary is discarded while busy, while an explicit user turn wins
+  // the next admission slot without overlapping the active commentary.
+  {
+    const release = deferred<void>()
+    const starts: string[] = []
+    const coordinator = new ConversationAdmissionCoordinator(
+      async (value) => {
+        starts.push(value.turnId)
+        if (value.source === 'autonomous_initiative') await release.promise
+        return completed(value.turnId)
+      },
+      new UtteranceBacklog(),
+      new BacklogSelector(),
+    )
+    const runningCommentary = coordinator.admitWithResult(
+      input('initiative-active', 'autonomous_initiative'),
+    )
+    await flush()
+    const suppressedCommentary = await coordinator.admitWithResult(
+      input('initiative-busy', 'autonomous_initiative'),
+    )
+    const userTurn = coordinator.admitExplicit(input('user-wins', 'text_chat'))
+    assert.equal(suppressedCommentary.outcome, 'ignored_busy')
+    assert.equal(suppressedCommentary.completion, undefined)
+    release.resolve()
+    assert.equal((await runningCommentary).completion?.status, 'completed')
+    assert.equal((await userTurn).status, 'completed')
+    assert.deepEqual(starts, ['initiative-active', 'user-wins'])
+  }
+
   // Three delayed busy phrases produce at most one successor; P0 wins.
   {
     const release = deferred<void>()

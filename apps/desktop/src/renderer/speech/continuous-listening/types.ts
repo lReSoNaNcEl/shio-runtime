@@ -11,6 +11,7 @@ export type ConversationInputSource =
   | 'push_to_talk'
   | 'continuous_listening'
   | 'backlog_selected'
+  | 'autonomous_initiative'
   | 'debug'
 
 export interface ConversationInput {

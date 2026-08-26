@@ -1,6 +1,10 @@
 import type { CharacterEmbodimentIntent } from '../../shared/character-response'
 import type { CharacterReplyStreamEvent } from '../../shared/character-stream'
-import type { ConversationTurnFailure, ReplyGrounding } from '../../shared/conversation'
+import type {
+  CharacterReplyOrigin,
+  ConversationTurnFailure,
+  ReplyGrounding,
+} from '../../shared/conversation'
 import {
   type EmotionTextSegment,
   parseEmotionalReply,
@@ -44,6 +48,7 @@ export interface CharacterResponsePort {
     userText: string,
     screenContextId?: string,
     onStreamEvent?: (event: CharacterReplyStreamEvent) => void,
+    origin?: CharacterReplyOrigin,
   ): Promise<AssistantReplyDraft>
 }
 
@@ -54,6 +59,7 @@ export class MainCharacterResponsePort implements CharacterResponsePort {
     userText: string,
     screenContextId?: string,
     onStreamEvent?: (event: CharacterReplyStreamEvent) => void,
+    origin?: CharacterReplyOrigin,
   ): Promise<AssistantReplyDraft> {
     const unsubscribe = onStreamEvent
       ? window.api.llm.onReplyStreamEvent((event) => {
@@ -62,7 +68,7 @@ export class MainCharacterResponsePort implements CharacterResponsePort {
       : undefined
     let reply: Awaited<ReturnType<Window['api']['llm']['reply']>>
     try {
-      reply = await window.api.llm.reply(turnId, userText, screenContextId)
+      reply = await window.api.llm.reply(turnId, userText, screenContextId, origin)
     } finally {
       unsubscribe?.()
     }

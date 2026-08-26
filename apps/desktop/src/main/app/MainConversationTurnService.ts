@@ -1,6 +1,6 @@
 import { type CharacterReplyStreamEvent, characterRequestId } from '../../shared/character-stream'
 import type { AppSettings } from '../../shared/config'
-import type { AttachmentDisposition } from '../../shared/conversation'
+import type { AttachmentDisposition, CharacterReplyOrigin } from '../../shared/conversation'
 import { deriveTurnRecoveryCapabilities } from '../../shared/conversation'
 import type { LlmTurnErrorCode } from '../../shared/llm'
 import { latencyTelemetry } from '../diagnostics/latencyTelemetry'
@@ -15,6 +15,7 @@ export interface CharacterReplyRequest {
   turnId: string
   userText: string
   screenContextId?: string
+  origin?: CharacterReplyOrigin
 }
 
 const TURN_ERROR_CODES = new Set<LlmTurnErrorCode>([
@@ -78,7 +79,7 @@ export class MainConversationTurnService {
     request: CharacterReplyRequest,
     emitStreamEvent?: (event: CharacterReplyStreamEvent) => void,
   ) {
-    const { turnId, userText, screenContextId } = request
+    const { turnId, userText, screenContextId, origin = 'user' } = request
     const llmConfig = this.llmSettings()
     const activeProfile = PROVIDER_PROFILES.find(
       (profile) => profile.id === llmConfig.activeProvider,
@@ -184,6 +185,7 @@ export class MainConversationTurnService {
     try {
       const input: CharacterReplyInput = {
         userText,
+        origin,
         screenContext: pendingCapture
           ? {
               mimeType: pendingCapture.mimeType,

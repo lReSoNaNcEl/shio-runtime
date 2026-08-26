@@ -38,6 +38,7 @@ export const IPC_CHANNEL_CAPABILITIES = {
   'avatar-state:publish': mainOnly,
   'browser-game:get-status': mainOnly,
   'browser-game:pause': mainOnly,
+  'browser-game:report-commentary': mainOnly,
   'browser-game:stop': mainOnly,
   'capabilities:snapshot': mainOnly,
   'config:get': mainOnly,
