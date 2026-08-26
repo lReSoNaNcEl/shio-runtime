@@ -65,6 +65,8 @@ const api = {
       ipcRenderer.invoke('alive:decide-habit', { id, status }) as Promise<AliveSnapshot>,
     evaluateAttention: (input: FastBrainAttentionInput) =>
       ipcRenderer.invoke('alive:evaluate-attention', input),
+    cancelAttention: (utteranceId: string) =>
+      ipcRenderer.invoke('alive:cancel-attention', utteranceId) as Promise<{ ok: boolean }>,
     onChanged: (callback: (snapshot: AliveSnapshot) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, snapshot: unknown): void =>
         callback(snapshot as AliveSnapshot)

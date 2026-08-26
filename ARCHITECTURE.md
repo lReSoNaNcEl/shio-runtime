@@ -1520,9 +1520,15 @@ candidates from speech, world, experience, scheduler, goals, and behavior. Each
 candidate carries salience, novelty, urgency, social relevance, and interruptibility.
 Deterministic policy selects a clear winner first. Fast Brain is an optional bounded
 decision-model role used only when two or more viable candidates remain ambiguous; a
-timeout or provider failure returns to deterministic fallback. Fast Brain is not
-Character Response Generation, cannot call Character tools, and never grants
-admission itself.
+timeout or provider failure returns to deterministic fallback. Its provider response
+must be exact JSON validated by a strict typed schema for disposition, candidate
+identity, confidence, and bounded reason; prose extraction, unknown fields, invalid
+confidence, and a candidate identity outside the current set are rejected. The
+caller-owned cancellation signal reaches the provider transport. Candidate expiry,
+continuous-listening/session invalidation, and Alive Runtime shutdown abort in-flight
+model work and discard its result, while a provider timeout still follows deterministic
+fallback. Fast Brain is not Character Response Generation, cannot call Character
+tools, and never grants admission itself.
 
 Experience Runtime consumes completed typed facts including conversation completion
 or interruption, verified or failed Actions, permission denial, browser blocking or

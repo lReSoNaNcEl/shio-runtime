@@ -1,6 +1,19 @@
+import { z } from 'zod'
+
 import type { AttentionCandidate, AttentionDecision, AutonomySettings } from '../../shared/alive'
 import type { LlmGateway } from '../llm'
 import { mainLog } from '../logging/safeLogger'
+
+const FAST_BRAIN_MAX_RESPONSE_CHARACTERS = 2_000
+
+export const fastBrainModelDecisionSchema = z
+  .object({
+    disposition: z.enum(['ignore', 'observe', 'admit']),
+    candidateId: z.string().trim().min(1).max(100).optional(),
+    confidence: z.number().finite().min(0).max(1),
+    reason: z.string().trim().min(1).max(120),
+  })
+  .strict()
 
 export class FastBrainRuntime {
   constructor(
@@ -14,9 +27,11 @@ export class FastBrainRuntime {
     candidates: readonly AttentionCandidate[],
     settings: AutonomySettings,
     fallback: AttentionDecision,
+    signal: AbortSignal,
   ): Promise<AttentionDecision> {
     const startedAt = Date.now()
     try {
+      signal.throwIfAborted()
       const response = await this.llm({
         providerId: settings.fastBrain.providerId,
         model: settings.fastBrain.model,
@@ -50,41 +65,44 @@ export class FastBrainRuntime {
             .slice(0, 80)}`,
           timeoutMs: settings.fastBrain.timeoutMs,
           maxTokens: settings.fastBrain.maxTokens,
+          signal,
         },
       )
-      const parsed = JSON.parse(response.match(/\{[\s\S]*\}/u)?.[0] ?? '') as {
-        disposition?: unknown
-        candidateId?: unknown
-        confidence?: unknown
-        reason?: unknown
-      }
-      const disposition = ['ignore', 'observe', 'admit'].includes(String(parsed.disposition))
-        ? (parsed.disposition as AttentionDecision['disposition'])
-        : null
+      signal.throwIfAborted()
+      const parsed = parseModelDecision(response)
       const candidateId =
-        typeof parsed.candidateId === 'string' &&
-        candidates.some((candidate) => candidate.id === parsed.candidateId)
+        parsed.candidateId && candidates.some((candidate) => candidate.id === parsed.candidateId)
           ? parsed.candidateId
           : undefined
-      if (!disposition || (disposition !== 'ignore' && !candidateId)) {
+      if (parsed.disposition !== 'ignore' && !candidateId) {
         return { ...fallback, source: 'fallback', latencyMs: Date.now() - startedAt }
       }
       return {
-        disposition,
+        disposition: parsed.disposition,
         ...(candidateId ? { candidateId } : {}),
-        confidence:
-          typeof parsed.confidence === 'number'
-            ? Math.max(0, Math.min(1, parsed.confidence))
-            : fallback.confidence,
+        confidence: parsed.confidence,
         source: 'model',
-        reason: typeof parsed.reason === 'string' ? parsed.reason.slice(0, 120) : 'model',
+        reason: parsed.reason,
         latencyMs: Date.now() - startedAt,
       }
     } catch (error) {
+      if (signal.aborted) throw signal.reason ?? abortError()
       mainLog.warn('[FastBrain] attention fallback', {
         code: error instanceof Error ? error.name : 'UNKNOWN',
       })
       return { ...fallback, source: 'fallback', latencyMs: Date.now() - startedAt }
     }
   }
+}
+
+function parseModelDecision(response: string): z.infer<typeof fastBrainModelDecisionSchema> {
+  const trimmed = response.trim()
+  if (!trimmed || trimmed.length > FAST_BRAIN_MAX_RESPONSE_CHARACTERS) {
+    throw new Error('FAST_BRAIN_INVALID_RESPONSE')
+  }
+  return fastBrainModelDecisionSchema.parse(JSON.parse(trimmed) as unknown)
+}
+
+function abortError(): DOMException {
+  return new DOMException('Fast Brain arbitration cancelled', 'AbortError')
 }

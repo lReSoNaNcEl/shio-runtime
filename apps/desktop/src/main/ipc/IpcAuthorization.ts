@@ -19,6 +19,7 @@ export const IPC_CHANNEL_CAPABILITIES = {
   'actions:respond-confirmation': mainOnly,
   'actions:snapshot': mainOnly,
   'alive:approve-task': mainOnly,
+  'alive:cancel-attention': mainOnly,
   'alive:create-goal': mainOnly,
   'alive:create-task': mainOnly,
   'alive:decide-habit': mainOnly,

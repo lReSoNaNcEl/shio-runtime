@@ -265,6 +265,12 @@ export function registerAliveIpc(
       ),
     ),
   )
+  ipcMain.handle(
+    'alive:cancel-attention',
+    authorization.handlePayload('alive:cancel-attention', IPC_ONE_PAYLOAD, (_event, input) => ({
+      ok: runtime.cancelAttention(z.string().min(1).max(100).parse(input)),
+    })),
+  )
 
   const unsubscribeChanged = runtime.onChanged((snapshot) => {
     if (!window.isDestroyed()) window.webContents.send('alive:changed', snapshot)

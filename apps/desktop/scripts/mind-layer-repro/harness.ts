@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import {
+  AliveFacade,
   AliveStore,
   AttentionArbiter,
   AutonomyEnvelope,
@@ -13,6 +14,7 @@ import {
   MoodRuntime,
   ProactiveInitiativeGate,
 } from '../../src/main/alive'
+import type { LlmRequestOptions } from '../../src/main/llm'
 import type { AttentionCandidate, WorldContextSnapshot } from '../../src/shared/alive'
 import type { GameSemanticEvent, GameSemanticEventType } from '../../src/shared/browser-game'
 
@@ -161,18 +163,31 @@ async function main(): Promise<void> {
 
     let modelCalls = 0
     let failModel = false
+    let deferModel = false
+    let modelResponse = JSON.stringify({
+      disposition: 'admit',
+      candidateId: 'speech',
+      confidence: 0.8,
+      reason: 'direct address',
+    })
+    let lastModelOptions: LlmRequestOptions | undefined
     const fastBrain = new FastBrainRuntime(
       () =>
         ({
-          chat: async () => {
+          chat: async (_messages: unknown, options?: LlmRequestOptions) => {
             modelCalls += 1
+            lastModelOptions = options
             if (failModel) throw new Error('FAST_BRAIN_DOWN')
-            return JSON.stringify({
-              disposition: 'admit',
-              candidateId: 'speech',
-              confidence: 0.8,
-              reason: 'direct address',
-            })
+            if (deferModel) {
+              assert(options?.signal, 'Fast Brain provider call must receive an AbortSignal')
+              return new Promise<string>((_resolve, reject) => {
+                const rejectAborted = (): void =>
+                  reject(options.signal?.reason ?? new DOMException('Cancelled', 'AbortError'))
+                if (options.signal?.aborted) rejectAborted()
+                else options.signal?.addEventListener('abort', rejectAborted, { once: true })
+              })
+            }
+            return modelResponse
           },
         }) as never,
     )
@@ -193,6 +208,22 @@ async function main(): Promise<void> {
     ]
     assert.equal((await arbiter.decide(ambiguous, settings)).source, 'model')
     assert.equal(modelCalls, 1)
+    assert(lastModelOptions?.signal)
+    assert.equal(lastModelOptions.timeoutMs, settings.fastBrain.timeoutMs)
+    assert.equal(lastModelOptions.maxTokens, settings.fastBrain.maxTokens)
+
+    modelResponse = JSON.stringify({
+      disposition: 'admit',
+      candidateId: 'speech',
+      confidence: 0.8,
+      reason: 'direct address',
+      unexpected: true,
+    })
+    assert.equal((await arbiter.decide(ambiguous, settings)).source, 'fallback')
+    modelResponse =
+      '```json\n{"disposition":"admit","candidateId":"speech","confidence":0.8,"reason":"fenced"}\n```'
+    assert.equal((await arbiter.decide(ambiguous, settings)).source, 'fallback')
+
     failModel = true
     const fallback = await arbiter.decide(ambiguous, settings)
     assert.equal(fallback.source, 'fallback')
@@ -317,6 +348,53 @@ async function main(): Promise<void> {
     assert.equal(afterDispose.outcome, 'ignore')
     assert.equal(deliveries, 2, 'disposed gate delivered an initiative')
 
+    failModel = false
+    deferModel = true
+    const cancelled = new AbortController()
+    const callsBeforeCancel = modelCalls
+    const cancelledDecision = arbiter.decide(ambiguous, settings, {
+      signal: cancelled.signal,
+    })
+    await waitUntil(() => modelCalls > callsBeforeCancel)
+    const cancelledProviderSignal = lastModelOptions?.signal
+    cancelled.abort(new DOMException('Turn cancelled', 'AbortError'))
+    await assert.rejects(cancelledDecision, { name: 'AbortError' })
+    assert.equal(cancelledProviderSignal?.aborted, true)
+
+    const expiring = ambiguous.map((entry) => ({ ...entry, expiresAt: Date.now() + 20 }))
+    const callsBeforeExpiry = modelCalls
+    const expiringDecision = arbiter.decide(expiring, settings)
+    await waitUntil(() => modelCalls > callsBeforeExpiry)
+    await assert.rejects(expiringDecision, { name: 'AbortError' })
+    assert.equal(lastModelOptions?.signal?.aborted, true)
+
+    const lifecycleStore = new AliveStore(join(directory, 'alive-lifecycle.sqlite'))
+    let lifecycleProviderSignal: AbortSignal | undefined
+    const lifecycleRuntime = new AliveFacade(
+      lifecycleStore,
+      () =>
+        ({
+          chat: async (_messages: unknown, options?: LlmRequestOptions) => {
+            lifecycleProviderSignal = options?.signal
+            assert(lifecycleProviderSignal)
+            return new Promise<string>((_resolve, reject) => {
+              const rejectAborted = (): void =>
+                reject(
+                  lifecycleProviderSignal?.reason ?? new DOMException('Disposed', 'AbortError'),
+                )
+              if (lifecycleProviderSignal.aborted) rejectAborted()
+              else lifecycleProviderSignal.addEventListener('abort', rejectAborted, { once: true })
+            })
+          },
+        }) as never,
+    )
+    lifecycleRuntime.updateSettings(settings)
+    const lifecycleDecision = lifecycleRuntime.arbitrateAttention(ambiguous)
+    await waitUntil(() => lifecycleProviderSignal !== undefined)
+    lifecycleRuntime.dispose()
+    await assert.rejects(lifecycleDecision, { name: 'AbortError' })
+    assert.equal(lifecycleProviderSignal?.aborted, true)
+
     for (const source of ['BehaviorRuntime.ts', 'ExperienceRuntime.ts', 'FastBrainRuntime.ts']) {
       const text = readFileSync(join(process.cwd(), 'src/main/alive', source), 'utf8')
       assert.doesNotMatch(text, /ActionRuntime|ConversationRuntime|\.execute\s*\(/u)
@@ -354,6 +432,14 @@ function gameEvent(
     importance,
   }
   return { type: 'game-event', at, eventId: event.eventId, gameEvent: event }
+}
+
+async function waitUntil(condition: () => boolean): Promise<void> {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    if (condition()) return
+    await new Promise((resolve) => setImmediate(resolve))
+  }
+  assert.fail('condition did not become true')
 }
 
 function candidate(

@@ -49,6 +49,7 @@ export class ProactiveInitiativeGate {
   private evaluationTail: Promise<void> = Promise.resolve()
   private lastInitiativeAt: number | null
   private disposed = false
+  private readonly lifecycleController = new AbortController()
 
   constructor(private readonly options: ProactiveInitiativeGateOptions) {
     this.lastInitiativeAt = options.store.lastInitiativeAt()
@@ -72,6 +73,9 @@ export class ProactiveInitiativeGate {
 
   dispose(): void {
     this.disposed = true
+    this.lifecycleController.abort(
+      new DOMException('Proactive Initiative Gate disposed', 'AbortError'),
+    )
   }
 
   private async evaluate(
@@ -94,10 +98,19 @@ export class ProactiveInitiativeGate {
       return policy
     }
 
-    const attention = await this.options.attention.decide(request.candidates, settings, {
-      busy: world.conversationActive || world.audioActive,
-      now,
-    })
+    let attention: AttentionDecision
+    try {
+      attention = await this.options.attention.decide(request.candidates, settings, {
+        busy: world.conversationActive || world.audioActive,
+        now,
+        signal: this.lifecycleController.signal,
+      })
+    } catch (error) {
+      if (this.lifecycleController.signal.aborted) {
+        return { outcome: 'ignore', reason: 'gate-disposed' }
+      }
+      throw error
+    }
     if (this.disposed) return { outcome: 'ignore', reason: 'gate-disposed', attention }
     if (attention.disposition !== 'admit') {
       this.audit(request, attention.disposition, attention.reason)

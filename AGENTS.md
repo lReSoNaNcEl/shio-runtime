@@ -115,7 +115,10 @@ Architecture and ownership:
   none of those owners may grant conversation admission themselves.
 - Fast Brain provider/model selection is bounded non-secret policy. It reuses the
   Main-owned LLM credential store and may never persist credentials in Alive storage
-  or expose them through World Context, renderer state, or diagnostics.
+  or expose them through World Context, renderer state, or diagnostics. Fast Brain
+  accepts only exact JSON through a strict typed result schema, and every model call
+  receives caller cancellation. Candidate expiry, continuous-listening/session reset,
+  and Alive Runtime shutdown abort actual provider work; a late result is discarded.
 - Autonomy modes, including Full, never bypass Action Runtime, Permission Guard,
   validation, verification, cancellation, or logging for externally authoritative
   side effects. Global Suspend and Privacy Mode are authoritative policy stops.

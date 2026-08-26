@@ -246,6 +246,7 @@ export class Controller {
     saveConfig: (patch) => window.api.config.save(patch),
     arbitrateBacklog: (request) => window.api.llm.arbitrateBacklog(request),
     evaluateAttention: (request) => window.api.alive.evaluateAttention(request),
+    cancelAttention: (utteranceId) => window.api.alive.cancelAttention(utteranceId),
     normalizeMicrophoneFailure: (error) => this.microphoneDeviceService.normalizeFailure(error),
     getMicrophoneAccessFailedMessage: () => this.t('controller.microphoneAccessFailed'),
     createTurnId: (prefix) => `${prefix}-${nextId()}`,
@@ -992,6 +993,7 @@ export class Controller {
     this.unsubscribeConfigUpdates?.()
     this.unsubscribeConfigUpdates = null
     this.aliveExperience.dispose()
+    this.conversationInput.dispose()
     if (this.avatarTickTimerId !== null) window.clearInterval(this.avatarTickTimerId)
     this.avatarTickTimerId = null
     this.detachCanvas()

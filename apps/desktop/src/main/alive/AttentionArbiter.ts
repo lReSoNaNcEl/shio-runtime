@@ -15,10 +15,11 @@ export class AttentionArbiter {
   async decide(
     candidates: readonly AttentionCandidate[],
     settings: AutonomySettings,
-    options: { busy?: boolean; now?: number } = {},
+    options: { busy?: boolean; now?: number; signal?: AbortSignal } = {},
   ): Promise<AttentionDecision> {
     const startedAt = Date.now()
     const now = options.now ?? startedAt
+    options.signal?.throwIfAborted()
     const viable = candidates
       .filter(
         (candidate) =>
@@ -46,16 +47,24 @@ export class AttentionArbiter {
         reason: margin >= CLEAR_WINNER_MARGIN ? 'clear_winner' : 'model_disabled',
       }
     }
-    return this.fastBrain.arbitrate(
-      viable.slice(0, 4).map((entry) => entry.candidate),
-      settings,
-      fallback,
-    )
+    const ambiguousCandidates = viable.slice(0, 4).map((entry) => entry.candidate)
+    const arbitration = createArbitrationSignal(ambiguousCandidates, options.signal, now)
+    try {
+      return await this.fastBrain.arbitrate(
+        ambiguousCandidates,
+        settings,
+        fallback,
+        arbitration.signal,
+      )
+    } finally {
+      arbitration.dispose()
+    }
   }
 
   async evaluateLegacy(
     input: FastBrainAttentionInput,
     settings: AutonomySettings,
+    options: { signal?: AbortSignal } = {},
   ): Promise<FastBrainAttentionDecision> {
     const decision = await this.decide(
       [
@@ -76,7 +85,7 @@ export class AttentionArbiter {
         },
       ],
       settings,
-      { busy: input.speaking || input.cooldownActive },
+      { busy: input.speaking || input.cooldownActive, signal: options.signal },
     )
     return {
       shouldAttend: decision.disposition === 'admit',
@@ -85,6 +94,42 @@ export class AttentionArbiter {
       reason: decision.reason,
       latencyMs: decision.latencyMs,
     }
+  }
+}
+
+function createArbitrationSignal(
+  candidates: readonly AttentionCandidate[],
+  externalSignal: AbortSignal | undefined,
+  now: number,
+): { signal: AbortSignal; dispose(): void } {
+  const controller = new AbortController()
+  const abortFromExternal = (): void => controller.abort(externalSignal?.reason)
+  externalSignal?.addEventListener('abort', abortFromExternal, { once: true })
+  if (externalSignal?.aborted) abortFromExternal()
+
+  const earliestExpiry = candidates.reduce<number | undefined>(
+    (earliest, candidate) =>
+      candidate.expiresAt === undefined
+        ? earliest
+        : earliest === undefined
+          ? candidate.expiresAt
+          : Math.min(earliest, candidate.expiresAt),
+    undefined,
+  )
+  const expiryTimer =
+    earliestExpiry === undefined
+      ? undefined
+      : setTimeout(
+          () => controller.abort(new DOMException('Attention candidates expired', 'AbortError')),
+          Math.max(0, earliestExpiry - now),
+        )
+
+  return {
+    signal: controller.signal,
+    dispose: () => {
+      if (expiryTimer !== undefined) clearTimeout(expiryTimer)
+      externalSignal?.removeEventListener('abort', abortFromExternal)
+    },
   }
 }
 

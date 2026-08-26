@@ -73,6 +73,8 @@ export class AliveFacade {
   private readonly scheduler: ScheduledTaskRuntime
   private readonly listeners = new Set<(snapshot: AliveSnapshot) => void>()
   private readonly behaviorListeners = new Set<(command: BehaviorCommand) => void>()
+  private readonly lifecycleController = new AbortController()
+  private readonly attentionRequests = new Map<string, AbortController>()
 
   constructor(
     private readonly store: AliveStore,
@@ -125,6 +127,11 @@ export class AliveFacade {
 
   dispose(): void {
     this.initiativeGate.dispose()
+    this.lifecycleController.abort(new DOMException('Alive Runtime disposed', 'AbortError'))
+    for (const controller of this.attentionRequests.values()) {
+      controller.abort(this.lifecycleController.signal.reason)
+    }
+    this.attentionRequests.clear()
     this.world.dispose()
     this.scheduler.dispose()
     this.listeners.clear()
@@ -293,7 +300,30 @@ export class AliveFacade {
   }
 
   evaluateAttention(input: FastBrainAttentionInput): Promise<FastBrainAttentionDecision> {
-    return this.attention.evaluateLegacy(input, this.store.settings())
+    this.lifecycleController.signal.throwIfAborted()
+    this.attentionRequests
+      .get(input.utteranceId)
+      ?.abort(new DOMException('Attention request superseded', 'AbortError'))
+    const controller = new AbortController()
+    const abortForLifecycle = (): void => controller.abort(this.lifecycleController.signal.reason)
+    this.lifecycleController.signal.addEventListener('abort', abortForLifecycle, { once: true })
+    this.attentionRequests.set(input.utteranceId, controller)
+    return this.attention
+      .evaluateLegacy(input, this.store.settings(), { signal: controller.signal })
+      .finally(() => {
+        this.lifecycleController.signal.removeEventListener('abort', abortForLifecycle)
+        if (this.attentionRequests.get(input.utteranceId) === controller) {
+          this.attentionRequests.delete(input.utteranceId)
+        }
+      })
+  }
+
+  cancelAttention(utteranceId: string): boolean {
+    const controller = this.attentionRequests.get(utteranceId)
+    if (!controller) return false
+    controller.abort(new DOMException('Attention request cancelled', 'AbortError'))
+    this.attentionRequests.delete(utteranceId)
+    return true
   }
 
   arbitrateAttention(candidates: readonly AttentionCandidate[]): Promise<AttentionDecision> {
@@ -301,6 +331,7 @@ export class AliveFacade {
     const world = this.world.snapshot(settings)
     return this.attention.decide(candidates, settings, {
       busy: world.conversationActive || world.audioActive,
+      signal: this.lifecycleController.signal,
     })
   }
 

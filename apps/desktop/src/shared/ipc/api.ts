@@ -97,6 +97,7 @@ export interface ShioRuntimeApi {
     approveTask: (id: string) => Promise<AliveSnapshot>
     decideHabit: (id: string, status: 'approved' | 'rejected') => Promise<AliveSnapshot>
     evaluateAttention: (input: FastBrainAttentionInput) => Promise<FastBrainAttentionDecision>
+    cancelAttention: (utteranceId: string) => Promise<{ ok: boolean }>
     onChanged: (callback: (snapshot: AliveSnapshot) => void) => () => void
     onBehavior: (callback: (command: BehaviorCommand) => void) => () => void
   }
