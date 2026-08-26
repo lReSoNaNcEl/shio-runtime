@@ -47,6 +47,7 @@ class TestReflexAdapter implements GameReflexAdapter {
   initialized: GameCalibrationContext | null = null
   readonly frames: GameFrame[] = []
   intents: GameInputIntent[] = []
+  suspendCount = 0
   resetCount = 0
   onDecide: (() => void) | null = null
 
@@ -68,6 +69,10 @@ class TestReflexAdapter implements GameReflexAdapter {
     this.frames.push(frame)
     this.onDecide?.()
     return this.intents.shift() ?? { type: 'none' }
+  }
+
+  suspend(): void {
+    this.suspendCount += 1
   }
 
   reset(): void {
@@ -449,6 +454,7 @@ async function main(): Promise<void> {
   assert.equal(paused.state, 'paused')
   assert(gameEvents.some((event) => event.type === 'game-paused'))
   assert(realtime.releaseCount >= 1)
+  assert.equal(reflexAdapter.suspendCount, 1)
   assert.equal(realtime.inputs.length, 1)
 
   const resumed = await controller.resume()
@@ -472,6 +478,7 @@ async function main(): Promise<void> {
   assert.equal(controller.status().telemetry.commentPolicySuppressions, 1)
   assert.equal(controller.status().waitingReason, 'authentication')
   assert(gameEvents.some((event) => event.type === 'waiting-user'))
+  assert.equal(reflexAdapter.suspendCount, 2)
   realtime.blocker = undefined
   const resumedAfterIntervention = await controller.resume()
   assert.equal(resumedAfterIntervention.state, 'running')
@@ -996,36 +1003,45 @@ async function main(): Promise<void> {
     localState,
     localSignal,
   )
-  assert.equal(firstTarget.type, 'pointer-tap')
-  if (firstTarget.type === 'pointer-tap') {
+  assert.equal(firstTarget.type, 'pointer-down')
+  if (firstTarget.type === 'pointer-down') {
     assert(Math.abs(firstTarget.x - 160) < 3)
     assert(Math.abs(firstTarget.y - 90) < 3)
   }
-  assert.deepEqual(
-    await localReflex.decide(
-      await visualTargetFrame({ frameId: 2, capturedAt: 70_200, targetX: 160 }),
-      localState,
-      localSignal,
-    ),
-    { type: 'none' },
-  )
-  const movedTarget = await localReflex.decide(
-    await visualTargetFrame({ frameId: 3, capturedAt: 70_400, targetX: 190 }),
+  const firstRelease = await localReflex.decide(
+    await visualTargetFrame({ frameId: 2, capturedAt: 70_200, targetX: 160 }),
     localState,
     localSignal,
   )
-  assert.equal(movedTarget.type, 'pointer-tap')
-  assert.deepEqual(
-    await localReflex.decide(
-      await visualTargetFrame({ frameId: 4, capturedAt: 71_200 }),
-      localState,
-      localSignal,
-    ),
-    movedTarget,
+  assert.equal(firstRelease.type, 'pointer-up')
+  if (firstRelease.type === 'pointer-up' && firstTarget.type === 'pointer-down') {
+    assert.deepEqual(firstRelease, { type: 'pointer-up', x: firstTarget.x, y: firstTarget.y })
+  }
+  const movedTarget = await localReflex.decide(
+    await visualTargetFrame({ frameId: 3, capturedAt: 70_600, targetX: 190 }),
+    localState,
+    localSignal,
   )
+  assert.equal(movedTarget.type, 'pointer-down')
+  const movedRelease = await localReflex.decide(
+    await visualTargetFrame({ frameId: 4, capturedAt: 70_800 }),
+    localState,
+    localSignal,
+  )
+  assert.equal(movedRelease.type, 'pointer-up')
+  if (movedRelease.type === 'pointer-up' && movedTarget.type === 'pointer-down') {
+    assert.deepEqual(movedRelease, { type: 'pointer-up', x: movedTarget.x, y: movedTarget.y })
+  }
+  const reacquired = await localReflex.decide(
+    await visualTargetFrame({ frameId: 5, capturedAt: 71_400 }),
+    localState,
+    localSignal,
+  )
+  assert.equal(reacquired.type, 'pointer-down')
+  localReflex.suspend()
   assert.deepEqual(
     await localReflex.decide(
-      await visualTargetFrame({ frameId: 5, capturedAt: 72_000 }),
+      await visualTargetFrame({ frameId: 6, capturedAt: 72_000 }),
       localState,
       localSignal,
     ),
@@ -1035,7 +1051,7 @@ async function main(): Promise<void> {
   cancelled.abort()
   await assert.rejects(
     localReflex.decide(
-      await visualTargetFrame({ frameId: 6, capturedAt: 72_500, targetX: 220 }),
+      await visualTargetFrame({ frameId: 7, capturedAt: 72_500, targetX: 220 }),
       localState,
       cancelled.signal,
     ),

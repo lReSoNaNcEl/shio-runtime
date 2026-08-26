@@ -23,6 +23,7 @@ interface Candidate extends Point {
 
 interface StrategyTiming {
   minimumIntentIntervalMs: number
+  pointerHoldMs: number
   reacquireDelayMs: number
   sameTargetRetryMs: number
 }
@@ -30,16 +31,19 @@ interface StrategyTiming {
 const STRATEGY_TIMING: Record<GameStrategy, StrategyTiming> = {
   careful: {
     minimumIntentIntervalMs: 650,
+    pointerHoldMs: 300,
     reacquireDelayMs: 1_000,
     sameTargetRetryMs: 1_600,
   },
   balanced: {
     minimumIntentIntervalMs: 350,
+    pointerHoldMs: 200,
     reacquireDelayMs: 750,
     sameTargetRetryMs: 1_100,
   },
   fast: {
     minimumIntentIntervalMs: 180,
+    pointerHoldMs: 100,
     reacquireDelayMs: 500,
     sameTargetRetryMs: 700,
   },
@@ -74,6 +78,8 @@ export class LocalVisualTargetReflexAdapter implements GameReflexAdapter {
   private lastIntentAt = Number.NEGATIVE_INFINITY
   private lastCandidateSeenAt: number | undefined
   private lastTarget: Point | undefined
+  private heldTarget: Point | undefined
+  private heldAt: number | undefined
   private sameTargetRetries = 0
   private reacquireUsed = false
 
@@ -120,13 +126,23 @@ export class LocalVisualTargetReflexAdapter implements GameReflexAdapter {
     this.strategy = strategy
   }
 
+  suspend(): void {
+    this.resetTracking()
+  }
+
   reset(): void {
     this.scope = null
     this.pointerAllowed = false
+    this.resetTracking()
+  }
+
+  private resetTracking(): void {
     this.lastFrameId = -1
     this.lastIntentAt = Number.NEGATIVE_INFINITY
     this.lastCandidateSeenAt = undefined
     this.lastTarget = undefined
+    this.heldTarget = undefined
+    this.heldAt = undefined
     this.sameTargetRetries = 0
     this.reacquireUsed = false
   }
@@ -221,6 +237,15 @@ export class LocalVisualTargetReflexAdapter implements GameReflexAdapter {
   private intentFor(candidate: Candidate | null, frame: GameFrame): GameInputIntent {
     const at = frame.capturedAt
     const timing = STRATEGY_TIMING[this.strategy]
+    if (this.heldTarget && this.heldAt !== undefined && at - this.heldAt >= timing.pointerHoldMs) {
+      const target = this.heldTarget
+      this.heldTarget = undefined
+      this.heldAt = undefined
+      this.lastIntentAt = at
+      return { type: 'pointer-up', ...target }
+    }
+    if (this.heldTarget) return { type: 'none' }
+
     if (candidate) {
       this.lastCandidateSeenAt = at
       const target = { x: candidate.x, y: candidate.y }
@@ -235,8 +260,10 @@ export class LocalVisualTargetReflexAdapter implements GameReflexAdapter {
           this.sameTargetRetries += 1
         }
         this.lastTarget = target
+        this.heldTarget = target
+        this.heldAt = at
         this.lastIntentAt = at
-        return { type: 'pointer-tap', ...target }
+        return { type: 'pointer-down', ...target }
       }
       return { type: 'none' }
     }
@@ -249,8 +276,10 @@ export class LocalVisualTargetReflexAdapter implements GameReflexAdapter {
       at - this.lastIntentAt >= timing.minimumIntentIntervalMs
     ) {
       this.reacquireUsed = true
+      this.heldTarget = this.lastTarget
+      this.heldAt = at
       this.lastIntentAt = at
-      return { type: 'pointer-tap', ...this.lastTarget }
+      return { type: 'pointer-down', ...this.lastTarget }
     }
     return { type: 'none' }
   }

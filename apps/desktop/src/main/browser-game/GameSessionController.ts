@@ -426,6 +426,7 @@ export class GameSessionController {
     await active.loopTask
     active.loopTask = null
     await active.realtime.releaseInputs()
+    this.options.reflex.suspend()
     this.eventLane?.reset()
     this.publishGameEvent(active.scope, 'game-paused', 'ambient', { reason: 'user' })
     this.publishChanged()
@@ -688,6 +689,7 @@ export class GameSessionController {
     active.loopTask = null
     active.inputTimestamps = []
     await active.realtime.releaseInputs()
+    this.options.reflex.suspend()
     this.eventLane?.reset()
     this.publishGameEvent(active.scope, 'waiting-user', 'blocking', {
       label: reason,

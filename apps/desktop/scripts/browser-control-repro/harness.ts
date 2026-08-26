@@ -736,6 +736,10 @@ async function main(): Promise<void> {
       let gameRunError: unknown
       try {
         await waitForGameInput(gameController)
+        assert.deepEqual(
+          fixtureReflex.intents.slice(0, 2).map((intent) => intent.type),
+          ['pointer-down', 'pointer-up'],
+        )
         if (BROWSER_GAME_QUALIFICATION_MS === 0) {
           const firstScore = await waitForObservedGameState(adapter, /Score: 1/u)
           assert.match(firstScore, /Released/u)

@@ -26,6 +26,7 @@ export interface GameReflexPolicy {
   initialize(context: GameCalibrationContext, signal: AbortSignal): Promise<void>
   decide(frame: GameFrame, state: GameReflexState, signal: AbortSignal): Promise<GameInputIntent>
   updateStrategy?(strategy: GameStrategy): void
+  suspend(): void
   reset(): void
 }
 
@@ -46,6 +47,10 @@ export class AdapterBackedGameReflexPolicy implements GameReflexPolicy {
 
   updateStrategy(strategy: GameStrategy): void {
     this.adapter.updateStrategy?.(strategy)
+  }
+
+  suspend(): void {
+    this.adapter.suspend()
   }
 
   reset(): void {

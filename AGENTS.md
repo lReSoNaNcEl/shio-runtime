@@ -217,6 +217,9 @@ Architecture and ownership:
 - The bundled local visual reflex may select only bounded pointer intents from transient
   cropped frames. It may not inspect DOM, call Character/VLM per frame, persist images,
   bypass Game Session rate limits, or claim support for semantic/keyboard-heavy games.
+  Pointer holds use bounded frame-to-frame press pulses. After releasing actual inputs on
+  pause or a user-intervention blocker, Game Session Controller must also suspend Reflex
+  transient state so no logical press survives resume.
   Its typed Reflex status is the source for Capability Catalog detail, Character game-tool
   input schemas, and bounded renderer diagnostics; reject any requested input class that
   the active backend does not report as supported before preparing an Action scope.

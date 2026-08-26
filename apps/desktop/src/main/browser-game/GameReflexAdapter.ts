@@ -22,6 +22,8 @@ export interface GameReflexAdapter {
   initialize(context: GameReflexAdapterInitialization, signal: AbortSignal): Promise<void>
   decide(frame: GameFrame, state: GameReflexState, signal: AbortSignal): Promise<GameInputIntent>
   updateStrategy?(strategy: GameStrategy): void
+  /** Clears transient pressed-input state while retaining bounded session calibration. */
+  suspend(): void
   reset(): void
 }
 
@@ -48,6 +50,8 @@ export class ObservingGameReflexAdapter implements GameReflexAdapter {
   ): Promise<GameInputIntent> {
     return { type: 'none' }
   }
+
+  suspend(): void {}
 
   reset(): void {}
 }
