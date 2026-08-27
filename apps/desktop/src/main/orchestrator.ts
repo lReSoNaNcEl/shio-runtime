@@ -28,6 +28,7 @@ import {
   type CharacterEmbodimentIntent,
   parseCharacterEmbodimentResponse,
 } from '../shared/character-response'
+import type { CharacterToolRequirement, TurnToolEvidenceSummary } from '../shared/character-tools'
 import type { AppSettings } from '../shared/config'
 import type { CharacterReplyOrigin, ReplyGrounding } from '../shared/conversation'
 import type {
@@ -162,6 +163,48 @@ function presentRecoverableProviderFailure(error: LlmResponseError, locale: UiLo
   return '[calm]I hear you, but the model provider is temporarily unavailable. Please try again shortly.'
 }
 
+function presentToolRequirementFailure(
+  requirement: CharacterToolRequirement | undefined,
+  reason: 'classification-failed' | 'unavailable' | 'unfulfilled',
+  locale: UiLocale,
+): string {
+  if (reason === 'classification-failed') {
+    return locale === 'ru'
+      ? '[calm]Не смогла надёжно определить обязательный источник для этого запроса, поэтому не буду отвечать наугад.'
+      : '[calm]I could not reliably determine the required source for this request, so I will not guess.'
+  }
+  const target =
+    requirement?.type === 'explicit-tool'
+      ? requirement.tool
+      : requirement?.type === 'required-source'
+        ? requirement.source === 'web'
+          ? locale === 'ru'
+            ? 'веб-поиск'
+            : 'web search'
+          : requirement.source === 'project'
+            ? locale === 'ru'
+              ? 'поиск по проекту'
+              : 'project search'
+            : requirement.source === 'memory'
+              ? locale === 'ru'
+                ? 'долговременную память'
+                : 'long-term memory'
+              : locale === 'ru'
+                ? 'состояние управляемого браузера'
+                : 'the controlled browser state'
+        : locale === 'ru'
+          ? 'обязательный источник'
+          : 'the required source'
+  if (reason === 'unavailable') {
+    return locale === 'ru'
+      ? `[calm]Сейчас не могу использовать ${target}, поэтому не буду подменять проверку ответом из памяти.`
+      : `[calm]I cannot use ${target} right now, so I will not replace the requested check with remembered knowledge.`
+  }
+  return locale === 'ru'
+    ? `[calm]Не смогла выполнить обязательную работу через ${target}, поэтому не буду выдавать непроверенный ответ.`
+    : `[calm]I could not complete the required work through ${target}, so I will not present an unverified answer.`
+}
+
 function safeEvidenceSource(
   item: ProjectContextPacket['evidence'][number],
 ): ProjectEvidenceSource | null {
@@ -285,6 +328,8 @@ export class Orchestrator {
       errorCode?: string
     }>,
     private conversationThreads?: ConversationThreadRuntimePort,
+    // Production composition enables this; the default preserves bounded legacy/test adapters.
+    private toolPolicy: { enforceRequirements?: boolean } = {},
   ) {}
 
   async createReply(
@@ -425,6 +470,7 @@ export class Orchestrator {
     let rawReplyText: string
     let projectContext: ProjectContextPacket | null = null
     let actionGrounding: ActionReplyGrounding | undefined
+    let turnToolEvidence: TurnToolEvidenceSummary | undefined
     try {
       let dispatcher: CharacterToolDispatcher | undefined
       const registry = (): CharacterToolRegistry =>
@@ -481,6 +527,9 @@ export class Orchestrator {
         signal: options.signal,
         requestOptions: options,
         nativeToolsRejected: this.nativeCharacterToolsRejected,
+        enforceToolRequirements: !autonomous && this.toolPolicy.enforceRequirements,
+        requirementFailureReply: (requirement, reason) =>
+          presentToolRequirementFailure(requirement, reason, locale),
         onStreamEvent: options.onStreamEvent,
         failureReply: (latestActionResult, latestVerifiedOutcome) =>
           latestActionResult
@@ -503,6 +552,7 @@ export class Orchestrator {
       })
       this.nativeCharacterToolsRejected = toolResult.nativeToolsRejected
       rawReplyText = toolResult.replyText
+      turnToolEvidence = toolResult.toolEvidence
       projectContext = toolResult.projectContext ?? null
       actionGrounding = toolResult.latestActionResult
         ? actionReplyGrounding(toolResult.latestActionResult)
@@ -515,6 +565,9 @@ export class Orchestrator {
         responseCharacters: rawReplyText.length,
         toolRounds: toolResult.rounds,
         toolCalls: toolResult.calls,
+        toolRequirement: toolResult.toolEvidence.requirement.type,
+        webSearchUsed: toolResult.toolEvidence.web.used,
+        webSearchSucceeded: toolResult.toolEvidence.web.succeeded,
         projectEvidenceCount: projectContext?.evidence.length ?? 0,
       })
     } catch (error) {
@@ -539,6 +592,7 @@ export class Orchestrator {
         assistant: {
           role: 'assistant',
           content: visibleReplyText,
+          toolEvidence: turnToolEvidence,
         },
       })
     }

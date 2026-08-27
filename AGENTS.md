@@ -216,7 +216,23 @@ Architecture and ownership:
 - Character LLM is the sole semantic owner for deciding whether to answer directly
   or call available Project, Browser, Shell/Desktop, or Memory tools. Do not add
   phrase-, keyword-, regex-, filename-, symbol-, or locale-alias routing for these
-  natural-language decisions. Absence of a tool call means no capability is needed.
+  natural-language decisions. Before an explicit user turn may produce a terminal
+  reply, the same Character LLM emits a typed Tool Requirement: direct answer,
+  required source, or explicit tool. Runtime rejects a terminal reply while a
+  required available source/tool remains unattempted; unavailable or failed required
+  work produces an honest bounded response and may not be replaced by remembered
+  knowledge.
+- Runtime-owned Turn Tool Evidence records only bounded attempted/succeeded facts.
+  Character may claim that a source was searched, checked, verified, or found only
+  when current-turn evidence reports success. The immediately previous bounded
+  summary may ground retrospective questions about actual tool use, but never
+  satisfies a current-turn source requirement and never stores raw tool payloads.
+- Tool continuation context stays bounded and requirement-relevant. Once a typed
+  source or explicit-tool requirement exists, do not keep sending unrelated tool
+  schemas. Preserve typed Action outcomes, but remove superseded Browser
+  Observations so only the latest transient observation informs the next decision.
+  A provider continuation failure must not be disguised as the presentation of an
+  earlier Action result.
 - When an executed `project.search` call participates in planning an Action, later
   tool rounds and post-action narration reuse that exact turn packet and must not
   silently rerun retrieval or snapshot resolution. The immutable response grounding preserves both the

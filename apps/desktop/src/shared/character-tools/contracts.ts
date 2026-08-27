@@ -34,6 +34,46 @@ export const CHARACTER_TOOL_IDS = [
 
 export type CharacterToolId = (typeof CHARACTER_TOOL_IDS)[number]
 
+export const CHARACTER_TOOL_SOURCE_IDS = ['web', 'project', 'memory', 'browser-state'] as const
+
+export type CharacterToolSourceId = (typeof CHARACTER_TOOL_SOURCE_IDS)[number]
+
+export const characterToolRequirementSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('direct-answer') }).strict(),
+  z
+    .object({
+      type: z.literal('required-source'),
+      source: z.enum(CHARACTER_TOOL_SOURCE_IDS),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('explicit-tool'),
+      tool: z.enum(CHARACTER_TOOL_IDS),
+    })
+    .strict(),
+])
+
+export type CharacterToolRequirement = z.infer<typeof characterToolRequirementSchema>
+
+export interface TurnToolSourceEvidence {
+  used: boolean
+  succeeded: boolean
+  resultCount?: number
+  freshestSourceAt?: number
+}
+
+/** Runtime-owned bounded facts about tool work actually attempted in one conversation turn. */
+export interface TurnToolEvidenceSummary {
+  requirement: CharacterToolRequirement
+  executedTools: readonly CharacterToolId[]
+  failedTools: readonly CharacterToolId[]
+  web: TurnToolSourceEvidence
+  project: TurnToolSourceEvidence
+  browser: TurnToolSourceEvidence
+  memory: TurnToolSourceEvidence
+}
+
 export const characterToolCallSchema = z
   .object({
     tool: z.enum(CHARACTER_TOOL_IDS),

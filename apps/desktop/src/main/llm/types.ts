@@ -1,6 +1,7 @@
 import type { AxiosInstance } from 'axios'
 
 import type { CharacterStreamDeadlines, CharacterStreamEvent } from '../../shared/character-stream'
+import type { TurnToolEvidenceSummary } from '../../shared/character-tools'
 import type { LlmCapabilities, LlmProviderId, ProviderProfile } from '../../shared/llm'
 
 export type { LlmCapabilities } from '../../shared/llm'
@@ -26,6 +27,8 @@ export interface ChatMessage {
   toolCalls?: readonly LlmToolCall[]
   toolCallId?: string
   name?: string
+  /** Main-owned metadata used only to ground later conversational claims about prior tool use. */
+  toolEvidence?: TurnToolEvidenceSummary
 }
 
 export interface LlmRequestOptions {
@@ -63,7 +66,7 @@ export interface LlmCompletion {
 
 export interface LlmCompletionOptions extends LlmRequestOptions {
   tools?: readonly LlmToolDefinition[]
-  toolChoice?: 'auto' | 'none'
+  toolChoice?: 'auto' | 'none' | 'required'
 }
 
 export interface LlmStreamOptions extends LlmCompletionOptions {

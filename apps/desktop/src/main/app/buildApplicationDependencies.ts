@@ -512,6 +512,7 @@ export function buildApplicationDependencies(): ApplicationDependencies {
         }
       },
       conversationThreads,
+      { enforceRequirements: true },
     )
   }
 

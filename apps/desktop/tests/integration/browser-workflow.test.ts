@@ -203,7 +203,8 @@ async function main(): Promise<void> {
   assert.equal(noBrowse.requests.length, 0)
   assert.equal(noBrowse.calls.length, 1)
   assert.match(actionPrompt(noBrowse.calls[0]), /Use available tools only when/)
-  assert.match(actionPrompt(noBrowse.calls[0]), /current web information/)
+  assert.match(actionPrompt(noBrowse.calls[0]), /current public-web facts/)
+  assert.match(actionPrompt(noBrowse.calls[0]), /Public-web discovery alone is web\.search work/)
   assert.equal(
     noBrowse.calls[0].some(
       (message) =>
@@ -286,14 +287,28 @@ async function main(): Promise<void> {
           content: 'Blender 4.5 LTS is the current stable release.',
         }),
       )
-      return browserResult(index, request.browserOperation)
+      const result = browserResult(index, request.browserOperation)
+      return {
+        ...result,
+        execution: result.execution
+          ? {
+              ...result.execution,
+              verification: 'unverified',
+              browser: result.execution.browser
+                ? { ...result.execution.browser, verification: 'unverified' }
+                : undefined,
+            }
+          : undefined,
+      }
     },
   })
   // Once a browser mutation has executed, a failed continuation is contained
-  // without replaying provider generation and risking a duplicate action.
+  // without replaying provider generation and risking a duplicate action. The
+  // reply must still identify the provider failure instead of presenting the
+  // preceding Action result as if it explained why the answer stopped.
   assert.equal(retried.calls.length, 2)
   assert.equal(retried.requests.length, 1)
-  assert.match(retried.replyText, /fixture\.test/)
+  assert.match(retried.replyText, /не могу связаться с моделью/u)
 
   const rejectedObservationContinuation = await scenario({
     userText: 'Что сейчас открыто в браузере?',
@@ -392,6 +407,12 @@ async function main(): Promise<void> {
   )
   assert.equal(new Set(multiStep.scopeIds).size, 1)
   assert.match(multiStep.replyText, /42 credits/)
+  const finalMultiStepContext = multiStep.calls[3]
+    .map((message) => String(message.content))
+    .join('\n')
+  assert.match(finalMultiStepContext, /Product X costs 42 credits\./u)
+  assert.doesNotMatch(finalMultiStepContext, /Catalog home|Products: X/u)
+  assert.equal(finalMultiStepContext.match(/## Character Tool Results/gu)?.length, 1)
 
   const form = observation(20, {
     content: 'Search form',

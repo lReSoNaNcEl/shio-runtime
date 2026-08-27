@@ -34,7 +34,7 @@ export interface ChatRunConfig {
   maxTokensOverride?: number
   requestTimeoutMs?: number
   tools?: readonly LlmToolDefinition[]
-  toolChoice?: 'auto' | 'none'
+  toolChoice?: 'auto' | 'none' | 'required'
 }
 
 const DEFAULT_TEMPERATURE = 0.7
