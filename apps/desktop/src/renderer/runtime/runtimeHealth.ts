@@ -38,7 +38,6 @@ export function formatRelativeTime(
 export function pluginHealthSeverity(plugin: RuntimePluginHealth): HealthSeverity {
   if (plugin.lifecycle === 'error' || plugin.health.state === 'error') return 'error'
   if (plugin.health.state === 'degraded') return 'degraded'
-  if (plugin.health.state === 'needs-setup' || plugin.lifecycle !== 'active') return 'notice'
   return 'healthy'
 }
 
@@ -89,7 +88,7 @@ export function buildRuntimeHealthProjection(
   state: ControllerState,
   support: RuntimeSupportBundle | null,
 ): RuntimeHealthProjection {
-  const streamingEnabled = state.continuousListeningState !== 'off'
+  const streamingEnabled = state.continuousListening.desired
   const components: RuntimeHealthComponent[] = [
     {
       id: 'speech',
@@ -110,7 +109,8 @@ export function buildRuntimeHealthProjection(
     {
       id: 'streaming',
       category: 'runtime',
-      severity: state.continuousListeningState === 'error' ? 'error' : 'healthy',
+      severity:
+        streamingEnabled && state.continuousListening.transport === 'failed' ? 'error' : 'healthy',
       enabled: streamingEnabled,
       titleKey: 'health.streaming.title',
       summaryKey: streamingEnabled ? 'health.streaming.running' : 'health.streaming.off',
@@ -167,12 +167,8 @@ export function buildRuntimeHealthProjection(
   components.push({
     id: 'alive-runtime',
     category: 'runtime',
-    severity: !alive.health.operational
-      ? 'error'
-      : alive.globallySuspended || alive.mode === 'off'
-        ? 'notice'
-        : 'healthy',
-    enabled: alive.mode !== 'off',
+    severity: alive.health.operational ? 'healthy' : 'error',
+    enabled: true,
     titleKey: 'health.alive.title',
     summaryKey: !alive.health.operational
       ? 'health.alive.unavailable'

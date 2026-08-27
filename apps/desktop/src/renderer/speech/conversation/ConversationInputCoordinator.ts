@@ -11,7 +11,10 @@ import { isDefaultMicrophone, type StreamingModeId } from '../../audio/microphon
 import { semanticEarTuning } from '../../avatar/tuning/motionTuning'
 import type { ChatMsg, ControllerState } from '../../controller/contracts'
 import { AttentionEngine } from '../../conversation/admission/AttentionEngine'
-import { BacklogSelector } from '../../conversation/admission/BacklogSelector'
+import {
+  BacklogSelector,
+  type BacklogSelectorDiagnostics,
+} from '../../conversation/admission/BacklogSelector'
 import {
   ConversationAdmissionCoordinator,
   type ConversationAdmissionOutcome,
@@ -40,6 +43,8 @@ import type {
   AdmittedConversationTurn,
   BufferedUtterance,
   ChatSubmissionResult,
+  ContinuousListeningProjection,
+  ContinuousListeningRuntimeProjection,
   ContinuousListeningSettings,
   ConversationCompletionResult,
   ConversationExecutionPhase,
@@ -132,6 +137,7 @@ export class ConversationInputCoordinator {
   private conversationSessionResetPending = false
   private attentionGeneration = 0
   private pendingAttentionUtteranceIds = new Set<string>()
+  private continuousCommandGeneration = 0
 
   constructor(private readonly dependencies: ConversationInputCoordinatorDependencies) {
     this.backlogSelector = new BacklogSelector(async (items, backlogVersion, config) => {
@@ -244,21 +250,28 @@ export class ConversationInputCoordinator {
     settings: ContinuousListeningSettings,
     persist = true,
   ): Promise<void> {
-    if (persist) this.desiredContinuousListening = settings.enabled
-    this.continuousSettings = { ...settings }
+    const generation = ++this.continuousCommandGeneration
+    this.desiredContinuousListening = settings.enabled
+    this.continuousSettings = { ...settings, enabled: false }
+    this.patchContinuousProjection({
+      ...this.dependencies.getControllerState().continuousListening,
+      desired: settings.enabled,
+    })
     if (!settings.enabled) {
       this.cancelPendingAttention()
+      this.conversationAdmission.setContinuousEnabled(false)
       this.bargeInPolicy.reset()
       this.bargeInSegments.clear()
       this.streamingSessionId = null
+      await this.dependencies.speechInputRuntime.setContinuousListening(false)
+      if (generation !== this.continuousCommandGeneration) return
+      if (persist) await this.persistContinuousTuning(settings)
+      return
     }
-    this.conversationAdmission.setContinuousEnabled(settings.enabled)
+    this.conversationAdmission.setContinuousEnabled(false)
     const config = await this.dependencies.getConfig()
+    if (generation !== this.continuousCommandGeneration) return
     this.conversationAdmission.configureSelector(config.llm.roles.backlogSelector)
-    this.dependencies.patchControllerState({
-      continuousListeningState: settings.enabled ? 'starting' : 'off',
-      continuousListeningError: '',
-    })
     try {
       await this.dependencies.speechInputRuntime.setContinuousListening(
         settings.enabled,
@@ -271,34 +284,22 @@ export class ConversationInputCoordinator {
           )
         },
       )
-      this.dependencies.patchControllerState({
-        continuousListeningEnabled: settings.enabled,
-        continuousListeningState: settings.enabled ? 'on' : 'off',
-      })
+      if (generation !== this.continuousCommandGeneration) return
+      this.continuousSettings.enabled = settings.enabled
+      this.conversationAdmission.setContinuousEnabled(settings.enabled)
     } catch (error) {
+      if (generation !== this.continuousCommandGeneration) return
       this.continuousSettings.enabled = false
       this.conversationAdmission.setContinuousEnabled(false)
-      this.dependencies.patchControllerState({
-        continuousListeningEnabled: false,
-        continuousListeningState: 'error',
-        continuousListeningError: this.dependencies.getMicrophoneAccessFailedMessage(),
-      })
       throw error
     }
-    if (persist) {
-      await this.dependencies.saveConfig({
-        continuousListeningReplyCooldownMs: String(settings.replyCooldownMs),
-        continuousListeningFollowUpWindowMs: String(settings.followUpWindowMs),
-        continuousListeningCuriosityChance: String(settings.curiosityChance),
-      })
-    }
+    if (persist) await this.persistContinuousTuning(settings)
   }
 
   async toggleContinuousListening(): Promise<void> {
     const state = this.dependencies.getControllerState()
-    if (state.continuousListeningState === 'starting') return
     if (state.microphoneGate.status !== 'closed') return
-    if (this.continuousSettings.enabled) {
+    if (state.continuousListening.desired) {
       await this.applyContinuousSettings({ ...this.continuousSettings, enabled: false })
       return
     }
@@ -313,15 +314,30 @@ export class ConversationInputCoordinator {
     this.bargeInPolicy.reset()
     this.bargeInSegments.clear()
     this.streamingSessionId = null
-    this.dependencies.patchControllerState({
-      continuousListeningEnabled: false,
-      continuousListeningState: 'off',
-      continuousListeningError: '',
-    })
     this.dependencies.recordRuntimeEvent(
       'Streaming Service Lost Teardown',
       `desired=${this.desiredContinuousListening}`,
     )
+  }
+
+  handleContinuousRuntimeProjection(projection: ContinuousListeningRuntimeProjection): void {
+    this.patchContinuousProjection({
+      ...projection,
+      desired: this.desiredContinuousListening,
+    })
+  }
+
+  async retryContinuousListening(): Promise<void> {
+    const projection = this.dependencies.getControllerState().continuousListening
+    if (!projection.desired || projection.transport !== 'failed') return
+    if (
+      projection.failure?.domain === 'microphone' ||
+      projection.failure?.domain === 'permission'
+    ) {
+      await this.requestStreamingStart('default')
+      return
+    }
+    await this.startStreaming('default')
   }
 
   isContinuousEnabled(): boolean {
@@ -330,6 +346,10 @@ export class ConversationInputCoordinator {
 
   getSettings(): Readonly<ContinuousListeningSettings> {
     return this.continuousSettings
+  }
+
+  getBacklogDiagnostics(): BacklogSelectorDiagnostics {
+    return this.backlogSelector.getDiagnostics()
   }
 
   dispose(): void {
@@ -358,12 +378,16 @@ export class ConversationInputCoordinator {
         enabled: true,
       })
     } catch (error) {
+      const projection = this.dependencies.getControllerState().continuousListening
+      if (!projection.desired) return
       const failure = this.dependencies.normalizeMicrophoneFailure(error)
       this.dependencies.recordRuntimeEvent('Streaming Runtime Start Failed', failure.reason)
-      this.dependencies.patchControllerState({
-        continuousListeningState: 'off',
-        continuousListeningError: '',
-      })
+      if (
+        projection.failure?.domain !== 'microphone' &&
+        projection.failure?.domain !== 'permission'
+      ) {
+        return
+      }
       const result = await this.dependencies.microphoneGate.request(
         { type: 'start-streaming', modeId },
         'runtime-start-failed',
@@ -382,10 +406,18 @@ export class ConversationInputCoordinator {
     if (!this.continuousSettings.enabled) return
     const modeId: StreamingModeId = 'default'
     this.dependencies.recordRuntimeEvent('Streaming Microphone Lost', modeId)
-    await this.applyContinuousSettings({ ...this.continuousSettings, enabled: false })
-    this.dependencies.patchControllerState({
-      continuousListeningState: 'off',
-      continuousListeningError: '',
+    const failure = this.dependencies.getControllerState().continuousListening.failure
+    const generation = ++this.continuousCommandGeneration
+    this.continuousSettings.enabled = false
+    this.conversationAdmission.setContinuousEnabled(false)
+    await this.dependencies.speechInputRuntime.setContinuousListening(false)
+    if (generation !== this.continuousCommandGeneration) return
+    this.patchContinuousProjection({
+      desired: true,
+      transport: 'failed',
+      activity: 'idle',
+      microphoneCaptured: false,
+      failure: failure ?? { domain: 'microphone', code: 'DEVICE_LOST' },
     })
     const result = await this.dependencies.microphoneGate.request(
       { type: 'start-streaming', modeId },
@@ -397,6 +429,18 @@ export class ConversationInputCoordinator {
       )
       await this.startStreaming(modeId)
     }
+  }
+
+  private patchContinuousProjection(projection: ContinuousListeningProjection): void {
+    this.dependencies.patchControllerState({ continuousListening: projection })
+  }
+
+  private async persistContinuousTuning(settings: ContinuousListeningSettings): Promise<void> {
+    await this.dependencies.saveConfig({
+      continuousListeningReplyCooldownMs: String(settings.replyCooldownMs),
+      continuousListeningFollowUpWindowMs: String(settings.followUpWindowMs),
+      continuousListeningCuriosityChance: String(settings.curiosityChance),
+    })
   }
 
   private async handleContinuousFinal(recognized: ContinuousRecognizedSpeech): Promise<void> {

@@ -1,58 +1,71 @@
-import { ActionButton, Text, Tooltip, TooltipTrigger } from '@react-spectrum/s2'
+import { Text, ToggleButton, Tooltip, TooltipTrigger } from '@react-spectrum/s2'
 import AlertTriangle from '@react-spectrum/s2/icons/AlertTriangle'
 import AudioWave from '@react-spectrum/s2/icons/AudioWave'
 import Microphone from '@react-spectrum/s2/icons/Microphone'
 import MicrophoneOff from '@react-spectrum/s2/icons/MicrophoneOff'
 
 import { useTranslation } from '../../localization/useTranslation'
-export type ListeningPresentationState = 'off' | 'starting' | 'on' | 'error'
+import { type ContinuousListeningProjection } from '../../speech/continuous-listening/types'
 
 function stateText(
-  state: ListeningPresentationState,
+  projection: ContinuousListeningProjection,
   t: ReturnType<typeof useTranslation>['t'],
 ): string {
-  switch (state) {
-    case 'on':
-      return t('streaming.state.listening')
+  if (projection.transport === 'ready') {
+    if (projection.activity === 'hearing-speech') return t('streaming.state.hearing')
+    if (projection.activity === 'recognizing') return t('streaming.state.recognizing')
+    return t('streaming.state.waiting')
+  }
+  switch (projection.transport) {
     case 'starting':
       return t('streaming.state.startingShort')
-    case 'error':
-      return t('streaming.state.error')
+    case 'reconnecting':
+      return t('streaming.state.reconnecting')
+    case 'failed':
+      return t('streaming.state.problem')
+    case 'stopping':
+      return t('streaming.state.stopping')
     default:
-      return t('streaming.state.notListening')
+      return t('streaming.state.voiceOff')
   }
 }
 
-function ListeningStatusIcon({ state }: { state: ListeningPresentationState }) {
-  if (state === 'on') return <Microphone />
-  if (state === 'error') return <AlertTriangle />
-  if (state === 'starting') return <AudioWave />
+function ListeningStatusIcon({ projection }: { projection: ContinuousListeningProjection }) {
+  if (projection.transport === 'failed') return <AlertTriangle />
+  if (
+    projection.transport === 'starting' ||
+    projection.transport === 'reconnecting' ||
+    projection.activity !== 'idle'
+  ) {
+    return <AudioWave />
+  }
+  if (projection.transport === 'ready') return <Microphone />
   return <MicrophoneOff />
 }
 
 export function ListeningControl({
-  listeningState,
+  projection,
   onToggle,
 }: {
-  listeningState: ListeningPresentationState
+  projection: ContinuousListeningProjection
   onToggle: () => void
 }) {
   const { t } = useTranslation()
-  const action =
-    listeningState === 'on' ? t('streaming.toggle.disable') : t('streaming.toggle.enable')
+  const status = stateText(projection, t)
+  const action = projection.desired ? t('streaming.toggle.disable') : t('streaming.toggle.enable')
   return (
     <TooltipTrigger delay={200}>
-      <ActionButton
-        aria-label={action}
-        aria-pressed={listeningState === 'on'}
-        isDisabled={listeningState === 'starting'}
-        onPress={onToggle}
-        UNSAFE_className={`listening-toggle streaming-${listeningState}`}
+      <ToggleButton
+        aria-label={`${t('streaming.control.label')}: ${status}. ${action}`}
+        isSelected={projection.desired}
+        isDisabled={projection.transport === 'stopping'}
+        onChange={onToggle}
+        UNSAFE_className={`listening-toggle streaming-${projection.transport} streaming-${projection.activity}`}
       >
-        <ListeningStatusIcon state={listeningState} />
-        <Text>{stateText(listeningState, t)}</Text>
-      </ActionButton>
-      <Tooltip>{action}</Tooltip>
+        <ListeningStatusIcon projection={projection} />
+        <Text>{t('streaming.control.label')}</Text>
+      </ToggleButton>
+      <Tooltip>{`${status} · ${action}`}</Tooltip>
     </TooltipTrigger>
   )
 }

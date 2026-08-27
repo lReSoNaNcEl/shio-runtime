@@ -10,8 +10,8 @@ export const BROWSER_COMPUTER_USE_MAX_ACTIONS = 1_000
 export const BROWSER_COMPUTER_USE_MAX_DURATION_MS = 30 * 60 * 1_000
 
 export const browserComputerUseStateSchema = z.enum([
-  'starting',
   'running',
+  'stopping',
   'paused',
   'waiting-user',
   'completed',
@@ -42,7 +42,7 @@ export const browserComputerUseSessionSchema = z
     stepCount: z.number().int().nonnegative(),
     actionCount: z.number().int().nonnegative(),
     authorityScopeId: z.string().min(1).max(200),
-    mode: z.enum(['semantic', 'visual', 'realtime']),
+    mode: z.enum(['semantic', 'visual']),
     activity: z.enum([
       'starting',
       'observing',
@@ -130,6 +130,7 @@ export const browserComputerUseObservationSchema = z
       })
       .strict()
       .optional(),
+    visualFingerprint: z.string().regex(/^[0-9a-f]{60}$/u),
     blocker: browserComputerUseBlockerSchema.optional(),
     capturedAt: z.number().int().nonnegative(),
   })
@@ -141,6 +142,10 @@ const decisionScope = {
   observationId: browserComputerUseObservationSchema.shape.id,
   pageId: browserComputerUseObservationSchema.shape.page.shape.id,
 }
+const visualDecisionScope = {
+  ...decisionScope,
+  visualFingerprint: browserComputerUseObservationSchema.shape.visualFingerprint,
+}
 
 export const browserComputerUseDecisionSchema = z.discriminatedUnion('type', [
   z
@@ -148,20 +153,22 @@ export const browserComputerUseDecisionSchema = z.discriminatedUnion('type', [
     .strict(),
   z
     .object({
-      ...decisionScope,
+      ...visualDecisionScope,
       type: z.literal('click'),
       x: z.number(),
       y: z.number(),
       button: z.enum(['left', 'right']).default('left'),
     })
     .strict(),
-  z.object({ ...decisionScope, type: z.literal('move'), x: z.number(), y: z.number() }).strict(),
   z
-    .object({ ...decisionScope, type: z.literal('drag'), from: pointSchema, to: pointSchema })
+    .object({ ...visualDecisionScope, type: z.literal('move'), x: z.number(), y: z.number() })
+    .strict(),
+  z
+    .object({ ...visualDecisionScope, type: z.literal('drag'), from: pointSchema, to: pointSchema })
     .strict(),
   z
     .object({
-      ...decisionScope,
+      ...visualDecisionScope,
       type: z.literal('mouse-down'),
       button: z.enum(['left', 'right']),
       x: z.number(),
@@ -170,7 +177,7 @@ export const browserComputerUseDecisionSchema = z.discriminatedUnion('type', [
     .strict(),
   z
     .object({
-      ...decisionScope,
+      ...visualDecisionScope,
       type: z.literal('mouse-up'),
       button: z.enum(['left', 'right']),
       x: z.number(),
@@ -231,6 +238,15 @@ export const browserComputerUseDecisionSchema = z.discriminatedUnion('type', [
     .strict(),
 ])
 export type BrowserComputerUseDecision = z.infer<typeof browserComputerUseDecisionSchema>
+
+export const browserCompletionAssessmentSchema = z
+  .object({
+    status: z.enum(['satisfied', 'not-satisfied', 'uncertain']),
+    confidence: z.number().min(0).max(1),
+    evidenceSummary: z.string().trim().min(1).max(500).optional(),
+  })
+  .strict()
+export type BrowserCompletionAssessment = z.infer<typeof browserCompletionAssessmentSchema>
 
 export const computerUseNotableObservationSchema = z
   .object({

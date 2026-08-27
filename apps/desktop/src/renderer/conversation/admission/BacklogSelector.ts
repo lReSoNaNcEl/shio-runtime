@@ -24,6 +24,18 @@ export type BacklogArbitrator = (
   config: BacklogSelectorLlmConfig,
 ) => Promise<BacklogSelectionResult>
 
+export interface BacklogSelectorDiagnostics {
+  ambiguousQueues: number
+  llmArbitrations: number
+  deterministicSelections: number
+  timeouts: number
+  fallbacks: number
+  cancelled: number
+  averageArbitrationLatencyMs: number
+}
+
+class BacklogArbitrationTimeoutError extends Error {}
+
 const priorityRank: Record<BufferedUtterance['priorityClass'], number> = {
   P0: 0,
   P1: 1,
@@ -39,13 +51,28 @@ export class BacklogSelector {
   private arbitrationInFlight = false
   private arbitrationId = 0
   private generation = 0
+  private diagnostics: BacklogSelectorDiagnostics = {
+    ambiguousQueues: 0,
+    llmArbitrations: 0,
+    deterministicSelections: 0,
+    timeouts: 0,
+    fallbacks: 0,
+    cancelled: 0,
+    averageArbitrationLatencyMs: 0,
+  }
+  private arbitrationLatencyTotalMs = 0
 
   constructor(private readonly arbitrate?: BacklogArbitrator) {}
 
   cancel(): void {
+    if (this.arbitrationInFlight) this.diagnostics.cancelled += 1
     this.generation += 1
     this.arbitrationId += 1
     this.arbitrationInFlight = false
+  }
+
+  getDiagnostics(): BacklogSelectorDiagnostics {
+    return { ...this.diagnostics }
   }
 
   async select(
@@ -59,8 +86,10 @@ export class BacklogSelector {
       return this.discard(version, 'streaming_disabled_or_empty')
 
     const clearWinner = this.unambiguousHighPriorityWinner(items)
-    if (clearWinner)
+    if (clearWinner) {
+      this.diagnostics.deterministicSelections += 1
       return this.withSimpleMerge(clearWinner, items, version, 'deterministic_high_priority')
+    }
 
     const llmConfig = {
       ...context.llm,
@@ -68,6 +97,8 @@ export class BacklogSelector {
       model: context.llm.model.trim(),
     }
     const arbitrate = this.arbitrate
+    const ambiguous = this.selectionIsAmbiguous(items)
+    if (ambiguous) this.diagnostics.ambiguousQueues += 1
     const llmEligible =
       llmConfig.enabled &&
       Boolean(llmConfig.providerId && llmConfig.model) &&
@@ -75,13 +106,15 @@ export class BacklogSelector {
       llmConfig.minimumConfidence >= 0 &&
       llmConfig.minimumConfidence <= 1 &&
       items.length >= 2 &&
-      this.selectionIsAmbiguous(items) &&
+      ambiguous &&
       !this.arbitrationInFlight &&
       Boolean(arbitrate)
     if (llmEligible && arbitrate) {
       const generation = ++this.generation
       const arbitrationId = ++this.arbitrationId
       this.arbitrationInFlight = true
+      this.diagnostics.llmArbitrations += 1
+      const startedAt = performance.now()
       try {
         const result = await this.withTimeout(
           Promise.resolve().then(() => arbitrate(items, version, llmConfig)),
@@ -92,7 +125,7 @@ export class BacklogSelector {
           result.backlogVersion !== version ||
           generation !== this.generation
         ) {
-          return this.deterministic(backlog.snapshot(), backlog.getVersion(), 'stale_llm_fallback')
+          return this.fallback(backlog.snapshot(), backlog.getVersion(), 'stale_llm_fallback')
         }
         const snapshotIds = new Set(items.map((item) => item.id))
         const validIds = result.selectedIds.every((id) => snapshotIds.has(id) && backlog.has(id))
@@ -105,10 +138,15 @@ export class BacklogSelector {
                 : result.selectedIds.length >= 2)
         if (result.confidence >= llmConfig.minimumConfidence && validIds && validAction)
           return result
-        return this.deterministic(items, version, 'low_confidence_or_schema_fallback')
-      } catch {
-        return this.deterministic(backlog.snapshot(), backlog.getVersion(), 'llm_error_fallback')
+        return this.fallback(items, version, 'low_confidence_or_schema_fallback')
+      } catch (error) {
+        if (error instanceof BacklogArbitrationTimeoutError) this.diagnostics.timeouts += 1
+        return this.fallback(backlog.snapshot(), backlog.getVersion(), 'llm_error_fallback')
       } finally {
+        this.arbitrationLatencyTotalMs += performance.now() - startedAt
+        this.diagnostics.averageArbitrationLatencyMs = Math.round(
+          this.arbitrationLatencyTotalMs / this.diagnostics.llmArbitrations,
+        )
         if (arbitrationId === this.arbitrationId) this.arbitrationInFlight = false
       }
     }
@@ -120,9 +158,19 @@ export class BacklogSelector {
     version: number,
     reason: string,
   ): BacklogSelectionResult {
+    this.diagnostics.deterministicSelections += 1
     if (items.length === 0) return this.discard(version, reason)
     const sorted = [...items].sort((a, b) => this.compareItems(a, b))
     return this.withSimpleMerge(sorted[0], items, version, reason)
+  }
+
+  private fallback(
+    items: readonly BufferedUtterance[],
+    version: number,
+    reason: string,
+  ): BacklogSelectionResult {
+    this.diagnostics.fallbacks += 1
+    return this.deterministic(items, version, reason)
   }
 
   private unambiguousHighPriorityWinner(
@@ -203,7 +251,7 @@ export class BacklogSelector {
 
   private withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
     return new Promise<T>((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error('Backlog arbitration timeout')), timeoutMs)
+      const timer = setTimeout(() => reject(new BacklogArbitrationTimeoutError()), timeoutMs)
       promise.then(
         (value) => {
           clearTimeout(timer)

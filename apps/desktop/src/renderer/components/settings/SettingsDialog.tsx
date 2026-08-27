@@ -21,8 +21,7 @@ export function SettingsDialog({
   overlayViewModeProjection,
   llmHealth,
   voiceWarmup,
-  continuousListeningState,
-  onToggleContinuousListening,
+  continuousListening,
   onOverlayVisibleChange,
   onToggleOverlay,
 }: SettingsDialogProps) {
@@ -34,8 +33,7 @@ export function SettingsDialog({
     overlayViewModeProjection,
     llmHealth,
     voiceWarmup,
-    continuousListeningState,
-    onToggleContinuousListening,
+    continuousListening,
     onOverlayVisibleChange,
     onToggleOverlay,
   })

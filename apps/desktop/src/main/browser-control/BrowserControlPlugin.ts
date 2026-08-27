@@ -261,8 +261,7 @@ export class BrowserControlPlugin implements BundledPlugin {
   }
 
   async emergencyStop(): Promise<void> {
-    await this.dependencies.computerUse.dispose()
-    await this.dependencies.browser.close()
+    await this.dependencies.computerUse.emergencyStop()
     this.publishChanged()
   }
 

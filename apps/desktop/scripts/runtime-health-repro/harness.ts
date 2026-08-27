@@ -97,10 +97,11 @@ async function pluginFiltering(): Promise<void> {
 
     plugin.setHealth('needs-setup')
     enabled = await runtime.listEnabledHealth()
-    assert.equal(pluginHealthSeverity(enabled[0]), 'notice')
+    assert.equal(pluginHealthSeverity(enabled[0]), 'healthy')
     assert.equal(
       aggregateHealth([{ enabled: true, severity: pluginHealthSeverity(enabled[0]) }]),
-      'notice',
+      'healthy',
+      'optional setup readiness must not become an application health warning',
     )
 
     await runtime.disable(PROJECT_AWARENESS_PLUGIN_ID)
@@ -151,24 +152,24 @@ function relativeTimeSemantics(): void {
 }
 
 async function staticUiContract(): Promise<void> {
-  const [view, css, app, shell, supportHook] = await Promise.all([
-    source('src/renderer/components/views/RuntimeHealthView.tsx'),
-    source('src/renderer/styles/health.css'),
+  const [system, diagnostics, app, appShell, status, supportHook] = await Promise.all([
+    source('src/renderer/components/diagnostics/SystemDiagnostics.tsx'),
+    source('src/renderer/components/views/DiagnosticsView.tsx'),
     source('src/renderer/components/App.tsx'),
+    source('src/renderer/components/shell/AppShell.tsx'),
     source('src/renderer/components/shell/RuntimeStatusIndicator.tsx'),
     source('src/renderer/hooks/useRuntimeSupportBundle.ts'),
   ])
-  assert.doesNotMatch(view, /PROJECT_AWARENESS|projectAwareness|health\.project/)
-  assert.doesNotMatch(view, /InlineAlert|health\.alert/)
-  assert.doesNotMatch(view, /<(?:button|details|summary)(?:\s|>)/)
-  assert.doesNotMatch(view, /<Heading level=\{1\}/)
-  assert.match(view, /projection\.plugins\.map/)
-  assert.match(view, /alive-runtime/)
-  assert.match(view, /@react-spectrum\/s2/)
-  assert.match(css, /repeat\(auto-fit, minmax/)
-  assert.match(css, /width: min\(100%, 1040px\)/)
+  await assert.rejects(source('src/renderer/components/views/RuntimeHealthView.tsx'))
+  assert.doesNotMatch(app, /RuntimeHealthView|section === 'health'/)
+  assert.doesNotMatch(appShell, /id: 'health'|onSectionChange\('health'\)/)
+  assert.match(system, /buildRuntimeHealthProjection/)
+  assert.match(diagnostics, /SystemDiagnostics/)
   assert.match(app, /buildRuntimeHealthProjection/)
-  assert.match(shell, /runtime-status-label/)
+  assert.match(status, /<Popover/)
+  assert.match(status, /issues\.map/)
+  assert.match(status, /openDiagnostics/)
+  assert.match(status, /copyReport/)
   assert.match(supportHook, /const RUNTIME_SUPPORT_REFRESH_MS = 30_000/)
   assert.match(supportHook, /setInterval\([\s\S]*?RUNTIME_SUPPORT_REFRESH_MS\)/)
 }

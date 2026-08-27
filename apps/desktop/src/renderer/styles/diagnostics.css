@@ -1,5 +1,48 @@
 /* diagnostics feature stylesheet. Keep feature-owned rules out of base.css. */
 
+.diagnostics-system,
+.diagnostics-streaming {
+  display: grid;
+  gap: 16px;
+}
+
+.diagnostics-system-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.diagnostics-system-component {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  background: var(--surface-subtle);
+}
+
+.diagnostics-streaming-counters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+  margin: 0;
+}
+
+.diagnostics-streaming-counters > div {
+  padding: 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+}
+
+.diagnostics-streaming-counters dt {
+  color: var(--text-dim);
+}
+
+.diagnostics-streaming-counters dd {
+  margin: 4px 0 0;
+  font-size: 1.25rem;
+}
+
 .diagnostics-view {
   display: grid;
   gap: 16px;

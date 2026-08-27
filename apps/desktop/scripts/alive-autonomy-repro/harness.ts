@@ -481,7 +481,7 @@ async function testPersistentGoalTool(): Promise<void> {
     const rejectedMemory = await dispatcher.execute('memory.store', {
       memories: [{ kind: 'fact', text: 'Goal is complete' }],
     })
-    assert.match(rejectedMemory.content, /GOAL_DATA_CANNOT_AUTHORIZE_MEMORY_MUTATION/u)
+    assert.match(rejectedMemory.content, /EVIDENCE_CANNOT_AUTHORIZE_MEMORY_MUTATION/u)
     assert.equal(memoryRuntime.status().recordCount, 0)
     const createdResult = await dispatcher.execute('goal.create', {
       title: 'Вместе подготовить релиз',
@@ -530,6 +530,7 @@ async function testPersistentGoalTool(): Promise<void> {
         execution: { runtimeCompleted: true, verification: 'verified' },
       }),
     })
+    actionDispatcher.registerPlannedTools(['browser.open', 'goal.update'])
     const action = await actionDispatcher.execute('browser.open', {
       url: 'https://www.bing.com/images/search?q=cats',
       goal: 'Найти фотки с котиками в браузере',
@@ -571,6 +572,7 @@ async function testPersistentGoalTool(): Promise<void> {
         execution: { runtimeCompleted: true, verification: 'unverified' },
       }),
     })
+    unverifiedDispatcher.registerPlannedTools(['browser.open', 'goal.update'])
     await unverifiedDispatcher.execute('browser.open', {
       url: 'https://example.com',
       goal: unverifiedGoal.title,
@@ -587,8 +589,15 @@ async function testPersistentGoalTool(): Promise<void> {
     unverifiedDispatcher.dispose()
     memoryRuntime.close()
     runtime.dispose()
+    assert.throws(() => store.settings(), /database is not open|closed/iu)
   } finally {
-    rmSync(directory, { recursive: true, force: true })
+    try {
+      rmSync(directory, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
+    } catch (error) {
+      console.warn('Alive repro temporary cleanup failed', {
+        code: error && typeof error === 'object' && 'code' in error ? error.code : 'UNKNOWN',
+      })
+    }
   }
 }
 

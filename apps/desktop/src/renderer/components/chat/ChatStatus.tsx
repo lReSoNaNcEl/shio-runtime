@@ -10,8 +10,11 @@ function deriveChatStatus(
   state: ControllerState,
   t: LocalizationContextValue['t'],
 ): { variant: StatusVariant; label: string } {
-  if (state.continuousListeningState === 'error') {
+  if (state.continuousListening.desired && state.continuousListening.transport === 'failed') {
     return { variant: 'negative', label: t('chat.status.error') }
+  }
+  if (state.continuousListening.transport === 'reconnecting') {
+    return { variant: 'notice', label: t('streaming.state.reconnecting') }
   }
   switch (state.status) {
     case 'listening':

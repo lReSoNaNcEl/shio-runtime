@@ -8,6 +8,34 @@
   white-space: nowrap;
 }
 
+.system-status-popover {
+  width: min(420px, calc(100vw - 32px));
+}
+
+.system-status-healthy,
+.system-status-issues {
+  display: grid;
+  gap: 12px;
+  padding-block: 12px;
+}
+
+.system-status-issue {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+}
+
+.system-status-issue > div {
+  display: grid;
+  gap: 4px;
+}
+
+.system-status-actions {
+  padding-top: 12px;
+  border-top: 1px solid var(--border-subtle);
+}
+
 .sidebar-item {
   display: flex;
   align-items: center;

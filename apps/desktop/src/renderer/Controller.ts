@@ -163,9 +163,12 @@ export class Controller {
     vrmConfigured: false,
     vrmLoaded: false,
     faceTrackingEnabled: false,
-    continuousListeningEnabled: false,
-    continuousListeningState: 'off',
-    continuousListeningError: '',
+    continuousListening: {
+      desired: false,
+      transport: 'off',
+      activity: 'idle',
+      microphoneCaptured: false,
+    },
     overlayState: 'off',
     overlayCameraMode: 'bust',
     overlayError: '',
@@ -185,6 +188,7 @@ export class Controller {
     getSpeechTimeline: () => this.speechRuntime.getSpeechTimeline(),
     getSpeechPolishDebugState: () => this.speechRuntime.getSpeechPolishDebugState(),
     getMicrophoneGateDebug: () => this.microphoneGate.getDebugState(),
+    getBacklogDiagnostics: () => this.conversationInput.getBacklogDiagnostics(),
     isAvatarLoaded: () => this.avatarRuntime.isLoaded(),
     createId: () => nextId(),
     now: () => Date.now(),
@@ -274,6 +278,9 @@ export class Controller {
     this.speechInputRuntime.setStreamingServiceLostHandler((error) =>
       this.handleStreamingServiceLost(error),
     )
+    this.speechInputRuntime.setContinuousLifecycleHandler((projection) =>
+      this.conversationInput.handleContinuousRuntimeProjection(projection),
+    )
   }
 
   private t(key: TranslationKey, params?: TranslationParams): string {
@@ -316,9 +323,6 @@ export class Controller {
         ...this.state.llmHealth,
         detail: this.t(this.llmHealthDetailKey),
       }
-    }
-    if (this.state.continuousListeningState === 'error') {
-      patch.continuousListeningError = this.t('controller.microphoneAccessFailed')
     }
     this.set(patch)
   }
@@ -951,6 +955,10 @@ export class Controller {
 
   async toggleContinuousListening(): Promise<void> {
     await this.conversationInput.toggleContinuousListening()
+  }
+
+  async retryContinuousListening(): Promise<void> {
+    await this.conversationInput.retryContinuousListening()
   }
 
   /** Begin a one-shot voice recording (device already validated by the guard). */

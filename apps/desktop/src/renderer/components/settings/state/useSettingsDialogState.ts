@@ -36,8 +36,7 @@ interface SettingsDialogStateOptions {
   overlayViewModeProjection: OverlayViewMode
   llmHealth: SettingsDialogViewModel['llm']['state']['health']
   voiceWarmup: SettingsDialogViewModel['speech']['state']['voiceWarmup']
-  continuousListeningState: SettingsDialogViewModel['speech']['state']['continuousListeningState']
-  onToggleContinuousListening: () => void
+  continuousListening: SettingsDialogViewModel['speech']['state']['continuousListening']
   onOverlayVisibleChange: (visible: boolean) => void
   onToggleOverlay: (visible: boolean) => void | Promise<void>
 }
@@ -53,8 +52,7 @@ export function useSettingsDialogState({
   overlayViewModeProjection,
   llmHealth,
   voiceWarmup,
-  continuousListeningState,
-  onToggleContinuousListening,
+  continuousListening,
   onOverlayVisibleChange,
   onToggleOverlay,
 }: SettingsDialogStateOptions): SettingsDialogViewModel {
@@ -617,7 +615,7 @@ export function useSettingsDialogState({
         microphones: mics,
         microphoneId: micId,
         voiceWarmup,
-        continuousListeningState,
+        continuousListening,
         microphoneTestState,
         microphoneLevel,
       },
@@ -629,7 +627,6 @@ export function useSettingsDialogState({
         },
         recordMicrophoneTest,
         playMicrophoneTest,
-        toggleContinuousListening: onToggleContinuousListening,
       },
     },
     llm: {

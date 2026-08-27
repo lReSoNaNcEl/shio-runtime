@@ -2,6 +2,7 @@ import type { AvatarRuntimeHealth, CharacterState, RuntimeEvent } from '../../sh
 import type { SpeechPolishDebugState } from '../../shared/speech'
 import type { AudioPlayer } from '../audio/audioPlayer'
 import type { MicrophoneGateDebugState } from '../audio/microphoneGateTypes'
+import type { BacklogSelectorDiagnostics } from '../conversation/admission/BacklogSelector'
 import type { AvatarRuntimeDebugState } from '../runtime/AvatarRuntime'
 import {
   type RuntimeHealth,
@@ -22,6 +23,7 @@ export interface RuntimeDiagnosticsDependencies {
   getSpeechTimeline(): SpeechStateTimelineEntry[]
   getSpeechPolishDebugState(): SpeechPolishDebugState
   getMicrophoneGateDebug(): MicrophoneGateDebugState
+  getBacklogDiagnostics(): BacklogSelectorDiagnostics
   isAvatarLoaded(): boolean
   createId(): string
   now(): number
@@ -68,6 +70,8 @@ export class RuntimeDiagnosticsProjection {
     const micGate = this.dependencies.getMicrophoneGateDebug()
     return {
       appStatus: state.status,
+      continuousListening: state.continuousListening,
+      backlogArbitration: this.dependencies.getBacklogDiagnostics(),
       avatarRuntimeHealth: this.dependencies.getAvatarRuntimeHealth(),
       characterState: this.dependencies.getCharacterState(),
       eventHistory: this.dependencies.getEventHistory(),

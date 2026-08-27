@@ -1,4 +1,5 @@
 import type {
+  BrowserCompletionAssessment,
   BrowserComputerUseDecision,
   BrowserComputerUseObservation,
   BrowserVisualControlState,
@@ -25,4 +26,8 @@ export interface BrowserVisualActionAdapter {
     context: BrowserComputerUseDecisionContext,
     signal: AbortSignal,
   ): Promise<BrowserComputerUseDecision>
+  verifyCompletion(
+    context: { goal: string; observation: BrowserComputerUseObservation },
+    signal: AbortSignal,
+  ): Promise<BrowserCompletionAssessment>
 }

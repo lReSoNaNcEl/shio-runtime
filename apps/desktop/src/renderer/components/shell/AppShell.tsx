@@ -15,7 +15,6 @@ import Bug from '@react-spectrum/s2/icons/Bug'
 import Calendar from '@react-spectrum/s2/icons/Calendar'
 import Chat from '@react-spectrum/s2/icons/Chat'
 import Discover from '@react-spectrum/s2/icons/Discover'
-import Heart from '@react-spectrum/s2/icons/Heart'
 import More from '@react-spectrum/s2/icons/More'
 import Settings from '@react-spectrum/s2/icons/Settings'
 import User from '@react-spectrum/s2/icons/User'
@@ -23,8 +22,8 @@ import { type ReactNode, useEffect, useRef, useState } from 'react'
 
 import { useTranslation } from '../../localization/useTranslation'
 import { observeRendererPromise } from '../../reliability/observePromise'
-import { type ApplicationHealth } from '../../runtime/runtimeHealth'
-import { RuntimeStatusIndicator } from './RuntimeStatusIndicator'
+import { type ApplicationHealth, type RuntimeHealthProjection } from '../../runtime/runtimeHealth'
+import { RuntimeStatusIndicator, type SystemStatusActions } from './RuntimeStatusIndicator'
 
 export type AppSection =
   | 'chat'
@@ -33,7 +32,6 @@ export type AppSection =
   | 'tasks'
   | 'avatar'
   | 'plugins'
-  | 'health'
   | 'debug'
   | 'settings'
 
@@ -41,6 +39,8 @@ export function AppShell({
   section,
   onSectionChange,
   health,
+  runtimeHealth,
+  systemStatusActions,
   developerModeEnabled,
   children,
   heading,
@@ -52,6 +52,8 @@ export function AppShell({
   section: AppSection
   onSectionChange: (section: AppSection) => void
   health: { state: ApplicationHealth; text: string }
+  runtimeHealth: RuntimeHealthProjection
+  systemStatusActions: SystemStatusActions
   developerModeEnabled: boolean
   children: ReactNode
   heading?: ReactNode
@@ -113,7 +115,6 @@ export function AppShell({
         ]
       : []),
     { id: 'plugins', label: t('app.nav.plugins'), icon: <Apps /> },
-    { id: 'health', label: t('app.nav.health'), icon: <Heart /> },
   ]
   const utility: NavigationItem[] = [
     ...(developerModeEnabled
@@ -216,7 +217,11 @@ export function AppShell({
             <div className="section-header-actions">
               <div id="action-runtime-status-slot" className="action-runtime-status-slot" />
               {headerAction}
-              <RuntimeStatusIndicator health={health} onPress={() => onSectionChange('health')} />
+              <RuntimeStatusIndicator
+                health={health}
+                projection={runtimeHealth}
+                actions={systemStatusActions}
+              />
             </div>
           </header>
         )}

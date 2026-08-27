@@ -32,7 +32,7 @@ import { useScreenContextAttachment } from './useScreenContextAttachment'
 interface Props {
   state: ControllerState
   gateOpen?: boolean
-  onOpenHealth?: () => void
+  onOpenSpeechSettings?: () => void
   onOpenLlmSettings?: () => void
 }
 
@@ -41,7 +41,7 @@ export interface ChatOverlayHandle {
 }
 
 export const ChatOverlay = forwardRef<ChatOverlayHandle, Props>(function ChatOverlay(
-  { state, gateOpen = false, onOpenHealth, onOpenLlmSettings },
+  { state, gateOpen = false, onOpenSpeechSettings, onOpenLlmSettings },
   ref,
 ) {
   const { locale, t } = useTranslation()
@@ -63,8 +63,12 @@ export const ChatOverlay = forwardRef<ChatOverlayHandle, Props>(function ChatOve
   const listening = state.status === 'listening'
   const capabilities = state.speechCapabilities
   const recognitionUnavailable = capabilities.recognition === 'unavailable'
+  const continuousFailure =
+    state.continuousListening.desired && state.continuousListening.transport === 'failed'
   const bannerVisible =
-    bannerCopy(capabilities, locale) !== null && dismissedIncidentId !== capabilities.incidentId
+    !continuousFailure &&
+    bannerCopy(capabilities, locale) !== null &&
+    dismissedIncidentId !== capabilities.incidentId
   const canInterrupt =
     ['thinking', 'synthesizing', 'speaking'].includes(state.status) &&
     !state.responseInterruptionPending
@@ -236,13 +240,17 @@ export const ChatOverlay = forwardRef<ChatOverlayHandle, Props>(function ChatOve
         status={state.status}
         quickActions={quickActions}
         onQuickAction={submit}
-        continuousListeningError={
-          state.continuousListeningState === 'error' ? state.continuousListeningError : undefined
-        }
+        continuousListening={state.continuousListening}
         onRetryContinuousListening={() =>
           observeRendererPromise(
-            controller.toggleContinuousListening(),
+            controller.retryContinuousListening(),
             'retry continuous listening',
+          )
+        }
+        onDisableContinuousListening={() =>
+          observeRendererPromise(
+            controller.toggleContinuousListening(),
+            'disable continuous listening',
           )
         }
       />
@@ -252,7 +260,7 @@ export const ChatOverlay = forwardRef<ChatOverlayHandle, Props>(function ChatOve
             capabilities={capabilities}
             highlight={bannerHighlight}
             onRetry={() => controller.recheckSpeechService()}
-            onOpenHealth={() => onOpenHealth?.()}
+            onOpenSpeechSettings={() => onOpenSpeechSettings?.()}
             onDismiss={() => setDismissedIncidentId(capabilities.incidentId)}
           />
         )}
@@ -299,7 +307,13 @@ export const ChatOverlay = forwardRef<ChatOverlayHandle, Props>(function ChatOve
           canInterrupt={canInterrupt}
           interruptionPending={interrupting || state.responseInterruptionPending}
           microphoneUnavailable={recognitionUnavailable}
-          microphoneDisabled={state.continuousListeningEnabled || (busy && !listening)}
+          microphoneDisabled={
+            state.continuousListening.microphoneCaptured ||
+            ['starting', 'reconnecting', 'stopping'].includes(
+              state.continuousListening.transport,
+            ) ||
+            (busy && !listening)
+          }
           onTextChange={(draft) => controller.setChatDraft(draft)}
           onSubmit={() => submit(text)}
           onAttachScreen={() => screenContext.setPickerOpen(true)}

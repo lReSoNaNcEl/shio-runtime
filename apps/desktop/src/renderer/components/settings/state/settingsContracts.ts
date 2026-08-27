@@ -28,8 +28,7 @@ export interface SettingsDialogProps {
   overlayViewModeProjection: OverlayViewMode
   llmHealth: ControllerState['llmHealth']
   voiceWarmup: ControllerState['voiceWarmup']
-  continuousListeningState: ControllerState['continuousListeningState']
-  onToggleContinuousListening: () => void
+  continuousListening: ControllerState['continuousListening']
   onOverlayVisibleChange: (visible: boolean) => void
   onToggleOverlay: (visible: boolean) => void | Promise<void>
   onClose: () => void
@@ -60,7 +59,7 @@ export interface SpeechSettingsState {
   microphones: Array<{ deviceId: string; label: string }>
   microphoneId: string
   voiceWarmup: ControllerState['voiceWarmup']
-  continuousListeningState: ControllerState['continuousListeningState']
+  continuousListening: ControllerState['continuousListening']
   microphoneTestState:
     | 'idle'
     | 'recording'
@@ -76,7 +75,6 @@ export interface SpeechSettingsActions {
   setMicrophoneId: (id: string) => void
   recordMicrophoneTest: () => Promise<void>
   playMicrophoneTest: () => Promise<void>
-  toggleContinuousListening: () => void
 }
 
 export interface LlmSettingsState {

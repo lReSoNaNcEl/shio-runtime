@@ -13,6 +13,12 @@ export type BrowserAutomationErrorCode =
   | 'COMPUTER_USE_UNAVAILABLE'
   | 'COMPUTER_USE_LIMIT_REACHED'
   | 'COMPUTER_USE_BLOCKED'
+  | 'COMPUTER_USE_FAILED'
+  | 'COMPUTER_USE_RATE_LIMITED'
+  | 'COMPUTER_USE_MODEL_TIMEOUT'
+  | 'COMPUTER_USE_MODEL_UNAVAILABLE'
+  | 'COMPUTER_USE_PROVIDER_NETWORK'
+  | 'COMPUTER_USE_COMPLETION_UNVERIFIED'
 
 const PUBLIC_MESSAGES: Record<BrowserAutomationErrorCode, string> = {
   NO_ACTIVE_SESSION: 'There is no active browser session',
@@ -29,6 +35,12 @@ const PUBLIC_MESSAGES: Record<BrowserAutomationErrorCode, string> = {
   COMPUTER_USE_UNAVAILABLE: 'Visual browser control is unavailable',
   COMPUTER_USE_LIMIT_REACHED: 'The bounded browser control session reached its limit',
   COMPUTER_USE_BLOCKED: 'Browser control requires user intervention',
+  COMPUTER_USE_FAILED: 'Visual browser control failed',
+  COMPUTER_USE_RATE_LIMITED: 'The visual browser model is temporarily rate limited',
+  COMPUTER_USE_MODEL_TIMEOUT: 'The visual browser model timed out',
+  COMPUTER_USE_MODEL_UNAVAILABLE: 'The visual browser model is unavailable',
+  COMPUTER_USE_PROVIDER_NETWORK: 'The visual browser model could not be reached',
+  COMPUTER_USE_COMPLETION_UNVERIFIED: 'Browser completion could not be verified',
 }
 
 export class BrowserAutomationError extends Error {

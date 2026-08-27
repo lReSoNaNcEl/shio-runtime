@@ -21,10 +21,12 @@ import type { TailBehaviorDebugState } from '../avatar/embodiment/secondary-moti
 import type { MouthWeights } from '../avatar/embodiment/speech/LipSync'
 import type { VrmBodyActionDebugState } from '../avatar/rendering/three/VrmModel'
 import type { OverlayViewMode } from '../avatar/tuning/cameraTuning'
+import type { BacklogSelectorDiagnostics } from '../conversation/admission/BacklogSelector'
 import type { AvatarMode, AvatarRuntime } from '../runtime/AvatarRuntime'
 import type { RuntimeHealth } from '../runtime/RuntimeStateInvariantValidator'
 import type { SpeechStateTimelineEntry } from '../runtime/SpeechRuntime'
 import type { SpeechCapabilitiesState } from '../runtime/speechCapabilities'
+import type { ContinuousListeningProjection } from '../speech/continuous-listening/types'
 
 export type AppStatus =
   | 'idle'
@@ -72,9 +74,7 @@ export interface ControllerState {
   vrmConfigured: boolean
   vrmLoaded: boolean
   faceTrackingEnabled: boolean
-  continuousListeningEnabled: boolean
-  continuousListeningState: 'off' | 'starting' | 'on' | 'error'
-  continuousListeningError: string
+  continuousListening: ContinuousListeningProjection
   overlayState: 'off' | 'opening' | 'on' | 'closing' | 'error'
   overlayCameraMode: OverlayViewMode
   overlayError: string
@@ -93,6 +93,8 @@ export interface RuntimeTimelineEvent {
 
 export interface RuntimeDebugSnapshot {
   appStatus: AppStatus
+  continuousListening: ContinuousListeningProjection
+  backlogArbitration: BacklogSelectorDiagnostics
   avatarRuntimeHealth: AvatarRuntimeHealth
   characterState: CharacterState
   eventHistory: readonly RuntimeEvent[]

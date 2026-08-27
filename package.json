@@ -22,6 +22,7 @@
     "desktop:security:repro": "npm --prefix apps/desktop run repro:desktop-security",
     "desktop:reliability:repro": "npm --prefix apps/desktop run repro:desktop-reliability",
     "desktop:speech-reliability:repro": "npm --prefix apps/desktop run repro:speech-reliability",
+    "desktop:stability-hardening:repro": "npm --prefix apps/desktop run repro:stability-hardening",
     "desktop:ui:repro": "npm --prefix apps/desktop run repro:desktop-ui-architecture",
     "desktop:architecture-ownership:repro": "npm --prefix apps/desktop run repro:architecture-ownership",
     "desktop:main-application-services:repro": "npm --prefix apps/desktop run repro:main-application-services",

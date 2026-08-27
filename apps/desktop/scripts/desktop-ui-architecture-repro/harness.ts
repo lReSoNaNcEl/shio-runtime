@@ -70,7 +70,6 @@ function assertCssOwnership(): void {
     'capabilities',
     'settings',
     'avatar-preview',
-    'health',
     'plugins',
     'diagnostics',
   ]) {
@@ -83,7 +82,6 @@ function assertCssOwnership(): void {
     'capabilities',
     'settings',
     'avatar-preview',
-    'health',
     'plugins',
     'diagnostics',
   ]) {
@@ -92,9 +90,11 @@ function assertCssOwnership(): void {
 }
 
 function assertViewHierarchy(): void {
-  const health = source('src/renderer/components/views/RuntimeHealthView.tsx')
-  assert.doesNotMatch(health, /health-dashboard-title|health-dashboard-subtitle/)
-  assert.match(health, /health-dashboard-toolbar/)
+  const status = source('src/renderer/components/shell/RuntimeStatusIndicator.tsx')
+  const systemDiagnostics = source('src/renderer/components/views/DiagnosticsView.tsx')
+  assert.match(status, /system-status-popover/)
+  assert.match(status, /issues\.map/)
+  assert.match(systemDiagnostics, /SystemDiagnostics/)
 
   const avatar = source('src/renderer/components/views/AvatarPreviewView.tsx')
   for (const ownedRegion of [
@@ -169,7 +169,10 @@ function assertViewHierarchy(): void {
   assert.match(capabilityStyles, /repeat\(auto-fill, minmax\(min\(100%, 420px\), 1fr\)\)/)
   assert.match(capabilityStyles, /min-height: 158px/)
 
-  const diagnostics = source('src/renderer/components/views/DiagnosticsView.tsx')
+  const diagnostics =
+    source('src/renderer/components/views/DiagnosticsView.tsx') +
+    source('src/renderer/components/diagnostics/EventsDiagnostics.tsx') +
+    source('src/renderer/components/diagnostics/NetworkDiagnostics.tsx')
   assert.match(diagnostics, /pausedNetworkRequests/)
   assert.match(diagnostics, /diagnostics\.stream\.live/)
   assert.match(diagnostics, /copyDiagnostic/)

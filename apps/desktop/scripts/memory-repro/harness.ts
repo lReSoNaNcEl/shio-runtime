@@ -404,12 +404,13 @@ async function recoverableProviderRequestsRetryOnce(root: string): Promise<void>
 
   const boundedRuntime = createSemanticMemoryRuntime(join(root, 'recoverable-bounded.sqlite'))
   const boundedProvider = new RecoverableFallbackProvider(2)
-  await assert.rejects(
-    createOrchestrator(boundedProvider, new MemoryToolBroker(boundedRuntime)).createReply(
-      { userText: 'Сколько будет 5!?' },
-      { traceId: 'turn-recoverable-bounded' },
-    ),
-    (error: unknown) => error instanceof LlmResponseError && error.code === 'NETWORK_ERROR',
+  const boundedReply = await createOrchestrator(
+    boundedProvider,
+    new MemoryToolBroker(boundedRuntime),
+  ).createReply({ userText: 'Сколько будет 5!?' }, { traceId: 'turn-recoverable-bounded' })
+  assert.equal(
+    boundedReply.replyText,
+    '[calm]Я тебя слышу, но сейчас не могу связаться с моделью. Попробуй ещё раз чуть позже.',
   )
   assert.equal(boundedProvider.calls, 2)
   boundedRuntime.close()

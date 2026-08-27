@@ -1,25 +1,37 @@
-import { createHash, randomUUID } from 'node:crypto'
-import { mkdir } from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
 
-import { type BrowserContext, chromium, type Locator, type Page } from 'playwright-core'
+import type { BrowserContext, chromium, Page } from 'playwright-core'
 
 import type {
   BrowserComputerUseDecision,
   BrowserComputerUseObservation,
 } from '../../../shared/browser-computer-use'
-import {
-  BROWSER_OBSERVATION_CONTENT_MAX_CHARS,
-  BROWSER_OBSERVATION_MAX_INTERACTIVE_ELEMENTS,
-  type BrowserInteractiveElement,
-  type BrowserInteractiveRole,
-  type BrowserObservation,
-  type BrowserSessionState,
-  type BrowserTab,
-  type BrowserTarget,
+import type {
+  BrowserObservation,
+  BrowserSessionState,
+  BrowserTab,
+  BrowserTarget,
 } from '../../../shared/browser-control'
 import type { BrowserExecutionEvidence } from '../../action/executionEvidence'
 import { mainLog } from '../../logging/safeLogger'
 import { BrowserAutomationError, type BrowserAutomationErrorCode } from '../errors'
+import { launchOwnedBrowserContext } from './PlaywrightBrowserLifecycle'
+import {
+  captureFingerprintImage,
+  capturePlaywrightComputerUseObservation,
+} from './PlaywrightComputerUseObserver'
+import { PlaywrightInputController } from './PlaywrightInputController'
+import { PlaywrightPageRegistry } from './PlaywrightPageRegistry'
+import { type PlaywrightRefBinding, PlaywrightRefRegistry } from './PlaywrightRefRegistry'
+import {
+  capturePlaywrightSemanticSnapshot,
+  combinedSemanticSnapshot,
+  normalizedSemanticName,
+  playwrightSensitiveValues,
+  sanitizeBrowserText,
+} from './PlaywrightSemanticObserver'
+import { redactSensitiveValues } from './PlaywrightSensitiveElements'
+import { createVisualFingerprint, visualFingerprintChanged } from './PlaywrightVisualFingerprint'
 
 export interface BrowserInteractionResult {
   evidence: BrowserExecutionEvidence
@@ -32,114 +44,6 @@ export interface PlaywrightBrowserAdapterOptions {
   now?: () => number
   createId?: () => string
   launchPersistentContext?: typeof chromium.launchPersistentContext
-}
-
-interface RefBinding {
-  observationId: string
-  pageId: string
-  locator: Locator
-  element: BrowserInteractiveElement
-}
-
-const INTERACTIVE_SELECTOR = [
-  'button',
-  'a[href]',
-  'input:not([type="hidden"])',
-  'textarea',
-  'select',
-  '[role="button"]',
-  '[role="link"]',
-  '[role="textbox"]',
-  '[role="checkbox"]',
-  '[role="radio"]',
-  '[role="combobox"]',
-  '[role="tab"]',
-  '[role="menuitem"]',
-  '[contenteditable="true"]',
-].join(',')
-
-const SENSITIVE_SELECTOR = [
-  'input[type="password"]',
-  'input[autocomplete="current-password"]',
-  'input[autocomplete="new-password"]',
-  'input[autocomplete="one-time-code"]',
-  'input[autocomplete="cc-number"]',
-  'input[autocomplete="cc-csc"]',
-  'input[name*="token" i]',
-  'textarea[name*="token" i]',
-].join(',')
-
-function sanitizeText(value: string, maximum = BROWSER_OBSERVATION_CONTENT_MAX_CHARS): string {
-  let sanitized = ''
-  for (const character of value) {
-    const codePoint = character.codePointAt(0) ?? 0
-    if (codePoint === 9 || codePoint === 10 || codePoint === 13 || codePoint >= 32) {
-      if (codePoint !== 127) sanitized += character
-    }
-  }
-  return sanitized
-    .replace(/\r\n?/gu, '\n')
-    .replace(/\n{4,}/gu, '\n\n\n')
-    .trim()
-    .slice(0, maximum)
-}
-
-function combinedSemanticSnapshot(
-  ariaSnapshot: string,
-  elements: readonly BrowserInteractiveElement[],
-): string {
-  return sanitizeText(
-    [
-      ariaSnapshot,
-      'Semantic refs:',
-      ...elements.map(
-        (element) =>
-          `${element.ref} ${element.role}${element.name ? ` ${element.name}` : ''}${element.disabled ? ' disabled' : ''}`,
-      ),
-    ].join('\n'),
-    16_000,
-  )
-}
-
-function normalizeRole(
-  rawRole: string | null,
-  tagName: string,
-  inputType: string,
-): BrowserInteractiveRole {
-  const role = rawRole?.trim().toLowerCase()
-  if (
-    role &&
-    ['button', 'link', 'textbox', 'checkbox', 'radio', 'combobox', 'tab', 'menuitem'].includes(role)
-  ) {
-    return role as BrowserInteractiveRole
-  }
-  if (tagName === 'button') return 'button'
-  if (tagName === 'a') return 'link'
-  if (tagName === 'select') return 'combobox'
-  if (tagName === 'textarea') return 'textbox'
-  if (tagName === 'input') {
-    if (inputType === 'checkbox') return 'checkbox'
-    if (inputType === 'radio') return 'radio'
-    return 'textbox'
-  }
-  return 'other'
-}
-
-function normalizedName(value: string): string {
-  return value.normalize('NFKC').trim().replace(/\s+/gu, ' ').toLocaleLowerCase()
-}
-
-function fingerprint(observation: BrowserObservation): string {
-  return createHash('sha256')
-    .update(
-      JSON.stringify({
-        url: observation.url,
-        title: observation.title,
-        content: observation.content,
-        interactiveElements: observation.interactiveElements,
-      }),
-    )
-    .digest('hex')
 }
 
 function validHttpUrl(value: string): string {
@@ -155,15 +59,16 @@ function validHttpUrl(value: string): string {
 
 export class PlaywrightBrowserAdapter {
   private context: BrowserContext | null = null
-  private activePage: Page | null = null
   private session: BrowserSessionState | null = null
   private observation: BrowserObservation | null = null
   private computerUseObservation: BrowserComputerUseObservation | null = null
-  private readonly pageIds = new WeakMap<Page, string>()
-  private readonly boundPages = new WeakSet<Page>()
-  private readonly refs = new Map<string, RefBinding>()
-  private readonly heldKeys = new Set<string>()
-  private readonly heldButtons = new Set<'left' | 'right'>()
+  private readonly normalRefs = new PlaywrightRefRegistry()
+  private readonly computerUseRefs = new PlaywrightRefRegistry()
+  private readonly input = new PlaywrightInputController()
+  private readonly pages = new PlaywrightPageRegistry(
+    () => this.createId(),
+    () => this.invalidateObservation(),
+  )
   private queue: Promise<void> = Promise.resolve()
 
   constructor(private readonly options: PlaywrightBrowserAdapterOptions) {}
@@ -248,7 +153,7 @@ export class PlaywrightBrowserAdapter {
       const page = context.pages().find((candidate) => this.pageId(candidate) === pageId)
       if (!page) throw new BrowserAutomationError('TARGET_NOT_FOUND')
       const before = this.observationSnapshot() ?? undefined
-      this.activePage = page
+      this.pages.setActive(page)
       await page.bringToFront()
       this.invalidateObservation()
       const observation = await this.captureSemanticObservation(page, false, signal)
@@ -322,48 +227,16 @@ export class PlaywrightBrowserAdapter {
   ): Promise<BrowserComputerUseObservation> {
     return this.enqueue(async () => {
       const page = await this.ensurePage(signal)
-      const semantic = await this.captureSemanticObservation(page, false, signal)
-      const viewport = await page.evaluate(() => ({ width: innerWidth, height: innerHeight }))
-      const ariaSnapshot = await page
-        .locator('body')
-        .ariaSnapshot({ timeout: 10_000 })
-        .catch(() => '')
-      const blocker = await this.detectBlocker(page)
-      const visual = includeVisual
-        ? {
-            mimeType: 'image/jpeg' as const,
-            bytes: new Uint8Array(
-              await page.screenshot({
-                type: 'jpeg',
-                quality: 70,
-                scale: 'css',
-                animations: 'disabled',
-                caret: 'hide',
-                mask: [page.locator(SENSITIVE_SELECTOR)],
-                timeout: 15_000,
-              }),
-            ),
-          }
-        : undefined
-      const observation: BrowserComputerUseObservation = {
-        id: `browser-use-observation-${this.createId()}`,
-        page: {
-          id: this.pageId(page),
-          url: semantic.url,
-          title: semantic.title ?? '',
-        },
-        viewport,
-        semantic:
-          ariaSnapshot || semantic.interactiveElements.length > 0
-            ? {
-                ariaSnapshot: combinedSemanticSnapshot(ariaSnapshot, semantic.interactiveElements),
-                interactiveCount: semantic.interactiveElements.length,
-              }
-            : undefined,
-        visual,
-        blocker,
-        capturedAt: this.now(),
-      }
+      this.invalidateNormalObservation()
+      const semantic = await this.captureSemanticSnapshot(page, false, signal)
+      const captured = await capturePlaywrightComputerUseObservation(page, semantic, {
+        includeVisual,
+        pageId: this.pageId(page),
+        now: () => this.now(),
+        createId: () => this.createId(),
+      })
+      const { observation } = captured
+      this.computerUseRefs.replace(observation.id, observation.page.id, captured.refBindings)
       this.computerUseObservation = observation
       return observation
     })
@@ -396,112 +269,75 @@ export class PlaywrightBrowserAdapter {
         currentViewport.width !== current.viewport.width ||
         currentViewport.height !== current.viewport.height ||
         (current.semantic &&
-          combinedSemanticSnapshot(currentAria, this.observation?.interactiveElements ?? []) !==
-            current.semantic.ariaSnapshot)
+          combinedSemanticSnapshot(
+            redactSensitiveValues(currentAria, await playwrightSensitiveValues(page)),
+            this.computerUseRefs.values(current.id).map((binding) => binding.element),
+          ) !== current.semantic.ariaSnapshot)
       ) {
         this.invalidateObservation()
         throw new BrowserAutomationError('TARGET_STALE')
       }
-      this.assertCoordinates(decision, current)
-      switch (decision.type) {
-        case 'click-ref':
-          await this.refForComputerUse(decision.ref, current).locator.click({ timeout: 15_000 })
-          break
-        case 'fill-ref':
-          await this.refForComputerUse(decision.ref, current).locator.fill(decision.text, {
-            timeout: 15_000,
-          })
-          break
-        case 'click':
-          await page.mouse.click(decision.x, decision.y, { button: decision.button })
-          break
-        case 'move':
-          await page.mouse.move(decision.x, decision.y)
-          break
-        case 'drag':
-          await page.mouse.move(decision.from.x, decision.from.y)
-          await page.mouse.down()
-          this.heldButtons.add('left')
-          try {
-            await page.mouse.move(decision.to.x, decision.to.y, { steps: 10 })
-          } finally {
-            await page.mouse.up().catch(() => undefined)
-            this.heldButtons.delete('left')
-          }
-          break
-        case 'mouse-down':
-          await page.mouse.move(decision.x, decision.y)
-          await page.mouse.down({ button: decision.button })
-          this.heldButtons.add(decision.button)
-          break
-        case 'mouse-up':
-          await page.mouse.move(decision.x, decision.y)
-          await page.mouse.up({ button: decision.button })
-          this.heldButtons.delete(decision.button)
-          break
-        case 'scroll':
-          await page.mouse.wheel(decision.dx, decision.dy)
-          break
-        case 'key':
-          await page.keyboard.press(decision.key)
-          break
-        case 'key-down':
-          await page.keyboard.down(decision.key)
-          this.heldKeys.add(decision.key)
-          break
-        case 'key-up':
-          await page.keyboard.up(decision.key)
-          this.heldKeys.delete(decision.key)
-          break
-        case 'type':
-          await page.keyboard.type(decision.text)
-          break
-        case 'navigate':
-          await page.goto(validHttpUrl(decision.url), {
-            waitUntil: 'domcontentloaded',
-            timeout: 30_000,
-          })
-          break
-        case 'back':
-          await page.goBack({ waitUntil: 'domcontentloaded', timeout: 30_000 })
-          break
-        case 'forward':
-          await page.goForward({ waitUntil: 'domcontentloaded', timeout: 30_000 })
-          break
-        case 'switch-tab': {
-          const target = this.context
-            ?.pages()
-            .find((candidate) => this.pageId(candidate) === decision.targetPageId)
-          if (!target) throw new BrowserAutomationError('TARGET_NOT_FOUND')
-          this.activePage = target
-          await target.bringToFront()
-          break
+      if (isCoordinateDecision(decision)) {
+        if (decision.visualFingerprint !== current.visualFingerprint) {
+          this.invalidateObservation()
+          throw new BrowserAutomationError('TARGET_STALE')
         }
-        case 'wait':
-          await this.wait(decision.durationMs, signal)
-          break
-        case 'request-user':
-        case 'done':
-          return
+        const currentVisualFingerprint = await createVisualFingerprint(
+          await captureFingerprintImage(page),
+        )
+        if (visualFingerprintChanged(current.visualFingerprint, currentVisualFingerprint)) {
+          this.invalidateObservation()
+          throw new BrowserAutomationError('TARGET_STALE')
+        }
       }
+      this.input.assertCoordinates(decision, current)
+      if (this.input.isDirectInput(decision)) {
+        await this.input.execute(page, decision)
+      } else
+        switch (decision.type) {
+          case 'click-ref':
+            await this.refForComputerUse(decision.ref, current).locator.click({ timeout: 15_000 })
+            break
+          case 'fill-ref':
+            await this.refForComputerUse(decision.ref, current).locator.fill(decision.text, {
+              timeout: 15_000,
+            })
+            break
+          case 'navigate':
+            await page.goto(validHttpUrl(decision.url), {
+              waitUntil: 'domcontentloaded',
+              timeout: 30_000,
+            })
+            break
+          case 'back':
+            await page.goBack({ waitUntil: 'domcontentloaded', timeout: 30_000 })
+            break
+          case 'forward':
+            await page.goForward({ waitUntil: 'domcontentloaded', timeout: 30_000 })
+            break
+          case 'switch-tab': {
+            const target = this.context
+              ?.pages()
+              .find((candidate) => this.pageId(candidate) === decision.targetPageId)
+            if (!target) throw new BrowserAutomationError('TARGET_NOT_FOUND')
+            this.pages.setActive(target)
+            await target.bringToFront()
+            break
+          }
+          case 'wait':
+            await this.wait(decision.durationMs, signal)
+            break
+          case 'request-user':
+          case 'done':
+            return
+        }
       this.invalidateObservation()
-      await this.denyNotifications(this.activePage ?? page)
+      await this.denyNotifications(this.pages.activePage() ?? page)
     })
   }
 
   async releaseInputs(): Promise<void> {
-    const page = this.activePage
-    if (!page || page.isClosed()) {
-      this.heldButtons.clear()
-      this.heldKeys.clear()
-      return
-    }
-    await Promise.allSettled([
-      ...[...this.heldKeys].map((key) => page.keyboard.up(key)),
-      ...[...this.heldButtons].map((button) => page.mouse.up({ button })),
-    ])
-    this.heldButtons.clear()
-    this.heldKeys.clear()
+    await this.input.release(this.pages.activePage())
   }
 
   close(): Promise<void> {
@@ -509,7 +345,7 @@ export class PlaywrightBrowserAdapter {
       await this.releaseInputs()
       const context = this.context
       this.context = null
-      this.activePage = null
+      this.pages.reset()
       this.invalidateObservation()
       if (context)
         await context.close().catch((error) =>
@@ -524,30 +360,19 @@ export class PlaywrightBrowserAdapter {
   private async ensureContext(): Promise<BrowserContext> {
     if (this.context) return this.context
     if (!this.options.executablePath) throw new BrowserAutomationError('BROWSER_UNAVAILABLE')
-    await mkdir(this.options.profileDirectory, { recursive: true })
-    const launch =
-      this.options.launchPersistentContext ?? chromium.launchPersistentContext.bind(chromium)
     try {
-      const context = await launch(this.options.profileDirectory, {
-        executablePath: this.options.executablePath,
-        headless: false,
-        acceptDownloads: false,
-        viewport: null,
-        args: ['--deny-permission-prompts'],
-      })
-      context.setDefaultTimeout(15_000)
-      context.setDefaultNavigationTimeout(30_000)
+      const context = await launchOwnedBrowserContext(this.options)
       context.on('page', (page) => {
-        this.bindPage(page)
-        this.activePage = page
+        this.pages.bind(page)
+        this.pages.setActive(page)
       })
       context.on('close', () => {
         if (this.context === context) this.context = null
-        this.activePage = null
+        this.pages.reset()
         this.invalidateObservation()
       })
       this.context = context
-      for (const page of context.pages()) this.bindPage(page)
+      for (const page of context.pages()) this.pages.bind(page)
       const now = this.now()
       this.session = {
         sessionId: `browser-session-${this.createId()}`,
@@ -564,13 +389,10 @@ export class PlaywrightBrowserAdapter {
   private async ensurePage(signal?: AbortSignal): Promise<Page> {
     this.throwIfAborted(signal)
     const context = await this.ensureContext()
-    let page =
-      this.activePage && !this.activePage.isClosed()
-        ? this.activePage
-        : context.pages().find((candidate) => !candidate.isClosed())
+    let page = this.pages.activePage() ?? context.pages().find((candidate) => !candidate.isClosed())
     if (!page) page = await context.newPage()
-    this.activePage = page
-    this.bindPage(page)
+    this.pages.setActive(page)
+    this.pages.bind(page)
     await page.bringToFront()
     await this.denyNotifications(page)
     return page
@@ -581,111 +403,59 @@ export class PlaywrightBrowserAdapter {
     preserveIdWhenUnchanged: boolean,
     signal?: AbortSignal,
   ): Promise<BrowserObservation> {
-    this.throwIfAborted(signal)
-    const previous = this.observation
-    const base = page.locator(INTERACTIVE_SELECTOR)
-    const inspected = await base.evaluateAll((elements) =>
-      elements
-        .slice(0, 400)
-        .map((element, index) => {
-          const html = element as HTMLElement
-          const input = element as HTMLInputElement
-          const rect = html.getBoundingClientRect()
-          const style = getComputedStyle(html)
-          if (
-            rect.width <= 0 ||
-            rect.height <= 0 ||
-            style.visibility === 'hidden' ||
-            style.display === 'none'
-          )
-            return null
-          const tagName = html.tagName.toLowerCase()
-          const inputType = input.type?.toLowerCase?.() ?? ''
-          const rawRole = html.getAttribute('role')
-          const ariaLabel =
-            html.getAttribute('aria-label') ||
-            html.getAttribute('title') ||
-            input.placeholder ||
-            input.value
-          const text = (html.innerText || html.textContent || '').trim()
-          return {
-            index,
-            tagName,
-            inputType,
-            rawRole,
-            name: ariaLabel || text || undefined,
-            disabled: input.disabled || html.getAttribute('aria-disabled') === 'true',
-          }
-        })
-        .filter(Boolean),
+    this.invalidateComputerUseObservation()
+    const snapshot = await this.captureSemanticSnapshot(page, preserveIdWhenUnchanged, signal)
+    this.normalRefs.replace(
+      snapshot.observation.observationId,
+      this.pageId(page),
+      snapshot.refBindings,
     )
-    const elements: BrowserInteractiveElement[] = []
-    this.refs.clear()
-    for (const candidate of inspected as Array<{
-      index: number
-      tagName: string
-      inputType: string
-      rawRole: string | null
-      name?: string
-      disabled?: boolean
-    }>) {
-      if (elements.length >= BROWSER_OBSERVATION_MAX_INTERACTIVE_ELEMENTS) break
-      const ref = `e${elements.length + 1}`
-      const element: BrowserInteractiveElement = {
-        ref,
-        role: normalizeRole(candidate.rawRole, candidate.tagName, candidate.inputType),
-        ...(candidate.name ? { name: sanitizeText(candidate.name, 500) } : {}),
-        ...(candidate.disabled ? { disabled: true } : {}),
-      }
-      elements.push(element)
-      this.refs.set(ref, {
-        observationId: '',
-        pageId: this.pageId(page),
-        locator: base.nth(candidate.index),
-        element,
-      })
+    this.observation = snapshot.observation
+    return snapshot.observation
+  }
+
+  /** Immediately tears down the exact owned context without waiting behind the operation queue. */
+  async forceAbort(): Promise<void> {
+    const context = this.context
+    this.context = null
+    this.pages.reset()
+    this.input.reset()
+    this.invalidateObservation()
+    if (context) {
+      await context.close().catch((error) =>
+        mainLog.warn('[BrowserControl] forced Playwright abort failed', {
+          code: error instanceof Error ? error.name : 'Error',
+        }),
+      )
     }
-    const bodyText = sanitizeText(
-      await page
-        .locator('body')
-        .innerText({ timeout: 10_000 })
-        .catch(() => ''),
-    )
-    const capturedAt = this.now()
-    let observation: BrowserObservation = {
-      observationId: `browser-observation-${this.createId()}`,
-      sessionId: this.session?.sessionId ?? `browser-session-${this.createId()}`,
-      url: page.url(),
-      title: sanitizeText(await page.title().catch(() => ''), 1_000) || undefined,
-      capturedAt,
-      content: bodyText,
-      interactiveElements: elements,
-      truncated:
-        bodyText.length >= BROWSER_OBSERVATION_CONTENT_MAX_CHARS ||
-        (inspected as unknown[]).length > elements.length,
-    }
-    if (preserveIdWhenUnchanged && previous && fingerprint(previous) === fingerprint(observation)) {
-      observation = { ...observation, observationId: previous.observationId }
-    }
-    for (const binding of this.refs.values()) binding.observationId = observation.observationId
-    this.observation = observation
-    const tabs = await this.listTabs(signal)
-    this.session = {
-      ...(this.session ?? { sessionId: observation.sessionId, openedAt: capturedAt }),
-      status: 'ready',
-      currentUrl: observation.url,
-      currentTitle: observation.title,
-      activeTabId: this.pageId(page),
-      updatedAt: capturedAt,
-    }
-    if (!tabs.some((tab) => tab.active)) this.session.activeTabId = this.pageId(page)
-    return observation
+    if (this.session) this.session = { ...this.session, status: 'closed', updatedAt: this.now() }
+  }
+
+  private async captureSemanticSnapshot(
+    page: Page,
+    preserveIdWhenUnchanged: boolean,
+    signal?: AbortSignal,
+  ): Promise<{
+    observation: BrowserObservation
+    refBindings: readonly Omit<PlaywrightRefBinding, 'observationId' | 'pageId'>[]
+  }> {
+    const snapshot = await capturePlaywrightSemanticSnapshot(page, {
+      previous: this.observation,
+      preserveIdWhenUnchanged,
+      session: this.session,
+      pageId: this.pageId(page),
+      now: () => this.now(),
+      createId: () => this.createId(),
+      signal,
+    })
+    this.session = snapshot.session
+    return snapshot
   }
 
   private mutateTarget(
     operation: 'click' | 'fill' | 'select',
     target: BrowserTarget,
-    mutate: (binding: RefBinding) => Promise<unknown>,
+    mutate: (binding: PlaywrightRefBinding) => Promise<unknown>,
     signal?: AbortSignal,
   ): Promise<BrowserInteractionResult> {
     return this.enqueue(async () => {
@@ -706,28 +476,34 @@ export class PlaywrightBrowserAdapter {
     })
   }
 
-  private resolveTarget(target: BrowserTarget, observation: BrowserObservation): RefBinding {
+  private resolveTarget(
+    target: BrowserTarget,
+    observation: BrowserObservation,
+  ): PlaywrightRefBinding {
     if (target.kind === 'semantic-ref') {
-      const binding = this.refs.get(target.ref)
-      if (!binding || binding.observationId !== observation.observationId)
-        throw new BrowserAutomationError('TARGET_NOT_FOUND')
+      const binding = this.normalRefs.get(target.ref, observation.observationId)
+      if (!binding) throw new BrowserAutomationError('TARGET_NOT_FOUND')
       return binding
     }
-    const matches = [...this.refs.values()].filter(
-      (binding) =>
-        binding.element.role === target.role &&
-        binding.element.name &&
-        normalizedName(binding.element.name) === normalizedName(target.name),
-    )
+    const matches = this.normalRefs
+      .values(observation.observationId)
+      .filter(
+        (binding) =>
+          binding.element.role === target.role &&
+          binding.element.name &&
+          normalizedSemanticName(binding.element.name) === normalizedSemanticName(target.name),
+      )
     if (matches.length === 0) throw new BrowserAutomationError('TARGET_NOT_FOUND')
     if (matches.length > 1) throw new BrowserAutomationError('TARGET_AMBIGUOUS')
     return matches[0]
   }
 
-  private refForComputerUse(ref: string, observation: BrowserComputerUseObservation): RefBinding {
-    const binding = this.refs.get(ref)
-    if (!binding || binding.pageId !== observation.page.id)
-      throw new BrowserAutomationError('TARGET_NOT_FOUND')
+  private refForComputerUse(
+    ref: string,
+    observation: BrowserComputerUseObservation,
+  ): PlaywrightRefBinding {
+    const binding = this.computerUseRefs.get(ref, observation.id, observation.page.id)
+    if (!binding) throw new BrowserAutomationError('TARGET_NOT_FOUND')
     return binding
   }
 
@@ -757,8 +533,8 @@ export class PlaywrightBrowserAdapter {
         .map(async (page) => ({
           tabId: this.pageId(page),
           ...(page.url().startsWith('http') ? { url: page.url() } : {}),
-          title: sanitizeText(await page.title().catch(() => ''), 1_000) || undefined,
-          active: page === this.activePage,
+          title: sanitizeBrowserText(await page.title().catch(() => ''), 1_000) || undefined,
+          active: page === this.pages.activePage(),
         })),
     )
   }
@@ -780,42 +556,6 @@ export class PlaywrightBrowserAdapter {
     }
   }
 
-  private async detectBlocker(page: Page) {
-    const visible = async (selector: string): Promise<boolean> => {
-      const locator = page.locator(selector)
-      return (
-        (await locator.count()) > 0 &&
-        (await locator
-          .first()
-          .isVisible()
-          .catch(() => false))
-      )
-    }
-    if (
-      await visible(
-        'iframe[src*="recaptcha"],iframe[src*="hcaptcha"],.g-recaptcha,.h-captcha,.cf-turnstile',
-      )
-    )
-      return 'captcha' as const
-    if (await visible('input[autocomplete="one-time-code"]')) return 'two-factor' as const
-    if (await visible('input[autocomplete="cc-number"],input[autocomplete="cc-csc"]'))
-      return 'payment-confirmation' as const
-    if (
-      await visible(
-        '[data-password-manager-dialog],[aria-label*="password manager" i],[aria-label*="менеджер паролей" i]',
-      )
-    )
-      return 'password-manager' as const
-    if (await visible('[data-shio-secure-desktop-blocker]')) return 'secure-desktop' as const
-    if (
-      await visible(
-        'input[type="password"],input[autocomplete="current-password"],input[autocomplete="new-password"]',
-      )
-    )
-      return 'authentication' as const
-    return undefined
-  }
-
   private async denyNotifications(page: Page): Promise<void> {
     if (!this.context || !page.url().startsWith('http')) return
     try {
@@ -832,54 +572,23 @@ export class PlaywrightBrowserAdapter {
     }
   }
 
-  private assertCoordinates(
-    decision: BrowserComputerUseDecision,
-    observation: BrowserComputerUseObservation,
-  ): void {
-    const points: Array<{ x: number; y: number }> = []
-    if ('x' in decision && 'y' in decision) points.push({ x: decision.x, y: decision.y })
-    if (decision.type === 'drag') points.push(decision.from, decision.to)
-    for (const point of points) {
-      if (
-        !Number.isFinite(point.x) ||
-        !Number.isFinite(point.y) ||
-        point.x < 0 ||
-        point.y < 0 ||
-        point.x > observation.viewport.width ||
-        point.y > observation.viewport.height
-      ) {
-        throw new BrowserAutomationError('INPUT_FAILED')
-      }
-    }
-  }
-
   private pageId(page: Page): string {
-    let id = this.pageIds.get(page)
-    if (!id) {
-      id = `browser-page-${this.createId()}`
-      this.pageIds.set(page, id)
-    }
-    return id
-  }
-
-  private bindPage(page: Page): void {
-    if (this.boundPages.has(page)) return
-    this.boundPages.add(page)
-    this.pageId(page)
-    page.on('close', () => {
-      if (this.activePage === page) this.activePage = null
-      this.invalidateObservation()
-    })
-    page.on('domcontentloaded', () => this.invalidateObservation())
-    page.on('framenavigated', (frame) => {
-      if (frame === page.mainFrame()) this.invalidateObservation()
-    })
+    return this.pages.id(page)
   }
 
   private invalidateObservation(): void {
+    this.invalidateNormalObservation()
+    this.invalidateComputerUseObservation()
+  }
+
+  private invalidateNormalObservation(): void {
     this.observation = null
+    this.normalRefs.clear()
+  }
+
+  private invalidateComputerUseObservation(): void {
     this.computerUseObservation = null
-    this.refs.clear()
+    this.computerUseRefs.clear()
   }
 
   private normalizeError(
@@ -929,4 +638,13 @@ export class PlaywrightBrowserAdapter {
     )
     return task
   }
+}
+
+function isCoordinateDecision(
+  decision: BrowserComputerUseDecision,
+): decision is Extract<
+  BrowserComputerUseDecision,
+  { type: 'click' | 'move' | 'drag' | 'mouse-down' | 'mouse-up' }
+> {
+  return ['click', 'move', 'drag', 'mouse-down', 'mouse-up'].includes(decision.type)
 }

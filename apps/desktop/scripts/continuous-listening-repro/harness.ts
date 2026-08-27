@@ -10,7 +10,12 @@ import {
   ConversationRuntime,
   type ConversationRuntimeDeps,
 } from '../../src/renderer/runtime/ConversationRuntime'
+import { SpeechInputRuntime } from '../../src/renderer/runtime/SpeechInputRuntime'
 import { BargeInPolicy } from '../../src/renderer/speech/continuous-listening/BargeInPolicy'
+import {
+  ASR_STREAM_MAX_JSON_MESSAGE_CHARS,
+  parseAsrStreamEvent,
+} from '../../src/renderer/speech/continuous-listening/StreamingAsrClient'
 import {
   isExplicitBargeInPhrase,
   textSimilarity,
@@ -21,7 +26,10 @@ import type {
 } from '../../src/renderer/speech/continuous-listening/types'
 import { UtteranceBacklog } from '../../src/renderer/speech/continuous-listening/UtteranceBacklog'
 import { UtteranceChunkBuilder } from '../../src/renderer/speech/continuous-listening/UtteranceChunkBuilder'
-import { resolveContinuousAttention } from '../../src/renderer/speech/conversation/ConversationInputCoordinator'
+import {
+  ConversationInputCoordinator,
+  resolveContinuousAttention,
+} from '../../src/renderer/speech/conversation/ConversationInputCoordinator'
 
 let now = Date.now()
 const flush = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0))
@@ -88,6 +96,142 @@ const enabledLlm = {
 }
 
 async function main(): Promise<void> {
+  assert.deepEqual(parseAsrStreamEvent('{'), {
+    ok: false,
+    code: 'ASR_PROTOCOL_INVALID_JSON',
+  })
+  assert.deepEqual(parseAsrStreamEvent(new ArrayBuffer(4)), {
+    ok: false,
+    code: 'ASR_PROTOCOL_NON_TEXT',
+  })
+  assert.deepEqual(parseAsrStreamEvent('x'.repeat(ASR_STREAM_MAX_JSON_MESSAGE_CHARS + 1)), {
+    ok: false,
+    code: 'ASR_PROTOCOL_MESSAGE_TOO_LARGE',
+  })
+  assert.equal(parseAsrStreamEvent(JSON.stringify({ type: 'ready', protocolVersion: 2 })).ok, false)
+  assert.equal(
+    parseAsrStreamEvent(
+      JSON.stringify({
+        type: 'partial',
+        sessionId: 's',
+        segmentId: 'p',
+        revision: 1,
+        text: 'x'.repeat(16_001),
+        startMs: 0,
+        endMs: 1,
+        confidence: 2,
+      }),
+    ).ok,
+    false,
+  )
+  assert.equal(
+    parseAsrStreamEvent(
+      JSON.stringify({
+        type: 'ready',
+        protocolVersion: 1,
+        sessionId: 'session',
+        acceptedSampleRate: 16_000,
+      }),
+    ).ok,
+    true,
+  )
+
+  // Turning voice mode off while connection discovery is still pending cancels
+  // that exact generation. A late start result cannot recapture the microphone
+  // or replace the stable `off` projection.
+  {
+    const connection = deferred<{ baseUrl: string }>()
+    const projections: Array<{ transport: string; microphoneCaptured: boolean }> = []
+    ;(globalThis as unknown as { window: unknown }).window = {
+      api: {
+        config: {
+          get: async () => ({ ttsLanguage: 'ru' }),
+        },
+        asr: {
+          getStreamingConnection: () => connection.promise,
+        },
+      },
+      clearTimeout,
+      setTimeout,
+    }
+    const runtime = new SpeechInputRuntime({
+      speechRuntime: {},
+      characterState: { get: () => ({ mode: 'idle' }) },
+      speechState: {},
+      presentation: {},
+      events: { publish: () => undefined },
+      setStatus: () => undefined,
+      pushMessage: () => undefined,
+      formatMicrophoneUnavailable: (error) => error,
+      emptyRecordingMessage: () => '',
+      recordRuntimeEvent: () => undefined,
+      reportSpeechServiceError: () => undefined,
+    } as never)
+    runtime.setContinuousLifecycleHandler((projection) => projections.push(projection))
+    const start = runtime.setContinuousListening(true)
+    await flush()
+    assert.equal(projections.at(-1)?.transport, 'starting')
+    await runtime.setContinuousListening(false)
+    assert.equal(projections.at(-1)?.transport, 'off')
+    connection.resolve({ baseUrl: 'http://127.0.0.1:8000' })
+    await start
+    assert.equal(projections.at(-1)?.transport, 'off')
+    assert.equal(
+      projections.some((projection) => projection.microphoneCaptured),
+      false,
+    )
+    runtime.dispose()
+  }
+
+  // Coordinator disable is cancellation-first: it must not wait on an unrelated
+  // configuration read before aborting the active SpeechInput lifecycle.
+  {
+    const calls: string[] = []
+    const projection = {
+      desired: true,
+      transport: 'starting' as const,
+      activity: 'idle' as const,
+      microphoneCaptured: false,
+    }
+    const coordinator = new ConversationInputCoordinator({
+      speechInputRuntime: {
+        setContinuousListening: async (enabled: boolean) => {
+          calls.push(enabled ? 'start' : 'stop')
+        },
+      },
+      conversationRuntime: {},
+      microphoneGate: {},
+      presentation: {},
+      getControllerState: () => ({ continuousListening: projection }),
+      getCharacterState: () => ({}),
+      patchControllerState: () => undefined,
+      pushMessage: () => undefined,
+      recordRuntimeEvent: () => undefined,
+      publishRuntimeEvent: () => undefined,
+      getConfig: async () => {
+        calls.push('config')
+        throw new Error('disable must not read config')
+      },
+      saveConfig: async () => ({ ok: true }),
+      arbitrateBacklog: async () => ({ ok: false }),
+      evaluateAttention: async () => ({ ok: false }),
+      cancelAttention: async () => ({ ok: true }),
+      normalizeMicrophoneFailure: () => ({ reason: 'unknown' }),
+      getMicrophoneAccessFailedMessage: () => '',
+      createTurnId: (prefix: string) => prefix,
+    } as never)
+    await coordinator.applyContinuousSettings(
+      {
+        enabled: false,
+        replyCooldownMs: 1,
+        followUpWindowMs: 1,
+        curiosityChance: 0,
+      },
+      false,
+    )
+    assert.deepEqual(calls, ['stop'])
+  }
+
   const bargeInBase = {
     now: 1_000,
     activeResponseId: 'response-1',
@@ -559,6 +703,49 @@ async function main(): Promise<void> {
       (await throwingSelector.select(backlog, { continuousEnabled: true, llm: enabledLlm })).reason,
       'llm_error_fallback',
     )
+  }
+
+  // Diagnostics distinguish ambiguity, model arbitration, deterministic
+  // selection, timeout/fallback, cancellation, and bounded average latency.
+  {
+    const pendingArbitration = deferred<{
+      action: 'select'
+      selectedIds: string[]
+      text: string
+      reason: string
+      confidence: number
+      backlogVersion: number
+    }>()
+    const backlog = new UtteranceBacklog()
+    backlog.enqueue(item('diag-a', 'P3', 50))
+    backlog.enqueue(item('diag-b', 'P3', 50))
+    const selector = new BacklogSelector(() => pendingArbitration.promise)
+    const selection = selector.select(backlog, { continuousEnabled: true, llm: enabledLlm })
+    await flush()
+    selector.cancel()
+    pendingArbitration.resolve({
+      action: 'select',
+      selectedIds: ['diag-a'],
+      text: 'diag-a',
+      reason: 'cancelled-result',
+      confidence: 1,
+      backlogVersion: backlog.getVersion(),
+    })
+    await selection
+    const diagnostics = selector.getDiagnostics()
+    assert.equal(diagnostics.ambiguousQueues, 1)
+    assert.equal(diagnostics.llmArbitrations, 1)
+    assert.equal(diagnostics.cancelled, 1)
+    assert.equal(diagnostics.fallbacks, 1)
+    assert.equal(diagnostics.deterministicSelections, 1)
+    assert.ok(diagnostics.averageArbitrationLatencyMs >= 0)
+
+    const timeoutSelector = new BacklogSelector(() => new Promise(() => undefined))
+    await timeoutSelector.select(backlog, {
+      continuousEnabled: true,
+      llm: { ...enabledLlm, timeoutMs: 5 },
+    })
+    assert.equal(timeoutSelector.getDiagnostics().timeouts, 1)
   }
 
   // Invalid action/id combinations deterministically fall back.

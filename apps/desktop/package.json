@@ -53,6 +53,7 @@
     "repro:llm-compat": "esbuild scripts/llm-compat-repro/harness.ts --bundle --platform=node --format=cjs --external:electron --outfile=out/llm-compat-repro.cjs && node out/llm-compat-repro.cjs",
     "repro:llm-live": "esbuild scripts/llm-live-repro/harness.ts --bundle --platform=node --format=cjs --external:electron --outfile=out/llm-live-repro.cjs && node out/llm-live-repro.cjs",
     "repro:continuous-listening": "esbuild scripts/continuous-listening-repro/harness.ts --bundle --platform=node --format=cjs --outfile=out/continuous-listening-repro.cjs && node out/continuous-listening-repro.cjs",
+    "repro:stability-hardening": "esbuild scripts/stability-hardening-repro/harness.ts --bundle --platform=node --format=cjs --outfile=out/stability-hardening-repro.cjs && node out/stability-hardening-repro.cjs",
     "repro:project-awareness": "esbuild scripts/project-awareness-repro/harness.ts --bundle --platform=node --format=cjs --external:electron --outfile=out/project-awareness-repro.cjs && node out/project-awareness-repro.cjs",
     "repro:project-aware-actions": "esbuild scripts/project-aware-actions-repro/harness.ts --bundle --platform=node --format=cjs --external:electron --outfile=out/project-aware-actions-repro.cjs && node out/project-aware-actions-repro.cjs",
     "repro:semantic-character-tools": "esbuild scripts/semantic-character-tools-repro/harness.ts --bundle --platform=node --format=cjs --external:electron --outfile=out/semantic-character-tools-repro.cjs && node out/semantic-character-tools-repro.cjs",

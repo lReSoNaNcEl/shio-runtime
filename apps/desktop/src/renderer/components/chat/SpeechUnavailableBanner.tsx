@@ -13,13 +13,13 @@ export function SpeechUnavailableBanner({
   capabilities,
   highlight,
   onRetry,
-  onOpenHealth,
+  onOpenSpeechSettings,
   onDismiss,
 }: {
   capabilities: SpeechCapabilitiesState
   highlight: boolean
   onRetry: () => void
-  onOpenHealth: () => void
+  onOpenSpeechSettings: () => void
   onDismiss: () => void
 }) {
   const { locale, t } = useTranslation()
@@ -40,8 +40,8 @@ export function SpeechUnavailableBanner({
         <Button variant="secondary" onPress={onRetry}>
           {t('speech.banner.retryConnection')}
         </Button>
-        <Button variant="secondary" onPress={onOpenHealth}>
-          {t('speech.banner.openHealth')}
+        <Button variant="secondary" onPress={onOpenSpeechSettings}>
+          {t('speech.banner.openSettings')}
         </Button>
       </div>
       <ActionButton

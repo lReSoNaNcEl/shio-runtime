@@ -1,58 +1,30 @@
-import {
-  ActionButton,
-  Menu,
-  MenuItem,
-  MenuTrigger,
-  SearchField,
-  StatusLight,
-  Tab,
-  TabList,
-  TabPanel,
-  Tabs,
-  Text,
-} from '@react-spectrum/s2'
-import ChevronDown from '@react-spectrum/s2/icons/ChevronDown'
-import ChevronRight from '@react-spectrum/s2/icons/ChevronRight'
-import Copy from '@react-spectrum/s2/icons/Copy'
-import Erase from '@react-spectrum/s2/icons/Erase'
-import Filter from '@react-spectrum/s2/icons/Filter'
-import Pause from '@react-spectrum/s2/icons/Pause'
-import Play from '@react-spectrum/s2/icons/Play'
+import { Tab, TabList, TabPanel, Tabs } from '@react-spectrum/s2'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import {
-  type NetworkBodyDiagnostic,
-  type NetworkHeaderDiagnostic,
   type NetworkRequestDiagnostic,
   type NetworkRequestDiagnosticDetails,
-  type NetworkRequestOutcome,
   type NetworkRequestSource,
 } from '../../../shared/diagnostics'
 import { type LatencySnapshot } from '../../../shared/latency'
 import { controller, type RuntimeDebugSnapshot, type RuntimeTimelineEvent } from '../../Controller'
 import { useTranslation } from '../../localization/useTranslation'
 import { observeRendererPromise } from '../../reliability/observePromise'
+import { type DiagnosticsDisplayEvent, EventsDiagnostics } from '../diagnostics/EventsDiagnostics'
+import { LatencyDiagnostics } from '../diagnostics/LatencyDiagnostics'
+import { NetworkDiagnostics } from '../diagnostics/NetworkDiagnostics'
+import {
+  type DiagnosticsSnapshotSection,
+  RuntimeSnapshotDiagnostics,
+} from '../diagnostics/RuntimeSnapshotDiagnostics'
+import { StreamingDiagnostics } from '../diagnostics/StreamingDiagnostics'
+import { SystemDiagnostics } from '../diagnostics/SystemDiagnostics'
 
-type DiagnosticsTab = 'events' | 'network' | 'latency' | 'snapshot'
-
-interface DisplayEvent {
-  id: string
-  time: number
-  domain: string
-  name: string
-  summary: string
-  payload: unknown
-}
+type DiagnosticsTab = 'events' | 'network' | 'latency' | 'snapshot' | 'system' | 'streaming'
 
 interface SnapshotField {
   label: string
   value: unknown
-}
-
-interface SnapshotSection {
-  id: string
-  title: string
-  fields: SnapshotField[]
 }
 
 const MAX_VISIBLE_EVENTS = 500
@@ -99,32 +71,7 @@ const SNAPSHOT_GROUPS = {
   invariants: ['avatarRuntimeHealth', 'runtimeHealth'],
 } as const
 
-function formatTime(value: number): string {
-  return new Date(value).toLocaleTimeString(undefined, {
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  })
-}
-
-function networkOutcomeTone(
-  outcome: NetworkRequestOutcome,
-): 'informative' | 'positive' | 'negative' | 'notice' | 'neutral' {
-  switch (outcome) {
-    case 'pending':
-      return 'informative'
-    case 'success':
-      return 'positive'
-    case 'timeout':
-      return 'notice'
-    case 'failure':
-      return 'negative'
-    case 'cancelled':
-      return 'neutral'
-  }
-}
-
-function timelineEvent(event: RuntimeTimelineEvent): DisplayEvent {
+function timelineEvent(event: RuntimeTimelineEvent): DiagnosticsDisplayEvent {
   return {
     id: `timeline:${event.id}`,
     time: event.at,
@@ -135,9 +82,9 @@ function timelineEvent(event: RuntimeTimelineEvent): DisplayEvent {
   }
 }
 
-function collectEvents(snapshot: RuntimeDebugSnapshot | null): DisplayEvent[] {
+function collectEvents(snapshot: RuntimeDebugSnapshot | null): DiagnosticsDisplayEvent[] {
   if (!snapshot) return []
-  const runtimeEvents: DisplayEvent[] = snapshot.eventHistory.map((event) => ({
+  const runtimeEvents: DiagnosticsDisplayEvent[] = snapshot.eventHistory.map((event) => ({
     id: `event:${event.id}`,
     time: event.occurredAt,
     domain: event.category,
@@ -161,120 +108,6 @@ function fieldsFor(snapshot: RuntimeDebugSnapshot, keys: readonly string[]): Sna
   return keys.map((key) => ({ label: humanizeFieldName(key), value: record[key] }))
 }
 
-function SnapshotValue({ value }: { value: unknown }) {
-  const { t } = useTranslation()
-  if (value === null || value === undefined) return <span>{t('common.none')}</span>
-  if (typeof value === 'boolean') return <span>{value ? t('common.yes') : t('common.no')}</span>
-  if (typeof value === 'object')
-    return <pre className="diagnostics-json">{JSON.stringify(value, null, 2)}</pre>
-  return <span>{String(value)}</span>
-}
-
-function NetworkRequestDetailPanel({
-  details,
-  state,
-  onCopy,
-}: {
-  details: NetworkRequestDiagnosticDetails | null
-  state: 'loading' | 'ready' | 'missing' | 'failed'
-  onCopy: () => void
-}) {
-  const { t } = useTranslation()
-  if (state === 'loading') {
-    return (
-      <Text UNSAFE_className="diagnostics-network-detail-state">
-        {t('diagnostics.network.detail.loading')}
-      </Text>
-    )
-  }
-  if (state === 'missing' || state === 'failed' || !details) {
-    return (
-      <StatusLight
-        variant={state === 'failed' ? 'negative' : 'notice'}
-        size="S"
-        UNSAFE_className="diagnostics-network-detail-state"
-      >
-        {state === 'failed'
-          ? t('diagnostics.network.detail.failed')
-          : t('diagnostics.network.detail.unavailable')}
-      </StatusLight>
-    )
-  }
-  return (
-    <div className="diagnostics-network-detail-ready">
-      <div className="diagnostics-detail-actions">
-        <ActionButton onPress={onCopy}>
-          <Copy />
-          <Text>{t('diagnostics.copy.request')}</Text>
-        </ActionButton>
-      </div>
-      <div className="diagnostics-network-detail-grid">
-        <NetworkExchangeDetail
-          title={t('diagnostics.network.detail.request')}
-          headers={details.requestHeaders}
-          body={details.requestBody}
-        />
-        <NetworkExchangeDetail
-          title={t('diagnostics.network.detail.response')}
-          headers={details.responseHeaders}
-          body={details.responseBody}
-        />
-      </div>
-    </div>
-  )
-}
-
-function NetworkExchangeDetail({
-  title,
-  headers,
-  body,
-}: {
-  title: string
-  headers: NetworkHeaderDiagnostic[]
-  body: NetworkBodyDiagnostic
-}) {
-  const { t } = useTranslation()
-  const metadata = [
-    body.contentType,
-    body.byteLength === undefined
-      ? undefined
-      : t('diagnostics.network.detail.bytes', { count: body.byteLength }),
-    body.truncated ? t('diagnostics.network.detail.truncated') : undefined,
-  ]
-    .filter(Boolean)
-    .join(' · ')
-  const bodyText = body.text ?? t(`diagnostics.network.detail.body.${body.kind}`)
-  return (
-    <section className="diagnostics-network-detail-column">
-      <Text UNSAFE_className="diagnostics-network-detail-title">{title}</Text>
-      <div className="diagnostics-network-detail-block">
-        <Text UNSAFE_className="diagnostics-network-detail-label">
-          {t('diagnostics.network.detail.headers')}
-        </Text>
-        <pre className="diagnostics-network-detail-content">
-          {formatNetworkHeaders(headers, t('diagnostics.network.detail.noHeaders'))}
-        </pre>
-      </div>
-      <div className="diagnostics-network-detail-block">
-        <div className="diagnostics-network-detail-body-heading">
-          <Text UNSAFE_className="diagnostics-network-detail-label">
-            {t('diagnostics.network.detail.body')}
-          </Text>
-          {metadata && <Text UNSAFE_className="diagnostics-network-detail-meta">{metadata}</Text>}
-        </div>
-        <pre className="diagnostics-network-detail-content diagnostics-network-detail-body">
-          {bodyText}
-        </pre>
-      </div>
-    </section>
-  )
-}
-
-function formatNetworkHeaders(headers: NetworkHeaderDiagnostic[], emptyLabel: string): string {
-  if (headers.length === 0) return emptyLabel
-  return headers.map((header) => `${header.name}: ${header.value}`).join('\n')
-}
-
 export function DiagnosticsView() {
   const { t } = useTranslation()
   const [snapshot, setSnapshot] = useState<RuntimeDebugSnapshot | null>(null)
@@ -283,7 +116,7 @@ export function DiagnosticsView() {
   const [activeTab, setActiveTab] = useState<DiagnosticsTab>('events')
   const [search, setSearch] = useState('')
   const [domain, setDomain] = useState('')
-  const [pausedEvents, setPausedEvents] = useState<DisplayEvent[] | null>(null)
+  const [pausedEvents, setPausedEvents] = useState<DiagnosticsDisplayEvent[] | null>(null)
   const [expandedEvents, setExpandedEvents] = useState<Set<string>>(() => new Set())
   const [clearedEventIds, setClearedEventIds] = useState<Set<string>>(() => new Set())
   const [networkSearch, setNetworkSearch] = useState('')
@@ -421,7 +254,7 @@ export function DiagnosticsView() {
     if (networkSource && !networkSources.includes(networkSource)) setNetworkSource('')
   }, [networkSource, networkSources])
 
-  const snapshotSections = useMemo<SnapshotSection[]>(() => {
+  const snapshotSections = useMemo<DiagnosticsSnapshotSection[]>(() => {
     if (!snapshot) return []
     const assigned = new Set<string>([
       'eventHistory',
@@ -537,12 +370,6 @@ export function DiagnosticsView() {
     )
   }
 
-  const networkSourceLabel = (source: NetworkRequestSource): string =>
-    t(`diagnostics.network.source.${source}`)
-
-  const networkOutcomeLabel = (outcome: NetworkRequestOutcome): string =>
-    t(`diagnostics.network.outcome.${outcome}`)
-
   const copyDiagnostic = async (value: unknown): Promise<void> => {
     await navigator.clipboard.writeText(JSON.stringify(value, null, 2))
     setCopyNotice(t('diagnostics.copy.copied'))
@@ -557,8 +384,15 @@ export function DiagnosticsView() {
         aria-label={t('app.nav.diagnostics')}
         selectedKey={activeTab}
         onSelectionChange={(key) => {
-          if (key === 'network' || key === 'latency' || key === 'snapshot') setActiveTab(key)
-          else setActiveTab('events')
+          if (
+            key === 'network' ||
+            key === 'latency' ||
+            key === 'snapshot' ||
+            key === 'system' ||
+            key === 'streaming'
+          ) {
+            setActiveTab(key)
+          } else setActiveTab('events')
         }}
       >
         <TabList UNSAFE_className="diagnostics-tabs">
@@ -566,384 +400,69 @@ export function DiagnosticsView() {
           <Tab id="network">{t('diagnostics.tabs.network')}</Tab>
           <Tab id="latency">{t('diagnostics.tabs.latency')}</Tab>
           <Tab id="snapshot">{t('diagnostics.tabs.snapshot')}</Tab>
+          <Tab id="system">{t('diagnostics.tabs.system')}</Tab>
+          <Tab id="streaming">{t('diagnostics.tabs.streaming')}</Tab>
         </TabList>
         <TabPanel id="events">
-          <div className="diagnostics-events">
-            <div className="diagnostics-toolbar">
-              <div className="diagnostics-toolbar-filters">
-                <SearchField
-                  aria-label={t('diagnostics.events.searchPlaceholder')}
-                  value={search}
-                  onChange={setSearch}
-                  placeholder={t('diagnostics.events.searchPlaceholder')}
-                  size="M"
-                  UNSAFE_className="diagnostics-search"
-                />
-                <MenuTrigger>
-                  <ActionButton
-                    aria-label={t('diagnostics.events.domain')}
-                    UNSAFE_className="diagnostics-domain-trigger"
-                  >
-                    <Filter />
-                    <Text>{domain || t('diagnostics.events.allDomains')}</Text>
-                    <ChevronDown />
-                  </ActionButton>
-                  <Menu
-                    aria-label={t('diagnostics.events.domain')}
-                    selectionMode="single"
-                    disallowEmptySelection
-                    selectedKeys={[domain || '__all__']}
-                    onSelectionChange={(keys) => {
-                      if (keys === 'all') return
-                      const [key] = keys
-                      setDomain(key === '__all__' ? '' : String(key))
-                    }}
-                  >
-                    <MenuItem id="__all__">{t('diagnostics.events.allDomains')}</MenuItem>
-                    {domains.map((item) => (
-                      <MenuItem key={item} id={item}>
-                        {item}
-                      </MenuItem>
-                    ))}
-                  </Menu>
-                </MenuTrigger>
-              </div>
-              <div className="diagnostics-toolbar-actions">
-                <StatusLight variant={pausedEvents === null ? 'positive' : 'notice'} size="S">
-                  {t(
-                    pausedEvents === null ? 'diagnostics.stream.live' : 'diagnostics.stream.paused',
-                  )}
-                </StatusLight>
-                <Text UNSAFE_className="diagnostics-result-count">
-                  {t('diagnostics.results', {
-                    count: filteredEvents.length,
-                    total: visibleEvents.length,
-                  })}
-                </Text>
-                <ActionButton
-                  aria-label={
-                    pausedEvents === null
-                      ? t('diagnostics.events.pause')
-                      : t('diagnostics.events.resume')
-                  }
-                  aria-pressed={pausedEvents !== null}
-                  onPress={() =>
-                    setPausedEvents((current) => (current === null ? [...currentEvents] : null))
-                  }
-                  UNSAFE_className={
-                    pausedEvents === null
-                      ? 'diagnostics-toolbar-action'
-                      : 'diagnostics-toolbar-action diagnostics-toolbar-action-active'
-                  }
-                >
-                  {pausedEvents === null ? <Pause /> : <Play />}
-                  <Text>
-                    {pausedEvents === null
-                      ? t('diagnostics.events.pause')
-                      : t('diagnostics.events.resume')}
-                  </Text>
-                </ActionButton>
-                <ActionButton
-                  aria-label={t('diagnostics.events.clear')}
-                  onPress={clearView}
-                  UNSAFE_className="diagnostics-toolbar-action"
-                >
-                  <Erase />
-                  <Text>{t('diagnostics.events.clear')}</Text>
-                </ActionButton>
-              </div>
-            </div>
-            <div className="diagnostics-event-table">
-              <div className="diagnostics-event-header">
-                <span>{t('diagnostics.events.time')}</span>
-                <span>{t('diagnostics.events.domain')}</span>
-                <span>{t('diagnostics.events.event')}</span>
-                <span>{t('diagnostics.events.summary')}</span>
-              </div>
-              {filteredEvents.map((event) => (
-                <div className="diagnostics-event" key={event.id}>
-                  <ActionButton
-                    UNSAFE_className="diagnostics-event-row"
-                    aria-expanded={expandedEvents.has(event.id)}
-                    onPress={() => toggleEvent(event.id)}
-                  >
-                    <span>{formatTime(event.time)}</span>
-                    <span>{event.domain}</span>
-                    <span className="diagnostics-row-primary">
-                      {expandedEvents.has(event.id) ? <ChevronDown /> : <ChevronRight />}
-                      <strong>{event.name}</strong>
-                    </span>
-                    <span>{event.summary}</span>
-                  </ActionButton>
-                  {expandedEvents.has(event.id) && (
-                    <div className="diagnostics-expanded-detail">
-                      <div className="diagnostics-detail-actions">
-                        <ActionButton
-                          onPress={() =>
-                            observeRendererPromise(
-                              copyDiagnostic(event.payload),
-                              'copy diagnostic event',
-                            )
-                          }
-                        >
-                          <Copy />
-                          <Text>{t('diagnostics.copy.json')}</Text>
-                        </ActionButton>
-                      </div>
-                      <pre className="diagnostics-json">
-                        {JSON.stringify(event.payload, null, 2)}
-                      </pre>
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-            {visibleEvents.length === 0 && (
-              <Text UNSAFE_className="diagnostics-empty">{t('diagnostics.events.empty')}</Text>
-            )}
-            {visibleEvents.length > 0 && filteredEvents.length === 0 && (
-              <Text UNSAFE_className="diagnostics-empty">{t('diagnostics.events.noMatches')}</Text>
-            )}
-          </div>
+          <EventsDiagnostics
+            search={search}
+            onSearchChange={setSearch}
+            domain={domain}
+            domains={domains}
+            onDomainChange={setDomain}
+            paused={pausedEvents !== null}
+            onTogglePause={() =>
+              setPausedEvents((current) => (current === null ? [...currentEvents] : null))
+            }
+            onClear={clearView}
+            currentCount={filteredEvents.length}
+            totalCount={visibleEvents.length}
+            events={filteredEvents}
+            expanded={expandedEvents}
+            onToggleEvent={toggleEvent}
+            onCopy={copyDiagnostic}
+          />
         </TabPanel>
         <TabPanel id="network">
-          <div className="diagnostics-network">
-            <div className="diagnostics-toolbar diagnostics-network-toolbar">
-              <SearchField
-                aria-label={t('diagnostics.network.searchPlaceholder')}
-                value={networkSearch}
-                onChange={setNetworkSearch}
-                placeholder={t('diagnostics.network.searchPlaceholder')}
-                size="M"
-                UNSAFE_className="diagnostics-search"
-              />
-              <MenuTrigger>
-                <ActionButton
-                  aria-label={t('diagnostics.network.source')}
-                  UNSAFE_className="diagnostics-domain-trigger"
-                >
-                  <Filter />
-                  <Text>
-                    {networkSource
-                      ? networkSourceLabel(networkSource)
-                      : t('diagnostics.network.allSources')}
-                  </Text>
-                  <ChevronDown />
-                </ActionButton>
-                <Menu
-                  aria-label={t('diagnostics.network.source')}
-                  selectionMode="single"
-                  disallowEmptySelection
-                  selectedKeys={[networkSource || '__all__']}
-                  onSelectionChange={(keys) => {
-                    if (keys === 'all') return
-                    const [key] = keys
-                    setNetworkSource(key === '__all__' ? '' : (String(key) as NetworkRequestSource))
-                  }}
-                >
-                  <MenuItem id="__all__">{t('diagnostics.network.allSources')}</MenuItem>
-                  {networkSources.map((source) => (
-                    <MenuItem id={source} key={source}>
-                      {networkSourceLabel(source)}
-                    </MenuItem>
-                  ))}
-                </Menu>
-              </MenuTrigger>
-              <div className="diagnostics-toolbar-actions diagnostics-network-actions">
-                <StatusLight
-                  variant={pausedNetworkRequests === null ? 'positive' : 'notice'}
-                  size="S"
-                >
-                  {t(
-                    pausedNetworkRequests === null
-                      ? 'diagnostics.stream.live'
-                      : 'diagnostics.stream.paused',
-                  )}
-                </StatusLight>
-                <Text UNSAFE_className="diagnostics-result-count">
-                  {t('diagnostics.results', {
-                    count: filteredNetworkRequests.length,
-                    total: visibleNetworkRequests.length,
-                  })}
-                </Text>
-                <ActionButton
-                  aria-label={
-                    pausedNetworkRequests === null
-                      ? t('diagnostics.events.pause')
-                      : t('diagnostics.events.resume')
-                  }
-                  aria-pressed={pausedNetworkRequests !== null}
-                  onPress={() =>
-                    setPausedNetworkRequests((current) =>
-                      current === null ? [...networkRequests] : null,
-                    )
-                  }
-                  UNSAFE_className={
-                    pausedNetworkRequests === null
-                      ? 'diagnostics-toolbar-action'
-                      : 'diagnostics-toolbar-action diagnostics-toolbar-action-active'
-                  }
-                >
-                  {pausedNetworkRequests === null ? <Pause /> : <Play />}
-                  <Text>
-                    {t(
-                      pausedNetworkRequests === null
-                        ? 'diagnostics.events.pause'
-                        : 'diagnostics.events.resume',
-                    )}
-                  </Text>
-                </ActionButton>
-                <ActionButton
-                  aria-label={t('diagnostics.events.clear')}
-                  onPress={clearNetworkView}
-                  UNSAFE_className="diagnostics-toolbar-action"
-                >
-                  <Erase />
-                  <Text>{t('diagnostics.events.clear')}</Text>
-                </ActionButton>
-              </div>
-            </div>
-            <Text UNSAFE_className="diagnostics-network-privacy">
-              {t('diagnostics.network.safeMetadata')}
-            </Text>
-            <div className="diagnostics-network-table">
-              <div className="diagnostics-network-header">
-                <span>{t('diagnostics.events.time')}</span>
-                <span>{t('diagnostics.network.source')}</span>
-                <span>{t('diagnostics.network.method')}</span>
-                <span>{t('diagnostics.network.target')}</span>
-                <span>{t('diagnostics.network.status')}</span>
-                <span>{t('diagnostics.network.duration')}</span>
-              </div>
-              {filteredNetworkRequests.map((request) => (
-                <div className="diagnostics-network-entry" key={request.id}>
-                  <ActionButton
-                    UNSAFE_className="diagnostics-network-row"
-                    aria-expanded={expandedNetworkRequestId === request.id}
-                    aria-controls={`network-details-${request.id}`}
-                    onPress={() => toggleNetworkRequest(request.id)}
-                  >
-                    <span>{formatTime(request.startedAt)}</span>
-                    <span>{networkSourceLabel(request.source)}</span>
-                    <strong>{request.method}</strong>
-                    <span className="diagnostics-row-primary" title={request.target}>
-                      {expandedNetworkRequestId === request.id ? <ChevronDown /> : <ChevronRight />}
-                      <span>{request.target}</span>
-                    </span>
-                    <StatusLight variant={networkOutcomeTone(request.outcome)} size="S">
-                      {request.status ?? networkOutcomeLabel(request.outcome)}
-                    </StatusLight>
-                    <span>
-                      {request.durationMs === undefined
-                        ? t('diagnostics.network.pendingDuration')
-                        : `${request.durationMs} ms`}
-                    </span>
-                  </ActionButton>
-                  {expandedNetworkRequestId === request.id && (
-                    <div
-                      className="diagnostics-network-detail"
-                      id={`network-details-${request.id}`}
-                    >
-                      <NetworkRequestDetailPanel
-                        details={networkRequestDetails}
-                        state={networkRequestDetailState}
-                        onCopy={() =>
-                          observeRendererPromise(
-                            copyDiagnostic(networkRequestDetails),
-                            'copy network diagnostics',
-                          )
-                        }
-                      />
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-            {visibleNetworkRequests.length === 0 && (
-              <Text UNSAFE_className="diagnostics-empty">{t('diagnostics.network.empty')}</Text>
-            )}
-            {visibleNetworkRequests.length > 0 && filteredNetworkRequests.length === 0 && (
-              <Text UNSAFE_className="diagnostics-empty">{t('diagnostics.network.noMatches')}</Text>
-            )}
-          </div>
+          <NetworkDiagnostics
+            search={networkSearch}
+            onSearchChange={setNetworkSearch}
+            source={networkSource}
+            sources={networkSources}
+            onSourceChange={setNetworkSource}
+            paused={pausedNetworkRequests !== null}
+            onTogglePause={() =>
+              setPausedNetworkRequests((current) =>
+                current === null ? [...networkRequests] : null,
+              )
+            }
+            onClear={clearNetworkView}
+            allRequests={visibleNetworkRequests}
+            requests={filteredNetworkRequests}
+            expandedRequestId={expandedNetworkRequestId}
+            onToggleRequest={toggleNetworkRequest}
+            details={networkRequestDetails}
+            detailState={networkRequestDetailState}
+            onCopy={copyDiagnostic}
+          />
         </TabPanel>
         <TabPanel id="latency">
-          <div className="diagnostics-latency">
-            <Text UNSAFE_className="diagnostics-network-privacy">
-              {t('diagnostics.latency.description')}
-            </Text>
-            <div className="diagnostics-latency-grid">
-              {latency && Object.entries(latency.metrics).length > 0 ? (
-                Object.entries(latency.metrics).map(([name, metric]) => (
-                  <article className="diagnostics-latency-card" key={name}>
-                    <Text UNSAFE_className="diagnostics-latency-title">{name}</Text>
-                    <Text>
-                      p50 {metric.p50Ms} ms · p95 {metric.p95Ms} ms · max {metric.maxMs} ms
-                    </Text>
-                    <Text>{t('diagnostics.latency.samples', { count: metric.count })}</Text>
-                  </article>
-                ))
-              ) : (
-                <Text>{t('diagnostics.latency.empty')}</Text>
-              )}
-            </div>
-            <div className="diagnostics-latency-traces">
-              {latency?.recentTraces.map((trace) => (
-                <article className="diagnostics-latency-card" key={trace.turnId}>
-                  <Text UNSAFE_className="diagnostics-latency-title">
-                    {trace.turnId} · {trace.status ?? 'active'}
-                  </Text>
-                  <Text>
-                    {trace.provider ?? '—'} · {trace.model ?? '—'} · {trace.milestones.length}{' '}
-                    milestones
-                  </Text>
-                </article>
-              ))}
-            </div>
-          </div>
+          <LatencyDiagnostics latency={latency} />
         </TabPanel>
         <TabPanel id="snapshot">
-          <div className="diagnostics-snapshot">
-            <div className="diagnostics-snapshot-toolbar">
-              <Text>{t('diagnostics.snapshot.technicalKeys')}</Text>
-              <ActionButton
-                isDisabled={!snapshot}
-                onPress={() =>
-                  observeRendererPromise(copyDiagnostic(snapshot), 'copy Runtime snapshot')
-                }
-              >
-                <Copy />
-                <Text>{t('diagnostics.copy.snapshot')}</Text>
-              </ActionButton>
-            </div>
-            {snapshotSections.map((section) => {
-              const collapsed = collapsedSections.has(section.id)
-              return (
-                <section className="diagnostics-snapshot-section" key={section.id}>
-                  <ActionButton
-                    UNSAFE_className="diagnostics-snapshot-heading"
-                    aria-expanded={!collapsed}
-                    onPress={() => toggleSection(section.id)}
-                  >
-                    <strong>{section.title}</strong>
-                    <span>
-                      {t('diagnostics.snapshot.fieldCount', { count: section.fields.length })}
-                    </span>
-                  </ActionButton>
-                  {!collapsed && (
-                    <div className="diagnostics-snapshot-fields">
-                      {section.fields.map((field) => (
-                        <div className="diagnostics-snapshot-field" key={field.label}>
-                          <code>{field.label}</code>
-                          <SnapshotValue value={field.value} />
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </section>
-              )
-            })}
-          </div>
+          <RuntimeSnapshotDiagnostics
+            snapshot={snapshot}
+            sections={snapshotSections}
+            collapsed={collapsedSections}
+            onToggleSection={toggleSection}
+            onCopy={copyDiagnostic}
+          />
+        </TabPanel>
+        <TabPanel id="system">
+          <SystemDiagnostics />
+        </TabPanel>
+        <TabPanel id="streaming">
+          <StreamingDiagnostics snapshot={snapshot} />
         </TabPanel>
       </Tabs>
     </section>

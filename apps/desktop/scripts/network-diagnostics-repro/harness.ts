@@ -166,11 +166,13 @@ function assertIpcAndUiBoundary(): void {
   assert.doesNotMatch(overlayPreload, /diagnostics:get-network-request-details/)
 
   const diagnosticsView = source('src/renderer/components/views/DiagnosticsView.tsx')
+  const networkDiagnostics = source('src/renderer/components/diagnostics/NetworkDiagnostics.tsx')
   const diagnosticsCss = source('src/renderer/styles/diagnostics.css')
   assert.match(diagnosticsView, /<Tab id="network">/)
-  assert.match(diagnosticsView, /safeMetadata/)
   assert.match(diagnosticsView, /getNetworkRequestDetails/)
-  assert.match(diagnosticsView, /aria-expanded=\{expandedNetworkRequestId === request\.id\}/)
+  assert.match(diagnosticsView, /<NetworkDiagnostics/)
+  assert.match(networkDiagnostics, /safeMetadata/)
+  assert.match(networkDiagnostics, /aria-expanded=\{expandedRequestId === request\.id\}/)
   assert.doesNotMatch(diagnosticsCss, /\.diagnostics-tabs\s+button/)
   assert.doesNotMatch(diagnosticsCss, /\.diagnostics-toolbar\s*\{[^}]*top:\s*-/s)
 }

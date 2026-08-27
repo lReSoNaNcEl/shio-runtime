@@ -6,7 +6,12 @@ import { observeRendererPromise } from '../reliability/observePromise'
 import {
   type AsrStreamEvent,
   StreamingAsrClient,
+  type StreamingAsrState,
 } from '../speech/continuous-listening/StreamingAsrClient'
+import type {
+  ContinuousListeningFailure,
+  ContinuousListeningRuntimeProjection,
+} from '../speech/continuous-listening/types'
 import type { CharacterStateReader, SpeechStateWriter } from './CharacterStateStore'
 import type {
   ConversationAvatarProjection,
@@ -78,10 +83,22 @@ export class SpeechInputRuntime {
     | null = null
   private onContinuousPartial: ((partial: ContinuousPartialSpeech) => void) | null = null
   private onContinuousDeviceLost: (() => void) | null = null
+  private onContinuousLifecycle:
+    | ((projection: ContinuousListeningRuntimeProjection) => void)
+    | null = null
+  private continuousProjection: ContinuousListeningRuntimeProjection = {
+    transport: 'off',
+    activity: 'idle',
+    microphoneCaptured: false,
+  }
+  private lifecycleGeneration = 0
+  private startController: AbortController | null = null
   private playbackCapturedSegments = new Set<string>()
   private streamingClient = new StreamingAsrClient({
     onEvent: (event) => this.handleStreamingEvent(event),
     onState: (state) => this.handleStreamingState(state),
+    onProtocolDiagnostic: (code) =>
+      this.recordRuntimeEvent('Continuous ASR Protocol Rejected', code),
   })
   // If the streaming transport stays in reconnect longer than this, we treat the
   // Speech API as lost, tear the session down, and stop retrying forever.
@@ -93,7 +110,7 @@ export class SpeechInputRuntime {
   private streamingGeneration = 0
   // Last transport state reported by the streaming client. Used to keep the
   // watchdog invariant explicit: it may only fire while still reconnecting.
-  private streamingState = 'idle'
+  private streamingState: StreamingAsrState = 'idle'
 
   constructor(deps: SpeechInputRuntimeDeps) {
     this.speechRuntime = deps.speechRuntime
@@ -112,6 +129,13 @@ export class SpeechInputRuntime {
   /** Register the owner's handler for irrecoverable streaming-transport loss. */
   setStreamingServiceLostHandler(handler: (error: SerializedSpeechError) => void): void {
     this.onStreamingServiceLost = handler
+  }
+
+  setContinuousLifecycleHandler(
+    handler: (projection: ContinuousListeningRuntimeProjection) => void,
+  ): void {
+    this.onContinuousLifecycle = handler
+    handler({ ...this.continuousProjection })
   }
 
   setMicrophone(deviceId: string, persist = true): void {
@@ -133,33 +157,70 @@ export class SpeechInputRuntime {
     onFinal?: (recognized: ContinuousRecognizedSpeech) => void | Promise<void>,
     onPartial?: (partial: ContinuousPartialSpeech) => void,
     onDeviceLost?: () => void,
+    signal?: AbortSignal,
   ): Promise<void> {
     this.onContinuousFinal = onFinal ?? this.onContinuousFinal
     this.onContinuousPartial = onPartial ?? this.onContinuousPartial
     this.onContinuousDeviceLost = onDeviceLost ?? this.onContinuousDeviceLost
-    if (enabled === this.continuousEnabled) return
-    this.continuousEnabled = enabled
+    if (enabled && this.continuousEnabled && this.streamingCapture.isAlive()) return
+    const generation = ++this.lifecycleGeneration
+    this.startController?.abort(new DOMException('Continuous start superseded', 'AbortError'))
+    this.startController = null
     if (!enabled) {
+      const wasActive = this.continuousEnabled || this.continuousProjection.transport !== 'off'
+      this.continuousEnabled = false
       this.streamingGeneration += 1
       this.clearReconnectWatchdog()
       this.playbackCapturedSegments.clear()
-      await this.streamingCapture.stop()
-      await this.streamingClient.stop()
-      this.publishSpeechEvent('ListeningFinished', 'continuous')
-      this.recordRuntimeEvent('Continuous Listening Disabled')
+      if (wasActive) {
+        this.updateContinuousProjection({
+          transport: 'stopping',
+          activity: 'idle',
+          microphoneCaptured: this.streamingCapture.isAlive(),
+        })
+      }
+      await Promise.all([this.streamingCapture.stop(), this.streamingClient.stop()])
+      if (generation !== this.lifecycleGeneration) return
+      this.updateContinuousProjection({
+        transport: 'off',
+        activity: 'idle',
+        microphoneCaptured: false,
+      })
+      if (wasActive) {
+        this.publishSpeechEvent('ListeningFinished', 'continuous')
+        this.recordRuntimeEvent('Continuous Listening Disabled')
+      }
       return
     }
+    const startController = new AbortController()
+    this.startController = startController
+    const unlink = linkAbort(signal, startController)
+    this.continuousEnabled = true
+    this.updateContinuousProjection({
+      transport: 'starting',
+      activity: 'idle',
+      microphoneCaptured: false,
+    })
     let connected = false
     try {
       const [config, connection] = await Promise.all([
         window.api.config.get(),
         window.api.asr.getStreamingConnection(),
       ])
-      await this.streamingClient.connect(connection.baseUrl, config.ttsLanguage || 'ru')
+      this.throwIfStartSuperseded(generation, startController.signal)
+      await this.streamingClient.connect(
+        connection.baseUrl,
+        config.ttsLanguage || 'ru',
+        startController.signal,
+      )
       connected = true
       // A fresh working session: invalidate any watchdog from a previous session.
       this.streamingGeneration += 1
-      if (!this.continuousEnabled) {
+      if (
+        generation !== this.lifecycleGeneration ||
+        !this.continuousEnabled ||
+        startController.signal.aborted
+      ) {
         await this.streamingClient.stop()
         return
       }
@@ -168,13 +229,30 @@ export class SpeechInputRuntime {
         (frame) => this.streamingClient.sendPcm(frame),
         () => this.handleContinuousDeviceLost(),
       )
+      this.throwIfStartSuperseded(generation, startController.signal)
+      this.updateContinuousProjection({
+        transport: 'ready',
+        activity: 'idle',
+        microphoneCaptured: true,
+      })
       this.publishSpeechEvent('ListeningStarted', 'continuous')
       this.recordRuntimeEvent('Continuous Listening Enabled')
     } catch (error) {
+      const superseded =
+        generation !== this.lifecycleGeneration ||
+        startController.signal.aborted ||
+        isAbortFailure(error)
       this.continuousEnabled = false
       this.clearReconnectWatchdog()
-      await this.streamingCapture.stop()
-      await this.streamingClient.stop()
+      await Promise.all([this.streamingCapture.stop(), this.streamingClient.stop()])
+      if (superseded || generation !== this.lifecycleGeneration) return
+      const failure = continuousStartFailure(error, connected)
+      this.updateContinuousProjection({
+        transport: 'failed',
+        activity: 'idle',
+        microphoneCaptured: false,
+        failure,
+      })
       this.recordRuntimeEvent('Continuous Listening Error', String(error))
       // A failure before the transport connected is a Speech API reachability
       // problem (streaming capability), not a microphone/device problem.
@@ -187,15 +265,58 @@ export class SpeechInputRuntime {
         })
       }
       throw error
+    } finally {
+      unlink()
+      if (this.startController === startController) this.startController = null
     }
   }
 
-  private handleStreamingState(state: string): void {
+  private handleStreamingState(state: StreamingAsrState): void {
     this.streamingState = state
     this.recordRuntimeEvent('Continuous ASR State', state)
     if (!this.continuousEnabled) {
       this.clearReconnectWatchdog()
+      if (this.continuousProjection.transport === 'failed') return
+      if (state === 'stopping') {
+        this.updateContinuousProjection({
+          transport: 'stopping',
+          activity: 'idle',
+          microphoneCaptured: this.streamingCapture.isAlive(),
+        })
+      } else if (state === 'idle') {
+        this.updateContinuousProjection({
+          transport: 'off',
+          activity: 'idle',
+          microphoneCaptured: false,
+        })
+      }
       return
+    }
+    if (state === 'connecting') {
+      this.updateContinuousProjection({
+        transport: 'starting',
+        activity: 'idle',
+        microphoneCaptured: this.streamingCapture.isAlive(),
+      })
+    } else if (state === 'ready' || state === 'listening') {
+      this.updateContinuousProjection({
+        transport: 'ready',
+        activity: this.continuousProjection.activity,
+        microphoneCaptured: this.streamingCapture.isAlive(),
+      })
+    } else if (state === 'reconnecting') {
+      this.updateContinuousProjection({
+        transport: 'reconnecting',
+        activity: 'idle',
+        microphoneCaptured: this.streamingCapture.isAlive(),
+      })
+    } else if (state === 'error') {
+      this.updateContinuousProjection({
+        transport: 'failed',
+        activity: 'idle',
+        microphoneCaptured: this.streamingCapture.isAlive(),
+        failure: { domain: 'transport', code: 'ASR_TRANSPORT_ERROR' },
+      })
     }
     if (state === 'reconnecting') {
       // Only a confirmed transport reconnect arms the watchdog. A normal speech
@@ -242,8 +363,22 @@ export class SpeechInputRuntime {
     if (!this.continuousEnabled) return
     this.streamingGeneration += 1
     this.continuousEnabled = false
-    observeRendererPromise(this.streamingCapture.stop(), 'stop lost streaming capture')
-    observeRendererPromise(this.streamingClient.stop(), 'stop lost streaming client')
+    this.updateContinuousProjection({
+      transport: 'failed',
+      activity: 'idle',
+      microphoneCaptured: this.streamingCapture.isAlive(),
+      failure: { domain: 'speech-service', code: 'SERVICE_UNAVAILABLE' },
+    })
+    observeRendererPromise(
+      Promise.all([this.streamingCapture.stop(), this.streamingClient.stop()]).then(() => {
+        if (this.continuousProjection.transport !== 'failed') return
+        this.updateContinuousProjection({
+          ...this.continuousProjection,
+          microphoneCaptured: false,
+        })
+      }),
+      'stop lost streaming resources',
+    )
     this.publishSpeechEvent('ListeningFinished', 'continuous')
     this.recordRuntimeEvent('Streaming Service Lost', reason)
     const error: SerializedSpeechError = {
@@ -269,6 +404,9 @@ export class SpeechInputRuntime {
     this.onContinuousFinal = null
     this.onContinuousPartial = null
     this.onContinuousDeviceLost = null
+    this.onContinuousLifecycle = null
+    this.startController?.abort(new DOMException('Speech input disposed', 'AbortError'))
+    this.startController = null
     if (this.micCapture.isRecording()) this.micCapture.stop()
     observeRendererPromise(this.streamingCapture.stop(), 'dispose streaming capture')
     observeRendererPromise(this.streamingClient.stop(), 'dispose streaming client')
@@ -285,6 +423,12 @@ export class SpeechInputRuntime {
    */
   private handleContinuousDeviceLost(): void {
     if (!this.continuousEnabled) return
+    this.updateContinuousProjection({
+      transport: 'failed',
+      activity: 'idle',
+      microphoneCaptured: false,
+      failure: { domain: 'microphone', code: 'DEVICE_LOST' },
+    })
     this.recordRuntimeEvent('Continuous Microphone Lost')
     this.onContinuousDeviceLost?.()
   }
@@ -312,6 +456,11 @@ export class SpeechInputRuntime {
   private handleStreamingEvent(event: AsrStreamEvent): void {
     if (!this.continuousEnabled) return
     if (event.type === 'speech_started') {
+      this.updateContinuousProjection({
+        transport: 'ready',
+        activity: 'hearing-speech',
+        microphoneCaptured: this.streamingCapture.isAlive(),
+      })
       if (this.characterState.get().mode === 'speaking') {
         this.playbackCapturedSegments.add(`${event.sessionId}:${event.segmentId}`)
         if (this.playbackCapturedSegments.size > 64) {
@@ -324,6 +473,11 @@ export class SpeechInputRuntime {
       return
     }
     if (event.type === 'speech_ended') {
+      this.updateContinuousProjection({
+        transport: 'ready',
+        activity: 'idle',
+        microphoneCaptured: this.streamingCapture.isAlive(),
+      })
       this.recordRuntimeEvent('Continuous Speech Ended', event.segmentId)
       return
     }
@@ -335,6 +489,11 @@ export class SpeechInputRuntime {
       return
     }
     if (event.type === 'partial') {
+      this.updateContinuousProjection({
+        transport: 'ready',
+        activity: 'recognizing',
+        microphoneCaptured: this.streamingCapture.isAlive(),
+      })
       const stableId = `${event.sessionId}:${event.segmentId}`
       this.onContinuousPartial?.({
         text: event.text,
@@ -349,6 +508,11 @@ export class SpeechInputRuntime {
       return
     }
     if (event.type !== 'final') return
+    this.updateContinuousProjection({
+      transport: 'ready',
+      activity: 'recognizing',
+      microphoneCaptured: this.streamingCapture.isAlive(),
+    })
     const stableId = `${event.sessionId}:${event.segmentId}`
     const capturedDuringPlayback = this.playbackCapturedSegments.delete(stableId)
     this.publishSpeechEvent('RecognitionCompleted', `continuous final ${event.reason}`)
@@ -440,4 +604,39 @@ export class SpeechInputRuntime {
       detail,
     })
   }
+
+  private updateContinuousProjection(projection: ContinuousListeningRuntimeProjection): void {
+    this.continuousProjection = projection
+    this.onContinuousLifecycle?.({ ...projection })
+  }
+
+  private throwIfStartSuperseded(generation: number, signal: AbortSignal): void {
+    if (generation !== this.lifecycleGeneration || signal.aborted) {
+      throw signal.reason ?? new DOMException('Continuous start superseded', 'AbortError')
+    }
+  }
+}
+
+function linkAbort(parent: AbortSignal | undefined, child: AbortController): () => void {
+  if (!parent) return () => undefined
+  const abort = (): void =>
+    child.abort(parent.reason ?? new DOMException('Continuous start aborted', 'AbortError'))
+  parent.addEventListener('abort', abort, { once: true })
+  if (parent.aborted) abort()
+  return () => parent.removeEventListener('abort', abort)
+}
+
+function isAbortFailure(error: unknown): boolean {
+  return error instanceof DOMException
+    ? error.name === 'AbortError'
+    : error instanceof Error && error.name === 'AbortError'
+}
+
+function continuousStartFailure(error: unknown, connected: boolean): ContinuousListeningFailure {
+  const name = error instanceof Error ? error.name : ''
+  if (name === 'NotAllowedError' || name === 'SecurityError') {
+    return { domain: 'permission', code: 'MICROPHONE_PERMISSION_DENIED' }
+  }
+  if (connected) return { domain: 'microphone', code: 'MICROPHONE_CAPTURE_FAILED' }
+  return { domain: 'speech-service', code: 'SERVICE_UNAVAILABLE' }
 }

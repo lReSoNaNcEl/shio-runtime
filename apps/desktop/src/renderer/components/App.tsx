@@ -1,13 +1,9 @@
 import { Provider } from '@react-spectrum/s2'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { type CapabilityNavigationTarget } from '../../shared/capabilities'
 import { normalizeUiTheme, type UiTheme } from '../../shared/config'
-import {
-  DESKTOP_CONTROL_PLUGIN_ID,
-  type PluginId,
-  PROJECT_AWARENESS_PLUGIN_ID,
-} from '../../shared/plugins'
+import { type PluginId } from '../../shared/plugins'
 import { controller } from '../Controller'
 import { useCapabilities } from '../hooks/useCapabilities'
 import { useControllerState } from '../hooks/useControllerState'
@@ -21,6 +17,7 @@ import { NewConversationButton } from './chat/NewConversationButton'
 import { NewConversationDialog } from './chat/NewConversationDialog'
 import { ListeningControl } from './controls/ListeningControl'
 import { OverlayCameraControl } from './controls/OverlayCameraControl'
+import { pluginIdForNavigationTarget } from './navigation/capabilityNavigation'
 import { MicrophoneGateOverlay } from './overlays/MicrophoneGateOverlay'
 import { MissingVrmDialog } from './overlays/MissingVrmDialog'
 import { PluginsView } from './plugins/PluginsView'
@@ -32,7 +29,6 @@ import { AvatarPreviewView } from './views/AvatarPreviewView'
 import { CapabilitiesView } from './views/CapabilitiesView'
 import { DiagnosticsView } from './views/DiagnosticsView'
 import { MemoryView } from './views/MemoryView'
-import { RuntimeHealthView } from './views/RuntimeHealthView'
 import { TasksView } from './views/TasksView'
 
 export function App() {
@@ -70,6 +66,9 @@ export function App() {
         ? 'health.shell.notice'
         : 'health.shell.error',
   )
+  const refreshOverlayVisibility = useCallback(() => {
+    observeRendererPromise(controller.refreshOverlayVisibility(), 'refresh Overlay visibility')
+  }, [])
 
   // One unobtrusive, auto-dismissing toast when the Speech API recovers (ТЗ §9).
   const speechService = state.speechCapabilities.service
@@ -136,7 +135,7 @@ export function App() {
   }, [])
 
   useEffect(() => {
-    if (!developerModeEnabled && (section === 'debug' || section === 'avatar')) setSection('chat')
+    if (!developerModeEnabled && section === 'avatar') setSection('chat')
   }, [developerModeEnabled, section])
   useEffect(() => {
     document.documentElement.classList.toggle('overlay-window', isOverlay)
@@ -172,7 +171,6 @@ export function App() {
       title: t('app.section.avatar.title'),
       subtitle: t('app.section.avatar.subtitle'),
     },
-    health: { title: t('app.nav.health'), subtitle: t('app.section.health.subtitle') },
     plugins: {
       title: t('app.section.plugins.title'),
       subtitle: t('app.section.plugins.subtitle'),
@@ -228,13 +226,12 @@ export function App() {
       return
     }
     if (target.kind === 'plugin') {
-      if (target.id === PROJECT_AWARENESS_PLUGIN_ID || target.id === DESKTOP_CONTROL_PLUGIN_ID) {
-        setPluginDetails(target.id)
-      }
+      const pluginId = pluginIdForNavigationTarget(target)
+      if (pluginId) setPluginDetails(pluginId)
       setSection('plugins')
       return
     }
-    const views: AppSection[] = ['chat', 'capabilities', 'memory', 'tasks', 'plugins', 'health']
+    const views: AppSection[] = ['chat', 'capabilities', 'memory', 'tasks', 'plugins']
     if (views.includes(target.id as AppSection)) setSection(target.id as AppSection)
   }
 
@@ -279,6 +276,26 @@ export function App() {
           setSection(nextSection)
         }}
         health={{ state: runtimeHealth.overall, text: runtimeHealthLabel }}
+        runtimeHealth={runtimeHealth}
+        systemStatusActions={{
+          openDiagnostics: () => setSection('debug'),
+          openSpeechSettings: () => {
+            setSettingsInitialSection('speech')
+            setSection('settings')
+          },
+          openLlmSettings: () => {
+            setSettingsInitialSection('llm')
+            setSection('settings')
+          },
+          openPlugin: (pluginId) => {
+            setPluginDetails(pluginId)
+            setSection('plugins')
+          },
+          copyReport: async () => {
+            const report = await runtimeSupport.refresh()
+            await navigator.clipboard.writeText(JSON.stringify(report, null, 2))
+          },
+        }}
         developerModeEnabled={developerModeEnabled}
         hideHeader={setupOpen}
         contentClassName={setupOpen ? 'setup-layer' : undefined}
@@ -305,7 +322,7 @@ export function App() {
                 </div>
               )}
               <ListeningControl
-                listeningState={state.continuousListeningState}
+                projection={state.continuousListening}
                 onToggle={() =>
                   observeRendererPromise(
                     controller.toggleContinuousListening(),
@@ -340,7 +357,10 @@ export function App() {
                 ref={chatOverlayRef}
                 state={state}
                 gateOpen={state.microphoneGate.status !== 'closed'}
-                onOpenHealth={() => setSection('health')}
+                onOpenSpeechSettings={() => {
+                  setSettingsInitialSection('speech')
+                  setSection('settings')
+                }}
                 onOpenLlmSettings={() => {
                   setSettingsInitialSection('llm')
                   setSection('settings')
@@ -383,30 +403,6 @@ export function App() {
             }}
           />
         )}
-        {section === 'health' && (
-          <RuntimeHealthView
-            state={state}
-            support={runtimeSupport.bundle}
-            projection={runtimeHealth}
-            onOpenPlugin={() => {
-              setPluginDetails(PROJECT_AWARENESS_PLUGIN_ID)
-              setSection('plugins')
-            }}
-            onOpenLlmSettings={() => {
-              setSettingsInitialSection('llm')
-              setSection('settings')
-            }}
-            onRetrySpeech={() => controller.recheckSpeechService()}
-            onRefresh={async () => {
-              await Promise.all([
-                controller.checkHealth(),
-                controller.checkLlmHealth(),
-                runtimeSupport.refresh(),
-              ])
-            }}
-            getSupportReport={runtimeSupport.refresh}
-          />
-        )}
         {section === 'plugins' && (
           <PluginsView
             detailPluginId={pluginDetails}
@@ -418,7 +414,7 @@ export function App() {
             }}
           />
         )}
-        {section === 'debug' && developerModeEnabled && <DiagnosticsView />}
+        {section === 'debug' && <DiagnosticsView />}
         {section === 'settings' && (
           <SettingsDialog
             isOpen
@@ -433,19 +429,8 @@ export function App() {
             overlayViewModeProjection={state.overlayCameraMode}
             llmHealth={state.llmHealth}
             voiceWarmup={state.voiceWarmup}
-            continuousListeningState={state.continuousListeningState}
-            onToggleContinuousListening={() =>
-              observeRendererPromise(
-                controller.toggleContinuousListening(),
-                'toggle continuous listening from Settings',
-              )
-            }
-            onOverlayVisibleChange={() =>
-              observeRendererPromise(
-                controller.refreshOverlayVisibility(),
-                'refresh Overlay visibility',
-              )
-            }
+            continuousListening={state.continuousListening}
+            onOverlayVisibleChange={refreshOverlayVisibility}
             onToggleOverlay={setOverlayVisible}
             onClose={() => setSection('chat')}
           />

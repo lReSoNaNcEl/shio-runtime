@@ -1,13 +1,4 @@
-import {
-  Button,
-  Heading,
-  Meter,
-  Picker,
-  PickerItem,
-  StatusLight,
-  Switch,
-  Text,
-} from '@react-spectrum/s2'
+import { Button, Heading, Meter, Picker, PickerItem, StatusLight, Text } from '@react-spectrum/s2'
 import Microphone from '@react-spectrum/s2/icons/Microphone'
 import Play from '@react-spectrum/s2/icons/Play'
 import { style } from '@react-spectrum/s2/style' with { type: 'macro' }
@@ -28,7 +19,9 @@ export function SpeechSettingsSection({
   const { t } = useTranslation()
   const isRecording = state.microphoneTestState === 'recording'
   const isPlaying = state.microphoneTestState === 'playing'
-  const testDisabled = state.continuousListeningState !== 'off'
+  const testDisabled =
+    state.continuousListening.microphoneCaptured ||
+    ['starting', 'reconnecting', 'stopping'].includes(state.continuousListening.transport)
   const recordingAvailable =
     state.microphoneTestState === 'ready' ||
     state.microphoneTestState === 'playback-error' ||
@@ -62,17 +55,6 @@ export function SpeechSettingsSection({
         <PickerItem id="ru">{t('settings.language.ru')}</PickerItem>
         <PickerItem id="en">{t('settings.language.en')}</PickerItem>
       </Picker>
-      <Switch
-        isSelected={state.continuousListeningState === 'on'}
-        isDisabled={state.continuousListeningState === 'starting'}
-        onChange={actions.toggleContinuousListening}
-      >
-        {t(
-          state.continuousListeningState === 'on'
-            ? 'streaming.state.listening'
-            : 'streaming.state.notListening',
-        )}
-      </Switch>
       <section className="microphone-test-card" aria-labelledby="microphone-test-title">
         <div className="microphone-test-header">
           <div className="microphone-test-copy">

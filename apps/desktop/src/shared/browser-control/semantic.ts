@@ -21,7 +21,9 @@ export const browserInteractiveElementSchema = z
     ref: z.string().regex(/^e\d+$/u),
     role: browserInteractiveRoleSchema,
     name: z.string().max(500).optional(),
+    placeholder: z.string().max(500).optional(),
     disabled: z.boolean().optional(),
+    sensitive: z.literal(true).optional(),
   })
   .strict()
 export type BrowserInteractiveElement = z.infer<typeof browserInteractiveElementSchema>

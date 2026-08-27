@@ -12,8 +12,9 @@ export interface ChatMessageListProps {
   status: ControllerState['status']
   quickActions: readonly string[]
   onQuickAction: (text: string) => void
-  continuousListeningError?: string
+  continuousListening: ControllerState['continuousListening']
   onRetryContinuousListening?: () => void
+  onDisableContinuousListening?: () => void
 }
 
 export function ChatMessageList({
@@ -21,8 +22,9 @@ export function ChatMessageList({
   status,
   quickActions,
   onQuickAction,
-  continuousListeningError,
+  continuousListening,
   onRetryContinuousListening,
+  onDisableContinuousListening,
 }: ChatMessageListProps) {
   const { t } = useTranslation()
   const listRef = useRef<HTMLDivElement>(null)
@@ -34,12 +36,24 @@ export function ChatMessageList({
 
   return (
     <div id="chat-messages" ref={listRef}>
-      {continuousListeningError && (
+      {continuousListening.desired && continuousListening.transport === 'failed' && (
         <div className="input-error" role="alert">
-          <span>{continuousListeningError}</span>
-          <Button variant="secondary" onPress={() => onRetryContinuousListening?.()}>
-            {t('common.retry')}
-          </Button>
+          <span>
+            {t(
+              continuousListening.failure?.domain === 'microphone' ||
+                continuousListening.failure?.domain === 'permission'
+                ? 'streaming.failure.microphone'
+                : 'streaming.failure.connection',
+            )}
+          </span>
+          <ButtonGroup>
+            <Button variant="secondary" onPress={() => onRetryContinuousListening?.()}>
+              {t('common.retry')}
+            </Button>
+            <Button variant="secondary" onPress={() => onDisableContinuousListening?.()}>
+              {t('streaming.action.off')}
+            </Button>
+          </ButtonGroup>
         </div>
       )}
       {messages.length === 0 && (

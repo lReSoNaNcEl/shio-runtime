@@ -10,10 +10,13 @@ import {
   BrowserComputerUseRuntime,
   type BrowserVisualActionAdapter,
   type BrowserVisualActionStatus,
+  LlmBrowserVisualActionAdapter,
   PlaywrightBrowserAdapter,
   resolveChromeExecutable,
 } from '../../src/main/browser-control'
+import { LlmResponseError } from '../../src/main/llm'
 import type {
+  BrowserCompletionAssessment,
   BrowserComputerUseDecision,
   BrowserComputerUseObservation,
   BrowserComputerUseSession,
@@ -23,6 +26,15 @@ import type {
   BrowserObservation,
   BrowserTarget,
 } from '../../src/shared/browser-control'
+
+const SENSITIVE_SECRETS = [
+  'correct-horse-password',
+  '604992',
+  '4111111111111111',
+  '08/31',
+  'sk-fixture-api-key-value',
+  'fixture-token-textarea-secret',
+] as const
 
 const QUALIFICATION_DURATION_MS = Number(
   process.env.SHIO_BROWSER_CONTROL_QUALIFICATION_MS ?? 15 * 60 * 1_000,
@@ -38,6 +50,14 @@ class ScriptedVisualAdapter implements BrowserVisualActionAdapter {
       call: number,
     ) => Promise<BrowserComputerUseDecision> | BrowserComputerUseDecision,
     private readonly vision = true,
+    private readonly verifyNext: (
+      context: { goal: string; observation: BrowserComputerUseObservation },
+      signal: AbortSignal,
+    ) => Promise<BrowserCompletionAssessment> | BrowserCompletionAssessment = () => ({
+      status: 'satisfied',
+      confidence: 1,
+      evidenceSummary: 'Deterministic fixture verified completion.',
+    }),
   ) {}
 
   status(): BrowserVisualActionStatus {
@@ -50,6 +70,13 @@ class ScriptedVisualAdapter implements BrowserVisualActionAdapter {
   ): Promise<BrowserComputerUseDecision> {
     const call = this.calls++
     return Promise.resolve(this.decideNext(context, signal, call))
+  }
+
+  verifyCompletion(
+    context: { goal: string; observation: BrowserComputerUseObservation },
+    signal: AbortSignal,
+  ): Promise<BrowserCompletionAssessment> {
+    return Promise.resolve(this.verifyNext(context, signal))
   }
 }
 
@@ -68,6 +95,15 @@ function fixtureHtml(blocker?: string): string {
               : blocker === 'secure-desktop'
                 ? '<div data-shio-secure-desktop-blocker>Secure desktop active</div>'
                 : ''
+  const sensitiveMarkup =
+    blocker === 'sensitive'
+      ? `<input aria-label="Password" type="password" value="${SENSITIVE_SECRETS[0]}">
+         <input aria-label="OTP" autocomplete="one-time-code" value="${SENSITIVE_SECRETS[1]}">
+         <input aria-label="Card number" autocomplete="cc-number" value="${SENSITIVE_SECRETS[2]}">
+         <input aria-label="Card expiry" autocomplete="cc-exp" value="${SENSITIVE_SECRETS[3]}">
+         <input aria-label="API key" id="api-key" value="${SENSITIVE_SECRETS[4]}">
+         <textarea aria-label="Token" name="token">${SENSITIVE_SECRETS[5]}</textarea>`
+      : ''
   return `<!doctype html>
 <html lang="en">
   <head>
@@ -94,6 +130,7 @@ function fixtureHtml(blocker?: string): string {
     <p id="notification">Notification permission: pending</p>
     <canvas aria-label="Canvas target" role="button" tabindex="0" width="320" height="180"></canvas>
     ${blockerMarkup}
+    ${sensitiveMarkup}
     <script>
       const player = document.querySelector('#player')
       const difficulty = document.querySelector('#difficulty')
@@ -124,6 +161,12 @@ function fixtureHtml(blocker?: string): string {
       const context = canvas.getContext('2d')
       context.fillStyle = '#68a0cf'
       context.fillRect(20, 20, 100, 80)
+      if (new URLSearchParams(location.search).get('blocker') === 'canvas-change') {
+        setTimeout(() => {
+          context.fillStyle = '#d43f70'
+          context.fillRect(0, 0, canvas.width, canvas.height)
+        }, 1000)
+      }
       document.querySelector('#notification').textContent =
         'Notification permission: ' + Notification.permission
     </script>
@@ -134,11 +177,15 @@ function fixtureHtml(blocker?: string): string {
 async function startFixture(): Promise<{ server: Server; origin: string }> {
   const server = createServer((request, response) => {
     const url = new URL(request.url ?? '/', 'http://127.0.0.1')
-    response.writeHead(200, {
-      'content-type': 'text/html; charset=utf-8',
-      'cache-control': 'no-store',
-    })
-    response.end(fixtureHtml(url.searchParams.get('blocker') ?? undefined))
+    const send = (): void => {
+      response.writeHead(200, {
+        'content-type': 'text/html; charset=utf-8',
+        'cache-control': 'no-store',
+      })
+      response.end(fixtureHtml(url.searchParams.get('blocker') ?? undefined))
+    }
+    if (url.pathname === '/slow') setTimeout(send, 2_000)
+    else send()
   })
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject)
@@ -185,6 +232,9 @@ function scopedDecision(
     ...decision,
     observationId: observation.id,
     pageId: observation.page.id,
+    ...(['click', 'move', 'drag', 'mouse-down', 'mouse-up'].includes(decision.type)
+      ? { visualFingerprint: observation.visualFingerprint }
+      : {}),
   } as BrowserComputerUseDecision
 }
 
@@ -251,6 +301,43 @@ async function deterministicRepro(
     await new Promise((resolve) => setTimeout(resolve, 100))
     const notifications = await browser.observe()
     assert(notifications.content.includes('Notification permission: denied'), notifications.content)
+    console.log('Browser Control repro: semantic operations PASS')
+
+    await browser.open(`${origin}/?blocker=sensitive`)
+    const sensitiveSemantic = await browser.observe()
+    const sensitiveComputerUse = await browser.captureComputerUseObservation(true)
+    const semanticEvidence = JSON.stringify(sensitiveSemantic)
+    const computerUseEvidence = JSON.stringify({
+      ...sensitiveComputerUse,
+      visual: sensitiveComputerUse.visual
+        ? { mimeType: sensitiveComputerUse.visual.mimeType }
+        : null,
+    })
+    for (const secret of SENSITIVE_SECRETS) {
+      assert(!semanticEvidence.includes(secret), `Sensitive semantic leak: ${secret}`)
+      assert(!computerUseEvidence.includes(secret), `Sensitive computer-use leak: ${secret}`)
+    }
+    assert(
+      sensitiveSemantic.interactiveElements
+        .filter((element) => element.sensitive)
+        .every((element) => element.name && !SENSITIVE_SECRETS.includes(element.name as never)),
+    )
+    assert(sensitiveComputerUse.visual?.bytes.length)
+    await browser.open(origin)
+    console.log('Browser Control repro: sensitive evidence redaction PASS')
+
+    const refObservation = await browser.captureComputerUseObservation(true)
+    const saveRef = refFor(refObservation, 'Save profile')
+    await browser.observe()
+    await assert.rejects(
+      () =>
+        browser.executeComputerUseDecision(
+          scopedDecision(refObservation, { type: 'click-ref', ref: saveRef }),
+          new AbortController().signal,
+        ),
+      (error) => error instanceof BrowserAutomationError && error.code === 'TARGET_STALE',
+    )
+    console.log('Browser Control repro: exact observation ref ownership PASS')
 
     await assert.rejects(
       () => browser.click(target(initial, 'button', 'Save profile')),
@@ -265,6 +352,9 @@ async function deterministicRepro(
       }),
       decide: async () => {
         throw new Error('An unavailable visual model must never receive a decision request')
+      },
+      verifyCompletion: async () => {
+        throw new Error('An unavailable visual model must never verify completion')
       },
     }
     const unavailableRuntime = new BrowserComputerUseRuntime({
@@ -310,6 +400,75 @@ async function deterministicRepro(
     )
     assert.equal(boundedSession.maxSteps, 5)
     await waitForSession(boundedRuntime, (session) => session.state === 'completed')
+    console.log('Browser Control repro: completion verification PASS')
+
+    let incompleteDecisions = 0
+    const incompleteVisual = new ScriptedVisualAdapter(
+      (context) => {
+        incompleteDecisions += 1
+        return incompleteDecisions === 1
+          ? scopedDecision(context.observation, {
+              type: 'done',
+              summary: 'Model proposed completion too early',
+            })
+          : scopedDecision(context.observation, {
+              type: 'request-user',
+              reasonCode: 'fixture-remains-incomplete',
+            })
+      },
+      true,
+      () => ({
+        status: 'not-satisfied',
+        confidence: 0.99,
+        evidenceSummary: 'The fixture still shows an incomplete state.',
+      }),
+    )
+    const incompleteRuntime = new BrowserComputerUseRuntime({ browser, visual: incompleteVisual })
+    await incompleteRuntime.start(
+      {
+        goal: 'Complete a state that is still incomplete',
+        maxSteps: 5,
+        maxActions: 5,
+        maxDurationMs: 30_000,
+      },
+      'incomplete-action',
+      new AbortController().signal,
+    )
+    const incomplete = await waitForSession(
+      incompleteRuntime,
+      (session) => session.state === 'waiting-user',
+    )
+    assert.notEqual(incomplete.state, 'completed')
+    await incompleteRuntime.stop()
+
+    const uncertainRuntime = new BrowserComputerUseRuntime({
+      browser,
+      visual: new ScriptedVisualAdapter(
+        (context) =>
+          scopedDecision(context.observation, {
+            type: 'done',
+            summary: 'Unverifiable proposal',
+          }),
+        true,
+        () => ({ status: 'uncertain', confidence: 0.4 }),
+      ),
+    })
+    await uncertainRuntime.start(
+      {
+        goal: 'Require honest completion evidence',
+        maxSteps: 5,
+        maxActions: 5,
+        maxDurationMs: 30_000,
+      },
+      'uncertain-action',
+      new AbortController().signal,
+    )
+    const uncertain = await waitForSession(
+      uncertainRuntime,
+      (session) => session.state === 'failed',
+    )
+    assert.equal(uncertain.lastErrorCode, 'COMPUTER_USE_COMPLETION_UNVERIFIED')
+    console.log('Browser Control repro: completion honesty PASS')
 
     let fixtureDecision = 0
     const fixtureEvents: string[] = []
@@ -356,6 +515,7 @@ async function deterministicRepro(
     assert(fixtureEvents.includes('computer-use-started'))
     assert(fixtureEvents.includes('computer-use-progress'))
     assert(fixtureEvents.includes('computer-use-completed'))
+    console.log('Browser Control repro: delegated input PASS')
 
     let pauseDecision = 0
     const pauseVisual = new ScriptedVisualAdapter(async (context, signal) => {
@@ -391,10 +551,25 @@ async function deterministicRepro(
       pauseRuntime,
       (session) => session.actionCount === 1 && session.activity === 'deciding',
     )
-    assert.equal((await pauseRuntime.pause()).state, 'paused')
+    console.log('Browser Control repro: pausing active decision')
+    const pausedSession = await Promise.race([
+      pauseRuntime.pause(),
+      new Promise<never>((_resolve, reject) =>
+        setTimeout(
+          () =>
+            reject(new Error(`Pause did not settle: ${JSON.stringify(pauseRuntime.snapshot())}`)),
+          5_000,
+        ),
+      ),
+    ])
+    assert.equal(pausedSession.state, 'paused')
+    console.log('Browser Control repro: paused')
     assert((await browser.observe()).content.includes('Key released ArrowLeft'))
+    console.log('Browser Control repro: input released')
     await pauseRuntime.resume()
+    console.log('Browser Control repro: resumed')
     await waitForSession(pauseRuntime, (session) => session.state === 'completed')
+    console.log('Browser Control repro: pause/resume PASS')
 
     for (const blocker of [
       'captcha',
@@ -427,6 +602,120 @@ async function deterministicRepro(
       assert.equal(blockerVisual.calls, 0)
       await blockerRuntime.stop()
     }
+    console.log('Browser Control repro: blocker handoff PASS')
+
+    await browser.open(`${origin}/?blocker=canvas-change`)
+    const canvasObservation = await browser.captureComputerUseObservation(true)
+    await new Promise((resolve) => setTimeout(resolve, 1_200))
+    await assert.rejects(
+      () =>
+        browser.executeComputerUseDecision(
+          scopedDecision(canvasObservation, {
+            type: 'click',
+            x: 80,
+            y: 240,
+            button: 'left',
+          }),
+          new AbortController().signal,
+        ),
+      (error) => error instanceof BrowserAutomationError && error.code === 'TARGET_STALE',
+    )
+    assert((await browser.observe()).content.includes('Ready'))
+    console.log('Browser Control repro: canvas visual stale detection PASS')
+
+    await browser.open(origin)
+    const slowRuntime = new BrowserComputerUseRuntime({
+      browser,
+      stopTimeoutMs: 100,
+      visual: new ScriptedVisualAdapter((context) =>
+        scopedDecision(context.observation, { type: 'navigate', url: `${origin}/slow` }),
+      ),
+    })
+    await slowRuntime.start(
+      {
+        goal: 'Stop a slow navigation without a delayed mutation',
+        maxSteps: 5,
+        maxActions: 5,
+        maxDurationMs: 30_000,
+      },
+      'slow-stop-action',
+      new AbortController().signal,
+    )
+    await waitForSession(slowRuntime, (session) => session.activity === 'acting')
+    assert.equal((await slowRuntime.stop()).state, 'stopped')
+    assert.equal(browser.sessionSnapshot()?.status, 'closed')
+    await new Promise((resolve) => setTimeout(resolve, 2_200))
+    assert.equal(browser.sessionSnapshot()?.status, 'closed')
+    assert(!browser.sessionSnapshot()?.currentUrl?.includes('/slow'))
+    console.log('Browser Control repro: no delayed mutation after Stop PASS')
+
+    await browser.open(origin)
+    const providerObservation = await browser.captureComputerUseObservation(true)
+    const providerContext = { goal: 'Classify provider errors', observation: providerObservation }
+    const capabilities = () => ({
+      supportsReasoning: false,
+      supportsStreaming: false,
+      supportsTemperature: true,
+      supportsSystemPrompt: true,
+      supportsToolCalling: false,
+      supportsVision: true,
+      recommendedMaxTokens: 1_000,
+    })
+    const providerCases = [
+      {
+        expected: 'COMPUTER_USE_RATE_LIMITED',
+        error: new LlmResponseError({
+          provider: 'groq',
+          code: 'RATE_LIMITED',
+          message: 'rate limited',
+        }),
+      },
+      {
+        expected: 'COMPUTER_USE_MODEL_TIMEOUT',
+        error: new LlmResponseError({ provider: 'groq', code: 'TIMEOUT', message: 'timeout' }),
+      },
+      { expected: 'COMPUTER_USE_PROVIDER_NETWORK', error: { code: 'ECONNRESET' } },
+    ] as const
+    for (const providerCase of providerCases) {
+      const adapter = new LlmBrowserVisualActionAdapter({
+        provider: () => ({
+          capabilities,
+          chat: async () => {
+            throw providerCase.error
+          },
+        }),
+        modelLabel: () => 'fixture-vision',
+      })
+      await assert.rejects(
+        () => adapter.decide(providerContext, new AbortController().signal),
+        (error) => error instanceof BrowserAutomationError && error.code === providerCase.expected,
+      )
+      if (providerCase.expected === 'COMPUTER_USE_RATE_LIMITED') {
+        assert.equal(adapter.status().state, 'rate-limited')
+      }
+    }
+    const unavailableProvider = new LlmBrowserVisualActionAdapter({
+      provider: () => ({
+        capabilities: () => ({ ...capabilities(), supportsVision: false }),
+        chat: async () => '{}',
+      }),
+      modelLabel: () => 'text-only',
+    })
+    await assert.rejects(
+      () => unavailableProvider.decide(providerContext, new AbortController().signal),
+      (error) =>
+        error instanceof BrowserAutomationError && error.code === 'COMPUTER_USE_MODEL_UNAVAILABLE',
+    )
+    const invalidProvider = new LlmBrowserVisualActionAdapter({
+      provider: () => ({ capabilities, chat: async () => 'not-json' }),
+      modelLabel: () => 'invalid-json',
+    })
+    await assert.rejects(
+      () => invalidProvider.decide(providerContext, new AbortController().signal),
+      (error) => error instanceof BrowserAutomationError && error.code === 'COMPUTER_USE_FAILED',
+    )
+    assert.equal((await browser.observe()).url, origin.endsWith('/') ? origin : `${origin}/`)
+    console.log('Browser Control repro: typed provider failures PASS')
 
     await browser.open(origin)
     const staleObservation = await browser.captureComputerUseObservation(true)

@@ -97,3 +97,28 @@ export interface ContinuousListeningSettings {
   followUpWindowMs: number
   curiosityChance: number
 }
+
+export type ContinuousListeningTransport =
+  | 'off'
+  | 'starting'
+  | 'ready'
+  | 'reconnecting'
+  | 'failed'
+  | 'stopping'
+
+export type ContinuousListeningActivity = 'idle' | 'hearing-speech' | 'recognizing'
+
+export interface ContinuousListeningFailure {
+  domain: 'microphone' | 'permission' | 'speech-service' | 'transport'
+  code: string
+}
+
+export interface ContinuousListeningProjection {
+  desired: boolean
+  transport: ContinuousListeningTransport
+  activity: ContinuousListeningActivity
+  microphoneCaptured: boolean
+  failure?: ContinuousListeningFailure
+}
+
+export type ContinuousListeningRuntimeProjection = Omit<ContinuousListeningProjection, 'desired'>
