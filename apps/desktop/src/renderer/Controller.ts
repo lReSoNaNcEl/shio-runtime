@@ -27,6 +27,7 @@ import type { EarAxisOverride } from './avatar/embodiment/secondary-motion/EarBe
 import type { MouthWeights } from './avatar/embodiment/speech/LipSync'
 import { SceneManager } from './avatar/rendering/three/SceneManager'
 import type { OverlayViewMode } from './avatar/tuning/cameraTuning'
+import { ChatMessageUpdateCoalescer } from './controller/ChatMessageUpdateCoalescer'
 import { type ControllerStateListener, ControllerStore } from './controller/ControllerStore'
 import type {
   AppStatus,
@@ -177,6 +178,9 @@ export class Controller {
     overlayAnimationFile: '',
     microphoneGate: CLOSED_GATE,
   })
+  private messageUpdates = new ChatMessageUpdateCoalescer((id, patch) =>
+    this.store.updateMessage(id, patch),
+  )
   private diagnostics = new RuntimeDiagnosticsProjection({
     getControllerState: () => this.store.getState(),
     getCharacterState: () => this.getCharacterStateSnapshot(),
@@ -213,8 +217,10 @@ export class Controller {
     presentation: this.conversationPresentation,
     events: this.shioRuntime.events,
     setStatus: (status) => this.set({ status }),
-    pushMessage: (role, text, grounding) => this.pushMessage(role, text, grounding),
-    updateMessage: (id, text, grounding) => this.store.updateMessage(id, { text, grounding }),
+    pushMessage: (role, text, grounding, streaming) =>
+      this.pushMessage(role, text, grounding, streaming),
+    updateMessage: (id, text, grounding, streaming, immediate) =>
+      this.messageUpdates.update(id, { text, grounding, streaming }, immediate),
     formatUserError: (message) => this.formatConversationUserError(message),
     markAssistantMessageInterrupted: () => this.markAssistantMessageInterrupted(),
     setResponseInterruptionPending: (pending) => this.set({ responseInterruptionPending: pending }),
@@ -449,9 +455,10 @@ export class Controller {
     role: ChatMsg['role'],
     text: string,
     grounding?: ChatMsg['grounding'],
+    streaming = false,
   ): string {
     const id = nextId()
-    this.store.appendMessage({ id, role, text, grounding })
+    this.store.appendMessage({ id, role, text, grounding, streaming })
     return id
   }
 
@@ -460,6 +467,7 @@ export class Controller {
   }
 
   private markAssistantMessageInterrupted(): void {
+    this.messageUpdates.flushAll({ streaming: false })
     this.store.markLatestAssistantInterrupted()
   }
 
@@ -1008,6 +1016,7 @@ export class Controller {
     observeRendererPromise(this.player.dispose(), 'dispose output AudioContext')
     this.speechInputRuntime.dispose()
     this.microphoneGate.dispose()
+    this.messageUpdates.dispose()
     this.speechCapabilitiesRuntime.dispose()
     this.avatarRuntime.dispose()
   }

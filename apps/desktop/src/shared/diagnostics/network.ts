@@ -3,6 +3,7 @@ export const NETWORK_REQUEST_SOURCES = [
   'speech-api',
   'llm',
   'project-awareness',
+  'web-search',
 ] as const
 
 export type NetworkRequestSource = (typeof NETWORK_REQUEST_SOURCES)[number]

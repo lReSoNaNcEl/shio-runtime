@@ -1,4 +1,8 @@
-import axios from 'axios'
+import { APIConnectionTimeoutError, APIUserAbortError } from 'openai'
+import type {
+  ChatCompletionChunk,
+  ChatCompletionCreateParamsStreaming,
+} from 'openai/resources/chat/completions'
 
 import type {
   CharacterStreamDeadlines,
@@ -15,23 +19,24 @@ import {
   normalizeHttpErrorMessage,
 } from '../errors'
 import type { LlmStreamOptions } from '../types'
-import { prepareMessages } from './messageCompatibility'
-import type { ChatRunConfig } from './request'
+import { type ChatRunConfig, createChatCompletionBody, sdkHttpFailure } from './request'
 import { normalizeFinishReason } from './response'
 
-const DEFAULT_TEMPERATURE = 0.7
 export const DEFAULT_STREAM_DEADLINES: CharacterStreamDeadlines = Object.freeze({
   connectionMs: 12_000,
   firstByteMs: 20_000,
   idleMs: 20_000,
   totalMs: 120_000,
 })
-const MAX_SSE_LINE_CHARACTERS = 1_000_000
 
 interface PendingToolCall {
   id: string
   name: string
   argumentsJson: string
+}
+
+interface OpenAIChunkStream extends AsyncIterable<ChatCompletionChunk> {
+  controller: AbortController
 }
 
 class StreamDeadlineError extends Error {
@@ -69,52 +74,13 @@ function finitePositive(value: number | undefined, fallback: number): number {
   return Number.isFinite(value) && Number(value) > 0 ? Math.floor(Number(value)) : fallback
 }
 
-function createRequestBody(
-  config: ChatRunConfig,
-  options: LlmStreamOptions,
-): Record<string, unknown> {
-  const requestedMaxTokens =
-    options.maxTokens ?? config.maxTokensOverride ?? config.capabilities.recommendedMaxTokens
-  const maxTokens = Number.isFinite(requestedMaxTokens)
-    ? Math.max(1, Math.floor(requestedMaxTokens))
-    : config.capabilities.recommendedMaxTokens
-  const body: Record<string, unknown> = {
-    model: config.model,
-    messages: prepareMessages(
-      config.messages,
-      config.capabilities,
-      config.singleLeadingSystemMessage,
-    ),
-    max_tokens: maxTokens,
-    stream: true,
-    stream_options: { include_usage: true },
-  }
-  if (config.capabilities.supportsTemperature) {
-    body.temperature = config.temperature ?? DEFAULT_TEMPERATURE
-  }
-  const tools = options.tools ?? config.tools
-  if (tools && tools.length > 0 && config.capabilities.supportsToolCalling) {
-    body.tools = tools.map((tool) => ({
-      type: 'function',
-      function: {
-        name: tool.name,
-        description: tool.description,
-        parameters: tool.parameters,
-      },
-    }))
-    body.tool_choice = options.toolChoice ?? config.toolChoice ?? 'auto'
-    body.parallel_tool_calls = false
-  }
-  return body
-}
-
 export async function* runChatCompletionStream(
   config: ChatRunConfig,
   options: LlmStreamOptions = {},
 ): AsyncGenerator<CharacterStreamEvent> {
   const traceId = safeTraceId(options.traceId)
   const deadlines = resolvedDeadlines(options)
-  const body = createRequestBody(config, options)
+  const body = createChatCompletionBody(config, options, true)
   const controller = new AbortController()
   const abortFromCaller = (): void => controller.abort(options.signal?.reason)
   if (options.signal?.aborted) abortFromCaller()
@@ -126,10 +92,9 @@ export async function* runChatCompletionStream(
   const startedAt = Date.now()
   let terminalResult = 'failure'
   let terminalCode = 'UNKNOWN'
-  let stream: AsyncIterable<Buffer> | null = null
+  let stream: OpenAIChunkStream | null = null
   const pendingTools = new Map<number, PendingToolCall>()
   let finishReason: CharacterStreamFinishReason = 'unknown'
-  let completionEmitted = false
 
   mainLog.info('[LLMTransportTrace] request_started', {
     traceId,
@@ -144,21 +109,17 @@ export async function* runChatCompletionStream(
   })
 
   try {
-    const response = await withDeadline(
-      config.http.post(config.chatPath, body, {
-        headers: { Authorization: `Bearer ${config.apiKey}`, ...config.extraHeaders },
-        responseType: 'stream',
-        signal: controller.signal,
-        timeout: 0,
-      }),
+    stream = (await withDeadline(
+      config.client.chat.completions.create(
+        body as unknown as ChatCompletionCreateParamsStreaming,
+        { signal: controller.signal, maxRetries: 0 },
+      ),
       deadlines.connectionMs,
       'connectionMs',
       controller,
-    )
+    )) as unknown as OpenAIChunkStream
     yield { type: 'connected', at: Date.now() }
-    stream = response.data as AsyncIterable<Buffer>
     const iterator = stream[Symbol.asyncIterator]()
-    let lineBuffer = ''
     let receivedFirstByte = false
     while (true) {
       const item = await withDeadline(
@@ -172,37 +133,13 @@ export async function* runChatCompletionStream(
         receivedFirstByte = true
         yield { type: 'first-byte', at: Date.now() }
       }
-      lineBuffer += item.value.toString('utf8')
-      if (lineBuffer.length > MAX_SSE_LINE_CHARACTERS && !lineBuffer.includes('\n')) {
-        throw providerRejected(config.provider, config.displayName, 'oversized SSE event')
-      }
-      const lines = lineBuffer.split(/\r?\n/u)
-      lineBuffer = lines.pop() ?? ''
-      for (const line of lines) {
-        const parsed = parseSseLine(line)
-        if (parsed === null) continue
-        if (parsed === 'done') {
-          yield* completePendingTools(pendingTools)
-          if (!completionEmitted) {
-            completionEmitted = true
-            yield { type: 'completed', at: Date.now(), finishReason }
-          }
-          terminalResult = 'success'
-          terminalCode = 'OK'
-          return
-        }
-        const events = parseStreamPayload(parsed, pendingTools)
-        for (const event of events) {
-          if (event.type === 'completed') {
-            finishReason = event.finishReason
-            continue
-          }
-          yield event
-        }
+      for (const event of parseStreamChunk(item.value, pendingTools)) {
+        if (event.type === 'completed') finishReason = event.finishReason
+        else yield event
       }
     }
     yield* completePendingTools(pendingTools)
-    if (!completionEmitted) yield { type: 'completed', at: Date.now(), finishReason }
+    yield { type: 'completed', at: Date.now(), finishReason }
     terminalResult = 'success'
     terminalCode = 'OK'
   } catch (error) {
@@ -212,11 +149,7 @@ export async function* runChatCompletionStream(
   } finally {
     clearTimeout(totalTimer)
     options.signal?.removeEventListener('abort', abortFromCaller)
-    if (controller.signal.aborted && stream && 'destroy' in stream) {
-      ;(stream as AsyncIterable<Buffer> & { destroy(reason?: unknown): void }).destroy(
-        controller.signal.reason,
-      )
-    }
+    stream?.controller.abort(controller.signal.reason)
     mainLog.info('[LLMTransportTrace] request_terminal', {
       traceId,
       provider: config.provider,
@@ -243,19 +176,7 @@ async function* completePendingTools(
   pendingTools.clear()
 }
 
-function parseSseLine(line: string): unknown | 'done' | null {
-  const trimmed = line.trim()
-  if (!trimmed || trimmed.startsWith(':') || !trimmed.startsWith('data:')) return null
-  const data = trimmed.slice(5).trim()
-  if (data === '[DONE]') return 'done'
-  try {
-    return JSON.parse(data) as unknown
-  } catch {
-    throw new Error('INVALID_SSE_JSON')
-  }
-}
-
-function parseStreamPayload(
+function parseStreamChunk(
   raw: unknown,
   pendingTools: Map<number, PendingToolCall>,
 ): CharacterStreamEvent[] {
@@ -332,21 +253,21 @@ function parseUsage(value: unknown): CharacterStreamUsage | null {
 }
 
 async function withDeadline<T>(
-  promise: Promise<T>,
+  promise: PromiseLike<T>,
   timeoutMs: number,
   stage: keyof CharacterStreamDeadlines,
   controller: AbortController,
 ): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined
   let removeAbortListener = (): void => undefined
-  const timeout = new Promise<never>((_, reject) => {
+  const timeout = new Promise<never>((_resolve, reject) => {
     timer = setTimeout(() => {
       const error = new StreamDeadlineError(stage)
       controller.abort(error)
       reject(error)
     }, timeoutMs)
   })
-  const aborted = new Promise<never>((_, reject) => {
+  const aborted = new Promise<never>((_resolve, reject) => {
     const rejectAbort = (): void => reject(controller.signal.reason ?? new Error('ABORTED'))
     if (controller.signal.aborted) {
       rejectAbort()
@@ -356,7 +277,7 @@ async function withDeadline<T>(
     removeAbortListener = () => controller.signal.removeEventListener('abort', rejectAbort)
   })
   try {
-    return await Promise.race([promise, timeout, aborted])
+    return await Promise.race([Promise.resolve(promise), timeout, aborted])
   } finally {
     if (timer) clearTimeout(timer)
     removeAbortListener()
@@ -371,7 +292,11 @@ function normalizeStreamError(
 ): LlmResponseError {
   if (error instanceof LlmResponseError) return error
   const reason = controller.signal.reason
-  if (error instanceof StreamDeadlineError || reason instanceof StreamDeadlineError) {
+  if (
+    error instanceof StreamDeadlineError ||
+    reason instanceof StreamDeadlineError ||
+    error instanceof APIConnectionTimeoutError
+  ) {
     return new LlmResponseError({
       provider: config.provider,
       code: 'TIMEOUT',
@@ -379,7 +304,7 @@ function normalizeStreamError(
       message: `${config.displayName}: превышено время ожидания потока ответа.`,
     })
   }
-  if (options.signal?.aborted || (axios.isAxiosError(error) && axios.isCancel(error))) {
+  if (options.signal?.aborted || error instanceof APIUserAbortError) {
     return new LlmResponseError({
       provider: config.provider,
       code: 'CANCELLED',
@@ -387,27 +312,16 @@ function normalizeStreamError(
       message: `${config.displayName}: запрос отменён.`,
     })
   }
-  if (axios.isAxiosError(error) && error.response) {
-    const failure = classifyHttpFailure(error.response.status, error.response.data)
+  const httpFailure = sdkHttpFailure(error)
+  if (httpFailure) {
+    const failure = classifyHttpFailure(httpFailure.status, httpFailure.data)
     return new LlmResponseError({
       provider: config.provider,
       ...failure,
-      message: normalizeHttpErrorMessage(
-        config.displayName,
-        error.response.status,
-        error.response.data,
-      ),
+      message: normalizeHttpErrorMessage(config.displayName, httpFailure.status, httpFailure.data),
     })
   }
-  if (axios.isAxiosError(error) && ['ECONNABORTED', 'ETIMEDOUT'].includes(error.code ?? '')) {
-    return new LlmResponseError({
-      provider: config.provider,
-      code: 'TIMEOUT',
-      recoverable: true,
-      message: `${config.displayName}: превышено время ожидания ответа.`,
-    })
-  }
-  if (error instanceof Error && error.message === 'INVALID_SSE_JSON') {
+  if (error instanceof SyntaxError) {
     return providerRejected(config.provider, config.displayName, 'invalid SSE JSON')
   }
   return new LlmResponseError({

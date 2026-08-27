@@ -654,6 +654,7 @@ export const enMessages: Record<TranslationKey, string> = {
   'diagnostics.network.source.speech-api': 'Speech API',
   'diagnostics.network.source.llm': 'LLM',
   'diagnostics.network.source.project-awareness': 'Project Awareness',
+  'diagnostics.network.source.web-search': 'Web Search',
   'diagnostics.network.outcome.pending': 'Pending',
   'diagnostics.network.outcome.success': 'Succeeded',
   'diagnostics.network.outcome.failure': 'Failed',

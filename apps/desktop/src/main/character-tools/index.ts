@@ -1,4 +1,5 @@
 export * from './CharacterToolDispatcher'
 export * from './CharacterToolLoop'
 export * from './CharacterToolRegistry'
+export * from './CharacterToolSpecifications'
 export * from './ToolInfluenceContext'

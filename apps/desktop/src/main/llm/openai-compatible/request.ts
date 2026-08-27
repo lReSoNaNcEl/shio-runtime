@@ -1,4 +1,6 @@
-import axios, { type AxiosInstance } from 'axios'
+import type OpenAI from 'openai'
+import { APIConnectionError, APIConnectionTimeoutError, APIError, APIUserAbortError } from 'openai'
+import type { ChatCompletionCreateParamsNonStreaming } from 'openai/resources/chat/completions'
 
 import type { LlmProviderId } from '../../../shared/llm'
 import { mainLog } from '../../logging/safeLogger'
@@ -22,13 +24,10 @@ import { type ParsedCompletion, parseChatCompletion } from './response'
 export interface ChatRunConfig {
   provider: LlmProviderId
   displayName: string
-  http: AxiosInstance
-  chatPath: string
-  apiKey: string
+  client: Pick<OpenAI, 'chat'>
   model: string
   capabilities: LlmCapabilities
   messages: readonly ChatMessage[]
-  extraHeaders?: Record<string, string>
   singleLeadingSystemMessage?: boolean
   temperature?: number
   maxTokensOverride?: number
@@ -41,7 +40,7 @@ const DEFAULT_TEMPERATURE = 0.7
 const DEFAULT_REQUEST_TIMEOUT_MS = 60_000
 
 function safeTraceId(value: string | undefined): string {
-  return value && /^[A-Za-z0-9_.:-]{1,100}$/.test(value) ? value : 'untracked'
+  return value && /^[A-Za-z0-9_.:-]{1,100}$/u.test(value) ? value : 'untracked'
 }
 
 function requestDeadline(
@@ -74,6 +73,46 @@ function requestDeadline(
   }
 }
 
+export function createChatCompletionBody(
+  config: ChatRunConfig,
+  options: LlmCompletionOptions,
+  stream: boolean,
+): Record<string, unknown> {
+  const requestedMaxTokens =
+    options.maxTokens ?? config.maxTokensOverride ?? config.capabilities.recommendedMaxTokens
+  const maxTokens = Number.isFinite(requestedMaxTokens)
+    ? Math.max(1, Math.floor(requestedMaxTokens))
+    : config.capabilities.recommendedMaxTokens
+  const body: Record<string, unknown> = {
+    model: config.model,
+    messages: prepareMessages(
+      config.messages,
+      config.capabilities,
+      config.singleLeadingSystemMessage,
+    ),
+    max_tokens: maxTokens,
+    stream,
+  }
+  if (stream) body.stream_options = { include_usage: true }
+  if (config.capabilities.supportsTemperature) {
+    body.temperature = config.temperature ?? DEFAULT_TEMPERATURE
+  }
+  const tools = options.tools ?? config.tools
+  if (tools && tools.length > 0 && config.capabilities.supportsToolCalling) {
+    body.tools = tools.map((tool) => ({
+      type: 'function',
+      function: {
+        name: tool.name,
+        description: tool.description,
+        parameters: tool.parameters,
+      },
+    }))
+    body.tool_choice = options.toolChoice ?? config.toolChoice ?? 'auto'
+    body.parallel_tool_calls = false
+  }
+  return body
+}
+
 export async function runChatCompletion(
   config: ChatRunConfig,
   options: LlmRequestOptions = {},
@@ -91,39 +130,9 @@ export async function runChatCompletionDetailed(
   const timeoutMs = Number.isFinite(requestedTimeoutMs)
     ? Math.max(1, requestedTimeoutMs)
     : DEFAULT_REQUEST_TIMEOUT_MS
-  const requestedMaxTokens =
-    options.maxTokens ?? config.maxTokensOverride ?? config.capabilities.recommendedMaxTokens
-  const maxTokens = Number.isFinite(requestedMaxTokens)
-    ? Math.max(1, Math.floor(requestedMaxTokens))
-    : config.capabilities.recommendedMaxTokens
   const deadline = requestDeadline(options.signal, timeoutMs)
-  const preparedMessages = prepareMessages(
-    config.messages,
-    config.capabilities,
-    config.singleLeadingSystemMessage,
-  )
-  const body: Record<string, unknown> = {
-    model: config.model,
-    messages: preparedMessages,
-    max_tokens: maxTokens,
-    stream: false,
-  }
-  if (config.capabilities.supportsTemperature) {
-    body.temperature = config.temperature ?? DEFAULT_TEMPERATURE
-  }
-  const tools = options.tools ?? config.tools
-  if (tools && tools.length > 0 && config.capabilities.supportsToolCalling) {
-    body.tools = tools.map((tool) => ({
-      type: 'function',
-      function: {
-        name: tool.name,
-        description: tool.description,
-        parameters: tool.parameters,
-      },
-    }))
-    body.tool_choice = options.toolChoice ?? config.toolChoice ?? 'auto'
-    body.parallel_tool_calls = false
-  }
+  const body = createChatCompletionBody(config, options, false)
+  const preparedMessages = body.messages as readonly { role?: unknown }[]
   const traceId = safeTraceId(options.traceId)
   const toolCount = Array.isArray(body.tools) ? body.tools.length : 0
   let terminalResult = 'failure'
@@ -139,16 +148,15 @@ export async function runChatCompletionDetailed(
     toolChoice: toolCount > 0 ? body.tool_choice : undefined,
     streaming: false,
     deadlineMs: timeoutMs,
-    maxTokens,
+    maxTokens: body.max_tokens,
   })
 
   try {
-    const response = await config.http.post(config.chatPath, body, {
-      headers: { Authorization: `Bearer ${config.apiKey}`, ...config.extraHeaders },
-      signal: deadline.signal,
-      timeout: timeoutMs,
-    })
-    const parsed = parseChatCompletion(config.provider, config.displayName, response.data)
+    const response = await config.client.chat.completions.create(
+      body as unknown as ChatCompletionCreateParamsNonStreaming,
+      { signal: deadline.signal, maxRetries: 0 },
+    )
+    const parsed = parseChatCompletion(config.provider, config.displayName, response)
     llmDebug({
       provider: config.provider,
       model: config.model,
@@ -164,42 +172,22 @@ export async function runChatCompletionDetailed(
   } catch (error) {
     if (error instanceof LlmResponseError) {
       terminalCode = error.code
-      llmDebug({
-        provider: config.provider,
-        model: config.model,
-        finishReason: 'error',
-        latencyMs: Date.now() - started,
-        hadReasoning: false,
-        contentEmpty: true,
-        error: error.message,
-      })
+      llmDebugFailure(config, started, error.message)
       throw error
     }
-    if (axios.isAxiosError(error) && error.response) {
+    const httpFailure = sdkHttpFailure(error)
+    if (httpFailure) {
       const message = normalizeHttpErrorMessage(
         config.displayName,
-        error.response.status,
-        error.response.data,
+        httpFailure.status,
+        httpFailure.data,
       )
-      const failure = classifyHttpFailure(error.response.status, error.response.data)
+      const failure = classifyHttpFailure(httpFailure.status, httpFailure.data)
       terminalCode = failure.code
-      llmDebug({
-        provider: config.provider,
-        model: config.model,
-        finishReason: 'error',
-        latencyMs: Date.now() - started,
-        hadReasoning: false,
-        contentEmpty: true,
-        status: error.response.status,
-        error: message,
-      })
-      throw new LlmResponseError({
-        provider: config.provider,
-        ...failure,
-        message,
-      })
+      llmDebugFailure(config, started, message, httpFailure.status)
+      throw new LlmResponseError({ provider: config.provider, ...failure, message })
     }
-    if (deadline.didTimeOut()) {
+    if (deadline.didTimeOut() || error instanceof APIConnectionTimeoutError) {
       terminalCode = 'TIMEOUT'
       throw new LlmResponseError({
         provider: config.provider,
@@ -208,7 +196,7 @@ export async function runChatCompletionDetailed(
         message: `${config.displayName}: превышено время ожидания ответа.`,
       })
     }
-    if (options.signal?.aborted || axios.isCancel(error)) {
+    if (options.signal?.aborted || error instanceof APIUserAbortError) {
       terminalCode = 'CANCELLED'
       throw new LlmResponseError({
         provider: config.provider,
@@ -217,24 +205,12 @@ export async function runChatCompletionDetailed(
         message: `${config.displayName}: запрос отменён.`,
       })
     }
-    if (
-      axios.isAxiosError(error) &&
-      (error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT')
-    ) {
-      terminalCode = 'TIMEOUT'
-      throw new LlmResponseError({
-        provider: config.provider,
-        code: 'TIMEOUT',
-        recoverable: true,
-        message: `${config.displayName}: превышено время ожидания ответа.`,
-      })
-    }
-    if (axios.isAxiosError(error)) {
+    if (error instanceof APIConnectionError) {
       const cause = error.cause as { code?: unknown; name?: unknown; syscall?: unknown } | undefined
       mainLog.warn('[LLM] transport failure', {
         provider: config.provider,
         model: config.model,
-        code: error.code ?? 'unknown',
+        code: 'API_CONNECTION_ERROR',
         causeCode: typeof cause?.code === 'string' ? cause.code : undefined,
         causeName: typeof cause?.name === 'string' ? cause.name : undefined,
         causeSyscall: typeof cause?.syscall === 'string' ? cause.syscall : undefined,
@@ -242,15 +218,7 @@ export async function runChatCompletionDetailed(
     }
     const message = networkErrorMessage(config.displayName)
     terminalCode = 'NETWORK_ERROR'
-    llmDebug({
-      provider: config.provider,
-      model: config.model,
-      finishReason: 'error',
-      latencyMs: Date.now() - started,
-      hadReasoning: false,
-      contentEmpty: true,
-      error: message,
-    })
+    llmDebugFailure(config, started, message)
     throw new LlmResponseError({
       provider: config.provider,
       code: 'NETWORK_ERROR',
@@ -269,4 +237,27 @@ export async function runChatCompletionDetailed(
       streaming: false,
     })
   }
+}
+
+export function sdkHttpFailure(error: unknown): { status: number; data: { error: object } } | null {
+  if (!(error instanceof APIError) || typeof error.status !== 'number') return null
+  return { status: error.status, data: { error: error.error ?? {} } }
+}
+
+function llmDebugFailure(
+  config: ChatRunConfig,
+  started: number,
+  error: string,
+  status?: number,
+): void {
+  llmDebug({
+    provider: config.provider,
+    model: config.model,
+    finishReason: 'error',
+    latencyMs: Date.now() - started,
+    hadReasoning: false,
+    contentEmpty: true,
+    status,
+    error,
+  })
 }

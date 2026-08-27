@@ -1,3 +1,5 @@
+import { type CheerioAPI, load } from 'cheerio'
+
 import type {
   WebSearchFailureCode,
   WebSearchFreshness,
@@ -7,12 +9,13 @@ import type {
   WebSearchResultItem,
   WebSearchStatus,
 } from '../../shared/web-search'
+import { createObservedFetch } from '../diagnostics/createObservedFetch'
 import type { WebSearchAdapter } from './WebSearchAdapter'
 
 const DUCKDUCKGO_LITE_ENDPOINT = 'https://lite.duckduckgo.com/lite/'
 const SEARCH_TIMEOUT_MS = 12_000
 const MAX_RESPONSE_BYTES = 1_000_000
-const PARSER_SIGNATURE = 'duckduckgo-lite/result-link-v1'
+const PARSER_SIGNATURE = 'duckduckgo-lite/cheerio-result-link-v2'
 const CIRCUIT_FAILURE_THRESHOLD = 3
 const CIRCUIT_OPEN_MS = 30_000
 const FRESHNESS: Record<WebSearchFreshness, string> = {
@@ -22,79 +25,15 @@ const FRESHNESS: Record<WebSearchFreshness, string> = {
   year: 'y',
 }
 
-interface ParsedAnchor {
-  start: number
-  end: number
-  href: string
-  titleHtml: string
-}
-
 function boundedString(value: string, maximum: number): string | undefined {
   const normalized = value.replace(/\s+/gu, ' ').trim()
   return normalized ? normalized.slice(0, maximum) : undefined
 }
 
-function decodeHtmlEntities(value: string): string {
-  const named: Readonly<Record<string, string>> = {
-    amp: '&',
-    apos: "'",
-    gt: '>',
-    lt: '<',
-    nbsp: ' ',
-    quot: '"',
-  }
-  return value
-    .replace(/&#(x?[0-9a-f]+);/giu, (_match, encoded: string) => {
-      const hexadecimal = encoded.toLocaleLowerCase().startsWith('x')
-      const parsed = Number.parseInt(
-        hexadecimal ? encoded.slice(1) : encoded,
-        hexadecimal ? 16 : 10,
-      )
-      return Number.isInteger(parsed) && parsed >= 0 && parsed <= 0x10ffff
-        ? String.fromCodePoint(parsed)
-        : '\ufffd'
-    })
-    .replace(/&([a-z]+);/giu, (match, entity: string) => named[entity.toLocaleLowerCase()] ?? match)
-}
-
-function plainText(html: string, maximum: number): string | undefined {
-  return boundedString(
-    decodeHtmlEntities(html.replace(/<!--[\s\S]*?-->/gu, ' ').replace(/<[^>]*>/gu, ' ')),
-    maximum,
-  )
-}
-
-function attribute(attributes: string, name: string): string | undefined {
-  const pattern = /([a-z_:][\w:.-]*)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/giu
-  for (const match of attributes.matchAll(pattern)) {
-    if (match[1]?.toLocaleLowerCase() !== name) continue
-    return match[2] ?? match[3] ?? match[4]
-  }
-  return undefined
-}
-
-function resultAnchors(html: string): readonly ParsedAnchor[] {
-  const anchors: ParsedAnchor[] = []
-  const pattern = /<a\b([^>]*)>([\s\S]*?)<\/a>/giu
-  for (const match of html.matchAll(pattern)) {
-    const attributes = match[1] ?? ''
-    const classes = attribute(attributes, 'class')?.split(/\s+/u) ?? []
-    const href = attribute(attributes, 'href')
-    if (!classes.includes('result-link') || !href || match.index === undefined) continue
-    anchors.push({
-      start: match.index,
-      end: match.index + match[0].length,
-      href,
-      titleHtml: match[2] ?? '',
-    })
-  }
-  return Object.freeze(anchors)
-}
-
 function externalResultUrl(value: string): URL | undefined {
   let parsed: URL
   try {
-    parsed = new URL(decodeHtmlEntities(value), DUCKDUCKGO_LITE_ENDPOINT)
+    parsed = new URL(value, DUCKDUCKGO_LITE_ENDPOINT)
     if (parsed.hostname === 'duckduckgo.com' && parsed.pathname === '/l/') {
       const target = parsed.searchParams.get('uddg')
       if (!target) return undefined
@@ -119,41 +58,59 @@ interface ParsedDocument {
   results: readonly WebSearchResultItem[]
 }
 
-function isChallengePage(html: string): boolean {
-  return /(?:class\s*=\s*['"][^'"]*(?:challenge-form|anomaly-modal)[^'"]*['"]|id\s*=\s*['"][^'"]*captcha[^'"]*['"]|cf-chl-|bots use duckduckgo|please complete the following challenge)/iu.test(
-    html,
-  )
+function isChallengePage($: CheerioAPI): boolean {
+  if ($('.challenge-form, .anomaly-modal').length > 0) return true
+  let structuralMarker = false
+  $('[id], [class]').each((_index, element) => {
+    const marker = `${$(element).attr('id') ?? ''} ${$(element).attr('class') ?? ''}`
+      .toLocaleLowerCase()
+      .trim()
+    if (marker.includes('captcha') || marker.includes('cf-chl-')) structuralMarker = true
+  })
+  if (structuralMarker) return true
+  const text = boundedString($.root().text(), 20_000) ?? ''
+  return /(?:bots use duckduckgo|please complete the following challenge)/iu.test(text)
 }
 
-function hasLitePageSignature(html: string): boolean {
-  return (
-    /duckduckgo/iu.test(html) &&
-    /<(?:form|input)\b[^>]*(?:action\s*=\s*['"][^'"]*\/lite\/?|name\s*=\s*['"]q['"])/iu.test(html)
-  )
+function hasLitePageSignature($: CheerioAPI): boolean {
+  const identifiesDuckDuckGo = /duckduckgo/iu.test(`${$('title').text()} ${$.root().text()}`)
+  const hasLiteForm = $('form')
+    .toArray()
+    .some((form) => ($(form).attr('action') ?? '').includes('/lite/'))
+  return identifiesDuckDuckGo && (hasLiteForm || $('input[name="q"]').length > 0)
 }
 
-function hasExplicitNoResults(html: string): boolean {
+function hasExplicitNoResults($: CheerioAPI): boolean {
   return /(?:no (?:more )?results(?: found)?|did not match any documents|no results\.)/iu.test(
-    plainText(html, 20_000) ?? '',
+    boundedString($.root().text(), 20_000) ?? '',
   )
 }
 
-function parseDocument(html: string): ParsedDocument {
-  const anchors = resultAnchors(html)
+function parseDocument($: CheerioAPI): ParsedDocument {
+  const candidates: Array<{ href: string; title: string; snippet?: string }> = []
+  let current: (typeof candidates)[number] | undefined
+  $('.result-link, .result-snippet').each((_index, element) => {
+    const selection = $(element)
+    if (selection.hasClass('result-link')) {
+      const href = selection.attr('href')
+      const title = boundedString(selection.text(), 300)
+      current = href && title ? { href, title } : undefined
+      if (current) candidates.push(current)
+      return
+    }
+    if (current && current.snippet === undefined) {
+      current.snippet = boundedString(selection.text(), 600)
+    }
+  })
+
   const results: WebSearchResultItem[] = []
-  for (const [index, anchor] of anchors.entries()) {
-    const title = plainText(anchor.titleHtml, 300)
-    const url = externalResultUrl(anchor.href)
-    if (!title || !url) continue
-    const segment = html.slice(anchor.end, anchors[index + 1]?.start ?? html.length)
-    const snippetHtml =
-      /<td\b[^>]*class\s*=\s*(['"])[^'"]*\bresult-snippet\b[^'"]*\1[^>]*>([\s\S]*?)<\/td>/iu.exec(
-        segment,
-      )?.[2]
+  for (const candidate of candidates) {
+    const url = externalResultUrl(candidate.href)
+    if (!url) continue
     results.push({
-      title,
+      title: candidate.title,
       url: url.toString(),
-      snippet: snippetHtml ? plainText(snippetHtml, 600) : undefined,
+      snippet: candidate.snippet,
       source: url.hostname,
     })
   }
@@ -163,7 +120,7 @@ function parseDocument(html: string): ParsedDocument {
       results: Object.freeze(results.map((result) => Object.freeze(result))),
     }
   }
-  if (hasLitePageSignature(html) && hasExplicitNoResults(html)) {
+  if (hasLitePageSignature($) && hasExplicitNoResults($)) {
     return { state: 'valid-empty', results: Object.freeze([]) }
   }
   return { state: 'structural-failure', results: Object.freeze([]) }
@@ -227,7 +184,7 @@ export class DuckDuckGoWebSearchAdapter implements WebSearchAdapter {
   private circuitOpenUntil: number | undefined
 
   constructor(
-    private readonly fetchImpl: typeof fetch = fetch,
+    private readonly fetchImpl: typeof fetch = createObservedFetch(fetch, 'web-search'),
     private readonly now: () => number = Date.now,
   ) {}
 
@@ -287,12 +244,13 @@ export class DuckDuckGoWebSearchAdapter implements WebSearchAdapter {
         throw new WebSearchAdapterError('unexpected-content-type')
       }
       const html = await boundedHtml(response)
-      if (isChallengePage(html)) {
+      const $ = load(html, { xml: { decodeEntities: true, xmlMode: false } }, false)
+      if (isChallengePage($)) {
         this.parserState = 'challenge'
         throw new WebSearchAdapterError('challenge')
       }
       if (response.status !== 200) throw new WebSearchAdapterError('http-error')
-      const parsed = parseDocument(html)
+      const parsed = parseDocument($)
       this.parserState = parsed.state
       if (parsed.state === 'structural-failure') {
         throw new WebSearchAdapterError('parser-structure')

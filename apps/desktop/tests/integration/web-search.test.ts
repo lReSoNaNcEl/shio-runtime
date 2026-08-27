@@ -163,7 +163,7 @@ async function run(): Promise<void> {
   check('DuckDuckGo provider identity is explicit', duckDuckGoResult.provider === 'duckduckgo')
   check(
     'parser signature is explicit',
-    duckDuckGo.status().diagnostics.parserSignature === 'duckduckgo-lite/result-link-v1',
+    duckDuckGo.status().diagnostics.parserSignature === 'duckduckgo-lite/cheerio-result-link-v2',
   )
   check(
     'successful result records parser state',
@@ -240,6 +240,46 @@ async function run(): Promise<void> {
   check(
     'challenge has a distinct parser state',
     challenge.status().diagnostics.parserState === 'challenge',
+  )
+
+  const malformedButRecoverable = new DuckDuckGoWebSearchAdapter(
+    async () =>
+      new Response(
+        '<div><a class="result-link" href="https://example.com/recovered"><b>Recovered &amp; nested</a><td class="result-snippet"><i>Still readable',
+        { status: 200, headers: { 'Content-Type': 'text/html' } },
+      ),
+  )
+  const recovered = await malformedButRecoverable.search({ query: 'recoverable markup' })
+  check(
+    'Cheerio recovers bounded results from malformed nested HTML',
+    recovered.results[0]?.title === 'Recovered & nested',
+  )
+
+  const oversized = new DuckDuckGoWebSearchAdapter(
+    async () =>
+      new Response('', {
+        status: 200,
+        headers: { 'Content-Type': 'text/html', 'Content-Length': '1000001' },
+      }),
+  )
+  await expectFailureCode(
+    'oversized HTML is rejected before parsing',
+    oversized.search({ query: 'oversized' }),
+    'response-too-large',
+  )
+
+  const unexpectedOrigin = new DuckDuckGoWebSearchAdapter(async () => {
+    const response = new Response('<html>DuckDuckGo</html>', {
+      status: 200,
+      headers: { 'Content-Type': 'text/html' },
+    })
+    Object.defineProperty(response, 'url', { value: 'https://attacker.example/results' })
+    return response
+  })
+  await expectFailureCode(
+    'redirect to an unexpected origin is rejected',
+    unexpectedOrigin.search({ query: 'origin' }),
+    'unexpected-origin',
   )
 
   let circuitNow = 10_000

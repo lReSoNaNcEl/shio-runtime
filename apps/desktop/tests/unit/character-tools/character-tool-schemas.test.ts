@@ -1,0 +1,77 @@
+import { describe, expect, it } from 'vitest'
+
+import { CharacterToolRegistry } from '../../../src/main/character-tools/CharacterToolRegistry'
+import {
+  CHARACTER_TOOL_SPECS,
+  goalUpdateInputSchema,
+  toLlmToolJsonSchema,
+} from '../../../src/main/character-tools/CharacterToolSpecifications'
+import { CHARACTER_TOOL_IDS } from '../../../src/shared/character-tools'
+
+describe('canonical Character tool schemas', () => {
+  it('covers every Character tool exactly once', () => {
+    const ids = CHARACTER_TOOL_SPECS.map((tool) => tool.id)
+    expect(new Set(ids).size).toBe(ids.length)
+    expect([...ids].sort()).toEqual([...CHARACTER_TOOL_IDS].sort())
+  })
+
+  it('derives bounded Draft 7 input schemas from the runtime Zod schemas', () => {
+    for (const tool of CHARACTER_TOOL_SPECS) {
+      const jsonSchema = toLlmToolJsonSchema(tool.inputSchema)
+      expect(jsonSchema.type, tool.id).toBe('object')
+      expect(jsonSchema).not.toHaveProperty('$schema')
+      expect(JSON.stringify(jsonSchema).length, tool.id).toBeLessThan(30_000)
+    }
+  })
+
+  it('keeps runtime-only goal refinements authoritative', () => {
+    const jsonSchema = toLlmToolJsonSchema(goalUpdateInputSchema)
+    expect(jsonSchema).toHaveProperty('properties.progressPercent')
+    expect(() => goalUpdateInputSchema.parse({ id: 'goal-1', progressPercent: 50 })).toThrow()
+    expect(() => goalUpdateInputSchema.parse({ id: 'goal-1' })).toThrow()
+    expect(
+      goalUpdateInputSchema.parse({
+        id: 'goal-1',
+        progressPercent: 50,
+        progressBasis: 'user-report',
+      }),
+    ).toMatchObject({ progressPercent: 50, progressBasis: 'user-report' })
+  })
+
+  it('uses the same schemas for native definitions and runtime parsing', () => {
+    const registry = new CharacterToolRegistry({
+      projectAvailable: true,
+      webAvailable: true,
+      goalsAvailable: true,
+      goalCreatesAvailable: true,
+      goalUpdatesAvailable: true,
+      conversationThreadsAvailable: true,
+      actionsAvailable: true,
+      browserComputerUseAvailable: true,
+      browserObservation: null,
+      capabilityContext: {
+        capabilities: [
+          { id: 'computer-control', availability: 'available' },
+          { id: 'browser-control', availability: 'available' },
+          { id: 'browser-computer-use', availability: 'available' },
+        ],
+      } as never,
+      memory: { status: () => ({ enabled: true, operational: true }) } as never,
+    })
+    expect(
+      registry
+        .nativeDefinitions()
+        .map((tool) => tool.name)
+        .sort(),
+    ).toEqual(CHARACTER_TOOL_SPECS.map((tool) => tool.nativeName).sort())
+    expect(registry.parseInput('project.search', { query: '  actual source  ' })).toEqual({
+      query: 'actual source',
+    })
+    expect(() =>
+      registry.parseInput('project.search', { query: 'actual source', unexpected: true }),
+    ).toThrow()
+    for (const definition of registry.definitions()) {
+      expect(definition.llmInputSchema).toEqual(toLlmToolJsonSchema(definition.inputSchema))
+    }
+  })
+})

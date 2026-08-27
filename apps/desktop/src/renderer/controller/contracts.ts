@@ -49,6 +49,7 @@ export interface ChatMsg {
   id: string
   role: 'user' | 'assistant' | 'error' | 'meta'
   text: string
+  streaming?: boolean
   interrupted?: boolean
   grounding?: ReplyGrounding
 }

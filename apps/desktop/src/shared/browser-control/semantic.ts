@@ -86,7 +86,7 @@ export const browserTargetSchema = z.discriminatedUnion('kind', [
 ])
 export type BrowserTarget = z.infer<typeof browserTargetSchema>
 
-const browserUrlSchema = z
+export const browserUrlSchema = z
   .string()
   .trim()
   .max(2_048)
@@ -100,37 +100,40 @@ const browserUrlSchema = z
     )
   }, 'Browser URL must be an HTTP(S) URL without embedded credentials')
 
-export const browserOperationSchema = z.discriminatedUnion('operation', [
-  z.object({ operation: z.literal('observe') }).strict(),
-  z.object({ operation: z.literal('open'), url: browserUrlSchema }).strict(),
-  z.object({ operation: z.literal('click'), target: browserTargetSchema }).strict(),
-  z
+export const browserOperationInputSchemas = Object.freeze({
+  observe: z.object({}).strict(),
+  open: z.object({ url: browserUrlSchema }).strict(),
+  click: z.object({ target: browserTargetSchema }).strict(),
+  fill: z.object({ target: browserTargetSchema, value: z.string().max(2_000) }).strict(),
+  select: z
     .object({
-      operation: z.literal('fill'),
-      target: browserTargetSchema,
-      value: z.string().max(2_000),
-    })
-    .strict(),
-  z
-    .object({
-      operation: z.literal('select'),
       target: browserTargetSchema,
       values: z.array(z.string().trim().min(1).max(500)).min(1).max(20),
     })
     .strict(),
-  z
+  scroll: z
     .object({
-      operation: z.literal('scroll'),
       direction: z.enum(['up', 'down', 'left', 'right']),
       amount: z.number().int().min(1).max(2_000).default(500),
     })
     .strict(),
-  z.object({ operation: z.literal('back') }).strict(),
-  z.object({ operation: z.literal('forward') }).strict(),
-  z.object({ operation: z.literal('tabs') }).strict(),
-  z
-    .object({ operation: z.literal('switch-tab'), tabId: z.string().trim().min(1).max(200) })
-    .strict(),
+  back: z.object({}).strict(),
+  forward: z.object({}).strict(),
+  tabs: z.object({}).strict(),
+  'switch-tab': z.object({ tabId: z.string().trim().min(1).max(200) }).strict(),
+})
+
+export const browserOperationSchema = z.discriminatedUnion('operation', [
+  browserOperationInputSchemas.observe.extend({ operation: z.literal('observe') }),
+  browserOperationInputSchemas.open.extend({ operation: z.literal('open') }),
+  browserOperationInputSchemas.click.extend({ operation: z.literal('click') }),
+  browserOperationInputSchemas.fill.extend({ operation: z.literal('fill') }),
+  browserOperationInputSchemas.select.extend({ operation: z.literal('select') }),
+  browserOperationInputSchemas.scroll.extend({ operation: z.literal('scroll') }),
+  browserOperationInputSchemas.back.extend({ operation: z.literal('back') }),
+  browserOperationInputSchemas.forward.extend({ operation: z.literal('forward') }),
+  browserOperationInputSchemas.tabs.extend({ operation: z.literal('tabs') }),
+  browserOperationInputSchemas['switch-tab'].extend({ operation: z.literal('switch-tab') }),
 ])
 export type BrowserOperation = z.infer<typeof browserOperationSchema>
 

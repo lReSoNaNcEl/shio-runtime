@@ -12,6 +12,8 @@
  */
 
 import axios, { type AxiosInstance } from 'axios'
+import type OpenAI from 'openai'
+import { APIError, APIUserAbortError } from 'openai'
 import { describe, it } from 'vitest'
 
 import type { ChatMessage, LlmProviderId } from '../../src/main/llm'
@@ -55,31 +57,47 @@ function check(name: string, cond: boolean, detail = ''): void {
 
 /** Fake AxiosInstance: `handler` returns response data or an Error to throw. */
 function fakeHttp(handler: (path: string, body: Record<string, unknown>) => unknown): {
-  http: AxiosInstance
+  http: Pick<OpenAI, 'chat'>
   lastBody: () => Record<string, unknown>
 } {
   let captured: Record<string, unknown> = {}
   const http = {
-    post: async (path: string, body: Record<string, unknown>) => {
-      captured = body
-      const r = handler(path, body)
-      if (r instanceof Error) throw r
-      return { data: r }
+    chat: {
+      completions: {
+        create: async (body: Record<string, unknown>) => {
+          captured = body
+          const result = handler('/chat/completions', body)
+          if (axios.isAxiosError(result) && result.response) {
+            throw APIError.generate(
+              result.response.status,
+              result.response.data as object,
+              result.message,
+              new Headers(),
+            )
+          }
+          if (result instanceof Error) throw result
+          return result
+        },
+      },
     },
-  } as unknown as AxiosInstance
+  } as unknown as Pick<OpenAI, 'chat'>
   return { http, lastBody: () => captured }
 }
 
-function hangingHttp(): AxiosInstance {
+function hangingHttp(): Pick<OpenAI, 'chat'> {
   return {
-    post: async (_path: string, _body: unknown, config?: { signal?: AbortSignal }) =>
-      new Promise((_resolve, reject) => {
-        const signal = config?.signal
-        const rejectCancelled = (): void => reject(new axios.CanceledError())
-        if (signal?.aborted) rejectCancelled()
-        else signal?.addEventListener('abort', rejectCancelled, { once: true })
-      }),
-  } as unknown as AxiosInstance
+    chat: {
+      completions: {
+        create: async (_body: unknown, options?: { signal?: AbortSignal }) =>
+          new Promise((_resolve, reject) => {
+            const signal = options?.signal
+            const rejectCancelled = (): void => reject(new APIUserAbortError())
+            if (signal?.aborted) rejectCancelled()
+            else signal?.addEventListener('abort', rejectCancelled, { once: true })
+          }),
+      },
+    },
+  } as unknown as Pick<OpenAI, 'chat'>
 }
 
 function axiosErr(status: number, data?: unknown): Error {
@@ -167,9 +185,7 @@ async function runProviderBattery(pc: ProviderCase): Promise<void> {
     const out = await runChatCompletion({
       provider: pc.id,
       displayName,
-      http,
-      chatPath: '/chat/completions',
-      apiKey: 'test-key',
+      client: http,
       model: pc.plainModel,
       capabilities: caps,
       messages: baseMessages('Hello Shio'),
@@ -197,9 +213,7 @@ async function runProviderBattery(pc: ProviderCase): Promise<void> {
     const out = await runChatCompletion({
       provider: pc.id,
       displayName,
-      http,
-      chatPath: '/chat/completions',
-      apiKey: 'test-key',
+      client: http,
       model: pc.plainModel,
       capabilities: resolveCapabilities(pc.id, pc.plainModel),
       messages: baseMessages('Привет'),
@@ -213,9 +227,7 @@ async function runProviderBattery(pc: ProviderCase): Promise<void> {
     await runChatCompletion({
       provider: pc.id,
       displayName,
-      http,
-      chatPath: '/c',
-      apiKey: 'k',
+      client: http,
       model: pc.plainModel,
       capabilities: caps,
       messages: baseMessages('hi'),
@@ -238,9 +250,7 @@ async function runProviderBattery(pc: ProviderCase): Promise<void> {
     await runChatCompletion({
       provider: pc.id,
       displayName,
-      http,
-      chatPath: '/c',
-      apiKey: 'k',
+      client: http,
       model: pc.reasoningModel,
       capabilities: caps,
       messages: baseMessages('hi'),
@@ -260,9 +270,7 @@ async function runProviderBattery(pc: ProviderCase): Promise<void> {
       {
         provider: pc.id,
         displayName,
-        http,
-        chatPath: '/c',
-        apiKey: 'k',
+        client: http,
         model: pc.reasoningModel,
         capabilities: resolveCapabilities(pc.id, pc.reasoningModel),
         messages: baseMessages('select one tool'),
@@ -283,9 +291,7 @@ async function runProviderBattery(pc: ProviderCase): Promise<void> {
     const out = await runChatCompletion({
       provider: pc.id,
       displayName,
-      http,
-      chatPath: '/c',
-      apiKey: 'k',
+      client: http,
       model: pc.plainModel,
       capabilities: resolveCapabilities(pc.id, pc.plainModel),
       messages: baseMessages('x'),
@@ -300,9 +306,7 @@ async function runProviderBattery(pc: ProviderCase): Promise<void> {
     const out = await runChatCompletion({
       provider: pc.id,
       displayName,
-      http,
-      chatPath: '/c',
-      apiKey: 'k',
+      client: http,
       model: pc.plainModel,
       capabilities: resolveCapabilities(pc.id, pc.plainModel),
       messages: baseMessages('x'),
@@ -323,9 +327,7 @@ async function runProviderBattery(pc: ProviderCase): Promise<void> {
       await runChatCompletion({
         provider: pc.id,
         displayName,
-        http,
-        chatPath: '/c',
-        apiKey: 'k',
+        client: http,
         model: pc.reasoningModel,
         capabilities: resolveCapabilities(pc.id, pc.reasoningModel),
         messages: baseMessages('x'),
@@ -349,9 +351,7 @@ async function runProviderBattery(pc: ProviderCase): Promise<void> {
       await runChatCompletion({
         provider: pc.id,
         displayName,
-        http,
-        chatPath: '/c',
-        apiKey: 'k',
+        client: http,
         model: pc.plainModel,
         capabilities: resolveCapabilities(pc.id, pc.plainModel),
         messages: baseMessages('x'),
@@ -372,9 +372,7 @@ async function runProviderBattery(pc: ProviderCase): Promise<void> {
       await runChatCompletion({
         provider: pc.id,
         displayName,
-        http,
-        chatPath: '/c',
-        apiKey: 'k',
+        client: http,
         model: pc.plainModel,
         capabilities: resolveCapabilities(pc.id, pc.plainModel),
         messages: baseMessages('x'),
@@ -413,9 +411,7 @@ async function runProviderBattery(pc: ProviderCase): Promise<void> {
       await runChatCompletion({
         provider: pc.id,
         displayName,
-        http,
-        chatPath: '/c',
-        apiKey: 'k',
+        client: http,
         model: pc.reasoningModel,
         capabilities: resolveCapabilities(pc.id, pc.reasoningModel),
         messages: baseMessages('x'),
@@ -500,7 +496,7 @@ async function testMistralModelsApi(): Promise<void> {
       model: 'mistral-medium-3.5',
     })
     const { http, lastBody } = fakeHttp(() => okResponse('[calm]ok'))
-    ;(provider as unknown as { http: AxiosInstance }).http = http
+    ;(provider as unknown as { client: Pick<OpenAI, 'chat'> }).client = http
     await provider.chat(baseMessages('hi'))
     check(
       'chat request canonicalizes persisted dotted Mistral Medium 3.5 id',
@@ -702,9 +698,7 @@ async function testRequestDeadline(): Promise<void> {
   const config = {
     provider: 'mistral' as const,
     displayName: 'Mistral',
-    http: hangingHttp(),
-    chatPath: '/chat/completions',
-    apiKey: 'test-key',
+    client: hangingHttp(),
     model: 'mistral-small-latest',
     capabilities: resolveCapabilities('mistral', 'mistral-small-latest'),
     messages: baseMessages('Project context question'),

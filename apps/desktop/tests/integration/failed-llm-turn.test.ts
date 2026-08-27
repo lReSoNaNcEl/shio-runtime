@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 
-import { AxiosError } from 'axios'
+import { APIError } from 'openai'
 import { describe, it } from 'vitest'
 
 import type { ChatMessage, LLMProvider } from '../../src/main/llm'
@@ -231,21 +231,20 @@ async function testScreenContextLease(): Promise<void> {
 }
 
 async function testHttp413Classification(): Promise<void> {
-  const error = new AxiosError('large', 'ERR_BAD_REQUEST', undefined, undefined, {
-    status: 413,
-    statusText: 'Payload Too Large',
-    headers: {},
-    config: { headers: {} } as never,
-    data: { sensitive: 'must-not-cross-boundary' },
-  })
-  const http = { post: async () => Promise.reject(error) }
+  const error = APIError.generate(
+    413,
+    { error: { sensitive: 'must-not-cross-boundary' } },
+    'large',
+    new Headers(),
+  )
+  const client = {
+    chat: { completions: { create: async () => Promise.reject(error) } },
+  }
   await assert.rejects(
     runChatCompletionDetailed({
       provider: 'mistral',
       displayName: 'Mistral',
-      http: http as never,
-      chatPath: '/chat',
-      apiKey: 'test',
+      client: client as never,
       model: 'test',
       capabilities: {
         supportsVision: true,

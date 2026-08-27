@@ -118,11 +118,17 @@ export class MarkdownRenderErrorBoundary extends Component<
   }
 }
 
-export function MarkdownMessage({ text }: { text: string }) {
+export function MarkdownMessage({
+  text,
+  streaming = false,
+}: {
+  text: string
+  streaming?: boolean
+}) {
   return (
     <MarkdownRenderErrorBoundary text={text}>
       <Streamdown
-        mode="static"
+        mode={streaming ? 'streaming' : 'static'}
         controls={false}
         linkSafety={{ enabled: false }}
         skipHtml

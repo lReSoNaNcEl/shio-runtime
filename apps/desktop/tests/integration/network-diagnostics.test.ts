@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import axios, { AxiosError, type InternalAxiosRequestConfig } from 'axios'
 import { describe, it } from 'vitest'
 
+import { createObservedFetch } from '../../src/main/diagnostics/createObservedFetch'
 import { NetworkRequestDiagnostics } from '../../src/main/diagnostics/NetworkRequestDiagnostics'
 import {
   observeAxiosNetwork,
@@ -142,6 +143,34 @@ async function assertAxiosLifecycle(): Promise<void> {
   assert.equal(diagnostics.snapshot().length, 2, 'disposed Axios observer still recorded traffic')
 }
 
+async function assertFetchLifecycle(): Promise<void> {
+  const diagnostics = new NetworkRequestDiagnostics()
+  const observed = createObservedFetch(
+    async () =>
+      new Response('data: {"visible":true}\n\n', {
+        headers: { 'Content-Type': 'text/event-stream' },
+      }),
+    'llm',
+    diagnostics,
+  )
+  const response = await observed('https://provider.example/v1/chat/completions?token=secret', {
+    method: 'POST',
+    headers: { Authorization: 'Bearer request-secret', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ prompt: 'safe', apiKey: 'body-secret' }),
+  })
+
+  assert.equal(response.bodyUsed, false, 'observed Fetch consumed the one-shot SSE body')
+  assert.match(await response.text(), /visible/)
+  const [request] = diagnostics.snapshot()
+  assert.equal(request.outcome, 'success')
+  assert.equal(request.target, 'https://provider.example/v1/chat/completions')
+  const details = diagnostics.details(request.id)
+  assert.ok(details)
+  assert.equal(details.responseBody.kind, 'unavailable')
+  assert.equal(details.responseBody.contentType, 'text/event-stream')
+  assert.doesNotMatch(JSON.stringify(details), /request-secret|body-secret|token=secret/u)
+}
+
 function assertIpcAndUiBoundary(): void {
   assert.deepEqual(IPC_CHANNEL_CAPABILITIES['diagnostics:get-network-requests'], ['main'])
   assert.deepEqual(IPC_CHANNEL_CAPABILITIES['diagnostics:get-network-request-details'], ['main'])
@@ -181,6 +210,7 @@ function assertIpcAndUiBoundary(): void {
 async function main(): Promise<void> {
   assertSafeMetadataBoundary()
   await assertAxiosLifecycle()
+  await assertFetchLifecycle()
   assertIpcAndUiBoundary()
   console.log('Network Diagnostics focused repro: PASS')
 }

@@ -1,9 +1,7 @@
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
-import { dirname } from 'node:path'
-
 import { z } from 'zod'
 
 import type { ProjectAwarenessPublicConfig } from '../../shared/project-awareness'
+import { ValidatedElectronStore } from '../persistence/ValidatedElectronStore'
 
 const PROJECT_CONFIG_SCHEMA_VERSION = 1
 const projectConfigSchema = z
@@ -33,18 +31,19 @@ const DEFAULT_CONFIG: ProjectAwarenessPluginConfig = {
 
 export class ProjectAwarenessConfigStore {
   private config: ProjectAwarenessPluginConfig | null = null
+  private readonly store: ValidatedElectronStore<z.infer<typeof projectConfigSchema>>
 
-  constructor(private readonly filePath: string) {}
+  constructor(filePath: string) {
+    this.store = new ValidatedElectronStore(filePath, projectConfigSchema)
+  }
 
   async load(): Promise<ProjectAwarenessPluginConfig> {
     if (this.config) return { ...this.config }
-    try {
-      const saved = projectConfigSchema.parse(JSON.parse(await readFile(this.filePath, 'utf8')))
+    const saved = this.store.read()
+    if (saved) {
       const { schemaVersion: _schemaVersion, ...config } = saved
       this.config = config
-    } catch (error) {
-      const code = error instanceof Error && 'code' in error ? String(error.code) : ''
-      if (code !== 'ENOENT') throw error
+    } else {
       const config = { ...DEFAULT_CONFIG }
       await this.persist(config)
       this.config = config
@@ -67,14 +66,7 @@ export class ProjectAwarenessConfigStore {
   }
 
   private async persist(config: ProjectAwarenessPluginConfig): Promise<void> {
-    await mkdir(dirname(this.filePath), { recursive: true })
-    const temporaryPath = `${this.filePath}.tmp`
-    await writeFile(
-      temporaryPath,
-      JSON.stringify({ schemaVersion: PROJECT_CONFIG_SCHEMA_VERSION, ...config }, null, 2),
-      'utf8',
-    )
-    await rename(temporaryPath, this.filePath)
+    this.store.write({ schemaVersion: PROJECT_CONFIG_SCHEMA_VERSION, ...config })
   }
 }
 

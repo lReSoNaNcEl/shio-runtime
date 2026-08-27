@@ -1017,19 +1017,21 @@ async function transportToolContract(): Promise<void> {
   assert.equal(parsed.toolCalls[0]?.name, 'memory_list')
 
   let requestBody: Record<string, unknown> | null = null
-  const http = {
-    post: async (_path: string, body: Record<string, unknown>) => {
-      requestBody = body
-      return { data: raw }
+  const client = {
+    chat: {
+      completions: {
+        create: async (body: Record<string, unknown>) => {
+          requestBody = body
+          return raw
+        },
+      },
     },
   }
   await runChatCompletionDetailed(
     {
       provider: 'groq',
       displayName: 'Groq',
-      http: http as never,
-      chatPath: '/chat/completions',
-      apiKey: 'test-key',
+      client: client as never,
       model: 'llama-3.3-70b-versatile',
       capabilities: TOOL_CAPABILITIES,
       messages: [{ role: 'user', content: 'list memory' }],

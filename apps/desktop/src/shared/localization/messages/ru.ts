@@ -651,6 +651,7 @@ export const ruMessages = {
   'diagnostics.network.source.speech-api': 'Speech API',
   'diagnostics.network.source.llm': 'LLM',
   'diagnostics.network.source.project-awareness': 'Project Awareness',
+  'diagnostics.network.source.web-search': 'Веб-поиск',
   'diagnostics.network.outcome.pending': 'В процессе',
   'diagnostics.network.outcome.success': 'Успешно',
   'diagnostics.network.outcome.failure': 'Ошибка',

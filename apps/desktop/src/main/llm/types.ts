@@ -109,7 +109,6 @@ export interface ProviderDefinition {
   profile: ProviderProfile
   chat: {
     baseUrl: string
-    path: string
     supportsStreaming: boolean
     headers?: Record<string, string>
     singleLeadingSystemMessage?: boolean

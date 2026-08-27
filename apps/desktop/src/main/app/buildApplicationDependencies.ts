@@ -248,7 +248,6 @@ export function buildApplicationDependencies(): ApplicationDependencies {
             const { activeProvider, providers } = getConfig().llm
             const definition = getProviderDefinition(activeProvider)
             const credential = getLlmCredentialStore().resolve(activeProvider)
-            const chatPathPrefix = definition.chat.path.replace(/\/chat\/completions\/?$/, '')
             const accountId = resolveLlmProviderAccountId(
               activeProvider,
               providers[activeProvider].accountId,
@@ -257,7 +256,7 @@ export function buildApplicationDependencies(): ApplicationDependencies {
               provider: activeProvider,
               providerDisplayName: definition.profile.displayName,
               model: providers[activeProvider].model.trim(),
-              baseURL: `${resolveProviderChatBaseUrl(activeProvider, { accountId }).replace(/\/$/, '')}${chatPathPrefix}`,
+              baseURL: resolveProviderChatBaseUrl(activeProvider, { accountId }).replace(/\/$/, ''),
               apiKey: credential.apiKey,
               credentialConfigured:
                 credential.status.configured &&

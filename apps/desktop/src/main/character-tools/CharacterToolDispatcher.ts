@@ -14,12 +14,11 @@ import type {
   ReviseGoalInput,
   RevisePersistentGoal,
 } from '../../shared/alive'
-import {
-  type BrowserComputerUseControlAction,
-  type BrowserComputerUseProvider,
-  type BrowserComputerUseSession,
-  type BrowserComputerUseStartRequest,
-  browserComputerUseStartRequestSchema,
+import type {
+  BrowserComputerUseControlAction,
+  BrowserComputerUseProvider,
+  BrowserComputerUseSession,
+  BrowserComputerUseStartRequest,
 } from '../../shared/browser-computer-use'
 import {
   type BrowserContextProviderResolver,
@@ -42,132 +41,18 @@ import type { BrowserWorkflowCoordinator } from '../browser-control/workflow'
 import { mainLog } from '../logging/safeLogger'
 import type { MemoryToolBroker } from '../memory'
 import type { CharacterToolRegistry } from './CharacterToolRegistry'
+import type {
+  GoalCreateInput,
+  GoalListInput,
+  GoalUpdateInput,
+  ProjectSearchInput,
+  ShellExecuteInput,
+  ThreadOpenInput,
+  ThreadResolveInput,
+} from './CharacterToolSpecifications'
 import { ToolInfluenceContext } from './ToolInfluenceContext'
 
 const MAX_PROJECT_PACKETS_PER_TURN = 4
-
-const PROJECT_SEARCH_INPUT_SCHEMA = z
-  .object({
-    query: z.string().trim().min(1).max(500),
-    hints: z
-      .object({
-        paths: z.array(z.string().trim().min(1).max(500)).max(12).optional(),
-        symbols: z.array(z.string().trim().min(1).max(200)).max(12).optional(),
-      })
-      .strict()
-      .optional(),
-  })
-  .strict()
-
-const SHELL_INPUT_SCHEMA = z
-  .object({
-    command: z.string().trim().min(1).max(2_000),
-    goal: z.string().trim().min(1).max(2_000).optional(),
-  })
-  .strict()
-
-const GOAL_LIST_INPUT_SCHEMA = z
-  .object({
-    status: z
-      .enum(['active', 'waiting_user', 'waiting_external', 'paused', 'completed', 'cancelled'])
-      .optional(),
-    limit: z.number().int().min(1).max(20).optional(),
-  })
-  .strict()
-
-const GOAL_CREATE_INPUT_SCHEMA = z
-  .object({
-    title: z.string().trim().min(1).max(160),
-    description: z.string().trim().max(2_000).optional(),
-    nextStep: z.string().trim().max(1_000).optional(),
-    owner: z.enum(['user', 'shio', 'shared']).optional(),
-    measurable: z.boolean().optional(),
-  })
-  .strict()
-
-const GOAL_UPDATE_INPUT_SCHEMA = z
-  .object({
-    id: z.string().trim().min(1).max(100),
-    title: z.string().trim().min(1).max(160).optional(),
-    description: z.string().trim().max(2_000).optional(),
-    nextStep: z.string().trim().max(1_000).optional(),
-    lastNote: z.string().trim().max(1_000).optional(),
-    owner: z.enum(['user', 'shio', 'shared']).optional(),
-    status: z
-      .enum(['active', 'waiting_user', 'waiting_external', 'paused', 'completed', 'cancelled'])
-      .optional(),
-    measurable: z.boolean().optional(),
-    progressPercent: z.number().int().min(0).max(100).optional(),
-    progressBasis: z
-      .enum(['verified-result', 'user-report', 'explicit-user-correction'])
-      .optional(),
-  })
-  .strict()
-  .superRefine((input, context) => {
-    if ((input.progressPercent === undefined) !== (input.progressBasis === undefined)) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'progressPercent and progressBasis must be supplied together',
-      })
-    }
-  })
-  .refine((input) => Object.keys(input).some((key) => key !== 'id'), {
-    message: 'At least one goal field must be revised',
-  })
-
-const THREAD_OPEN_INPUT_SCHEMA = z
-  .object({
-    topic: z.string().trim().min(1).max(160),
-    summary: z.string().trim().min(1).max(600),
-    status: z.enum(['active', 'interrupted', 'waiting-user', 'dormant']).optional(),
-    salience: z.number().finite().min(0).max(1).optional(),
-  })
-  .strict()
-
-const THREAD_RESOLVE_INPUT_SCHEMA = z
-  .object({ id: z.string().regex(/^conversation-thread-[0-9a-f-]{36}$/iu) })
-  .strict()
-
-const BROWSER_GOAL_SCHEMA = z.string().trim().min(1).max(2_000).optional()
-
-const BROWSER_USE_INPUT_SCHEMAS = {
-  'browser.use': browserComputerUseStartRequestSchema,
-  'browser.useStatus': z.object({}).strict(),
-  'browser.usePause': z.object({}).strict(),
-  'browser.useResume': z.object({}).strict(),
-  'browser.useStop': z.object({}).strict(),
-} as const
-
-const BROWSER_INPUT_SCHEMAS = {
-  'browser.observe': z.object({}).strict(),
-  'browser.open': z
-    .object({ url: z.string().trim().min(1).max(2_048), goal: BROWSER_GOAL_SCHEMA })
-    .strict(),
-  'browser.click': z.object({ target: z.unknown(), goal: BROWSER_GOAL_SCHEMA }).strict(),
-  'browser.fill': z
-    .object({ target: z.unknown(), value: z.string().max(8_000), goal: BROWSER_GOAL_SCHEMA })
-    .strict(),
-  'browser.select': z
-    .object({
-      target: z.unknown(),
-      values: z.array(z.string().max(1_000)).min(1).max(20),
-      goal: BROWSER_GOAL_SCHEMA,
-    })
-    .strict(),
-  'browser.scroll': z
-    .object({
-      direction: z.enum(['up', 'down']),
-      amount: z.number().int().min(1).max(2_000).optional(),
-      goal: BROWSER_GOAL_SCHEMA,
-    })
-    .strict(),
-  'browser.back': z.object({ goal: BROWSER_GOAL_SCHEMA }).strict(),
-  'browser.forward': z.object({ goal: BROWSER_GOAL_SCHEMA }).strict(),
-  'browser.tabs': z.object({}).strict(),
-  'browser.switchTab': z
-    .object({ tabId: z.string().trim().min(1).max(200), goal: BROWSER_GOAL_SCHEMA })
-    .strict(),
-} as const
 
 const MEMORY_TOOL_IDS: ReadonlySet<CharacterToolId> = new Set([
   'memory.search',
@@ -461,7 +346,8 @@ export class CharacterToolDispatcher {
     id: CharacterToolId,
     input: Record<string, unknown>,
   ): Promise<CharacterToolDispatchResult> {
-    if (!this.options.registry().get(id)) {
+    const registry = this.options.registry()
+    if (!registry.get(id)) {
       return { content: failureContent('TOOL_UNAVAILABLE') }
     }
     if (this.options.signal.aborted) throw this.options.signal.reason ?? new Error('Turn cancelled')
@@ -480,16 +366,17 @@ export class CharacterToolDispatcher {
         return { content: failureContent('GOAL_DATA_CANNOT_AUTHORIZE_MEMORY_MUTATION') }
       }
       this.influence.select(id)
-      if (id === 'project.search') return await this.executeProject(input)
-      if (id === 'web.search') return await this.executeWebSearch(input)
-      if (id === 'goal.create') return this.executeGoalCreate(input)
-      if (id === 'goal.list') return this.executeGoalList(input)
-      if (id === 'goal.update') return this.executeGoalUpdate(input)
-      if (id === 'thread.open') return this.executeThreadOpen(input)
-      if (id === 'thread.resolve') return this.executeThreadResolve(input)
-      if (MEMORY_TOOL_IDS.has(id)) return this.executeMemory(id as MemoryToolName, input)
-      if (id === 'shell.execute') return await this.executeShell(input)
-      if (id === 'browser.observe') return await this.executeBrowserObservation(input)
+      const validatedInput = registry.parseInput(id, input)
+      if (id === 'project.search') return await this.executeProject(validatedInput)
+      if (id === 'web.search') return await this.executeWebSearch(validatedInput)
+      if (id === 'goal.create') return this.executeGoalCreate(validatedInput)
+      if (id === 'goal.list') return this.executeGoalList(validatedInput)
+      if (id === 'goal.update') return this.executeGoalUpdate(validatedInput)
+      if (id === 'thread.open') return this.executeThreadOpen(validatedInput)
+      if (id === 'thread.resolve') return this.executeThreadResolve(validatedInput)
+      if (MEMORY_TOOL_IDS.has(id)) return this.executeMemory(id as MemoryToolName, validatedInput)
+      if (id === 'shell.execute') return await this.executeShell(validatedInput)
+      if (id === 'browser.observe') return await this.executeBrowserObservation()
       if (id.startsWith('browser.use')) {
         return await this.executeBrowserComputerUse(
           id as
@@ -498,7 +385,7 @@ export class CharacterToolDispatcher {
             | 'browser.useResume'
             | 'browser.useStop'
             | 'browser.useStatus',
-          input,
+          validatedInput,
         )
       }
       return await this.executeBrowser(
@@ -520,7 +407,7 @@ export class CharacterToolDispatcher {
           | 'thread.resolve'
           | MemoryToolName
         >,
-        input,
+        validatedInput,
       )
     } catch (error) {
       if (this.options.signal.aborted) throw this.options.signal.reason ?? error
@@ -601,7 +488,7 @@ export class CharacterToolDispatcher {
   private async executeProject(
     input: Record<string, unknown>,
   ): Promise<CharacterToolDispatchResult> {
-    const request = PROJECT_SEARCH_INPUT_SCHEMA.parse(input)
+    const request = input as ProjectSearchInput
     const requestFingerprint = projectRequestFingerprint(request)
     const cachedFingerprint = this.projectFingerprintByRequest.get(requestFingerprint)
     const cached = cachedFingerprint ? this.projectCache.get(cachedFingerprint) : undefined
@@ -683,7 +570,7 @@ export class CharacterToolDispatcher {
   }
 
   private executeGoalList(input: Record<string, unknown>): CharacterToolDispatchResult {
-    const request = GOAL_LIST_INPUT_SCHEMA.parse(input)
+    const request = input as GoalListInput
     if (!this.options.persistentGoals) {
       return { content: failureContent('GOALS_UNAVAILABLE') }
     }
@@ -705,7 +592,7 @@ export class CharacterToolDispatcher {
   }
 
   private executeGoalCreate(input: Record<string, unknown>): CharacterToolDispatchResult {
-    const request = GOAL_CREATE_INPUT_SCHEMA.parse(input)
+    const request = input as GoalCreateInput
     if (!this.options.createPersistentGoal) {
       return { content: failureContent('GOAL_CREATION_UNAVAILABLE') }
     }
@@ -722,7 +609,7 @@ export class CharacterToolDispatcher {
   }
 
   private executeGoalUpdate(input: Record<string, unknown>): CharacterToolDispatchResult {
-    const request = GOAL_UPDATE_INPUT_SCHEMA.parse(input) as ReviseGoalInput
+    const request = input as GoalUpdateInput as ReviseGoalInput
     if (!this.options.revisePersistentGoal) {
       return { content: failureContent('GOAL_UPDATES_UNAVAILABLE') }
     }
@@ -762,7 +649,7 @@ export class CharacterToolDispatcher {
     if (!this.options.conversationThreads) {
       return { content: failureContent('CONVERSATION_THREADS_UNAVAILABLE') }
     }
-    const request = THREAD_OPEN_INPUT_SCHEMA.parse(input)
+    const request = input as ThreadOpenInput
     const thread = this.options.conversationThreads.open(request, this.options.traceId)
     this.knownThreadIds.add(thread.id)
     return {
@@ -780,7 +667,7 @@ export class CharacterToolDispatcher {
     if (!this.options.conversationThreads) {
       return { content: failureContent('CONVERSATION_THREADS_UNAVAILABLE') }
     }
-    const request = THREAD_RESOLVE_INPUT_SCHEMA.parse(input)
+    const request = input as ThreadResolveInput
     if (!this.knownThreadIds.has(request.id)) {
       return { content: failureContent('CONVERSATION_THREAD_NOT_IN_TURN_CONTEXT') }
     }
@@ -796,7 +683,7 @@ export class CharacterToolDispatcher {
   }
 
   private async executeShell(input: Record<string, unknown>): Promise<CharacterToolDispatchResult> {
-    const parsed = SHELL_INPUT_SCHEMA.parse(input)
+    const parsed = input as ShellExecuteInput
     return this.executeDesktopAction(
       desktopWorkflowRequestSchema.parse({
         type: 'desktop.workflow',
@@ -810,10 +697,7 @@ export class CharacterToolDispatcher {
     )
   }
 
-  private async executeBrowserObservation(
-    input: Record<string, unknown>,
-  ): Promise<CharacterToolDispatchResult> {
-    BROWSER_INPUT_SCHEMAS['browser.observe'].parse(input)
+  private async executeBrowserObservation(): Promise<CharacterToolDispatchResult> {
     const provider = this.options.browserContext?.()
     if (!provider) return { content: failureContent('BROWSER_UNAVAILABLE') }
     this.browserSelected = true
@@ -849,8 +733,7 @@ export class CharacterToolDispatcher {
     >,
     input: Record<string, unknown>,
   ): Promise<CharacterToolDispatchResult> {
-    const schema = BROWSER_INPUT_SCHEMAS[id]
-    const parsed = schema.parse(input) as Record<string, unknown>
+    const parsed = input
     const goal = typeof parsed.goal === 'string' ? parsed.goal : defaultBrowserGoal(id)
     const operation = (() => {
       switch (id) {
@@ -961,7 +844,6 @@ export class CharacterToolDispatcher {
     const provider = this.options.browserComputerUse?.()
     if (!provider) return { content: failureContent('BROWSER_COMPUTER_USE_UNAVAILABLE') }
     if (id === 'browser.useStatus') {
-      BROWSER_USE_INPUT_SCHEMAS[id].parse(input)
       const session = provider.status().currentSession
       return {
         content: successfulContent({
@@ -979,9 +861,8 @@ export class CharacterToolDispatcher {
     }
     let action: BrowserComputerUseStartRequest | BrowserComputerUseControlAction
     if (id === 'browser.use') {
-      action = BROWSER_USE_INPUT_SCHEMAS[id].parse(input)
+      action = input as BrowserComputerUseStartRequest
     } else {
-      BROWSER_USE_INPUT_SCHEMAS[id].parse(input)
       action = {
         operation:
           id === 'browser.usePause' ? 'pause' : id === 'browser.useResume' ? 'resume' : 'stop',
@@ -1069,7 +950,7 @@ function normalizeFingerprintPart(value: string): string {
   return value.normalize('NFKC').trim().replace(/\s+/gu, ' ').toLocaleLowerCase()
 }
 
-function projectRequestFingerprint(request: z.infer<typeof PROJECT_SEARCH_INPUT_SCHEMA>): string {
+function projectRequestFingerprint(request: ProjectSearchInput): string {
   const paths = [...new Set((request.hints?.paths ?? []).map(normalizeFingerprintPart))].sort()
   const symbols = [...new Set((request.hints?.symbols ?? []).map(normalizeFingerprintPart))].sort()
   return JSON.stringify({ query: normalizeFingerprintPart(request.query), paths, symbols })

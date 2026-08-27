@@ -1,9 +1,7 @@
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
-import { dirname } from 'node:path'
-
 import { z } from 'zod'
 
 import type { PluginId, PluginManifest } from '../../shared/plugins'
+import { ValidatedElectronStore } from '../persistence/ValidatedElectronStore'
 
 const REGISTRY_SCHEMA_VERSION = 1
 const registrySchema = z
@@ -20,21 +18,18 @@ interface PluginRegistryDocument {
 
 export class PluginRegistryStore {
   private document: PluginRegistryDocument | null = null
+  private readonly store: ValidatedElectronStore<PluginRegistryDocument>
 
   constructor(
-    private readonly filePath: string,
+    filePath: string,
     private readonly manifests: readonly PluginManifest[],
-  ) {}
+  ) {
+    this.store = new ValidatedElectronStore(filePath, registrySchema)
+  }
 
   async load(): Promise<void> {
     if (this.document) return
-    let saved: PluginRegistryDocument | null = null
-    try {
-      saved = registrySchema.parse(JSON.parse(await readFile(this.filePath, 'utf8')))
-    } catch (error) {
-      const code = error instanceof Error && 'code' in error ? String(error.code) : ''
-      if (code !== 'ENOENT') throw error
-    }
+    const saved = this.store.read()
     const document = this.withDefaults(saved)
     if (!saved || JSON.stringify(saved) !== JSON.stringify(document)) await this.persist(document)
     this.document = document
@@ -65,10 +60,7 @@ export class PluginRegistryStore {
   }
 
   private async persist(document: PluginRegistryDocument): Promise<void> {
-    await mkdir(dirname(this.filePath), { recursive: true })
-    const temporaryPath = `${this.filePath}.tmp`
-    await writeFile(temporaryPath, JSON.stringify(document, null, 2), 'utf8')
-    await rename(temporaryPath, this.filePath)
+    this.store.write(document)
   }
 }
 

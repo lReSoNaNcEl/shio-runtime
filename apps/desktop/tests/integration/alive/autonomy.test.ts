@@ -3,7 +3,6 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
-import { Readable } from 'node:stream'
 
 import { describe, it } from 'vitest'
 
@@ -61,17 +60,20 @@ async function testSentenceSegmentation(): Promise<void> {
 }
 
 async function testSseAndDeadlines(): Promise<void> {
-  const stream = Readable.from([
-    'data: {"choices":[{"delta":{"content":"[warm]Hi"}}]}\n\n',
-    'data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"total_tokens":4}}\n\n',
-    'data: [DONE]\n\n',
-  ])
+  const stream = {
+    controller: new AbortController(),
+    async *[Symbol.asyncIterator]() {
+      yield { choices: [{ delta: { content: '[warm]Hi' }, finish_reason: null }] }
+      yield {
+        choices: [{ delta: {}, finish_reason: 'stop' }],
+        usage: { total_tokens: 4 },
+      }
+    },
+  }
   const config = {
     provider: 'groq',
     displayName: 'Groq',
-    http: { post: async () => ({ data: stream }) },
-    chatPath: '/chat',
-    apiKey: 'secret',
+    client: { chat: { completions: { create: async () => stream } } },
     model: 'test',
     capabilities: {
       supportsReasoning: false,
@@ -99,16 +101,14 @@ async function testSseAndDeadlines(): Promise<void> {
   )
   assert.equal(events.at(-1)?.type, 'completed')
 
-  let destroyed = false
+  const stalledController = new AbortController()
   const stalled = {
+    controller: stalledController,
     [Symbol.asyncIterator]: () => ({ next: () => new Promise<never>(() => undefined) }),
-    destroy: () => {
-      destroyed = true
-    },
   }
   const stalledConfig = {
     ...config,
-    http: { post: async () => ({ data: stalled }) },
+    client: { chat: { completions: { create: async () => stalled } } },
   } as never
   await assert.rejects(
     async () => {
@@ -121,33 +121,34 @@ async function testSseAndDeadlines(): Promise<void> {
     },
     (error: unknown) => (error as { code?: string }).code === 'TIMEOUT',
   )
-  assert.equal(destroyed, true)
+  assert.equal(stalledController.signal.aborted, true)
 
-  let cancelledDestroyed = false
+  const cancellableController = new AbortController()
   let nextCall = 0
   const cancellable = {
+    controller: cancellableController,
     [Symbol.asyncIterator]: () => ({
       next: () => {
         nextCall += 1
         if (nextCall === 1) {
           return Promise.resolve({
             done: false,
-            value: Buffer.from('data: {"choices":[{"delta":{"content":"visible"}}]}\n\n'),
+            value: { choices: [{ delta: { content: 'visible' }, finish_reason: null }] },
           })
         }
         return new Promise<never>(() => undefined)
       },
     }),
-    destroy: () => {
-      cancelledDestroyed = true
-    },
   }
   const controller = new AbortController()
   const delivered: string[] = []
   await assert.rejects(
     async () => {
       for await (const event of runChatCompletionStream(
-        { ...config, http: { post: async () => ({ data: cancellable }) } } as never,
+        {
+          ...config,
+          client: { chat: { completions: { create: async () => cancellable } } },
+        } as never,
         { traceId: 'sse-cancel', signal: controller.signal },
       )) {
         if (event.type === 'text-delta') {
@@ -159,7 +160,7 @@ async function testSseAndDeadlines(): Promise<void> {
     (error: unknown) => (error as { code?: string }).code === 'CANCELLED',
   )
   assert.deepEqual(delivered, ['visible'])
-  assert.equal(cancelledDestroyed, true)
+  assert.equal(cancellableController.signal.aborted, true)
 }
 
 async function testToolRoundContainment(): Promise<void> {

@@ -57,7 +57,7 @@ describe('Shell risk policy', () => {
     })
     const shell = registry.definitions().find((tool) => tool.id === 'shell.execute')
     expect(shell).toBeDefined()
-    const properties = shell?.inputSchema.properties as Record<string, unknown>
+    const properties = shell?.llmInputSchema.properties as Record<string, unknown>
     expect(properties).not.toHaveProperty('risk')
   })
 })

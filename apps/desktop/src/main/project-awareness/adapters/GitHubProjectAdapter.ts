@@ -1,11 +1,11 @@
-import axios, { type AxiosInstance } from 'axios'
+import { request as octokitRequest } from '@octokit/request'
 
 import { DEFAULT_UI_LOCALE, type Translator, translate } from '../../../shared/localization'
 import type {
   ProjectRepositoryIdentity,
   ProjectSourceFile,
 } from '../../../shared/project-awareness'
-import { observeAxiosNetwork } from '../../diagnostics/observeAxiosNetwork'
+import { createObservedFetch } from '../../diagnostics/createObservedFetch'
 import type {
   ProjectChangedFile,
   ProjectCommit,
@@ -54,10 +54,11 @@ export function normalizeGitHubProjectError(
   hasToken: boolean,
   t: Translator = (key, params) => translate(DEFAULT_UI_LOCALE, key, params),
 ): Error {
-  if (!axios.isAxiosError(error)) {
+  const status = githubErrorStatus(error)
+  if (status === undefined) {
+    if (isOctokitTransportError(error)) return new Error(t('main.error.github.network'))
     return error instanceof Error ? error : new Error(String(error))
   }
-  const status = error.response?.status
   if (status === 404) {
     return new Error(
       hasToken
@@ -75,6 +76,23 @@ export function normalizeGitHubProjectError(
   }
   return new Error(
     status ? t('main.error.github.http', { status }) : t('main.error.github.network'),
+  )
+}
+
+function githubErrorStatus(error: unknown): number | undefined {
+  if (!error || typeof error !== 'object') return undefined
+  const candidate = error as { name?: unknown; status?: unknown; response?: { status?: unknown } }
+  if (candidate.name === 'HttpError' && !candidate.response) return undefined
+  const status = candidate.status ?? candidate.response?.status
+  return typeof status === 'number' ? status : undefined
+}
+
+function isOctokitTransportError(error: unknown): boolean {
+  return Boolean(
+    error &&
+      typeof error === 'object' &&
+      ((error as { name?: unknown }).name === 'HttpError' ||
+        (error as { name?: unknown }).name === 'AbortError'),
   )
 }
 
@@ -97,74 +115,68 @@ function normalizeChangedStatus(status: string | undefined): ProjectChangedFile[
 }
 
 export class GitHubProjectAdapter implements ProjectRepositoryAdapter {
-  private readonly http: AxiosInstance
-  private readonly rawHttp: AxiosInstance
+  private readonly request: ReturnType<typeof octokitRequest.defaults>
+  private readonly fetchImpl: typeof fetch
+  private readonly repository: string
+  private readonly hasToken: boolean
   private readonly treeBlobs = new Map<string, { sha: string; size: number }>()
 
   constructor(
     private readonly owner: string,
     private readonly name: string,
-    token: string,
+    private readonly tokenValue: string,
     private readonly t: Translator = (key, params) => translate(DEFAULT_UI_LOCALE, key, params),
+    fetchImpl: typeof fetch = fetch,
   ) {
-    const repository = `${owner}/${name}`
-    const normalizeRejectedRequest = (error: unknown): Promise<never> =>
-      Promise.reject(normalizeGitHubProjectError(error, repository, Boolean(token), this.t))
-    this.http = axios.create({
-      baseURL: 'https://api.github.com',
-      timeout: 20_000,
+    this.repository = `${owner}/${name}`
+    this.hasToken = Boolean(this.tokenValue)
+    this.fetchImpl = createObservedFetch(fetchImpl, 'project-awareness')
+    this.request = octokitRequest.defaults({
       headers: {
-        Accept: 'application/vnd.github+json',
-        'X-GitHub-Api-Version': '2022-11-28',
-        'User-Agent': 'Shio-Project-Awareness',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        accept: 'application/vnd.github+json',
+        'x-github-api-version': '2022-11-28',
+        'user-agent': 'Shio-Project-Awareness',
+        ...(this.tokenValue ? { authorization: `Bearer ${this.tokenValue}` } : {}),
       },
+      request: { fetch: this.fetchImpl },
     })
-    observeAxiosNetwork(this.http, 'project-awareness')
-    this.http.interceptors.response.use((response) => response, normalizeRejectedRequest)
-    this.rawHttp = axios.create({
-      baseURL: `https://raw.githubusercontent.com/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`,
-      timeout: 20_000,
-      responseType: 'text',
-      transformResponse: [(data: unknown) => data],
-      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-    })
-    observeAxiosNetwork(this.rawHttp, 'project-awareness')
-    this.rawHttp.interceptors.response.use((response) => response, normalizeRejectedRequest)
   }
 
   async getRepository(): Promise<ProjectRepositoryIdentity> {
-    const response = await this.http.get<GitHubRepositoryResponse>(
-      `/repos/${encodeURIComponent(this.owner)}/${encodeURIComponent(this.name)}`,
-    )
-    if (!response.data.default_branch) {
+    const data = await this.api<GitHubRepositoryResponse>('GET /repos/{owner}/{repo}', {
+      owner: this.owner,
+      repo: this.name,
+    })
+    if (!data.default_branch) {
       throw new Error(this.t('main.error.github.defaultBranchMissing'))
     }
     return {
       provider: 'github',
       owner: this.owner,
       name: this.name,
-      defaultBranch: response.data.default_branch,
+      defaultBranch: data.default_branch,
     }
   }
 
   async getBranchHead(branch: string): Promise<string> {
-    const response = await this.http.get<GitHubCommitResponse>(
-      `/repos/${encodeURIComponent(this.owner)}/${encodeURIComponent(this.name)}/commits/${encodeURIComponent(branch)}`,
-    )
-    if (!response.data.sha) throw new Error(this.t('main.error.github.commitMissing'))
-    return response.data.sha
+    const data = await this.api<GitHubCommitResponse>('GET /repos/{owner}/{repo}/commits/{ref}', {
+      owner: this.owner,
+      repo: this.name,
+      ref: branch,
+    })
+    if (!data.sha) throw new Error(this.t('main.error.github.commitMissing'))
+    return data.sha
   }
 
   async listTree(commitSha: string): Promise<ProjectTreeEntry[]> {
-    const response = await this.http.get<GitHubTreeResponse>(
-      `/repos/${encodeURIComponent(this.owner)}/${encodeURIComponent(this.name)}/git/trees/${encodeURIComponent(commitSha)}`,
-      { params: { recursive: '1' } },
+    const data = await this.api<GitHubTreeResponse>(
+      'GET /repos/{owner}/{repo}/git/trees/{tree_sha}',
+      { owner: this.owner, repo: this.name, tree_sha: commitSha, recursive: '1' },
     )
-    if (response.data.truncated) {
+    if (data.truncated) {
       throw new Error(this.t('main.error.github.treeTruncated'))
     }
-    const tree = (response.data.tree ?? []).flatMap((entry) => {
+    const tree = (data.tree ?? []).flatMap((entry) => {
       if (
         entry.type !== 'blob' ||
         typeof entry.path !== 'string' ||
@@ -193,11 +205,19 @@ export class GitHubProjectAdapter implements ProjectRepositoryAdapter {
     if (!language) throw new Error(this.t('main.error.github.unsupportedLanguage', { path }))
     const treeBlob = this.treeBlobs.get(path)
     try {
-      const response = await this.rawHttp.get<string>(
+      const rawUrl = new URL(
         `${encodeURIComponent(commitSha)}/${encodePath(path)}`,
+        `https://raw.githubusercontent.com/${encodeURIComponent(this.owner)}/${encodeURIComponent(this.name)}/`,
       )
-      const content =
-        typeof response.data === 'string' ? response.data : String(response.data ?? '')
+      const response = await this.fetchImpl(rawUrl, {
+        headers: this.hasToken ? { Authorization: `Bearer ${this.tokenValue}` } : undefined,
+        signal: AbortSignal.timeout(20_000),
+      })
+      if (!response.ok)
+        throw Object.assign(new Error(`GitHub raw HTTP ${response.status}`), {
+          status: response.status,
+        })
+      const content = await response.text()
       return {
         path,
         sha: treeBlob?.sha ?? commitSha,
@@ -210,11 +230,10 @@ export class GitHubProjectAdapter implements ProjectRepositoryAdapter {
       // Fall back to the authenticated GitHub Contents API while preserving the
       // same read-only Adapter contract.
     }
-    const response = await this.http.get<GitHubContentResponse>(
-      `/repos/${encodeURIComponent(this.owner)}/${encodeURIComponent(this.name)}/contents/${encodePath(path)}`,
-      { params: { ref: commitSha } },
+    const data = await this.api<GitHubContentResponse>(
+      'GET /repos/{owner}/{repo}/contents/{path}',
+      { owner: this.owner, repo: this.name, path, ref: commitSha },
     )
-    const data = response.data
     if (
       data.type !== 'file' ||
       typeof data.sha !== 'string' ||
@@ -233,10 +252,11 @@ export class GitHubProjectAdapter implements ProjectRepositoryAdapter {
   }
 
   async compareCommits(baseSha: string, headSha: string): Promise<ProjectChangedFile[]> {
-    const response = await this.http.get<GitHubCompareResponse>(
-      `/repos/${encodeURIComponent(this.owner)}/${encodeURIComponent(this.name)}/compare/${encodeURIComponent(baseSha)}...${encodeURIComponent(headSha)}`,
+    const data = await this.api<GitHubCompareResponse>(
+      'GET /repos/{owner}/{repo}/compare/{basehead}',
+      { owner: this.owner, repo: this.name, basehead: `${baseSha}...${headSha}` },
     )
-    return (response.data.files ?? []).flatMap((file) => {
+    return (data.files ?? []).flatMap((file) => {
       if (!file.filename) return []
       return [
         {
@@ -249,11 +269,13 @@ export class GitHubProjectAdapter implements ProjectRepositoryAdapter {
   }
 
   async listRecentCommits(branch: string, limit: number): Promise<ProjectCommit[]> {
-    const response = await this.http.get<GitHubCommitResponse[]>(
-      `/repos/${encodeURIComponent(this.owner)}/${encodeURIComponent(this.name)}/commits`,
-      { params: { sha: branch, per_page: Math.max(1, Math.min(20, limit)) } },
-    )
-    return response.data.flatMap((commit) => {
+    const data = await this.api<GitHubCommitResponse[]>('GET /repos/{owner}/{repo}/commits', {
+      owner: this.owner,
+      repo: this.name,
+      sha: branch,
+      per_page: Math.max(1, Math.min(20, limit)),
+    })
+    return data.flatMap((commit) => {
       if (!commit.sha) return []
       const authoredAt = Date.parse(commit.commit?.author?.date ?? '')
       return [
@@ -265,5 +287,17 @@ export class GitHubProjectAdapter implements ProjectRepositoryAdapter {
         },
       ]
     })
+  }
+
+  private async api<T>(route: `GET ${string}`, parameters: Record<string, unknown>): Promise<T> {
+    try {
+      const response = await this.request(route, {
+        ...parameters,
+        request: { signal: AbortSignal.timeout(20_000) },
+      })
+      return response.data as T
+    } catch (error) {
+      throw normalizeGitHubProjectError(error, this.repository, this.hasToken, this.t)
+    }
   }
 }

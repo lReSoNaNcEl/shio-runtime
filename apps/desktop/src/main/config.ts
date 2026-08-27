@@ -1,7 +1,7 @@
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { app } from 'electron'
+import { z } from 'zod'
 
 import type { DesktopAuthorityMode } from '../shared/actions'
 import {
@@ -25,9 +25,14 @@ import { defaultLlmConfig, type LlmCredentialStore, normalizeLlmConfig } from '.
 import { resolveLlmProviderAccountId, toPublicLlmConfig } from './llm/config'
 import { resolveLlmPersistence } from './llm/persistence'
 import { mainLog } from './logging/safeLogger'
+import { ValidatedElectronStore } from './persistence/ValidatedElectronStore'
 import { migrateProjectAwarenessPlugin } from './plugins'
 
 const CONFIG_PATH = join(app.getPath('userData'), 'config.json')
+const appConfigDocumentSchema = z.record(z.string(), z.unknown())
+const appConfigStore = new ValidatedElectronStore(CONFIG_PATH, appConfigDocumentSchema, {
+  clearMalformedJson: true,
+})
 export const CURRENT_CONFIG_SCHEMA_VERSION = DESKTOP_CONFIG_SCHEMA_VERSION
 
 export interface AppConfig {
@@ -130,16 +135,17 @@ function resolveSetupLifecycle(saved: Record<string, unknown>): SetupLifecycleCo
   }
 }
 
-function serializedConfig(config: AppConfig): string {
-  return JSON.stringify(config, null, 2)
+function persistConfig(config: AppConfig): void {
+  appConfigStore.write(config as unknown as Record<string, unknown>)
 }
 
 export async function loadConfig(llmCredentialStore: LlmCredentialStore): Promise<AppConfig> {
   _llmCredentialStore = llmCredentialStore
   await llmCredentialStore.load()
   try {
-    if (existsSync(CONFIG_PATH)) {
-      const rawSaved = JSON.parse(readFileSync(CONFIG_PATH, 'utf-8')) as Record<string, unknown> &
+    const stored = appConfigStore.read()
+    if (stored) {
+      const rawSaved = stored as Record<string, unknown> &
         import('./llm/persistence').LegacyPersistedLlmConfig
       const legacyProjectFound =
         typeof rawSaved.projectAwareness === 'object' && rawSaved.projectAwareness !== null
@@ -202,7 +208,7 @@ export async function loadConfig(llmCredentialStore: LlmCredentialStore): Promis
         projectMigrationCompleted &&
         ((migrated && llmMigrationCompleted) || configNeedsMigration)
       ) {
-        writeFileSync(CONFIG_PATH, serializedConfig(_config), 'utf-8')
+        persistConfig(_config)
       }
     }
   } catch {
@@ -299,5 +305,5 @@ export function saveConfig(
           : _config.uiLocale,
     uiTheme: partial.uiTheme === undefined ? _config.uiTheme : normalizeUiTheme(partial.uiTheme),
   }
-  writeFileSync(CONFIG_PATH, serializedConfig(_config), 'utf-8')
+  persistConfig(_config)
 }

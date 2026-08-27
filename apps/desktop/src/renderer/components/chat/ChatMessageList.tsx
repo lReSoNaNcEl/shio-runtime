@@ -70,7 +70,11 @@ export function ChatMessageList({
         </div>
       )}
       {messages.map((message) => (
-        <div key={message.id} className={`message message-${message.role}`}>
+        <div
+          key={message.id}
+          className={`message message-${message.role}`}
+          aria-busy={message.streaming || undefined}
+        >
           {message.role !== 'error' && message.role !== 'meta' && (
             <span className="msg-name">
               {message.role === 'user' ? t('chat.you') : t('chat.assistant')}
@@ -78,7 +82,7 @@ export function ChatMessageList({
           )}
           {message.role === 'assistant' ? (
             <div className="msg-text">
-              <MarkdownMessage text={message.text} />
+              <MarkdownMessage text={message.text} streaming={message.streaming} />
             </div>
           ) : (
             <span className="msg-text">{message.text}</span>

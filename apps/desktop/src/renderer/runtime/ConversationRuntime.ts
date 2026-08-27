@@ -99,8 +99,19 @@ export interface ConversationRuntimeDeps {
   presentation: ConversationPresentationPort
   events: EventBus
   setStatus: (status: ConversationStatus) => void
-  pushMessage: (role: ChatMsg['role'], text: string, grounding?: ReplyGrounding) => string
-  updateMessage: (id: string, text: string, grounding?: ReplyGrounding) => void
+  pushMessage: (
+    role: ChatMsg['role'],
+    text: string,
+    grounding?: ReplyGrounding,
+    streaming?: boolean,
+  ) => string
+  updateMessage: (
+    id: string,
+    text: string,
+    grounding?: ReplyGrounding,
+    streaming?: boolean,
+    immediate?: boolean,
+  ) => void
   formatUserError: (message: string) => string
   markAssistantMessageInterrupted: () => void
   setResponseInterruptionPending: (pending: boolean) => void
@@ -278,6 +289,8 @@ export class ConversationRuntime {
     reportPhase: (phase: ConversationExecutionPhase) => void,
   ): Promise<ConversationCompletionResult> {
     let failurePhase: 'generation' | 'synthesis' | 'playback' | 'cleanup' = 'generation'
+    let streamedDisplayText = ''
+    let streamedMessageId: string | null = null
     try {
       this.setEmbodimentIntent(
         turn.screenContextId ? { intensity: 'subtle', gazeHint: 'screen' } : undefined,
@@ -291,8 +304,6 @@ export class ConversationRuntime {
       this.deps.recordRuntimeEvent('Thinking', `turnId=${turn.turnId}`)
       reportPhase('generating')
       const streamSegmenter = new StreamingSpeechSegmenter(turn.turnId)
-      let streamedDisplayText = ''
-      let streamedMessageId: string | null = null
       let streamedSpeechPrepared = false
       let streamedPlaybackStarted = false
       let streamedSegmentCount = 0
@@ -372,12 +383,34 @@ export class ConversationRuntime {
               `LLM Stream ${event.type}`,
               `turnId=${turn.turnId} round=${event.llmRound}`,
             )
-            if (event.type !== 'text-delta' || !this.isCurrentTurn(turn.turnId)) return
+            if (!this.isCurrentTurn(turn.turnId)) return
+            if (event.type !== 'text-delta') {
+              if (
+                streamedMessageId &&
+                (event.type === 'tool-round-started' ||
+                  event.type === 'tool-round-completed' ||
+                  event.type === 'completed')
+              ) {
+                this.deps.updateMessage(
+                  streamedMessageId,
+                  streamedDisplayText,
+                  undefined,
+                  true,
+                  true,
+                )
+              }
+              return
+            }
             streamedDisplayText += event.delta.text
             if (!streamedMessageId && streamedDisplayText.trim()) {
-              streamedMessageId = this.deps.pushMessage('assistant', streamedDisplayText)
+              streamedMessageId = this.deps.pushMessage(
+                'assistant',
+                streamedDisplayText,
+                undefined,
+                true,
+              )
             } else if (streamedMessageId) {
-              this.deps.updateMessage(streamedMessageId, streamedDisplayText)
+              this.deps.updateMessage(streamedMessageId, streamedDisplayText, undefined, true)
             }
             enqueueSpeechSegments(streamSegmenter.push(event.delta))
           },
@@ -397,7 +430,7 @@ export class ConversationRuntime {
       })
       this.deps.conversationState.setPresence(generatedPresence)
       if (streamedMessageId) {
-        this.deps.updateMessage(streamedMessageId, draft.displayText, draft.grounding)
+        this.deps.updateMessage(streamedMessageId, draft.displayText, draft.grounding, false, true)
         enqueueSpeechSegments(streamSegmenter.flush())
         streamingPipeline.close()
         await Promise.race([streamingExecution, this.interruptionFor(turn.turnId)])
@@ -538,6 +571,9 @@ export class ConversationRuntime {
         cleanupCompleted: true,
       }
     } catch (error) {
+      if (streamedMessageId) {
+        this.deps.updateMessage(streamedMessageId, streamedDisplayText, undefined, false, true)
+      }
       this.activeEmotionPipeline?.cancel()
       this.activeEmotionPipeline = null
       if (this.playbackTurnId === turn.turnId) this.playbackTurnId = null

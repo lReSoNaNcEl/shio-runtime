@@ -141,7 +141,7 @@ async function main(): Promise<void> {
     CHARACTER_TOOL_IDS.some((id) => id.startsWith('game.')),
     false,
   )
-  const startSchema = JSON.stringify(registry.get('browser.use')?.inputSchema)
+  const startSchema = JSON.stringify(registry.get('browser.use')?.llmInputSchema)
   assert.doesNotMatch(startSchema, /"x"|"y"|coordinate|key-down|mouse-down/u)
 
   let currentSession: BrowserComputerUseSession | null = null

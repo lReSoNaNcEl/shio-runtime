@@ -16,8 +16,8 @@ import { parseCharacterEmbodimentResponse } from '../../../src/shared/character-
 
 const desktopRoot = fileURLToPath(new URL('../../..', import.meta.url))
 
-function render(markdown: string): string {
-  return renderToStaticMarkup(createElement(MarkdownMessage, { text: markdown }))
+function render(markdown: string, streaming = false): string {
+  return renderToStaticMarkup(createElement(MarkdownMessage, { text: markdown, streaming }))
 }
 
 describe('Markdown message rendering', () => {
@@ -56,13 +56,28 @@ const answer: string = 'работает'
   })
 
   it('contains malformed and hostile Markdown as visible safe text', () => {
-    const malformed = render(`Незакрытый **жирный текст
+    const malformed = render(
+      `Незакрытый **жирный текст
 
 \`\`\`unknown-language
 очень длинная строка ${'x'.repeat(2_000)}
-`)
+`,
+      true,
+    )
     expect(malformed).toContain('Незакрытый')
     expect(malformed).toMatch(/x{100}/)
+
+    for (const partial of [
+      '```ts',
+      '```ts\nconst',
+      '```ts\nconst x = 1',
+      '```ts\nconst x = 1\n```',
+      '**',
+      '**bold',
+      '**bold**',
+    ]) {
+      expect(render(partial, true)).toBeTruthy()
+    }
 
     const malicious = render(`
 [опасная ссылка](javascript:alert(document.domain))

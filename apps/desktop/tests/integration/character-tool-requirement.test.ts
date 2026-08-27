@@ -100,6 +100,7 @@ describe('Character Tool Requirement', () => {
   it.each([
     'Управляй этой динамической страницей непрерывно, реагируй на изменения и остановись только когда я попрошу.',
     'Запусти browser.use для непрерывного управления до явной остановки.',
+    'Открой любой сайт с играми, выбери любую игру и поиграй в неё 3–5 минут на своё усмотрение.',
   ])(
     'requires browser.use and returns after the background session starts: %s',
     async (request) => {
@@ -746,5 +747,142 @@ describe('Character Tool Requirement', () => {
     assert.equal(replyCalls, 2)
     assert.match(result.replyText, /31 августа 2026/u)
     assert.deepEqual(result.toolEvidence.executedTools, ['browser.open'])
+  })
+
+  it('streams a final direct answer through the structured fallback', async () => {
+    let chatCalls = 0
+    const visibleText: string[] = []
+    const result = await new CharacterToolLoop().run({
+      llm: {
+        capabilities: () => ({
+          ...capabilities,
+          supportsStreaming: true,
+          supportsToolCalling: false,
+        }),
+        chat: async () => {
+          chatCalls += 1
+          return 'The structured fallback must not use chat for the final answer.'
+        },
+        stream: async function* () {
+          yield { type: 'connected' as const, at: 1 }
+          yield { type: 'text-delta' as const, at: 2, text: '[calm]Потоковый ' }
+          yield { type: 'text-delta' as const, at: 3, text: 'ответ.' }
+          yield { type: 'completed' as const, at: 4, finishReason: 'stop' as const }
+        },
+      },
+      providerId: 'mistral',
+      messages: [{ role: 'user', content: 'Ответь на вопрос.' }],
+      registry: () => registry(true),
+      createDispatcher: () => ({ dispose: () => undefined }) as never,
+      traceId: 'structured-fallback-stream',
+      requestOptions: {},
+      nativeToolsRejected: false,
+      enforceToolRequirements: false,
+      failureReply: 'TOOL_FAILURE',
+      limitReply: 'TOOL_LIMIT',
+      onStreamEvent: (event) => {
+        if (event.type === 'text-delta') visibleText.push(event.delta.text)
+      },
+    })
+
+    assert.equal(chatCalls, 0)
+    assert.equal(result.replyText, '[calm]Потоковый ответ.')
+    assert.equal(visibleText.join(''), 'Потоковый ответ.')
+  })
+
+  it('continues structured tool work after the requirement is satisfied without leaking protocol', async () => {
+    const browserCapabilities: ShioCapabilitySnapshot = {
+      schemaVersion: 1,
+      generatedAt: 3,
+      capabilities: [
+        {
+          id: 'browser-control',
+          category: 'action',
+          source: { kind: 'plugin', pluginId: 'browser-control' },
+          titleKey: 'capabilities.browser.title',
+          descriptionKey: 'capabilities.browser.description',
+          availability: 'available',
+          authority: 'confirm',
+        },
+      ],
+    }
+    const currentRegistry = () =>
+      new CharacterToolRegistry({
+        projectAvailable: false,
+        capabilityContext: browserCapabilities,
+        browserObservation: null,
+        actionsAvailable: true,
+      })
+    let chatRound = 0
+    let streamRound = 0
+    const visibleText: string[] = []
+    const result = await new CharacterToolLoop().run({
+      llm: {
+        capabilities: () => ({
+          ...capabilities,
+          supportsStreaming: true,
+          supportsToolCalling: false,
+        }),
+        chat: async () => {
+          chatRound += 1
+          if (chatRound === 1) {
+            return JSON.stringify({
+              type: 'explicit-tool',
+              tool: 'browser.open',
+            } satisfies CharacterToolRequirement)
+          }
+          return '<shio-tools>{"plannedTools":["browser.open"],"calls":[{"tool":"browser.open","arguments":{"url":"https://example.com","goal":"Open the page"}}]}</shio-tools>'
+        },
+        stream: async function* () {
+          streamRound += 1
+          yield { type: 'connected' as const, at: 1 }
+          if (streamRound === 1) {
+            yield {
+              type: 'text-delta' as const,
+              at: 2,
+              text: '<shio-tools>{"calls":[{"tool":"browser.open","arguments":{"url":"https://example.com/game","goal":"Open the selected game"}}]}</shio-tools>',
+            }
+          } else {
+            yield { type: 'text-delta' as const, at: 2, text: '[calm]Готово.' }
+          }
+          yield { type: 'completed' as const, at: 3, finishReason: 'stop' as const }
+        },
+      },
+      providerId: 'mistral',
+      messages: [{ role: 'user', content: 'Открой страницу.' }],
+      registry: currentRegistry,
+      createDispatcher: (signal) =>
+        new CharacterToolDispatcher({
+          registry: currentRegistry,
+          traceId: 'terminal-structured-protocol',
+          userGoal: 'Открой страницу.',
+          signal,
+          executeDesktopWorkflow: async () =>
+            ({
+              actionId: 'action-00000000-0000-4000-8000-000000000001',
+              tool: 'desktop.workflow',
+              outcome: 'success',
+              authorization: 'confirmed',
+              execution: { runtimeCompleted: true, verification: 'verified' },
+            }) as never,
+        }),
+      traceId: 'terminal-structured-protocol',
+      requestOptions: {},
+      nativeToolsRejected: false,
+      enforceToolRequirements: true,
+      failureReply: (latestActionResult) =>
+        latestActionResult ? 'HONEST_ACTION_RESULT' : 'NO_ACTION_RESULT',
+      limitReply: 'TOOL_LIMIT',
+      onStreamEvent: (event) => {
+        if (event.type === 'text-delta') visibleText.push(event.delta.text)
+      },
+    })
+
+    assert.equal(chatRound, 2)
+    assert.equal(streamRound, 2)
+    assert.equal(result.calls, 2)
+    assert.equal(result.replyText, '[calm]Готово.')
+    assert.equal(visibleText.join(''), 'Готово.')
+    assert.notEqual(result.replyText, 'TOOL_LIMIT')
   })
 })

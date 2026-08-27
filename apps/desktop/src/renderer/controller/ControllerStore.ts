@@ -1,3 +1,4 @@
+import type { ChatMessagePatch } from './ChatMessageUpdateCoalescer'
 import type { ChatMsg, ControllerState } from './contracts'
 
 export type ControllerStateListener = (state: ControllerState) => void
@@ -29,7 +30,7 @@ export class ControllerStore {
     this.patch({ messages: [...this.state.messages, message] })
   }
 
-  updateMessage(id: string, patch: Pick<ChatMsg, 'text' | 'grounding'>): void {
+  updateMessage(id: string, patch: ChatMessagePatch): void {
     const index = this.state.messages.findIndex((message) => message.id === id)
     if (index < 0) return
     const messages = [...this.state.messages]
@@ -45,7 +46,7 @@ export class ControllerStore {
     const messages = [...this.state.messages]
     const index = messages.findLastIndex((message) => message.role === 'assistant')
     if (index < 0) return
-    messages[index] = { ...messages[index], interrupted: true }
+    messages[index] = { ...messages[index], interrupted: true, streaming: false }
     this.patch({ messages })
   }
 
