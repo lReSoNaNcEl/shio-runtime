@@ -1,24 +1,34 @@
 import { randomUUID } from 'node:crypto'
 
 import {
-  type BrowserComputerUseDecision,
   type BrowserComputerUseSession,
   type BrowserComputerUseStartRequest,
   browserComputerUseStartRequestSchema,
   type ComputerUseNotableObservation,
+  type ContinuousControlBudget,
+  continuousControlBudgetSchema,
+  DEFAULT_CONTINUOUS_CONTROL_BUDGET,
+  EMPTY_BROWSER_COMPUTER_USE_DIAGNOSTICS,
 } from '../../../shared/browser-computer-use'
 import { mainLog } from '../../logging/safeLogger'
 import { BrowserAutomationError } from '../errors'
 import type { PlaywrightBrowserAdapter } from '../playwright/PlaywrightBrowserAdapter'
+import type { BrowserReactiveTrackerPort } from './BrowserReactiveTracker'
 import type {
   BrowserVisualActionAdapter,
   BrowserVisualActionStatus,
 } from './BrowserVisualActionAdapter'
+import {
+  ComputerUseControlCoordinator,
+  type ComputerUseCoordinatorEventType,
+} from './ComputerUseControlCoordinator'
 
 export interface BrowserComputerUseRuntimeOptions {
   browser: PlaywrightBrowserAdapter
   visual: BrowserVisualActionAdapter
   maximumSteps?: () => number
+  continuousBudget?: Partial<ContinuousControlBudget>
+  reactiveTracker?: BrowserReactiveTrackerPort
   now?: () => number
   createId?: () => string
   stopTimeoutMs?: number
@@ -39,18 +49,30 @@ export interface BrowserComputerUseRuntimeOptions {
   }) => void
 }
 
+/** Session façade. Control-frequency mechanics belong to ComputerUseControlCoordinator. */
 export class BrowserComputerUseRuntime {
   private session: BrowserComputerUseSession | null = null
   private sessionController: AbortController | null = null
-  private decisionController: AbortController | null = null
   private loopTask: Promise<void> | null = null
   private pauseRequested = false
-  private recentAction:
-    | { type: BrowserComputerUseDecision['type']; outcome: 'executed' | 'stale' | 'failed' }
-    | undefined
   private readonly listeners = new Set<() => void>()
+  private readonly continuousBudget: ContinuousControlBudget
+  private readonly coordinator: ComputerUseControlCoordinator
 
-  constructor(private readonly options: BrowserComputerUseRuntimeOptions) {}
+  constructor(private readonly options: BrowserComputerUseRuntimeOptions) {
+    this.continuousBudget = continuousControlBudgetSchema.parse({
+      ...DEFAULT_CONTINUOUS_CONTROL_BUDGET,
+      ...options.continuousBudget,
+    })
+    this.coordinator = new ComputerUseControlCoordinator({
+      browser: options.browser,
+      visual: options.visual,
+      continuousBudget: this.continuousBudget,
+      reactiveTracker: options.reactiveTracker,
+      now: options.now,
+      completionRetryLimit: options.completionRetryLimit,
+    })
+  }
 
   onChanged(listener: () => void): () => void {
     this.listeners.add(listener)
@@ -58,11 +80,11 @@ export class BrowserComputerUseRuntime {
   }
 
   snapshot(): BrowserComputerUseSession | null {
-    return this.session ? { ...this.session } : null
+    return this.session ? { ...this.session, diagnostics: this.coordinator.diagnostics() } : null
   }
 
   visualStatus(): BrowserVisualActionStatus {
-    return this.options.visual.status()
+    return this.coordinator.visualStatus()
   }
 
   async start(
@@ -87,13 +109,23 @@ export class BrowserComputerUseRuntime {
         'A browser control session is already active',
       )
     }
-    if (signal.aborted)
+    if (signal.aborted) {
       throw signal.reason ?? new BrowserAutomationError('COMPUTER_USE_UNAVAILABLE')
+    }
+    if (this.loopTask) await this.loopTask
     const observation = await this.options.browser.captureComputerUseObservation(
       visualStatus.supportsVision,
       signal,
     )
     const now = this.now()
+    const termination = request.termination ?? { type: 'goal-completed' as const }
+    const durationMs =
+      termination.type === 'goal-completed'
+        ? request.maxDurationMs
+        : termination.type === 'until-time'
+          ? termination.durationMs
+          : this.continuousBudget.maximumDurationMs
+    this.coordinator.reset()
     const session: BrowserComputerUseSession = {
       id: `browser-use-session-${this.createId()}`,
       goal: request.goal,
@@ -102,7 +134,7 @@ export class BrowserComputerUseRuntime {
       pageId: observation.page.id,
       state: 'running',
       startedAt: now,
-      expiresAt: now + request.maxDurationMs,
+      expiresAt: now + durationMs,
       maxSteps: Math.min(
         request.maxSteps,
         Math.max(1, Math.min(300, Math.round(this.options.maximumSteps?.() ?? 30))),
@@ -111,83 +143,104 @@ export class BrowserComputerUseRuntime {
       stepCount: 0,
       actionCount: 0,
       authorityScopeId,
+      termination,
+      ...(termination.type === 'goal-completed' ? {} : { continuousBudget: this.continuousBudget }),
       mode: observation.visual ? 'visual' : 'semantic',
+      controlMode: 'slow',
       activity: 'observing',
+      diagnostics: { ...EMPTY_BROWSER_COMPUTER_USE_DIAGNOSTICS },
     }
     this.session = session
     this.sessionController = new AbortController()
     this.pauseRequested = false
-    this.recentAction = undefined
     this.emit('computer-use-started')
     this.launchLoop(this.sessionController.signal)
-    return { ...session }
+    return this.requireSnapshot()
   }
 
   async pause(): Promise<BrowserComputerUseSession> {
     const session = this.requireSession()
-    if (session.state !== 'running') return { ...session }
+    if (session.state !== 'running') return this.requireSnapshot()
     this.pauseRequested = true
-    this.decisionController?.abort(new Error('BROWSER_COMPUTER_USE_PAUSED'))
+    await this.coordinator.pause()
     const loopTask = this.loopTask
     if (loopTask) await loopTask
     await this.options.browser.releaseInputs()
     const current = this.requireSession()
-    if (current.state !== 'running') return { ...current }
-    this.session = { ...current, state: 'paused', activity: 'idle' }
+    if (current.state !== 'running') return this.requireSnapshot()
+    this.session = { ...current, state: 'paused', activity: 'idle', controlMode: 'slow' }
     this.publishChanged()
-    return { ...this.session }
+    return this.requireSnapshot()
   }
 
   async resume(signal?: AbortSignal): Promise<BrowserComputerUseSession> {
     const session = this.requireSession()
-    if (!['paused', 'waiting-user'].includes(session.state)) return { ...session }
-    if (signal?.aborted)
+    if (!['paused', 'waiting-user'].includes(session.state)) return this.requireSnapshot()
+    if (signal?.aborted) {
       throw signal.reason ?? new BrowserAutomationError('COMPUTER_USE_UNAVAILABLE')
+    }
     const controller = this.sessionController
-    if (!controller || controller.signal.aborted)
+    if (!controller || controller.signal.aborted) {
       throw new BrowserAutomationError('COMPUTER_USE_UNAVAILABLE')
+    }
     this.pauseRequested = false
-    this.session = { ...session, state: 'running', activity: 'observing' }
+    this.coordinator.resume()
+    this.session = {
+      ...session,
+      state: 'running',
+      activity: 'observing',
+      controlMode: 'slow',
+      lastErrorCode: undefined,
+    }
     this.launchLoop(controller.signal)
     this.publishChanged()
-    return { ...this.session }
+    return this.requireSnapshot()
   }
 
   async stop(): Promise<BrowserComputerUseSession> {
     const session = this.requireSession()
     if (!['running', 'paused', 'waiting-user', 'stopping'].includes(session.state)) {
-      return { ...session }
+      return this.requireSnapshot()
     }
     this.pauseRequested = false
-    this.session = { ...session, state: 'stopping', activity: 'idle' }
+    this.session = { ...session, state: 'stopping', activity: 'idle', controlMode: 'slow' }
     this.publishChanged()
     this.sessionController?.abort(new Error('BROWSER_COMPUTER_USE_STOPPED'))
-    this.decisionController?.abort(new Error('BROWSER_COMPUTER_USE_STOPPED'))
+    await this.coordinator.shutdown()
     const settled = await settleWithin(this.loopTask, this.options.stopTimeoutMs ?? 2_000)
     if (!settled) {
       await this.options.browser.forceAbort()
       await settleWithin(this.loopTask, this.options.stopTimeoutMs ?? 2_000)
     }
     await this.options.browser.releaseInputs()
-    this.session = { ...this.requireSession(), state: 'stopped', activity: 'idle' }
+    this.session = {
+      ...this.requireSession(),
+      state: 'stopped',
+      activity: 'idle',
+      controlMode: 'slow',
+    }
     this.emit('computer-use-stopped')
-    return { ...this.session }
+    return this.requireSnapshot()
   }
 
   async emergencyStop(): Promise<BrowserComputerUseSession | null> {
     const session = this.session
     this.pauseRequested = false
     this.sessionController?.abort(new Error('BROWSER_COMPUTER_USE_EMERGENCY_STOPPED'))
-    this.decisionController?.abort(new Error('BROWSER_COMPUTER_USE_EMERGENCY_STOPPED'))
     if (session) {
-      this.session = { ...session, state: 'stopping', activity: 'idle' }
+      this.session = { ...session, state: 'stopping', activity: 'idle', controlMode: 'slow' }
       this.publishChanged()
     }
-    await this.options.browser.forceAbort()
+    await Promise.allSettled([this.coordinator.shutdown(), this.options.browser.forceAbort()])
     if (!this.session) return null
-    this.session = { ...this.session, state: 'stopped', activity: 'idle' }
+    this.session = {
+      ...this.session,
+      state: 'stopped',
+      activity: 'idle',
+      controlMode: 'slow',
+    }
     this.emit('computer-use-stopped')
-    return { ...this.session }
+    return this.requireSnapshot()
   }
 
   async dispose(): Promise<void> {
@@ -196,141 +249,43 @@ export class BrowserComputerUseRuntime {
       ['running', 'stopping', 'paused', 'waiting-user'].includes(this.session.state)
     ) {
       await this.stop()
+    } else {
+      await this.coordinator.shutdown()
     }
     await this.options.browser.releaseInputs()
   }
 
   private async runLoop(signal: AbortSignal): Promise<void> {
-    let completionProposalCount = 0
     try {
-      while (!signal.aborted && !this.pauseRequested) {
-        const session = this.session
-        if (session?.state !== 'running') return
-        if (
-          this.now() >= session.expiresAt ||
-          session.stepCount >= session.maxSteps ||
-          session.actionCount >= session.maxActions
-        ) {
-          throw new BrowserAutomationError('COMPUTER_USE_LIMIT_REACHED')
-        }
-        this.session = { ...session, activity: 'observing' }
-        const visualStatus = this.options.visual.status()
-        const observation = await this.options.browser.captureComputerUseObservation(
-          visualStatus.supportsVision,
-          signal,
-        )
-        if (observation.blocker) {
-          await this.options.browser.releaseInputs()
-          this.session = {
-            ...this.requireSession(),
-            state: 'waiting-user',
-            activity: 'waiting-user',
-            lastErrorCode: observation.blocker,
-          }
-          this.emit('computer-use-blocked', undefined, observation.blocker)
-          return
-        }
-        this.session = {
-          ...this.requireSession(),
-          pageId: observation.page.id,
-          mode: observation.visual ? 'visual' : 'semantic',
-          activity: 'deciding',
-          stepCount: this.requireSession().stepCount + 1,
-        }
-        const decisionController = new AbortController()
-        this.decisionController = decisionController
-        const unlink = linkAbort(signal, decisionController)
-        let decision: BrowserComputerUseDecision
-        try {
-          decision = await this.options.visual.decide(
-            {
-              goal: this.requireSession().goal,
-              observation,
-              recentAction: this.recentAction,
-            },
-            decisionController.signal,
-          )
-        } finally {
-          unlink()
-          if (this.decisionController === decisionController) this.decisionController = null
-        }
-        if (signal.aborted || this.pauseRequested) return
-        if (decision.type === 'request-user') {
-          await this.options.browser.releaseInputs()
-          this.session = {
-            ...this.requireSession(),
-            state: 'waiting-user',
-            activity: 'waiting-user',
-            lastErrorCode: decision.reasonCode,
-          }
-          this.emit('computer-use-blocked', undefined, decision.reasonCode)
-          return
-        }
-        if (decision.type === 'done') {
-          completionProposalCount += 1
-          this.session = { ...this.requireSession(), activity: 'verifying' }
-          const freshObservation = await this.options.browser.captureComputerUseObservation(
-            visualStatus.supportsVision,
-            signal,
-          )
-          const assessment = await this.options.visual.verifyCompletion(
-            { goal: this.requireSession().goal, observation: freshObservation },
-            signal,
-          )
-          if (assessment.status === 'satisfied') {
-            await this.options.browser.releaseInputs()
-            const summary =
-              assessment.evidenceSummary ?? 'Completion verified against a fresh observation.'
-            this.session = {
-              ...this.requireSession(),
-              state: 'completed',
-              activity: 'idle',
-              summary,
-            }
-            this.emit('computer-use-completed', {
-              kind: 'success',
-              summary,
-              confidence: assessment.confidence,
-            })
-            return
-          }
-          if (assessment.status === 'uncertain') {
-            throw new BrowserAutomationError('COMPUTER_USE_COMPLETION_UNVERIFIED')
-          }
-          this.recentAction = { type: 'done', outcome: 'failed' }
-          if (completionProposalCount > (this.options.completionRetryLimit ?? 2)) {
-            throw new BrowserAutomationError('COMPUTER_USE_COMPLETION_UNVERIFIED')
-          }
-          continue
-        }
-        this.session = { ...this.requireSession(), activity: 'acting' }
-        try {
-          await this.options.browser.executeComputerUseDecision(decision, signal)
-          this.recentAction = { type: decision.type, outcome: 'executed' }
-          this.session = {
-            ...this.requireSession(),
-            actionCount: this.requireSession().actionCount + 1,
-            activity: 'verifying',
-          }
-          this.emit('computer-use-progress')
-        } catch (error) {
-          if (error instanceof BrowserAutomationError && error.code === 'TARGET_STALE') {
-            this.recentAction = { type: decision.type, outcome: 'stale' }
-            continue
-          }
-          this.recentAction = { type: decision.type, outcome: 'failed' }
-          throw error
-        }
+      await this.coordinator.run(
+        {
+          session: () => this.requireSession(),
+          update: (patch) => this.updateSession(patch),
+          emit: (type, observation, errorCode) => this.emit(type, observation, errorCode),
+        },
+        signal,
+      )
+      if (
+        this.session &&
+        ['completed', 'failed', 'waiting-user', 'stopped'].includes(this.session.state)
+      ) {
+        await this.coordinator.shutdown()
       }
     } catch (error) {
-      if (signal.aborted) return
-      if (this.pauseRequested) return
+      if (signal.aborted || this.pauseRequested) return
       if (this.session?.state === 'paused' || this.session?.state === 'waiting-user') return
+      await this.coordinator.shutdown()
       await this.options.browser.releaseInputs()
       const errorCode = error instanceof BrowserAutomationError ? error.code : 'COMPUTER_USE_FAILED'
       const current = this.session
       if (current) {
-        this.session = { ...current, state: 'failed', activity: 'idle', lastErrorCode: errorCode }
+        this.session = {
+          ...current,
+          state: 'failed',
+          activity: 'idle',
+          controlMode: 'slow',
+          lastErrorCode: errorCode,
+        }
         this.emit('computer-use-failed', undefined, errorCode)
       }
       mainLog.warn('[BrowserComputerUse] session failed', { errorCode })
@@ -350,13 +305,31 @@ export class BrowserComputerUseRuntime {
     })
   }
 
+  private updateSession(patch: Partial<BrowserComputerUseSession>): BrowserComputerUseSession {
+    this.session = {
+      ...this.requireSession(),
+      ...patch,
+      diagnostics: this.coordinator.diagnostics(),
+    }
+    this.publishChanged()
+    return this.session
+  }
+
   private requireSession(): BrowserComputerUseSession {
     if (!this.session) throw new BrowserAutomationError('NO_ACTIVE_SESSION')
     return this.session
   }
 
+  private requireSnapshot(): BrowserComputerUseSession {
+    const snapshot = this.snapshot()
+    if (!snapshot) throw new BrowserAutomationError('NO_ACTIVE_SESSION')
+    return snapshot
+  }
+
   private emit(
-    type: Parameters<NonNullable<BrowserComputerUseRuntimeOptions['onEvent']>>[0]['type'],
+    type:
+      | Parameters<NonNullable<BrowserComputerUseRuntimeOptions['onEvent']>>[0]['type']
+      | ComputerUseCoordinatorEventType,
     observation?: ComputerUseNotableObservation,
     errorCode?: string,
   ): void {
@@ -383,13 +356,6 @@ export class BrowserComputerUseRuntime {
   private createId(): string {
     return (this.options.createId ?? randomUUID)()
   }
-}
-
-function linkAbort(parent: AbortSignal, child: AbortController): () => void {
-  const abort = (): void => child.abort(parent.reason)
-  parent.addEventListener('abort', abort, { once: true })
-  if (parent.aborted) abort()
-  return () => parent.removeEventListener('abort', abort)
 }
 
 async function settleWithin(task: Promise<void> | null, timeoutMs: number): Promise<boolean> {

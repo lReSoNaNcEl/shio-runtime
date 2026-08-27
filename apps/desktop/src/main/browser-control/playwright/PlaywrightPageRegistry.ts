@@ -15,6 +15,7 @@ export class PlaywrightPageRegistry {
   }
 
   setActive(page: Page | null): void {
+    if (this.active && this.active !== page) this.invalidate()
     this.active = page
   }
 

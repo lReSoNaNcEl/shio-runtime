@@ -2,6 +2,7 @@ import type { BrowserWindow } from 'electron'
 
 import { actionConfirmationRequestSchema, actionRuntimeSnapshotSchema } from '../../shared/actions'
 import {
+  BROWSER_COMPUTER_USE_CONTINUOUS_DEFAULT_LEASE_MS,
   type BrowserComputerUseControlAction,
   type BrowserComputerUseSession,
   type BrowserComputerUseStartRequest,
@@ -128,21 +129,30 @@ export function createActionRuntime({
   })
   actions.register<BrowserComputerUseStartRequest, BrowserComputerUseSession>({
     name: 'browser.use',
-    description: 'Authorize and start one bounded browser computer-use session.',
+    description: 'Authorize and start one bounded or continuous browser computer-use session.',
     validate: (payload) => browserComputerUseStartRequestSchema.parse(payload),
     authority: 'delegated-session',
-    confirmation: (actionId, request) =>
-      actionConfirmationRequestSchema.parse({
+    confirmation: (actionId, request) => {
+      const termination = request.termination ?? { type: 'goal-completed' as const }
+      const maximumDurationMs =
+        termination.type === 'goal-completed'
+          ? request.maxDurationMs
+          : termination.type === 'until-time'
+            ? termination.durationMs
+            : BROWSER_COMPUTER_USE_CONTINUOUS_DEFAULT_LEASE_MS
+      return actionConfirmationRequestSchema.parse({
         schemaVersion: 1,
         actionId,
         tool: 'browser.use',
         goal: request.goal,
         maxSteps: request.maxSteps,
         maxActions: request.maxActions,
-        maxDurationMs: request.maxDurationMs,
+        maxDurationMs: maximumDurationMs,
+        termination,
         requestedCapabilities: ['browser-computer-use'],
         risk: 'normal',
-      }),
+      })
+    },
     timeoutMs: 30_000,
     singleFlight: true,
     adapter: 'browser-control',

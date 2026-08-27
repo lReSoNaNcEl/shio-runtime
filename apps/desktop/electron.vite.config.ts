@@ -12,6 +12,10 @@ export default defineConfig({
         external: ['electron'],
         input: {
           index: resolve(__dirname, 'src/main/index.ts'),
+          browserReactiveTrackerWorker: resolve(
+            __dirname,
+            'src/main/browser-control/computer-use/browserReactiveTrackerWorker.ts',
+          ),
         },
         output: {
           entryFileNames: '[name].js',

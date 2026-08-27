@@ -317,6 +317,7 @@ async function main(): Promise<void> {
         maxSteps: request.maxSteps,
         maxActions: request.maxActions,
         maxDurationMs: request.maxDurationMs,
+        termination: { type: 'goal-completed' },
         requestedCapabilities: ['browser-computer-use'],
         risk: 'normal',
       }),

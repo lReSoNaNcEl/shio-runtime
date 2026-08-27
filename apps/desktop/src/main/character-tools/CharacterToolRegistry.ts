@@ -411,7 +411,7 @@ export class CharacterToolRegistry {
           definition(
             'browser.use',
             'browser_use',
-            'Start one bounded autonomous browser-only session for a high-level goal. The internal controller may use semantic targets or visual pointer/keyboard actions, but low-level input is never exposed to Character Response Generation. CAPTCHA, authentication, 2FA, payment, password-manager, and secure-desktop blockers require the user.',
+            'Start one bounded or continuous autonomous browser-only session for a high-level goal. Choose termination semantically: goal-completed for finite work, until-stopped when the user explicitly wants control to continue until Stop, or until-time for an exact duration. The internal controller may use slow semantic/visual reasoning and reactive pointer/keyboard control, but technical budgets and low-level input are never exposed to Character Response Generation. CAPTCHA, authentication, 2FA, payment, password-manager, and secure-desktop blockers require the user.',
             {
               type: 'object',
               required: ['goal'],
@@ -420,6 +420,31 @@ export class CharacterToolRegistry {
                 maxSteps: { type: 'integer', minimum: 1, maximum: 300 },
                 maxActions: { type: 'integer', minimum: 1, maximum: 1000 },
                 maxDurationMs: { type: 'integer', minimum: 10000, maximum: 1800000 },
+                termination: {
+                  oneOf: [
+                    {
+                      type: 'object',
+                      required: ['type'],
+                      properties: { type: { type: 'string', const: 'goal-completed' } },
+                      additionalProperties: false,
+                    },
+                    {
+                      type: 'object',
+                      required: ['type'],
+                      properties: { type: { type: 'string', const: 'until-stopped' } },
+                      additionalProperties: false,
+                    },
+                    {
+                      type: 'object',
+                      required: ['type', 'durationMs'],
+                      properties: {
+                        type: { type: 'string', const: 'until-time' },
+                        durationMs: { type: 'integer', minimum: 10000, maximum: 7200000 },
+                      },
+                      additionalProperties: false,
+                    },
+                  ],
+                },
               },
               additionalProperties: false,
             },

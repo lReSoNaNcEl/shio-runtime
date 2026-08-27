@@ -6,11 +6,12 @@ import { verifiedToolOutcomeFallback } from '../../src/main/character/presentati
 import { CharacterToolDispatcher } from '../../src/main/character-tools/CharacterToolDispatcher'
 import { CharacterToolRegistry } from '../../src/main/character-tools/CharacterToolRegistry'
 import { ToolInfluenceContext } from '../../src/main/character-tools/ToolInfluenceContext'
-import type {
-  BrowserComputerUseControlAction,
-  BrowserComputerUseProvider,
-  BrowserComputerUseSession,
-  BrowserComputerUseStartRequest,
+import {
+  type BrowserComputerUseControlAction,
+  type BrowserComputerUseProvider,
+  type BrowserComputerUseSession,
+  type BrowserComputerUseStartRequest,
+  EMPTY_BROWSER_COMPUTER_USE_DIAGNOSTICS,
 } from '../../src/shared/browser-computer-use'
 import type { BrowserContextProvider, BrowserObservation } from '../../src/shared/browser-control'
 import type { ShioCapabilitySnapshot } from '../../src/shared/capabilities'
@@ -80,8 +81,11 @@ function session(
     stepCount: 0,
     actionCount: 0,
     authorityScopeId: 'action-1-00000000-0000-4000-8000-000000000001',
+    termination: { type: 'goal-completed' },
     mode: 'visual',
+    controlMode: 'slow',
     activity: state === 'running' ? 'observing' : 'idle',
+    diagnostics: { ...EMPTY_BROWSER_COMPUTER_USE_DIAGNOSTICS },
     ...overrides,
   }
 }
@@ -101,6 +105,13 @@ async function main(): Promise<void> {
   influence.observeEvidence('browser')
   assert.equal(influence.canInvoke('browser.use'), true)
   assert.equal(influence.canInvoke('shell.execute'), false)
+
+  const injectedPageInfluence = new ToolInfluenceContext('Read the current page')
+  injectedPageInfluence.registerPlannedTools(['browser.open'])
+  injectedPageInfluence.select('browser.open')
+  injectedPageInfluence.observeEvidence('browser')
+  assert.equal(injectedPageInfluence.canInvoke('browser.use'), false)
+  assert.equal(injectedPageInfluence.canInvoke('shell.execute'), false)
 
   const disabledRegistry = new CharacterToolRegistry({
     projectAvailable: false,

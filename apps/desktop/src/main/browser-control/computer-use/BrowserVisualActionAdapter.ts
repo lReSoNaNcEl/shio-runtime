@@ -2,6 +2,8 @@ import type {
   BrowserCompletionAssessment,
   BrowserComputerUseDecision,
   BrowserComputerUseObservation,
+  BrowserReactiveControlPlan,
+  BrowserReactivePlanningContext,
   BrowserVisualControlState,
 } from '../../../shared/browser-computer-use'
 
@@ -26,6 +28,10 @@ export interface BrowserVisualActionAdapter {
     context: BrowserComputerUseDecisionContext,
     signal: AbortSignal,
   ): Promise<BrowserComputerUseDecision>
+  planReactive(
+    context: BrowserReactivePlanningContext,
+    signal: AbortSignal,
+  ): Promise<BrowserReactiveControlPlan | null>
   verifyCompletion(
     context: { goal: string; observation: BrowserComputerUseObservation },
     signal: AbortSignal,

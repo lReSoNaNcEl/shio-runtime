@@ -15,7 +15,9 @@ import type {
 import type { BrowserExecutionEvidence } from '../../action/executionEvidence'
 import { mainLog } from '../../logging/safeLogger'
 import { BrowserAutomationError, type BrowserAutomationErrorCode } from '../errors'
+import { BrowserHeldInputRegistry, type BrowserHeldInputSnapshot } from './BrowserHeldInputRegistry'
 import { launchOwnedBrowserContext } from './PlaywrightBrowserLifecycle'
+import type { BrowserSensitiveRegion } from './PlaywrightCdpFrameStream'
 import {
   captureFingerprintImage,
   capturePlaywrightComputerUseObservation,
@@ -30,7 +32,7 @@ import {
   playwrightSensitiveValues,
   sanitizeBrowserText,
 } from './PlaywrightSemanticObserver'
-import { redactSensitiveValues } from './PlaywrightSensitiveElements'
+import { redactSensitiveValues, SENSITIVE_ELEMENT_SELECTOR } from './PlaywrightSensitiveElements'
 import { createVisualFingerprint, visualFingerprintChanged } from './PlaywrightVisualFingerprint'
 
 export interface BrowserInteractionResult {
@@ -44,6 +46,13 @@ export interface PlaywrightBrowserAdapterOptions {
   now?: () => number
   createId?: () => string
   launchPersistentContext?: typeof chromium.launchPersistentContext
+}
+
+export interface PlaywrightReactiveControlTarget {
+  page: Page
+  pageId: string
+  viewport: { width: number; height: number }
+  sensitiveRegions: readonly BrowserSensitiveRegion[]
 }
 
 function validHttpUrl(value: string): string {
@@ -64,10 +73,18 @@ export class PlaywrightBrowserAdapter {
   private computerUseObservation: BrowserComputerUseObservation | null = null
   private readonly normalRefs = new PlaywrightRefRegistry()
   private readonly computerUseRefs = new PlaywrightRefRegistry()
-  private readonly input = new PlaywrightInputController()
+  private readonly heldInputs = new BrowserHeldInputRegistry()
+  private readonly input = new PlaywrightInputController(this.heldInputs)
   private readonly pages = new PlaywrightPageRegistry(
     () => this.createId(),
-    () => this.invalidateObservation(),
+    () => {
+      this.invalidateObservation()
+      void this.releaseInputs().catch((error: unknown) => {
+        mainLog.warn('[BrowserControl] input release after page invalidation failed', {
+          code: error instanceof Error ? error.name : 'Error',
+        })
+      })
+    },
   )
   private queue: Promise<void> = Promise.resolve()
 
@@ -337,7 +354,43 @@ export class PlaywrightBrowserAdapter {
   }
 
   async releaseInputs(): Promise<void> {
-    await this.input.release(this.pages.activePage())
+    await this.heldInputs.releaseAll()
+  }
+
+  heldInputSnapshot(): BrowserHeldInputSnapshot {
+    return this.heldInputs.snapshot()
+  }
+
+  heldInputRegistry(): BrowserHeldInputRegistry {
+    return this.heldInputs
+  }
+
+  reactiveControlTarget(signal?: AbortSignal): Promise<PlaywrightReactiveControlTarget> {
+    return this.enqueue(async () => {
+      const page = await this.ensurePage(signal)
+      const viewport = await page.evaluate(() => ({ width: innerWidth, height: innerHeight }))
+      const locator = page.locator(SENSITIVE_ELEMENT_SELECTOR)
+      const count = Math.min(await locator.count(), 50)
+      const sensitiveRegions: BrowserSensitiveRegion[] = []
+      for (let index = 0; index < count; index += 1) {
+        const bounds = await locator
+          .nth(index)
+          .boundingBox()
+          .catch(() => null)
+        if (bounds) sensitiveRegions.push(bounds)
+      }
+      return {
+        page,
+        pageId: this.pageId(page),
+        viewport,
+        sensitiveRegions: Object.freeze(sensitiveRegions),
+      }
+    })
+  }
+
+  isReactiveControlTargetCurrent(pageId: string): boolean {
+    const page = this.pages.activePage()
+    return Boolean(page && this.pageId(page) === pageId)
   }
 
   close(): Promise<void> {
@@ -419,7 +472,7 @@ export class PlaywrightBrowserAdapter {
     const context = this.context
     this.context = null
     this.pages.reset()
-    this.input.reset()
+    this.heldInputs.reset()
     this.invalidateObservation()
     if (context) {
       await context.close().catch((error) =>

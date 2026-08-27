@@ -1,9 +1,10 @@
 import { z } from 'zod'
 
 import {
+  BROWSER_COMPUTER_USE_CONTINUOUS_MAX_LEASE_MS,
   BROWSER_COMPUTER_USE_MAX_ACTIONS,
-  BROWSER_COMPUTER_USE_MAX_DURATION_MS,
   BROWSER_COMPUTER_USE_MAX_STEPS,
+  browserComputerUseTerminationSchema,
 } from '../browser-computer-use'
 import {
   BROWSER_SEMANTIC_RISK_CLASSES,
@@ -133,7 +134,8 @@ const browserComputerUseActionConfirmationRequestSchema = z
     goal: z.string().min(1).max(1_000),
     maxSteps: z.number().int().min(1).max(BROWSER_COMPUTER_USE_MAX_STEPS),
     maxActions: z.number().int().min(1).max(BROWSER_COMPUTER_USE_MAX_ACTIONS),
-    maxDurationMs: z.number().int().min(5_000).max(BROWSER_COMPUTER_USE_MAX_DURATION_MS),
+    maxDurationMs: z.number().int().min(10_000).max(BROWSER_COMPUTER_USE_CONTINUOUS_MAX_LEASE_MS),
+    termination: browserComputerUseTerminationSchema,
     requestedCapabilities: z.tuple([z.literal('browser-computer-use')]),
     risk: z.literal('normal'),
   })

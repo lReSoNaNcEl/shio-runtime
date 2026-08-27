@@ -41,6 +41,7 @@ function capabilityFor(id: CharacterToolId): ToolCapability {
 export class ToolInfluenceContext {
   private readonly selected = new Set<ToolCapability>()
   private readonly authorityCapabilities = new Set<ToolCapability>()
+  private readonly plannedTools = new Set<CharacterToolId>()
   private readonly evidenceEntries: ToolEvidenceProvenance[] = []
   private readonly scopes = new Set<string>()
 
@@ -51,12 +52,16 @@ export class ToolInfluenceContext {
 
   registerPlannedTools(ids: readonly CharacterToolId[]): void {
     if (this.evidenceEntries.length > 0) return
-    for (const id of ids) this.authorityCapabilities.add(capabilityFor(id))
+    for (const id of ids) {
+      this.authorityCapabilities.add(capabilityFor(id))
+      this.plannedTools.add(id)
+    }
   }
 
   canInvoke(id: CharacterToolId): boolean {
     const capability = capabilityFor(id)
     if (this.evidenceEntries.length === 0) return true
+    if (id === 'browser.use') return this.plannedTools.has(id)
     return this.authorityCapabilities.has(capability)
   }
 

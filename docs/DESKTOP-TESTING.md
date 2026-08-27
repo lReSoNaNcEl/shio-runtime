@@ -74,3 +74,14 @@ coverage until the feature work resumes.
 
 Browser Control shares scenario helpers between a deterministic local-fixture Vitest suite
 and the opt-in public-site qualification. The qualification is never discovered by Vitest.
+Continuous Browser Control adds a dynamic local Canvas fixture to the deterministic regression
+tier and a separate real-Chrome qualification/soak command:
+
+```text
+npm run desktop:qualify:continuous-browser
+```
+
+The qualification reports frame backpressure, tracking/input latency, re-anchor/plan counts,
+held-input cleanup, Worker memory, and process-memory samples. Set
+`SHIO_CONTINUOUS_BROWSER_SOAK_MS` to shorten a local diagnostic run; the release qualification
+default remains 30 minutes.

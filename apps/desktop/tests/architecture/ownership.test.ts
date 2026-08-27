@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { join, normalize, relative } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
@@ -141,6 +142,42 @@ describe('Desktop runtime ownership', () => {
     expectNoImports('main/alive/ExperienceRuntime.ts', [
       'PlaywrightBrowserAdapter',
       'BrowserComputerUseRuntime',
+    ])
+  })
+
+  it('keeps continuous browser frames and tracking inside the Main-owned Browser Control boundary', () => {
+    const browserControlRoot = join(sourceRoot, 'main', 'browser-control')
+    const trackerOwner = normalize(
+      join(browserControlRoot, 'computer-use', 'BrowserReactiveTracker.ts'),
+    )
+    for (const file of sourceFiles) {
+      const source = readFileSync(file, 'utf8')
+      if (source.includes('BrowserCdpFrame')) {
+        expect(
+          isBelow(file, browserControlRoot),
+          `${relative(desktopRoot, file)} exposes transient CDP frame data outside Browser Control`,
+        ).toBe(true)
+      }
+      walk(parseFile(file), (node) => {
+        const specifier = importedSource(node)
+        if (specifier !== 'node:worker_threads') return
+        expect(
+          normalize(file) === trackerOwner || file.endsWith('browserReactiveTrackerWorker.ts'),
+          `${relative(desktopRoot, file)} creates an unowned Browser Control worker`,
+        ).toBe(true)
+      })
+    }
+
+    const worker = join(browserControlRoot, 'computer-use', 'browserReactiveTrackerWorker.ts')
+    expectNoImports(relative(sourceRoot, worker), [
+      'CharacterTool',
+      '/action',
+      '/alive',
+      '/memory',
+      '/goals',
+      'desktop-control',
+      'DshHarnessAdapter',
+      'renderer',
     ])
   })
 

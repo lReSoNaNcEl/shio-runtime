@@ -347,8 +347,11 @@ function browserComputerUseSessionProjection(status: BrowserComputerUseSession |
     maxSteps: status.maxSteps,
     maxActions: status.maxActions,
     expiresAt: status.expiresAt,
+    termination: status.termination,
     mode: status.mode,
+    controlMode: status.controlMode,
     activity: status.activity,
+    diagnostics: status.diagnostics,
     summary: status.summary,
     lastErrorCode: status.lastErrorCode,
   }

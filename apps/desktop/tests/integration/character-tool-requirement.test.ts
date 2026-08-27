@@ -7,6 +7,11 @@ import { CharacterToolLoop } from '../../src/main/character-tools/CharacterToolL
 import { CharacterToolRegistry } from '../../src/main/character-tools/CharacterToolRegistry'
 import type { ChatMessage, LLMProvider, LlmCapabilities, LlmCompletion } from '../../src/main/llm'
 import type { DesktopWorkflowActionResult } from '../../src/shared/actions'
+import {
+  type BrowserComputerUseProvider,
+  type BrowserComputerUseSession,
+  EMPTY_BROWSER_COMPUTER_USE_DIAGNOSTICS,
+} from '../../src/shared/browser-computer-use'
 import type { BrowserContextProvider, BrowserObservation } from '../../src/shared/browser-control'
 import type { ShioCapabilitySnapshot } from '../../src/shared/capabilities'
 import type { CharacterToolRequirement } from '../../src/shared/character-tools'
@@ -92,6 +97,315 @@ async function runWebRequirement(options: {
 }
 
 describe('Character Tool Requirement', () => {
+  it.each([
+    'Управляй этой динамической страницей непрерывно, реагируй на изменения и остановись только когда я попрошу.',
+    'Запусти browser.use для непрерывного управления до явной остановки.',
+  ])(
+    'requires browser.use and returns after the background session starts: %s',
+    async (request) => {
+      const browserCapabilities: ShioCapabilitySnapshot = {
+        schemaVersion: 1,
+        generatedAt: 1,
+        capabilities: [
+          {
+            id: 'browser-control',
+            category: 'action',
+            source: { kind: 'plugin', pluginId: 'browser-control' },
+            titleKey: 'capabilities.browser.title',
+            descriptionKey: 'capabilities.browser.description',
+            availability: 'available',
+            authority: 'confirm',
+          },
+          {
+            id: 'browser-computer-use',
+            category: 'action',
+            source: { kind: 'plugin', pluginId: 'browser-control' },
+            titleKey: 'plugins.browserControl.name',
+            descriptionKey: 'plugins.browserControl.description',
+            availability: 'available',
+            authority: 'confirm',
+            details: {
+              kind: 'browser-computer-use',
+              semanticControl: 'ready',
+              visualControl: 'ready',
+              isolatedProfile: true,
+            },
+          },
+        ],
+      }
+      const activeSession: BrowserComputerUseSession = {
+        id: 'browser-use-session-00000000-0000-4000-8000-000000000003',
+        goal: request,
+        browserContextId: 'browser-session-1',
+        pageId: 'browser-page-1',
+        state: 'running',
+        startedAt: 1,
+        expiresAt: 1_800_001,
+        maxSteps: 30,
+        maxActions: 100,
+        stepCount: 0,
+        actionCount: 0,
+        authorityScopeId: 'action-1',
+        termination: { type: 'until-stopped' },
+        continuousBudget: {
+          maximumDurationMs: 1_800_000,
+          maxSlowDecisionsPerMinute: 120,
+          maxReactiveInputEventsPerSecond: 30,
+          maxReactiveInputEventsTotal: 216_000,
+          maxPointerHoldMs: 5_000,
+          maxKeyHoldMs: 5_000,
+          maxFrameRate: 30,
+        },
+        mode: 'visual',
+        controlMode: 'slow',
+        activity: 'observing',
+        diagnostics: { ...EMPTY_BROWSER_COMPUTER_USE_DIAGNOSTICS },
+      }
+      const computerUse: BrowserComputerUseProvider = {
+        browserContext: { currentObservation: () => null, observe: async () => null },
+        status: () => ({
+          enabled: true,
+          browser: 'Google Chrome',
+          isolatedProfile: true,
+          semanticControl: 'ready',
+          visualControl: 'ready',
+          visualModel: 'fixture-vision',
+          currentSession: activeSession,
+        }),
+        start: async () => activeSession,
+        pause: async () => activeSession,
+        resume: async () => activeSession,
+        stop: async () => activeSession,
+      }
+      const currentRegistry = () =>
+        new CharacterToolRegistry({
+          projectAvailable: false,
+          capabilityContext: browserCapabilities,
+          browserObservation: null,
+          actionsAvailable: true,
+          browserComputerUseAvailable: true,
+        })
+      let responseRound = 0
+      let actionCount = 0
+      const result = await new CharacterToolLoop().run({
+        llm: {
+          capabilities: () => capabilities,
+          chat: async () =>
+            JSON.stringify({
+              type: 'explicit-tool',
+              tool: 'browser.use',
+            } satisfies CharacterToolRequirement),
+          complete: async () => {
+            responseRound += 1
+            if (responseRound === 1) return textCompletion('[calm]Начинаю управлять страницей.')
+            if (responseRound === 2) {
+              return {
+                content: '',
+                toolCalls: [
+                  {
+                    id: 'browser-use-call',
+                    name: 'browser_use',
+                    argumentsJson: JSON.stringify({
+                      goal: request,
+                      termination: { type: 'until-stopped' },
+                    }),
+                  },
+                ],
+                finishReason: 'tool_calls',
+              }
+            }
+            return textCompletion('[calm]Управление браузером запущено и продолжится в фоне.')
+          },
+        },
+        providerId: 'mistral',
+        messages: [{ role: 'user', content: request }],
+        registry: currentRegistry,
+        createDispatcher: (signal) =>
+          new CharacterToolDispatcher({
+            registry: currentRegistry,
+            traceId: 'continuous-browser-tool-requirement',
+            userGoal: request,
+            signal,
+            browserComputerUse: () => computerUse,
+            executeBrowserComputerUseAction: async () => {
+              actionCount += 1
+              return { outcome: 'success', authorization: 'confirmed', session: activeSession }
+            },
+          }),
+        traceId: 'continuous-browser-tool-requirement',
+        requestOptions: {},
+        nativeToolsRejected: false,
+        enforceToolRequirements: true,
+        failureReply: 'TOOL_FAILURE',
+        limitReply: 'TOOL_LIMIT',
+      })
+
+      assert.equal(actionCount, 1)
+      assert.equal(responseRound, 3)
+      assert.match(result.replyText, /продолжится в фоне/u)
+      assert.deepEqual(result.toolEvidence, {
+        requirement: { type: 'explicit-tool', tool: 'browser.use' },
+        executedTools: ['browser.use'],
+        failedTools: [],
+        web: { used: false, succeeded: false },
+        project: { used: false, succeeded: false },
+        browser: { used: true, succeeded: true },
+        memory: { used: false, succeeded: false },
+      })
+    },
+  )
+
+  it('uses fresh browser.useStatus state without rewriting previous turn evidence', async () => {
+    const browserCapabilities: ShioCapabilitySnapshot = {
+      schemaVersion: 1,
+      generatedAt: 2,
+      capabilities: [
+        {
+          id: 'browser-control',
+          category: 'action',
+          source: { kind: 'plugin', pluginId: 'browser-control' },
+          titleKey: 'capabilities.browser.title',
+          descriptionKey: 'capabilities.browser.description',
+          availability: 'available',
+          authority: 'confirm',
+        },
+        {
+          id: 'browser-computer-use',
+          category: 'action',
+          source: { kind: 'plugin', pluginId: 'browser-control' },
+          titleKey: 'plugins.browserControl.name',
+          descriptionKey: 'plugins.browserControl.description',
+          availability: 'available',
+          authority: 'confirm',
+          details: {
+            kind: 'browser-computer-use',
+            semanticControl: 'ready',
+            visualControl: 'ready',
+            isolatedProfile: true,
+          },
+        },
+      ],
+    }
+    const currentSession: BrowserComputerUseSession = {
+      id: 'browser-use-session-00000000-0000-4000-8000-000000000004',
+      goal: 'Keep controlling the page',
+      browserContextId: 'browser-session-1',
+      pageId: 'browser-page-1',
+      state: 'paused',
+      startedAt: 1,
+      expiresAt: 1_800_001,
+      maxSteps: 30,
+      maxActions: 100,
+      stepCount: 40,
+      actionCount: 18,
+      authorityScopeId: 'action-1',
+      termination: { type: 'until-stopped' },
+      continuousBudget: {
+        maximumDurationMs: 1_800_000,
+        maxSlowDecisionsPerMinute: 120,
+        maxReactiveInputEventsPerSecond: 30,
+        maxReactiveInputEventsTotal: 216_000,
+        maxPointerHoldMs: 5_000,
+        maxKeyHoldMs: 5_000,
+        maxFrameRate: 30,
+      },
+      mode: 'visual',
+      controlMode: 'slow',
+      activity: 'idle',
+      diagnostics: { ...EMPTY_BROWSER_COMPUTER_USE_DIAGNOSTICS },
+    }
+    const provider: BrowserComputerUseProvider = {
+      browserContext: { currentObservation: () => null, observe: async () => null },
+      status: () => ({
+        enabled: true,
+        browser: 'Google Chrome',
+        isolatedProfile: true,
+        semanticControl: 'ready',
+        visualControl: 'ready',
+        visualModel: 'fixture-vision',
+        currentSession,
+      }),
+      start: async () => currentSession,
+      pause: async () => currentSession,
+      resume: async () => currentSession,
+      stop: async () => currentSession,
+    }
+    const currentRegistry = () =>
+      new CharacterToolRegistry({
+        projectAvailable: false,
+        capabilityContext: browserCapabilities,
+        browserObservation: null,
+        actionsAvailable: true,
+        browserComputerUseAvailable: true,
+      })
+    const prior = {
+      requirement: { type: 'explicit-tool', tool: 'browser.use' } as const,
+      executedTools: ['browser.use'] as const,
+      failedTools: [] as const,
+      web: { used: false, succeeded: false },
+      project: { used: false, succeeded: false },
+      browser: { used: true, succeeded: true },
+      memory: { used: false, succeeded: false },
+    }
+    const priorBytes = JSON.stringify(prior)
+    let responseRound = 0
+    let statusPrompt = ''
+    const result = await new CharacterToolLoop().run({
+      llm: {
+        capabilities: () => capabilities,
+        chat: async () =>
+          JSON.stringify({
+            type: 'explicit-tool',
+            tool: 'browser.useStatus',
+          } satisfies CharacterToolRequirement),
+        complete: async (messages) => {
+          responseRound += 1
+          if (responseRound === 1) {
+            return {
+              content: '',
+              toolCalls: [
+                {
+                  id: 'browser-status-call',
+                  name: 'browser_use_status',
+                  argumentsJson: '{}',
+                },
+              ],
+              finishReason: 'tool_calls',
+            }
+          }
+          statusPrompt = messages.map((message) => String(message.content)).join('\n')
+          return textCompletion('[calm]Сессия сейчас на паузе.')
+        },
+      },
+      providerId: 'mistral',
+      messages: [
+        { role: 'user', content: 'Играй, пока я не остановлю.' },
+        { role: 'assistant', content: 'Управление запущено.', toolEvidence: prior },
+        { role: 'user', content: 'Ты всё ещё играешь?' },
+      ],
+      registry: currentRegistry,
+      createDispatcher: (signal) =>
+        new CharacterToolDispatcher({
+          registry: currentRegistry,
+          traceId: 'fresh-browser-status',
+          userGoal: 'Ты всё ещё играешь?',
+          signal,
+          browserComputerUse: () => provider,
+        }),
+      traceId: 'fresh-browser-status',
+      requestOptions: {},
+      nativeToolsRejected: false,
+      enforceToolRequirements: true,
+      failureReply: 'TOOL_FAILURE',
+      limitReply: 'TOOL_LIMIT',
+    })
+
+    assert.match(result.replyText, /на паузе/u)
+    assert.match(statusPrompt, /"state":"paused"/u)
+    assert.deepEqual(result.toolEvidence.executedTools, ['browser.useStatus'])
+    assert.equal(JSON.stringify(prior), priorBytes)
+  })
+
   it('rejects an unsourced draft and requires the explicitly requested web.search call', async () => {
     let searchCount = 0
     let responseRound = 0

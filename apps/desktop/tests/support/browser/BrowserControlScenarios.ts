@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict'
+import { execFile } from 'node:child_process'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { createServer, type Server } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { monitorEventLoopDelay } from 'node:perf_hooks'
 
 import {
   BrowserAutomationError,
@@ -14,12 +16,20 @@ import {
   PlaywrightBrowserAdapter,
   resolveChromeExecutable,
 } from '../../../src/main/browser-control'
+import {
+  BrowserReactiveTracker,
+  type BrowserReactiveTrackerPort,
+} from '../../../src/main/browser-control/computer-use/BrowserReactiveTracker'
+import type { ReactiveTrackerResult } from '../../../src/main/browser-control/computer-use/BrowserReactiveTrackerProtocol'
+import type { BrowserCdpFrame } from '../../../src/main/browser-control/playwright/PlaywrightCdpFrameStream'
 import { LlmResponseError } from '../../../src/main/llm'
 import type {
   BrowserCompletionAssessment,
   BrowserComputerUseDecision,
   BrowserComputerUseObservation,
   BrowserComputerUseSession,
+  BrowserReactiveControlPlan,
+  BrowserReactivePlanningContext,
 } from '../../../src/shared/browser-computer-use'
 import type {
   BrowserInteractiveRole,
@@ -72,11 +82,216 @@ class ScriptedVisualAdapter implements BrowserVisualActionAdapter {
     return Promise.resolve(this.decideNext(context, signal, call))
   }
 
+  planReactive(): Promise<null> {
+    return Promise.resolve(null)
+  }
+
   verifyCompletion(
     context: { goal: string; observation: BrowserComputerUseObservation },
     signal: AbortSignal,
   ): Promise<BrowserCompletionAssessment> {
     return Promise.resolve(this.verifyNext(context, signal))
+  }
+}
+
+class DeterministicReactiveTracker implements BrowserReactiveTrackerPort {
+  private running = false
+
+  active(): boolean {
+    return this.running
+  }
+
+  memoryBytes(): number {
+    return this.running ? 256 * 1_024 : 0
+  }
+
+  async track(
+    frame: BrowserCdpFrame,
+    plan: BrowserReactiveControlPlan,
+    _viewport: { width: number; height: number },
+    signal: AbortSignal,
+  ): Promise<ReactiveTrackerResult> {
+    this.running = true
+    await waitAbortable(65, signal)
+    const pointsRight = Math.floor(frame.id / 30) % 2 === 0
+    return {
+      requestId: frame.id,
+      planId: plan.id,
+      pageId: frame.pageId,
+      frameId: frame.id,
+      receivedAt: frame.receivedAt,
+      width: 480,
+      height: 280,
+      trackingConfidence: 0.98,
+      sceneDifference: 0.08,
+      motionIntensity: 0.5,
+      anchors: [
+        {
+          id: 'player',
+          bounds: { x: pointsRight ? 80 : 380, y: 125, width: 24, height: 24 },
+          confidence: 0.98,
+        },
+        {
+          id: 'target',
+          bounds: { x: pointsRight ? 380 : 80, y: 125, width: 24, height: 24 },
+          confidence: 0.98,
+        },
+      ],
+      latencyMs: 65,
+      workerMemoryBytes: this.memoryBytes(),
+    }
+  }
+
+  stop(): Promise<void> {
+    this.running = false
+    return Promise.resolve()
+  }
+}
+
+class ContinuousVisualAdapter implements BrowserVisualActionAdapter {
+  planCalls = 0
+  decisionCalls = 0
+
+  status(): BrowserVisualActionStatus {
+    return { state: 'ready', model: 'deterministic-continuous', supportsVision: true }
+  }
+
+  decide(context: BrowserComputerUseDecisionContext): Promise<BrowserComputerUseDecision> {
+    this.decisionCalls += 1
+    const retry = context.observation.semantic?.ariaSnapshot.includes('Retry')
+    return Promise.resolve(
+      scopedDecision(context.observation, {
+        type: 'click-ref',
+        ref: refFor(context.observation, retry ? 'Retry' : 'Start continuous fixture'),
+      }),
+    )
+  }
+
+  planReactive(
+    context: BrowserReactivePlanningContext,
+  ): Promise<BrowserReactiveControlPlan | null> {
+    const semantic = context.observation.semantic?.ariaSnapshot ?? ''
+    if (!semantic.includes('Continuous fixture running') || semantic.includes('Round complete')) {
+      return Promise.resolve(null)
+    }
+    this.planCalls += 1
+    const createdAt = Math.max(Date.now(), context.observation.capturedAt)
+    return Promise.resolve({
+      id: `fixture-reactive-plan-${this.planCalls}`,
+      sessionId: context.sessionId,
+      pageId: context.observation.page.id,
+      sourceObservationId: context.observation.id,
+      sourceVisualFingerprint: context.observation.visualFingerprint,
+      confidence: 0.99,
+      createdAt,
+      expiresAt: createdAt + 2_000,
+      reanchorAfterMs: 800,
+      maximumInputHz: 20,
+      anchors: [
+        { id: 'player', role: 'controlled', bounds: { x: 80, y: 125, width: 24, height: 24 } },
+        { id: 'target', role: 'target', bounds: { x: 380, y: 125, width: 24, height: 24 } },
+      ],
+      primitive: {
+        type: 'directional-keys',
+        controlledAnchorId: 'player',
+        targetAnchorId: 'target',
+        keys: {
+          up: 'ArrowUp',
+          down: 'ArrowDown',
+          left: 'ArrowLeft',
+          right: 'ArrowRight',
+        },
+        deadZonePx: 10,
+      },
+      ...(this.planCalls % 3 === 0
+        ? {
+            notableObservation: {
+              kind: 'progress' as const,
+              summary: 'Deterministic continuous fixture remains active.',
+              confidence: 0.99,
+            },
+          }
+        : {}),
+    })
+  }
+
+  verifyCompletion(): Promise<BrowserCompletionAssessment> {
+    throw new Error('Continuous termination must not invoke goal completion verification')
+  }
+}
+
+class PublicContinuousVisualAdapter implements BrowserVisualActionAdapter {
+  planCalls = 0
+
+  status(): BrowserVisualActionStatus {
+    return { state: 'ready', model: 'qualification-public-generic', supportsVision: true }
+  }
+
+  decide(context: BrowserComputerUseDecisionContext): Promise<BrowserComputerUseDecision> {
+    return Promise.resolve(scopedDecision(context.observation, { type: 'wait', durationMs: 500 }))
+  }
+
+  planReactive(context: BrowserReactivePlanningContext): Promise<BrowserReactiveControlPlan> {
+    this.planCalls += 1
+    const createdAt = Math.max(Date.now(), context.observation.capturedAt)
+    const pointsRight = this.planCalls % 2 === 1
+    return Promise.resolve({
+      id: `public-reactive-plan-${this.planCalls}`,
+      sessionId: context.sessionId,
+      pageId: context.observation.page.id,
+      sourceObservationId: context.observation.id,
+      sourceVisualFingerprint: context.observation.visualFingerprint,
+      confidence: 0.9,
+      createdAt,
+      expiresAt: createdAt + 2_000,
+      reanchorAfterMs: 800,
+      maximumInputHz: 12,
+      anchors: [
+        {
+          id: 'controlled',
+          role: 'controlled',
+          bounds: { x: pointsRight ? 220 : 420, y: 240, width: 32, height: 32 },
+        },
+        {
+          id: 'target',
+          role: 'target',
+          bounds: { x: pointsRight ? 420 : 220, y: 240, width: 32, height: 32 },
+        },
+      ],
+      primitive: {
+        type: 'directional-keys',
+        controlledAnchorId: 'controlled',
+        targetAnchorId: 'target',
+        keys: {
+          up: 'ArrowUp',
+          down: 'ArrowDown',
+          left: 'ArrowLeft',
+          right: 'ArrowRight',
+        },
+        deadZonePx: 12,
+      },
+    })
+  }
+
+  verifyCompletion(): Promise<BrowserCompletionAssessment> {
+    throw new Error('Public continuous qualification does not claim goal completion')
+  }
+}
+
+class ProviderOutageContinuousVisualAdapter extends ContinuousVisualAdapter {
+  override async planReactive(
+    context: BrowserReactivePlanningContext,
+  ): Promise<BrowserReactiveControlPlan | null> {
+    const plan = await super.planReactive(context)
+    if (!plan) return null
+    if (this.planCalls > 1) {
+      throw new BrowserAutomationError('COMPUTER_USE_PROVIDER_NETWORK')
+    }
+    return {
+      ...plan,
+      expiresAt: plan.createdAt + 800,
+      reanchorAfterMs: 250,
+    }
   }
 }
 
@@ -174,6 +389,108 @@ function fixtureHtml(blocker?: string): string {
 </html>`
 }
 
+function continuousFixtureHtml(): string {
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>Continuous Browser Control Fixture</title>
+    <style>
+      body { font-family: sans-serif; margin: 24px; }
+      canvas { border: 2px solid #345; display: block; margin-top: 16px; }
+      #result[hidden] { display: none; }
+    </style>
+  </head>
+  <body>
+    <h1>Continuous Browser Control Fixture</h1>
+    <button aria-label="Start continuous fixture" id="start">Start continuous fixture</button>
+    <p id="state" aria-live="polite">Waiting to start</p>
+    <p id="metrics">cycles=0 inputs=0 retries=0 held=none</p>
+    <div id="result" role="dialog" aria-label="Round complete" hidden>
+      <p>Round complete</p>
+      <button aria-label="Retry" id="retry">Retry</button>
+    </div>
+    <canvas aria-label="Continuous dynamic canvas" width="480" height="280"></canvas>
+    <script>
+      const canvas = document.querySelector('canvas')
+      const context = canvas.getContext('2d')
+      const state = document.querySelector('#state')
+      const metrics = document.querySelector('#metrics')
+      const result = document.querySelector('#result')
+      const held = new Set()
+      let running = false
+      let cycles = 0
+      let inputs = 0
+      let retries = 0
+      let roundInputs = 0
+      let playerX = 80
+      let targetX = 400
+      function report() {
+        metrics.textContent =
+          'cycles=' + cycles + ' inputs=' + inputs + ' retries=' + retries +
+          ' held=' + ([...held].join(',') || 'none')
+      }
+      function begin() {
+        running = true
+        roundInputs = 0
+        playerX = 80
+        targetX = 400
+        result.hidden = true
+        state.textContent = 'Continuous fixture running'
+        report()
+      }
+      document.querySelector('#start').addEventListener('click', begin)
+      document.querySelector('#retry').addEventListener('click', () => {
+        retries += 1
+        begin()
+      })
+      window.addEventListener('keydown', (event) => {
+        if (!event.key.startsWith('Arrow')) return
+        if (!held.has(event.key)) {
+          inputs += 1
+          roundInputs += 1
+        }
+        held.add(event.key)
+        if (running && roundInputs >= 4) {
+          cycles += 1
+          running = false
+          held.clear()
+          result.hidden = false
+          state.textContent = 'Round complete'
+        }
+        report()
+      })
+      window.addEventListener('keyup', (event) => {
+        held.delete(event.key)
+        report()
+      })
+      function draw() {
+        context.fillStyle = '#f2f5f8'
+        context.fillRect(0, 0, canvas.width, canvas.height)
+        context.fillStyle = '#e35f79'
+        context.fillRect(220, 30, 40, 70)
+        context.fillStyle = '#356aa0'
+        context.fillRect(playerX, 125, 24, 24)
+        context.fillStyle = '#3a9d62'
+        context.fillRect(targetX, 125, 24, 24)
+        if (running) {
+          if (held.has('ArrowRight')) playerX += 5
+          if (held.has('ArrowLeft')) playerX -= 5
+          playerX = Math.max(10, Math.min(446, playerX))
+          if (Math.abs(playerX - targetX) < 18) {
+            targetX = targetX > 240 ? 60 : 400
+            report()
+          }
+        }
+        requestAnimationFrame(draw)
+      }
+      draw()
+      report()
+    </script>
+  </body>
+</html>`
+}
+
 async function startFixture(): Promise<{ server: Server; origin: string }> {
   const server = createServer((request, response) => {
     const url = new URL(request.url ?? '/', 'http://127.0.0.1')
@@ -182,7 +499,11 @@ async function startFixture(): Promise<{ server: Server; origin: string }> {
         'content-type': 'text/html; charset=utf-8',
         'cache-control': 'no-store',
       })
-      response.end(fixtureHtml(url.searchParams.get('blocker') ?? undefined))
+      response.end(
+        url.pathname === '/continuous'
+          ? continuousFixtureHtml()
+          : fixtureHtml(url.searchParams.get('blocker') ?? undefined),
+      )
     }
     if (url.pathname === '/slow') setTimeout(send, 2_000)
     else send()
@@ -358,6 +679,9 @@ async function deterministicRepro(
       }),
       decide: async () => {
         throw new Error('An unavailable visual model must never receive a decision request')
+      },
+      planReactive: async () => {
+        throw new Error('An unavailable visual model must never receive a reactive plan request')
       },
       verifyCompletion: async () => {
         throw new Error('An unavailable visual model must never verify completion')
@@ -806,6 +1130,410 @@ async function liveQualification(executablePath: string, profileDirectory: strin
   }
 }
 
+async function continuousRepro(
+  executablePath: string,
+  profileDirectory: string,
+  origin: string,
+): Promise<void> {
+  const browser = new PlaywrightBrowserAdapter({ executablePath, profileDirectory })
+  const events: string[] = []
+  try {
+    await browser.open(`${origin}/continuous`)
+    const visual = new ContinuousVisualAdapter()
+    const runtime = new BrowserComputerUseRuntime({
+      browser,
+      visual,
+      reactiveTracker: new DeterministicReactiveTracker(),
+      continuousBudget: {
+        maximumDurationMs: 30_000,
+        maxSlowDecisionsPerMinute: 120,
+        maxReactiveInputEventsPerSecond: 30,
+        maxReactiveInputEventsTotal: 2_000,
+        maxPointerHoldMs: 1_000,
+        maxKeyHoldMs: 1_500,
+        maxFrameRate: 30,
+      },
+      onEvent: (event) => events.push(event.type),
+    })
+    const started = await runtime.start(
+      {
+        goal: 'Keep the dynamic canvas controlled until explicitly stopped',
+        termination: { type: 'until-stopped' },
+        maxSteps: 1,
+        maxActions: 1,
+        maxDurationMs: 10_000,
+      },
+      'continuous-fixture-action',
+      new AbortController().signal,
+    )
+    assert.equal(started.state, 'running')
+    assert.equal(started.termination.type, 'until-stopped')
+    await waitForSession(
+      runtime,
+      (session) =>
+        session.controlMode === 'reactive' &&
+        session.diagnostics.framesProcessed >= 3 &&
+        session.diagnostics.heldKeys > 0,
+    )
+    const beforePause = runtime.snapshot()
+    assert(beforePause)
+    assert(beforePause.stepCount > beforePause.maxSteps)
+    const paused = await runtime.pause()
+    assert.equal(paused.state, 'paused')
+    assert.equal(paused.diagnostics.heldKeys, 0)
+    assert.equal(paused.diagnostics.heldButtons, 0)
+    assert((await browser.observe()).content.includes('held=none'))
+    const inputAtPause = paused.diagnostics.inputEventsTotal
+    await new Promise((resolve) => setTimeout(resolve, 250))
+    assert.equal(runtime.snapshot()?.diagnostics.inputEventsTotal, inputAtPause)
+
+    await runtime.resume()
+    await waitForSession(runtime, (session) => session.diagnostics.inputEventsTotal > inputAtPause)
+    await waitForSession(runtime, (session) => session.actionCount >= 2, 12_000)
+    const pageContent = (await browser.observe()).content
+    assert.match(
+      pageContent,
+      /retries=[1-9]/u,
+      `Continuous fixture did not retry: ${JSON.stringify(runtime.snapshot())}`,
+    )
+    const stopped = await runtime.stop()
+    assert.equal(stopped.state, 'stopped')
+    assert.equal(stopped.diagnostics.activeScreencast, false)
+    assert.equal(stopped.diagnostics.activeVlmRequests, 0)
+    assert.equal(stopped.diagnostics.activeCdpSessions, 0)
+    assert.equal(stopped.diagnostics.heldKeys, 0)
+    assert.equal(stopped.diagnostics.heldButtons, 0)
+    assert.equal(stopped.diagnostics.pendingFrames, 0)
+    assert.equal(stopped.diagnostics.maxPendingFrames, 1)
+    assert(stopped.diagnostics.framesReceived >= stopped.diagnostics.framesProcessed)
+    assert(stopped.diagnostics.framesDropped > 0)
+    assert.equal(
+      stopped.diagnostics.framesReceived,
+      stopped.diagnostics.framesProcessed + stopped.diagnostics.framesDropped,
+    )
+    assert(stopped.diagnostics.inputEventsTotal > 0)
+    assert(visual.planCalls >= 2)
+    assert(events.includes('computer-use-started'))
+    assert(events.includes('computer-use-notable-observation'))
+    assert(events.includes('computer-use-stopped'))
+    console.log('Continuous Browser Control repro: pause/resume/retry/stop PASS')
+
+    await browser.open(`${origin}/continuous`)
+    const realStartedAt = Date.now()
+    const acceleratedNow = (): number => realStartedAt + (Date.now() - realStartedAt) * 25
+    const timedRuntime = new BrowserComputerUseRuntime({
+      browser,
+      visual: new ContinuousVisualAdapter(),
+      reactiveTracker: new DeterministicReactiveTracker(),
+      now: acceleratedNow,
+      continuousBudget: {
+        maximumDurationMs: 20_000,
+        maxSlowDecisionsPerMinute: 120,
+        maxReactiveInputEventsPerSecond: 30,
+        maxReactiveInputEventsTotal: 2_000,
+        maxPointerHoldMs: 1_000,
+        maxKeyHoldMs: 1_500,
+        maxFrameRate: 30,
+      },
+    })
+    await timedRuntime.start(
+      {
+        goal: 'Control for the requested duration',
+        termination: { type: 'until-time', durationMs: 10_000 },
+        maxSteps: 1,
+        maxActions: 1,
+        maxDurationMs: 10_000,
+      },
+      'continuous-timed-action',
+      new AbortController().signal,
+    )
+    const completed = await waitForSession(
+      timedRuntime,
+      (session) => session.state === 'completed',
+      5_000,
+    )
+    assert.equal(completed.termination.type, 'until-time')
+    assert.equal(completed.summary, 'Requested continuous-control duration completed.')
+    assert.equal(completed.diagnostics.activeScreencast, false)
+    assert.equal(completed.diagnostics.heldKeys, 0)
+    console.log('Continuous Browser Control repro: until-time lease PASS')
+
+    await browser.open(`${origin}/continuous`)
+    const outageRuntime = new BrowserComputerUseRuntime({
+      browser,
+      visual: new ProviderOutageContinuousVisualAdapter(),
+      reactiveTracker: new DeterministicReactiveTracker(),
+      continuousBudget: {
+        maximumDurationMs: 20_000,
+        maxSlowDecisionsPerMinute: 120,
+        maxReactiveInputEventsPerSecond: 30,
+        maxReactiveInputEventsTotal: 2_000,
+        maxPointerHoldMs: 1_000,
+        maxKeyHoldMs: 1_500,
+        maxFrameRate: 30,
+      },
+    })
+    await outageRuntime.start(
+      {
+        goal: 'Stop reactive input when the slow provider becomes unavailable',
+        termination: { type: 'until-stopped' },
+        maxSteps: 1,
+        maxActions: 1,
+        maxDurationMs: 10_000,
+      },
+      'continuous-provider-outage',
+      new AbortController().signal,
+    )
+    const failed = await waitForSession(
+      outageRuntime,
+      (session) => session.state === 'failed',
+      8_000,
+    )
+    assert.equal(failed.lastErrorCode, 'COMPUTER_USE_PROVIDER_NETWORK')
+    assert(failed.diagnostics.planExpirations >= 1)
+    assert.equal(failed.diagnostics.activeScreencast, false)
+    assert.equal(failed.diagnostics.activeCdpSessions, 0)
+    assert.equal(failed.diagnostics.heldKeys, 0)
+    assert.equal(failed.diagnostics.workerActive, false)
+    console.log('Continuous Browser Control repro: provider outage TTL PASS')
+  } finally {
+    await browser.close()
+  }
+}
+
+interface ContinuousQualificationMetrics {
+  label: string
+  durationMs: number
+  captureFpsP50: number
+  captureFpsP95: number
+  frameToInputP50Ms: number
+  frameToInputP95Ms: number
+  trackingLatencyP50Ms: number
+  trackingLatencyP95Ms: number
+  vlmLatencyP50Ms: number
+  vlmLatencyP95Ms: number
+  vlmRequestsTotal: number
+  framesReceived: number
+  framesProcessed: number
+  framesDropped: number
+  maxPendingFrames: number
+  inputHzP50: number
+  inputHzP95: number
+  inputEventsTotal: number
+  planReplacements: number
+  planExpirations: number
+  reanchors: number
+  modeTransitions: number
+  notableObservations: number
+  completedEvents: number
+  commentsEmitted: number
+  commentsCompleted: number
+  mainHeapDeltaBytes: number
+  workerMemoryPeakBytes: number
+  workerMemoryTeardownBytes: number
+  chromeMemoryDeltaBytes: number
+  eventLoopDelayP95Ms: number
+  pauseLatencyMs: number
+  stopLatencyMs: number
+  teardown: {
+    heldKeys: number
+    heldButtons: number
+    activeScreencast: boolean
+    activeVlmRequests: number
+    activeCdpSessions: number
+    workerActive: boolean
+    pendingFrames: number
+  }
+}
+
+async function runContinuousQualificationSession(input: {
+  label: string
+  executablePath: string
+  profileDirectory: string
+  url: string
+  durationMs: number
+  workerPath: string
+  visual: BrowserVisualActionAdapter
+  pauseDuringRun: boolean
+}): Promise<ContinuousQualificationMetrics> {
+  const browser = new PlaywrightBrowserAdapter({
+    executablePath: input.executablePath,
+    profileDirectory: input.profileDirectory,
+  })
+  const captureSamples: number[] = []
+  const inputSamples: number[] = []
+  const eventTypes: string[] = []
+  const eventLoop = monitorEventLoopDelay({ resolution: 20 })
+  let workerMemoryPeakBytes = 0
+  let pauseLatencyMs = 0
+  const mainHeapBaseline = process.memoryUsage().heapUsed
+  eventLoop.enable()
+  try {
+    await browser.open(input.url)
+    const chromeMemoryBaseline = await chromeWorkingSetBytes(input.profileDirectory)
+    const runtime = new BrowserComputerUseRuntime({
+      browser,
+      visual: input.visual,
+      reactiveTracker: new BrowserReactiveTracker({ workerPath: input.workerPath }),
+      continuousBudget: {
+        maximumDurationMs: Math.min(2 * 60 * 60 * 1_000, input.durationMs + 60_000),
+        maxSlowDecisionsPerMinute: 120,
+        maxReactiveInputEventsPerSecond: 30,
+        maxReactiveInputEventsTotal: 500_000,
+        maxPointerHoldMs: 2_000,
+        maxKeyHoldMs: 2_000,
+        maxFrameRate: 30,
+      },
+      onEvent: (event) => eventTypes.push(event.type),
+    })
+    await runtime.start(
+      {
+        goal: `${input.label}: continuously control the current browser page until stopped`,
+        termination: { type: 'until-stopped' },
+        maxSteps: 1,
+        maxActions: 1,
+        maxDurationMs: 10_000,
+      },
+      `qualification-${input.label}`,
+      new AbortController().signal,
+    )
+    await waitForSession(
+      runtime,
+      (session) => session.controlMode === 'reactive' && session.diagnostics.framesProcessed > 0,
+      30_000,
+    )
+    const startedAt = Date.now()
+    let paused = false
+    let lastMinute = -1
+    while (Date.now() - startedAt < input.durationMs) {
+      const snapshot = runtime.snapshot()
+      assert(snapshot, `${input.label}: missing active session`)
+      assert.equal(snapshot.state, 'running', JSON.stringify(snapshot))
+      captureSamples.push(snapshot.diagnostics.captureFps)
+      inputSamples.push(snapshot.diagnostics.fastInputHz)
+      workerMemoryPeakBytes = Math.max(
+        workerMemoryPeakBytes,
+        snapshot.diagnostics.workerMemoryBytes,
+      )
+      const elapsed = Date.now() - startedAt
+      const minute = Math.floor(elapsed / 60_000)
+      if (minute !== lastMinute) {
+        lastMinute = minute
+        console.log(`${input.label}: ${minute} min, frames=${snapshot.diagnostics.framesReceived}`)
+      }
+      if (input.pauseDuringRun && !paused && elapsed >= Math.min(60_000, input.durationMs / 3)) {
+        const pauseStartedAt = performance.now()
+        const pausedSession = await runtime.pause()
+        pauseLatencyMs = performance.now() - pauseStartedAt
+        assert.equal(pausedSession.state, 'paused')
+        assert.equal(pausedSession.diagnostics.heldKeys, 0)
+        assert.equal(pausedSession.diagnostics.heldButtons, 0)
+        await new Promise((resolve) => setTimeout(resolve, 250))
+        await runtime.resume()
+        paused = true
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1_000))
+    }
+    const stopStartedAt = performance.now()
+    const stopped = await runtime.stop()
+    const stopLatencyMs = performance.now() - stopStartedAt
+    const chromeMemoryFinal = await chromeWorkingSetBytes(input.profileDirectory)
+    const mainHeapFinal = process.memoryUsage().heapUsed
+    eventLoop.disable()
+    const diagnostics = stopped.diagnostics
+    assert.equal(stopped.state, 'stopped')
+    assert.equal(diagnostics.heldKeys, 0)
+    assert.equal(diagnostics.heldButtons, 0)
+    assert.equal(diagnostics.activeScreencast, false, JSON.stringify(diagnostics))
+    assert.equal(diagnostics.activeVlmRequests, 0)
+    assert.equal(diagnostics.activeCdpSessions, 0)
+    assert.equal(diagnostics.workerActive, false)
+    assert.equal(diagnostics.pendingFrames, 0)
+    assert(diagnostics.maxPendingFrames <= 1)
+    assert(diagnostics.framesReceived > 0)
+    assert(diagnostics.framesProcessed > 0)
+    assert.equal(
+      diagnostics.framesReceived,
+      diagnostics.framesProcessed + diagnostics.framesDropped,
+    )
+    assert(diagnostics.inputEventsTotal > 0)
+    return {
+      label: input.label,
+      durationMs: Date.now() - startedAt,
+      captureFpsP50: samplePercentile(captureSamples, 0.5),
+      captureFpsP95: samplePercentile(captureSamples, 0.95),
+      frameToInputP50Ms: diagnostics.frameToInputP50Ms,
+      frameToInputP95Ms: diagnostics.frameToInputP95Ms,
+      trackingLatencyP50Ms: diagnostics.trackingLatencyP50Ms,
+      trackingLatencyP95Ms: diagnostics.trackingLatencyP95Ms,
+      vlmLatencyP50Ms: diagnostics.vlmLatencyP50Ms,
+      vlmLatencyP95Ms: diagnostics.vlmLatencyP95Ms,
+      vlmRequestsTotal: diagnostics.vlmRequestsTotal,
+      framesReceived: diagnostics.framesReceived,
+      framesProcessed: diagnostics.framesProcessed,
+      framesDropped: diagnostics.framesDropped,
+      maxPendingFrames: diagnostics.maxPendingFrames,
+      inputHzP50: samplePercentile(inputSamples, 0.5),
+      inputHzP95: samplePercentile(inputSamples, 0.95),
+      inputEventsTotal: diagnostics.inputEventsTotal,
+      planReplacements: diagnostics.planReplacements,
+      planExpirations: diagnostics.planExpirations,
+      reanchors: diagnostics.reanchors,
+      modeTransitions: diagnostics.modeTransitions,
+      notableObservations: eventTypes.filter((type) => type === 'computer-use-notable-observation')
+        .length,
+      completedEvents: eventTypes.filter((type) => type === 'computer-use-completed').length,
+      commentsEmitted: 0,
+      commentsCompleted: 0,
+      mainHeapDeltaBytes: mainHeapFinal - mainHeapBaseline,
+      workerMemoryPeakBytes,
+      workerMemoryTeardownBytes: diagnostics.workerMemoryBytes,
+      chromeMemoryDeltaBytes: chromeMemoryFinal - chromeMemoryBaseline,
+      eventLoopDelayP95Ms: eventLoop.percentile(95) / 1_000_000,
+      pauseLatencyMs,
+      stopLatencyMs,
+      teardown: {
+        heldKeys: diagnostics.heldKeys,
+        heldButtons: diagnostics.heldButtons,
+        activeScreencast: diagnostics.activeScreencast,
+        activeVlmRequests: diagnostics.activeVlmRequests,
+        activeCdpSessions: diagnostics.activeCdpSessions,
+        workerActive: diagnostics.workerActive,
+        pendingFrames: diagnostics.pendingFrames,
+      },
+    }
+  } finally {
+    eventLoop.disable()
+    await browser.close()
+  }
+}
+
+function samplePercentile(samples: readonly number[], quantile: number): number {
+  if (samples.length === 0) return 0
+  const sorted = [...samples].sort((left, right) => left - right)
+  return sorted[Math.min(sorted.length - 1, Math.floor((sorted.length - 1) * quantile))]
+}
+
+function chromeWorkingSetBytes(profileDirectory: string): Promise<number> {
+  if (process.platform !== 'win32') return Promise.resolve(0)
+  const script = [
+    '$needle = [Environment]::GetEnvironmentVariable("SHIO_QUALIFICATION_PROFILE")',
+    '$sum = (Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like ("*" + $needle + "*") } | Measure-Object -Property WorkingSetSize -Sum).Sum',
+    'if ($null -eq $sum) { "0" } else { [string]$sum }',
+  ].join('; ')
+  return new Promise((resolve) => {
+    execFile(
+      'powershell',
+      ['-NoProfile', '-NonInteractive', '-Command', script],
+      {
+        env: { ...process.env, SHIO_QUALIFICATION_PROFILE: profileDirectory },
+        windowsHide: true,
+      },
+      (error, stdout) => resolve(error ? 0 : Number.parseInt(stdout.trim(), 10) || 0),
+    )
+  })
+}
+
 export async function runDeterministicBrowserControl(): Promise<void> {
   const executablePath = resolveChromeExecutable()
   assert(executablePath, 'Google Chrome is required for Browser Control tests')
@@ -813,6 +1541,79 @@ export async function runDeterministicBrowserControl(): Promise<void> {
   const { server, origin } = await startFixture()
   try {
     await deterministicRepro(executablePath, profileDirectory, origin)
+  } finally {
+    await closeServer(server)
+    await removeProfile(profileDirectory)
+  }
+}
+
+export async function runDeterministicContinuousBrowserControl(): Promise<void> {
+  const executablePath = resolveChromeExecutable()
+  assert(executablePath, 'Google Chrome is required for Continuous Browser Control tests')
+  const profileDirectory = await mkdtemp(join(tmpdir(), 'shio-browser-continuous-control-'))
+  const { server, origin } = await startFixture()
+  try {
+    await continuousRepro(executablePath, profileDirectory, origin)
+  } finally {
+    await closeServer(server)
+    await removeProfile(profileDirectory)
+  }
+}
+
+export async function runContinuousBrowserControlQualification(workerPath: string): Promise<void> {
+  const executablePath = resolveChromeExecutable()
+  assert(executablePath, 'Google Chrome is required for Continuous Browser Control qualification')
+  const profileDirectory = await mkdtemp(join(tmpdir(), 'shio-browser-continuous-qualification-'))
+  const localDurationMs = Number(process.env.SHIO_CONTINUOUS_BROWSER_LOCAL_MS ?? 10 * 60 * 1_000)
+  const publicDurationMs = Number(process.env.SHIO_CONTINUOUS_BROWSER_PUBLIC_MS ?? 60_000)
+  const soakDurationMs = Number(process.env.SHIO_CONTINUOUS_BROWSER_SOAK_MS ?? 30 * 60 * 1_000)
+  assert(localDurationMs >= 10_000 && Number.isFinite(localDurationMs))
+  assert(publicDurationMs >= 10_000 && Number.isFinite(publicDurationMs))
+  assert(soakDurationMs >= 10_000 && Number.isFinite(soakDurationMs))
+  const { server, origin } = await startFixture()
+  try {
+    const local = await runContinuousQualificationSession({
+      label: 'local-dynamic',
+      executablePath,
+      profileDirectory: join(profileDirectory, 'local-dynamic'),
+      url: `${origin}/continuous`,
+      durationMs: localDurationMs,
+      workerPath,
+      visual: new ContinuousVisualAdapter(),
+      pauseDuringRun: true,
+    })
+    const publicSmoke = await runContinuousQualificationSession({
+      label: 'public-browser',
+      executablePath,
+      profileDirectory: join(profileDirectory, 'public-browser'),
+      url: process.env.SHIO_CONTINUOUS_BROWSER_PUBLIC_URL ?? 'https://play2048.co/',
+      durationMs: publicDurationMs,
+      workerPath,
+      visual: new PublicContinuousVisualAdapter(),
+      pauseDuringRun: false,
+    })
+    const soak = await runContinuousQualificationSession({
+      label: 'thirty-minute-soak',
+      executablePath,
+      profileDirectory: join(profileDirectory, 'thirty-minute-soak'),
+      url: `${origin}/continuous`,
+      durationMs: soakDurationMs,
+      workerPath,
+      visual: new ContinuousVisualAdapter(),
+      pauseDuringRun: true,
+    })
+    for (const result of [local, soak]) {
+      assert(result.captureFpsP50 >= 15, `${result.label}: capture FPS below minimum`)
+      assert(result.frameToInputP50Ms < 120, `${result.label}: frame-to-input p50 missed target`)
+      assert(result.frameToInputP95Ms < 200, `${result.label}: frame-to-input p95 missed target`)
+    }
+    console.log(
+      `Continuous Browser Control qualification: PASS\n${JSON.stringify(
+        { local, publicSmoke, soak },
+        null,
+        2,
+      )}`,
+    )
   } finally {
     await closeServer(server)
     await removeProfile(profileDirectory)

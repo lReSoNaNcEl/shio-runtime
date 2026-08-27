@@ -5,6 +5,7 @@ import type {
   BrowserComputerUseObservation,
 } from '../../../shared/browser-computer-use'
 import { BrowserAutomationError } from '../errors'
+import type { BrowserHeldInputRegistry } from './BrowserHeldInputRegistry'
 
 type DirectInputDecision = Extract<
   BrowserComputerUseDecision,
@@ -24,8 +25,7 @@ type DirectInputDecision = Extract<
 >
 
 export class PlaywrightInputController {
-  private readonly heldKeys = new Set<string>()
-  private readonly heldButtons = new Set<'left' | 'right'>()
+  constructor(private readonly heldInputs: BrowserHeldInputRegistry) {}
 
   isDirectInput(decision: BrowserComputerUseDecision): decision is DirectInputDecision {
     return [
@@ -53,23 +53,25 @@ export class PlaywrightInputController {
       case 'drag':
         await page.mouse.move(decision.from.x, decision.from.y)
         await page.mouse.down()
-        this.heldButtons.add('left')
+        this.heldInputs.holdButton('playwright', 'left', () => page.mouse.up({ button: 'left' }))
         try {
           await page.mouse.move(decision.to.x, decision.to.y, { steps: 10 })
         } finally {
-          await page.mouse.up().catch(() => undefined)
-          this.heldButtons.delete('left')
+          await this.heldInputs.releaseButton('playwright', 'left').catch(() => undefined)
         }
         break
       case 'mouse-down':
         await page.mouse.move(decision.x, decision.y)
         await page.mouse.down({ button: decision.button })
-        this.heldButtons.add(decision.button)
+        this.heldInputs.holdButton('playwright', decision.button, () =>
+          page.mouse.up({ button: decision.button }),
+        )
         break
       case 'mouse-up':
         await page.mouse.move(decision.x, decision.y)
-        await page.mouse.up({ button: decision.button })
-        this.heldButtons.delete(decision.button)
+        if (!(await this.heldInputs.releaseButton('playwright', decision.button))) {
+          await page.mouse.up({ button: decision.button })
+        }
         break
       case 'scroll':
         await page.mouse.wheel(decision.dx, decision.dy)
@@ -79,11 +81,12 @@ export class PlaywrightInputController {
         break
       case 'key-down':
         await page.keyboard.down(decision.key)
-        this.heldKeys.add(decision.key)
+        this.heldInputs.holdKey('playwright', decision.key, () => page.keyboard.up(decision.key))
         break
       case 'key-up':
-        await page.keyboard.up(decision.key)
-        this.heldKeys.delete(decision.key)
+        if (!(await this.heldInputs.releaseKey('playwright', decision.key))) {
+          await page.keyboard.up(decision.key)
+        }
         break
       case 'type':
         await page.keyboard.type(decision.text)
@@ -112,20 +115,11 @@ export class PlaywrightInputController {
     }
   }
 
-  async release(page: Page | null): Promise<void> {
-    if (!page || page.isClosed()) {
-      this.reset()
-      return
-    }
-    await Promise.allSettled([
-      ...[...this.heldKeys].map((key) => page.keyboard.up(key)),
-      ...[...this.heldButtons].map((button) => page.mouse.up({ button })),
-    ])
-    this.reset()
+  async release(): Promise<void> {
+    await this.heldInputs.releaseOwner('playwright')
   }
 
   reset(): void {
-    this.heldButtons.clear()
-    this.heldKeys.clear()
+    this.heldInputs.resetOwner('playwright')
   }
 }
