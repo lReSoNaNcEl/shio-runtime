@@ -452,6 +452,8 @@ from the repository root and need no manual virtualenv activation:
 npm run desktop:check
 npm run desktop:format:check
 npm run desktop:imports:check
+npm run desktop:test:fast
+npm run desktop:test:regression
 npm run api:lint
 npm run api:format:check
 npm run api:test
@@ -465,7 +467,7 @@ installed only in `apps/desktop`); the Python API uses Ruff; TypeScript types us
 `tsc`. Do not add Biome to `apps/api`, and do not run Biome over Python.
 
 - Before committing Desktop changes → `npm run desktop:check`, the desktop build,
-  typecheck, and applicable repro tests.
+  typecheck, `npm run desktop:test:regression`, and any applicable opt-in qualification.
 - Before committing API changes → `npm run api:lint`, `npm run api:test`, plus the
   applicable endpoint checks.
 - Before committing cross-boundary changes → validate both applications and run an
@@ -476,9 +478,19 @@ final report. A commit must not be created if its required validation has not pa
 
 Do not launch the application or run a live smoke test unless the user explicitly
 requests live validation for the current Work Item. Static checks, builds, typechecks,
-and focused automated repro tests remain required where applicable. When live validation
+and focused deterministic tests remain required where applicable. When live validation
 was not requested, state this directly in the final report; its absence does not block
 a commit.
+
+Permanent deterministic Desktop tests use Vitest and live below `apps/desktop/tests`,
+organized by level and owning domain. Use `test:fast` for unit, contract, and architecture
+guards, and `test:regression` for the complete deterministic suite. The managed-Chrome
+fixture is deterministic regression coverage; public-site Browser checks, real Electron,
+long-running soaks, live-provider checks, and benchmarks remain standalone qualification
+runners. New bug repros are temporary, issue-scoped artifacts; migrate the regression case
+into `tests` and remove the repro after the fix. The unfinished Continuous Listening harness
+is the only temporary legacy `repro:*` exception and is excluded from regression until that
+feature is ready. See `docs/DESKTOP-TESTING.md` for the taxonomy and command surface.
 
 ## 8. Do not hide errors
 

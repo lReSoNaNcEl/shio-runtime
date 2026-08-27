@@ -92,15 +92,12 @@ explicit override.
 Focused commands:
 
 ```text
-npm run desktop:living-loop-hardening:repro
-npm run desktop:world-context:repro
-npm run desktop:mind-layer:repro
-npm run desktop:goal-runtime:repro
-npm run desktop:memory-2:repro
-npm run desktop:streaming-tts-2:repro
-npm run desktop:prompt-budget:repro
-npm run desktop:web-search:repro
-npm run desktop:latency-benchmark
+npm run desktop:test:regression
+npm --prefix apps/desktop run test -- mind-layer
+npm --prefix apps/desktop run test -- goal-runtime
+npm --prefix apps/desktop run test -- prompt-budget
+npm --prefix apps/desktop run test -- web-search
+npm run desktop:benchmark:latency
 ```
 
 Desktop Main, preload, renderer, SQLite, browser, speech, and goal changes additionally

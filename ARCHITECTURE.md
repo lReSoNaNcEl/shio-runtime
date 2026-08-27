@@ -1930,6 +1930,22 @@ Before introducing a significant architectural change, ask:
 
 The ultimate objective is architectural continuity across evolving technologies, platforms, and character capabilities.
 
+#### Test architecture
+
+Desktop verification mirrors production ownership without becoming a second runtime
+architecture. Permanent deterministic TypeScript tests are owned by Vitest and organized
+under `apps/desktop/tests` by test level (`unit`, `integration`, `renderer`, `contracts`,
+and `architecture`) and then by the production domain that owns the behavior. Architecture
+and security guards analyze imports or syntax trees where structure is the invariant;
+renderer tests observe rendered behavior and accessibility rather than source formatting.
+
+Real Electron execution, public-site checks, live model calls, long soaks, and performance
+measurements remain explicit qualifications or benchmarks outside the deterministic suite.
+Browser Control's local deterministic fixture may exercise the Shio-managed Chrome context;
+it shares scenarios with, but remains separate from, the public-site qualification. A bug
+reproducer is temporary and issue-scoped; once fixed, its durable regression case moves to
+the owning test domain.
+
 ### 25. Architecture Compliance Checklist
 
 Use this checklist before implementing significant features, Runtime modifications, or architectural changes.

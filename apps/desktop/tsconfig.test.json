@@ -1,0 +1,23 @@
+{
+  "compilerOptions": {
+    "forceConsistentCasingInFileNames": true,
+    "jsx": "react-jsx",
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "noEmit": true,
+    "noUncheckedSideEffectImports": true,
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "target": "ESNext",
+    "types": ["node", "vite/client", "vitest/globals"]
+  },
+  "include": [
+    "benchmarks/**/*",
+    "qualifications/**/*",
+    "src/renderer/api.d.ts",
+    "tests/**/*",
+    "vitest.config.ts"
+  ]
+}

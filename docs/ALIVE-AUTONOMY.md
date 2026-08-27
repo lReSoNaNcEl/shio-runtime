@@ -144,10 +144,10 @@ full turn when the required milestones exist.
 Focused automated validation:
 
 ```text
-npm run desktop:alive-autonomy:repro
+npm run desktop:test:regression
 ```
 
-The repro covers normal SSE, upstream first-byte timeout abort, split internal
+The deterministic suite covers normal SSE, upstream first-byte timeout abort, split internal
 markers, emotion stripping, sentence/code/link segmentation, tool-round containment,
 ordered bounded speech playback, typed Persistent Goal retrieval, SQLite
 restart/migration/idempotency, Autonomy

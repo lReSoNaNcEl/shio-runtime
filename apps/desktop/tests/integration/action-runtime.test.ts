@@ -1,0 +1,574 @@
+import assert from 'node:assert/strict'
+
+import { describe, it } from 'vitest'
+import { z } from 'zod'
+
+import {
+  ActionConfirmationBroker,
+  ActionPermissionGuard,
+  ActionRuntime,
+  type EffectiveDesktopWorkflowRequest,
+} from '../../src/main/action'
+import { BrowserWorkflowScopeRegistry } from '../../src/main/browser-control/workflow'
+import {
+  actionRuntimeActivity,
+  desktopWorkflowActivity,
+  isDesktopWorkflowActive,
+} from '../../src/renderer/components/actions/actionRuntimePresentation'
+import {
+  actionConfirmationRequestSchema,
+  actionRuntimeSnapshotSchema,
+  type DesktopAuthorityMode,
+  type DesktopWorkflowRequest,
+  desktopWorkflowRequestSchema,
+} from '../../src/shared/actions'
+import type { RuntimeEventInput } from '../../src/shared/runtime'
+
+async function main(): Promise<void> {
+  let mode: DesktopAuthorityMode = 'confirm'
+  let executionCount = 0
+  let emergencyCleanupCount = 0
+  const actionConfirmationEvents: Parameters<ActionConfirmationBroker['requestAction']>[0][] = []
+  const authorityConfirmationEvents: Parameters<ActionConfirmationBroker['requestAuthority']>[0][] =
+    []
+  const runtimeEvents: RuntimeEventInput[] = []
+  const snapshots: string[] = []
+
+  const confirmations = new ActionConfirmationBroker(
+    (request) => actionConfirmationEvents.push(request),
+    (request) => authorityConfirmationEvents.push(request),
+    1_000,
+  )
+  const guard = new ActionPermissionGuard({
+    authorityMode: () => mode,
+    requestConfirmation: (request) => confirmations.requestAction(request),
+  })
+  const runtime = new ActionRuntime({
+    permissionGuard: guard,
+    authorityMode: () => mode,
+    cancelPendingConfirmations: () => confirmations.cancelAll(),
+    onEvent: (event) => runtimeEvents.push(event),
+    onChanged: (snapshot) =>
+      snapshots.push(JSON.stringify(actionRuntimeSnapshotSchema.parse(snapshot))),
+  })
+  runtime.onEmergencyStop(() => {
+    emergencyCleanupCount += 1
+  })
+
+  const workflow = (goal: string): DesktopWorkflowRequest => ({
+    type: 'desktop.workflow',
+    goal,
+    shellCommand: 'systeminfo',
+    requestedCapabilities: ['shell'],
+    risk: 'normal',
+  })
+
+  runtime.register<DesktopWorkflowRequest, { runtimeCompleted: boolean }>({
+    name: 'desktop.workflow',
+    description: 'Action Runtime focused repro tool',
+    validate: (payload) => desktopWorkflowRequestSchema.parse(payload),
+    authority: 'desktop-workflow',
+    confirmation: (actionId, request) =>
+      actionConfirmationRequestSchema.parse({
+        schemaVersion: 1,
+        actionId,
+        tool: request.type,
+        goal: request.goal,
+        shellCommand: request.shellCommand,
+        browserOperation: request.browserOperation,
+        requestedCapabilities: request.requestedCapabilities,
+        risk: request.risk,
+      }),
+    adapter: 'fake-automation-adapter',
+    timeoutMs: 500,
+    singleFlight: true,
+    execute: async (_request, context) => {
+      executionCount += 1
+      if (_request.goal === 'wait') {
+        await new Promise<void>((_resolve, reject) => {
+          context.signal.addEventListener('abort', () => reject(new Error('aborted')), {
+            once: true,
+          })
+        })
+      }
+      return { runtimeCompleted: true }
+    },
+  })
+
+  let finishSpeechAction: (() => void) | null = null
+  runtime.register({
+    name: 'speech.wait',
+    description: 'Non-desktop action presentation repro',
+    validate: (payload) => z.undefined().parse(payload),
+    execute: () =>
+      new Promise<void>((resolve) => {
+        finishSpeechAction = resolve
+      }),
+  })
+
+  const speechAction = runtime.execute({ name: 'speech.wait', payload: undefined })
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  assert(runtime.snapshot().activeActionId)
+  assert.equal(
+    isDesktopWorkflowActive(runtime.snapshot()),
+    false,
+    'A speech action was presented as an active desktop workflow',
+  )
+  assert(finishSpeechAction)
+  ;(finishSpeechAction as () => void)()
+  await speechAction
+
+  const confirmed = runtime.execute({
+    name: 'desktop.workflow',
+    payload: workflow('SECRET_ACTION_GOAL_DO_NOT_LOG'),
+  })
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  assert.equal(actionConfirmationEvents.length, 1)
+  const shellConfirmation = actionConfirmationEvents[0]
+  assert.equal(shellConfirmation.tool, 'desktop.workflow')
+  assert.equal(
+    shellConfirmation.tool === 'desktop.workflow' ? shellConfirmation.shellCommand : undefined,
+    'systeminfo',
+  )
+  assert.equal(isDesktopWorkflowActive(runtime.snapshot()), true)
+  assert.equal(desktopWorkflowActivity(runtime.snapshot()), 'awaiting-confirmation')
+  assert.equal(executionCount, 0)
+  assert(
+    confirmations.respondToAction({
+      actionId: actionConfirmationEvents[0].actionId,
+      decision: 'confirm',
+    }),
+  )
+  const confirmedResult = await confirmed
+  assert.equal(confirmedResult.status, 'success')
+  assert.equal(confirmedResult.authorization, 'confirmed')
+  assert.equal(executionCount, 1)
+
+  const cancelled = runtime.execute({
+    name: 'desktop.workflow',
+    payload: {
+      type: 'desktop.workflow',
+      goal: 'Click the exact Catalog button',
+      browserOperation: {
+        operation: 'click',
+        target: {
+          kind: 'accessible-name',
+          observationId: 'browser-observation-00000000-0000-4000-8000-000000000000',
+          role: 'button',
+          name: 'Catalog',
+        },
+      },
+      requestedCapabilities: ['browser'],
+      risk: 'normal',
+    },
+  })
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  const browserConfirmation = actionConfirmationEvents[1]
+  assert.equal(browserConfirmation.tool, 'desktop.workflow')
+  assert.equal(
+    browserConfirmation.tool === 'desktop.workflow'
+      ? browserConfirmation.browserOperation?.operation
+      : undefined,
+    'click',
+  )
+  assert(
+    confirmations.respondToAction({
+      actionId: actionConfirmationEvents[1].actionId,
+      decision: 'cancel',
+    }),
+  )
+  const cancelledResult = await cancelled
+  assert.equal(cancelledResult.status, 'cancelled')
+  assert.equal(executionCount, 1, 'Permission-denied browser click reached the Adapter')
+
+  mode = 'full'
+  runtime.notifyAuthorityModeChanged()
+  const fullResult = await runtime.execute({ name: 'desktop.workflow', payload: workflow('full') })
+  assert.equal(fullResult.status, 'success')
+  assert.equal(fullResult.authorization, 'full')
+  assert.equal(actionConfirmationEvents.length, 2, 'Full mode requested confirmation')
+  assert.equal(executionCount, 2)
+
+  const invalid = await runtime.execute({
+    name: 'desktop.workflow',
+    payload: {
+      type: 'desktop.workflow',
+      goal: '',
+      requestedCapabilities: ['unknown'],
+      risk: 'normal',
+    },
+  })
+  assert.equal(invalid.status, 'failure')
+  assert.equal(invalid.errorCode, 'ACTION_VALIDATION_FAILED')
+  assert.equal(executionCount, 2)
+
+  mode = 'confirm'
+  runtime.notifyAuthorityModeChanged()
+  const emergencyPending = runtime.execute({
+    name: 'desktop.workflow',
+    payload: workflow('emergency pending'),
+  })
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  await runtime.emergencyStop()
+  assert.equal((await emergencyPending).status, 'cancelled')
+  assert.equal(executionCount, 2)
+
+  mode = 'full'
+  const running = runtime.execute({ name: 'desktop.workflow', payload: workflow('wait') })
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  assert(runtime.snapshot().activeActionId)
+  assert.equal(isDesktopWorkflowActive(runtime.snapshot()), true)
+  assert.equal(desktopWorkflowActivity(runtime.snapshot()), 'executing')
+  await runtime.emergencyStop()
+  assert.equal((await running).status, 'cancelled')
+  assert.equal(emergencyCleanupCount, 2)
+
+  const next = await runtime.execute({ name: 'desktop.workflow', payload: workflow('next') })
+  assert.equal(next.status, 'success')
+  assert.equal(next.authorization, 'full')
+
+  const authorityPromise = confirmations.requestAuthority({
+    requestId: `authority-${Date.now()}-00000000-0000-4000-8000-000000000000`,
+    requestedMode: 'full',
+  })
+  assert.equal(authorityConfirmationEvents.length, 1)
+  assert(
+    confirmations.respondToAuthority({
+      requestId: authorityConfirmationEvents[0].requestId,
+      decision: 'confirm',
+    }),
+  )
+  assert.equal(await authorityPromise, 'confirm')
+
+  const events = runtimeEvents.map((event) => event.type)
+  for (const required of [
+    'ToolRequested',
+    'ToolValidated',
+    'ToolAuthorized',
+    'ToolStarted',
+    'ToolCompleted',
+    'ToolCancelled',
+  ]) {
+    assert(
+      events.includes(required as RuntimeEventInput['type']),
+      `Missing lifecycle event ${required}`,
+    )
+  }
+  assert(snapshots.length > 0)
+  const serializedLog = JSON.stringify(runtime.snapshot().recentActions)
+  assert(!serializedLog.includes('emergency pending'))
+  assert(!serializedLog.includes('SECRET_ACTION_GOAL_DO_NOT_LOG'))
+
+  const undefinedTool = new ActionRuntime({
+    permissionGuard: guard,
+    authorityMode: () => mode,
+    cancelPendingConfirmations: () => confirmations.cancelAll(),
+  })
+  undefinedTool.register({
+    name: 'timeout',
+    description: 'Timeout probe',
+    validate: (payload) => z.undefined().parse(payload),
+    timeoutMs: 10,
+    execute: () => new Promise(() => undefined),
+  })
+  const timeoutResult = await undefinedTool.execute({ name: 'timeout', payload: undefined })
+  assert.equal(timeoutResult.status, 'timeout')
+  assert.equal(timeoutResult.errorCode, 'ACTION_TIMEOUT')
+
+  mode = 'confirm'
+  const delegatedConfirmations: Parameters<ActionConfirmationBroker['requestAction']>[0][] = []
+  const delegatedBroker = new ActionConfirmationBroker(
+    (request) => delegatedConfirmations.push(request),
+    () => undefined,
+    1_000,
+  )
+  const delegatedRuntime = new ActionRuntime({
+    permissionGuard: new ActionPermissionGuard({
+      authorityMode: () => mode,
+      requestConfirmation: (request) => delegatedBroker.requestAction(request),
+    }),
+    authorityMode: () => mode,
+    cancelPendingConfirmations: () => delegatedBroker.cancelAll(),
+  })
+  let delegatedExecutionCount = 0
+  delegatedRuntime.register<
+    { goal: string; maxSteps: number; maxActions: number; maxDurationMs: number },
+    { state: 'running'; actionId: string }
+  >({
+    name: 'browser.use',
+    description: 'Delegated browser computer-use repro tool',
+    validate: (payload) =>
+      z
+        .object({
+          goal: z.string().min(1),
+          maxSteps: z.number().int().positive(),
+          maxActions: z.number().int().positive(),
+          maxDurationMs: z.number().int().positive(),
+        })
+        .strict()
+        .parse(payload),
+    authority: 'delegated-session',
+    confirmation: (actionId, request) =>
+      actionConfirmationRequestSchema.parse({
+        schemaVersion: 1,
+        actionId,
+        tool: 'browser.use',
+        goal: request.goal,
+        maxSteps: request.maxSteps,
+        maxActions: request.maxActions,
+        maxDurationMs: request.maxDurationMs,
+        requestedCapabilities: ['browser-computer-use'],
+        risk: 'normal',
+      }),
+    execute: (_payload, context) => {
+      delegatedExecutionCount += 1
+      return { state: 'running', actionId: context.actionId }
+    },
+  })
+  const delegatedStart = delegatedRuntime.execute({
+    name: 'browser.use',
+    payload: {
+      goal: 'Complete the bounded browser fixture',
+      maxSteps: 30,
+      maxActions: 100,
+      maxDurationMs: 60_000,
+    },
+  })
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  assert.equal(delegatedConfirmations.length, 1)
+  assert.equal(delegatedConfirmations[0].tool, 'browser.use')
+  assert.deepEqual(delegatedConfirmations[0].requestedCapabilities, ['browser-computer-use'])
+  assert.equal(actionRuntimeActivity(delegatedRuntime.snapshot()), 'awaiting-confirmation')
+  assert.equal(delegatedExecutionCount, 0)
+  assert(
+    delegatedBroker.respondToAction({
+      actionId: delegatedConfirmations[0].actionId,
+      decision: 'confirm',
+    }),
+  )
+  const delegatedResult = await delegatedStart
+  assert.equal(delegatedResult.status, 'success')
+  assert.equal(delegatedResult.authorization, 'confirmed')
+  assert.equal(
+    (delegatedResult.result as { actionId?: string } | undefined)?.actionId,
+    delegatedResult.actionId,
+  )
+  assert.equal(delegatedExecutionCount, 1)
+
+  mode = 'full'
+  const fullDelegatedResult = await delegatedRuntime.execute({
+    name: 'browser.use',
+    payload: {
+      goal: 'Continue the bounded browser fixture',
+      maxSteps: 30,
+      maxActions: 100,
+      maxDurationMs: 60_000,
+    },
+  })
+  assert.equal(fullDelegatedResult.authorization, 'full')
+  assert.equal(delegatedConfirmations.length, 1)
+  assert.equal(delegatedExecutionCount, 2)
+
+  const scopedConfirmations: Parameters<ActionConfirmationBroker['requestAction']>[0][] = []
+  const scopedBroker = new ActionConfirmationBroker(
+    (request) => scopedConfirmations.push(request),
+    () => undefined,
+    1_000,
+  )
+  const scopes = new BrowserWorkflowScopeRegistry()
+  const scopedGuard = new ActionPermissionGuard({
+    authorityMode: () => mode,
+    requestConfirmation: (request) => scopedBroker.requestAction(request),
+    authorizeScope: (scopeId, confirmation, requestConfirmation) =>
+      scopes.authorize(scopeId, confirmation, {
+        authorityMode: mode,
+        requestConfirmation,
+      }),
+  })
+  let scopedExecutionCount = 0
+  const scopedRuntime = new ActionRuntime({
+    permissionGuard: scopedGuard,
+    authorityMode: () => mode,
+    cancelPendingConfirmations: () => scopedBroker.cancelAll(),
+    cancelConfirmation: (actionId) => {
+      scopedBroker.cancelAction(actionId)
+    },
+  })
+  scopedRuntime.register<EffectiveDesktopWorkflowRequest, { runtimeCompleted: boolean }>({
+    name: 'desktop.workflow',
+    description: 'Scoped browser workflow repro tool',
+    validate: (payload) => {
+      const { browserRiskClass, ...request } = payload as EffectiveDesktopWorkflowRequest
+      return { ...desktopWorkflowRequestSchema.parse(request), browserRiskClass }
+    },
+    authority: 'desktop-workflow',
+    confirmation: (actionId, request, actionRequest) =>
+      actionConfirmationRequestSchema.parse({
+        schemaVersion: 1,
+        actionId,
+        tool: request.type,
+        goal: scopes.confirmationGoal(actionRequest.authorizationScopeId, request.goal),
+        browserOperation: request.browserOperation,
+        browserRiskClass: request.browserRiskClass,
+        requestedCapabilities: request.requestedCapabilities,
+        risk: request.risk,
+      }),
+    execute: async (request, context) => {
+      scopedExecutionCount += 1
+      if (request.goal === 'wait scoped') {
+        await new Promise<void>((_resolve, reject) => {
+          context.signal.addEventListener('abort', () => reject(new Error('aborted')), {
+            once: true,
+          })
+        })
+      }
+      return { runtimeCompleted: true }
+    },
+  })
+
+  const workflowSignal = new AbortController()
+  mode = 'confirm'
+  const scope = scopes.create('Inspect two safe pages', workflowSignal.signal)
+  const firstScoped = scopedRuntime.execute({
+    name: 'desktop.workflow',
+    authorizationScopeId: scope.workflowId,
+    signal: workflowSignal.signal,
+    payload: {
+      type: 'desktop.workflow',
+      goal: 'Model-generated substep text',
+      browserOperation: { operation: 'observe' },
+      browserRiskClass: 'read',
+      requestedCapabilities: ['browser'],
+      risk: 'normal',
+    } as EffectiveDesktopWorkflowRequest,
+  })
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  assert.equal(scopedConfirmations.length, 1)
+  assert.equal(scopedConfirmations[0].goal, 'Inspect two safe pages')
+  assert(
+    scopedBroker.respondToAction({
+      actionId: scopedConfirmations[0].actionId,
+      decision: 'confirm',
+    }),
+  )
+  assert.equal((await firstScoped).authorization, 'confirmed')
+  const secondScoped = await scopedRuntime.execute({
+    name: 'desktop.workflow',
+    authorizationScopeId: scope.workflowId,
+    signal: workflowSignal.signal,
+    payload: {
+      type: 'desktop.workflow',
+      goal: 'Open the next safe page',
+      browserOperation: { operation: 'open', url: 'https://example.com/' },
+      browserRiskClass: 'navigation',
+      requestedCapabilities: ['browser'],
+      risk: 'normal',
+    } as EffectiveDesktopWorkflowRequest,
+  })
+  assert.equal(secondScoped.authorization, 'confirmed')
+  assert.equal(scopedConfirmations.length, 1, 'Safe scoped action requested a second confirmation')
+
+  mode = 'full'
+  const fullScope = scopes.create('Read in Full Control', new AbortController().signal)
+  const fullScoped = await scopedRuntime.execute({
+    name: 'desktop.workflow',
+    authorizationScopeId: fullScope.workflowId,
+    payload: {
+      type: 'desktop.workflow',
+      goal: 'Observe',
+      browserOperation: { operation: 'observe' },
+      browserRiskClass: 'read',
+      requestedCapabilities: ['browser'],
+      risk: 'normal',
+    } as EffectiveDesktopWorkflowRequest,
+  })
+  assert.equal(fullScoped.authorization, 'full')
+  assert.equal(scopedConfirmations.length, 1)
+
+  const criticalScope = scopes.create(
+    'Buy only after explicit approval',
+    new AbortController().signal,
+  )
+  const critical = scopedRuntime.execute({
+    name: 'desktop.workflow',
+    authorizationScopeId: criticalScope.workflowId,
+    payload: {
+      type: 'desktop.workflow',
+      goal: 'Click Buy',
+      browserOperation: {
+        operation: 'click',
+        target: {
+          kind: 'accessible-name',
+          observationId: 'browser-observation-00000000-0000-4000-8000-000000000000',
+          role: 'button',
+          name: 'Buy',
+        },
+      },
+      browserRiskClass: 'financial',
+      requestedCapabilities: ['browser'],
+      risk: 'destructive',
+    } as EffectiveDesktopWorkflowRequest,
+  })
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  assert.equal(scopedConfirmations.length, 2)
+  assert.equal(scopedExecutionCount, 3, 'Critical Full Control action executed before approval')
+  assert(
+    scopedBroker.respondToAction({
+      actionId: scopedConfirmations[1].actionId,
+      decision: 'confirm',
+    }),
+  )
+  assert.equal((await critical).authorization, 'confirmed')
+
+  mode = 'confirm'
+  const deniedScope = scopes.create('Denied browser workflow', new AbortController().signal)
+  const denied = scopedRuntime.execute({
+    name: 'desktop.workflow',
+    authorizationScopeId: deniedScope.workflowId,
+    payload: {
+      type: 'desktop.workflow',
+      goal: 'Observe denied',
+      browserOperation: { operation: 'observe' },
+      browserRiskClass: 'read',
+      requestedCapabilities: ['browser'],
+      risk: 'normal',
+    } as EffectiveDesktopWorkflowRequest,
+  })
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  assert.equal(scopedConfirmations.length, 3)
+  assert(
+    scopedBroker.respondToAction({
+      actionId: scopedConfirmations[2].actionId,
+      decision: 'cancel',
+    }),
+  )
+  assert.equal((await denied).status, 'cancelled')
+  assert.equal(scopedExecutionCount, 4)
+
+  mode = 'full'
+  const abortController = new AbortController()
+  const abortScope = scopes.create('Cancel current browser step', abortController.signal)
+  const externallyCancelled = scopedRuntime.execute({
+    name: 'desktop.workflow',
+    authorizationScopeId: abortScope.workflowId,
+    signal: abortController.signal,
+    payload: {
+      type: 'desktop.workflow',
+      goal: 'wait scoped',
+      browserOperation: { operation: 'observe' },
+      browserRiskClass: 'read',
+      requestedCapabilities: ['browser'],
+      risk: 'normal',
+    } as EffectiveDesktopWorkflowRequest,
+  })
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  abortController.abort()
+  assert.equal((await externallyCancelled).status, 'cancelled')
+  scopes.releaseAll()
+
+  console.log('Action Runtime authority, lifecycle, validation and Emergency Stop repro: PASS')
+}
+
+describe('Action Runtime integration', () => {
+  it('enforces authority, lifecycle, validation, cancellation, and Emergency Stop', main)
+})
