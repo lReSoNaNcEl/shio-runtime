@@ -1,3 +1,5 @@
+import { containInternalReasoning } from './reasoning'
+
 export const EMBODIMENT_INTENSITIES = ['subtle', 'normal', 'strong'] as const
 export const EMBODIMENT_GESTURE_HINTS = [
   'explain',
@@ -65,16 +67,17 @@ export function parseCharacterEmbodimentResponse(text: string): {
   replyText: string
   embodimentIntent?: CharacterEmbodimentIntent
 } {
-  const match = text.match(EMBODIMENT_MARKER)
+  const safeText = containInternalReasoning(text).text
+  const match = safeText.match(EMBODIMENT_MARKER)
   if (!match) {
-    return EMBODIMENT_MARKER_LIKE.test(text)
-      ? { replyText: containMalformedEmbodimentMarker(text) }
-      : { replyText: text }
+    return EMBODIMENT_MARKER_LIKE.test(safeText)
+      ? { replyText: containMalformedEmbodimentMarker(safeText) }
+      : { replyText: safeText }
   }
   try {
     const embodimentIntent = normalizeCharacterEmbodimentIntent(JSON.parse(match[1]))
-    return { replyText: text.replace(EMBODIMENT_MARKER, '').trim(), embodimentIntent }
+    return { replyText: safeText.replace(EMBODIMENT_MARKER, '').trim(), embodimentIntent }
   } catch {
-    return { replyText: text.replace(EMBODIMENT_MARKER, '').trim() }
+    return { replyText: safeText.replace(EMBODIMENT_MARKER, '').trim() }
   }
 }

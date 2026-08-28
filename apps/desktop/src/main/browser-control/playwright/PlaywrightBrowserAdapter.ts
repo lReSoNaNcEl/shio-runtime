@@ -130,6 +130,7 @@ export class PlaywrightBrowserAdapter {
       try {
         await page.goto(requestedUrl, { waitUntil: 'domcontentloaded', timeout: 30_000 })
         await this.denyNotifications(page)
+        await this.stabilizeAfterNavigation(page, signal)
         const observation = await this.captureSemanticObservation(page, false, signal)
         return this.result('open', observation, { requestedUrl, before })
       } catch (error) {
@@ -173,6 +174,7 @@ export class PlaywrightBrowserAdapter {
       this.pages.setActive(page)
       await page.bringToFront()
       this.invalidateObservation()
+      await this.stabilizeAfterNavigation(page, signal)
       const observation = await this.captureSemanticObservation(page, false, signal)
       return this.result('switch-tab', observation, { requestedTabId: pageId, before })
     })
@@ -505,6 +507,38 @@ export class PlaywrightBrowserAdapter {
     return snapshot
   }
 
+  /**
+   * A bounded post-navigation settle avoids presenting one transient semantic snapshot
+   * as evidence that a requested visible UI does not exist. It waits for DOM readiness
+   * and a short quiet period, never an unbounded or page-supplied delay.
+   */
+  private async stabilizeAfterNavigation(page: Page, signal?: AbortSignal): Promise<void> {
+    const startedAt = this.now()
+    const deadline = startedAt + 1_200
+    await page
+      .waitForLoadState('domcontentloaded', { timeout: Math.max(1, deadline - this.now()) })
+      .catch(() => undefined)
+    let previous = await page
+      .locator('body')
+      .innerText({ timeout: Math.min(250, Math.max(1, deadline - this.now())) })
+      .catch(() => '')
+    let quietSince = this.now()
+    while (this.now() < deadline) {
+      if (signal?.aborted) throw signal.reason ?? new Error('BROWSER_OBSERVATION_ABORTED')
+      await waitForBrowserSettle(Math.min(80, Math.max(1, deadline - this.now())), signal)
+      const current = await page
+        .locator('body')
+        .innerText({ timeout: Math.min(250, Math.max(1, deadline - this.now())) })
+        .catch(() => previous)
+      const now = this.now()
+      if (current !== previous) {
+        previous = current
+        quietSince = now
+      }
+      if (now - startedAt >= 750 && now - quietSince >= 250) return
+    }
+  }
+
   private mutateTarget(
     operation: 'click' | 'fill' | 'select',
     target: BrowserTarget,
@@ -571,6 +605,7 @@ export class PlaywrightBrowserAdapter {
       if (operation === 'back')
         await page.goBack({ waitUntil: 'domcontentloaded', timeout: 30_000 })
       else await page.goForward({ waitUntil: 'domcontentloaded', timeout: 30_000 })
+      await this.stabilizeAfterNavigation(page, signal)
       const observation = await this.captureSemanticObservation(page, false, signal)
       return this.result(operation, observation, { before })
     })
@@ -700,4 +735,19 @@ function isCoordinateDecision(
   { type: 'click' | 'move' | 'drag' | 'mouse-down' | 'mouse-up' }
 > {
   return ['click', 'move', 'drag', 'mouse-down', 'mouse-up'].includes(decision.type)
+}
+
+function waitForBrowserSettle(durationMs: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const abort = (): void => {
+      clearTimeout(timer)
+      reject(signal?.reason ?? new Error('BROWSER_OBSERVATION_ABORTED'))
+    }
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', abort)
+      resolve()
+    }, durationMs)
+    signal?.addEventListener('abort', abort, { once: true })
+    if (signal?.aborted) abort()
+  })
 }

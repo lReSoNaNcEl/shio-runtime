@@ -6,7 +6,6 @@ import { CharacterToolDispatcher } from '../../src/main/character-tools/Characte
 import { CharacterToolLoop } from '../../src/main/character-tools/CharacterToolLoop'
 import { CharacterToolRegistry } from '../../src/main/character-tools/CharacterToolRegistry'
 import type { ChatMessage, LLMProvider, LlmCapabilities, LlmCompletion } from '../../src/main/llm'
-import type { DesktopWorkflowActionResult } from '../../src/shared/actions'
 import {
   type BrowserComputerUseProvider,
   type BrowserComputerUseSession,
@@ -66,7 +65,24 @@ async function runWebRequirement(options: {
       capabilities: () => capabilities,
       chat: async () =>
         JSON.stringify(options.requirement ?? { type: 'explicit-tool', tool: 'web.search' }),
-      complete: options.complete,
+      complete: async (messages, requestOptions) => {
+        if (requestOptions?.tools?.some((tool) => tool.name === 'character_tool_requirement')) {
+          return {
+            content: '',
+            toolCalls: [
+              {
+                id: 'requirement-call',
+                name: 'character_tool_requirement',
+                argumentsJson: JSON.stringify(
+                  options.requirement ?? { type: 'explicit-tool', tool: 'web.search' },
+                ),
+              },
+            ],
+            finishReason: 'tool_calls',
+          }
+        }
+        return options.complete?.(messages, requestOptions) as Promise<LlmCompletion>
+      },
     },
     providerId: 'mistral',
     messages: [
@@ -359,7 +375,23 @@ describe('Character Tool Requirement', () => {
             type: 'explicit-tool',
             tool: 'browser.useStatus',
           } satisfies CharacterToolRequirement),
-        complete: async (messages) => {
+        complete: async (messages, requestOptions) => {
+          if (requestOptions?.tools?.some((tool) => tool.name === 'character_tool_requirement')) {
+            return {
+              content: '',
+              toolCalls: [
+                {
+                  id: 'status-requirement-call',
+                  name: 'character_tool_requirement',
+                  argumentsJson: JSON.stringify({
+                    type: 'explicit-tool',
+                    tool: 'browser.useStatus',
+                  }),
+                },
+              ],
+              finishReason: 'tool_calls',
+            }
+          }
           responseRound += 1
           if (responseRound === 1) {
             return {
@@ -510,7 +542,7 @@ describe('Character Tool Requirement', () => {
     const emptyRegistry = () => registry(false)
     const result = await new CharacterToolLoop().run({
       llm: {
-        capabilities: () => capabilities,
+        capabilities: () => ({ ...capabilities, supportsToolCalling: false }),
         complete: async () => {
           replyCallCount += 1
           return textCompletion('[calm]По памяти дата такая-то.')
@@ -560,7 +592,7 @@ describe('Character Tool Requirement', () => {
     }
     const emptyRegistry = () => registry(false)
     const llm: LLMProvider = {
-      capabilities: () => capabilities,
+      capabilities: () => ({ ...capabilities, supportsToolCalling: false }),
       complete: async () => {
         throw new Error('No native tool call is expected without available Character tools')
       },
@@ -650,7 +682,19 @@ describe('Character Tool Requirement', () => {
       })
     const provider: BrowserContextProvider = {
       currentObservation: () => currentObservation,
-      observe: async () => currentObservation,
+      observe: async () => {
+        currentObservation = {
+          observationId: 'browser-observation-00000000-0000-4000-8000-000000000001',
+          sessionId: 'browser-session-00000000-0000-4000-8000-000000000001',
+          url: 'https://fish.example/article',
+          title: 'Fish Audio offer',
+          capturedAt: 1,
+          content: 'Free access is available through 31 August 2026.',
+          interactiveElements: [],
+          truncated: false,
+        }
+        return currentObservation
+      },
     }
     let classifierCalls = 0
     let replyCalls = 0
@@ -674,12 +718,13 @@ describe('Character Tool Requirement', () => {
         replyCalls += 1
         const prompt = messages.map((message) => String(message.content)).join('\n')
         if (replyCalls === 1) {
-          assert.match(prompt, /"id":"browser\.open"/u)
           assert.match(prompt, /"id":"browser\.observe"/u)
-          assert.match(prompt, /"id":"browser\.scroll"/u)
+          assert.doesNotMatch(prompt, /"id":"browser\.open"/u)
+          assert.doesNotMatch(prompt, /"id":"browser\.scroll"/u)
+          assert.doesNotMatch(prompt, /"id":"browser\.switchTab"/u)
           assert.doesNotMatch(prompt, /"id":"shell\.execute"/u)
           assert.doesNotMatch(prompt, /"id":"browser\.fill"/u)
-          return '<shio-tools>{"plannedTools":["browser.open"],"calls":[{"tool":"browser.open","arguments":{"url":"https://fish.example/article"}}]}</shio-tools>'
+          return '<shio-tools>{"plannedTools":["browser.observe"],"calls":[{"tool":"browser.observe","arguments":{}}]}</shio-tools>'
         }
         assert.equal(prompt.match(/## Character Tool Results/gu)?.length, 1)
         assert.match(prompt, /Free access is available through 31 August 2026\./u)
@@ -703,37 +748,6 @@ describe('Character Tool Requirement', () => {
           userGoal: 'Прочитать точную дату на странице',
           signal,
           browserContext: () => provider,
-          executeDesktopWorkflow: async (request) => {
-            currentObservation = {
-              observationId: 'browser-observation-00000000-0000-4000-8000-000000000001',
-              sessionId: 'browser-session-00000000-0000-4000-8000-000000000001',
-              url: 'https://fish.example/article',
-              title: 'Fish Audio offer',
-              capturedAt: 1,
-              content: 'Free access is available through 31 August 2026.',
-              interactiveElements: [],
-              truncated: false,
-            }
-            return {
-              actionId: 'action-00000000-0000-4000-8000-000000000001',
-              tool: 'desktop.workflow',
-              outcome: 'success',
-              authorization: 'confirmed',
-              execution: {
-                runtimeCompleted: true,
-                verification: 'verified',
-                browser: {
-                  kind: 'browser',
-                  operation: request.browserOperation?.operation ?? 'open',
-                  status: 'success',
-                  verification: 'verified',
-                  riskClass: 'navigation',
-                  resultingUrl: currentObservation.url,
-                  resultingTitle: currentObservation.title,
-                },
-              },
-            } satisfies DesktopWorkflowActionResult
-          },
         }),
       traceId: 'bounded-browser-requirement',
       requestOptions: {},
@@ -746,7 +760,7 @@ describe('Character Tool Requirement', () => {
     assert.equal(classifierCalls, 1)
     assert.equal(replyCalls, 2)
     assert.match(result.replyText, /31 августа 2026/u)
-    assert.deepEqual(result.toolEvidence.executedTools, ['browser.open'])
+    assert.deepEqual(result.toolEvidence.executedTools, ['browser.observe'])
   })
 
   it('streams a final direct answer through the structured fallback', async () => {
@@ -761,11 +775,12 @@ describe('Character Tool Requirement', () => {
         }),
         chat: async () => {
           chatCalls += 1
-          return 'The structured fallback must not use chat for the final answer.'
+          return JSON.stringify({ type: 'direct-answer' } satisfies CharacterToolRequirement)
         },
         stream: async function* () {
           yield { type: 'connected' as const, at: 1 }
           yield { type: 'text-delta' as const, at: 2, text: '[calm]Потоковый ' }
+          assert.equal(visibleText.join(''), 'Потоковый ')
           yield { type: 'text-delta' as const, at: 3, text: 'ответ.' }
           yield { type: 'completed' as const, at: 4, finishReason: 'stop' as const }
         },
@@ -777,7 +792,7 @@ describe('Character Tool Requirement', () => {
       traceId: 'structured-fallback-stream',
       requestOptions: {},
       nativeToolsRejected: false,
-      enforceToolRequirements: false,
+      enforceToolRequirements: true,
       failureReply: 'TOOL_FAILURE',
       limitReply: 'TOOL_LIMIT',
       onStreamEvent: (event) => {
@@ -785,9 +800,55 @@ describe('Character Tool Requirement', () => {
       },
     })
 
-    assert.equal(chatCalls, 0)
+    assert.equal(chatCalls, 1)
     assert.equal(result.replyText, '[calm]Потоковый ответ.')
     assert.equal(visibleText.join(''), 'Потоковый ответ.')
+  })
+
+  it('streams a native-provider direct answer without transactional delay', async () => {
+    const visibleText: string[] = []
+    const result = await new CharacterToolLoop().run({
+      llm: {
+        capabilities: () => ({ ...capabilities, supportsStreaming: true }),
+        chat: async () => {
+          throw new Error('Native requirement classification must not call textual chat')
+        },
+        complete: async () => ({
+          content: '',
+          toolCalls: [
+            {
+              id: 'direct-requirement',
+              name: 'character_tool_requirement',
+              argumentsJson: JSON.stringify({ type: 'direct-answer' }),
+            },
+          ],
+          finishReason: 'tool_calls',
+        }),
+        stream: async function* () {
+          yield { type: 'connected' as const, at: 1 }
+          yield { type: 'text-delta' as const, at: 2, text: '[calm]Видимый ' }
+          assert.equal(visibleText.join(''), 'Видимый ')
+          yield { type: 'text-delta' as const, at: 3, text: 'поток.' }
+          yield { type: 'completed' as const, at: 4, finishReason: 'stop' as const }
+        },
+      },
+      providerId: 'mistral',
+      messages: [{ role: 'user', content: 'Ответь прямо.' }],
+      registry: () => registry(true),
+      createDispatcher: () => ({ dispose: () => undefined }) as never,
+      traceId: 'native-direct-visible-stream',
+      requestOptions: {},
+      nativeToolsRejected: false,
+      enforceToolRequirements: true,
+      failureReply: 'TOOL_FAILURE',
+      limitReply: 'TOOL_LIMIT',
+      onStreamEvent: (event) => {
+        if (event.type === 'text-delta') visibleText.push(event.delta.text)
+      },
+    })
+
+    assert.equal(result.replyText, '[calm]Видимый поток.')
+    assert.equal(visibleText.join(''), 'Видимый поток.')
   })
 
   it('continues structured tool work after the requirement is satisfied without leaking protocol', async () => {
@@ -884,5 +945,138 @@ describe('Character Tool Requirement', () => {
     assert.equal(result.replyText, '[calm]Готово.')
     assert.equal(visibleText.join(''), 'Готово.')
     assert.notEqual(result.replyText, 'TOOL_LIMIT')
+  })
+
+  it('discards a native tool preamble and streams only the post-tool reply', async () => {
+    const browserCapabilities: ShioCapabilitySnapshot = {
+      schemaVersion: 1,
+      generatedAt: 4,
+      capabilities: [
+        {
+          id: 'browser-control',
+          category: 'action',
+          source: { kind: 'plugin', pluginId: 'browser-control' },
+          titleKey: 'capabilities.browser.title',
+          descriptionKey: 'capabilities.browser.description',
+          availability: 'available',
+          authority: 'confirm',
+        },
+        {
+          id: 'browser-computer-use',
+          category: 'action',
+          source: { kind: 'plugin', pluginId: 'browser-control' },
+          titleKey: 'plugins.browserControl.name',
+          descriptionKey: 'plugins.browserControl.description',
+          availability: 'available',
+          authority: 'confirm',
+          details: {
+            kind: 'browser-computer-use',
+            semanticControl: 'ready',
+            visualControl: 'ready',
+            isolatedProfile: true,
+          },
+        },
+      ],
+    }
+    const currentRegistry = () =>
+      new CharacterToolRegistry({
+        projectAvailable: false,
+        capabilityContext: browserCapabilities,
+        browserObservation: null,
+        actionsAvailable: true,
+        browserComputerUseAvailable: true,
+      })
+    const visibleText: string[] = []
+    let streamRound = 0
+    let executed = 0
+    const result = await new CharacterToolLoop().run({
+      llm: {
+        capabilities: () => ({ ...capabilities, supportsStreaming: true }),
+        chat: async () => {
+          throw new Error('Native requirement classification must not call textual chat')
+        },
+        complete: async () => ({
+          content: '',
+          toolCalls: [
+            {
+              id: 'requirement-call',
+              name: 'character_tool_requirement',
+              argumentsJson: JSON.stringify({ type: 'explicit-tool', tool: 'browser.use' }),
+            },
+          ],
+          finishReason: 'tool_calls',
+        }),
+        stream: async function* () {
+          streamRound += 1
+          yield { type: 'connected' as const, at: 1 }
+          if (streamRound === 1) {
+            yield { type: 'text-delta' as const, at: 2, text: '[calm]Сейчас посмотрю…' }
+            assert.equal(visibleText.join(''), '')
+            yield {
+              type: 'tool-call-start' as const,
+              at: 3,
+              index: 0,
+              id: 'browser-use-call',
+              name: 'browser_use',
+            }
+            yield {
+              type: 'tool-call-complete' as const,
+              at: 4,
+              index: 0,
+              call: {
+                id: 'browser-use-call',
+                name: 'browser_use',
+                argumentsJson: JSON.stringify({
+                  goal: 'Close the visible cookie dialog',
+                  termination: { type: 'goal-completed' },
+                }),
+              },
+            }
+            yield { type: 'completed' as const, at: 5, finishReason: 'tool_calls' as const }
+            return
+          }
+          yield { type: 'text-delta' as const, at: 6, text: '[calm]Управление запущено.' }
+          assert.equal(visibleText.join(''), 'Управление запущено.')
+          yield { type: 'completed' as const, at: 7, finishReason: 'stop' as const }
+        },
+      },
+      providerId: 'mistral',
+      messages: [{ role: 'user', content: 'Закрой видимый куки-баннер.' }],
+      registry: currentRegistry,
+      createDispatcher: () =>
+        ({
+          registerPlannedTools: () => undefined,
+          execute: async (tool: string) => {
+            assert.equal(tool, 'browser.use')
+            executed += 1
+            return {
+              content: JSON.stringify({ ok: true, data: { state: 'running', actionCount: 0 } }),
+              verifiedOutcome: {
+                kind: 'browser.use',
+                actionOutcome: 'success',
+                projection: 'session-started',
+                state: 'running',
+                actionCount: 0,
+              },
+            }
+          },
+          dispose: () => undefined,
+        }) as never,
+      traceId: 'native-tool-preamble-transaction',
+      requestOptions: {},
+      nativeToolsRejected: false,
+      enforceToolRequirements: true,
+      failureReply: 'TOOL_FAILURE',
+      limitReply: 'TOOL_LIMIT',
+      onStreamEvent: (event) => {
+        if (event.type === 'text-delta') visibleText.push(event.delta.text)
+      },
+    })
+
+    assert.equal(executed, 1)
+    assert.equal(streamRound, 2)
+    assert.equal(result.replyText, '[calm]Управление запущено.')
+    assert.equal(visibleText.join(''), 'Управление запущено.')
+    assert(!visibleText.join('').includes('Сейчас посмотрю'))
   })
 })

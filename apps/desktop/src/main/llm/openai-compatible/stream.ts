@@ -46,6 +46,19 @@ class StreamDeadlineError extends Error {
   }
 }
 
+class StreamProtocolError extends Error {
+  constructor(readonly code: 'EMPTY_STREAM' | 'INVALID_STREAM_CHUNK' | 'INCOMPLETE_TOOL_CALL') {
+    super(code)
+    this.name = 'StreamProtocolError'
+  }
+}
+
+interface ParsedStreamChunk {
+  events: CharacterStreamEvent[]
+  meaningful: boolean
+  invalid: boolean
+}
+
 function safeTraceId(value: string | undefined): string {
   return value && /^[A-Za-z0-9_.:-]{1,100}$/u.test(value) ? value : 'untracked'
 }
@@ -95,6 +108,8 @@ export async function* runChatCompletionStream(
   let stream: OpenAIChunkStream | null = null
   const pendingTools = new Map<number, PendingToolCall>()
   let finishReason: CharacterStreamFinishReason = 'unknown'
+  let meaningfulEvents = 0
+  let invalidChunkCount = 0
 
   mainLog.info('[LLMTransportTrace] request_started', {
     traceId,
@@ -133,10 +148,22 @@ export async function* runChatCompletionStream(
         receivedFirstByte = true
         yield { type: 'first-byte', at: Date.now() }
       }
-      for (const event of parseStreamChunk(item.value, pendingTools)) {
+      const parsed = parseStreamChunk(item.value, pendingTools)
+      if (parsed.invalid) invalidChunkCount += 1
+      if (parsed.meaningful) meaningfulEvents += 1
+      for (const event of parsed.events) {
         if (event.type === 'completed') finishReason = event.finishReason
         else yield event
       }
+    }
+    if (meaningfulEvents === 0) {
+      throw new StreamProtocolError(invalidChunkCount > 0 ? 'INVALID_STREAM_CHUNK' : 'EMPTY_STREAM')
+    }
+    if (invalidChunkCount > 0) {
+      mainLog.warn('[LLMTransportTrace] ignored bounded protocol anomalies', {
+        traceId,
+        invalidChunkCount,
+      })
     }
     yield* completePendingTools(pendingTools)
     yield { type: 'completed', at: Date.now(), finishReason }
@@ -166,6 +193,9 @@ async function* completePendingTools(
   pendingTools: Map<number, PendingToolCall>,
 ): AsyncGenerator<CharacterStreamEvent> {
   for (const [index, call] of [...pendingTools].sort(([left], [right]) => left - right)) {
+    if (!call.name || !call.argumentsJson || !isJsonObject(call.argumentsJson)) {
+      throw new StreamProtocolError('INCOMPLETE_TOOL_CALL')
+    }
     yield {
       type: 'tool-call-complete',
       at: Date.now(),
@@ -179,14 +209,18 @@ async function* completePendingTools(
 function parseStreamChunk(
   raw: unknown,
   pendingTools: Map<number, PendingToolCall>,
-): CharacterStreamEvent[] {
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return []
+): ParsedStreamChunk {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return { events: [], meaningful: false, invalid: true }
+  }
   const root = raw as Record<string, unknown>
   const output: CharacterStreamEvent[] = []
   const usage = parseUsage(root.usage)
   if (usage) output.push({ type: 'usage', at: Date.now(), usage })
   const choice = Array.isArray(root.choices) ? root.choices[0] : undefined
-  if (!choice || typeof choice !== 'object' || Array.isArray(choice)) return output
+  if (!choice || typeof choice !== 'object' || Array.isArray(choice)) {
+    return { events: output, meaningful: false, invalid: !usage }
+  }
   const choiceRecord = choice as Record<string, unknown>
   const delta =
     choiceRecord.delta &&
@@ -194,12 +228,20 @@ function parseStreamChunk(
     !Array.isArray(choiceRecord.delta)
       ? (choiceRecord.delta as Record<string, unknown>)
       : undefined
+  let meaningful = false
+  let invalid = !delta && choiceRecord.finish_reason === undefined
   if (typeof delta?.content === 'string' && delta.content) {
     output.push({ type: 'text-delta', at: Date.now(), text: delta.content })
+    meaningful = true
+  } else if (delta?.content !== undefined && typeof delta.content !== 'string') {
+    invalid = true
   }
   if (Array.isArray(delta?.tool_calls)) {
     for (const rawTool of delta.tool_calls) {
-      if (!rawTool || typeof rawTool !== 'object' || Array.isArray(rawTool)) continue
+      if (!rawTool || typeof rawTool !== 'object' || Array.isArray(rawTool)) {
+        invalid = true
+        continue
+      }
       const tool = rawTool as Record<string, unknown>
       const index = Number.isInteger(tool.index) && Number(tool.index) >= 0 ? Number(tool.index) : 0
       const fn =
@@ -226,16 +268,31 @@ function parseStreamChunk(
         nameDelta,
         argumentsDelta,
       })
+      meaningful = true
     }
+  } else if (delta?.tool_calls !== undefined) {
+    invalid = true
   }
   if (choiceRecord.finish_reason !== null && choiceRecord.finish_reason !== undefined) {
+    const normalized = normalizeFinishReason(String(choiceRecord.finish_reason))
     output.push({
       type: 'completed',
       at: Date.now(),
-      finishReason: normalizeFinishReason(String(choiceRecord.finish_reason)),
+      finishReason: normalized,
     })
+    if (normalized === 'unknown') invalid = true
+    else meaningful = true
   }
-  return output
+  return { events: output, meaningful, invalid }
+}
+
+function isJsonObject(value: string): boolean {
+  try {
+    const parsed: unknown = JSON.parse(value)
+    return Boolean(parsed && typeof parsed === 'object' && !Array.isArray(parsed))
+  } catch {
+    return false
+  }
 }
 
 function parseUsage(value: unknown): CharacterStreamUsage | null {
@@ -292,6 +349,15 @@ function normalizeStreamError(
 ): LlmResponseError {
   if (error instanceof LlmResponseError) return error
   const reason = controller.signal.reason
+  if (error instanceof StreamProtocolError || reason instanceof StreamProtocolError) {
+    const protocolError = error instanceof StreamProtocolError ? error : reason
+    return new LlmResponseError({
+      provider: config.provider,
+      code: protocolError.code,
+      recoverable: false,
+      message: `${config.displayName}: поток ответа модели нарушил ожидаемый протокол.`,
+    })
+  }
   if (
     error instanceof StreamDeadlineError ||
     reason instanceof StreamDeadlineError ||

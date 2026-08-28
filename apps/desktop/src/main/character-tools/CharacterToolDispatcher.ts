@@ -161,8 +161,16 @@ export type CharacterToolVerifiedOutcome =
         | 'browser.useResume'
         | 'browser.useStop'
         | 'browser.useStatus'
-      outcome: ActionOutcome
+      actionOutcome: ActionOutcome
+      projection:
+        | 'session-started'
+        | 'session-paused'
+        | 'session-resumed'
+        | 'session-stopped'
+        | 'status-read'
+        | 'goal-completed'
       state?: BrowserComputerUseSession['state']
+      actionCount?: number
       errorCode?: string
     }
 
@@ -301,6 +309,20 @@ function verifiedMemoryOutcome(
     case 'memory.list':
       return undefined
   }
+}
+
+function browserComputerUseOutcomeProjection(
+  id: Extract<CharacterToolId, `browser.use${string}`>,
+  session: BrowserComputerUseSession | undefined,
+): Extract<
+  CharacterToolVerifiedOutcome,
+  { kind: `browser.use${string}` | 'browser.use' }
+>['projection'] {
+  if (id === 'browser.usePause') return 'session-paused'
+  if (id === 'browser.useResume') return 'session-resumed'
+  if (id === 'browser.useStop') return 'session-stopped'
+  if (id === 'browser.useStatus') return 'status-read'
+  return session?.state === 'completed' ? 'goal-completed' : 'session-started'
 }
 
 export class CharacterToolDispatcher {
@@ -845,14 +867,18 @@ export class CharacterToolDispatcher {
     if (!provider) return { content: failureContent('BROWSER_COMPUTER_USE_UNAVAILABLE') }
     if (id === 'browser.useStatus') {
       const session = provider.status().currentSession
+      const projection = browserComputerUseOutcomeProjection(id, session ?? undefined)
       return {
         content: successfulContent({
           browserComputerUse: browserComputerUseSessionProjection(session),
+          verifiedOutcome: { actionOutcome: 'success', projection },
         }),
         verifiedOutcome: {
           kind: id,
-          outcome: 'success',
+          actionOutcome: 'success',
+          projection,
           ...(session ? { state: session.state } : {}),
+          ...(session ? { actionCount: session.actionCount } : {}),
         },
       }
     }
@@ -874,6 +900,7 @@ export class CharacterToolDispatcher {
       this.actionWorkflowClosed = true
     }
     const session = result.session ?? provider.status().currentSession ?? undefined
+    const projection = browserComputerUseOutcomeProjection(id, session)
     mainLog.info('[BrowserComputerUse] character tool completed', {
       operation: id,
       outcome: result.outcome,
@@ -884,14 +911,19 @@ export class CharacterToolDispatcher {
       content: JSON.stringify({
         ok: result.outcome === 'success',
         data: session
-          ? { browserComputerUse: browserComputerUseSessionProjection(session) }
+          ? {
+              browserComputerUse: browserComputerUseSessionProjection(session),
+              verifiedOutcome: { actionOutcome: result.outcome, projection },
+            }
           : undefined,
         ...(result.errorCode ? { error: { code: result.errorCode } } : {}),
       }),
       verifiedOutcome: {
         kind: id,
-        outcome: result.outcome,
+        actionOutcome: result.outcome,
+        projection,
         ...(session ? { state: session.state } : {}),
+        ...(session ? { actionCount: session.actionCount } : {}),
         ...(result.errorCode ? { errorCode: result.errorCode } : {}),
       },
     }

@@ -87,6 +87,7 @@ export function PlaintextMessage({ text }: { text: string }) {
 
 interface MarkdownRenderErrorBoundaryProps {
   text: string
+  streaming: boolean
   children: ReactNode
 }
 
@@ -109,7 +110,9 @@ export class MarkdownRenderErrorBoundary extends Component<
   }
 
   componentDidUpdate(previous: MarkdownRenderErrorBoundaryProps): void {
-    if (this.state.failed && previous.text !== this.props.text) this.setState({ failed: false })
+    if (this.state.failed && previous.streaming && !this.props.streaming) {
+      this.setState({ failed: false })
+    }
   }
 
   render(): ReactNode {
@@ -126,7 +129,7 @@ export function MarkdownMessage({
   streaming?: boolean
 }) {
   return (
-    <MarkdownRenderErrorBoundary text={text}>
+    <MarkdownRenderErrorBoundary text={text} streaming={streaming}>
       <Streamdown
         mode={streaming ? 'streaming' : 'static'}
         controls={false}

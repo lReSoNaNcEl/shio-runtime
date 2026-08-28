@@ -702,6 +702,7 @@ export const enMessages: Record<TranslationKey, string> = {
   'chat.send': 'Send',
   'chat.stopResponse': "Stop Shio's response",
   'chat.ready': 'Shio is ready',
+  'chat.jumpToLatest': '↓ Jump to latest',
   'chat.synthesizing': 'Generating voice…',
   'chat.quick.greet': 'Say hello',
   'chat.quick.joke': 'Tell me a joke',
@@ -746,6 +747,10 @@ export const enMessages: Record<TranslationKey, string> = {
   'chat.turnFailure.REQUEST_TOO_LARGE': 'The request is too large for {provider}.',
   'chat.turnFailure.VISION_UNSUPPORTED': 'The selected model does not support images.',
   'chat.turnFailure.CANCELLED': 'The request was cancelled.',
+  'chat.turnFailure.EMPTY_STREAM': '{provider} finished with an empty response stream.',
+  'chat.turnFailure.INVALID_STREAM_CHUNK':
+    '{provider} sent a response stream in an unsupported format.',
+  'chat.turnFailure.INCOMPLETE_TOOL_CALL': '{provider} ended a tool call before it was complete.',
   'chat.turnFailure.UNKNOWN': 'Could not get a response from {provider}.',
   'chat.turnFailure.retry': 'Retry',
   'chat.turnFailure.sendWithoutImage': 'Send without image',

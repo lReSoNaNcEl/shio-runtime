@@ -12,6 +12,7 @@ import {
   memoryUpdateInputSchema,
 } from '../../shared/memory'
 import { webSearchInputSchema } from '../../shared/web-search'
+import { PortableToolSchemaProjector } from './PortableToolSchemaProjector'
 
 export interface CharacterToolAvailabilityContext {
   projectAvailable: boolean
@@ -399,7 +400,7 @@ export function toLlmToolJsonSchema(schema: z.ZodType): Record<string, unknown> 
     io: 'input',
     unrepresentable: 'throw',
   })
-  return jsonSchema
+  return new PortableToolSchemaProjector().project(jsonSchema)
 }
 
 export type ProjectSearchInput = z.infer<typeof projectSearchInputSchema>

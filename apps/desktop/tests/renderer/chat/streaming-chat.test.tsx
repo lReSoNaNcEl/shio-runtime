@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { render } from '@testing-library/react'
+import { fireEvent, render } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
 
 import type { ReactNode } from 'react'
@@ -98,5 +98,49 @@ describe('streaming assistant chat bubble', () => {
     expect(bubble).toHaveTextContent('Сохранённый partial')
     expect(bubble).not.toHaveAttribute('aria-busy')
     expect(bubble?.querySelector('.msg-interrupted')).not.toBeNull()
+  })
+
+  it('preserves history scroll through streaming deltas and resumes from Jump to latest', () => {
+    const messages: ChatMsg[] = [
+      { id: 'user-1', role: 'user', text: 'Вопрос' },
+      { id: 'reply-1', role: 'assistant', text: 'Начало', streaming: true },
+    ]
+    const view = render(<ChatMessageList {...props(messages)} />, { wrapper: Wrapper })
+    const list = view.container.querySelector('#chat-messages') as HTMLDivElement
+    Object.defineProperty(list, 'scrollHeight', { configurable: true, value: 2_000 })
+    Object.defineProperty(list, 'clientHeight', { configurable: true, value: 400 })
+    list.scrollTop = 700
+    fireEvent.scroll(list)
+
+    for (let index = 0; index < 50; index += 1) {
+      view.rerender(
+        <ChatMessageList
+          {...props([
+            messages[0],
+            {
+              id: 'reply-1',
+              role: 'assistant',
+              text: `Длинный поток ${index}`,
+              streaming: true,
+            },
+          ])}
+        />,
+      )
+      expect(list.scrollTop).toBe(700)
+    }
+
+    const jump = view.getByRole('button', { name: '↓ К последнему сообщению' })
+    fireEvent.click(jump)
+    expect(list.scrollTop).toBe(2_000)
+
+    view.rerender(
+      <ChatMessageList
+        {...props([
+          messages[0],
+          { id: 'reply-1', role: 'assistant', text: 'Ещё delta', streaming: true },
+        ])}
+      />,
+    )
+    expect(list.scrollTop).toBe(2_000)
   })
 })

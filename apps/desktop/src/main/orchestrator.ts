@@ -26,6 +26,7 @@ import type { BrowserContextProviderResolver } from '../shared/browser-control'
 import type { ShioCapabilityProvider, ShioCapabilitySnapshot } from '../shared/capabilities'
 import {
   type CharacterEmbodimentIntent,
+  containInternalReasoning,
   parseCharacterEmbodimentResponse,
 } from '../shared/character-response'
 import type { CharacterToolRequirement, TurnToolEvidenceSummary } from '../shared/character-tools'
@@ -578,6 +579,11 @@ export class Orchestrator {
         elapsedMs: Date.now() - providerStartedAt,
       })
       throw error
+    }
+    const reasoningContainment = containInternalReasoning(rawReplyText)
+    if (reasoningContainment.contained) {
+      mainLog.warn('[CharacterToolLoop] provider reasoning contained', { traceId })
+      rawReplyText = reasoningContainment.text.trim()
     }
     if (containsCharacterProtocol(rawReplyText)) {
       mainLog.warn('[CharacterToolLoop] repeated or malformed protocol contained', { traceId })

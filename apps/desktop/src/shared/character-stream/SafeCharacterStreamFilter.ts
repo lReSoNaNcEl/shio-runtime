@@ -1,3 +1,4 @@
+import { InternalReasoningStreamContainment } from '../character-response/reasoning'
 import { emotionRegistry } from '../emotion'
 import type { SafeCharacterTextDelta } from './contracts'
 
@@ -10,17 +11,19 @@ function emotionKey(value: string): string {
 }
 
 export class SafeCharacterStreamFilter {
+  private readonly reasoning = new InternalReasoningStreamContainment()
   private pending = ''
   private internalMarker: (typeof INTERNAL_MARKERS)[number] | null = null
   private emotion = emotionRegistry.defaultEmotion
 
   push(text: string): readonly SafeCharacterTextDelta[] {
     if (!text) return []
-    this.pending += text
+    this.pending += this.reasoning.push(text).join('')
     return this.drain(false)
   }
 
   flush(): readonly SafeCharacterTextDelta[] {
+    this.pending += this.reasoning.flush().join('')
     return this.drain(true)
   }
 

@@ -16,12 +16,49 @@ describe('canonical Character tool schemas', () => {
   })
 
   it('derives bounded Draft 7 input schemas from the runtime Zod schemas', () => {
+    const allowedKeywords = new Set([
+      'type',
+      'properties',
+      'required',
+      'additionalProperties',
+      'enum',
+      'const',
+      'items',
+      'integer',
+      'minimum',
+      'maximum',
+      'oneOf',
+    ])
+    const assertPortable = (node: unknown, path: string): void => {
+      if (!node || typeof node !== 'object' || Array.isArray(node)) return
+      const record = node as Record<string, unknown>
+      for (const key of Object.keys(record)) {
+        expect(allowedKeywords.has(key), `${path}.${key}`).toBe(true)
+      }
+      if (record.properties && typeof record.properties === 'object') {
+        for (const [key, value] of Object.entries(record.properties)) {
+          assertPortable(value, `${path}.properties.${key}`)
+        }
+      }
+      if (record.items) assertPortable(record.items, `${path}.items`)
+      if (Array.isArray(record.oneOf)) {
+        for (const [index, value] of record.oneOf.entries()) {
+          assertPortable(value, `${path}.oneOf.${index}`)
+        }
+      }
+    }
     for (const tool of CHARACTER_TOOL_SPECS) {
       const jsonSchema = toLlmToolJsonSchema(tool.inputSchema)
       expect(jsonSchema.type, tool.id).toBe('object')
       expect(jsonSchema).not.toHaveProperty('$schema')
+      expect(jsonSchema).not.toHaveProperty('default')
+      assertPortable(jsonSchema, tool.id)
       expect(JSON.stringify(jsonSchema).length, tool.id).toBeLessThan(30_000)
     }
+    const browserUse = CHARACTER_TOOL_SPECS.find((tool) => tool.id === 'browser.use')
+    expect(browserUse).toBeDefined()
+    if (!browserUse) throw new Error('browser.use schema is missing')
+    expect(JSON.stringify(toLlmToolJsonSchema(browserUse.inputSchema))).toContain('oneOf')
   })
 
   it('keeps runtime-only goal refinements authoritative', () => {

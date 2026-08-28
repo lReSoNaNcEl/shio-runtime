@@ -72,6 +72,23 @@
   min-height: 80px;
 }
 
+.chat-message-list {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.chat-message-list #chat-messages {
+  min-height: 0;
+}
+
+.chat-jump-to-latest {
+  position: absolute;
+  right: 20px;
+  bottom: 16px;
+}
+
 #chat-messages::-webkit-scrollbar {
   width: 4px;
 }

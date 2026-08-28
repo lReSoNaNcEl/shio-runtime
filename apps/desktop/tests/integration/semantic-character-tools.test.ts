@@ -200,7 +200,8 @@ async function main(): Promise<void> {
     maxDurationMs: 300_000,
   })
   assert.equal(started.verifiedOutcome?.kind, 'browser.use')
-  assert.equal(started.verifiedOutcome?.outcome, 'success')
+  assert.equal(started.verifiedOutcome?.actionOutcome, 'success')
+  assert.equal(started.verifiedOutcome?.projection, 'session-started')
   assert.match(started.content, /"state":"running"/u)
   assert.deepEqual(actions[0], {
     goal: 'Complete the fixture application',
@@ -224,11 +225,19 @@ async function main(): Promise<void> {
 
   assert.equal(
     verifiedToolOutcomeFallback(started.verifiedOutcome, 'ru'),
-    '[calm]Сессия управления браузером запущена.',
+    '[calm]Запустила управление браузером, сейчас разбираюсь со страницей.',
   )
+  const startedPresentation = verifiedToolOutcomeFallback(started.verifiedOutcome, 'ru')
+  assert(startedPresentation)
+  assert.doesNotMatch(startedPresentation, /уже играю|закрыла|сделала/iu)
   assert.equal(
     verifiedToolOutcomeFallback(
-      { kind: 'browser.useStatus', outcome: 'success', state: 'waiting-user' },
+      {
+        kind: 'browser.useStatus',
+        actionOutcome: 'success',
+        projection: 'status-read',
+        state: 'waiting-user',
+      },
       'ru',
     ),
     '[calm]Сессия браузера сохранена и ждёт твоего вмешательства.',

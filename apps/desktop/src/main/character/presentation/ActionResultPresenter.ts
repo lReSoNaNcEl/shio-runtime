@@ -71,8 +71,8 @@ function successfulActionFallback(
 
 const BROWSER_FAILURES: Partial<Record<string, Record<UiLocale, string>>> = {
   TARGET_NOT_FOUND: {
-    ru: 'Я не вижу запрошенный элемент на текущей странице.',
-    en: 'I cannot see the requested element on the current page.',
+    ru: 'В текущем семантическом снимке я не смогла надёжно определить запрошенный элемент.',
+    en: 'I could not reliably identify the requested element in the current semantic snapshot.',
   },
   TARGET_AMBIGUOUS: {
     ru: 'На странице несколько подходящих элементов — уточни, какой выбрать.',

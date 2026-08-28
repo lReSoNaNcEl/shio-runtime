@@ -15,12 +15,17 @@ import {
   computerUseNotableObservationSchema,
 } from '../../../shared/browser-computer-use'
 import { type LLMProvider, LlmResponseError } from '../../llm'
+import { mainLog } from '../../logging/safeLogger'
 import { BrowserAutomationError, type BrowserAutomationErrorCode } from '../errors'
 import type {
   BrowserComputerUseDecisionContext,
   BrowserVisualActionAdapter,
   BrowserVisualActionStatus,
 } from './BrowserVisualActionAdapter'
+import {
+  isStructuredModelResponseError,
+  StructuredModelResponseParser,
+} from './StructuredModelResponseParser'
 
 export interface LlmBrowserVisualActionAdapterOptions {
   provider(): LLMProvider | undefined
@@ -46,6 +51,19 @@ const reactivePlanProposalSchema = z.discriminatedUnion('type', [
     })
     .strict(),
 ])
+
+const decisionResponseParser = new StructuredModelResponseParser(
+  browserComputerUseDecisionSchema,
+  'browser-computer-use-decision',
+)
+const reactivePlanResponseParser = new StructuredModelResponseParser(
+  reactivePlanProposalSchema,
+  'browser-reactive-plan-proposal',
+)
+const completionResponseParser = new StructuredModelResponseParser(
+  browserCompletionAssessmentSchema,
+  'browser-completion-assessment',
+)
 
 export class LlmBrowserVisualActionAdapter implements BrowserVisualActionAdapter {
   private consecutiveProviderFailures = 0
@@ -110,9 +128,7 @@ export class LlmBrowserVisualActionAdapter implements BrowserVisualActionAdapter
           },
         ]
       : facts
-    return this.callModel(provider, instructions, content, signal, (response) =>
-      browserComputerUseDecisionSchema.parse(parseExactJson(response)),
-    )
+    return this.callModel(provider, instructions, content, signal, decisionResponseParser)
   }
 
   async planReactive(
@@ -166,7 +182,7 @@ export class LlmBrowserVisualActionAdapter implements BrowserVisualActionAdapter
         },
       ],
       signal,
-      (response) => reactivePlanProposalSchema.parse(parseExactJson(response)),
+      reactivePlanResponseParser,
       1_200,
     )
     if (proposal.type === 'none') return null
@@ -227,9 +243,7 @@ export class LlmBrowserVisualActionAdapter implements BrowserVisualActionAdapter
           },
         ]
       : facts
-    return this.callModel(provider, instructions, content, signal, (response) =>
-      browserCompletionAssessmentSchema.parse(parseExactJson(response)),
-    )
+    return this.callModel(provider, instructions, content, signal, completionResponseParser)
   }
 
   private async callModel<T>(
@@ -237,25 +251,39 @@ export class LlmBrowserVisualActionAdapter implements BrowserVisualActionAdapter
     instructions: string,
     content: Parameters<LLMProvider['chat']>[0][number]['content'],
     signal: AbortSignal,
-    parse: (response: string) => T,
+    parser: StructuredModelResponseParser<T>,
     maxTokens = 400,
   ): Promise<T> {
     try {
-      const response = await provider.chat(
-        [
-          { role: 'system', content: instructions },
-          { role: 'user', content },
-        ],
-        {
+      const response = await this.requestModel(provider, instructions, content, signal, maxTokens)
+      let result: T
+      try {
+        result = parser.parse(response)
+      } catch (error) {
+        if (!isStructuredModelResponseError(error)) throw error
+        this.logInvalidStructuredResponse(error)
+        const repaired = await this.requestModel(
+          provider,
+          [
+            instructions,
+            'Your previous response was invalid.',
+            'Return only one object matching the exact contract above. Do not include reasoning, prose, or Markdown.',
+            `Validation issues: ${formatDiagnostic(error)}`,
+          ].join('\n\n'),
+          content,
           signal,
-          timeoutMs:
-            typeof this.options.timeoutMs === 'function'
-              ? this.options.timeoutMs()
-              : (this.options.timeoutMs ?? 15_000),
           maxTokens,
-        },
-      )
-      const result = parse(response)
+        )
+        try {
+          result = parser.parse(repaired)
+        } catch (repairError) {
+          if (isStructuredModelResponseError(repairError)) {
+            this.logInvalidStructuredResponse(repairError)
+            throw new BrowserAutomationError(repairError.code)
+          }
+          throw repairError
+        }
+      }
       this.consecutiveProviderFailures = 0
       this.circuitOpenUntil = 0
       return result
@@ -266,6 +294,44 @@ export class LlmBrowserVisualActionAdapter implements BrowserVisualActionAdapter
       if (error instanceof BrowserAutomationError) throw error
       throw new BrowserAutomationError(code)
     }
+  }
+
+  private requestModel(
+    provider: LLMProvider,
+    instructions: string,
+    content: Parameters<LLMProvider['chat']>[0][number]['content'],
+    signal: AbortSignal,
+    maxTokens: number,
+  ): Promise<string> {
+    return provider.chat(
+      [
+        { role: 'system', content: instructions },
+        { role: 'user', content },
+      ],
+      {
+        signal,
+        timeoutMs:
+          typeof this.options.timeoutMs === 'function'
+            ? this.options.timeoutMs()
+            : (this.options.timeoutMs ?? 15_000),
+        maxTokens,
+      },
+    )
+  }
+
+  private logInvalidStructuredResponse(error: {
+    code: string
+    diagnostic: {
+      expectedSchema: string
+      issues: readonly { path: readonly string[]; code: string }[]
+    }
+  }): void {
+    // Model text and screenshots are deliberately excluded from diagnostics.
+    mainLog.warn('[BrowserComputerUse] structured model response rejected', {
+      code: error.code,
+      expectedSchema: error.diagnostic.expectedSchema,
+      issues: error.diagnostic.issues,
+    })
   }
 
   private assertCircuitAvailable(): void {
@@ -287,12 +353,16 @@ export class LlmBrowserVisualActionAdapter implements BrowserVisualActionAdapter
   }
 }
 
-function parseExactJson(response: string): unknown {
-  const value = response.trim()
-  if (!value.startsWith('{') || !value.endsWith('}')) {
-    throw new Error('BROWSER_VISUAL_INVALID_RESPONSE')
+function formatDiagnostic(error: {
+  diagnostic: {
+    expectedSchema: string
+    issues: readonly { path: readonly string[]; code: string }[]
   }
-  return JSON.parse(value) as unknown
+}): string {
+  const issues = error.diagnostic.issues
+    .map((issue) => `${issue.path.join('.') || '(root)'} (${issue.code})`)
+    .join(', ')
+  return [error.diagnostic.expectedSchema, issues].filter(Boolean).join(': ')
 }
 
 function classifyProviderFailure(error: unknown): BrowserAutomationErrorCode {

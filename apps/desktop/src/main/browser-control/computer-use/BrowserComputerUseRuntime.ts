@@ -113,10 +113,8 @@ export class BrowserComputerUseRuntime {
       throw signal.reason ?? new BrowserAutomationError('COMPUTER_USE_UNAVAILABLE')
     }
     if (this.loopTask) await this.loopTask
-    const observation = await this.options.browser.captureComputerUseObservation(
-      visualStatus.supportsVision,
-      signal,
-    )
+    await this.options.browser.prepareForDelegation(signal)
+    const browserSession = this.options.browser.sessionSnapshot()
     const now = this.now()
     const termination = request.termination ?? { type: 'goal-completed' as const }
     const durationMs =
@@ -129,9 +127,8 @@ export class BrowserComputerUseRuntime {
     const session: BrowserComputerUseSession = {
       id: `browser-use-session-${this.createId()}`,
       goal: request.goal,
-      browserContextId:
-        this.options.browser.sessionSnapshot()?.sessionId ?? 'browser-context-unavailable',
-      pageId: observation.page.id,
+      browserContextId: browserSession?.sessionId ?? 'browser-context-unavailable',
+      pageId: browserSession?.activeTabId ?? 'browser-page-pending',
       state: 'running',
       startedAt: now,
       expiresAt: now + durationMs,
@@ -145,9 +142,9 @@ export class BrowserComputerUseRuntime {
       authorityScopeId,
       termination,
       ...(termination.type === 'goal-completed' ? {} : { continuousBudget: this.continuousBudget }),
-      mode: observation.visual ? 'visual' : 'semantic',
+      mode: 'semantic',
       controlMode: 'slow',
-      activity: 'observing',
+      activity: 'starting',
       diagnostics: { ...EMPTY_BROWSER_COMPUTER_USE_DIAGNOSTICS },
     }
     this.session = session

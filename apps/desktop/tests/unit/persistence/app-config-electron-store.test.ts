@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -113,5 +113,10 @@ describe('App config electron-store migration', () => {
       uiTheme: 'light',
       setup: { completed: false },
     })
+    const backups = readdirSync(directory).filter((name) =>
+      /^config\.json\.corrupt\.\d+\.json$/u.test(name),
+    )
+    expect(backups).toHaveLength(1)
+    expect(readFileSync(join(directory, backups[0]), 'utf8')).toBe('{malformed')
   })
 })

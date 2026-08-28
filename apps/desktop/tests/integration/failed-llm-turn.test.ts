@@ -122,6 +122,25 @@ async function testTransactionalMemory(): Promise<void> {
   assert.equal((await memory.getHistory('default')).length, 10)
 }
 
+async function testProviderReasoningContainment(): Promise<void> {
+  const provider = new FakeProvider()
+  const memory = new InMemoryStore()
+  const orchestrator = new Orchestrator(
+    provider,
+    memory,
+    {} as ConstructorParameters<typeof Orchestrator>[2],
+    (() => ({})) as () => AppSettings,
+  )
+  provider.enqueue('\\<think>private plan\\</think>[warm]Привет!')
+
+  const reply = await orchestrator.createReply({ userText: 'Поздоровайся' })
+  const history = await memory.getHistory('default')
+
+  assert.equal(reply.replyText, '[warm]Привет!')
+  assert.equal(history.at(-1)?.content, 'Привет!')
+  assert.doesNotMatch(JSON.stringify({ reply, history }), /private plan|think/u)
+}
+
 async function testConversationAlwaysLeavesThinking(): Promise<void> {
   for (const code of ['TIMEOUT', 'CANCELLED', 'NETWORK_ERROR'] as const) {
     const statuses: string[] = []
@@ -279,6 +298,7 @@ async function testHttp413Classification(): Promise<void> {
 
 async function run(): Promise<void> {
   await testTransactionalMemory()
+  await testProviderReasoningContainment()
   await testConversationAlwaysLeavesThinking()
   await testScreenContextLease()
   await testHttp413Classification()

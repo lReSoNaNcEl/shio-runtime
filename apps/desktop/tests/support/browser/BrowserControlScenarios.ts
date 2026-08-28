@@ -389,6 +389,78 @@ function fixtureHtml(blocker?: string): string {
 </html>`
 }
 
+class InvalidReactivePlanAdapter extends ContinuousVisualAdapter {
+  rejectedPlans = 0
+
+  override planReactive(): Promise<BrowserReactiveControlPlan | null> {
+    this.rejectedPlans += 1
+    if (this.rejectedPlans === 1) {
+      throw new BrowserAutomationError('COMPUTER_USE_MODEL_SCHEMA_MISMATCH')
+    }
+    return Promise.resolve(null)
+  }
+}
+
+function delayedCookieFixtureHtml(): string {
+  return `<!doctype html>
+<html lang="en">
+  <head><meta charset="utf-8"><title>Delayed Cookie Fixture</title></head>
+  <body>
+    <h1>Delayed Cookie Fixture</h1>
+    <p id="status" aria-live="polite">Waiting for consent UI</p>
+    <script>
+      setTimeout(() => {
+        const dialog = document.createElement('div')
+        dialog.setAttribute('role', 'dialog')
+        dialog.setAttribute('aria-label', 'Cookie settings')
+        dialog.innerHTML = '<p>Cookie settings</p><button aria-label="Close cookie banner">Close</button>'
+        dialog.querySelector('button').addEventListener('click', () => {
+          dialog.remove()
+          document.querySelector('#status').textContent = 'Cookie banner closed'
+        })
+        document.body.append(dialog)
+      }, 700)
+    </script>
+  </body>
+</html>`
+}
+
+function crossFrameFixtureHtml(port: number): string {
+  return `<!doctype html>
+<html lang="en">
+  <head><meta charset="utf-8"><title>Cross-frame Modal Fixture</title></head>
+  <body style="margin:0">
+    <iframe title="Cross-origin modal" src="http://localhost:${port}/frame-modal" style="position:fixed;left:0;top:0;width:400px;height:250px;border:0"></iframe>
+    <p id="frame-status" aria-live="polite" style="margin-top:300px">Cross-frame modal open</p>
+    <script>
+      window.addEventListener('message', (event) => {
+        if (event.data === 'frame-modal-closed') {
+          document.querySelector('#frame-status').textContent = 'Cross-frame modal closed'
+        }
+      })
+    </script>
+  </body>
+</html>`
+}
+
+function frameModalFixtureHtml(): string {
+  return `<!doctype html>
+<html lang="en">
+  <head><meta charset="utf-8"><title>Frame Modal</title></head>
+  <body style="margin:0">
+    <div role="dialog" aria-label="Embedded modal" style="position:fixed;inset:0;background:white">
+      <button aria-label="Close embedded modal" style="position:absolute;left:40px;top:40px;width:160px;height:60px">Close embedded modal</button>
+    </div>
+    <script>
+      document.querySelector('button').addEventListener('click', () => {
+        document.querySelector('[role=dialog]').remove()
+        parent.postMessage('frame-modal-closed', '*')
+      })
+    </script>
+  </body>
+</html>`
+}
+
 function continuousFixtureHtml(): string {
   return `<!doctype html>
 <html lang="en">
@@ -495,6 +567,8 @@ async function startFixture(): Promise<{ server: Server; origin: string }> {
   const server = createServer((request, response) => {
     const url = new URL(request.url ?? '/', 'http://127.0.0.1')
     const send = (): void => {
+      const address = server.address()
+      assert(address && typeof address === 'object')
       response.writeHead(200, {
         'content-type': 'text/html; charset=utf-8',
         'cache-control': 'no-store',
@@ -502,7 +576,13 @@ async function startFixture(): Promise<{ server: Server; origin: string }> {
       response.end(
         url.pathname === '/continuous'
           ? continuousFixtureHtml()
-          : fixtureHtml(url.searchParams.get('blocker') ?? undefined),
+          : url.pathname === '/delayed-cookie'
+            ? delayedCookieFixtureHtml()
+            : url.pathname === '/cross-frame'
+              ? crossFrameFixtureHtml(address.port)
+              : url.pathname === '/frame-modal'
+                ? frameModalFixtureHtml()
+                : fixtureHtml(url.searchParams.get('blocker') ?? undefined),
       )
     }
     if (url.pathname === '/slow') setTimeout(send, 2_000)
@@ -629,6 +709,60 @@ async function deterministicRepro(
     const notifications = await browser.observe()
     assert(notifications.content.includes('Notification permission: denied'), notifications.content)
     console.log('Browser Control repro: semantic operations PASS')
+
+    const delayedCookie = (await browser.open(`${origin}/delayed-cookie`)).observation
+    assert(delayedCookie)
+    assert(
+      delayedCookie.interactiveElements.some((element) => element.name === 'Close cookie banner'),
+      'The bounded navigation stabilization returned before the delayed cookie UI appeared',
+    )
+    const closedCookie = (
+      await browser.click(target(delayedCookie, 'button', 'Close cookie banner'))
+    ).observation
+    assert(closedCookie?.content.includes('Cookie banner closed'))
+    console.log('Browser Control repro: delayed cookie stabilization PASS')
+
+    await browser.open(`${origin}/cross-frame`)
+    let frameDecision = 0
+    const frameRuntime = new BrowserComputerUseRuntime({
+      browser,
+      visual: new ScriptedVisualAdapter((context) => {
+        assert(context.observation.visual?.bytes.length)
+        frameDecision += 1
+        if (frameDecision === 1) {
+          return scopedDecision(context.observation, {
+            type: 'click',
+            x: 100,
+            y: 70,
+            button: 'left',
+          })
+        }
+        assert(context.observation.semantic?.ariaSnapshot.includes('Cross-frame modal closed'))
+        return scopedDecision(context.observation, {
+          type: 'done',
+          summary: 'Cross-frame modal closed with visual control',
+        })
+      }),
+    })
+    const frameStarted = await frameRuntime.start(
+      {
+        goal: 'Close the visible cross-frame modal',
+        maxSteps: 5,
+        maxActions: 5,
+        maxDurationMs: 30_000,
+      },
+      'cross-frame-visual-action',
+      new AbortController().signal,
+    )
+    assert.equal(frameStarted.activity, 'starting')
+    assert.equal(frameStarted.actionCount, 0)
+    const frameCompleted = await waitForSession(
+      frameRuntime,
+      (session) => session.state === 'completed',
+    )
+    assert.equal(frameCompleted.actionCount, 1)
+    assert((await browser.observe()).content.includes('Cross-frame modal closed'))
+    console.log('Browser Control repro: cross-frame visual fallback PASS')
 
     await browser.open(`${origin}/?blocker=sensitive`)
     const sensitiveSemantic = await browser.observe()
@@ -847,6 +981,39 @@ async function deterministicRepro(
     assert(fixtureEvents.includes('computer-use-completed'))
     console.log('Browser Control repro: delegated input PASS')
 
+    const recoveryObservationIds: string[] = []
+    const recoveryRuntime = new BrowserComputerUseRuntime({
+      browser,
+      visual: new ScriptedVisualAdapter((context, _signal, call) => {
+        recoveryObservationIds.push(context.observation.id)
+        if (call === 0) {
+          throw new BrowserAutomationError('COMPUTER_USE_MODEL_SCHEMA_MISMATCH')
+        }
+        return scopedDecision(context.observation, {
+          type: 'done',
+          summary: 'Fresh observation recovery verified',
+        })
+      }),
+    })
+    await recoveryRuntime.start(
+      {
+        goal: 'Recover a malformed visual decision without browser input',
+        maxSteps: 5,
+        maxActions: 5,
+        maxDurationMs: 30_000,
+      },
+      'fresh-observation-recovery-action',
+      new AbortController().signal,
+    )
+    const recoveredSession = await waitForSession(
+      recoveryRuntime,
+      (session) => session.state === 'completed',
+    )
+    assert.equal(recoveredSession.actionCount, 0)
+    assert.equal(recoveryObservationIds.length, 2)
+    assert.notEqual(recoveryObservationIds[0], recoveryObservationIds[1])
+    console.log('Browser Control repro: malformed decision re-observation PASS')
+
     let pauseDecision = 0
     const pauseVisual = new ScriptedVisualAdapter(async (context, signal) => {
       pauseDecision += 1
@@ -1042,7 +1209,9 @@ async function deterministicRepro(
     })
     await assert.rejects(
       () => invalidProvider.decide(providerContext, new AbortController().signal),
-      (error) => error instanceof BrowserAutomationError && error.code === 'COMPUTER_USE_FAILED',
+      (error) =>
+        error instanceof BrowserAutomationError &&
+        error.code === 'COMPUTER_USE_MODEL_INVALID_RESPONSE',
     )
     assert.equal((await browser.observe()).url, origin.endsWith('/') ? origin : `${origin}/`)
     console.log('Browser Control repro: typed provider failures PASS')
@@ -1257,6 +1426,80 @@ async function continuousRepro(
     assert.equal(completed.diagnostics.activeScreencast, false)
     assert.equal(completed.diagnostics.heldKeys, 0)
     console.log('Continuous Browser Control repro: until-time lease PASS')
+
+    await browser.open(`${origin}/continuous`)
+    const leaseStartedAt = Date.now()
+    const leaseRuntime = new BrowserComputerUseRuntime({
+      browser,
+      visual: new ScriptedVisualAdapter((context) =>
+        scopedDecision(context.observation, { type: 'wait', durationMs: 100 }),
+      ),
+      now: () => leaseStartedAt + (Date.now() - leaseStartedAt) * 50,
+      continuousBudget: {
+        maximumDurationMs: 10_000,
+        maxSlowDecisionsPerMinute: 120,
+        maxReactiveInputEventsPerSecond: 30,
+        maxReactiveInputEventsTotal: 2_000,
+        maxPointerHoldMs: 1_000,
+        maxKeyHoldMs: 1_500,
+        maxFrameRate: 30,
+      },
+    })
+    await leaseRuntime.start(
+      {
+        goal: 'Keep control until explicitly stopped',
+        termination: { type: 'until-stopped' },
+        maxSteps: 1,
+        maxActions: 1,
+        maxDurationMs: 10_000,
+      },
+      'continuous-until-stopped-lease',
+      new AbortController().signal,
+    )
+    const leaseExpired = await waitForSession(
+      leaseRuntime,
+      (session) => session.state === 'stopped',
+      5_000,
+    )
+    assert.equal(leaseExpired.lastErrorCode, 'COMPUTER_USE_LEASE_EXPIRED')
+    assert.notEqual(leaseExpired.state, 'completed')
+    console.log('Continuous Browser Control repro: until-stopped lease honesty PASS')
+
+    await browser.open(`${origin}/continuous`)
+    const reactiveDegradeVisual = new InvalidReactivePlanAdapter()
+    const reactiveDegradeRuntime = new BrowserComputerUseRuntime({
+      browser,
+      visual: reactiveDegradeVisual,
+      continuousBudget: {
+        maximumDurationMs: 20_000,
+        maxSlowDecisionsPerMinute: 120,
+        maxReactiveInputEventsPerSecond: 30,
+        maxReactiveInputEventsTotal: 2_000,
+        maxPointerHoldMs: 1_000,
+        maxKeyHoldMs: 1_500,
+        maxFrameRate: 30,
+      },
+    })
+    await reactiveDegradeRuntime.start(
+      {
+        goal: 'Continue through slow control after an invalid reactive proposal',
+        termination: { type: 'until-stopped' },
+        maxSteps: 1,
+        maxActions: 1,
+        maxDurationMs: 10_000,
+      },
+      'continuous-reactive-degrade',
+      new AbortController().signal,
+    )
+    const degraded = await waitForSession(
+      reactiveDegradeRuntime,
+      (session) => session.state === 'running' && session.actionCount > 0,
+      8_000,
+    )
+    assert.equal(degraded.controlMode, 'slow')
+    assert.equal(reactiveDegradeVisual.rejectedPlans >= 1, true)
+    await reactiveDegradeRuntime.stop()
+    console.log('Continuous Browser Control repro: invalid reactive plan degradation PASS')
 
     await browser.open(`${origin}/continuous`)
     const outageRuntime = new BrowserComputerUseRuntime({

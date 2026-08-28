@@ -65,34 +65,71 @@ export function verifiedToolOutcomeFallback(
 }
 
 function presentBrowserUseOutcome(outcome: BrowserUseOutcome, locale: UiLocale): string {
-  if (outcome.outcome !== 'success') {
+  if (outcome.actionOutcome !== 'success') {
     if (locale === 'ru') {
-      if (outcome.outcome === 'permission-denied')
+      if (outcome.actionOutcome === 'permission-denied')
         return '[calm]Сессия управления браузером не была разрешена.'
-      if (outcome.outcome === 'cancelled')
+      if (outcome.actionOutcome === 'cancelled')
         return '[calm]Управление браузером отменено, все удерживаемые клавиши и кнопки отпущены.'
-      return `[calm]Не удалось безопасно выполнить управление браузером${outcome.errorCode ? `: ${outcome.errorCode}` : '.'}`
+      return `[calm]${browserUseFailure(outcome.errorCode, locale)}`
     }
-    if (outcome.outcome === 'permission-denied')
+    if (outcome.actionOutcome === 'permission-denied')
       return '[calm]The browser control session was not authorized.'
-    if (outcome.outcome === 'cancelled')
+    if (outcome.actionOutcome === 'cancelled')
       return '[calm]Browser control was cancelled and all held inputs were released.'
-    return `[calm]I could not safely complete browser control${outcome.errorCode ? `: ${outcome.errorCode}` : '.'}`
+    return `[calm]${browserUseFailure(outcome.errorCode, locale)}`
   }
   if (locale === 'ru') {
     if (outcome.state === 'waiting-user')
       return '[calm]Сессия браузера сохранена и ждёт твоего вмешательства.'
-    if (outcome.kind === 'browser.usePause') return '[calm]Поставила управление браузером на паузу.'
-    if (outcome.kind === 'browser.useResume') return '[calm]Продолжаю работу в браузере.'
-    if (outcome.kind === 'browser.useStop') return '[calm]Остановила управление браузером.'
-    if (outcome.kind === 'browser.use') return '[calm]Сессия управления браузером запущена.'
+    if (outcome.projection === 'session-paused')
+      return '[calm]Поставила управление браузером на паузу.'
+    if (outcome.projection === 'session-resumed') return '[calm]Продолжаю работу в браузере.'
+    if (outcome.projection === 'session-stopped') return '[calm]Остановила управление браузером.'
+    if (outcome.projection === 'goal-completed') return '[calm]Готово.'
+    if (outcome.projection === 'session-started') {
+      return outcome.actionCount && outcome.actionCount > 0
+        ? '[calm]Работаю с сайтом.'
+        : '[calm]Запустила управление браузером, сейчас разбираюсь со страницей.'
+    }
     return `[calm]Состояние управления браузером: «${outcome.state ?? 'нет активной сессии'}».`
   }
   if (outcome.state === 'waiting-user')
     return '[calm]The browser session is retained and waiting for your intervention.'
-  if (outcome.kind === 'browser.usePause') return '[calm]I paused browser control.'
-  if (outcome.kind === 'browser.useResume') return '[calm]I am continuing the browser task.'
-  if (outcome.kind === 'browser.useStop') return '[calm]I stopped browser control.'
-  if (outcome.kind === 'browser.use') return '[calm]The browser control session has started.'
+  if (outcome.projection === 'session-paused') return '[calm]I paused browser control.'
+  if (outcome.projection === 'session-resumed') return '[calm]I am continuing the browser task.'
+  if (outcome.projection === 'session-stopped') return '[calm]I stopped browser control.'
+  if (outcome.projection === 'goal-completed') return '[calm]Done.'
+  if (outcome.projection === 'session-started') {
+    return outcome.actionCount && outcome.actionCount > 0
+      ? '[calm]I am working with the site.'
+      : '[calm]I started browser control and am assessing the page now.'
+  }
   return `[calm]Browser control state: “${outcome.state ?? 'no active session'}”.`
+}
+
+function browserUseFailure(errorCode: string | undefined, locale: UiLocale): string {
+  const ru = {
+    COMPUTER_USE_MODEL_INVALID_RESPONSE: 'Не смогла разобрать текущий визуальный ответ модели.',
+    COMPUTER_USE_MODEL_SCHEMA_MISMATCH:
+      'Не смогла согласовать визуальный ответ модели с текущей страницей.',
+    COMPUTER_USE_COMPLETION_UNVERIFIED:
+      'Не смогла надёжно подтвердить завершение задачи в браузере.',
+    COMPUTER_USE_LEASE_EXPIRED: 'Сработал безопасный лимит времени управления браузером.',
+  } as const
+  const en = {
+    COMPUTER_USE_MODEL_INVALID_RESPONSE: 'I could not parse the current visual model response.',
+    COMPUTER_USE_MODEL_SCHEMA_MISMATCH:
+      'I could not validate the visual model response for the current page.',
+    COMPUTER_USE_COMPLETION_UNVERIFIED:
+      'I could not reliably verify that the browser task was complete.',
+    COMPUTER_USE_LEASE_EXPIRED: 'The browser-control safety lease expired.',
+  } as const
+  const selected = locale === 'ru' ? ru : en
+  return (
+    selected[errorCode as keyof typeof selected] ??
+    (locale === 'ru'
+      ? 'Не смогла завершить управление браузером из-за ошибки текущей сессии.'
+      : 'I could not finish browser control because the current session failed.')
+  )
 }

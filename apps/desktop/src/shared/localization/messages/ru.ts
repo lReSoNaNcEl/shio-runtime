@@ -699,6 +699,7 @@ export const ruMessages = {
   'chat.send': 'Отправить',
   'chat.stopResponse': 'Остановить ответ Shio',
   'chat.ready': 'Shio готова',
+  'chat.jumpToLatest': '↓ К последнему сообщению',
   'chat.synthesizing': 'Генерирую голос…',
   'chat.quick.greet': 'Поздоровайся',
   'chat.quick.joke': 'Расскажи шутку',
@@ -744,6 +745,10 @@ export const ruMessages = {
   'chat.turnFailure.REQUEST_TOO_LARGE': 'Запрос слишком большой для {provider}.',
   'chat.turnFailure.VISION_UNSUPPORTED': 'Выбранная модель не поддерживает изображения.',
   'chat.turnFailure.CANCELLED': 'Запрос отменён.',
+  'chat.turnFailure.EMPTY_STREAM': '{provider} завершил пустой поток ответа.',
+  'chat.turnFailure.INVALID_STREAM_CHUNK':
+    '{provider} передал поток ответа в неподдерживаемом формате.',
+  'chat.turnFailure.INCOMPLETE_TOOL_CALL': '{provider} оборвал вызов инструмента до завершения.',
   'chat.turnFailure.UNKNOWN': 'Не удалось получить ответ от {provider}.',
   'chat.turnFailure.retry': 'Повторить',
   'chat.turnFailure.sendWithoutImage': 'Отправить без изображения',

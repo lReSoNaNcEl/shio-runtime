@@ -160,7 +160,6 @@ describe('official OpenAI SDK transport', () => {
                 tool_calls: [
                   {
                     index: 0,
-                    id: 'call-a',
                     function: { name: 'memory_', arguments: '{"limit":' },
                   },
                   {
@@ -179,7 +178,7 @@ describe('official OpenAI SDK transport', () => {
             {
               delta: {
                 tool_calls: [
-                  { index: 0, function: { name: 'list', arguments: '8}' } },
+                  { index: 0, id: 'call-a', function: { name: 'list', arguments: '8}' } },
                   { index: 1, function: { name: 'search', arguments: 'now"}' } },
                 ],
               },
@@ -210,6 +209,49 @@ describe('official OpenAI SDK transport', () => {
         // Consume the SDK stream so malformed SSE reaches Shio normalization.
       }
     }).rejects.toMatchObject({ code: 'PROVIDER_REJECTED', recoverable: false })
+  })
+
+  it.each([
+    ['empty protocol stream', [{ choices: [{ delta: {}, finish_reason: null }] }], 'EMPTY_STREAM'],
+    ['unknown-only stream', [{ unexpected: true }], 'INVALID_STREAM_CHUNK'],
+    [
+      'incomplete tool call',
+      [
+        {
+          choices: [
+            {
+              delta: {
+                tool_calls: [
+                  {
+                    index: 0,
+                    id: 'call-incomplete',
+                    function: { name: 'web_search', arguments: '{' },
+                  },
+                ],
+              },
+              finish_reason: 'tool_calls',
+            },
+          ],
+        },
+      ],
+      'INCOMPLETE_TOOL_CALL',
+    ],
+  ] as const)('rejects %s with a typed protocol code', async (_label, chunks, code) => {
+    const client = sdk(async () => sse(...chunks))
+    await expect(collect(client)).rejects.toMatchObject({ code, recoverable: false })
+  })
+
+  it('tolerates one bounded unknown chunk when the stream has valid meaning', async () => {
+    const client = sdk(async () =>
+      sse(
+        { provider_bookkeeping: true },
+        { choices: [{ delta: { content: 'valid' }, finish_reason: null }] },
+        { choices: [{ delta: {}, finish_reason: 'stop' }] },
+      ),
+    )
+    const events = await collect(client)
+    expect(events.find((event) => event.type === 'text-delta')).toMatchObject({ text: 'valid' })
+    expect(events.at(-1)).toMatchObject({ type: 'completed', finishReason: 'stop' })
   })
 
   it.each([

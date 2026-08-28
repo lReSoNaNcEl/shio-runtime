@@ -118,9 +118,38 @@ const answer: string = 'работает'
   })
 
   it('falls back to escaped plaintext after a render failure', () => {
-    const boundary = new MarkdownRenderErrorBoundary({ text: '<unsafe>', children: null })
+    const boundary = new MarkdownRenderErrorBoundary({
+      text: '<unsafe>',
+      streaming: false,
+      children: null,
+    })
     boundary.state = MarkdownRenderErrorBoundary.getDerivedStateFromError()
     expect(renderToStaticMarkup(boundary.render())).toContain('&lt;unsafe&gt;')
+  })
+
+  it('keeps one plaintext fallback for the stream and retries only at static completion', () => {
+    const streamingProps = { text: '**partial', streaming: true, children: null }
+    const boundary = new MarkdownRenderErrorBoundary(streamingProps)
+    boundary.state = MarkdownRenderErrorBoundary.getDerivedStateFromError()
+    let resets = 0
+    boundary.setState = ((next: { failed: boolean }) => {
+      resets += 1
+      boundary.state = next
+    }) as never
+
+    Object.defineProperty(boundary, 'props', {
+      configurable: true,
+      value: { ...streamingProps, text: '**partial update' },
+    })
+    boundary.componentDidUpdate(streamingProps)
+    expect(resets).toBe(0)
+    expect(boundary.state.failed).toBe(true)
+
+    const finalProps = { text: '**complete**', streaming: false, children: null }
+    Object.defineProperty(boundary, 'props', { configurable: true, value: finalProps })
+    boundary.componentDidUpdate({ ...streamingProps, text: '**partial update' })
+    expect(resets).toBe(1)
+    expect(boundary.state.failed).toBe(false)
   })
 
   it('keeps the audited Markdown dependencies pinned', () => {

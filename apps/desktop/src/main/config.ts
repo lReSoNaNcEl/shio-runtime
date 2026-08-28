@@ -1,3 +1,4 @@
+import { existsSync, renameSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { app } from 'electron'
@@ -30,9 +31,7 @@ import { migrateProjectAwarenessPlugin } from './plugins'
 
 const CONFIG_PATH = join(app.getPath('userData'), 'config.json')
 const appConfigDocumentSchema = z.record(z.string(), z.unknown())
-const appConfigStore = new ValidatedElectronStore(CONFIG_PATH, appConfigDocumentSchema, {
-  clearMalformedJson: true,
-})
+const appConfigStore = new ValidatedElectronStore(CONFIG_PATH, appConfigDocumentSchema)
 export const CURRENT_CONFIG_SCHEMA_VERSION = DESKTOP_CONFIG_SCHEMA_VERSION
 
 export interface AppConfig {
@@ -106,6 +105,15 @@ export function freshDefaults(isPackaged = app.isPackaged): AppConfig {
 
 let _config: AppConfig = freshDefaults()
 let _llmCredentialStore: LlmCredentialStore | null = null
+let _configStorageHealth: ConfigStorageHealth = { state: 'ready' }
+
+export type ConfigStorageHealth =
+  | { state: 'ready' }
+  | { state: 'degraded'; code: 'CONFIG_STORAGE_RUNTIME_FAILURE' }
+
+export function getConfigStorageHealth(): ConfigStorageHealth {
+  return _configStorageHealth
+}
 
 function pickKnownStrings(
   saved: Record<string, unknown>,
@@ -136,12 +144,38 @@ function resolveSetupLifecycle(saved: Record<string, unknown>): SetupLifecycleCo
 }
 
 function persistConfig(config: AppConfig): void {
+  if (_configStorageHealth.state === 'degraded') {
+    throw new Error('CONFIG_STORAGE_RUNTIME_FAILURE')
+  }
   appConfigStore.write(config as unknown as Record<string, unknown>)
+}
+
+function isMalformedConfigError(error: unknown): boolean {
+  return error instanceof SyntaxError || error instanceof z.ZodError
+}
+
+function backupMalformedConfig(): boolean {
+  if (!existsSync(CONFIG_PATH)) return false
+  const backupPath = `${CONFIG_PATH}.corrupt.${Date.now()}.json`
+  try {
+    appConfigStore.close()
+    renameSync(CONFIG_PATH, backupPath)
+    mainLog.warn('[Config] malformed configuration backed up before reset', {
+      backupName: backupPath.slice(backupPath.lastIndexOf('\\') + 1),
+    })
+    return true
+  } catch (error) {
+    mainLog.error('[Config] malformed configuration backup failed; preserving original', {
+      error: error instanceof Error ? error.name : 'UNKNOWN',
+    })
+    return false
+  }
 }
 
 export async function loadConfig(llmCredentialStore: LlmCredentialStore): Promise<AppConfig> {
   _llmCredentialStore = llmCredentialStore
   await llmCredentialStore.load()
+  _configStorageHealth = { state: 'ready' }
   try {
     const stored = appConfigStore.read()
     if (stored) {
@@ -211,8 +245,31 @@ export async function loadConfig(llmCredentialStore: LlmCredentialStore): Promis
         persistConfig(_config)
       }
     }
-  } catch {
+  } catch (error) {
     _config = freshDefaults()
+    if (isMalformedConfigError(error)) {
+      if (backupMalformedConfig()) {
+        try {
+          persistConfig(_config)
+        } catch (persistError) {
+          mainLog.error(
+            '[Config] defaults could not be persisted after malformed config recovery',
+            {
+              error: persistError instanceof Error ? persistError.name : 'UNKNOWN',
+            },
+          )
+        }
+      }
+    } else {
+      appConfigStore.close()
+      _configStorageHealth = {
+        state: 'degraded',
+        code: 'CONFIG_STORAGE_RUNTIME_FAILURE',
+      }
+      mainLog.error('[Config] storage read failed; preserving existing configuration file', {
+        error: error instanceof Error ? error.name : 'UNKNOWN',
+      })
+    }
   }
   return _config
 }
@@ -277,7 +334,7 @@ export function saveConfig(
   const input = partial as Record<string, unknown>
   const knownStrings = pickKnownStrings(input)
   const normalizedLlm = partial.llm === undefined ? _config.llm : normalizeLlmConfig(partial.llm)
-  _config = {
+  const nextConfig: AppConfig = {
     ..._config,
     ...knownStrings,
     configSchemaVersion: CURRENT_CONFIG_SCHEMA_VERSION,
@@ -305,5 +362,6 @@ export function saveConfig(
           : _config.uiLocale,
     uiTheme: partial.uiTheme === undefined ? _config.uiTheme : normalizeUiTheme(partial.uiTheme),
   }
-  persistConfig(_config)
+  persistConfig(nextConfig)
+  _config = nextConfig
 }

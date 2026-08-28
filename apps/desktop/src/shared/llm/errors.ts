@@ -10,6 +10,9 @@ export type LlmTurnErrorCode =
   | 'REQUEST_TOO_LARGE'
   | 'VISION_UNSUPPORTED'
   | 'CANCELLED'
+  | 'EMPTY_STREAM'
+  | 'INVALID_STREAM_CHUNK'
+  | 'INCOMPLETE_TOOL_CALL'
   | 'UNKNOWN'
 
 export interface LlmResponseFailure {

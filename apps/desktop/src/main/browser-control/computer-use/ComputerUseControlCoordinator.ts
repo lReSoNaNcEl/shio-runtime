@@ -1,4 +1,5 @@
 import {
+  type BrowserCompletionAssessment,
   type BrowserComputerUseDecision,
   type BrowserComputerUseSession,
   type BrowserReactiveControlPlan,
@@ -21,6 +22,7 @@ export type ComputerUseCoordinatorEventType =
   | 'computer-use-notable-observation'
   | 'computer-use-blocked'
   | 'computer-use-completed'
+  | 'computer-use-stopped'
 
 export interface ComputerUseCoordinatorHooks {
   session(): BrowserComputerUseSession
@@ -92,10 +94,6 @@ export class ComputerUseControlCoordinator {
         throw new BrowserAutomationError('COMPUTER_USE_LIMIT_REACHED')
       }
 
-      hooks.update({
-        activity: this.reactive.active() ? 'reanchoring' : 'observing',
-        controlMode: this.reactive.active() ? 'reactive' : 'slow',
-      })
       const visualStatus = this.options.visual.status()
       const observation = await this.options.browser.captureComputerUseObservation(
         visualStatus.supportsVision,
@@ -116,7 +114,8 @@ export class ComputerUseControlCoordinator {
       hooks.update({
         pageId: observation.page.id,
         mode: observation.visual ? 'visual' : 'semantic',
-        activity: 'deciding',
+        activity: this.reactive.active() ? 'reanchoring' : 'observing',
+        controlMode: this.reactive.active() ? 'reactive' : 'slow',
         stepCount: hooks.session().stepCount + 1,
       })
 
@@ -151,7 +150,37 @@ export class ComputerUseControlCoordinator {
         hooks.update({ controlMode: 'slow', activity: 'deciding' })
       }
 
-      const decision = await this.decide(hooks.session(), observation, signal)
+      let decision: BrowserComputerUseDecision
+      try {
+        hooks.update({ activity: 'deciding' })
+        decision = await this.decide(hooks.session(), observation, signal)
+      } catch (error) {
+        if (!isRecoverableModelResponseError(error)) throw error
+        hooks.update({ activity: 'observing', controlMode: 'slow' })
+        const refreshed = await this.options.browser.captureComputerUseObservation(
+          visualStatus.supportsVision,
+          signal,
+        )
+        if (refreshed.blocker) {
+          await this.reactive.deactivate('blocker')
+          await this.options.browser.releaseInputs()
+          hooks.update({
+            state: 'waiting-user',
+            activity: 'waiting-user',
+            controlMode: 'slow',
+            lastErrorCode: refreshed.blocker,
+          })
+          hooks.emit('computer-use-blocked', undefined, refreshed.blocker)
+          return
+        }
+        hooks.update({
+          pageId: refreshed.page.id,
+          mode: refreshed.visual ? 'visual' : 'semantic',
+          activity: 'deciding',
+          stepCount: hooks.session().stepCount + 1,
+        })
+        decision = await this.decide(hooks.session(), refreshed, signal)
+      }
       if (signal.aborted || this.pauseRequested) return
       if (decision.type === 'request-user') {
         await this.reactive.deactivate('request-user')
@@ -178,12 +207,20 @@ export class ComputerUseControlCoordinator {
           visualStatus.supportsVision,
           signal,
         )
-        const assessment = await this.callVlm(signal, (childSignal) =>
-          this.options.visual.verifyCompletion(
-            { goal: hooks.session().goal, observation: freshObservation },
-            childSignal,
-          ),
-        )
+        let assessment: BrowserCompletionAssessment
+        try {
+          assessment = await this.callVlm(signal, (childSignal) =>
+            this.options.visual.verifyCompletion(
+              { goal: hooks.session().goal, observation: freshObservation },
+              childSignal,
+            ),
+          )
+        } catch (error) {
+          if (isRecoverableModelResponseError(error)) {
+            throw new BrowserAutomationError('COMPUTER_USE_COMPLETION_UNVERIFIED')
+          }
+          throw error
+        }
         if (assessment.status === 'satisfied') {
           await this.reactive.deactivate('completed')
           await this.options.browser.releaseInputs()
@@ -212,10 +249,10 @@ export class ComputerUseControlCoordinator {
         await this.options.browser.executeComputerUseDecision(decision, signal)
         this.recentAction = { type: decision.type, outcome: 'executed' }
         hooks.update({
-          actionCount: hooks.session().actionCount + 1,
+          ...(decision.type === 'wait' ? {} : { actionCount: hooks.session().actionCount + 1 }),
           activity: 'verifying',
         })
-        hooks.emit('computer-use-progress')
+        if (decision.type !== 'wait') hooks.emit('computer-use-progress')
       } catch (error) {
         if (error instanceof BrowserAutomationError && error.code === 'TARGET_STALE') {
           this.recentAction = { type: decision.type, outcome: 'stale' }
@@ -265,6 +302,10 @@ export class ComputerUseControlCoordinator {
         ),
       )
     } catch (error) {
+      if (isRecoverableModelResponseError(error)) {
+        await this.reactive.deactivate('invalid-reactive-plan')
+        return null
+      }
       const plan = this.reactive.plan()
       if (!plan || !isProviderAvailabilityFailure(error)) throw error
       const remaining = Math.max(0, plan.expiresAt - this.now())
@@ -333,10 +374,19 @@ export class ComputerUseControlCoordinator {
     }
     await this.reactive.deactivate('lease-completed')
     await this.options.browser.releaseInputs()
-    const summary =
-      session.termination.type === 'until-time'
-        ? 'Requested continuous-control duration completed.'
-        : 'Continuous-control safety lease completed.'
+    if (session.termination.type === 'until-stopped') {
+      const summary = 'Continuous-control safety lease expired before an explicit Stop.'
+      hooks.update({
+        state: 'stopped',
+        activity: 'idle',
+        controlMode: 'slow',
+        summary,
+        lastErrorCode: 'COMPUTER_USE_LEASE_EXPIRED',
+      })
+      hooks.emit('computer-use-stopped', undefined, 'COMPUTER_USE_LEASE_EXPIRED')
+      return true
+    }
+    const summary = 'Requested continuous-control duration completed.'
     hooks.update({ state: 'completed', activity: 'idle', controlMode: 'slow', summary })
     hooks.emit('computer-use-completed', { kind: 'success', summary, confidence: 1 })
     return true
@@ -383,6 +433,14 @@ function isProviderAvailabilityFailure(error: unknown): boolean {
       'COMPUTER_USE_MODEL_UNAVAILABLE',
       'COMPUTER_USE_PROVIDER_NETWORK',
     ].includes(error.code)
+  )
+}
+
+function isRecoverableModelResponseError(error: unknown): boolean {
+  return (
+    error instanceof BrowserAutomationError &&
+    (error.code === 'COMPUTER_USE_MODEL_INVALID_RESPONSE' ||
+      error.code === 'COMPUTER_USE_MODEL_SCHEMA_MISMATCH')
   )
 }
 

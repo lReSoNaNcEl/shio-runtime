@@ -18,7 +18,10 @@ export type BrowserAutomationErrorCode =
   | 'COMPUTER_USE_MODEL_TIMEOUT'
   | 'COMPUTER_USE_MODEL_UNAVAILABLE'
   | 'COMPUTER_USE_PROVIDER_NETWORK'
+  | 'COMPUTER_USE_MODEL_INVALID_RESPONSE'
+  | 'COMPUTER_USE_MODEL_SCHEMA_MISMATCH'
   | 'COMPUTER_USE_COMPLETION_UNVERIFIED'
+  | 'COMPUTER_USE_LEASE_EXPIRED'
 
 const PUBLIC_MESSAGES: Record<BrowserAutomationErrorCode, string> = {
   NO_ACTIVE_SESSION: 'There is no active browser session',
@@ -40,7 +43,10 @@ const PUBLIC_MESSAGES: Record<BrowserAutomationErrorCode, string> = {
   COMPUTER_USE_MODEL_TIMEOUT: 'The visual browser model timed out',
   COMPUTER_USE_MODEL_UNAVAILABLE: 'The visual browser model is unavailable',
   COMPUTER_USE_PROVIDER_NETWORK: 'The visual browser model could not be reached',
+  COMPUTER_USE_MODEL_INVALID_RESPONSE: 'The visual browser model returned an invalid response',
+  COMPUTER_USE_MODEL_SCHEMA_MISMATCH: 'The visual browser model returned an incompatible response',
   COMPUTER_USE_COMPLETION_UNVERIFIED: 'Browser completion could not be verified',
+  COMPUTER_USE_LEASE_EXPIRED: 'The browser control safety lease expired',
 }
 
 export class BrowserAutomationError extends Error {
