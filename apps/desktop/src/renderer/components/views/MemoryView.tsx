@@ -8,6 +8,9 @@ import {
   DialogContainer,
   Heading,
   InlineAlert,
+  Menu,
+  MenuItem,
+  MenuTrigger,
   Picker,
   PickerItem,
   ProgressCircle,
@@ -23,6 +26,7 @@ import {
 import Add from '@react-spectrum/s2/icons/Add'
 import Delete from '@react-spectrum/s2/icons/Delete'
 import Edit from '@react-spectrum/s2/icons/Edit'
+import More from '@react-spectrum/s2/icons/More'
 import { useEffect, useState } from 'react'
 
 import { type AliveSnapshot } from '../../../shared/alive'
@@ -225,41 +229,51 @@ export function MemoryView({ aliveSnapshot }: { aliveSnapshot: AliveSnapshot | n
 
   return (
     <section className="memory-view page-container" aria-label={t('app.nav.memory')}>
-      <section className="memory-overview" aria-labelledby="memory-overview-title">
-        <div className="memory-overview-copy">
-          <Heading id="memory-overview-title" level={2}>
-            {t('memory.overview.title')}
-          </Heading>
-          <Text>{t('memory.overview.description')}</Text>
-        </div>
-        <div className="memory-overview-actions">
+      <fieldset className="memory-toolbar">
+        <legend className="visually-hidden">{t('memory.toolbar.label')}</legend>
+        <div className="memory-toolbar-status">
           <Switch
             isSelected={status?.enabled ?? false}
             isDisabled={busy || !status?.operational}
             onChange={toggleEnabled}
           >
-            {status?.enabled ? t('common.enabled') : t('common.disabled')}
+            {t(status?.enabled ? 'memory.toolbar.enabled' : 'memory.toolbar.disabled')}
           </Switch>
-          <ButtonGroup>
-            <Button
-              variant="primary"
-              isDisabled={busy || !status?.operational}
-              onPress={() => setEditor({ mode: 'create', kind: 'fact', text: '' })}
-            >
-              <Add />
-              <Text>{t('memory.add')}</Text>
-            </Button>
-            <Button
-              variant="secondary"
-              isDisabled={busy || (status?.recordCount ?? 0) === 0 || !status?.operational}
-              onPress={() => setClearConfirmation(true)}
-            >
-              <Delete />
-              <Text>{t('memory.clearAll')}</Text>
-            </Button>
-          </ButtonGroup>
+          <Text UNSAFE_className="memory-count">
+            {t('memory.resultsCount', { count: status?.recordCount ?? 0 })}
+          </Text>
         </div>
-      </section>
+        <div className="memory-toolbar-actions">
+          <Button
+            variant="primary"
+            isDisabled={busy || !status?.operational}
+            onPress={() => setEditor({ mode: 'create', kind: 'fact', text: '' })}
+          >
+            <Add />
+            <Text>{t('memory.add')}</Text>
+          </Button>
+          <MenuTrigger>
+            <ActionButton aria-label={t('memory.toolbar.more')} isDisabled={busy}>
+              <More />
+            </ActionButton>
+            <Menu
+              aria-label={t('memory.toolbar.more')}
+              onAction={(key) => {
+                if (key === 'clear') setClearConfirmation(true)
+              }}
+            >
+              <MenuItem
+                id="clear"
+                textValue={t('memory.clearAll')}
+                isDisabled={(status?.recordCount ?? 0) === 0 || !status?.operational}
+              >
+                <Delete />
+                <Text>{t('memory.clearAll')}</Text>
+              </MenuItem>
+            </Menu>
+          </MenuTrigger>
+        </div>
+      </fieldset>
 
       {!status?.operational && (
         <InlineAlert variant="negative" fillStyle="subtleFill">

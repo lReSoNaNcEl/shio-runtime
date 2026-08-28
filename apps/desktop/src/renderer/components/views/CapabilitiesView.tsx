@@ -146,15 +146,21 @@ export function CapabilitiesView({
 }) {
   const { t } = useTranslation()
   const [filter, setFilter] = useState<AvailabilityFilter>('all')
+  const presentedCapabilities = useMemo(
+    () => snapshot?.capabilities.filter((capability) => capability.id !== 'avatar-presence') ?? [],
+    [snapshot],
+  )
   const counts = useMemo(() => {
-    const capabilities = snapshot?.capabilities ?? []
     return Object.fromEntries(
-      FILTERS.map(({ id }) => [id, capabilities.filter((item) => matchesFilter(item, id)).length]),
+      FILTERS.map(({ id }) => [
+        id,
+        presentedCapabilities.filter((item) => matchesFilter(item, id)).length,
+      ]),
     ) as Record<AvailabilityFilter, number>
-  }, [snapshot])
+  }, [presentedCapabilities])
   const visibleCapabilities = useMemo(
-    () => snapshot?.capabilities.filter((capability) => matchesFilter(capability, filter)) ?? [],
-    [filter, snapshot],
+    () => presentedCapabilities.filter((capability) => matchesFilter(capability, filter)),
+    [filter, presentedCapabilities],
   )
   const attentionCount = counts.setup + counts.problems
 

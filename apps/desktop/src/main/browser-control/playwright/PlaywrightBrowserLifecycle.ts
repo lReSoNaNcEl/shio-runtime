@@ -14,6 +14,7 @@ export async function launchOwnedBrowserContext(
   const context = await launch(options.profileDirectory, {
     executablePath: options.executablePath,
     headless: false,
+    chromiumSandbox: true,
     acceptDownloads: false,
     viewport: null,
     args: ['--deny-permission-prompts'],

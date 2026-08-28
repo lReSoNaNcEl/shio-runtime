@@ -60,11 +60,13 @@ export function App() {
     [runtimeSupport.bundle, state],
   )
   const runtimeHealthLabel = t(
-    runtimeHealth.overall === 'healthy'
-      ? 'health.shell.healthy'
-      : runtimeHealth.overall === 'notice'
-        ? 'health.shell.notice'
-        : 'health.shell.error',
+    runtimeHealth.recentIncidents.length > 0
+      ? 'systemStatus.incident.shell'
+      : runtimeHealth.overall === 'healthy'
+        ? 'health.shell.healthy'
+        : runtimeHealth.overall === 'notice'
+          ? 'health.shell.notice'
+          : 'health.shell.error',
   )
   const refreshOverlayVisibility = useCallback(() => {
     observeRendererPromise(controller.refreshOverlayVisibility(), 'refresh Overlay visibility')
@@ -348,6 +350,10 @@ export function App() {
                 state={state}
                 onClose={() => setSetupOpen(false)}
                 onComplete={() => setSetupOpen(false)}
+                onOpenPlugins={() => {
+                  setSetupOpen(false)
+                  setSection('plugins')
+                }}
                 onToggleOverlay={async (visible) => {
                   await setOverlayVisible(visible)
                 }}
@@ -356,7 +362,9 @@ export function App() {
               <ChatOverlay
                 ref={chatOverlayRef}
                 state={state}
+                capabilitySnapshot={capabilities.snapshot}
                 gateOpen={state.microphoneGate.status !== 'closed'}
+                onOpenCapabilities={() => setSection('capabilities')}
                 onOpenSpeechSettings={() => {
                   setSettingsInitialSection('speech')
                   setSection('settings')

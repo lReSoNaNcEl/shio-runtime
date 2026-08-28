@@ -99,6 +99,29 @@ async function main(): Promise<void> {
     assert.deepEqual(parsed.plannedTools, ['browser.open', 'browser.use'])
   }
 
+  const recoveredProjectSearch = parseCharacterToolDirective(
+    '<shio-tools>{"calls":[{"tool":"project.search","arguments":{"query":"Какие пакеты @deepseek-ai перечислены в dependencies файла apps/desktop/package.json?","hints":{"paths":["apps/desktop/package.json"]}}]}</shio-tools>',
+  )
+  assert.equal(recoveredProjectSearch.kind, 'calls')
+  if (recoveredProjectSearch.kind === 'calls') {
+    assert.deepEqual(recoveredProjectSearch.calls, [
+      {
+        tool: 'project.search',
+        arguments: {
+          query:
+            'Какие пакеты @deepseek-ai перечислены в dependencies файла apps/desktop/package.json?',
+          hints: { paths: ['apps/desktop/package.json'] },
+        },
+      },
+    ])
+  }
+  assert.equal(
+    parseCharacterToolDirective(
+      '<shio-tools>{"calls":[{"tool":"project.search","arguments":{"query":"packages","hints":{"paths":["apps/desktop/package.json"]}]}</shio-tools>',
+    ).kind,
+    'malformed',
+  )
+
   const influence = new ToolInfluenceContext('Complete the fixture application')
   influence.registerPlannedTools(['browser.open', 'browser.use'])
   influence.select('browser.open')
@@ -213,6 +236,19 @@ async function main(): Promise<void> {
   const status = await dispatcher.execute('browser.useStatus', {})
   assert.equal(status.verifiedOutcome?.kind, 'browser.useStatus')
   assert.match(status.content, /"state":"running"/u)
+  setTimeout(() => {
+    currentSession = session('completed', {
+      summary: 'Example Domain',
+      actionCount: 1,
+    })
+  }, 10)
+  const completedStatus = await dispatcher.execute('browser.useStatus', {
+    waitForTerminalMs: 1_000,
+  })
+  const completedOutcome = completedStatus.verifiedOutcome
+  assert(completedOutcome?.kind === 'browser.useStatus')
+  assert.equal(completedOutcome.state, 'completed')
+  assert.match(completedStatus.content, /Example Domain/u)
   await dispatcher.execute('browser.usePause', {})
   await dispatcher.execute('browser.useResume', {})
   const stopped = await dispatcher.execute('browser.useStop', {})

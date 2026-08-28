@@ -21,7 +21,7 @@ export function GeneralSettingsSection({
 }) {
   const { t } = useTranslation()
   return (
-    <div className="settings-grid">
+    <div className="settings-grid settings-general-grid">
       <Picker
         label={t('settings.language')}
         selectedKey={state.uiLocale}
@@ -58,6 +58,7 @@ export function GeneralSettingsSection({
           variant="secondary"
           fillStyle="outline"
           size="M"
+          UNSAFE_className="settings-open-setup-action"
           onPress={() => window.dispatchEvent(new Event('shio:open-setup'))}
         >
           <Settings />

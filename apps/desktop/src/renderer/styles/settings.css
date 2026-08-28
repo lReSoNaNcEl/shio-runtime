@@ -159,6 +159,12 @@
   display: grid;
   gap: 8px;
 }
+.model-capability-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 20px;
+}
 .model-option-label {
   display: flex;
   width: 100%;
@@ -527,6 +533,9 @@
   min-width: 0;
   max-width: 680px;
 }
+.settings-content .settings-general-grid {
+  padding-top: 14px;
+}
 .settings-content .overlay-panel {
   min-width: 0;
 }
@@ -620,6 +629,15 @@
 .settings-action-panel-copy h3,
 .settings-action-panel-copy .settings-hint {
   margin: 0;
+}
+
+.settings-open-setup-action,
+.settings-open-setup-action [data-slot="text"] {
+  white-space: nowrap;
+}
+
+.settings-open-setup-action {
+  flex: 0 0 auto;
 }
 
 @media (max-width: 620px) {

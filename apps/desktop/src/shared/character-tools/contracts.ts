@@ -42,6 +42,12 @@ export const characterToolRequirementSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('direct-answer') }).strict(),
   z
     .object({
+      type: z.literal('source-preferred'),
+      source: z.enum(CHARACTER_TOOL_SOURCE_IDS),
+    })
+    .strict(),
+  z
+    .object({
       type: z.literal('required-source'),
       source: z.enum(CHARACTER_TOOL_SOURCE_IDS),
     })
@@ -55,6 +61,25 @@ export const characterToolRequirementSchema = z.discriminatedUnion('type', [
 ])
 
 export type CharacterToolRequirement = z.infer<typeof characterToolRequirementSchema>
+
+export const initialCharacterToolPlanSchema = z
+  .object({
+    plannedTools: z
+      .array(z.enum(CHARACTER_TOOL_IDS))
+      .max(CHARACTER_TOOL_IDS.length)
+      .refine((values) => new Set(values).size === values.length, 'Planned tools must be unique'),
+  })
+  .strict()
+
+/** Semantic work that may be needed for the original user goal, resolved before evidence. */
+export type InitialCharacterToolPlan = z.infer<typeof initialCharacterToolPlanSchema>
+
+export const characterToolPlanningResultSchema = z
+  .object({
+    requirement: characterToolRequirementSchema,
+    plannedTools: initialCharacterToolPlanSchema.shape.plannedTools,
+  })
+  .strict()
 
 export interface TurnToolSourceEvidence {
   used: boolean
@@ -156,6 +181,46 @@ function repairMissingCallObjectClosure(value: string): string {
   return value.replace(/\}(\s*),(\s*)\{(?=\s*["']?(?:tool|name|function)["']?\s*:)/gu, '}}$1,$2{')
 }
 
+function repairSingleMissingObjectClosureBeforeArray(value: string): string {
+  const stack: Array<'{' | '['> = []
+  let quote: '"' | "'" | null = null
+  let escaped = false
+  let insertionIndex: number | null = null
+
+  for (let index = 0; index < value.length; index += 1) {
+    const character = value[index]
+    if (quote) {
+      if (escaped) escaped = false
+      else if (character === '\\') escaped = true
+      else if (character === quote) quote = null
+      continue
+    }
+    if (character === '"' || character === "'") {
+      quote = character
+      continue
+    }
+    if (character === '{' || character === '[') {
+      stack.push(character)
+      continue
+    }
+    if (character === '}') {
+      if (stack.pop() !== '{') return value
+      continue
+    }
+    if (character !== ']') continue
+
+    if (stack.at(-1) === '{' && stack.at(-2) === '[') {
+      if (insertionIndex !== null) return value
+      insertionIndex = index
+      stack.pop()
+    }
+    if (stack.pop() !== '[') return value
+  }
+
+  if (quote || insertionIndex === null || stack.length > 0) return value
+  return `${value.slice(0, insertionIndex)}}${value.slice(insertionIndex)}`
+}
+
 function parseProtocolJson(value: string): unknown {
   const unwrapped = unwrapProtocolFence(value)
   if (unwrapped.length > 50_000) throw new Error('tool protocol JSON exceeds the size limit')
@@ -165,7 +230,14 @@ function parseProtocolJson(value: string): unknown {
     try {
       return parseJson5(unwrapped) as unknown
     } catch {
-      return parseJson5(repairMissingCallObjectClosure(unwrapped)) as unknown
+      const repairedCallSeparators = repairMissingCallObjectClosure(unwrapped)
+      try {
+        return parseJson5(repairedCallSeparators) as unknown
+      } catch {
+        return parseJson5(
+          repairSingleMissingObjectClosureBeforeArray(repairedCallSeparators),
+        ) as unknown
+      }
     }
   }
 }

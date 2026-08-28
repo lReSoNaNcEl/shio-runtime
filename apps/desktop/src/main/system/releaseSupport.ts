@@ -23,6 +23,7 @@ interface ReleaseSupportDependencies {
   aliveRuntime: () => RuntimeSupportBundle['aliveRuntime']
   mainRendererHealth: () => RuntimeSupportBundle['renderers']['main']
   overlayRendererHealth: () => RuntimeSupportBundle['renderers']['overlay']
+  recentIncidents: () => RuntimeSupportBundle['recentIncidents']
 }
 
 const externalNavigationResultSchema = z.object({ ok: z.literal(true) }).strict()
@@ -122,6 +123,7 @@ export function registerReleaseSupportHandlers(
         const mainRenderer = dependencies.mainRendererHealth()
         const avatarRuntimeHealth = dependencies.avatarRuntimeHealth()
         return {
+          generatedAt: Date.now(),
           release: releaseInfo(),
           speech,
           llm: {
@@ -142,6 +144,7 @@ export function registerReleaseSupportHandlers(
           microphoneConfigured: Boolean(config.micDeviceId),
           overlayVisible: dependencies.isOverlayVisible(),
           latestRuntimeErrors: getRecentSafeErrors(),
+          recentIncidents: dependencies.recentIncidents(),
           paths: {
             userData: app.getPath('userData'),
             logs: app.getPath('logs'),

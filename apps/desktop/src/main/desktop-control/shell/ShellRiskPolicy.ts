@@ -25,6 +25,7 @@ const READ_ONLY_COMMANDS = new Set([
   'get-content',
   'get-culture',
   'get-date',
+  'get-host',
   'get-item',
   'get-itemproperty',
   'get-location',
@@ -80,11 +81,17 @@ const SAFE_EXTERNAL_COMMANDS: Readonly<Record<string, ReadonlySet<string>>> = Ob
   git: new Set(['branch', 'diff', 'log', 'merge-base', 'rev-parse', 'show', 'status']),
   node: new Set(['--version', '-v']),
   npm: new Set(['--version', '-v', 'view']),
+  'npm.cmd': new Set(['--version', '-v', 'view']),
+  npx: new Set(['--version', '-v']),
+  'npx.cmd': new Set(['--version', '-v']),
   pnpm: new Set(['--version', '-v']),
+  'pnpm.cmd': new Set(['--version', '-v']),
   pwsh: new Set(['--version', '-v']),
   rg: new Set<string>(),
   tsc: new Set(['--version', '-v']),
+  'tsc.cmd': new Set(['--version', '-v']),
   yarn: new Set(['--version', '-v']),
+  'yarn.cmd': new Set(['--version', '-v']),
 })
 
 interface ParsedInvocation {

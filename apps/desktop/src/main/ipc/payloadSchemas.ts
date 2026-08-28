@@ -24,6 +24,21 @@ const boundedObject = z
   .record(z.string().max(100), z.unknown())
   .refine((value) => serializedSizeAtMost(value, 200_000), 'Payload is too large')
 
+const rendererDiagnosticName = z
+  .string()
+  .trim()
+  .min(1)
+  .max(80)
+  .regex(/^[\p{L}\p{N}_.:$-]+$/u)
+
+export const rendererFailureReportSchema = z
+  .object({
+    errorId: z.string().regex(/^RDR-[A-Z0-9-]{8,56}$/),
+    errorName: rendererDiagnosticName,
+    componentNames: z.array(rendererDiagnosticName).max(8),
+  })
+  .strict()
+
 export const configSaveSchema = z
   .object({
     configSchemaVersion: z.number().int().nonnegative().optional(),

@@ -19,6 +19,7 @@ export const mistralProvider: ProviderDefinition = {
     displayName: 'Mistral',
     requiresApiKey: true,
     modelsRequireApiKey: true,
+    schemaCapabilities: { oneOf: true },
   },
   chat: {
     baseUrl: 'https://api.mistral.ai/v1',

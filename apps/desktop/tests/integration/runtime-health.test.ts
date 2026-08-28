@@ -15,6 +15,7 @@ import {
 import { PROJECT_AWARENESS_MANIFEST } from '../../src/main/project-awareness'
 import {
   aggregateHealth,
+  buildRuntimeHealthProjection,
   formatRelativeTime,
   pluginHealthSeverity,
 } from '../../src/renderer/runtime/runtimeHealth'
@@ -153,6 +154,46 @@ function relativeTimeSemantics(): void {
   assert.equal(formatRelativeTime(now - 10_000, 'ru', 'только что', now), 'только что')
 }
 
+function transientIncidentSemantics(): void {
+  const projection = buildRuntimeHealthProjection(
+    {
+      speechCapabilities: { service: 'available' },
+      llmReadiness: { reason: 'ready' },
+      llmHealth: { state: 'ok' },
+      continuousListening: { desired: false, transport: 'idle' },
+    } as never,
+    {
+      generatedAt: 100,
+      renderers: {
+        main: { status: 'ready' },
+        overlay: { status: 'not-created' },
+      },
+      overlayVisible: false,
+      avatarRuntime: { reportFresh: true, health: null },
+      aliveRuntime: {
+        health: { operational: true },
+        globallySuspended: false,
+        mode: 'off',
+      },
+      plugins: [],
+      recentIncidents: [
+        {
+          id: 'llm:rate_limited',
+          owner: 'llm',
+          code: 'RATE_LIMITED',
+          provider: 'mistral',
+          occurredAt: 90,
+          expiresAt: 200,
+        },
+      ],
+    } as never,
+  )
+
+  assert.equal(projection.overall, 'notice')
+  assert.equal(projection.recentIncidents[0]?.code, 'RATE_LIMITED')
+  assert.equal(projection.lastCheckedAt, 100)
+}
+
 async function staticUiContract(): Promise<void> {
   const [system, diagnostics, app, appShell, status, supportHook] = await Promise.all([
     source('src/renderer/components/diagnostics/SystemDiagnostics.tsx'),
@@ -172,6 +213,8 @@ async function staticUiContract(): Promise<void> {
   assert.match(status, /issues\.map/)
   assert.match(status, /openDiagnostics/)
   assert.match(status, /copyReport/)
+  assert.match(status, /recentIncidents/)
+  assert.match(status, /systemStatus\.incident\.shell/)
   assert.match(supportHook, /const RUNTIME_SUPPORT_REFRESH_MS = 30_000/)
   assert.match(supportHook, /setInterval\([\s\S]*?RUNTIME_SUPPORT_REFRESH_MS\)/)
 }
@@ -180,6 +223,7 @@ async function main(): Promise<void> {
   await pluginFiltering()
   aggregateSemantics()
   relativeTimeSemantics()
+  transientIncidentSemantics()
   await staticUiContract()
   console.log('Runtime Health UX 2.0 focused repro: PASS')
 }

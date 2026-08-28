@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 import { describe, it } from 'vitest'
 
@@ -6,6 +9,8 @@ import { CharacterToolDispatcher } from '../../src/main/character-tools/Characte
 import { CharacterToolLoop } from '../../src/main/character-tools/CharacterToolLoop'
 import { CharacterToolRegistry } from '../../src/main/character-tools/CharacterToolRegistry'
 import type { ChatMessage, LLMProvider, LlmCapabilities, LlmCompletion } from '../../src/main/llm'
+import { createSemanticMemoryRuntime, MemoryToolBroker } from '../../src/main/memory'
+import type { PersistentGoal } from '../../src/shared/alive'
 import {
   type BrowserComputerUseProvider,
   type BrowserComputerUseSession,
@@ -14,6 +19,7 @@ import {
 import type { BrowserContextProvider, BrowserObservation } from '../../src/shared/browser-control'
 import type { ShioCapabilitySnapshot } from '../../src/shared/capabilities'
 import type { CharacterToolRequirement } from '../../src/shared/character-tools'
+import type { ProjectContextPacket } from '../../src/shared/project-awareness'
 import type { WebSearchProvider } from '../../src/shared/web-search'
 
 const capabilities: LlmCapabilities = {
@@ -113,6 +119,354 @@ async function runWebRequirement(options: {
 }
 
 describe('Character Tool Requirement', () => {
+  it('calls memory.list without an invented kind and returns stored records', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'shio-memory-list-requirement-'))
+    const runtime = createSemanticMemoryRuntime(join(directory, 'memory.sqlite'))
+    try {
+      runtime.setEnabled(true)
+      runtime.createManual({
+        kind: 'preference',
+        text: 'Пользователь предпочитает тёмную тему.',
+      })
+      const broker = new MemoryToolBroker(runtime)
+      const currentRegistry = () =>
+        new CharacterToolRegistry({
+          projectAvailable: false,
+          capabilityContext: null,
+          browserObservation: null,
+          memory: broker,
+          actionsAvailable: false,
+        })
+      let replyCalls = 0
+      let planningPrompt = ''
+      const result = await new CharacterToolLoop().run({
+        llm: {
+          capabilities: () => ({ ...capabilities, supportsToolCalling: false }),
+          complete: async () => {
+            throw new Error(
+              'Native completion is not expected for this structured-provider fixture',
+            )
+          },
+          chat: async (messages) => {
+            const prompt = messages.map((message) => String(message.content)).join('\n')
+            if (prompt.includes('Character Tool Requirement Planning')) {
+              planningPrompt = prompt
+              return JSON.stringify({
+                requirement: { type: 'explicit-tool', tool: 'memory.list' },
+                plannedTools: ['memory.list'],
+              })
+            }
+            replyCalls += 1
+            if (replyCalls === 1) {
+              assert.match(prompt, /"id":"memory\.list"/u)
+              return '<shio-tools>{"calls":[{"tool":"memory.list","arguments":{"limit":20}}]}</shio-tools>'
+            }
+            assert.match(prompt, /Пользователь предпочитает тёмную тему/u)
+            return '[warm]Я помню, что ты предпочитаешь тёмную тему.'
+          },
+        },
+        providerId: 'mistral',
+        messages: [
+          {
+            role: 'user',
+            content:
+              'Вызови memory.list с аргументами {"limit":20} и перечисли, что ты помнишь обо мне.',
+          },
+        ],
+        registry: currentRegistry,
+        createDispatcher: (signal) =>
+          new CharacterToolDispatcher({
+            registry: currentRegistry,
+            traceId: 'memory-list-requirement',
+            userGoal: 'Перечислить записи долговременной памяти',
+            signal,
+            semanticMemory: broker,
+          }),
+        traceId: 'memory-list-requirement',
+        requestOptions: {},
+        nativeToolsRejected: false,
+        enforceToolRequirements: true,
+        failureReply: 'TOOL_FAILURE',
+        limitReply: 'TOOL_LIMIT',
+      })
+
+      assert.match(planningPrompt, /Use explicit-tool memory\.list/u)
+      assert.equal(replyCalls, 2)
+      assert.equal(result.calls, 1)
+      assert.deepEqual(result.toolEvidence.requirement, {
+        type: 'explicit-tool',
+        tool: 'memory.list',
+      })
+      assert.deepEqual(result.toolEvidence.executedTools, ['memory.list'])
+      assert.equal(result.toolEvidence.memory.succeeded, true)
+      assert.match(result.replyText, /тёмную тему/u)
+    } finally {
+      runtime.close()
+      rmSync(directory, { recursive: true, force: true })
+    }
+  })
+
+  it('maps an explicit Goal Store listing to goal.list and returns active next steps', async () => {
+    const goals: readonly PersistentGoal[] = [
+      {
+        id: 'goal-active-00000000-0000-4000-8000-000000000001',
+        title: 'Подготовить релиз',
+        description: 'Завершить квалификацию релиза.',
+        nextStep: 'Запустить deterministic regression suite.',
+        lastNote: '',
+        owner: 'shared',
+        status: 'active',
+        progress: 0.5,
+        measurable: true,
+        createdAt: 1,
+        updatedAt: 2,
+      },
+      {
+        id: 'goal-paused-00000000-0000-4000-8000-000000000002',
+        title: 'Отложенная цель',
+        description: '',
+        nextStep: 'Дождаться решения.',
+        lastNote: '',
+        owner: 'user',
+        status: 'paused',
+        progress: 0,
+        measurable: false,
+        createdAt: 1,
+        updatedAt: 2,
+      },
+    ]
+    const currentRegistry = () =>
+      new CharacterToolRegistry({
+        projectAvailable: false,
+        goalsAvailable: true,
+        capabilityContext: null,
+        browserObservation: null,
+        actionsAvailable: false,
+      })
+    let replyCalls = 0
+    let planningPrompt = ''
+    const result = await new CharacterToolLoop().run({
+      llm: {
+        capabilities: () => ({ ...capabilities, supportsToolCalling: false }),
+        complete: async () => {
+          throw new Error('Native completion is not expected for this structured-provider fixture')
+        },
+        chat: async (messages) => {
+          const prompt = messages.map((message) => String(message.content)).join('\n')
+          if (prompt.includes('Character Tool Requirement Planning')) {
+            planningPrompt = prompt
+            return JSON.stringify({
+              requirement: { type: 'explicit-tool', tool: 'goal.list' },
+              plannedTools: ['goal.list'],
+            })
+          }
+          replyCalls += 1
+          if (replyCalls === 1) {
+            assert.match(prompt, /"id":"goal\.list"/u)
+            return '<shio-tools>{"calls":[{"tool":"goal.list","arguments":{"status":"active","limit":20}}]}</shio-tools>'
+          }
+          assert.match(prompt, /Подготовить релиз/u)
+          assert.match(prompt, /Запустить deterministic regression suite/u)
+          assert.doesNotMatch(prompt, /Отложенная цель/u)
+          return '[calm]Активная цель: «Подготовить релиз». Следующий шаг — запустить regression suite.'
+        },
+      },
+      providerId: 'mistral',
+      messages: [
+        {
+          role: 'user',
+          content:
+            'Вызови goal.list с аргументами {"status":"active","limit":20} и покажи активные цели.',
+        },
+      ],
+      registry: currentRegistry,
+      createDispatcher: (signal) =>
+        new CharacterToolDispatcher({
+          registry: currentRegistry,
+          traceId: 'active-goal-list-requirement',
+          userGoal: 'Показать активные цели из Goal Store',
+          signal,
+          persistentGoals: () => goals,
+        }),
+      traceId: 'active-goal-list-requirement',
+      requestOptions: {},
+      nativeToolsRejected: false,
+      enforceToolRequirements: true,
+      failureReply: 'TOOL_FAILURE',
+      limitReply: 'TOOL_LIMIT',
+    })
+
+    assert.match(planningPrompt, /Use explicit-tool goal\.list/u)
+    assert.equal(replyCalls, 2)
+    assert.equal(result.calls, 1)
+    assert.deepEqual(result.toolEvidence.requirement, {
+      type: 'explicit-tool',
+      tool: 'goal.list',
+    })
+    assert.deepEqual(result.toolEvidence.executedTools, ['goal.list'])
+    assert.match(result.replyText, /Подготовить релиз/u)
+  })
+
+  it('treats attached Screen Context as direct visual evidence without browser tools', async () => {
+    const browserCapabilities: ShioCapabilitySnapshot = {
+      schemaVersion: 1,
+      generatedAt: 1,
+      capabilities: [
+        {
+          id: 'browser-control',
+          category: 'action',
+          source: { kind: 'plugin', pluginId: 'browser-control' },
+          titleKey: 'capabilities.browser.title',
+          descriptionKey: 'capabilities.browser.description',
+          availability: 'available',
+          authority: 'confirm',
+        },
+      ],
+    }
+    const currentRegistry = () =>
+      new CharacterToolRegistry({
+        projectAvailable: false,
+        capabilityContext: browserCapabilities,
+        browserObservation: null,
+        actionsAvailable: true,
+      })
+    let planningPrompt = ''
+    let responseReceivedImage = false
+    const result = await new CharacterToolLoop().run({
+      llm: {
+        capabilities: () => ({ ...capabilities, supportsToolCalling: false, supportsVision: true }),
+        complete: async () => {
+          throw new Error('Native completion is not expected for this structured-provider fixture')
+        },
+        chat: async (messages) => {
+          const prompt = messages.map((message) => String(message.content)).join('\n')
+          if (prompt.includes('Character Tool Requirement Planning')) {
+            planningPrompt = prompt
+            return JSON.stringify({ requirement: { type: 'direct-answer' }, plannedTools: [] })
+          }
+          responseReceivedImage = messages.some(
+            (message) =>
+              message.role === 'user' &&
+              Array.isArray(message.content) &&
+              message.content.some((part) => part.type === 'image'),
+          )
+          return '[calm]На приложенном снимке виден интерфейс приложения.'
+        },
+      },
+      providerId: 'mistral',
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: 'Проанализируй приложенный снимок экрана.' },
+            { type: 'image', mimeType: 'image/png', bytes: new Uint8Array([1, 2, 3]) },
+          ],
+        },
+      ],
+      registry: currentRegistry,
+      createDispatcher: (signal) =>
+        new CharacterToolDispatcher({
+          registry: currentRegistry,
+          traceId: 'attached-screen-context-requirement',
+          userGoal: 'Проанализировать приложенный снимок экрана',
+          signal,
+        }),
+      traceId: 'attached-screen-context-requirement',
+      requestOptions: {},
+      nativeToolsRejected: false,
+      enforceToolRequirements: true,
+      failureReply: 'TOOL_FAILURE',
+      limitReply: 'TOOL_LIMIT',
+    })
+
+    assert.match(planningPrompt, /Screen Context image attached[^\n]*yes/u)
+    assert.match(planningPrompt, /Return direct-answer with no browser tools/u)
+    assert.match(planningPrompt, /browser\.observe cannot inspect Screen Context/u)
+    assert.equal(responseReceivedImage, true)
+    assert.equal(result.calls, 0)
+    assert.deepEqual(result.toolEvidence.requirement, { type: 'direct-answer' })
+    assert.deepEqual(result.toolEvidence.executedTools, [])
+  })
+
+  it('uses the supplied World Context for a current system status question', async () => {
+    const currentRegistry = () => registry(false)
+    let planningPrompt = ''
+    let responsePrompt = ''
+    const result = await new CharacterToolLoop().run({
+      llm: {
+        capabilities: () => ({ ...capabilities, supportsToolCalling: false }),
+        complete: async () => {
+          throw new Error('Native completion is not expected for this structured-provider fixture')
+        },
+        chat: async (messages) => {
+          const prompt = messages.map((message) => String(message.content)).join('\n')
+          if (prompt.includes('Character Tool Requirement Planning')) {
+            planningPrompt = prompt
+            return JSON.stringify({
+              requirement: { type: 'direct-answer' },
+              plannedTools: [],
+            })
+          }
+          responsePrompt = prompt
+          return '[calm]Сейчас на переднем плане Visual Studio Code; высокой нагрузки не видно.'
+        },
+      },
+      providerId: 'mistral',
+      messages: [
+        {
+          role: 'system',
+          content: [
+            '## Current World Context',
+            'Present-state, request-scoped observations only.',
+            JSON.stringify({
+              foregroundApplication: { processName: 'Code.exe', displayName: 'Visual Studio Code' },
+              runningApplications: [{ processName: 'Code.exe', displayName: 'Visual Studio Code' }],
+              systemLoad: { cpuPercent: 8, memoryPercent: 42 },
+            }),
+          ].join('\n\n'),
+        },
+        {
+          role: 'user',
+          content: 'Что ты умеешь?',
+        },
+        {
+          role: 'assistant',
+          content: 'Могу подсказать, что делает твоя система на данный момент.',
+        },
+        {
+          role: 'user',
+          content: 'Что делает моя система на данный момент?',
+        },
+      ],
+      registry: currentRegistry,
+      createDispatcher: (signal) =>
+        new CharacterToolDispatcher({
+          registry: currentRegistry,
+          traceId: 'world-context-system-status',
+          userGoal: 'Что делает моя система на данный момент?',
+          signal,
+        }),
+      traceId: 'world-context-system-status',
+      requestOptions: {},
+      nativeToolsRejected: false,
+      enforceToolRequirements: true,
+      failureReply: 'TOOL_FAILURE',
+      limitReply: 'TOOL_LIMIT',
+    })
+
+    assert.match(planningPrompt, /Current World Context projection included[^\n]*yes/u)
+    assert.match(planningPrompt, /return direct-answer/u)
+    assert.match(planningPrompt, /browser\.useStatus only/u)
+    assert.match(planningPrompt, /installed version of a command-line utility/u)
+    assert.match(planningPrompt, /What npx version is installed on my computer/u)
+    assert.match(planningPrompt, /do not make it browser-state/u)
+    assert.match(responsePrompt, /Visual Studio Code/u)
+    assert.match(result.replyText, /Visual Studio Code/u)
+    assert.equal(result.calls, 0)
+    assert.deepEqual(result.toolEvidence.requirement, { type: 'direct-answer' })
+    assert.deepEqual(result.toolEvidence.executedTools, [])
+  })
+
   it.each([
     'Управляй этой динамической страницей непрерывно, реагируй на изменения и остановись только когда я попрошу.',
     'Запусти browser.use для непрерывного управления до явной остановки.',
@@ -577,6 +931,749 @@ describe('Character Tool Requirement', () => {
     assert.match(result.replyText, /^REQUIREMENT_FAILURE:unavailable:/u)
     assert.deepEqual(result.toolEvidence.executedTools, [])
     assert.deepEqual(result.toolEvidence.web, { used: false, succeeded: false })
+    assert.equal(result.assistantTurnKind, 'tool-requirement-failure')
+  })
+
+  it('answers bounded self-knowledge when a preferred project source is unavailable', async () => {
+    let round = 0
+    const emptyRegistry = () => registry(false)
+    const result = await new CharacterToolLoop().run({
+      llm: {
+        capabilities: () => ({ ...capabilities, supportsToolCalling: false }),
+        chat: async () => {
+          round += 1
+          return round === 1
+            ? JSON.stringify({
+                requirement: { type: 'source-preferred', source: 'project' },
+                plannedTools: [],
+              })
+            : '[calm]Shio Runtime объединяет Desktop и отдельный Speech API. Текущий репозиторий я не проверяла.'
+        },
+      },
+      providerId: 'mistral',
+      messages: [{ role: 'user', content: 'Что ты знаешь о своём проекте?' }],
+      registry: emptyRegistry,
+      createDispatcher: (signal) =>
+        new CharacterToolDispatcher({
+          registry: emptyRegistry,
+          traceId: 'preferred-project-unavailable',
+          userGoal: 'Что ты знаешь о своём проекте?',
+          signal,
+        }),
+      traceId: 'preferred-project-unavailable',
+      requestOptions: {},
+      nativeToolsRejected: false,
+      enforceToolRequirements: true,
+      requirementFailureReply: () => 'REQUIREMENT_FAILURE',
+      failureReply: 'TOOL_FAILURE',
+      limitReply: 'TOOL_LIMIT',
+    })
+
+    assert.equal(round, 2)
+    assert.match(result.replyText, /Текущий репозиторий я не проверяла/u)
+    assert.equal(result.toolEvidence.requirement.type, 'source-preferred')
+    assert.equal(result.assistantTurnKind, 'character')
+  })
+
+  it('keeps current repository inspection as a hard project-source requirement', async () => {
+    let round = 0
+    const emptyRegistry = () => registry(false)
+    const result = await new CharacterToolLoop().run({
+      llm: {
+        capabilities: () => ({ ...capabilities, supportsToolCalling: false }),
+        chat: async () => {
+          round += 1
+          return JSON.stringify({
+            requirement: { type: 'required-source', source: 'project' },
+            plannedTools: [],
+          })
+        },
+      },
+      providerId: 'mistral',
+      messages: [
+        { role: 'user', content: 'Проверь текущий код CharacterToolLoop и предложи исправления.' },
+      ],
+      registry: emptyRegistry,
+      createDispatcher: (signal) =>
+        new CharacterToolDispatcher({
+          registry: emptyRegistry,
+          traceId: 'required-project-unavailable',
+          userGoal: 'Проверь текущий код CharacterToolLoop и предложи исправления.',
+          signal,
+        }),
+      traceId: 'required-project-unavailable',
+      requestOptions: {},
+      nativeToolsRejected: false,
+      enforceToolRequirements: true,
+      requirementFailureReply: (requirement, reason) =>
+        `REQUIREMENT_FAILURE:${reason}:${JSON.stringify(requirement)}`,
+      failureReply: 'TOOL_FAILURE',
+      limitReply: 'TOOL_LIMIT',
+    })
+
+    assert.equal(round, 1)
+    assert.match(result.replyText, /^REQUIREMENT_FAILURE:unavailable:/u)
+    assert.equal(result.toolEvidence.requirement.type, 'required-source')
+    assert.equal(result.assistantTurnKind, 'tool-requirement-failure')
+  })
+
+  it('repairs malformed planning for a scoped package manifest question', async () => {
+    let round = 0
+    let planningPrompt = ''
+    const emptyRegistry = () => registry(false)
+    const result = await new CharacterToolLoop().run({
+      llm: {
+        capabilities: () => ({ ...capabilities, supportsToolCalling: false }),
+        chat: async (messages) => {
+          round += 1
+          planningPrompt = messages.map((message) => String(message.content)).join('\n')
+          if (round === 1) return '{"requirement":"project","plannedTools":"project.search"}'
+          return JSON.stringify({
+            requirement: { type: 'required-source', source: 'project' },
+            plannedTools: [],
+          })
+        },
+      },
+      providerId: 'mistral',
+      messages: [
+        {
+          role: 'user',
+          content: 'Какие пакеты от @deepseek-ai установлены в package.json папки desktop?',
+        },
+      ],
+      registry: emptyRegistry,
+      createDispatcher: (signal) =>
+        new CharacterToolDispatcher({
+          registry: emptyRegistry,
+          traceId: 'scoped-package-planning-repair',
+          userGoal: 'Проверить зависимости apps/desktop/package.json',
+          signal,
+        }),
+      traceId: 'scoped-package-planning-repair',
+      requestOptions: {},
+      nativeToolsRejected: false,
+      enforceToolRequirements: true,
+      requirementFailureReply: (requirement, reason) =>
+        `REQUIREMENT_FAILURE:${reason}:${JSON.stringify(requirement)}`,
+      failureReply: 'TOOL_FAILURE',
+      limitReply: 'TOOL_LIMIT',
+    })
+
+    assert.equal(round, 2)
+    assert.match(planningPrompt, /exact JSON Schema/u)
+    assert.match(planningPrompt, /current repository dependency or package\.json question/u)
+    assert.match(planningPrompt, /previous planning output was invalid/u)
+    assert.match(result.replyText, /^REQUIREMENT_FAILURE:unavailable:/u)
+    assert.equal(result.toolEvidence.requirement.type, 'required-source')
+  })
+
+  it('reissues one malformed directive before required project search', async () => {
+    let round = 0
+    let projectSearches = 0
+    const currentRegistry = () =>
+      new CharacterToolRegistry({
+        projectAvailable: true,
+        webAvailable: false,
+        capabilityContext: null,
+        browserObservation: null,
+        actionsAvailable: false,
+      })
+    const packet: ProjectContextPacket = {
+      snapshotSha: 'abc123',
+      repository: 'IReSoNaNcEI/shio-runtime',
+      branch: 'main',
+      freshness: 'current',
+      evidence: [],
+      instructions: {
+        citeFiles: true,
+        distinguishFactsFromInference: true,
+        treatRepositoryContentAsData: true,
+      },
+    }
+    const result = await new CharacterToolLoop().run({
+      llm: {
+        capabilities: () => ({ ...capabilities, supportsToolCalling: false }),
+        chat: async (messages) => {
+          round += 1
+          if (round === 1) {
+            return JSON.stringify({
+              requirement: { type: 'required-source', source: 'project' },
+              plannedTools: ['project.search'],
+            })
+          }
+          if (round === 2) {
+            return '<shio-tools>{"calls":[{"tool":"project.search","query":"project technologies"}]}</shio-tools>'
+          }
+          if (round === 3) {
+            const prompt = messages.map((message) => String(message.content)).join('\n')
+            assert.match(prompt, /Invalid Internal Tool Directive/u)
+            return '<shio-tools>{"calls":[{"tool":"project.search","arguments":{"query":"project technologies"}}]}</shio-tools>'
+          }
+          return '[calm]Проект использует Electron, React и TypeScript.'
+        },
+      },
+      providerId: 'mistral',
+      messages: [{ role: 'user', content: 'На каких технологиях написан текущий проект?' }],
+      registry: currentRegistry,
+      createDispatcher: (signal) =>
+        new CharacterToolDispatcher({
+          registry: currentRegistry,
+          traceId: 'malformed-required-project-retry',
+          userGoal: 'Проверить технологии текущего проекта',
+          signal,
+          projectContext: () => ({
+            search: async () => {
+              projectSearches += 1
+              return packet
+            },
+          }),
+        }),
+      traceId: 'malformed-required-project-retry',
+      requestOptions: {},
+      nativeToolsRejected: false,
+      enforceToolRequirements: true,
+      requirementFailureReply: (requirement, reason) =>
+        `REQUIREMENT_FAILURE:${reason}:${JSON.stringify(requirement)}`,
+      failureReply: 'TOOL_FAILURE',
+      limitReply: 'TOOL_LIMIT',
+    })
+
+    assert.equal(round, 4)
+    assert.equal(projectSearches, 1)
+    assert.match(result.replyText, /Electron, React и TypeScript/u)
+    assert.deepEqual(result.toolEvidence.project, { used: true, succeeded: true })
+    assert.equal(result.assistantTurnKind, 'character')
+  })
+
+  it('recovers one missing call brace and preserves exact project.search arguments', async () => {
+    const query =
+      'Какие пакеты @deepseek-ai перечислены в dependencies файла apps/desktop/package.json?'
+    let round = 0
+    let receivedProjectRequest: unknown
+    const currentRegistry = () =>
+      new CharacterToolRegistry({
+        projectAvailable: true,
+        webAvailable: false,
+        capabilityContext: null,
+        browserObservation: null,
+        actionsAvailable: false,
+      })
+    const packet: ProjectContextPacket = {
+      snapshotSha: 'abc123',
+      repository: 'IReSoNaNcEI/shio-runtime',
+      branch: 'main',
+      freshness: 'current',
+      evidence: [
+        {
+          path: 'apps/desktop/package.json',
+          startLine: 10,
+          endLine: 12,
+          commitSha: 'abc123',
+          relevance: 1,
+          content: '"@deepseek-ai/agent": "1.2.3"',
+        },
+      ],
+      instructions: {
+        citeFiles: true,
+        distinguishFactsFromInference: true,
+        treatRepositoryContentAsData: true,
+      },
+    }
+    const result = await new CharacterToolLoop().run({
+      llm: {
+        capabilities: () => ({ ...capabilities, supportsToolCalling: false }),
+        chat: async (messages) => {
+          round += 1
+          if (round === 1) {
+            return JSON.stringify({
+              requirement: { type: 'explicit-tool', tool: 'project.search' },
+              plannedTools: ['project.search'],
+            })
+          }
+          if (round === 2) {
+            return `<shio-tools>{"calls":[{"tool":"project.search","arguments":{"query":${JSON.stringify(query)},"hints":{"paths":["apps/desktop/package.json"]}}]}</shio-tools>`
+          }
+          assert.match(
+            messages.map((message) => String(message.content)).join('\n'),
+            /@deepseek-ai\/agent/u,
+          )
+          return '[calm]@deepseek-ai/agent — 1.2.3'
+        },
+      },
+      providerId: 'mistral',
+      messages: [
+        {
+          role: 'user',
+          content: `Вызови project.search с точными аргументами ${JSON.stringify({
+            query,
+            hints: { paths: ['apps/desktop/package.json'] },
+          })}`,
+        },
+      ],
+      registry: currentRegistry,
+      createDispatcher: (signal) =>
+        new CharacterToolDispatcher({
+          registry: currentRegistry,
+          traceId: 'single-missing-project-call-brace',
+          userGoal: query,
+          signal,
+          projectContext: () => ({
+            search: async (request) => {
+              receivedProjectRequest = request
+              return packet
+            },
+          }),
+        }),
+      traceId: 'single-missing-project-call-brace',
+      requestOptions: {},
+      nativeToolsRejected: false,
+      enforceToolRequirements: true,
+      requirementFailureReply: (requirement, reason) =>
+        `REQUIREMENT_FAILURE:${reason}:${JSON.stringify(requirement)}`,
+      failureReply: 'TOOL_FAILURE',
+      limitReply: 'TOOL_LIMIT',
+    })
+
+    assert.equal(round, 3)
+    assert.deepEqual(receivedProjectRequest, {
+      query,
+      hints: { paths: ['apps/desktop/package.json'] },
+      traceId: 'single-missing-project-call-brace',
+    })
+    assert.deepEqual(result.toolEvidence.executedTools, ['project.search'])
+    assert.deepEqual(result.toolEvidence.project, { used: true, succeeded: true })
+    assert.match(result.replyText, /@deepseek-ai\/agent — 1\.2\.3/u)
+  })
+
+  it('executes a classified required project source when structured transport returns prose', async () => {
+    let round = 0
+    let projectSearches = 0
+    let projectQuery = ''
+    const currentRegistry = () =>
+      new CharacterToolRegistry({
+        projectAvailable: true,
+        webAvailable: false,
+        capabilityContext: null,
+        browserObservation: null,
+        actionsAvailable: false,
+      })
+    const packet: ProjectContextPacket = {
+      snapshotSha: 'abc123',
+      repository: 'IReSoNaNcEI/shio-runtime',
+      branch: 'main',
+      freshness: 'current',
+      evidence: [
+        {
+          path: 'apps/desktop/package.json',
+          startLine: 1,
+          endLine: 8,
+          commitSha: 'abc123',
+          relevance: 1,
+          content: '{"dependencies":{"@react-spectrum/s2":"1.0.0","react":"19.0.0"}}',
+        },
+      ],
+      instructions: {
+        citeFiles: true,
+        distinguishFactsFromInference: true,
+        treatRepositoryContentAsData: true,
+      },
+    }
+    const result = await new CharacterToolLoop().run({
+      llm: {
+        capabilities: () => ({ ...capabilities, supportsToolCalling: false }),
+        chat: async (messages) => {
+          round += 1
+          if (round === 1) {
+            return JSON.stringify({
+              requirement: { type: 'required-source', source: 'project' },
+              plannedTools: ['project.search'],
+            })
+          }
+          if (round === 2) {
+            return '[calm]В package.json установлены electron-context-menu и zustand.'
+          }
+          const prompt = messages.map((message) => String(message.content)).join('\n')
+          assert.match(prompt, /apps\/desktop\/package\.json/u)
+          assert.match(prompt, /@react-spectrum\/s2/u)
+          assert.match(prompt, /every claimed dependency/u)
+          return '[calm]Проверила файл: среди зависимостей есть React Spectrum 2 и React.'
+        },
+      },
+      providerId: 'mistral',
+      messages: [
+        {
+          role: 'user',
+          content: 'Какие пакеты установлены в клиенте apps/desktop/package.json?',
+        },
+        {
+          role: 'assistant',
+          content: '[calm]Там установлены electron-context-menu и zustand.',
+        },
+        { role: 'user', content: 'Откуда ты взяла эти зависимости? Ты их придумала?' },
+      ],
+      registry: currentRegistry,
+      createDispatcher: (signal) =>
+        new CharacterToolDispatcher({
+          registry: currentRegistry,
+          traceId: 'required-project-runtime-fallback',
+          userGoal: 'Проверить зависимости клиента по текущему проекту',
+          signal,
+          projectContext: () => ({
+            search: async (request) => {
+              projectSearches += 1
+              projectQuery = request.query
+              return packet
+            },
+          }),
+        }),
+      traceId: 'required-project-runtime-fallback',
+      requestOptions: {},
+      nativeToolsRejected: false,
+      enforceToolRequirements: true,
+      requirementFailureReply: (requirement, reason) =>
+        `REQUIREMENT_FAILURE:${reason}:${JSON.stringify(requirement)}`,
+      failureReply: 'TOOL_FAILURE',
+      limitReply: 'TOOL_LIMIT',
+    })
+
+    assert.equal(round, 3)
+    assert.equal(projectSearches, 1)
+    assert.match(projectQuery, /apps\/desktop\/package\.json/u)
+    assert.match(projectQuery, /Откуда ты взяла/u)
+    assert.equal(result.calls, 1)
+    assert.deepEqual(result.toolEvidence.project, { used: true, succeeded: true })
+    assert.match(result.replyText, /React Spectrum 2/u)
+  })
+
+  it('allows an optional planned tool when the terminal requirement is direct-answer', async () => {
+    let round = 0
+    let searchCount = 0
+    const currentRegistry = () => registry(true)
+    const web: WebSearchProvider = {
+      status: () => ({
+        availability: 'available',
+        diagnostics: {
+          parserSignature: 'fixture/v1',
+          parserState: 'valid-results',
+          consecutiveFailureCount: 0,
+        },
+      }),
+      search: async () => {
+        searchCount += 1
+        return { results: [], truncated: false, provider: 'fixture' }
+      },
+    }
+    const result = await new CharacterToolLoop().run({
+      llm: {
+        capabilities: () => ({ ...capabilities, supportsToolCalling: false }),
+        chat: async (messages) => {
+          round += 1
+          if (round === 1) {
+            return JSON.stringify({
+              requirement: { type: 'direct-answer' },
+              plannedTools: ['web.search'],
+            })
+          }
+          if (round === 2) {
+            assert.match(
+              messages.map((message) => String(message.content)).join('\n'),
+              /web\.search/u,
+            )
+            return '<shio-tools>{"calls":[{"tool":"web.search","arguments":{"query":"background context"}}]}</shio-tools>'
+          }
+          return '[calm]Ответ дополнен опциональным поиском.'
+        },
+      },
+      providerId: 'mistral',
+      messages: [{ role: 'user', content: 'Предложи идею; можешь проверить фон в сети.' }],
+      registry: currentRegistry,
+      createDispatcher: (signal) =>
+        new CharacterToolDispatcher({
+          registry: currentRegistry,
+          traceId: 'direct-answer-optional-tool',
+          userGoal: 'Предложи идею; можешь проверить фон в сети.',
+          signal,
+          webSearch: () => web,
+        }),
+      traceId: 'direct-answer-optional-tool',
+      requestOptions: {},
+      nativeToolsRejected: false,
+      enforceToolRequirements: true,
+      failureReply: 'TOOL_FAILURE',
+      limitReply: 'TOOL_LIMIT',
+    })
+
+    assert.equal(searchCount, 1)
+    assert.equal(result.calls, 1)
+    assert.match(result.replyText, /опциональным поиском/u)
+  })
+
+  it('keeps native optional tools advertised for a direct-answer turn', async () => {
+    let replyRound = 0
+    let searchCount = 0
+    const currentRegistry = () => registry(true)
+    const web: WebSearchProvider = {
+      status: () => ({
+        availability: 'available',
+        diagnostics: {
+          parserSignature: 'fixture/v1',
+          parserState: 'valid-results',
+          consecutiveFailureCount: 0,
+        },
+      }),
+      search: async () => {
+        searchCount += 1
+        return { results: [], truncated: false, provider: 'fixture' }
+      },
+    }
+    const result = await new CharacterToolLoop().run({
+      llm: {
+        capabilities: () => capabilities,
+        chat: async () => {
+          throw new Error('Native planning must not use structured chat')
+        },
+        complete: async (_messages, requestOptions) => {
+          if (requestOptions?.tools?.some((tool) => tool.name === 'character_tool_requirement')) {
+            return {
+              content: '',
+              toolCalls: [
+                {
+                  id: 'planning-call',
+                  name: 'character_tool_requirement',
+                  argumentsJson: JSON.stringify({
+                    requirement: { type: 'direct-answer' },
+                    plannedTools: ['web.search'],
+                  }),
+                },
+              ],
+              finishReason: 'tool_calls',
+            }
+          }
+          replyRound += 1
+          assert.deepEqual(
+            requestOptions?.tools?.map((tool) => tool.name),
+            ['web_search'],
+          )
+          assert.equal(requestOptions?.toolChoice, 'auto')
+          return replyRound === 1
+            ? webCall()
+            : textCompletion('[calm]Native-поиск завершён, отвечаю.')
+        },
+      },
+      providerId: 'mistral',
+      messages: [{ role: 'user', content: 'Ответь и при необходимости используй веб-поиск.' }],
+      registry: currentRegistry,
+      createDispatcher: (signal) =>
+        new CharacterToolDispatcher({
+          registry: currentRegistry,
+          traceId: 'native-direct-optional-tool',
+          userGoal: 'Ответь и при необходимости используй веб-поиск.',
+          signal,
+          webSearch: () => web,
+        }),
+      traceId: 'native-direct-optional-tool',
+      requestOptions: {},
+      nativeToolsRejected: false,
+      enforceToolRequirements: true,
+      failureReply: 'TOOL_FAILURE',
+      limitReply: 'TOOL_LIMIT',
+    })
+
+    assert.equal(replyRound, 2)
+    assert.equal(searchCount, 1)
+    assert.match(result.replyText, /Native-поиск завершён/u)
+  })
+
+  it('keeps a planned source tool available after the hard source requirement succeeds', async () => {
+    let round = 0
+    let searchCount = 0
+    let continuationPrompt = ''
+    const currentRegistry = () => registry(true)
+    const web: WebSearchProvider = {
+      status: () => ({
+        availability: 'available',
+        diagnostics: {
+          parserSignature: 'fixture/v1',
+          parserState: 'valid-results',
+          consecutiveFailureCount: 0,
+        },
+      }),
+      search: async ({ query }) => {
+        searchCount += 1
+        return {
+          results: [{ title: query, url: `https://example.test/${searchCount}` }],
+          truncated: false,
+          provider: 'fixture',
+        }
+      },
+    }
+    const result = await new CharacterToolLoop().run({
+      llm: {
+        capabilities: () => ({ ...capabilities, supportsToolCalling: false }),
+        chat: async (messages) => {
+          round += 1
+          if (round === 1) {
+            return JSON.stringify({
+              requirement: { type: 'required-source', source: 'web' },
+              plannedTools: ['web.search'],
+            })
+          }
+          const prompt = messages.map((message) => String(message.content)).join('\n')
+          if (round === 2) {
+            return '<shio-tools>{"calls":[{"tool":"web.search","arguments":{"query":"first source"}}]}</shio-tools>'
+          }
+          if (round === 3) {
+            continuationPrompt = prompt
+            return '<shio-tools>{"calls":[{"tool":"web.search","arguments":{"query":"second source"}}]}</shio-tools>'
+          }
+          return '[calm]Проверила два источника.'
+        },
+      },
+      providerId: 'mistral',
+      messages: [
+        { role: 'user', content: 'Проверь актуальные данные по двум независимым источникам.' },
+      ],
+      registry: currentRegistry,
+      createDispatcher: (signal) =>
+        new CharacterToolDispatcher({
+          registry: currentRegistry,
+          traceId: 'required-source-then-second-step',
+          userGoal: 'Проверь актуальные данные по двум независимым источникам.',
+          signal,
+          webSearch: () => web,
+        }),
+      traceId: 'required-source-then-second-step',
+      requestOptions: {},
+      nativeToolsRejected: false,
+      enforceToolRequirements: true,
+      failureReply: 'TOOL_FAILURE',
+      limitReply: 'TOOL_LIMIT',
+    })
+
+    assert.equal(searchCount, 2)
+    assert.equal(result.calls, 2)
+    assert.match(result.replyText, /два источника/u)
+    assert.match(continuationPrompt, /Typed Tool Requirement status: succeeded\./u)
+    assert.match(continuationPrompt, /"id":"web\.search"/u)
+  })
+
+  it('excludes typed Runtime failure presentations from semantic requirement planning', async () => {
+    let planningMessages: readonly ChatMessage[] = []
+    let round = 0
+    const emptyRegistry = () => registry(false)
+    const result = await new CharacterToolLoop().run({
+      llm: {
+        capabilities: () => ({ ...capabilities, supportsToolCalling: false }),
+        chat: async (messages) => {
+          round += 1
+          if (round === 1) {
+            planningMessages = messages
+            return JSON.stringify({
+              requirement: { type: 'direct-answer' },
+              plannedTools: [],
+            })
+          }
+          return '[calm]Новый независимый ответ.'
+        },
+      },
+      providerId: 'mistral',
+      messages: [
+        { role: 'user', content: 'Первый вопрос.' },
+        {
+          role: 'assistant',
+          content: 'RUNTIME_FAILURE_SENTINEL',
+          assistantTurnKind: 'tool-requirement-failure',
+        },
+        {
+          role: 'assistant',
+          content: 'CHARACTER_CONTEXT_SENTINEL',
+          assistantTurnKind: 'character',
+        },
+        { role: 'user', content: 'Второй вопрос.' },
+      ],
+      registry: emptyRegistry,
+      createDispatcher: (signal) =>
+        new CharacterToolDispatcher({
+          registry: emptyRegistry,
+          traceId: 'typed-planning-history',
+          userGoal: 'Второй вопрос.',
+          signal,
+        }),
+      traceId: 'typed-planning-history',
+      requestOptions: {},
+      nativeToolsRejected: false,
+      enforceToolRequirements: true,
+      failureReply: 'TOOL_FAILURE',
+      limitReply: 'TOOL_LIMIT',
+    })
+
+    const planningText = planningMessages.map((message) => String(message.content)).join('\n')
+    assert.doesNotMatch(planningText, /RUNTIME_FAILURE_SENTINEL/u)
+    assert.match(planningText, /CHARACTER_CONTEXT_SENTINEL/u)
+    assert.equal(result.assistantTurnKind, 'character')
+  })
+
+  it('exposes bounded failure evidence for an immediate retrospective follow-up', async () => {
+    let planningMessages: readonly ChatMessage[] = []
+    let round = 0
+    const emptyRegistry = () => registry(false)
+    const result = await new CharacterToolLoop().run({
+      llm: {
+        capabilities: () => ({ ...capabilities, supportsToolCalling: false }),
+        chat: async (messages) => {
+          round += 1
+          if (round === 1) {
+            planningMessages = messages
+            return JSON.stringify({
+              requirement: { type: 'direct-answer' },
+              plannedTools: [],
+            })
+          }
+          return '[calm]Поиск по проекту не был выполнен из-за сбоя внутреннего вызова.'
+        },
+      },
+      providerId: 'mistral',
+      messages: [
+        { role: 'user', content: 'На каких технологиях написан проект?' },
+        {
+          role: 'assistant',
+          content: 'RUNTIME_FAILURE_SENTINEL',
+          assistantTurnKind: 'tool-requirement-failure',
+          toolEvidence: {
+            requirement: { type: 'required-source', source: 'project' },
+            executedTools: [],
+            failedTools: [],
+            web: { used: false, succeeded: false },
+            project: { used: false, succeeded: false },
+            browser: { used: false, succeeded: false },
+            memory: { used: false, succeeded: false },
+          },
+        },
+        { role: 'user', content: 'Почему не смогла?' },
+      ],
+      registry: emptyRegistry,
+      createDispatcher: (signal) =>
+        new CharacterToolDispatcher({
+          registry: emptyRegistry,
+          traceId: 'retrospective-tool-failure',
+          userGoal: 'Почему не смогла?',
+          signal,
+        }),
+      traceId: 'retrospective-tool-failure',
+      requestOptions: {},
+      nativeToolsRejected: false,
+      enforceToolRequirements: true,
+      failureReply: 'TOOL_FAILURE',
+      limitReply: 'TOOL_LIMIT',
+    })
+
+    const planningText = planningMessages.map((message) => String(message.content)).join('\n')
+    assert.doesNotMatch(planningText, /RUNTIME_FAILURE_SENTINEL/u)
+    assert.match(planningText, /Previous-turn Runtime evidence/u)
+    assert.match(planningText, /"source":"project"/u)
+    assert.match(planningText, /"executedTools":\[\]/u)
+    assert.match(result.replyText, /сбоя внутреннего вызова/u)
+    assert.equal(result.toolEvidence.requirement.type, 'direct-answer')
   })
 
   it('exposes previous-turn Runtime provenance for a factual follow-up', async () => {

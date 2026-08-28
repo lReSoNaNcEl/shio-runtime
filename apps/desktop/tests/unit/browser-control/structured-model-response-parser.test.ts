@@ -83,6 +83,40 @@ describe('LlmBrowserVisualActionAdapter response repair', () => {
     expect(chat.mock.calls[1]?.[0]?.[0]?.content).toContain('Your previous response was invalid')
   })
 
+  it('supplies the exact decision contract and directs a blank page to navigate', async () => {
+    const blankObservation = {
+      ...observation,
+      page: { ...observation.page, url: 'about:blank', title: '' },
+    }
+    const navigate = JSON.stringify({
+      type: 'navigate',
+      observationId: blankObservation.id,
+      pageId: blankObservation.page.id,
+      url: 'https://example.com/',
+    })
+    const chat = vi.fn().mockResolvedValue(navigate)
+    const adapter = new LlmBrowserVisualActionAdapter({
+      provider: () => ({ capabilities, chat }),
+      modelLabel: () => 'fixture-vision',
+    })
+
+    await expect(
+      adapter.decide(
+        {
+          goal: 'Open https://example.com and read the page title',
+          observation: blankObservation,
+        } as never,
+        new AbortController().signal,
+      ),
+    ).resolves.toMatchObject({ type: 'navigate', url: 'https://example.com/' })
+
+    const systemPrompt = String(chat.mock.calls[0]?.[0]?.[0]?.content)
+    expect(systemPrompt).toContain('When the current page is about:blank')
+    expect(systemPrompt).toContain('"const":"navigate"')
+    expect(systemPrompt).toContain('"required":["observationId","pageId","type","url"]')
+    expect(systemPrompt).toContain('"additionalProperties":false')
+  })
+
   it('returns a typed failure after exactly one unsuccessful repair', async () => {
     const chat = vi.fn().mockResolvedValue('not-json')
     const adapter = new LlmBrowserVisualActionAdapter({

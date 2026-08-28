@@ -44,6 +44,10 @@ import type {
   ProjectKnowledgeStore,
   ProjectRetrievalCandidates,
 } from './ProjectKnowledgeStore'
+import {
+  buildPackageManifestDependencyCandidates,
+  isPackageManifestDependencyQuery,
+} from './retrieval/PackageManifestEvidence'
 import { PROJECT_CONTEXT_BUDGET, selectProjectEvidence } from './retrieval/ProjectEvidenceSelector'
 import { compileProjectRetrievalQuery } from './retrieval/ProjectRetrievalQueryCompiler'
 
@@ -613,23 +617,28 @@ export class ProjectAwarenessRuntime {
     if (queries.length === 0) return []
     const maxEvidenceItems = Math.max(1, Math.min(10, input.limit ?? 8))
     const maxCharacters = Math.max(1_000, Math.min(20_000, input.maxCharacters ?? 16_000))
+    const plans = queries.map(compileProjectRetrievalQuery)
     const retrieval = mergeRetrievalCandidates(
-      queries.map((query) =>
-        this.store.findCandidates(
-          current.id,
-          compileProjectRetrievalQuery(query),
-          maxEvidenceItems * 6,
-        ),
-      ),
+      plans.map((plan) => this.store.findCandidates(current.id, plan, maxEvidenceItems * 6)),
     )
-    return selectProjectEvidence(retrieval.candidates, {
-      commitSha: current.snapshot.commitSha,
-      normalizedTerms: retrieval.normalizedTerms,
-      maxEvidenceItems,
-      maxEvidenceSources: maxEvidenceItems,
-      maxTotalEvidenceCharacters: maxCharacters,
-      maxPacketPayloadCharacters: maxCharacters + 5_000,
-    }).evidence
+    const manifestCandidates = isPackageManifestDependencyQuery(plans)
+      ? buildPackageManifestDependencyCandidates(
+          retrieval.candidates,
+          retrieval.normalizedTerms,
+          (path) => this.store.readIndexedFile(current.id, path),
+        )
+      : []
+    return selectProjectEvidence(
+      manifestCandidates.length > 0 ? manifestCandidates : retrieval.candidates,
+      {
+        commitSha: current.snapshot.commitSha,
+        normalizedTerms: retrieval.normalizedTerms,
+        maxEvidenceItems,
+        maxEvidenceSources: maxEvidenceItems,
+        maxTotalEvidenceCharacters: maxCharacters,
+        maxPacketPayloadCharacters: maxCharacters + 5_000,
+      },
+    ).evidence
   }
 
   readFile(input: ProjectReadFileInput): ProjectFileExcerpt {
@@ -744,16 +753,22 @@ export class ProjectAwarenessRuntime {
       ? summarizeProjectMap(map).slice(0, PROJECT_CONTEXT_BUDGET.maxMapSummaryCharacters)
       : undefined
     const retrievalStartedAt = Date.now()
+    const plans = queries.map(compileProjectRetrievalQuery)
     const retrieval = mergeRetrievalCandidates(
-      queries.map((query) =>
-        this.store.findCandidates(
-          current.id,
-          compileProjectRetrievalQuery(query),
-          PROJECT_CONTEXT_BUDGET.candidateLimit,
-        ),
+      plans.map((plan) =>
+        this.store.findCandidates(current.id, plan, PROJECT_CONTEXT_BUDGET.candidateLimit),
       ),
     )
-    const selection = selectProjectEvidence(retrieval.candidates, {
+    const manifestCandidates = isPackageManifestDependencyQuery(plans)
+      ? buildPackageManifestDependencyCandidates(
+          retrieval.candidates,
+          retrieval.normalizedTerms,
+          (path) => this.store.readIndexedFile(current.id, path),
+        )
+      : []
+    const selectionCandidates =
+      manifestCandidates.length > 0 ? manifestCandidates : retrieval.candidates
+    const selection = selectProjectEvidence(selectionCandidates, {
       commitSha: current.snapshot.commitSha,
       normalizedTerms: retrieval.normalizedTerms,
       reservedPacketCharacters: mapSummary?.length ?? 0,
@@ -764,7 +779,7 @@ export class ProjectAwarenessRuntime {
       path: 0,
       fts: 0,
     }
-    for (const candidate of retrieval.candidates) {
+    for (const candidate of selectionCandidates) {
       for (const match of candidate.matches) {
         candidateMatchCounts[match.kind] += 1
       }

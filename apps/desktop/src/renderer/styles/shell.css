@@ -10,13 +10,44 @@
 
 .system-status-popover {
   width: min(420px, calc(100vw - 32px));
+  padding: 16px;
 }
 
-.system-status-healthy,
+.system-status-title {
+  margin: 0;
+}
+
+.system-status-overview,
+.system-status-summary,
+.system-status-incidents,
 .system-status-issues {
   display: grid;
   gap: 12px;
   padding-block: 12px;
+}
+
+.system-status-overview {
+  gap: 4px;
+}
+
+.system-status-summary {
+  gap: 8px;
+  margin: 0;
+  padding-inline: 0;
+  border: 0;
+  border-block: 1px solid var(--border-subtle);
+}
+
+.system-status-summary-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.system-status-last-checked {
+  color: var(--text-dim);
+  font-size: 0.8rem;
 }
 
 .system-status-issue {
@@ -190,11 +221,17 @@
   color: var(--text-dim);
 }
 
+.sidebar-meta {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
 .sidebar-version {
   display: flex;
   align-items: center;
-  justify-self: start;
-  width: fit-content;
+  justify-content: flex-start;
+  width: 100%;
   min-height: 24px;
   padding: 0 10px;
   border: 0;
@@ -204,6 +241,43 @@
   cursor: pointer;
   text-align: left;
   user-select: none;
+}
+
+.sidebar-creator {
+  justify-content: flex-start;
+  width: 100%;
+  min-width: 0;
+  min-height: 36px;
+  background: transparent;
+  color: var(--text-dim);
+}
+
+.sidebar-creator:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.sidebar-creator:focus-visible,
+.sidebar-creator[data-focus-visible] {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.telegram-logo {
+  width: 18px;
+  height: 18px;
+  fill: currentColor;
+}
+
+.sidebar-creator-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: inherit;
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 16px;
 }
 
 .sidebar-version:hover {
@@ -220,7 +294,7 @@
 }
 
 .sidebar-version-number {
-  color: color-mix(in srgb, var(--text-dim) 82%, transparent);
+  color: var(--text-dim);
   font-size: 11px;
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.02em;
@@ -265,7 +339,7 @@
 
   .sidebar-brand,
   .sidebar-primary-action,
-  .sidebar-version,
+  .sidebar-meta,
   .sidebar-version-status {
     display: none;
   }

@@ -405,7 +405,7 @@ async function main(): Promise<void> {
         message.content.includes('## Current Shio Capabilities'),
     )?.content
     assert.equal(typeof prompt, 'string')
-    assert.match(String(prompt), /Project Awareness: Отключено/)
+    assert.match(String(prompt), /Контекст проекта: Отключено/)
     assert.doesNotMatch(String(prompt), /дополнительная возможность установлена/)
     assert.match(String(prompt), /Движок автоматизации: Отключено/)
     assert.match(String(prompt), /Управление браузером: Недоступно/)

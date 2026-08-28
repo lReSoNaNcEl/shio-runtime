@@ -25,12 +25,19 @@ interface SetupCenterProps {
   state: ControllerState
   onClose: () => void
   onComplete: () => void
+  onOpenPlugins: () => void
   onToggleOverlay: (visible: boolean) => Promise<void>
 }
 
 type SetupActionState = 'idle' | 'busy' | 'ready' | 'error'
 
-export function SetupCenter({ state, onClose, onComplete, onToggleOverlay }: SetupCenterProps) {
+export function SetupCenter({
+  state,
+  onClose,
+  onComplete,
+  onOpenPlugins,
+  onToggleOverlay,
+}: SetupCenterProps) {
   const { t } = useTranslation()
   const [providers, setProviders] = useState<ProviderProfile[]>([])
   const [provider, setProvider] = useState<LlmProviderId>(state.llmReadiness.providerId)
@@ -42,16 +49,20 @@ export function SetupCenter({ state, onClose, onComplete, onToggleOverlay }: Set
     null,
   )
   const [aiAction, setAiAction] = useState<SetupActionState>('idle')
+  const [replaceCredential, setReplaceCredential] = useState(false)
   const [avatarAction, setAvatarAction] = useState<SetupActionState>('idle')
+  const [microphoneAction, setMicrophoneAction] = useState<SetupActionState>('idle')
   const [microphones, setMicrophones] = useState<MediaDeviceInfo[]>([])
   const [microphoneId, setMicrophoneId] = useState('')
 
   useEffect(() => {
+    let active = true
     const devices =
       navigator.mediaDevices?.enumerateDevices().catch(() => []) ?? Promise.resolve([])
     observeRendererPromise(
       Promise.all([window.api.llm.providers(), window.api.config.get(), devices]).then(
         ([availableProviders, currentConfig, availableDevices]) => {
+          if (!active) return
           setProviders(availableProviders)
           setConfig(currentConfig)
           setProvider(currentConfig.llm.activeProvider)
@@ -61,10 +72,23 @@ export function SetupCenter({ state, onClose, onComplete, onToggleOverlay }: Set
           setModel(currentConfig.llm.providers[currentConfig.llm.activeProvider].model)
           setMicrophoneId(currentConfig.micDeviceId)
           setMicrophones(availableDevices.filter((device) => device.kind === 'audioinput'))
+          const selectedProvider = currentConfig.llm.activeProvider
+          const selectedAccountId = currentConfig.llm.providers[selectedProvider].accountId ?? ''
+          if (currentConfig.llm.providers[selectedProvider].credential.configured) {
+            observeRendererPromise(
+              window.api.llm.fetchModels(selectedProvider, selectedAccountId).then((result) => {
+                if (active && result.ok) setModels(result.models ?? [])
+              }),
+              'load configured Setup Center models',
+            )
+          }
         },
       ),
       'load Setup Center data',
     )
+    return () => {
+      active = false
+    }
   }, [])
 
   const credentialConfigured = Boolean(config?.llm.providers[provider].credential.configured)
@@ -174,6 +198,21 @@ export function SetupCenter({ state, onClose, onComplete, onToggleOverlay }: Set
     controller.setMicrophone(deviceId)
   }
 
+  const testMicrophone = async (): Promise<void> => {
+    setMicrophoneAction('busy')
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: microphoneId ? { deviceId: { exact: microphoneId } } : true,
+      })
+      for (const track of stream.getTracks()) track.stop()
+      setMicrophoneAction('ready')
+      const devices = await navigator.mediaDevices.enumerateDevices()
+      setMicrophones(devices.filter((device) => device.kind === 'audioinput'))
+    } catch {
+      setMicrophoneAction('error')
+    }
+  }
+
   const complete = async (): Promise<void> => {
     const result = await window.api.config.save({
       setup: { completed: true, completedAt: new Date().toISOString() },
@@ -182,7 +221,11 @@ export function SetupCenter({ state, onClose, onComplete, onToggleOverlay }: Set
     onComplete()
   }
 
-  const enableOverlay = async (): Promise<void> => {
+  const toggleOverlay = async (): Promise<void> => {
+    if (state.overlayState === 'on') {
+      await onToggleOverlay(false)
+      return
+    }
     const result = await window.api.config.save({
       overlayViewMode: 'bust',
       overlayCorner: 'bottom-right',
@@ -198,7 +241,6 @@ export function SetupCenter({ state, onClose, onComplete, onToggleOverlay }: Set
   return (
     <section className="setup-center" aria-labelledby="setup-center-title">
       <header className="setup-hero">
-        <Text UNSAFE_className="setup-eyebrow">{t('setup.eyebrow')}</Text>
         <Heading id="setup-center-title" level={2}>
           {t('setup.title')}
         </Heading>
@@ -222,6 +264,7 @@ export function SetupCenter({ state, onClose, onComplete, onToggleOverlay }: Set
               setAccountId(config?.llm.providers[next].accountId ?? '')
               setModel(config?.llm.providers[next].model ?? '')
               setModels([])
+              setReplaceCredential(false)
             }}
             styles={fullWidth}
           >
@@ -243,39 +286,75 @@ export function SetupCenter({ state, onClose, onComplete, onToggleOverlay }: Set
               styles={fullWidth}
             />
           )}
-          <TextField
-            label={provider === 'cloudflare' ? t('setup.ai.apiToken') : t('setup.ai.apiKey')}
-            type="password"
-            value={apiKey}
-            autoComplete="off"
-            onChange={setApiKey}
-            styles={fullWidth}
-          />
-          <div className="setup-actions">
-            <Button
-              variant="primary"
-              isDisabled={!apiKey.trim() || !accountIdReady}
-              isPending={aiAction === 'busy'}
-              onPress={() => void saveCredential()}
-            >
-              {provider === 'cloudflare' ? t('setup.ai.saveToken') : t('setup.ai.saveKey')}
-            </Button>
+          {credentialConfigured && !replaceCredential ? (
+            <div className="setup-inline-row">
+              <StatusLight variant="positive" size="S">
+                {t('setup.ai.credentialSaved')}
+              </StatusLight>
+              <ActionButton onPress={() => setReplaceCredential(true)}>
+                {t('setup.ai.replaceCredential')}
+              </ActionButton>
+            </div>
+          ) : (
+            <>
+              <TextField
+                label={provider === 'cloudflare' ? t('setup.ai.apiToken') : t('setup.ai.apiKey')}
+                type="password"
+                value={apiKey}
+                autoComplete="off"
+                onChange={setApiKey}
+                styles={fullWidth}
+              />
+              <div className="setup-actions">
+                <Button
+                  variant="primary"
+                  isDisabled={!apiKey.trim() || !accountIdReady}
+                  isPending={aiAction === 'busy'}
+                  onPress={() =>
+                    void saveCredential().then(() => {
+                      setReplaceCredential(false)
+                    })
+                  }
+                >
+                  {provider === 'cloudflare' ? t('setup.ai.saveToken') : t('setup.ai.saveKey')}
+                </Button>
+                {credentialConfigured && (
+                  <Button
+                    variant="secondary"
+                    isDisabled={aiAction === 'busy'}
+                    onPress={() => {
+                      setApiKey('')
+                      setReplaceCredential(false)
+                    }}
+                  >
+                    {t('common.cancel')}
+                  </Button>
+                )}
+              </div>
+            </>
+          )}
+          <div className="setup-model-row">
+            <ModelComboBox
+              label={t('common.model')}
+              models={models}
+              selectedId={model}
+              isDisabled={models.length === 0}
+              isLoading={aiAction === 'busy'}
+              showCapabilities
+              showImageFilter
+              showVisionFilter
+              showCapabilityDetails={false}
+              onSelect={(id) => void saveModel(id)}
+            />
             <ActionButton
+              UNSAFE_className="setup-model-action"
               isDisabled={!credentialConfigured || !accountIdReady}
               isPending={aiAction === 'busy'}
-              onPress={() => observeRendererPromise(loadModels(), 'load Setup Center models')}
+              onPress={() => observeRendererPromise(loadModels(), 'refresh Setup Center models')}
             >
-              {t('setup.ai.loadModels')}
+              {t('setup.ai.refreshModels')}
             </ActionButton>
           </div>
-          <ModelComboBox
-            label={t('common.model')}
-            models={models}
-            selectedId={model}
-            isDisabled={models.length === 0}
-            isLoading={aiAction === 'busy'}
-            onSelect={(id) => void saveModel(id)}
-          />
           <StatusLight
             variant={
               aiComplete
@@ -296,82 +375,104 @@ export function SetupCenter({ state, onClose, onComplete, onToggleOverlay }: Set
 
         <li className="setup-step">
           <div className="setup-step-heading">
-            <Heading level={3}>{t('setup.avatar.title')}</Heading>
+            <Heading level={3}>{t('setup.character.title')}</Heading>
             <Badge size="S" variant="gray">
               {t('setup.optional')}
             </Badge>
           </div>
-          <Text UNSAFE_className="setup-step-description">{t('setup.avatar.description')}</Text>
-          <Button
-            variant="secondary"
-            isPending={avatarAction === 'busy'}
-            onPress={() => void pickAvatar()}
-          >
-            {t('settings.avatar.chooseFile')}
-          </Button>
-          <StatusLight
-            role="status"
-            size="S"
-            variant={
-              state.vrmConfigured ? 'positive' : avatarAction === 'error' ? 'negative' : 'neutral'
-            }
-          >
-            {state.vrmConfigured
-              ? t('setup.avatar.ready')
-              : avatarAction === 'error'
-                ? t('setup.avatar.error')
-                : t('setup.optional')}
-          </StatusLight>
+          <Text UNSAFE_className="setup-step-description">{t('setup.character.description')}</Text>
+          <div className="setup-detail-list">
+            <div className="setup-detail-row">
+              <div className="setup-detail-copy">
+                <Text UNSAFE_className="setup-detail-label">{t('setup.avatar.label')}</Text>
+                <Text>{config?.vrmAssetName || t('setup.avatar.notSelected')}</Text>
+              </div>
+              <Button
+                variant="secondary"
+                UNSAFE_className="setup-row-action"
+                isPending={avatarAction === 'busy'}
+                onPress={() => void pickAvatar()}
+              >
+                {state.vrmConfigured ? t('setup.change') : t('settings.avatar.chooseFile')}
+              </Button>
+            </div>
+            <div className="setup-detail-row">
+              <div className="setup-detail-copy">
+                <Text UNSAFE_className="setup-detail-label">{t('setup.overlay.title')}</Text>
+                <Text>{t(state.overlayState === 'on' ? 'common.enabled' : 'common.disabled')}</Text>
+              </div>
+              <Button
+                variant="secondary"
+                UNSAFE_className="setup-row-action"
+                aria-pressed={state.overlayState === 'on'}
+                isDisabled={state.overlayState !== 'on' && !state.vrmConfigured}
+                isPending={state.overlayState === 'opening' || state.overlayState === 'closing'}
+                onPress={() => void toggleOverlay()}
+              >
+                {t(state.overlayState === 'on' ? 'setup.overlay.disable' : 'setup.overlay.enable')}
+              </Button>
+            </div>
+          </div>
         </li>
 
         <li className="setup-step">
           <div className="setup-step-heading">
-            <Heading level={3}>{t('setup.microphone.title')}</Heading>
+            <Heading level={3}>{t('setup.conversation.title')}</Heading>
             <Badge size="S" variant="gray">
               {t('setup.optional')}
             </Badge>
           </div>
-          <Picker
-            label={t('settings.speech.microphone')}
-            selectedKey={microphoneId || '__default__'}
-            onSelectionChange={(key) => void selectMicrophone(key)}
-            styles={fullWidth}
-          >
-            <PickerItem id="__default__">{t('settings.speech.systemDefault')}</PickerItem>
-            {microphones.map((device, index) => (
-              <PickerItem key={device.deviceId} id={device.deviceId}>
-                {device.label || t('setup.microphone.device', { number: index + 1 })}
-              </PickerItem>
-            ))}
-          </Picker>
-          <Text UNSAFE_className="setup-step-description">{t('setup.microphone.explicit')}</Text>
-        </li>
-
-        <li className="setup-step">
-          <div className="setup-step-heading">
-            <Heading level={3}>{t('setup.overlay.title')}</Heading>
-            <Badge size="S" variant="gray">
-              {t('setup.optional')}
-            </Badge>
+          <div className="setup-detail-list">
+            <div className="setup-detail-row setup-microphone-row">
+              <Picker
+                label={t('settings.speech.microphone')}
+                selectedKey={microphoneId || '__default__'}
+                onSelectionChange={(key) => void selectMicrophone(key)}
+                styles={fullWidth}
+              >
+                <PickerItem id="__default__">{t('settings.speech.systemDefault')}</PickerItem>
+                {microphones.map((device, index) => (
+                  <PickerItem key={device.deviceId} id={device.deviceId}>
+                    {device.label || t('setup.microphone.device', { number: index + 1 })}
+                  </PickerItem>
+                ))}
+              </Picker>
+              <Button
+                variant="secondary"
+                UNSAFE_className="setup-row-action"
+                isPending={microphoneAction === 'busy'}
+                onPress={() => void testMicrophone()}
+              >
+                {t('setup.microphone.test')}
+              </Button>
+            </div>
+            {microphoneAction !== 'idle' && microphoneAction !== 'busy' && (
+              <StatusLight
+                variant={microphoneAction === 'ready' ? 'positive' : 'negative'}
+                size="S"
+              >
+                {t(
+                  microphoneAction === 'ready'
+                    ? 'setup.microphone.testReady'
+                    : 'setup.microphone.testError',
+                )}
+              </StatusLight>
+            )}
           </div>
-          <Text UNSAFE_className="setup-step-description">{t('setup.overlay.description')}</Text>
-          <Button
-            variant="secondary"
-            isDisabled={!state.vrmConfigured}
-            isPending={state.overlayState === 'opening'}
-            onPress={() => void enableOverlay()}
-          >
-            {t('setup.overlay.enable')}
-          </Button>
-          <StatusLight
-            role="status"
-            size="S"
-            variant={state.overlayState === 'on' ? 'positive' : 'neutral'}
-          >
-            {state.overlayState === 'on' ? t('setup.overlay.ready') : t('setup.optional')}
-          </StatusLight>
         </li>
       </ol>
+
+      <section className="setup-plugins" aria-labelledby="setup-plugins-title">
+        <div>
+          <Heading id="setup-plugins-title" level={3}>
+            {t('setup.plugins.title')}
+          </Heading>
+          <Text>{t('setup.plugins.description')}</Text>
+        </div>
+        <Button variant="secondary" UNSAFE_className="setup-row-action" onPress={onOpenPlugins}>
+          {t('setup.plugins.open')}
+        </Button>
+      </section>
 
       <footer className="setup-footer">
         <Button variant="secondary" onPress={onClose}>

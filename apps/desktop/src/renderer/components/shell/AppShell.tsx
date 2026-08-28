@@ -20,6 +20,7 @@ import Settings from '@react-spectrum/s2/icons/Settings'
 import User from '@react-spectrum/s2/icons/User'
 import { type ReactNode, useEffect, useRef, useState } from 'react'
 
+import { type ReleaseInfo } from '../../../shared/system'
 import { useTranslation } from '../../localization/useTranslation'
 import { observeRendererPromise } from '../../reliability/observePromise'
 import { type ApplicationHealth, type RuntimeHealthProjection } from '../../runtime/runtimeHealth'
@@ -34,6 +35,20 @@ export type AppSection =
   | 'plugins'
   | 'debug'
   | 'settings'
+
+function TelegramLogo() {
+  return (
+    <svg
+      className="telegram-logo"
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      focusable="false"
+      slot="icon"
+    >
+      <path d="M9.78 18.65 10.06 14.42 17.74 7.5C18.08 7.2 17.67 7.05 17.22 7.33L7.74 13.3 3.64 12C2.76 11.75 2.74 11.14 3.84 10.7L19.82 4.54C20.56 4.27 21.2 4.72 20.97 5.84L18.25 18.64C18.06 19.55 17.51 19.77 16.75 19.34L12.61 16.28 10.61 18.21C10.39 18.43 10.21 18.61 9.78 18.65Z" />
+    </svg>
+  )
+}
 
 export function AppShell({
   section,
@@ -63,9 +78,7 @@ export function AppShell({
   contentClassName?: string
 }) {
   const { t } = useTranslation()
-  const [releaseInfo, setReleaseInfo] = useState<
-    Awaited<ReturnType<Window['api']['system']['getReleaseInfo']>> | undefined
-  >()
+  const [releaseInfo, setReleaseInfo] = useState<ReleaseInfo>()
   const [versionCopied, setVersionCopied] = useState(false)
   const versionCopiedTimer = useRef<number | null>(null)
   useEffect(() => {
@@ -92,6 +105,12 @@ export function AppShell({
     setVersionCopied(true)
     if (versionCopiedTimer.current !== null) window.clearTimeout(versionCopiedTimer.current)
     versionCopiedTimer.current = window.setTimeout(() => setVersionCopied(false), 2_000)
+  }
+  const openCreator = (): void => {
+    observeRendererPromise(
+      window.api.system.openExternalLink('https://t.me/IReSoNaNcEI'),
+      'open creator Telegram link',
+    )
   }
   type NavigationItem = {
     id: AppSection
@@ -180,7 +199,13 @@ export function AppShell({
               </ActionButton>
               <Menu
                 aria-label={t('app.nav.more')}
-                onAction={(key) => onSectionChange(String(key) as AppSection)}
+                onAction={(key) => {
+                  if (key === 'creator') {
+                    openCreator()
+                    return
+                  }
+                  onSectionChange(String(key) as AppSection)
+                }}
               >
                 {mobileOverflowItems.map((item) => (
                   <MenuItem id={item.id} key={item.id} textValue={item.label}>
@@ -188,23 +213,42 @@ export function AppShell({
                     <Text>{item.label}</Text>
                   </MenuItem>
                 ))}
+                <MenuItem id="creator" textValue={t('app.creator.mobile')}>
+                  <TelegramLogo />
+                  <Text>{t('app.creator.mobile')}</Text>
+                </MenuItem>
               </Menu>
             </MenuTrigger>
           </div>
-          <TooltipTrigger delay={200}>
-            <ActionButton
-              isQuiet
-              UNSAFE_className="sidebar-version"
-              isDisabled={!releaseInfo}
-              aria-label={t('app.version.copy')}
-              onPress={() => observeRendererPromise(copyVersion(), 'copy Desktop version')}
-            >
-              <Text UNSAFE_className="sidebar-version-number">
-                {releaseInfo ? `v${releaseInfo.version}` : 'v\u00a0—'}
-              </Text>
-            </ActionButton>
-            <Tooltip>{t(versionCopied ? 'app.version.copied' : 'app.version.copy')}</Tooltip>
-          </TooltipTrigger>
+          <div className="sidebar-meta">
+            <TooltipTrigger delay={500} placement="right" containerPadding={12}>
+              <ActionButton
+                size="M"
+                isQuiet
+                UNSAFE_className="sidebar-creator"
+                aria-label={t('app.creator.label')}
+                onPress={openCreator}
+              >
+                <TelegramLogo />
+                <Text UNSAFE_className="sidebar-creator-title">{t('app.creator.badge')}</Text>
+              </ActionButton>
+              <Tooltip>{t('app.creator.tooltip')}</Tooltip>
+            </TooltipTrigger>
+            <TooltipTrigger delay={200} placement="right" containerPadding={12}>
+              <ActionButton
+                isQuiet
+                UNSAFE_className="sidebar-version"
+                isDisabled={!releaseInfo}
+                aria-label={t('app.version.copy')}
+                onPress={() => observeRendererPromise(copyVersion(), 'copy Desktop version')}
+              >
+                <Text UNSAFE_className="sidebar-version-number">
+                  {releaseInfo ? `v${releaseInfo.version}` : 'v\u00a0—'}
+                </Text>
+              </ActionButton>
+              <Tooltip>{t(versionCopied ? 'app.version.copied' : 'app.version.copy')}</Tooltip>
+            </TooltipTrigger>
+          </div>
           <span className="sidebar-version-status" role="status" aria-live="polite">
             {versionCopied ? t('app.version.copied') : ''}
           </span>

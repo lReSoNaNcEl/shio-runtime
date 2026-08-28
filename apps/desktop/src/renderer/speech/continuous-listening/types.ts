@@ -4,7 +4,7 @@ export type {
   BufferedUtterance,
 } from '../../../shared/conversation'
 
-import type { ConversationTurnFailure } from '../../../shared/conversation'
+import type { AttachmentDisposition, ConversationTurnFailure } from '../../../shared/conversation'
 
 export type ConversationInputSource =
   | 'text_chat'
@@ -52,8 +52,13 @@ export type ConversationCompletionResult =
       phase: 'generation' | 'synthesis' | 'playback' | 'cleanup'
       error: string
       failure?: ConversationTurnFailure
+      attachmentDisposition?: AttachmentDisposition
     }
-  | { status: 'cancelled'; turnId: string }
+  | {
+      status: 'cancelled'
+      turnId: string
+      attachmentDisposition?: AttachmentDisposition
+    }
 
 export type ChatSubmissionResult =
   | { status: 'completed' }
@@ -61,7 +66,7 @@ export type ChatSubmissionResult =
       status: 'failed'
       failure: ConversationTurnFailure
     }
-  | { status: 'cancelled' }
+  | { status: 'cancelled'; attachmentDisposition?: AttachmentDisposition }
 
 export type ChunkCompletionReason = 'asr_final' | 'vad_pause' | 'timeout' | 'max_length'
 

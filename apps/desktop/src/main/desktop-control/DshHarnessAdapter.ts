@@ -258,6 +258,12 @@ const RUNTIME_VERSION_COMMANDS: ReadonlyMap<string, string> = new Map([
   ['node --version', 'Node.js'],
   ['npm -v', 'npm'],
   ['npm --version', 'npm'],
+  ['npm.cmd -v', 'npm'],
+  ['npm.cmd --version', 'npm'],
+  ['npx -v', 'npx'],
+  ['npx --version', 'npx'],
+  ['npx.cmd -v', 'npx'],
+  ['npx.cmd --version', 'npx'],
   ['python --version', 'Python'],
   ['python -V', 'Python'],
   ['py --version', 'Python'],
@@ -267,7 +273,9 @@ const RUNTIME_VERSION_COMMANDS: ReadonlyMap<string, string> = new Map([
 
 function exactRuntimeVersion(label: string, output: string): string | undefined {
   const escapedLabel =
-    label === 'Node.js' || label === 'npm' ? '' : `${label.replace('.', '\\.')}\\s+`
+    label === 'Node.js' || label === 'npm' || label === 'npx'
+      ? ''
+      : `${label.replace('.', '\\.')}\\s+`
   const match = output.match(
     new RegExp(
       `^${escapedLabel}${label === 'Git' ? 'version\\s+' : ''}v?(\\d+(?:\\.\\d+){1,4}(?:[-+.][0-9A-Za-z.-]+)?)$`,

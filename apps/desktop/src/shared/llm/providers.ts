@@ -10,6 +10,7 @@ export const LLM_PROVIDER_IDS = ['groq', 'cloudflare', 'openrouter', 'mistral'] 
 export type LlmProviderId = (typeof LLM_PROVIDER_IDS)[number]
 
 export interface ModelCapabilitySummary {
+  supportsImageGeneration: boolean
   supportsVision: boolean
   supportsReasoning: boolean
   supportsStreaming: boolean
@@ -31,6 +32,12 @@ export interface ProviderProfile {
   modelsRequireApiKey: boolean
   /** Whether this provider needs an account-scoped identifier in addition to its credential. */
   requiresAccountId?: boolean
+  /** Conservative JSON Schema features accepted by this provider's tool endpoint. */
+  schemaCapabilities: ProviderSchemaCapabilities
+}
+
+export interface ProviderSchemaCapabilities {
+  oneOf: boolean
 }
 
 export type ModelFetchErrorKind =

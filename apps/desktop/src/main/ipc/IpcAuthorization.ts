@@ -109,6 +109,7 @@ export const IPC_CHANNEL_CAPABILITIES = {
   'system:open-external-link': mainOnly,
   'system:open-logs-folder': mainOnly,
   'system:report-renderer-failure': mainOnly,
+  'system:restart-application': mainOnly,
   'tts:cancel-synthesis': mainOnly,
   'tts:synthesize-reply': mainOnly,
   'tts:warmup': mainOnly,

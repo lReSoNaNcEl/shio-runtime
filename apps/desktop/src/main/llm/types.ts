@@ -2,6 +2,7 @@ import type { AxiosInstance } from 'axios'
 
 import type { CharacterStreamDeadlines, CharacterStreamEvent } from '../../shared/character-stream'
 import type { TurnToolEvidenceSummary } from '../../shared/character-tools'
+import type { AssistantTurnKind } from '../../shared/conversation'
 import type { LlmCapabilities, LlmProviderId, ProviderProfile } from '../../shared/llm'
 
 export type { LlmCapabilities } from '../../shared/llm'
@@ -29,6 +30,8 @@ export interface ChatMessage {
   name?: string
   /** Main-owned metadata used only to ground later conversational claims about prior tool use. */
   toolEvidence?: TurnToolEvidenceSummary
+  /** Main-owned presentation origin; Runtime fallbacks are not semantic Character evidence. */
+  assistantTurnKind?: AssistantTurnKind
 }
 
 export interface LlmRequestOptions {
@@ -90,6 +93,7 @@ export interface ModelCatalogEntry {
   id: string
   displayName?: string
   capabilities?: {
+    supportsImageGeneration?: boolean
     supportsVision?: boolean
     supportsReasoning?: boolean
     supportsStreaming?: boolean

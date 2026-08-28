@@ -17,8 +17,9 @@
   min-height: 240px;
 }
 
-.memory-overview,
-.memory-overview-actions,
+.memory-toolbar,
+.memory-toolbar-status,
+.memory-toolbar-actions,
 .memory-library-heading,
 .memory-filters,
 .memory-card-heading,
@@ -28,16 +29,15 @@
   gap: 10px;
 }
 
-.memory-overview {
+.memory-toolbar {
   justify-content: space-between;
-  gap: 24px;
-  padding: 18px;
-  border: 1px solid var(--border-subtle);
-  border-radius: 14px;
-  background: var(--surface-subtle);
+  gap: 16px;
+  min-height: 40px;
+  margin: 0;
+  padding: 0;
+  border: 0;
 }
 
-.memory-overview-copy,
 .memory-library,
 .memory-habits-heading,
 .memory-habit-copy {
@@ -46,9 +46,13 @@
   min-width: 0;
 }
 
-.memory-overview-actions {
+.memory-toolbar-status,
+.memory-toolbar-actions {
   flex: 0 0 auto;
   flex-wrap: wrap;
+}
+
+.memory-toolbar-actions {
   justify-content: flex-end;
 }
 
@@ -145,14 +149,13 @@
 }
 
 @media (max-width: 900px) {
-  .memory-overview,
-  .memory-overview-actions,
+  .memory-toolbar,
   .memory-filters {
     align-items: stretch;
     flex-direction: column;
   }
 
-  .memory-overview-actions {
+  .memory-toolbar-actions {
     justify-content: stretch;
   }
 

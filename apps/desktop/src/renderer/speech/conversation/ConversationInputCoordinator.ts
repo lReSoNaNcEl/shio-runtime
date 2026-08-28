@@ -179,13 +179,19 @@ export class ConversationInputCoordinator {
       },
     })
     if (result.status === 'completed') return { status: 'completed' }
-    if (result.status === 'cancelled') return { status: 'cancelled' }
+    if (result.status === 'cancelled') {
+      return {
+        status: 'cancelled',
+        attachmentDisposition: result.attachmentDisposition,
+      }
+    }
     return {
       status: 'failed',
       failure: result.failure ?? {
         domain: screenContextId ? 'screen-context' : 'llm',
         code: 'UNKNOWN',
-        attachmentDisposition: screenContextId ? 'retained' : 'released',
+        attachmentDisposition:
+          result.attachmentDisposition ?? (screenContextId ? 'retained' : 'released'),
         retrySameRequest: false,
         canResubmitWithoutImage: Boolean(screenContextId),
       },

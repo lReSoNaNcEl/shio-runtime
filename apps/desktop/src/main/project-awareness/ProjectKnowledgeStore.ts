@@ -721,16 +721,26 @@ export class ProjectKnowledgeStore {
       )
       .all(snapshotId, query.rawQuery, limit) as unknown as ChunkRow[]
     add(symbolRows, 'symbol')
-    const pathRows = this.database
-      .prepare(
-        `SELECT c.id, f.path, c.start_line, c.end_line, c.symbol_name, c.content
-         FROM chunks c JOIN files f ON f.id = c.file_id
-         WHERE f.snapshot_id = ? AND lower(f.path) LIKE lower(?)
-         ORDER BY f.priority DESC, c.start_line
-         LIMIT ?`,
+    const pathStatement = this.database.prepare(
+      `SELECT c.id, f.path, c.start_line, c.end_line, c.symbol_name, c.content
+       FROM chunks c JOIN files f ON f.id = c.file_id
+       WHERE f.snapshot_id = ? AND lower(f.path) LIKE lower(?)
+       ORDER BY f.priority DESC, c.start_line
+       LIMIT ?`,
+    )
+    const pathQueries = [query.rawQuery, ...query.pathTerms].filter(
+      (value, index, values) => value.length > 0 && values.indexOf(value) === index,
+    )
+    for (const pathQuery of pathQueries) {
+      add(
+        pathStatement.all(
+          snapshotId,
+          `%${pathQuery.slice(0, 200)}%`,
+          limit,
+        ) as unknown as ChunkRow[],
+        'path',
       )
-      .all(snapshotId, `%${query.rawQuery.slice(0, 200)}%`, limit) as unknown as ChunkRow[]
-    add(pathRows, 'path')
+    }
     if (query.expression) {
       const ftsRows = this.database
         .prepare(
@@ -758,6 +768,13 @@ export class ProjectKnowledgeStore {
       candidates: [...candidates.values()],
       normalizedTerms: query.normalizedTerms,
     }
+  }
+
+  readIndexedFile(snapshotId: string, path: string): string | null {
+    const row = this.database
+      .prepare('SELECT content FROM files WHERE snapshot_id = ? AND path = ?')
+      .get(snapshotId, path) as { content: string } | undefined
+    return row?.content ?? null
   }
 
   readFile(

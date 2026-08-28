@@ -77,12 +77,21 @@ const TECHNICAL_TERM_ALIASES: ReadonlyArray<{
     matches: /^(?:технолог\p{L}*|техстек|stack)$/u,
     terms: ['typescript', 'python', 'electron', 'react', 'fastapi', 'dependencies'],
   },
+  {
+    matches: /^(?:пакет\p{L}*|packages?|package\.json|dependency|dependencies|devdependencies)$/u,
+    terms: ['dependencies', 'devdependencies'],
+  },
+  {
+    matches: /^(?:клиент\p{L}*|desktop)$/u,
+    terms: ['desktop', 'renderer'],
+  },
 ]
 
 export interface ProjectRetrievalQueryPlan {
   rawQuery: string
   expression: string | null
   normalizedTerms: string[]
+  pathTerms: string[]
 }
 
 function isQueryStopWord(term: string): boolean {
@@ -97,6 +106,9 @@ export function compileProjectRetrievalQuery(query: string): ProjectRetrievalQue
       .normalize('NFKC')
       .toLowerCase()
       .match(/[\p{L}\p{N}_./-]{2,}/gu) ?? []
+  const pathTerms = rawTerms
+    .filter((term) => term.includes('/') || /^[\p{L}\p{N}_-]+\.[\p{L}\p{N}_.-]+$/u.test(term))
+    .slice(0, 8)
   const expandedTerms: string[] = []
   const seen = new Set<string>()
   const add = (term: string): void => {
@@ -126,5 +138,6 @@ export function compileProjectRetrievalQuery(query: string): ProjectRetrievalQue
     rawQuery: query.trim(),
     expression: quotedTerms.length > 0 ? quotedTerms.join(' OR ') : null,
     normalizedTerms,
+    pathTerms,
   }
 }

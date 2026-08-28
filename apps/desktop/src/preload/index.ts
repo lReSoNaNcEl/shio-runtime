@@ -40,6 +40,7 @@ import type {
   ScreenContextImportRequest,
   ScreenContextRecaptureRequest,
 } from '../shared/screen-context'
+import type { RendererFailureReport } from '../shared/system'
 
 const api = {
   alive: {
@@ -126,7 +127,9 @@ const api = {
     openExternalLink: (url: string) =>
       ipcRenderer.invoke('system:open-external-link', url) as Promise<{ ok: true }>,
     openLogsFolder: () => ipcRenderer.invoke('system:open-logs-folder'),
-    reportRendererFailure: () => ipcRenderer.invoke('system:report-renderer-failure'),
+    reportRendererFailure: (report: RendererFailureReport) =>
+      ipcRenderer.invoke('system:report-renderer-failure', report),
+    restartApplication: () => ipcRenderer.invoke('system:restart-application'),
     getRuntimeSupportBundle: () => ipcRenderer.invoke('system:get-runtime-support-bundle'),
   },
   health: {

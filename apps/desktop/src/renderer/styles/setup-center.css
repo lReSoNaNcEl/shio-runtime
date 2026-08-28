@@ -4,35 +4,38 @@
 
 .setup-center {
   box-sizing: border-box;
-  width: min(100%, 1180px);
+  width: min(100%, 900px);
   min-height: 100%;
   margin: 0 auto;
-  padding: 32px;
+  padding: 36px 32px 32px;
 }
 
 .setup-hero {
+  position: relative;
   display: grid;
-  gap: 8px;
-  padding: 24px;
+  gap: 10px;
   overflow: hidden;
-  border: 1px solid var(--setup-border);
-  border-radius: 18px;
+  padding: 28px;
+  border-bottom: 1px solid var(--setup-border);
+  border: 1px solid color-mix(in srgb, var(--accent) 42%, var(--setup-border));
+  border-radius: 16px;
   background:
-    radial-gradient(circle at 100% 0%, var(--surface-selected), transparent 42%),
-    var(--setup-surface);
+    radial-gradient(
+      circle at top right,
+      color-mix(in srgb, var(--accent2) 24%, transparent),
+      transparent 48%
+    ),
+    linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--accent) 13%, var(--setup-surface)),
+      var(--setup-surface)
+    );
+  box-shadow: 0 14px 28px color-mix(in srgb, var(--shadow) 64%, transparent);
 }
 
 .setup-hero h2,
 .setup-step h3 {
   margin: 0;
-}
-
-.setup-eyebrow {
-  color: var(--accent2);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
 }
 
 .setup-intro,
@@ -43,10 +46,10 @@
 
 .setup-steps {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: 1fr;
   align-items: start;
-  gap: 16px;
-  margin: 16px 0 0;
+  gap: 14px;
+  margin: 14px 0 0;
   padding: 0;
   list-style: none;
 }
@@ -56,10 +59,11 @@
   align-content: start;
   gap: 16px;
   min-width: 0;
-  padding: 20px;
+  padding: 24px;
   border: 1px solid var(--setup-border);
-  border-radius: 16px;
+  border-radius: 14px;
   background: var(--setup-surface);
+  box-shadow: 0 8px 18px color-mix(in srgb, var(--shadow) 34%, transparent);
 }
 
 .setup-step > * {
@@ -79,20 +83,108 @@
   gap: 10px;
 }
 
+.setup-inline-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.setup-model-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: start;
+}
+
+.setup-model-row > :first-child {
+  min-width: 0;
+}
+
+.setup-model-action {
+  margin-top: 25px;
+  white-space: nowrap;
+}
+
+.setup-detail-list,
+.setup-detail-copy {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.setup-detail-list {
+  gap: 0;
+  overflow: hidden;
+  border: 1px solid var(--setup-border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface-inset) 52%, transparent);
+}
+
+.setup-detail-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 24px;
+  min-height: 54px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--setup-border);
+}
+
+.setup-detail-row:last-child {
+  border-bottom: 0;
+}
+
+.setup-detail-label {
+  color: var(--text-dim);
+  font-size: 0.8rem;
+}
+
+.setup-microphone-row > :first-child {
+  min-width: 0;
+}
+
+.setup-microphone-row {
+  grid-template-columns: minmax(0, 1fr) max-content;
+  align-items: end;
+}
+
+.setup-row-action {
+  justify-self: end;
+  white-space: nowrap;
+}
+
+.setup-plugins {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 24px;
+  margin-top: 14px;
+  padding: 24px;
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--setup-border));
+  border-radius: 14px;
+  background: linear-gradient(
+    115deg,
+    var(--setup-surface),
+    color-mix(in srgb, var(--accent) 8%, var(--setup-surface))
+  );
+}
+
+.setup-plugins > div {
+  display: grid;
+  gap: 6px;
+}
+
+.setup-plugins h3 {
+  margin: 0;
+}
+
 .setup-footer {
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 10px;
-  margin-top: 20px;
   padding-top: 20px;
-  border-top: 1px solid var(--setup-border);
-}
-
-@media (max-width: 1200px) {
-  .setup-steps {
-    grid-template-columns: 1fr;
-  }
 }
 
 @media (max-width: 560px) {
@@ -100,10 +192,12 @@
     padding: 16px;
   }
 
-  .setup-hero,
+  .setup-hero {
+    padding: 22px;
+  }
+
   .setup-step {
-    padding: 16px;
-    border-radius: 14px;
+    padding: 20px;
   }
 
   .setup-step-heading {
@@ -112,8 +206,25 @@
   }
 
   .setup-actions,
+  .setup-inline-row,
   .setup-footer {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .setup-model-row,
+  .setup-detail-row,
+  .setup-plugins {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .setup-row-action {
+    justify-self: stretch;
+  }
+
+  .setup-model-action {
+    margin-top: 0;
   }
 }

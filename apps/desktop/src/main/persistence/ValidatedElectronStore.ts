@@ -4,6 +4,8 @@ import { basename, dirname, extname } from 'node:path'
 import ElectronStore from 'electron-store'
 import type { z } from 'zod'
 
+import { closeElectronStoreWatcher } from './ElectronStoreLifecycleAdapter'
+
 interface ValidatedElectronStoreOptions {
   clearMalformedJson?: boolean
 }
@@ -56,7 +58,7 @@ export class ValidatedElectronStore<T extends object> {
   }
 
   close(): void {
-    this.storeInstance?._closeWatcher()
+    closeElectronStoreWatcher(this.storeInstance)
     this.storeInstance = null
   }
 

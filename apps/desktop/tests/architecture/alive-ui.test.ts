@@ -21,16 +21,21 @@ describe('Alive UI architecture', () => {
     })
     expect(selectors).toContain('.tasks-form-surface')
     expect(selectors).toContain('.tasks-create-actions')
-    expect(selectors).toContain('.tasks-conversation-first')
+    expect(selectors).toContain('.tasks-empty-actions')
+    expect(selectors).toContain('.tasks-item-actions')
   })
 
-  it('uses Spectrum Disclosure and measurable goal state structurally', () => {
+  it('keeps manual goal creation in a Spectrum Dialog and measurable goal state structurally', () => {
     const view = join(sourceRoot, 'renderer', 'components', 'views', 'TasksView.tsx')
+    let dialogElements = 0
     let disclosureElements = 0
     let measurableReads = 0
     walk(parseFile(view), (node) => {
       if (node.type === 'JSXOpeningElement' && memberName(node.name as never) === 'Disclosure') {
         disclosureElements += 1
+      }
+      if (node.type === 'JSXOpeningElement' && memberName(node.name as never) === 'Dialog') {
+        dialogElements += 1
       }
       if (
         node.type === 'MemberExpression' &&
@@ -40,7 +45,8 @@ describe('Alive UI architecture', () => {
         measurableReads += 1
       }
     })
-    expect(disclosureElements).toBeGreaterThan(0)
+    expect(dialogElements).toBeGreaterThan(0)
+    expect(disclosureElements).toBe(0)
     expect(measurableReads).toBeGreaterThan(0)
   })
 })

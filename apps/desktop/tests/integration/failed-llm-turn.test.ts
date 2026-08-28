@@ -19,6 +19,7 @@ import {
   ConversationRuntime,
   type ConversationRuntimeDeps,
 } from '../../src/renderer/runtime/ConversationRuntime'
+import type { CharacterReplyStreamEvent } from '../../src/shared/character-stream'
 import type { AppSettings } from '../../src/shared/config'
 import { deriveTurnRecoveryCapabilities } from '../../src/shared/conversation'
 
@@ -26,8 +27,14 @@ Object.defineProperty(globalThis, 'window', {
   configurable: true,
   value: {
     api: {
+      llm: {
+        cancelReply: async () => ({ ok: true as const }),
+      },
       latency: {
         record: async () => ({ ok: true as const }),
+      },
+      tts: {
+        cancelSynthesis: async () => ({ ok: true as const }),
       },
     },
   },
@@ -205,6 +212,259 @@ async function testConversationAlwaysLeavesThinking(): Promise<void> {
   }
 }
 
+async function testPostGenerationFailureReleasesScreenAttachment(): Promise<void> {
+  let embodimentUpdates = 0
+  const runtime = new ConversationRuntime({
+    speechOutput: { stopCurrent: () => undefined },
+    characterResponse: {
+      createReply: async () => ({
+        replyText: '[calm]screen answer',
+        displayText: 'screen answer',
+        speechText: '',
+        emotionKey: 'calm',
+        segments: [],
+      }),
+    },
+    characterState: { get: () => ({}) },
+    conversationState: {
+      transition: () => ({}),
+      setPresence: () => ({}),
+    },
+    conversationPresence: { update: (patch: object) => patch },
+    presentation: {
+      applyCharacterState: () => undefined,
+      setEmbodimentIntent: () => {
+        embodimentUpdates += 1
+        if (embodimentUpdates === 2) throw new Error('post-generation renderer failure')
+      },
+      interruptLipSync: () => undefined,
+      stopLipSync: () => undefined,
+      triggerEarImpulse: () => false,
+      triggerReactionGesture: () => undefined,
+      triggerUserInterruption: () => undefined,
+      publishAvatarState: () => undefined,
+    },
+    events: { publish: () => undefined },
+    setStatus: () => undefined,
+    pushMessage: () => undefined,
+    formatUserError: (message: string) => message,
+    markAssistantMessageInterrupted: () => undefined,
+    setResponseInterruptionPending: () => undefined,
+    recordRuntimeEvent: () => undefined,
+    reportSpeechServiceError: () => undefined,
+    rememberSpeechMetadata: () => undefined,
+    updateSpeechPlaybackProgress: () => undefined,
+    isContinuousCaptureAlive: () => false,
+    handleLlmSetupRequired: () => undefined,
+  } as unknown as ConversationRuntimeDeps)
+
+  const result = await runtime.execute(
+    {
+      turnId: 'turn-post-generation-failure',
+      text: 'analyze the attached screenshot',
+      source: 'text_chat',
+      screenContextId: 'capture-consumed-by-main',
+      createdAt: Date.now(),
+      admissionCycleId: 'cycle-post-generation-failure',
+    },
+    () => undefined,
+  )
+
+  assert.equal(result.status, 'failed')
+  if (result.status !== 'failed') throw new Error('Expected failed result')
+  assert.equal(result.attachmentDisposition, 'released')
+}
+
+async function testPostGenerationCancellationReleasesScreenAttachment(): Promise<void> {
+  let markSynthesisStarted!: () => void
+  const synthesisStarted = new Promise<void>((resolve) => {
+    markSynthesisStarted = resolve
+  })
+  const runtime = new ConversationRuntime({
+    speechOutput: {
+      hasSpeakableContent: () => true,
+      synthesizeSegment: async () => {
+        markSynthesisStarted()
+        return await new Promise<never>(() => undefined)
+      },
+      stopCurrent: () => undefined,
+    },
+    characterResponse: {
+      createReply: async () => ({
+        replyText: '[calm]screen answer',
+        displayText: 'screen answer',
+        speechText: 'screen answer',
+        emotionKey: 'calm',
+        segments: [
+          {
+            id: 'segment-1',
+            index: 0,
+            emotion: 'calm',
+            text: 'screen answer',
+            boundaryAfter: 'sentence',
+            targetMaxGapMs: 0,
+          },
+        ],
+      }),
+    },
+    characterState: { get: () => ({}) },
+    conversationState: {
+      transition: () => ({}),
+      setPresence: () => ({}),
+    },
+    conversationPresence: { update: (patch: object) => patch },
+    presentation: {
+      applyCharacterState: () => undefined,
+      setEmbodimentIntent: () => undefined,
+      interruptLipSync: () => undefined,
+      stopLipSync: () => undefined,
+      triggerEarImpulse: () => false,
+      triggerReactionGesture: () => undefined,
+      triggerUserInterruption: () => undefined,
+      publishAvatarState: () => undefined,
+    },
+    events: { publish: () => undefined },
+    setStatus: () => undefined,
+    pushMessage: () => undefined,
+    formatUserError: (message: string) => message,
+    markAssistantMessageInterrupted: () => undefined,
+    setResponseInterruptionPending: () => undefined,
+    recordRuntimeEvent: () => undefined,
+    reportSpeechServiceError: () => undefined,
+    rememberSpeechMetadata: () => undefined,
+    updateSpeechPlaybackProgress: () => undefined,
+    isContinuousCaptureAlive: () => false,
+    handleLlmSetupRequired: () => undefined,
+  } as unknown as ConversationRuntimeDeps)
+
+  const execution = runtime.execute(
+    {
+      turnId: 'turn-post-generation-cancellation',
+      text: 'analyze the attached screenshot',
+      source: 'text_chat',
+      screenContextId: 'capture-consumed-by-main',
+      createdAt: Date.now(),
+      admissionCycleId: 'cycle-post-generation-cancellation',
+    },
+    () => undefined,
+  )
+  await synthesisStarted
+  assert.equal(await runtime.interruptCurrentResponse('manual-stop'), true)
+  const result = await execution
+
+  assert.equal(result.status, 'cancelled')
+  if (result.status !== 'cancelled') throw new Error('Expected cancelled result')
+  assert.equal(result.attachmentDisposition, 'released')
+}
+
+async function testSpeechCancellationPreservesFinalStreamedText(): Promise<void> {
+  const partialText = 'Короткая потоковая версия. '
+  const finalText = `${partialText}Полное продолжение ответа модели.`
+  let markFinalShown!: () => void
+  const finalShown = new Promise<void>((resolve) => {
+    markFinalShown = resolve
+  })
+  const messageTexts: string[] = []
+  const runtime = new ConversationRuntime({
+    speechOutput: {
+      hasSpeakableContent: () => true,
+      synthesizeSegment: async () => await new Promise<never>(() => undefined),
+      stopCurrent: () => undefined,
+    },
+    characterResponse: {
+      createReply: async (
+        _turnId: string,
+        _text: string,
+        _screenContextId?: string,
+        onStreamEvent?: (event: CharacterReplyStreamEvent) => void,
+      ) => {
+        onStreamEvent?.({
+          type: 'text-delta',
+          turnId: 'turn-preserve-final-text',
+          requestId: 'request:turn-preserve-final-text',
+          at: Date.now(),
+          llmRound: 0,
+          delta: { text: partialText, emotion: 'calm' },
+        })
+        return {
+          replyText: `[calm]${finalText}`,
+          displayText: finalText,
+          speechText: finalText,
+          emotionKey: 'calm',
+          segments: [
+            {
+              id: 'segment-1',
+              index: 0,
+              emotion: 'calm',
+              text: finalText,
+              boundaryAfter: 'sentence',
+              targetMaxGapMs: 0,
+            },
+          ],
+        }
+      },
+    },
+    characterState: { get: () => ({}) },
+    conversationState: {
+      transition: () => ({}),
+      setPresence: () => ({}),
+    },
+    conversationPresence: { update: (patch: object) => patch },
+    presentation: {
+      applyCharacterState: () => undefined,
+      setEmbodimentIntent: () => undefined,
+      interruptLipSync: () => undefined,
+      stopLipSync: () => undefined,
+      triggerEarImpulse: () => false,
+      triggerReactionGesture: () => undefined,
+      triggerUserInterruption: () => undefined,
+      publishAvatarState: () => undefined,
+    },
+    events: { publish: () => undefined },
+    setStatus: () => undefined,
+    pushMessage: (_role: string, text: string) => {
+      messageTexts.push(text)
+      return 'assistant-stream'
+    },
+    updateMessage: (
+      _id: string,
+      text: string,
+      _grounding: unknown,
+      _streaming: boolean | undefined,
+      immediate: boolean | undefined,
+    ) => {
+      messageTexts.push(text)
+      if (immediate && text === finalText) markFinalShown()
+    },
+    formatUserError: (message: string) => message,
+    markAssistantMessageInterrupted: () => undefined,
+    setResponseInterruptionPending: () => undefined,
+    recordRuntimeEvent: () => undefined,
+    reportSpeechServiceError: () => undefined,
+    rememberSpeechMetadata: () => undefined,
+    updateSpeechPlaybackProgress: () => undefined,
+    isContinuousCaptureAlive: () => false,
+    handleLlmSetupRequired: () => undefined,
+  } as unknown as ConversationRuntimeDeps)
+
+  const execution = runtime.execute(
+    {
+      turnId: 'turn-preserve-final-text',
+      text: 'Ответь подробно',
+      source: 'text_chat',
+      createdAt: Date.now(),
+      admissionCycleId: 'cycle-preserve-final-text',
+    },
+    () => undefined,
+  )
+  await finalShown
+  assert.equal(await runtime.interruptCurrentResponse('manual-stop'), true)
+  const result = await execution
+
+  assert.equal(result.status, 'cancelled')
+  assert.equal(messageTexts.at(-1), finalText)
+}
+
 async function testScreenContextLease(): Promise<void> {
   const normalized: NormalizedScreenContextImage = {
     bytes: new Uint8Array([7, 8, 9]),
@@ -300,6 +560,9 @@ async function run(): Promise<void> {
   await testTransactionalMemory()
   await testProviderReasoningContainment()
   await testConversationAlwaysLeavesThinking()
+  await testPostGenerationFailureReleasesScreenAttachment()
+  await testPostGenerationCancellationReleasesScreenAttachment()
+  await testSpeechCancellationPreservesFinalStreamedText()
   await testScreenContextLease()
   await testHttp413Classification()
   console.log('Failed LLM turn recovery repro passed')

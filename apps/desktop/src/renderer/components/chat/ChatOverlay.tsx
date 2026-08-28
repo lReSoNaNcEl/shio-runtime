@@ -8,6 +8,7 @@ import {
   useState,
 } from 'react'
 
+import { type ShioCapabilitySnapshot } from '../../../shared/capabilities'
 import { type ControllerState, controller } from '../../Controller'
 import { shouldBlockChatSubmission } from '../../controller/firstRunState'
 import { useTranslation } from '../../localization/useTranslation'
@@ -16,6 +17,7 @@ import { bannerCopy } from '../../runtime/speechCapabilities'
 import { ChatComposer } from './ChatComposer'
 import { ChatMessageList } from './ChatMessageList'
 import { ChatStatus } from './ChatStatus'
+import { type ChatQuickAction, createChatQuickActions } from './chatQuickActions'
 import { LlmSetupCard } from './LlmSetupCard'
 import { ScreenContextAttachment } from './ScreenContextAttachment'
 import { ScreenContextDropOverlay } from './ScreenContextDropOverlay'
@@ -31,9 +33,11 @@ import { useScreenContextAttachment } from './useScreenContextAttachment'
 
 interface Props {
   state: ControllerState
+  capabilitySnapshot: ShioCapabilitySnapshot | null
   gateOpen?: boolean
   onOpenSpeechSettings?: () => void
   onOpenLlmSettings?: () => void
+  onOpenCapabilities?: () => void
 }
 
 export interface ChatOverlayHandle {
@@ -41,7 +45,14 @@ export interface ChatOverlayHandle {
 }
 
 export const ChatOverlay = forwardRef<ChatOverlayHandle, Props>(function ChatOverlay(
-  { state, gateOpen = false, onOpenSpeechSettings, onOpenLlmSettings },
+  {
+    state,
+    capabilitySnapshot,
+    gateOpen = false,
+    onOpenSpeechSettings,
+    onOpenLlmSettings,
+    onOpenCapabilities,
+  },
   ref,
 ) {
   const { locale, t } = useTranslation()
@@ -162,7 +173,17 @@ export const ChatOverlay = forwardRef<ChatOverlayHandle, Props>(function ChatOve
     })()
   }
 
-  const quickActions = [t('chat.quick.greet'), t('chat.quick.joke'), t('chat.quick.capabilities')]
+  const quickActions = createChatQuickActions(capabilitySnapshot, t)
+
+  const handleQuickAction = (action: ChatQuickAction): void => {
+    if (action.effect === 'prepare-screen-context') {
+      if (!imageInputAvailable) return
+      controller.setChatDraft(action.prompt)
+      screenContext.setPickerOpen(true)
+      return
+    }
+    submit(action.prompt)
+  }
 
   const handlePaste = (event: ClipboardEvent<HTMLElement>): void => {
     if (!imageInputAvailable) return
@@ -239,7 +260,8 @@ export const ChatOverlay = forwardRef<ChatOverlayHandle, Props>(function ChatOve
         messages={state.messages}
         status={state.status}
         quickActions={quickActions}
-        onQuickAction={submit}
+        onQuickAction={handleQuickAction}
+        onOpenCapabilities={onOpenCapabilities}
         continuousListening={state.continuousListening}
         onRetryContinuousListening={() =>
           observeRendererPromise(

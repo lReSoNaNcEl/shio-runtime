@@ -46,7 +46,7 @@ import type {
 } from '../screen-context/contracts'
 import type { SpeechAudioBoundaryTelemetry, SpeechTextNormalizationTelemetry } from '../speech'
 import type { SpeechServiceErrorCode } from '../speech/errors'
-import type { ReleaseInfo, RuntimeSupportBundle } from '../system'
+import type { ReleaseInfo, RendererFailureReport, RuntimeSupportBundle } from '../system'
 
 export interface SpeechHealthCapabilities {
   serviceReachable: boolean
@@ -111,7 +111,8 @@ export interface ShioRuntimeApi {
     getReleaseInfo: () => Promise<ReleaseInfo>
     openExternalLink: (url: string) => Promise<{ ok: true }>
     openLogsFolder: () => Promise<{ ok: boolean }>
-    reportRendererFailure: () => Promise<{ ok: boolean }>
+    reportRendererFailure: (report: RendererFailureReport) => Promise<{ ok: boolean }>
+    restartApplication: () => Promise<{ ok: boolean }>
     getRuntimeSupportBundle: () => Promise<RuntimeSupportBundle>
   }
   health: {

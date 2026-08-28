@@ -3,6 +3,7 @@ import type { AppSettings } from '../../shared/config'
 import type { AttachmentDisposition, CharacterReplyOrigin } from '../../shared/conversation'
 import { deriveTurnRecoveryCapabilities } from '../../shared/conversation'
 import type { LlmTurnErrorCode } from '../../shared/llm'
+import type { RecentRuntimeIncident, RuntimeIncidentCode } from '../../shared/system'
 import { latencyTelemetry } from '../diagnostics/latencyTelemetry'
 import type { LlmGateway } from '../llm'
 import { LlmTurnCancelledError } from '../llm/errors'
@@ -33,6 +34,11 @@ const TURN_ERROR_CODES = new Set<LlmTurnErrorCode>([
   'INCOMPLETE_TOOL_CALL',
   'UNKNOWN',
 ])
+const TRANSIENT_INCIDENT_TTL_MS = 120_000
+
+function isRuntimeIncidentCode(code: LlmTurnErrorCode): code is RuntimeIncidentCode {
+  return code === 'RATE_LIMITED' || code === 'TIMEOUT' || code === 'NETWORK_ERROR'
+}
 
 function normalizeFailure(error: unknown, fallbackProvider: string) {
   const candidate = error as {
@@ -69,6 +75,7 @@ export class MainConversationTurnService {
   private readonly abortControllers = new Map<string, AbortController>()
   private readonly settlements = new Map<string, Promise<void>>()
   private readonly visionTurns = new Set<string>()
+  private recentLlmIncident: RecentRuntimeIncident | null = null
 
   constructor(
     private readonly orchestrator: () => Orchestrator,
@@ -79,6 +86,28 @@ export class MainConversationTurnService {
 
   isIdle(): boolean {
     return this.activeTurnId === null
+  }
+
+  recentIncidents(now = Date.now()): readonly RecentRuntimeIncident[] {
+    if (this.recentLlmIncident && this.recentLlmIncident.expiresAt <= now) {
+      this.recentLlmIncident = null
+    }
+    return this.recentLlmIncident ? [Object.freeze({ ...this.recentLlmIncident })] : []
+  }
+
+  private recordLlmIncident(
+    provider: RecentRuntimeIncident['provider'],
+    code: RuntimeIncidentCode,
+    occurredAt = Date.now(),
+  ): void {
+    this.recentLlmIncident = Object.freeze({
+      id: `llm:${code.toLowerCase()}`,
+      owner: 'llm',
+      code,
+      provider,
+      occurredAt,
+      expiresAt: occurredAt + TRANSIENT_INCIDENT_TTL_MS,
+    })
   }
 
   async createReply(
@@ -231,6 +260,11 @@ export class MainConversationTurnService {
         },
       })
       if (abortController.signal.aborted) throw new LlmTurnCancelledError()
+      if (result.providerIncidentCode) {
+        this.recordLlmIncident(llmConfig.activeProvider, result.providerIncidentCode)
+      } else if (result.assistantTurnKind === 'character') {
+        this.recentLlmIncident = null
+      }
       terminalResult = 'success'
       terminalCode = 'OK'
       if (pendingCapture && screenContextId) {
@@ -256,6 +290,9 @@ export class MainConversationTurnService {
       return { ok: true as const, replyText, emotionKey, embodimentIntent, grounding }
     } catch (error) {
       const failure = normalizeFailure(error, llmConfig.activeProvider)
+      if (isRuntimeIncidentCode(failure.code)) {
+        this.recordLlmIncident(llmConfig.activeProvider, failure.code)
+      }
       terminalCode = failure.code
       terminalResult = failure.code === 'CANCELLED' ? 'cancelled' : 'failure'
       let attachmentDisposition: AttachmentDisposition = 'released'

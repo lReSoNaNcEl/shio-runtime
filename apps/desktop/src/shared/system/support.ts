@@ -3,6 +3,17 @@ import type { LlmProviderId } from '../llm'
 import type { RuntimePluginHealth } from '../plugins'
 import type { AvatarRuntimeHealth } from '../runtime'
 
+export type RuntimeIncidentCode = 'RATE_LIMITED' | 'TIMEOUT' | 'NETWORK_ERROR'
+
+export interface RecentRuntimeIncident {
+  id: string
+  owner: 'llm'
+  code: RuntimeIncidentCode
+  provider: LlmProviderId
+  occurredAt: number
+  expiresAt: number
+}
+
 export type RendererProcessStatus =
   | 'not-created'
   | 'loading'
@@ -34,7 +45,14 @@ export interface ReleaseInfo {
   isPackaged: boolean
 }
 
+export interface RendererFailureReport {
+  errorId: string
+  errorName: string
+  componentNames: readonly string[]
+}
+
 export interface RuntimeSupportBundle {
+  generatedAt: number
   release: ReleaseInfo
   speech: {
     capabilities: {
@@ -69,6 +87,7 @@ export interface RuntimeSupportBundle {
   microphoneConfigured: boolean
   overlayVisible: boolean
   latestRuntimeErrors: ReadonlyArray<{ timestamp: string; message: string }>
+  recentIncidents: readonly RecentRuntimeIncident[]
   paths: {
     userData: string
     logs: string

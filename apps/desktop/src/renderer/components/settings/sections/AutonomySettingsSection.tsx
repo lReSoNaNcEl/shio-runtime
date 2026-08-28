@@ -21,17 +21,63 @@ import { type AliveSnapshot, type AutonomyMode } from '../../../../shared/alive'
 import { LLM_PROVIDER_IDS, type LlmProviderId } from '../../../../shared/llm'
 import { useTranslation } from '../../../localization/useTranslation'
 
+interface AutonomyLimitsDraft {
+  quietStartHour: number
+  quietEndHour: number
+  cooldownMinutes: number
+  maxDailyInitiatives: number
+}
+
+function limitsDraft(settings: AliveSnapshot['settings']): AutonomyLimitsDraft {
+  return {
+    quietStartHour: settings.quietHours.startHour,
+    quietEndHour: settings.quietHours.endHour,
+    cooldownMinutes: Math.round(settings.cooldownMs / 60_000),
+    maxDailyInitiatives: settings.maxDailyInitiatives,
+  }
+}
+
 export function AutonomySettingsSection({ snapshot }: { snapshot: AliveSnapshot | null }) {
   const { t } = useTranslation()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [modelDraft, setModelDraft] = useState(snapshot?.settings.fastBrain.model ?? '')
+  const [limits, setLimits] = useState<AutonomyLimitsDraft | null>(() =>
+    snapshot ? limitsDraft(snapshot.settings) : null,
+  )
+  const snapshotQuietStartHour = snapshot?.settings.quietHours.startHour
+  const snapshotQuietEndHour = snapshot?.settings.quietHours.endHour
+  const snapshotCooldownMs = snapshot?.settings.cooldownMs
+  const snapshotMaxDailyInitiatives = snapshot?.settings.maxDailyInitiatives
 
   useEffect(() => {
     setModelDraft(snapshot?.settings.fastBrain.model ?? '')
   }, [snapshot?.settings.fastBrain.model])
 
-  if (!snapshot) {
+  useEffect(() => {
+    if (
+      snapshotQuietStartHour === undefined ||
+      snapshotQuietEndHour === undefined ||
+      snapshotCooldownMs === undefined ||
+      snapshotMaxDailyInitiatives === undefined
+    ) {
+      setLimits(null)
+      return
+    }
+    setLimits({
+      quietStartHour: snapshotQuietStartHour,
+      quietEndHour: snapshotQuietEndHour,
+      cooldownMinutes: Math.round(snapshotCooldownMs / 60_000),
+      maxDailyInitiatives: snapshotMaxDailyInitiatives,
+    })
+  }, [
+    snapshotCooldownMs,
+    snapshotMaxDailyInitiatives,
+    snapshotQuietEndHour,
+    snapshotQuietStartHour,
+  ])
+
+  if (!snapshot || !limits) {
     return (
       <div className="autonomy-settings-loading">
         <ProgressCircle isIndeterminate aria-label={t('common.loading')} />
@@ -39,19 +85,36 @@ export function AutonomySettingsSection({ snapshot }: { snapshot: AliveSnapshot 
     )
   }
 
-  const updateSettings = (patch: Partial<AliveSnapshot['settings']>): Promise<unknown> =>
-    window.api.alive.updateSettings({ ...snapshot.settings, ...patch })
+  const updateSettings = async (
+    patch: Partial<AliveSnapshot['settings']>,
+  ): Promise<AliveSnapshot> => {
+    const updated = await window.api.alive.updateSettings({ ...snapshot.settings, ...patch })
+    setLimits(limitsDraft(updated.settings))
+    return updated
+  }
 
-  const run = async (operation: () => Promise<unknown>): Promise<void> => {
+  const run = async (operation: () => Promise<unknown>, rollback?: () => void): Promise<void> => {
     setBusy(true)
     setError(null)
     try {
       await operation()
     } catch (operationError) {
+      rollback?.()
       setError(operationError instanceof Error ? operationError.message : String(operationError))
     } finally {
       setBusy(false)
     }
+  }
+
+  const updateLimits = (
+    next: AutonomyLimitsDraft,
+    patch: Partial<AliveSnapshot['settings']>,
+  ): void => {
+    setLimits(next)
+    void run(
+      () => updateSettings(patch),
+      () => setLimits(limitsDraft(snapshot.settings)),
+    )
   }
 
   const autonomyState =
@@ -167,29 +230,37 @@ export function AutonomySettingsSection({ snapshot }: { snapshot: AliveSnapshot 
           <div className="autonomy-settings-grid">
             <NumberField
               label={t('tasks.autonomy.quietStart')}
-              value={snapshot.settings.quietHours.startHour}
+              value={limits.quietStartHour}
               minValue={0}
               maxValue={23}
               isDisabled={busy}
-              onChange={(startHour) =>
-                void run(() =>
-                  updateSettings({
-                    quietHours: { ...snapshot.settings.quietHours, startHour },
-                  }),
+              onChange={(quietStartHour) =>
+                updateLimits(
+                  { ...limits, quietStartHour },
+                  {
+                    quietHours: {
+                      ...snapshot.settings.quietHours,
+                      startHour: quietStartHour,
+                    },
+                  },
                 )
               }
             />
             <NumberField
               label={t('tasks.autonomy.quietEnd')}
-              value={snapshot.settings.quietHours.endHour}
+              value={limits.quietEndHour}
               minValue={0}
               maxValue={23}
               isDisabled={busy}
-              onChange={(endHour) =>
-                void run(() =>
-                  updateSettings({
-                    quietHours: { ...snapshot.settings.quietHours, endHour },
-                  }),
+              onChange={(quietEndHour) =>
+                updateLimits(
+                  { ...limits, quietEndHour },
+                  {
+                    quietHours: {
+                      ...snapshot.settings.quietHours,
+                      endHour: quietEndHour,
+                    },
+                  },
                 )
               }
             />
@@ -198,22 +269,22 @@ export function AutonomySettingsSection({ snapshot }: { snapshot: AliveSnapshot 
         <div className="autonomy-settings-grid">
           <NumberField
             label={t('tasks.autonomy.cooldownMinutes')}
-            value={Math.round(snapshot.settings.cooldownMs / 60_000)}
+            value={limits.cooldownMinutes}
             minValue={1}
             maxValue={1_440}
             isDisabled={busy}
             onChange={(cooldownMinutes) =>
-              void run(() => updateSettings({ cooldownMs: cooldownMinutes * 60_000 }))
+              updateLimits({ ...limits, cooldownMinutes }, { cooldownMs: cooldownMinutes * 60_000 })
             }
           />
           <NumberField
             label={t('tasks.autonomy.dailyCap')}
-            value={snapshot.settings.maxDailyInitiatives}
+            value={limits.maxDailyInitiatives}
             minValue={0}
             maxValue={100}
             isDisabled={busy}
             onChange={(maxDailyInitiatives) =>
-              void run(() => updateSettings({ maxDailyInitiatives }))
+              updateLimits({ ...limits, maxDailyInitiatives }, { maxDailyInitiatives })
             }
           />
         </div>

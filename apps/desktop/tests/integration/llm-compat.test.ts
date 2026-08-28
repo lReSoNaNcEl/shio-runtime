@@ -789,15 +789,19 @@ async function testCatalogCapabilityMetadata(): Promise<void> {
       {
         id: 'publisher/openrouter-opaque:free',
         name: 'OpenRouter Opaque',
-        architecture: { input_modalities: ['text', 'image'] },
+        architecture: {
+          input_modalities: ['text', 'image'],
+          output_modalities: ['text', 'image'],
+        },
         supported_parameters: ['reasoning'],
         pricing: { prompt: '0', completion: '0' },
       },
     ],
   })
   check(
-    'OpenRouter architecture metadata maps Vision and Reasoning',
-    openRouter.capabilities?.supportsVision === true &&
+    'OpenRouter architecture metadata maps image generation, Vision, and Reasoning',
+    openRouter.capabilities?.supportsImageGeneration === true &&
+      openRouter.capabilities.supportsVision === true &&
       openRouter.capabilities.supportsReasoning === true,
   )
 

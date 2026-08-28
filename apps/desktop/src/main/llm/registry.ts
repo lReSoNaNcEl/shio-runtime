@@ -131,6 +131,7 @@ export function enrichModelCatalog(
     const id = model.id
     const key = modelCapabilityKey(providerId, id)
     if (
+      model.capabilities?.supportsImageGeneration !== undefined ||
       model.capabilities?.supportsVision !== undefined ||
       model.capabilities?.supportsReasoning !== undefined ||
       model.capabilities?.supportsStreaming !== undefined ||
@@ -144,6 +145,7 @@ export function enrichModelCatalog(
     return {
       ...model,
       capabilities: {
+        supportsImageGeneration: model.capabilities?.supportsImageGeneration ?? false,
         supportsVision: capabilities.supportsVision,
         supportsReasoning: capabilities.supportsReasoning,
         supportsStreaming: capabilities.supportsStreaming,

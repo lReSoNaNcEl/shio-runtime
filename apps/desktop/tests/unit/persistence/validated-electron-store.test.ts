@@ -2,9 +2,10 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
 
+import { closeElectronStoreWatcher } from '../../../src/main/persistence/ElectronStoreLifecycleAdapter'
 import {
   resolveElectronStoreConstructor,
   ValidatedElectronStore,
@@ -28,6 +29,21 @@ function temporaryPath(name: string): string {
 }
 
 describe('ValidatedElectronStore', () => {
+  it('contains the optional watcher cleanup behind a guarded compatibility adapter', () => {
+    const closeWatcher = vi.fn()
+
+    expect(closeElectronStoreWatcher({ _closeWatcher: closeWatcher })).toBe(true)
+    expect(closeWatcher).toHaveBeenCalledOnce()
+    expect(closeElectronStoreWatcher({})).toBe(false)
+    expect(
+      closeElectronStoreWatcher({
+        _closeWatcher: () => {
+          throw new Error('dependency hook changed')
+        },
+      }),
+    ).toBe(false)
+  })
+
   it('resolves both ESM and externalized CommonJS module shapes', () => {
     class FakeElectronStore {}
 

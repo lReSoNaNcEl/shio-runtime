@@ -1,6 +1,6 @@
 import { useContext } from 'react'
 
-import { LocalizationContext, type LocalizationContextValue } from './LocalizationProvider'
+import { LocalizationContext, type LocalizationContextValue } from './localizationContext'
 
 export function useTranslation(): LocalizationContextValue {
   const value = useContext(LocalizationContext)

@@ -31,7 +31,11 @@ import {
 } from '../shared/character-response'
 import type { CharacterToolRequirement, TurnToolEvidenceSummary } from '../shared/character-tools'
 import type { AppSettings } from '../shared/config'
-import type { CharacterReplyOrigin, ReplyGrounding } from '../shared/conversation'
+import type {
+  AssistantTurnKind,
+  CharacterReplyOrigin,
+  ReplyGrounding,
+} from '../shared/conversation'
 import type {
   ConversationThread,
   ConversationThreadRuntimePort,
@@ -70,11 +74,13 @@ import { responsePolicyPrompt } from './character/prompting/ResponsePolicyPrompt
 import {
   CharacterToolDispatcher,
   CharacterToolLoop,
+  type CharacterToolLoopResult,
   type CharacterToolLoopStreamEvent,
   CharacterToolRegistry,
 } from './character-tools'
 import {
   type ChatMessage,
+  getProviderProfile,
   type LLMProvider,
   type LlmRequestOptions,
   LlmResponseError,
@@ -341,6 +347,8 @@ export class Orchestrator {
     emotionKey: string
     embodimentIntent?: CharacterEmbodimentIntent
     grounding?: ReplyGrounding
+    assistantTurnKind: AssistantTurnKind
+    providerIncidentCode?: CharacterToolLoopResult['providerIncidentCode']
   }> {
     const { userText, screenContext, origin = 'user' } = input
     const autonomous = origin === 'autonomous'
@@ -472,6 +480,8 @@ export class Orchestrator {
     let projectContext: ProjectContextPacket | null = null
     let actionGrounding: ActionReplyGrounding | undefined
     let turnToolEvidence: TurnToolEvidenceSummary | undefined
+    let assistantTurnKind: AssistantTurnKind = 'character'
+    let providerIncidentCode: CharacterToolLoopResult['providerIncidentCode']
     try {
       let dispatcher: CharacterToolDispatcher | undefined
       const registry = (): CharacterToolRegistry =>
@@ -490,6 +500,9 @@ export class Orchestrator {
           actionsAvailable: !autonomous && Boolean(this.executeDesktopWorkflow),
           browserComputerUseAvailable:
             !autonomous && Boolean(this.browserComputerUse && this.executeBrowserComputerUseAction),
+          providerSchemaCapabilities: getProviderProfile(
+            this.settings().llm?.activeProvider ?? 'groq',
+          ).schemaCapabilities,
         })
       const toolResult = await new CharacterToolLoop().run({
         llm: this.llm,
@@ -554,6 +567,8 @@ export class Orchestrator {
       this.nativeCharacterToolsRejected = toolResult.nativeToolsRejected
       rawReplyText = toolResult.replyText
       turnToolEvidence = toolResult.toolEvidence
+      assistantTurnKind = toolResult.assistantTurnKind
+      providerIncidentCode = toolResult.providerIncidentCode
       projectContext = toolResult.projectContext ?? null
       actionGrounding = toolResult.latestActionResult
         ? actionReplyGrounding(toolResult.latestActionResult)
@@ -599,6 +614,7 @@ export class Orchestrator {
           role: 'assistant',
           content: visibleReplyText,
           toolEvidence: turnToolEvidence,
+          assistantTurnKind,
         },
       })
     }
@@ -613,6 +629,8 @@ export class Orchestrator {
         projectContext ? projectReplyProvenance(projectContext) : undefined,
         actionGrounding,
       ),
+      assistantTurnKind,
+      ...(providerIncidentCode ? { providerIncidentCode } : {}),
     }
   }
 

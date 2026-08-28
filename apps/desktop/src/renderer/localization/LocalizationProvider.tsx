@@ -1,23 +1,16 @@
-import { createContext, type ReactNode, useEffect, useMemo, useState } from 'react'
+import { type ReactNode, useEffect, useMemo, useState } from 'react'
 
 import {
   DEFAULT_UI_LOCALE,
   normalizeUiLocale,
-  type TranslationKey,
-  type TranslationParams,
   toIntlLocale,
   translate,
   type UiLocale,
 } from '../../shared/localization'
 import { observeRendererPromise } from '../reliability/observePromise'
+import { LocalizationContext, type LocalizationContextValue } from './localizationContext'
 
-export interface LocalizationContextValue {
-  locale: UiLocale
-  intlLocale: 'ru-RU' | 'en-US'
-  t: (key: TranslationKey, params?: TranslationParams) => string
-}
-
-export const LocalizationContext = createContext<LocalizationContextValue | null>(null)
+export { LocalizationContext, type LocalizationContextValue } from './localizationContext'
 
 export function LocalizationProvider({ children }: { children: ReactNode }) {
   const [locale, setLocale] = useState<UiLocale>(DEFAULT_UI_LOCALE)

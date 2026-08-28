@@ -4,8 +4,16 @@ import { join } from 'node:path'
 
 import { describe, it } from 'vitest'
 
-import { transitionRecordingSchema } from '../../src/main/ipc/payloadSchemas'
+import {
+  rendererFailureReportSchema,
+  transitionRecordingSchema,
+} from '../../src/main/ipc/payloadSchemas'
 import { RendererProcessHealthTracker } from '../../src/main/windows/RendererProcessHealthTracker'
+import {
+  createRendererFailureDetails,
+  extractRendererComponentNames,
+  sanitizeRendererErrorMessage,
+} from '../../src/renderer/components/errors/rendererErrorDiagnostics'
 import { observeRendererPromise } from '../../src/renderer/reliability/observePromise'
 import type { AvatarRuntimeDebugState } from '../../src/renderer/runtime/AvatarRuntime'
 import { AvatarRuntimeHealthTracker } from '../../src/renderer/runtime/AvatarRuntimeHealthTracker'
@@ -108,6 +116,19 @@ function assertStaticLifecycleWiring(): void {
 
   const root = source('src/renderer/main.tsx')
   assert.match(root, /<RendererErrorBoundary>/)
+  const localizationHook = source('src/renderer/localization/useTranslation.ts')
+  assert.match(localizationHook, /from '\.\/localizationContext'/)
+  assert.doesNotMatch(localizationHook, /from '\.\/LocalizationProvider'/)
+  const errorBoundary = source('src/renderer/components/errors/RendererErrorBoundary.tsx')
+  assert.match(errorBoundary, /system\.restartApplication\(\)/)
+  assert.match(errorBoundary, /system\.openLogsFolder\(\)/)
+  assert.match(errorBoundary, /copyDiagnostics/)
+  const systemIpc = source('src/main/ipc/registerSystemIpc.ts')
+  assert.match(systemIpc, /rendererFailureReportSchema\.parse\(input\)/)
+  assert.match(systemIpc, /process\.env\.NODE_ENV === 'development'/)
+  assert.match(systemIpc, /event\.sender\.reloadIgnoringCache\(\)/)
+  assert.match(systemIpc, /app\.relaunch\(\)/)
+  assert.match(systemIpc, /app\.quit\(\)/)
   const overlay = source('src/renderer/runtime/OverlayRuntime.ts')
   assert.match(overlay, /remoteUnsubscribers/)
   assert.match(overlay, /disposeRemoteSubscriptions\(\)/)
@@ -123,6 +144,44 @@ function assertStaticLifecycleWiring(): void {
   assert(
     clearDraftAt < awaitTurnAt,
     'composer draft must clear before waiting for LLM, TTS, and playback completion',
+  )
+}
+
+function assertRendererFailureDiagnostics(): void {
+  const message = sanitizeRendererErrorMessage(
+    'Failed at C:\\Users\\alice\\project\\view.tsx with Bearer secret-value and token=private at https://example.test/path?secret=yes',
+  )
+  assert.doesNotMatch(message, /alice|secret-value|private|secret=yes/)
+  assert.match(message, /\[local path\]/)
+  assert.match(message, /\[redacted\]/)
+  assert.match(message, /\[url\]/)
+
+  const componentNames = extractRendererComponentNames(`
+    at div (http://localhost)
+    at SettingsPanel (http://localhost)
+    at App.Shell (http://localhost)
+    at SettingsPanel (http://localhost)
+  `)
+  assert.deepEqual(componentNames, ['SettingsPanel', 'App.Shell'])
+
+  const details = createRendererFailureDetails(
+    new TypeError('Cannot read properties of undefined'),
+    '    at SettingsPanel (http://localhost)',
+  )
+  assert.match(details.errorId, /^RDR-[A-Z0-9-]+$/)
+  assert.equal(details.errorName, 'TypeError')
+  assert.equal(
+    rendererFailureReportSchema.safeParse({
+      errorId: details.errorId,
+      errorName: details.errorName,
+      componentNames: details.componentNames,
+    }).success,
+    true,
+  )
+  assert.equal(
+    rendererFailureReportSchema.safeParse(details).success,
+    false,
+    'renderer IPC must reject the local error message',
   )
 }
 
@@ -352,6 +411,7 @@ async function main(): Promise<void> {
   assertRendererProcessHealth()
   assertMalformedMarkerContainment()
   assertStaticLifecycleWiring()
+  assertRendererFailureDiagnostics()
   assertTransitionRecordingContract()
   assertTransitionRecorderBounds()
   assertOverlaySubscriptionCleanup()

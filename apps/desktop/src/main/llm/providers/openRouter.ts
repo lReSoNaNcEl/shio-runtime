@@ -20,6 +20,7 @@ export const openRouterProvider: ProviderDefinition = {
     displayName: 'OpenRouter',
     requiresApiKey: true,
     modelsRequireApiKey: false,
+    schemaCapabilities: { oneOf: false },
   },
   chat: {
     baseUrl: 'https://openrouter.ai/api/v1',
@@ -34,6 +35,7 @@ export const openRouterProvider: ProviderDefinition = {
         id: model.id,
         displayName: model.name,
         capabilities: {
+          supportsImageGeneration: model.architecture?.output_modalities?.includes('image'),
           supportsVision: model.architecture?.input_modalities?.includes('image'),
           supportsReasoning:
             model.supported_parameters?.includes('reasoning') ||

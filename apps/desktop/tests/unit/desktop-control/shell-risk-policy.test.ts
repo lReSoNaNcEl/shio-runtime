@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { CharacterToolRegistry } from '../../../src/main/character-tools/CharacterToolRegistry'
+import { CharacterToolRegistry } from '../../../src/main/character-tools'
 import { DesktopControlPlugin, ShellRiskPolicy } from '../../../src/main/desktop-control'
 
 describe('Shell risk policy', () => {
@@ -12,11 +12,30 @@ describe('Shell risk policy', () => {
       commands: ['Get-Process', 'Select-Object'],
       reason: 'parsed_read-only',
     })
+    expect(policy.classify('Get-Host | Select-Object -ExpandProperty Version')).toEqual({
+      classification: 'read-only',
+      effectiveRisk: 'normal',
+      commands: ['Get-Host', 'Select-Object'],
+      reason: 'parsed_read-only',
+    })
     expect(policy.classify('Set-Content -Path note.txt -Value ready').classification).toBe(
       'mutating',
     )
     expect(policy.classify('Remove-Item note.txt').effectiveRisk).toBe('destructive')
     expect(policy.classify('Invoke-Expression $command').classification).toBe('unknown')
+  })
+
+  it('allows only read-only version checks through Windows Node command shims', () => {
+    const policy = new ShellRiskPolicy()
+
+    expect(policy.classify('npx.cmd --version')).toEqual({
+      classification: 'read-only',
+      effectiveRisk: 'normal',
+      commands: ['npx.cmd'],
+      reason: 'parsed_read-only',
+    })
+    expect(policy.classify('npm.cmd --version').classification).toBe('read-only')
+    expect(policy.classify('npx.cmd some-package').classification).toBe('unknown')
   })
 
   it('keeps effective risk Main-owned and absent from Character tool input', () => {

@@ -10,6 +10,7 @@ export const groqProvider: ProviderDefinition = {
     displayName: 'Groq',
     requiresApiKey: true,
     modelsRequireApiKey: true,
+    schemaCapabilities: { oneOf: true },
   },
   chat: {
     baseUrl: 'https://api.groq.com/openai/v1',

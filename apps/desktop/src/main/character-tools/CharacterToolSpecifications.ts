@@ -4,6 +4,7 @@ import { browserComputerUseStartRequestSchema } from '../../shared/browser-compu
 import { browserOperationInputSchemas } from '../../shared/browser-control'
 import type { ShioCapabilitySnapshot } from '../../shared/capabilities'
 import type { CharacterToolId } from '../../shared/character-tools'
+import type { ProviderSchemaCapabilities } from '../../shared/llm'
 import {
   memoryForgetInputSchema,
   memoryListInputSchema,
@@ -136,6 +137,11 @@ export const threadResolveInputSchema = z
 
 const browserGoalSchema = z.string().trim().min(1).max(2_000).optional()
 const emptyInputSchema = z.object({}).strict()
+export const browserComputerUseStatusInputSchema = z
+  .object({
+    waitForTerminalMs: z.number().int().min(0).max(15_000).optional(),
+  })
+  .strict()
 const browserInputSchemas = Object.freeze({
   'browser.observe': browserOperationInputSchemas.observe,
   'browser.open': browserOperationInputSchemas.open.extend({ goal: browserGoalSchema }),
@@ -183,7 +189,7 @@ export const CHARACTER_TOOL_SPECS = Object.freeze([
     id: 'project.search',
     nativeName: 'project_search',
     description:
-      "Search the currently connected project when the user's request depends on its actual source code, architecture, configuration, history, or repository state. Do not use it for generic programming knowledge. For a technology overview, include likely manifest paths as hints instead of relying on user wording.",
+      "Search the currently connected project when the user's request depends on its actual source code, architecture, configuration, history, or repository state. Do not use it for generic programming knowledge. Preserve every exact repository path or filename named by the user in hints.paths. For dependencies or a technology overview, include likely manifest paths as hints instead of relying on broad user wording.",
     inputSchema: projectSearchInputSchema,
     availability: projectAvailable,
   }),
@@ -271,7 +277,7 @@ export const CHARACTER_TOOL_SPECS = Object.freeze([
     id: 'memory.list',
     nativeName: 'memory_list',
     description:
-      'List bounded long-term memory when the user asks what Shio remembers. Prefer search for a topical recall question.',
+      'List bounded long-term memory when the user asks what Shio remembers. Omit kind to list every category; when filtering, kind must be exactly fact, preference, decision, commitment, or relationship. Prefer search for a topical recall question.',
     inputSchema: memoryListInputSchema,
     availability: memoryAvailable,
   }),
@@ -279,7 +285,7 @@ export const CHARACTER_TOOL_SPECS = Object.freeze([
     id: 'shell.execute',
     nativeName: 'shell_execute',
     description:
-      'Run one exact PowerShell command through Action Runtime when the answer depends on current local-computer state or the user requests an operating-system action. Runtime validation and Permission Guard remain authoritative.',
+      'Run one exact PowerShell command through Action Runtime when the answer depends on current local-computer state or the user requests an operating-system action. On Windows, invoke Node package-manager command shims with the .cmd suffix (for example, npx.cmd --version instead of npx --version) so PowerShell does not select a potentially blocked .ps1 shim. Do not suggest changing PowerShell ExecutionPolicy merely to run the corresponding .cmd shim. Runtime validation and Permission Guard remain authoritative.',
     inputSchema: shellExecuteInputSchema,
     availability: shellAvailable,
   }),
@@ -295,7 +301,7 @@ export const CHARACTER_TOOL_SPECS = Object.freeze([
     id: 'browser.open',
     nativeName: 'browser_open',
     description:
-      'Open one exact HTTP(S) URL in the isolated Shio browser session through Action Runtime.',
+      'Open one exact HTTP(S) URL in the isolated Shio browser session through Action Runtime. A successful result includes the fresh bounded observation with its URL, title, content, and interactive elements; answer read-only page facts from that result without calling browser.observe or browser.useStatus.',
     inputSchema: browserInputSchemas['browser.open'],
     availability: browserAvailable,
   }),
@@ -360,15 +366,16 @@ export const CHARACTER_TOOL_SPECS = Object.freeze([
     id: 'browser.use',
     nativeName: 'browser_use',
     description:
-      'Start one bounded or continuous autonomous browser-only session for a high-level, multi-step, or time-bounded goal. Use this instead of decomposing autonomous browsing, choosing among pages/items, gameplay, or reactive visual control into browser.open/browser.click calls across turns. Choose termination semantically: goal-completed for finite work, until-stopped when the user explicitly wants control to continue until Stop, or until-time for an exact duration. The internal controller may use slow semantic/visual reasoning and reactive pointer/keyboard control, but technical budgets and low-level input are never exposed to Character Response Generation. CAPTCHA, authentication, 2FA, payment, password-manager, and secure-desktop blockers require the user.',
+      'Start one bounded or continuous autonomous browser-only session for a high-level, multi-step, or time-bounded browser goal. It never observes general operating-system or application activity and must not be used for a read-only question about what the computer is currently doing. Use this instead of decomposing autonomous browsing, choosing among pages/items, gameplay, or reactive visual control into browser.open/browser.click calls across turns. Choose termination semantically: goal-completed for finite work, until-stopped when the user explicitly wants control to continue until Stop, or until-time for an exact duration. Termination is always an object, never a string: use {"type":"goal-completed"}, {"type":"until-stopped"}, or {"type":"until-time","durationMs":10000}. The internal controller may use slow semantic/visual reasoning and reactive pointer/keyboard control, but technical budgets and low-level input are never exposed to Character Response Generation. CAPTCHA, authentication, 2FA, payment, password-manager, and secure-desktop blockers require the user.',
     inputSchema: browserComputerUseStartRequestSchema,
     availability: browserUseAvailable,
   }),
   defineCharacterTool({
     id: 'browser.useStatus',
     nativeName: 'browser_use_status',
-    description: 'Read the bounded status of the current browser computer-use session.',
-    inputSchema: emptyInputSchema,
+    description:
+      'Read only the bounded lifecycle status of the current delegated browser computer-use session. This is not the current page, computer, application, or operating-system status. When the original request requires the completed verified result, set waitForTerminalMs up to 15000 to wait cancellation-safely for this session to leave its active state instead of repeatedly reading the same immediate snapshot.',
+    inputSchema: browserComputerUseStatusInputSchema,
     availability: browserUseAvailable,
   }),
   defineCharacterTool({
@@ -394,13 +401,16 @@ export const CHARACTER_TOOL_SPECS = Object.freeze([
   }),
 ] satisfies readonly CharacterToolSpec[])
 
-export function toLlmToolJsonSchema(schema: z.ZodType): Record<string, unknown> {
+export function toLlmToolJsonSchema(
+  schema: z.ZodType,
+  capabilities: ProviderSchemaCapabilities = { oneOf: true },
+): Record<string, unknown> {
   const { $schema: _schema, ...jsonSchema } = z.toJSONSchema(schema, {
     target: 'draft-07',
     io: 'input',
     unrepresentable: 'throw',
   })
-  return new PortableToolSchemaProjector().project(jsonSchema)
+  return new PortableToolSchemaProjector().project(jsonSchema, capabilities)
 }
 
 export type ProjectSearchInput = z.infer<typeof projectSearchInputSchema>

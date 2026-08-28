@@ -4,9 +4,9 @@ import type { ProjectRetrievalCandidate, ProjectRetrievalMatchKind } from '../Pr
 export const PROJECT_CONTEXT_BUDGET = Object.freeze({
   candidateLimit: 48,
   maxEvidenceSources: 6,
-  maxFragmentsPerSource: 2,
+  maxFragmentsPerSource: 4,
   maxFragmentCharacters: 1_400,
-  maxSourceCharacters: 2_200,
+  maxSourceCharacters: 4_200,
   maxTotalEvidenceCharacters: 6_000,
   maxMapSummaryCharacters: 1_000,
   maxPacketPayloadCharacters: 7_500,

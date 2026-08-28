@@ -10,7 +10,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 20px;
-  padding: 14px 16px;
+  padding: 8px 12px;
   border: 1px solid var(--border-subtle);
   border-radius: 12px;
   background: var(--surface-subtle);
@@ -36,26 +36,11 @@
 
 .tasks-panel-heading,
 .tasks-item,
-.tasks-create-row,
-.tasks-conversation-first {
+.tasks-create-row {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 18px;
-}
-
-.tasks-conversation-first {
-  display: grid;
-  justify-items: start;
-  padding: 18px 20px;
-  border: 1px solid var(--border-subtle);
-  border-radius: 12px;
-  background: var(--surface-subtle);
-}
-
-.tasks-conversation-first > button {
-  flex: 0 0 auto;
-  white-space: nowrap;
 }
 
 .tasks-create-row {
@@ -69,13 +54,6 @@
 
 .tasks-form-surface {
   padding-block-start: 14px;
-}
-
-.tasks-manual-disclosure {
-  padding: 10px 16px 14px;
-  border: 1px solid var(--border-subtle);
-  border-radius: 12px;
-  background: var(--surface);
 }
 
 .tasks-create-grid {
@@ -130,6 +108,15 @@
   align-items: center;
   justify-content: space-between;
   gap: 14px;
+}
+
+.tasks-item-actions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
 }
 
 .tasks-goal-card {
@@ -194,6 +181,19 @@
   text-align: center;
 }
 
+.tasks-empty-actions,
+.tasks-goal-entry-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  padding-block-start: 8px;
+}
+
+.tasks-goal-entry-actions {
+  justify-content: flex-end;
+}
+
 .tasks-history-groups {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -231,7 +231,9 @@
     width: 100%;
   }
 
-  .tasks-conversation-first > button {
-    width: 100%;
+  .tasks-empty-actions,
+  .tasks-goal-entry-actions {
+    align-items: stretch;
+    flex-direction: column;
   }
 }

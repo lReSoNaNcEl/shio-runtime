@@ -4,7 +4,7 @@ import { fireEvent, render } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
 
 import type { ReactNode } from 'react'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import type { ChatMsg } from '../../../src/renderer/Controller'
 import { ChatMessageList } from '../../../src/renderer/components/chat/ChatMessageList'
@@ -22,7 +22,7 @@ function props(messages: ChatMsg[]) {
   return {
     messages,
     status: 'thinking' as const,
-    quickActions: [],
+    quickActions: { starter: [], tools: [] },
     onQuickAction: () => undefined,
     continuousListening: listening,
   }
@@ -43,6 +43,45 @@ function Wrapper({ children }: { children: ReactNode }) {
 }
 
 describe('streaming assistant chat bubble', () => {
+  it('renders tool shortcuts separately and forwards the full prepared action', () => {
+    const onQuickAction = vi.fn()
+    const onOpenCapabilities = vi.fn()
+    const toolAction = {
+      id: 'web-search',
+      label: 'Веб-поиск',
+      prompt: 'Найди свежие новости с источниками.',
+      effect: 'submit' as const,
+    }
+    const starterAction = {
+      id: 'greeting',
+      label: 'Поздоровайся',
+      prompt: 'Поздоровайся со мной.',
+      effect: 'submit' as const,
+    }
+    const view = render(
+      <ChatMessageList
+        {...props([])}
+        quickActions={{ starter: [starterAction], tools: [toolAction] }}
+        onQuickAction={onQuickAction}
+        onOpenCapabilities={onOpenCapabilities}
+      />,
+      { wrapper: Wrapper },
+    )
+
+    expect(view.getByRole('group', { name: 'Быстрый старт' })).toHaveClass(
+      'chat-starter-action-grid',
+    )
+    expect(view.getByRole('group', { name: 'Проверить инструменты' })).toHaveClass(
+      'chat-tool-action-grid',
+    )
+    expect(view.getByRole('button', { name: 'Поздоровайся' })).toHaveClass('shio-accent-button')
+    fireEvent.click(view.getByRole('button', { name: 'Веб-поиск' }))
+    expect(onQuickAction).toHaveBeenCalledWith(toolAction)
+
+    fireEvent.click(view.getByRole('button', { name: 'Все возможности' }))
+    expect(onOpenCapabilities).toHaveBeenCalledOnce()
+  })
+
   it('appears on first text, updates one bubble, and settles on completion', () => {
     const view = render(
       <ChatMessageList {...props([{ id: 'user-1', role: 'user', text: 'Вопрос' }])} />,

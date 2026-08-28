@@ -58,7 +58,30 @@ describe('canonical Character tool schemas', () => {
     const browserUse = CHARACTER_TOOL_SPECS.find((tool) => tool.id === 'browser.use')
     expect(browserUse).toBeDefined()
     if (!browserUse) throw new Error('browser.use schema is missing')
+    expect(browserUse.description).toContain('{"type":"goal-completed"}')
     expect(JSON.stringify(toLlmToolJsonSchema(browserUse.inputSchema))).toContain('oneOf')
+    const portableBrowserUse = toLlmToolJsonSchema(browserUse.inputSchema, { oneOf: false })
+    expect(JSON.stringify(portableBrowserUse)).not.toContain('oneOf')
+    expect(portableBrowserUse).toHaveProperty('properties.termination', {
+      type: 'object',
+      required: ['type'],
+      properties: {
+        type: { enum: ['goal-completed', 'until-stopped', 'until-time'] },
+        durationMs: { type: 'integer', minimum: 10_000, maximum: 7_200_000 },
+      },
+      additionalProperties: false,
+    })
+    const browserUseStatus = CHARACTER_TOOL_SPECS.find((tool) => tool.id === 'browser.useStatus')
+    expect(browserUseStatus?.description).toContain('waitForTerminalMs')
+    expect(browserUseStatus?.inputSchema.parse({ waitForTerminalMs: 15_000 })).toEqual({
+      waitForTerminalMs: 15_000,
+    })
+    expect(() => browserUseStatus?.inputSchema.parse({ waitForTerminalMs: 15_001 })).toThrow()
+
+    const shellExecute = CHARACTER_TOOL_SPECS.find((tool) => tool.id === 'shell.execute')
+    expect(shellExecute?.description).toContain('npx.cmd --version')
+    expect(shellExecute?.description).toContain('ExecutionPolicy')
+    expect(shellExecute?.description).not.toContain('browser')
   })
 
   it('keeps runtime-only goal refinements authoritative', () => {
@@ -110,5 +133,26 @@ describe('canonical Character tool schemas', () => {
     for (const definition of registry.definitions()) {
       expect(definition.llmInputSchema).toEqual(toLlmToolJsonSchema(definition.inputSchema))
     }
+  })
+
+  it('projects tool definitions through the active provider schema capabilities', () => {
+    const registry = new CharacterToolRegistry({
+      projectAvailable: false,
+      actionsAvailable: true,
+      browserComputerUseAvailable: true,
+      browserObservation: null,
+      capabilityContext: {
+        capabilities: [
+          { id: 'browser-control', availability: 'available' },
+          { id: 'browser-computer-use', availability: 'available' },
+        ],
+      } as never,
+      providerSchemaCapabilities: { oneOf: false },
+    })
+    const browserUse = registry.get('browser.use')
+
+    expect(browserUse).toBeDefined()
+    expect(JSON.stringify(browserUse?.llmInputSchema)).not.toContain('oneOf')
+    expect(browserUse?.llmInputSchema).toHaveProperty('properties.termination.required', ['type'])
   })
 })

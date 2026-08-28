@@ -5,7 +5,7 @@ import {
   type SpeechSegment,
   StreamingSpeechSegmenter,
 } from '../../shared/character-stream'
-import type { ReplyGrounding } from '../../shared/conversation'
+import type { AttachmentDisposition, ReplyGrounding } from '../../shared/conversation'
 import {
   EMOTION_BOUNDARY_GAPS,
   type EmotionSegmentBoundary,
@@ -289,8 +289,12 @@ export class ConversationRuntime {
     reportPhase: (phase: ConversationExecutionPhase) => void,
   ): Promise<ConversationCompletionResult> {
     let failurePhase: 'generation' | 'synthesis' | 'playback' | 'cleanup' = 'generation'
+    let attachmentDisposition: AttachmentDisposition = turn.screenContextId
+      ? 'retained'
+      : 'released'
     let streamedDisplayText = ''
     let streamedMessageId: string | null = null
+    let streamedMessageFinalized = false
     try {
       this.setEmbodimentIntent(
         turn.screenContextId ? { intensity: 'subtle', gazeHint: 'screen' } : undefined,
@@ -417,7 +421,13 @@ export class ConversationRuntime {
           turn.source === 'autonomous_initiative' ? 'autonomous' : 'user',
         ),
       )
-      if (!this.isCurrentTurn(turn.turnId)) return { status: 'cancelled', turnId: turn.turnId }
+      // A successful Main-owned reply consumes its leased Screen Context before
+      // the IPC result reaches the renderer. Any later cancellation or cleanup
+      // failure must therefore clear the local attachment card.
+      attachmentDisposition = 'released'
+      if (!this.isCurrentTurn(turn.turnId)) {
+        return { status: 'cancelled', turnId: turn.turnId, attachmentDisposition }
+      }
 
       this.setEmbodimentIntent(draft.embodimentIntent)
 
@@ -431,12 +441,15 @@ export class ConversationRuntime {
       this.deps.conversationState.setPresence(generatedPresence)
       if (streamedMessageId) {
         this.deps.updateMessage(streamedMessageId, draft.displayText, draft.grounding, false, true)
+        streamedMessageFinalized = true
         enqueueSpeechSegments(streamSegmenter.flush())
         streamingPipeline.close()
         await Promise.race([streamingExecution, this.interruptionFor(turn.turnId)])
         if (this.activeEmotionPipeline === streamingPipeline) this.activeEmotionPipeline = null
         if (this.playbackTurnId === turn.turnId) this.playbackTurnId = null
-        if (!this.isCurrentTurn(turn.turnId)) return { status: 'cancelled', turnId: turn.turnId }
+        if (!this.isCurrentTurn(turn.turnId)) {
+          return { status: 'cancelled', turnId: turn.turnId, attachmentDisposition }
+        }
         reportPhase('cleaning_up')
         if (streamedSpeechPrepared) await this.finishSpeechCleanup(turn.turnId)
         else this.completeSilentReply(turn.turnId, draft.emotionKey, draft.displayText)
@@ -558,7 +571,9 @@ export class ConversationRuntime {
         }
       }
       if (this.playbackTurnId === turn.turnId) this.playbackTurnId = null
-      if (!this.isCurrentTurn(turn.turnId)) return { status: 'cancelled', turnId: turn.turnId }
+      if (!this.isCurrentTurn(turn.turnId)) {
+        return { status: 'cancelled', turnId: turn.turnId, attachmentDisposition }
+      }
 
       failurePhase = 'cleanup'
       reportPhase('cleaning_up')
@@ -571,7 +586,7 @@ export class ConversationRuntime {
         cleanupCompleted: true,
       }
     } catch (error) {
-      if (streamedMessageId) {
+      if (streamedMessageId && !streamedMessageFinalized) {
         this.deps.updateMessage(streamedMessageId, streamedDisplayText, undefined, false, true)
       }
       this.activeEmotionPipeline?.cancel()
@@ -582,7 +597,7 @@ export class ConversationRuntime {
         (error instanceof ConversationInterruptedError && error.turnId === turn.turnId) ||
         !this.isCurrentTurn(turn.turnId)
       ) {
-        return { status: 'cancelled', turnId: turn.turnId }
+        return { status: 'cancelled', turnId: turn.turnId, attachmentDisposition }
       }
       if (error instanceof LlmCredentialMissingError || error instanceof LlmModelMissingError) {
         const reason =
@@ -590,7 +605,13 @@ export class ConversationRuntime {
         this.deps.handleLlmSetupRequired(turn.text, reason)
         this.deps.recordRuntimeEvent('LLM Setup Required', `turnId=${turn.turnId}`)
         await this.recoverToIdle(turn.turnId)
-        return { status: 'failed', turnId: turn.turnId, phase: failurePhase, error: error.message }
+        return {
+          status: 'failed',
+          turnId: turn.turnId,
+          phase: failurePhase,
+          error: error.message,
+          attachmentDisposition,
+        }
       }
       if (error instanceof ConversationTurnFailureError) {
         const { failure } = error
@@ -606,6 +627,7 @@ export class ConversationRuntime {
             turnId: turn.turnId,
             phase: 'cleanup',
             error: String(cleanupError),
+            attachmentDisposition: failure.attachmentDisposition,
           }
         }
         return {
@@ -635,6 +657,7 @@ export class ConversationRuntime {
             turnId: turn.turnId,
             phase: 'cleanup',
             error: String(cleanupError),
+            attachmentDisposition,
           }
         }
         return {
@@ -658,6 +681,7 @@ export class ConversationRuntime {
             turnId: turn.turnId,
             phase: 'cleanup',
             error: String(cleanupError),
+            attachmentDisposition,
           }
         }
         return {
@@ -687,9 +711,16 @@ export class ConversationRuntime {
           turnId: turn.turnId,
           phase: 'cleanup',
           error: String(cleanupError),
+          attachmentDisposition,
         }
       }
-      return { status: 'failed', turnId: turn.turnId, phase: failurePhase, error: message }
+      return {
+        status: 'failed',
+        turnId: turn.turnId,
+        phase: failurePhase,
+        error: message,
+        attachmentDisposition,
+      }
     }
   }
 

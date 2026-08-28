@@ -36,6 +36,17 @@ export type ScreenContextAttachmentState =
   | 'retryable'
   | 'expired'
 
+export function resolveScreenContextSettlement(result: ChatSubmissionResult): {
+  retain: boolean
+  state: ScreenContextAttachmentState
+} {
+  if (result.status === 'completed') return { retain: false, state: 'empty' }
+  const disposition =
+    result.status === 'failed' ? result.failure.attachmentDisposition : result.attachmentDisposition
+  if (!disposition || disposition === 'retained') return { retain: true, state: 'retryable' }
+  return { retain: false, state: disposition === 'expired' ? 'expired' : 'empty' }
+}
+
 export function useScreenContextAttachment(): ScreenContextAttachmentController {
   const { t } = useTranslation()
   const [pending, setPending] = useState<ScreenContextCaptureDescriptor | null>(null)
@@ -157,6 +168,11 @@ export function useScreenContextAttachment(): ScreenContextAttachmentController 
         return
       }
       if (!result.ok) {
+        if (result.error.code === 'CAPTURE_NOT_OWNED' || result.error.code === 'CAPTURE_EXPIRED') {
+          pendingRef.current = null
+          setPending(null)
+          setState('expired')
+        }
         setError(screenContextErrorMessage(result.error.code, t))
         return
       }
@@ -259,23 +275,14 @@ export function useScreenContextAttachment(): ScreenContextAttachmentController 
       setState('empty')
       return
     }
-    if (result.status === 'completed') {
-      pendingRef.current = null
-      setPending(null)
-      setState('empty')
-      return
-    }
-    if (result.status === 'cancelled') {
-      setState('retryable')
-      return
-    }
-    if (result.failure.attachmentDisposition === 'retained') {
-      setState('retryable')
+    const settlement = resolveScreenContextSettlement(result)
+    if (settlement.retain) {
+      setState(settlement.state)
       return
     }
     pendingRef.current = null
     setPending(null)
-    setState(result.failure.attachmentDisposition === 'expired' ? 'expired' : 'empty')
+    setState(settlement.state)
   }
 
   return {

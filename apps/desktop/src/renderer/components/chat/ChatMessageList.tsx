@@ -1,17 +1,21 @@
-import { Button, ButtonGroup, Heading } from '@react-spectrum/s2'
+import { Badge, Button, ButtonGroup, Heading, StatusLight, Text } from '@react-spectrum/s2'
 import Chat from '@react-spectrum/s2/icons/Chat'
+import MagicWand from '@react-spectrum/s2/icons/MagicWand'
+import RocketQuickActions from '@react-spectrum/s2/icons/RocketQuickActions'
 import { useEffect, useRef, useState } from 'react'
 
 import { type ControllerState } from '../../Controller'
 import { useTranslation } from '../../localization/useTranslation'
+import { type ChatQuickAction, type ChatQuickActionGroups } from './chatQuickActions'
 import { MarkdownMessage } from './MarkdownMessage'
 import { ProjectEvidenceBar } from './ProjectEvidenceBar'
 
 export interface ChatMessageListProps {
   messages: ControllerState['messages']
   status: ControllerState['status']
-  quickActions: readonly string[]
-  onQuickAction: (text: string) => void
+  quickActions: ChatQuickActionGroups
+  onQuickAction: (action: ChatQuickAction) => void
+  onOpenCapabilities?: () => void
   continuousListening: ControllerState['continuousListening']
   onRetryContinuousListening?: () => void
   onDisableContinuousListening?: () => void
@@ -22,6 +26,7 @@ export function ChatMessageList({
   status,
   quickActions,
   onQuickAction,
+  onOpenCapabilities,
   continuousListening,
   onRetryContinuousListening,
   onDisableContinuousListening,
@@ -88,15 +93,94 @@ export function ChatMessageList({
         )}
         {messages.length === 0 && (
           <div className="chat-empty">
-            <Chat UNSAFE_className="chat-empty-icon" aria-hidden />
-            <Heading level={2}>{t('chat.ready')}</Heading>
-            <ButtonGroup>
-              {quickActions.map((action) => (
-                <Button key={action} variant="secondary" onPress={() => onQuickAction(action)}>
-                  {action}
+            <div className="chat-empty-hero">
+              <div className="chat-empty-icon-frame" aria-hidden="true">
+                <Chat UNSAFE_className="chat-empty-icon" />
+              </div>
+              <StatusLight variant="positive" size="S">
+                {t('chat.ready')}
+              </StatusLight>
+              <Heading level={2}>{t('chat.empty.title')}</Heading>
+              <Text UNSAFE_className="chat-empty-description">{t('chat.empty.description')}</Text>
+            </div>
+
+            <div className="chat-quick-action-grid">
+              <section
+                className="chat-quick-action-group chat-quick-action-group-starter"
+                aria-labelledby="chat-quick-start-title"
+              >
+                <div className="chat-quick-action-heading">
+                  <MagicWand aria-hidden />
+                  <Heading id="chat-quick-start-title" level={3}>
+                    {t('chat.quick.startTitle')}
+                  </Heading>
+                </div>
+                <Text UNSAFE_className="chat-quick-action-description">
+                  {t('chat.quick.startDescription')}
+                </Text>
+                <fieldset
+                  className="chat-quick-action-buttons chat-starter-action-grid"
+                  aria-labelledby="chat-quick-start-title"
+                >
+                  {quickActions.starter.map((action, index) => (
+                    <Button
+                      key={action.id}
+                      size="M"
+                      variant={index === 0 ? 'accent' : 'secondary'}
+                      UNSAFE_className={`chat-starter-action${index === 0 ? ' shio-accent-button' : ''}`}
+                      onPress={() => onQuickAction(action)}
+                    >
+                      {action.label}
+                    </Button>
+                  ))}
+                </fieldset>
+              </section>
+
+              {quickActions.tools.length > 0 && (
+                <section
+                  className="chat-quick-action-group chat-quick-action-group-tools"
+                  aria-labelledby="chat-quick-tools-title"
+                >
+                  <div className="chat-quick-action-heading">
+                    <RocketQuickActions aria-hidden />
+                    <Heading id="chat-quick-tools-title" level={3}>
+                      {t('chat.quick.toolsTitle')}
+                    </Heading>
+                    <Badge size="S" variant="gray" UNSAFE_className="chat-quick-action-count">
+                      {quickActions.tools.length}
+                    </Badge>
+                  </div>
+                  <Text UNSAFE_className="chat-quick-action-description">
+                    {t('chat.quick.toolsDescription')}
+                  </Text>
+                  <fieldset
+                    className="chat-quick-action-buttons chat-tool-action-grid"
+                    aria-labelledby="chat-quick-tools-title"
+                  >
+                    {quickActions.tools.map((action) => (
+                      <Button
+                        key={action.id}
+                        size="S"
+                        variant="secondary"
+                        UNSAFE_className="chat-tool-action"
+                        onPress={() => onQuickAction(action)}
+                      >
+                        {action.label}
+                      </Button>
+                    ))}
+                  </fieldset>
+                </section>
+              )}
+            </div>
+
+            {onOpenCapabilities && (
+              <div className="chat-empty-catalog-link">
+                <Text>{t('chat.quick.catalogHint')}</Text>
+                <Button size="S" variant="secondary" onPress={onOpenCapabilities}>
+                  {t('chat.quick.catalogAction')}
                 </Button>
-              ))}
-            </ButtonGroup>
+              </div>
+            )}
           </div>
         )}
         {messages.map((message) => (

@@ -61,7 +61,15 @@ async function main(): Promise<void> {
           timedOut: false,
           aborted: false,
           timeoutMs,
-          stdout: { text: command === 'node -v' ? 'v22.12.0' : 'fixture output', truncated: false },
+          stdout: {
+            text:
+              command === 'node -v'
+                ? 'v22.12.0'
+                : command === 'npx.cmd --version'
+                  ? '11.17.0'
+                  : 'fixture output',
+            truncated: false,
+          },
           stderr: { text: '', truncated: false },
         }),
         close: async () => {
@@ -81,6 +89,19 @@ async function main(): Promise<void> {
     assert.equal(result.evidence.kind, 'shell')
     assert.equal(result.presentationFacts?.[0]?.value, '22.12.0')
     assert.equal(starts, 1)
+
+    const npxResult = await adapter.execute(
+      'Read the installed npx version',
+      new AbortController().signal,
+      'shell',
+      'npx.cmd --version',
+    )
+    assert.deepEqual(npxResult.presentationFacts?.[0], {
+      kind: 'runtime-version',
+      label: 'npx',
+      value: '11.17.0',
+      sensitivity: 'safe',
+    })
 
     await assert.rejects(
       () =>

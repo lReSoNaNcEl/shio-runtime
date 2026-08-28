@@ -17,6 +17,9 @@ export interface ModelComboBoxProps {
   isLoading?: boolean
   placeholder?: string
   showCapabilities?: boolean
+  showImageFilter?: boolean
+  showVisionFilter?: boolean
+  showCapabilityDetails?: boolean
   onSelect: (id: string) => void
 }
 
@@ -27,16 +30,26 @@ export function ModelComboBox({
   isDisabled,
   isLoading,
   showCapabilities = false,
+  showImageFilter = false,
+  showVisionFilter = false,
+  showCapabilityDetails = showCapabilities,
   onSelect,
 }: ModelComboBoxProps) {
   const { t } = useTranslation()
   const [searchText, setSearchText] = useState(selectedId)
   const [isOpen, setIsOpen] = useState(false)
+  const [onlyImages, setOnlyImages] = useState(false)
   const [onlyVision, setOnlyVision] = useState(false)
   const normalizedSearch = isOpen ? searchText.trim().toLocaleLowerCase() : ''
+  const filterImages = showImageFilter && onlyImages
+  const filterVision = showVisionFilter && onlyVision
   const capabilityFilteredModels =
-    showCapabilities && onlyVision
-      ? models.filter((model) => model.capabilities.supportsVision)
+    filterImages || filterVision
+      ? models.filter(
+          (model) =>
+            (filterImages && model.capabilities.supportsImageGeneration) ||
+            (filterVision && model.capabilities.supportsVision),
+        )
       : models
   const filteredModels = normalizedSearch
     ? capabilityFilteredModels.filter((model) =>
@@ -49,11 +62,12 @@ export function ModelComboBox({
     if (!isOpen) setSearchText(selectedId)
   }, [isOpen, selectedId])
 
-  const emptyText = onlyVision
-    ? t('settings.llm.capabilities.noVisionModels')
-    : models.length === 0
-      ? t('common.modelsNotFound')
-      : t('common.modelsNotFoundForQuery')
+  const emptyText =
+    onlyImages || onlyVision
+      ? t('settings.llm.capabilities.noFilteredModels')
+      : models.length === 0
+        ? t('common.modelsNotFound')
+        : t('common.modelsNotFoundForQuery')
   return (
     <div className="model-combobox">
       <ComboBox
@@ -118,12 +132,21 @@ export function ModelComboBox({
           </ComboBoxItem>
         )}
       </ComboBox>
-      {showCapabilities && (
-        <Switch isSelected={onlyVision} onChange={setOnlyVision}>
-          {t('settings.llm.capabilities.onlyVision')}
-        </Switch>
+      {(showImageFilter || showVisionFilter) && (
+        <div className="model-capability-filters">
+          {showImageFilter && (
+            <Switch isSelected={onlyImages} onChange={setOnlyImages}>
+              {t('settings.llm.capabilities.onlyImages')}
+            </Switch>
+          )}
+          {showVisionFilter && (
+            <Switch isSelected={onlyVision} onChange={setOnlyVision}>
+              {t('settings.llm.capabilities.onlyVision')}
+            </Switch>
+          )}
+        </div>
       )}
-      {showCapabilities && selectedModel && (
+      {showCapabilities && showCapabilityDetails && selectedModel && (
         <div
           className={`model-capability-status ${selectedModel.capabilities.supportsVision ? 'model-capability-status-positive' : 'model-capability-status-neutral'}`}
         >

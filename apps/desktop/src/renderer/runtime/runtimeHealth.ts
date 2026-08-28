@@ -19,6 +19,19 @@ export interface RuntimeHealthProjection {
   overall: ApplicationHealth
   components: readonly RuntimeHealthComponent[]
   plugins: readonly RuntimePluginHealth[]
+  recentIncidents: readonly RuntimeHealthIncident[]
+  lastCheckedAt: number | null
+}
+
+export interface RuntimeHealthIncident {
+  id: string
+  ownerComponentId: 'llm'
+  severity: 'notice'
+  code: RuntimeSupportBundle['recentIncidents'][number]['code']
+  provider: RuntimeSupportBundle['recentIncidents'][number]['provider']
+  occurredAt: number
+  titleKey: TranslationKey
+  summaryKey: TranslationKey
 }
 
 export function formatRelativeTime(
@@ -126,7 +139,13 @@ export function buildRuntimeHealthProjection(
       titleKey: 'health.system.title',
       summaryKey: 'health.system.loading',
     })
-    return { overall: aggregateHealth(components), components, plugins: [] }
+    return {
+      overall: aggregateHealth(components),
+      components,
+      plugins: [],
+      recentIncidents: [],
+      lastCheckedAt: null,
+    }
   }
 
   components.push({
@@ -190,9 +209,25 @@ export function buildRuntimeHealthProjection(
     })
   }
 
+  const recentIncidents: RuntimeHealthIncident[] = support.recentIncidents.map((incident) => ({
+    id: incident.id,
+    ownerComponentId: 'llm',
+    severity: 'notice',
+    code: incident.code,
+    provider: incident.provider,
+    occurredAt: incident.occurredAt,
+    titleKey: 'systemStatus.incident.llm.title',
+    summaryKey: `systemStatus.incident.${incident.code}`,
+  }))
+
   return {
-    overall: aggregateHealth(components),
+    overall: aggregateHealth([
+      ...components,
+      ...recentIncidents.map((incident) => ({ enabled: true, severity: incident.severity })),
+    ]),
     components,
     plugins: support.plugins,
+    recentIncidents,
+    lastCheckedAt: support.generatedAt,
   }
 }

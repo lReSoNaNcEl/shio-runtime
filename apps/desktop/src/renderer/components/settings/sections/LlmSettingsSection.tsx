@@ -136,6 +136,8 @@ export function LlmSettingsSection({
             isDisabled={state.modelsState !== 'ready'}
             isLoading={state.modelsState === 'loading'}
             showCapabilities
+            showImageFilter
+            showVisionFilter
             onSelect={(id) => actions.updateProviderSettings(state.activeProvider, id)}
           />
           <span className="settings-hint">

@@ -3,6 +3,7 @@ import type { z } from 'zod'
 import type { BrowserObservation } from '../../shared/browser-control'
 import type { ShioCapabilitySnapshot } from '../../shared/capabilities'
 import type { CharacterToolId } from '../../shared/character-tools'
+import type { ProviderSchemaCapabilities } from '../../shared/llm'
 import type { LlmToolDefinition } from '../llm'
 import type { MemoryToolBroker } from '../memory'
 import {
@@ -32,6 +33,7 @@ interface CharacterToolRegistryOptions {
   memory?: MemoryToolBroker
   actionsAvailable: boolean
   browserComputerUseAvailable?: boolean
+  providerSchemaCapabilities?: ProviderSchemaCapabilities
 }
 
 function browserObservationHint(observation: BrowserObservation | null): string {
@@ -60,8 +62,10 @@ export class CharacterToolRegistry {
   private readonly tools: readonly CharacterToolDefinition[]
   private readonly byId: ReadonlyMap<CharacterToolId, CharacterToolDefinition>
   private readonly byNativeName: ReadonlyMap<string, CharacterToolDefinition>
+  private readonly providerSchemaCapabilities: ProviderSchemaCapabilities
 
   constructor(options: CharacterToolRegistryOptions) {
+    this.providerSchemaCapabilities = options.providerSchemaCapabilities ?? { oneOf: true }
     const memoryStatus = options.memory?.status()
     const context: CharacterToolAvailabilityContext = {
       projectAvailable: options.projectAvailable,
@@ -81,7 +85,7 @@ export class CharacterToolRegistry {
         nativeName: spec.nativeName,
         description: resolvedDescription(spec.id, spec.description, options.browserObservation),
         inputSchema: spec.inputSchema,
-        llmInputSchema: toLlmToolJsonSchema(spec.inputSchema),
+        llmInputSchema: toLlmToolJsonSchema(spec.inputSchema, this.providerSchemaCapabilities),
         availability: 'available' as const,
       }),
     )
@@ -92,6 +96,10 @@ export class CharacterToolRegistry {
 
   definitions(): readonly CharacterToolDefinition[] {
     return this.tools
+  }
+
+  schemaCapabilities(): ProviderSchemaCapabilities {
+    return this.providerSchemaCapabilities
   }
 
   nativeDefinitions(): readonly LlmToolDefinition[] {

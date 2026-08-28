@@ -220,7 +220,10 @@ Architecture and ownership:
   phrase-, keyword-, regex-, filename-, symbol-, or locale-alias routing for these
   natural-language decisions. Before an explicit user turn may produce a terminal
   reply, the same Character LLM emits a typed Tool Requirement: direct answer,
-  required source, or explicit tool. Runtime rejects a terminal reply while a
+  preferred source, required source, or explicit tool. This requirement is the
+  minimum terminal obligation, not the turn-wide tool allowlist. A separate bounded
+  initial Tool Plan is registered from the original request before external evidence.
+  Runtime rejects a terminal reply while a
   required available source/tool remains unattempted; unavailable or failed required
   work produces an honest bounded response and may not be replaced by remembered
   knowledge.
@@ -229,9 +232,14 @@ Architecture and ownership:
   when current-turn evidence reports success. The immediately previous bounded
   summary may ground retrospective questions about actual tool use, but never
   satisfies a current-turn source requirement and never stores raw tool payloads.
-- Tool continuation context stays bounded and requirement-relevant. Once a typed
-  source or explicit-tool requirement exists, do not keep sending unrelated tool
-  schemas. Preserve typed Action outcomes, but remove superseded Browser
+- Main-owned typed assistant-turn metadata distinguishes Character prose from provider
+  failures, Tool Requirement failures, and Runtime fallbacks. Non-Character failure
+  presentations are excluded from later semantic Tool Requirement planning and are
+  never identified by matching their text.
+- Tool continuation context stays bounded and plan/requirement-relevant. Send only
+  definitions selected by the initial Tool Plan plus the required or preferred source
+  family, but do not remove them merely because the terminal requirement was satisfied.
+  Preserve typed Action outcomes, but remove superseded Browser
   Observations so only the latest transient observation informs the next decision.
   A provider continuation failure must not be disguised as the presentation of an
   earlier Action result.

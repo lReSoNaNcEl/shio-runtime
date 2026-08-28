@@ -67,8 +67,14 @@ export function PluginToggle({
 }) {
   const { t } = useTranslation()
   return (
-    <Switch size="S" isSelected={plugin.enabled} isDisabled={plugin.busy} onChange={onChange}>
-      {plugin.enabled ? t('common.enabled') : t('common.disabled')}
-    </Switch>
+    <Switch
+      size="S"
+      isSelected={plugin.enabled}
+      isDisabled={plugin.busy}
+      aria-label={t(plugin.enabled ? 'plugins.disableLabel' : 'plugins.enableLabel', {
+        plugin: t(plugin.manifest.nameKey),
+      })}
+      onChange={onChange}
+    />
   )
 }

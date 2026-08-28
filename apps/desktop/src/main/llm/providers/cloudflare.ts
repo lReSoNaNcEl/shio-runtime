@@ -76,6 +76,7 @@ export const cloudflareProvider: ProviderDefinition = {
     requiresApiKey: true,
     modelsRequireApiKey: true,
     requiresAccountId: true,
+    schemaCapabilities: { oneOf: false },
   },
   chat: {
     baseUrl: 'https://api.cloudflare.com',

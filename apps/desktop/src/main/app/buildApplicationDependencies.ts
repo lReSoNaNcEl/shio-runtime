@@ -750,6 +750,7 @@ export function buildApplicationDependencies(): ApplicationDependencies {
         },
         mainRendererHealth: () => mainWindows.getHealth(),
         overlayRendererHealth: () => overlayWindows.getHealth(),
+        recentIncidents: () => conversationTurnService?.recentIncidents() ?? [],
       },
       ipcAuthorization,
       actionRuntime,

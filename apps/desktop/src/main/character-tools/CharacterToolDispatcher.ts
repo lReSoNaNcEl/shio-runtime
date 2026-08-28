@@ -54,6 +54,22 @@ import { ToolInfluenceContext } from './ToolInfluenceContext'
 
 const MAX_PROJECT_PACKETS_PER_TURN = 4
 
+type BrowserComputerUseToolId = Extract<CharacterToolId, `browser.use${string}`>
+type BrowserDirectToolId = Exclude<
+  CharacterToolId,
+  | 'project.search'
+  | 'web.search'
+  | 'shell.execute'
+  | 'browser.observe'
+  | BrowserComputerUseToolId
+  | 'goal.create'
+  | 'goal.list'
+  | 'goal.update'
+  | 'thread.open'
+  | 'thread.resolve'
+  | MemoryToolName
+>
+
 const MEMORY_TOOL_IDS: ReadonlySet<CharacterToolId> = new Set([
   'memory.search',
   'memory.store',
@@ -77,6 +93,29 @@ const READ_ONLY_TOOL_IDS: ReadonlySet<CharacterToolId> = new Set([
   'goal.list',
   'browser.useStatus',
 ])
+const BROWSER_COMPUTER_USE_TOOL_IDS: ReadonlySet<CharacterToolId> = new Set([
+  'browser.use',
+  'browser.usePause',
+  'browser.useResume',
+  'browser.useStop',
+  'browser.useStatus',
+])
+const LEGACY_BROWSER_TOOL_IDS = Object.freeze({
+  observe: 'browser.observe',
+  open: 'browser.open',
+  click: 'browser.click',
+  fill: 'browser.fill',
+  select: 'browser.select',
+  scroll: 'browser.scroll',
+  back: 'browser.back',
+  forward: 'browser.forward',
+  tabs: 'browser.tabs',
+  'switch-tab': 'browser.switchTab',
+}) satisfies Partial<Record<BrowserOperation['operation'], CharacterToolId>>
+
+function isBrowserComputerUseToolId(id: CharacterToolId): id is BrowserComputerUseToolId {
+  return BROWSER_COMPUTER_USE_TOOL_IDS.has(id)
+}
 
 function authorityFailureCode(id: CharacterToolId): string {
   if (id === 'shell.execute') return 'EVIDENCE_CANNOT_AUTHORIZE_SHELL'
@@ -312,7 +351,7 @@ function verifiedMemoryOutcome(
 }
 
 function browserComputerUseOutcomeProjection(
-  id: Extract<CharacterToolId, `browser.use${string}`>,
+  id: BrowserComputerUseToolId,
   session: BrowserComputerUseSession | undefined,
 ): Extract<
   CharacterToolVerifiedOutcome,
@@ -376,11 +415,12 @@ export class CharacterToolDispatcher {
     try {
       if (!READ_ONLY_TOOL_IDS.has(id) && !this.influence.canInvoke(id)) {
         const code = authorityFailureCode(id)
+        const influence = this.influence.snapshot()
         mainLog.info('[CharacterTools] independent authority missing', {
           tool: id,
           code,
-          authorityOrigin: this.influence.snapshot().authority.origin,
-          evidenceOrigins: this.influence.snapshot().evidenceOrigins,
+          authorityOrigin: influence.authority.origin,
+          evidenceOrigins: influence.evidenceOrigins,
         })
         return { content: failureContent(code) }
       }
@@ -399,38 +439,10 @@ export class CharacterToolDispatcher {
       if (MEMORY_TOOL_IDS.has(id)) return this.executeMemory(id as MemoryToolName, validatedInput)
       if (id === 'shell.execute') return await this.executeShell(validatedInput)
       if (id === 'browser.observe') return await this.executeBrowserObservation()
-      if (id.startsWith('browser.use')) {
-        return await this.executeBrowserComputerUse(
-          id as
-            | 'browser.use'
-            | 'browser.usePause'
-            | 'browser.useResume'
-            | 'browser.useStop'
-            | 'browser.useStatus',
-          validatedInput,
-        )
+      if (isBrowserComputerUseToolId(id)) {
+        return await this.executeBrowserComputerUse(id, validatedInput)
       }
-      return await this.executeBrowser(
-        id as Exclude<
-          CharacterToolId,
-          | 'project.search'
-          | 'web.search'
-          | 'shell.execute'
-          | 'browser.observe'
-          | 'browser.use'
-          | 'browser.usePause'
-          | 'browser.useResume'
-          | 'browser.useStop'
-          | 'browser.useStatus'
-          | 'goal.create'
-          | 'goal.list'
-          | 'goal.update'
-          | 'thread.open'
-          | 'thread.resolve'
-          | MemoryToolName
-        >,
-        validatedInput,
-      )
+      return await this.executeBrowser(id as BrowserDirectToolId, validatedInput)
     } catch (error) {
       if (this.options.signal.aborted) throw this.options.signal.reason ?? error
       const code = error instanceof z.ZodError ? 'INVALID_REQUEST' : 'TOOL_EXECUTION_FAILED'
@@ -468,27 +480,10 @@ export class CharacterToolDispatcher {
         return { content: failureContent(authorityFailureCode(legacyId)) }
       }
       this.influence.select(legacyId)
-      const browserToolId: Partial<
-        Record<
-          NonNullable<DesktopWorkflowRequest['browserOperation']>['operation'],
-          CharacterToolId
-        >
-      > = {
-        observe: 'browser.observe',
-        open: 'browser.open',
-        click: 'browser.click',
-        fill: 'browser.fill',
-        select: 'browser.select',
-        scroll: 'browser.scroll',
-        back: 'browser.back',
-        forward: 'browser.forward',
-        tabs: 'browser.tabs',
-        'switch-tab': 'browser.switchTab',
-      }
       const id =
         requested === 'browser'
           ? validated.browserOperation
-            ? browserToolId[validated.browserOperation.operation]
+            ? LEGACY_BROWSER_TOOL_IDS[validated.browserOperation.operation]
             : undefined
           : 'shell.execute'
       if (!id) return { content: failureContent('TOOL_UNAVAILABLE') }
@@ -735,24 +730,7 @@ export class CharacterToolDispatcher {
   }
 
   private async executeBrowser(
-    id: Exclude<
-      CharacterToolId,
-      | 'project.search'
-      | 'web.search'
-      | 'shell.execute'
-      | 'browser.observe'
-      | 'browser.use'
-      | 'browser.usePause'
-      | 'browser.useResume'
-      | 'browser.useStop'
-      | 'browser.useStatus'
-      | 'goal.create'
-      | 'goal.list'
-      | 'goal.update'
-      | 'thread.open'
-      | 'thread.resolve'
-      | MemoryToolName
-    >,
+    id: BrowserDirectToolId,
     input: Record<string, unknown>,
   ): Promise<CharacterToolDispatchResult> {
     const parsed = input
@@ -855,18 +833,19 @@ export class CharacterToolDispatcher {
   }
 
   private async executeBrowserComputerUse(
-    id:
-      | 'browser.use'
-      | 'browser.usePause'
-      | 'browser.useResume'
-      | 'browser.useStop'
-      | 'browser.useStatus',
+    id: BrowserComputerUseToolId,
     input: Record<string, unknown>,
   ): Promise<CharacterToolDispatchResult> {
     const provider = this.options.browserComputerUse?.()
     if (!provider) return { content: failureContent('BROWSER_COMPUTER_USE_UNAVAILABLE') }
     if (id === 'browser.useStatus') {
-      const session = provider.status().currentSession
+      const waitForTerminalMs =
+        typeof input.waitForTerminalMs === 'number' ? input.waitForTerminalMs : 0
+      const session = await waitForBrowserComputerUseTerminalState(
+        provider,
+        waitForTerminalMs,
+        this.options.signal,
+      )
       const projection = browserComputerUseOutcomeProjection(id, session ?? undefined)
       return {
         content: successfulContent({
@@ -976,6 +955,47 @@ export class CharacterToolDispatcher {
       actionResult: result,
     }
   }
+}
+
+async function waitForBrowserComputerUseTerminalState(
+  provider: BrowserComputerUseProvider,
+  waitForTerminalMs: number,
+  signal: AbortSignal,
+): Promise<BrowserComputerUseSession | null> {
+  let session = provider.status().currentSession
+  if (!session || waitForTerminalMs <= 0 || !isBrowserComputerUseActive(session)) return session
+  const sessionId = session.id
+  const deadline = Date.now() + waitForTerminalMs
+  while (Date.now() < deadline) {
+    await waitForStatusPoll(Math.min(200, deadline - Date.now()), signal)
+    const current = provider.status().currentSession
+    if (!current || current.id !== sessionId) return current
+    session = current
+    if (!isBrowserComputerUseActive(session)) return session
+  }
+  return session
+}
+
+function isBrowserComputerUseActive(session: BrowserComputerUseSession): boolean {
+  return session.state === 'running' || session.state === 'stopping'
+}
+
+function waitForStatusPoll(durationMs: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const abort = (): void => {
+      clearTimeout(timer)
+      reject(signal.reason ?? new Error('Turn cancelled'))
+    }
+    const timer = setTimeout(
+      () => {
+        signal.removeEventListener('abort', abort)
+        resolve()
+      },
+      Math.max(0, durationMs),
+    )
+    signal.addEventListener('abort', abort, { once: true })
+    if (signal.aborted) abort()
+  })
 }
 
 function normalizeFingerprintPart(value: string): string {

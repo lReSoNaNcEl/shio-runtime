@@ -23,9 +23,14 @@ import type {
 } from '../../src/main/project-awareness/contracts'
 import { sourcePriority } from '../../src/main/project-awareness/indexing/SourceFilter'
 import {
+  buildPackageManifestDependencyCandidates,
+  isPackageManifestDependencyQuery,
+} from '../../src/main/project-awareness/retrieval/PackageManifestEvidence'
+import {
   PROJECT_CONTEXT_BUDGET,
   selectProjectEvidence,
 } from '../../src/main/project-awareness/retrieval/ProjectEvidenceSelector'
+import { compileProjectRetrievalQuery } from '../../src/main/project-awareness/retrieval/ProjectRetrievalQueryCompiler'
 import { type Translator, translate } from '../../src/shared/localization'
 import {
   isValidProjectBranch,
@@ -114,6 +119,67 @@ function assertDeterministicBalancedEvidenceBudget(): void {
   assert(weak.totalEvidenceCharacters <= 1_200)
 }
 
+function assertDesktopPackageManifestSelection(): void {
+  const plan = compileProjectRetrievalQuery(
+    'Какие пакеты установлены в клиенте apps/desktop/package.json?',
+  )
+  assert.equal(isPackageManifestDependencyQuery([plan]), true)
+  const manifests = new Map([
+    ['package.json', '{\n  "name": "root"\n}'],
+    [
+      'apps/desktop/package.json',
+      '{\n  "dependencies": {\n    "react": "19.2.7",\n    "zod": "4.4.3"\n  }\n}',
+    ],
+  ])
+  const candidates = buildPackageManifestDependencyCandidates(
+    [
+      {
+        id: 1,
+        path: 'package.json',
+        startLine: 1,
+        endLine: 3,
+        content: manifests.get('package.json') ?? '',
+        matches: [{ kind: 'path', ordinal: 0 }],
+      },
+      {
+        id: 2,
+        path: 'apps/desktop/package.json',
+        startLine: 1,
+        endLine: 6,
+        content: manifests.get('apps/desktop/package.json') ?? '',
+        matches: [{ kind: 'path', ordinal: 1 }],
+      },
+    ],
+    plan.normalizedTerms,
+    (path) => manifests.get(path) ?? null,
+  )
+  assert(candidates.length > 0)
+  assert(candidates.every((candidate) => candidate.path === 'apps/desktop/package.json'))
+  assert.match(candidates.map((candidate) => candidate.content).join('\n'), /"zod": "4\.4\.3"/u)
+
+  const scopedPackagePlan = compileProjectRetrievalQuery(
+    'Какие пакеты от @deepseek-ai установлены в package.json папки desktop?',
+  )
+  assert.equal(isPackageManifestDependencyQuery([scopedPackagePlan]), true)
+  const scopedCandidates = buildPackageManifestDependencyCandidates(
+    [
+      ...candidates,
+      {
+        id: 3,
+        path: 'apps/desktop/package.json',
+        startLine: 1,
+        endLine: 6,
+        content: manifests.get('apps/desktop/package.json') ?? '',
+        matches: [{ kind: 'path', ordinal: 1 }],
+      },
+    ],
+    scopedPackagePlan.normalizedTerms,
+    (path) => manifests.get(path) ?? null,
+  )
+  assert(scopedCandidates.length > 0)
+  assert(scopedCandidates.every((candidate) => candidate.path === 'apps/desktop/package.json'))
+}
+
 const translateEnglish: Translator = (key, params) => translate('en', key, params)
 
 const sourceV2 = sourceV1.replaceAll('ProjectRuntime', 'ProjectRuntimeV2')
@@ -125,10 +191,24 @@ const stableSource = [
 const packageManifest = JSON.stringify(
   {
     name: 'technology-fixture',
+    description: 'Electron client fixture',
+    scripts: Object.fromEntries(
+      Array.from({ length: 36 }, (_, index) => [
+        `fixture:script:${index}`,
+        `node scripts/fixture-${index}.mjs --long-argument-for-retrieval-regression`,
+      ]),
+    ),
+    devDependencies: {
+      vitest: '4.1.11',
+    },
     dependencies: {
       electron: '1.0.0',
       react: '1.0.0',
       typescript: '1.0.0',
+      ...Object.fromEntries(
+        Array.from({ length: 78 }, (_, index) => [`fixture-package-${index}`, `1.0.${index}`]),
+      ),
+      'zod-tail-fixture': '4.4.3',
     },
   },
   null,
@@ -230,6 +310,7 @@ class MockRepositoryAdapter implements ProjectRepositoryAdapter {
 
 async function main(): Promise<void> {
   assertDeterministicBalancedEvidenceBudget()
+  assertDesktopPackageManifestSelection()
   assert.equal(
     isAllowedProjectPath({ path: 'apps/desktop/src/main/index.ts', size: 100 }, 1024),
     true,
@@ -500,6 +581,22 @@ async function main(): Promise<void> {
       ['package.json', 'apps/api/README.md'],
     )
     assert.match(technologyResults.map((result) => result.content).join('\n'), /Electron|FastAPI/)
+    const manifestResults = runtime.search({
+      query: 'Какие пакеты установлены в клиенте package.json?',
+    })
+    assert.equal(manifestResults[0]?.path, 'package.json')
+    const manifestEvidence = manifestResults.map((result) => result.content).join('\n')
+    assert.match(manifestEvidence, /devDependencies/u)
+    assert.match(manifestEvidence, /zod-tail-fixture/u)
+    assert.doesNotMatch(manifestEvidence, /fixture:script/u)
+    const manifestContext = runtime.buildContextPacket({
+      query: 'Какие пакеты установлены в клиенте package.json?',
+    })
+    assert(manifestContext)
+    assert.match(
+      manifestContext.evidence.map((result) => result.content).join('\n'),
+      /zod-tail-fixture/u,
+    )
     assert.equal(runtime.readSymbol({ name: 'ProjectRuntime' }).startLine, 6)
 
     adapter.head = '2222222222222222222222222222222222222222'
