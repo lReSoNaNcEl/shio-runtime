@@ -1,1 +1,2 @@
 pip-tools==7.6.0
+setuptools<82

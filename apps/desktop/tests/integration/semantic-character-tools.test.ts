@@ -121,6 +121,14 @@ async function main(): Promise<void> {
     ).kind,
     'malformed',
   )
+  const providerTextCall = parseCharacterToolDirective(
+    '[calm]Сейчас посмотрю. \\<tool\\_call> {"name":"Action:capabilities.list","arguments":{}} \\</tool\\_call>',
+  )
+  assert.deepEqual(providerTextCall, {
+    kind: 'malformed',
+    replyText: '[calm]Сейчас посмотрю.',
+    source: 'provider-control',
+  })
 
   const influence = new ToolInfluenceContext('Complete the fixture application')
   influence.registerPlannedTools(['browser.open', 'browser.use'])

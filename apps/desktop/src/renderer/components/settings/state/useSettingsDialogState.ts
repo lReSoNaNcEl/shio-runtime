@@ -500,7 +500,7 @@ export function useSettingsDialogState({
     const timer = window.setTimeout(() => {
       void persistPatch({
         ttsLanguage: lang,
-        ttsEngine: 'f5',
+        ttsEngine: 'cosyvoice3',
       }).catch(() => setSaveState('error'))
     }, 650)
     return () => window.clearTimeout(timer)

@@ -71,7 +71,7 @@ type StringConfigKey = Exclude<
 function stringDefaults(isPackaged = app.isPackaged): Record<StringConfigKey, string> {
   return {
     ttsLanguage: process.env.TTS_LANGUAGE ?? 'ru',
-    ttsEngine: process.env.TTS_ENGINE ?? 'f5',
+    ttsEngine: process.env.TTS_ENGINE ?? 'cosyvoice3',
     vrmPath: '',
     micDeviceId: '',
     overlayWidth: process.env.OVERLAY_WIDTH ?? '360',

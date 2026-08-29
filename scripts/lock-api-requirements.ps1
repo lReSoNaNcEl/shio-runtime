@@ -6,6 +6,8 @@ $apiRoot = Join-Path $repoRoot "apps\api"
 $tempBase = [System.IO.Path]::GetFullPath([System.IO.Path]::GetTempPath())
 $tempRoot = Join-Path $tempBase ("shio-api-lock-" + [guid]::NewGuid().ToString("N"))
 $venvPython = Join-Path $tempRoot "Scripts\python.exe"
+$canonicalPython = Join-Path $apiRoot ".venv\Scripts\python.exe"
+$bootstrapPython = if ($env:SHIO_API_PYTHON) { $env:SHIO_API_PYTHON } else { $canonicalPython }
 
 function Invoke-Checked {
     param(
@@ -19,14 +21,19 @@ function Invoke-Checked {
 }
 
 try {
-    $version = (& py -3.12 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')").Trim()
+    if (-not (Test-Path -LiteralPath $bootstrapPython)) {
+        throw "Python was not found at $bootstrapPython. Run npm run api:install:dev or set SHIO_API_PYTHON."
+    }
+    $version = (& $bootstrapPython -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')").Trim()
     if ($LASTEXITCODE -ne 0 -or $version -ne "3.12") {
         throw "Python 3.12 is required to generate API dependency locks."
     }
 
-    Invoke-Checked py -3.12 -m venv $tempRoot
+    Invoke-Checked $bootstrapPython -m venv $tempRoot
     Invoke-Checked $venvPython -m pip install --upgrade "pip>=25.3,<26"
     Invoke-Checked $venvPython -m pip install -r (Join-Path $apiRoot "requirements-tools.txt")
+    # Some pinned audio packages import NumPy while preparing metadata.
+    Invoke-Checked $venvPython -m pip install "numpy==1.26.4"
 
     Push-Location $apiRoot
     try {
@@ -34,6 +41,7 @@ try {
             --resolver=backtracking `
             --strip-extras `
             --allow-unsafe `
+            --pip-args=--no-build-isolation `
             --output-file=requirements.lock.txt `
             requirements.txt `
             requirements-torch-cu128.txt
@@ -41,6 +49,7 @@ try {
             --resolver=backtracking `
             --strip-extras `
             --allow-unsafe `
+            --pip-args=--no-build-isolation `
             --output-file=requirements-dev.lock.txt `
             requirements-dev.txt `
             requirements-torch-cu128.txt

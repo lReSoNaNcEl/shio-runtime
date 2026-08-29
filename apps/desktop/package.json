@@ -32,7 +32,7 @@
     "test:architecture": "vitest run tests/architecture",
     "test:contracts": "vitest run tests/contracts",
     "test:fast": "vitest run tests/unit tests/contracts tests/architecture",
-    "test:regression": "vitest run",
+    "test:regression": "vitest run tests/integration tests/renderer",
     "qualify:browser": "npm run qualify:browser-control",
     "qualify:browser-control": "esbuild qualifications/browser-control/qualify.ts --bundle --platform=node --format=esm --packages=external --outfile=out/browser-control-qualification.mjs && node out/browser-control-qualification.mjs",
     "qualify:continuous-browser": "esbuild src/main/browser-control/computer-use/browserReactiveTrackerWorker.ts --bundle --platform=node --format=cjs --packages=external --outfile=out/continuous-browser-reactive-worker.cjs && esbuild qualifications/continuous-browser-control/qualify.ts --bundle --platform=node --format=esm --packages=external --outfile=out/continuous-browser-qualification.mjs && node out/continuous-browser-qualification.mjs",
@@ -41,7 +41,6 @@
     "qualify:world-context": "esbuild qualifications/world-context/windows-worker.ts --bundle --platform=node --format=cjs --outfile=out/world-context-qualification.cjs && node out/world-context-qualification.cjs",
     "benchmark:latency": "npm run benchmark:latency-30",
     "benchmark:latency-30": "esbuild benchmarks/latency/benchmark.ts --bundle --platform=node --format=cjs --outfile=out/latency-30-benchmark.cjs && node out/latency-30-benchmark.cjs",
-    "repro:continuous-listening": "esbuild scripts/continuous-listening-repro/harness.ts --bundle --platform=node --format=cjs --outfile=out/continuous-listening-repro.cjs && node out/continuous-listening-repro.cjs",
     "test:llm-live": "npm run qualify:llm"
   },
   "keywords": [],

@@ -15,13 +15,13 @@
     "startupTimeoutSeconds": 180,
     "installTimeoutSeconds": 7200,
     "serviceId": "shio.speech-api",
-    "contractVersion": "1.1",
+    "contractVersion": "2.0",
     "releaseEnvironmentTemplate": "api/.env.release",
     "modelRevisions": {
       "fasterWhisper": "08e178d48790749d25932bbc082711ddcfdfbc4f",
-      "f5": "ea166adeae4c80ec5ee423a671e2bdb83906cf84",
-      "vocoder": "0feb3fdd929bcd6649e0e7c5a688cf7dd012ef21",
-      "ruaccent": "b78ae5ea1e62beaf138bed1865cd8c3b0b5ca855"
+      "cosyVoiceModel": "29e01c4e8d000f4bcd70751be16fa94bf3d85a18",
+      "cosyVoiceSource": "074ca6dc9e80a2f424f1f74b48bdd7d3fea531cc",
+      "cosyVoiceMatcha": "dd9105b34bf2be2230f4aa1e4769fb586a3c824e"
     }
   },
   "requirements": {

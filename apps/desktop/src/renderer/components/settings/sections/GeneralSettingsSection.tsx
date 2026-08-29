@@ -42,6 +42,7 @@ export function GeneralSettingsSection({
           size="S"
           isSelected={uiTheme === 'dark'}
           aria-label={t('app.theme.switch')}
+          UNSAFE_className="settings-theme-switch"
           onChange={(selected) => onThemeChange(selected ? 'dark' : 'light')}
         >
           {t(uiTheme === 'dark' ? 'app.theme.dark' : 'app.theme.light')}

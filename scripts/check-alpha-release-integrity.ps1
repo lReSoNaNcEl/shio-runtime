@@ -125,7 +125,7 @@ try {
 
 foreach ($required in @(
     "serviceId -eq `$Manifest.speechPack.serviceId",
-    "engines.f5.mode -eq `"real`"",
+    "synthesis.engine -eq `"cosyvoice3`"",
     "actualExecutable -eq",
     "Adopting an existing managed Speech API",
     "Repair refused: an unowned process",
@@ -188,7 +188,7 @@ Import-LauncherFunction "Get-HealthyApiClassification"
 $healthManifest = [pscustomobject]@{
     speechPack = [pscustomobject]@{
         serviceId = "shio.speech-api"
-        contractVersion = "1.1"
+        contractVersion = "2.0"
         version = $manifest.speechPack.version
     }
 }
@@ -198,10 +198,16 @@ $healthManifest = [pscustomobject]@{
             status = "ok"
             ready = $true
             serviceId = "wrong.service"
-            contractVersion = "1.1"
+            contractVersion = "2.0"
             speechPackVersion = $manifest.speechPack.version
             asr = [pscustomobject]@{ ready = $true }
-            engines = [pscustomobject]@{ f5 = [pscustomobject]@{ ready = $true; mode = "real" } }
+            synthesis = [pscustomobject]@{
+                ready = $true
+                engine = "cosyvoice3"
+                mode = "real"
+                streaming = $true
+                voiceCloning = $true
+            }
         }
     }
     if (Test-Health $healthManifest) { throw "Incompatible service identity was accepted." }
@@ -221,13 +227,19 @@ $healthManifest = [pscustomobject]@{
             status = "ok"
             ready = $true
             serviceId = "shio.speech-api"
-            contractVersion = "1.1"
+            contractVersion = "2.0"
             speechPackVersion = $manifest.speechPack.version
             asr = [pscustomobject]@{ ready = $true }
-            engines = [pscustomobject]@{ f5 = [pscustomobject]@{ ready = $true; mode = "mock" } }
+            synthesis = [pscustomobject]@{
+                ready = $true
+                engine = "cosyvoice3"
+                mode = "unavailable"
+                streaming = $true
+                voiceCloning = $true
+            }
         }
     }
-    if (Test-Health $healthManifest) { throw "Mock F5 mode was accepted by the release launcher." }
+    if (Test-Health $healthManifest) { throw "Unavailable synthesis was accepted by the release launcher." }
 }
 & {
     function Get-Process {

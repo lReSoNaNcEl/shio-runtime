@@ -85,7 +85,7 @@ details without logging credentials or full browser/DOM snapshots.
 - Node.js 24.x
 - npm 11.x
 - Python 3.12
-- CUDA-capable GPU recommended (F5-TTS and faster-whisper default to CUDA)
+- CUDA-capable GPU recommended (CosyVoice 3 and faster-whisper default to CUDA)
 - PowerShell examples below assume Windows
 
 Developed with:
@@ -196,10 +196,11 @@ npm run api:dev
 The API starts at `http://localhost:8000`. Stop it with `Ctrl+C`; the launcher
 forwards the signal so uvicorn shuts down and port 8000 is released.
 
-> **First run may be slow.** On the first `api:dev` the F5-TTS model (`F5_MODEL_ID`,
-> default `Misha24-10/F5-TTS_RUSSIAN`) and the ASR model are downloaded into the
-> Hugging Face cache / `apps/api/models/`. These weights are not stored in Git,
-> so the first startup can take a while before the service becomes ready.
+> **Prepare models before the first conversation.** `npm run api:prefetch` downloads
+> the exact pinned CosyVoice 3 and ASR artifacts into the application-owned model
+> root. These weights are not stored in Git. Managed installation completes and
+> validates prefetch before it starts the service; conversation never downloads a
+> model on demand.
 
 **Terminal 2 — Desktop**
 
@@ -318,15 +319,15 @@ Each application has its own local environment file, created from the included
 examples. Local `.env` files are ignored by Git.
 
 ```text
-apps/desktop/.env       (from apps/desktop/.env.example)
+apps/desktop/.env   (from apps/desktop/.env.example)
 apps/api/.env       (from apps/api/.env.example)
 ```
 
 ### Desktop → API URL
 
-The Desktop client connects to `http://localhost:8000`. The URL can be overridden
-with the environment variable `PYTHON_SPEECH_URL`. Despite its legacy name, it now
-points to the service located in `apps/api`.
+The Desktop client connects to `http://127.0.0.1:8000`. The URL can be overridden
+before startup with the Main-owned environment variable `SHIO_SPEECH_API_URL`.
+Changing it requires restarting Desktop.
 
 ### API host and port
 
@@ -361,11 +362,12 @@ environment override.
 VOICE_DATASET_REVISION=
 ```
 
-### F5-TTS model
+### CosyVoice 3 model
 
-The TTS engine loads the F5 model from `F5_MODEL_ID`
-(default `Misha24-10/F5-TTS_RUSSIAN`). The weights are downloaded on the first API
-run and are not committed (see below).
+The sole TTS backend loads `FunAudioLLM/Fun-CosyVoice3-0.5B-2512` from exact
+source and model revisions configured by the Speech API. Prefetch installs only
+the required artifacts into the application-owned model root. The weights are not
+committed (see below).
 
 ## Files not stored in Git
 
@@ -374,7 +376,7 @@ run and are not committed (see below).
 API virtual environments
 node_modules
 build output
-F5 model weights and Hugging Face model caches (apps/api/models/)
+CosyVoice and ASR model weights (apps/api/models/)
 voice reference assets (apps/api/voices/**/reference.wav|.txt)
 generated and temporary audio
 runtime logs
@@ -393,9 +395,9 @@ GET  /voices
 GET  /emotions
 GET  /voices/status
 POST /voices/sync
-POST /synthesize
 POST /recognize
 WS   /ws
+WS   /tts/stream
 ```
 
 ## API checks
@@ -408,8 +410,8 @@ npm run api:test
 ```
 
 Then verify the read-only endpoints respond: `/health`, `/voices`, `/emotions`.
-Run a short `/synthesize` smoke test only after backend changes (F5 engine, audio
-encoding, or synthesis lifecycle).
+After synthesis changes, run the bounded `/tts/stream` fake-engine tests. Real
+model inference is reserved for one short post-stabilization qualification.
 
 ## Architecture
 

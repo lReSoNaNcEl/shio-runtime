@@ -315,19 +315,42 @@ function Install-SpeechPack {
         Invoke-Checked $stagingPython @("-m", "pip", "install", "-r", "requirements.lock.txt") $stagingApi $installLog
         Invoke-Checked $stagingPython @("-m", "pip", "check") $stagingApi $installLog
         $persistentEnv = Join-Path $DataRoot "speech-api.env"
+        $template = Join-Path $staging $Manifest.speechPack.releaseEnvironmentTemplate
         if (-not (Test-Path -LiteralPath $persistentEnv)) {
-            $template = Join-Path $staging $Manifest.speechPack.releaseEnvironmentTemplate
             Copy-Item -LiteralPath $template -Destination $persistentEnv
         }
+        $templateEnvironment = Get-Content -LiteralPath $template
+        $allowedEnvironmentKeys = @{}
+        foreach ($line in $templateEnvironment) {
+            if ($line -match '^([A-Z][A-Z0-9_]*)=') { $allowedEnvironmentKeys[$Matches[1]] = $true }
+        }
+        $preservedEnvironment = @{}
+        foreach ($line in (Get-Content -LiteralPath $persistentEnv)) {
+            if ($line -match '^([A-Z][A-Z0-9_]*)=' -and $allowedEnvironmentKeys.ContainsKey($Matches[1])) {
+                $preservedEnvironment[$Matches[1]] = $line
+            }
+        }
+        $currentEnvironment = foreach ($line in $templateEnvironment) {
+            if ($line -match '^([A-Z][A-Z0-9_]*)=' -and $preservedEnvironment.ContainsKey($Matches[1])) {
+                $preservedEnvironment[$Matches[1]]
+            } else { $line }
+        }
+        $currentEnvironment = $currentEnvironment | Where-Object {
+            $_ -notmatch '^(?:TTS_DEFAULT_ENGINE=|COSYVOICE_(?:MODEL|SOURCE|MATCHA)_REVISION=)'
+        }
+        $currentEnvironment += @(
+            "TTS_DEFAULT_ENGINE=cosyvoice3",
+            "COSYVOICE_MODEL_REVISION=$($Manifest.speechPack.modelRevisions.cosyVoiceModel)",
+            "COSYVOICE_SOURCE_REVISION=$($Manifest.speechPack.modelRevisions.cosyVoiceSource)",
+            "COSYVOICE_MATCHA_REVISION=$($Manifest.speechPack.modelRevisions.cosyVoiceMatcha)"
+        )
+        Set-Content -LiteralPath $persistentEnv -Encoding UTF8 -Value $currentEnvironment
         Copy-Item -LiteralPath $persistentEnv -Destination (Join-Path $stagingApi ".env")
         Add-Content -LiteralPath (Join-Path $stagingApi ".env") -Encoding UTF8 -Value @(
             "SHIO_MODEL_ROOT=$((Join-Path $DataRoot 'models').Replace('\', '/'))",
+            "VOICE_CACHE_ROOT=$((Join-Path $DataRoot 'cache').Replace('\', '/'))",
             "SPEECH_PACK_VERSION=$($Manifest.speechPack.version)",
-            "F5_ALLOW_MOCK=false",
-            "F5_MODEL_REVISION=$($Manifest.speechPack.modelRevisions.f5)",
-            "WHISPER_MODEL_REVISION=$($Manifest.speechPack.modelRevisions.fasterWhisper)",
-            "F5_VOCODER_REVISION=$($Manifest.speechPack.modelRevisions.vocoder)",
-            "RUACCENT_MODEL_REVISION=$($Manifest.speechPack.modelRevisions.ruaccent)"
+            "WHISPER_MODEL_REVISION=$($Manifest.speechPack.modelRevisions.fasterWhisper)"
         )
         $persistentVoices = Join-Path $DataRoot "voices"
         New-Item -ItemType Directory -Force -Path $persistentVoices | Out-Null
@@ -407,8 +430,11 @@ function Test-Health {
         $health.contractVersion -eq $Manifest.speechPack.contractVersion -and
         $health.speechPackVersion -eq $Manifest.speechPack.version -and
         $health.asr.ready -eq $true -and
-        $health.engines.f5.ready -eq $true -and
-        $health.engines.f5.mode -eq "real"
+        $health.synthesis.ready -eq $true -and
+        $health.synthesis.engine -eq "cosyvoice3" -and
+        $health.synthesis.mode -eq "real" -and
+        $health.synthesis.streaming -eq $true -and
+        $health.synthesis.voiceCloning -eq $true
     )
 }
 
@@ -519,12 +545,12 @@ function Start-ManagedApi {
     Rotate-Log $runtimeLog
     Rotate-Log $runtimeErrorLog
     $env:SHIO_MODEL_ROOT = Join-Path $DataRoot "models"
+    $env:VOICE_CACHE_ROOT = Join-Path $DataRoot "cache"
     $env:SPEECH_PACK_VERSION = $Manifest.speechPack.version
-    $env:F5_MODEL_REVISION = $Manifest.speechPack.modelRevisions.f5
     $env:WHISPER_MODEL_REVISION = $Manifest.speechPack.modelRevisions.fasterWhisper
-    $env:F5_VOCODER_REVISION = $Manifest.speechPack.modelRevisions.vocoder
-    $env:RUACCENT_MODEL_REVISION = $Manifest.speechPack.modelRevisions.ruaccent
-    $env:F5_ALLOW_MOCK = "false"
+    $env:COSYVOICE_MODEL_REVISION = $Manifest.speechPack.modelRevisions.cosyVoiceModel
+    $env:COSYVOICE_SOURCE_REVISION = $Manifest.speechPack.modelRevisions.cosyVoiceSource
+    $env:COSYVOICE_MATCHA_REVISION = $Manifest.speechPack.modelRevisions.cosyVoiceMatcha
     $arguments = @(
         "-m", "uvicorn", "app.main:app", "--host", $Manifest.speechPack.host,
         "--port", [string]$Manifest.speechPack.port

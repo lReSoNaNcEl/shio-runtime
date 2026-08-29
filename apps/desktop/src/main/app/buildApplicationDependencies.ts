@@ -657,10 +657,7 @@ export function buildApplicationDependencies(): ApplicationDependencies {
       screenContextService,
       () => getRendererConfig().llm,
     )
-    speechApplicationService = new SpeechApplicationService(
-      getSpeechClientManager,
-      resolveOrchestrator,
-    )
+    speechApplicationService = new SpeechApplicationService(getSpeechClientManager)
     registerIpcHandlers(
       resolveOrchestrator,
       resolveLlmGateway,

@@ -1,7 +1,12 @@
 import axios, { type AxiosInstance } from 'axios'
 
 import { type EmotionContract, emotionRegistry } from '../../shared/emotion'
-import type { SpeechAudioBoundaryTelemetry, SpeechUtteranceKind } from '../../shared/speech'
+import type {
+  SpeechStreamInput,
+  SpeechStreamOutput,
+  SpeechStreamStart,
+  SpeechStreamStartMessage,
+} from '../../shared/speech'
 import { observeAxiosNetwork } from '../diagnostics/observeAxiosNetwork'
 import { mainLog } from '../logging/safeLogger'
 import { type Health, HealthSchema, type Recognize, RecognizeSchema } from '../schemas'
@@ -11,12 +16,6 @@ export type { Health, Recognize }
 
 export const DEFAULT_TTS_VOICE_ID = 'animevox_makima'
 
-/**
- * Per-capability projection derived from a successful `/health` response. A
- * reachable service does not imply every engine is up: ASR, F5 (TTS), and the
- * streaming transport are reported independently so the renderer can render
- * partial availability.
- */
 export interface SpeechCapabilitiesProbe {
   serviceReachable: boolean
   recognition: boolean
@@ -25,37 +24,23 @@ export interface SpeechCapabilitiesProbe {
 }
 
 function isEngineOk(status: string | undefined): boolean {
-  if (!status) return true // absent = not reported as failed; treat as available
-  const s = status.toLowerCase()
-  return s === 'ok' || s === 'ready' || s === 'available' || s === 'up'
+  if (!status) return true
+  const normalized = status.toLowerCase()
+  return ['ok', 'ready', 'available', 'up'].includes(normalized)
 }
 
-/** Derive per-capability availability from a parsed `/health` payload. */
 export function deriveCapabilities(health: Health): SpeechCapabilitiesProbe {
-  const asrStatus = health.asr?.status
-  const f5Status = health.engines?.f5?.status
+  const asrReady = isEngineOk(health.asr?.status)
+  const synthesisReady =
+    health.synthesis?.engine === 'cosyvoice3' &&
+    health.synthesis.streaming === true &&
+    isEngineOk(health.synthesis.status)
   return {
     serviceReachable: true,
-    recognition: isEngineOk(asrStatus),
-    synthesis: isEngineOk(f5Status),
-    // The streaming transport rides on the same service; if the service is
-    // reachable and ASR is up, streaming is considered available.
-    streaming: isEngineOk(asrStatus),
+    recognition: asrReady,
+    synthesis: synthesisReady,
+    streaming: asrReady && synthesisReady,
   }
-}
-
-export interface SynthesizeResult {
-  audioBuffer: ArrayBuffer
-  emotion?: string
-  requestedEmotion?: string
-  textEmotion?: string
-  vrmEmotion?: string
-  latencyMs?: string
-  generatedLatencyMs?: string
-  cache?: string
-  rtf?: string
-  durationSec?: string
-  audioBoundaries?: SpeechAudioBoundaryTelemetry
 }
 
 export interface VoiceWarmupResult {
@@ -67,19 +52,16 @@ export interface VoiceWarmupResult {
   error?: string
 }
 
-export interface SynthesizeParams {
-  text: string
-  language?: string
-  emotion?: string
-  voiceId?: string
-  speed?: number
-  pitch?: number
-  engine?: string
-  utteranceKind?: SpeechUtteranceKind
+export interface SpeechStreamConnection {
+  send(message: Exclude<SpeechStreamInput, { type: 'audio-ack' }>): void
+  cancel(reason: string): void
 }
 
-export interface SpeechSynthesisClient {
-  synthesize(params: SynthesizeParams, signal?: AbortSignal): Promise<SynthesizeResult>
+export interface SpeechStreamingClient {
+  openStream(
+    input: SpeechStreamStart,
+    onEvent: (event: SpeechStreamOutput) => void,
+  ): SpeechStreamConnection
 }
 
 interface RequestSignal {
@@ -109,22 +91,17 @@ function combineAbortSignals(signals: readonly AbortSignal[]): RequestSignal {
   }
 }
 
-export class SpeechClient implements SpeechSynthesisClient {
-  private http: AxiosInstance
+export class SpeechClient implements SpeechStreamingClient {
+  private readonly http: AxiosInstance
+  private readonly baseUrl: string
   private readonly lifecycle = new AbortController()
   private readonly disposeNetworkObserver: () => void
+  private readonly streams = new Set<SpeechStreamConnection>()
   private disposed = false
 
   constructor(baseUrl: string) {
-    // Force IPv4: Node inside Electron may resolve `localhost` to ::1 first, but
-    // uvicorn binds IPv4 (0.0.0.0) - that mismatch surfaces as AggregateError.
-    const ipv4Url = baseUrl.replace('://localhost', '://127.0.0.1')
-    this.http = axios.create({
-      baseURL: ipv4Url,
-      timeout: 120_000,
-      // The local speech backend should never be routed through a proxy.
-      proxy: false,
-    })
+    this.baseUrl = baseUrl.replace('://localhost', '://127.0.0.1').replace(/\/+$/u, '')
+    this.http = axios.create({ baseURL: this.baseUrl, timeout: 120_000, proxy: false })
     this.disposeNetworkObserver = observeAxiosNetwork(this.http, 'speech-api')
   }
 
@@ -132,14 +109,15 @@ export class SpeechClient implements SpeechSynthesisClient {
     if (this.disposed) return
     this.disposed = true
     this.lifecycle.abort(new Error('Speech client disposed'))
+    for (const stream of this.streams) stream.cancel('Speech client disposed')
+    this.streams.clear()
     this.disposeNetworkObserver()
   }
 
   async health(signal?: AbortSignal): Promise<Health> {
     const request = this.requestSignal(signal)
     try {
-      const res = await this.http.get('/health', { signal: request.signal })
-      return HealthSchema.parse(res.data)
+      return HealthSchema.parse((await this.http.get('/health', { signal: request.signal })).data)
     } catch (error) {
       throw normalizeSpeechError(error, 'health')
     } finally {
@@ -150,11 +128,11 @@ export class SpeechClient implements SpeechSynthesisClient {
   async emotions(signal?: AbortSignal): Promise<EmotionContract> {
     const request = this.requestSignal(signal)
     try {
-      const res = await this.http.get('/emotions', { signal: request.signal })
+      const data = (await this.http.get('/emotions', { signal: request.signal })).data
       return {
-        schemaVersion: Number(res.data?.schemaVersion),
-        defaultEmotion: String(res.data?.defaultEmotion ?? ''),
-        supported: Array.isArray(res.data?.supported) ? res.data.supported.map(String) : [],
+        schemaVersion: Number(data?.schemaVersion),
+        defaultEmotion: String(data?.defaultEmotion ?? ''),
+        supported: Array.isArray(data?.supported) ? data.supported.map(String) : [],
       }
     } catch (error) {
       throw normalizeSpeechError(error, 'health')
@@ -183,8 +161,9 @@ export class SpeechClient implements SpeechSynthesisClient {
     try {
       const form = new FormData()
       form.append('file', new Blob([wavBuffer], { type: 'audio/wav' }), 'audio.wav')
-      const res = await this.http.post('/recognize', form, { signal: request.signal })
-      return RecognizeSchema.parse(res.data)
+      return RecognizeSchema.parse(
+        (await this.http.post('/recognize', form, { signal: request.signal })).data,
+      )
     } catch (error) {
       throw normalizeSpeechError(error, 'recognition')
     } finally {
@@ -193,17 +172,13 @@ export class SpeechClient implements SpeechSynthesisClient {
   }
 
   async warmupVoice(
-    input: {
-      engine: string
-      voiceId: string
-      language: string
-    },
+    input: { engine: string; voiceId: string; language: string },
     signal?: AbortSignal,
   ): Promise<VoiceWarmupResult> {
     const request = this.requestSignal(signal)
     try {
-      const response = await this.http.post('/tts/warmup', input, { signal: request.signal })
-      return response.data as VoiceWarmupResult
+      return (await this.http.post('/tts/warmup', input, { signal: request.signal }))
+        .data as VoiceWarmupResult
     } catch (error) {
       throw normalizeSpeechError(error, 'synthesis')
     } finally {
@@ -211,129 +186,95 @@ export class SpeechClient implements SpeechSynthesisClient {
     }
   }
 
-  async synthesize(params: SynthesizeParams, signal?: AbortSignal): Promise<SynthesizeResult> {
-    try {
-      return await this.synthesizeInternal(params, signal)
-    } catch (error) {
-      throw normalizeSpeechError(error, 'synthesis')
-    }
-  }
+  openStream(
+    input: SpeechStreamStart,
+    onEvent: (event: SpeechStreamOutput) => void,
+  ): SpeechStreamConnection {
+    if (this.disposed) throw new Error('Speech client is disposed')
+    const socketUrl = `${this.baseUrl.replace(/^http/u, 'ws')}/tts/stream`
+    const socket = new WebSocket(socketUrl)
+    socket.binaryType = 'arraybuffer'
+    let pendingAudio: { sequence: number; samples: number } | null = null
+    let terminal = false
+    const queued: Array<Exclude<SpeechStreamInput, { type: 'audio-ack' }>> = []
 
-  private async synthesizeInternal(
-    params: SynthesizeParams,
-    signal?: AbortSignal,
-  ): Promise<SynthesizeResult> {
-    const request = this.requestSignal(signal)
-    try {
-      const res = await this.http.post(
-        '/synthesize',
-        {
-          text: params.text,
-          language: params.language ?? 'ru',
-          emotion: params.emotion ?? 'neutral',
-          voiceId: params.voiceId ?? DEFAULT_TTS_VOICE_ID,
-          speed: params.speed ?? 1.0,
-          pitch: params.pitch ?? 0,
-          engine: params.engine ?? 'f5',
-          utteranceKind: params.utteranceKind ?? 'normal',
-        },
-        { responseType: 'arraybuffer', signal: request.signal },
-      )
-      const data = res.data as ArrayBuffer | Buffer
-      const contentType = String(res.headers['content-type'] ?? '').toLowerCase()
-      const byteLength = Buffer.isBuffer(data) ? data.byteLength : data.byteLength
-      if (!contentType.startsWith('audio/') || byteLength < 44) {
-        throw new SpeechServiceError({
-          code: 'INVALID_RESPONSE',
-          operation: 'synthesis',
-          recoverable: false,
-          technicalMessage: `invalid audio (content-type=${contentType || 'missing'}, bytes=${byteLength})`,
-        })
-      }
-      // axios may return a Node Buffer; normalize to a standalone ArrayBuffer
-      if (Buffer.isBuffer(data)) {
-        const ab = new ArrayBuffer(data.byteLength)
-        new Uint8Array(ab).set(data)
-        return {
-          audioBuffer: ab,
-          emotion: res.headers['x-emotion'],
-          requestedEmotion: res.headers['x-requested-emotion'],
-          textEmotion: res.headers['x-text-emotion'],
-          vrmEmotion: res.headers['x-vrm-emotion'],
-          latencyMs: res.headers['x-latency-ms'],
-          generatedLatencyMs: res.headers['x-generated-latency-ms'],
-          cache: res.headers['x-cache'],
-          rtf: res.headers['x-rtf'],
-          durationSec: res.headers['x-duration-sec'],
-          audioBoundaries: parseAudioBoundaryTelemetry(res.headers),
+    const send = (message: Exclude<SpeechStreamInput, { type: 'audio-ack' }>): void => {
+      if (terminal) return
+      if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message))
+      else queued.push(message)
+    }
+    const connection: SpeechStreamConnection = {
+      send,
+      cancel: (reason) => {
+        if (terminal) return
+        terminal = true
+        if (socket.readyState === WebSocket.OPEN) {
+          socket.send(JSON.stringify({ type: 'cancel', reason }))
+          socket.close(1000, 'cancelled')
+        } else {
+          socket.close()
         }
-      }
-      return {
-        audioBuffer: data,
-        emotion: res.headers['x-emotion'],
-        requestedEmotion: res.headers['x-requested-emotion'],
-        textEmotion: res.headers['x-text-emotion'],
-        vrmEmotion: res.headers['x-vrm-emotion'],
-        latencyMs: res.headers['x-latency-ms'],
-        generatedLatencyMs: res.headers['x-generated-latency-ms'],
-        cache: res.headers['x-cache'],
-        rtf: res.headers['x-rtf'],
-        durationSec: res.headers['x-duration-sec'],
-        audioBoundaries: parseAudioBoundaryTelemetry(res.headers),
-      }
-    } finally {
-      request.dispose()
+        this.streams.delete(connection)
+      },
     }
+    this.streams.add(connection)
+
+    socket.addEventListener('open', () => {
+      const start: SpeechStreamStartMessage = { type: 'start', ...input }
+      socket.send(JSON.stringify(start))
+      for (const message of queued.splice(0)) socket.send(JSON.stringify(message))
+    })
+    socket.addEventListener('message', (message) => {
+      try {
+        if (typeof message.data === 'string') {
+          const event = JSON.parse(message.data) as SpeechStreamOutput
+          if (event.type === 'audio') {
+            if (pendingAudio || event.sequence < 0 || event.samples <= 0)
+              throw new Error('Invalid audio metadata sequence')
+            pendingAudio = { sequence: event.sequence, samples: event.samples }
+            return
+          }
+          if (event.type === 'complete' || event.type === 'cancelled' || event.type === 'error')
+            terminal = true
+          onEvent(event)
+          if (terminal) this.streams.delete(connection)
+          return
+        }
+        if (!(message.data instanceof ArrayBuffer) || !pendingAudio)
+          throw new Error('Unexpected binary TTS payload')
+        const metadata = pendingAudio
+        pendingAudio = null
+        if (message.data.byteLength !== metadata.samples * Float32Array.BYTES_PER_ELEMENT)
+          throw new Error('PCM payload length does not match metadata')
+        onEvent({ type: 'audio', ...metadata, pcm: message.data })
+      } catch (error) {
+        terminal = true
+        onEvent({
+          type: 'error',
+          code: 'invalid_stream_response',
+          message: error instanceof Error ? error.message : String(error),
+        })
+        socket.close()
+        this.streams.delete(connection)
+      }
+    })
+    socket.addEventListener('error', () => {
+      if (terminal) return
+      terminal = true
+      onEvent({ type: 'error', code: 'stream_transport_error', message: 'TTS stream failed' })
+      this.streams.delete(connection)
+    })
+    socket.addEventListener('close', () => {
+      if (!terminal) {
+        terminal = true
+        onEvent({ type: 'error', code: 'stream_closed', message: 'TTS stream closed early' })
+      }
+      this.streams.delete(connection)
+    })
+    return connection
   }
 
   private requestSignal(signal?: AbortSignal): RequestSignal {
     return combineAbortSignals(signal ? [this.lifecycle.signal, signal] : [this.lifecycle.signal])
   }
-}
-
-function parseAudioBoundaryTelemetry(
-  headers: Record<string, unknown>,
-): SpeechAudioBoundaryTelemetry | undefined {
-  const profile = headerString(headers, 'x-audio-boundary-profile')
-  if (!profile) return undefined
-  const values = [
-    headerNumber(headers, 'x-audio-leading-silence-ms'),
-    headerNumber(headers, 'x-audio-trailing-silence-ms'),
-    headerNumber(headers, 'x-audio-trimmed-leading-ms'),
-    headerNumber(headers, 'x-audio-trimmed-trailing-ms'),
-    headerNumber(headers, 'x-audio-fade-in-ms'),
-    headerNumber(headers, 'x-audio-fade-out-ms'),
-    headerNumber(headers, 'x-audio-postprocess-ms'),
-  ]
-  if (values.some((value) => value === undefined)) return undefined
-  const [
-    leadingSilenceMs,
-    trailingSilenceMs,
-    trimmedLeadingMs,
-    trimmedTrailingMs,
-    fadeInMs,
-    fadeOutMs,
-    postprocessMs,
-  ] = values as number[]
-  return {
-    profile,
-    leadingSilenceMs,
-    trailingSilenceMs,
-    trimmedLeadingMs,
-    trimmedTrailingMs,
-    fadeInMs,
-    fadeOutMs,
-    postprocessMs,
-  }
-}
-
-function headerString(headers: Record<string, unknown>, name: string): string | undefined {
-  const value = headers[name]
-  if (typeof value !== 'string' || !value.trim()) return undefined
-  return value
-}
-
-function headerNumber(headers: Record<string, unknown>, name: string): number | undefined {
-  const value = Number(headers[name])
-  return Number.isFinite(value) && value >= 0 ? value : undefined
 }

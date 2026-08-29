@@ -45,6 +45,7 @@ apps/api/build/
 
 # API model storage
 /apps/api/models/
+/apps/api/cache/
 
 # Runtime and temporary data
 /logs/

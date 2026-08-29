@@ -349,8 +349,11 @@ export const ChatOverlay = forwardRef<ChatOverlayHandle, Props>(function ChatOve
           onInterrupt={() => {
             setInterrupting(true)
             observeRendererPromise(
-              controller.interruptCurrentResponse('manual-stop'),
+              controller.interruptCurrentResponse('manual-stop').then((interrupted) => {
+                if (!interrupted) setInterrupting(false)
+              }),
               'interrupt current response',
+              () => setInterrupting(false),
             )
           }}
         />

@@ -44,7 +44,7 @@ import type {
   ScreenContextResult,
   ScreenContextSource,
 } from '../screen-context/contracts'
-import type { SpeechAudioBoundaryTelemetry, SpeechTextNormalizationTelemetry } from '../speech'
+import type { SpeechStreamRendererPort, SpeechStreamStart } from '../speech'
 import type { SpeechServiceErrorCode } from '../speech/errors'
 import type { ReleaseInfo, RendererFailureReport, RuntimeSupportBundle } from '../system'
 
@@ -193,25 +193,7 @@ export interface ShioRuntimeApi {
       latencyMs?: number
       error?: string
     }>
-    synthesizeReply: (
-      turnId: string,
-      replyText: string,
-      emotionKey: string,
-    ) => Promise<{
-      ok: boolean
-      audioBuffer?: ArrayBuffer
-      emotionKey?: string
-      requestedEmotion?: string
-      textEmotion?: string
-      vrmEmotion?: string
-      latencyMs?: string
-      generatedLatencyMs?: string
-      cache?: string
-      normalization?: SpeechTextNormalizationTelemetry
-      audioBoundaries?: SpeechAudioBoundaryTelemetry
-      error?: string
-      errorCode?: SpeechServiceErrorCode
-    }>
+    openStream: (input: SpeechStreamStart) => SpeechStreamRendererPort
     cancelSynthesis: (turnId: string) => Promise<{ ok: boolean }>
   }
   memory: MemoryManagementApi & { clear: () => Promise<unknown> }

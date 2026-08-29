@@ -79,7 +79,11 @@ export type {
 } from './controller/contracts'
 export { STATUS_LABELS } from './controller/contracts'
 
-type SpeechReply = Awaited<ReturnType<Window['api']['tts']['synthesizeReply']>>
+interface SpeechReplyMetadata {
+  vrmEmotion?: string
+  latencyMs?: string
+  cache?: string
+}
 
 let idSeq = 0
 const nextId = (): string => `m${++idSeq}`
@@ -106,7 +110,7 @@ export class Controller {
     },
   })
   private player = new AudioPlayer()
-  private speechRuntime = new SpeechRuntime(this.shioRuntime.events)
+  private speechRuntime = new SpeechRuntime()
   private speechOutput = new RuntimeSpeechOutputPort(this.speechRuntime, this.player)
   private characterResponse = new MainCharacterResponsePort()
   private unsubscribeCharacterState = this.shioRuntime.characterState.subscribe(
@@ -372,7 +376,7 @@ export class Controller {
 
   private async warmSelectedVoice(): Promise<void> {
     if (!this.selectedVoiceLanguage) return
-    const key = `f5:${this.selectedVoiceLanguage}`
+    const key = `cosyvoice3:${this.selectedVoiceLanguage}`
     if (this.voiceWarmupKey === key && this.state.voiceWarmup.state !== 'failed') return
     this.voiceWarmupKey = key
     this.set({
@@ -862,7 +866,7 @@ export class Controller {
     this.updateOverlayAnimationHudFile()
   }
 
-  private rememberSpeechMetadata(speech: SpeechReply): void {
+  private rememberSpeechMetadata(speech: SpeechReplyMetadata): void {
     this.diagnostics.rememberSpeechMetadata(speech)
   }
 

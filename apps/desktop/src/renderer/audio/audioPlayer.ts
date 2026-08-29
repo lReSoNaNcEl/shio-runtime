@@ -6,6 +6,7 @@ export interface PlaybackSession {
   playbackItemId: string
   normalizationReference: number
   durationMs: number
+  durationFinal?: boolean
 }
 
 export interface AudioPlayOptions {
@@ -20,6 +21,13 @@ export interface PlaybackCompletion {
   turnId: string
 }
 
+export interface PcmStreamPlayback {
+  session: PlaybackSession
+  append(pcm: ArrayBuffer): Promise<void>
+  finish(): Promise<PlaybackCompletion>
+  cancel(reason: 'conversation-interrupted' | 'stream-failed'): void
+}
+
 export interface PreparedAudio {
   audioBuffer: AudioBuffer
   durationMs: number
@@ -29,7 +37,9 @@ export interface PreparedAudio {
 interface ActivePlayback extends PlaybackSession {
   sequence: number
   source: AudioBufferSourceNode | null
+  streamNode: AudioWorkletNode | null
   settle: (() => void) | null
+  cancelStream: (() => void) | null
 }
 
 export class ParallelPlaybackError extends Error {
@@ -51,6 +61,7 @@ export class AudioPlayer {
   private progressTimer: number | null = null
   private duration = 0
   private playbackSeq = 0
+  private workletLoaded: Promise<void> | null = null
 
   constructor() {
     this.audioCtx = new AudioContext()
@@ -114,6 +125,127 @@ export class AudioPlayer {
     }
   }
 
+  async startPcmStream(sampleRate: number, options: AudioPlayOptions): Promise<PcmStreamPlayback> {
+    const active = this.reserve(options.turnId)
+    try {
+      if (this.audioCtx.state === 'suspended') await this.audioCtx.resume()
+      await this.ensurePcmWorklet()
+      this.assertOwner(active)
+      const node = new AudioWorkletNode(this.audioCtx, 'shio-pcm-stream-player', {
+        numberOfInputs: 0,
+        numberOfOutputs: 1,
+        outputChannelCount: [1],
+        processorOptions: { sourceSampleRate: sampleRate },
+      })
+      active.streamNode = node
+      node.connect(this.analyser)
+      const maximumBufferedSamples = Math.ceil(sampleRate * 1.5)
+      let bufferedSamples = 0
+      let started = false
+      let ready = false
+      let finished = false
+      const capacityWaiters: Array<() => void> = []
+      const normalizationEnergies: number[] = []
+      let receivedSamples = 0
+      const wakeCapacity = (): void => {
+        for (const resolve of capacityWaiters.splice(0)) resolve()
+      }
+      active.cancelStream = wakeCapacity
+      const ended = new Promise<void>((resolve) => {
+        active.settle = resolve
+      })
+      node.port.onmessage = (event: MessageEvent<unknown>) => {
+        const message = event.data as { type?: string; samples?: number }
+        if (message.type === 'consumed') {
+          bufferedSamples = Math.max(0, bufferedSamples - Number(message.samples ?? 0))
+          wakeCapacity()
+        } else if (message.type === 'started' && !started) {
+          started = true
+          options.onStarted?.()
+          options.onProgress?.(0)
+        } else if (message.type === 'underrun') {
+          console.warn(`[audio] PCM underrun turnId=${options.turnId}`)
+        } else if (message.type === 'ended') {
+          options.onProgress?.(1)
+          active.settle?.()
+        }
+      }
+      const session: PlaybackSession = {
+        playbackId: active.playbackId,
+        playbackItemId: active.playbackItemId,
+        turnId: options.turnId,
+        analyser: this.analyser,
+        startedAt: performance.now(),
+        normalizationReference: 0.12,
+        durationMs: 0,
+        durationFinal: false,
+      }
+      return {
+        session,
+        append: async (pcm) => {
+          if (pcm.byteLength === 0 || pcm.byteLength % Float32Array.BYTES_PER_ELEMENT !== 0)
+            throw new Error('PCM stream chunk is empty or misaligned')
+          const samples = pcm.byteLength / Float32Array.BYTES_PER_ELEMENT
+          this.assertOwner(active)
+          const source = new Float32Array(pcm)
+          receivedSamples += samples
+          session.durationMs = (receivedSamples / sampleRate) * 1000
+          active.durationMs = session.durationMs
+          normalizationEnergies.push(...this.collectNormalizationEnergies(source, sampleRate))
+          if (normalizationEnergies.length > 512) {
+            normalizationEnergies.splice(0, normalizationEnergies.length - 512)
+          }
+          if (normalizationEnergies.length > 0) {
+            const sorted = normalizationEnergies.slice().sort((a, b) => a - b)
+            const percentileIndex = Math.min(
+              sorted.length - 1,
+              Math.max(0, Math.ceil(sorted.length * 0.8) - 1),
+            )
+            session.normalizationReference = Math.max(0.04, Math.min(0.3, sorted[percentileIndex]))
+            active.normalizationReference = session.normalizationReference
+          }
+          if (!ready) {
+            await options.onReady(session)
+            ready = true
+            this.assertOwner(active)
+          }
+          const requiresReframing = samples > maximumBufferedSamples
+          const maximumPushSamples = requiresReframing
+            ? Math.max(1, Math.floor(maximumBufferedSamples / 2))
+            : samples
+          for (let offset = 0; offset < samples; offset += maximumPushSamples) {
+            const pushSamples = Math.min(maximumPushSamples, samples - offset)
+            while (bufferedSamples + pushSamples > maximumBufferedSamples) {
+              await new Promise<void>((resolve) => capacityWaiters.push(resolve))
+              this.assertOwner(active)
+            }
+            this.assertOwner(active)
+            const pushPcm = requiresReframing
+              ? source.slice(offset, offset + pushSamples).buffer
+              : pcm
+            bufferedSamples += pushSamples
+            node.port.postMessage({ type: 'push', pcm: pushPcm }, [pushPcm])
+          }
+        },
+        finish: async () => {
+          if (!finished) {
+            finished = true
+            session.durationFinal = true
+            node.port.postMessage({ type: 'finish' })
+          }
+          await ended
+          const completion = { playbackId: active.playbackId, turnId: options.turnId }
+          this.release(active)
+          return completion
+        },
+        cancel: () => this.stopCurrent(options.turnId, 'conversation-interrupted'),
+      }
+    } catch (error) {
+      this.release(active)
+      throw error
+    }
+  }
+
   stop(): void {
     const active = this.activePlayback
     if (!active) return
@@ -134,6 +266,19 @@ export class AudioPlayer {
       this.disposeSource(source, active.playbackId)
     }
     active.source = null
+    const streamNode = active.streamNode
+    active.cancelStream?.()
+    active.cancelStream = null
+    if (streamNode) {
+      streamNode.port.onmessage = null
+      streamNode.port.postMessage({ type: 'cancel' })
+      try {
+        streamNode.disconnect()
+      } catch {
+        /* already disconnected */
+      }
+    }
+    active.streamNode = null
     active.settle?.()
     active.settle = null
   }
@@ -151,7 +296,7 @@ export class AudioPlayer {
   }
 
   isPlaying(): boolean {
-    return this.activePlayback?.source !== null && Boolean(this.activePlayback)
+    return Boolean(this.activePlayback?.source || this.activePlayback?.streamNode)
   }
   isBusy(): boolean {
     return this.activePlayback !== null
@@ -199,7 +344,9 @@ export class AudioPlayer {
       durationMs: 0,
       sequence,
       source: null,
+      streamNode: null,
       settle: null,
+      cancelStream: null,
     }
     this.activePlayback = active
     console.log(`[audio] playbackId=${playbackId} turnId=${turnId} reserved`)
@@ -245,6 +392,7 @@ export class AudioPlayer {
       startedAt: performance.now(),
       normalizationReference: prepared.normalizationReference,
       durationMs: prepared.durationMs,
+      durationFinal: true,
     })
     this.assertOwner(active)
     const startedAt = this.audioCtx.currentTime
@@ -264,8 +412,18 @@ export class AudioPlayer {
     if (this.activePlayback !== active) return
     this.clearProgressTimer()
     this.disposeSource(active.source, active.playbackId)
+    if (active.streamNode) {
+      active.streamNode.port.onmessage = null
+      try {
+        active.streamNode.disconnect()
+      } catch {
+        /* already disconnected */
+      }
+    }
     active.source = null
+    active.streamNode = null
     active.settle = null
+    active.cancelStream = null
     this.activePlayback = null
     console.log(`[audio] playbackId=${active.playbackId} turnId=${active.turnId} released`)
   }
@@ -308,6 +466,31 @@ export class AudioPlayer {
     energies.sort((a, b) => a - b)
     const percentile = energies[Math.min(energies.length - 1, Math.floor(energies.length * 0.8))]
     return Math.max(0.04, Math.min(0.3, percentile))
+  }
+
+  private collectNormalizationEnergies(samples: Float32Array, sampleRate: number): number[] {
+    const windowSize = Math.max(64, Math.floor(sampleRate * 0.02))
+    const energies: number[] = []
+    for (let offset = 0; offset < samples.length; offset += windowSize) {
+      const end = Math.min(samples.length, offset + windowSize)
+      let sum = 0
+      let count = 0
+      for (let index = offset; index < end; index += 1) {
+        const sample = Number.isFinite(samples[index]) ? samples[index] : 0
+        sum += sample * sample
+        count += 1
+      }
+      const rms = count > 0 ? Math.sqrt(sum / count) : 0
+      if (rms >= facialSilenceFloor) energies.push(rms)
+    }
+    return energies
+  }
+
+  private ensurePcmWorklet(): Promise<void> {
+    this.workletLoaded ??= this.audioCtx.audioWorklet.addModule(
+      new URL('./pcmStreamWorklet.js', import.meta.url).href,
+    )
+    return this.workletLoaded
   }
 }
 

@@ -111,7 +111,7 @@ export const IPC_CHANNEL_CAPABILITIES = {
   'system:report-renderer-failure': mainOnly,
   'system:restart-application': mainOnly,
   'tts:cancel-synthesis': mainOnly,
-  'tts:synthesize-reply': mainOnly,
+  'tts:open-stream': mainOnly,
   'tts:warmup': mainOnly,
   'vrm:pick': mainOnly,
   'vrm:read': mainAndOverlay,

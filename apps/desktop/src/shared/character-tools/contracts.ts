@@ -129,6 +129,7 @@ const CHARACTER_TOOLS_UNCLOSED_MARKER = /<shio-tools>([\s\S]*)$/iu
 const CHARACTER_TOOLS_MARKER_OPEN = /<shio-tools\b/iu
 const CHARACTER_TOOLS_MARKER_LIKE = /<\/?shio-tools\b/iu
 const CHARACTER_TOOLS_MARKER_TOKEN = /<\/?shio-tools\b[^>]*>?/giu
+const PROVIDER_TOOL_MARKER_LIKE = /\\?<\s*\/?\s*(?:tool\\?_calls?|function\\?_call)(?=[\s>]|$)/iu
 const COMPACT_TOOL_MARKER =
   /\[(?:project|web|browser|shell|memory|goal|thread)\.[A-Za-z][A-Za-z0-9]*\]/u
 const PROTOCOL_FENCE = /^\s*```(?:json|xml|text)?\s*([\s\S]*?)\s*```\s*$/iu
@@ -142,7 +143,7 @@ export type CharacterToolDirective =
       plannedTools?: readonly CharacterToolId[]
       recovered?: 'unclosed-marker'
     }
-  | { kind: 'malformed'; replyText: string }
+  | { kind: 'malformed'; replyText: string; source?: 'provider-control' }
 
 function containMalformedMarker(text: string): string {
   const markerStart = text.search(CHARACTER_TOOLS_MARKER_OPEN)
@@ -346,6 +347,14 @@ function parseCompactToolDirective(text: string): CharacterToolDirective | null 
 
 /** Provider-neutral structured tool calls produced by the Character LLM. */
 export function parseCharacterToolDirective(text: string): CharacterToolDirective {
+  const providerMarker = PROVIDER_TOOL_MARKER_LIKE.exec(text)
+  if (providerMarker) {
+    return {
+      kind: 'malformed',
+      replyText: text.slice(0, providerMarker.index).trim(),
+      source: 'provider-control',
+    }
+  }
   const unwrapped = unwrapProtocolFence(text)
   const candidate =
     CHARACTER_TOOLS_MARKER_LIKE.test(unwrapped) || COMPACT_TOOL_MARKER.test(unwrapped)

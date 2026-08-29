@@ -41,6 +41,7 @@ import type {
   ScreenContextRecaptureRequest,
 } from '../shared/screen-context'
 import type { RendererFailureReport } from '../shared/system'
+import { createSpeechStreamRendererPort } from './speechStreamPort'
 
 const api = {
   alive: {
@@ -200,8 +201,12 @@ const api = {
   },
   tts: {
     warmup: (input: { language: string }) => ipcRenderer.invoke('tts:warmup', input),
-    synthesizeReply: (turnId: string, replyText: string, emotionKey: string) =>
-      ipcRenderer.invoke('tts:synthesize-reply', turnId, replyText, emotionKey),
+    openStream: (input) => {
+      const channel = new MessageChannel()
+      const rendererPort = createSpeechStreamRendererPort(channel.port1)
+      ipcRenderer.postMessage('tts:open-stream', input, [channel.port2])
+      return rendererPort
+    },
     cancelSynthesis: (turnId: string) => ipcRenderer.invoke('tts:cancel-synthesis', turnId),
   },
   memory: {

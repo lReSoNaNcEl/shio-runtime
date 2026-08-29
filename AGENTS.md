@@ -253,9 +253,11 @@ Architecture and ownership:
 - Procedural habits belong to Memory Runtime, require deduped completed typed facts,
   explicit approval, and reuse cooldown. Hybrid retrieval must retain lexical/FTS as
   the operational fallback when an optional Embedding Adapter is unavailable.
-- Streaming speech uses at most two concurrent synthesis workers plus an ordered
-  reorder buffer. Cancellation aborts both workers, queued or prepared audio, and
-  pending playback; no later segment may overtake an earlier segment.
+- Normal Character speech uses one logical text-in/audio-out session per turn.
+  Safe text commits enter the same session while the Character LLM is still
+  generating; bounded PCM reaches AudioPlayer through MessagePort and an
+  AudioWorklet. Cancellation synchronously flushes local audio before backend
+  cancellation and late PCM is discarded.
 - New Project evidence UI uses React Spectrum 2, and every new evidence or Plugin UI
   string is added in both Russian and English.
 - Preserve the existing HTTP contract with `apps/api` unless the task
@@ -358,7 +360,7 @@ Desktop quality and validation:
 
 ## API service rules
 
-`apps/api` is the FastAPI service that owns ASR and F5-TTS.
+`apps/api` is the FastAPI service that owns ASR and CosyVoice 3 synthesis.
 
 Architecture and ownership:
 
@@ -369,9 +371,10 @@ Architecture and ownership:
 - Resolve service assets relative to the service root using `Path(__file__)` /
   `apps/api`, never from the monorepo working directory.
 - FastAPI runs on port `8000`. ASR uses faster-whisper with Silero VAD. TTS uses
-  one in-process `F5LocalEngine` wrapping `f5_tts.api.F5TTS`.
-- `/synthesize` returns WAV plus engine, language, emotion, VRM-emotion, latency,
-  RTF, and duration headers.
+  one revision-pinned in-process `CosyVoiceEngine`.
+- `/tts/stream` is the only normal Character synthesis path. Its versioned
+  WebSocket protocol accepts incremental text and delivery updates and returns
+  ordered binary mono Float32 PCM frames.
 - `/voices` exposes voice presets, available references, and VRM expression
   mappings.
 
@@ -391,10 +394,10 @@ API commands and validation:
   `apps/api/.ruff_cache`; they must not create `.ruff_cache` in the repository root.
 - Run `npm run api:lint`, `npm run api:format:check`, and `npm run api:test`.
 - Do not rely on `py_compile` alone. Applicable endpoint validation covers
-  `/health`, `/voices`, `/emotions`, `/synthesize`, and `/recognize`; synthesis
-  validation must confirm that an actual WAV is produced.
-- `/health` must report `engines.f5.mode` as `real` for a real-engine endpoint
-  check.
+  `/health`, `/voices`, `/emotions`, `/tts/stream`, and `/recognize`; synthesis
+  validation must confirm that ordered binary PCM is produced.
+- `/health` must report `synthesis.engine` as `cosyvoice3`, `mode` as `real`,
+  and both streaming and voice cloning as ready for a real-engine endpoint check.
 
 Voice registry and references:
 
@@ -405,7 +408,7 @@ Voice registry and references:
 - `app/tts/emotion.py` removes normalized emotion tags and maps them to TTS
   emotions and VRM expression weights.
 - `app/tts/voice_registry.py` is the voice-registry owner and resolves logical
-  voice IDs to F5 reference audio.
+  voice IDs to provider-neutral reference audio.
 - Reference assets use
   `voices/<dataset>/<voice>/reference.wav` with an adjacent `reference.txt`.
 - A voice is available only when both reference files exist.
@@ -416,8 +419,9 @@ Voice registry and references:
 - Voice sync must remain single-flight, revision-pinnable, validated, and atomic;
   interrupted downloads must not produce a partially available voice.
 - Confirm `voice_manifest.json` and reference assets resolve from `apps/api`.
-- Server-side F5 knobs remain in `.env`: `F5_NFE_STEP`, `F5_CFG_STRENGTH`, and
-  `F5_USE_ACCENT`.
+- CosyVoice source, Matcha source, and model revisions are immutable release
+  configuration. Voice-conditioning cache identity includes voice ID, reference
+  audio hash, transcript hash, and model revision.
 - Never commit model caches, secrets, generated audio, or the local virtual
   environment.
 
@@ -510,13 +514,14 @@ a commit.
 
 Permanent deterministic Desktop tests use Vitest and live below `apps/desktop/tests`,
 organized by level and owning domain. Use `test:fast` for unit, contract, and architecture
-guards, and `test:regression` for the complete deterministic suite. The managed-Chrome
-fixture is deterministic regression coverage; public-site Browser checks, real Electron,
-long-running soaks, live-provider checks, and benchmarks remain standalone qualification
-runners. New bug repros are temporary, issue-scoped artifacts; migrate the regression case
-into `tests` and remove the repro after the fix. The unfinished Continuous Listening harness
-is the only temporary legacy `repro:*` exception and is excluded from regression until that
-feature is ready. See `docs/DESKTOP-TESTING.md` for the taxonomy and command surface.
+guards, and `test:regression` for integration and renderer tests. Together those two commands
+form the complete deterministic suite without overlapping discovery; `test` remains the
+single-command full deterministic run. The managed-Chrome fixture is deterministic regression
+coverage; public-site Browser checks, real Electron, long-running soaks, live-provider checks,
+and benchmarks remain standalone qualification runners. New bug repros are temporary,
+issue-scoped artifacts; migrate the regression case into `tests` and remove the repro after
+the fix. Permanent `repro:*` package scripts are prohibited. See `docs/DESKTOP-TESTING.md` for
+the taxonomy and command surface.
 
 ## 8. Do not hide errors
 

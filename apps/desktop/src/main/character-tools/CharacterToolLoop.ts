@@ -535,6 +535,15 @@ function malformedStructuredDirectivePrompt(requirement: CharacterToolRequiremen
   ].join('\n\n')
 }
 
+function containedProviderProtocolPrompt(requirement: CharacterToolRequirement): string {
+  return [
+    '## Unsupported Provider Control Syntax Contained',
+    `Runtime contained the previous response because it exposed a textual tool/function control marker. The current typed requirement is: ${JSON.stringify(requirement)}.`,
+    'Return the complete final answer as natural Shio prose only. Do not emit XML-like tool_call/function_call blocks, JSON directives, tool names, or explanations of internal protocol.',
+    'Use only the bounded Runtime Capability Context and tool evidence already supplied for this turn. Never invent a capability or claim that a tool was checked unless current-turn evidence says it succeeded.',
+  ].join('\n\n')
+}
+
 type ToolRequirementStatus = 'not-required' | 'pending' | 'succeeded' | 'failed' | 'unavailable'
 
 function requirementTools(requirement: CharacterToolRequirement): readonly CharacterToolId[] {
@@ -796,7 +805,9 @@ function withToolPrompts(
   return [...messages.slice(0, insertion), ...prompts, ...messages.slice(insertion)]
 }
 
-function parseStructuredCalls(text: string): StructuredCalls | 'malformed' | null {
+function parseStructuredCalls(
+  text: string,
+): StructuredCalls | 'malformed' | 'provider-control' | null {
   const directive = parseCharacterToolDirective(text)
   if (directive.kind === 'calls') {
     return {
@@ -806,7 +817,9 @@ function parseStructuredCalls(text: string): StructuredCalls | 'malformed' | nul
       recovered: directive.recovered,
     }
   }
-  if (directive.kind === 'malformed') return 'malformed'
+  if (directive.kind === 'malformed') {
+    return directive.source === 'provider-control' ? 'provider-control' : 'malformed'
+  }
 
   // Compatibility containment for already persisted/provider-cached structured protocols.
   const memory = parseLegacyCharacterMemoryDirective(text)
@@ -1833,19 +1846,24 @@ export class CharacterToolLoop {
           return loopExecutionResult(state, nativeToolsRejected, response)
         }
       }
-      if (parsed === 'malformed') {
+      if (parsed === 'malformed' || parsed === 'provider-control') {
+        const providerControlContained = parsed === 'provider-control'
         mainLog.warn('[CharacterToolLoop] malformed_protocol_contained', {
           traceId: options.traceId,
+          providerControlContained,
           ...protocolShape(response),
         })
         if (
-          statusBeforeRound === 'pending' &&
+          (statusBeforeRound === 'pending' || providerControlContained) &&
           requirementCorrections < CHARACTER_TOOL_REQUIREMENT_MAX_CORRECTIONS
         ) {
           requirementCorrections += 1
           working.push({
             role: 'system',
-            content: malformedStructuredDirectivePrompt(state.requirement),
+            content:
+              statusBeforeRound === 'pending'
+                ? malformedStructuredDirectivePrompt(state.requirement)
+                : containedProviderProtocolPrompt(state.requirement),
           })
           mainLog.info('[CharacterToolLoop] malformed_protocol_reissued', {
             traceId: options.traceId,

@@ -1,4 +1,4 @@
-import { runBrowserControlQualification } from '../../tests/support/browser/BrowserControlScenarios'
+import { runBrowserControlQualification } from '../../tests/support/browser/scenarios/qualification'
 
 runBrowserControlQualification().catch((error: unknown) => {
   console.error(error)

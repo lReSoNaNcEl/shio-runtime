@@ -24,7 +24,6 @@ import {
 import type { MemoryRetrievalStrategy } from '../../../src/main/memory/MemoryRetrievalStrategy'
 import type { NewMemoryRecord } from '../../../src/main/memory/SemanticMemoryStore'
 import { Orchestrator } from '../../../src/main/orchestrator'
-import type { SpeechSynthesisClient } from '../../../src/main/speech/speechClient'
 import type { AppSettings } from '../../../src/shared/config'
 import {
   MEMORY_LIMITS,
@@ -49,7 +48,7 @@ const FALLBACK_CAPABILITIES: LlmCapabilities = {
 }
 
 const settings = (): AppSettings => ({ uiLocale: 'ru' }) as AppSettings
-const speech = {} as SpeechSynthesisClient
+const speech = {}
 
 function createOrchestrator(provider: LLMProvider, broker: MemoryToolBroker): Orchestrator {
   return new Orchestrator(

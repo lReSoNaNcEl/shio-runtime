@@ -1,35 +1,37 @@
 import assert from 'node:assert/strict'
 
-import { AudioPlayer } from '../../src/renderer/audio/audioPlayer'
-import { HeadMotionRuntime } from '../../src/renderer/avatar/embodiment/gaze/HeadMotionRuntime'
-import { AttentionEngine } from '../../src/renderer/conversation/admission/AttentionEngine'
-import { BacklogSelector } from '../../src/renderer/conversation/admission/BacklogSelector'
-import { ConversationAdmissionCoordinator } from '../../src/renderer/conversation/admission/ConversationAdmissionCoordinator'
-import { RuleGate } from '../../src/renderer/conversation/admission/RuleGate'
+import { describe, it } from 'vitest'
+
+import { AudioPlayer } from '../../../src/renderer/audio/audioPlayer'
+import { HeadMotionRuntime } from '../../../src/renderer/avatar/embodiment/gaze/HeadMotionRuntime'
+import { AttentionEngine } from '../../../src/renderer/conversation/admission/AttentionEngine'
+import { BacklogSelector } from '../../../src/renderer/conversation/admission/BacklogSelector'
+import { ConversationAdmissionCoordinator } from '../../../src/renderer/conversation/admission/ConversationAdmissionCoordinator'
+import { RuleGate } from '../../../src/renderer/conversation/admission/RuleGate'
 import {
   ConversationRuntime,
   type ConversationRuntimeDeps,
-} from '../../src/renderer/runtime/ConversationRuntime'
-import { SpeechInputRuntime } from '../../src/renderer/runtime/SpeechInputRuntime'
-import { BargeInPolicy } from '../../src/renderer/speech/continuous-listening/BargeInPolicy'
+} from '../../../src/renderer/runtime/ConversationRuntime'
+import { SpeechInputRuntime } from '../../../src/renderer/runtime/SpeechInputRuntime'
+import { BargeInPolicy } from '../../../src/renderer/speech/continuous-listening/BargeInPolicy'
 import {
   ASR_STREAM_MAX_JSON_MESSAGE_CHARS,
   parseAsrStreamEvent,
-} from '../../src/renderer/speech/continuous-listening/StreamingAsrClient'
+} from '../../../src/renderer/speech/continuous-listening/StreamingAsrClient'
 import {
   isExplicitBargeInPhrase,
   textSimilarity,
-} from '../../src/renderer/speech/continuous-listening/textAnalysis'
+} from '../../../src/renderer/speech/continuous-listening/textAnalysis'
 import type {
   BufferedUtterance,
   ConversationInput,
-} from '../../src/renderer/speech/continuous-listening/types'
-import { UtteranceBacklog } from '../../src/renderer/speech/continuous-listening/UtteranceBacklog'
-import { UtteranceChunkBuilder } from '../../src/renderer/speech/continuous-listening/UtteranceChunkBuilder'
+} from '../../../src/renderer/speech/continuous-listening/types'
+import { UtteranceBacklog } from '../../../src/renderer/speech/continuous-listening/UtteranceBacklog'
+import { UtteranceChunkBuilder } from '../../../src/renderer/speech/continuous-listening/UtteranceChunkBuilder'
 import {
   ConversationInputCoordinator,
   resolveContinuousAttention,
-} from '../../src/renderer/speech/conversation/ConversationInputCoordinator'
+} from '../../../src/renderer/speech/conversation/ConversationInputCoordinator'
 
 let now = Date.now()
 const flush = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0))
@@ -95,7 +97,7 @@ const enabledLlm = {
   minimumConfidence: 0.72,
 }
 
-async function main(): Promise<void> {
+async function runContinuousListeningLifecycle(): Promise<void> {
   assert.deepEqual(parseAsrStreamEvent('{'), {
     ok: false,
     code: 'ASR_PROTOCOL_INVALID_JSON',
@@ -162,7 +164,7 @@ async function main(): Promise<void> {
       events: { publish: () => undefined },
       setStatus: () => undefined,
       pushMessage: () => undefined,
-      formatMicrophoneUnavailable: (error) => error,
+      formatMicrophoneUnavailable: (error: string) => error,
       emptyRecordingMessage: () => '',
       recordRuntimeEvent: () => undefined,
       reportSpeechServiceError: () => undefined,
@@ -251,10 +253,7 @@ async function main(): Promise<void> {
     const policy = new BargeInPolicy()
     const reason = (decision: ReturnType<BargeInPolicy['evaluate']>): string =>
       decision.type === 'ignore' ? decision.reason : decision.type
-    assert.equal(
-      reason(policy.evaluate({ ...bargeInBase, responsePhase: 'generating' })),
-      'not-speaking',
-    )
+    assert.equal(reason(policy.evaluate({ ...bargeInBase, responsePhase: null })), 'not-speaking')
     assert.equal(reason(policy.evaluate({ ...bargeInBase, speechDurationMs: 100 })), 'too-short')
     assert.equal(
       reason(policy.evaluate({ ...bargeInBase, now: 700, playbackStartedAt: 500 })),
@@ -317,19 +316,22 @@ async function main(): Promise<void> {
     let cancelReplyCalled = false
     let rejectSynthesis: ((error: Error) => void) | null = null
     let cancelSynthesisCalls = 0
+    let failCancellationTransition = true
     ;(globalThis as unknown as { window: unknown }).window = {
       api: {
         llm: {
-          cancelReply: async () => {
+          cancelReply: () => {
             cancelReplyCalled = true
             rejectGeneration(new DOMException('Request aborted', 'AbortError'))
+            return new Promise<never>(() => undefined)
           },
         },
         tts: {
-          cancelSynthesis: async () => {
+          cancelSynthesis: () => {
             cancelSynthesisCalls += 1
             rejectSynthesis?.(new DOMException('Synthesis aborted', 'AbortError'))
             rejectSynthesis = null
+            return new Promise<never>(() => undefined)
           },
         },
       },
@@ -337,16 +339,32 @@ async function main(): Promise<void> {
     const runtime = new ConversationRuntime({
       speechOutput: {
         hasSpeakableContent: () => true,
-        createDebugSpeechTurn: () =>
-          new Promise<never>((_, reject) => {
+        openStream: () => {
+          const completion = new Promise<never>((_, reject) => {
             rejectSynthesis = reject
-          }),
+          })
+          return {
+            completion,
+            commit: () => undefined,
+            finish: () => undefined,
+            cancel: () => {
+              rejectSynthesis?.(new DOMException('Speech stream cancelled', 'AbortError'))
+              rejectSynthesis = null
+            },
+          }
+        },
         stopCurrent: () => undefined,
       },
       characterResponse: { createReply: () => generation },
       characterState: { get: () => ({}) },
       conversationState: {
-        transition: () => ({}),
+        transition: (patch: { status?: string }) => {
+          if (patch.status === 'listening' && failCancellationTransition) {
+            failCancellationTransition = false
+            throw new Error('Simulated cancellation presentation failure')
+          }
+          return {}
+        },
         setPresence: () => ({}),
       },
       conversationPresence: {
@@ -552,7 +570,10 @@ async function main(): Promise<void> {
     const result = await coordinator.admitExplicit(input('failed-explicit', 'text_chat'))
     await flush()
     assert.equal(result.status, 'failed')
-    assert.equal(result.status === 'failed' && result.code, 'NETWORK_ERROR')
+    assert.equal(
+      result.status === 'failed' && 'code' in result ? result.code : undefined,
+      'NETWORK_ERROR',
+    )
     assert.equal(coordinator.isBusy(), false)
     assert.equal(coordinator.getActiveExecution(), undefined)
   }
@@ -892,11 +913,10 @@ async function main(): Promise<void> {
     assert.equal(createdSources, 0)
     assert.equal(player.isBusy(), false)
   }
-
-  console.log('Continuous listening repro: PASS')
 }
 
-void main().catch((error) => {
-  console.error(error)
-  process.exitCode = 1
+describe('Continuous listening lifecycle', () => {
+  it('keeps admission, barge-in, transport and AudioPlayer cancellation deterministic', async () => {
+    await runContinuousListeningLifecycle()
+  })
 })

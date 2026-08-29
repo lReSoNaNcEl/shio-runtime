@@ -60,7 +60,7 @@ function runPronunciationRegression(): void {
   includes(normalize('TypeScript GitHub WebSocket localhost'), 'локалхост', 'localhost')
   check(normalize('src/main') === 'эс-эр-си, слэш, мэйн', 'src/main path')
   includes(
-    normalize('apps/api/app/routes/synthesize.py'),
+    normalize('apps/api/app/routes/tts_stream.py'),
     'эппс, слэш, эй-пи-ай',
     'POSIX repository path',
   )
@@ -125,7 +125,7 @@ function runSafetyAndIdempotenceRegression(): void {
   const corpus = [
     'GPT-5.6 работает с TypeScript.',
     'Открой http://localhost:8000/health.',
-    'Проверь apps/api/app/routes/synthesize.py.',
+    'Проверь apps/api/app/routes/tts_stream.py.',
     '- GitHub\n- JSON',
     'Хм…',
   ]

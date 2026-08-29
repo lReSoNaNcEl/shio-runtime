@@ -67,4 +67,17 @@ describe('internal character reasoning containment', () => {
     expect(output.join('')).toBe('')
     expect(containment.didContain()).toBe(true)
   })
+
+  it.each([
+    '<tool_call> {"name":"Action:capabilities.list","arguments":{}} </tool_call>',
+    '\\<tool\\_call> {"name":"Action:capabilities.list","arguments":{}} \\</tool\\_call>',
+  ])('contains textual provider tool syntax across arbitrary stream splits', (marker) => {
+    const filter = new SafeCharacterStreamFilter()
+    const input = `[calm]Сейчас посмотрю. ${marker}`
+    const deltas = [...input].flatMap((character) => filter.push(character))
+    deltas.push(...filter.flush())
+
+    expect(deltas.map((delta) => delta.text).join('')).toBe('Сейчас посмотрю. ')
+    expect(JSON.stringify(deltas)).not.toMatch(/tool|Action|capabilities/u)
+  })
 })

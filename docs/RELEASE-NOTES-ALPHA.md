@@ -10,7 +10,7 @@ This release normalizes the monorepo application layout without changing Runtime
 
 - Run an interactive VRM character with idle motion, expressions, lip sync, and a mirror overlay.
 - Chat through supported cloud LLM providers while keeping API keys in Windows-backed encrypted storage.
-- Accept text and microphone input, recognize speech locally, and answer through local F5-TTS playback.
+- Accept text and microphone input, recognize speech locally, and answer through local cloned-voice streaming playback.
 - Load a user-selected VRM avatar and provide a guided fallback when no model is configured.
 - Build a read-only searchable context from a selected GitHub repository and branch.
 - Expose Runtime Health, persistent logs, and safe support information for diagnostics.

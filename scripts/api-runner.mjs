@@ -32,6 +32,7 @@ const isWindows = process.platform === 'win32'
 const REQUIRED_PY = [3, 12]
 const ALPHA_PIP_SPEC = 'pip>=25.3,<26'
 const ALPHA_TORCH_VERSION = '2.11.0+cu128'
+const BUILD_BOOTSTRAP = ['setuptools<82', 'wheel']
 
 // --- Virtual environment discovery -----------------------------------------
 
@@ -99,6 +100,15 @@ function targetVenvForInstall() {
 function systemPythonCandidates() {
   if (isWindows) {
     return [
+      {
+        executable: path.join(
+          apiRoot,
+          '.python',
+          'cpython-3.12-windows-x86_64-none',
+          'python.exe',
+        ),
+        prefixArgs: [],
+      },
       { executable: 'py', prefixArgs: ['-3.12'] },
       { executable: 'python3.12', prefixArgs: [] },
       { executable: 'python', prefixArgs: [] },
@@ -269,25 +279,46 @@ async function pip(python, args) {
 
 async function actionInstall(extra) {
   const python = ensureVenv()
-  await pip(python, ['install', '--upgrade', 'pip'])
-  await pip(python, ['install', '-r', 'requirements.txt', ...extra])
+  await pip(python, ['install', '--upgrade', ALPHA_PIP_SPEC])
+  await pip(python, ['install', ...BUILD_BOOTSTRAP])
+  await pip(python, [
+    'install',
+    '--no-build-isolation',
+    '-r',
+    'requirements.lock.txt',
+    ...extra,
+  ])
   process.exit(0)
 }
 
 async function actionInstallDev(extra) {
   const python = ensureVenv()
-  await pip(python, ['install', '--upgrade', 'pip'])
+  await pip(python, ['install', '--upgrade', ALPHA_PIP_SPEC])
+  await pip(python, ['install', ...BUILD_BOOTSTRAP])
   // requirements-dev.txt already includes `-r requirements.txt`, so this one
   // install covers both runtime and dev dependencies.
-  await pip(python, ['install', '-r', 'requirements-dev.txt', ...extra])
+  await pip(python, [
+    'install',
+    '--no-build-isolation',
+    '-r',
+    'requirements-dev.lock.txt',
+    ...extra,
+  ])
   process.exit(0)
 }
 
 async function actionInstallAlpha(extra) {
   const python = ensureVenv()
   await pip(python, ['install', '--upgrade', ALPHA_PIP_SPEC])
+  await pip(python, ['install', ...BUILD_BOOTSTRAP])
   await pip(python, ['install', '-r', 'requirements-torch-cu128.txt'])
-  await pip(python, ['install', '-r', 'requirements.lock.txt', ...extra])
+  await pip(python, [
+    'install',
+    '--no-build-isolation',
+    '-r',
+    'requirements.lock.txt',
+    ...extra,
+  ])
   await pip(python, ['check'])
   const verify = [
     '-c',

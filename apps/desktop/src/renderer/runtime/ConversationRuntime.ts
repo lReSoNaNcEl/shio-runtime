@@ -2,16 +2,10 @@ import type { ExperienceEvent } from '../../shared/alive'
 import type { CharacterEmbodimentIntent } from '../../shared/character-response'
 import {
   characterRequestId,
-  type SpeechSegment,
-  StreamingSpeechSegmenter,
+  type SpeechTextCommit,
+  SpeechTextCommitBuffer,
 } from '../../shared/character-stream'
 import type { AttachmentDisposition, ReplyGrounding } from '../../shared/conversation'
-import {
-  EMOTION_BOUNDARY_GAPS,
-  type EmotionSegmentBoundary,
-  type EmotionTextSegment,
-  emotionRegistry,
-} from '../../shared/emotion'
 import type { LatencyMilestoneName } from '../../shared/latency'
 import type {
   CharacterConversationPresenceState,
@@ -40,14 +34,12 @@ import type {
   ConversationAvatarProjection,
   ConversationPresentationPort,
 } from './ConversationPresentationPort'
-import { EmotionSpeechPipeline, type PreparedEmotionSpeechSegment } from './EmotionSpeechPipeline'
 import type {
   SpeechOutputPort,
-  SpeechPlaybackOptions,
+  SpeechOutputStream,
   SpeechPlaybackSession,
 } from './SpeechOutputPort'
-import { StreamingSpeechPipeline } from './StreamingSpeechPipeline'
-import { isSpeechServiceError } from './speechCapabilities'
+import { deliveryIntent } from './SpeechOutputPort'
 
 export type ConversationStatus =
   | 'idle'
@@ -68,25 +60,12 @@ export class ConversationInterruptedError extends Error {
   }
 }
 
-function toEmotionTextSegment(segment: SpeechSegment, index: number): EmotionTextSegment {
-  const boundaryAfter: EmotionSegmentBoundary =
-    segment.boundary === 'clause'
-      ? 'clause'
-      : /(?:\.\.\.|…)$/u.test(segment.text.trimEnd())
-        ? 'expressive'
-        : 'sentence'
-  return {
-    id: segment.id,
-    index,
-    emotion: emotionRegistry.normalize(segment.emotion),
-    text: segment.text,
-    boundaryAfter,
-    targetMaxGapMs: EMOTION_BOUNDARY_GAPS[boundaryAfter],
-  }
+interface SpeechReplyMetadata {
+  emotionKey?: string
+  vrmEmotion?: string
+  latencyMs?: string
+  cache?: string
 }
-
-type SpeechReply = Awaited<ReturnType<Window['api']['tts']['synthesizeReply']>>
-type SuccessfulSpeechReply = SpeechReply & { ok: true; audioBuffer: ArrayBuffer }
 
 export interface ConversationRuntimeDeps {
   speechOutput: SpeechOutputPort
@@ -118,7 +97,7 @@ export interface ConversationRuntimeDeps {
   recordRuntimeEvent: (label: string, detail?: string) => void
   /** Report a normalized Speech Adapter failure to the capabilities health component. */
   reportSpeechServiceError: (error: SerializedSpeechError) => void
-  rememberSpeechMetadata: (speech: SpeechReply) => void
+  rememberSpeechMetadata: (speech: SpeechReplyMetadata) => void
   updateSpeechPlaybackProgress: (progress: number) => void
   isContinuousCaptureAlive: () => boolean
   handleLlmSetupRequired: (userText: string, reason: 'missing-credential' | 'model-missing') => void
@@ -130,10 +109,8 @@ export class ConversationRuntime {
   private activePhase: ConversationExecutionPhase | null = null
   private playbackStartedAt: number | null = null
   private generationTurnId: string | null = null
-  private synthesisTurnId: string | null = null
-  private activeSynthesisWorkers = 0
   private playbackTurnId: string | null = null
-  private activeEmotionPipeline: { cancel(): void } | null = null
+  private activeSpeechStream: SpeechOutputStream | null = null
   private embodimentIntent: CharacterEmbodimentIntent | undefined
   private interruption: {
     turnId: string
@@ -223,52 +200,64 @@ export class ConversationRuntime {
     const interruption = this.interruption
     if (!turnId || !interruption || interruption.turnId !== turnId) return false
     this.deps.setResponseInterruptionPending(true)
-    this.setEmbodimentIntent(undefined)
-    this.activeEmotionPipeline?.cancel()
+    const speechStream = this.activeSpeechStream
+    this.activeSpeechStream = null
     this.activeTurnId = null
     this.activePhase = null
     this.playbackStartedAt = null
     // Settle the local execution before asking external adapters to cancel.
     // Adapter AbortErrors can therefore never win the local interruption race.
     interruption.reject(new ConversationInterruptedError(turnId, source))
-    this.deps.speechOutput.stopCurrent(turnId, 'conversation-interrupted')
-    this.deps.presentation.interruptLipSync(turnId)
-    this.deps.markAssistantMessageInterrupted()
-    const listening = this.deps.isContinuousCaptureAlive()
+    try {
+      speechStream?.cancel('conversation-interrupted')
+    } catch (error) {
+      this.recordCancellationFailure('Speech Stream', turnId, error)
+    }
+    // Backend cancellation must be dispatched before any presentation/state
+    // work. A failed Character State transition must never strand the model
+    // generator or its inference lock.
+    this.observeAdapterCancellation('LLM', () => window.api.llm.cancelReply(turnId), turnId)
+    this.observeAdapterCancellation('Speech', () => window.api.tts.cancelSynthesis(turnId), turnId)
+    let listening = false
+    try {
+      listening = this.deps.isContinuousCaptureAlive()
+    } catch (error) {
+      this.recordCancellationFailure('Continuous Capture', turnId, error)
+    }
     const status: ConversationStatus = listening ? 'listening' : 'idle'
     const mode: CharacterRuntimeMode = listening ? 'listening' : 'idle'
-    const waiting = this.deps.conversationPresence.update({ phase: 'waiting' })
-    this.deps.conversationState.setPresence(waiting)
-    this.deps.conversationState.transition({
-      status,
-      mode,
-      emotion: 'neutral',
-      conversationPresence: waiting,
-    })
-    this.applyAvatarCharacterState({ stopLipSyncTurnId: turnId })
-    if (source === 'voice-barge-in') {
-      try {
-        this.deps.presentation.triggerUserInterruption()
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error)
-        this.deps.recordRuntimeEvent('User Interruption Reaction Failed', message)
-      }
-    }
-    this.publishAvatarState({
-      mode,
-      emotionKey: 'neutral',
-      reaction: source === 'voice-barge-in' ? 'user-interruption' : undefined,
-      reactionId: source === 'voice-barge-in' ? `${turnId}:${Date.now()}` : undefined,
-    })
+    // Reset the visible control state before best-effort presentation cleanup.
     this.deps.updateSpeechPlaybackProgress(0)
     this.deps.setStatus(status)
+    try {
+      this.setEmbodimentIntent(undefined)
+      this.deps.speechOutput.stopCurrent(turnId, 'conversation-interrupted')
+      this.deps.presentation.interruptLipSync(turnId)
+      this.deps.markAssistantMessageInterrupted()
+      const waiting = this.deps.conversationPresence.update({ phase: 'waiting' })
+      this.deps.conversationState.setPresence(waiting)
+      this.deps.conversationState.transition({
+        status,
+        mode,
+        emotion: 'neutral',
+        conversationPresence: waiting,
+      })
+      this.applyAvatarCharacterState({ stopLipSyncTurnId: turnId })
+      if (source === 'voice-barge-in') {
+        this.deps.presentation.triggerUserInterruption()
+      }
+      this.publishAvatarState({
+        mode,
+        emotionKey: 'neutral',
+        reaction: source === 'voice-barge-in' ? 'user-interruption' : undefined,
+        reactionId: source === 'voice-barge-in' ? `${turnId}:${Date.now()}` : undefined,
+      })
+    } catch (error) {
+      this.recordCancellationFailure('Presentation', turnId, error)
+    }
     this.deps.recordRuntimeEvent('Conversation Interrupted', `turnId=${turnId} source=${source}`)
     this.deps.reportExperience?.({ type: 'conversation-interrupted', at: Date.now(), turnId })
     this.publishRuntimeEvent('ResponseInterrupted', 'speech', `turnId=${turnId} source=${source}`)
-    await Promise.allSettled([
-      window.api.llm.cancelReply(turnId),
-      window.api.tts.cancelSynthesis(turnId),
-    ])
     return true
   }
 
@@ -295,6 +284,11 @@ export class ConversationRuntime {
     let streamedDisplayText = ''
     let streamedMessageId: string | null = null
     let streamedMessageFinalized = false
+    let playbackStarted = false
+    let spokenCommitCount = 0
+    let speechStream: SpeechOutputStream | null = null
+    const commitBuffer = new SpeechTextCommitBuffer(turn.turnId)
+
     try {
       this.setEmbodimentIntent(
         turn.screenContextId ? { intensity: 'subtle', gazeHint: 'screen' } : undefined,
@@ -307,76 +301,59 @@ export class ConversationRuntime {
       this.deps.conversationState.setPresence(thinkingPresence)
       this.deps.recordRuntimeEvent('Thinking', `turnId=${turn.turnId}`)
       reportPhase('generating')
-      const streamSegmenter = new StreamingSpeechSegmenter(turn.turnId)
-      let streamedSpeechPrepared = false
-      let streamedPlaybackStarted = false
-      let streamedSegmentCount = 0
-      const streamingPipeline = new StreamingSpeechPipeline({
-        turnId: turn.turnId,
-        synthesize: (segment, signal) => {
-          if (signal.aborted) throw signal.reason
-          return this.runSynthesis(turn.turnId, () =>
-            this.deps.speechOutput.synthesizeSegment(turn.turnId, segment),
-          )
-        },
-        prepareAudio: (audioBuffer) => this.deps.speechOutput.prepare(audioBuffer),
-        playPrepared: async (item, onStarted) => {
-          this.rememberSpeech(item.speech, null)
-          failurePhase = 'playback'
-          await this.deps.speechOutput.playPrepared(item.audio, {
+
+      const ensureSpeechStream = (commit: SpeechTextCommit): SpeechOutputStream => {
+        if (speechStream) return speechStream
+        failurePhase = 'synthesis'
+        this.playbackTurnId = turn.turnId
+        this.prepareSpeech(commit.emotion, `stream turnId=${turn.turnId}`, streamedDisplayText)
+        reportPhase('synthesizing')
+        speechStream = this.deps.speechOutput.openStream(
+          turn.turnId,
+          deliveryIntent(commit.emotion),
+          {
             turnId: turn.turnId,
             onReady: (session) => {
               if (!this.isCurrentTurn(turn.turnId))
                 throw new Error(`Stale playback ready turnId=${turn.turnId}`)
-              if (!streamedPlaybackStarted) {
-                streamedPlaybackStarted = true
-                reportPhase('playing')
-              }
-              this.startSpeech(session, item.speech, item.segment.emotion, item.segment.text)
+              failurePhase = 'playback'
+              reportPhase('playing')
+              this.deps.rememberSpeechMetadata({
+                emotionKey: commit.emotion,
+              })
+              this.startSpeech(
+                session,
+                { emotionKey: commit.emotion },
+                commit.emotion,
+                streamedDisplayText,
+              )
+            },
+            onStarted: () => {
+              playbackStarted = true
+              this.recordLatency(turn.turnId, 'playback_started', 'success')
             },
             onProgress: (progress) => {
               if (this.isCurrentTurn(turn.turnId)) this.deps.updateSpeechPlaybackProgress(progress)
             },
-            onStarted,
-          })
-        },
-        isCurrentTurn: () => this.isCurrentTurn(turn.turnId),
-        recordEvent: (label, detail) => this.deps.recordRuntimeEvent(label, detail),
-        recordTiming: (event) => {
-          const options = {
-            at: event.at,
-            ttsSegmentId: event.segment.id,
-            workerId: event.workerId,
-            characters: event.segment.text.length,
-            words: event.segment.text.trim().split(/\s+/u).filter(Boolean).length,
-          }
-          this.recordLatency(turn.turnId, event.name, 'success', options)
-          if (event.name === 'audio_ready' && event.segment.index === 0) {
-            this.recordLatency(turn.turnId, 'first_audio_ready', 'success', options)
-          }
-        },
-      })
-      this.activeEmotionPipeline = streamingPipeline
-      const streamingExecution = streamingPipeline.execute()
-      void streamingExecution.catch(() => undefined)
-      const enqueueSpeechSegments = (
-        segments: ReturnType<StreamingSpeechSegmenter['push']>,
-      ): void => {
-        for (const segment of segments) {
-          if (streamedSegmentCount === 0) {
+          },
+        )
+        this.activeSpeechStream = speechStream
+        return speechStream
+      }
+
+      const commitSpeech = (commits: readonly SpeechTextCommit[]): void => {
+        for (const commit of commits) {
+          if (spokenCommitCount === 0)
             this.recordLatency(turn.turnId, 'llm_first_sentence', 'success')
-          }
-          if (!streamedSpeechPrepared) {
-            streamedSpeechPrepared = true
-            failurePhase = 'synthesis'
-            this.playbackTurnId = turn.turnId
-            this.prepareSpeech(segment.emotion, `stream turnId=${turn.turnId}`, streamedDisplayText)
-            reportPhase('synthesizing')
-          }
-          streamingPipeline.enqueue(toEmotionTextSegment(segment, streamedSegmentCount))
-          streamedSegmentCount += 1
+          ensureSpeechStream(commit).commit(commit)
+          spokenCommitCount += 1
+          this.deps.recordRuntimeEvent(
+            'Speech Text Committed',
+            `turnId=${turn.turnId} sequence=${commit.sequence} boundary=${commit.boundary} characters=${commit.text.length}`,
+          )
         }
       }
+
       const draft = await this.runGeneration(turn.turnId, () =>
         this.deps.characterResponse.createReply(
           turn.turnId,
@@ -416,21 +393,17 @@ export class ConversationRuntime {
             } else if (streamedMessageId) {
               this.deps.updateMessage(streamedMessageId, streamedDisplayText, undefined, true)
             }
-            enqueueSpeechSegments(streamSegmenter.push(event.delta))
+            commitSpeech(commitBuffer.push(event.delta))
           },
           turn.source === 'autonomous_initiative' ? 'autonomous' : 'user',
         ),
       )
-      // A successful Main-owned reply consumes its leased Screen Context before
-      // the IPC result reaches the renderer. Any later cancellation or cleanup
-      // failure must therefore clear the local attachment card.
       attachmentDisposition = 'released'
       if (!this.isCurrentTurn(turn.turnId)) {
         return { status: 'cancelled', turnId: turn.turnId, attachmentDisposition }
       }
 
       this.setEmbodimentIntent(draft.embodimentIntent)
-
       this.publishRuntimeEvent('SentenceGenerated', 'speech', `turnId=${turn.turnId}`)
       const generatedPresence = this.deps.conversationPresence.update({
         phase: 'preparingReply',
@@ -439,35 +412,20 @@ export class ConversationRuntime {
         emotionKey: draft.emotionKey,
       })
       this.deps.conversationState.setPresence(generatedPresence)
+
       if (streamedMessageId) {
         this.deps.updateMessage(streamedMessageId, draft.displayText, draft.grounding, false, true)
-        streamedMessageFinalized = true
-        enqueueSpeechSegments(streamSegmenter.flush())
-        streamingPipeline.close()
-        await Promise.race([streamingExecution, this.interruptionFor(turn.turnId)])
-        if (this.activeEmotionPipeline === streamingPipeline) this.activeEmotionPipeline = null
-        if (this.playbackTurnId === turn.turnId) this.playbackTurnId = null
-        if (!this.isCurrentTurn(turn.turnId)) {
-          return { status: 'cancelled', turnId: turn.turnId, attachmentDisposition }
-        }
-        reportPhase('cleaning_up')
-        if (streamedSpeechPrepared) await this.finishSpeechCleanup(turn.turnId)
-        else this.completeSilentReply(turn.turnId, draft.emotionKey, draft.displayText)
-        return {
-          status: 'completed',
-          turnId: turn.turnId,
-          playbackCompleted: streamedPlaybackStarted,
-          cleanupCompleted: true,
+      } else {
+        streamedMessageId = this.deps.pushMessage('assistant', draft.displayText, draft.grounding)
+        if (this.deps.speechOutput.hasSpeakableContent(draft.speechText)) {
+          commitSpeech(commitBuffer.push({ text: draft.speechText, emotion: draft.emotionKey }))
         }
       }
+      streamedMessageFinalized = true
+      commitSpeech(commitBuffer.flush())
 
-      streamingPipeline.cancel()
-      await streamingExecution.catch(() => undefined)
-      if (this.activeEmotionPipeline === streamingPipeline) this.activeEmotionPipeline = null
-      this.deps.pushMessage('assistant', draft.displayText, draft.grounding)
-
-      if (!this.deps.speechOutput.hasSpeakableContent(draft.speechText)) {
-        reportPhase('cleaning_up')
+      const completedSpeechStream = this.activeSpeechStream
+      if (!completedSpeechStream) {
         this.completeSilentReply(turn.turnId, draft.emotionKey, draft.displayText)
         return {
           status: 'completed',
@@ -477,99 +435,9 @@ export class ConversationRuntime {
         }
       }
 
-      this.prepareSpeech(draft.emotionKey, `turnId=${turn.turnId}`, draft.displayText)
-
-      failurePhase = 'synthesis'
-      reportPhase('synthesizing')
-      this.playbackTurnId = turn.turnId
-      this.deps.recordRuntimeEvent(
-        'Emotion Segments Parsed',
-        draft.segments.map((segment) => segment.emotion).join(' → '),
-      )
-      if (draft.segments.length === 1) {
-        const segment = draft.segments[0]
-        failurePhase = 'synthesis'
-        const speech = await this.runSynthesis(turn.turnId, () =>
-          this.deps.speechOutput.synthesizeSegment(turn.turnId, segment),
-        )
-        this.rememberSpeech(speech, null)
-        failurePhase = 'playback'
-        reportPhase('playing')
-        await Promise.race([
-          this.deps.speechOutput.play(speech.audioBuffer, {
-            turnId: turn.turnId,
-            onReady: (session) => {
-              if (!this.isCurrentTurn(turn.turnId))
-                throw new Error(`Stale playback ready turnId=${turn.turnId}`)
-              this.startSpeech(session, speech, segment.emotion, segment.text)
-            },
-            onProgress: (progress) => {
-              if (this.isCurrentTurn(turn.turnId)) this.deps.updateSpeechPlaybackProgress(progress)
-            },
-          }),
-          this.interruptionFor(turn.turnId),
-        ])
-      } else {
-        const segmentWeights = draft.segments.map((segment) =>
-          Math.max(1, segment.text.trim().length),
-        )
-        const totalWeight = segmentWeights.reduce((sum, weight) => sum + weight, 0)
-        let completedWeight = 0
-        let playbackPhaseStarted = false
-        let synthesisFailure: unknown = null
-        const pipeline = new EmotionSpeechPipeline({
-          turnId: turn.turnId,
-          segments: draft.segments,
-          synthesize: async (segment) => {
-            try {
-              return await this.runSynthesis(turn.turnId, () =>
-                this.deps.speechOutput.synthesizeSegment(turn.turnId, segment),
-              )
-            } catch (error) {
-              synthesisFailure = error
-              throw error
-            }
-          },
-          prepareAudio: (audioBuffer) => this.deps.speechOutput.prepare(audioBuffer),
-          playPrepared: async (item, onStarted) => {
-            this.rememberSpeech(item.speech, null)
-            failurePhase = 'playback'
-            await this.playPreparedEmotionSegment(
-              turn.turnId,
-              item,
-              (session) => {
-                if (!playbackPhaseStarted) {
-                  playbackPhaseStarted = true
-                  reportPhase('playing')
-                }
-                this.startSpeech(session, item.speech, item.segment.emotion, item.segment.text)
-              },
-              (progress) => {
-                if (!this.isCurrentTurn(turn.turnId)) return
-                const currentWeight = segmentWeights[item.segment.index] ?? 1
-                this.deps.updateSpeechPlaybackProgress(
-                  (completedWeight + progress * currentWeight) / totalWeight,
-                )
-              },
-              onStarted,
-            )
-            completedWeight += segmentWeights[item.segment.index] ?? 1
-            if (this.isCurrentTurn(turn.turnId))
-              this.deps.updateSpeechPlaybackProgress(completedWeight / totalWeight)
-          },
-          isCurrentTurn: () => this.isCurrentTurn(turn.turnId),
-          recordEvent: (label, detail) => this.deps.recordRuntimeEvent(label, detail),
-        })
-        this.activeEmotionPipeline = pipeline
-        try {
-          await Promise.race([pipeline.execute(), this.interruptionFor(turn.turnId)])
-        } catch (error) {
-          if (error === synthesisFailure) failurePhase = 'synthesis'
-          throw error
-        } finally {
-          if (this.activeEmotionPipeline === pipeline) this.activeEmotionPipeline = null
-        }
-      }
+      completedSpeechStream.finish()
+      await Promise.race([completedSpeechStream.completion, this.interruptionFor(turn.turnId)])
+      if (this.activeSpeechStream === completedSpeechStream) this.activeSpeechStream = null
       if (this.playbackTurnId === turn.turnId) this.playbackTurnId = null
       if (!this.isCurrentTurn(turn.turnId)) {
         return { status: 'cancelled', turnId: turn.turnId, attachmentDisposition }
@@ -578,19 +446,19 @@ export class ConversationRuntime {
       failurePhase = 'cleanup'
       reportPhase('cleaning_up')
       await this.finishSpeechCleanup(turn.turnId)
-      console.debug(`[conversation] turnId=${turn.turnId} cleanup=completed`)
       return {
         status: 'completed',
         turnId: turn.turnId,
-        playbackCompleted: true,
+        playbackCompleted: playbackStarted,
         cleanupCompleted: true,
       }
     } catch (error) {
       if (streamedMessageId && !streamedMessageFinalized) {
         this.deps.updateMessage(streamedMessageId, streamedDisplayText, undefined, false, true)
       }
-      this.activeEmotionPipeline?.cancel()
-      this.activeEmotionPipeline = null
+      const failedSpeechStream = this.activeSpeechStream
+      failedSpeechStream?.cancel('stream-failed')
+      if (this.activeSpeechStream === failedSpeechStream) this.activeSpeechStream = null
       if (this.playbackTurnId === turn.turnId) this.playbackTurnId = null
       const message = error instanceof Error ? error.message : String(error)
       if (
@@ -617,19 +485,9 @@ export class ConversationRuntime {
         const { failure } = error
         this.deps.recordRuntimeEvent(
           'Conversation Turn Failed',
-          `provider=${failure.providerId ?? 'none'} turnId=${turn.turnId} code=${failure.code} vision=${Boolean(turn.screenContextId)} attachmentDisposition=${failure.attachmentDisposition} retrySameRequest=${failure.retrySameRequest} canResubmitWithoutImage=${failure.canResubmitWithoutImage}`,
+          `provider=${failure.providerId ?? 'none'} turnId=${turn.turnId} code=${failure.code}`,
         )
-        try {
-          await this.recoverToIdle(turn.turnId)
-        } catch (cleanupError) {
-          return {
-            status: 'failed',
-            turnId: turn.turnId,
-            phase: 'cleanup',
-            error: String(cleanupError),
-            attachmentDisposition: failure.attachmentDisposition,
-          }
-        }
+        await this.recoverToIdle(turn.turnId)
         return {
           status: 'failed',
           turnId: turn.turnId,
@@ -638,52 +496,12 @@ export class ConversationRuntime {
           failure,
         }
       }
-      // Speech output (TTS) is a secondary capability. If synthesis fails because
-      // the Speech API is unavailable, the reply text has already been shown
-      // (pushed before synthesis). The turn is therefore a successful conversation
-      // completion — the failure is a Speech capability failure, not a turn
-      // failure — so we degrade to a stable idle state without a red chat error.
-      if (
-        isSpeechServiceError(error) &&
-        error.operation === 'synthesis' &&
-        error.code === 'CANCELLED'
-      ) {
-        this.deps.recordRuntimeEvent('synthesis_cancelled', `turnId=${turn.turnId}`)
-        try {
-          await this.recoverToIdle(turn.turnId)
-        } catch (cleanupError) {
-          return {
-            status: 'failed',
-            turnId: turn.turnId,
-            phase: 'cleanup',
-            error: String(cleanupError),
-            attachmentDisposition,
-          }
-        }
-        return {
-          status: 'completed',
-          turnId: turn.turnId,
-          playbackCompleted: false,
-          cleanupCompleted: true,
-        }
-      }
-      if (isSpeechServiceError(error) && error.operation === 'synthesis') {
+      if (['synthesis', 'playback'].includes(failurePhase)) {
         this.deps.recordRuntimeEvent(
           'synthesis_degraded',
-          `turnId=${turn.turnId} code=${error.code}`,
+          `turnId=${turn.turnId} message=${message}`,
         )
-        this.deps.reportSpeechServiceError(error.toSerialized())
-        try {
-          await this.recoverToIdle(turn.turnId)
-        } catch (cleanupError) {
-          return {
-            status: 'failed',
-            turnId: turn.turnId,
-            phase: 'cleanup',
-            error: String(cleanupError),
-            attachmentDisposition,
-          }
-        }
+        await this.recoverToIdle(turn.turnId)
         return {
           status: 'completed',
           turnId: turn.turnId,
@@ -692,28 +510,15 @@ export class ConversationRuntime {
         }
       }
       const invariantViolation =
-        /(?:Character generation|Generation|TTS synthesis|Synthesis|Conversation Runtime|Conversation execution|Parallel playback) overlap|Parallel playback rejected/i.test(
+        /(?:Character generation|Generation|Conversation Runtime|Conversation execution|Parallel playback) overlap|Parallel playback rejected/i.test(
           message,
         )
       this.deps.recordRuntimeEvent(
         invariantViolation ? 'conversation.invariant_violation' : `${failurePhase} Error`,
         `turnId=${turn.turnId} phase=${failurePhase} ${message}`,
       )
-      // Internal concurrency diagnostics belong in Runtime Debug/Event Bus,
-      // never in conversation history. Normal provider/user-facing failures
-      // retain the existing inline error behavior.
       if (!invariantViolation) this.deps.pushMessage('error', this.deps.formatUserError(message))
-      try {
-        await this.recoverToIdle(turn.turnId)
-      } catch (cleanupError) {
-        return {
-          status: 'failed',
-          turnId: turn.turnId,
-          phase: 'cleanup',
-          error: String(cleanupError),
-          attachmentDisposition,
-        }
-      }
+      await this.recoverToIdle(turn.turnId)
       return {
         status: 'failed',
         turnId: turn.turnId,
@@ -730,30 +535,36 @@ export class ConversationRuntime {
   ): Promise<ConversationCompletionResult> {
     let failurePhase: 'synthesis' | 'playback' | 'cleanup' = 'synthesis'
     const emotionKey = turn.text || 'happy'
+    const text = 'Тестирую полный поток речи Shio.'
+    let stream: SpeechOutputStream | null = null
     try {
       this.deps.recordRuntimeEvent('Test Full Runtime Started', `turnId=${turn.turnId}`)
       this.prepareSpeech(emotionKey, `debug turnId=${turn.turnId}`)
       reportPhase('synthesizing')
-      const speechTurn = await this.runSynthesis(turn.turnId, () =>
-        this.deps.speechOutput.createDebugSpeechTurn(turn.turnId, emotionKey),
-      )
-      if (!this.isCurrentTurn(turn.turnId)) return { status: 'cancelled', turnId: turn.turnId }
-      this.rememberSpeech(speechTurn.speech, speechTurn.ttsLatencyText)
-
-      failurePhase = 'playback'
-      reportPhase('playing')
       this.playbackTurnId = turn.turnId
-      await Promise.race([
-        this.deps.speechOutput.play(speechTurn.speech.audioBuffer, {
-          turnId: turn.turnId,
-          onReady: (session) =>
-            this.startSpeech(session, speechTurn.speech, speechTurn.emotionKey, speechTurn.text),
-          onProgress: (progress) => {
-            if (this.isCurrentTurn(turn.turnId)) this.deps.updateSpeechPlaybackProgress(progress)
-          },
-        }),
-        this.interruptionFor(turn.turnId),
-      ])
+      stream = this.deps.speechOutput.openStream(turn.turnId, deliveryIntent(emotionKey), {
+        turnId: turn.turnId,
+        onReady: (session) => {
+          failurePhase = 'playback'
+          reportPhase('playing')
+          this.startSpeech(session, { emotionKey }, emotionKey, text)
+        },
+        onProgress: (progress) => {
+          if (this.isCurrentTurn(turn.turnId)) this.deps.updateSpeechPlaybackProgress(progress)
+        },
+      })
+      this.activeSpeechStream = stream
+      stream.commit({
+        id: `${turn.turnId}:speech:0`,
+        turnId: turn.turnId,
+        text,
+        emotion: emotionKey,
+        sequence: 0,
+        boundary: 'final',
+      })
+      stream.finish()
+      await Promise.race([stream.completion, this.interruptionFor(turn.turnId)])
+      if (this.activeSpeechStream === stream) this.activeSpeechStream = null
       if (this.playbackTurnId === turn.turnId) this.playbackTurnId = null
 
       failurePhase = 'cleanup'
@@ -766,6 +577,8 @@ export class ConversationRuntime {
         cleanupCompleted: true,
       }
     } catch (error) {
+      stream?.cancel('stream-failed')
+      if (this.activeSpeechStream === stream) this.activeSpeechStream = null
       if (this.playbackTurnId === turn.turnId) this.playbackTurnId = null
       const message = error instanceof Error ? error.message : String(error)
       if (
@@ -793,30 +606,6 @@ export class ConversationRuntime {
       return result
     } finally {
       if (this.generationTurnId === turnId) this.generationTurnId = null
-    }
-  }
-
-  private async runSynthesis<T>(turnId: string, operation: () => Promise<T>): Promise<T> {
-    if (this.synthesisTurnId && this.synthesisTurnId !== turnId)
-      throw new Error(
-        `Synthesis overlap: activeTurnId=${this.synthesisTurnId} requestedTurnId=${turnId}`,
-      )
-    if (this.activeSynthesisWorkers >= 2)
-      throw new Error(`Synthesis worker limit exceeded turnId=${turnId}`)
-    this.synthesisTurnId = turnId
-    this.activeSynthesisWorkers += 1
-    console.debug(
-      `[conversation] turnId=${turnId} synthesis=started workers=${this.activeSynthesisWorkers}`,
-    )
-    try {
-      const result = await Promise.race([operation(), this.interruptionFor(turnId)])
-      if (!this.isCurrentTurn(turnId)) throw new Error(`Stale synthesis result turnId=${turnId}`)
-      console.debug(`[conversation] turnId=${turnId} synthesis=completed`)
-      return result
-    } finally {
-      this.activeSynthesisWorkers = Math.max(0, this.activeSynthesisWorkers - 1)
-      if (this.synthesisTurnId === turnId && this.activeSynthesisWorkers === 0)
-        this.synthesisTurnId = null
     }
   }
 
@@ -867,7 +656,7 @@ export class ConversationRuntime {
 
   private startSpeech(
     session: SpeechPlaybackSession,
-    speech: SuccessfulSpeechReply,
+    speech: SpeechReplyMetadata,
     fallbackEmotion: string,
     replyText = '',
   ): void {
@@ -917,24 +706,6 @@ export class ConversationRuntime {
       'Audio Started',
       `turnId=${session.turnId} playbackId=${session.playbackId}`,
     )
-  }
-
-  private async playPreparedEmotionSegment(
-    turnId: string,
-    item: PreparedEmotionSpeechSegment,
-    onReady: SpeechPlaybackOptions['onReady'],
-    onProgress: (progress: number) => void,
-    onStarted: () => void,
-  ): Promise<void> {
-    await this.deps.speechOutput.playPrepared(item.audio, {
-      turnId,
-      onReady: (session) => {
-        if (!this.isCurrentTurn(turnId)) throw new Error(`Stale playback ready turnId=${turnId}`)
-        return onReady(session)
-      },
-      onProgress,
-      onStarted,
-    })
   }
 
   private async finishSpeechCleanup(turnId: string, extraEvent?: string): Promise<void> {
@@ -998,11 +769,6 @@ export class ConversationRuntime {
     this.deps.recordRuntimeEvent('Finished', `turnId=${turnId}`)
   }
 
-  private rememberSpeech(speech: SpeechReply, latencyText: string | null): void {
-    this.deps.rememberSpeechMetadata(speech)
-    if (latencyText) this.deps.pushMessage('meta', latencyText)
-  }
-
   private applyAvatarCharacterState(
     options: Parameters<ConversationPresentationPort['applyCharacterState']>[1] = {},
   ): void {
@@ -1011,6 +777,32 @@ export class ConversationRuntime {
 
   private publishAvatarState(state: ConversationAvatarProjection): void {
     this.deps.presentation.publishAvatarState(state, this.embodimentIntent)
+  }
+
+  private observeAdapterCancellation(
+    adapter: 'LLM' | 'Speech',
+    cancel: () => Promise<unknown>,
+    turnId: string,
+  ): void {
+    try {
+      void cancel().catch((error: unknown) => {
+        this.recordCancellationFailure(adapter, turnId, error)
+      })
+    } catch (error) {
+      this.recordCancellationFailure(adapter, turnId, error)
+    }
+  }
+
+  private recordCancellationFailure(adapter: string, turnId: string, error: unknown): void {
+    const message = error instanceof Error ? error.message : String(error)
+    try {
+      this.deps.recordRuntimeEvent(
+        `${adapter} Cancellation Failed`,
+        `turnId=${turnId} message=${message}`,
+      )
+    } catch (reportError) {
+      console.error(`[conversation] ${adapter} cancellation reporting failed`, reportError)
+    }
   }
 
   private setEmbodimentIntent(intent: CharacterEmbodimentIntent | undefined): void {

@@ -886,28 +886,29 @@ Audio Input
 *Output side:*
 
 ```text
-Response Text / Speech Intent (from Character Response Generation)
-  -> Per-Segment Speech Text Preparation
-  -> Deterministic TTS-Only Text Normalization
-  -> Speech Synthesis
-  -> Final Audio Boundary Processing
-  -> Speech Playback
+Safe Character Text Deltas (while Character generation is active)
+  -> SpeechTextCommitBuffer
+  -> One Logical Speech Session per Character Turn
+  -> Main-owned Versioned WebSocket Transport
+  -> Continuous Mono Float32 PCM
+  -> Bounded AudioPlayer Ring/Jitter Buffer
+  -> AudioWorklet -> Analyser -> Destination
   -> Speech Completion
 ```
 
-The output chain preserves distinct text representations. `replyText` is the original Character Response Generation result and may contain internal emotion markup. `displayText` is the visible assistant response with internal emotion markup removed. `speechText` is one independently preserved emotion segment after assistant-markup cleanup. `normalizedSpeechText` is a deterministic, provider-independent, TTS-only representation derived at the Desktop Speech boundary. Only `normalizedSpeechText` crosses the synthesis request boundary. It never replaces visible conversation text, conversational history, or Memory Layer content, and normalization never merges segments or changes their emotion boundaries, transition targets, or look-ahead ownership.
+The output chain preserves distinct text representations. `replyText` is the original Character Response Generation result and may contain internal emotion markup. `displayText` is the visible assistant response with internal emotion markup removed. Safe Character Stream emits only contained `SafeCharacterTextDelta` values. `SpeechTextCommitBuffer` derives provider-neutral, stable `SpeechTextCommit` values without exposing code, Markdown link destinations, internal markers, tool payloads, or reasoning. Desktop normalizes each commit at the Main speech boundary. Speech commits never replace visible conversation text, conversation history, or Memory Layer content.
 
-Desktop owns technical-text, Markdown, URL, path, version, list, and nonverbal speech normalization because these are speech-domain preparation rules shared by local and future replaceable speech providers. The Speech API owns final waveform-boundary analysis because it alone owns the synthesized waveform. Final boundary processing runs after provider-specific complete-response processing and optional pitch processing, and before WAV serialization and TTS cache storage. For F5, this final response-level responsibility does not replace per-chunk tail validation, suspicious-tail retry, chunk crossfade, safe loudness normalization, selected-voice warmup, or the shared inference synchronization boundary.
+Desktop owns technical-text, Markdown, URL, path, version, list, and nonverbal speech normalization because these are speech-domain preparation rules shared by replaceable speech checkpoints. The Speech API owns concrete CosyVoice source/model loading, provider instructions, voice conditioning, inference isolation, and PCM production. Normal Character speech has no complete-response WAV, generated-speech cache, per-sentence synthesis request, prepared-audio queue, or synthesis worker pool.
 
 The Desktop Speech API endpoint is immutable, main-process-owned environment configuration for one application process. `SHIO_SPEECH_API_URL` may override the bundled local default `http://127.0.0.1:8000` before startup; changing it requires restarting Desktop. Renderer-editable application settings never own, persist, or mutate this endpoint. A read-only renderer transport projection may expose only the already resolved Main endpoint when a renderer-owned speech transport requires it.
 
-Speech-normalization and audio-boundary diagnostics are transient Runtime Debug and Event projections, not Character State or conversational memory. They may contain rule counts, category names, versions, lengths, profiles, durations, trim values, fade values, and processing latency. They never contain original or normalized speech text, URL or path values, code contents, query parameter values, credentials, or voice-reference transcripts.
+Speech-normalization and streaming diagnostics are transient Runtime Debug and Event projections, not Character State or conversational memory. They may contain rule counts, category names, versions, lengths, model and voice IDs, conditioning-cache hit, first-commit/first-PCM/first-audible timing, buffered duration, underruns, high-water observations, approximate RTF, and cancellation latency. They never contain original or normalized speech text, URL or path values, code contents, query parameter values, credentials, raw PCM, or voice-reference transcripts.
 
-Speech Runtime is streaming-first on both sides. It should begin producing output as soon as meaningful information becomes available, including partial recognition, sentence-level synthesis, and incremental playback.
+Speech Runtime is streaming-first on both sides. It begins output once a linguistically stable safe commit is available; Character generation may still be active after text has reached the same Speech session and PCM playback has started.
 
-The speech-output queue guarantees sequential playback, interruption handling, cancellation, future prioritization, and synchronization with Character State.
+SpeechOutputPort guarantees one active turn-scoped session, strict text/audio ordering, bounded flow control, interruption, and synchronization with Character State. Renderer does not own the backend WebSocket: preload supplies a typed MessagePort, Electron Main owns the WebSocket, and AudioPlayer remains the sole physical playback owner. AudioPlayer keeps a single continuous Analyser connection for LipSync across PCM packets.
 
-The Local Speech API may expose an idempotent selected-voice warmup operation as part of its speech-adapter contract. Warmup resolves the configured engine, voice, and language through the same synthesis implementation as normal output, discards generated audio, and shares the engine's single inference synchronization boundary with real synthesis. Desktop may request this preparation in the background and project its status, but the API remains the owner of model, accent, voice-reference, and inference readiness.
+The Local Speech API may expose an idempotent selected-voice warmup operation as part of its speech-adapter contract. Warmup resolves the configured voice and language through the same CosyVoice implementation as normal output, discards generated PCM, and shares the engine's single inference synchronization boundary with real synthesis. Desktop may request this preparation in the background and project its status, but the API remains the owner of model, voice-reference, conditioning-cache, and inference readiness.
 
 A current implementation may use a local service, a persistent bidirectional transport, incremental speech recognition, and a remote structured-output model. These are replaceable implementation choices, not architectural ownership boundaries.
 
@@ -1528,18 +1529,21 @@ first external text commit.
 The renderer consumes safe deltas for two coordinated projections:
 
 - one assistant message is appended once and updated in place;
-- Streaming Speech Segmentation creates ordered sentence or bounded-clause segments,
-  excluding fenced code and link destinations from speech boundaries;
-- a bounded producer/consumer queue uses two synthesis workers and may prepare at
-  most two segments ahead; a sequence-indexed reorder buffer releases audio to
-  playback strictly in source order;
+- SpeechTextCommitBuffer creates ordered stable text commits, excluding fenced
+  code, inline code contents, internal markers, and Markdown link destinations;
+- all commits and delivery changes enter one logical Speech session for the turn;
+- Electron Main transports one ordered PCM stream through a bounded MessagePort,
+  while AudioPlayer applies 120 ms startup buffering and a 1.5 second high-water
+  boundary before its AudioWorklet;
 - AudioPlayer remains the sole playback owner, and Conversation Runtime retains the
-  single-flight lock until generation, queued synthesis, playback, and cleanup are
+  single-flight lock until generation, stream input, PCM playback, and cleanup are
   terminal.
 
 Cancellation propagates from Conversation Runtime to Main-owned LLM and TTS
-`AbortController` instances and invalidates the segment queue. Cancellation never
-creates a second playback owner or permits stale output to resume.
+operations only after it invalidates generation, synchronously flushes AudioPlayer,
+and stops LipSync. Turn/session ownership prevents late PCM from reaching the
+AudioWorklet. Cancellation never creates a second playback owner or permits stale
+output to resume.
 
 ### 21E. World Context, Experience, Attention, and Behavior
 
@@ -1961,6 +1965,12 @@ Browser Control's local deterministic fixture may exercise the Shio-managed Chro
 it shares scenarios with, but remains separate from, the public-site qualification. A bug
 reproducer is temporary and issue-scoped; once fixed, its durable regression case moves to
 the owning test domain.
+
+The default deterministic command topology is intentionally non-overlapping: `test:fast`
+discovers unit, contract, and architecture suites, while `test:regression` discovers
+integration and renderer suites. Their union is the complete deterministic coverage;
+`test` is the optional single-command form of that same union. Permanent `repro:*` runners
+are prohibited.
 
 ### 25. Architecture Compliance Checklist
 

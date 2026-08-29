@@ -36,10 +36,12 @@ npm --prefix apps/desktop run test -- memory
 npm --prefix apps/desktop run test -- speech
 ```
 
-`desktop:test:fast` covers unit, contract, and architecture tests. The complete
-credential-free deterministic suite is `desktop:test:regression`; it is a single Vitest
-run. Browser Control's local fixture uses the Shio-managed Chrome context and belongs to
-this regression tier. The public-site Browser qualification remains opt-in.
+`desktop:test:fast` covers unit, contract, and architecture tests.
+`desktop:test:regression` covers integration and renderer tests. Together the two commands
+form the complete credential-free deterministic suite without executing a suite twice.
+`desktop:test` remains the single-command full deterministic run. Browser Control's local
+fixture uses the Shio-managed Chrome context and belongs to the regression tier. The
+public-site Browser qualification remains opt-in.
 
 ## Qualifications and benchmarks
 
@@ -55,17 +57,16 @@ the issue, root cause, owner, expected failure, creation date, and migration tar
 the fix, move the durable regression case into the owner's deterministic suite and remove
 the temporary reproducer.
 
-The former permanent `apps/desktop/scripts/*-repro` suites have been migrated into Vitest.
-Continuous Listening is the sole temporary exception: its feature is not ready, its legacy
-harness stays outside `test:regression`, and it must not be migrated or treated as current
-coverage until the feature work resumes.
+The former permanent `apps/desktop/scripts/*-repro` suites, including the deterministic
+Continuous Listening lifecycle harness, have been migrated into their owning Vitest tiers.
+Permanent `repro:*` package scripts are not part of the test topology.
 
 ## CI tiers
 
 | Tier | Purpose | Contents |
 | --- | --- | --- |
 | Fast | Every change | Unit, contracts, architecture |
-| Regression | Before merge | All deterministic integration and renderer tests |
+| Regression | Before merge | Integration and renderer tests |
 | E2E | Merge candidate | Electron smoke |
 | Qualification | Relevant opt-in changes | Real Chrome, speech service, public-site checks |
 | Soak | Nightly or major runtime changes | Extended lifecycle and leak checks |

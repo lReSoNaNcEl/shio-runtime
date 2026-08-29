@@ -25,7 +25,7 @@
 - Windows 11 x64 only; the qualified local speech path requires an NVIDIA CUDA-capable GPU and Python 3.12 x64.
 - The unsigned ZIP has no installer, automatic update, code signing, or macOS/Linux target.
 - First installation remains large and network-dependent because locked dependencies, voice references, and pinned models are installed into persistent local data.
-- Clean-machine launcher, real CUDA/F5/Whisper inference, microphone, VRM, playback, shutdown, ownership adoption, and failed-repair rollback qualification were explicitly waived before publication.
+- Clean-machine launcher, real CUDA speech inference, microphone, VRM, playback, shutdown, ownership adoption, and failed-repair rollback qualification were explicitly waived before publication.
 - Testers provide their own LLM credential and a separate GitHub token for Project Awareness.
 - Screen Context 2.x, Memory Layer, and Action Runtime remain outside the release-ready alpha scope.
 
@@ -33,9 +33,9 @@
 
 ### Added
 
-- Selected-voice Speech API warmup prepares the configured F5 voice, language, and Russian accent path in the background.
+- Selected-voice Speech API warmup prepares the configured voice and language in the background.
 - Chat shows typed LLM setup readiness with a direct Settings action when the active provider credential is missing.
-- Launcher installation prefetches revision-pinned Whisper, F5, vocoder, and RUAccent model assets before normal startup.
+- Launcher installation prefetches revision-pinned speech model assets before normal startup.
 
 ### Changed
 
@@ -50,7 +50,7 @@
 - Missing LLM credentials no longer clear the composer draft, append the user turn, or appear as a red chat error, including credential-removal races.
 - VRM configuration is independent of a mounted Three.js Preview scene, so first selection immediately unlocks Camera and Overlay guards.
 - Selected Russian voices no longer remain cold after the core default-voice warmup.
-- F5 warmup and real synthesis share one inference lock; concurrent identical warmups coalesce and the distinct warmup queue is bounded.
+- Speech warmup and real synthesis share one inference lock; concurrent identical warmups coalesce and the distinct warmup queue is bounded.
 - Launcher adoption no longer treats an unrelated healthy process as managed, and stop/repair operations reject ownership identity mismatches.
 - Packaged model prefetch now bootstraps the Speech API import root when launched as a script.
 - Failed installation cleanup removes only the staging voice junction and preserves persistent voice data.
@@ -60,14 +60,14 @@
 ### Security
 
 - Release workflows require annotated tags from `origin/main`, pin official Actions by immutable commit SHA, and never overwrite a published release.
-- Published Speech Packs require the expected service/contract identity and real F5 mode; mock F5 cannot satisfy release readiness.
+- Published Speech Packs require the expected service/contract identity and real synthesis mode; a mock engine cannot satisfy release readiness.
 
 ### Known Limitations
 
 - Windows 11 x64 only; the qualified local speech path requires an NVIDIA CUDA-capable GPU and Python 3.12 x64.
 - The unsigned ZIP has no installer, automatic update, code signing, or macOS/Linux target.
 - First installation remains large and network-dependent because locked dependencies, voice references, and pinned models are installed into persistent local data.
-- Clean-machine launcher, real CUDA/F5/Whisper, microphone, VRM, playback, shutdown, and repair qualification were explicitly waived before publication.
+- Clean-machine launcher, real CUDA speech inference, microphone, VRM, playback, shutdown, and repair qualification were explicitly waived before publication.
 - Testers provide their own LLM credential and a separate GitHub token for Project Awareness.
 - Screen Context 2.x, Memory Layer, and Action Runtime remain outside the release-ready alpha scope.
 
@@ -111,7 +111,7 @@
 ### Added
 
 - Portable Windows desktop client with VRM avatar loading, chat, microphone input, speech playback, Mirror Overlay, and Runtime Health.
-- Local FastAPI Speech API with faster-whisper ASR, Silero VAD, and F5-TTS.
+- Local FastAPI Speech API with faster-whisper ASR, Silero VAD, and cloned-voice synthesis.
 - LLM provider selection for Groq, Cerebras, GitHub Models, OpenRouter, and Mistral with credentials stored through Electron secure storage.
 - Read-only GitHub Project Awareness with local SQLite/FTS indexing.
 - Russian and English interface localization.

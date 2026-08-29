@@ -47,13 +47,13 @@ export interface SafeCharacterTextDelta {
   emotion: string
 }
 
-export interface SpeechSegment {
+export interface SpeechTextCommit {
   id: string
   turnId: string
   text: string
   emotion: string
   sequence: number
-  boundary: 'clause' | 'sentence' | 'final'
+  boundary: 'clause' | 'sentence' | 'hard-limit' | 'final' | 'emotion'
 }
 
 export type CharacterReplyStreamEvent =

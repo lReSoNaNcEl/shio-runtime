@@ -611,6 +611,7 @@
 
 .settings-action-panel {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 20px;
@@ -622,6 +623,7 @@
 
 .settings-action-panel-copy {
   display: grid;
+  flex: 1 1 220px;
   gap: 4px;
   min-width: 0;
 }
@@ -631,11 +633,14 @@
   margin: 0;
 }
 
+.settings-theme-switch,
+.settings-theme-switch [data-slot="text"],
 .settings-open-setup-action,
 .settings-open-setup-action [data-slot="text"] {
   white-space: nowrap;
 }
 
+.settings-theme-switch,
 .settings-open-setup-action {
   flex: 0 0 auto;
 }

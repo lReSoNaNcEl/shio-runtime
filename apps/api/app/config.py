@@ -1,7 +1,10 @@
 from enum import Enum
+from pathlib import Path
 
-from pydantic import Field
-from pydantic_settings import BaseSettings
+from pydantic import Field, field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+API_ROOT = Path(__file__).resolve().parents[1]
 
 
 class ASRProvider(str, Enum):
@@ -10,7 +13,7 @@ class ASRProvider(str, Enum):
 
 
 class TTSEngine(str, Enum):
-    F5 = "f5"
+    COSYVOICE3 = "cosyvoice3"
 
 
 class WhisperModel(str, Enum):
@@ -27,6 +30,12 @@ class Language(str, Enum):
 
 
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=API_ROOT / ".env",
+        case_sensitive=True,
+        extra="ignore",
+    )
+
     # FastAPI
     HOST: str = Field(default="0.0.0.0", description="Server host")
     PORT: int = Field(default=8000, description="Server port")
@@ -45,7 +54,8 @@ class Settings(BaseSettings):
         description="Pinned Hugging Face revision for the configured faster-whisper model",
     )
     SHIO_MODEL_ROOT: str = Field(
-        default="", description="Persistent root prepared by the release model-prefetch command"
+        default=str(API_ROOT / "models"),
+        description="Persistent root prepared by the release model-prefetch command",
     )
     ASR_LANGUAGE: Language = Field(default=Language.AUTO, description="ASR language (auto/ru/en)")
     WHISPER_COMPUTE_TYPE: str = Field(default="auto", description="Whisper compute type")
@@ -61,19 +71,26 @@ class Settings(BaseSettings):
 
     # TTS
     TTS_DEFAULT_ENGINE: TTSEngine = Field(
-        default=TTSEngine.F5, description="Default TTS engine (f5)"
+        default=TTSEngine.COSYVOICE3, description="Default TTS engine (cosyvoice3)"
     )
     VOICE_MANIFEST_PATH: str = Field(
-        default="./voice_manifest.json", description="Voice manifest for logical voice IDs"
+        default=str(API_ROOT / "voice_manifest.json"),
+        description="Voice manifest for logical voice IDs",
     )
     EMOTION_MANIFEST_PATH: str = Field(
-        default="./emotion_manifest.json", description="Shared emotion manifest"
+        default=str(API_ROOT / "emotion_manifest.json"),
+        description="Shared emotion manifest",
     )
     VOICE_SYNC_MAX_VOICES: int = Field(
         default=10, ge=0, le=200, description="Default max voices to import per remote sync"
     )
     VOICE_REPOSITORY_STATUS_PATH: str = Field(
-        default="./voice_repository_status.json", description="Voice repository sync/cache status"
+        default=str(API_ROOT / "voice_repository_status.json"),
+        description="Voice repository sync/cache status",
+    )
+    VOICE_CACHE_ROOT: str = Field(
+        default=str(API_ROOT / "cache"),
+        description="App-owned derived voice-conditioning cache root",
     )
     VOICE_DATASET_REVISION: str = Field(
         default="",
@@ -82,67 +99,37 @@ class Settings(BaseSettings):
     HF_TOKEN: str = Field(
         default="", description="Optional Hugging Face token for remote voice repositories"
     )
-    F5_MODEL_ID: str = Field(
-        default="Misha24-10/F5-TTS_RUSSIAN", description="Hugging Face model id for F5-TTS"
+    COSYVOICE_MODEL_ID: str = Field(
+        default="FunAudioLLM/Fun-CosyVoice3-0.5B-2512",
+        description="Pinned Hugging Face CosyVoice 3 model id",
     )
-    F5_MODEL_REVISION: str = Field(
-        default="ea166adeae4c80ec5ee423a671e2bdb83906cf84",
-        description="Pinned Hugging Face revision for F5 model assets",
+    COSYVOICE_MODEL_REVISION: str = Field(
+        default="29e01c4e8d000f4bcd70751be16fa94bf3d85a18",
+        description="Pinned Hugging Face CosyVoice 3 model revision",
     )
-    F5_VOCODER_REVISION: str = Field(
-        default="0feb3fdd929bcd6649e0e7c5a688cf7dd012ef21",
-        description="Pinned Hugging Face revision for the F5 Vocos model",
+    COSYVOICE_SOURCE_REVISION: str = Field(
+        default="074ca6dc9e80a2f424f1f74b48bdd7d3fea531cc",
+        description="Pinned upstream CosyVoice source revision",
     )
-    RUACCENT_MODEL_REVISION: str = Field(
-        default="b78ae5ea1e62beaf138bed1865cd8c3b0b5ca855",
-        description="Pinned Hugging Face revision for RUAccent model assets",
+    COSYVOICE_MATCHA_REVISION: str = Field(
+        default="dd9105b34bf2be2230f4aa1e4769fb586a3c824e",
+        description="Pinned Matcha-TTS source revision used by CosyVoice",
     )
-    F5_CKPT_SUBPATH: str = Field(
-        default="F5TTS_v1_Base_v2/model_last_inference.safetensors",
-        description="F5 checkpoint path in the model repo",
+    COSYVOICE_SOURCE_PATH: str = Field(
+        default="", description="Optional explicit path to pinned CosyVoice source"
     )
-    F5_VOCAB_SUBPATH: str = Field(
-        default="F5TTS_v1_Base/vocab.txt", description="F5 vocab path in the model repo"
+    COSYVOICE_MODEL_PATH: str = Field(
+        default="", description="Optional explicit path to the pinned CosyVoice model snapshot"
     )
-    F5_USE_ACCENT: bool = Field(
-        default=True, description="Use RUAccent for Russian text when available"
-    )
-    F5_NFE_STEP: int = Field(default=24, ge=1, le=64, description="F5 inference steps")
-    F5_CFG_STRENGTH: float = Field(
-        default=1.5, ge=0.0, le=5.0, description="F5 classifier-free guidance strength"
-    )
-    F5_TTS_FORCE_DURATION: bool = Field(
-        default=False, description="Debug only: force F5 fix_duration from local duration estimator"
-    )
-    F5_CHUNK_MAX_CHARS: int = Field(
-        default=180, ge=40, le=400, description="Maximum text characters per F5 chunk"
-    )
-    F5_CHUNK_MAX_SECONDS: float = Field(
-        default=22.0,
-        ge=5.0,
-        le=28.0,
-        description="Maximum estimated generated seconds per F5 chunk",
-    )
-    F5_CHUNK_CROSSFADE_MS: int = Field(
-        default=80, ge=0, le=500, description="Crossfade between generated F5 chunks"
-    )
-    F5_TAIL_VALIDATION: bool = Field(
-        default=True, description="Validate and conservatively trim suspicious F5 chunk tails"
-    )
-    F5_TARGET_RMS_DB: float = Field(
-        default=-20.0,
-        ge=-40.0,
-        le=-8.0,
-        description="Final F5 response RMS target after validation/chunking",
-    )
-    F5_ALLOW_MOCK: bool = Field(
-        default=True,
-        description="Explicit development/test opt-in for mock TTS; release configuration disables it",
-    )
+    COSYVOICE_SAMPLE_RATE: int = Field(default=24000, ge=8000, le=48000)
+    COSYVOICE_MAX_SESSIONS: int = Field(default=1, ge=1, le=4)
+    COSYVOICE_TEXT_QUEUE_ITEMS: int = Field(default=16, ge=2, le=64)
+    COSYVOICE_AUDIO_QUEUE_ITEMS: int = Field(default=8, ge=2, le=32)
+    COSYVOICE_MAX_SESSION_SECONDS: int = Field(default=120, ge=10, le=600)
 
     # Stable launcher/service identity
     SERVICE_ID: str = Field(default="shio.speech-api", description="Stable Speech API identity")
-    CONTRACT_VERSION: str = Field(default="1.1", description="Speech HTTP contract version")
+    CONTRACT_VERSION: str = Field(default="2.0", description="Speech HTTP contract version")
     SPEECH_PACK_VERSION: str = Field(
         default="development", description="Version of the packaged Speech API runtime"
     )
@@ -160,10 +147,22 @@ class Settings(BaseSettings):
         description="CORS allowed origins",
     )
 
-    class Config:
-        env_file = ".env"
-        case_sensitive = True
-        extra = "ignore"
+    @field_validator(
+        "SHIO_MODEL_ROOT",
+        "VOICE_MANIFEST_PATH",
+        "EMOTION_MANIFEST_PATH",
+        "VOICE_REPOSITORY_STATUS_PATH",
+        "VOICE_CACHE_ROOT",
+        "COSYVOICE_SOURCE_PATH",
+        "COSYVOICE_MODEL_PATH",
+        mode="after",
+    )
+    @classmethod
+    def resolve_service_path(cls, value: str) -> str:
+        if not value:
+            return value
+        path = Path(value)
+        return str(path if path.is_absolute() else API_ROOT / path)
 
 
 # Global settings instance
