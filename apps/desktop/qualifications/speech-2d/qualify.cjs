@@ -6,7 +6,15 @@ const assert = require('node:assert/strict')
 ;(async () => {
   const output = path.resolve('../../.work/qualification-desktop')
   await fs.mkdir(output, { recursive: true })
-  await fs.copyFile('src/renderer/audio/pcmStreamWorklet.js', 'out/renderer/pcmStreamWorklet.js')
+  const { verifySpeechAssets } = await import('../../scripts/verify-speech-assets.mjs')
+  const { workletReference } = verifySpeechAssets(path.resolve('out/renderer'))
+  // Bind the isolated harness to the emitted production resource. Copying its
+  // source here would hide Vite inlining and CSP packaging failures.
+  const harnessPath = 'out/renderer/qualification-speech-2d.mjs'
+  const harness = await fs.readFile(harnessPath, 'utf8')
+  const references = harness.split('./pcmStreamWorklet.js?no-inline')
+  assert.equal(references.length, 2, 'Expected exactly one harness worklet reference')
+  await fs.writeFile(harnessPath, references.join(`./${workletReference}`))
   const app = await electron.launch({
     executablePath: require('electron'),
     args: [process.cwd()],
@@ -50,7 +58,7 @@ const assert = require('node:assert/strict')
     assert.deepEqual(errors, [])
     await fs.writeFile(
       path.join(output, 'report.json'),
-      JSON.stringify({ result, errors }, null, 2),
+      JSON.stringify({ result, workletReference, errors }, null, 2),
     )
     console.log(JSON.stringify(result))
   } finally {

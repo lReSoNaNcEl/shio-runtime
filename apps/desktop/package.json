@@ -8,7 +8,7 @@
   },
   "scripts": {
     "dev": "electron-vite dev",
-    "build": "electron-vite build",
+    "build": "electron-vite build && node scripts/verify-speech-assets.mjs",
     "pack": "npm run build && electron-builder --dir --win --x64",
     "preview": "electron-vite preview",
     "start": "electron .",

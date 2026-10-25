@@ -518,7 +518,8 @@ export class AudioPlayer {
 
   private ensurePcmWorklet(): Promise<void> {
     this.workletLoaded ??= this.audioCtx.audioWorklet.addModule(
-      new URL('./pcmStreamWorklet.js', import.meta.url).href,
+      // Worklet modules must remain self-origin files under the renderer CSP.
+      new URL('./pcmStreamWorklet.js?no-inline', import.meta.url).href,
     )
     return this.workletLoaded
   }
