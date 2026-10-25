@@ -199,6 +199,7 @@ async function textWaitsForServerReady(): Promise<void> {
     turnId: 'turn:handshake',
     text: 'Готовый текст для проверки handshake.',
     emotion: 'happy',
+    voiceStyle: 'bright playful tone',
     sequence: 0,
     boundary: 'sentence',
   })
@@ -219,7 +220,7 @@ async function textWaitsForServerReady(): Promise<void> {
   })
 
   assert.deepEqual(messagePort.sent, [
-    { type: 'delivery', sequence: 0, delivery: deliveryIntent('happy') },
+    { type: 'delivery', sequence: 0, delivery: deliveryIntent('happy', 'bright playful tone') },
     { type: 'text', sequence: 1, text: 'Готовый текст для проверки handshake.' },
     { type: 'finish-input' },
   ])

@@ -10,6 +10,7 @@ export interface SpeechDeliveryIntent {
   pace: 'slow' | 'normal' | 'fast'
   energy: 'low' | 'normal' | 'high'
   volume: 'soft' | 'normal' | 'loud'
+  style?: string
 }
 
 export interface SpeechStreamStart {

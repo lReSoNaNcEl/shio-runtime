@@ -12,6 +12,7 @@ export class SpeechTextCommitBuffer {
   private readonly commits: SpeechTextCommit[] = []
   private buffer = ''
   private emotion = 'neutral'
+  private voiceStyle: string | undefined
   private sequence = 0
   private inFence = false
   private inInlineCode = false
@@ -26,9 +27,10 @@ export class SpeechTextCommitBuffer {
 
   push(delta: SafeCharacterTextDelta): readonly SpeechTextCommit[] {
     this.commits.length = 0
-    if (delta.emotion !== this.emotion) {
+    if (delta.emotion !== this.emotion || delta.voiceStyle !== this.voiceStyle) {
       this.emitBuffered('emotion')
       this.emotion = delta.emotion
+      this.voiceStyle = delta.voiceStyle
     }
     for (const character of delta.text) this.consume(character)
     return Object.freeze([...this.commits])
@@ -156,6 +158,7 @@ export class SpeechTextCommitBuffer {
         turnId: this.turnId,
         text,
         emotion: this.emotion,
+        ...(this.voiceStyle ? { voiceStyle: this.voiceStyle } : {}),
         sequence: this.sequence,
         boundary,
       }),

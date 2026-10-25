@@ -372,6 +372,7 @@ Architecture and ownership:
 - FastAPI runs on port `8000`. ASR uses faster-whisper with Silero VAD. TTS uses
   one revision-pinned `FishS2ProEngine` with one owned cancellable subprocess.
 - `/tts/stream` is the sole normal Character synthesis path: incremental safe text and typed delivery in, ordered mono Float32 PCM out. Audio acknowledgements provide bounded backpressure.
+- Optional descriptive delivery style is bounded to 120 characters with no nested tags or control characters. Contain `[voice:...]` before chat/history/TTS prose; only validated metadata becomes Fish instructions. The canonical emotion remains the visual synchronization cue. Attaching an S22 canvas must preserve active speech and LipSync.
 - Warm up the compiled sampler before declaring real synthesis ready; cancellation flushes local playback before terminating upstream work.
 - `/voices` exposes voice presets, available references, and S22 expression
   mappings.

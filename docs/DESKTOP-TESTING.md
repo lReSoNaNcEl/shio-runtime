@@ -48,6 +48,21 @@ a public site, live LLM or speech infrastructure, a long soak, or performance me
 Their stable root commands use the `desktop:qualify:*` or `desktop:benchmark:*` prefixes.
 They do not run as part of deterministic regression.
 
+Speech and S22 can be qualified through the terminal without navigation, mouse,
+keyboard, screenshots or settings changes:
+
+```text
+npm run desktop:qualify:speech-2d:terminal
+```
+
+Start the local speech API and close the existing client before running it. The
+runner waits for real-engine readiness, launches the built client, and uses an
+offscreen canvas to verify audible PCM, LipSync, native gestures, timed emotion
+cues, two presentation reloads during speech, mirror mouth values and closure at
+completion. It uses the actual emitted CSP-compatible AudioWorklet resource.
+The JSON result is saved below `.work/qualification-s22-terminal`. The default
+runner closes its own client afterwards; pass `-- --keep-open` to leave it open.
+
 ## Temporary reproducers
 
 New reproducers belong below `apps/desktop/repro/issue-<id>` and require a README stating

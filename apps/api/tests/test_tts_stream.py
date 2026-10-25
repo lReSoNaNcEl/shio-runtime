@@ -7,6 +7,7 @@ import numpy as np
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 from starlette.websockets import WebSocketDisconnect, WebSocketState
 
 from app.routes import tts_stream
@@ -98,6 +99,58 @@ def start_message(session_id: str = "turn:test") -> dict:
             "volume": "normal",
         },
     }
+
+
+@pytest.mark.parametrize(
+    "style", ["", " x", "x ", "x" * 121, "[angry]", "<tool>", "bad\nstyle", "bad\u200bstyle"]
+)
+def test_voice_style_rejects_unbounded_or_nested_control(style):
+    with pytest.raises(ValidationError):
+        tts_stream.DeliveryIntentMessage(style=style)
+    with pytest.raises(ValueError):
+        FishS2ProDeliveryAdapter().instruction(SpeechDeliveryIntent(style=style), "ru")
+
+
+def test_voice_style_reaches_engine_and_keeps_canonical_audio_cue():
+    chunks = []
+
+    class RecordingEngine(FakeStreamingEngine):
+        def stream(self, text_chunks, **kwargs):
+            for chunk in text_chunks:
+                chunks.append(chunk)
+                yield from super().stream([chunk], **kwargs)
+
+    with (
+        patch.object(tts_stream, "get_engine", return_value=RecordingEngine()),
+        patch.object(tts_stream, "_voice_id", return_value="voice"),
+        client().websocket_connect("/tts/stream") as websocket,
+    ):
+        start = start_message("turn:style")
+        start["delivery"]["style"] = "soft reassuring tone"
+        websocket.send_json(start)
+        assert websocket.receive_json()["type"] == "ready"
+        websocket.send_json({"type": "text", "sequence": 0, "text": "Я рядом."})
+        websocket.send_json(
+            {
+                "type": "delivery",
+                "sequence": 1,
+                "delivery": {"emotion": "whisper", "style": "whisper in small voice"},
+            }
+        )
+        websocket.send_json({"type": "text", "sequence": 2, "text": "Тихий секрет."})
+        websocket.send_json({"type": "finish-input"})
+        for emotion, sequence in [("warm", 0), ("whisper", 2)]:
+            audio = websocket.receive_json()
+            assert audio["emotion"] == emotion
+            assert audio["textSequence"] == sequence
+            assert len(websocket.receive_bytes()) == audio["samples"] * 4
+        assert websocket.receive_json()["type"] == "complete"
+    assert [chunk.intent.style for chunk in chunks] == [
+        "soft reassuring tone",
+        "whisper in small voice",
+    ]
+    instruction = FishS2ProDeliveryAdapter().instruction(chunks[1].intent, "ru")
+    assert "[whisper in small voice]" in instruction
 
 
 def test_stream_emits_versioned_ready_and_ordered_float32_pcm():

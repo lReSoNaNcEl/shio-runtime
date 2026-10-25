@@ -11,12 +11,12 @@ from enum import Enum
 from typing import Literal
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 from starlette.websockets import WebSocketState
 
 from app.config import settings
 from app.tts.emotion import EmotionRegistry
-from app.tts.fish import SpeechDeliveryIntent, SpeechTextChunk
+from app.tts.fish import SpeechDeliveryIntent, SpeechTextChunk, validate_voice_style
 from app.tts.runtime import get_engine
 from app.tts.voices import default_voice_id, voice_registry
 
@@ -49,6 +49,12 @@ class DeliveryIntentMessage(BaseModel):
     pace: Literal["slow", "normal", "fast"] = "normal"
     energy: Literal["low", "normal", "high"] = "normal"
     volume: Literal["soft", "normal", "loud"] = "normal"
+    style: str | None = Field(default=None, min_length=1, max_length=120)
+
+    @field_validator("style")
+    @classmethod
+    def bounded_voice_style(cls, value: str | None) -> str | None:
+        return validate_voice_style(value) if value is not None else None
 
 
 class StartMessage(BaseModel):

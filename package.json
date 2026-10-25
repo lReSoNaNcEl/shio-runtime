@@ -64,6 +64,7 @@
     "avatar:qualify": "npm --prefix apps/shio-2d run qualify",
     "avatar:install": "npm --prefix apps/shio-2d ci",
     "emotions:sync": "node scripts/sync-emotions.mjs",
-    "desktop:qualify:speech-2d": "npm --prefix apps/desktop run qualify:speech-2d"
+    "desktop:qualify:speech-2d": "npm --prefix apps/desktop run qualify:speech-2d",
+    "desktop:qualify:speech-2d:terminal": "npm --prefix apps/desktop run qualify:speech-2d:terminal --"
   }
 }

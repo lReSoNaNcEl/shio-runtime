@@ -1,3 +1,4 @@
+import { stripVoiceStyleMarkers } from '../speech/voiceStyle'
 import type { EmotionKey } from './contracts'
 import { emotionRegistry } from './registry'
 
@@ -34,6 +35,7 @@ export function parseEmotionalReply(
   text: string,
   options: { enabled?: boolean; maxSegments?: number } = {},
 ): ParsedEmotionalReply {
+  text = stripVoiceStyleMarkers(text)
   const enabled = options.enabled ?? EMOTION_SEGMENTS_TUNING.enabled
   const maxSegments = Math.max(1, options.maxSegments ?? EMOTION_SEGMENTS_TUNING.maxSegments)
   const supported = new Set(emotionRegistry.supported())

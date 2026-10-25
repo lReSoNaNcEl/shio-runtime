@@ -2,6 +2,7 @@ import type { ExperienceEvent } from '../../shared/alive'
 import type { CharacterEmbodimentIntent } from '../../shared/character-response'
 import {
   characterRequestId,
+  SafeCharacterStreamFilter,
   type SpeechTextCommit,
   SpeechTextCommitBuffer,
 } from '../../shared/character-stream'
@@ -310,7 +311,7 @@ export class ConversationRuntime {
         reportPhase('synthesizing')
         speechStream = this.deps.speechOutput.openStream(
           turn.turnId,
-          deliveryIntent(commit.emotion),
+          deliveryIntent(commit.emotion, commit.voiceStyle),
           {
             turnId: turn.turnId,
             onDelivery: (emotion) => {
@@ -422,7 +423,10 @@ export class ConversationRuntime {
       } else {
         streamedMessageId = this.deps.pushMessage('assistant', draft.displayText, draft.grounding)
         if (this.deps.speechOutput.hasSpeakableContent(draft.speechText)) {
-          commitSpeech(commitBuffer.push({ text: draft.speechText, emotion: draft.emotionKey }))
+          const filter = new SafeCharacterStreamFilter()
+          for (const delta of [...filter.push(draft.replyText), ...filter.flush()]) {
+            commitSpeech(commitBuffer.push(delta))
+          }
         }
       }
       streamedMessageFinalized = true

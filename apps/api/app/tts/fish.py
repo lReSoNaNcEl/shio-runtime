@@ -6,6 +6,7 @@ import multiprocessing as mp
 import queue
 import threading
 import time
+import unicodedata
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
@@ -22,6 +23,18 @@ class SpeechDeliveryIntent:
     pace: Literal["slow", "normal", "fast"] = "normal"
     energy: Literal["low", "normal", "high"] = "normal"
     volume: Literal["soft", "normal", "loud"] = "normal"
+    style: str | None = None
+
+
+def validate_voice_style(style: str) -> str:
+    if (
+        not style.strip()
+        or style != style.strip()
+        or len(style) > 120
+        or any(c in "[]<>" or unicodedata.category(c).startswith("C") for c in style)
+    ):
+        raise ValueError("Invalid bounded voice style")
+    return style
 
 
 @dataclass(frozen=True)
@@ -46,6 +59,8 @@ class FishS2ProDeliveryAdapter:
             tags.append(f"{intent.energy} energy")
         if intent.volume != "normal":
             tags.append("low volume" if intent.volume == "soft" else "loud")
+        if intent.style is not None:
+            tags.append(validate_voice_style(intent.style))
         return "".join(f"[{tag}]" for tag in dict.fromkeys(tags)) or None
 
     def compatibility(self, emotion: str) -> Literal["native", "unsupported"]:

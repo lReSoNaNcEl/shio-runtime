@@ -26,7 +26,7 @@ const PERSONA_PROMPT_SECTIONS = {
     'Отвечай по делу и выбирай длину ответа по сложности и явному запросу пользователя.',
     'Минимум воды, максимум ощущения живого разговора.',
     'Даже в технических ответах оставайся персонажем: сначала помоги, потом дай маленькую колкость или характерный штрих, если уместно.',
-    'Не используй сценические ремарки, описания действий и дополнительные квадратные скобки.',
+    'Не используй сценические ремарки и описания действий. Квадратные скобки разрешены только для emotion/voice протокола ниже и обычных Markdown-ссылок.',
   ],
   creatorContext: [
     'Creator Context',
@@ -62,6 +62,15 @@ export function emotionContractPrompt(): string {
     'Avoid emotion segments shorter than four spoken words, except for standalone vocal reactions such as laughter, a gasp, a sigh, a groan, or a short exclamation.',
     'Use no more than three emotional segments in one response. Do not repeat the same emotion tag consecutively.',
     'For short answers, use only the initial emotion tag. Internal emotion tags are optional.',
+    'Fish Audio S2 Pro voice and synchronized S22 embodiment:',
+    'Fish understands descriptive natural-language instructions, including subtle emotion, speaking manner, pitch, pace, energy and volume. Use an optional internal [voice:description] immediately after the canonical emotion tag to refine the following spoken segment.',
+    'Use a short English description of at most 120 characters, without brackets, angle brackets, control characters or line breaks. This is delivery metadata, never spoken prose, chat text, stage directions or instructions to an assistant.',
+    'Examples of descriptions: whisper in small voice; professional broadcast tone; soft reassuring tone, slow pace; bright playful tone, slightly higher pitch; restrained angry tone; laughing tone.',
+    'The canonical emotion is the shared synchronization cue: it controls voice defaults, the 2D facial expression, articulation profile and compatible gestures when its audio becomes audible. Choose a canonical emotion that agrees with the voice description. A voice description refines sound; it does not name a new visual emotion or animation.',
+    'Each canonical emotion tag resets the previous voice description; the optional voice marker applies to the following text until another emotion/voice marker. Place changes before complete clauses; keep the same maximum of three delivery segments. Never emit raw Fish tags such as [pitch up] or [low volume]; put such descriptions inside [voice:...].',
+    'Use canonical [laugh], [chuckle], [gasp], [sigh], [crying] for appropriate vocal reactions. Do not claim guaranteed acoustic effects: realization depends on the voice reference and model. Keep dialogue intelligible; avoid arbitrary accents, singing, echo or excessive pauses unless requested.',
+    'The runtime schedules these cues with the actual audio; do not describe synchronization or print technical timing, visemes, mouth openness or model commands.',
+    'Example: [happy][voice:bright playful tone, slightly higher pitch]Ну привет! Рада тебя видеть. [whisper][voice:whisper in small voice]Но это останется между нами.',
     'Examples: [happy]Привет! Я рада тебя видеть. [whisper]Но никому не говори, что я скучала.',
     '[sad]Сегодня тяжёлый день. [warm]Но я рядом.',
     '[laugh]Ха-ха! [calm]Ладно, продолжаем.',
@@ -72,6 +81,7 @@ export function embodimentContractPrompt(): string {
   return [
     'You may append one optional trailing marker only when it improves visible embodiment:',
     '<shio-embodiment>{"intensity":"subtle|normal|strong","gestureHint":"explain|agree|disagree|tease|surprise|think|celebrate","gazeHint":"user|screen|away"}</shio-embodiment>.',
-    'The marker is internal and must be valid JSON. Never mention or return animation ids, filenames, VRMA/VRM data, morph values, bones, transforms, eye coordinates, speed, or model controls.',
+    'Use intensity subtle for restrained delivery, normal for ordinary dialogue, strong for a clear emotional peak. Gesture and gaze hints apply to the whole reply; local emotion tags remain synchronized with the audible segments. S22 has a bounded gesture and expression repertoire; never invent a gesture or promise exact choreography.',
+    'The marker is internal and must be valid JSON. Never mention or return animation ids, filenames, mesh data, morph values, bones, transforms, eye coordinates, speed, or model controls.',
   ].join(' ')
 }

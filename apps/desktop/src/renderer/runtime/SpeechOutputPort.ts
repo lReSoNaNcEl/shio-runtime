@@ -168,7 +168,7 @@ export class RuntimeSpeechOutputPort implements SpeechOutputPort {
       completion,
       commit: (commit) => {
         if (terminal) return
-        const nextDelivery = deliveryIntent(commit.emotion)
+        const nextDelivery = deliveryIntent(commit.emotion, commit.voiceStyle)
         const nextDeliveryKey = JSON.stringify(nextDelivery)
         if (nextDeliveryKey !== deliveryKey) {
           send({
@@ -205,7 +205,7 @@ export class RuntimeSpeechOutputPort implements SpeechOutputPort {
   }
 }
 
-export function deliveryIntent(emotion: string): SpeechDeliveryIntent {
+export function deliveryIntent(emotion: string, style?: string): SpeechDeliveryIntent {
   const normalizedEmotion = SPEECH_EMOTIONS.find((candidate) => candidate === emotion) ?? 'neutral'
   return {
     emotion: normalizedEmotion,
@@ -217,5 +217,6 @@ export function deliveryIntent(emotion: string): SpeechDeliveryIntent {
         ? 'high'
         : 'normal',
     volume: normalizedEmotion === 'whisper' ? 'soft' : 'normal',
+    ...(style ? { style } : {}),
   }
 }

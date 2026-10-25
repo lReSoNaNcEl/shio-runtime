@@ -68,6 +68,7 @@ export class AvatarController {
   private conversationEmbodimentIntent: CharacterEmbodimentIntent | undefined
   private behaviorEmbodimentIntent: CharacterEmbodimentIntent | undefined
   private lastCharacterState: CharacterState | undefined
+  private speechDeliveryEmotion: string | null = null
 
   constructor(options: { overlayMode?: boolean } = {}) {
     this.overlayAnimationPolicy = options.overlayMode ? new OverlayAnimationPolicy() : null
@@ -125,10 +126,15 @@ export class AvatarController {
   }
 
   async loadPuppet(canvas: HTMLCanvasElement): Promise<void> {
-    this.stopAnimation()
+    // A canvas is a presentation attachment. Speech and its analyser can already
+    // be running headlessly, or continue while the Avatar screen is reopened.
+    this.animations.stop()
+    this.playback.reset()
     await this.avatarModel.load(canvas)
     this.lastCharacterStateKey = null
-    this.setMode('idle')
+    if (this.lastCharacterState) this.applyCharacterState(this.lastCharacterState)
+    else this.applyStateEffect(this.stateMachine.setMode(this.stateMachine.getMode()))
+    this.setSpeechDelivery(this.speechDeliveryEmotion)
   }
 
   unloadPresentation(): void {
@@ -145,8 +151,13 @@ export class AvatarController {
     this.avatarModel.setTailStyle(style)
   }
   setSpeechDelivery(emotion: string | null): void {
+    const changed = this.speechDeliveryEmotion !== emotion
+    this.speechDeliveryEmotion = emotion
     this.avatarModel.setSpeechDelivery(emotion)
     this.lipSync.setEmotion(emotion ?? this.stateMachine.getEmotion())
+    if (changed && this.stateMachine.getMode() === 'speaking') {
+      this.speakingGestures.beginSegment(resolveEmotionEmbodimentProfile(emotion ?? 'neutral').id)
+    }
   }
 
   stopAnimation(): void {
@@ -541,6 +552,11 @@ export class AvatarController {
     stopLipSyncTurnId?: string,
     continuingSpeech = false,
   ): void {
+    this.lastEffect = effect
+    const intensity = this.effectiveEmbodimentIntent()?.intensity ?? 'normal'
+    this.avatarModel.setExpressionIntensity(
+      intensity === 'subtle' ? 0.45 : intensity === 'strong' ? 1 : 0.8,
+    )
     this.stateEffects.apply({
       effect,
       avatarEmotion,
@@ -555,9 +571,13 @@ export class AvatarController {
         this.speakingGestures.beginSegment(resolveEmotionEmbodimentProfile(effect.emotionKey).id)
         return
       }
-      const decision = this.speakingGestures.begin(effect, state)
+      const speakingEffect = {
+        ...effect,
+        behaviorId: resolveEmotionEmbodimentProfile(effect.emotionKey).id,
+      }
+      const decision = this.speakingGestures.begin(speakingEffect, state)
       this.playSpeakingGestureDecision(
-        { ...effect, behaviorId: decision.behaviorId },
+        { ...speakingEffect, behaviorId: decision.behaviorId },
         state,
         decision,
         'speech start',
@@ -615,10 +635,17 @@ export class AvatarController {
 
   private updateSpeakingGestureSession(delta: number, state?: CharacterState): void {
     if (this.stateMachine.getMode() !== 'speaking' || this.lastEffect?.mode !== 'speaking') return
-    const decision = this.speakingGestures.update(delta, this.lastEffect, state)
+    const effect = {
+      ...this.lastEffect,
+      emotionKey: this.speechDeliveryEmotion ?? this.lastEffect.emotionKey,
+      behaviorId: resolveEmotionEmbodimentProfile(
+        this.speechDeliveryEmotion ?? this.lastEffect.emotionKey,
+      ).id,
+    }
+    const decision = this.speakingGestures.update(delta, effect, state)
     if (!decision?.shouldRequest) return
     this.playSpeakingGestureDecision(
-      { ...this.lastEffect, behaviorId: decision.behaviorId },
+      { ...effect, behaviorId: decision.behaviorId },
       state,
       decision,
       'scheduled speaking gesture',

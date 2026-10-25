@@ -18,7 +18,7 @@ export const CHARACTER_CONTEXT_BUDGET = Object.freeze({
   totalCharacters: 16_000,
   sections: Object.freeze({
     persona: 5_500,
-    responsePolicy: 2_000,
+    responsePolicy: 6_500,
     mood: 900,
     relationship: 1_400,
     goals: 1_800,
@@ -42,7 +42,8 @@ export const CHARACTER_CONTEXT_ALLOCATION = Object.freeze({
   }),
   minimumCharacters: Object.freeze({
     persona: 3_000,
-    responsePolicy: 1_200,
+    // Keep the complete delivery/embodiment protocol even in a saturated turn.
+    responsePolicy: 6_000,
     toolResults: 1_600,
     goals: 500,
     threads: 350,
@@ -82,7 +83,7 @@ function bounded(value: string, maximum: number): string {
   if (normalized.length <= maximum) return normalized
   const marker = '[truncated]'
   if (maximum <= marker.length) return marker.slice(0, maximum)
-  return `${normalized.slice(0, maximum - marker.length - 1).trimEnd()}\n${marker}`
+  return `${normalized.slice(0, maximum - marker.length - 1)}\n${marker}`
 }
 
 function safeStrings(values: readonly string[], limit: number, maximum: number): readonly string[] {
@@ -232,7 +233,7 @@ function allocateCharacters(
   active: readonly { section: CharacterContextSection; value: string }[],
 ): ReadonlyMap<CharacterContextSection, number> {
   const allocations = new Map<CharacterContextSection, number>()
-  let remaining = CHARACTER_CONTEXT_BUDGET.totalCharacters
+  let remaining = CHARACTER_CONTEXT_BUDGET.totalCharacters - Math.max(0, active.length - 1)
 
   for (const { section, value } of active) {
     const reserved = Math.min(

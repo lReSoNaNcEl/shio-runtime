@@ -43,7 +43,8 @@
     "benchmark:latency-30": "esbuild benchmarks/latency/benchmark.ts --bundle --platform=node --format=cjs --outfile=out/latency-30-benchmark.cjs && node out/latency-30-benchmark.cjs",
     "repro:continuous-listening": "esbuild scripts/continuous-listening-repro/harness.ts --bundle --platform=node --format=cjs --outfile=out/continuous-listening-repro.cjs && node out/continuous-listening-repro.cjs",
     "test:llm-live": "npm run qualify:llm",
-    "qualify:speech-2d": "npm run build && esbuild qualifications/speech-2d/entry.ts --bundle --platform=browser --format=esm --outfile=out/renderer/qualification-speech-2d.mjs && node qualifications/speech-2d/qualify.cjs"
+    "qualify:speech-2d": "npm run build && esbuild qualifications/speech-2d/entry.ts --bundle --platform=browser --format=esm --outfile=out/renderer/qualification-speech-2d.mjs && node qualifications/speech-2d/qualify.cjs",
+    "qualify:speech-2d:terminal": "npm run build && esbuild qualifications/speech-2d/terminal-entry.ts --bundle --platform=browser --format=esm --outfile=out/renderer/qualification-s22-terminal.mjs && node qualifications/speech-2d/terminal.cjs"
   },
   "keywords": [],
   "author": "lReSoNaNcEl",

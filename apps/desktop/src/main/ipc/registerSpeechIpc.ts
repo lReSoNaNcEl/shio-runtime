@@ -2,6 +2,7 @@ import { ipcMain, type MessagePortMain } from 'electron'
 import { z } from 'zod'
 
 import {
+  normalizeVoiceStyle,
   SPEECH_EMOTIONS,
   type SpeechOperation,
   type SpeechStreamInput,
@@ -85,6 +86,10 @@ export function registerSpeechIpc({
       pace: z.enum(['slow', 'normal', 'fast']),
       energy: z.enum(['low', 'normal', 'high']),
       volume: z.enum(['soft', 'normal', 'loud']),
+      style: z
+        .string()
+        .refine((value) => normalizeVoiceStyle(value) === value)
+        .optional(),
     })
     .strict()
   const streamStartSchema = z

@@ -204,7 +204,7 @@ async function main(): Promise<void> {
     "pushMessage('assistant', draft.displayText, draft.grounding)",
   )
   const fallbackSpeechCommitIndex = conversationRuntimeSource.indexOf(
-    'commitSpeech(commitBuffer.push({ text: draft.speechText',
+    'commitSpeech(commitBuffer.push(delta))',
     fallbackMessageIndex,
   )
   assert(fallbackMessageIndex >= 0 && fallbackSpeechCommitIndex > fallbackMessageIndex)

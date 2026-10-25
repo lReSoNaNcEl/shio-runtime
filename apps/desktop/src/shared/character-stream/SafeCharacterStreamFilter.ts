@@ -1,5 +1,6 @@
 import { InternalReasoningStreamContainment } from '../character-response/reasoning'
 import { emotionRegistry } from '../emotion'
+import { normalizeVoiceStyle, VOICE_STYLE_MAX_LENGTH } from '../speech/voiceStyle'
 import type { SafeCharacterTextDelta } from './contracts'
 
 const INTERNAL_MARKERS = ['tools', 'action', 'memory', 'embodiment'] as const
@@ -11,11 +12,13 @@ const PROVIDER_TOOL_TAGS = PROVIDER_TOOL_MARKERS.flatMap((name) => {
   const escapedName = name.replaceAll('_', '\\_')
   return [`<${name}>`, `\\<${escapedName}>`, `</${name}>`, `\\</${escapedName}>`]
 })
-const CONTROL_TAG_PREFIXES = [...START_TAGS, ...PROVIDER_TOOL_TAGS]
+const VOICE_STYLE_PREFIX = '[voice:'
+const CONTROL_TAG_PREFIXES = [...START_TAGS, ...PROVIDER_TOOL_TAGS, VOICE_STYLE_PREFIX]
 const SUPPRESSED_INTERNAL_SUFFIX_LENGTH = 64
 const SUPPORTED_EMOTIONS = new Set(emotionRegistry.supported())
 
 type ActiveInternalMarker =
+  | { kind: 'voice-style' }
   | { kind: 'shio'; name: (typeof INTERNAL_MARKERS)[number] }
   | { kind: 'provider-tool'; name: (typeof PROVIDER_TOOL_MARKERS)[number] }
 
@@ -28,6 +31,7 @@ export class SafeCharacterStreamFilter {
   private pending = ''
   private internalMarker: ActiveInternalMarker | null = null
   private emotion = emotionRegistry.defaultEmotion
+  private voiceStyle: string | undefined
 
   push(text: string): readonly SafeCharacterTextDelta[] {
     if (!text) return []
@@ -63,8 +67,14 @@ export class SafeCharacterStreamFilter {
       if (special) {
         this.emit(output, this.pending.slice(0, special.index))
         this.pending = this.pending.slice(special.index + special.length)
-        if (special.kind === 'marker') this.internalMarker = special.marker
-        else this.emotion = emotionRegistry.normalize(special.emotion)
+        if (special.kind === 'marker') {
+          this.internalMarker = special.marker
+          if (special.marker?.kind === 'voice-style') this.voiceStyle = undefined
+        } else if (special.kind === 'voice-style') this.voiceStyle = special.style
+        else {
+          this.emotion = emotionRegistry.normalize(special.emotion)
+          this.voiceStyle = undefined
+        }
         continue
       }
 
@@ -88,6 +98,7 @@ export class SafeCharacterStreamFilter {
         marker: ActiveInternalMarker | null
       }
     | { kind: 'emotion'; index: number; length: number; emotion: string }
+    | { kind: 'voice-style'; index: number; length: number; style?: string }
     | null {
     const lower = this.pending.toLowerCase()
     let result:
@@ -98,7 +109,30 @@ export class SafeCharacterStreamFilter {
           marker: ActiveInternalMarker | null
         }
       | { kind: 'emotion'; index: number; length: number; emotion: string }
+      | { kind: 'voice-style'; index: number; length: number; style?: string }
       | null = null
+    const voiceIndex = lower.indexOf(VOICE_STYLE_PREFIX)
+    if (voiceIndex >= 0) {
+      const end = lower.indexOf(']', voiceIndex)
+      if (end >= 0) {
+        result = {
+          kind: 'voice-style',
+          index: voiceIndex,
+          length: end - voiceIndex + 1,
+          style: normalizeVoiceStyle(
+            this.pending.slice(voiceIndex + VOICE_STYLE_PREFIX.length, end),
+          ),
+        }
+      } else if (lower.length - voiceIndex > VOICE_STYLE_PREFIX.length + VOICE_STYLE_MAX_LENGTH) {
+        // Invalid oversized instructions remain suppressed without growing memory.
+        result = {
+          kind: 'marker',
+          index: voiceIndex,
+          length: VOICE_STYLE_PREFIX.length,
+          marker: { kind: 'voice-style' },
+        }
+      }
+    }
     for (const name of INTERNAL_MARKERS) {
       const tag = `<shio-${name}>`
       const index = lower.indexOf(tag)
@@ -149,6 +183,10 @@ export class SafeCharacterStreamFilter {
       hold = Math.max(hold, this.pending.length - providerStart)
     }
     const bracket = this.pending.lastIndexOf('[')
+    const voiceIndex = lower.lastIndexOf(VOICE_STYLE_PREFIX)
+    if (voiceIndex >= 0 && !lower.slice(voiceIndex).includes(']')) {
+      hold = Math.max(hold, this.pending.length - voiceIndex)
+    }
     if (bracket >= 0 && this.pending.length - bracket <= 34) {
       const suffix = this.pending.slice(bracket)
       if (/^\[[a-z_ -]*$/iu.test(suffix)) hold = Math.max(hold, suffix.length)
@@ -163,19 +201,25 @@ export class SafeCharacterStreamFilter {
     const markerHold = marker >= 0 ? this.pending.length - marker : 0
     const providerStart = lastProviderToolMarkerStart(lower)
     const providerHold = providerStart >= 0 ? this.pending.length - providerStart : 0
+    const voiceIndex = lower.lastIndexOf(VOICE_STYLE_PREFIX)
+    const voiceHold = voiceIndex >= 0 ? this.pending.length - voiceIndex : 0
     const bracketSuffix = bracket >= 0 ? this.pending.slice(bracket) : ''
     const bracketHold = /^\[[a-z_ -]*$/iu.test(bracketSuffix) ? bracketSuffix.length : 0
-    return Math.max(markerHold, providerHold, bracketHold)
+    return Math.max(markerHold, providerHold, bracketHold, voiceHold)
   }
 
   private emit(output: SafeCharacterTextDelta[], text: string): void {
     if (!text) return
     const last = output.at(-1)
-    if (last?.emotion === this.emotion) {
+    if (last?.emotion === this.emotion && last.voiceStyle === this.voiceStyle) {
       last.text += text
       return
     }
-    output.push({ text, emotion: this.emotion })
+    output.push({
+      text,
+      emotion: this.emotion,
+      ...(this.voiceStyle ? { voiceStyle: this.voiceStyle } : {}),
+    })
   }
 }
 
@@ -187,6 +231,10 @@ function findInternalClosingToken(
   text: string,
   marker: ActiveInternalMarker,
 ): { index: number; length: number } | null {
+  if (marker.kind === 'voice-style') {
+    const index = text.indexOf(']')
+    return index >= 0 ? { index, length: 1 } : null
+  }
   if (marker.kind === 'shio') {
     const closing = `</shio-${marker.name}>`
     const index = text.toLowerCase().indexOf(closing)

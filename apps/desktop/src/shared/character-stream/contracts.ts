@@ -45,6 +45,7 @@ export interface CharacterStreamDeadlines {
 export interface SafeCharacterTextDelta {
   text: string
   emotion: string
+  voiceStyle?: string
 }
 
 export interface SpeechTextCommit {
@@ -52,6 +53,7 @@ export interface SpeechTextCommit {
   turnId: string
   text: string
   emotion: string
+  voiceStyle?: string
   sequence: number
   boundary: 'clause' | 'sentence' | 'hard-limit' | 'final' | 'emotion'
 }

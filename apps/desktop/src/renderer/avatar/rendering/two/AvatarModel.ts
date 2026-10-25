@@ -48,6 +48,9 @@ interface PuppetPose {
   pelvisY?: number
 }
 interface Puppet {
+  state: string
+  mouthTarget: number
+  viseme: string
   time: number
   last: number
   pose: PuppetPose
@@ -439,6 +442,9 @@ export class AvatarModel {
       mouth: this.getFinalMouthWeights(),
       gaze: { ...this.look },
       nativeGesture: this.puppet?.gesture?.name ?? null,
+      nativeState: this.puppet?.state ?? null,
+      nativeMouthTarget: this.puppet?.mouthTarget ?? 0,
+      nativeViseme: this.puppet?.viseme ?? null,
       nativeFacialGesture: this.puppet?.facialGesture?.name ?? null,
       nativePose: this.puppet
         ? {
