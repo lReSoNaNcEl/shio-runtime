@@ -58,7 +58,6 @@ function createDetailedAvatarSnapshot(avatar: AvatarRuntimeDebugState): Record<s
     ...avatar,
     bodyActions: {
       ...avatar.bodyActions,
-      frameTrace: avatar.bodyActions.frameTrace.slice(-1),
     },
     playbackRequests: {
       ...avatar.playbackRequests,
@@ -92,10 +91,6 @@ function createEssentialAvatarSnapshot(avatar: AvatarRuntimeDebugState): Record<
       currentClipDuration: body.currentClipDuration,
       currentClipTime: body.currentClipTime,
       transitionRemaining: body.transitionRemaining,
-      hipsDeltaY: body.hipsDeltaY,
-      rootDeltaY: body.rootDeltaY,
-      maxHipsDeltaY: body.maxHipsDeltaY,
-      maxRootDeltaY: body.maxRootDeltaY,
       lastLoadSource: truncate(body.lastLoadSource),
       lastLoadReason: truncate(body.lastLoadReason),
       lastLoadAnimationId: truncate(body.lastLoadAnimationId),
@@ -103,6 +98,7 @@ function createEssentialAvatarSnapshot(avatar: AvatarRuntimeDebugState): Record<
       ownershipGapCount: body.ownershipGapCount,
       lastTransitionEvent: truncate(body.lastTransitionEvent),
     },
+    model2d: avatar.model2d,
     playbackRequests: {
       currentAnimation: truncate(avatar.playbackRequests.currentAnimation),
       requestedAnimation: truncate(avatar.playbackRequests.requestedAnimation),
@@ -217,9 +213,14 @@ export class TransitionRecorder {
     runtimeHealth: RuntimeHealth | null,
   ): string | null {
     const body = avatar.bodyActions
-    const hipsJump = Math.abs(body.hipsDeltaY) > 0.1
-    if (hipsJump)
-      return `hips jump ${body.hipsDeltaY.toFixed(3)} during ${body.lastLoadAnimationId ?? 'none'}`
+    const pose = avatar.model2d?.nativePose
+    if (
+      pose &&
+      [pose.yaw, pose.pitch, pose.roll, pose.tail, ...pose.ears].some(
+        (value) => !Number.isFinite(value),
+      )
+    )
+      return `S22 nonfinite pose during ${body.lastLoadAnimationId ?? 'none'}`
 
     if (body.ownershipGapCount > this.lastOwnershipGapCount) {
       this.lastOwnershipGapCount = body.ownershipGapCount

@@ -1,5 +1,5 @@
 import type { AvatarMode } from './AvatarStateMachine'
-import type { VrmModel } from './rendering/three/VrmModel'
+import type { AvatarModel } from './rendering/two/AvatarModel'
 
 type IdleBehaviorKind =
   | 'none'
@@ -19,10 +19,10 @@ export class AvatarIdleBehaviorController {
   private nextBehaviorIn = 2.5
   private activeFor = 0
 
-  constructor(private vrmModel: VrmModel) {}
+  constructor(private avatarModel: AvatarModel) {}
 
   update(delta: number, mode: AvatarMode): void {
-    if (mode !== 'idle' || !this.vrmModel.isLoaded()) {
+    if (mode !== 'idle' || !this.avatarModel.isLoaded()) {
       this.activeBehavior = 'none'
       this.activeFor = 0
       this.nextBehaviorIn = Math.max(this.nextBehaviorIn, 1.2)
@@ -77,14 +77,14 @@ export class AvatarIdleBehaviorController {
     if (roll < glanceDownThreshold) {
       this.activeBehavior = 'glance-down'
       this.activeFor = 1.8
-      this.vrmModel.nudgeMicroMotion({ headX: 0.035, eyeY: 0.035, duration: 1.8 })
+      this.avatarModel.nudgeMicroMotion({ headX: 0.035, eyeY: 0.035, duration: 1.8 })
       return
     }
 
     if (roll < postureThreshold) {
       this.activeBehavior = 'posture-shift'
       this.activeFor = 2.2
-      this.vrmModel.nudgeMicroMotion({
+      this.avatarModel.nudgeMicroMotion({
         headX: this.randomBetween(-0.015, 0.015),
         headY: this.randomBetween(-0.025, 0.025),
         duration: 2.2,
@@ -94,13 +94,13 @@ export class AvatarIdleBehaviorController {
 
     this.activeBehavior = 'soft-blink'
     this.activeFor = 1.0
-    this.vrmModel.forceBlink(this.randomBetween(0.75, 1.0))
+    this.avatarModel.forceBlink(this.randomBetween(0.75, 1.0))
   }
 
   private startGlance(kind: IdleBehaviorKind, direction: -1 | 1): void {
     this.activeBehavior = kind
     this.activeFor = 1.6
-    this.vrmModel.nudgeMicroMotion({
+    this.avatarModel.nudgeMicroMotion({
       headY: 0.028 * direction,
       eyeX: 0.04 * direction,
       duration: 1.6,

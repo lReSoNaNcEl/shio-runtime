@@ -1,3 +1,5 @@
+> Experimental branch: local Fish Audio S2 Pro streaming + bundled Shio S22 2D. The current setup, contract migration and measured qualification are documented in [docs/EXPERIMENT-FISH-S22.md](docs/EXPERIMENT-FISH-S22.md). Historical release notes describe the published F5/3D release, not this experimental branch.
+
 # Shio Runtime
 
 Desktop AI character runtime with a local ASR/TTS service.
@@ -16,7 +18,8 @@ and [AGENTS.md](./AGENTS.md).
 ```text
 shio-runtime/
 ├─ apps/
-│  ├─ desktop/          Electron + React + Three.js application
+│  ├─ desktop/          Electron + React + S22 2D application
+│  ├─ shio-2d/          Bundled S22 renderer, assets and qualification
 │  └─ api/              Python Speech API application
 ├─ launcher/            Release installation and process coordination
 ├─ scripts/             Repository and release tooling
@@ -85,7 +88,7 @@ details without logging credentials or full browser/DOM snapshots.
 - Node.js 24.x
 - npm 11.x
 - Python 3.12
-- CUDA-capable GPU recommended (F5-TTS and faster-whisper default to CUDA)
+- CUDA-capable GPU required for the qualified Fish S2 Pro configuration; see the experimental guide above
 - PowerShell examples below assume Windows
 
 Developed with:
@@ -196,10 +199,9 @@ npm run api:dev
 The API starts at `http://localhost:8000`. Stop it with `Ctrl+C`; the launcher
 forwards the signal so uvicorn shuts down and port 8000 is released.
 
-> **First run may be slow.** On the first `api:dev` the F5-TTS model (`F5_MODEL_ID`,
-> default `Misha24-10/F5-TTS_RUSSIAN`) and the ASR model are downloaded into the
-> Hugging Face cache / `apps/api/models/`. These weights are not stored in Git,
-> so the first startup can take a while before the service becomes ready.
+> Run `npm run api:prefetch` before startup to download the pinned Fish and ASR assets.
+> The first startup compiles and warms the Fish sampler before reporting readiness.
+> Weights and compiler caches are not stored in Git.
 
 **Terminal 2 — Desktop**
 
@@ -361,11 +363,11 @@ environment override.
 VOICE_DATASET_REVISION=
 ```
 
-### F5-TTS model
+### Fish Audio S2 Pro model
 
-The TTS engine loads the F5 model from `F5_MODEL_ID`
-(default `Misha24-10/F5-TTS_RUSSIAN`). The weights are downloaded on the first API
-run and are not committed (see below).
+The local TTS engine uses `fishaudio/s2-pro`, with immutable source/model revisions.
+Prepare its weights with `npm run api:prefetch`; see the experiment guide for pins,
+GPU requirements, streaming protocol and measured performance.
 
 ## Files not stored in Git
 
@@ -374,7 +376,7 @@ run and are not committed (see below).
 API virtual environments
 node_modules
 build output
-F5 model weights and Hugging Face model caches (apps/api/models/)
+Fish/ASR model weights and Hugging Face model caches (apps/api/models/)
 voice reference assets (apps/api/voices/**/reference.wav|.txt)
 generated and temporary audio
 runtime logs
@@ -393,7 +395,8 @@ GET  /voices
 GET  /emotions
 GET  /voices/status
 POST /voices/sync
-POST /synthesize
+WS   /tts/stream
+POST /tts/warmup
 POST /recognize
 WS   /ws
 ```
@@ -408,8 +411,8 @@ npm run api:test
 ```
 
 Then verify the read-only endpoints respond: `/health`, `/voices`, `/emotions`.
-Run a short `/synthesize` smoke test only after backend changes (F5 engine, audio
-encoding, or synthesis lifecycle).
+Verify ordered binary PCM, first-packet latency, delivery cues and cancellation
+through `/tts/stream` after changing synthesis or its transport.
 
 ## Architecture
 

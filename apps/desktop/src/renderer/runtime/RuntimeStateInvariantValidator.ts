@@ -179,7 +179,7 @@ export class RuntimeStateInvariantValidator {
     {
       id: 'INV-04-single-skeleton-owner',
       label: 'only one body animation owns the skeleton',
-      suspectedOwner: 'VrmModel body pipeline',
+      suspectedOwner: 'AvatarModel body pipeline',
       evaluate: (i) => {
         if (i.bodyTransitionRemaining > 0) return { ok: true, detail: 'cross-fade in progress' }
         const ok = i.bodyWeightedActionCount <= 1
@@ -269,7 +269,7 @@ export class RuntimeStateInvariantValidator {
     {
       id: 'INV-10-transition-ownership',
       label: 'body transition keeps animation ownership',
-      suspectedOwner: 'VrmModel body action ownership',
+      suspectedOwner: 'AvatarModel body action ownership',
       evaluate: (i) => {
         if (i.bodyActiveActionCount === 0) return { ok: null, detail: 'no body action loaded yet' }
         const ok = i.bodyWeightedActionCount > 0

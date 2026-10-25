@@ -24,7 +24,7 @@ export interface CharacterLifecycleTransition {
   status: CharacterLifecycleStatus
   mode: CharacterRuntimeMode
   emotion?: string
-  vrmEmotion?: string
+  avatarEmotion?: string
   currentSentence?: string
   voiceId?: string
   conversationPresence?: CharacterConversationPresenceState
@@ -228,7 +228,7 @@ export class CharacterStateStore implements CharacterStateReader {
           ...current.avatar,
           mode: transition.mode,
           expression: emotion,
-          vrmExpression: transition.vrmEmotion,
+          avatarExpression: transition.avatarEmotion,
         },
         updatedAt: Date.now(),
       }

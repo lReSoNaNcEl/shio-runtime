@@ -8,7 +8,12 @@ import type { LlmGateway } from '../../src/main/llm'
 import type { CharacterReplyInput, Orchestrator } from '../../src/main/orchestrator'
 import type { ScreenContextService } from '../../src/main/screen-context'
 import type { SpeechClientManager } from '../../src/main/speech/SpeechClientManager'
-import { SpeechServiceError } from '../../src/main/speech/speechErrors'
+import type { SpeechStreamConnection } from '../../src/main/speech/speechClient'
+import type {
+  SpeechStreamInput,
+  SpeechStreamOutput,
+  SpeechStreamStart,
+} from '../../src/shared/speech'
 
 function configuredLlmSettings() {
   return {
@@ -92,47 +97,46 @@ async function conversationTurnLifecycle(): Promise<void> {
 }
 
 async function speechServiceLifecycle(): Promise<void> {
-  let synthesisSignal: AbortSignal | null = null
-  const orchestrator = {
-    synthesizeReply: async (_text: string, _emotion: string, signal: AbortSignal) => {
-      synthesisSignal = signal
-      return new Promise<never>((_resolve, reject) => {
-        signal.addEventListener(
-          'abort',
-          () =>
-            reject(
-              new SpeechServiceError({
-                code: 'CANCELLED',
-                operation: 'synthesis',
-                recoverable: false,
-                technicalMessage: 'cancelled in repro',
-              }),
-            ),
-          { once: true },
-        )
-      })
-    },
-  } as unknown as Orchestrator
+  const streamMessages: Array<SpeechStreamInput> = []
+  const cancellations: string[] = []
+  let streamOutput: ((event: SpeechStreamOutput) => void) | undefined
   const speech = {
     getEndpoint: () => 'http://127.0.0.1:8000',
     health: async () => ({ status: 'ok' }),
     transcribe: async () => ({ text: 'распознано' }),
     warmupVoice: async () => ({ ok: true }),
+    openStream: (_input: SpeechStreamStart, onEvent: (event: SpeechStreamOutput) => void) => {
+      streamOutput = onEvent
+      return {
+        send: (message) => streamMessages.push(message),
+        cancel: (reason) => cancellations.push(reason),
+      } satisfies SpeechStreamConnection
+    },
   } as unknown as SpeechClientManager
-  const service = new SpeechApplicationService(
-    () => speech,
-    () => orchestrator,
-  )
+  const service = new SpeechApplicationService(() => speech)
 
   assert.equal(service.getEndpoint(), 'http://127.0.0.1:8000')
   assert.deepEqual(await service.recognize(new ArrayBuffer(48)), { text: 'распознано' })
-  const synthesis = service.synthesize('speech-cancel', 'Текст', 'calm')
-  await service.cancelSynthesis('speech-cancel')
-  await assert.rejects(synthesis, (error: unknown) => {
-    assert.equal((error as { code?: string }).code, 'CANCELLED')
-    return true
+  const stream = service.openStream(
+    {
+      protocolVersion: 1,
+      sessionId: 'speech:speech-cancel',
+      turnId: 'speech-cancel',
+      voiceId: 'animevox_makima',
+      language: 'ru',
+      delivery: { emotion: 'calm', pace: 'slow', energy: 'normal', volume: 'normal' },
+    },
+    () => undefined,
+  )
+  stream.send({
+    type: 'text',
+    sequence: 0,
+    text: 'Текст для потоковой речи.',
   })
-  assert.equal((synthesisSignal as AbortSignal | null)?.aborted, true)
+  assert.equal(streamMessages.length, 1)
+  await service.cancelSynthesis('speech-cancel')
+  assert.deepEqual(cancellations, ['Conversation interrupted'])
+  streamOutput?.({ type: 'error', code: 'cancelled', message: 'cancelled in test' })
 }
 
 async function main(): Promise<void> {

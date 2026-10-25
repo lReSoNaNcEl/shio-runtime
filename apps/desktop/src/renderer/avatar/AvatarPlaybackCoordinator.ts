@@ -13,7 +13,7 @@ import {
 import type { AvatarMode, AvatarStateEffect } from './AvatarStateMachine'
 import { type AvatarTransitionDecision, AvatarTransitionPolicy } from './AvatarTransitionPolicy'
 import type { AnimationId } from './animationManifest'
-import type { VrmModel } from './rendering/three/VrmModel'
+import type { AvatarModel } from './rendering/two/AvatarModel'
 
 interface PlaybackContext {
   animationId: string
@@ -53,13 +53,12 @@ export class AvatarPlaybackCoordinator {
 
   constructor(
     private readonly animations: AvatarAnimationController,
-    private readonly vrmModel: VrmModel,
+    private readonly avatarModel: AvatarModel,
   ) {}
 
   reset(): void {
     this.animationQueue.clear()
     this.currentPlaybackContext = null
-    this.vrmModel.setBodyMotionLayer('base')
   }
 
   clearPending(): void {
@@ -297,7 +296,6 @@ export class AvatarPlaybackCoordinator {
     }
 
     this.currentPlaybackContext = null
-    this.vrmModel.setBodyMotionLayer('base')
   }
 
   previewAnimation(input: {
@@ -306,7 +304,6 @@ export class AvatarPlaybackCoordinator {
     mode: AvatarMode
     frame: number
   }): void {
-    this.vrmModel.setBodyMotionLayer('base')
     const decision = this.transitionPolicy.resolve({
       fromAnimationId: this.currentPlaybackContext?.animationId ?? null,
       toAnimationId: input.animationId,
@@ -368,7 +365,6 @@ export class AvatarPlaybackCoordinator {
       motionLayer: input.item.motionLayer,
       completionFallbackAnimationId: input.fallbackAnimationId,
     }
-    this.vrmModel.setBodyMotionLayer(input.item.motionLayer)
     void this.animations.playManifest(input.item.animationId, input.item.loop, {
       fallbackId: input.fallbackAnimationId,
       blendDuration: effectiveTransition.blendDuration,
@@ -397,7 +393,7 @@ export class AvatarPlaybackCoordinator {
       currentAnimationId: this.currentPlaybackContext?.animationId ?? null,
       requestedAnimationId: input.animationId === 'none' ? null : input.animationId,
       transitionPolicy: this.lastTransitionDecision?.policyId ?? 'none',
-      transitionPending: this.vrmModel.getBodyActionDebugState().transitionRemaining > 0,
+      transitionPending: this.avatarModel.getBodyActionDebugState().transitionRemaining > 0,
     })
   }
 

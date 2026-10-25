@@ -22,10 +22,8 @@ import {
   type MicrophoneGateDebugState,
 } from './audio/microphoneGateTypes'
 import type { DebugAvatarMode } from './avatar/avatarAnimations'
-import { readResolvedVrmSource, resolveVrmSource } from './avatar/defaultVrm'
-import type { EarAxisOverride } from './avatar/embodiment/secondary-motion/EarBehaviorRuntime'
 import type { MouthWeights } from './avatar/embodiment/speech/LipSync'
-import { SceneManager } from './avatar/rendering/three/SceneManager'
+import { SceneManager } from './avatar/rendering/two/SceneManager'
 import type { OverlayViewMode } from './avatar/tuning/cameraTuning'
 import { ChatMessageUpdateCoalescer } from './controller/ChatMessageUpdateCoalescer'
 import { type ControllerStateListener, ControllerStore } from './controller/ControllerStore'
@@ -36,7 +34,6 @@ import type {
   HealthState,
   RuntimeDebugSnapshot,
 } from './controller/contracts'
-import { isVrmConfigured } from './controller/firstRunState'
 import { RuntimeDiagnosticsProjection } from './controller/RuntimeDiagnosticsProjection'
 import { observeRendererPromise } from './reliability/observePromise'
 import { AliveExperienceRuntime } from './runtime/AliveExperienceRuntime'
@@ -79,7 +76,11 @@ export type {
 } from './controller/contracts'
 export { STATUS_LABELS } from './controller/contracts'
 
-type SpeechReply = Awaited<ReturnType<Window['api']['tts']['synthesizeReply']>>
+interface SpeechReplyMetadata {
+  avatarEmotion?: string
+  latencyMs?: string
+  cache?: string
+}
 
 let idSeq = 0
 const nextId = (): string => `m${++idSeq}`
@@ -89,7 +90,7 @@ export class Controller {
   private shioRuntime = new ShioRuntime()
   private scene: SceneManager | null = null
   // Monotonic token for the local Avatar Preview scene. Bumped on every attach and
-  // detach so async VRM loads can detect that the scene they started with was torn
+  // detach so async S22 loads can detect that the scene they started with was torn
   // down or replaced, and silently abort instead of touching a disposed SceneManager.
   private previewSceneVersion = 0
   private selectedVoiceLanguage = ''
@@ -106,7 +107,7 @@ export class Controller {
     },
   })
   private player = new AudioPlayer()
-  private speechRuntime = new SpeechRuntime(this.shioRuntime.events)
+  private speechRuntime = new SpeechRuntime()
   private speechOutput = new RuntimeSpeechOutputPort(this.speechRuntime, this.player)
   private characterResponse = new MainCharacterResponsePort()
   private unsubscribeCharacterState = this.shioRuntime.characterState.subscribe(
@@ -161,8 +162,8 @@ export class Controller {
       providerId: 'groq',
       providerDisplayName: 'Groq',
     },
-    vrmConfigured: false,
-    vrmLoaded: false,
+    avatarConfigured: false,
+    avatarLoaded: false,
     faceTrackingEnabled: false,
     continuousListening: {
       desired: false,
@@ -372,7 +373,7 @@ export class Controller {
 
   private async warmSelectedVoice(): Promise<void> {
     if (!this.selectedVoiceLanguage) return
-    const key = `f5:${this.selectedVoiceLanguage}`
+    const key = `fish-s2-pro:${this.selectedVoiceLanguage}`
     if (this.voiceWarmupKey === key && this.state.voiceWarmup.state !== 'failed') return
     this.voiceWarmupKey = key
     this.set({
@@ -521,7 +522,7 @@ export class Controller {
     if (this.overlayRuntime.isOverlayWindow()) {
       const cfg = await window.overlayApi.config.get()
       if (this.disposed) return
-      this.set({ vrmConfigured: isVrmConfigured(resolveVrmSource(cfg.vrmAssetHandle)) })
+      this.set({ avatarConfigured: true })
       this.applyUiLocale(normalizeUiLocale(cfg.uiLocale))
       const remote = await this.overlayRuntime.loadInitialRemoteState()
       if (this.disposed) return
@@ -537,7 +538,7 @@ export class Controller {
     const cfg = await window.api.config.get()
     if (this.disposed) return
     this.selectedVoiceLanguage = cfg.ttsLanguage
-    this.set({ vrmConfigured: isVrmConfigured(resolveVrmSource(cfg.vrmAssetHandle)) })
+    this.set({ avatarConfigured: true })
     this.set({ llmReadiness: await window.api.llm.getReadiness() })
     if (this.disposed) return
     this.applyUiLocale(normalizeUiLocale(cfg.uiLocale))
@@ -551,7 +552,7 @@ export class Controller {
     this.unsubscribeConfigUpdates = window.api.config.onUpdated((updated) => {
       this.applyOverlayConfigProjection(updated)
       this.applyUiLocale(normalizeUiLocale(updated.uiLocale))
-      this.set({ vrmConfigured: isVrmConfigured(resolveVrmSource(updated.vrmAssetHandle)) })
+      this.set({ avatarConfigured: true })
       observeRendererPromise(
         window.api.llm.getReadiness().then((llmReadiness) => this.set({ llmReadiness })),
         'refresh LLM readiness after config update',
@@ -690,28 +691,29 @@ export class Controller {
     await this.bootstrap()
     if (this.disposed) return
     if (this.scene) return
-    const scene = new SceneManager(canvas)
+    const scene = new SceneManager(canvas, (view, scale) =>
+      this.avatarRuntime.setPresentationView(view, scale),
+    )
     const version = ++this.previewSceneVersion
     this.scene = scene
-    scene.start()
     this.avatarRuntime.attachPresentation()
 
     const cfg = this.overlayRuntime.isOverlayWindow()
       ? await window.overlayApi.config.get()
       : await window.api.config.get()
     this.applyOverlaySettings(cfg)
-    if (options.loadModel !== false)
-      await this.loadVrmFromPath(resolveVrmSource(cfg.vrmAssetHandle), scene, version)
+    if (options.loadModel !== false) await this.loadAvatar(scene, version)
   }
 
   detachCanvas(): void {
     if (!this.scene) return
     // Invalidate any in-flight preview load so its post-await steps abort.
     ++this.previewSceneVersion
+    this.avatarRuntime.unloadPresentation()
     this.scene.dispose()
     this.scene = null
     this.avatarRuntime.detachPresentation()
-    this.set({ vrmLoaded: false })
+    this.set({ avatarLoaded: false })
   }
 
   async reloadPreviewModel(): Promise<void> {
@@ -719,10 +721,9 @@ export class Controller {
     if (this.disposed || !this.scene) return
     const scene = this.scene
     const version = ++this.previewSceneVersion
-    const cfg = await window.api.config.get()
     if (this.disposed || this.scene !== scene || version !== this.previewSceneVersion) return
-    this.set({ vrmLoaded: false })
-    await this.loadVrmFromPath(resolveVrmSource(cfg.vrmAssetHandle), scene, version)
+    this.set({ avatarLoaded: false })
+    await this.loadAvatar(scene, version)
   }
 
   // Avatar Runtime tick (LipSync, facial mixer, overlay mouth-weight publish) must
@@ -794,7 +795,7 @@ export class Controller {
       status,
       mode: avatarState.mode,
       emotion: avatarState.emotionKey ?? 'neutral',
-      vrmEmotion: avatarState.vrmEmotion,
+      avatarEmotion: avatarState.avatarEmotion,
     })
     this.avatarRuntime.setEmbodimentIntent(avatarState.embodimentIntent)
     this.avatarRuntime.setBehaviorEmbodimentIntent(avatarState.behaviorEmbodimentIntent)
@@ -808,6 +809,7 @@ export class Controller {
       )
     }
     this.applyAvatarCharacterState()
+    this.avatarRuntime.setSpeechDelivery(avatarState.speechDeliveryEmotion ?? null)
     if (allowReaction && avatarState.reaction === 'user-interruption')
       this.avatarRuntime.triggerUserInterruption()
     if (allowReaction && avatarState.earImpulse)
@@ -835,14 +837,14 @@ export class Controller {
     status: AppStatus
     mode: CharacterRuntimeMode
     emotion: string
-    vrmEmotion?: string
+    avatarEmotion?: string
     conversationPresence?: CharacterState['conversationPresence']
   }): CharacterState {
     const characterState = this.shioRuntime.characterState.conversation.transition({
       status: patch.status,
       mode: patch.mode,
       emotion: patch.emotion,
-      vrmEmotion: patch.vrmEmotion,
+      avatarEmotion: patch.avatarEmotion,
       currentSentence:
         patch.status === 'speaking' ? (this.state.messages.at(-1)?.text ?? '') : undefined,
       conversationPresence: patch.conversationPresence,
@@ -862,7 +864,7 @@ export class Controller {
     this.updateOverlayAnimationHudFile()
   }
 
-  private rememberSpeechMetadata(speech: SpeechReply): void {
+  private rememberSpeechMetadata(speech: SpeechReplyMetadata): void {
     this.diagnostics.rememberSpeechMetadata(speech)
   }
 
@@ -1021,63 +1023,29 @@ export class Controller {
     this.avatarRuntime.dispose()
   }
 
-  // ---- VRM / animation -----------------------------------------------------
-  async loadVrmFromPath(
-    filePath: string,
+  // ---- S22 / animation -----------------------------------------------------
+  async loadAvatar(
     scene: SceneManager | null = this.scene,
     version: number = this.previewSceneVersion,
   ): Promise<void> {
     if (!scene) return
-    // True when the preview scene this load started with is still the current one.
-    // If Preview was detached or replaced during an await, the load is stale and
-    // must abort silently — it must never touch a disposed SceneManager.
     const isCurrent = (): boolean => version === this.previewSceneVersion && this.scene === scene
     try {
-      const res = await readResolvedVrmSource(filePath)
-      if (!res.ok || !res.buffer) throw new Error(res.error ?? this.t('controller.fileReadFailed'))
+      await this.avatarRuntime.loadPuppet(scene.canvas)
       if (!isCurrent()) return
-      await this.avatarRuntime.loadVrm(scene.scene, res.buffer)
-      if (!isCurrent()) return
-      const renderQuality = scene.configureAvatarModelQuality()
-      console.log(
-        `[RENDERDBG] avatar model quality textures=${renderQuality.textureCount} materials=${renderQuality.materialCount} anisotropy=${renderQuality.anisotropy}`,
+      this.avatarRuntime.setLookAtTarget(
+        this.state.faceTrackingEnabled ? scene.getLookAtTarget() : null,
       )
-      const lookAtRequested = this.state.faceTrackingEnabled
-      const ok = this.avatarRuntime.setLookAtTarget(
-        lookAtRequested ? scene.getLookAtTarget() : null,
-      )
-      this.set({ faceTrackingEnabled: lookAtRequested && ok })
       this.syncAvatarStateProjection()
-      this.set({ vrmLoaded: true })
-      // Frame the model to a sensible full-body size in the local Avatar Preview.
-      // The overlay window owns its own camera framing via overlay presets, so it
-      // must not be reframed here.
+      this.set({ avatarLoaded: true, avatarConfigured: true })
       if (!this.overlayRuntime.isOverlayWindow()) scene.frameLoadedModel()
-      this.recordRuntimeEvent('VRM Loaded')
-      // Keep the single mirror overlay in sync with the newly selected model.
-      // Only the main window drives this; the overlay reloads itself in place,
-      // so it must never re-trigger the refresh on its own boot.
-      if (!this.overlayRuntime.isOverlayWindow()) {
-        observeRendererPromise(window.api.overlay.reloadAvatar(), 'reload Overlay avatar')
-      }
-    } catch (e) {
-      // A load invalidated by detach/replace is an expected cancellation, not a
-      // real failure — swallow it without surfacing a user-facing error.
+      this.recordRuntimeEvent('Shio S22 Loaded')
+    } catch (error) {
       if (!isCurrent()) return
-      this.set({ vrmLoaded: false })
-      this.recordRuntimeEvent('VRM Error', String(e))
-      this.pushMessage('error', this.t('controller.vrmLoadFailed', { error: String(e) }))
+      this.set({ avatarLoaded: false })
+      this.recordRuntimeEvent('Shio S22 Load Failed', String(error))
+      this.pushMessage('error', this.t('controller.avatarLoadFailed', { error: String(error) }))
     }
-  }
-
-  selectVrm(filePath: string): void {
-    this.set({ vrmConfigured: isVrmConfigured(filePath) })
-    if (this.scene) observeRendererPromise(this.loadVrmFromPath(filePath), 'load selected VRM')
-  }
-
-  async loadAnimation(buffer: ArrayBuffer): Promise<void> {
-    await this.avatarRuntime.loadAnimation(buffer, true)
-    this.updateOverlayAnimationHudFile()
   }
 
   stopAnimation(): void {
@@ -1104,6 +1072,12 @@ export class Controller {
   previewAvatarMode(mode: DebugAvatarMode): void {
     this.avatarRuntime.previewMode(mode)
     this.updateOverlayAnimationHudFile()
+  }
+  previewEmotion(emotion: string, intensity: number): void {
+    this.avatarRuntime.previewEmotion(emotion, intensity)
+  }
+  previewTailStyle(style: 'side' | 'back'): void {
+    this.avatarRuntime.previewTailStyle(style)
   }
 
   previewAvatarAnimation(id: string): void {
@@ -1152,10 +1126,6 @@ export class Controller {
 
   previewAvatarBlink(): void {
     this.avatarRuntime.previewBlink()
-  }
-
-  setEarAxisOverride(axis: EarAxisOverride): void {
-    this.avatarRuntime.setEarAxisOverride(axis)
   }
 
   setEarAmplitudeScale(scale: number): void {
@@ -1304,7 +1274,7 @@ export class Controller {
 
 export const controller = new Controller()
 
-// This module owns imperative Three.js/audio singletons that can't be hot-swapped.
+// This module owns imperative S22/audio singletons that can't be hot-swapped.
 // Force a full page reload on change so we never end up with a split-brain
 // controller (one rendering the scene, another that React subscribes to).
 if (import.meta.hot) {

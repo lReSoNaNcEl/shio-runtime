@@ -4,15 +4,16 @@ import {
 } from '../../shared/character-response'
 import type { EarImpulse } from '../avatar/embodiment/secondary-motion/EarBehaviorRuntime'
 import type { MouthWeights } from '../avatar/embodiment/speech/LipSync'
-import type { SceneManager } from '../avatar/rendering/three/SceneManager'
+import type { SceneManager } from '../avatar/rendering/two/SceneManager'
 import type { OverlayViewMode } from '../avatar/tuning/cameraTuning'
 import { observeRendererPromise } from '../reliability/observePromise'
 import type { AvatarMode } from './AvatarRuntime'
 
 export interface SyncedAvatarState {
+  speechDeliveryEmotion?: string | null
   mode: AvatarMode
   emotionKey?: string
-  vrmEmotion?: string
+  avatarEmotion?: string
   reaction?: 'user-interruption'
   reactionId?: string
   earImpulse?: EarImpulse
@@ -173,7 +174,9 @@ export class OverlayRuntime {
     return {
       mode: value.mode,
       emotionKey: typeof value.emotionKey === 'string' ? value.emotionKey : undefined,
-      vrmEmotion: typeof value.vrmEmotion === 'string' ? value.vrmEmotion : undefined,
+      speechDeliveryEmotion:
+        typeof value.speechDeliveryEmotion === 'string' ? value.speechDeliveryEmotion : null,
+      avatarEmotion: typeof value.avatarEmotion === 'string' ? value.avatarEmotion : undefined,
       reaction: value.reaction === 'user-interruption' ? value.reaction : undefined,
       reactionId: typeof value.reactionId === 'string' ? value.reactionId : undefined,
       earImpulse:

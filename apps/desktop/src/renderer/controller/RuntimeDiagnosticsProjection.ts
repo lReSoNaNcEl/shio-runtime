@@ -32,7 +32,7 @@ export interface RuntimeDiagnosticsDependencies {
 
 export class RuntimeDiagnosticsProjection {
   private timeline: RuntimeTimelineEvent[] = []
-  private lastVrmEmotion = 'none'
+  private lastAvatarEmotion = 'none'
   private lastTtsLatencyMs = 'none'
   private lastTtsCache = 'none'
   private invariantValidator = new RuntimeStateInvariantValidator()
@@ -54,11 +54,11 @@ export class RuntimeDiagnosticsProjection {
   }
 
   rememberSpeechMetadata(speech: {
-    vrmEmotion?: string
+    avatarEmotion?: string
     latencyMs?: string
     cache?: string
   }): void {
-    this.lastVrmEmotion = speech.vrmEmotion ?? 'none'
+    this.lastAvatarEmotion = speech.avatarEmotion ?? 'none'
     this.lastTtsLatencyMs = speech.latencyMs ?? 'none'
     this.lastTtsCache = speech.cache ?? 'none'
   }
@@ -77,13 +77,13 @@ export class RuntimeDiagnosticsProjection {
       eventHistory: this.dependencies.getEventHistory(),
       avatarMode: avatar.mode,
       emotionKey: avatar.emotionKey,
-      vrmEmotion: this.lastVrmEmotion,
+      avatarEmotion: this.lastAvatarEmotion,
       currentBodyAnimation: avatar.currentBodyAnimation,
       currentBodyAnimationFile: avatar.currentBodyAnimationFile,
       currentBodyAnimationLoop: avatar.currentBodyAnimationLoop,
       currentBodyAnimationStatus: avatar.currentBodyAnimationStatus,
       bodyActions: avatar.bodyActions,
-      animationAssetCache: avatar.animationAssetCache,
+      model2d: avatar.model2d,
       previousBodyAnimation: avatar.previousBodyAnimation,
       activeTransitionPolicy: avatar.activeTransitionPolicy,
       activeBlendDuration: avatar.activeBlendDuration,
@@ -123,7 +123,6 @@ export class RuntimeDiagnosticsProjection {
         replayCount: String(avatar.playbackRequests.replayCount),
         bodyActions: String(avatar.bodyActions.activeActionCount),
         weightedBodyActions: String(avatar.bodyActions.weightedActionCount),
-        rootMotionPolicy: avatar.bodyActions.rootMotionPolicy,
         lookAtMode: avatar.lookAt.mode,
         lookAtTarget: avatar.lookAt.target,
         headMotionProfile: avatar.headMotion.profile,

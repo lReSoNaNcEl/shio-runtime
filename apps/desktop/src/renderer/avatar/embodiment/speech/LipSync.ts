@@ -20,6 +20,7 @@ export interface LipSyncSession {
   playbackItemId: string
   normalizationReference: number
   durationMs: number
+  durationFinal?: boolean
 }
 
 export interface LipSyncStartRequest {
@@ -154,7 +155,7 @@ export class LipSync {
       // turn session alive while replacing only the playback attachment;
       // resetting mouth state here would create an artificial closure between
       // chunks and would incorrectly trip the overlap invariant.
-      this.activeSession = { ...session }
+      this.activeSession = session
       this.analyser = session.analyser
       this.analyser.fftSize = 512
       this.analyser.smoothingTimeConstant = facialTuning.lipSync.analyserSmoothing
@@ -174,7 +175,7 @@ export class LipSync {
       return
     }
     this.playbackSeq += 1
-    this.activeSession = { ...session }
+    this.activeSession = session
     this.analyser = session.analyser
     this.analyser.fftSize = 512
     this.analyser.smoothingTimeConstant = facialTuning.lipSync.analyserSmoothing
@@ -264,9 +265,11 @@ export class LipSync {
     this.graceRemainingMs = Math.max(0, this.graceRemainingMs - Math.max(0, _delta) * 1000)
     if (this.activeSession) {
       this.phraseElapsedMs += Math.max(0, _delta) * 1000
+      this.phraseDurationMs = Math.max(this.phraseDurationMs, this.activeSession.durationMs, 1)
+      const progress = Math.min(1, this.phraseElapsedMs / this.phraseDurationMs)
       this.output.updateSpeechPhrase(
         _delta,
-        Math.min(1, this.phraseElapsedMs / this.phraseDurationMs),
+        this.activeSession.durationFinal === false ? Math.min(0.98, progress) : progress,
         this.speechEnergy,
       )
     } else {

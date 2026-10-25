@@ -8,7 +8,7 @@ import { facialTuning } from '../../tuning/facialTuning'
  * look: after every blink the eyes ease back toward the *current* drifting
  * target rather than one fixed openness.
  *
- * It owns only a 0..maxSquint weight per eye and never writes into the VRM
+ * It owns only a 0..maxSquint weight per eye and never writes into the previous rig
  * Expression Manager — the AvatarExpressionMixer reads {@link getLeft} /
  * {@link getRight} each frame and combines them with the Blink domain (Blink
  * always wins full closure). Emotion modifies the drift; it never replaces it.

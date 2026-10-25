@@ -44,7 +44,7 @@ export function App() {
   const [newConversationDialogOpen, setNewConversationDialogOpen] = useState(false)
   const [newConversationPending, setNewConversationPending] = useState(false)
   const [newConversationError, setNewConversationError] = useState<string | null>(null)
-  const [missingVrmDialogOpen, setMissingVrmDialogOpen] = useState(false)
+  const [missingAvatarDialogOpen, setMissingVrmDialogOpen] = useState(false)
   const [pluginDetails, setPluginDetails] = useState<PluginId | null>(null)
   const chatOverlayRef = useRef<ChatOverlayHandle>(null)
   const prevSpeechService = useRef(state.speechCapabilities.service)
@@ -238,7 +238,7 @@ export function App() {
   }
 
   const setOverlayVisible = async (visible: boolean): Promise<void> => {
-    if (visible && !state.vrmConfigured) {
+    if (visible && !state.avatarConfigured) {
       setMissingVrmDialogOpen(true)
       return
     }
@@ -335,7 +335,7 @@ export function App() {
               <OverlayCameraControl
                 overlayState={state.overlayState}
                 cameraMode={state.overlayCameraMode}
-                vrmConfigured={state.vrmConfigured}
+                avatarConfigured={state.avatarConfigured}
                 onToggle={() => setOverlayVisible(state.overlayState !== 'on')}
                 onCameraModeChange={(mode) => controller.setOverlayViewMode(mode)}
               />
@@ -430,7 +430,7 @@ export function App() {
             aliveSnapshot={state.alive}
             uiTheme={uiTheme}
             onThemeChange={changeUiTheme}
-            vrmLoaded={state.vrmLoaded}
+            avatarLoaded={state.avatarLoaded}
             faceTrackingEnabled={state.faceTrackingEnabled}
             onToggleFaceTracking={() => controller.toggleFaceTracking()}
             overlayVisible={state.overlayState === 'on'}
@@ -461,7 +461,7 @@ export function App() {
         }}
       />
       <MissingVrmDialog
-        isOpen={missingVrmDialogOpen}
+        isOpen={missingAvatarDialogOpen}
         onDismiss={() => setMissingVrmDialogOpen(false)}
         onOpenSettings={() => {
           setMissingVrmDialogOpen(false)

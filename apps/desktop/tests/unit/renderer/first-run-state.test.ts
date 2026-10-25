@@ -11,7 +11,7 @@ import {
 import { ControllerStore } from '../../../src/renderer/controller/ControllerStore'
 import type { ControllerState } from '../../../src/renderer/controller/contracts'
 import {
-  isVrmConfigured,
+  isAvatarConfigured,
   shouldBlockChatSubmission,
 } from '../../../src/renderer/controller/firstRunState'
 
@@ -52,8 +52,8 @@ describe('First-run state', () => {
   })
 
   it('recognizes configured VRM and Project credential presentation', () => {
-    expect(isVrmConfigured('')).toBe(false)
-    expect(isVrmConfigured(' C:\\avatar.vrm ')).toBe(true)
+    expect(isAvatarConfigured('')).toBe(false)
+    expect(isAvatarConfigured(' C:\\avatar.vrm ')).toBe(true)
     expect(
       credentialStatusKey({
         configured: true,

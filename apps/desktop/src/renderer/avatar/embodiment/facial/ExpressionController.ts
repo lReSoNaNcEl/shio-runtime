@@ -1,12 +1,11 @@
-import type { VRM } from '@pixiv/three-vrm'
-
+import { emotionRegistry } from '../../../../shared/emotion'
 import { type FacialProfile, getFacialProfile } from './FacialProfile'
 import { type FacialEasingId, releaseValue } from './facialEasing'
 
 /**
  * ExpressionController — Emotion source.
  *
- * Maps an emotion key (or an explicit VRM expression string) to a set of target
+ * Maps an emotion key (or an explicit previous rig expression string) to a set of target
  * expression weights. Rising toward a new emotion uses an exponential attack;
  * falling toward zero uses the centralized, duration-based eased release in
  * {@link facialEasing} so emotions fade naturally through an explicit
@@ -14,7 +13,7 @@ import { type FacialEasingId, releaseValue } from './facialEasing'
  *   active -> release -> inactive
  *
  * lifecycle instead of snapping. It owns the *emotion* domain only (never mouth,
- * never blink) and does not write into the VRM Expression Manager: the
+ * never blink) and does not write into the facial target: the
  * AvatarExpressionMixer reads {@link getValues} each frame and performs the
  * authoritative facial write.
  */
@@ -38,7 +37,7 @@ export class ExpressionController {
   private speechEnergy = 0
   private breathPhase = Math.random() * Math.PI * 2
 
-  attach(_vrm: VRM): void {
+  attach(): void {
     this.clear()
     this.attached = true
   }
@@ -54,13 +53,13 @@ export class ExpressionController {
     this.releases.clear()
   }
 
-  applyEmotion(emotionKey: string, vrmEmotion?: string): void {
+  applyEmotion(emotionKey: string, avatarEmotion?: string): void {
     this.targets.clear()
 
     this.profile = getFacialProfile(emotionKey)
     const preset = {
-      ...this.profile.expressionWeights,
-      ...(this.parseVrmEmotion(vrmEmotion) ?? {}),
+      ...emotionRegistry.avatarExpressionWeights(emotionKey),
+      ...(this.parseAvatarEmotion(avatarEmotion) ?? {}),
     }
     for (const [name, weight] of Object.entries(preset)) {
       // Mouth is owned by the LipSync domain — never contributed by emotion.
@@ -149,11 +148,11 @@ export class ExpressionController {
     this.speechEnergy = this.clamp(energy)
   }
 
-  private parseVrmEmotion(vrmEmotion?: string): Record<string, number> | null {
-    if (!vrmEmotion) return null
+  private parseAvatarEmotion(avatarEmotion?: string): Record<string, number> | null {
+    if (!avatarEmotion) return null
     const result: Record<string, number> = {}
 
-    for (const part of vrmEmotion.split(',')) {
+    for (const part of avatarEmotion.split(',')) {
       const [rawName, rawWeight] = part.split(':')
       const name = rawName?.trim()
       if (!name) continue

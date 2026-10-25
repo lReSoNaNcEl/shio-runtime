@@ -61,14 +61,25 @@ export class MainCharacterResponsePort implements CharacterResponsePort {
     onStreamEvent?: (event: CharacterReplyStreamEvent) => void,
     origin?: CharacterReplyOrigin,
   ): Promise<AssistantReplyDraft> {
+    let resolveStreamCompletion: (() => void) | undefined
+    // The invoke result and pushed stream events use separate IPC channels. Keep
+    // the listener alive until the terminal event so queued tail deltas cannot be lost.
+    const streamCompletion = onStreamEvent
+      ? new Promise<void>((resolve) => {
+          resolveStreamCompletion = resolve
+        })
+      : undefined
     const unsubscribe = onStreamEvent
       ? window.api.llm.onReplyStreamEvent((event) => {
-          if (event.turnId === turnId) onStreamEvent(event)
+          if (event.turnId !== turnId) return
+          if (event.type === 'completed') resolveStreamCompletion?.()
+          onStreamEvent(event)
         })
       : undefined
     let reply: Awaited<ReturnType<Window['api']['llm']['reply']>>
     try {
       reply = await window.api.llm.reply(turnId, userText, screenContextId, origin)
+      if (reply.ok) await streamCompletion
     } finally {
       unsubscribe?.()
     }

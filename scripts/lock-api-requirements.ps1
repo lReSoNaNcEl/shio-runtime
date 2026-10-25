@@ -19,12 +19,16 @@ function Invoke-Checked {
 }
 
 try {
-    $version = (& py -3.12 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')").Trim()
+    $lockPython = $env:SHIO_API_PYTHON
+    if ([string]::IsNullOrWhiteSpace($lockPython)) {
+        $lockPython = Join-Path $apiRoot '.venv\Scripts\python.exe'
+    }
+    $version = (& $lockPython -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')").Trim()
     if ($LASTEXITCODE -ne 0 -or $version -ne "3.12") {
         throw "Python 3.12 is required to generate API dependency locks."
     }
 
-    Invoke-Checked py -3.12 -m venv $tempRoot
+    Invoke-Checked $lockPython -m venv $tempRoot
     Invoke-Checked $venvPython -m pip install --upgrade "pip>=25.3,<26"
     Invoke-Checked $venvPython -m pip install -r (Join-Path $apiRoot "requirements-tools.txt")
 

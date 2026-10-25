@@ -44,7 +44,7 @@ import type {
   ScreenContextResult,
   ScreenContextSource,
 } from '../screen-context/contracts'
-import type { SpeechAudioBoundaryTelemetry, SpeechTextNormalizationTelemetry } from '../speech'
+import type { SpeechStreamRendererPort, SpeechStreamStart } from '../speech'
 import type { SpeechServiceErrorCode } from '../speech/errors'
 import type { ReleaseInfo, RendererFailureReport, RuntimeSupportBundle } from '../system'
 
@@ -58,7 +58,7 @@ export interface SpeechHealthCapabilities {
 export interface OverlayPresentationConfig {
   uiLocale: AppSettings['uiLocale']
   uiTheme: AppSettings['uiTheme']
-  vrmAssetHandle: string
+  avatarAssetId: string
   overlayTransparentBackground: string
   overlayScale: string
   overlayViewMode: string
@@ -70,9 +70,6 @@ export interface OverlayPresentationApi {
   config: {
     get: () => Promise<OverlayPresentationConfig>
     onUpdated: (callback: (settings: OverlayPresentationConfig) => void) => () => void
-  }
-  vrm: {
-    read: (assetHandle: string) => Promise<{ ok: boolean; buffer?: ArrayBuffer; error?: string }>
   }
   avatarState: {
     get: () => Promise<unknown>
@@ -193,25 +190,7 @@ export interface ShioRuntimeApi {
       latencyMs?: number
       error?: string
     }>
-    synthesizeReply: (
-      turnId: string,
-      replyText: string,
-      emotionKey: string,
-    ) => Promise<{
-      ok: boolean
-      audioBuffer?: ArrayBuffer
-      emotionKey?: string
-      requestedEmotion?: string
-      textEmotion?: string
-      vrmEmotion?: string
-      latencyMs?: string
-      generatedLatencyMs?: string
-      cache?: string
-      normalization?: SpeechTextNormalizationTelemetry
-      audioBoundaries?: SpeechAudioBoundaryTelemetry
-      error?: string
-      errorCode?: SpeechServiceErrorCode
-    }>
+    openStream: (input: SpeechStreamStart) => SpeechStreamRendererPort
     cancelSynthesis: (turnId: string) => Promise<{ ok: boolean }>
   }
   memory: MemoryManagementApi & { clear: () => Promise<unknown> }
@@ -223,18 +202,6 @@ export interface ShioRuntimeApi {
     get: () => Promise<AppSettings>
     save: (settings: Partial<AppSettings>) => Promise<{ ok: boolean; error?: string }>
     onUpdated: (callback: (settings: AppSettings) => void) => () => void
-  }
-  vrm: {
-    pick: () => Promise<{
-      ok: boolean
-      assetHandle?: string
-      displayName?: string
-      error?: string
-    }>
-    read: (assetHandle: string) => Promise<{ ok: boolean; buffer?: ArrayBuffer; error?: string }>
-  }
-  vrma: {
-    pick: () => Promise<{ ok: boolean; animPath?: string; buffer?: ArrayBuffer; error?: string }>
   }
   overlay: {
     toggle: () => Promise<{ visible: boolean }>

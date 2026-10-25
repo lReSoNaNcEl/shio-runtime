@@ -1,20 +1,10 @@
 import assert from 'node:assert/strict'
-import {
-  mkdtempSync,
-  readdirSync,
-  readFileSync,
-  rmdirSync,
-  unlinkSync,
-  writeFileSync,
-} from 'node:fs'
-import { tmpdir } from 'node:os'
+import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { describe, it } from 'vitest'
 
-import { VrmAssetRegistry } from '../../src/main/assets/VrmAssetRegistry'
 import { IPC_CHANNEL_CAPABILITIES, IpcAuthorization } from '../../src/main/ipc/IpcAuthorization'
-import { vrmAssetHandleSchema } from '../../src/main/ipc/payloadSchemas'
 import { installRendererNavigationGuards } from '../../src/main/windows/windowSecurity'
 
 function main(): void {
@@ -35,7 +25,7 @@ function main(): void {
     const registrations = new Map<string, string>()
     for (const filePath of collectTypeScriptFiles(mainSourceRoot)) {
       const source = readFileSync(filePath, 'utf8')
-      for (const match of source.matchAll(/ipcMain\.handle\(\s*['"]([^'"]+)['"]/g)) {
+      for (const match of source.matchAll(/ipcMain\.(?:handle|on)\(\s*['"]([^'"]+)['"]/g)) {
         const channel = match[1]
         assert(!registrations.has(channel), `duplicate IPC handler: ${channel}`)
         registrations.set(channel, source.slice(match.index, match.index + 1_500))
@@ -48,6 +38,11 @@ function main(): void {
       'IPC inventory and capability matrix differ',
     )
     for (const [channel, registration] of registrations) {
+      if (channel === 'tts:open-stream') {
+        assert.match(registration, /authorization\.assert\(event, 'tts:open-stream'\)/)
+        assert.match(registration, /streamStartSchema\.parse\(input\)/)
+        continue
+      }
       const escapedChannel = channel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
       assert(
         new RegExp(`authorization\\.handle(?:Payload)?\\(\\s*['"]${escapedChannel}['"]`).test(
@@ -121,25 +116,11 @@ function main(): void {
   }
 
   function assertOpaqueAssetBoundary(): void {
-    assert.throws(
-      () => vrmAssetHandleSchema.parse('C:\\Users\\attacker\\arbitrary.vrm'),
-      /Invalid VRM asset handle/,
-    )
-
-    const directory = mkdtempSync(join(tmpdir(), 'shio-security-repro-'))
-    const selectedPath = join(directory, 'selected.vrm')
-    const expected = Buffer.from([0x67, 0x6c, 0x54, 0x46])
-    try {
-      writeFileSync(selectedPath, expected)
-      const registry = new VrmAssetRegistry()
-      const selected = registry.registerSelectedAsset(selectedPath)
-      assert(vrmAssetHandleSchema.safeParse(selected.assetHandle).success)
-      assert.deepEqual(Buffer.from(registry.readAsset(selected.assetHandle)), expected)
-      assert.throws(() => registry.readAsset(selectedPath), /Unknown VRM asset handle/)
-    } finally {
-      unlinkSync(selectedPath)
-      rmdirSync(directory)
-    }
+    const channels = Object.keys(IPC_CHANNEL_CAPABILITIES)
+    assert(!channels.some((channel) => /vrm|vrma|avatar:read|avatar:pick/.test(channel)))
+    const preload = readFileSync(join(desktopRoot, 'src/preload/index.ts'), 'utf8')
+    assert(!preload.includes('vrm:read'))
+    assert(!preload.includes('pickVrm'))
   }
 
   function assertWindowAndPreloadBoundaries(): void {
@@ -189,7 +170,6 @@ function main(): void {
       'avatar-mouth:get',
       'avatar-state:get',
       'overlay-presentation:config:get',
-      'vrm:read',
     ])
     assert(!/credential|project-awareness|plugins:|config:save|overlay:toggle/.test(overlayPreload))
     assert(!overlayPreload.includes('capabilities:snapshot'))

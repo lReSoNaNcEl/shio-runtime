@@ -4,7 +4,7 @@ import type { EffectiveBlinkProfile } from './BlinkProfileResolver'
  * BlinkController — Auto Blink source.
  *
  * Owns only blink *timing* and produces a single 0..1 blink weight. It does not
- * write into the VRM Expression Manager; the AvatarExpressionMixer reads
+ * write into the facial target; the AvatarExpressionMixer reads
  * {@link getWeight} each frame and owns the blink expression domain.
  *
  * The controller no longer composes profiles itself and no longer accepts the

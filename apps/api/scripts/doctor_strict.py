@@ -37,7 +37,14 @@ def main() -> int:
     if Path(sys.prefix).resolve() != required_venv:
         fail(f"Expected venv {required_venv}; selected {Path(sys.prefix).resolve()}")
 
-    for module_name in ("faster_whisper", "silero_vad", "f5_tts"):
+    for module_name in (
+        "faster_whisper",
+        "silero_vad",
+        "transformers",
+        "hydra",
+        "dac",
+        "onnxruntime",
+    ):
         importlib.import_module(module_name)
 
     import torch
@@ -63,8 +70,6 @@ def main() -> int:
         fail(f"Invalid API bind address: {settings.HOST!r}")
     if not 1 <= settings.PORT <= 65535:
         fail(f"Invalid API port: {settings.PORT}")
-    if settings.F5_ALLOW_MOCK:
-        fail("F5_ALLOW_MOCK must be false for a published Speech Pack")
     verify(model_root())
 
     manifest_path = (SERVICE_ROOT / settings.VOICE_MANIFEST_PATH).resolve()

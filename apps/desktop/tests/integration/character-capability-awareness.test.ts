@@ -59,7 +59,7 @@ class CapabilityPlugin implements BundledPlugin {
 
 const settings = {
   uiLocale: 'ru',
-  vrmAssetHandle: 'vrm:configured',
+  avatarAssetId: 'vrm:configured',
 } as AppSettings
 
 const browserControlManifest: PluginManifest = {

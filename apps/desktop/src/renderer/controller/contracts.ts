@@ -19,7 +19,7 @@ import type { LookAtDebugState } from '../avatar/embodiment/gaze/LookAtRuntime'
 import type { EarBehaviorDebugState } from '../avatar/embodiment/secondary-motion/EarBehaviorRuntime'
 import type { TailBehaviorDebugState } from '../avatar/embodiment/secondary-motion/TailBehaviorRuntime'
 import type { MouthWeights } from '../avatar/embodiment/speech/LipSync'
-import type { VrmBodyActionDebugState } from '../avatar/rendering/three/VrmModel'
+import type { AvatarBodyActionDebugState } from '../avatar/rendering/two/AvatarModel'
 import type { OverlayViewMode } from '../avatar/tuning/cameraTuning'
 import type { BacklogSelectorDiagnostics } from '../conversation/admission/BacklogSelector'
 import type { AvatarMode, AvatarRuntime } from '../runtime/AvatarRuntime'
@@ -72,8 +72,8 @@ export interface ControllerState {
   }
   llmHealth: { state: 'unknown' | 'checking' | 'ok' | 'error'; detail: string }
   llmReadiness: LlmReadiness
-  vrmConfigured: boolean
-  vrmLoaded: boolean
+  avatarConfigured: boolean
+  avatarLoaded: boolean
   faceTrackingEnabled: boolean
   continuousListening: ContinuousListeningProjection
   overlayState: 'off' | 'opening' | 'on' | 'closing' | 'error'
@@ -101,13 +101,13 @@ export interface RuntimeDebugSnapshot {
   eventHistory: readonly RuntimeEvent[]
   avatarMode: AvatarMode
   emotionKey: string
-  vrmEmotion: string
+  avatarEmotion: string
   currentBodyAnimation: string
   currentBodyAnimationFile: string
   currentBodyAnimationLoop: boolean
   currentBodyAnimationStatus: AnimationPlaybackStatus
-  bodyActions: VrmBodyActionDebugState
-  animationAssetCache: ReturnType<AvatarRuntime['getDebugState']>['animationAssetCache']
+  bodyActions: AvatarBodyActionDebugState
+  model2d: ReturnType<AvatarRuntime['getDebugState']>['model2d']
   previousBodyAnimation: string
   activeTransitionPolicy: string
   activeBlendDuration: number

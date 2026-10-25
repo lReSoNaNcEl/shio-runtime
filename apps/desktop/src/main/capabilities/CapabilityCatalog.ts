@@ -214,7 +214,7 @@ export class CapabilityCatalog {
           : 'degraded'
     // Preview attachment is view-scoped: navigating away detaches the canvas without removing
     // Avatar Runtime's loaded capability. Runtime Health still reports that presentation fact.
-    const avatarState: CapabilityAvailability = !settings.vrmAssetHandle
+    const avatarState: CapabilityAvailability = !settings.avatarAssetId
       ? 'needs-setup'
       : !avatarHealth ||
           avatarHealth.status === 'not-initialized' ||
@@ -350,7 +350,7 @@ export class CapabilityCatalog {
         descriptionKey: 'capabilities.avatar.description',
         availability: avatarState,
         navigationTarget: { kind: 'settings', id: 'avatar' },
-        reasonKey: !settings.vrmAssetHandle
+        reasonKey: !settings.avatarAssetId
           ? 'capabilities.reason.avatarSetup'
           : avatarState === 'degraded'
             ? 'capabilities.reason.avatarStarting'

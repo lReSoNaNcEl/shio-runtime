@@ -8,7 +8,8 @@ rules.
 
 ## 1. Repository
 
-- `apps/desktop` — Electron, React, TypeScript, Three.js client.
+- `apps/desktop` — Electron, React, TypeScript, S22 2D client.
+- `apps/shio-2d` — bundled Shio S22 renderer, model assets and qualification.
 - `apps/api` — Python, FastAPI, ASR and TTS service (port `8000`).
 - `launcher` — release installation and process coordination.
 - `scripts` — repository and release tooling.
@@ -17,14 +18,14 @@ rules.
 
 ## Desktop application rules
 
-`apps/desktop` is the Electron + React + TypeScript + Three.js client.
+`apps/desktop` is the Electron + React + TypeScript + S22 2D client.
 
 Architecture and ownership:
 
 - Controller coordinates existing Runtimes but does not absorb their ownership.
 - AudioPlayer is the sole audio playback owner.
 - AvatarExpressionMixer is the sole final facial-expression writer. Do not write
-  to VRM facial expressions outside the mixer.
+  to final facial values outside the mixer.
 - Overlay is a presentation consumer, not an application Runtime.
 - Character State is the single source of truth for character state.
 - Character State mutations use domain-limited writers; do not add a generic
@@ -352,13 +353,13 @@ Desktop quality and validation:
   deterministic Browser Control repro plus the opt-in real-site qualification
   (`npm run desktop:browser-control:qualification`) before commit.
 - When live validation is explicitly requested after Avatar Runtime changes,
-  verify VRM loading, idle animation, `loadAnimation`, Debug Preview, Speaking,
-  LipSync, Overlay, absence of A-pose, and Runtime Health. Animation Runtime
+  verify S22 loading, native idle/gestures, Debug Preview, Speaking,
+  LipSync, Overlay, both UI themes, disposal and Runtime Health. Animation Runtime
   changes additionally require idle, speaking, transitions, and preview checks.
 
 ## API service rules
 
-`apps/api` is the FastAPI service that owns ASR and F5-TTS.
+`apps/api` is the FastAPI service that owns ASR and Fish Audio S2 Pro.
 
 Architecture and ownership:
 
@@ -369,10 +370,10 @@ Architecture and ownership:
 - Resolve service assets relative to the service root using `Path(__file__)` /
   `apps/api`, never from the monorepo working directory.
 - FastAPI runs on port `8000`. ASR uses faster-whisper with Silero VAD. TTS uses
-  one in-process `F5LocalEngine` wrapping `f5_tts.api.F5TTS`.
-- `/synthesize` returns WAV plus engine, language, emotion, VRM-emotion, latency,
-  RTF, and duration headers.
-- `/voices` exposes voice presets, available references, and VRM expression
+  one revision-pinned `FishS2ProEngine` with one owned cancellable subprocess.
+- `/tts/stream` is the sole normal Character synthesis path: incremental safe text and typed delivery in, ordered mono Float32 PCM out. Audio acknowledgements provide bounded backpressure.
+- Warm up the compiled sampler before declaring real synthesis ready; cancellation flushes local playback before terminating upstream work.
+- `/voices` exposes voice presets, available references, and S22 expression
   mappings.
 
 API commands and validation:
@@ -391,9 +392,9 @@ API commands and validation:
   `apps/api/.ruff_cache`; they must not create `.ruff_cache` in the repository root.
 - Run `npm run api:lint`, `npm run api:format:check`, and `npm run api:test`.
 - Do not rely on `py_compile` alone. Applicable endpoint validation covers
-  `/health`, `/voices`, `/emotions`, `/synthesize`, and `/recognize`; synthesis
-  validation must confirm that an actual WAV is produced.
-- `/health` must report `engines.f5.mode` as `real` for a real-engine endpoint
+  `/health`, `/voices`, `/emotions`, `/tts/stream`, and `/recognize`; synthesis
+  validation must confirm that ordered binary PCM is produced.
+- `/health` must report `synthesis.engine` as `fish-s2-pro`, `mode` as `real`, streaming and voice cloning ready for a real-engine endpoint
   check.
 
 Voice registry and references:
@@ -401,11 +402,11 @@ Voice registry and references:
 - LLM output should use a single leading normalized emotion tag where possible.
   Supported tags are `neutral`, `calm`, `warm`, `happy`, `laugh`, `chuckle`,
   `sad`, `crying`, `angry`, `fear`, `surprised`, `gasp`, `sigh`, `groan`, and
-  `whisper`.
+  `whisper`; additional S22 semantics are generated from `contracts/emotions.v2.json`.
 - `app/tts/emotion.py` removes normalized emotion tags and maps them to TTS
-  emotions and VRM expression weights.
+  emotions and S22 expression weights.
 - `app/tts/voice_registry.py` is the voice-registry owner and resolves logical
-  voice IDs to F5 reference audio.
+  voice IDs to provider-neutral reference audio.
 - Reference assets use
   `voices/<dataset>/<voice>/reference.wav` with an adjacent `reference.txt`.
 - A voice is available only when both reference files exist.
@@ -416,8 +417,9 @@ Voice registry and references:
 - Voice sync must remain single-flight, revision-pinnable, validated, and atomic;
   interrupted downloads must not produce a partially available voice.
 - Confirm `voice_manifest.json` and reference assets resolve from `apps/api`.
-- Server-side F5 knobs remain in `.env`: `F5_NFE_STEP`, `F5_CFG_STRENGTH`, and
-  `F5_USE_ACCENT`.
+- Fish source/model revisions are immutable release configuration. Conditioning identities include voice ID, reference audio hash, transcript hash and model revision.
+- The canonical cue list is `contracts/emotions.v2.json`; run `npm run emotions:sync` after changing it. Every cue must map to Fish tags and an existing S22 expression.
+- Validate S22 with `npm run avatar:test`, `npm run avatar:qualify`, and `npm run desktop:qualify:speech-2d`. Never modify the original authoring directory during a runtime migration.
 - Never commit model caches, secrets, generated audio, or the local virtual
   environment.
 
@@ -622,7 +624,7 @@ instructions. Do not use release notes as a substitute for the changelog.
 7. By default, perform clean-machine qualification on the supported platform and hardware.
    For the current Windows speech bundle this includes launcher first-run setup,
    repair/doctor behavior, Desktop startup, API health, real ASR/TTS, microphone,
-   VRM loading, playback, shutdown, and ownership-safe API cleanup.
+   S22 loading, playback, shutdown, and ownership-safe API cleanup.
    If the user explicitly directs publication after being told which qualification
    remains incomplete, treat that repeated direction as an informed qualification
    waiver and continue. Record every waived check in the release notes and final report.

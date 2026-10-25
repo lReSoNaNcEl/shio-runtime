@@ -1,6 +1,9 @@
 # apps/desktop
 
-Electron + React + Three.js client (VRM avatar, LLM orchestration, mic capture).
+Electron + React + S22 2D client (bundled avatar, LLM orchestration, mic capture).
+
+The experimental Fish/S22 setup and qualification commands are documented in
+[EXPERIMENT-FISH-S22.md](../../docs/EXPERIMENT-FISH-S22.md).
 Connects to the local Speech service over HTTP only.
 
 - Architecture: [../../ARCHITECTURE.md](../../ARCHITECTURE.md)

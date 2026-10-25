@@ -103,8 +103,8 @@ export function useSettingsDialogState({
     setOverlayTransparentBackground,
     setOverlayViewMode,
     setOverlayWidth,
-    setVrmName,
-    vrmName,
+    setAvatarName,
+    avatarName,
   } = useAvatarSettings()
   const {
     activeProvider,
@@ -176,7 +176,7 @@ export function useSettingsDialogState({
         setProviderSettings(cfg.llm.providers)
         setBacklogRole(cfg.llm?.roles?.backlogSelector ?? defaultBacklogSelectorRole)
         setComputerUseVisionRole(cfg.llm?.roles?.computerUseVision ?? defaultComputerUseVisionRole)
-        setVrmName(cfg.vrmAssetName)
+        setAvatarName(cfg.avatarAssetName)
         setOverlayWidth(parseNumberSetting(cfg.overlayWidth, overlayDefaults.width, 250, 2000))
         setOverlayHeight(parseNumberSetting(cfg.overlayHeight, overlayDefaults.height, 250, 2000))
         setOverlayMargin(parseNumberSetting(cfg.overlayMargin, overlayDefaults.margin, 0, 500))
@@ -343,14 +343,6 @@ export function useSettingsDialogState({
     providers,
   ])
 
-  const pickVrm = async (): Promise<void> => {
-    const result = await window.api.vrm.pick()
-    if (result.ok && result.assetHandle) {
-      setVrmName(result.displayName ?? '')
-      controller.selectVrm(result.assetHandle)
-    }
-  }
-
   const saveLlmCredential = async (): Promise<void> => {
     const apiKey = keyInput.trim()
     if (!apiKey) return
@@ -500,7 +492,7 @@ export function useSettingsDialogState({
     const timer = window.setTimeout(() => {
       void persistPatch({
         ttsLanguage: lang,
-        ttsEngine: 'f5',
+        ttsEngine: 'fish-s2-pro',
       }).catch(() => setSaveState('error'))
     }, 650)
     return () => window.clearTimeout(timer)
@@ -657,7 +649,7 @@ export function useSettingsDialogState({
     },
     avatar: {
       state: {
-        vrmName,
+        avatarName,
         overlayVisible,
         overlayViewMode,
         overlayWidth,
@@ -670,7 +662,6 @@ export function useSettingsDialogState({
         overlayScalePercent,
       },
       actions: {
-        pickVrm,
         toggleOverlay,
         setOverlayViewMode,
         setOverlayWidth,

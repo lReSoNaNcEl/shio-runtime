@@ -4,9 +4,12 @@ import { z } from 'zod'
 export const HealthSchema = z.object({
   status: z.string(),
   asr: z.object({ status: z.string() }).partial().passthrough().optional(),
-  engines: z
+  synthesis: z
     .object({
-      f5: z.object({ status: z.string(), mode: z.string() }).partial().passthrough().optional(),
+      status: z.string(),
+      engine: z.literal('fish-s2-pro'),
+      streaming: z.boolean(),
+      voiceCloning: z.boolean(),
     })
     .partial()
     .passthrough()

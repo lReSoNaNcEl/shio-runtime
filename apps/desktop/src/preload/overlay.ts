@@ -14,9 +14,6 @@ const api = {
       return () => ipcRenderer.removeListener('overlay-settings:updated', listener)
     },
   },
-  vrm: {
-    read: (assetHandle: string) => ipcRenderer.invoke('vrm:read', assetHandle),
-  },
   avatarState: {
     get: () => ipcRenderer.invoke('avatar-state:get'),
     onUpdated: (callback: (state: unknown) => void) => {

@@ -8,8 +8,9 @@ from fastapi.staticfiles import StaticFiles
 
 from app.asr import SileroVAD, WhisperASR
 from app.config import settings
-from app.routes import health, recognize, synthesize, ws
-from app.tts.f5_local import F5LocalEngine
+from app.routes import health, recognize, tts, tts_stream, ws
+from app.tts.fish import FishS2ProEngine
+from app.tts.runtime import set_engine
 
 logging.basicConfig(
     level=logging.INFO,
@@ -51,43 +52,36 @@ async def init_asr():
 
 
 async def init_tts_engines():
-    """Initialize F5-TTS locally."""
-    logger.info("Initializing F5-TTS...")
-    f5_engine = None
+    """Initialize the one real Fish Audio S2 Pro engine."""
+    logger.info("Initializing Fish Audio S2 Pro...")
+    engine = None
     try:
-        f5_engine = F5LocalEngine(
+        engine = FishS2ProEngine(
             device=settings.DEVICE,
-            model_id=settings.F5_MODEL_ID,
-            model_revision=settings.F5_MODEL_REVISION,
-            vocoder_revision=settings.F5_VOCODER_REVISION,
-            accent_revision=settings.RUACCENT_MODEL_REVISION,
-            ckpt_subpath=settings.F5_CKPT_SUBPATH,
-            vocab_subpath=settings.F5_VOCAB_SUBPATH,
+            model_id=settings.FISH_MODEL_ID,
+            model_revision=settings.FISH_MODEL_REVISION,
+            source_revision=settings.FISH_SOURCE_REVISION,
             model_root=settings.SHIO_MODEL_ROOT,
-            allow_mock=settings.F5_ALLOW_MOCK,
-            use_accent=settings.F5_USE_ACCENT,
-            nfe_step=settings.F5_NFE_STEP,
-            cfg_strength=settings.F5_CFG_STRENGTH,
-            force_duration=settings.F5_TTS_FORCE_DURATION,
-            max_chunk_chars=settings.F5_CHUNK_MAX_CHARS,
-            max_chunk_seconds=settings.F5_CHUNK_MAX_SECONDS,
-            chunk_crossfade_ms=settings.F5_CHUNK_CROSSFADE_MS,
-            tail_validation=settings.F5_TAIL_VALIDATION,
-            target_rms_db=settings.F5_TARGET_RMS_DB,
+            source_path=settings.FISH_SOURCE_PATH,
+            model_path=settings.FISH_MODEL_PATH,
+            sample_rate=settings.FISH_SAMPLE_RATE,
+            compile=settings.FISH_COMPILE,
         )
         if settings.WARMUP_ON_STARTUP:
-            f5_engine.warmup()
-        mode = "real" if f5_engine.model is not None else "mock"
-        health.set_engine_ready("f5", mode == "real" or settings.F5_ALLOW_MOCK, mode)
-        logger.info("F5-TTS loaded (%s)", mode)
+            engine.warmup()
+        health.set_engine_ready("fish-s2-pro", True, "real")
+        logger.info("Fish Audio S2 Pro loaded")
     except Exception as e:
-        logger.error("Failed to load F5-TTS: %s", e)
-        health.set_engine_ready("f5", False, "unavailable")
+        logger.error("Failed to load Fish Audio S2 Pro: %s", e)
+        if engine is not None:
+            engine.close()
+        engine = None
+        health.set_engine_ready("fish-s2-pro", False, "unavailable")
 
-    synthesize.init_engines(f5_engine)
-    if f5_engine is None:
+    set_engine(engine)
+    if engine is None:
         logger.warning("No TTS engines available")
-    return f5_engine
+    return engine
 
 
 @asynccontextmanager
@@ -95,19 +89,24 @@ async def lifespan(app: FastAPI):
     logger.info("Starting up application...")
     try:
         _asr_instances["whisper"], _asr_instances["vad"] = await init_asr()
-        _tts_engines["f5"] = await init_tts_engines()
+        _tts_engines["fish-s2-pro"] = await init_tts_engines()
         logger.info("Application startup completed")
     except Exception as e:
         logger.error("Startup failed: %s", e)
         raise
 
-    yield
-
-    logger.info("Application shutdown completed")
+    try:
+        yield
+    finally:
+        tts_stream.cancel_active_sessions()
+        for engine in _tts_engines.values():
+            if engine is not None:
+                engine.close()
+        logger.info("Application shutdown completed")
 
 
 API_DESCRIPTION = """
-Local ASR + F5-TTS service for Russian and English.
+Local ASR + Fish Audio S2 Pro service for Russian and English.
 
 * **ASR**: faster-whisper + streaming Silero VAD, WAV fallback and continuous PCM WebSocket.
 * **Streaming protocol**: connect to `/ws/asr` (`/ws` compatibility alias). The
@@ -115,8 +114,8 @@ Local ASR + F5-TTS service for Russian and English.
   publishes the versioned control messages, binary audio contract, server event
   types, VAD tuning and resource-safety invariants because OpenAPI does not model
   WebSocket operations directly.
-* **TTS**: F5-TTS with logical voice IDs resolved through `voice_manifest.json`
-  plus matching transcript files (`.wav.txt` or `.txt`).
+* **TTS**: Fish Audio S2 Pro bi-streaming text-in/audio-out over `/tts/stream`, with
+  logical voice IDs resolved through `voice_manifest.json` and matching transcripts.
 * **Emotion tags**: loaded from `emotion_manifest.json` through Emotion Registry.
 * **Emotion contract**: `/emotions` exposes the shared speech-side emotion contract.
 
@@ -128,18 +127,21 @@ TAGS_METADATA = [
         "name": "asr",
         "description": "Speech recognition: WAV upload (`/recognize`) and continuous PCM WebSocket (`/ws/asr`, `/ws` alias).",
     },
-    {"name": "tts", "description": "F5-TTS: synthesis, voices, and emotion metadata."},
+    {
+        "name": "tts",
+        "description": "Fish Audio S2 Pro streaming synthesis, voices, and emotion metadata.",
+    },
     {"name": "health", "description": "Service and engine status."},
 ]
 
 app = FastAPI(
-    title="Speech ASR + F5-TTS",
+    title="Speech ASR + Fish Audio S2 Pro",
     description=API_DESCRIPTION,
     version="3.1.0",
     lifespan=lifespan,
     openapi_tags=TAGS_METADATA,
     contact={"name": "Resonance", "url": "https://t.me/IReSoNaNcEI"},
-    license_info={"name": "Check F5-TTS model/package license before commercial use"},
+    license_info={"name": "Check FishS2Pro model/package license before commercial use"},
 )
 
 app.add_middleware(
@@ -158,7 +160,8 @@ if web_dir.exists():
 app.include_router(health.router)
 app.include_router(recognize.router)
 app.include_router(ws.router)
-app.include_router(synthesize.router)
+app.include_router(tts.router)
+app.include_router(tts_stream.router)
 
 
 @app.get("/", include_in_schema=False)
@@ -168,7 +171,7 @@ async def root():
     index_path = Path(__file__).parent.parent / "web" / "index.html"
     if index_path.exists():
         return FileResponse(str(index_path))
-    return {"message": "Welcome to Speech ASR + F5-TTS Service"}
+    return {"message": "Welcome to Speech ASR + Fish Audio S2 Pro Service"}
 
 
 if __name__ == "__main__":

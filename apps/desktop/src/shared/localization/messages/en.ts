@@ -1,6 +1,30 @@
 import type { TranslationKey } from './ru'
 
 export const enMessages: Record<TranslationKey, string> = {
+  'avatar2d.emotion': 'Emotion',
+  'avatar2d.intensity': 'Intensity',
+  'avatar2d.framing': 'Framing',
+  'avatar2d.tail': 'Tail position',
+  'avatar2d.tail.side': 'Side',
+  'avatar2d.tail.back': 'Back',
+  'avatar2d.emotion.neutral': 'Neutral',
+  'avatar2d.emotion.happy': 'Happy',
+  'avatar2d.emotion.sad': 'Sad',
+  'avatar2d.emotion.angry': 'Angry',
+  'avatar2d.emotion.surprised': 'Surprised',
+  'avatar2d.emotion.shy': 'Shy',
+  'avatar2d.emotion.amused': 'Amused',
+  'avatar2d.emotion.sleepy': 'Sleepy',
+  'avatar2d.emotion.excited': 'Excited',
+  'avatar2d.emotion.worried': 'Worried',
+  'avatar2d.emotion.confused': 'Confused',
+  'avatar2d.emotion.proud': 'Proud',
+  'avatar2d.emotion.pouting': 'Pouting',
+  'avatar2d.emotion.crying': 'Crying',
+  'avatar2d.emotion.laugh': 'Laughing',
+  'avatar2d.emotion.loving': 'Loving',
+  'avatar2d.emotion.dazed': 'Dazed',
+  'avatar2d.bundled': 'Bundled Shio S22 · 2D',
   'plugins.browserControl.name': 'Browser Control',
   'plugins.browserControl.description':
     'A persistent isolated Google Chrome session with semantic and visual control.',
@@ -365,7 +389,7 @@ export const enMessages: Record<TranslationKey, string> = {
   'capabilities.reason.pluginSetup': 'The plugin is enabled but still needs setup.',
   'capabilities.reason.pluginDegraded': 'The plugin is temporarily limited.',
   'capabilities.reason.pluginUnavailable': 'The plugin is currently unavailable.',
-  'capabilities.reason.avatarSetup': 'Choose a VRM model.',
+  'capabilities.reason.avatarSetup': 'Wait for the bundled S22 model to load.',
   'capabilities.reason.avatarStarting': 'The avatar is still starting.',
   'capabilities.reason.avatarUnavailable': 'Avatar Runtime is currently unavailable.',
   'capabilities.reason.desktopBackendUnavailable':
@@ -958,13 +982,11 @@ export const enMessages: Record<TranslationKey, string> = {
   'camera.toggle.enable': 'Turn on camera, current mode {mode}',
   'camera.framing.open': 'Avatar framing: {mode}. Open menu.',
   'camera.label': 'Camera',
-  'camera.missingVrm.title': 'Avatar model is not configured',
-  'camera.missingVrm.description':
-    'The camera overlay has nothing to display because no VRM model is loaded.',
-  'camera.missingVrm.hint': 'Choose a .vrm file in Avatar settings, then turn the camera on again.',
-  'camera.missingVrm.openSettings': 'Open Avatar settings',
-  'camera.missingVrm.triggerDescription':
-    'Camera unavailable: choose a VRM model in Avatar settings.',
+  'camera.missingAvatar.title': 'Avatar model is not configured',
+  'camera.missingAvatar.description': 'The bundled S22 model is still loading.',
+  'camera.missingAvatar.hint': 'Wait for S22 to load, then turn the camera on again.',
+  'camera.missingAvatar.openSettings': 'Open Avatar settings',
+  'camera.missingAvatar.triggerDescription': 'Camera unavailable: S22 has not loaded yet.',
 
   'health.project.title': 'Project Awareness',
   'health.project.state.disconnected': 'Disconnected',
@@ -1116,7 +1138,7 @@ export const enMessages: Record<TranslationKey, string> = {
     'Speech API connection, service HUD, and access to local logs.',
   'settings.developerAnimationHud.title': 'Show active animation name',
   'settings.developerAnimationHud.description':
-    'Displays the current .vrma filename above the avatar in the Overlay window. Use Diagnostics for regular runtime inspection.',
+    'Displays the current S22 gesture above the avatar in the Overlay window. Use Diagnostics for regular runtime inspection.',
   'settings.saveFailed': 'Could not save settings',
   'settings.general.empty': 'General application settings do not need further configuration.',
   'settings.advanced.description': 'Diagnostics and advanced Runtime settings.',
@@ -1213,7 +1235,7 @@ export const enMessages: Record<TranslationKey, string> = {
   'settings.llm.smart.hint':
     'Uses a separate model only in ambiguous cases while streaming is enabled.',
 
-  'settings.avatar.model': 'VRM model',
+  'settings.avatar.model': 'S22 model',
   'settings.avatar.chooseFile': 'Choose file…',
   'settings.avatar.notSelected': 'No model selected',
   'settings.avatar.modelSection': 'Model',
@@ -1321,7 +1343,7 @@ export const enMessages: Record<TranslationKey, string> = {
   'controller.overlay.closeFailed': 'Could not close camera',
   'controller.microphoneAccessFailed': 'Could not access the microphone.',
   'controller.fileReadFailed': 'Could not read the file',
-  'controller.vrmLoadFailed': 'Could not load VRM: {error}',
+  'controller.avatarLoadFailed': 'Could not load S22: {error}',
   'controller.llm.checking': 'Checking model availability',
   'controller.llm.providerMissing': 'No provider selected',
   'controller.llm.providerAvailable': 'Provider is available',
@@ -1332,10 +1354,6 @@ export const enMessages: Record<TranslationKey, string> = {
   'controller.llm.unavailable': 'Provider is unavailable',
   'controller.llm.checkFailed': 'Could not check the provider',
 
-  'main.dialog.vrm.title': 'Choose a VRM model',
-  'main.dialog.vrm.filter': 'VRM model',
-  'main.dialog.vrma.title': 'Choose a VRM animation',
-  'main.dialog.vrma.filter': 'VRM animation',
   'main.error.unknownProvider': 'Unknown provider: {provider}',
   'main.error.llmCredentialValidation': 'Could not validate the LLM credential.',
   'main.error.invalidBacklog': 'Invalid backlog arbitration request',

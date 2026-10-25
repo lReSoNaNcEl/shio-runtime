@@ -5,6 +5,7 @@ import { app } from 'electron'
 import { z } from 'zod'
 
 import type { DesktopAuthorityMode } from '../shared/actions'
+import { BUNDLED_AVATAR_ASSET_ID } from '../shared/avatarAsset'
 import {
   type AppSettings,
   DESKTOP_CONFIG_SCHEMA_VERSION,
@@ -20,7 +21,6 @@ import {
   normalizeUiLocale,
   type UiLocale,
 } from '../shared/localization'
-import { vrmAssetRegistry } from './assets/VrmAssetRegistry'
 import { developerModeDefaults, resolveDeveloperModeSettings } from './configDefaults'
 import { defaultLlmConfig, type LlmCredentialStore, normalizeLlmConfig } from './llm'
 import { resolveLlmProviderAccountId, toPublicLlmConfig } from './llm/config'
@@ -43,7 +43,6 @@ export interface AppConfig {
   desktopAuthorityMode: DesktopAuthorityMode
   ttsLanguage: string
   ttsEngine: string
-  vrmPath: string
   micDeviceId: string
   overlayWidth: string
   overlayHeight: string
@@ -71,8 +70,7 @@ type StringConfigKey = Exclude<
 function stringDefaults(isPackaged = app.isPackaged): Record<StringConfigKey, string> {
   return {
     ttsLanguage: process.env.TTS_LANGUAGE ?? 'ru',
-    ttsEngine: process.env.TTS_ENGINE ?? 'f5',
-    vrmPath: '',
+    ttsEngine: process.env.TTS_ENGINE ?? 'fish-s2-pro',
     micDeviceId: '',
     overlayWidth: process.env.OVERLAY_WIDTH ?? '360',
     overlayHeight: process.env.OVERLAY_HEIGHT ?? '560',
@@ -291,13 +289,12 @@ export function getRendererConfig(): AppSettings {
           },
     (provider, accountId) => resolveLlmProviderAccountId(provider, accountId),
   )
-  const { vrmPath, ...publicConfig } = _config
-  const vrmAsset = vrmAssetRegistry.describeConfiguredAsset(vrmPath)
+  const publicConfig = _config
   return {
     ...publicConfig,
     llm,
-    vrmAssetHandle: vrmAsset.assetHandle,
-    vrmAssetName: vrmAsset.displayName,
+    avatarAssetId: BUNDLED_AVATAR_ASSET_ID,
+    avatarAssetName: 'Shio S22',
   }
 }
 
@@ -305,7 +302,7 @@ export function getOverlayPresentationConfig(): Pick<
   AppSettings,
   | 'uiLocale'
   | 'uiTheme'
-  | 'vrmAssetHandle'
+  | 'avatarAssetId'
   | 'overlayTransparentBackground'
   | 'overlayScale'
   | 'overlayViewMode'
@@ -316,7 +313,7 @@ export function getOverlayPresentationConfig(): Pick<
   return {
     uiLocale: config.uiLocale,
     uiTheme: config.uiTheme,
-    vrmAssetHandle: config.vrmAssetHandle,
+    avatarAssetId: config.avatarAssetId,
     overlayTransparentBackground: config.overlayTransparentBackground,
     overlayScale: config.overlayScale,
     overlayViewMode: config.overlayViewMode,

@@ -1,0 +1,15 @@
+{
+  "name": "shio-2d",
+  "version": "0.22.0",
+  "private": true,
+  "type": "module",
+  "description": "Bundled Shio S22 model, renderer, resources and qualification",
+  "scripts": {
+    "build": "node tools/verify-assets.mjs",
+    "test": "node --test tests/*.test.mjs",
+    "qualify": "node tools/qualify.mjs"
+  },
+  "devDependencies": {
+    "playwright-core": "1.62.1"
+  }
+}

@@ -94,7 +94,6 @@ export interface FacialDebugState {
   mouthTuning: MouthTuningDebug
   blinkTuning: BlinkTuningDebug
   blinkExpressions: string[]
-  vrmaFacialTracksDisabled: number
   speakingEye: SpeakingEyeDebug & {
     leftExpression: string
     rightExpression: string

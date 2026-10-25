@@ -1,5 +1,3 @@
-import type * as THREE from 'three'
-
 import type { CharacterEmbodimentIntent } from '../../shared/character-response'
 import type { CharacterState } from '../../shared/runtime'
 import { AvatarAnimationController } from './AvatarAnimationController'
@@ -16,7 +14,7 @@ import { AvatarIdleBehaviorController } from './AvatarIdleBehaviorController'
 import { AvatarIdleOrchestrator, type IdleOrchestratorDebugState } from './AvatarIdleOrchestrator'
 import { AvatarPlaybackCoordinator } from './AvatarPlaybackCoordinator'
 import type { AvatarPlaybackRequestSource } from './AvatarPlaybackRequestLog'
-import { toAvatarMode, toProceduralMode } from './AvatarRuntimeMappers'
+import { toAvatarMode } from './AvatarRuntimeMappers'
 import {
   AvatarSpeakingGestureScheduler,
   type SpeakingGestureDecision,
@@ -28,14 +26,14 @@ import { getAnimation } from './animationManifest'
 import type { DebugAvatarMode } from './avatarAnimations'
 import { resolveEmotionEmbodimentProfile } from './EmotionEmbodimentProfile'
 import { AvatarGazeArbiter } from './embodiment/gaze/AvatarGazeArbiter'
-import type { EarAxisOverride, EarImpulse } from './embodiment/secondary-motion/EarBehaviorRuntime'
+import type { EarImpulse } from './embodiment/secondary-motion/EarBehaviorRuntime'
 import { LipSync, type LipSyncStartRequest, type MouthWeights } from './embodiment/speech/LipSync'
 import type { SpeechPhrasePhase } from './embodiment/speech/PhraseEnvelopeController'
 import { OverlayAnimationPolicy } from './OverlayAnimationPolicy'
-import { VrmModel } from './rendering/three/VrmModel'
+import type { GazeTarget } from './rendering/two/AvatarModel'
+import { AvatarModel } from './rendering/two/AvatarModel'
 import type { OverlayViewMode } from './tuning/cameraTuning'
 import { speakingGestureTuning } from './tuning/speechTuning'
-import { avatarStartupTuning } from './tuning/startupTuning'
 
 export type { AvatarMode } from './AvatarStateMachine'
 export type { AvatarBehaviorTransitionLogEntry }
@@ -46,18 +44,18 @@ export type ReactionGestureTrigger =
   | 'user-interruption'
 
 export class AvatarController {
-  private vrmModel = new VrmModel()
-  private animations = new AvatarAnimationController(this.vrmModel)
+  private avatarModel = new AvatarModel()
+  private animations = new AvatarAnimationController(this.avatarModel)
   private behaviorEngine = new AvatarBehaviorEngine()
   private behaviorResolver = new AvatarBehaviorResolver()
   private gestures = new AvatarGestureScheduler()
   private speakingGestures = new AvatarSpeakingGestureScheduler()
-  private idleBehaviors = new AvatarIdleBehaviorController(this.vrmModel)
+  private idleBehaviors = new AvatarIdleBehaviorController(this.avatarModel)
   private idleOrchestrator = new AvatarIdleOrchestrator()
-  private playback = new AvatarPlaybackCoordinator(this.animations, this.vrmModel)
+  private playback = new AvatarPlaybackCoordinator(this.animations, this.avatarModel)
   private debugSnapshots = new AvatarDebugSnapshotBuilder()
-  private lipSync = new LipSync(this.vrmModel)
-  private stateEffects = new AvatarStateEffectApplier(this.vrmModel, this.lipSync)
+  private lipSync = new LipSync(this.avatarModel)
+  private stateEffects = new AvatarStateEffectApplier(this.avatarModel, this.lipSync)
   private stateMachine = new AvatarStateMachine()
   private gaze = new AvatarGazeArbiter()
   private lastEffect: AvatarStateEffect | null = null
@@ -110,24 +108,12 @@ export class AvatarController {
         this.playResolvedBehavior(idleEffect, 'idle-orchestrator', 'idle orchestrator tick')
       }
     }
-    // Keep the Ear Runtime self-driven from the render loop: sync its profile +
-    // emotion every frame from the current Character State (falling back to the
-    // state machine) so idle / AFK procedural motion keeps progressing on both
-    // the main avatar and the independent Mirror Overlay, without depending on
-    // discrete applyCharacterState events. Ear-only — facial profiles stay
-    // event-driven.
-    const earMode = toProceduralMode(state?.mode ?? mode)
-    const earEmotion = state
-      ? state.emotion || state.avatar.expression || 'neutral'
-      : this.stateMachine.getEmotion()
-    this.vrmModel.syncEarState(earMode, earEmotion)
-
     // Mirror weights are already the main avatar's final mixer output. Preserve
     // that composition marker on every frame; otherwise the overlay falls back
     // into its local idle PhraseEnvelope (articulationScale=0) and mutes the
     // externally supplied mouth immediately after the first synced frame.
     if (this.externalMouthWeights) {
-      this.vrmModel.setMouthWeights(this.externalMouthWeights, true)
+      this.avatarModel.setMouthWeights(this.externalMouthWeights, true)
     } else {
       // Resolve the current analyser frame before the facial mixer writes the
       // frame. The previous order mixed yesterday's mouth state and only then
@@ -135,34 +121,32 @@ export class AvatarController {
       // viseme and phrase-envelope transition.
       this.lipSync.update(delta)
     }
-    this.vrmModel.update(delta)
+    this.avatarModel.update(delta)
   }
 
-  async loadVrm(scene: THREE.Scene, buffer: ArrayBuffer): Promise<void> {
-    // A replacement model must not inherit the previous skeleton's queue or
-    // active-animation identity; otherwise the initial idle may be rejected as
-    // a duplicate even though the new skeleton has no body action yet.
+  async loadPuppet(canvas: HTMLCanvasElement): Promise<void> {
     this.stopAnimation()
-    await this.vrmModel.load(scene, buffer)
-    this.vrmModel.setSceneVisible(false)
-    try {
-      this.setMode('idle')
-      const animationReady = await this.animations.waitForLatestPlaybackRequest(
-        avatarStartupTuning.initialAnimationTimeoutMs,
-      )
-      if (!animationReady) {
-        console.warn('[ANIMDBG] initial animation bootstrap fell back to visible bind pose')
-      }
-    } finally {
-      // Bootstrap visibility is one-shot and failure-safe. Later animation
-      // loads never own scene visibility; stale/error startup falls back to the
-      // visible bind pose instead of leaving an empty overlay.
-      this.vrmModel.setSceneVisible(true)
-    }
+    await this.avatarModel.load(canvas)
+    this.lastCharacterStateKey = null
+    this.setMode('idle')
   }
 
-  async loadAnimation(buffer: ArrayBuffer, loop = true): Promise<void> {
-    await this.animations.loadExternal(buffer, loop)
+  unloadPresentation(): void {
+    this.avatarModel.unload()
+  }
+  setPresentationView(view: string, scale = 1): void {
+    this.avatarModel.setView(view, scale)
+  }
+  previewEmotion(emotion: string, intensity: number): void {
+    this.avatarModel.setExpressionIntensity(intensity)
+    this.setEmotion(emotion)
+  }
+  previewTailStyle(style: 'side' | 'back'): void {
+    this.avatarModel.setTailStyle(style)
+  }
+  setSpeechDelivery(emotion: string | null): void {
+    this.avatarModel.setSpeechDelivery(emotion)
+    this.lipSync.setEmotion(emotion ?? this.stateMachine.getEmotion())
   }
 
   stopAnimation(): void {
@@ -178,7 +162,7 @@ export class AvatarController {
     this.stopAnimation()
     this.lipSync.detach(undefined, true, true)
     this.externalMouthWeights = null
-    this.vrmModel.dispose()
+    this.avatarModel.dispose()
   }
 
   setMode(mode: AvatarMode): void {
@@ -192,11 +176,11 @@ export class AvatarController {
     this.lastCharacterState = state
     const mode = toAvatarMode(state.mode)
     const emotionKey = state.emotion || state.avatar.expression || 'neutral'
-    const vrmEmotion = state.avatar.vrmExpression
-    const semanticKey = `${mode}|${emotionKey}|${vrmEmotion ?? ''}|${JSON.stringify(this.effectiveEmbodimentIntent()) ?? ''}|browser=${this.gaze.browserScreenGazeActive()}|${options.lipSyncStart?.session.playbackId ?? ''}`
+    const avatarEmotion = state.avatar.avatarExpression
+    const semanticKey = `${mode}|${emotionKey}|${avatarEmotion ?? ''}|${JSON.stringify(this.effectiveEmbodimentIntent()) ?? ''}|browser=${this.gaze.browserScreenGazeActive()}|${options.lipSyncStart?.session.playbackId ?? ''}`
 
     if (semanticKey === this.lastCharacterStateKey) {
-      this.vrmModel.applyEmotion(emotionKey || 'neutral', vrmEmotion)
+      this.avatarModel.applyEmotion(emotionKey || 'neutral', avatarEmotion)
       this.playback.recordPlaybackOnly({
         animationId: this.playback.getCurrentContext()?.animationId ?? 'none',
         behaviorId: this.playback.getCurrentContext()?.behaviorId ?? 'none',
@@ -214,32 +198,32 @@ export class AvatarController {
 
     if (mode === 'speaking') {
       if (options.lipSyncStart)
-        this.startSpeaking(options.lipSyncStart, emotionKey, vrmEmotion, state)
-      else this.showSpeaking(emotionKey, vrmEmotion, state)
+        this.startSpeaking(options.lipSyncStart, emotionKey, avatarEmotion, state)
+      else this.showSpeaking(emotionKey, avatarEmotion, state)
       return
     }
 
     if (mode === 'awaitingSpeech') {
-      this.prepareSpeaking(emotionKey, vrmEmotion, state)
+      this.prepareSpeaking(emotionKey, avatarEmotion, state)
       return
     }
 
     this.applyStateEffect(
       this.stateMachine.setMode(mode),
-      vrmEmotion,
+      avatarEmotion,
       undefined,
       state,
       'character-state',
       'CharacterState mode/emotion changed',
       options.stopLipSyncTurnId,
     )
-    if (emotionKey || vrmEmotion) this.setEmotion(emotionKey, vrmEmotion)
+    if (emotionKey || avatarEmotion) this.setEmotion(emotionKey, avatarEmotion)
   }
 
-  setEmotion(emotionKey: string, vrmEmotion?: string): void {
-    this.vrmModel.applyEmotion(emotionKey || 'neutral', vrmEmotion)
+  setEmotion(emotionKey: string, avatarEmotion?: string): void {
+    this.avatarModel.applyEmotion(emotionKey || 'neutral', avatarEmotion)
     const effect = this.stateMachine.setEmotion(emotionKey)
-    if (effect) this.applyStateEffect(effect, vrmEmotion)
+    if (effect) this.applyStateEffect(effect, avatarEmotion)
   }
 
   setEmbodimentIntent(intent: CharacterEmbodimentIntent | undefined): void {
@@ -268,11 +252,11 @@ export class AvatarController {
     return this.gaze.browserScreenGazeActive()
   }
 
-  prepareSpeaking(emotionKey?: string, vrmEmotion?: string, state?: CharacterState): void {
+  prepareSpeaking(emotionKey?: string, avatarEmotion?: string, state?: CharacterState): void {
     const effect = this.stateMachine.prepareSpeaking(emotionKey)
     this.applyStateEffect(
       effect,
-      vrmEmotion,
+      avatarEmotion,
       undefined,
       state,
       'character-state',
@@ -283,14 +267,14 @@ export class AvatarController {
   startSpeaking(
     request: LipSyncStartRequest,
     emotionKey?: string,
-    vrmEmotion?: string,
+    avatarEmotion?: string,
     state?: CharacterState,
   ): void {
     const continuingSpeech = this.lipSync.getActiveSession()?.turnId === request.session.turnId
     const effect = this.stateMachine.startSpeaking(emotionKey)
     this.applyStateEffect(
       effect,
-      vrmEmotion,
+      avatarEmotion,
       request,
       state,
       'character-state',
@@ -300,14 +284,21 @@ export class AvatarController {
     )
   }
 
-  showSpeaking(emotionKey?: string, vrmEmotion?: string, state?: CharacterState): void {
+  showSpeaking(emotionKey?: string, avatarEmotion?: string, state?: CharacterState): void {
     const effect = this.stateMachine.startSpeaking(emotionKey)
-    this.applyStateEffect(effect, vrmEmotion, undefined, state, 'character-state', 'show speaking')
+    this.applyStateEffect(
+      effect,
+      avatarEmotion,
+      undefined,
+      state,
+      'character-state',
+      'show speaking',
+    )
   }
 
   getMouthWeights(): MouthWeights {
     if (this.externalMouthWeights) return { ...this.externalMouthWeights }
-    return this.vrmModel.getFinalMouthWeights()
+    return this.avatarModel.getFinalMouthWeights()
   }
 
   setMouthWeights(weights: Partial<MouthWeights>): void {
@@ -318,7 +309,7 @@ export class AvatarController {
       ee: weights.ee ?? 0,
       oh: weights.oh ?? 0,
     }
-    this.vrmModel.setMouthWeights(this.externalMouthWeights, true)
+    this.avatarModel.setMouthWeights(this.externalMouthWeights, true)
   }
 
   stopSpeaking(): void {
@@ -342,12 +333,12 @@ export class AvatarController {
 
   triggerUserInterruption(): boolean {
     const earTriggered = this.triggerEarImpulse('user-interruption')
-    const headTriggered = this.vrmModel.triggerHeadAttentionImpulse('user-interruption')
+    const headTriggered = this.avatarModel.triggerHeadAttentionImpulse('user-interruption')
     return earTriggered || headTriggered
   }
 
   triggerEarImpulse(impulse: EarImpulse, identity?: string): boolean {
-    return this.vrmModel.triggerEarImpulse(impulse, identity)
+    return this.avatarModel.triggerEarImpulse(impulse, identity)
   }
 
   triggerReactionGesture(trigger: ReactionGestureTrigger): string | null {
@@ -386,13 +377,13 @@ export class AvatarController {
     return resolved.animationId
   }
 
-  getLastEarImpulseDecision(): ReturnType<VrmModel['getLastEarImpulseDecision']> {
-    return this.vrmModel.getLastEarImpulseDecision()
+  getLastEarImpulseDecision(): ReturnType<AvatarModel['getLastEarImpulseDecision']> {
+    return this.avatarModel.getLastEarImpulseDecision()
   }
 
   getSpeechPhraseSnapshot(): { phase: SpeechPhrasePhase; turnId: string | null } {
     return {
-      phase: this.vrmModel.getSpeechPhrasePhase(),
+      phase: this.avatarModel.getSpeechPhrasePhase(),
       turnId: this.lipSync.getActiveSession()?.turnId ?? null,
     }
   }
@@ -402,7 +393,7 @@ export class AvatarController {
   }
 
   isLoaded(): boolean {
-    return this.vrmModel.isLoaded()
+    return this.avatarModel.isLoaded()
   }
 
   getMode(): AvatarMode {
@@ -423,7 +414,7 @@ export class AvatarController {
       idleBehaviors: this.idleBehaviors,
       idleOrchestrator: this.idleOrchestrator,
       playbackRequests: this.playback.getPlaybackRequests(),
-      vrmModel: this.vrmModel,
+      avatarModel: this.avatarModel,
       mouthWeights: this.getMouthWeights(),
       behaviorTimeline: this.playback.getBehaviorTimeline(),
     })
@@ -475,7 +466,7 @@ export class AvatarController {
   }
 
   previewBlink(): void {
-    this.vrmModel.forceBlink()
+    this.avatarModel.forceBlink()
   }
 
   testTransition(
@@ -532,21 +523,17 @@ export class AvatarController {
     )
   }
 
-  setLookAtTarget(target: THREE.Object3D | null): boolean {
-    return this.vrmModel.setLookAtTarget(target)
-  }
-
-  setEarAxisOverride(axis: EarAxisOverride): void {
-    this.vrmModel.setEarAxisOverride(axis)
+  setLookAtTarget(target: GazeTarget | null): boolean {
+    return this.avatarModel.setLookAtTarget(target)
   }
 
   setEarAmplitudeScale(scale: number): void {
-    this.vrmModel.setEarAmplitudeScale(scale)
+    this.avatarModel.setEarAmplitudeScale(scale)
   }
 
   private applyStateEffect(
     effect: AvatarStateEffect,
-    vrmEmotion?: string,
+    avatarEmotion?: string,
     lipSyncStart?: LipSyncStartRequest,
     state?: CharacterState,
     source: AvatarPlaybackRequestSource = 'state-effect',
@@ -556,7 +543,7 @@ export class AvatarController {
   ): void {
     this.stateEffects.apply({
       effect,
-      vrmEmotion,
+      avatarEmotion,
       lipSyncStart,
       stopLipSyncTurnId,
       state,

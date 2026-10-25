@@ -2,7 +2,7 @@
   "name": "shio-runtime",
   "private": true,
   "version": "0.1.0-alpha.6",
-  "description": "Monorepo root for the Shio runtime: Electron desktop client + local ASR/TTS speech service. Root only orchestrates existing per-project commands; the two apps stay independent and communicate solely over the HTTP API contract.",
+  "description": "Shio monorepo: independent Desktop, speech API and bundled S22 model project.",
   "scripts": {
     "desktop:install": "npm --prefix apps/desktop install",
     "desktop:dev": "npm --prefix apps/desktop run dev",
@@ -51,13 +51,19 @@
     "alpha:bundle": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-alpha-bundle.ps1",
     "alpha:bundle:verify": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-alpha-bundle.ps1",
     "alpha:checksums": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/write-alpha-checksums.ps1",
-    "build": "npm run desktop:build",
+    "build": "npm run avatar:build && npm run desktop:build",
     "typecheck": "npm run desktop:typecheck",
     "test": "npm run api:test",
     "lint": "npm run desktop:lint && npm run api:lint",
     "lint:fix": "npm run desktop:lint:fix && npm run api:lint:fix",
     "format": "npm run desktop:format && npm run api:format",
     "format:check": "npm run desktop:format:check && npm run api:format:check",
-    "check": "npm run lint && npm run format:check && npm run typecheck && npm run test"
+    "check": "npm run lint && npm run format:check && npm run typecheck && npm run test",
+    "avatar:build": "npm --prefix apps/shio-2d run build",
+    "avatar:test": "npm --prefix apps/shio-2d test",
+    "avatar:qualify": "npm --prefix apps/shio-2d run qualify",
+    "avatar:install": "npm --prefix apps/shio-2d ci",
+    "emotions:sync": "node scripts/sync-emotions.mjs",
+    "desktop:qualify:speech-2d": "npm --prefix apps/desktop run qualify:speech-2d"
   }
 }

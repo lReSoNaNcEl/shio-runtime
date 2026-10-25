@@ -7,7 +7,7 @@ import type { AvatarStateEffect } from '../../src/renderer/avatar/AvatarStateMac
 import { resolveEmotionEmbodimentProfile } from '../../src/renderer/avatar/EmotionEmbodimentProfile'
 import { PhraseEnvelopeController } from '../../src/renderer/avatar/embodiment/speech/PhraseEnvelopeController'
 import { buildSpeechPhraseTimingPlan } from '../../src/renderer/avatar/embodiment/speech/SpeechPhraseTiming'
-import { VrmModel } from '../../src/renderer/avatar/rendering/three/VrmModel'
+import { AvatarModel } from '../../src/renderer/avatar/rendering/two/AvatarModel'
 import {
   type CharacterState,
   cloneCharacterState,
@@ -67,7 +67,7 @@ function main(): void {
   assert.equal(comma.getOutput().closureStrength, 0)
   console.log('PhraseEnvelopeController: PASS')
 
-  const headlessFacial = new VrmModel()
+  const headlessFacial = new AvatarModel()
   headlessFacial.setProceduralMode('speaking')
   headlessFacial.startSpeechPhrase(buildSpeechPhraseTimingPlan('Headless Mirror LipSync'))
   headlessFacial.setSpeechEnergy(0.5)

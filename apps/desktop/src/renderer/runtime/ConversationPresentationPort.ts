@@ -9,6 +9,7 @@ import type { OverlayRuntime, SyncedAvatarState } from './OverlayRuntime'
 export type ConversationAvatarProjection = SyncedAvatarState
 
 export interface ConversationPresentationPort {
+  setSpeechDelivery?(emotion: string | null): void
   applyCharacterState(
     state: CharacterState,
     options?: { lipSyncStart?: LipSyncStartRequest; stopLipSyncTurnId?: string },
@@ -31,6 +32,7 @@ export class AvatarConversationPresentationPort implements ConversationPresentat
   private behaviorIntent: CharacterEmbodimentIntent | undefined
   private browserScreenGazeSessionId: string | undefined
   private browserScreenGazeActive = false
+  private speechDeliveryEmotion: string | null = null
 
   constructor(
     private readonly avatar: AvatarRuntime,
@@ -80,11 +82,19 @@ export class AvatarConversationPresentationPort implements ConversationPresentat
   }
 
   interruptLipSync(turnId: string): void {
+    this.setSpeechDelivery(null)
     this.contain('interrupt LipSync', () => this.avatar.interruptLipSync(turnId))
   }
 
   stopLipSync(turnId: string): void {
+    this.setSpeechDelivery(null)
     this.contain('stop LipSync', () => this.avatar.stopLipSync(turnId))
+  }
+
+  setSpeechDelivery(emotion: string | null): void {
+    this.speechDeliveryEmotion = emotion
+    this.contain('set audible speech delivery', () => this.avatar.setSpeechDelivery(emotion))
+    this.publishOverlayProjection()
   }
 
   triggerUserInterruption(): void {
@@ -122,6 +132,7 @@ export class AvatarConversationPresentationPort implements ConversationPresentat
         behaviorEmbodimentIntent: this.behaviorIntent,
         browserScreenGazeSessionId: this.browserScreenGazeSessionId,
         browserScreenGazeActive: this.browserScreenGazeActive,
+        speechDeliveryEmotion: this.speechDeliveryEmotion,
       }),
     )
   }

@@ -9,13 +9,8 @@ type OverlayAnimationPolicyConfig = {
 }
 
 const OVERLAY_ANIMATION_POLICY = {
-  // `afk_swing_02` reads poorly in the Mirror Overlay framing (compact swing
-  // motion clips through the tighter overlay camera), so the overlay never
-  // selects it. The main avatar may still use it — this exclusion is overlay
-  // only. The behavior resolver skips excluded ids and falls back safely
-  // (getFallbackAnimationId honours the exclusion set), so the mirror simply
-  // picks another idle-presence clip instead.
-  alwaysExcluded: ['neutral2', 'afk_swing_02'],
+  // All bundled S22 gestures are available in both presentation surfaces.
+  alwaysExcluded: [],
   idleExcluded: [],
   speakingExcluded: [],
   reactionExcluded: [],

@@ -30,7 +30,7 @@ interface SnapshotField {
 const MAX_VISIBLE_EVENTS = 500
 
 const SNAPSHOT_GROUPS = {
-  character: ['appStatus', 'characterState', 'emotionKey', 'vrmEmotion'],
+  character: ['appStatus', 'characterState', 'emotionKey', 'avatarEmotion'],
   conversationSpeech: ['speechTimeline', 'speechPolish', 'ttsLatencyMs', 'ttsCache'],
   avatarPlayback: [
     'avatarMode',
@@ -50,7 +50,7 @@ const SNAPSHOT_GROUPS = {
   ],
   queueOwnership: [
     'bodyActions',
-    'animationAssetCache',
+    'model2d',
     'animationQueue',
     'speakingGestureScheduler',
     'currentBehaviorCandidates',

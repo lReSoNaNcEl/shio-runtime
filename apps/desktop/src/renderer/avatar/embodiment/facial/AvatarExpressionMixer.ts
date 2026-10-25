@@ -1,4 +1,7 @@
-import type { VRM } from '@pixiv/three-vrm'
+export interface FacialTarget {
+  supportedExpressions: readonly string[]
+  setValue(name: string, value: number): void
+}
 
 import { facialTuning } from '../../tuning/facialTuning'
 import { resolveEffectiveBlinkProfile } from './BlinkProfileResolver'
@@ -32,10 +35,10 @@ export type {
 } from './FacialDebugTypes'
 
 /**
- * AvatarExpressionMixer — the single authority over VRM facial expressions.
+ * AvatarExpressionMixer — the single authority over facial values.
  *
  * Facial motion is produced by several independent sources (Auto Blink, LipSync,
- * Emotion Runtime, LookAt). Historically each wrote into the VRM Expression
+ * Emotion Runtime, LookAt). Historically each wrote into the facial
  * Manager directly, which produced conflicts (eyes vanishing on blink, unstable
  * mouth during speech, competing expression writes, multiple `manager.update()`
  * calls per frame).
@@ -48,22 +51,21 @@ export type {
  *   - Auto Blink  -> blink / blinkLeft / blinkRight
  *   - LipSync     -> aa / ih / ou (mouth)
  *   - Emotion     -> happy / angry / sad / surprised / relaxed / neutral / ...
- *   - LookAt      -> eye direction (owned by `vrm.lookAt`; the mixer never writes
+ *   - LookAt      -> eye direction (owned by `S22 gaze`; the mixer never writes
  *                    look* expressions so gaze stays independent)
  *
- * Body (skeletal) animation is a separate pipeline entirely; VRMA facial tracks
- * are stripped before playback (see VrmModel.loadAnimation) so clips only drive
- * bones.
+ * Native S22 gestures and secondary motion stay inside the model adapter.
+ * The adapter translates this mixer's final facial values to the authored rig.
  */
 
 const MOUTH_NAMES = VISEME_NAMES
 
-// VRM lookAt preset expressions — owned by the LookAt domain (vrm.lookAt), so the
+// previous rig lookAt preset expressions — owned by the LookAt domain (S22 gaze), so the
 // mixer must never zero or write them.
 const LOOKAT_NAMES = new Set(['lookUp', 'lookDown', 'lookLeft', 'lookRight'])
 
 export class AvatarExpressionMixer {
-  private vrm: VRM | null = null
+  private target: FacialTarget | null = null
   private blinkNames: string[] = []
   private blinkNameSet = new Set<string>()
   private supportedNames = new Set<string>()
@@ -90,7 +92,6 @@ export class AvatarExpressionMixer {
   private lastFinal = new Map<string, FacialExpressionEntry>()
   /** Expression names the mixer wrote a non-zero value for last frame. */
   private writtenNames = new Set<string>()
-  private vrmaFacialTracksDisabled = 0
   private frame = 0
   private clockMs = 0
   private lastDeltaMs = 16.67
@@ -171,12 +172,11 @@ export class AvatarExpressionMixer {
     source: 'AutoBlink',
   }
 
-  attach(vrm: VRM): void {
+  attach(target: FacialTarget): void {
     this.detach()
-    this.vrm = vrm
+    this.target = target
 
-    const manager = vrm.expressionManager
-    const allNames = Object.keys(manager?.expressionMap ?? {})
+    const allNames = [...target.supportedExpressions]
     this.supportedNames = new Set(allNames)
     this.blinkNames = this.resolveBlinkNames(allNames)
     this.blinkNameSet = new Set(this.blinkNames)
@@ -185,8 +185,6 @@ export class AvatarExpressionMixer {
     this.writtenNames = new Set()
     this.resetLifecycle()
 
-    this.allowBlinkOverExpressions()
-
     // TEMP WI12.1 DIAGNOSTIC: model's expression set.
     console.log(
       `[ANIMDBG] mixer attach expressions=[${allNames.join(',')}] blink=[${this.blinkNames.join(',')}]`,
@@ -194,7 +192,7 @@ export class AvatarExpressionMixer {
   }
 
   detach(): void {
-    this.vrm = null
+    this.target = null
     this.blinkNames = []
     this.blinkNameSet = new Set()
     this.supportedNames = new Set()
@@ -294,17 +292,13 @@ export class AvatarExpressionMixer {
     this.blinkTuning = debug
   }
 
-  notifyVrmaFacialTracksDisabled(count: number): void {
-    this.vrmaFacialTracksDisabled = count
-  }
-
   /**
-   * Combine every domain and perform the single authoritative write into the VRM
-   * Expression Manager. Does NOT call `manager.update()` — VrmModel.vrm.update()
+   * Combine every domain and perform the single authoritative write into the previous rig
+   * Expression Manager. Does NOT call `manager.update()` — the S22 adapter
    * runs it exactly once per frame after this.
    */
   apply(): void {
-    const manager = this.vrm?.expressionManager
+    const manager = this.target
     if (!manager) return
 
     const final = new Map<string, FacialExpressionEntry>()
@@ -368,7 +362,7 @@ export class AvatarExpressionMixer {
     // emotions / blinks / mouth). Expressions the mixer never touches — e.g. the
     // model's own default eye/brow state — are LEFT ALONE, matching the previous
     // per-source behaviour and avoiding accidental suppression (eyes vanishing).
-    // VRMA facial curves are already stripped in VrmModel.loadAnimation, so the
+    // skeletal facial curves are already stripped in AvatarModel.loadAnimation, so the
     // mixer does not need to blanket-zero every expression to stay authoritative.
     const namesToWrite = new Set<string>([...this.writtenNames, ...final.keys()])
     for (const name of namesToWrite) {
@@ -493,7 +487,6 @@ export class AvatarExpressionMixer {
         cooldown: Number(this.blinkTuning.cooldown.toFixed(2)),
       },
       blinkExpressions: this.blinkNames.slice(),
-      vrmaFacialTracksDisabled: this.vrmaFacialTracksDisabled,
       speakingEye: {
         enabled: this.speakingEyeDebug?.enabled ?? false,
         speaking: this.speakingEyeDebug?.speaking ?? false,
@@ -713,30 +706,15 @@ export class AvatarExpressionMixer {
   }
 
   /**
-   * Prevent non-blink expressions from suppressing the blink domain via the VRM
+   * Prevent non-blink expressions from suppressing the blink domain via the previous rig
    * override system, so the mixer's explicit domain writes are authoritative.
    * (Preserves the prior BlinkController behaviour, now owned by the mixer.)
    */
-  private allowBlinkOverExpressions(): void {
-    const manager = this.vrm?.expressionManager
-    const map = manager?.expressionMap
-    if (!manager || !map) return
-
-    for (const [name, expression] of Object.entries(map)) {
-      if (!this.blinkNameSet.has(name)) expression.overrideBlink = 'none'
-    }
-    manager.blinkExpressionNames = this.blinkNames.slice()
-  }
-
-  private setValueSafe(
-    manager: NonNullable<VRM['expressionManager']>,
-    name: string,
-    value: number,
-  ): void {
+  private setValueSafe(manager: FacialTarget, name: string, value: number): void {
     try {
       manager.setValue(name, value)
     } catch {
-      // Some VRM models do not define every recommended expression.
+      // Some facial targets do not define every recommended expression.
     }
   }
 

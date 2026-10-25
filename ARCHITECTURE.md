@@ -887,17 +887,22 @@ Audio Input
 
 ```text
 Response Text / Speech Intent (from Character Response Generation)
-  -> Per-Segment Speech Text Preparation
-  -> Deterministic TTS-Only Text Normalization
-  -> Speech Synthesis
-  -> Final Audio Boundary Processing
-  -> Speech Playback
+  -> Safe Incremental Protocol Filter
+  -> Stable Text Commits and Typed Delivery Intent
+  -> Deterministic TTS-Only Text Normalization (Electron Main)
+  -> One Logical Fish S2 Pro Session per Turn (API)
+  -> Ordered Mono Float32 PCM with Audible Delivery Cues
+  -> Main MessagePort -> AudioPlayer -> AudioWorklet
   -> Speech Completion
 ```
 
-The output chain preserves distinct text representations. `replyText` is the original Character Response Generation result and may contain internal emotion markup. `displayText` is the visible assistant response with internal emotion markup removed. `speechText` is one independently preserved emotion segment after assistant-markup cleanup. `normalizedSpeechText` is a deterministic, provider-independent, TTS-only representation derived at the Desktop Speech boundary. Only `normalizedSpeechText` crosses the synthesis request boundary. It never replaces visible conversation text, conversational history, or Memory Layer content, and normalization never merges segments or changes their emotion boundaries, transition targets, or look-ahead ownership.
+`replyText`, visible `displayText`, and normalized speech text remain separate. Provider control syntax and structured embodiment markers are contained before either chat or speech. Only safe stable text commits enter synthesis while the Character LLM continues generating. Tool-call-first rounds expose no text. Delivery changes affect the speech presentation domain and never overwrite conversational emotion in Character State.
 
-Desktop owns technical-text, Markdown, URL, path, version, list, and nonverbal speech normalization because these are speech-domain preparation rules shared by local and future replaceable speech providers. The Speech API owns final waveform-boundary analysis because it alone owns the synthesized waveform. Final boundary processing runs after provider-specific complete-response processing and optional pitch processing, and before WAV serialization and TTS cache storage. For F5, this final response-level responsibility does not replace per-chunk tail validation, suspicious-tail retry, chunk crossfade, safe loudness normalization, selected-voice warmup, or the shared inference synchronization boundary.
+**Experimental implementation decision: Fish S2 Pro / S22.** This branch deliberately replaces the previous F5 complete-WAV path. The API owns the revision-pinned local Fish model, codec, voice references and one isolated cancellable inference worker. Its `/tts/stream` WebSocket accepts incremental text and delivery updates and emits ordered Float32 PCM while tokens are generated. The Shio-owned hook observes the pinned token decoder and decodes bounded causal prefixes with codec holdback; it does not replace the upstream sampler. Startup warmup compiles the sampler before readiness. Cancellation terminates actual upstream work and the worker is reloaded; health reports the intervening loading state. There is no alternate synthesis engine or silent mock fallback.
+
+Desktop Main owns normalization and the environment-selected endpoint. The API owns provider tags; renderer text cannot inject raw Fish instructions. `contracts/emotions.v2.json` generates API, Desktop and S22 manifests. Each canonical cue maps to Fish tags and a supported S22 expression. Audio metadata carries the text sequence and cue; AudioPlayer applies cue callbacks on the consumed sample clock. Overlay receives the same bounded presentation projection and mouth weights. Backend audio credits, Main forwarding and the worklet buffer are bounded. Cancellation flushes local audio synchronously before backend cancellation and rejects late PCM.
+
+ASR, reference registry ownership, atomic voice synchronization, Desktop/API independence and external-action authority remain unchanged. `/synthesize` and the F5 WAV contract are intentionally removed; HTTP contract version is `2.0`, stream protocol version is `1`. Existing ASR and voice endpoints remain available.
 
 The Desktop Speech API endpoint is immutable, main-process-owned environment configuration for one application process. `SHIO_SPEECH_API_URL` may override the bundled local default `http://127.0.0.1:8000` before startup; changing it requires restarting Desktop. Renderer-editable application settings never own, persist, or mutate this endpoint. A read-only renderer transport projection may expose only the already resolved Main endpoint when a renderer-owned speech transport requires it.
 
@@ -981,7 +986,7 @@ Expected extensions include memory-aware reactions, relationship-aware behavior,
 
 **Ambient Micro-Presence**
 
-Behavior owns a deterministic Ambient Presence Policy that consumes only bounded World Context transitions, Mood projection, autonomy settings, and the current Browser Computer Use screen-focus lease. Foreground application changes, return from long idle, entry into long idle, media state changes, and substantial system-load changes may yield a semantic attention/energy/curiosity intent. Most changes yield nothing, selected intents have a bounded cooldown, and this path makes no LLM call. Global Suspend, Privacy Mode, autonomy Off, active conversation/audio, and an active Browser Computer Use gaze lease suppress ambient selection. The result is semantic embodiment only; it contains no bones, morph values, animation filenames, or direct VRM writes. Avatar Runtime remains the concrete embodiment and gaze arbitrator. Ambient presence does not independently grant Conversation Admission or proactive speech authority.
+Behavior owns a deterministic Ambient Presence Policy that consumes only bounded World Context transitions, Mood projection, autonomy settings, and the current Browser Computer Use screen-focus lease. Foreground application changes, return from long idle, entry into long idle, media state changes, and substantial system-load changes may yield a semantic attention/energy/curiosity intent. Most changes yield nothing, selected intents have a bounded cooldown, and this path makes no LLM call. Global Suspend, Privacy Mode, autonomy Off, active conversation/audio, and an active Browser Computer Use gaze lease suppress ambient selection. The result is semantic embodiment only; it contains no bones, morph values, animation filenames, or direct model writes. Avatar Runtime remains the concrete embodiment and gaze arbitrator. Ambient presence does not independently grant Conversation Admission or proactive speech authority.
 
 ### 18. Character Personality Model
 
@@ -1145,6 +1150,9 @@ Future actions may include moderation, application control, automation, scheduli
 Avatar Runtime is responsible for the physical embodiment of the digital character. Its purpose is not rendering as a technology choice; its purpose is making the character visually believable.
 
 Avatar Runtime is the sole owner of visual embodiment. Other Runtime systems may provide semantic intent, timing, or state, but they do not directly mutate the character model. Embodiment is divided into independent domains so that speech, emotion, gaze, animation, and procedural motion can evolve without competing for uncontrolled model writes.
+
+**Experimental S22 presentation.** `apps/shio-2d` is the third monorepo project: a self-contained copy of source model v22 and its transitive assets, not a second application Runtime. The Desktop Avatar Runtime adapts semantic state, gaze, blinking, speech envelopes and LipSync to this bundled 2D rig. S22 owns WebGL, authored deformations, secondary motion and resource teardown; AvatarExpressionMixer remains the final facial composition owner. Native automatic blinking is suppressed only when the mixer supplies external blink. The original illustration and native model geometry are retained. Three.js, VRM/VRMA loaders, assets, retargeting and model-file picker IPC are removed. The model has 17 visual expressions, 19 native gestures, 6 mouth forms and two tail styles. Both main canvas and Overlay load bundled relative resources; no runtime access to the original authoring directory is needed.
+
 
 **Responsibilities**
 
@@ -1596,7 +1604,7 @@ Behavior Runtime consumes bounded Mood, Experience, World Context, Attention, Go
 habit, and user-activity projections and selects only a semantic intent: none,
 embodiment, conversation candidate, or goal suggestion. Avatar Runtime translates
 embodiment intent into concrete ears, head, gaze, expression, and gesture behavior;
-Behavior never writes VRM state or calls an Adapter. A conversational Behavior intent
+Behavior never writes model state or calls an Adapter. A conversational Behavior intent
 must return to Conversation Admission. Mood modulation is deterministic for the same
 event and state, bounded around the base Experience appraisal, and cannot invent
 speech content, override quiet/suspend/privacy policy, or expand capability authority.
@@ -2085,8 +2093,8 @@ Use this checklist before implementing significant features, Runtime modificatio
 **Post-Refactor Verification**
 
 - After decomposing Runtime internals, did the implementation pass both `npm run build` and a live smoke check of the affected Runtime?
-- For Avatar Runtime changes, did the live client verify VRM loading, idle animation startup, debug VRMA preview, speaking LipSync, speaking gesture transitions without A-pose, and overlay/mirror rendering?
-- If a refactor touched VRM lifecycle or animation loading, did the smoke check explicitly exercise `loadVrm()` and `loadAnimation()` in the running client?
+- For Avatar Runtime changes, did the live client verify S22 loading, native idle, all expressions and gestures, speaking LipSync, interrupted speech, and overlay/mirror rendering in both UI themes?
+- If a change touched S22 lifecycle or gesture playback, did the live check exercise load, native gestures, canvas detachment and disposal in the running client?
 
 **Simplicity**
 

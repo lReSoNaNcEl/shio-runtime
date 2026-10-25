@@ -1,14 +1,14 @@
 import type { EmotionContract } from '../../shared/emotion'
+import type { SpeechStreamOutput, SpeechStreamStart } from '../../shared/speech'
 import type { Health, Recognize } from '../schemas'
 import {
   SpeechClient,
-  type SpeechSynthesisClient,
-  type SynthesizeParams,
-  type SynthesizeResult,
+  type SpeechStreamConnection,
+  type SpeechStreamingClient,
   type VoiceWarmupResult,
 } from './speechClient'
 
-export interface ManagedSpeechClient extends SpeechSynthesisClient {
+export interface ManagedSpeechClient extends SpeechStreamingClient {
   dispose(): void
   health(signal?: AbortSignal): Promise<Health>
   emotions(signal?: AbortSignal): Promise<EmotionContract>
@@ -26,7 +26,7 @@ function normalizeEndpoint(endpoint: string): string {
   return endpoint.trim().replace(/\/+$/, '')
 }
 
-export class SpeechClientManager implements SpeechSynthesisClient {
+export class SpeechClientManager implements SpeechStreamingClient {
   private readonly endpoint: string
   private current: ManagedSpeechClient
   private disposed = false
@@ -71,8 +71,11 @@ export class SpeechClientManager implements SpeechSynthesisClient {
     return this.getCurrent().warmupVoice(input, signal)
   }
 
-  synthesize(params: SynthesizeParams, signal?: AbortSignal): Promise<SynthesizeResult> {
-    return this.getCurrent().synthesize(params, signal)
+  openStream(
+    input: SpeechStreamStart,
+    onEvent: (event: SpeechStreamOutput) => void,
+  ): SpeechStreamConnection {
+    return this.getCurrent().openStream(input, onEvent)
   }
 
   dispose(): void {

@@ -8,7 +8,6 @@ export const IPC_THREE_PAYLOADS = z.tuple([z.unknown(), z.unknown(), z.unknown()
 const IPC_NO_PAYLOAD = z.tuple([])
 
 const mainOnly = ['main'] as const
-const mainAndOverlay = ['main', 'overlay'] as const
 const overlayOnly = ['overlay'] as const
 
 /** Canonical inventory of every renderer -> main invoke channel and its capability set. */
@@ -111,11 +110,8 @@ export const IPC_CHANNEL_CAPABILITIES = {
   'system:report-renderer-failure': mainOnly,
   'system:restart-application': mainOnly,
   'tts:cancel-synthesis': mainOnly,
-  'tts:synthesize-reply': mainOnly,
+  'tts:open-stream': mainOnly,
   'tts:warmup': mainOnly,
-  'vrm:pick': mainOnly,
-  'vrm:read': mainAndOverlay,
-  'vrma:pick': mainOnly,
 } as const
 
 export type IpcChannel = keyof typeof IPC_CHANNEL_CAPABILITIES

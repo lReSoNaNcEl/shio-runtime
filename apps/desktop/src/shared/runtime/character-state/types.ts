@@ -125,7 +125,7 @@ export interface CharacterConversationPresenceState {
 export interface CharacterAvatarState {
   mode: CharacterRuntimeMode
   expression: string
-  vrmExpression?: string
+  avatarExpression?: string
   lipsync: {
     aa: number
     ih: number

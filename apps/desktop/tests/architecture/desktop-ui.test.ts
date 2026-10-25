@@ -107,9 +107,9 @@ function main(): void {
     const avatar = source('src/renderer/components/views/AvatarPreviewView.tsx')
     for (const ownedRegion of [
       'animation-library',
-      'preview-viewport-header',
-      'preview-camera-toolbar',
-      'preview-playback',
+      'avatar-2d-controls',
+      'avatar-preview-stage',
+      'avatar-preview-canvas',
     ]) {
       assert.match(avatar, new RegExp(ownedRegion))
     }

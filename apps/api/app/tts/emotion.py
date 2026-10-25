@@ -19,6 +19,7 @@ class EmotionEntry:
     aliases: tuple[str, ...]
     markers: tuple[str, ...]
     speech: dict[str, Any]
+    avatar: dict[str, Any]
 
     def to_public_dict(self) -> dict[str, Any]:
         return {
@@ -27,6 +28,7 @@ class EmotionEntry:
             "aliases": list(self.aliases),
             "markers": list(self.markers),
             "speech": self.speech,
+            "avatar": self.avatar,
         }
 
 
@@ -62,6 +64,7 @@ class EmotionRegistry:
                 ),
                 markers=tuple(str(marker) for marker in raw.get("markers") or ()),
                 speech=dict(raw.get("speech") or {}),
+                avatar=dict(raw.get("avatar") or {}),
             )
             emotions[emotion_id] = entry
             aliases[emotion_id] = emotion_id

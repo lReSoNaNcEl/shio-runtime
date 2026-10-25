@@ -269,17 +269,19 @@ async function pip(python, args) {
 
 async function actionInstall(extra) {
   const python = ensureVenv()
-  await pip(python, ['install', '--upgrade', 'pip'])
-  await pip(python, ['install', '-r', 'requirements.txt', ...extra])
+  await pip(python, ['install', '--upgrade', ALPHA_PIP_SPEC])
+  await pip(python, ['install', '-r', 'requirements.lock.txt', ...extra])
+  await pip(python, ['check'])
   process.exit(0)
 }
 
 async function actionInstallDev(extra) {
   const python = ensureVenv()
-  await pip(python, ['install', '--upgrade', 'pip'])
+  await pip(python, ['install', '--upgrade', ALPHA_PIP_SPEC])
   // requirements-dev.txt already includes `-r requirements.txt`, so this one
   // install covers both runtime and dev dependencies.
-  await pip(python, ['install', '-r', 'requirements-dev.txt', ...extra])
+  await pip(python, ['install', '-r', 'requirements-dev.lock.txt', ...extra])
+  await pip(python, ['check'])
   process.exit(0)
 }
 

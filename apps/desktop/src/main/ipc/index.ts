@@ -25,7 +25,6 @@ import type { ProjectAwarenessPlugin } from '../project-awareness'
 import type { ScreenContextService } from '../screen-context'
 import { IPC_ONE_PAYLOAD, type IpcAuthorization } from './IpcAuthorization'
 import { registerActionIpc } from './registerActionIpc'
-import { registerAvatarIpc } from './registerAvatarIpc'
 import { registerBrowserControlIpc } from './registerBrowserControlIpc'
 import { registerCapabilitiesIpc } from './registerCapabilitiesIpc'
 import { registerConfigIpc } from './registerConfigIpc'
@@ -282,7 +281,6 @@ export function registerIpcHandlers(
   })
 
   registerConfigIpc(win, authorization, () => capabilityCatalog.invalidate())
-  registerAvatarIpc(win, authorization)
 
   registerSystemIpc(authorization)
 }

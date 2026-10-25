@@ -1,0 +1,1794 @@
+{
+  "version": 22,
+  "source": "Shio S22",
+  "files": [
+    {
+      "path": "rig-renderer.mjs",
+      "sha256": "46bb51d2ca50a82ebb6d74f0e382ae9c77ceb0c6e8c4fe4cfe42a678342fd20f",
+      "sourcePath": "source/v22/runtime/rig-renderer.mjs",
+      "sourceSha256": "9e38427c109264494157cc66e20e8bc5f85b769639e17be650e262bd07bbc4ac"
+    },
+    {
+      "path": "assets/v16/garment-motion-v16.mjs",
+      "sha256": "bff0efe44897c8a84c6eb9c4aa55538e85fd2eef024a53cf28dda31220fc6af2",
+      "sourcePath": "assets/v16/garment-motion-v16.mjs",
+      "sourceSha256": "bff0efe44897c8a84c6eb9c4aa55538e85fd2eef024a53cf28dda31220fc6af2"
+    },
+    {
+      "path": "assets/v16/xpbd-chains-v13.mjs",
+      "sha256": "0265103a517b71e3ac5fcda8e2c5aeba7c23c5a28e599195fc3760e7ca8ab6e9",
+      "sourcePath": "assets/v16/xpbd-chains-v13.mjs",
+      "sourceSha256": "0265103a517b71e3ac5fcda8e2c5aeba7c23c5a28e599195fc3760e7ca8ab6e9"
+    },
+    {
+      "path": "assets/v22/head-on-torso-v22.mjs",
+      "sha256": "b95742465d0e3a638037fff7712ad9d3950c911c78c34b4808698b1486c13ad7",
+      "sourcePath": "assets/v22/head-on-torso-v22.mjs",
+      "sourceSha256": "65e2dc90509abe717eb7c0407a0b197def42583cb43b429d2a3cbb0a877972c9"
+    },
+    {
+      "path": "assets/v22/head-core-v22.mjs",
+      "sha256": "f961cefa0de16432868e83f6cac124841af4236bad8b3b81916af88e4baea7e3",
+      "sourcePath": "assets/v22/head-core-v22.mjs",
+      "sourceSha256": "d875fde08107efdd078391cec38cec913d973c8bf6b39f2a905cf5059e40601a"
+    },
+    {
+      "path": "assets/v22/hair-material-v22.mjs",
+      "sha256": "157ecb887cd64a75a06d3c3e40c71675bd9a11382b4b57ec84d6c621e4ad9cb5",
+      "sourcePath": "assets/v22/hair-material-v22.mjs",
+      "sourceSha256": "157ecb887cd64a75a06d3c3e40c71675bd9a11382b4b57ec84d6c621e4ad9cb5"
+    },
+    {
+      "path": "assets/v16/hair-motion-v16.mjs",
+      "sha256": "a08f48d86878c101c0278b031c7444aa4c5788b95ff71278e59db1093f7fdd78",
+      "sourcePath": "assets/v16/hair-motion-v16.mjs",
+      "sourceSha256": "a08f48d86878c101c0278b031c7444aa4c5788b95ff71278e59db1093f7fdd78"
+    },
+    {
+      "path": "assets/v16/neck-ownership-v16.mjs",
+      "sha256": "91cddb4b4b5ebd009cb640cd8cdcebc3bf0b0466ad0f266903a785128de52837",
+      "sourcePath": "assets/v16/neck-ownership-v16.mjs",
+      "sourceSha256": "91cddb4b4b5ebd009cb640cd8cdcebc3bf0b0466ad0f266903a785128de52837"
+    },
+    {
+      "path": "assets/v9/semantic-base.mjs",
+      "sha256": "48ebfc5d78af4e2abe02ddfa87ee063178298cb66787267f1cbe8b178d955e00",
+      "sourcePath": "assets/v9/semantic-base.mjs",
+      "sourceSha256": "48ebfc5d78af4e2abe02ddfa87ee063178298cb66787267f1cbe8b178d955e00"
+    },
+    {
+      "path": "assets/v16/neck-bridge-v16.mjs",
+      "sha256": "a614909ce839f558c218e9039d719ed8e83c45031786b963915100793fb283d5",
+      "sourcePath": "assets/v16/neck-bridge-v16.mjs",
+      "sourceSha256": "a614909ce839f558c218e9039d719ed8e83c45031786b963915100793fb283d5"
+    },
+    {
+      "path": "assets/v16/mouth-acting-v16.mjs",
+      "sha256": "02456ce62840765c934115e25ae8077216b281fa9ddcf9c9e41ac29fdd43e3dc",
+      "sourcePath": "assets/v16/mouth-acting-v16.mjs",
+      "sourceSha256": "02456ce62840765c934115e25ae8077216b281fa9ddcf9c9e41ac29fdd43e3dc"
+    },
+    {
+      "path": "assets/v16/torso-motion-v16.mjs",
+      "sha256": "5a2d48e8565942e898d46468f743d89b06130e1842296024f184bfe7c90cc412",
+      "sourcePath": "assets/v16/torso-motion-v16.mjs",
+      "sourceSha256": "5a2d48e8565942e898d46468f743d89b06130e1842296024f184bfe7c90cc412"
+    },
+    {
+      "path": "assets/v8/neck-attachment.mjs",
+      "sha256": "8b7d736bae4f49656c911e52fb55dcf7c3f72753541f533dd5020e3165ff0cbd",
+      "sourcePath": "assets/v8/neck-attachment.mjs",
+      "sourceSha256": "8b7d736bae4f49656c911e52fb55dcf7c3f72753541f533dd5020e3165ff0cbd"
+    },
+    {
+      "path": "assets/v22/creature-motion-v22.mjs",
+      "sha256": "56af9accb8013ae23031a9880f0341017fff8737bb1b8664198d51389bd07350",
+      "sourcePath": "assets/v22/creature-motion-v22.mjs",
+      "sourceSha256": "56af9accb8013ae23031a9880f0341017fff8737bb1b8664198d51389bd07350"
+    },
+    {
+      "path": "assets/v22/creature-base-v22.mjs",
+      "sha256": "7d43e25edef4b36ed21c3c97326c6133ec9e01760f6a3f15bc6e652636800a62",
+      "sourcePath": "assets/v22/creature-base-v22.mjs",
+      "sourceSha256": "7d43e25edef4b36ed21c3c97326c6133ec9e01760f6a3f15bc6e652636800a62"
+    },
+    {
+      "path": "assets/v22/secondary-motion-v22.mjs",
+      "sha256": "812da227bf765f7651e076c2fb33dfd159ff19d2e66ea894692b0acb6a95f861",
+      "sourcePath": "assets/v22/secondary-motion-v22.mjs",
+      "sourceSha256": "406a91c1d139e145c1b05ca10e37bb301f880979ab26d8fd9bd0bba79fa93c1c"
+    },
+    {
+      "path": "assets/v22/leg-rig-v22.mjs",
+      "sha256": "85434790a368be3e22967f2c2ce7286b0b8ee3d76b8102c1e33eaa8f5e941546",
+      "sourcePath": "assets/v22/leg-rig-v22.mjs",
+      "sourceSha256": "29a965a9122ce01c0cd6d2ef4fd4c4111f4531b0aefd573db9af419dd7b4808d"
+    },
+    {
+      "path": "assets/v16/textiles-v16.mjs",
+      "sha256": "7bf560cc24279e56cecbe770df927d02ca85f194fed505e67b827922871cff96",
+      "sourcePath": "assets/v16/textiles-v16.mjs",
+      "sourceSha256": "7bf560cc24279e56cecbe770df927d02ca85f194fed505e67b827922871cff96"
+    },
+    {
+      "path": "assets/v22/arm-renderer-v22.mjs",
+      "sha256": "773d8c92984dd1247687ad49b1add7d1b1371fca6ce34fd05a32c27127290a3b",
+      "sourcePath": "assets/v22/arm-renderer-v22.mjs",
+      "sourceSha256": "ef456de3eb7ff447b88706ef25f6de63e5eef0c0425cf5bf7502225ea1f5d613"
+    },
+    {
+      "path": "assets/v22/accessories-v22.mjs",
+      "sha256": "1d94b93d1c46593fad38ab998f60f820fc83809d5cee9f3f054293b929e7d176",
+      "sourcePath": "assets/v22/accessories-v22.mjs",
+      "sourceSha256": "1d94b93d1c46593fad38ab998f60f820fc83809d5cee9f3f054293b929e7d176"
+    },
+    {
+      "path": "runtime.mjs",
+      "sha256": "bd756519587a861d95ba0a9b673351bdcc7de691929c33baf423f48377fa5df1",
+      "sourcePath": "source/v22/runtime/runtime.mjs",
+      "sourceSha256": "2089b5efb239c85efb536ddf5ae0116aaac210a4f645f48aacb46aea4d30a8c5"
+    },
+    {
+      "path": "assets/v22/model.json",
+      "sha256": "f36c60c8bdbf515cec0fabc84f9ac1c2a113466a6561d1705040778fb0d3cf88",
+      "sourcePath": "assets/v22/model.json",
+      "sourceSha256": "3af0cdfa9f1e6745ad7cf33332ef2cf36c79d08177de1b94491ab83421490251"
+    },
+    {
+      "path": "assets/v19/arms/forearm.png",
+      "sha256": "b4a07d65418b840218c7b95301cd1209dc854078ae44242d5a9663c7fb74cd15",
+      "sourcePath": "assets/v19/arms/forearm.png",
+      "sourceSha256": "b4a07d65418b840218c7b95301cd1209dc854078ae44242d5a9663c7fb74cd15"
+    },
+    {
+      "path": "assets/v19/arms/upper-right.png",
+      "sha256": "7012d0a5571be58daa40cde70da7e1c9a0f3b3cb268250f4a567a6a21bab9fdc",
+      "sourcePath": "assets/v19/arms/upper-right.png",
+      "sourceSha256": "7012d0a5571be58daa40cde70da7e1c9a0f3b3cb268250f4a567a6a21bab9fdc"
+    },
+    {
+      "path": "assets/v19/arms/upper-left.png",
+      "sha256": "d3e31a732a673dfe1fa876016d31eeb87f068726cf4eeb502032d102f6f8ec88",
+      "sourcePath": "assets/v19/arms/upper-left.png",
+      "sourceSha256": "d3e31a732a673dfe1fa876016d31eeb87f068726cf4eeb502032d102f6f8ec88"
+    },
+    {
+      "path": "assets/v19/arms/sdf-thoughtful-right.png",
+      "sha256": "5c571c0c713ec0a7e1ff01b2e8558aac03fc26f4c7ea72ae46a8accf9fb9b1ec",
+      "sourcePath": "assets/v19/arms/sdf-thoughtful-right.png",
+      "sourceSha256": "5c571c0c713ec0a7e1ff01b2e8558aac03fc26f4c7ea72ae46a8accf9fb9b1ec"
+    },
+    {
+      "path": "assets/v19/arms/hand-thoughtful-right.png",
+      "sha256": "66358cd4d54d5d9ddf158671915c67c5e8dc67bffbc74a690badcb934dabfb25",
+      "sourcePath": "assets/v19/arms/hand-thoughtful-right.png",
+      "sourceSha256": "66358cd4d54d5d9ddf158671915c67c5e8dc67bffbc74a690badcb934dabfb25"
+    },
+    {
+      "path": "assets/v19/arms/sdf-thoughtful-left.png",
+      "sha256": "30750ad36fc0d09409e62194f00e90aed4945c3b403a32d0962e833239f2940c",
+      "sourcePath": "assets/v19/arms/sdf-thoughtful-left.png",
+      "sourceSha256": "30750ad36fc0d09409e62194f00e90aed4945c3b403a32d0962e833239f2940c"
+    },
+    {
+      "path": "assets/v19/arms/hand-thoughtful-left.png",
+      "sha256": "ed7a94db78cc1d4604eda4b27cb6f93aecb293f1587614917ef63999152f7f61",
+      "sourcePath": "assets/v19/arms/hand-thoughtful-left.png",
+      "sourceSha256": "ed7a94db78cc1d4604eda4b27cb6f93aecb293f1587614917ef63999152f7f61"
+    },
+    {
+      "path": "assets/v19/arms/sdf-heart-right.png",
+      "sha256": "c76c7e0d393a2afc5f3d1cebc79a0461396efc38f73efad2ea14422c07247448",
+      "sourcePath": "assets/v19/arms/sdf-heart-right.png",
+      "sourceSha256": "c76c7e0d393a2afc5f3d1cebc79a0461396efc38f73efad2ea14422c07247448"
+    },
+    {
+      "path": "assets/v19/arms/hand-heart-right.png",
+      "sha256": "db0368275e789660826ee6a324599cffc133e3be12b4da252ef6ff25f2c60b70",
+      "sourcePath": "assets/v19/arms/hand-heart-right.png",
+      "sourceSha256": "db0368275e789660826ee6a324599cffc133e3be12b4da252ef6ff25f2c60b70"
+    },
+    {
+      "path": "assets/v19/arms/sdf-heart-left.png",
+      "sha256": "c4982ec61194b259f5f84255417507d1e696ce23e6419d244dd0852e188be92d",
+      "sourcePath": "assets/v19/arms/sdf-heart-left.png",
+      "sourceSha256": "c4982ec61194b259f5f84255417507d1e696ce23e6419d244dd0852e188be92d"
+    },
+    {
+      "path": "assets/v19/arms/hand-heart-left.png",
+      "sha256": "690d257ae5ec3ab5a842eb78c0d0f0fdce42daa0c493566e718dbd4e52b96d1d",
+      "sourcePath": "assets/v19/arms/hand-heart-left.png",
+      "sourceSha256": "690d257ae5ec3ab5a842eb78c0d0f0fdce42daa0c493566e718dbd4e52b96d1d"
+    },
+    {
+      "path": "assets/v19/arms/sdf-waist-right.png",
+      "sha256": "4dd7d36fdf2133e25f2bec3e7e766c4b69239b4aa6efecf6adc7e06c584d7db9",
+      "sourcePath": "assets/v19/arms/sdf-waist-right.png",
+      "sourceSha256": "4dd7d36fdf2133e25f2bec3e7e766c4b69239b4aa6efecf6adc7e06c584d7db9"
+    },
+    {
+      "path": "assets/v19/arms/hand-waist-right.png",
+      "sha256": "f7acd9946116ae101a8eaf8f2c7c192b374ad189981483787119746ce66afb6d",
+      "sourcePath": "assets/v19/arms/hand-waist-right.png",
+      "sourceSha256": "f7acd9946116ae101a8eaf8f2c7c192b374ad189981483787119746ce66afb6d"
+    },
+    {
+      "path": "assets/v19/arms/sdf-waist-left.png",
+      "sha256": "d1b35a53461eb3c526a861cfef5e7ab8983e7c472ab4ec21178394be3297cb15",
+      "sourcePath": "assets/v19/arms/sdf-waist-left.png",
+      "sourceSha256": "d1b35a53461eb3c526a861cfef5e7ab8983e7c472ab4ec21178394be3297cb15"
+    },
+    {
+      "path": "assets/v19/arms/hand-waist-left.png",
+      "sha256": "b68e01e4a684bb3786db85591c844fbadb71b88be66a0af0acca76d26757b37d",
+      "sourcePath": "assets/v19/arms/hand-waist-left.png",
+      "sourceSha256": "b68e01e4a684bb3786db85591c844fbadb71b88be66a0af0acca76d26757b37d"
+    },
+    {
+      "path": "assets/v9/neck-skin.png",
+      "sha256": "9450ef19fd60e3dd75e9d52c79b681ec94c97e108f5630cdeaeef40cdc7d8059",
+      "sourcePath": "assets/v9/neck-skin.png",
+      "sourceSha256": "9450ef19fd60e3dd75e9d52c79b681ec94c97e108f5630cdeaeef40cdc7d8059"
+    },
+    {
+      "path": "assets/v16/hair-atlas/native.png",
+      "sha256": "a0daf58dc99331ed1e1dd452765f5f3deaa05739c7f3b454907dbeaa79f5f971",
+      "sourcePath": "assets/v16/hair-atlas/native.png",
+      "sourceSha256": "a0daf58dc99331ed1e1dd452765f5f3deaa05739c7f3b454907dbeaa79f5f971"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-8-24.png",
+      "sha256": "15f6590df15ba9de4b6ef90271b1f02061a30b6aea4b27293aec7fd003819aab",
+      "sourcePath": "assets/v20/hair-atlas/pose-8-24.png",
+      "sourceSha256": "15f6590df15ba9de4b6ef90271b1f02061a30b6aea4b27293aec7fd003819aab"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-8-23.png",
+      "sha256": "fdcd7b75c016dd11c4d1dad3dd09092139fb033a0ca5ea9842d33bbba1dab50b",
+      "sourcePath": "assets/v20/hair-atlas/pose-8-23.png",
+      "sourceSha256": "fdcd7b75c016dd11c4d1dad3dd09092139fb033a0ca5ea9842d33bbba1dab50b"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-8-22.png",
+      "sha256": "1def1e0f42412d422827d67c9cd8f61d8cdb7c7420c0408628ea9b76abed881a",
+      "sourcePath": "assets/v20/hair-atlas/pose-8-22.png",
+      "sourceSha256": "1def1e0f42412d422827d67c9cd8f61d8cdb7c7420c0408628ea9b76abed881a"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-8-21.png",
+      "sha256": "d3072edae09fb7b597826433e852037e6405b98a7c9a303de5fe6e4c6338df2a",
+      "sourcePath": "assets/v20/hair-atlas/pose-8-21.png",
+      "sourceSha256": "d3072edae09fb7b597826433e852037e6405b98a7c9a303de5fe6e4c6338df2a"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-8-20.png",
+      "sha256": "f7f043b7d642bf48e2046b542a4bf863ee2086c755f355eda50e7eb58d771195",
+      "sourcePath": "assets/v20/hair-atlas/pose-8-20.png",
+      "sourceSha256": "f7f043b7d642bf48e2046b542a4bf863ee2086c755f355eda50e7eb58d771195"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-8-19.png",
+      "sha256": "5f5c2d753afcbe683aa4f37d3ca3442ca405d28c8d03985e717b21a0896be146",
+      "sourcePath": "assets/v20/hair-atlas/pose-8-19.png",
+      "sourceSha256": "5f5c2d753afcbe683aa4f37d3ca3442ca405d28c8d03985e717b21a0896be146"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-8-18.png",
+      "sha256": "21611ff1edaa359e40d9aa1423bbfdf96808f551affffd2350f4af5886c7b57a",
+      "sourcePath": "assets/v20/hair-atlas/pose-8-18.png",
+      "sourceSha256": "21611ff1edaa359e40d9aa1423bbfdf96808f551affffd2350f4af5886c7b57a"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-8-17.png",
+      "sha256": "698a9fdcfe5d04c8ebc9264017dffbd9a996a8f8e5e1ec8e8b08be464b61ef9b",
+      "sourcePath": "assets/v20/hair-atlas/pose-8-17.png",
+      "sourceSha256": "698a9fdcfe5d04c8ebc9264017dffbd9a996a8f8e5e1ec8e8b08be464b61ef9b"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-8-16.png",
+      "sha256": "74ce678599974bf1e7e117ac609ccc280b4398f3cb3048d43e2007498d52adba",
+      "sourcePath": "assets/v20/hair-atlas/pose-8-16.png",
+      "sourceSha256": "74ce678599974bf1e7e117ac609ccc280b4398f3cb3048d43e2007498d52adba"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-8-15.png",
+      "sha256": "816fdf4460b3d822020adc956ac72dc59df5f5c58a538e83ce2b1c1840702abf",
+      "sourcePath": "assets/v20/hair-atlas/pose-8-15.png",
+      "sourceSha256": "816fdf4460b3d822020adc956ac72dc59df5f5c58a538e83ce2b1c1840702abf"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-8-14.png",
+      "sha256": "6c09969c83c63d101c66b11469ace034cdfc2007231b0426b5a97ba31f27d5ac",
+      "sourcePath": "assets/v20/hair-atlas/pose-8-14.png",
+      "sourceSha256": "6c09969c83c63d101c66b11469ace034cdfc2007231b0426b5a97ba31f27d5ac"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-8-13.png",
+      "sha256": "5486434217120819d732c7f46c10944813067a32a4713ea95f8261134a7359cf",
+      "sourcePath": "assets/v20/hair-atlas/pose-8-13.png",
+      "sourceSha256": "5486434217120819d732c7f46c10944813067a32a4713ea95f8261134a7359cf"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-8-12.png",
+      "sha256": "69f1b424102878c53dd44a55254c53c75d721b89203055378faa1ba445f84c8d",
+      "sourcePath": "assets/v20/hair-atlas/pose-8-12.png",
+      "sourceSha256": "69f1b424102878c53dd44a55254c53c75d721b89203055378faa1ba445f84c8d"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-8-11.png",
+      "sha256": "2826e771fd923e601ba77ad9c8a197b7ae3b9829487a886034aeb65459c91a00",
+      "sourcePath": "assets/v20/hair-atlas/pose-8-11.png",
+      "sourceSha256": "2826e771fd923e601ba77ad9c8a197b7ae3b9829487a886034aeb65459c91a00"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-8-10.png",
+      "sha256": "afd0b8213478e7eab58c487a03ebef291e3f3012d21c10ec498a857541ad32d4",
+      "sourcePath": "assets/v20/hair-atlas/pose-8-10.png",
+      "sourceSha256": "afd0b8213478e7eab58c487a03ebef291e3f3012d21c10ec498a857541ad32d4"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-8-9.png",
+      "sha256": "f40e9d7e18e22e680f28595c71ad2e876f453ed576eb5ff3239ad27b24c47bf4",
+      "sourcePath": "assets/v20/hair-atlas/pose-8-9.png",
+      "sourceSha256": "f40e9d7e18e22e680f28595c71ad2e876f453ed576eb5ff3239ad27b24c47bf4"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-8-8.png",
+      "sha256": "a8f685f28abd2450ebd91d2662b1e5f1b4e73aa0cf7997d42d1af9ca365b9d0d",
+      "sourcePath": "assets/v20/hair-atlas/pose-8-8.png",
+      "sourceSha256": "a8f685f28abd2450ebd91d2662b1e5f1b4e73aa0cf7997d42d1af9ca365b9d0d"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-8-7.png",
+      "sha256": "a727a4046bb164335705d1064811187f78e8db2fc7b0ab602884e326a163800e",
+      "sourcePath": "assets/v20/hair-atlas/pose-8-7.png",
+      "sourceSha256": "a727a4046bb164335705d1064811187f78e8db2fc7b0ab602884e326a163800e"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-8-6.png",
+      "sha256": "536beca1439b1df1077e306a01afb8e3fd9f67c9c8be0bf04b30f8580c731f56",
+      "sourcePath": "assets/v20/hair-atlas/pose-8-6.png",
+      "sourceSha256": "536beca1439b1df1077e306a01afb8e3fd9f67c9c8be0bf04b30f8580c731f56"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-8-5.png",
+      "sha256": "51050aacb595ce725bcf4301cb5c8aafe54e2c252f2e2786f1472f43f7da271f",
+      "sourcePath": "assets/v20/hair-atlas/pose-8-5.png",
+      "sourceSha256": "51050aacb595ce725bcf4301cb5c8aafe54e2c252f2e2786f1472f43f7da271f"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-8-4.png",
+      "sha256": "15f8dc5006c1c399a8798b3a242be68dbfa1bf784d79faa2019071324bee539f",
+      "sourcePath": "assets/v20/hair-atlas/pose-8-4.png",
+      "sourceSha256": "15f8dc5006c1c399a8798b3a242be68dbfa1bf784d79faa2019071324bee539f"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-8-3.png",
+      "sha256": "12a568e30098f8512d3ec9ff5b08e8660dc65ebcfb8858b31eb070045d72ff5a",
+      "sourcePath": "assets/v20/hair-atlas/pose-8-3.png",
+      "sourceSha256": "12a568e30098f8512d3ec9ff5b08e8660dc65ebcfb8858b31eb070045d72ff5a"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-8-2.png",
+      "sha256": "28b3e67cc1db5fe2c92f026ee5fadaed12bd0309a49b5d9d3abc419ceb1a5a75",
+      "sourcePath": "assets/v20/hair-atlas/pose-8-2.png",
+      "sourceSha256": "28b3e67cc1db5fe2c92f026ee5fadaed12bd0309a49b5d9d3abc419ceb1a5a75"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-8-1.png",
+      "sha256": "ef21e02ee5ad159f761f4468b0b90b85e43be5aba763f72d4ba880115238f211",
+      "sourcePath": "assets/v20/hair-atlas/pose-8-1.png",
+      "sourceSha256": "ef21e02ee5ad159f761f4468b0b90b85e43be5aba763f72d4ba880115238f211"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-8-0.png",
+      "sha256": "1bc7c0a9896efd9c07404e9e547f5a8d95828a98b11ffbcfc8d9e226331c03ff",
+      "sourcePath": "assets/v20/hair-atlas/pose-8-0.png",
+      "sourceSha256": "1bc7c0a9896efd9c07404e9e547f5a8d95828a98b11ffbcfc8d9e226331c03ff"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-7-24.png",
+      "sha256": "21b7601c3578dd83aeec60e6a64d751c4bf32a0cb67e80608e6bfc5032e69cad",
+      "sourcePath": "assets/v20/hair-atlas/pose-7-24.png",
+      "sourceSha256": "21b7601c3578dd83aeec60e6a64d751c4bf32a0cb67e80608e6bfc5032e69cad"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-7-23.png",
+      "sha256": "8fab7cd227e8499e0712a2f933d30cf4ee1f73e9bf16acf68bbfad8bff36f7db",
+      "sourcePath": "assets/v20/hair-atlas/pose-7-23.png",
+      "sourceSha256": "8fab7cd227e8499e0712a2f933d30cf4ee1f73e9bf16acf68bbfad8bff36f7db"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-7-22.png",
+      "sha256": "d087e3b0520d8cffbf9c263038b8ec3a01b04859da8f83f21c26e994dbaeec45",
+      "sourcePath": "assets/v20/hair-atlas/pose-7-22.png",
+      "sourceSha256": "d087e3b0520d8cffbf9c263038b8ec3a01b04859da8f83f21c26e994dbaeec45"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-7-21.png",
+      "sha256": "3e85b69e0e55d81eeaac12e06b2bd888920e99cc5ad9e7abb95d24572b051aab",
+      "sourcePath": "assets/v20/hair-atlas/pose-7-21.png",
+      "sourceSha256": "3e85b69e0e55d81eeaac12e06b2bd888920e99cc5ad9e7abb95d24572b051aab"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-7-20.png",
+      "sha256": "738ec84b319030ed0462db33262ee878f15df55a24abed77b30fd9ea814f51ef",
+      "sourcePath": "assets/v20/hair-atlas/pose-7-20.png",
+      "sourceSha256": "738ec84b319030ed0462db33262ee878f15df55a24abed77b30fd9ea814f51ef"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-7-19.png",
+      "sha256": "5905201a18487932eacebe3785360c897d703ab631c3608df918e50bb232e65e",
+      "sourcePath": "assets/v20/hair-atlas/pose-7-19.png",
+      "sourceSha256": "5905201a18487932eacebe3785360c897d703ab631c3608df918e50bb232e65e"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-7-18.png",
+      "sha256": "b3fdefc70ee0c302dddf44ae7e16059b5b7d97b81e1fe3dabc2a8bd083199056",
+      "sourcePath": "assets/v20/hair-atlas/pose-7-18.png",
+      "sourceSha256": "b3fdefc70ee0c302dddf44ae7e16059b5b7d97b81e1fe3dabc2a8bd083199056"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-7-17.png",
+      "sha256": "27abe02947edeb84181a0ea310415d81ccb2e27d8cd48bdbe97444d5a92e96f4",
+      "sourcePath": "assets/v20/hair-atlas/pose-7-17.png",
+      "sourceSha256": "27abe02947edeb84181a0ea310415d81ccb2e27d8cd48bdbe97444d5a92e96f4"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-7-16.png",
+      "sha256": "31b6cb7dd400619cb4ca552e2d1c40310a257172d01de2fb1b87664e1328c729",
+      "sourcePath": "assets/v20/hair-atlas/pose-7-16.png",
+      "sourceSha256": "31b6cb7dd400619cb4ca552e2d1c40310a257172d01de2fb1b87664e1328c729"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-7-15.png",
+      "sha256": "5abe4095a2566933769f41e113150cee9efb9dec7f7fc59a7927f43a8e88e78f",
+      "sourcePath": "assets/v20/hair-atlas/pose-7-15.png",
+      "sourceSha256": "5abe4095a2566933769f41e113150cee9efb9dec7f7fc59a7927f43a8e88e78f"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-7-14.png",
+      "sha256": "7be82a78fcf6ab78a6bcba0ddf11ca21decde6e09f6b94e4e462670e13993922",
+      "sourcePath": "assets/v20/hair-atlas/pose-7-14.png",
+      "sourceSha256": "7be82a78fcf6ab78a6bcba0ddf11ca21decde6e09f6b94e4e462670e13993922"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-7-13.png",
+      "sha256": "65cad4593a952e79d96299abd0da47a6edf8dcdc1295fe42016cdee5a50f499d",
+      "sourcePath": "assets/v20/hair-atlas/pose-7-13.png",
+      "sourceSha256": "65cad4593a952e79d96299abd0da47a6edf8dcdc1295fe42016cdee5a50f499d"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-7-12.png",
+      "sha256": "1c063e8dbe45edff226eb477cc24eb56dee55d15356f3aadbd138be7aa3f9fd4",
+      "sourcePath": "assets/v20/hair-atlas/pose-7-12.png",
+      "sourceSha256": "1c063e8dbe45edff226eb477cc24eb56dee55d15356f3aadbd138be7aa3f9fd4"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-7-11.png",
+      "sha256": "e46dcf05502f9b4a09a5ee47847b75f8f2f0e90e4c7aabe5ad56a339207f4331",
+      "sourcePath": "assets/v20/hair-atlas/pose-7-11.png",
+      "sourceSha256": "e46dcf05502f9b4a09a5ee47847b75f8f2f0e90e4c7aabe5ad56a339207f4331"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-7-10.png",
+      "sha256": "c9d99bfac3fc01f17e3aacee4ef991ce5edb9ebe8bc798c9c6c14e3f5f4b1d0c",
+      "sourcePath": "assets/v20/hair-atlas/pose-7-10.png",
+      "sourceSha256": "c9d99bfac3fc01f17e3aacee4ef991ce5edb9ebe8bc798c9c6c14e3f5f4b1d0c"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-7-9.png",
+      "sha256": "2c7faa8c9b1225f0dcff8dcf620f8489e1e86a5544bee71988ef5e20ce0db12b",
+      "sourcePath": "assets/v20/hair-atlas/pose-7-9.png",
+      "sourceSha256": "2c7faa8c9b1225f0dcff8dcf620f8489e1e86a5544bee71988ef5e20ce0db12b"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-7-8.png",
+      "sha256": "58d51d02ac35020764d37fb0ca43f00859ec7d1e6de8665beb5b08e0be582c05",
+      "sourcePath": "assets/v20/hair-atlas/pose-7-8.png",
+      "sourceSha256": "58d51d02ac35020764d37fb0ca43f00859ec7d1e6de8665beb5b08e0be582c05"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-7-7.png",
+      "sha256": "2e2b098ec714bcac1bc33fe81b8febe58ccf4de12ad782829c81df76cdb5c9d7",
+      "sourcePath": "assets/v20/hair-atlas/pose-7-7.png",
+      "sourceSha256": "2e2b098ec714bcac1bc33fe81b8febe58ccf4de12ad782829c81df76cdb5c9d7"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-7-6.png",
+      "sha256": "19b560334b0b0d4088d4dea8b1d937ff343169b01ea34c4e79b821e7c37ab539",
+      "sourcePath": "assets/v20/hair-atlas/pose-7-6.png",
+      "sourceSha256": "19b560334b0b0d4088d4dea8b1d937ff343169b01ea34c4e79b821e7c37ab539"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-7-5.png",
+      "sha256": "567c1a8c17ca76698ec302534a1832526e056b4f0c46b1d73de7f00e58f2d2a7",
+      "sourcePath": "assets/v20/hair-atlas/pose-7-5.png",
+      "sourceSha256": "567c1a8c17ca76698ec302534a1832526e056b4f0c46b1d73de7f00e58f2d2a7"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-7-4.png",
+      "sha256": "8ce0736e57f516db05eb7ef6176897c1708587eddd4b03589a9d2de01ced9cab",
+      "sourcePath": "assets/v20/hair-atlas/pose-7-4.png",
+      "sourceSha256": "8ce0736e57f516db05eb7ef6176897c1708587eddd4b03589a9d2de01ced9cab"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-7-3.png",
+      "sha256": "c9884e93a448b1cfa4bcb38ce8228e07280861a3f57d909d8a055e21f15945e0",
+      "sourcePath": "assets/v20/hair-atlas/pose-7-3.png",
+      "sourceSha256": "c9884e93a448b1cfa4bcb38ce8228e07280861a3f57d909d8a055e21f15945e0"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-7-2.png",
+      "sha256": "679e4ed8cfe59026fae82fd81ae327c2b53af42ef292cab248a86f6d68d9faab",
+      "sourcePath": "assets/v20/hair-atlas/pose-7-2.png",
+      "sourceSha256": "679e4ed8cfe59026fae82fd81ae327c2b53af42ef292cab248a86f6d68d9faab"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-7-1.png",
+      "sha256": "5e6a3691caeff6dc94c82a9220516a79a2c5f83b398d94de5344f859510bf915",
+      "sourcePath": "assets/v20/hair-atlas/pose-7-1.png",
+      "sourceSha256": "5e6a3691caeff6dc94c82a9220516a79a2c5f83b398d94de5344f859510bf915"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-7-0.png",
+      "sha256": "5c1b0a3a633654a79bcbfbdb401c48967a74feec8ce1b47ccada4a130168bcca",
+      "sourcePath": "assets/v20/hair-atlas/pose-7-0.png",
+      "sourceSha256": "5c1b0a3a633654a79bcbfbdb401c48967a74feec8ce1b47ccada4a130168bcca"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-6-24.png",
+      "sha256": "2af6e272ba8550de71b2d1daa10260577368d5a6e98845b64f9bdbe8944015e8",
+      "sourcePath": "assets/v20/hair-atlas/pose-6-24.png",
+      "sourceSha256": "2af6e272ba8550de71b2d1daa10260577368d5a6e98845b64f9bdbe8944015e8"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-6-23.png",
+      "sha256": "af8f1d878794458fda30850f0deea3bb592dedd31ab4ee2fef739f0a20b31e23",
+      "sourcePath": "assets/v20/hair-atlas/pose-6-23.png",
+      "sourceSha256": "af8f1d878794458fda30850f0deea3bb592dedd31ab4ee2fef739f0a20b31e23"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-6-22.png",
+      "sha256": "ac5e149482438a0bba2d45516702c69171d1f77c04392b7be889cd74a18f640e",
+      "sourcePath": "assets/v20/hair-atlas/pose-6-22.png",
+      "sourceSha256": "ac5e149482438a0bba2d45516702c69171d1f77c04392b7be889cd74a18f640e"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-6-21.png",
+      "sha256": "848810d344b28e5d7be54c811a6a5a374df3b54d09969e1b1d8ea1a832099b65",
+      "sourcePath": "assets/v20/hair-atlas/pose-6-21.png",
+      "sourceSha256": "848810d344b28e5d7be54c811a6a5a374df3b54d09969e1b1d8ea1a832099b65"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-6-20.png",
+      "sha256": "9fe924ec71d1440a8ff092e37b248af4ca5ec820cf7e01e1dc7592fdce17f8dc",
+      "sourcePath": "assets/v20/hair-atlas/pose-6-20.png",
+      "sourceSha256": "9fe924ec71d1440a8ff092e37b248af4ca5ec820cf7e01e1dc7592fdce17f8dc"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-6-19.png",
+      "sha256": "e63f60c98d6a8d645bc9b7c58ed3f274a9ffedebcc85c2a541a6d0df6ba95dc4",
+      "sourcePath": "assets/v20/hair-atlas/pose-6-19.png",
+      "sourceSha256": "e63f60c98d6a8d645bc9b7c58ed3f274a9ffedebcc85c2a541a6d0df6ba95dc4"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-6-18.png",
+      "sha256": "04724d2ea4e0910605c158b0dfdca206a159ff30f07e0ece595cf0c5f0579bb2",
+      "sourcePath": "assets/v20/hair-atlas/pose-6-18.png",
+      "sourceSha256": "04724d2ea4e0910605c158b0dfdca206a159ff30f07e0ece595cf0c5f0579bb2"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-6-17.png",
+      "sha256": "2a3a1ef2a36c58177e91907ce27622ca232aefa2aec93e070bbbbb32f89283be",
+      "sourcePath": "assets/v20/hair-atlas/pose-6-17.png",
+      "sourceSha256": "2a3a1ef2a36c58177e91907ce27622ca232aefa2aec93e070bbbbb32f89283be"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-6-16.png",
+      "sha256": "3c43df573552a8104434ecd69595b933ba7092ae9f9f7cd981a530359253d6b3",
+      "sourcePath": "assets/v20/hair-atlas/pose-6-16.png",
+      "sourceSha256": "3c43df573552a8104434ecd69595b933ba7092ae9f9f7cd981a530359253d6b3"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-6-15.png",
+      "sha256": "bfd0865627eabde9bf7001d83a869ae82cdc86396392337e7c69dd4d5c9accec",
+      "sourcePath": "assets/v20/hair-atlas/pose-6-15.png",
+      "sourceSha256": "bfd0865627eabde9bf7001d83a869ae82cdc86396392337e7c69dd4d5c9accec"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-6-14.png",
+      "sha256": "0ea5265c79426845aa99841cab19e002178ac31973cf779061e1ff135004dee5",
+      "sourcePath": "assets/v20/hair-atlas/pose-6-14.png",
+      "sourceSha256": "0ea5265c79426845aa99841cab19e002178ac31973cf779061e1ff135004dee5"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-6-13.png",
+      "sha256": "9ef0399cbc3e50e5310d734d3f3594cfda5b3f7b1afe3f129bcee0a99b0db6bf",
+      "sourcePath": "assets/v20/hair-atlas/pose-6-13.png",
+      "sourceSha256": "9ef0399cbc3e50e5310d734d3f3594cfda5b3f7b1afe3f129bcee0a99b0db6bf"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-6-12.png",
+      "sha256": "333cc813f4b882fc3243e696a5ccdce52a7152f7a37f7d05e3bbc890619651ec",
+      "sourcePath": "assets/v20/hair-atlas/pose-6-12.png",
+      "sourceSha256": "333cc813f4b882fc3243e696a5ccdce52a7152f7a37f7d05e3bbc890619651ec"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-6-11.png",
+      "sha256": "5a22d967082f35825f22fb6dbe63409991c24a33d54014cd596e6626e8231eae",
+      "sourcePath": "assets/v20/hair-atlas/pose-6-11.png",
+      "sourceSha256": "5a22d967082f35825f22fb6dbe63409991c24a33d54014cd596e6626e8231eae"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-6-10.png",
+      "sha256": "aecece8f232678e9dcb21f1404599f54ed12764ff8de237670e8616306588b72",
+      "sourcePath": "assets/v20/hair-atlas/pose-6-10.png",
+      "sourceSha256": "aecece8f232678e9dcb21f1404599f54ed12764ff8de237670e8616306588b72"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-6-9.png",
+      "sha256": "2b8535075f2f45d82945e9c411a0f9d79b0fec3aa3de08ee5ffb0edf825526a5",
+      "sourcePath": "assets/v20/hair-atlas/pose-6-9.png",
+      "sourceSha256": "2b8535075f2f45d82945e9c411a0f9d79b0fec3aa3de08ee5ffb0edf825526a5"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-6-8.png",
+      "sha256": "f3b451e78a2528d54c42f69a6f94136319a60b84c191a7544a8edb87a58d4772",
+      "sourcePath": "assets/v20/hair-atlas/pose-6-8.png",
+      "sourceSha256": "f3b451e78a2528d54c42f69a6f94136319a60b84c191a7544a8edb87a58d4772"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-6-7.png",
+      "sha256": "9bec8a03349026af369278769c17f8bc796aef62b81e5d54b86586e5af54509a",
+      "sourcePath": "assets/v20/hair-atlas/pose-6-7.png",
+      "sourceSha256": "9bec8a03349026af369278769c17f8bc796aef62b81e5d54b86586e5af54509a"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-6-6.png",
+      "sha256": "24ae0ffbebf94286e5bfad3d59db41139a4d6440920262900dec4dbc29d674d7",
+      "sourcePath": "assets/v20/hair-atlas/pose-6-6.png",
+      "sourceSha256": "24ae0ffbebf94286e5bfad3d59db41139a4d6440920262900dec4dbc29d674d7"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-6-5.png",
+      "sha256": "3fb1340df4250f88a340a03eb702e6884cd15fdcf566fee0aa9c60fb481d7286",
+      "sourcePath": "assets/v20/hair-atlas/pose-6-5.png",
+      "sourceSha256": "3fb1340df4250f88a340a03eb702e6884cd15fdcf566fee0aa9c60fb481d7286"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-6-4.png",
+      "sha256": "812e1ad957b87c54eea83d5d7c2707f4e1adcdf0ff21901cdbb14a9e5c7595be",
+      "sourcePath": "assets/v20/hair-atlas/pose-6-4.png",
+      "sourceSha256": "812e1ad957b87c54eea83d5d7c2707f4e1adcdf0ff21901cdbb14a9e5c7595be"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-6-3.png",
+      "sha256": "e05df43f4c5ddab66aa866858c2b21d1439e4886c0b423cb41b2ecc8b5799ca6",
+      "sourcePath": "assets/v20/hair-atlas/pose-6-3.png",
+      "sourceSha256": "e05df43f4c5ddab66aa866858c2b21d1439e4886c0b423cb41b2ecc8b5799ca6"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-6-2.png",
+      "sha256": "7ef4880c63041e19346267a44191dde491c11aa20e2490905089e9fe21278597",
+      "sourcePath": "assets/v20/hair-atlas/pose-6-2.png",
+      "sourceSha256": "7ef4880c63041e19346267a44191dde491c11aa20e2490905089e9fe21278597"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-6-1.png",
+      "sha256": "7efb973296b4417c544b7e6ff932ea07c3ee5af5e707da42dc092ca7454d246a",
+      "sourcePath": "assets/v20/hair-atlas/pose-6-1.png",
+      "sourceSha256": "7efb973296b4417c544b7e6ff932ea07c3ee5af5e707da42dc092ca7454d246a"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-6-0.png",
+      "sha256": "eb944050db290d52b0195ff263b9f614fbb630db20f4a6a9714d115f2f89cc36",
+      "sourcePath": "assets/v20/hair-atlas/pose-6-0.png",
+      "sourceSha256": "eb944050db290d52b0195ff263b9f614fbb630db20f4a6a9714d115f2f89cc36"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-5-24.png",
+      "sha256": "f66e97fdec823d6e38488ca28443d24e44d69c1c4a7fc97d472a1500043417a1",
+      "sourcePath": "assets/v20/hair-atlas/pose-5-24.png",
+      "sourceSha256": "f66e97fdec823d6e38488ca28443d24e44d69c1c4a7fc97d472a1500043417a1"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-5-23.png",
+      "sha256": "9450deed394552cb8d409b7de74d4b6f7ae54b16c9e85834be3b1b524c50d709",
+      "sourcePath": "assets/v20/hair-atlas/pose-5-23.png",
+      "sourceSha256": "9450deed394552cb8d409b7de74d4b6f7ae54b16c9e85834be3b1b524c50d709"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-5-22.png",
+      "sha256": "ac1aa82abecded5c5ddf7dadfbae6430f7006d7e28f8ca56e85348a509c537ab",
+      "sourcePath": "assets/v20/hair-atlas/pose-5-22.png",
+      "sourceSha256": "ac1aa82abecded5c5ddf7dadfbae6430f7006d7e28f8ca56e85348a509c537ab"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-5-21.png",
+      "sha256": "d107a770e7f37b1049924f7766eff0f7aa8c9c8bf7f9ede0edf0ad830ba1dc4b",
+      "sourcePath": "assets/v20/hair-atlas/pose-5-21.png",
+      "sourceSha256": "d107a770e7f37b1049924f7766eff0f7aa8c9c8bf7f9ede0edf0ad830ba1dc4b"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-5-20.png",
+      "sha256": "0ed74e2eee997828687cd0b8a6de0150890c72046556a9be5b7c1c02d46eae0e",
+      "sourcePath": "assets/v20/hair-atlas/pose-5-20.png",
+      "sourceSha256": "0ed74e2eee997828687cd0b8a6de0150890c72046556a9be5b7c1c02d46eae0e"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-5-19.png",
+      "sha256": "eb3537d65d19d7939ac700ccf4ae8def6b5c98f2d6c29db4f2a4d0d863e1025f",
+      "sourcePath": "assets/v20/hair-atlas/pose-5-19.png",
+      "sourceSha256": "eb3537d65d19d7939ac700ccf4ae8def6b5c98f2d6c29db4f2a4d0d863e1025f"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-5-18.png",
+      "sha256": "ef5901edebbbd0d07eaa7f98888032afcd69b70118591373d77f24a0fd8a1bf5",
+      "sourcePath": "assets/v20/hair-atlas/pose-5-18.png",
+      "sourceSha256": "ef5901edebbbd0d07eaa7f98888032afcd69b70118591373d77f24a0fd8a1bf5"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-5-17.png",
+      "sha256": "98b4104104d61dbbcdb60f8f9eef761b948ee21d28cb48b3db9d530d9ea2493d",
+      "sourcePath": "assets/v20/hair-atlas/pose-5-17.png",
+      "sourceSha256": "98b4104104d61dbbcdb60f8f9eef761b948ee21d28cb48b3db9d530d9ea2493d"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-5-16.png",
+      "sha256": "21e0489e5648c297e37d20d474f9597a5cb8b42135c18fef9f0be1a082d0dd50",
+      "sourcePath": "assets/v20/hair-atlas/pose-5-16.png",
+      "sourceSha256": "21e0489e5648c297e37d20d474f9597a5cb8b42135c18fef9f0be1a082d0dd50"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-5-15.png",
+      "sha256": "da6270b1e67ad146dd40222dc5ca99da5c6610064d17b7a2e3f7861d2263a7fb",
+      "sourcePath": "assets/v20/hair-atlas/pose-5-15.png",
+      "sourceSha256": "da6270b1e67ad146dd40222dc5ca99da5c6610064d17b7a2e3f7861d2263a7fb"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-5-14.png",
+      "sha256": "5f42891a4e972fb22dc79173d9768e0370d86166cdd711fba48077d5c8191d70",
+      "sourcePath": "assets/v20/hair-atlas/pose-5-14.png",
+      "sourceSha256": "5f42891a4e972fb22dc79173d9768e0370d86166cdd711fba48077d5c8191d70"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-5-13.png",
+      "sha256": "4fb687b92aeae1cfe9ca89c9a9a838cb8c3030e3ca53c9801e51ebc4251bc2ee",
+      "sourcePath": "assets/v20/hair-atlas/pose-5-13.png",
+      "sourceSha256": "4fb687b92aeae1cfe9ca89c9a9a838cb8c3030e3ca53c9801e51ebc4251bc2ee"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-5-12.png",
+      "sha256": "248e56304b2a26e356fe9e1fe87f30ffea768766c36672acaa44b05ca49fbded",
+      "sourcePath": "assets/v20/hair-atlas/pose-5-12.png",
+      "sourceSha256": "248e56304b2a26e356fe9e1fe87f30ffea768766c36672acaa44b05ca49fbded"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-5-11.png",
+      "sha256": "d10c1f13136d876219724e6c4c0eeef19f8d8e393fcb20ddf00ce06b48f775f4",
+      "sourcePath": "assets/v20/hair-atlas/pose-5-11.png",
+      "sourceSha256": "d10c1f13136d876219724e6c4c0eeef19f8d8e393fcb20ddf00ce06b48f775f4"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-5-10.png",
+      "sha256": "2ac6acc1587dabbd66674dba0b1da8aceaabeb273e4cb9ee609cd1c5f79407ee",
+      "sourcePath": "assets/v20/hair-atlas/pose-5-10.png",
+      "sourceSha256": "2ac6acc1587dabbd66674dba0b1da8aceaabeb273e4cb9ee609cd1c5f79407ee"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-5-9.png",
+      "sha256": "ce4768ec1fedb0a9f324c91a7b6cb24bb9776396c527eab4dfbdc11825ed379d",
+      "sourcePath": "assets/v20/hair-atlas/pose-5-9.png",
+      "sourceSha256": "ce4768ec1fedb0a9f324c91a7b6cb24bb9776396c527eab4dfbdc11825ed379d"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-5-8.png",
+      "sha256": "dec1a3cd9f213fdb57b6d452a72096c9d7f839fca047e4db0a0e1928e34ec33c",
+      "sourcePath": "assets/v20/hair-atlas/pose-5-8.png",
+      "sourceSha256": "dec1a3cd9f213fdb57b6d452a72096c9d7f839fca047e4db0a0e1928e34ec33c"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-5-7.png",
+      "sha256": "1976043cf3c11a3c228c2579f6bfd3daf2168033abee0833758698ddb3424e4d",
+      "sourcePath": "assets/v20/hair-atlas/pose-5-7.png",
+      "sourceSha256": "1976043cf3c11a3c228c2579f6bfd3daf2168033abee0833758698ddb3424e4d"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-5-6.png",
+      "sha256": "ae16dd77e54fc06bd1088fef9045d70271b516cbb5dda91332ac8c784d6b7351",
+      "sourcePath": "assets/v20/hair-atlas/pose-5-6.png",
+      "sourceSha256": "ae16dd77e54fc06bd1088fef9045d70271b516cbb5dda91332ac8c784d6b7351"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-5-5.png",
+      "sha256": "d93a11328db779c088dbf4256d6bb8017ecb6c8d3bd395c892b7db966ba5a7cb",
+      "sourcePath": "assets/v20/hair-atlas/pose-5-5.png",
+      "sourceSha256": "d93a11328db779c088dbf4256d6bb8017ecb6c8d3bd395c892b7db966ba5a7cb"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-5-4.png",
+      "sha256": "eb3ba55fcc021d99cd5e7f108338cd3666a5802b6a6197a3e2f396145abd8d88",
+      "sourcePath": "assets/v20/hair-atlas/pose-5-4.png",
+      "sourceSha256": "eb3ba55fcc021d99cd5e7f108338cd3666a5802b6a6197a3e2f396145abd8d88"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-5-3.png",
+      "sha256": "9d8e3494fa51358b04278049996424dbbdf159ad98dd78d732cc5cc6f95b958c",
+      "sourcePath": "assets/v20/hair-atlas/pose-5-3.png",
+      "sourceSha256": "9d8e3494fa51358b04278049996424dbbdf159ad98dd78d732cc5cc6f95b958c"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-5-2.png",
+      "sha256": "7513c4beeab4252de06cb9f2b4f6d0aeeb1b4272d8ad68b8d4e0ccb97d2abeaf",
+      "sourcePath": "assets/v20/hair-atlas/pose-5-2.png",
+      "sourceSha256": "7513c4beeab4252de06cb9f2b4f6d0aeeb1b4272d8ad68b8d4e0ccb97d2abeaf"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-5-1.png",
+      "sha256": "ec5f5e0c85b9245a11d42823c587e58ad7812815cdf3d07cdb2ca43ed78357b1",
+      "sourcePath": "assets/v20/hair-atlas/pose-5-1.png",
+      "sourceSha256": "ec5f5e0c85b9245a11d42823c587e58ad7812815cdf3d07cdb2ca43ed78357b1"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-5-0.png",
+      "sha256": "b59cf5323d7b1fa90af62cc0b8103e3d200aeab9f9a43f5fb0e54eeb8e0f6b65",
+      "sourcePath": "assets/v20/hair-atlas/pose-5-0.png",
+      "sourceSha256": "b59cf5323d7b1fa90af62cc0b8103e3d200aeab9f9a43f5fb0e54eeb8e0f6b65"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-4-24.png",
+      "sha256": "4b3db10ba4151c26081e516ce31b7999d4f66c0af02d267875cb7446b78cf157",
+      "sourcePath": "assets/v20/hair-atlas/pose-4-24.png",
+      "sourceSha256": "4b3db10ba4151c26081e516ce31b7999d4f66c0af02d267875cb7446b78cf157"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-4-23.png",
+      "sha256": "94321428bf0331b20e528b80a088855691aa0717a0e93607255f17ff9241c3cf",
+      "sourcePath": "assets/v20/hair-atlas/pose-4-23.png",
+      "sourceSha256": "94321428bf0331b20e528b80a088855691aa0717a0e93607255f17ff9241c3cf"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-4-22.png",
+      "sha256": "6e992f6528e61b002450d8d4f7589d8c5b893f4408df8f136ae3884f5ae01b21",
+      "sourcePath": "assets/v20/hair-atlas/pose-4-22.png",
+      "sourceSha256": "6e992f6528e61b002450d8d4f7589d8c5b893f4408df8f136ae3884f5ae01b21"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-4-21.png",
+      "sha256": "60ad48cadc6b12f6c7cc339287204d82a390bcf33273ebef1488eba9d27dfbc9",
+      "sourcePath": "assets/v20/hair-atlas/pose-4-21.png",
+      "sourceSha256": "60ad48cadc6b12f6c7cc339287204d82a390bcf33273ebef1488eba9d27dfbc9"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-4-20.png",
+      "sha256": "5839259527426f59c3f679b495a1dc876a8e4a2f4fdec8a992a82139f15bd684",
+      "sourcePath": "assets/v20/hair-atlas/pose-4-20.png",
+      "sourceSha256": "5839259527426f59c3f679b495a1dc876a8e4a2f4fdec8a992a82139f15bd684"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-4-19.png",
+      "sha256": "220499f76faeeb84a8a66c3d42affa5073c3987ea7298d63135d178a38123cfa",
+      "sourcePath": "assets/v20/hair-atlas/pose-4-19.png",
+      "sourceSha256": "220499f76faeeb84a8a66c3d42affa5073c3987ea7298d63135d178a38123cfa"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-4-18.png",
+      "sha256": "cb3e729df9ce25fcd336511a16054cb3ef718c643c9970a43e7074453ec280b5",
+      "sourcePath": "assets/v20/hair-atlas/pose-4-18.png",
+      "sourceSha256": "cb3e729df9ce25fcd336511a16054cb3ef718c643c9970a43e7074453ec280b5"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-4-17.png",
+      "sha256": "a241c40eda1e2201641383c9996213aef2c3ec9a0db57fe8ef8b8f86abe49d47",
+      "sourcePath": "assets/v20/hair-atlas/pose-4-17.png",
+      "sourceSha256": "a241c40eda1e2201641383c9996213aef2c3ec9a0db57fe8ef8b8f86abe49d47"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-4-16.png",
+      "sha256": "843c4c1d8a481b107f9ed65c71a13ddd345a8bf553fdc44e83c0d02162c0f0b6",
+      "sourcePath": "assets/v20/hair-atlas/pose-4-16.png",
+      "sourceSha256": "843c4c1d8a481b107f9ed65c71a13ddd345a8bf553fdc44e83c0d02162c0f0b6"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-4-15.png",
+      "sha256": "e6215efdd577e142123bfc6f78800f92473f7fe03df75632eac599de97f19187",
+      "sourcePath": "assets/v20/hair-atlas/pose-4-15.png",
+      "sourceSha256": "e6215efdd577e142123bfc6f78800f92473f7fe03df75632eac599de97f19187"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-4-14.png",
+      "sha256": "9e7c1d6c2154b33573ffd13578c3ab454e86c1d25287983cac7dc2c8100532b9",
+      "sourcePath": "assets/v20/hair-atlas/pose-4-14.png",
+      "sourceSha256": "9e7c1d6c2154b33573ffd13578c3ab454e86c1d25287983cac7dc2c8100532b9"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-4-13.png",
+      "sha256": "f0e1802bed16c26191b0733ddb14c6f6a090a4cbb2c978a2a30e618f721a5afd",
+      "sourcePath": "assets/v20/hair-atlas/pose-4-13.png",
+      "sourceSha256": "f0e1802bed16c26191b0733ddb14c6f6a090a4cbb2c978a2a30e618f721a5afd"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-4-11.png",
+      "sha256": "467f82a30436be421fce7606f926fbc591cecd4dcddf73aa2c0b24c8e62a8c00",
+      "sourcePath": "assets/v20/hair-atlas/pose-4-11.png",
+      "sourceSha256": "467f82a30436be421fce7606f926fbc591cecd4dcddf73aa2c0b24c8e62a8c00"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-4-10.png",
+      "sha256": "d5de0bba0aa3655508ee7d12d2cc22ef66ed7fd88144d11b9536e5d821e0af17",
+      "sourcePath": "assets/v20/hair-atlas/pose-4-10.png",
+      "sourceSha256": "d5de0bba0aa3655508ee7d12d2cc22ef66ed7fd88144d11b9536e5d821e0af17"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-4-9.png",
+      "sha256": "7fd65a8b36877ba868de69833729052123354ebfe68b1037810807e61dc3ec9c",
+      "sourcePath": "assets/v20/hair-atlas/pose-4-9.png",
+      "sourceSha256": "7fd65a8b36877ba868de69833729052123354ebfe68b1037810807e61dc3ec9c"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-4-8.png",
+      "sha256": "5c9475551cf673a4d80f13bf006e830d8b0b8350b9bd5ff4ab2322b0b934dbed",
+      "sourcePath": "assets/v20/hair-atlas/pose-4-8.png",
+      "sourceSha256": "5c9475551cf673a4d80f13bf006e830d8b0b8350b9bd5ff4ab2322b0b934dbed"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-4-7.png",
+      "sha256": "7874c17825d7af7fb54ff1bc3f9710898cc07a90fe1935983802ef4d64eb9a23",
+      "sourcePath": "assets/v20/hair-atlas/pose-4-7.png",
+      "sourceSha256": "7874c17825d7af7fb54ff1bc3f9710898cc07a90fe1935983802ef4d64eb9a23"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-4-6.png",
+      "sha256": "db29715e010da5297b4737faba3ae9579584bd8081f2911b185edeb3b1876e76",
+      "sourcePath": "assets/v20/hair-atlas/pose-4-6.png",
+      "sourceSha256": "db29715e010da5297b4737faba3ae9579584bd8081f2911b185edeb3b1876e76"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-4-5.png",
+      "sha256": "cb23436878cba9c03f5e0e72a5e3c9ec6c532cf43bee50e0a5db3f3b2ca7dd19",
+      "sourcePath": "assets/v20/hair-atlas/pose-4-5.png",
+      "sourceSha256": "cb23436878cba9c03f5e0e72a5e3c9ec6c532cf43bee50e0a5db3f3b2ca7dd19"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-4-4.png",
+      "sha256": "9bc0ce02afccaf12f696d231b08f56a978ba6ec193931fb04347f61a9014ffd5",
+      "sourcePath": "assets/v20/hair-atlas/pose-4-4.png",
+      "sourceSha256": "9bc0ce02afccaf12f696d231b08f56a978ba6ec193931fb04347f61a9014ffd5"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-4-3.png",
+      "sha256": "92742c2ce507d68689324dd26e84d02607e842ea5c8f11dccb21dc000f819590",
+      "sourcePath": "assets/v20/hair-atlas/pose-4-3.png",
+      "sourceSha256": "92742c2ce507d68689324dd26e84d02607e842ea5c8f11dccb21dc000f819590"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-4-2.png",
+      "sha256": "d31bdf23854d08c990bb4550010c56c600d84f49869fa83f7010d3839721014d",
+      "sourcePath": "assets/v20/hair-atlas/pose-4-2.png",
+      "sourceSha256": "d31bdf23854d08c990bb4550010c56c600d84f49869fa83f7010d3839721014d"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-4-1.png",
+      "sha256": "3616a19ef64cc069cb33ba823cb859276b015435acf9b0880558be95dfec8331",
+      "sourcePath": "assets/v20/hair-atlas/pose-4-1.png",
+      "sourceSha256": "3616a19ef64cc069cb33ba823cb859276b015435acf9b0880558be95dfec8331"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-4-0.png",
+      "sha256": "ebed8ecbccca7e6b8d832837c78da5a969b41ce256f7b22c3e4edcaa561d1bba",
+      "sourcePath": "assets/v20/hair-atlas/pose-4-0.png",
+      "sourceSha256": "ebed8ecbccca7e6b8d832837c78da5a969b41ce256f7b22c3e4edcaa561d1bba"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-3-24.png",
+      "sha256": "22c4c81bee61ce33d42dde1cc3b1ba28d8f8e360ab657271373730e3d44193ff",
+      "sourcePath": "assets/v20/hair-atlas/pose-3-24.png",
+      "sourceSha256": "22c4c81bee61ce33d42dde1cc3b1ba28d8f8e360ab657271373730e3d44193ff"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-3-23.png",
+      "sha256": "2450d547223337ee93ca8a227c1251b3b362f78b1a00dff3647894fd08e68c4b",
+      "sourcePath": "assets/v20/hair-atlas/pose-3-23.png",
+      "sourceSha256": "2450d547223337ee93ca8a227c1251b3b362f78b1a00dff3647894fd08e68c4b"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-3-22.png",
+      "sha256": "c89d73ca66dcf37e24cc0867599e2619a951a16791b9fa21b2dd56f51424d324",
+      "sourcePath": "assets/v20/hair-atlas/pose-3-22.png",
+      "sourceSha256": "c89d73ca66dcf37e24cc0867599e2619a951a16791b9fa21b2dd56f51424d324"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-3-21.png",
+      "sha256": "3bda8825d665f2565d23fbc88e4938e961dd9f7d224bd7367c3ea18080ca7956",
+      "sourcePath": "assets/v20/hair-atlas/pose-3-21.png",
+      "sourceSha256": "3bda8825d665f2565d23fbc88e4938e961dd9f7d224bd7367c3ea18080ca7956"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-3-20.png",
+      "sha256": "882896326b0eac49159856c3bf5173efc12c9f4c3859381fc1af572dd663cde4",
+      "sourcePath": "assets/v20/hair-atlas/pose-3-20.png",
+      "sourceSha256": "882896326b0eac49159856c3bf5173efc12c9f4c3859381fc1af572dd663cde4"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-3-19.png",
+      "sha256": "372d94bedbf23f1f116b613501306c609a817984d4d8fa13475008b8d23cf0a4",
+      "sourcePath": "assets/v20/hair-atlas/pose-3-19.png",
+      "sourceSha256": "372d94bedbf23f1f116b613501306c609a817984d4d8fa13475008b8d23cf0a4"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-3-18.png",
+      "sha256": "a7da0c316202f7c75d74e827aac0216af4cee563975f55aff6feaef13411c4ab",
+      "sourcePath": "assets/v20/hair-atlas/pose-3-18.png",
+      "sourceSha256": "a7da0c316202f7c75d74e827aac0216af4cee563975f55aff6feaef13411c4ab"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-3-17.png",
+      "sha256": "ee60d08ca32c8cd58af70381f72c6349c671d40e3400a9f3c68e00ff395f7ef0",
+      "sourcePath": "assets/v20/hair-atlas/pose-3-17.png",
+      "sourceSha256": "ee60d08ca32c8cd58af70381f72c6349c671d40e3400a9f3c68e00ff395f7ef0"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-3-16.png",
+      "sha256": "9ae22dbb38e9e10ce5d09e4acd3584d20f0b17a4ac3d590de1f08acb59976a2d",
+      "sourcePath": "assets/v20/hair-atlas/pose-3-16.png",
+      "sourceSha256": "9ae22dbb38e9e10ce5d09e4acd3584d20f0b17a4ac3d590de1f08acb59976a2d"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-3-15.png",
+      "sha256": "abfe5f82104493e48ad8a3f54572211d8864281516a242694b3bbe75b735e9a6",
+      "sourcePath": "assets/v20/hair-atlas/pose-3-15.png",
+      "sourceSha256": "abfe5f82104493e48ad8a3f54572211d8864281516a242694b3bbe75b735e9a6"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-3-14.png",
+      "sha256": "01eb8e87f9930e061c4a4cc6a7b8a00bf4d408e09ddab2efeb9cf2aa520adabe",
+      "sourcePath": "assets/v20/hair-atlas/pose-3-14.png",
+      "sourceSha256": "01eb8e87f9930e061c4a4cc6a7b8a00bf4d408e09ddab2efeb9cf2aa520adabe"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-3-13.png",
+      "sha256": "fdce01d9c4dc3cfb09d1b46bbbf9c6e9133e2c08d84b935ee8c28d8c36d0bdc4",
+      "sourcePath": "assets/v20/hair-atlas/pose-3-13.png",
+      "sourceSha256": "fdce01d9c4dc3cfb09d1b46bbbf9c6e9133e2c08d84b935ee8c28d8c36d0bdc4"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-3-12.png",
+      "sha256": "c04f8e758e510501fa903833c1dba0a5207159adf2260da3c07c3f96ee77f426",
+      "sourcePath": "assets/v20/hair-atlas/pose-3-12.png",
+      "sourceSha256": "c04f8e758e510501fa903833c1dba0a5207159adf2260da3c07c3f96ee77f426"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-3-11.png",
+      "sha256": "994bacb35044c2386227500d892d54114d587587f2ed9998514320cf59772dc4",
+      "sourcePath": "assets/v20/hair-atlas/pose-3-11.png",
+      "sourceSha256": "994bacb35044c2386227500d892d54114d587587f2ed9998514320cf59772dc4"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-3-10.png",
+      "sha256": "702667577e8776842289cbe46f70be779ac31f63f4fe5233110cdc264861acf1",
+      "sourcePath": "assets/v20/hair-atlas/pose-3-10.png",
+      "sourceSha256": "702667577e8776842289cbe46f70be779ac31f63f4fe5233110cdc264861acf1"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-3-9.png",
+      "sha256": "e2aa8fbc3dea5126e3d5f6b2f8059c6293b8d44f4566bdfb85a6bddc5fc913df",
+      "sourcePath": "assets/v20/hair-atlas/pose-3-9.png",
+      "sourceSha256": "e2aa8fbc3dea5126e3d5f6b2f8059c6293b8d44f4566bdfb85a6bddc5fc913df"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-3-8.png",
+      "sha256": "674dba58c1dfa72fb58889dbd11adb71cb754d8bfff9f529a195d812d3b8ab55",
+      "sourcePath": "assets/v20/hair-atlas/pose-3-8.png",
+      "sourceSha256": "674dba58c1dfa72fb58889dbd11adb71cb754d8bfff9f529a195d812d3b8ab55"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-3-7.png",
+      "sha256": "525ebb4a341f2fb1e6808d1a1b86d3b5e458df92b485cee5869819cc0e1fd127",
+      "sourcePath": "assets/v20/hair-atlas/pose-3-7.png",
+      "sourceSha256": "525ebb4a341f2fb1e6808d1a1b86d3b5e458df92b485cee5869819cc0e1fd127"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-3-6.png",
+      "sha256": "77e23483fd6d05679db7500f7ef936ed07b7c22941a4b116881429af40590cf9",
+      "sourcePath": "assets/v20/hair-atlas/pose-3-6.png",
+      "sourceSha256": "77e23483fd6d05679db7500f7ef936ed07b7c22941a4b116881429af40590cf9"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-3-5.png",
+      "sha256": "e90e0a02e63d380f331c8964782c1869114589195bc7fc8b0713bfb1b048069c",
+      "sourcePath": "assets/v20/hair-atlas/pose-3-5.png",
+      "sourceSha256": "e90e0a02e63d380f331c8964782c1869114589195bc7fc8b0713bfb1b048069c"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-3-4.png",
+      "sha256": "f39de37d9107612d370ca743b418e692144b9eb96f22620728c0c0501f5a816d",
+      "sourcePath": "assets/v20/hair-atlas/pose-3-4.png",
+      "sourceSha256": "f39de37d9107612d370ca743b418e692144b9eb96f22620728c0c0501f5a816d"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-3-3.png",
+      "sha256": "810328eb40f12f6b17c49443ba4a20fdcaa6afec4f48cf99b7cd999976a1947d",
+      "sourcePath": "assets/v20/hair-atlas/pose-3-3.png",
+      "sourceSha256": "810328eb40f12f6b17c49443ba4a20fdcaa6afec4f48cf99b7cd999976a1947d"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-3-2.png",
+      "sha256": "27b84055492fd16760344dc6033fd69148aadaf9e66adf43de026762dac3eef3",
+      "sourcePath": "assets/v20/hair-atlas/pose-3-2.png",
+      "sourceSha256": "27b84055492fd16760344dc6033fd69148aadaf9e66adf43de026762dac3eef3"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-3-1.png",
+      "sha256": "3cf4f65e1dbc8e22059283a0b71fe324aace6ebc7eb5e3c6b9e6c465a54fe86b",
+      "sourcePath": "assets/v20/hair-atlas/pose-3-1.png",
+      "sourceSha256": "3cf4f65e1dbc8e22059283a0b71fe324aace6ebc7eb5e3c6b9e6c465a54fe86b"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-3-0.png",
+      "sha256": "126ac62a4b91881cee49f7394589f4e3fb65005dbbd376e395b99c47f6b450bb",
+      "sourcePath": "assets/v20/hair-atlas/pose-3-0.png",
+      "sourceSha256": "126ac62a4b91881cee49f7394589f4e3fb65005dbbd376e395b99c47f6b450bb"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-2-24.png",
+      "sha256": "ef388d22a03ebc0a2e1400414132aaf8eb4cafacba512b6958b5bf5c27894099",
+      "sourcePath": "assets/v20/hair-atlas/pose-2-24.png",
+      "sourceSha256": "ef388d22a03ebc0a2e1400414132aaf8eb4cafacba512b6958b5bf5c27894099"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-2-23.png",
+      "sha256": "6e2ced85192ae50a6a7bc907b00326a8bf58101bb297c6b8ec3deccda7498d39",
+      "sourcePath": "assets/v20/hair-atlas/pose-2-23.png",
+      "sourceSha256": "6e2ced85192ae50a6a7bc907b00326a8bf58101bb297c6b8ec3deccda7498d39"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-2-22.png",
+      "sha256": "08e95cd91536d254da6cd046a93b9ecaf2b4a8d9b45e1306c514365292ccc058",
+      "sourcePath": "assets/v20/hair-atlas/pose-2-22.png",
+      "sourceSha256": "08e95cd91536d254da6cd046a93b9ecaf2b4a8d9b45e1306c514365292ccc058"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-2-21.png",
+      "sha256": "deb54207dbef3a4c052515e53260ef8c560a206afff037863fec63b7ddbaf751",
+      "sourcePath": "assets/v20/hair-atlas/pose-2-21.png",
+      "sourceSha256": "deb54207dbef3a4c052515e53260ef8c560a206afff037863fec63b7ddbaf751"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-2-20.png",
+      "sha256": "0cd51e87e9ed00328fc6290c96ca56e347485a2a5cfa046d45dc0035610f3994",
+      "sourcePath": "assets/v20/hair-atlas/pose-2-20.png",
+      "sourceSha256": "0cd51e87e9ed00328fc6290c96ca56e347485a2a5cfa046d45dc0035610f3994"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-2-19.png",
+      "sha256": "5722bdfb9332e4d782c1ec92fcd497d0399677c635ba5f7d0a2d9f964d80ed0e",
+      "sourcePath": "assets/v20/hair-atlas/pose-2-19.png",
+      "sourceSha256": "5722bdfb9332e4d782c1ec92fcd497d0399677c635ba5f7d0a2d9f964d80ed0e"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-2-18.png",
+      "sha256": "9efce549e39aa1b18234cb860fc7ee8af5b597378fa2669b6a11572e64214aab",
+      "sourcePath": "assets/v20/hair-atlas/pose-2-18.png",
+      "sourceSha256": "9efce549e39aa1b18234cb860fc7ee8af5b597378fa2669b6a11572e64214aab"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-2-17.png",
+      "sha256": "80dd3201a370b506c5327faab150bfc8dd3a58fea0ca7f0e89b6c098e124577d",
+      "sourcePath": "assets/v20/hair-atlas/pose-2-17.png",
+      "sourceSha256": "80dd3201a370b506c5327faab150bfc8dd3a58fea0ca7f0e89b6c098e124577d"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-2-16.png",
+      "sha256": "bdd8020966adbcd4c58926745334b03778f1b56c2fbe2fdb61ce4c1fb8994f23",
+      "sourcePath": "assets/v20/hair-atlas/pose-2-16.png",
+      "sourceSha256": "bdd8020966adbcd4c58926745334b03778f1b56c2fbe2fdb61ce4c1fb8994f23"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-2-15.png",
+      "sha256": "c7b382b64b27dbca0fe2e0436ee0279a738e6734f7273fae98139c1b8c85780b",
+      "sourcePath": "assets/v20/hair-atlas/pose-2-15.png",
+      "sourceSha256": "c7b382b64b27dbca0fe2e0436ee0279a738e6734f7273fae98139c1b8c85780b"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-2-14.png",
+      "sha256": "f5a45a3bc17b2947704287facd297b8bb3020b9c78196f28984786e10c0b7919",
+      "sourcePath": "assets/v20/hair-atlas/pose-2-14.png",
+      "sourceSha256": "f5a45a3bc17b2947704287facd297b8bb3020b9c78196f28984786e10c0b7919"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-2-13.png",
+      "sha256": "86a48cd0e87d9d404ad87a34171c5bd132d9319e0b964f0786e636903a1dadfb",
+      "sourcePath": "assets/v20/hair-atlas/pose-2-13.png",
+      "sourceSha256": "86a48cd0e87d9d404ad87a34171c5bd132d9319e0b964f0786e636903a1dadfb"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-2-12.png",
+      "sha256": "2835cd875330d73fe76fd0bffc02967787ce70c4af40f04956ebf4dc9e17c650",
+      "sourcePath": "assets/v20/hair-atlas/pose-2-12.png",
+      "sourceSha256": "2835cd875330d73fe76fd0bffc02967787ce70c4af40f04956ebf4dc9e17c650"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-2-11.png",
+      "sha256": "559762ead7ff59a9e43e7710e82a6c1f662388f2989c94f4ee453baf8a6de2f3",
+      "sourcePath": "assets/v20/hair-atlas/pose-2-11.png",
+      "sourceSha256": "559762ead7ff59a9e43e7710e82a6c1f662388f2989c94f4ee453baf8a6de2f3"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-2-10.png",
+      "sha256": "cd28f091619d3eeccfba9dadc6fc6ba150c56d9b8a225aafb19322ed301a75fd",
+      "sourcePath": "assets/v20/hair-atlas/pose-2-10.png",
+      "sourceSha256": "cd28f091619d3eeccfba9dadc6fc6ba150c56d9b8a225aafb19322ed301a75fd"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-2-9.png",
+      "sha256": "e115eb905915178dc13bd76a3cc257189204ef5dda7fa5418c33c5a9a113771f",
+      "sourcePath": "assets/v20/hair-atlas/pose-2-9.png",
+      "sourceSha256": "e115eb905915178dc13bd76a3cc257189204ef5dda7fa5418c33c5a9a113771f"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-2-8.png",
+      "sha256": "1c5e93961d429761393c3f5552cadd731f63422300d10e67cd6c491b984afe02",
+      "sourcePath": "assets/v20/hair-atlas/pose-2-8.png",
+      "sourceSha256": "1c5e93961d429761393c3f5552cadd731f63422300d10e67cd6c491b984afe02"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-2-7.png",
+      "sha256": "0849f70d32dd185d9e40902b8803193cb182179a2ac4288f0b7f85973c18b7fd",
+      "sourcePath": "assets/v20/hair-atlas/pose-2-7.png",
+      "sourceSha256": "0849f70d32dd185d9e40902b8803193cb182179a2ac4288f0b7f85973c18b7fd"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-2-6.png",
+      "sha256": "8f063cf508c48d9fec206946120c0e6dda4e76ba5229b20fc3e9e41f3e7d2fc3",
+      "sourcePath": "assets/v20/hair-atlas/pose-2-6.png",
+      "sourceSha256": "8f063cf508c48d9fec206946120c0e6dda4e76ba5229b20fc3e9e41f3e7d2fc3"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-2-5.png",
+      "sha256": "1821ade47f3e9b349c53740708dbdc41eb36749e64ff1d5df2005e8f6f468b15",
+      "sourcePath": "assets/v20/hair-atlas/pose-2-5.png",
+      "sourceSha256": "1821ade47f3e9b349c53740708dbdc41eb36749e64ff1d5df2005e8f6f468b15"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-2-4.png",
+      "sha256": "a1380e5f08ac4e68a2f5ef0ba1c271f90ab83b049fd7679cda0c2a542064459c",
+      "sourcePath": "assets/v20/hair-atlas/pose-2-4.png",
+      "sourceSha256": "a1380e5f08ac4e68a2f5ef0ba1c271f90ab83b049fd7679cda0c2a542064459c"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-2-3.png",
+      "sha256": "91691bfaa0e78f4e810e2f7672d0ae52bf8dd5381add01f6431327ee2becbb3d",
+      "sourcePath": "assets/v20/hair-atlas/pose-2-3.png",
+      "sourceSha256": "91691bfaa0e78f4e810e2f7672d0ae52bf8dd5381add01f6431327ee2becbb3d"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-2-2.png",
+      "sha256": "e0540be906e4a3d523b5bbddf1b121c80097951dc0d764dfff6f123aa3729964",
+      "sourcePath": "assets/v20/hair-atlas/pose-2-2.png",
+      "sourceSha256": "e0540be906e4a3d523b5bbddf1b121c80097951dc0d764dfff6f123aa3729964"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-2-1.png",
+      "sha256": "e41a2b8983b394733e130db01dd6d174dffa5d1c136715d1071b9450373b01fe",
+      "sourcePath": "assets/v20/hair-atlas/pose-2-1.png",
+      "sourceSha256": "e41a2b8983b394733e130db01dd6d174dffa5d1c136715d1071b9450373b01fe"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-2-0.png",
+      "sha256": "f7f36f738a68a2dd9201ad37177590d782dd307de743fa33c5fd1a461c44d92c",
+      "sourcePath": "assets/v20/hair-atlas/pose-2-0.png",
+      "sourceSha256": "f7f36f738a68a2dd9201ad37177590d782dd307de743fa33c5fd1a461c44d92c"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-1-24.png",
+      "sha256": "f081157ad51bf3006c49b8b0b477f10f6240e14137e67d7276b8c154713a26f3",
+      "sourcePath": "assets/v20/hair-atlas/pose-1-24.png",
+      "sourceSha256": "f081157ad51bf3006c49b8b0b477f10f6240e14137e67d7276b8c154713a26f3"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-1-23.png",
+      "sha256": "375b9a988336b17da159bd8f7d4c5274c6b1aa2860809a5683cc19af8fc587ca",
+      "sourcePath": "assets/v20/hair-atlas/pose-1-23.png",
+      "sourceSha256": "375b9a988336b17da159bd8f7d4c5274c6b1aa2860809a5683cc19af8fc587ca"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-1-22.png",
+      "sha256": "0caedb1af58f65748a191328dd9ffeaf914a564587ef01f9826363086a2880a9",
+      "sourcePath": "assets/v20/hair-atlas/pose-1-22.png",
+      "sourceSha256": "0caedb1af58f65748a191328dd9ffeaf914a564587ef01f9826363086a2880a9"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-1-21.png",
+      "sha256": "302437094a7fcd8cd1d4854d2f2668bb687973c73e176934efe67a203b3ded2d",
+      "sourcePath": "assets/v20/hair-atlas/pose-1-21.png",
+      "sourceSha256": "302437094a7fcd8cd1d4854d2f2668bb687973c73e176934efe67a203b3ded2d"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-1-20.png",
+      "sha256": "889ed80c88813a7dcd4d80bdf06d559f417378b94ce9c21ddd26e33984141045",
+      "sourcePath": "assets/v20/hair-atlas/pose-1-20.png",
+      "sourceSha256": "889ed80c88813a7dcd4d80bdf06d559f417378b94ce9c21ddd26e33984141045"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-1-19.png",
+      "sha256": "1c56208c63bcc953b84eb1a19ca625862f4aa59393982d297f4d036e818f02ea",
+      "sourcePath": "assets/v20/hair-atlas/pose-1-19.png",
+      "sourceSha256": "1c56208c63bcc953b84eb1a19ca625862f4aa59393982d297f4d036e818f02ea"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-1-18.png",
+      "sha256": "fe41bc06a6677c1213b736ad0cf8d2f4b4e32dd9508686b1272834f9e599c041",
+      "sourcePath": "assets/v20/hair-atlas/pose-1-18.png",
+      "sourceSha256": "fe41bc06a6677c1213b736ad0cf8d2f4b4e32dd9508686b1272834f9e599c041"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-1-17.png",
+      "sha256": "02f1fb7d833e22f54d8dcf3533f39644dcb9896ae131d59bde2e8ce4006e5eff",
+      "sourcePath": "assets/v20/hair-atlas/pose-1-17.png",
+      "sourceSha256": "02f1fb7d833e22f54d8dcf3533f39644dcb9896ae131d59bde2e8ce4006e5eff"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-1-16.png",
+      "sha256": "f95729479e77695bb46354655373bf0f07877138616238735b37244a07dbd9e5",
+      "sourcePath": "assets/v20/hair-atlas/pose-1-16.png",
+      "sourceSha256": "f95729479e77695bb46354655373bf0f07877138616238735b37244a07dbd9e5"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-1-15.png",
+      "sha256": "131857798f0201f478d4db57cd8819a515857a2444d25a7f650922e7c621622b",
+      "sourcePath": "assets/v20/hair-atlas/pose-1-15.png",
+      "sourceSha256": "131857798f0201f478d4db57cd8819a515857a2444d25a7f650922e7c621622b"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-1-14.png",
+      "sha256": "692f0cbb09ac5ac6b46aa4315a315737c4dd8d024216988892e7caad5573ba2b",
+      "sourcePath": "assets/v20/hair-atlas/pose-1-14.png",
+      "sourceSha256": "692f0cbb09ac5ac6b46aa4315a315737c4dd8d024216988892e7caad5573ba2b"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-1-13.png",
+      "sha256": "1025518e0245984d5d02ecb078d2139786f915768979d019ea8c5bf77c68df4b",
+      "sourcePath": "assets/v20/hair-atlas/pose-1-13.png",
+      "sourceSha256": "1025518e0245984d5d02ecb078d2139786f915768979d019ea8c5bf77c68df4b"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-1-12.png",
+      "sha256": "7a363844f9770d343174f1afb115ff07b75440513369dfd113d28ec9b0331933",
+      "sourcePath": "assets/v20/hair-atlas/pose-1-12.png",
+      "sourceSha256": "7a363844f9770d343174f1afb115ff07b75440513369dfd113d28ec9b0331933"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-1-11.png",
+      "sha256": "220b9a1f3c0912d9d825fa55d372636ff1269b6ed2a5ee936134f80931c68324",
+      "sourcePath": "assets/v20/hair-atlas/pose-1-11.png",
+      "sourceSha256": "220b9a1f3c0912d9d825fa55d372636ff1269b6ed2a5ee936134f80931c68324"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-1-10.png",
+      "sha256": "c52204f931b89b9f9b740e89350e5ec64e49918cd2ed483e06a984ec8bbb047a",
+      "sourcePath": "assets/v20/hair-atlas/pose-1-10.png",
+      "sourceSha256": "c52204f931b89b9f9b740e89350e5ec64e49918cd2ed483e06a984ec8bbb047a"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-1-9.png",
+      "sha256": "ebf322de0823d75eb54688d6453d8894cb2124abf8bf14f9e579a1b4d57464c5",
+      "sourcePath": "assets/v20/hair-atlas/pose-1-9.png",
+      "sourceSha256": "ebf322de0823d75eb54688d6453d8894cb2124abf8bf14f9e579a1b4d57464c5"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-1-8.png",
+      "sha256": "81a1d6055bf9d7c9226e774f50db5b973065b1d99bcc7e1e2f3c7e9cfd2eab5f",
+      "sourcePath": "assets/v20/hair-atlas/pose-1-8.png",
+      "sourceSha256": "81a1d6055bf9d7c9226e774f50db5b973065b1d99bcc7e1e2f3c7e9cfd2eab5f"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-1-7.png",
+      "sha256": "a846f0ca7bb5bfba941c7a4a0baac53ab9db4e3c6d0d492f4a4233bfce6893fb",
+      "sourcePath": "assets/v20/hair-atlas/pose-1-7.png",
+      "sourceSha256": "a846f0ca7bb5bfba941c7a4a0baac53ab9db4e3c6d0d492f4a4233bfce6893fb"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-1-6.png",
+      "sha256": "785aa1a4580485ae6015df6898472006a5093db9a6527aeb8ceecb448e8abfc2",
+      "sourcePath": "assets/v20/hair-atlas/pose-1-6.png",
+      "sourceSha256": "785aa1a4580485ae6015df6898472006a5093db9a6527aeb8ceecb448e8abfc2"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-1-5.png",
+      "sha256": "fbfb82a52f8ce42426ecc12c155bc9a003bc0c8b7f5edbe0aaabb93b35a56462",
+      "sourcePath": "assets/v20/hair-atlas/pose-1-5.png",
+      "sourceSha256": "fbfb82a52f8ce42426ecc12c155bc9a003bc0c8b7f5edbe0aaabb93b35a56462"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-1-4.png",
+      "sha256": "70cba201c68962e75cc97e73bcd60947ea1530541d384697f6ce6a2441298278",
+      "sourcePath": "assets/v20/hair-atlas/pose-1-4.png",
+      "sourceSha256": "70cba201c68962e75cc97e73bcd60947ea1530541d384697f6ce6a2441298278"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-1-3.png",
+      "sha256": "26a0bea9ea625e4717618d1070a8f4a7d07a1fbc2ce6dc360112b569ab47f44e",
+      "sourcePath": "assets/v20/hair-atlas/pose-1-3.png",
+      "sourceSha256": "26a0bea9ea625e4717618d1070a8f4a7d07a1fbc2ce6dc360112b569ab47f44e"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-1-2.png",
+      "sha256": "b9e77b6c0eb87e2ae8aa11471adf95a8f7bbeaf4d554a65ce878c6968d821e25",
+      "sourcePath": "assets/v20/hair-atlas/pose-1-2.png",
+      "sourceSha256": "b9e77b6c0eb87e2ae8aa11471adf95a8f7bbeaf4d554a65ce878c6968d821e25"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-1-1.png",
+      "sha256": "4a075c27ec265c86710b47cdcb47fab1bd4ca53aeaac022a91b5990d5dbce8e2",
+      "sourcePath": "assets/v20/hair-atlas/pose-1-1.png",
+      "sourceSha256": "4a075c27ec265c86710b47cdcb47fab1bd4ca53aeaac022a91b5990d5dbce8e2"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-1-0.png",
+      "sha256": "993590036d14e93100c3e0eff3b01b94cd0c075922893b17800bea9a1c85769a",
+      "sourcePath": "assets/v20/hair-atlas/pose-1-0.png",
+      "sourceSha256": "993590036d14e93100c3e0eff3b01b94cd0c075922893b17800bea9a1c85769a"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-0-24.png",
+      "sha256": "caccc2a30214fe151ae5d8587193ba89a4175d79e3c8f24d13a946248c6e4d23",
+      "sourcePath": "assets/v20/hair-atlas/pose-0-24.png",
+      "sourceSha256": "caccc2a30214fe151ae5d8587193ba89a4175d79e3c8f24d13a946248c6e4d23"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-0-23.png",
+      "sha256": "b4094373c4915544b8938d447715666aea7b547c8cb62a1d7dee03a5f32ffe82",
+      "sourcePath": "assets/v20/hair-atlas/pose-0-23.png",
+      "sourceSha256": "b4094373c4915544b8938d447715666aea7b547c8cb62a1d7dee03a5f32ffe82"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-0-22.png",
+      "sha256": "f0ea9591491a81e3e01e5d79b9e5ea4a9fec0f6621bbcbef1e5b41adc5d41a79",
+      "sourcePath": "assets/v20/hair-atlas/pose-0-22.png",
+      "sourceSha256": "f0ea9591491a81e3e01e5d79b9e5ea4a9fec0f6621bbcbef1e5b41adc5d41a79"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-0-21.png",
+      "sha256": "c2401324182c7a3591b40c3c48eace43fab8c626ee824450377549970cb3ff16",
+      "sourcePath": "assets/v20/hair-atlas/pose-0-21.png",
+      "sourceSha256": "c2401324182c7a3591b40c3c48eace43fab8c626ee824450377549970cb3ff16"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-0-20.png",
+      "sha256": "4f263646832b117b1527592b05ed7c8f2c848c1ca27a3bdd5392bd0f1d0ccb8a",
+      "sourcePath": "assets/v20/hair-atlas/pose-0-20.png",
+      "sourceSha256": "4f263646832b117b1527592b05ed7c8f2c848c1ca27a3bdd5392bd0f1d0ccb8a"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-0-19.png",
+      "sha256": "61f1b6e108722b1b7720aa6646459e74bbca5fddabdbe08defead7ba43b7d014",
+      "sourcePath": "assets/v20/hair-atlas/pose-0-19.png",
+      "sourceSha256": "61f1b6e108722b1b7720aa6646459e74bbca5fddabdbe08defead7ba43b7d014"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-0-18.png",
+      "sha256": "48775c9c6db4968ea893f22079689f803de853b55825811e58faa5dd108e8ee7",
+      "sourcePath": "assets/v20/hair-atlas/pose-0-18.png",
+      "sourceSha256": "48775c9c6db4968ea893f22079689f803de853b55825811e58faa5dd108e8ee7"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-0-17.png",
+      "sha256": "61925d8d4d6b6a0b57f8891259ff74e565ae6a3142830a943edaf8299a0b58ee",
+      "sourcePath": "assets/v20/hair-atlas/pose-0-17.png",
+      "sourceSha256": "61925d8d4d6b6a0b57f8891259ff74e565ae6a3142830a943edaf8299a0b58ee"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-0-16.png",
+      "sha256": "25f728121c03ef34da0023dd7383106241d15d69a7a3cea6a62f24afadaae932",
+      "sourcePath": "assets/v20/hair-atlas/pose-0-16.png",
+      "sourceSha256": "25f728121c03ef34da0023dd7383106241d15d69a7a3cea6a62f24afadaae932"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-0-15.png",
+      "sha256": "1085603fc7c9bcd0c6e4e951e83f27f2f08158cc4c642f3e3af59bee8da0ee1a",
+      "sourcePath": "assets/v20/hair-atlas/pose-0-15.png",
+      "sourceSha256": "1085603fc7c9bcd0c6e4e951e83f27f2f08158cc4c642f3e3af59bee8da0ee1a"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-0-14.png",
+      "sha256": "f9e81d37175dfcb02d49bbce1567505fad0c6429f6cbd5563ba6ff9593746514",
+      "sourcePath": "assets/v20/hair-atlas/pose-0-14.png",
+      "sourceSha256": "f9e81d37175dfcb02d49bbce1567505fad0c6429f6cbd5563ba6ff9593746514"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-0-13.png",
+      "sha256": "c12520f9b335152431e940ef1b6f0b6091fc496788c3e8e330df2c2f06b447dc",
+      "sourcePath": "assets/v20/hair-atlas/pose-0-13.png",
+      "sourceSha256": "c12520f9b335152431e940ef1b6f0b6091fc496788c3e8e330df2c2f06b447dc"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-0-12.png",
+      "sha256": "3602fc25d3383fce04e38d79814d8a36a53d3030b68fab0489fe4bb15dc70582",
+      "sourcePath": "assets/v20/hair-atlas/pose-0-12.png",
+      "sourceSha256": "3602fc25d3383fce04e38d79814d8a36a53d3030b68fab0489fe4bb15dc70582"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-0-11.png",
+      "sha256": "91b2e5d43f113429760b252cb39f770eb47b1b08b93651d31c2829bfecfc1b33",
+      "sourcePath": "assets/v20/hair-atlas/pose-0-11.png",
+      "sourceSha256": "91b2e5d43f113429760b252cb39f770eb47b1b08b93651d31c2829bfecfc1b33"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-0-10.png",
+      "sha256": "478480ea71c5797afb4662370ca654b73ab888ce6ab20749620a1cba92fc898f",
+      "sourcePath": "assets/v20/hair-atlas/pose-0-10.png",
+      "sourceSha256": "478480ea71c5797afb4662370ca654b73ab888ce6ab20749620a1cba92fc898f"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-0-9.png",
+      "sha256": "ac8b49bb4e83caf4a241466061311de9cd8c0e06a172206f698ad860a9858a08",
+      "sourcePath": "assets/v20/hair-atlas/pose-0-9.png",
+      "sourceSha256": "ac8b49bb4e83caf4a241466061311de9cd8c0e06a172206f698ad860a9858a08"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-0-8.png",
+      "sha256": "0df32682be351ed5b2d497e6589d4629b2605828581ad27ae72ae92c333e416d",
+      "sourcePath": "assets/v20/hair-atlas/pose-0-8.png",
+      "sourceSha256": "0df32682be351ed5b2d497e6589d4629b2605828581ad27ae72ae92c333e416d"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-0-7.png",
+      "sha256": "ff7d0f2b41126a8ed361ba7d67212cabf13f6d8158bc5dd56da54d8f30e9aa21",
+      "sourcePath": "assets/v20/hair-atlas/pose-0-7.png",
+      "sourceSha256": "ff7d0f2b41126a8ed361ba7d67212cabf13f6d8158bc5dd56da54d8f30e9aa21"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-0-6.png",
+      "sha256": "a839fbcb5a43dcc7d3ad3c2fa716d7aeec85b54e1979b437e8579a58edf75f51",
+      "sourcePath": "assets/v20/hair-atlas/pose-0-6.png",
+      "sourceSha256": "a839fbcb5a43dcc7d3ad3c2fa716d7aeec85b54e1979b437e8579a58edf75f51"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-0-5.png",
+      "sha256": "1dd0979707de6b3bb204db3bea9da921440a8700618314b816f991f236575410",
+      "sourcePath": "assets/v20/hair-atlas/pose-0-5.png",
+      "sourceSha256": "1dd0979707de6b3bb204db3bea9da921440a8700618314b816f991f236575410"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-0-4.png",
+      "sha256": "a7690b97231047fdbef597e5b50218ed235284242826ea8b3831d2068febc886",
+      "sourcePath": "assets/v20/hair-atlas/pose-0-4.png",
+      "sourceSha256": "a7690b97231047fdbef597e5b50218ed235284242826ea8b3831d2068febc886"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-0-3.png",
+      "sha256": "1fb96f9e1796e4521067bd93c48bda4ea92c9eb42ebb117f109d71d3f30a4433",
+      "sourcePath": "assets/v20/hair-atlas/pose-0-3.png",
+      "sourceSha256": "1fb96f9e1796e4521067bd93c48bda4ea92c9eb42ebb117f109d71d3f30a4433"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-0-2.png",
+      "sha256": "b8ff2d318d5a4dd2b4fb652433e7b08d92760bea477a302e423b8016d9f97fc2",
+      "sourcePath": "assets/v20/hair-atlas/pose-0-2.png",
+      "sourceSha256": "b8ff2d318d5a4dd2b4fb652433e7b08d92760bea477a302e423b8016d9f97fc2"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-0-1.png",
+      "sha256": "5c7978bcd98c32cb247d8fe1a6f32e9d17018ec0b0b9cecc5d2702b2deda81f4",
+      "sourcePath": "assets/v20/hair-atlas/pose-0-1.png",
+      "sourceSha256": "5c7978bcd98c32cb247d8fe1a6f32e9d17018ec0b0b9cecc5d2702b2deda81f4"
+    },
+    {
+      "path": "assets/v20/hair-atlas/pose-0-0.png",
+      "sha256": "675351762f95c352e81aaf63939ea632a7dbf0755f80936fc8e0312f203b69b8",
+      "sourcePath": "assets/v20/hair-atlas/pose-0-0.png",
+      "sourceSha256": "675351762f95c352e81aaf63939ea632a7dbf0755f80936fc8e0312f203b69b8"
+    },
+    {
+      "path": "assets/v7-display/ink-mouth-o.png",
+      "sha256": "967d6e69e8f193b8212ce5f53257ae0c467181c1cbbce20b6b3157bdc4d9991d",
+      "sourcePath": "assets/v7-display/ink-mouth-o.png",
+      "sourceSha256": "967d6e69e8f193b8212ce5f53257ae0c467181c1cbbce20b6b3157bdc4d9991d"
+    },
+    {
+      "path": "assets/v7-display/mouth-o.png",
+      "sha256": "d06e08a7ae0c86978b3bba0359f8ebe1b86e39e7414ab7f02dfc9bb6562b189f",
+      "sourcePath": "assets/v7-display/mouth-o.png",
+      "sourceSha256": "d06e08a7ae0c86978b3bba0359f8ebe1b86e39e7414ab7f02dfc9bb6562b189f"
+    },
+    {
+      "path": "assets/v7-display/ink-mouth-e.png",
+      "sha256": "becbf6d17bd21d92406b56340452c0e587e2881f4acf3edd402d5d997e7d479c",
+      "sourcePath": "assets/v7-display/ink-mouth-e.png",
+      "sourceSha256": "becbf6d17bd21d92406b56340452c0e587e2881f4acf3edd402d5d997e7d479c"
+    },
+    {
+      "path": "assets/v7-display/mouth-e.png",
+      "sha256": "357e9be6f0a1d1854d8514fb507eff228dd3bd3bdc377c03b66abe34e0e15395",
+      "sourcePath": "assets/v7-display/mouth-e.png",
+      "sourceSha256": "357e9be6f0a1d1854d8514fb507eff228dd3bd3bdc377c03b66abe34e0e15395"
+    },
+    {
+      "path": "assets/v7-display/ink-mouth-a.png",
+      "sha256": "95b6fadc3bd1b49d40f3ad86662c8062f01d6769ee18123f4348c527baf50150",
+      "sourcePath": "assets/v7-display/ink-mouth-a.png",
+      "sourceSha256": "95b6fadc3bd1b49d40f3ad86662c8062f01d6769ee18123f4348c527baf50150"
+    },
+    {
+      "path": "assets/v7-display/mouth-a.png",
+      "sha256": "95d26957c3c0deb31c659b8fcf12f41f245ae769608b22570c19813122829520",
+      "sourcePath": "assets/v7-display/mouth-a.png",
+      "sourceSha256": "95d26957c3c0deb31c659b8fcf12f41f245ae769608b22570c19813122829520"
+    },
+    {
+      "path": "assets/v7-display/ink-mouth-laughing.png",
+      "sha256": "971de8cee8b5559f24636caf63c09ee19e61beb9673b2b3f799db1e0831ab072",
+      "sourcePath": "assets/v7-display/ink-mouth-laughing.png",
+      "sourceSha256": "971de8cee8b5559f24636caf63c09ee19e61beb9673b2b3f799db1e0831ab072"
+    },
+    {
+      "path": "assets/v7-display/mouth-laughing.png",
+      "sha256": "094cbbc91c67d75b76273bc2cdeeabad427a58a10c45741122f120830b45c082",
+      "sourcePath": "assets/v7-display/mouth-laughing.png",
+      "sourceSha256": "094cbbc91c67d75b76273bc2cdeeabad427a58a10c45741122f120830b45c082"
+    },
+    {
+      "path": "assets/v7-display/neck-front.png",
+      "sha256": "3e72e69ec8952fcccab183e9e4cdcd491c20a64890e6493c62a4340e698b03db",
+      "sourcePath": "assets/v7-display/neck-front.png",
+      "sourceSha256": "3e72e69ec8952fcccab183e9e4cdcd491c20a64890e6493c62a4340e698b03db"
+    },
+    {
+      "path": "assets/v7-display/head-approved.png",
+      "sha256": "8f17f4de0a694d3478fbc0d798736b75f390db1237376099a6fc4143bac24846",
+      "sourcePath": "assets/v7-display/head-approved.png",
+      "sourceSha256": "8f17f4de0a694d3478fbc0d798736b75f390db1237376099a6fc4143bac24846"
+    },
+    {
+      "path": "assets/v7-display/torso-bridge.png",
+      "sha256": "37338b518115a8a76f14d5fa59c729ace219d6dae7652601eb34dfaccee36422",
+      "sourcePath": "assets/v7-display/torso-bridge.png",
+      "sourceSha256": "37338b518115a8a76f14d5fa59c729ace219d6dae7652601eb34dfaccee36422"
+    },
+    {
+      "path": "assets/v8-cloth/skirt-right.png",
+      "sha256": "e307888fc83d52eba85d0d3ea1f17c869412dd9cb30e8756855254b80781af33",
+      "sourcePath": "assets/v8-cloth/skirt-right.png",
+      "sourceSha256": "e307888fc83d52eba85d0d3ea1f17c869412dd9cb30e8756855254b80781af33"
+    },
+    {
+      "path": "assets/v8-cloth/skirt-left.png",
+      "sha256": "6b4d44720642dc21a5f67161ee880c46f356601585ff91d2bd2b86ea03d22b07",
+      "sourcePath": "assets/v8-cloth/skirt-left.png",
+      "sourceSha256": "6b4d44720642dc21a5f67161ee880c46f356601585ff91d2bd2b86ea03d22b07"
+    },
+    {
+      "path": "assets/v8-cloth/leg-right.png",
+      "sha256": "132cc1e307d7a75c33485f9c30616d1b6a9575df3e2a7de410b1c629ca72f0cc",
+      "sourcePath": "assets/v8-cloth/leg-right.png",
+      "sourceSha256": "132cc1e307d7a75c33485f9c30616d1b6a9575df3e2a7de410b1c629ca72f0cc"
+    },
+    {
+      "path": "assets/v8-cloth/leg-left.png",
+      "sha256": "443c4c8f5400eb8648be7af41c2e669fc747a81e43a422cb60ae94b799e7b69f",
+      "sourcePath": "assets/v8-cloth/leg-left.png",
+      "sourceSha256": "443c4c8f5400eb8648be7af41c2e669fc747a81e43a422cb60ae94b799e7b69f"
+    },
+    {
+      "path": "assets/v7-display/body.png",
+      "sha256": "60b08efb0fb88c00b92fc86a5a3e6328a6c65c87f1364b41068d2826829a3708",
+      "sourcePath": "assets/v7-display/body.png",
+      "sourceSha256": "60b08efb0fb88c00b92fc86a5a3e6328a6c65c87f1364b41068d2826829a3708"
+    },
+    {
+      "path": "assets/v7-display/hair-lock-4.png",
+      "sha256": "e0543194d84cd7b79ce303865fc6b6b78149d2e3e7dded939f5c7ba6eab42150",
+      "sourcePath": "assets/v7-display/hair-lock-4.png",
+      "sourceSha256": "e0543194d84cd7b79ce303865fc6b6b78149d2e3e7dded939f5c7ba6eab42150"
+    },
+    {
+      "path": "assets/v7-display/hair-lock-3.png",
+      "sha256": "a69f413ef55fa6f07d94df737e081313f5c843461179ef2419df1a0277605307",
+      "sourcePath": "assets/v7-display/hair-lock-3.png",
+      "sourceSha256": "a69f413ef55fa6f07d94df737e081313f5c843461179ef2419df1a0277605307"
+    },
+    {
+      "path": "assets/v7-display/hair-lock-2.png",
+      "sha256": "c26b97548d84eb4efe7db0f7cec68fc580fa60ad879e475a24b4bade814b1736",
+      "sourcePath": "assets/v7-display/hair-lock-2.png",
+      "sourceSha256": "c26b97548d84eb4efe7db0f7cec68fc580fa60ad879e475a24b4bade814b1736"
+    },
+    {
+      "path": "assets/v7-display/hair-lock-1.png",
+      "sha256": "f12c0c4b7618539425e62ecea2ed7f6df44f25918e7ae0f66bb650eb8eb76987",
+      "sourcePath": "assets/v7-display/hair-lock-1.png",
+      "sourceSha256": "f12c0c4b7618539425e62ecea2ed7f6df44f25918e7ae0f66bb650eb8eb76987"
+    },
+    {
+      "path": "assets/v7-display/hair-lock-0.png",
+      "sha256": "73b86c5b579e5de3af585ec50a60d95efc71c02ea038d409ee3ce48d8efe74fb",
+      "sourcePath": "assets/v7-display/hair-lock-0.png",
+      "sourceSha256": "73b86c5b579e5de3af585ec50a60d95efc71c02ea038d409ee3ce48d8efe74fb"
+    },
+    {
+      "path": "assets/v7-display/tail.png",
+      "sha256": "487dd4acb470ff0925d60b9a88e6458d86c6c96f9291c837186ec5778e22da6e",
+      "sourcePath": "assets/v7-display/tail.png",
+      "sourceSha256": "487dd4acb470ff0925d60b9a88e6458d86c6c96f9291c837186ec5778e22da6e"
+    },
+    {
+      "path": "assets/v16/reaction-motion-v16.mjs",
+      "sha256": "bd7fb9d29c31ebb4bb8e4f28331f953c1f1815df824ecc3f90ca8f4d89b4571c",
+      "sourcePath": "assets/v16/reaction-motion-v16.mjs",
+      "sourceSha256": "bd7fb9d29c31ebb4bb8e4f28331f953c1f1815df824ecc3f90ca8f4d89b4571c"
+    },
+    {
+      "path": "assets/v8/render-quality.mjs",
+      "sha256": "2ce055b3f86c6add59434e28500f980a62c122fbbb2b6befd50bb693dc45c84f",
+      "sourcePath": "assets/v8/render-quality.mjs",
+      "sourceSha256": "2ce055b3f86c6add59434e28500f980a62c122fbbb2b6befd50bb693dc45c84f"
+    },
+    {
+      "path": "assets/v17/textiles-v17.mjs",
+      "sha256": "58705b3b0d5ab5ff19ba3f64cad40ce1d77822432d5baf4d591bb36d901878b4",
+      "sourcePath": "assets/v17/textiles-v17.mjs",
+      "sourceSha256": "461e0b9bdc65933e593ddd0facddff4096e6ecf5c800ead6b9e5150a2f5ad567"
+    },
+    {
+      "path": "assets/v16/kinetics-v16.mjs",
+      "sha256": "6ee79f6ffd126e8334a34ebf401a09e93472ed156e9323e82c302d2c41432f26",
+      "sourcePath": "assets/v16/kinetics-v16.mjs",
+      "sourceSha256": "6ee79f6ffd126e8334a34ebf401a09e93472ed156e9323e82c302d2c41432f26"
+    },
+    {
+      "path": "assets/v22/body-flow-v22.mjs",
+      "sha256": "5cf0a3a85ff0d09d1f6db426a733987337387d23fbcd80e649847f75c3d6ec7f",
+      "sourcePath": "assets/v22/body-flow-v22.mjs",
+      "sourceSha256": "f5f5cae4be61e30367134cef59532c32d5d8c2bde2aa0cd1f7056db5f13f395a"
+    },
+    {
+      "path": "assets/v16/body-coordination-v16.mjs",
+      "sha256": "6f43ac0e515d91284b56ec902547b6762bcfb76caa4eafff7656ee4c83806f8c",
+      "sourcePath": "assets/v16/body-coordination-v16.mjs",
+      "sourceSha256": "6f43ac0e515d91284b56ec902547b6762bcfb76caa4eafff7656ee4c83806f8c"
+    },
+    {
+      "path": "assets/v17/head-motion-v17.mjs",
+      "sha256": "cb46ed91c7092eff4f44887955c40cafb798f984ccacf50c4c71a136250fd370",
+      "sourcePath": "assets/v17/head-motion-v17.mjs",
+      "sourceSha256": "cb46ed91c7092eff4f44887955c40cafb798f984ccacf50c4c71a136250fd370"
+    },
+    {
+      "path": "assets/v17/psd2live-hair.mjs",
+      "sha256": "bf93d0fa9cdc67e58c40c90bcca19f7b4793439fe11febb7482cf80ab7465018",
+      "sourcePath": "assets/v17/psd2live-hair.mjs",
+      "sourceSha256": "7efbf210a00985ba8429c314e5ce380358347d6458ef0812aeb5667f607cf6a4"
+    },
+    {
+      "path": "assets/v17/psd2live/shio-hair.p2lrt",
+      "sha256": "b678ed8efe5d65c63b4d21e9474e1ac8b4fdad01e125dbd76710ad673ea15a29",
+      "sourcePath": "assets/v17/psd2live/shio-hair.p2lrt",
+      "sourceSha256": "b678ed8efe5d65c63b4d21e9474e1ac8b4fdad01e125dbd76710ad673ea15a29"
+    },
+    {
+      "path": "assets/v17/psd2live/p2l_runtime.wasm",
+      "sha256": "d8bbff52f27aebd40baca94139f9eca5af0f9d2a07c1c70fc5c15633121862a7",
+      "sourcePath": "assets/v17/psd2live/p2l_runtime.wasm",
+      "sourceSha256": "d8bbff52f27aebd40baca94139f9eca5af0f9d2a07c1c70fc5c15633121862a7"
+    },
+    {
+      "path": "assets/v17/psd2live/mapping.json",
+      "sha256": "2151d2112088bf67af6ebff952d146ca0be662eafc9fef8ca36275371b56f999",
+      "sourcePath": "assets/v17/psd2live/mapping.json",
+      "sourceSha256": "2151d2112088bf67af6ebff952d146ca0be662eafc9fef8ca36275371b56f999"
+    },
+    {
+      "path": "assets/v22/arm-transitions-v22.mjs",
+      "sha256": "027f59c16ae6d8a9ccb932907c36ed8bac2f608846f4887b4ce2fe4259c0b35d",
+      "sourcePath": "assets/v22/arm-transitions-v22.mjs",
+      "sourceSha256": "f0c6d5e5891c2774f281e21f75f3d406a51f1e680831a335bdb0004c607483ef"
+    },
+    {
+      "path": "assets/v18/arm-poses-v18.mjs",
+      "sha256": "8cb63577edacacd0eafac50124f6c7d5d401f2c72220b234dd20451f40c2e6b7",
+      "sourcePath": "assets/v18/arm-poses-v18.mjs",
+      "sourceSha256": "8cb63577edacacd0eafac50124f6c7d5d401f2c72220b234dd20451f40c2e6b7"
+    }
+  ]
+}

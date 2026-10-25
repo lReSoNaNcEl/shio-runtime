@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Speech ASR + F5-TTS</title>
+  <title>Speech ASR + Fish Audio S2 Pro</title>
   <style>
     * { box-sizing: border-box; }
     body { margin: 0; font-family: Inter, Segoe UI, Roboto, Arial, sans-serif; color: #18202a; background: #eef2f7; }
@@ -31,6 +31,7 @@
     input[type=range] { padding: 0; }
     .field { margin-bottom: 14px; }
     .actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 8px; }
+    .tts-actions { grid-template-columns: repeat(3, minmax(0, 1fr)); }
     .status { display: none; margin: 14px 0; padding: 12px; border-radius: 8px; }
     .error { background: #fee2e2; color: #991b1b; }
     .success { background: #dcfce7; color: #166534; }
@@ -57,8 +58,8 @@
   <div class="container">
     <header>
       <div>
-        <h1>Speech ASR + F5-TTS</h1>
-        <p class="subtitle">Whisper ASR, F5 voice references, shared emotion manifest</p>
+        <h1>Speech ASR + Fish Audio S2 Pro</h1>
+        <p class="subtitle">Whisper ASR, Fish Audio S2 Pro voice references, shared emotion manifest</p>
       </div>
       <a href="/docs">Swagger</a>
     </header>
@@ -102,8 +103,8 @@
 
     <section id="tts" class="panel">
       <div style="display:flex; justify-content:space-between; gap:12px; align-items:center; margin-bottom:14px;">
-        <h2>F5-TTS</h2>
-        <span class="badge">voice-reference engine</span>
+        <h2>Fish Audio S2 Pro Streaming</h2>
+        <span class="badge">continuous PCM stream</span>
       </div>
       <div id="tts-error" class="status error"></div>
       <div id="tts-success" class="status success"></div>
@@ -111,7 +112,7 @@
       <form id="tts-form">
         <div class="field">
           <label for="tts-text">Текст</label>
-          <textarea id="tts-text" placeholder="[happy] Привет! Это тест эмоций для голоса."></textarea>
+          <textarea id="tts-text" placeholder="Привет! Это тест потокового синтеза речи."></textarea>
         </div>
 
         <div class="grid3">
@@ -152,48 +153,65 @@
 
         <div class="grid3">
           <div class="field">
-            <label for="tts-speed">Speed: <span id="speed-val">1.0</span></label>
-            <input type="range" id="tts-speed" min="0.5" max="2.0" step="0.05" value="1.0" oninput="speedVal.textContent=this.value">
+            <label for="tts-pace">Темп</label>
+            <select id="tts-pace">
+              <option value="slow">Медленный</option>
+              <option value="normal" selected>Обычный</option>
+              <option value="fast">Быстрый</option>
+            </select>
           </div>
           <div class="field">
-            <label for="tts-pitch">Pitch: <span id="pitch-val">0</span> semitones</label>
-            <input type="range" id="tts-pitch" min="-6" max="6" step="0.5" value="0" oninput="pitchVal.textContent=this.value">
+            <label for="tts-energy">Энергия</label>
+            <select id="tts-energy">
+              <option value="low">Низкая</option>
+              <option value="normal" selected>Обычная</option>
+              <option value="high">Высокая</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="tts-volume">Громкость</label>
+            <select id="tts-volume">
+              <option value="soft">Тихо</option>
+              <option value="normal" selected>Обычно</option>
+              <option value="loud">Громко</option>
+            </select>
           </div>
         </div>
 
-        <div class="actions">
-          <button type="button" class="primary" onclick="synthesizeOne()">Синтез</button>
-          <button type="button" class="secondary" onclick="previewVoice()">Preview voice</button>
+        <div class="actions tts-actions">
+          <button id="tts-synthesize-btn" type="button" class="primary" onclick="synthesizeOne()">Синтезировать поток</button>
+          <button id="tts-preview-btn" type="button" class="secondary" onclick="previewVoice()">Preview voice</button>
+          <button id="tts-stop-btn" type="button" class="danger" onclick="cancelSynthesis()" disabled>Остановить</button>
         </div>
       </form>
 
-      <div id="tts-loading" class="loading">Синтез речи...</div>
+      <div id="tts-loading" class="loading">Потоковый синтез речи...</div>
       <div id="tts-result" style="display:none;">
         <div id="tts-result-text" class="player"></div>
         <div id="player-container" class="players"></div>
       </div>
 
       <details class="help" open>
-        <summary>Как задавать эмоции в тексте</summary>
+        <summary>Как задавать подачу речи</summary>
         <div class="body">
-          <p>LLM может начать ответ с одного ведущего тега: <code>[happy]</code>, <code>[sigh]</code>, <code>[gasp]</code>, <code>[angry]</code>. Backend вырезает тег из озвучки и нормализует emotion через <code>emotion_manifest.json</code>.</p>
-          <p class="mono">[happy] Привет! Я рада тебя видеть.</p>
-          <p>F5 не имеет sampling-пресетов эмоций. Голос выбирается через <code>voice_manifest.json</code>, а reference-аудио хранится в <code>voices/&lt;dataset&gt;/&lt;voice&gt;/reference.wav</code> вместе с <code>reference.txt</code>.</p>
+          <p>Выбранные emotion, темп, энергия и громкость передаются как единый delivery intent. Сам текст отправляется в поток без служебных тегов и начинает проигрываться по мере поступления PCM-аудио.</p>
+          <p class="mono">Привет! Я рада тебя видеть.</p>
+          <p>Голос выбирается через <code>voice_manifest.json</code>. Исходные <code>reference.wav</code> и <code>reference.txt</code> остаются неизменными, а подготовленные для модели данные хранятся отдельно в производном кэше.</p>
         </div>
       </details>
 
       <details class="help" open>
-        <summary>Какие параметры на F5-TTS влияют</summary>
+        <summary>Параметры Fish Audio S2 Pro Streaming</summary>
         <div class="body">
           <table>
-            <tr><th>Параметр</th><th>F5-TTS</th><th>Runtime contract</th></tr>
-            <tr><td><code>voiceId</code></td><td>Выбирает logical voice из <code>voice_manifest.json</code>; remote sync может установить ассеты в <code>voices/&lt;dataset&gt;/&lt;voice&gt;</code>.</td><td>Не влияет напрямую.</td></tr>
-            <tr><td><code>emotion</code> / тег</td><td>Нормализуется через Emotion Registry; speech получает только <code>speech.style</code>.</td><td>Avatar mappings остаются на стороне Shio Runtime.</td></tr>
-            <tr><td><code>language</code></td><td>Подсказывает языковую обработку. Для русского может использоваться RUAccent, если установлен.</td><td>Не влияет напрямую.</td></tr>
-            <tr><td><code>speed</code></td><td>Нативный параметр скорости генерации F5.</td><td>Меняет длительность речи и темп lipsync.</td></tr>
-            <tr><td><code>pitch</code></td><td>Пост-обработка WAV после генерации.</td><td>Не влияет напрямую.</td></tr>
-            <tr><td><code>F5_NFE_STEP</code></td><td>Настройка сервера в <code>.env</code>: число diffusion/inference steps. Больше обычно медленнее и потенциально чище.</td><td>Не влияет напрямую.</td></tr>
-            <tr><td><code>F5_CFG_STRENGTH</code></td><td>Настройка сервера в <code>.env</code>: насколько строго F5 держится reference/condition.</td><td>Не влияет напрямую.</td></tr>
+            <tr><th>Параметр</th><th>Fish Audio S2 Pro</th><th>Runtime contract</th></tr>
+            <tr><td><code>voiceId</code></td><td>Выбирает logical voice и соответствующий reference из <code>voice_manifest.json</code>.</td><td>Один голос фиксируется на всю streaming-сессию.</td></tr>
+            <tr><td><code>emotion</code></td><td>Передаётся модели как нормализованная семантическая эмоция.</td><td>Avatar mappings остаются на стороне Shio Runtime.</td></tr>
+            <tr><td><code>language</code></td><td>Выбирает русскую или английскую языковую обработку.</td><td>Фиксируется при сообщении <code>start</code>.</td></tr>
+            <tr><td><code>pace</code></td><td><code>slow</code>, <code>normal</code> или <code>fast</code>.</td><td>Часть delivery intent.</td></tr>
+            <tr><td><code>energy</code></td><td><code>low</code>, <code>normal</code> или <code>high</code>.</td><td>Часть delivery intent.</td></tr>
+            <tr><td><code>volume</code></td><td><code>soft</code>, <code>normal</code> или <code>loud</code>.</td><td>Часть delivery intent.</td></tr>
+            <tr><td><code>/tts/stream</code></td><td>Одна WebSocket-сессия возвращает упорядоченные mono Float32 PCM-фреймы.</td><td>Аудио начинает проигрываться до завершения полного ответа.</td></tr>
           </table>
         </div>
       </details>
@@ -201,10 +219,10 @@
   </div>
 
   <script>
-    const speedVal = document.getElementById('speed-val');
-    const pitchVal = document.getElementById('pitch-val');
     let voiceData = null;
     const emotionLabels = [];
+    let activeTtsRun = null;
+    let ttsResultUrl = null;
     const ASR_TARGET_SR = 16000;
     let asrStream = null;
     let asrAudioCtx = null;
@@ -231,57 +249,271 @@
 
     function ttsParams() {
       return {
-        text: document.getElementById('tts-text').value,
+        text: document.getElementById('tts-text').value.trim(),
         language: document.getElementById('tts-language').value,
         emotion: document.getElementById('tts-emotion').value,
         voiceId: document.getElementById('tts-voice').value,
-        speed: Number(document.getElementById('tts-speed').value),
-        pitch: Number(document.getElementById('tts-pitch').value),
-        engine: 'f5'
+        pace: document.getElementById('tts-pace').value,
+        energy: document.getElementById('tts-energy').value,
+        volume: document.getElementById('tts-volume').value
       };
+    }
+
+    function setTtsControls(busy, canStop = busy) {
+      document.getElementById('tts-synthesize-btn').disabled = busy;
+      document.getElementById('tts-preview-btn').disabled = busy;
+      document.getElementById('tts-stop-btn').disabled = !canStop;
+      document.getElementById('tts-loading').classList.toggle('show', busy);
+    }
+
+    function splitTtsCommits(text, maxChars = 220) {
+      const commits = [];
+      let current = '';
+      for (const word of text.split(/\s+/).filter(Boolean)) {
+        if (word.length > maxChars) {
+          if (current) commits.push(current);
+          current = '';
+          for (let offset = 0; offset < word.length; offset += maxChars) {
+            commits.push(word.slice(offset, offset + maxChars));
+          }
+          continue;
+        }
+        const candidate = current ? `${current} ${word}` : word;
+        if (candidate.length > maxChars) {
+          commits.push(current);
+          current = word;
+        } else {
+          current = candidate;
+        }
+      }
+      if (current) commits.push(current);
+      return commits;
+    }
+
+    function escapeHtml(value) {
+      return String(value)
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#039;');
+    }
+
+    function floatChunksToWav(chunks, sampleRate) {
+      let total = 0;
+      chunks.forEach(chunk => total += chunk.length);
+      const pcm = new Float32Array(total);
+      let offset = 0;
+      chunks.forEach(chunk => {
+        pcm.set(chunk, offset);
+        offset += chunk.length;
+      });
+      return encodeWav(floatToInt16(pcm), sampleRate);
+    }
+
+    function stopTtsRun(run, notifyBackend) {
+      if (!run || run.stopped) return;
+      run.stopped = true;
+      if (notifyBackend && run.socket.readyState === WebSocket.OPEN && !run.terminal) {
+        run.socket.send(JSON.stringify({ type: 'cancel', reason: 'web-playground-cancelled' }));
+      }
+      run.sources.forEach(source => {
+        try { source.stop(); } catch (_) {}
+      });
+      run.sources = [];
+      try { run.socket.close(); } catch (_) {}
+      if (run.audioContext) run.audioContext.close().catch(() => {});
+      if (run.reject && !run.terminal) run.reject(new Error('Синтез остановлен'));
+      if (activeTtsRun === run) activeTtsRun = null;
+    }
+
+    function cancelSynthesis(showStatus = true) {
+      if (!activeTtsRun) return;
+      const run = activeTtsRun;
+      run.cancelled = true;
+      stopTtsRun(run, true);
+      setTtsControls(false, false);
+      if (showStatus) show('tts-success', 'Синтез остановлен');
+    }
+
+    function schedulePcm(run, samples) {
+      const buffer = run.audioContext.createBuffer(1, samples.length, run.sampleRate);
+      buffer.copyToChannel(samples, 0);
+      const source = run.audioContext.createBufferSource();
+      source.buffer = buffer;
+      source.connect(run.audioContext.destination);
+      const startAt = Math.max(run.nextStartAt, run.audioContext.currentTime + 0.03);
+      source.start(startAt);
+      run.nextStartAt = startAt + buffer.duration;
+      run.sources.push(source);
+    }
+
+    function runTtsStream(params) {
+      return new Promise((resolve, reject) => {
+        const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+        const socket = new WebSocket(`${proto}://${location.host}/tts/stream`);
+        socket.binaryType = 'arraybuffer';
+        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+        const audioContext = new AudioContextClass();
+        const resumePromise = audioContext.resume();
+        const run = {
+          socket,
+          audioContext,
+          sources: [],
+          pcmChunks: [],
+          pendingAudio: null,
+          sampleRate: 0,
+          nextStartAt: audioContext.currentTime,
+          startedAt: performance.now(),
+          firstPcmMs: null,
+          ready: null,
+          terminal: false,
+          stopped: false,
+          cancelled: false,
+          reject
+        };
+        activeTtsRun = run;
+
+        const fail = message => {
+          if (run.terminal || run.stopped) return;
+          run.terminal = true;
+          reject(new Error(message));
+          stopTtsRun(run, false);
+        };
+        resumePromise.catch(error => fail(`Не удалось запустить аудио: ${error.message}`));
+
+        socket.onopen = () => {
+          const suffix = Math.random().toString(16).slice(2);
+          const sessionId = `web-${Date.now()}-${suffix}`;
+          socket.send(JSON.stringify({
+            type: 'start',
+            protocolVersion: 1,
+            sessionId,
+            turnId: sessionId,
+            voiceId: params.voiceId || null,
+            language: params.language,
+            delivery: {
+              emotion: params.emotion,
+              pace: params.pace,
+              energy: params.energy,
+              volume: params.volume
+            }
+          }));
+        };
+
+        socket.onmessage = event => {
+          if (typeof event.data !== 'string') {
+            if (!run.pendingAudio) return fail('Получен PCM без метаданных audio');
+            const samples = new Float32Array(event.data).slice();
+            if (samples.length !== run.pendingAudio.samples) {
+              return fail(`Ожидалось ${run.pendingAudio.samples} samples, получено ${samples.length}`);
+            }
+            if (run.firstPcmMs === null) run.firstPcmMs = performance.now() - run.startedAt;
+            run.pcmChunks.push(samples);
+            schedulePcm(run, samples);
+            socket.send(JSON.stringify({ type: 'audio-ack', sequence: run.pendingAudio.sequence }));
+            run.pendingAudio = null;
+            return;
+          }
+
+          let message;
+          try { message = JSON.parse(event.data); }
+          catch (_) { return fail('Сервер прислал некорректное JSON-сообщение'); }
+
+          if (message.type === 'ready') {
+            run.ready = message;
+            run.sampleRate = Number(message.sampleRate);
+            if (!run.sampleRate) return fail('Сервер не сообщил sampleRate');
+            const commits = splitTtsCommits(params.text);
+            commits.forEach((text, sequence) => {
+              socket.send(JSON.stringify({ type: 'text', sequence, text }));
+            });
+            socket.send(JSON.stringify({ type: 'finish-input' }));
+          } else if (message.type === 'audio') {
+            if (run.pendingAudio) return fail('Новый audio-фрейм получен до PCM предыдущего');
+            run.pendingAudio = message;
+          } else if (message.type === 'complete') {
+            if (run.pendingAudio) return fail('Поток завершён до получения ожидаемого PCM');
+            run.terminal = true;
+            const elapsedMs = performance.now() - run.startedAt;
+            const samples = run.pcmChunks.reduce((sum, chunk) => sum + chunk.length, 0);
+            const durationSec = samples / run.sampleRate;
+            resolve({
+              blob: floatChunksToWav(run.pcmChunks, run.sampleRate),
+              chunks: run.pcmChunks.length,
+              durationSec,
+              firstPcmMs: run.firstPcmMs || 0,
+              rtf: durationSec ? elapsedMs / 1000 / durationSec : 0,
+              ready: run.ready
+            });
+            const playbackMs = Math.max(0, run.nextStartAt - run.audioContext.currentTime) * 1000 + 100;
+            setTimeout(() => {
+              if (activeTtsRun === run) {
+                stopTtsRun(run, false);
+                setTtsControls(false, false);
+              }
+            }, playbackMs);
+          } else if (message.type === 'cancelled') {
+            fail('Синтез остановлен');
+          } else if (message.type === 'error') {
+            fail(message.message || message.code || 'Ошибка streaming-сессии');
+          }
+        };
+
+        socket.onerror = () => fail('Не удалось открыть WebSocket /tts/stream');
+        socket.onclose = event => {
+          if (!run.terminal && !run.stopped) fail(`Streaming-сессия закрылась с кодом ${event.code}`);
+        };
+      });
     }
 
     async function synthesizeOne() {
       const p = ttsParams();
       if (!p.text.trim()) return show('tts-error', 'Введите текст');
+      if (!p.voiceId) return show('tts-error', 'Нет доступного voice reference');
+      if (activeTtsRun) cancelSynthesis(false);
       try {
-        hide('tts-error'); document.getElementById('tts-loading').classList.add('show');
-        const response = await fetch('/synthesize', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(p) });
-        if (!response.ok) throw new Error(await response.text());
-        displaySingle(await response.blob(), response.headers);
-        show('tts-success', 'Синтез завершён');
+        hide('tts-error');
+        setTtsControls(true, true);
+        const result = await runTtsStream(p);
+        displayStreamResult(result, p);
+        setTtsControls(false, true);
+        show('tts-success', 'Потоковый синтез завершён');
+        return true;
       } catch (e) {
-        show('tts-error', 'Ошибка синтеза: ' + e.message);
-      } finally {
-        document.getElementById('tts-loading').classList.remove('show');
+        setTtsControls(false, false);
+        if (!String(e.message).includes('остановлен')) show('tts-error', 'Ошибка синтеза: ' + e.message);
+        return false;
       }
     }
 
-    function displaySingle(blob, headers) {
-      const emotion = headers.get('X-Emotion') || '';
+    function displayStreamResult(result, params) {
+      if (ttsResultUrl) URL.revokeObjectURL(ttsResultUrl);
+      ttsResultUrl = URL.createObjectURL(result.blob);
+      const model = result.ready ? `${result.ready.modelId}@${result.ready.modelRevision}` : 'unknown';
       document.getElementById('tts-result').style.display = 'block';
-      document.getElementById('tts-result-text').innerHTML = `<strong>Engine:</strong> ${headers.get('X-Engine') || 'f5'}<br><strong>Emotion:</strong> ${emotion}`;
-      const url = URL.createObjectURL(blob);
-      document.getElementById('player-container').innerHTML = playerHtml(url, emotion || 'single', {
-        label: emotion || 'single',
-        latency_ms: Number(headers.get('X-Latency-Ms')),
-        rtf: Number(headers.get('X-RTF')),
-        duration_sec: Number(headers.get('X-Duration-Sec')),
-        params: { speed: Number(document.getElementById('tts-speed').value) }
+      document.getElementById('tts-result-text').innerHTML = `<strong>Engine:</strong> Fish Audio S2 Pro<br><strong>Model:</strong> ${escapeHtml(model)}<br><strong>Emotion:</strong> ${escapeHtml(params.emotion)}`;
+      document.getElementById('player-container').innerHTML = playerHtml(ttsResultUrl, params.emotion, {
+        firstPcmMs: result.firstPcmMs,
+        rtf: result.rtf,
+        durationSec: result.durationSec,
+        chunks: result.chunks,
+        params: { pace: params.pace, energy: params.energy, volume: params.volume }
       });
     }
 
     function playerHtml(url, label, item) {
-      const title = label || item.label || item.emotion || 'f5';
+      const title = label || 'neutral';
       const safeTitle = String(title).replace(/[^\wа-яА-ЯёЁ.-]+/g, '_');
       return `<div class="player">
-        <h3>${title} <span class="badge">F5-TTS</span></h3>
+        <h3>${escapeHtml(title)} <span class="badge">Fish Audio S2 Pro</span></h3>
         <audio controls src="${url}"></audio>
         <div class="metrics">
-          latency: ${Number(item.latency_ms || 0).toFixed(0)} ms<br>
-          RTF: ${Number(item.rtf || 0).toFixed(3)}<br>
-          duration: ${Number(item.duration_sec || 0).toFixed(2)} s<br>
-          params: <span class="mono">${JSON.stringify(item.params || {})}</span>
+          first PCM: ${Number(item.firstPcmMs || 0).toFixed(0)} ms<br>
+          approximate RTF: ${Number(item.rtf || 0).toFixed(3)}<br>
+          duration: ${Number(item.durationSec || 0).toFixed(2)} s<br>
+          chunks: ${Number(item.chunks || 0)}<br>
+          delivery: <span class="mono">${escapeHtml(JSON.stringify(item.params || {}))}</span>
         </div>
         <button onclick="downloadAudio('${url}', '${safeTitle}')">Скачать WAV</button>
       </div>`;
@@ -290,7 +522,7 @@
     function downloadAudio(url, label) {
       const a = document.createElement('a');
       a.href = url;
-      a.download = `f5_${label}_${Date.now()}.wav`;
+      a.download = `fish-s2-pro_${label}_${Date.now()}.wav`;
       a.click();
     }
 
@@ -452,6 +684,7 @@
     async function loadVoices() {
       try {
         const response = await fetch('/voices');
+        if (!response.ok) throw new Error(await response.text());
         voiceData = await response.json();
       } catch {
         voiceData = { default: '', presets: [], voices: [], datasets: [], all_emotions: emotionLabels };
@@ -495,7 +728,10 @@
       const total = voices.length;
       const defaultVoice = voiceData.defaultVoiceId || voiceData.default || '-';
       const selected = document.getElementById('tts-voice').value || '-';
-      status.textContent = `default=${defaultVoice}; selected=${selected}; installed=${installed}/${total}; sync=${voiceData.syncState || 'unknown'}`;
+      const model = voiceData.fish-s2-pro
+        ? `${voiceData.fish-s2-pro.modelId}@${voiceData.fish-s2-pro.modelRevision}`
+        : 'unknown';
+      status.textContent = `model=${model}; default=${defaultVoice}; selected=${selected}; installed=${installed}/${total}; sync=${voiceData.syncState || 'unknown'}`;
     }
 
     async function syncVoices() {
@@ -519,10 +755,20 @@
 
     async function previewVoice() {
       const previous = document.getElementById('tts-text').value;
-      if (!previous.trim()) document.getElementById('tts-text').value = 'Hello, this is a voice preview.';
+      const language = document.getElementById('tts-language').value;
+      if (!previous.trim()) {
+        document.getElementById('tts-text').value = language === 'ru'
+          ? 'Привет! Это короткая проверка голоса.'
+          : 'Hello, this is a short voice preview.';
+      }
       await synthesizeOne();
       if (!previous.trim()) document.getElementById('tts-text').value = previous;
     }
+
+    window.addEventListener('beforeunload', () => {
+      if (activeTtsRun) stopTtsRun(activeTtsRun, true);
+      if (ttsResultUrl) URL.revokeObjectURL(ttsResultUrl);
+    });
 
     loadVoices();
   </script>

@@ -40,6 +40,7 @@ export default defineConfig({
   },
   renderer: {
     root: resolve(__dirname, 'src/renderer'),
+    publicDir: resolve(__dirname, '../shio-2d/public'),
     // macros() MUST run before react() so the S2 style() macro is evaluated at build time
     plugins: [macros.vite(), react()],
     build: {

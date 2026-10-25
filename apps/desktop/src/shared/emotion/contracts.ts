@@ -10,6 +10,7 @@ export interface EmotionManifestEntry {
   }
   speech?: {
     style?: string
+    fishTags?: string[]
   }
 }
 

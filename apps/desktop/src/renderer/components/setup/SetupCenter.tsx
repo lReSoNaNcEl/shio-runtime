@@ -50,7 +50,6 @@ export function SetupCenter({
   )
   const [aiAction, setAiAction] = useState<SetupActionState>('idle')
   const [replaceCredential, setReplaceCredential] = useState(false)
-  const [avatarAction, setAvatarAction] = useState<SetupActionState>('idle')
   const [microphoneAction, setMicrophoneAction] = useState<SetupActionState>('idle')
   const [microphones, setMicrophones] = useState<MediaDeviceInfo[]>([])
   const [microphoneId, setMicrophoneId] = useState('')
@@ -177,18 +176,6 @@ export function SetupCenter({
     await controller.checkLlmHealth()
   }
 
-  const pickAvatar = async (): Promise<void> => {
-    setAvatarAction('busy')
-    const result = await window.api.vrm.pick()
-    if (!result.ok || !result.assetHandle) {
-      setAvatarAction('error')
-      return
-    }
-    controller.selectVrm(result.assetHandle)
-    setConfig(await window.api.config.get())
-    setAvatarAction('ready')
-  }
-
   const selectMicrophone = async (key: Key | null): Promise<void> => {
     if (key === null) return
     const deviceId = String(key) === '__default__' ? '' : String(key)
@@ -231,7 +218,6 @@ export function SetupCenter({
       overlayCorner: 'bottom-right',
     })
     if (!result.ok) {
-      setAvatarAction('error')
       return
     }
     await controller.setOverlayViewMode('bust')
@@ -385,16 +371,8 @@ export function SetupCenter({
             <div className="setup-detail-row">
               <div className="setup-detail-copy">
                 <Text UNSAFE_className="setup-detail-label">{t('setup.avatar.label')}</Text>
-                <Text>{config?.vrmAssetName || t('setup.avatar.notSelected')}</Text>
+                <Text>{t('avatar2d.bundled')}</Text>
               </div>
-              <Button
-                variant="secondary"
-                UNSAFE_className="setup-row-action"
-                isPending={avatarAction === 'busy'}
-                onPress={() => void pickAvatar()}
-              >
-                {state.vrmConfigured ? t('setup.change') : t('settings.avatar.chooseFile')}
-              </Button>
             </div>
             <div className="setup-detail-row">
               <div className="setup-detail-copy">
@@ -405,7 +383,7 @@ export function SetupCenter({
                 variant="secondary"
                 UNSAFE_className="setup-row-action"
                 aria-pressed={state.overlayState === 'on'}
-                isDisabled={state.overlayState !== 'on' && !state.vrmConfigured}
+                isDisabled={state.overlayState !== 'on' && !state.avatarConfigured}
                 isPending={state.overlayState === 'opening' || state.overlayState === 'closing'}
                 onPress={() => void toggleOverlay()}
               >

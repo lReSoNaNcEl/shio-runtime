@@ -1,0 +1,51 @@
+import {projectTorso} from '../v16/torso-motion-v16.mjs';
+const rad=Math.PI/180,clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
+const smooth=(a,b,x)=>{const t=clamp((x-a)/(b-a),0,1);return t*t*(3-2*t);};
+const normalize=p=>{const l=Math.hypot(...p);return p.map(x=>x/l);};
+const axis=(a,b)=>normalize([b[0]-a[0],b[1]-a[1]]);
+const grid=(nx,ny)=>{const data=[];for(let y=0;y<ny;y++)for(let x=0;x<nx;x++)for(const [a,b]of [[x,y],[x+1,y],[x,y+1],[x+1,y],[x+1,y+1],[x,y+1]])data.push(a/nx,b/ny);return new Float32Array(data);};
+const vs=`#version 300 es
+in vec2 pos;in vec2 uv;out vec2 tex;uniform vec4 camera;void main(){vec2 p=(pos-camera.xy)/camera.zw;gl_Position=vec4(p.x*2.-1.,1.-p.y*2.,0,1);tex=uv;}`;
+const limbFS=`#version 300 es
+precision highp float;in vec2 tex;uniform sampler2D art;uniform vec4 uvRect;out vec4 color;void main(){vec4 c=texture(art,uvRect.xy+tex*uvRect.zw);if(c.a<.008)discard;color=c;}`;
+const handFS=`#version 300 es
+precision highp float;in vec2 tex;uniform sampler2D art0;uniform sampler2D art1;uniform sampler2D art2;uniform sampler2D sdf0;uniform sampler2D sdf1;uniform sampler2D sdf2;uniform vec3 weights;out vec4 color;
+vec4 lowArt(sampler2D image,vec2 uv){vec2 px=1.7/vec2(textureSize(image,0));vec4 low=vec4(0.);for(int y=-1;y<=1;y++)for(int x=-1;x<=1;x++)low+=texture(image,uv+vec2(x,y)*px);return low/9.;}
+void main(){vec4 a=texture(art0,tex),b=texture(art1,tex),c=texture(art2,tex);float d=dot(vec3(texture(sdf0,tex).r,texture(sdf1,tex).r,texture(sdf2,tex).r),weights)*32.-16.;float aa=max(.14,fwidth(d)*.7),alpha=smoothstep(-aa,aa,d);if(alpha<.001)discard;vec4 mixed=a*weights.x+b*weights.y+c*weights.z;vec3 rgb=mixed.rgb/max(mixed.a,.0001);float largest=max(weights.x,max(weights.y,weights.z));if(largest<.995){vec4 la=lowArt(art0,tex),lb=lowArt(art1,tex),lc=lowArt(art2,tex),low=la*weights.x+lb*weights.y+lc*weights.z;vec4 selected=weights.x>=largest?a:(weights.y>=largest?b:c),selectedLow=weights.x>=largest?la:(weights.y>=largest?lb:lc);float second=weights.x>=largest?max(weights.y,weights.z):(weights.y>=largest?max(weights.x,weights.z):max(weights.x,weights.y));vec3 detail=selected.rgb/max(selected.a,.0001)-selectedLow.rgb/max(selectedLow.a,.0001);rgb=low.rgb/max(low.a,.0001)+detail*smoothstep(0.,.55,largest-second);}color=vec4(clamp(rgb,0.,1.)*alpha,alpha);}
+`;
+function program(g,fs){const shader=(type,src)=>{const s=g.createShader(type);g.shaderSource(s,src);g.compileShader(s);if(!g.getShaderParameter(s,g.COMPILE_STATUS))throw Error(g.getShaderInfoLog(s));return s;};const v=shader(g.VERTEX_SHADER,vs),f=shader(g.FRAGMENT_SHADER,fs),p=g.createProgram();g.attachShader(p,v);g.attachShader(p,f);g.linkProgram(p);g.deleteShader(v);g.deleteShader(f);if(!g.getProgramParameter(p,g.LINK_STATUS))throw Error(g.getProgramInfoLog(p));return p;}
+export class ArmTransitionRenderer{
+ constructor(g,model,images){
+  this.g=g;this.disposed=false;this.limbUV=grid(6,18);this.textures=[];this.programs=[program(g,limbFS),program(g,handFS)];this.handUV=[];for(let y=0;y<12;y++)for(let x=0;x<4;x++)for(const [a,b]of [[x,y],[x+1,y],[x,y+1],[x+1,y],[x+1,y+1],[x,y+1]])this.handUV.push(a/4,b/12);this.handUV=new Float32Array(this.handUV);this.slots=this.programs.map((p,index)=>{const vao=g.createVertexArray();g.bindVertexArray(vao);const pos=g.createBuffer(),uv=g.createBuffer();g.bindBuffer(g.ARRAY_BUFFER,pos);g.bufferData(g.ARRAY_BUFFER,index?this.handUV.byteLength:this.limbUV.byteLength,g.DYNAMIC_DRAW);let loc=g.getAttribLocation(p,'pos');g.enableVertexAttribArray(loc);g.vertexAttribPointer(loc,2,g.FLOAT,false,0,0);g.bindBuffer(g.ARRAY_BUFFER,uv);g.bufferData(g.ARRAY_BUFFER,index?this.handUV:this.limbUV,g.STATIC_DRAW);loc=g.getAttribLocation(p,'uv');g.enableVertexAttribArray(loc);g.vertexAttribPointer(loc,2,g.FLOAT,false,0,0);return{p,vao,pos,uv,uniforms:new Map()};});
+  const texture=name=>{const t=g.createTexture();g.bindTexture(g.TEXTURE_2D,t);g.texParameteri(g.TEXTURE_2D,g.TEXTURE_MIN_FILTER,g.LINEAR);g.texParameteri(g.TEXTURE_2D,g.TEXTURE_MAG_FILTER,g.LINEAR);g.texParameteri(g.TEXTURE_2D,g.TEXTURE_WRAP_S,g.CLAMP_TO_EDGE);g.texParameteri(g.TEXTURE_2D,g.TEXTURE_WRAP_T,g.CLAMP_TO_EDGE);g.texImage2D(g.TEXTURE_2D,0,g.RGBA,g.RGBA,g.UNSIGNED_BYTE,images[name]);this.textures.push(t);return t;};
+  this.forearm={...model.armRig.forearm,art:texture('forearm')};
+  this.limbs=['left','right'].map(side=>{const cfg=model.armRig[side],point=p=>[cfg.origin[0]+p[0]*cfg.scale[0],cfg.origin[1]+p[1]*cfg.scale[1]],S=point(cfg.S),E=point(cfg.E),rect=[...cfg.origin,941*cfg.scale[0],1672*cfg.scale[1]];return{S,E,rect,cuffY:cfg.cuffY,wristBindings:model.armRig.wristBindings[side],upperAxis:axis(S,E),upper:texture('upper-'+side),hands:['waist','heart','thoughtful'].map(n=>texture('hand-'+n+'-'+side)),sdf:['waist','heart','thoughtful'].map(n=>texture('sdf-'+n+'-'+side))};});
+
+ }
+ uniform(slot,name){if(!slot.uniforms.has(name))slot.uniforms.set(name,this.g.getUniformLocation(slot.p,name));return slot.uniforms.get(name);}
+ transport(p,side,s){
+  const d=s.secondary?.shoulders?.[side]??[0,0];let x=p[0]+d[0],y=p[1]+d[1];[x,y]=projectTorso(x,y,s,1,48);
+  const a=(s.bodyRoll??0)*rad,dx=x-542,dy=y-700;
+  return[542+dx*Math.cos(a)-dy*Math.sin(a)+(s.pelvisX??0)+(s.shoulderX??0)*(1-smooth(320,700,347)),700+dx*Math.sin(a)+dy*Math.cos(a)+(s.pelvisY??0)+(s.breath??0)-(s.shoulderLift??0)];
+ }
+ affine(p,P,Q,srcAxis,targetAxis,scale=1){const dx=p[0]-P[0],dy=p[1]-P[1],u=(dx*srcAxis[0]+dy*srcAxis[1])*scale,n=-dx*srcAxis[1]+dy*srcAxis[0];return[Q[0]+u*targetAxis[0]-n*targetAxis[1],Q[1]+u*targetAxis[1]+n*targetAxis[0]];}
+ quad(slot,points,side,view,state){const g=this.g;g.useProgram(slot.p);g.uniform4f(this.uniform(slot,'camera'),...view);g.bindVertexArray(slot.vao);g.bindBuffer(g.ARRAY_BUFFER,slot.pos);g.bufferSubData(g.ARRAY_BUFFER,0,new Float32Array(points.flatMap(p=>this.transport(p,side,state))));g.drawArrays(points.length===4?g.TRIANGLE_STRIP:g.TRIANGLES,0,points.length);}
+ bind(slot,name,t,unit){const g=this.g;g.activeTexture(g.TEXTURE0+unit);g.bindTexture(g.TEXTURE_2D,t);g.uniform1i(this.uniform(slot,name),unit);}
+ render(view,state){if(this.disposed||!state.armRig)return;const g=this.g,slot=this.slots[0],handSlot=this.slots[1],current=state.armRig.limbs,f=this.forearm;
+  const limbGrid=fn=>{const points=[];for(let i=0;i<this.limbUV.length;i+=2)points.push(fn(this.limbUV[i],this.limbUV[i+1]));return points;};
+  const fore=(side,y0,y1)=>{const q=current[side],c=q.cuffAngle*rad,cuff=[Math.cos(c),Math.sin(c)],B=[q.W[0]-cuff[0]*f.cuffLength,q.W[1]-cuff[1]*f.cuffLength],skin=axis(q.E,B),point=(u,v)=>{const x=u*f.size[0],y=y0+v*(y1-y0),n=(x-f.centerX)*f.widthScale*(side?1:-1);if(y>=f.cuffY){const k=(y-f.cuffY)/(f.wristY-f.cuffY);return[B[0]+cuff[0]*f.cuffLength*k-cuff[1]*n,B[1]+cuff[1]*f.cuffLength*k+cuff[0]*n];}const k=(y-f.elbowY)/(f.cuffY-f.elbowY),w=smooth(.72,1,k),normal=[-skin[1]*(1-w)-cuff[1]*w,skin[0]*(1-w)+cuff[0]*w];return[q.E[0]+(B[0]-q.E[0])*k+normal[0]*n,q.E[1]+(B[1]-q.E[1])*k+normal[1]*n];};g.useProgram(slot.p);this.bind(slot,'art',f.art,0);g.uniform4f(this.uniform(slot,'uvRect'),0,y0/f.size[1],1,(y1-y0)/f.size[1]);this.quad(slot,limbGrid(point),side,view,state);};
+  const upper=(side,y0,y1)=>{const l=this.limbs[side],q=current[side],t=axis(q.S,q.E),L=Math.hypot(q.E[0]-q.S[0],q.E[1]-q.S[1]),scale=L/Math.hypot(l.E[0]-l.S[0],l.E[1]-l.S[1]),[x,y,w,h]=l.rect,Y0=y+h*y0/1672,Y1=y+h*y1/1672,point=(u,v)=>{const p=this.affine([x+w*u,Y0+(Y1-Y0)*v],l.S,q.S,l.upperAxis,t,scale),dx=p[0]-q.S[0],dy=p[1]-q.S[1],along=dx*t[0]+dy*t[1],n=-dx*t[1]+dy*t[0],root=smooth(5,55,along),tip=smooth(L*.35,L*1.15,along),edge=smooth(8,42,Math.abs(n)),m=q.sleeve??{},normal=((m.swing??0)*tip+(m.flutter??0)*Math.sin(along*.08+side)*tip)*edge+(m.billow??0)*n*.018*root,axial=(m.flutter??0)*.2*tip*edge;return[p[0]-t[1]*normal+t[0]*axial,p[1]+t[0]*normal+t[1]*axial];};g.useProgram(slot.p);this.bind(slot,'art',l.upper,0);g.uniform4f(this.uniform(slot,'uvRect'),0,y0/1672,1,(y1-y0)/1672);this.quad(slot,limbGrid(point),side,view,state);};
+  const wristCollar=side=>{const q=current[side],c=q.cuffAngle*rad,h=q.hand*rad,t=[Math.cos(c),Math.sin(c)],u=[Math.cos(h),Math.sin(h)],A=[q.W[0]-t[0]*4,q.W[1]-t[1]*4],B=[q.W[0]+u[0]*12,q.W[1]+u[1]*12];g.useProgram(slot.p);this.bind(slot,'art',f.art,0);g.uniform4f(this.uniform(slot,'uvRect'),605/1280,1090/1280,50/1280,30/1280);this.quad(slot,limbGrid((x,y)=>{const n=(x*2-1)*(14.6-4.5*y),nx=-t[1]*(1-y)-u[1]*y,ny=t[0]*(1-y)+u[0]*y;return[A[0]+(B[0]-A[0])*y+nx*n,A[1]+(B[1]-A[1])*y+ny*n];}),side,view,state);};
+  // The bicep lies behind the folding forearm, while the flared lace hem
+  // lies in front of the elbow cap. Adjacent source strips meet exactly;
+  // there is no opacity crossfade or duplicated sleeve at the boundary.
+  for(let side=0;side<2;side++)upper(side,0,this.limbs[side].cuffY);
+  for(let side=0;side<2;side++){fore(side,0,f.cuffY);fore(side,f.cuffY,f.wristY);}
+  for(let side=0;side<2;side++)wristCollar(side);
+  for(let side=0;side<2;side++)upper(side,this.limbs[side].cuffY,1672);
+  for(let side=0;side<2;side++){const l=this.limbs[side],q=current[side],a=q.hand*rad,t=[Math.cos(a),Math.sin(a)],normal=[-t[1],t[0]],points=[];for(let k=0;k<this.handUV.length;k+=2){let n=-52+this.handUV[k]*104,v=-16+this.handUV[k+1]*128;const wristPin=1-smooth(4,32,v),center=l.wristBindings.reduce((a,b,i)=>a+b.center*state.armRig.weights[i],0),half=l.wristBindings.reduce((a,b,i)=>a+b.halfWidth*state.armRig.weights[i],0);n=(n-center*wristPin)*(1+(15.4/half-1)*wristPin);const flex=(q.fingerFlex??0)*smooth(34,95,v)*(1-smooth(25,48,Math.abs(n)));n+=flex*(side?1:-1);v+=flex*.25;points.push([q.W[0]+t[0]*v+normal[0]*n,q.W[1]+t[1]*v+normal[1]*n]);}g.useProgram(handSlot.p);for(let i=0;i<3;i++){this.bind(handSlot,'art'+i,l.hands[i],i);this.bind(handSlot,'sdf'+i,l.sdf[i],i+3);}g.uniform3f(this.uniform(handSlot,'weights'),...state.armRig.weights);this.quad(handSlot,points,side,view,state);}
+  g.activeTexture(g.TEXTURE0);
+ }
+
+ dispose(){if(this.disposed)return;this.disposed=true;const g=this.g;for(const t of this.textures)g.deleteTexture(t);this.textures=[];for(const s of this.slots){g.deleteBuffer(s.pos);g.deleteBuffer(s.uv);g.deleteVertexArray(s.vao);g.deleteProgram(s.p);}this.slots=[];this.limbs=[];this.handUV=null;this.limbUV=null;}
+}

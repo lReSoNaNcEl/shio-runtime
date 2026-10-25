@@ -283,10 +283,12 @@ async function testPostGenerationCancellationReleasesScreenAttachment(): Promise
   const runtime = new ConversationRuntime({
     speechOutput: {
       hasSpeakableContent: () => true,
-      synthesizeSegment: async () => {
-        markSynthesisStarted()
-        return await new Promise<never>(() => undefined)
-      },
+      openStream: () => ({
+        completion: new Promise<never>(() => undefined),
+        commit: () => markSynthesisStarted(),
+        finish: () => undefined,
+        cancel: () => undefined,
+      }),
       stopCurrent: () => undefined,
     },
     characterResponse: {
@@ -368,7 +370,12 @@ async function testSpeechCancellationPreservesFinalStreamedText(): Promise<void>
   const runtime = new ConversationRuntime({
     speechOutput: {
       hasSpeakableContent: () => true,
-      synthesizeSegment: async () => await new Promise<never>(() => undefined),
+      openStream: () => ({
+        completion: new Promise<never>(() => undefined),
+        commit: () => undefined,
+        finish: () => undefined,
+        cancel: () => undefined,
+      }),
       stopCurrent: () => undefined,
     },
     characterResponse: {

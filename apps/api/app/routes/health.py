@@ -3,6 +3,7 @@ import logging
 from fastapi import APIRouter
 
 from app.config import settings
+from app.tts.runtime import engine_status
 
 logger = logging.getLogger(__name__)
 
@@ -14,8 +15,8 @@ class HealthState:
 
     def __init__(self):
         self.asr_ready = False
-        self.f5_ready = False
-        self.f5_mode = "unavailable"
+        self.fish_ready = False
+        self.fish_mode = "unavailable"
         self.device = "cuda"
 
 
@@ -25,12 +26,12 @@ health_state = HealthState()
 @router.get("/health", summary="Service and engine status")
 async def health_check():
     """Get health status of the service."""
-    overall_ready = (
-        health_state.asr_ready and health_state.f5_ready and health_state.f5_mode == "real"
-    )
+    synthesis_status = engine_status()
+    synthesis_ready = synthesis_status == "ready"
+    overall_ready = health_state.asr_ready and synthesis_ready
     return {
         "status": "ok",
-        "service": "speech-asr-f5-tts",
+        "service": "speech-asr-fish-s2-pro",
         "serviceId": settings.SERVICE_ID,
         "contractVersion": settings.CONTRACT_VERSION,
         "speechPackVersion": settings.SPEECH_PACK_VERSION,
@@ -40,12 +41,17 @@ async def health_check():
             "ready": health_state.asr_ready,
             "model": "whisper-medium",
         },
-        "engines": {
-            "f5": {
-                "status": "ready" if health_state.f5_ready else "not-connected",
-                "ready": health_state.f5_ready,
-                "mode": health_state.f5_mode,
-            }
+        "synthesis": {
+            "status": synthesis_status,
+            "ready": synthesis_ready,
+            "engine": "fish-s2-pro",
+            "mode": health_state.fish_mode,
+            "model": settings.FISH_MODEL_ID,
+            "modelRevision": settings.FISH_MODEL_REVISION,
+            "sourceRevision": settings.FISH_SOURCE_REVISION,
+            "protocolVersion": 1,
+            "streaming": True,
+            "voiceCloning": True,
         },
         "provider": health_state.device,
         "timestamp": None,
@@ -57,11 +63,11 @@ def set_asr_ready(ready: bool):
     health_state.asr_ready = ready
 
 
-def set_engine_ready(engine: str, ready: bool, mode: str = "mock"):
-    """Set TTS engine readiness status and mode ('real' or 'mock')."""
-    if engine == "f5":
-        health_state.f5_ready = ready
-        health_state.f5_mode = mode
+def set_engine_ready(engine: str, ready: bool, mode: str = "real"):
+    """Set real Fish Audio S2 Pro readiness; no alternate or mock engine exists."""
+    if engine == "fish-s2-pro":
+        health_state.fish_ready = ready
+        health_state.fish_mode = mode
 
 
 def get_health_state() -> HealthState:

@@ -4,7 +4,7 @@ export type LlmSetupReadiness = LlmReadiness & {
   reason: 'missing-account-id' | 'missing-credential' | 'model-missing'
 }
 
-export function isVrmConfigured(filePath: string): boolean {
+export function isAvatarConfigured(filePath: string): boolean {
   return filePath.trim().length > 0
 }
 

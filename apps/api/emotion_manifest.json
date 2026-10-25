@@ -1,215 +1,600 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "defaultEmotion": "neutral",
   "emotions": [
     {
       "id": "neutral",
       "displayName": "Neutral",
       "aliases": [],
-      "markers": ["[neutral]", "(neutral)"],
+      "markers": [
+        "[neutral]",
+        "(neutral)"
+      ],
       "avatar": {
         "behavior": "neutral",
         "expression": "neutral",
-        "expressionWeights": {}
+        "expressionWeights": {
+          "neutral": 1
+        },
+        "modelVersion": 22
       },
       "speech": {
-        "style": "neutral"
+        "style": "neutral",
+        "fishTags": []
       }
     },
     {
       "id": "calm",
       "displayName": "Calm",
       "aliases": [],
-      "markers": ["[calm]", "(calm)"],
+      "markers": [
+        "[calm]",
+        "(calm)"
+      ],
       "avatar": {
         "behavior": "calm",
-        "expression": "relaxed",
-        "expressionWeights": { "relaxed": 0.8, "neutral": 0.2 }
+        "expression": "neutral",
+        "expressionWeights": {
+          "neutral": 1
+        },
+        "modelVersion": 22
       },
       "speech": {
-        "style": "calm"
+        "style": "calm",
+        "fishTags": [
+          "calm"
+        ]
       }
     },
     {
       "id": "warm",
       "displayName": "Warm",
       "aliases": [],
-      "markers": ["[warm]", "(warm)"],
+      "markers": [
+        "[warm]",
+        "(warm)"
+      ],
       "avatar": {
         "behavior": "warm",
-        "expression": "happy",
-        "expressionWeights": { "relaxed": 0.7, "happy": 0.35 }
+        "expression": "loving",
+        "expressionWeights": {
+          "loving": 1
+        },
+        "modelVersion": 22
       },
       "speech": {
-        "style": "warm"
+        "style": "warm",
+        "fishTags": [
+          "warm"
+        ]
       }
     },
     {
       "id": "happy",
       "displayName": "Happy",
-      "aliases": ["joy", "smile"],
-      "markers": ["[happy]", "(happy)", "(радостно)"],
+      "aliases": [
+        "joy",
+        "smile"
+      ],
+      "markers": [
+        "[happy]",
+        "(happy)",
+        "(радостно)"
+      ],
       "avatar": {
         "behavior": "happy",
         "expression": "happy",
-        "expressionWeights": { "happy": 1.0 }
+        "expressionWeights": {
+          "happy": 1
+        },
+        "modelVersion": 22
       },
       "speech": {
-        "style": "happy"
+        "style": "happy",
+        "fishTags": [
+          "happy"
+        ]
       }
     },
     {
       "id": "laugh",
       "displayName": "Laugh",
-      "aliases": ["laughter", "laughing"],
-      "markers": ["[laugh]", "[laughter]", "(laugh)", "(laughter)", "(смех)"],
+      "aliases": [
+        "laughter",
+        "laughing"
+      ],
+      "markers": [
+        "[laugh]",
+        "[laughter]",
+        "(laugh)",
+        "(laughter)",
+        "(смех)"
+      ],
       "avatar": {
         "behavior": "laugh",
-        "expression": "happy",
-        "expressionWeights": { "happy": 1.0, "aa": 0.35 }
+        "expression": "laughing",
+        "expressionWeights": {
+          "laughing": 1
+        },
+        "modelVersion": 22
       },
       "speech": {
-        "style": "laugh"
+        "style": "laugh",
+        "fishTags": [
+          "laughing"
+        ]
       }
     },
     {
       "id": "chuckle",
       "displayName": "Chuckle",
       "aliases": [],
-      "markers": ["[chuckle]", "(chuckle)", "(смешок)"],
+      "markers": [
+        "[chuckle]",
+        "(chuckle)",
+        "(смешок)"
+      ],
       "avatar": {
-        "behavior": "laugh",
-        "expression": "happy",
-        "expressionWeights": { "happy": 0.65, "relaxed": 0.25 }
+        "behavior": "chuckle",
+        "expression": "amused",
+        "expressionWeights": {
+          "amused": 1
+        },
+        "modelVersion": 22
       },
       "speech": {
-        "style": "chuckle"
+        "style": "chuckle",
+        "fishTags": [
+          "chuckle"
+        ]
       }
     },
     {
       "id": "sad",
       "displayName": "Sad",
       "aliases": [],
-      "markers": ["[sad]", "(sad)", "(грустно)"],
+      "markers": [
+        "[sad]",
+        "(sad)",
+        "(грустно)"
+      ],
       "avatar": {
         "behavior": "sad",
         "expression": "sad",
-        "expressionWeights": { "sad": 1.0 }
+        "expressionWeights": {
+          "sad": 1
+        },
+        "modelVersion": 22
       },
       "speech": {
-        "style": "sad"
+        "style": "sad",
+        "fishTags": [
+          "sad"
+        ]
       }
     },
     {
       "id": "crying",
       "displayName": "Crying",
       "aliases": [],
-      "markers": ["[crying]", "(crying)", "(плачет)"],
+      "markers": [
+        "[crying]",
+        "(crying)",
+        "(плачет)"
+      ],
       "avatar": {
         "behavior": "crying",
-        "expression": "sad",
-        "expressionWeights": { "sad": 1.0 }
+        "expression": "crying",
+        "expressionWeights": {
+          "crying": 1
+        },
+        "modelVersion": 22
       },
       "speech": {
-        "style": "crying"
+        "style": "crying",
+        "fishTags": [
+          "crying"
+        ]
       }
     },
     {
       "id": "angry",
       "displayName": "Angry",
       "aliases": [],
-      "markers": ["[angry]", "(angry)", "(зло)", "(зла)"],
+      "markers": [
+        "[angry]",
+        "(angry)",
+        "(зло)",
+        "(зла)"
+      ],
       "avatar": {
         "behavior": "angry",
         "expression": "angry",
-        "expressionWeights": { "angry": 1.0 }
+        "expressionWeights": {
+          "angry": 1
+        },
+        "modelVersion": 22
       },
       "speech": {
-        "style": "angry"
+        "style": "angry",
+        "fishTags": [
+          "angry"
+        ]
       }
     },
     {
       "id": "fear",
       "displayName": "Fear",
-      "aliases": ["scared", "afraid"],
-      "markers": ["[fear]", "[scared]", "(fear)", "(scared)", "(испуганно)"],
+      "aliases": [
+        "scared",
+        "afraid"
+      ],
+      "markers": [
+        "[fear]",
+        "[scared]",
+        "(fear)",
+        "(scared)",
+        "(испуганно)"
+      ],
       "avatar": {
         "behavior": "fear",
-        "expression": "surprised",
-        "expressionWeights": { "surprised": 0.7, "sad": 0.5 }
+        "expression": "worried",
+        "expressionWeights": {
+          "worried": 1
+        },
+        "modelVersion": 22
       },
       "speech": {
-        "style": "fear"
+        "style": "fear",
+        "fishTags": [
+          "scared"
+        ]
       }
     },
     {
       "id": "surprised",
       "displayName": "Surprised",
-      "aliases": ["surprise", "surprize"],
-      "markers": ["[surprised]", "[surprise]", "(surprised)", "(surprise)", "(удивленно)", "(удивлённо)"],
+      "aliases": [
+        "surprise",
+        "surprize"
+      ],
+      "markers": [
+        "[surprised]",
+        "[surprise]",
+        "(surprised)",
+        "(surprise)",
+        "(удивленно)",
+        "(удивлённо)"
+      ],
       "avatar": {
         "behavior": "surprised",
         "expression": "surprised",
-        "expressionWeights": { "surprised": 1.0 }
+        "expressionWeights": {
+          "surprised": 1
+        },
+        "modelVersion": 22
       },
       "speech": {
-        "style": "surprised"
+        "style": "surprised",
+        "fishTags": [
+          "surprised"
+        ]
       }
     },
     {
       "id": "gasp",
       "displayName": "Gasp",
       "aliases": [],
-      "markers": ["[gasp]", "(gasp)"],
+      "markers": [
+        "[gasp]",
+        "(gasp)"
+      ],
       "avatar": {
         "behavior": "gasp",
         "expression": "surprised",
-        "expressionWeights": { "surprised": 1.0, "aa": 0.45 }
+        "expressionWeights": {
+          "surprised": 1
+        },
+        "modelVersion": 22
       },
       "speech": {
-        "style": "gasp"
+        "style": "gasp",
+        "fishTags": [
+          "gasp"
+        ]
       }
     },
     {
       "id": "sigh",
       "displayName": "Sigh",
       "aliases": [],
-      "markers": ["[sigh]", "(sigh)", "(вздох)"],
+      "markers": [
+        "[sigh]",
+        "(sigh)",
+        "(вздох)"
+      ],
       "avatar": {
         "behavior": "sigh",
-        "expression": "relaxed",
-        "expressionWeights": { "relaxed": 0.6, "sad": 0.4 }
+        "expression": "sad",
+        "expressionWeights": {
+          "sad": 1
+        },
+        "modelVersion": 22
       },
       "speech": {
-        "style": "sigh"
+        "style": "sigh",
+        "fishTags": [
+          "sigh"
+        ]
       }
     },
     {
       "id": "groan",
       "displayName": "Groan",
       "aliases": [],
-      "markers": ["[groan]", "(groan)", "(стон)"],
+      "markers": [
+        "[groan]",
+        "(groan)",
+        "(стон)"
+      ],
       "avatar": {
         "behavior": "groan",
-        "expression": "sad",
-        "expressionWeights": { "sad": 0.55, "angry": 0.35, "aa": 0.2 }
+        "expression": "pouting",
+        "expressionWeights": {
+          "pouting": 1
+        },
+        "modelVersion": 22
       },
       "speech": {
-        "style": "groan"
+        "style": "groan",
+        "fishTags": [
+          "groan"
+        ]
       }
     },
     {
       "id": "whisper",
       "displayName": "Whisper",
       "aliases": [],
-      "markers": ["[whisper]", "(whisper)", "(шепотом)", "(шёпотом)"],
+      "markers": [
+        "[whisper]",
+        "(whisper)",
+        "(шепотом)",
+        "(шёпотом)"
+      ],
       "avatar": {
         "behavior": "whisper",
-        "expression": "relaxed",
-        "expressionWeights": { "relaxed": 0.8, "neutral": 0.2 }
+        "expression": "neutral",
+        "expressionWeights": {
+          "neutral": 1
+        },
+        "modelVersion": 22
       },
       "speech": {
-        "style": "whisper"
+        "style": "whisper",
+        "fishTags": [
+          "whisper"
+        ]
+      }
+    },
+    {
+      "id": "shy",
+      "displayName": "Shy",
+      "aliases": [],
+      "markers": [
+        "[shy]"
+      ],
+      "avatar": {
+        "behavior": "shy",
+        "expression": "shy",
+        "expressionWeights": {
+          "shy": 1
+        },
+        "modelVersion": 22
+      },
+      "speech": {
+        "style": "shy",
+        "fishTags": [
+          "shy"
+        ]
+      }
+    },
+    {
+      "id": "amused",
+      "displayName": "Amused",
+      "aliases": [],
+      "markers": [
+        "[amused]"
+      ],
+      "avatar": {
+        "behavior": "amused",
+        "expression": "amused",
+        "expressionWeights": {
+          "amused": 1
+        },
+        "modelVersion": 22
+      },
+      "speech": {
+        "style": "amused",
+        "fishTags": [
+          "amused"
+        ]
+      }
+    },
+    {
+      "id": "sleepy",
+      "displayName": "Sleepy",
+      "aliases": [],
+      "markers": [
+        "[sleepy]"
+      ],
+      "avatar": {
+        "behavior": "sleepy",
+        "expression": "sleepy",
+        "expressionWeights": {
+          "sleepy": 1
+        },
+        "modelVersion": 22
+      },
+      "speech": {
+        "style": "sleepy",
+        "fishTags": [
+          "sleepy"
+        ]
+      }
+    },
+    {
+      "id": "excited",
+      "displayName": "Excited",
+      "aliases": [],
+      "markers": [
+        "[excited]"
+      ],
+      "avatar": {
+        "behavior": "excited",
+        "expression": "excited",
+        "expressionWeights": {
+          "excited": 1
+        },
+        "modelVersion": 22
+      },
+      "speech": {
+        "style": "excited",
+        "fishTags": [
+          "excited"
+        ]
+      }
+    },
+    {
+      "id": "worried",
+      "displayName": "Worried",
+      "aliases": [],
+      "markers": [
+        "[worried]"
+      ],
+      "avatar": {
+        "behavior": "worried",
+        "expression": "worried",
+        "expressionWeights": {
+          "worried": 1
+        },
+        "modelVersion": 22
+      },
+      "speech": {
+        "style": "worried",
+        "fishTags": [
+          "worried"
+        ]
+      }
+    },
+    {
+      "id": "confused",
+      "displayName": "Confused",
+      "aliases": [],
+      "markers": [
+        "[confused]"
+      ],
+      "avatar": {
+        "behavior": "confused",
+        "expression": "confused",
+        "expressionWeights": {
+          "confused": 1
+        },
+        "modelVersion": 22
+      },
+      "speech": {
+        "style": "confused",
+        "fishTags": [
+          "confused"
+        ]
+      }
+    },
+    {
+      "id": "proud",
+      "displayName": "Proud",
+      "aliases": [],
+      "markers": [
+        "[proud]"
+      ],
+      "avatar": {
+        "behavior": "proud",
+        "expression": "proud",
+        "expressionWeights": {
+          "proud": 1
+        },
+        "modelVersion": 22
+      },
+      "speech": {
+        "style": "proud",
+        "fishTags": [
+          "proud"
+        ]
+      }
+    },
+    {
+      "id": "pouting",
+      "displayName": "Pouting",
+      "aliases": [],
+      "markers": [
+        "[pouting]"
+      ],
+      "avatar": {
+        "behavior": "pouting",
+        "expression": "pouting",
+        "expressionWeights": {
+          "pouting": 1
+        },
+        "modelVersion": 22
+      },
+      "speech": {
+        "style": "pouting",
+        "fishTags": [
+          "pouting"
+        ]
+      }
+    },
+    {
+      "id": "loving",
+      "displayName": "Loving",
+      "aliases": [],
+      "markers": [
+        "[loving]"
+      ],
+      "avatar": {
+        "behavior": "loving",
+        "expression": "loving",
+        "expressionWeights": {
+          "loving": 1
+        },
+        "modelVersion": 22
+      },
+      "speech": {
+        "style": "loving",
+        "fishTags": [
+          "tender"
+        ]
+      }
+    },
+    {
+      "id": "dazed",
+      "displayName": "Dazed",
+      "aliases": [],
+      "markers": [
+        "[dazed]"
+      ],
+      "avatar": {
+        "behavior": "dazed",
+        "expression": "dazed",
+        "expressionWeights": {
+          "dazed": 1
+        },
+        "modelVersion": 22
+      },
+      "speech": {
+        "style": "dazed",
+        "fishTags": [
+          "dazed"
+        ]
       }
     }
   ]

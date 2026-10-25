@@ -1,0 +1,11 @@
+{
+  "meshes": {
+    "hair-lock-0": "ArtMeshBackHair5",
+    "hair-lock-1": "ArtMeshBackHair4",
+    "hair-lock-2": "ArtMeshBackHair3",
+    "hair-lock-3": "ArtMeshBackHair2",
+    "hair-lock-4": "ArtMeshBackHair"
+  },
+  "compiler": "3.6.7",
+  "fps": 120
+}

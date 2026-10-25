@@ -40,7 +40,7 @@ import type {
   ConversationThread,
   ConversationThreadRuntimePort,
 } from '../shared/conversation-threads'
-import { normalizeEmotionTag, parseEmotionalReply, parseLeadingEmotionTag } from '../shared/emotion'
+import { parseEmotionalReply, parseLeadingEmotionTag } from '../shared/emotion'
 import { normalizeUiLocale, type UiLocale } from '../shared/localization'
 import type { HabitRecord, RelationshipContext } from '../shared/memory'
 import type { ProjectContextProviderResolver } from '../shared/plugins'
@@ -50,10 +50,6 @@ import type {
   ProjectReplyProvenance,
 } from '../shared/project-awareness'
 import type { ScreenContextImageMimeType } from '../shared/screen-context'
-import type {
-  SpeechAudioBoundaryTelemetry,
-  SpeechTextNormalizationTelemetry,
-} from '../shared/speech'
 import type { WebSearchProviderResolver } from '../shared/web-search'
 import type { BrowserWorkflowCoordinator } from './browser-control/workflow'
 import { containsCharacterProtocol } from './character/compatibility/LegacyDirectiveContainment'
@@ -88,8 +84,6 @@ import {
 } from './llm'
 import { mainLog } from './logging/safeLogger'
 import type { MemoryStore, MemoryToolBroker } from './memory'
-import type { SpeechSynthesisClient } from './speech/speechClient'
-import { classifySpeechUtterance, normalizeSpeechText } from './speech/text-normalization'
 
 export { presentActionResult as actionResultFallback }
 
@@ -102,8 +96,6 @@ interface CharacterLivingContext {
 }
 
 const SESSION_ID = 'default'
-const TTS_VOICE_ID = 'animevox_makima'
-const TTS_ENGINE = 'f5'
 
 export interface CharacterReplyInput {
   userText: string
@@ -307,7 +299,7 @@ export class Orchestrator {
   constructor(
     private llm: LLMProvider,
     private memory: MemoryStore,
-    private speech: SpeechSynthesisClient,
+    _speechRuntimeCompatibility: unknown,
     private settings: () => AppSettings,
     private projectContext?: ProjectContextProviderResolver,
     private capabilityContext?: ShioCapabilityProvider,
@@ -631,105 +623,6 @@ export class Orchestrator {
       ),
       assistantTurnKind,
       ...(providerIncidentCode ? { providerIncidentCode } : {}),
-    }
-  }
-
-  async synthesizeReply(
-    replyText: string,
-    emotionKey: string,
-    signal?: AbortSignal,
-  ): Promise<{
-    audioBuffer: ArrayBuffer
-    emotionKey: string
-    requestedEmotion?: string
-    textEmotion?: string
-    vrmEmotion?: string
-    latencyMs?: string
-    generatedLatencyMs?: string
-    cache?: string
-    normalization?: SpeechTextNormalizationTelemetry
-    audioBoundaries?: SpeechAudioBoundaryTelemetry
-  }> {
-    const cfg = this.settings()
-    const normalization = normalizeSpeechText({
-      text: replyText,
-      language: cfg.ttsLanguage,
-    })
-    if (normalization.diagnostics.fallbackReason) {
-      mainLog.warn('[speech-polish] text normalization fallback', {
-        category: normalization.diagnostics.fallbackReason,
-        inputCharacters: normalization.diagnostics.inputCharacters,
-        outputCharacters: normalization.diagnostics.outputCharacters,
-      })
-    }
-    const utteranceKind = classifySpeechUtterance(
-      normalization.text,
-      emotionKey,
-      normalization.utteranceKind === 'technical',
-    )
-    const speechResult = await this.speech.synthesize(
-      {
-        text: normalization.text,
-        language: cfg.ttsLanguage,
-        voiceId: TTS_VOICE_ID,
-        engine: TTS_ENGINE,
-        emotion: emotionKey,
-        utteranceKind,
-      },
-      signal,
-    )
-    mainLog.info('[emotion] TTS result', {
-      requestedEmotion: emotionKey,
-      ttsRequestedEmotion: speechResult.requestedEmotion,
-      ttsTextEmotion: speechResult.textEmotion,
-      returnedEmotion: speechResult.emotion,
-      latencyMs: speechResult.latencyMs,
-      rtf: speechResult.rtf,
-    })
-
-    return {
-      audioBuffer: speechResult.audioBuffer,
-      emotionKey: normalizeEmotionTag(speechResult.emotion ?? emotionKey),
-      requestedEmotion: speechResult.requestedEmotion,
-      textEmotion: speechResult.textEmotion,
-      vrmEmotion: speechResult.vrmEmotion,
-      latencyMs: speechResult.latencyMs,
-      generatedLatencyMs: speechResult.generatedLatencyMs,
-      cache: speechResult.cache,
-      normalization: {
-        version: normalization.diagnostics.version,
-        changed: normalization.diagnostics.changed,
-        inputCharacters: normalization.diagnostics.inputCharacters,
-        outputCharacters: normalization.diagnostics.outputCharacters,
-        appliedRuleCount: normalization.diagnostics.appliedRuleIds.length,
-        categories: normalization.diagnostics.categories,
-      },
-      audioBoundaries: speechResult.audioBoundaries,
-    }
-  }
-
-  async ask(userText: string): Promise<{
-    replyText: string
-    audioBuffer: ArrayBuffer
-    emotionKey: string
-    vrmEmotion?: string
-    latencyMs?: string
-    generatedLatencyMs?: string
-    cache?: string
-    grounding?: ReplyGrounding
-  }> {
-    const { replyText, emotionKey, grounding } = await this.createReply({ userText })
-    const speechResult = await this.synthesizeReply(replyText, emotionKey)
-
-    return {
-      replyText,
-      audioBuffer: speechResult.audioBuffer,
-      emotionKey: speechResult.emotionKey,
-      vrmEmotion: speechResult.vrmEmotion,
-      latencyMs: speechResult.latencyMs,
-      generatedLatencyMs: speechResult.generatedLatencyMs,
-      cache: speechResult.cache,
-      grounding,
     }
   }
 

@@ -3,29 +3,29 @@ import type { CharacterState } from '../../shared/runtime'
 import { toHeadMotionProfile, toLookAtMode } from './AvatarRuntimeMappers'
 import type { AvatarStateEffect } from './AvatarStateMachine'
 import type { LipSync, LipSyncStartRequest } from './embodiment/speech/LipSync'
-import type { VrmModel } from './rendering/three/VrmModel'
+import type { AvatarModel } from './rendering/two/AvatarModel'
 
 export class AvatarStateEffectApplier {
   constructor(
-    private readonly vrmModel: VrmModel,
+    private readonly avatarModel: AvatarModel,
     private readonly lipSync: LipSync,
   ) {}
 
   apply(input: {
     effect: AvatarStateEffect
-    vrmEmotion?: string
+    avatarEmotion?: string
     lipSyncStart?: LipSyncStartRequest
     stopLipSyncTurnId?: string
     state?: CharacterState
     gazeHint?: EmbodimentGazeHint
   }): void {
-    const { effect, vrmEmotion, lipSyncStart, stopLipSyncTurnId, state, gazeHint } = input
-    this.vrmModel.setProceduralMode(effect.proceduralMode)
+    const { effect, avatarEmotion, lipSyncStart, stopLipSyncTurnId, state, gazeHint } = input
+    this.avatarModel.setProceduralMode(effect.proceduralMode)
     this.applyGaze(effect.mode, state, gazeHint)
-    this.vrmModel.applyEmotion(effect.emotionKey, vrmEmotion)
+    this.avatarModel.applyEmotion(effect.emotionKey, avatarEmotion)
 
     if (effect.detachLipSync) this.lipSync.detach(stopLipSyncTurnId)
-    if (effect.resetMouth) this.vrmModel.setMouthWeights({ aa: 0, ih: 0, ou: 0, ee: 0, oh: 0 })
+    if (effect.resetMouth) this.avatarModel.setMouthWeights({ aa: 0, ih: 0, ou: 0, ee: 0, oh: 0 })
     if (effect.attachLipSync && lipSyncStart)
       this.lipSync.attach({
         ...lipSyncStart,
@@ -40,7 +40,7 @@ export class AvatarStateEffectApplier {
     gazeHint?: EmbodimentGazeHint,
   ): void {
     const lookAtMode = toLookAtMode({ mode }, state, gazeHint)
-    this.vrmModel.setLookAtMode(lookAtMode)
-    this.vrmModel.setHeadMotionProfile(toHeadMotionProfile(lookAtMode))
+    this.avatarModel.setLookAtMode(lookAtMode)
+    this.avatarModel.setHeadMotionProfile(toHeadMotionProfile(lookAtMode))
   }
 }

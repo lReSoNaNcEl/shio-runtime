@@ -9,7 +9,7 @@ import { facialTuning } from '../../tuning/facialTuning'
  * on micro-pauses, and at chunk / sentence boundaries.
  *
  * It owns only a single 0..1 closure strength (0 = no closure, 1 = fully shut).
- * It never touches the LipSync signal and never writes into the VRM Expression
+ * It never touches the LipSync signal and never writes into the facial
  * Manager — the AvatarExpressionMixer reads {@link getStrength} and applies it
  * as a multiplier on the final mouth value:
  *

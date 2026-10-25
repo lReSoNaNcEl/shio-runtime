@@ -323,11 +323,10 @@ function Install-SpeechPack {
         Add-Content -LiteralPath (Join-Path $stagingApi ".env") -Encoding UTF8 -Value @(
             "SHIO_MODEL_ROOT=$((Join-Path $DataRoot 'models').Replace('\', '/'))",
             "SPEECH_PACK_VERSION=$($Manifest.speechPack.version)",
-            "F5_ALLOW_MOCK=false",
-            "F5_MODEL_REVISION=$($Manifest.speechPack.modelRevisions.f5)",
+            "TTS_DEFAULT_ENGINE=fish-s2-pro",
+            "FISH_MODEL_REVISION=$($Manifest.speechPack.modelRevisions.fish)",
             "WHISPER_MODEL_REVISION=$($Manifest.speechPack.modelRevisions.fasterWhisper)",
-            "F5_VOCODER_REVISION=$($Manifest.speechPack.modelRevisions.vocoder)",
-            "RUACCENT_MODEL_REVISION=$($Manifest.speechPack.modelRevisions.ruaccent)"
+            "FISH_SOURCE_REVISION=$($Manifest.speechPack.modelRevisions.fishSource)"
         )
         $persistentVoices = Join-Path $DataRoot "voices"
         New-Item -ItemType Directory -Force -Path $persistentVoices | Out-Null
@@ -407,8 +406,11 @@ function Test-Health {
         $health.contractVersion -eq $Manifest.speechPack.contractVersion -and
         $health.speechPackVersion -eq $Manifest.speechPack.version -and
         $health.asr.ready -eq $true -and
-        $health.engines.f5.ready -eq $true -and
-        $health.engines.f5.mode -eq "real"
+        $health.synthesis.ready -eq $true -and
+        $health.synthesis.engine -eq "fish-s2-pro" -and
+        $health.synthesis.streaming -eq $true -and
+        $health.synthesis.voiceCloning -eq $true -and
+        $health.synthesis.mode -eq "real"
     )
 }
 
@@ -520,11 +522,9 @@ function Start-ManagedApi {
     Rotate-Log $runtimeErrorLog
     $env:SHIO_MODEL_ROOT = Join-Path $DataRoot "models"
     $env:SPEECH_PACK_VERSION = $Manifest.speechPack.version
-    $env:F5_MODEL_REVISION = $Manifest.speechPack.modelRevisions.f5
+    $env:FISH_MODEL_REVISION = $Manifest.speechPack.modelRevisions.fish
     $env:WHISPER_MODEL_REVISION = $Manifest.speechPack.modelRevisions.fasterWhisper
-    $env:F5_VOCODER_REVISION = $Manifest.speechPack.modelRevisions.vocoder
-    $env:RUACCENT_MODEL_REVISION = $Manifest.speechPack.modelRevisions.ruaccent
-    $env:F5_ALLOW_MOCK = "false"
+    $env:FISH_SOURCE_REVISION = $Manifest.speechPack.modelRevisions.fishSource
     $arguments = @(
         "-m", "uvicorn", "app.main:app", "--host", $Manifest.speechPack.host,
         "--port", [string]$Manifest.speechPack.port

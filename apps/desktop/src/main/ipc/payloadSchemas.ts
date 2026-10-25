@@ -1,6 +1,5 @@
 import { z } from 'zod'
 
-import { BUNDLED_DEFAULT_VRM_ASSET_HANDLE } from '../../shared/avatarAsset'
 import {
   EMBODIMENT_GAZE_HINTS,
   EMBODIMENT_GESTURE_HINTS,
@@ -11,6 +10,7 @@ import {
   TRANSITION_RECORDING_MAX_FRAME_BYTES,
   TRANSITION_RECORDING_MAX_FRAMES,
 } from '../../shared/diagnostics'
+import { SPEECH_EMOTIONS } from '../../shared/speech'
 
 function serializedSizeAtMost(value: unknown, maximumBytes: number): boolean {
   try {
@@ -73,25 +73,14 @@ export const configSaveSchema = z
   })
   .strict()
 
-export const vrmAssetHandleSchema = z
-  .string()
-  .max(80)
-  .refine(
-    (value) =>
-      value === BUNDLED_DEFAULT_VRM_ASSET_HANDLE ||
-      /^vrm-asset:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-        value,
-      ),
-    'Invalid VRM asset handle',
-  )
-
 const optionalBoundedText = z.string().max(200).optional()
 
 export const avatarStateSchema = z
   .object({
+    speechDeliveryEmotion: z.enum(SPEECH_EMOTIONS).nullable().optional(),
     mode: z.enum(['idle', 'listening', 'thinking', 'awaitingSpeech', 'speaking']),
     emotionKey: optionalBoundedText,
-    vrmEmotion: optionalBoundedText,
+    avatarEmotion: optionalBoundedText,
     reaction: z.literal('user-interruption').optional(),
     reactionId: optionalBoundedText,
     earImpulse: z

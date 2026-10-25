@@ -26,10 +26,10 @@ export function MissingVrmDialog({
     <DialogContainer onDismiss={onDismiss}>
       {isOpen && (
         <Dialog>
-          <Heading>{t('camera.missingVrm.title')}</Heading>
+          <Heading>{t('camera.missingAvatar.title')}</Heading>
           <Content>
-            <Text>{t('camera.missingVrm.description')}</Text>
-            <Text>{t('camera.missingVrm.hint')}</Text>
+            <Text>{t('camera.missingAvatar.description')}</Text>
+            <Text>{t('camera.missingAvatar.hint')}</Text>
           </Content>
           <Footer>
             <ButtonGroup>
@@ -41,7 +41,7 @@ export function MissingVrmDialog({
                 onPress={onOpenSettings}
                 UNSAFE_className="shio-accent-button"
               >
-                {t('camera.missingVrm.openSettings')}
+                {t('camera.missingAvatar.openSettings')}
               </Button>
             </ButtonGroup>
           </Footer>

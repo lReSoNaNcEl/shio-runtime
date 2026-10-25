@@ -1,11 +1,6 @@
-import {
-  type AnimationId,
-  getAnimation,
-  getAnimationUrl,
-  getRootMotionPolicy,
-} from './animationManifest'
+import { type AnimationId, getAnimation } from './animationManifest'
 import type { AvatarBodyMotionLayer } from './embodiment/motion/AvatarMotionLayer'
-import type { VrmBodyActionDebugState, VrmModel } from './rendering/three/VrmModel'
+import type { AvatarBodyActionDebugState, AvatarModel } from './rendering/two/AvatarModel'
 
 export type AnimationPlaybackStatus = 'idle' | 'loading' | 'playing' | 'failed'
 
@@ -21,12 +16,7 @@ export interface AnimationControllerDebugState {
   playbackStatus: AnimationPlaybackStatus
   lastBlendDuration: number
   isPlaybackActive: boolean
-  bodyActions: VrmBodyActionDebugState
-  assetCache: {
-    fetches: number
-    hits: number
-    misses: number
-  }
+  bodyActions: AvatarBodyActionDebugState
   failedAnimationIds: string[]
 }
 
@@ -51,31 +41,11 @@ export class AvatarAnimationController {
   private loop = false
   private lastBlendDuration = 0.3
   private playbackStatus: AnimationPlaybackStatus = 'idle'
-  private cache = new Map<string, ArrayBuffer>()
-  private assetCacheStats = {
-    fetches: 0,
-    hits: 0,
-    misses: 0,
-  }
   private failedIds = new Set<string>()
   private requestId = 0
   private latestPlaybackRequest: Promise<void> = Promise.resolve()
 
-  constructor(private vrmModel: VrmModel) {}
-
-  async loadExternal(buffer: ArrayBuffer, loop = true): Promise<void> {
-    this.requestId += 1
-    this.activeAnimationId = 'external'
-    this.requestedAnimationId = 'external'
-    this.previousAnimationId = null
-    this.activeFileName = 'external'
-    this.requestedFileName = 'external'
-    this.loop = loop
-    this.lastBlendDuration = 0.3
-    this.playbackStatus = 'playing'
-    this.failedIds.clear()
-    await this.vrmModel.loadAnimation(buffer, loop)
-  }
+  constructor(private avatarModel: AvatarModel) {}
 
   stop(): void {
     this.requestId += 1
@@ -86,7 +56,7 @@ export class AvatarAnimationController {
     this.requestedFileName = null
     this.loop = false
     this.playbackStatus = 'idle'
-    this.vrmModel.stopAnimation()
+    this.avatarModel.stopAnimation()
   }
 
   /**
@@ -123,7 +93,7 @@ export class AvatarAnimationController {
         await request.catch(() => undefined)
         if (request === this.latestPlaybackRequest) break
       }
-      return this.playbackStatus === 'playing' && this.vrmModel.isAnimationPlaying()
+      return this.playbackStatus === 'playing' && this.avatarModel.isAnimationPlaying()
     })()
     const timeout = new Promise<boolean>((resolve) => {
       timeoutId = setTimeout(() => resolve(false), Math.max(0, timeoutMs))
@@ -144,7 +114,7 @@ export class AvatarAnimationController {
     const blendDuration = options.blendDuration ?? 0.3
     const forceReplay = options.forceReplay ?? false
     const entry = getAnimation(id)
-    const url = getAnimationUrl(id)
+    const url = entry?.file
     this.requestedAnimationId = id
     this.requestedFileName = entry?.file ?? null
     this.loop = loop
@@ -158,7 +128,7 @@ export class AvatarAnimationController {
       !forceReplay &&
       loop &&
       this.activeAnimationId === id &&
-      this.vrmModel.isAnimationPlaying()
+      this.avatarModel.isAnimationPlaying()
     ) {
       this.playbackStatus = 'playing'
       console.log(
@@ -167,7 +137,7 @@ export class AvatarAnimationController {
       return
     }
 
-    if (!this.vrmModel.isLoaded() || !entry || !url) {
+    if (!this.avatarModel.isLoaded() || !entry || !url) {
       if (entry && !url) this.failedIds.add(id)
       this.playbackStatus = entry && !url ? 'failed' : this.playbackStatus
       if (fallbackId && fallbackId !== id)
@@ -182,13 +152,12 @@ export class AvatarAnimationController {
     )
 
     try {
-      const buffer = await this.loadBuffer(url)
-      if (!this.vrmModel.isLoaded() || requestId !== this.requestId) return
+      if (!this.avatarModel.isLoaded() || requestId !== this.requestId) return
       this.previousAnimationId = this.activeAnimationId
       this.activeAnimationId = id
       this.activeFileName = entry.file
       this.playbackStatus = 'playing'
-      await this.vrmModel.loadAnimation(buffer, loop, blendDuration, {
+      await this.avatarModel.playAnimation(id, loop, {
         animationId: id,
         file: entry.file,
         behaviorId: options.behaviorId ?? 'unknown',
@@ -197,7 +166,6 @@ export class AvatarAnimationController {
         previousAnimationId: options.previousAnimationId ?? this.previousAnimationId,
         forceReplay,
         frame: options.frame,
-        rootMotionPolicy: getRootMotionPolicy(entry),
         motionLayer: options.motionLayer ?? 'base',
       })
     } catch (e) {
@@ -213,7 +181,7 @@ export class AvatarAnimationController {
   }
 
   getDebugState(): AnimationControllerDebugState {
-    if (this.playbackStatus === 'playing' && !this.vrmModel.isAnimationPlaying()) {
+    if (this.playbackStatus === 'playing' && !this.avatarModel.isAnimationPlaying()) {
       this.playbackStatus = 'idle'
     }
 
@@ -226,27 +194,9 @@ export class AvatarAnimationController {
       loop: this.loop,
       playbackStatus: this.playbackStatus,
       lastBlendDuration: this.lastBlendDuration,
-      isPlaybackActive: this.vrmModel.isAnimationPlaying(),
-      bodyActions: this.vrmModel.getBodyActionDebugState(),
-      assetCache: { ...this.assetCacheStats },
+      isPlaybackActive: this.avatarModel.isAnimationPlaying(),
+      bodyActions: this.avatarModel.getBodyActionDebugState(),
       failedAnimationIds: [...this.failedIds],
     }
-  }
-
-  private async loadBuffer(url: string): Promise<ArrayBuffer> {
-    const cached = this.cache.get(url)
-    this.assetCacheStats.fetches += 1
-    if (cached) {
-      this.assetCacheStats.hits += 1
-      return cached.slice(0)
-    }
-
-    this.assetCacheStats.misses += 1
-    const res = await fetch(url)
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
-
-    const buffer = await res.arrayBuffer()
-    this.cache.set(url, buffer)
-    return buffer.slice(0)
   }
 }

@@ -1,1 +1,1 @@
-# Python Speech ASR + F5-TTS Service
+# Python Speech ASR + Fish Audio S2 Pro Service

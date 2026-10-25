@@ -22,8 +22,8 @@ export interface AppSettings {
   desktopAuthorityMode: DesktopAuthorityMode
   ttsLanguage: string
   ttsEngine: string
-  vrmAssetHandle: string
-  vrmAssetName: string
+  avatarAssetId: string
+  avatarAssetName: string
   micDeviceId: string
   overlayWidth: string
   overlayHeight: string

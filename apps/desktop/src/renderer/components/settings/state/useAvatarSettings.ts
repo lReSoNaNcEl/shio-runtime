@@ -4,7 +4,7 @@ import type { OverlayViewMode } from '../../../avatar/tuning/cameraTuning'
 import { overlayDefaults } from './settingsDefaults'
 
 export function useAvatarSettings() {
-  const [vrmName, setVrmName] = useState('')
+  const [avatarName, setAvatarName] = useState('')
   const [overlayWidth, setOverlayWidth] = useState(overlayDefaults.width)
   const [overlayHeight, setOverlayHeight] = useState(overlayDefaults.height)
   const [overlayMargin, setOverlayMargin] = useState(overlayDefaults.margin)
@@ -34,7 +34,7 @@ export function useAvatarSettings() {
     setOverlayTransparentBackground,
     setOverlayViewMode,
     setOverlayWidth,
-    setVrmName,
-    vrmName,
+    setAvatarName,
+    avatarName,
   }
 }

@@ -49,13 +49,13 @@ function statusCopy(
 export function OverlayCameraControl({
   overlayState,
   cameraMode,
-  vrmConfigured,
+  avatarConfigured,
   onToggle,
   onCameraModeChange,
 }: {
   overlayState: OverlayState
   cameraMode: OverlayViewMode
-  vrmConfigured: boolean
+  avatarConfigured: boolean
   onToggle: () => Promise<void>
   onCameraModeChange: (mode: OverlayViewMode) => Promise<void>
 }) {
@@ -67,8 +67,8 @@ export function OverlayCameraControl({
     description: t(`camera.mode.${item.id}.description`),
   }))
   const status =
-    !vrmConfigured && overlayState !== 'on'
-      ? t('camera.missingVrm.triggerDescription')
+    !avatarConfigured && overlayState !== 'on'
+      ? t('camera.missingAvatar.triggerDescription')
       : statusCopy(overlayState, cameraMode, t)
   const selectedMode = cameraModes.find((item) => item.id === cameraMode) ?? cameraModes[0]
   const SelectedModeIcon = selectedMode.Icon
@@ -77,8 +77,8 @@ export function OverlayCameraControl({
       <TooltipTrigger delay={200}>
         <ActionButton
           aria-label={
-            !vrmConfigured && overlayState !== 'on'
-              ? t('camera.missingVrm.triggerDescription')
+            !avatarConfigured && overlayState !== 'on'
+              ? t('camera.missingAvatar.triggerDescription')
               : overlayState === 'on'
                 ? t('camera.toggle.disable', { mode: cameraMode })
                 : t('camera.toggle.enable', { mode: cameraMode })

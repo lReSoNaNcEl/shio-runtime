@@ -21,7 +21,7 @@ export interface SettingsDialogProps {
   aliveSnapshot: AliveSnapshot | null
   uiTheme: UiTheme
   onThemeChange: (theme: UiTheme) => void
-  vrmLoaded: boolean
+  avatarLoaded: boolean
   faceTrackingEnabled: boolean
   onToggleFaceTracking: () => void
   overlayVisible: boolean
@@ -104,7 +104,7 @@ export interface LlmSettingsActions {
 }
 
 export interface AvatarSettingsState {
-  vrmName: string
+  avatarName: string
   overlayVisible: boolean
   overlayViewMode: OverlayViewMode
   overlayWidth: number
@@ -118,7 +118,6 @@ export interface AvatarSettingsState {
 }
 
 export interface AvatarSettingsActions {
-  pickVrm: () => Promise<void>
   toggleOverlay: (visible: boolean) => Promise<void>
   setOverlayViewMode: (mode: OverlayViewMode) => void
   setOverlayWidth: (value: number) => void

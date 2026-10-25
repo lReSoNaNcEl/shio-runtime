@@ -16,7 +16,6 @@ import {
 } from '@react-spectrum/s2'
 import { style } from '@react-spectrum/s2/style' with { type: 'macro' }
 
-import { overlayCameraPresets } from '../../../avatar/tuning/cameraTuning'
 import { useTranslation } from '../../../localization/useTranslation'
 import { observeRendererPromise } from '../../../reliability/observePromise'
 import { type AvatarSettingsActions, type AvatarSettingsState } from '../state/settingsContracts'
@@ -41,17 +40,7 @@ export function AvatarSettingsSection({
         </Heading>
         <div className="settings-field">
           <Text UNSAFE_className="settings-label">{t('settings.avatar.model')}</Text>
-          <div className="settings-row">
-            <Button
-              variant="secondary"
-              onPress={() => observeRendererPromise(actions.pickVrm(), 'select VRM asset')}
-            >
-              {t('settings.avatar.chooseFile')}
-            </Button>
-            <Text UNSAFE_className="settings-hint">
-              {state.vrmName || t('settings.avatar.notSelected')}
-            </Text>
-          </div>
+          <Text>{t('avatar2d.bundled')}</Text>
         </div>
       </section>
       <Divider />
@@ -100,7 +89,7 @@ export function AvatarSettingsSection({
           >
             {overlayViewModes.map((mode) => (
               <SegmentedControlItem key={mode} id={mode}>
-                {overlayCameraPresets[mode].label}
+                {t(`avatarPreview.cameraPreset.${mode === 'bust' ? 'full' : mode}`)}
               </SegmentedControlItem>
             ))}
           </SegmentedControl>

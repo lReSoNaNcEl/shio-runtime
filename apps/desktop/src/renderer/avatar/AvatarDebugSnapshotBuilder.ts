@@ -1,5 +1,4 @@
 import type {
-  AnimationControllerDebugState,
   AnimationPlaybackStatus,
   AvatarAnimationController,
 } from './AvatarAnimationController'
@@ -32,10 +31,10 @@ import type { EarBehaviorDebugState } from './embodiment/secondary-motion/EarBeh
 import type { TailBehaviorDebugState } from './embodiment/secondary-motion/TailBehaviorRuntime'
 import type { MouthWeights } from './embodiment/speech/LipSync'
 import type {
-  VrmBodyActionDebugState,
-  VrmModel,
-  VrmPerformanceDebugState,
-} from './rendering/three/VrmModel'
+  AvatarBodyActionDebugState,
+  AvatarModel,
+  AvatarPerformanceDebugState,
+} from './rendering/two/AvatarModel'
 
 export interface AvatarBehaviorTransitionLogEntry {
   at: number
@@ -57,8 +56,8 @@ export interface AvatarControllerDebugState {
   currentBodyAnimationFile: string
   currentBodyAnimationLoop: boolean
   currentBodyAnimationStatus: AnimationPlaybackStatus
-  bodyActions: VrmBodyActionDebugState
-  animationAssetCache: AnimationControllerDebugState['assetCache']
+  model2d: ReturnType<AvatarModel['getPresentationDebugState']>
+  bodyActions: AvatarBodyActionDebugState
   previousBodyAnimation: string
   activeTransitionPolicy: string
   activeBlendDuration: number
@@ -82,7 +81,7 @@ export interface AvatarControllerDebugState {
   headMotion: HeadMotionDebugState
   earBehavior: EarBehaviorDebugState
   tailBehavior: TailBehaviorDebugState
-  performance: VrmPerformanceDebugState
+  performance: AvatarPerformanceDebugState
   playbackRequests: AvatarPlaybackRequestDebugState
   behaviorTimeline: AvatarBehaviorTransitionLogEntry[]
   animationFailures: string[]
@@ -101,7 +100,7 @@ interface AvatarDebugSnapshotInput {
   idleBehaviors: AvatarIdleBehaviorController
   idleOrchestrator: AvatarIdleOrchestrator
   playbackRequests: AvatarPlaybackRequestLog
-  vrmModel: VrmModel
+  avatarModel: AvatarModel
   mouthWeights: MouthWeights
   behaviorTimeline: AvatarBehaviorTransitionLogEntry[]
 }
@@ -121,8 +120,8 @@ export class AvatarDebugSnapshotBuilder {
       currentBodyAnimationFile: animation.activeFileName ?? animation.requestedFileName ?? 'none',
       currentBodyAnimationLoop: animation.loop,
       currentBodyAnimationStatus: animation.playbackStatus,
+      model2d: input.avatarModel.getPresentationDebugState(),
       bodyActions: animation.bodyActions,
-      animationAssetCache: animation.assetCache,
       previousBodyAnimation: animation.previousAnimationId ?? 'none',
       activeTransitionPolicy: input.lastTransitionDecision?.policyId ?? 'none',
       activeBlendDuration: animation.lastBlendDuration,
@@ -143,12 +142,12 @@ export class AvatarDebugSnapshotBuilder {
       idleOrchestrator,
       ambientIdleBehavior: idle.ambientIdleBehavior,
       lipsyncWeights: input.mouthWeights,
-      facial: input.vrmModel.getFacialDebugState(),
-      lookAt: input.vrmModel.getLookAtDebugState(),
-      headMotion: input.vrmModel.getHeadMotionDebugState(),
-      earBehavior: input.vrmModel.getEarBehaviorDebugState(),
-      tailBehavior: input.vrmModel.getTailBehaviorDebugState(),
-      performance: input.vrmModel.getPerformanceDebugState(),
+      facial: input.avatarModel.getFacialDebugState(),
+      lookAt: input.avatarModel.getLookAtDebugState(),
+      headMotion: input.avatarModel.getHeadMotionDebugState(),
+      earBehavior: input.avatarModel.getEarBehaviorDebugState(),
+      tailBehavior: input.avatarModel.getTailBehaviorDebugState(),
+      performance: input.avatarModel.getPerformanceDebugState(),
       playbackRequests: input.playbackRequests.getDebugState({
         currentAnimation: animation.activeAnimationId,
         requestedAnimation: animation.requestedAnimationId,

@@ -67,3 +67,5 @@ apps/api/build/
 .DS_Store
 Thumbs.db
 desktop.ini
+.work/
+apps/api/cache/

@@ -32,7 +32,12 @@ foreach ($required in @(
     if (-not $text.Contains($required)) { throw "Launcher lifecycle guard missing: $required" }
 }
 $pythonProbe = "import sys, struct; print(str(sys.version_info.major) + '.' + str(sys.version_info.minor) + ':' + str(struct.calcsize('P') * 8))"
-$pythonVersion = & python.exe -c $pythonProbe
+$probePython = $env:SHIO_API_PYTHON
+if ([string]::IsNullOrWhiteSpace($probePython)) {
+    $probePython = Join-Path $repoRoot 'apps\api\.venv\Scripts\python.exe'
+    if (-not (Test-Path -LiteralPath $probePython)) { $probePython = 'python.exe' }
+}
+$pythonVersion = & $probePython -c $pythonProbe
 if ($LASTEXITCODE -ne 0 -or ([string]$pythonVersion).Trim() -ne "3.12:64") {
     throw "Launcher Python probe must detect Python 3.12 x64."
 }

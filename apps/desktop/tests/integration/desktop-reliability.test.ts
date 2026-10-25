@@ -110,7 +110,7 @@ function assertStaticLifecycleWiring(): void {
   }
 
   const releaseSupport = source('src/main/system/releaseSupport.ts')
-  assert.doesNotMatch(releaseSupport, /\bvrmLoaded\s*:/)
+  assert.doesNotMatch(releaseSupport, /\bavatarLoaded\s*:/)
   assert.match(releaseSupport, /reportFresh:/)
   assert.match(releaseSupport, /mainRenderer\.status === 'ready'/)
 
@@ -291,6 +291,11 @@ function realisticAvatarDebugState(frame: number, hipsDeltaY: number): AvatarRun
     mode: 'idle',
     emotionKey: 'neutral',
     currentBodyAnimation: 'idle_soft',
+    currentBehaviorId: 'idle',
+    behaviorSelectionReason: 'qualification',
+    selectedBehaviorAnimation: 'neutral_idle',
+    currentGesture: 'none',
+    scheduledAnimationKey: 'neutral_idle',
     currentBodyAnimationFile: 'idle_soft.vrma',
     currentBodyAnimationLoop: true,
     currentBodyAnimationStatus: 'playing',
@@ -311,7 +316,7 @@ function realisticAvatarDebugState(frame: number, hipsDeltaY: number): AvatarRun
       lastLoadAnimationId: 'idle_soft',
       lastLoadFile: 'idle_soft.vrma',
       restartCount: 0,
-      ownershipGapCount: 0,
+      ownershipGapCount: hipsDeltaY > 0 ? 1 : 0,
       lastTransitionEvent: 'crossfade',
       clipCache: { loads: 1, reuses: 1, hits: 1, misses: 0, parses: 1 },
       facialControlTracksDisabled: 0,
