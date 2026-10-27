@@ -13,11 +13,32 @@ Connects to the local Speech service over HTTP only.
 npm install          # or: npm run desktop:install (from repo root)
 npm run dev          # electron-vite dev
 npm run build        # electron-vite build
-npx tsc --noEmit     # typecheck
+npm run typecheck   # all TypeScript projects, including tests
 ```
 
-Speech base URL defaults to `http://localhost:8000`; override with `PYTHON_SPEECH_URL`
-in `.env` (copy from `.env.example`).
+Speech base URL is Main-owned `SHIO_SPEECH_API_URL`, default `http://127.0.0.1:8000`.
+Changing it requires restart. Renderer settings cannot supply an endpoint.
+
+This experimental branch uses real ARDY generated SOMA30 body motion and Fish
+S2 Pro streaming PCM while retaining Three.js, VRM, facial mixing, gaze and
+LipSync. `AudioPlayer` owns playback and the consumed-sample clock. The primary
+Avatar Runtime retains its skeleton with Preview closed; Overlay mirrors the
+same validated body pose and mouth weights. No physical animation clips remain.
+See [setup and qualification](../../docs/EXPERIMENT-ARDY-FISH.md).
+
+From the repository root:
+
+```powershell
+npm run motion:research:install
+npm run motion:research:prefetch
+npm run motion:research:doctor -- --offline
+npm run motion:research:test
+npm run motion:catalog:check
+```
+
+The independent Motion environment is `apps/desktop/motion/.venv`; it never uses
+the Speech API environment. Packaged launchers set Main-owned `SHIO_MOTION_ROOT`
+to their installed Motion directory. No runtime model download occurs in Electron.
 
 ## Product surfaces
 

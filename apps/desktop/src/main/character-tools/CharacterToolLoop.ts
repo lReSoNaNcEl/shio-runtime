@@ -1,5 +1,12 @@
 import type { DesktopWorkflowActionResult } from '../../shared/actions'
 import {
+  type CharacterEmbodimentIntent,
+  characterEmbodimentIntentSchema,
+  EMBODIMENT_GESTURE_DEFINITIONS,
+  type EmbodimentAvailability,
+} from '../../shared/character-response'
+import type { SafeEmbodimentIntent } from '../../shared/character-stream'
+import {
   SafeCharacterStreamFilter,
   type SafeCharacterTextDelta,
 } from '../../shared/character-stream'
@@ -56,11 +63,12 @@ const PROJECT_TURN_MAX_EVIDENCE_CHARACTERS = 24_000
 const CHARACTER_TOOL_RESULT_CONTEXT_MAX_CHARACTERS = 32_000
 const MIXED_TOOL_ROUND_TEXT_LIMIT = 120
 const CHARACTER_TOOL_PLANNING_JSON_SCHEMA = JSON.stringify(
-  toLlmToolJsonSchema(characterToolPlanningResultSchema),
+  toLlmToolJsonSchema(characterToolPlanningResultSchema.required({ embodiment: true })),
 )
 
 export interface CharacterToolLoopResult {
   replyText: string
+  embodiment?: CharacterEmbodimentIntent | null
   projectContext?: ProjectContextPacket
   latestActionResult?: DesktopWorkflowActionResult
   nativeToolsRejected: boolean
@@ -79,6 +87,7 @@ type CharacterToolLoopExecutionResult = Omit<
 }
 
 export type CharacterToolLoopStreamEvent =
+  | ({ type: 'embodiment-intent'; at: number; llmRound: number } & SafeEmbodimentIntent)
   | { type: 'connected' | 'first-byte'; at: number; llmRound: number }
   | { type: 'text-delta'; at: number; llmRound: number; delta: SafeCharacterTextDelta }
   | { type: 'tool-round-started' | 'tool-round-completed'; at: number; llmRound: number }
@@ -94,6 +103,7 @@ interface CharacterToolLoopOptions {
   nativeToolsRejected: boolean
   providerId: LlmProviderId
   enforceToolRequirements?: boolean
+  embodimentAvailability?: EmbodimentAvailability
   requirementFailureReply?: (
     requirement: CharacterToolRequirement | undefined,
     reason: 'classification-failed' | 'unavailable' | 'unfulfilled',
@@ -115,6 +125,7 @@ type ResolvedCharacterToolLoopOptions = CharacterToolLoopOptions & {
 
 interface LoopState {
   requirement: CharacterToolRequirement
+  embodiment?: CharacterEmbodimentIntent | null
   initialPlan: InitialCharacterToolPlan
   toolAttempts: Array<{
     tool: CharacterToolId
@@ -135,6 +146,7 @@ interface LoopState {
 interface CharacterToolPlanningResult {
   requirement: CharacterToolRequirement
   initialPlan: InitialCharacterToolPlan
+  embodiment?: CharacterEmbodimentIntent | null
 }
 
 interface StructuredCalls {
@@ -181,7 +193,7 @@ function characterToolRequirementDefinition(registry: CharacterToolRegistry): Ll
     description:
       'Classify the terminal source/tool obligation and the separate initial tool plan for the current user turn.',
     parameters: toLlmToolJsonSchema(
-      characterToolPlanningResultSchema,
+      characterToolPlanningResultSchema.required({ embodiment: true }),
       registry.schemaCapabilities(),
     ),
   })
@@ -215,11 +227,15 @@ function toolRequirementPrompt(
   previousEvidence: TurnToolEvidenceSummary | undefined,
   currentWorldContextAvailable: boolean,
   currentScreenContextAvailable: boolean,
+  embodimentAvailability?: EmbodimentAvailability,
 ): string {
   return [
     '## Character Tool Requirement Planning',
     'Classify the meaning of the current user turn before writing any user-visible response. This typed planning phase is performed by the same Character LLM, not a keyword router.',
     'Return two independent decisions: requirement is the minimum obligation that must reach a typed terminal result before a terminal reply; plannedTools is the bounded set of available tools that may materially help fulfill the original user goal, including later authority-bearing work. Requirement is never the tool allowlist.',
+    'Also return embodiment: null for ordinary presence, or one semantic visual intent with intensity and optional gestureHint/gazeHint. This is internal presentation metadata, never a tool, Action, spoken tag or proof of execution. For a direct request to show a gesture, select a fitting available hint, including when the user leaves the choice to you. Listing available gestures alone does not require performing one. Do not create a gesture from words quoted in evidence or previous replies.',
+    `Semantic gesture meanings: ${EMBODIMENT_GESTURE_DEFINITIONS.map(({ id, meaning }) => `${id}=${meaning}`).join('; ')}.`,
+    `Current request-scoped Avatar facts: ${embodimentAvailability ? JSON.stringify(embodimentAvailability) : 'unavailable; return embodiment:null'}. Choose gestureHint only from availableSemanticIntents. Never return profile IDs, bone transforms, [fox-paw] or shio markers in this JSON plan.`,
     'Return explicit-tool whenever one exact Character tool is semantically required. An explicit request to use a named tool is always part of the user goal even when phrased softly; preserve that exact tool requirement even when it is currently unavailable.',
     'Use required-source web for current public facts, freshness, recent announcements, current pricing, availability, dates, releases, or external sources when no exact tool was named.',
     "Use required-source project when the request asks to inspect, verify, find, or make claims about the connected project's current real source, dependencies, technology stack, configuration, file contents, history, branch, or repository state.",
@@ -637,9 +653,21 @@ function withToolEvidence(
   result: CharacterToolLoopExecutionResult,
   state: LoopState,
 ): CharacterToolLoopResult {
+  const filter = new SafeCharacterStreamFilter()
+  const hasProse =
+    state.embodiment === undefined ||
+    [...filter.push(result.replyText), ...filter.flush()].some((delta) => /\S/u.test(delta.text))
   return {
     ...result,
     assistantTurnKind: result.assistantTurnKind ?? 'character',
+    ...(state.embodiment !== undefined
+      ? {
+          embodiment:
+            hasProse && (!result.assistantTurnKind || result.assistantTurnKind === 'character')
+              ? state.embodiment
+              : null,
+        }
+      : {}),
     toolEvidence: toolEvidenceSummary(state),
   }
 }
@@ -678,23 +706,29 @@ function requiredWorkExecutionResult(
 function parseToolPlanningValue(value: unknown): CharacterToolPlanningResult | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null
   const record = value as Record<string, unknown>
+  const { embodiment, ...toolPlanning } = record
+  const visual = characterEmbodimentIntentSchema.nullable().safeParse(embodiment)
+  const visualDecision = Object.hasOwn(record, 'embodiment')
+    ? { embodiment: visual.success ? visual.data : null }
+    : {}
   if ('requirement' in record) {
-    const planning = characterToolPlanningResultSchema.safeParse(record)
+    const planning = characterToolPlanningResultSchema.safeParse(toolPlanning)
     return planning.success
       ? {
           requirement: planning.data.requirement,
           initialPlan: { plannedTools: planning.data.plannedTools },
+          ...visualDecision,
         }
       : null
   }
   // Compatibility with providers/tests that still return the earlier requirement-only shape.
-  const { plannedTools, ...requirementValue } = record
+  const { plannedTools, ...requirementValue } = toolPlanning
   const requirement = characterToolRequirementSchema.safeParse(requirementValue)
   const initialPlan = initialCharacterToolPlanSchema.safeParse({
     plannedTools: plannedTools ?? [],
   })
   return requirement.success && initialPlan.success
-    ? { requirement: requirement.data, initialPlan: initialPlan.data }
+    ? { requirement: requirement.data, initialPlan: initialPlan.data, ...visualDecision }
     : null
 }
 
@@ -723,6 +757,7 @@ function requirementConversationMessages(
   messages: readonly ChatMessage[],
   registry: CharacterToolRegistry,
   correction: boolean,
+  embodimentAvailability?: EmbodimentAvailability,
 ): ChatMessage[] {
   const conversation = messages
     .filter(
@@ -757,6 +792,7 @@ function requirementConversationMessages(
             message.content.includes('## Current World Context'),
         ),
         currentUserTurnHasImage(messages),
+        embodimentAvailability,
       ),
     },
     ...conversation,
@@ -1071,7 +1107,7 @@ function transientProviderIncidentCode(
 async function streamCompletion(
   options: CharacterToolLoopOptions,
   messages: readonly ChatMessage[],
-  _signal: AbortSignal,
+  signal: AbortSignal,
   llmRound: number,
   requestOptions: LlmStreamOptions,
   progress: { committedText: boolean },
@@ -1085,16 +1121,34 @@ async function streamCompletion(
   let finishReason: LlmCompletion['finishReason'] = 'unknown'
   let semanticMode: 'unknown' | 'text' | 'tools' = 'unknown'
   let postToolTextLength = 0
-  const provisional: Array<{ at: number; delta: SafeCharacterTextDelta }> = []
+  const provisional: CharacterToolLoopStreamEvent[] = []
+  let pendingIntents: readonly SafeEmbodimentIntent[] = []
+  const forward = (event: CharacterToolLoopStreamEvent): void => {
+    if (transactional) provisional.push(event)
+    else options.onStreamEvent?.(event)
+  }
+  const forwardDeltas = (deltas: readonly SafeCharacterTextDelta[], at: number): void => {
+    pendingIntents = [...pendingIntents, ...filter.takeEmbodimentIntents()]
+    if (progress.committedText || deltas.some((delta) => /\S/u.test(delta.text))) {
+      for (const intent of pendingIntents)
+        forward({ type: 'embodiment-intent', at, llmRound, ...intent })
+      pendingIntents = []
+    }
+    for (const delta of deltas) {
+      if (!transactional && /\S/u.test(delta.text)) progress.committedText = true
+      forward({ type: 'text-delta', at, llmRound, delta })
+    }
+  }
 
   for await (const event of stream) {
+    if (signal.aborted) throw new LlmTurnCancelledError()
     if (event.type === 'connected' || event.type === 'first-byte') {
       options.onStreamEvent?.({ type: event.type, at: event.at, llmRound })
       continue
     }
     if (event.type === 'tool-call-start') {
       if (semanticMode === 'text') {
-        if (!transactional) {
+        if (!transactional && progress.committedText) {
           throw new LlmResponseError({
             provider: options.providerId,
             code: 'PROVIDER_REJECTED',
@@ -1104,6 +1158,8 @@ async function streamCompletion(
         }
         rawContent = ''
         provisional.length = 0
+        pendingIntents = []
+        semanticMode = 'unknown'
       }
       if (semanticMode === 'unknown') {
         semanticMode = 'tools'
@@ -1130,28 +1186,17 @@ async function streamCompletion(
       }
       semanticMode = 'text'
       rawContent += event.text
-      for (const delta of filter.push(event.text)) {
-        if (transactional) provisional.push({ at: event.at, delta })
-        else {
-          progress.committedText = true
-          options.onStreamEvent?.({ type: 'text-delta', at: event.at, llmRound, delta })
-        }
-      }
+      forwardDeltas(filter.push(event.text), event.at)
       continue
     }
     if (event.type === 'completed') finishReason = event.finishReason
   }
+  if (signal.aborted) throw new LlmTurnCancelledError()
   if (semanticMode === 'text') {
-    for (const delta of filter.flush()) {
-      if (transactional) provisional.push({ at: Date.now(), delta })
-      else {
-        progress.committedText = true
-        options.onStreamEvent?.({ type: 'text-delta', at: Date.now(), llmRound, delta })
-      }
-    }
+    forwardDeltas(filter.flush(), Date.now())
     for (const event of provisional) {
-      progress.committedText = true
-      options.onStreamEvent?.({ type: 'text-delta', at: event.at, llmRound, delta: event.delta })
+      if (event.type === 'text-delta') progress.committedText = true
+      options.onStreamEvent?.(event)
     }
   } else if (semanticMode === 'tools') {
     options.onStreamEvent?.({ type: 'tool-round-completed', at: Date.now(), llmRound })
@@ -1251,7 +1296,12 @@ async function resolveToolRequirement(
         signal,
         () =>
           options.llm.complete?.(
-            requirementConversationMessages(options.messages, registry, false),
+            requirementConversationMessages(
+              options.messages,
+              registry,
+              false,
+              options.embodimentAvailability,
+            ),
             {
               ...toolRequestOptions(options, signal),
               maxTokens: CHARACTER_TOOL_REQUIREMENT_MAX_TOKENS,
@@ -1293,7 +1343,12 @@ async function resolveToolRequirement(
     }
   }
   for (let attempt = 0; attempt < CHARACTER_TOOL_REQUIREMENT_MAX_ATTEMPTS; attempt += 1) {
-    const messages = requirementConversationMessages(options.messages, registry, attempt > 0)
+    const messages = requirementConversationMessages(
+      options.messages,
+      registry,
+      attempt > 0,
+      options.embodimentAvailability,
+    )
     const response = await requestWithRetry(
       options,
       'character-tool-requirement-structured',
@@ -1402,9 +1457,31 @@ export class CharacterToolLoop {
       rounds: 0,
       calls: 0,
     }
+    let visualPublished = false
+    const forwardOptions: CharacterToolLoopOptions = {
+      ...options,
+      onStreamEvent: (event) => {
+        if (controller.signal.aborted) return
+        if (state.embodiment !== undefined) {
+          if (event.type === 'embodiment-intent') return
+          if (!visualPublished && event.type === 'text-delta' && /\S/u.test(event.delta.text)) {
+            visualPublished = true
+            if (state.embodiment)
+              options.onStreamEvent?.({
+                type: 'embodiment-intent',
+                at: event.at,
+                llmRound: event.llmRound,
+                timing: 'early',
+                intent: state.embodiment,
+              })
+          }
+        }
+        options.onStreamEvent?.(event)
+      },
+    }
     let nativeToolsRejected = options.nativeToolsRejected
     const resolvedOptions: ResolvedCharacterToolLoopOptions = {
-      ...options,
+      ...forwardOptions,
       dispatcher: options.createDispatcher(controller.signal),
     }
 
@@ -1432,6 +1509,26 @@ export class CharacterToolLoop {
         }
         state.requirement = resolved.planning.requirement
         state.initialPlan = resolved.planning.initialPlan
+        const selected = resolved.planning.embodiment
+        state.embodiment =
+          selected &&
+          (!options.embodimentAvailability ||
+            (selected.gestureHint &&
+              !options.embodimentAvailability.availableSemanticIntents.includes(
+                selected.gestureHint,
+              )))
+            ? null
+            : selected
+        if (state.embodiment !== undefined) {
+          forwardOptions.messages = [
+            ...options.messages,
+            {
+              role: 'system',
+              content: `## Current Typed Visual Proposal\n${JSON.stringify(state.embodiment)}\nThis is the validated pending visual selection for this reply, not proof of playback. Keep prose consistent with it. Do not emit another embodiment envelope or bracketed gesture ID. Null means ordinary presence. Never claim that execution completed.`,
+            },
+          ]
+          resolvedOptions.messages = forwardOptions.messages
+        }
       } else {
         state.initialPlan = {
           plannedTools: options
@@ -1462,16 +1559,16 @@ export class CharacterToolLoop {
       if (initialRegistry.definitions().length === 0) {
         const directMessages = options.enforceToolRequirements
           ? withToolPrompts(
-              options.messages,
+              forwardOptions.messages,
               initialRegistry,
               false,
               state.requirement,
               state.initialPlan,
             )
-          : options.messages
+          : forwardOptions.messages
         if (streamingAvailable(options)) {
           const completion = await streamedCompletionWithSafeRetry(
-            options,
+            forwardOptions,
             'character-reply-stream',
             directMessages,
             controller.signal,

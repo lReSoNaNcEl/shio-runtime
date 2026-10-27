@@ -35,9 +35,8 @@ const SNAPSHOT_GROUPS = {
   avatarPlayback: [
     'avatarMode',
     'currentBodyAnimation',
-    'currentBodyAnimationFile',
-    'currentBodyAnimationLoop',
-    'currentBodyAnimationStatus',
+    'requestedMotionContinuous',
+    'motionRequestStatus',
     'previousBodyAnimation',
     'activeTransitionPolicy',
     'activeBlendDuration',
@@ -49,8 +48,7 @@ const SNAPSHOT_GROUPS = {
     'idleOrchestrator',
   ],
   queueOwnership: [
-    'bodyActions',
-    'animationAssetCache',
+    'bodyMotion',
     'animationQueue',
     'speakingGestureScheduler',
     'currentBehaviorCandidates',
@@ -103,9 +101,13 @@ function humanizeFieldName(value: string): string {
     .replace(/^./, (character) => character.toUpperCase())
 }
 
-function fieldsFor(snapshot: RuntimeDebugSnapshot, keys: readonly string[]): SnapshotField[] {
+function fieldsFor(
+  snapshot: RuntimeDebugSnapshot,
+  keys: readonly string[],
+  labels: Record<string, string>,
+): SnapshotField[] {
   const record = snapshot as unknown as Record<string, unknown>
-  return keys.map((key) => ({ label: humanizeFieldName(key), value: record[key] }))
+  return keys.map((key) => ({ label: labels[key] ?? humanizeFieldName(key), value: record[key] }))
 }
 
 export function DiagnosticsView() {
@@ -256,6 +258,11 @@ export function DiagnosticsView() {
 
   const snapshotSections = useMemo<DiagnosticsSnapshotSection[]>(() => {
     if (!snapshot) return []
+    const fieldLabels = {
+      bodyMotion: t('diagnostics.motion.body'),
+      requestedMotionContinuous: t('diagnostics.motion.continuous'),
+      motionRequestStatus: t('diagnostics.motion.requestStatus'),
+    }
     const assigned = new Set<string>([
       'eventHistory',
       'timeline',
@@ -266,37 +273,37 @@ export function DiagnosticsView() {
       {
         id: 'character',
         title: t('diagnostics.snapshot.character'),
-        fields: fieldsFor(snapshot, SNAPSHOT_GROUPS.character),
+        fields: fieldsFor(snapshot, SNAPSHOT_GROUPS.character, fieldLabels),
       },
       {
         id: 'conversationSpeech',
         title: t('diagnostics.snapshot.conversationSpeech'),
-        fields: fieldsFor(snapshot, SNAPSHOT_GROUPS.conversationSpeech),
+        fields: fieldsFor(snapshot, SNAPSHOT_GROUPS.conversationSpeech, fieldLabels),
       },
       {
         id: 'avatarPlayback',
         title: t('diagnostics.snapshot.avatarPlayback'),
-        fields: fieldsFor(snapshot, SNAPSHOT_GROUPS.avatarPlayback),
+        fields: fieldsFor(snapshot, SNAPSHOT_GROUPS.avatarPlayback, fieldLabels),
       },
       {
         id: 'queueOwnership',
         title: t('diagnostics.snapshot.queueOwnership'),
-        fields: fieldsFor(snapshot, SNAPSHOT_GROUPS.queueOwnership),
+        fields: fieldsFor(snapshot, SNAPSHOT_GROUPS.queueOwnership, fieldLabels),
       },
       {
         id: 'embodiment',
         title: t('diagnostics.snapshot.embodiment'),
-        fields: fieldsFor(snapshot, SNAPSHOT_GROUPS.embodiment),
+        fields: fieldsFor(snapshot, SNAPSHOT_GROUPS.embodiment, fieldLabels),
       },
       {
         id: 'invariants',
         title: t('diagnostics.snapshot.invariants'),
-        fields: fieldsFor(snapshot, SNAPSHOT_GROUPS.invariants),
+        fields: fieldsFor(snapshot, SNAPSHOT_GROUPS.invariants, fieldLabels),
       },
       {
         id: 'other',
         title: t('diagnostics.snapshot.other'),
-        fields: fieldsFor(snapshot, otherKeys),
+        fields: fieldsFor(snapshot, otherKeys, fieldLabels),
       },
     ]
   }, [snapshot, t])

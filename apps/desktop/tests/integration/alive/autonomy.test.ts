@@ -21,11 +21,10 @@ import {
 import { CharacterToolRegistry } from '../../../src/main/character-tools/CharacterToolRegistry'
 import { runChatCompletionStream } from '../../../src/main/llm/openai-compatible/stream'
 import { createSemanticMemoryRuntime, MemoryToolBroker } from '../../../src/main/memory'
-import { StreamingSpeechPipeline } from '../../../src/renderer/runtime/StreamingSpeechPipeline'
 import {
   type CharacterStreamEvent,
   SafeCharacterStreamFilter,
-  StreamingSpeechSegmenter,
+  SpeechTextCommitBuffer,
 } from '../../../src/shared/character-stream'
 import { LatencyTelemetry } from '../../../src/shared/latency'
 
@@ -44,17 +43,17 @@ async function testSafeStreamFilter(): Promise<void> {
 }
 
 async function testSentenceSegmentation(): Promise<void> {
-  const segmenter = new StreamingSpeechSegmenter('turn-segment')
+  const commits = new SpeechTextCommitBuffer('turn-segment')
   const segments = [
-    ...segmenter.push({
+    ...commits.push({
       emotion: 'calm',
       text: 'Первое предложение. Ссылка [пример](https://example.com/a.b) готова. ```ts\nconst x = 1.\n``` Финал.',
     }),
-    ...segmenter.flush(),
+    ...commits.flush(),
   ]
   assert.deepEqual(
     segments.map((segment) => segment.text),
-    ['Первое предложение.', 'Ссылка [пример] готова.', 'Финал.'],
+    ['Первое предложение. Ссылка [пример] готова.', 'Финал.'],
   )
   assert.ok(segments.every((segment, index) => segment.sequence === index))
 }
@@ -233,60 +232,23 @@ async function testToolRoundContainment(): Promise<void> {
 }
 
 async function testStreamingSpeechQueue(): Promise<void> {
-  const order: string[] = []
-  const pipeline = new StreamingSpeechPipeline({
-    turnId: 'queue-turn',
-    synthesize: async (segment) => {
-      order.push(`synthesize:${segment.index}`)
-      return { ok: true, audioBuffer: new ArrayBuffer(1), emotionKey: segment.emotion } as never
-    },
-    prepareAudio: async () => ({ durationMs: 10 }) as never,
-    playPrepared: async (item, onStarted) => {
-      onStarted()
-      order.push(`play:${item.segment.index}`)
-    },
-    isCurrentTurn: () => true,
-  })
-  const execution = pipeline.execute()
-  for (const index of [0, 1, 2]) {
-    pipeline.enqueue({
-      id: `segment-${index}`,
-      index,
-      emotion: 'calm',
-      text: `segment ${index}`,
-      boundaryAfter: 'sentence',
-      targetMaxGapMs: 100,
-    })
-  }
-  pipeline.close()
-  await execution
+  const commits = new SpeechTextCommitBuffer('queue-turn')
+  const output = [
+    ...commits.push({ emotion: 'calm', text: 'Первый стабильный фрагмент речи. ' }),
+    ...commits.push({ emotion: 'warm', text: 'Второй стабильный фрагмент речи. ' }),
+    ...commits.push({ emotion: 'warm', text: 'Третий стабильный фрагмент речи.' }),
+    ...commits.flush(),
+  ]
   assert.deepEqual(
-    order.filter((item) => item.startsWith('play')),
-    ['play:0', 'play:1', 'play:2'],
+    output.map((item) => `${item.sequence}:${item.emotion}`),
+    ['0:calm', '1:warm', '2:warm'],
   )
-  assert.ok(order.indexOf('play:0') < order.indexOf('synthesize:2'))
+  assert.ok(output.every((item) => item.turnId === 'queue-turn'))
 
-  const failed = new StreamingSpeechPipeline({
-    turnId: 'queue-failure',
-    synthesize: async (segment) =>
-      ({ ok: true, audioBuffer: new ArrayBuffer(1), emotionKey: segment.emotion }) as never,
-    prepareAudio: async () => ({ durationMs: 10 }) as never,
-    playPrepared: async () => {
-      throw new Error('PLAYBACK_FAILED')
-    },
-    isCurrentTurn: () => true,
-  })
-  const failedExecution = failed.execute()
-  failed.enqueue({
-    id: 'failed-segment',
-    index: 0,
-    emotion: 'calm',
-    text: 'failure',
-    boundaryAfter: 'sentence',
-    targetMaxGapMs: 100,
-  })
-  failed.close()
-  await assert.rejects(failedExecution, /PLAYBACK_FAILED/u)
+  const cancelled = new SpeechTextCommitBuffer('cancelled-turn')
+  cancelled.push({ emotion: 'calm', text: 'Незавершённый фрагмент' })
+  cancelled.cancel()
+  assert.deepEqual(cancelled.flush(), [])
 }
 
 async function testPersistenceAndEnvelope(): Promise<void> {

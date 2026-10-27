@@ -1,6 +1,12 @@
 import { ipcMain } from 'electron'
+import { z } from 'zod'
 
 import type { OverlayPresentationConfig } from '../../shared/ipc'
+import {
+  type BodyPresentation,
+  type BodyPresentationProjection,
+  bodyPresentationSchema,
+} from '../../shared/motion'
 import { IPC_ONE_PAYLOAD, type IpcAuthorization } from './IpcAuthorization'
 import { avatarMouthSchema, avatarStateSchema } from './payloadSchemas'
 
@@ -14,6 +20,8 @@ export interface OverlayIpcDependencies {
   publishAvatarState: (state: unknown) => void
   getAvatarMouth: () => unknown
   publishAvatarMouth: (weights: unknown) => void
+  getAvatarBody: () => BodyPresentationProjection | null
+  publishAvatarBody: (owner: number, value: BodyPresentation | null) => boolean
 }
 
 export function registerOverlayIpc(
@@ -65,6 +73,18 @@ export function registerOverlayIpc(
         dependencies.publishAvatarMouth(avatarMouthSchema.parse(payload))
         return { ok: true }
       },
+    ),
+  )
+  ipcMain.handle(
+    'avatar-body:get',
+    authorization.handle('avatar-body:get', dependencies.getAvatarBody),
+  )
+  ipcMain.handle(
+    'avatar-body:publish',
+    authorization.handlePayload(
+      'avatar-body:publish',
+      z.tuple([bodyPresentationSchema.nullable()]),
+      (event, value) => ({ ok: dependencies.publishAvatarBody(event.sender.id, value) }),
     ),
   )
 }

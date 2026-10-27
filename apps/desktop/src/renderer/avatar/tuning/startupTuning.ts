@@ -6,9 +6,8 @@ export const avatarStartupTuning = {
     fov: 30,
     near: 0.1,
     far: 100,
-    // VRM scenes load facing -Z (glTF/three.js front-facing convention, unchanged
-    // by VRMLoaderPlugin). The camera must sit on the -Z side to frame the front
-    // of the model, matching the convention already used by `overlayCameraPresets`.
+    // Startup defaults to the VRM0 -Z front. The loaded model's metadata makes
+    // presentation presets use +Z for VRM1 without rotating the model itself.
     position: { x: 0, y: 1.4, z: -2.5 },
     target: { x: 0, y: 1.0, z: 0 },
   },

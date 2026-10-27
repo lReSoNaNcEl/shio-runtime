@@ -48,10 +48,12 @@ export interface RuntimeInvariantInput {
   playbackActive: boolean
   activePlaybackId: number
   // Avatar / Animation
-  bodyActiveActionCount: number
-  bodyWeightedActionCount: number
+  bodyActiveExecutionCount: number
+  bodyPoseOwnerCount: number
   bodyTransitionRemaining: number
-  bodyOwnershipGapCount: number
+  bodyUnderruns: number
+  bodyMotionState: string
+  bodyPresentationMode: 'primary' | 'mirror'
   currentBodyAnimation: string
   currentBehaviorId: string
   // Facial (mixer output only — read-only)
@@ -181,13 +183,15 @@ export class RuntimeStateInvariantValidator {
       label: 'only one body animation owns the skeleton',
       suspectedOwner: 'VrmModel body pipeline',
       evaluate: (i) => {
-        if (i.bodyTransitionRemaining > 0) return { ok: true, detail: 'cross-fade in progress' }
-        const ok = i.bodyWeightedActionCount <= 1
+        const ok =
+          i.bodyPoseOwnerCount <= 1 &&
+          i.bodyActiveExecutionCount <= 1 &&
+          (i.bodyPresentationMode !== 'mirror' || i.bodyActiveExecutionCount === 0)
         return {
           ok,
           detail: ok
-            ? `${i.bodyWeightedActionCount} weighted`
-            : `${i.bodyWeightedActionCount} weighted actions, no transition`,
+            ? `${i.bodyPoseOwnerCount} pose owner, ${i.bodyActiveExecutionCount} execution`
+            : `${i.bodyPoseOwnerCount} pose owners, ${i.bodyActiveExecutionCount} executions in ${i.bodyPresentationMode}`,
         }
       },
     },
@@ -269,15 +273,16 @@ export class RuntimeStateInvariantValidator {
     {
       id: 'INV-10-transition-ownership',
       label: 'body transition keeps animation ownership',
-      suspectedOwner: 'VrmModel body action ownership',
+      suspectedOwner: 'GeneratedBodyPlayback pose ownership',
       evaluate: (i) => {
-        if (i.bodyActiveActionCount === 0) return { ok: null, detail: 'no body action loaded yet' }
-        const ok = i.bodyWeightedActionCount > 0
+        if (i.bodyActiveExecutionCount === 0 || i.bodyMotionState === 'loading')
+          return { ok: null, detail: 'no ready generated execution' }
+        const ok = i.bodyPoseOwnerCount > 0
         return {
           ok,
           detail: ok
-            ? `${i.bodyWeightedActionCount} weighted action(s)`
-            : `zero weighted actions during ${i.currentBodyAnimation}`,
+            ? `${i.bodyPoseOwnerCount} applied pose owner(s)`
+            : `no applied pose during ${i.currentBodyAnimation}`,
         }
       },
     },
@@ -443,8 +448,8 @@ export class RuntimeStateInvariantValidator {
       playback: input.playbackActive ? `#${input.activePlaybackId}` : 'idle',
       mouthMax: Number(input.mouthMax.toFixed(2)),
       facialProfile: input.currentFacialProfile,
-      bodyWeighted: input.bodyWeightedActionCount,
-      bodyOwnershipGaps: input.bodyOwnershipGapCount,
+      bodyPoseOwners: input.bodyPoseOwnerCount,
+      bodyUnderruns: input.bodyUnderruns,
       lookAt: input.lookAtTarget,
       headGen: input.headMotionActiveGenerators.length,
     }
@@ -470,8 +475,8 @@ export class RuntimeStateInvariantValidator {
         characterMode: input.characterMode,
         avatarMode: input.avatarMode,
         conversationPhase: input.conversationResponsePhase,
-        bodyActions: `${input.bodyWeightedActionCount}/${input.bodyActiveActionCount} weighted/active`,
-        bodyOwnershipGaps: String(input.bodyOwnershipGapCount),
+        bodyMotion: `${input.bodyPoseOwnerCount} pose owner(s), ${input.bodyActiveExecutionCount} execution(s)`,
+        bodyUnderruns: String(input.bodyUnderruns),
         lookAt: `${input.lookAtTarget}`,
         headMotion: `${input.headMotionActiveGenerators.length} gen · energy ${input.headMotionEnergy.toFixed(2)}`,
         facial: input.facialActiveSources.join(',') || 'none',

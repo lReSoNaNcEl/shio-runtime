@@ -253,9 +253,23 @@ Architecture and ownership:
 - Procedural habits belong to Memory Runtime, require deduped completed typed facts,
   explicit approval, and reuse cooldown. Hybrid retrieval must retain lexical/FTS as
   the operational fallback when an optional Embedding Adapter is unavailable.
-- Streaming speech uses at most two concurrent synthesis workers plus an ordered
-  reorder buffer. Cancellation aborts both workers, queued or prepared audio, and
-  pending playback; no later segment may overtake an earlier segment.
+- Streaming speech uses one bounded Fish text-in/audio-out session per admitted
+  turn. AudioPlayer owns playback and consumed source-sample position. ACK is
+  transport credit, not audible completion. Cancellation invalidates queued PCM
+  and cues and stops actual inference; no new turn overlaps unfinished cleanup.
+- The ARDY experiment keeps its independent environment under
+  `apps/desktop/motion`. Electron Main owns the Adapter/processes and validates
+  bounded results; renderer Avatar Runtime owns retargeting and bone composition.
+  Head/neck, eyes, jaw and facial channels are excluded from generated body input.
+  Conversational body and delivery use AudioPlayer's consumed PCM cursor. Overlay
+  consumes that same pose and never starts a second generator. LLM2Vec is ARDY
+  conditioning, not the conversational LLM and cannot be replaced by chat text.
+- ARDY body composition applies procedural contributions once per frame, uses
+  model-oriented anatomical constraints and stable knee poles, and samples
+  procedural fingers from the same body cursor. Overlay consumes the composed
+  body/finger/chest projection with bounded interpolation; it never adds a second
+  independent breathing or upper-body motion layer. Correction diagnostics expose
+  bounded counts only, never raw poses.
 - New Project evidence UI uses React Spectrum 2, and every new evidence or Plugin UI
   string is added in both Russian and English.
 - Preserve the existing HTTP contract with `apps/api` unless the task
@@ -358,7 +372,7 @@ Desktop quality and validation:
 
 ## API service rules
 
-`apps/api` is the FastAPI service that owns ASR and F5-TTS.
+`apps/api` is the independent FastAPI service that owns ASR and Fish Audio S2 Pro.
 
 Architecture and ownership:
 
@@ -368,10 +382,12 @@ Architecture and ownership:
 - Preserve the existing HTTP API unless the task explicitly changes the contract.
 - Resolve service assets relative to the service root using `Path(__file__)` /
   `apps/api`, never from the monorepo working directory.
-- FastAPI runs on port `8000`. ASR uses faster-whisper with Silero VAD. TTS uses
-  one in-process `F5LocalEngine` wrapping `f5_tts.api.F5TTS`.
-- `/synthesize` returns WAV plus engine, language, emotion, VRM-emotion, latency,
-  RTF, and duration headers.
+- FastAPI runs on port `8000`. ASR uses faster-whisper with Silero VAD. TTS owns
+  one cancellable real Fish S2 Pro inference worker. No F5 fallback is allowed.
+- HTTP `2.1` and `/tts/stream` protocol `2` are a coordinated breaking change.
+  `/synthesize` is removed. Typed metadata/binary pairs describe mono Float32 LE
+  PCM at 44.1 kHz, exact sample counts and cumulative source offsets. Queues,
+  backpressure, cancellation, busy and disconnect are bounded and validated.
 - `/voices` exposes voice presets, available references, and VRM expression
   mappings.
 
@@ -391,21 +407,20 @@ API commands and validation:
   `apps/api/.ruff_cache`; they must not create `.ruff_cache` in the repository root.
 - Run `npm run api:lint`, `npm run api:format:check`, and `npm run api:test`.
 - Do not rely on `py_compile` alone. Applicable endpoint validation covers
-  `/health`, `/voices`, `/emotions`, `/synthesize`, and `/recognize`; synthesis
-  validation must confirm that an actual WAV is produced.
-- `/health` must report `engines.f5.mode` as `real` for a real-engine endpoint
-  check.
+  `/health`, `/voices`, `/emotions`, `/tts/warmup`, `/tts/stream`, `/recognize`
+  and `/ws/asr`; synthesis checks confirm real early PCM before finish-input.
+- `/health` reports actual Fish/ASR readiness, pinned revisions, compile mode,
+  warmup and bounded failure. Loading or local mute never proves inference abort.
 
 Voice registry and references:
 
-- LLM output should use a single leading normalized emotion tag where possible.
-  Supported tags are `neutral`, `calm`, `warm`, `happy`, `laugh`, `chuckle`,
-  `sad`, `crying`, `angry`, `fear`, `surprised`, `gasp`, `sigh`, `groan`, and
-  `whisper`.
+- Canonical semantic emotion, bounded delivery and VRM/body mappings derive from
+  the versioned contract under `contracts/`. Fish rendering uses square tags;
+  internal voice-style markers never reach provider text or visible history.
 - `app/tts/emotion.py` removes normalized emotion tags and maps them to TTS
   emotions and VRM expression weights.
-- `app/tts/voice_registry.py` is the voice-registry owner and resolves logical
-  voice IDs to F5 reference audio.
+- `app/tts/voice_registry.py` owns logical voice IDs and immutable references.
+  Fish conditioning is derived, checksum/revision-bound data, not a new reference.
 - Reference assets use
   `voices/<dataset>/<voice>/reference.wav` with an adjacent `reference.txt`.
 - A voice is available only when both reference files exist.
@@ -416,8 +431,10 @@ Voice registry and references:
 - Voice sync must remain single-flight, revision-pinnable, validated, and atomic;
   interrupted downloads must not produce a partially available voice.
 - Confirm `voice_manifest.json` and reference assets resolve from `apps/api`.
-- Server-side F5 knobs remain in `.env`: `F5_NFE_STEP`, `F5_CFG_STRENGTH`, and
-  `F5_USE_ACCENT`.
+- Keep Fish device/compile/session policy server-owned. Remove F5-only settings,
+  dependencies and installation rules as part of the explicit migration.
+- The separate speech API test page keeps its lightweight web stack; Spectrum 2
+  is mandatory for Electron UI. The API page owns no ARDY or VRM renderer.
 - Never commit model caches, secrets, generated audio, or the local virtual
   environment.
 
@@ -435,6 +452,16 @@ Before any architecture-related change, reread `ARCHITECTURE.md`. If a change to
 runtime boundaries or the Desktop–API contract, the final report must include an
 `Architecture Review` section stating either that there is no conflict, or describing
 the conflict found.
+
+Architecture-first implementation order is mandatory: first describe the deliberate
+target decision in `ARCHITECTURE.md` and check it against the existing architecture;
+then create or revise the implementation plan and trace each Work Item to that
+decision; only after the plan/architecture consistency review may implementation code
+be changed. Mark planned contracts as planned rather than claiming they are already
+implemented. A later architectural conflict returns to the architecture and plan
+review before dependent code changes. Review reports and plans do not become a second
+canonical architecture source. Keep architecture documentation and intentional
+Runtime behavior changes in separate Work Items.
 
 ## 3. Behavior-preserving work
 

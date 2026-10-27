@@ -18,6 +18,7 @@
     "src/preload/**/*",
     "src/shared/**/*",
     "electron.vite.config.ts",
-    "emotion_manifest.json"
+    "emotion_manifest.json",
+    "motion/motion-profiles.json"
   ]
 }

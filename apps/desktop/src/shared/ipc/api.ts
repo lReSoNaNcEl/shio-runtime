@@ -33,6 +33,7 @@ import type {
   ProviderProfile,
 } from '../llm/providers'
 import type { MemoryManagementApi } from '../memory'
+import type { BodyPresentation, BodyPresentationProjection, MotionApi } from '../motion'
 import type { PluginManagementApi } from '../plugins'
 import type { ProjectAwarenessApi } from '../project-awareness'
 import type { AvatarRuntimeHealth, RuntimeEventInput } from '../runtime'
@@ -44,7 +45,7 @@ import type {
   ScreenContextResult,
   ScreenContextSource,
 } from '../screen-context/contracts'
-import type { SpeechAudioBoundaryTelemetry, SpeechTextNormalizationTelemetry } from '../speech'
+import type { SpeechStreamRendererPort, SpeechStreamStart } from '../speech'
 import type { SpeechServiceErrorCode } from '../speech/errors'
 import type { ReleaseInfo, RendererFailureReport, RuntimeSupportBundle } from '../system'
 
@@ -67,6 +68,10 @@ export interface OverlayPresentationConfig {
 }
 
 export interface OverlayPresentationApi {
+  avatarBody: {
+    get: () => Promise<BodyPresentationProjection | null>
+    onUpdated: (callback: (value: unknown) => void) => () => void
+  }
   config: {
     get: () => Promise<OverlayPresentationConfig>
     onUpdated: (callback: (settings: OverlayPresentationConfig) => void) => () => void
@@ -85,6 +90,8 @@ export interface OverlayPresentationApi {
 }
 
 export interface ShioRuntimeApi {
+  avatarBody: { publish: (value: BodyPresentation | null) => Promise<{ ok: boolean }> }
+  motion: MotionApi
   alive: {
     snapshot: () => Promise<AliveSnapshot>
     updateSettings: (settings: AutonomySettings) => Promise<AliveSnapshot>
@@ -193,25 +200,7 @@ export interface ShioRuntimeApi {
       latencyMs?: number
       error?: string
     }>
-    synthesizeReply: (
-      turnId: string,
-      replyText: string,
-      emotionKey: string,
-    ) => Promise<{
-      ok: boolean
-      audioBuffer?: ArrayBuffer
-      emotionKey?: string
-      requestedEmotion?: string
-      textEmotion?: string
-      vrmEmotion?: string
-      latencyMs?: string
-      generatedLatencyMs?: string
-      cache?: string
-      normalization?: SpeechTextNormalizationTelemetry
-      audioBoundaries?: SpeechAudioBoundaryTelemetry
-      error?: string
-      errorCode?: SpeechServiceErrorCode
-    }>
+    openStream: (input: SpeechStreamStart) => SpeechStreamRendererPort
     cancelSynthesis: (turnId: string) => Promise<{ ok: boolean }>
   }
   memory: MemoryManagementApi & { clear: () => Promise<unknown> }
@@ -232,9 +221,6 @@ export interface ShioRuntimeApi {
       error?: string
     }>
     read: (assetHandle: string) => Promise<{ ok: boolean; buffer?: ArrayBuffer; error?: string }>
-  }
-  vrma: {
-    pick: () => Promise<{ ok: boolean; animPath?: string; buffer?: ArrayBuffer; error?: string }>
   }
   overlay: {
     toggle: () => Promise<{ visible: boolean }>

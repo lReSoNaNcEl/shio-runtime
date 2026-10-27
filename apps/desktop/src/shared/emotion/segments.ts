@@ -1,5 +1,5 @@
+import { SafeCharacterStreamFilter } from '../character-stream/SafeCharacterStreamFilter'
 import type { EmotionKey } from './contracts'
-import { emotionRegistry } from './registry'
 
 export const EMOTION_SEGMENTS_TUNING = {
   enabled: true,
@@ -34,17 +34,17 @@ export function parseEmotionalReply(
   text: string,
   options: { enabled?: boolean; maxSegments?: number } = {},
 ): ParsedEmotionalReply {
+  const filter = new SafeCharacterStreamFilter()
+  const deltas = [...filter.push(text), ...filter.flush()]
   const enabled = options.enabled ?? EMOTION_SEGMENTS_TUNING.enabled
   const maxSegments = Math.max(1, options.maxSegments ?? EMOTION_SEGMENTS_TUNING.maxSegments)
-  const supported = new Set(emotionRegistry.supported())
-  const matches = Array.from(text.matchAll(/\[([a-z_ -]+)\]/gi)).filter((match) =>
-    supported.has(key(match[1])),
-  )
-  const primaryEmotion = matches[0]
-    ? emotionRegistry.normalize(matches[0][1])
-    : emotionRegistry.defaultEmotion
+  const primaryEmotion =
+    deltas.find((delta) => delta.text.trim())?.emotion ?? filter.currentEmotion()
+  const visibleText = deltas
+    .map((delta) => delta.text)
+    .join('')
+    .trim()
   if (!enabled) {
-    const visibleText = emotionRegistry.stripEmotionTags(text)
     return {
       primaryEmotion,
       visibleText,
@@ -58,9 +58,7 @@ export function parseEmotionalReply(
     text: string
     boundaryAfter: EmotionSegmentBoundary
   }> = []
-  let emotion = primaryEmotion
-  let cursor = 0
-  const append = (raw: string): void => {
+  const append = (raw: string, emotion: string): void => {
     const cleaned = raw.trim()
     if (!cleaned) return
     const boundaryAfter = resolveBoundaryAfter(raw)
@@ -74,17 +72,11 @@ export function parseEmotionalReply(
       rawSegments.push({ emotion, text: cleaned, boundaryAfter })
     }
   }
-  for (const match of matches) {
-    const start = match.index ?? 0
-    append(text.slice(cursor, start))
-    if (rawSegments.length < maxSegments) emotion = emotionRegistry.normalize(match[1])
-    cursor = start + match[0].length
-  }
-  append(text.slice(cursor))
+  for (const delta of deltas) append(delta.text, delta.emotion)
   const segments = rawSegments.map((segment, index) => toSegment(segment, index))
   return {
     primaryEmotion,
-    visibleText: segments.map((segment) => segment.text).join(' '),
+    visibleText,
     segments,
   }
 }
@@ -115,11 +107,4 @@ function resolveBoundaryAfter(text: string): EmotionSegmentBoundary {
   if (/(?:\.\.\.|…)$/u.test(trimmed)) return 'expressive'
   if (/(?:[!?][!?]?|\.)$/u.test(trimmed)) return 'sentence'
   return 'clause'
-}
-
-function key(value: string): string {
-  return value
-    .toLowerCase()
-    .trim()
-    .replace(/[\s-]+/g, '_')
 }

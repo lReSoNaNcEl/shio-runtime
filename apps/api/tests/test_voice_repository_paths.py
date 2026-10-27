@@ -1,4 +1,6 @@
 import json
+import os
+import subprocess
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import TestCase
@@ -24,7 +26,25 @@ class VoiceRepositoryPathTests(TestCase):
             try:
                 voices_link.symlink_to(persistent_voices, target_is_directory=True)
             except OSError as exc:
-                self.skipTest(f"Directory links are unavailable: {exc}")
+                if os.name != "nt":
+                    raise
+                # Match the launcher: directory junctions need no symlink privilege.
+                result = subprocess.run(
+                    [
+                        "powershell",
+                        "-NoProfile",
+                        "-Command",
+                        "New-Item -ItemType Junction -Path $env:SHIO_TEST_LINK -Target $env:SHIO_TEST_TARGET -ErrorAction Stop | Out-Null",
+                    ],
+                    capture_output=True,
+                    check=False,
+                    env={
+                        **os.environ,
+                        "SHIO_TEST_LINK": str(voices_link),
+                        "SHIO_TEST_TARGET": str(persistent_voices),
+                    },
+                )
+                self.assertEqual(result.returncode, 0, f"Could not create test junction: {exc}")
 
             manifest_path = service_root / "voice_manifest.json"
             status_path = service_root / "voice_repository_status.json"

@@ -1,4 +1,4 @@
-import { Provider } from '@react-spectrum/s2'
+import { Provider, Text } from '@react-spectrum/s2'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { type CapabilityNavigationTarget } from '../../shared/capabilities'
@@ -261,8 +261,10 @@ export function App() {
     return (
       <Provider colorScheme={uiTheme} locale={intlLocale} UNSAFE_className="app-provider">
         <canvas id="canvas" ref={overlayCanvasRef} />
-        {state.overlayAnimationHudEnabled && state.overlayAnimationFile && (
-          <div className="overlay-animation-hud">{state.overlayAnimationFile}</div>
+        {state.overlayAnimationHudEnabled && state.overlayMotionProfileId && (
+          <div className="overlay-animation-hud">
+            <Text>{state.overlayMotionProfileId}</Text>
+          </div>
         )}
       </Provider>
     )

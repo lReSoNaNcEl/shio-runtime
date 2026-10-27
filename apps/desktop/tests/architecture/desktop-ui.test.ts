@@ -109,15 +109,18 @@ function main(): void {
       'animation-library',
       'preview-viewport-header',
       'preview-camera-toolbar',
-      'preview-playback',
+      'preview-inspector',
     ]) {
       assert.match(avatar, new RegExp(ownedRegion))
     }
 
+    assert.match(avatar, /<ListView[\s\S]*?selectionMode="single"/)
+    assert.match(avatar, /<ListViewItem/)
+
     const responsive =
       source('src/renderer/styles/shell.css') + source('src/renderer/styles/avatar-preview.css')
     assert.match(responsive, /@media \(max-width: 760px\)/)
-    assert.match(responsive, /@media \(max-width: 820px\)/)
+    assert.match(responsive, /@media \(max-width: 1280px\)/)
 
     const settings = source('src/renderer/components/settings/SettingsDialog.tsx')
     const generalSettings = source(

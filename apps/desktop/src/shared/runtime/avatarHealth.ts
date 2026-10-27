@@ -1,3 +1,6 @@
+import type { EmbodimentAvailability } from '../character-response'
+import type { GeneratedMotionHealth } from '../motion'
+
 export type AvatarRuntimeHealthStatus =
   | 'not-initialized'
   | 'loading'
@@ -19,4 +22,20 @@ export interface AvatarRuntimeHealth {
   operational: boolean
   updatedAt: string
   lastFailure: AvatarRuntimeFailure | null
+  motion?: GeneratedMotionHealth
+  embodimentAvailability?: EmbodimentAvailability
+  speech?: {
+    firstPcmAt?: number
+    firstOutputAt?: number
+    firstAudibleAt?: number
+    hardwareLatencyMs?: number
+    cueCount?: number
+    maxCueErrorMs?: number
+    active: boolean
+    sourceSampleOffset: number
+    sourceSampleRate: number
+    rawRms: number
+    mouthWeight: number
+    blinkWeight: number
+  }
 }

@@ -109,12 +109,6 @@ export const facialTuning = {
       },
     },
   },
-  animation: {
-    verboseTransitionLogs: false,
-    minimumTransitionWeight: 0.015,
-    cleanupGraceFrames: 1,
-    ownershipGapWeight: 0.01,
-  },
   blink: {
     // Global eyelid ceiling used as a fallback when an emotion profile omits its
     // own `blinkMax`.

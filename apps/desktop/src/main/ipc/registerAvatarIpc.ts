@@ -1,5 +1,3 @@
-import { readFileSync } from 'node:fs'
-
 import { type BrowserWindow, dialog, ipcMain } from 'electron'
 
 import { translate } from '../../shared/localization'
@@ -32,29 +30,6 @@ export function registerAvatarIpc(window: BrowserWindow, authorization: IpcAutho
     authorization.handlePayload('vrm:read', IPC_ONE_PAYLOAD, (_event, payload: unknown) => {
       const assetHandle = vrmAssetHandleSchema.parse(payload)
       return { ok: true, buffer: vrmAssetRegistry.readAsset(assetHandle) }
-    }),
-  )
-  ipcMain.handle(
-    'vrma:pick',
-    authorization.handle('vrma:pick', async () => {
-      const result = await dialog.showOpenDialog(window, {
-        title: translate(getConfig().uiLocale, 'main.dialog.vrma.title'),
-        filters: [
-          {
-            name: translate(getConfig().uiLocale, 'main.dialog.vrma.filter'),
-            extensions: ['vrma'],
-          },
-        ],
-        properties: ['openFile'],
-      })
-      if (result.canceled || result.filePaths.length === 0) return { ok: false }
-      const animPath = result.filePaths[0]
-      const buffer = readFileSync(animPath)
-      return {
-        ok: true,
-        animPath,
-        buffer: buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength),
-      }
     }),
   )
 }

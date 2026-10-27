@@ -56,9 +56,9 @@ function truncate(value: string | null, maximumLength = RECORDER_TEXT_LIMIT): st
 function createDetailedAvatarSnapshot(avatar: AvatarRuntimeDebugState): Record<string, unknown> {
   return {
     ...avatar,
-    bodyActions: {
-      ...avatar.bodyActions,
-      frameTrace: avatar.bodyActions.frameTrace.slice(-1),
+    bodyMotion: {
+      ...avatar.bodyMotion,
+      generatedTrace: avatar.bodyMotion.generatedTrace.slice(-1),
     },
     playbackRequests: {
       ...avatar.playbackRequests,
@@ -69,14 +69,13 @@ function createDetailedAvatarSnapshot(avatar: AvatarRuntimeDebugState): Record<s
 }
 
 function createEssentialAvatarSnapshot(avatar: AvatarRuntimeDebugState): Record<string, unknown> {
-  const body = avatar.bodyActions
+  const body = avatar.bodyMotion
   return {
     mode: avatar.mode,
     emotionKey: truncate(avatar.emotionKey),
     currentBodyAnimation: truncate(avatar.currentBodyAnimation),
-    currentBodyAnimationFile: truncate(avatar.currentBodyAnimationFile),
-    currentBodyAnimationLoop: avatar.currentBodyAnimationLoop,
-    currentBodyAnimationStatus: avatar.currentBodyAnimationStatus,
+    requestedMotionContinuous: avatar.requestedMotionContinuous,
+    motionRequestStatus: avatar.motionRequestStatus,
     previousBodyAnimation: truncate(avatar.previousBodyAnimation),
     activeTransitionPolicy: truncate(avatar.activeTransitionPolicy),
     activeBlendDuration: avatar.activeBlendDuration,
@@ -85,23 +84,9 @@ function createEssentialAvatarSnapshot(avatar: AvatarRuntimeDebugState): Record<
     selectedBehaviorAnimation: truncate(avatar.selectedBehaviorAnimation),
     currentGesture: truncate(avatar.currentGesture),
     scheduledAnimationKey: truncate(avatar.scheduledAnimationKey),
-    bodyActions: {
-      activeActionCount: body.activeActionCount,
-      weightedActionCount: body.weightedActionCount,
-      currentClipName: truncate(body.currentClipName),
-      currentClipDuration: body.currentClipDuration,
-      currentClipTime: body.currentClipTime,
-      transitionRemaining: body.transitionRemaining,
-      hipsDeltaY: body.hipsDeltaY,
-      rootDeltaY: body.rootDeltaY,
-      maxHipsDeltaY: body.maxHipsDeltaY,
-      maxRootDeltaY: body.maxRootDeltaY,
-      lastLoadSource: truncate(body.lastLoadSource),
-      lastLoadReason: truncate(body.lastLoadReason),
-      lastLoadAnimationId: truncate(body.lastLoadAnimationId),
-      restartCount: body.restartCount,
-      ownershipGapCount: body.ownershipGapCount,
-      lastTransitionEvent: truncate(body.lastTransitionEvent),
+    bodyMotion: {
+      ...body,
+      generatedTrace: body.generatedTrace.slice(-1),
     },
     playbackRequests: {
       currentAnimation: truncate(avatar.playbackRequests.currentAnimation),
@@ -186,7 +171,9 @@ export class TransitionRecorder {
   private history: RecorderFrame[] = []
   private pending: PendingCapture | null = null
   private seq = 0
-  private lastOwnershipGapCount = 0
+  private lastUnderrunCount = 0
+  private lastLateChunkCount = 0
+  private lastMotionError: string | null = null
   private lastViolationCount = 0
   private lastWriteAt = 0
 
@@ -216,14 +203,28 @@ export class TransitionRecorder {
     avatar: AvatarRuntimeDebugState,
     runtimeHealth: RuntimeHealth | null,
   ): string | null {
-    const body = avatar.bodyActions
+    const body = avatar.bodyMotion
     const hipsJump = Math.abs(body.hipsDeltaY) > 0.1
     if (hipsJump)
-      return `hips jump ${body.hipsDeltaY.toFixed(3)} during ${body.lastLoadAnimationId ?? 'none'}`
+      return `hips jump ${body.hipsDeltaY.toFixed(3)} during ${body.appliedPose?.profileId ?? 'none'}`
 
-    if (body.ownershipGapCount > this.lastOwnershipGapCount) {
-      this.lastOwnershipGapCount = body.ownershipGapCount
-      return `ownership gap count ${body.ownershipGapCount}`
+    const underruns = body.motionExecution.underruns
+    if (underruns > this.lastUnderrunCount) {
+      this.lastUnderrunCount = underruns
+      return `generated horizon underrun count ${underruns}`
+    }
+    this.lastUnderrunCount = underruns
+
+    const lateChunks = body.generated.lateChunks
+    if (lateChunks > this.lastLateChunkCount) {
+      this.lastLateChunkCount = lateChunks
+      return `late generated chunk count ${lateChunks}`
+    }
+    this.lastLateChunkCount = lateChunks
+    const motionError = body.generated.error
+    if (motionError !== this.lastMotionError) {
+      this.lastMotionError = motionError
+      if (motionError) return `generated motion error ${motionError}`
     }
 
     const violationCount = runtimeHealth?.totalViolations ?? 0

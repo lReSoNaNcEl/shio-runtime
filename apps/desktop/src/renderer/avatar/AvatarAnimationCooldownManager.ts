@@ -1,3 +1,4 @@
+import { getMotionProfile } from '../../shared/motion'
 import { type AnimationId, DEFAULT_ANIMATION_COOLDOWN_MS, getAnimation } from './animationManifest'
 
 export interface AnimationCooldownState {
@@ -16,7 +17,11 @@ export class AvatarAnimationCooldownManager {
 
   getState(animationId: AnimationId, now = Date.now()): AnimationCooldownState {
     const cooldownMs = this.getCooldownMs(animationId)
-    const lastPlayedAt = this.lastPlayedAtById.get(animationId) ?? null
+    const family = getMotionProfile(animationId)?.family
+    const times = [...this.lastPlayedAtById]
+      .filter(([id]) => !family || getMotionProfile(id)?.family === family)
+      .map(([, time]) => time)
+    const lastPlayedAt = times.length ? Math.max(...times) : null
     const remainingMs = lastPlayedAt === null ? 0 : Math.max(0, lastPlayedAt + cooldownMs - now)
 
     return {

@@ -220,57 +220,27 @@ function assertTransitionRecordingContract(): void {
 }
 
 function realisticAvatarDebugState(frame: number, hipsDeltaY: number): AvatarRuntimeDebugState {
-  const actions = Array.from({ length: 8 }, (_, index) => ({
-    name: `action-${index}`,
-    actionInstanceId: index,
-    clipInstanceId: index,
-    weight: 0.5,
-    time: frame / 60,
-    duration: 4,
-    enabled: true,
-    running: true,
-    fadingOut: false,
-    current: index === 0,
-    previous: index === 1,
-  }))
-  const frameTrace = Array.from({ length: 140 }, (_, index) => ({
+  const generatedTrace = Array.from({ length: 120 }, (_, index) => ({
     at: frame * 16 + index,
-    frame: frame - 140 + index,
-    label: 'transition-frame',
-    animationId: 'idle_soft',
-    previousAnimationId: 'idle_neutral',
-    mixerActionCount: actions.length,
-    bodyActionCount: actions.length,
-    weightedActionCount: actions.length,
-    totalEffectiveWeight: 1,
-    hasWeightGap: false,
-    hasZeroWeightedActions: false,
-    currentActionInfluential: true,
-    currentWeight: 0.8,
-    previousWeight: 0.2,
-    transitionRemaining: 0.2,
-    cleanupState: 'active',
-    localRootQuaternion: '0.000,0.000,0.000,1.000',
-    hipsQuaternion: '0.000,0.000,0.000,1.000',
-    firstBoneChangeAfterPlayFrame: frame,
-    framesSincePlayWithoutBoneChange: null,
-    hipsDeltaY,
-    rootDeltaY: 0,
-    mixerActions: actions,
-    actions,
+    profileId: 'presence_poised',
+    phase: 'ready',
+    sourceFrame: frame / 3,
+    sourceSampleOffset: null,
+    queueFrames: 16,
+    lateChunks: 0,
   }))
   const requests = Array.from({ length: 40 }, (_, index) => ({
     id: index,
     frame: frame - 40 + index,
-    animationId: 'idle_soft',
+    animationId: 'presence_poised',
     behaviorId: 'ambient-idle',
     source: 'idle-orchestrator' as const,
     reason: 'scheduled ambient idle behavior',
     accepted: true,
     decision: 'play' as const,
     rejectionReason: null,
-    currentAnimationId: 'idle_neutral',
-    requestedAnimationId: 'idle_soft',
+    currentAnimationId: 'presence_warm',
+    requestedAnimationId: 'presence_poised',
     transitionPolicy: 'soft-crossfade',
     transitionPending: true,
   }))
@@ -279,8 +249,8 @@ function realisticAvatarDebugState(frame: number, hipsDeltaY: number): AvatarRun
     frame: frame - 40 + index,
     fromBehaviorId: 'ambient-idle',
     toBehaviorId: 'ambient-idle',
-    fromAnimationId: 'idle_neutral',
-    toAnimationId: 'idle_soft',
+    fromAnimationId: 'presence_warm',
+    toAnimationId: 'presence_poised',
     mode: 'idle' as const,
     source: 'idle-orchestrator' as const,
     reason: 'scheduled ambient idle behavior',
@@ -290,42 +260,57 @@ function realisticAvatarDebugState(frame: number, hipsDeltaY: number): AvatarRun
   return {
     mode: 'idle',
     emotionKey: 'neutral',
-    currentBodyAnimation: 'idle_soft',
-    currentBodyAnimationFile: 'idle_soft.vrma',
-    currentBodyAnimationLoop: true,
-    currentBodyAnimationStatus: 'playing',
-    bodyActions: {
-      activeActionCount: actions.length,
-      weightedActionCount: actions.length,
-      currentClipName: 'idle_soft',
-      currentClipDuration: 4,
-      currentClipTime: frame / 60,
+    currentBodyAnimation: 'presence_poised',
+    requestedMotionContinuous: true,
+    motionRequestStatus: 'playing',
+    bodyMotion: {
+      generated: {
+        error: null,
+        state: 'ready',
+        queueFrames: 16,
+        lateChunks: 0,
+        inferenceMs: 20,
+        epoch: 1,
+        seed: 17,
+      },
+      motionExecution: {
+        profileId: 'presence_poised',
+        runningProfileId: 'presence_poised',
+        posture: 'standing',
+        phase: 'hold',
+        handPhase: 'hold',
+        transitionRoute: [],
+        rejectedReason: null,
+        profiles: {},
+        executionId: 'execution-1',
+        outcome: null,
+        blendRemaining: 0.2,
+        underruns: 0,
+      },
+      generatedTrace,
+      presentationMode: 'primary',
+      appliedPose: {
+        profileId: 'presence_poised',
+        executionId: 'execution-1',
+        phaseId: 'hold',
+        sourceFrame: frame / 3,
+        outcome: null,
+      },
+      activeExecutionCount: 1,
+      poseOwnerCount: 1,
+      avatarGeneration: 1,
+      executionsStarted: 1,
+      sourceTimeSeconds: frame / 60,
       transitionRemaining: 0.2,
-      rootMotionPolicy: 'in-place',
       hipsDeltaY,
-      rootDeltaY: 0,
       maxHipsDeltaY: Math.abs(hipsDeltaY),
-      maxRootDeltaY: 0,
-      lastLoadSource: 'idle-orchestrator',
-      lastLoadReason: 'scheduled ambient idle behavior',
-      lastLoadAnimationId: 'idle_soft',
-      lastLoadFile: 'idle_soft.vrma',
-      restartCount: 0,
-      ownershipGapCount: 0,
-      lastTransitionEvent: 'crossfade',
-      clipCache: { loads: 1, reuses: 1, hits: 1, misses: 0, parses: 1 },
-      facialControlTracksDisabled: 0,
-      facialControlTrackNames: [],
-      frameTrace,
-      actions,
     },
-    animationAssetCache: { fetches: 1, hits: 1, misses: 0 },
-    previousBodyAnimation: 'idle_neutral',
+    previousBodyAnimation: 'presence_warm',
     activeTransitionPolicy: 'soft-crossfade',
     activeBlendDuration: 0.3,
     playbackRequests: {
-      currentAnimation: 'idle_soft',
-      requestedAnimation: 'idle_soft',
+      currentAnimation: 'presence_poised',
+      requestedAnimation: 'presence_poised',
       currentTransition: 'soft-crossfade',
       transitionPending: true,
       replayCount: 0,
@@ -355,10 +340,10 @@ function assertTransitionRecorderBounds(): void {
     'the trigger frame must be recorded exactly once',
   )
   for (const frame of parsed.frames) {
-    const bodyActions = frame.avatar.bodyActions as { frameTrace?: unknown[] } | undefined
+    const bodyMotion = frame.avatar.bodyMotion as { generatedTrace?: unknown[] } | undefined
     const playbackRequests = frame.avatar.playbackRequests as { requests?: unknown[] } | undefined
     const behaviorTimeline = frame.avatar.behaviorTimeline as unknown[] | undefined
-    assert((bodyActions?.frameTrace?.length ?? 0) <= 1)
+    assert((bodyMotion?.generatedTrace?.length ?? 0) <= 1)
     assert((playbackRequests?.requests?.length ?? 0) <= 1)
     assert((behaviorTimeline?.length ?? 0) <= 1)
   }
@@ -376,6 +361,7 @@ function assertOverlaySubscriptionCleanup(): void {
       overlayApi: {
         avatarState: { onUpdated: subscription },
         avatarMouth: { onUpdated: subscription },
+        avatarBody: { onUpdated: subscription },
         config: { onUpdated: subscription },
       },
     },
@@ -383,9 +369,9 @@ function assertOverlaySubscriptionCleanup(): void {
   const runtime = new OverlayRuntime()
   runtime.subscribeToRemoteUpdates({})
   runtime.subscribeToRemoteUpdates({})
-  assert.equal(cleanupCount, 3, 'resubscribe must release the previous listener set')
+  assert.equal(cleanupCount, 4, 'resubscribe must release the previous listener set')
   runtime.dispose()
-  assert.equal(cleanupCount, 6, 'dispose must release every active Overlay listener')
+  assert.equal(cleanupCount, 8, 'dispose must release every active Overlay listener')
   Reflect.deleteProperty(globalThis, 'window')
 }
 
@@ -420,6 +406,51 @@ async function main(): Promise<void> {
 }
 
 describe('desktop reliability contracts', () => {
+  it.each(['underrun', 'late-chunk', 'error'])(
+    'records a bounded ARDY %s using its actual diagnostic signal',
+    (signal) => {
+      let captured: unknown = null
+      const recorder = new TransitionRecorder(async (payload) => {
+        captured = payload
+        return { ok: true }
+      })
+      for (let frame = 0; frame <= 60; frame += 1) {
+        const avatar = realisticAvatarDebugState(frame, 0)
+        if (signal === 'underrun') avatar.bodyMotion.motionExecution.underruns = 1
+        if (signal === 'late-chunk') avatar.bodyMotion.generated.lateChunks = 1
+        if (signal === 'error') avatar.bodyMotion.generated.error = 'ARDY_INFERENCE_FAILED'
+        recorder.observe(frame, avatar, null)
+      }
+      const recording = transitionRecordingSchema.parse(captured)
+      assert.match(
+        recording.reason,
+        signal === 'underrun'
+          ? /horizon underrun/
+          : signal === 'late-chunk'
+            ? /late generated chunk/
+            : /ARDY_INFERENCE_FAILED/,
+      )
+      assert(recording.frames.every((frame) => Object.hasOwn(frame.avatar, 'bodyMotion')))
+    },
+  )
+  it('does not report a recovered body with a latched motion failure as operational', () => {
+    const tracker = new AvatarRuntimeHealthTracker()
+    tracker.markReady(true)
+    const motion = {
+      error: 'ARDY_SPATIAL_TARGET_UNREACHED',
+      state: 'ready' as const,
+      queueFrames: 0,
+      lateChunks: 0,
+      inferenceMs: 1,
+      epoch: 1,
+      seed: 17,
+    }
+    tracker.setDiagnostics(motion, undefined)
+    assert.equal(tracker.getSnapshot().operational, false)
+    tracker.setDiagnostics({ ...motion, error: null }, undefined)
+    assert.equal(tracker.getSnapshot().operational, true)
+  })
+
   it('keeps renderer recovery and detached work bounded', async () => {
     await main()
   })

@@ -1,78 +1,68 @@
-# Python Speech - ASR + F5-TTS
+# Python Speech — ASR + Fish Audio S2 Pro
 
-Local FastAPI service for speech recognition and F5-based speech synthesis.
-
-## What Is Inside
-
-- ASR: faster-whisper + Silero VAD.
-- TTS: one local F5-TTS engine.
-- Voice references: logical `voiceId` values resolved through `voice_manifest.json`.
-- Remote voices: `/voices/sync` imports AnimeVox references into `voices/<dataset>/<voice>/`.
-- Emotion contract: emotion tags are normalized through `emotion_manifest.json` and exposed by `/emotions`.
-
-## Emotion Tags
-
-Use one leading tag in LLM output:
-
-```text
-[happy] Привет! Я рада тебя видеть.
-[sigh] Ладно, давай попробуем ещё раз.
-[gasp] Ого, вот это поворот.
-```
-
-Supported tags:
-
-```text
-neutral, calm, warm, happy, laugh, chuckle, sad, crying,
-angry, fear, surprised, gasp, sigh, groan, whisper
-```
-
-The backend removes the tag from spoken text and resolves the speech emotion through Emotion Registry.
-
-## API
-
-- `GET /` - Web UI.
-- `GET /docs` - Swagger UI.
-- `GET /health` - backwards-compatible service status with stable service,
-  contract, Speech Pack identity, and explicit ASR/F5 readiness.
-- `GET /voices` - manifest-backed voices, datasets, installed/available references, sync metadata, emotion contract.
-- `GET /emotions` - shared emotion manifest contract.
-- `GET /voices/status` - remote sync state, installed voices, and missing local assets.
-- `POST /voices/sync` - synchronize configured remote voice repositories.
-- `POST /synthesize` - WAV response from F5-TTS.
-- `POST /recognize` - ASR for uploaded audio.
-- `WS /ws` - streaming ASR.
-
-## Local setup
-
-The canonical Python environment is `apps/api/.venv`. From the repository root:
+Независимый FastAPI-сервис, порт 8000. ASR использует faster-whisper и Silero VAD;
+TTS — локальный `fishaudio/s2-pro` с зафиксированными source/model revisions.
+Установка, аппаратные требования, лицензия и измерения:
+[эксперимент ARDY/Fish](../../docs/EXPERIMENT-ARDY-FISH-S2-PRO-TZ.md).
 
 ```powershell
-npm run alpha:setup
+# Из корня монорепозитория
+npm run api:install:dev
+npm run api:prefetch
+npm run api:voices:sync
+npm run api:doctor:strict
 npm run api:dev
 ```
 
-The alpha setup requires Windows x64, Node.js 24.x, npm 11.x, Python 3.12 and an
-NVIDIA GPU supported by the pinned CUDA 12.8 PyTorch wheels. It installs from
-`requirements.lock.txt`, synchronizes the manifest-pinned AnimeVox revision and
-runs `api:doctor:strict`.
+Каноническое окружение — `apps/api/.venv`, Python 3.12. Установка использует
+lock-файлы; `npm run api:lock` пересобирает их в чистом временном окружении.
+`SHIO_API_PYTHON` выбирает интерпретатор. `.env.example` содержит настройки;
+не изменяйте модельные revisions отдельно от release manifest и квалификации.
 
-For development-only tools:
+| Endpoint | Контракт |
+|---|---|
+| `GET /health` | readiness ASR и synthesis, engine `fish-s2-pro`, mode `real`, revisions |
+| `WS /tts/stream` | protocol 2: incremental text/delivery → ordered binary mono Float32 LE PCM |
+| `POST /tts/warmup` | прогрев выбранного логического голоса |
+| `GET /voices`, `/emotions` | доступные референсы и общий контракт эмоций |
+| `GET /voices/status`, `POST /voices/sync` | атомарная синхронизация референсов |
+| `POST /recognize` | ASR аудиофайла |
+| `WS /ws/asr` | существующий поток ASR; `/ws` — совместимый alias |
+| `GET /asr/stream-protocol` | описание протокола ASR |
+
+Синтез: `start` → `ready`, затем `text`/`delivery` с общей возрастающей sequence,
+`finish-input`. Каждому JSON `audio` соответствует один бинарный пакет, который
+клиент подтверждает `audio-ack`; завершается потоком `complete`. Метаданные audio
+содержат `sessionId`, `turnId`, `sequence`, `sampleOffset`, `samples`, `emotion`
+и `textSequence`. `sampleOffset` — монотонная позиция в исходных PCM-сэмплах.
+`cancel` отменяет и ожидающее, и активное GPU-исполнение. Очереди и время сессии
+ограничены. Во время перезагрузки worker health показывает `loading`.
+
+HTTP contract версии 2.1 намеренно удаляет прежний `/synthesize` и альтернативные
+TTS-движки. Воспроизведение, LipSync, состояние персонажа и анимация принадлежат
+Desktop; API не импортирует код Desktop и не управляет 3D-моделью VRM.
+
+Канонические эмоции, reply-wide intensity, delivery и grammar — `contracts/emotions.v3.json`. Запустите
+`npm run emotions:sync` после изменения. Voice Registry остаётся владельцем
+логических ID; аудио и точный transcript обязательны. Identity кеша включает
+voice ID, хеши обоих референсов и model revision. Референсы не изменяются.
+`referencesAvailable` и `conditioningReady` различаются: последнее подтверждает
+успешную подготовку текущим живым Fish worker и сбрасывается после его остановки.
+Health доступен во время загрузки, сообщает `loading`/`warming`/`ready`/`failed`,
+compile mode, warmup и bounded error. После cancel новый worker загружается заново;
+отправка `cancelled` ждёт завершения реальной GPU-работы.
+
+Страница `/` поддерживает RU/EN, обе темы, ручной incremental input, ранний звук,
+ограниченный буфер 1,5 с, sample offsets, WAV preview и ASR через `/recognize`
+и `/ws/asr`. Тестовый WAV ограничен 600 секундами. Эта страница не владеет ARDY.
 
 ```powershell
-npm run api:install:dev
-npm run api:doctor
+npm run api:lint
+npm run api:format:check
+npm run api:test
 ```
 
-Regenerate lock files after changing direct requirements with `npm run api:lock`.
-`VOICE_DATASET_REVISION` is an optional override; when empty, voice sync uses the
-exact commit SHA stored in `voice_manifest.json`.
+Mock-тесты не подтверждают работу весов. Для настоящей проверки нужны готовый
+`/health`, бинарный PCM из `/tts/stream`, ранний первый пакет, обработка отмены
+и повторная сессия. Не коммитьте `.venv`, модели, кеши, голосовые ассеты или аудио.
 
-Managed release installation runs `scripts/prefetch_models.py` with
-`SHIO_MODEL_ROOT` pointing below the launcher's persistent Data directory. It
-downloads only the configured commit revisions; `--check` verifies the cache
-without network access.
-
-Open `http://localhost:8000` or `http://localhost:8000/docs`.
-`127.0.0.1` is the local bind address; `0.0.0.0` means “listen on all interfaces”
-and is not a browser URL.

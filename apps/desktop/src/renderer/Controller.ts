@@ -1,3 +1,5 @@
+import * as THREE from 'three'
+
 import type { TranslationKey } from '../shared/localization'
 import {
   DEFAULT_UI_LOCALE,
@@ -79,7 +81,7 @@ export type {
 } from './controller/contracts'
 export { STATUS_LABELS } from './controller/contracts'
 
-type SpeechReply = Awaited<ReturnType<Window['api']['tts']['synthesizeReply']>>
+type SpeechReply = Parameters<RuntimeDiagnosticsProjection['rememberSpeechMetadata']>[0]
 
 let idSeq = 0
 const nextId = (): string => `m${++idSeq}`
@@ -88,6 +90,9 @@ export class Controller {
   private uiLocale: UiLocale = DEFAULT_UI_LOCALE
   private shioRuntime = new ShioRuntime()
   private scene: SceneManager | null = null
+  private readonly avatarScene = new THREE.Scene()
+  private avatarLoadTask: Promise<void> = Promise.resolve()
+  private avatarModelVersion = 0
   // Monotonic token for the local Avatar Preview scene. Bumped on every attach and
   // detach so async VRM loads can detect that the scene they started with was torn
   // down or replaced, and silently abort instead of touching a disposed SceneManager.
@@ -106,8 +111,10 @@ export class Controller {
     },
   })
   private player = new AudioPlayer()
-  private speechRuntime = new SpeechRuntime(this.shioRuntime.events)
-  private speechOutput = new RuntimeSpeechOutputPort(this.speechRuntime, this.player)
+  private speechRuntime = new SpeechRuntime()
+  private speechOutput = new RuntimeSpeechOutputPort(this.speechRuntime, this.player, () =>
+    this.selectedVoiceLanguage === 'en' ? 'en' : 'ru',
+  )
   private characterResponse = new MainCharacterResponsePort()
   private unsubscribeCharacterState = this.shioRuntime.characterState.subscribe(
     (previous, current) => this.speechRuntime.observeCharacterState(previous, current),
@@ -175,7 +182,7 @@ export class Controller {
     overlayError: '',
     speechProgress: 0,
     overlayAnimationHudEnabled: false,
-    overlayAnimationFile: '',
+    overlayMotionProfileId: '',
     microphoneGate: CLOSED_GATE,
   })
   private messageUpdates = new ChatMessageUpdateCoalescer((id, patch) =>
@@ -372,7 +379,7 @@ export class Controller {
 
   private async warmSelectedVoice(): Promise<void> {
     if (!this.selectedVoiceLanguage) return
-    const key = `f5:${this.selectedVoiceLanguage}`
+    const key = `fish-s2-pro:${this.selectedVoiceLanguage}`
     if (this.voiceWarmupKey === key && this.state.voiceWarmup.state !== 'failed') return
     this.voiceWarmupKey = key
     this.set({
@@ -521,12 +528,14 @@ export class Controller {
     if (this.overlayRuntime.isOverlayWindow()) {
       const cfg = await window.overlayApi.config.get()
       if (this.disposed) return
+      this.applyOverlaySettings(cfg)
       this.set({ vrmConfigured: isVrmConfigured(resolveVrmSource(cfg.vrmAssetHandle)) })
       this.applyUiLocale(normalizeUiLocale(cfg.uiLocale))
       const remote = await this.overlayRuntime.loadInitialRemoteState()
       if (this.disposed) return
       if (remote.avatarState) this.applyRemoteAvatarState(remote.avatarState, false)
       if (remote.mouthWeights) this.applyRemoteMouthWeights(remote.mouthWeights)
+      this.avatarRuntime.applyBodyPresentation(remote.bodyPose)
       this.startAvatarTickLoop()
       return
     }
@@ -597,6 +606,10 @@ export class Controller {
       false,
     )
     this.startAvatarTickLoop()
+    observeRendererPromise(
+      this.loadVrmFromPath(resolveVrmSource(cfg.vrmAssetHandle)),
+      'load runtime avatar',
+    )
   }
 
   async toggleOverlay(): Promise<void> {
@@ -691,7 +704,7 @@ export class Controller {
     if (this.disposed) return
     if (this.scene) return
     const scene = new SceneManager(canvas)
-    const version = ++this.previewSceneVersion
+    ++this.previewSceneVersion
     this.scene = scene
     scene.start()
     this.avatarRuntime.attachPresentation()
@@ -700,18 +713,33 @@ export class Controller {
       ? await window.overlayApi.config.get()
       : await window.api.config.get()
     this.applyOverlaySettings(cfg)
-    if (options.loadModel !== false)
-      await this.loadVrmFromPath(resolveVrmSource(cfg.vrmAssetHandle), scene, version)
+    if (options.loadModel !== false) {
+      await this.avatarLoadTask
+      if (this.scene !== scene || this.disposed) return
+      if (!this.state.vrmLoaded) await this.loadVrmFromPath(resolveVrmSource(cfg.vrmAssetHandle))
+      else {
+        this.avatarRuntime.attachScene(scene.scene)
+        scene.configureAvatarModelQuality()
+        scene.setAvatarFrontSign(this.avatarRuntime.getAvatarFrontSign())
+        scene.setAvatarHeadPosition(this.avatarRuntime.getHeadPosition())
+        if (this.overlayRuntime.isOverlayWindow()) this.applyOverlaySettings(cfg)
+        else scene.frameLoadedModel()
+        this.avatarRuntime.setLookAtTarget(
+          this.state.faceTrackingEnabled ? scene.getLookAtTarget() : null,
+        )
+      }
+    }
   }
 
   detachCanvas(): void {
     if (!this.scene) return
     // Invalidate any in-flight preview load so its post-await steps abort.
     ++this.previewSceneVersion
+    this.avatarRuntime.attachScene(this.avatarScene)
+    this.avatarRuntime.setLookAtTarget(null)
     this.scene.dispose()
     this.scene = null
     this.avatarRuntime.detachPresentation()
-    this.set({ vrmLoaded: false })
   }
 
   async reloadPreviewModel(): Promise<void> {
@@ -722,7 +750,7 @@ export class Controller {
     const cfg = await window.api.config.get()
     if (this.disposed || this.scene !== scene || version !== this.previewSceneVersion) return
     this.set({ vrmLoaded: false })
-    await this.loadVrmFromPath(resolveVrmSource(cfg.vrmAssetHandle), scene, version)
+    await this.loadVrmFromPath(resolveVrmSource(cfg.vrmAssetHandle))
   }
 
   // Avatar Runtime tick (LipSync, facial mixer, overlay mouth-weight publish) must
@@ -737,9 +765,11 @@ export class Controller {
       const delta = Math.min(0.1, Math.max(0, (now - this.avatarTickLastTime) / 1000))
       this.avatarTickLastTime = now
       this.frameCounter += 1
+      this.avatarRuntime.setPcmClock(this.player.getPcmClock())
       this.avatarRuntime.update(delta, this.shioRuntime.characterState.get())
+      this.overlayRuntime.publishBodyFrame(delta, this.avatarRuntime.getBodyPresentation())
       this.syncAvatarStateProjection()
-      this.updateOverlayAnimationHudFile()
+      this.updateOverlayMotionHud()
       this.overlayRuntime.publishMouthWeightsFrame(
         delta,
         this.state.status === 'speaking',
@@ -769,13 +799,14 @@ export class Controller {
       cfg.developerModeEnabled === 'true' && cfg.developerOverlayAnimationHudEnabled !== 'false'
     this.set({
       overlayAnimationHudEnabled,
-      overlayAnimationFile: overlayAnimationHudEnabled ? this.state.overlayAnimationFile : '',
+      overlayMotionProfileId: overlayAnimationHudEnabled ? this.state.overlayMotionProfileId : '',
     })
-    this.updateOverlayAnimationHudFile()
+    this.updateOverlayMotionHud()
   }
 
   subscribeOverlayUpdates(): void {
     this.overlayRuntime.subscribeToRemoteUpdates({
+      bodyPose: (value) => this.avatarRuntime.applyBodyPresentation(value),
       avatarState: (state) => this.applyRemoteAvatarState(state, true),
       mouthWeights: (weights) => this.applyRemoteMouthWeights(weights),
       settings: (cfg) => this.applyOverlaySettings(cfg),
@@ -808,27 +839,28 @@ export class Controller {
       )
     }
     this.applyAvatarCharacterState()
+    this.avatarRuntime.setSpeechDelivery(avatarState.speechDeliveryEmotion ?? null)
     if (allowReaction && avatarState.reaction === 'user-interruption')
       this.avatarRuntime.triggerUserInterruption()
     if (allowReaction && avatarState.earImpulse)
       this.avatarRuntime.triggerEarImpulse(avatarState.earImpulse, avatarState.earImpulseId)
-    this.updateOverlayAnimationHudFile()
+    this.updateOverlayMotionHud()
   }
 
   private publishAvatarState(state: SyncedAvatarState): void {
     this.overlayRuntime.publishAvatarState(state)
   }
 
-  private updateOverlayAnimationHudFile(): void {
+  private updateOverlayMotionHud(): void {
     if (!this.overlayRuntime.isOverlayWindow() || !this.state.overlayAnimationHudEnabled) {
-      if (this.state.overlayAnimationFile) this.set({ overlayAnimationFile: '' })
+      if (this.state.overlayMotionProfileId) this.set({ overlayMotionProfileId: '' })
       return
     }
     const avatar = this.avatarRuntime.getDebugState()
-    const activeFileName =
-      avatar.currentBodyAnimationFile === 'none' ? '' : avatar.currentBodyAnimationFile
-    if (activeFileName !== this.state.overlayAnimationFile)
-      this.set({ overlayAnimationFile: activeFileName })
+    const pose = avatar.bodyMotion.appliedPose
+    const profileId = pose && !pose.outcome ? pose.profileId : ''
+    if (profileId !== this.state.overlayMotionProfileId)
+      this.set({ overlayMotionProfileId: profileId })
   }
 
   private transitionRemotePresentation(patch: {
@@ -859,7 +891,7 @@ export class Controller {
 
   private applyAvatarCharacterState(): void {
     this.avatarRuntime.applyCharacterState(this.shioRuntime.characterState.get())
-    this.updateOverlayAnimationHudFile()
+    this.updateOverlayMotionHud()
   }
 
   private rememberSpeechMetadata(speech: SpeechReply): void {
@@ -1022,37 +1054,46 @@ export class Controller {
   }
 
   // ---- VRM / animation -----------------------------------------------------
-  async loadVrmFromPath(
-    filePath: string,
-    scene: SceneManager | null = this.scene,
-    version: number = this.previewSceneVersion,
-  ): Promise<void> {
-    if (!scene) return
-    // True when the preview scene this load started with is still the current one.
-    // If Preview was detached or replaced during an await, the load is stale and
-    // must abort silently — it must never touch a disposed SceneManager.
-    const isCurrent = (): boolean => version === this.previewSceneVersion && this.scene === scene
+  loadVrmFromPath(filePath: string): Promise<void> {
+    const version = ++this.avatarModelVersion
+    this.avatarLoadTask = this.avatarLoadTask
+      .catch(() => undefined)
+      .then(() => this.loadRuntimeAvatar(filePath, version))
+    return this.avatarLoadTask
+  }
+
+  private async loadRuntimeAvatar(filePath: string, version: number): Promise<void> {
+    const isCurrent = (): boolean => version === this.avatarModelVersion && !this.disposed
+    if (!isCurrent()) return
     try {
       const res = await readResolvedVrmSource(filePath)
       if (!res.ok || !res.buffer) throw new Error(res.error ?? this.t('controller.fileReadFailed'))
       if (!isCurrent()) return
-      await this.avatarRuntime.loadVrm(scene.scene, res.buffer)
+      await this.avatarRuntime.loadVrm(this.avatarScene, res.buffer)
       if (!isCurrent()) return
-      const renderQuality = scene.configureAvatarModelQuality()
-      console.log(
-        `[RENDERDBG] avatar model quality textures=${renderQuality.textureCount} materials=${renderQuality.materialCount} anisotropy=${renderQuality.anisotropy}`,
-      )
+      const scene = this.scene
+      if (scene) {
+        this.avatarRuntime.attachScene(scene.scene)
+        scene.configureAvatarModelQuality()
+        scene.setAvatarFrontSign(this.avatarRuntime.getAvatarFrontSign())
+        scene.setAvatarHeadPosition(this.avatarRuntime.getHeadPosition())
+        if (this.overlayRuntime.isOverlayWindow()) {
+          const cfg = await window.overlayApi.config.get()
+          if (!isCurrent() || this.scene !== scene) return
+          this.applyOverlaySettings(cfg)
+        }
+      }
       const lookAtRequested = this.state.faceTrackingEnabled
       const ok = this.avatarRuntime.setLookAtTarget(
-        lookAtRequested ? scene.getLookAtTarget() : null,
+        lookAtRequested && scene ? scene.getLookAtTarget() : null,
       )
-      this.set({ faceTrackingEnabled: lookAtRequested && ok })
+      if (scene) this.set({ faceTrackingEnabled: lookAtRequested && ok })
       this.syncAvatarStateProjection()
       this.set({ vrmLoaded: true })
       // Frame the model to a sensible full-body size in the local Avatar Preview.
       // The overlay window owns its own camera framing via overlay presets, so it
       // must not be reframed here.
-      if (!this.overlayRuntime.isOverlayWindow()) scene.frameLoadedModel()
+      if (!this.overlayRuntime.isOverlayWindow()) scene?.frameLoadedModel()
       this.recordRuntimeEvent('VRM Loaded')
       // Keep the single mirror overlay in sync with the newly selected model.
       // Only the main window drives this; the overlay reloads itself in place,
@@ -1071,18 +1112,14 @@ export class Controller {
   }
 
   selectVrm(filePath: string): void {
+    this.avatarRuntime.stopAnimation()
     this.set({ vrmConfigured: isVrmConfigured(filePath) })
-    if (this.scene) observeRendererPromise(this.loadVrmFromPath(filePath), 'load selected VRM')
-  }
-
-  async loadAnimation(buffer: ArrayBuffer): Promise<void> {
-    await this.avatarRuntime.loadAnimation(buffer, true)
-    this.updateOverlayAnimationHudFile()
+    observeRendererPromise(this.loadVrmFromPath(filePath), 'load selected VRM')
   }
 
   stopAnimation(): void {
     this.avatarRuntime.stopAnimation()
-    this.updateOverlayAnimationHudFile()
+    this.updateOverlayMotionHud()
   }
 
   /** Avatar Preview only: restores the front-facing full-body framing. Does not affect Overlay. */
@@ -1103,17 +1140,44 @@ export class Controller {
 
   previewAvatarMode(mode: DebugAvatarMode): void {
     this.avatarRuntime.previewMode(mode)
-    this.updateOverlayAnimationHudFile()
+    this.updateOverlayMotionHud()
   }
 
   previewAvatarAnimation(id: string): void {
     this.avatarRuntime.previewAnimation(id)
-    this.updateOverlayAnimationHudFile()
+    this.updateOverlayMotionHud()
+  }
+
+  getMotionLibraryDebug() {
+    return this.avatarRuntime.getMotionLibraryDebug()
+  }
+
+  previewAvatarSequence(ids: readonly string[]): void {
+    this.avatarRuntime.previewSequence(ids)
+    this.updateOverlayMotionHud()
+  }
+
+  previewAvatarVariation(id: string, seed?: number): void {
+    this.avatarRuntime.previewVariation(id, seed)
+    this.updateOverlayMotionHud()
+  }
+
+  recoverAvatarMotion(): void {
+    this.avatarRuntime.recoverMotion()
+    this.updateOverlayMotionHud()
+  }
+
+  previewHandCamera(side: 'left' | 'right'): void {
+    this.scene?.frameHand(() => this.avatarRuntime.getHandBounds(side))
+  }
+
+  getGeneratedMotionDebug() {
+    return this.avatarRuntime.getDebugState().bodyMotion.generated
   }
 
   rerollAvatarAnimation(): void {
     this.avatarRuntime.rerollAnimation()
-    this.updateOverlayAnimationHudFile()
+    this.updateOverlayMotionHud()
   }
 
   clearAvatarAnimationCooldowns(): void {
@@ -1126,7 +1190,7 @@ export class Controller {
 
   queueAvatarTestSequence(): void {
     this.avatarRuntime.queueTestSequence()
-    this.updateOverlayAnimationHudFile()
+    this.updateOverlayMotionHud()
   }
 
   setIdleOrchestratorPaused(paused: boolean): void {
@@ -1142,12 +1206,12 @@ export class Controller {
       | 'greeting-to-idle',
   ): void {
     this.avatarRuntime.testTransition(kind)
-    this.updateOverlayAnimationHudFile()
+    this.updateOverlayMotionHud()
   }
 
   previewAvatarGreeting(): void {
     this.avatarRuntime.previewGreeting()
-    this.updateOverlayAnimationHudFile()
+    this.updateOverlayMotionHud()
   }
 
   previewAvatarBlink(): void {

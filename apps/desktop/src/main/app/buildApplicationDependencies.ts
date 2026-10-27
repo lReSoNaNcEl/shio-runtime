@@ -1,4 +1,4 @@
-import { join } from 'node:path'
+import { isAbsolute, join } from 'node:path'
 
 import { resolvePwshPath } from '@deepseek-ai/dsh-pwsh-local'
 import { app, type BrowserWindow, Menu, powerMonitor, safeStorage } from 'electron'
@@ -10,6 +10,7 @@ import type {
   BrowserComputerUseStartRequest,
 } from '../../shared/browser-computer-use'
 import { translate } from '../../shared/localization'
+import type { BodyPresentationProjection } from '../../shared/motion'
 import type { AvatarRuntimeHealth } from '../../shared/runtime'
 import {
   type ActionRuntime,
@@ -43,6 +44,7 @@ import { registerIpcHandlers } from '../ipc'
 import { IpcAuthorization } from '../ipc/IpcAuthorization'
 import { registerAliveIpc } from '../ipc/registerAliveIpc'
 import { registerLatencyIpc } from '../ipc/registerLatencyIpc'
+import { registerMotionIpc } from '../ipc/registerMotionIpc'
 import { registerOverlayIpc } from '../ipc/registerOverlayIpc'
 import { registerRuntimeHealthIpc } from '../ipc/registerRuntimeHealthIpc'
 import {
@@ -57,6 +59,7 @@ import {
 } from '../llm'
 import { mainLog } from '../logging/safeLogger'
 import { createMemoryStore, createSemanticMemoryRuntime, MemoryToolBroker } from '../memory'
+import { ArdyMotionService } from '../motion/ArdyMotionService'
 import { Orchestrator } from '../orchestrator'
 import { PluginCapabilityRegistry, PluginRegistryStore, PluginRuntime } from '../plugins'
 import {
@@ -96,6 +99,11 @@ export interface ApplicationDependencies {
 }
 
 export function buildApplicationDependencies(): ApplicationDependencies {
+  const motionRoot =
+    process.env.SHIO_MOTION_ROOT?.trim() ||
+    (app.isPackaged ? join(app.getPath('userData'), 'motion') : join(app.getAppPath(), 'motion'))
+  if (!isAbsolute(motionRoot)) throw new Error('SHIO_MOTION_ROOT must be absolute')
+  const ardy = new ArdyMotionService(motionRoot, () => getRendererConfig().vrmAssetHandle)
   const environmentConfig = resolveEnvironmentConfig()
   let win: BrowserWindow | null = null
   let quitting = false
@@ -140,6 +148,7 @@ export function buildApplicationDependencies(): ApplicationDependencies {
   let unsubscribeMemoryCapabilities: (() => void) | null = null
   let lastAvatarState: unknown = null
   let lastAvatarMouth: unknown = null
+  let lastAvatarBody: BodyPresentationProjection | null = null
   let lastAvatarRuntimeHealth: AvatarRuntimeHealth | null = null
   const screenContextService = new ScreenContextService(new ScreenCaptureAdapter())
   const pluginCapabilities = new PluginCapabilityRegistry()
@@ -512,6 +521,7 @@ export function buildApplicationDependencies(): ApplicationDependencies {
       },
       conversationThreads,
       { enforceRequirements: true },
+      () => lastAvatarRuntimeHealth,
     )
   }
 
@@ -546,6 +556,7 @@ export function buildApplicationDependencies(): ApplicationDependencies {
       const cleanupResults = await Promise.allSettled([
         conversationTurnService?.dispose() ?? Promise.resolve(),
         speechApplicationService?.dispose() ?? Promise.resolve(),
+        ardy.dispose(),
         actionRuntime?.emergencyStop() ?? Promise.resolve(),
         pluginRuntime?.dispose() ?? Promise.resolve(),
         Promise.resolve().then(() => aliveRuntime?.dispose()),
@@ -599,10 +610,24 @@ export function buildApplicationDependencies(): ApplicationDependencies {
       if (!quitting) shutdown()
     })
     const rendererId = win.webContents.id
+    win.webContents.on('did-start-navigation', (_event, _url, _inPlace, isMainFrame) => {
+      if (!isMainFrame) return
+      lastAvatarBody = null
+      overlayWindows.send('avatar-body:updated', null)
+      observeMainPromise(ardy.releaseOwner(rendererId), 'release ARDY before renderer navigation')
+    })
     win.webContents.once('destroyed', () => {
+      lastAvatarBody = null
+      overlayWindows.send('avatar-body:updated', null)
+      observeMainPromise(ardy.releaseOwner(rendererId), 'release ARDY renderer owner')
       networkObserver.dispose()
       if (rendererNetworkObserver === networkObserver) rendererNetworkObserver = null
       screenContextService.disposeRenderer(rendererId)
+    })
+    win.webContents.on('render-process-gone', () => {
+      lastAvatarBody = null
+      overlayWindows.send('avatar-body:updated', null)
+      observeMainPromise(ardy.releaseOwner(rendererId), 'release ARDY after renderer failure')
     })
 
     projectAwareness = getProjectAwareness()
@@ -657,10 +682,7 @@ export function buildApplicationDependencies(): ApplicationDependencies {
       screenContextService,
       () => getRendererConfig().llm,
     )
-    speechApplicationService = new SpeechApplicationService(
-      getSpeechClientManager,
-      resolveOrchestrator,
-    )
+    speechApplicationService = new SpeechApplicationService(getSpeechClientManager)
     registerIpcHandlers(
       resolveOrchestrator,
       resolveLlmGateway,
@@ -767,6 +789,8 @@ export function buildApplicationDependencies(): ApplicationDependencies {
   }
 
   const initialize = async (): Promise<void> => {
+    registerMotionIpc(ardy, ipcAuthorization)
+    observeMainPromise(ardy.warmup(), 'warm up ARDY')
     registerRuntimeHealthIpc((health) => {
       lastAvatarRuntimeHealth = health
       capabilityCatalog.invalidate()
@@ -787,6 +811,15 @@ export function buildApplicationDependencies(): ApplicationDependencies {
         publishAvatarMouth: (weights) => {
           lastAvatarMouth = weights
           overlayWindows.send('avatar-mouth:updated', weights)
+        },
+        getAvatarBody: () => lastAvatarBody,
+        publishAvatarBody: (owner, value) => {
+          if (value && !ardy.owns(owner, value.lease)) return false
+          lastAvatarBody = value
+            ? { ...value, modelAssetHandle: getRendererConfig().vrmAssetHandle }
+            : null
+          overlayWindows.send('avatar-body:updated', lastAvatarBody)
+          return true
         },
       },
       ipcAuthorization,

@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 3,
   "defaultEmotion": "neutral",
   "emotions": [
     {
@@ -10,10 +10,12 @@
       "avatar": {
         "behavior": "neutral",
         "expression": "neutral",
-        "expressionWeights": {}
+        "expressionWeights": {},
+        "bodyIntent": "explain"
       },
       "speech": {
-        "style": "neutral"
+        "style": "neutral",
+        "fishTags": []
       }
     },
     {
@@ -24,10 +26,15 @@
       "avatar": {
         "behavior": "calm",
         "expression": "relaxed",
-        "expressionWeights": { "relaxed": 0.8, "neutral": 0.2 }
+        "expressionWeights": {
+          "relaxed": 0.8,
+          "neutral": 0.2
+        },
+        "bodyIntent": "support"
       },
       "speech": {
-        "style": "calm"
+        "style": "calm",
+        "fishTags": ["calm"]
       }
     },
     {
@@ -38,10 +45,15 @@
       "avatar": {
         "behavior": "warm",
         "expression": "happy",
-        "expressionWeights": { "relaxed": 0.7, "happy": 0.35 }
+        "expressionWeights": {
+          "relaxed": 0.7,
+          "happy": 0.35
+        },
+        "bodyIntent": "support"
       },
       "speech": {
-        "style": "warm"
+        "style": "warm",
+        "fishTags": ["warm"]
       }
     },
     {
@@ -52,10 +64,14 @@
       "avatar": {
         "behavior": "happy",
         "expression": "happy",
-        "expressionWeights": { "happy": 1.0 }
+        "expressionWeights": {
+          "happy": 1
+        },
+        "bodyIntent": "celebrate"
       },
       "speech": {
-        "style": "happy"
+        "style": "happy",
+        "fishTags": ["happy"]
       }
     },
     {
@@ -66,10 +82,14 @@
       "avatar": {
         "behavior": "laugh",
         "expression": "happy",
-        "expressionWeights": { "happy": 1.0, "aa": 0.35 }
+        "expressionWeights": {
+          "happy": 1
+        },
+        "bodyIntent": "celebrate"
       },
       "speech": {
-        "style": "laugh"
+        "style": "laugh",
+        "fishTags": ["laughing"]
       }
     },
     {
@@ -80,10 +100,15 @@
       "avatar": {
         "behavior": "laugh",
         "expression": "happy",
-        "expressionWeights": { "happy": 0.65, "relaxed": 0.25 }
+        "expressionWeights": {
+          "happy": 0.65,
+          "relaxed": 0.25
+        },
+        "bodyIntent": "agree"
       },
       "speech": {
-        "style": "chuckle"
+        "style": "chuckle",
+        "fishTags": ["chuckle"]
       }
     },
     {
@@ -94,10 +119,14 @@
       "avatar": {
         "behavior": "sad",
         "expression": "sad",
-        "expressionWeights": { "sad": 1.0 }
+        "expressionWeights": {
+          "sad": 1
+        },
+        "bodyIntent": "support"
       },
       "speech": {
-        "style": "sad"
+        "style": "sad",
+        "fishTags": ["sad"]
       }
     },
     {
@@ -108,10 +137,14 @@
       "avatar": {
         "behavior": "crying",
         "expression": "sad",
-        "expressionWeights": { "sad": 1.0 }
+        "expressionWeights": {
+          "sad": 1
+        },
+        "bodyIntent": "support"
       },
       "speech": {
-        "style": "crying"
+        "style": "crying",
+        "fishTags": ["crying"]
       }
     },
     {
@@ -122,10 +155,14 @@
       "avatar": {
         "behavior": "angry",
         "expression": "angry",
-        "expressionWeights": { "angry": 1.0 }
+        "expressionWeights": {
+          "angry": 1
+        },
+        "bodyIntent": "disagree"
       },
       "speech": {
-        "style": "angry"
+        "style": "angry",
+        "fishTags": ["angry"]
       }
     },
     {
@@ -136,10 +173,15 @@
       "avatar": {
         "behavior": "fear",
         "expression": "surprised",
-        "expressionWeights": { "surprised": 0.7, "sad": 0.5 }
+        "expressionWeights": {
+          "surprised": 0.7,
+          "sad": 0.5
+        },
+        "bodyIntent": "surprise"
       },
       "speech": {
-        "style": "fear"
+        "style": "fear",
+        "fishTags": ["scared"]
       }
     },
     {
@@ -157,10 +199,14 @@
       "avatar": {
         "behavior": "surprised",
         "expression": "surprised",
-        "expressionWeights": { "surprised": 1.0 }
+        "expressionWeights": {
+          "surprised": 1
+        },
+        "bodyIntent": "surprise"
       },
       "speech": {
-        "style": "surprised"
+        "style": "surprised",
+        "fishTags": ["surprised"]
       }
     },
     {
@@ -171,10 +217,14 @@
       "avatar": {
         "behavior": "gasp",
         "expression": "surprised",
-        "expressionWeights": { "surprised": 1.0, "aa": 0.45 }
+        "expressionWeights": {
+          "surprised": 1
+        },
+        "bodyIntent": "surprise"
       },
       "speech": {
-        "style": "gasp"
+        "style": "gasp",
+        "fishTags": ["gasp"]
       }
     },
     {
@@ -185,10 +235,15 @@
       "avatar": {
         "behavior": "sigh",
         "expression": "relaxed",
-        "expressionWeights": { "relaxed": 0.6, "sad": 0.4 }
+        "expressionWeights": {
+          "relaxed": 0.6,
+          "sad": 0.4
+        },
+        "bodyIntent": "rest"
       },
       "speech": {
-        "style": "sigh"
+        "style": "sigh",
+        "fishTags": ["sigh"]
       }
     },
     {
@@ -199,10 +254,15 @@
       "avatar": {
         "behavior": "groan",
         "expression": "sad",
-        "expressionWeights": { "sad": 0.55, "angry": 0.35, "aa": 0.2 }
+        "expressionWeights": {
+          "sad": 0.55,
+          "angry": 0.35
+        },
+        "bodyIntent": "disagree"
       },
       "speech": {
-        "style": "groan"
+        "style": "groan",
+        "fishTags": ["groan"]
       }
     },
     {
@@ -213,11 +273,204 @@
       "avatar": {
         "behavior": "whisper",
         "expression": "relaxed",
-        "expressionWeights": { "relaxed": 0.8, "neutral": 0.2 }
+        "expressionWeights": {
+          "relaxed": 0.8,
+          "neutral": 0.2
+        },
+        "bodyIntent": "support"
       },
       "speech": {
-        "style": "whisper"
+        "style": "whisper",
+        "fishTags": ["whisper"]
+      }
+    },
+    {
+      "id": "shy",
+      "displayName": "Shy",
+      "aliases": [],
+      "markers": ["[shy]"],
+      "avatar": {
+        "behavior": "neutral",
+        "expression": "neutral",
+        "expressionWeights": {},
+        "bodyIntent": "explain"
+      },
+      "speech": {
+        "style": "shy",
+        "fishTags": ["shy"]
+      }
+    },
+    {
+      "id": "amused",
+      "displayName": "Amused",
+      "aliases": [],
+      "markers": ["[amused]"],
+      "avatar": {
+        "behavior": "neutral",
+        "expression": "neutral",
+        "expressionWeights": {},
+        "bodyIntent": "explain"
+      },
+      "speech": {
+        "style": "amused",
+        "fishTags": ["amused"]
+      }
+    },
+    {
+      "id": "sleepy",
+      "displayName": "Sleepy",
+      "aliases": [],
+      "markers": ["[sleepy]"],
+      "avatar": {
+        "behavior": "calm",
+        "expression": "relaxed",
+        "expressionWeights": {
+          "relaxed": 0.8,
+          "neutral": 0.2
+        },
+        "bodyIntent": "rest"
+      },
+      "speech": {
+        "style": "sleepy",
+        "fishTags": ["sleepy"]
+      }
+    },
+    {
+      "id": "excited",
+      "displayName": "Excited",
+      "aliases": [],
+      "markers": ["[excited]"],
+      "avatar": {
+        "behavior": "happy",
+        "expression": "happy",
+        "expressionWeights": {
+          "happy": 1
+        },
+        "bodyIntent": "celebrate"
+      },
+      "speech": {
+        "style": "excited",
+        "fishTags": ["excited"]
+      }
+    },
+    {
+      "id": "worried",
+      "displayName": "Worried",
+      "aliases": [],
+      "markers": ["[worried]"],
+      "avatar": {
+        "behavior": "neutral",
+        "expression": "neutral",
+        "expressionWeights": {},
+        "bodyIntent": "explain"
+      },
+      "speech": {
+        "style": "worried",
+        "fishTags": ["worried"]
+      }
+    },
+    {
+      "id": "confused",
+      "displayName": "Confused",
+      "aliases": [],
+      "markers": ["[confused]"],
+      "avatar": {
+        "behavior": "surprised",
+        "expression": "surprised",
+        "expressionWeights": {
+          "surprised": 1
+        },
+        "bodyIntent": "question"
+      },
+      "speech": {
+        "style": "confused",
+        "fishTags": ["confused"]
+      }
+    },
+    {
+      "id": "proud",
+      "displayName": "Proud",
+      "aliases": [],
+      "markers": ["[proud]"],
+      "avatar": {
+        "behavior": "neutral",
+        "expression": "neutral",
+        "expressionWeights": {},
+        "bodyIntent": "explain"
+      },
+      "speech": {
+        "style": "proud",
+        "fishTags": ["proud"]
+      }
+    },
+    {
+      "id": "pouting",
+      "displayName": "Pouting",
+      "aliases": [],
+      "markers": ["[pouting]"],
+      "avatar": {
+        "behavior": "neutral",
+        "expression": "neutral",
+        "expressionWeights": {},
+        "bodyIntent": "explain"
+      },
+      "speech": {
+        "style": "pouting",
+        "fishTags": ["pouting"]
+      }
+    },
+    {
+      "id": "loving",
+      "displayName": "Loving",
+      "aliases": [],
+      "markers": ["[loving]"],
+      "avatar": {
+        "behavior": "neutral",
+        "expression": "neutral",
+        "expressionWeights": {},
+        "bodyIntent": "explain"
+      },
+      "speech": {
+        "style": "loving",
+        "fishTags": ["tender"]
+      }
+    },
+    {
+      "id": "dazed",
+      "displayName": "Dazed",
+      "aliases": [],
+      "markers": ["[dazed]"],
+      "avatar": {
+        "behavior": "neutral",
+        "expression": "neutral",
+        "expressionWeights": {},
+        "bodyIntent": "explain"
+      },
+      "speech": {
+        "style": "dazed",
+        "fishTags": ["dazed"]
       }
     }
-  ]
+  ],
+  "intensity": {
+    "values": ["subtle", "normal", "strong"],
+    "default": "normal",
+    "source": "CharacterEmbodimentIntent.intensity",
+    "scope": "reply"
+  },
+  "delivery": {
+    "scope": "following-spoken-segment",
+    "anchor": "played-source-sample-offset",
+    "styleMaxCharacters": 120,
+    "pace": ["slow", "normal", "fast"],
+    "energy": ["low", "normal", "high"],
+    "volume": ["soft", "normal", "loud"]
+  },
+  "grammar": {
+    "version": 1,
+    "emotion": "[canonical-id]",
+    "voice": "[voice:description]",
+    "embodiment": "<shio-embodiment>strict bounded JSON</shio-embodiment>",
+    "voiceResetsAtEmotion": true
+  }
 }

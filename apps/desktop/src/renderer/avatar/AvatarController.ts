@@ -1,7 +1,12 @@
 import type * as THREE from 'three'
 
-import type { CharacterEmbodimentIntent } from '../../shared/character-response'
+import type {
+  CharacterEmbodimentIntent,
+  EmbodimentIntentContext,
+} from '../../shared/character-response'
+import { type BodyPresentation, getMotionProfile } from '../../shared/motion'
 import type { CharacterState } from '../../shared/runtime'
+import type { PcmPlaybackClock } from '../audio/audioPlayer'
 import { AvatarAnimationController } from './AvatarAnimationController'
 import type { AvatarAnimationQueueItem } from './AvatarAnimationQueue'
 import { AvatarBehaviorEngine, type AvatarBehaviorEngineDecision } from './AvatarBehaviorEngine'
@@ -31,7 +36,7 @@ import { AvatarGazeArbiter } from './embodiment/gaze/AvatarGazeArbiter'
 import type { EarAxisOverride, EarImpulse } from './embodiment/secondary-motion/EarBehaviorRuntime'
 import { LipSync, type LipSyncStartRequest, type MouthWeights } from './embodiment/speech/LipSync'
 import type { SpeechPhrasePhase } from './embodiment/speech/PhraseEnvelopeController'
-import { OverlayAnimationPolicy } from './OverlayAnimationPolicy'
+import { previewHandBounds } from './rendering/three/previewHandBounds'
 import { VrmModel } from './rendering/three/VrmModel'
 import type { OverlayViewMode } from './tuning/cameraTuning'
 import { speakingGestureTuning } from './tuning/speechTuning'
@@ -66,23 +71,41 @@ export class AvatarController {
   private externalMouthWeights: MouthWeights | null = null
   private frame = 0
   private lastCharacterStateKey: string | null = null
-  private overlayAnimationPolicy: OverlayAnimationPolicy | null = null
   private conversationEmbodimentIntent: CharacterEmbodimentIntent | undefined
   private behaviorEmbodimentIntent: CharacterEmbodimentIntent | undefined
   private lastCharacterState: CharacterState | undefined
+  private speechDeliveryEmotion: string | null = null
+  private pcmClock: PcmPlaybackClock | null = null
+  private scheduledPcmOffset = 0
+  private scheduledPlaybackId = ''
+  private intentContext: EmbodimentIntentContext | undefined
+  private processedIntentKey: string | undefined
+  private preparedGesture:
+    | {
+        key: string
+        resolved: AvatarBehaviorResolution
+        playback: NonNullable<ReturnType<AvatarPlaybackCoordinator['getCurrentContext']>>
+      }
+    | undefined
+  private previewPlan: string[] = []
+  private previewExecutionId: string | null = null
+  private previewExpectedProfile: string | null = null
+  private previewPreviousExecution: string | null = null
+  private lastStartedExecutionId: string | null = null
 
   constructor(options: { overlayMode?: boolean } = {}) {
-    this.overlayAnimationPolicy = options.overlayMode ? new OverlayAnimationPolicy() : null
+    this.vrmModel.setPresentationOnly(options.overlayMode === true)
   }
 
   update(delta: number, state?: CharacterState): void {
     if (state) this.lastCharacterState = state
     this.frame += 1
+    if (this.preparedGesture && !this.hasPreparedGesture()) this.releasePreparedGesture()
     const mode = this.stateMachine.getMode()
     this.idleBehaviors.update(delta, mode)
     this.advanceAnimationQueue()
-    this.updateSpeakingGestureSession(delta, state)
-    if (this.idleOrchestrator.update(delta, mode)) {
+    this.updateSpeakingGestureSession(state)
+    if (!this.hasPreparedGesture() && this.idleOrchestrator.update(delta, mode)) {
       const effect = this.stateMachine.getIdleEffect()
       const behaviorDecision = this.behaviorEngine.decide(effect)
       this.lastBehaviorEngineDecision = behaviorDecision
@@ -93,10 +116,7 @@ export class AvatarController {
           idleEffect,
           'idle-presence',
           'idle',
-          [
-            ...(lastExtendedIdle ? [lastExtendedIdle] : []),
-            ...this.getOverlayExcludedAnimationIds(idleEffect),
-          ],
+          [...(lastExtendedIdle ? [lastExtendedIdle] : [])],
         )
         this.playResolvedBehavior(
           idleEffect,
@@ -135,7 +155,9 @@ export class AvatarController {
       // viseme and phrase-envelope transition.
       this.lipSync.update(delta)
     }
+    if (this.speechDeliveryEmotion !== null) this.vrmModel.applyEmotion(this.speechDeliveryEmotion)
     this.vrmModel.update(delta)
+    this.advancePreviewSequence()
   }
 
   async loadVrm(scene: THREE.Scene, buffer: ArrayBuffer): Promise<void> {
@@ -143,10 +165,14 @@ export class AvatarController {
     // active-animation identity; otherwise the initial idle may be rejected as
     // a duplicate even though the new skeleton has no body action yet.
     this.stopAnimation()
+    await this.vrmModel.settleMotionCancellation()
     await this.vrmModel.load(scene, buffer)
+    this.lipSync.restorePresentation()
     this.vrmModel.setSceneVisible(false)
     try {
-      this.setMode('idle')
+      this.lastCharacterStateKey = ''
+      if (this.lastCharacterState) this.applyCharacterState(this.lastCharacterState)
+      else this.setMode('idle')
       const animationReady = await this.animations.waitForLatestPlaybackRequest(
         avatarStartupTuning.initialAnimationTimeoutMs,
       )
@@ -161,11 +187,21 @@ export class AvatarController {
     }
   }
 
-  async loadAnimation(buffer: ArrayBuffer, loop = true): Promise<void> {
-    await this.animations.loadExternal(buffer, loop)
+  attachScene(scene: THREE.Scene): void {
+    this.vrmModel.attachScene(scene)
+  }
+  getHeadPosition(): THREE.Vector3 | null {
+    return this.vrmModel.getHeadPosition()
   }
 
   stopAnimation(): void {
+    this.preparedGesture = undefined
+    this.conversationEmbodimentIntent = undefined
+    this.intentContext = undefined
+    this.gaze.setConversationIntent(undefined)
+    this.lastCharacterStateKey = null
+    this.previewPlan = []
+    this.previewExecutionId = null
     this.gestures.reset()
     this.speakingGestures.reset()
     this.idleBehaviors.reset()
@@ -239,16 +275,53 @@ export class AvatarController {
   setEmotion(emotionKey: string, vrmEmotion?: string): void {
     this.vrmModel.applyEmotion(emotionKey || 'neutral', vrmEmotion)
     const effect = this.stateMachine.setEmotion(emotionKey)
-    if (effect) this.applyStateEffect(effect, vrmEmotion)
+    if (effect)
+      this.applyStateEffect(
+        effect,
+        vrmEmotion,
+        undefined,
+        undefined,
+        'character-state',
+        'speech emotion update',
+        undefined,
+        this.lipSync.getActiveSession() !== null,
+      )
   }
 
-  setEmbodimentIntent(intent: CharacterEmbodimentIntent | undefined): void {
+  setSpeechDelivery(emotion: string | null): void {
+    const changed = this.speechDeliveryEmotion !== emotion
+    this.speechDeliveryEmotion = emotion
+    this.lipSync.setEmotion(emotion ?? this.lastCharacterState?.emotion ?? 'neutral')
+    this.vrmModel.applyEmotion(emotion ?? this.lastCharacterState?.emotion ?? 'neutral')
+    if (changed && emotion && this.stateMachine.getMode() === 'speaking') {
+      this.speakingGestures.beginSegment(resolveEmotionEmbodimentProfile(emotion).id)
+    }
+  }
+
+  setEmbodimentIntent(
+    intent: CharacterEmbodimentIntent | undefined,
+    context?: EmbodimentIntentContext,
+  ): void {
+    const activeTurn = this.lipSync.getActiveSession()?.turnId
+    if (
+      context &&
+      (Date.now() - context.receivedAt > 10000 ||
+        context.receivedAt > Date.now() + 1000 ||
+        (activeTurn && activeTurn !== context.turnId))
+    )
+      return
+    const key = context
+      ? `${context.turnId}|${context.receivedAt}|${JSON.stringify(intent)}`
+      : undefined
+    if (this.preparedGesture?.key !== key) this.releasePreparedGesture()
+    this.intentContext = context
     this.conversationEmbodimentIntent = intent
     this.behaviorEmbodimentIntent = undefined
     this.gaze.setConversationIntent(intent)
     this.gaze.setBehaviorIntent(undefined)
     this.lastCharacterStateKey = null
     this.applyCurrentGaze()
+    this.prepareConversationGesture()
   }
 
   setBehaviorEmbodimentIntent(intent: CharacterEmbodimentIntent | undefined): void {
@@ -302,7 +375,16 @@ export class AvatarController {
 
   showSpeaking(emotionKey?: string, vrmEmotion?: string, state?: CharacterState): void {
     const effect = this.stateMachine.startSpeaking(emotionKey)
-    this.applyStateEffect(effect, vrmEmotion, undefined, state, 'character-state', 'show speaking')
+    this.applyStateEffect(
+      effect,
+      vrmEmotion,
+      undefined,
+      state,
+      'character-state',
+      'show speaking',
+      undefined,
+      this.lipSync.getActiveSession() !== null,
+    )
   }
 
   getMouthWeights(): MouthWeights {
@@ -322,6 +404,8 @@ export class AvatarController {
   }
 
   stopSpeaking(): void {
+    this.releasePreparedGesture()
+    this.processedIntentKey = this.conversationIntentKey()
     this.applyStateEffect(
       this.stateMachine.stopSpeaking(),
       undefined,
@@ -337,7 +421,26 @@ export class AvatarController {
   }
 
   interruptLipSync(turnId: string): boolean {
-    return this.lipSync.detach(turnId, false, true)
+    const active = this.lipSync.getActiveSession()
+    if (active && active.turnId !== turnId) return false
+    const stopped = this.lipSync.detach(turnId, true, true)
+    if (
+      active ||
+      this.stateMachine.getMode() === 'thinking' ||
+      this.stateMachine.getMode() === 'awaitingSpeech'
+    )
+      this.stopAnimation()
+    return stopped
+  }
+
+  settleMotionCancellation(): Promise<void> {
+    return this.vrmModel.settleMotionCancellation()
+  }
+  getBodyPresentation(): BodyPresentation | null {
+    return this.vrmModel.getBodyPresentation()
+  }
+  applyBodyPresentation(value: BodyPresentation | null): void {
+    this.vrmModel.applyBodyPresentation(value)
   }
 
   triggerUserInterruption(): boolean {
@@ -380,7 +483,7 @@ export class AvatarController {
         source: 'queue',
         reason: `return after semantic reaction:${trigger}`,
         frame: this.frame,
-        interruptible: this.isInterruptible(returnEffect, returnResolution),
+        interruptible: this.isInterruptible(returnResolution),
       })
     }
     return resolved.animationId
@@ -435,6 +538,9 @@ export class AvatarController {
 
   /** Play a specific manifest animation directly (debug preview). */
   previewAnimation(id: string): void {
+    this.releasePreparedGesture()
+    this.processedIntentKey = this.conversationIntentKey()
+    this.previewPlan = []
     const loop = getAnimation(id)?.loop ?? true
     this.playback.previewAnimation({
       animationId: id,
@@ -444,7 +550,109 @@ export class AvatarController {
     })
   }
 
+  previewVariation(id: string, seed?: number): void {
+    this.releasePreparedGesture()
+    this.processedIntentKey = this.conversationIntentKey()
+    this.previewPlan = []
+    this.playback.previewAnimation({
+      animationId: id,
+      seed,
+      loop: getAnimation(id)?.loop ?? false,
+      mode: this.lastEffect?.mode ?? 'idle',
+      frame: this.frame,
+    })
+  }
+
+  getEmbodimentAvailability() {
+    return this.vrmModel.getEmbodimentAvailability()
+  }
+  getMotionLibraryDebug() {
+    return this.vrmModel.getMotionLibraryDebug()
+  }
+  recoverMotion(): void {
+    this.preparedGesture = undefined
+    this.processedIntentKey = this.conversationIntentKey()
+    this.previewPlan = []
+    this.vrmModel.recoverMotion()
+  }
+  getHandBounds(side: 'left' | 'right'): THREE.Sphere | null {
+    return previewHandBounds(this.vrmModel.vrm, side)
+  }
+  getAvatarFrontSign(): -1 | 1 {
+    return this.vrmModel.vrm?.meta.metaVersion === '1' ? 1 : -1
+  }
+  previewSequence(ids: readonly string[]): void {
+    if (ids.length < 3 || ids.length > 5 || ids.some((id) => !getAnimation(id))) return
+    this.previewPreviousExecution = this.getMotionLibraryDebug().executionId
+    this.previewExecutionId = null
+    this.previewExpectedProfile = ids[0]
+    this.previewAnimation(ids[0])
+    this.previewPlan = ids.slice(1)
+  }
+  private advancePreviewSequence(): void {
+    const debug = this.getMotionLibraryDebug()
+    if (
+      debug.executionId &&
+      debug.executionId !== this.lastStartedExecutionId &&
+      this.vrmModel.isAnimationPlaying()
+    ) {
+      this.lastStartedExecutionId = debug.executionId
+      if (debug.runningProfileId)
+        this.behaviorResolver.recordStarted(
+          debug.runningProfileId as import('./animationManifest').AnimationId,
+        )
+    }
+    if (!this.previewPlan.length) return
+    if (this.playback.getCurrentContext()?.behaviorId !== 'debug-preview') {
+      this.previewPlan = []
+      return
+    }
+    if (!this.previewExecutionId) {
+      if (
+        debug.runningProfileId !== this.previewExpectedProfile ||
+        debug.executionId === this.previewPreviousExecution
+      )
+        return
+      this.previewExecutionId = debug.executionId
+    }
+    if (
+      debug.executionId !== this.previewExecutionId ||
+      debug.outcome === 'failed' ||
+      debug.outcome === 'timed-out' ||
+      debug.outcome === 'cancelled'
+    ) {
+      this.previewPlan = []
+      return
+    }
+    if (debug.phase === 'hold' && getAnimation(debug.runningProfileId ?? '')?.loop)
+      this.vrmModel.recoverMotion()
+    if (debug.outcome !== 'completed' && debug.outcome !== 'superseded') return
+    const remaining = [...this.previewPlan]
+    const next = remaining.shift()
+    if (!next) return
+    this.previewPreviousExecution = debug.executionId
+    this.previewExecutionId = null
+    this.previewExpectedProfile = next
+    this.previewAnimation(next)
+    this.previewPlan = remaining
+  }
+
   rerollAnimation(): void {
+    this.releasePreparedGesture()
+    this.processedIntentKey = this.conversationIntentKey()
+    const current = this.playback.getCurrentContext()
+    if (current?.behaviorId === 'debug-preview') {
+      this.playback.previewAnimation({
+        animationId: current.animationId,
+        loop:
+          this.playback.getQueue().getCurrent()?.loop ??
+          getAnimation(current.animationId)?.loop ??
+          true,
+        mode: current.mode,
+        frame: this.frame,
+      })
+      return
+    }
     if (!this.lastEffect) return
     this.playResolvedBehavior(this.lastEffect, 'debug-reroll', 'manual reroll', true)
   }
@@ -459,7 +667,13 @@ export class AvatarController {
   }
 
   setCameraMode(cameraMode: OverlayViewMode | undefined): void {
+    this.vrmModel.setBodyCameraMode(cameraMode ?? 'full')
     this.behaviorResolver.setCameraMode(cameraMode)
+  }
+
+  setPcmClock(clock: PcmPlaybackClock | null): void {
+    this.pcmClock = clock
+    this.vrmModel.setPcmClock(clock)
   }
 
   clearAnimationQueue(): void {
@@ -564,11 +778,30 @@ export class AvatarController {
     })
 
     if (effect.mode === 'speaking') {
+      this.lastEffect = effect
       if (continuingSpeech) {
         this.speakingGestures.beginSegment(resolveEmotionEmbodimentProfile(effect.emotionKey).id)
         return
       }
       const decision = this.speakingGestures.begin(effect, state)
+      const prepared = this.preparedGesture
+      if (
+        prepared &&
+        this.hasPreparedGesture() &&
+        this.playback.adoptPreparedSpeaking(prepared.playback, this.frame)
+      ) {
+        this.preparedGesture = undefined
+        this.lastBehaviorResolution = prepared.resolved
+        this.speakingGestures.recordSelection({
+          animationId: prepared.resolved.animationId,
+          behaviorId: prepared.resolved.behaviorId,
+          skippedCandidates: [],
+          selectionReason: 'adopt prepared semantic gesture',
+          phase: 'opening',
+        })
+        return
+      }
+      this.releasePreparedGesture()
       this.playSpeakingGestureDecision(
         { ...effect, behaviorId: decision.behaviorId },
         state,
@@ -579,6 +812,17 @@ export class AvatarController {
     }
 
     this.speakingGestures.end()
+    if (effect.mode === 'awaitingSpeech' || effect.mode === 'thinking') {
+      this.prepareConversationGesture()
+      if (this.hasPreparedGesture()) {
+        this.lastEffect = effect
+        this.idleOrchestrator.leaveIdle()
+        return
+      }
+    } else {
+      this.releasePreparedGesture()
+      this.processedIntentKey = this.conversationIntentKey()
+    }
     this.gestures.schedule(effect)
     const behaviorDecision = this.behaviorEngine.decide(effect, state)
     this.lastBehaviorEngineDecision = behaviorDecision
@@ -594,11 +838,9 @@ export class AvatarController {
     idleStage: IdleOrchestratorDebugState['idleStage'] = 'normal-idle',
   ): void {
     this.lastEffect = effect
-    const resolved =
-      preResolved ??
-      this.behaviorResolver.resolve(effect, this.getOverlayExcludedAnimationIds(effect))
+    const resolved = preResolved ?? this.behaviorResolver.resolve(effect)
     this.lastBehaviorResolution = resolved
-    if (this.playback.shouldHoldSpeakingBehavior(effect, resolved)) {
+    if (!forceReplay && this.playback.shouldHoldSpeakingBehavior(effect, resolved)) {
       this.playback.recordRejectedResolvedBehavior({
         effect,
         resolved,
@@ -621,14 +863,37 @@ export class AvatarController {
       reason,
       frame: this.frame,
       forceReplay,
-      interruptible: this.isInterruptible(effect, resolved),
+      interruptible: this.isInterruptible(resolved),
     })
     if (source !== 'idle-orchestrator' && effect.mode === 'idle') this.idleOrchestrator.enterIdle()
   }
 
-  private updateSpeakingGestureSession(delta: number, state?: CharacterState): void {
+  private updateSpeakingGestureSession(state?: CharacterState): void {
     if (this.stateMachine.getMode() !== 'speaking' || this.lastEffect?.mode !== 'speaking') return
-    const decision = this.speakingGestures.update(delta, this.lastEffect, state)
+    const clock = this.pcmClock
+    if (clock?.playbackId !== this.scheduledPlaybackId) {
+      this.scheduledPlaybackId = clock?.playbackId ?? ''
+      this.scheduledPcmOffset = clock?.sourceSampleOffset ?? 0
+    }
+    const offset = clock?.sourceSampleOffset ?? this.scheduledPcmOffset
+    const consumedDelta =
+      Math.max(0, offset - this.scheduledPcmOffset) / (clock?.sourceSampleRate ?? 44100)
+    this.scheduledPcmOffset = offset
+    const decision = this.speakingGestures.update(consumedDelta, this.lastEffect, state)
+    if (this.canAdmitLateGesture(state)) {
+      this.playSpeakingGestureDecision(
+        this.lastEffect,
+        state,
+        {
+          shouldRequest: true,
+          phase: 'holding',
+          behaviorId: this.lastEffect.behaviorId,
+          reason: 'fresh late proposal at an interruptible body boundary',
+        },
+        'late semantic gesture',
+      )
+      return
+    }
     if (!decision?.shouldRequest) return
     this.playSpeakingGestureDecision(
       { ...this.lastEffect, behaviorId: decision.behaviorId },
@@ -644,20 +909,15 @@ export class AvatarController {
     decision: SpeakingGestureDecision,
     reason: string,
   ): void {
-    const excluded = [
-      ...this.speakingGestures.getExcludedAnimationIds(),
-      ...this.getOverlayExcludedAnimationIds(effect),
-    ]
+    const excluded = this.speakingGestures.getExcludedAnimationIds()
     const embodiment = resolveEmotionEmbodimentProfile(effect.emotionKey)
     const embodimentIntent = this.effectiveEmbodimentIntent()
     const intentResolution =
-      decision.phase === 'opening' && embodimentIntent?.gestureHint
-        ? this.behaviorResolver.resolveEmbodimentIntent(
-            effect,
-            embodimentIntent,
-            'speaking',
-            excluded,
-          )
+      ((decision.phase === 'opening' && this.intentContext?.eligibility !== 'future-only') ||
+        (decision.phase !== 'opening' && this.canAdmitLateGesture(state))) &&
+      (!this.intentContext || this.conversationIntentKey() !== this.processedIntentKey) &&
+      embodimentIntent?.gestureHint
+        ? this.resolveConversationGesture(effect, excluded)
         : null
     const resolved =
       intentResolution ??
@@ -699,13 +959,11 @@ export class AvatarController {
           excluded.includes(candidate.animationId),
       )
       .map((candidate) => {
-        const why = this.getOverlayExcludedAnimationIds(effect).includes(candidate.animationId)
-          ? 'overlay-policy'
-          : excluded.includes(candidate.animationId)
-            ? 'previous'
-            : candidate.excludedByUsage
-              ? 'usage'
-              : 'cooldown'
+        const why = excluded.includes(candidate.animationId)
+          ? 'previous'
+          : candidate.excludedByUsage
+            ? 'usage'
+            : 'cooldown'
         return `${candidate.animationId}:${why}`
       })
 
@@ -757,7 +1015,135 @@ export class AvatarController {
   }
 
   private effectiveEmbodimentIntent(): CharacterEmbodimentIntent | undefined {
+    if (this.intentContext && Date.now() - this.intentContext.receivedAt > 10000)
+      return this.behaviorEmbodimentIntent
     return this.conversationEmbodimentIntent ?? this.behaviorEmbodimentIntent
+  }
+
+  private conversationIntentKey(): string | undefined {
+    const context = this.intentContext
+    return context
+      ? `${context.turnId}|${context.receivedAt}|${JSON.stringify(this.conversationEmbodimentIntent)}`
+      : undefined
+  }
+
+  private resolveConversationGesture(
+    effect: AvatarStateEffect,
+    excluded: readonly string[] = [],
+  ): AvatarBehaviorResolution | null {
+    const intent = this.effectiveEmbodimentIntent()
+    if (
+      (this.intentContext && Date.now() - this.intentContext.receivedAt > 10000) ||
+      !intent?.gestureHint ||
+      !this.vrmModel.isLoaded() ||
+      !this.getEmbodimentAvailability().availableSemanticIntents.includes(intent.gestureHint)
+    )
+      return null
+    this.processedIntentKey = this.conversationIntentKey()
+    const resolved = this.behaviorResolver.resolveEmbodimentIntent(
+      effect,
+      intent,
+      'speaking',
+      excluded,
+    )
+    return resolved && getMotionProfile(resolved.animationId)?.kind === 'gesture' ? resolved : null
+  }
+
+  private prepareConversationGesture(): void {
+    if (
+      this.hasPreparedGesture() ||
+      this.intentContext?.eligibility !== 'opening' ||
+      this.stateMachine.getMode() === 'speaking' ||
+      this.playback.getCurrentContext()?.behaviorId === 'debug-preview'
+    )
+      return
+    const key = this.conversationIntentKey()
+    if (!key || key === this.processedIntentKey) return
+    const effect: AvatarStateEffect = {
+      mode: 'speaking',
+      proceduralMode: 'speaking',
+      emotionKey: this.stateMachine.getEmotion(),
+      behaviorId: 'neutral',
+      loop: false,
+    }
+    const resolved = this.resolveConversationGesture(effect)
+    if (!resolved) return
+    this.idleOrchestrator.leaveIdle()
+    this.playback.playResolvedImmediately({
+      effect: { ...effect, mode: 'awaitingSpeech' },
+      resolved,
+      item: {
+        id: 0,
+        animationId: resolved.animationId,
+        behaviorId: resolved.behaviorId,
+        mode: 'awaitingSpeech',
+        loop: resolved.loop,
+        motionLayer: resolved.motionLayer,
+        enqueueTime: Date.now(),
+        interruptible: false,
+      },
+      source: 'speaking-gesture-scheduler',
+      reason: 'early speech-bound semantic preparation',
+      frame: this.frame,
+    })
+    const playback = this.playback.getCurrentContext()
+    if (playback) this.preparedGesture = { key, resolved, playback }
+  }
+
+  private hasPreparedGesture(): boolean {
+    if (!this.preparedGesture) return false
+    const animation = this.animations.getDebugState()
+    return (
+      !!this.preparedGesture &&
+      this.preparedGesture.key === this.conversationIntentKey() &&
+      !!this.intentContext &&
+      Date.now() - this.intentContext.receivedAt <= 10000 &&
+      !!this.conversationEmbodimentIntent?.gestureHint &&
+      this.playback.getCurrentContext() === this.preparedGesture.playback &&
+      animation.activeAnimationId === this.preparedGesture.resolved.animationId &&
+      animation.playbackStatus !== 'failed' &&
+      (animation.playbackStatus === 'loading' || animation.isPlaybackActive)
+    )
+  }
+
+  private releasePreparedGesture(): void {
+    if (
+      this.preparedGesture &&
+      this.playback.getCurrentContext() === this.preparedGesture.playback
+    ) {
+      this.vrmModel.releaseSpeechPreparation(this.preparedGesture.resolved.animationId)
+      this.playback.reset()
+    }
+    this.preparedGesture = undefined
+  }
+
+  private canAdmitLateGesture(state?: CharacterState): boolean {
+    const context = this.intentContext
+    const clock = this.pcmClock
+    const hint = this.effectiveEmbodimentIntent()?.gestureHint
+    if (
+      context?.eligibility !== 'future-only' ||
+      this.conversationIntentKey() === this.processedIntentKey ||
+      !hint ||
+      !this.getEmbodimentAvailability().availableSemanticIntents.includes(hint) ||
+      clock?.state !== 'playing' ||
+      clock.sourceSampleOffset <= 0 ||
+      clock.turnId !== context.turnId ||
+      this.lipSync.getActiveSession()?.turnId !== context.turnId ||
+      state?.conversationPresence.responsePhase === 'finishingSpeech' ||
+      this.playback.getCurrentContext()?.behaviorId === 'debug-preview'
+    )
+      return false
+    const body = this.getMotionLibraryDebug()
+    const profile = getMotionProfile(body.runningProfileId ?? '')
+    return (
+      body.outcome === 'completed' ||
+      body.outcome === 'superseded' ||
+      (body.outcome === null &&
+        body.phase === 'hold' &&
+        (profile?.kind === 'presence' ||
+          !!profile?.interruptionPolicy.interruptiblePhases.includes('hold')))
+    )
   }
 
   private applyCurrentGaze(): void {
@@ -769,11 +1155,7 @@ export class AvatarController {
     this.playback.advanceQueue(this.frame)
   }
 
-  private isInterruptible(effect: AvatarStateEffect, resolved: AvatarBehaviorResolution): boolean {
-    return effect.mode === 'idle' || resolved.behaviorId === 'greeting'
-  }
-
-  private getOverlayExcludedAnimationIds(effect: AvatarStateEffect): string[] {
-    return this.overlayAnimationPolicy?.getExcludedAnimationIds(effect) ?? []
+  private isInterruptible(resolved: AvatarBehaviorResolution): boolean {
+    return getAnimation(resolved.animationId)?.interruptible ?? false
   }
 }

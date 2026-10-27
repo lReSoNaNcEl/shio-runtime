@@ -160,6 +160,10 @@ export class AvatarFacialRuntime {
     this.expressionMixer.apply()
   }
 
+  setPresentationOnly(value: boolean): void {
+    this.proceduralMotionController.setPresentationOnly(value)
+  }
+
   removeProceduralMotion(): void {
     this.proceduralMotionController.remove()
     this.lookAtRuntime.remove()
@@ -175,8 +179,8 @@ export class AvatarFacialRuntime {
     this.tailBehaviorRuntime.update(delta)
   }
 
-  notifyVrmaFacialTracksDisabled(count: number): void {
-    this.expressionMixer.notifyVrmaFacialTracksDisabled(count)
+  notifyBodyFacialChannelsRejected(count: number): void {
+    this.expressionMixer.notifyBodyFacialChannelsRejected(count)
   }
 
   forceBlink(duration = 1.2): void {

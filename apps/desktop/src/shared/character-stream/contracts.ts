@@ -1,3 +1,10 @@
+import type { CharacterEmbodimentIntent } from '../character-response/embodiment'
+
+export interface SafeEmbodimentIntent {
+  intent: CharacterEmbodimentIntent
+  timing: 'early' | 'late'
+}
+
 export type CharacterStreamFinishReason =
   | 'stop'
   | 'length'
@@ -45,18 +52,27 @@ export interface CharacterStreamDeadlines {
 export interface SafeCharacterTextDelta {
   text: string
   emotion: string
+  voiceStyle?: string
 }
 
-export interface SpeechSegment {
+export interface SpeechTextCommit {
   id: string
   turnId: string
   text: string
   emotion: string
+  voiceStyle?: string
   sequence: number
-  boundary: 'clause' | 'sentence' | 'final'
+  boundary: 'clause' | 'sentence' | 'hard-limit' | 'final' | 'emotion'
 }
 
 export type CharacterReplyStreamEvent =
+  | ({
+      type: 'embodiment-intent'
+      turnId: string
+      requestId: string
+      at: number
+      llmRound: number
+    } & SafeEmbodimentIntent)
   | {
       type: 'connected' | 'first-byte'
       turnId: string

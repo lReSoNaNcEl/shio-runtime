@@ -5,12 +5,14 @@ import {
   EMBODIMENT_GAZE_HINTS,
   EMBODIMENT_GESTURE_HINTS,
   EMBODIMENT_INTENSITIES,
+  embodimentAvailabilitySchema,
 } from '../../shared/character-response'
 import {
   TRANSITION_RECORDING_MAX_BYTES,
   TRANSITION_RECORDING_MAX_FRAME_BYTES,
   TRANSITION_RECORDING_MAX_FRAMES,
 } from '../../shared/diagnostics'
+import { generatedMotionHealthSchema } from '../../shared/motion'
 
 function serializedSizeAtMost(value: unknown, maximumBytes: number): boolean {
   try {
@@ -92,6 +94,7 @@ export const avatarStateSchema = z
     mode: z.enum(['idle', 'listening', 'thinking', 'awaitingSpeech', 'speaking']),
     emotionKey: optionalBoundedText,
     vrmEmotion: optionalBoundedText,
+    speechDeliveryEmotion: optionalBoundedText.nullable(),
     reaction: z.literal('user-interruption').optional(),
     reactionId: optionalBoundedText,
     earImpulse: z
@@ -149,6 +152,25 @@ export const avatarRuntimeHealthSchema = z
     presentationAttached: z.boolean(),
     operational: z.boolean(),
     updatedAt: z.string().datetime(),
+    motion: generatedMotionHealthSchema.optional(),
+    embodimentAvailability: embodimentAvailabilitySchema.optional(),
+    speech: z
+      .object({
+        firstPcmAt: z.number().finite().nonnegative().optional(),
+        firstOutputAt: z.number().finite().nonnegative().optional(),
+        firstAudibleAt: z.number().finite().nonnegative().optional(),
+        hardwareLatencyMs: z.number().finite().min(0).max(10000).optional(),
+        cueCount: z.number().int().min(0).max(100000).optional(),
+        maxCueErrorMs: z.number().finite().min(0).max(600000).optional(),
+        active: z.boolean(),
+        sourceSampleOffset: z.number().int().min(0).max(26460000),
+        sourceSampleRate: z.number().int().min(8000).max(48000),
+        rawRms: z.number().finite().min(0).max(1),
+        mouthWeight: z.number().finite().min(0).max(1),
+        blinkWeight: z.number().finite().min(0).max(1),
+      })
+      .strict()
+      .optional(),
     lastFailure: z
       .object({
         name: z.string().max(100),
@@ -161,7 +183,11 @@ export const avatarRuntimeHealthSchema = z
   .refine(
     (health) =>
       health.operational ===
-      (health.status === 'ready' && health.modelLoaded && health.presentationAttached),
+      (health.status === 'ready' &&
+        health.modelLoaded &&
+        (health.motion
+          ? health.motion.state === 'ready' || health.motion.state === 'mirror'
+          : health.presentationAttached)),
     'Inconsistent Avatar Runtime health',
   )
 

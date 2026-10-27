@@ -1,3 +1,5 @@
+import './app/initializeProfile'
+
 import * as dotenv from 'dotenv'
 import { app, BrowserWindow } from 'electron'
 

@@ -35,7 +35,7 @@ function main(): void {
     const registrations = new Map<string, string>()
     for (const filePath of collectTypeScriptFiles(mainSourceRoot)) {
       const source = readFileSync(filePath, 'utf8')
-      for (const match of source.matchAll(/ipcMain\.handle\(\s*['"]([^'"]+)['"]/g)) {
+      for (const match of source.matchAll(/ipcMain\.(?:handle|on)\(\s*['"]([^'"]+)['"]/g)) {
         const channel = match[1]
         assert(!registrations.has(channel), `duplicate IPC handler: ${channel}`)
         registrations.set(channel, source.slice(match.index, match.index + 1_500))
@@ -50,9 +50,9 @@ function main(): void {
     for (const [channel, registration] of registrations) {
       const escapedChannel = channel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
       assert(
-        new RegExp(`authorization\\.handle(?:Payload)?\\(\\s*['"]${escapedChannel}['"]`).test(
-          registration,
-        ),
+        new RegExp(
+          `authorization\\.(?:handle(?:Payload)?\\(\\s*['"]${escapedChannel}['"]|assert\\(event, ['"]${escapedChannel}['"])`,
+        ).test(registration),
         `IPC handler has no sender authorization: ${channel}`,
       )
     }
@@ -186,6 +186,7 @@ function main(): void {
       .map((match) => match[1])
       .sort()
     assert.deepEqual(invokedChannels, [
+      'avatar-body:get',
       'avatar-mouth:get',
       'avatar-state:get',
       'overlay-presentation:config:get',

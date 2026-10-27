@@ -19,6 +19,7 @@ export interface ProceduralMotionDebugState {
 export class ProceduralMotionController {
   private readonly breath = new BreathController()
   private readonly microMotion = new MicroMotionController()
+  private presentationOnly = false
   private mode: AvatarProceduralMode = 'idle'
   private bodyLayer: AvatarBodyMotionLayer = 'base'
   private lookAtMode: LookAtMode = 'idle'
@@ -41,8 +42,16 @@ export class ProceduralMotionController {
   }
 
   update(delta: number): void {
-    this.breath.update(delta)
+    if (!this.presentationOnly) this.breath.update(delta)
     this.microMotion.update(delta)
+  }
+
+  setPresentationOnly(value: boolean): void {
+    if (this.presentationOnly === value) return
+    this.breath.remove()
+    this.microMotion.remove()
+    this.presentationOnly = value
+    this.applyAuthority()
   }
 
   setMode(mode: AvatarProceduralMode): void {
@@ -99,7 +108,7 @@ export class ProceduralMotionController {
       screenGaze: this.lookAtMode === 'screenFocus',
     })
     this.microMotion.setAuthority(
-      authority.proceduralUpperBodyWeight,
+      this.presentationOnly ? 0 : authority.proceduralUpperBodyWeight,
       authority.proceduralHeadWeight,
     )
   }

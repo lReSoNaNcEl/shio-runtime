@@ -14,5 +14,10 @@
     "jsx": "react-jsx",
     "lib": ["ESNext", "DOM", "DOM.Iterable"]
   },
-  "include": ["src/renderer/**/*", "src/shared/**/*", "emotion_manifest.json"]
+  "include": [
+    "src/renderer/**/*",
+    "src/shared/**/*",
+    "emotion_manifest.json",
+    "motion/motion-profiles.json"
+  ]
 }

@@ -41,8 +41,17 @@ import type {
   ScreenContextRecaptureRequest,
 } from '../shared/screen-context'
 import type { RendererFailureReport } from '../shared/system'
+import { createSpeechStreamRendererPort } from './speechStreamPort'
 
 const api = {
+  avatarBody: { publish: (value) => ipcRenderer.invoke('avatar-body:publish', value) },
+  motion: {
+    reroll: (input) => ipcRenderer.invoke('motion:reroll', input),
+    start: (input) => ipcRenderer.invoke('motion:start', input),
+    next: (input) => ipcRenderer.invoke('motion:next', input),
+    stop: (lease) => ipcRenderer.invoke('motion:stop', lease),
+    status: () => ipcRenderer.invoke('motion:status'),
+  },
   alive: {
     snapshot: () => ipcRenderer.invoke('alive:snapshot') as Promise<AliveSnapshot>,
     updateSettings: (settings: AutonomySettings) =>
@@ -200,8 +209,12 @@ const api = {
   },
   tts: {
     warmup: (input: { language: string }) => ipcRenderer.invoke('tts:warmup', input),
-    synthesizeReply: (turnId: string, replyText: string, emotionKey: string) =>
-      ipcRenderer.invoke('tts:synthesize-reply', turnId, replyText, emotionKey),
+    openStream: (input) => {
+      const channel = new MessageChannel()
+      const rendererPort = createSpeechStreamRendererPort(channel.port1)
+      ipcRenderer.postMessage('tts:open-stream', input, [channel.port2])
+      return rendererPort
+    },
     cancelSynthesis: (turnId: string) => ipcRenderer.invoke('tts:cancel-synthesis', turnId),
   },
   memory: {
@@ -266,9 +279,6 @@ const api = {
   vrm: {
     pick: () => ipcRenderer.invoke('vrm:pick'),
     read: (assetHandle: string) => ipcRenderer.invoke('vrm:read', assetHandle),
-  },
-  vrma: {
-    pick: () => ipcRenderer.invoke('vrma:pick'),
   },
   overlay: {
     toggle: () => ipcRenderer.invoke('overlay:toggle'),

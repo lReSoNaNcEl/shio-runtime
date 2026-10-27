@@ -19,7 +19,7 @@ import type { LookAtDebugState } from '../avatar/embodiment/gaze/LookAtRuntime'
 import type { EarBehaviorDebugState } from '../avatar/embodiment/secondary-motion/EarBehaviorRuntime'
 import type { TailBehaviorDebugState } from '../avatar/embodiment/secondary-motion/TailBehaviorRuntime'
 import type { MouthWeights } from '../avatar/embodiment/speech/LipSync'
-import type { VrmBodyActionDebugState } from '../avatar/rendering/three/VrmModel'
+import type { GeneratedBodyDebugState } from '../avatar/rendering/three/VrmModel'
 import type { OverlayViewMode } from '../avatar/tuning/cameraTuning'
 import type { BacklogSelectorDiagnostics } from '../conversation/admission/BacklogSelector'
 import type { AvatarMode, AvatarRuntime } from '../runtime/AvatarRuntime'
@@ -81,7 +81,7 @@ export interface ControllerState {
   overlayError: string
   speechProgress: number
   overlayAnimationHudEnabled: boolean
-  overlayAnimationFile: string
+  overlayMotionProfileId: string
   microphoneGate: MicrophoneGateState
 }
 
@@ -103,11 +103,9 @@ export interface RuntimeDebugSnapshot {
   emotionKey: string
   vrmEmotion: string
   currentBodyAnimation: string
-  currentBodyAnimationFile: string
-  currentBodyAnimationLoop: boolean
-  currentBodyAnimationStatus: AnimationPlaybackStatus
-  bodyActions: VrmBodyActionDebugState
-  animationAssetCache: ReturnType<AvatarRuntime['getDebugState']>['animationAssetCache']
+  requestedMotionContinuous: boolean
+  motionRequestStatus: AnimationPlaybackStatus
+  bodyMotion: GeneratedBodyDebugState
   previousBodyAnimation: string
   activeTransitionPolicy: string
   activeBlendDuration: number

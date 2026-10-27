@@ -315,7 +315,7 @@ function main(): void {
 
   const queue = new AvatarAnimationQueue()
   const idle = queue.request({
-    animationId: 'neutral_idle',
+    animationId: 'presence_poised',
     behaviorId: 'idle',
     mode: 'idle',
     loop: true,
@@ -324,7 +324,7 @@ function main(): void {
   })
   assert.equal(idle.action, 'play')
   const speaking = queue.request({
-    animationId: 'neutral2',
+    animationId: 'presence_speaking',
     behaviorId: 'neutral',
     mode: 'speaking',
     loop: true,
@@ -333,7 +333,7 @@ function main(): void {
   })
   assert.equal(speaking.action, 'play')
   const recovery = queue.request({
-    animationId: 'neutral_idle',
+    animationId: 'presence_poised',
     behaviorId: 'idle',
     mode: 'idle',
     loop: true,
@@ -355,7 +355,7 @@ function main(): void {
     assert.equal(layered.action, 'play')
     assert.equal(layeredQueue.getCurrent()?.motionLayer, layer)
     const returnToIdle = layeredQueue.request({
-      animationId: 'neutral_idle',
+      animationId: 'presence_poised',
       behaviorId: 'idle',
       mode: 'idle',
       loop: true,
@@ -379,6 +379,7 @@ function main(): void {
     getDebugState: () => ({
       isPlaybackActive: oneShotPlaybackActive,
       playbackStatus: oneShotPlaybackActive ? 'playing' : 'idle',
+      activeAnimationId: 'stretch_small',
     }),
     playManifest: (
       animationId: string,
@@ -391,7 +392,15 @@ function main(): void {
   } as unknown as AvatarAnimationController
   const oneShotVrmModel = {
     setBodyMotionLayer: () => undefined,
-    getBodyActionDebugState: () => ({ transitionRemaining: 0 }),
+    getBodyMotionDebugState: () => ({
+      transitionRemaining: 0,
+      motionExecution: {
+        profileId: 'stretch_small',
+        executionId: 'stretch-execution',
+        runningProfileId: oneShotPlaybackActive ? 'stretch_small' : null,
+        outcome: oneShotPlaybackActive ? null : 'completed',
+      },
+    }),
   } as unknown as VrmModel
   const oneShotCoordinator = new AvatarPlaybackCoordinator(
     oneShotAnimationController,
@@ -400,26 +409,29 @@ function main(): void {
   oneShotCoordinator.requestResolvedBehavior({
     effect: { mode: 'idle' } as AvatarStateEffect,
     resolved: {
-      animationId: 'yawn',
+      animationId: 'stretch_small',
       behaviorId: 'idle',
       loop: false,
       motionLayer: 'gesture',
-      fallbackAnimationId: 'neutral_idle',
+      fallbackAnimationId: 'presence_poised',
       selectionReason: 'focused one-shot recovery repro',
+      candidates: [],
+      activeCooldowns: [],
     } as AvatarBehaviorResolution,
     source: 'idle-orchestrator',
     reason: 'focused one-shot recovery repro',
     frame: 1,
     interruptible: false,
   })
+  oneShotCoordinator.advanceQueue(1)
   oneShotPlaybackActive = false
   oneShotCoordinator.advanceQueue(2)
   assert.deepEqual(oneShotPlaybackCalls.at(-1), {
-    animationId: 'neutral_idle',
+    animationId: 'presence_poised',
     loop: true,
     motionLayer: 'base',
   })
-  assert.equal(oneShotCoordinator.getQueue().getCurrent()?.animationId, 'neutral_idle')
+  assert.equal(oneShotCoordinator.getQueue().getCurrent()?.animationId, 'presence_poised')
   assert.equal(oneShotCoordinator.getQueue().getCurrent()?.loop, true)
   console.log('Unqueued one-shot immediate base-motion recovery: PASS')
   console.log('Idle/speaking/gesture/reaction recovery regression: PASS')

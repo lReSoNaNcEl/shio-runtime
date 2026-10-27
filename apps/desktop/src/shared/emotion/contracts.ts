@@ -7,9 +7,11 @@ export interface EmotionManifestEntry {
     behavior?: string
     expression?: string
     expressionWeights?: Record<string, number>
+    bodyIntent?: string
   }
   speech?: {
     style?: string
+    fishTags?: string[]
   }
 }
 

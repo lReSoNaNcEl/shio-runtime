@@ -1,6 +1,8 @@
 import type { VRM } from '@pixiv/three-vrm'
 import type * as THREE from 'three'
 
+import type { BodyPresentation } from '../../../../shared/motion'
+import type { PcmPlaybackClock } from '../../../audio/audioPlayer'
 import { AvatarFacialRuntime } from '../../embodiment/AvatarFacialRuntime'
 import type { FacialDebugState } from '../../embodiment/facial/FacialDebugTypes'
 import type { MouthWeights } from '../../embodiment/facial/FacialProfile'
@@ -20,19 +22,20 @@ import type { TailBehaviorDebugState } from '../../embodiment/secondary-motion/T
 import type { SpeechPhrasePhase } from '../../embodiment/speech/PhraseEnvelopeController'
 import type { SpeechPhraseTimingPlan } from '../../embodiment/speech/SpeechPhraseTiming'
 import type { AvatarProceduralMode } from '../../embodiment/types'
-import type { VrmBodyActionDebugState, VrmPerformanceDebugState } from './AnimationDebugTypes'
 import { AvatarPerformanceMonitor } from './AvatarPerformanceMonitor'
-import type { VrmAnimationLoadContext } from './VrmAnimationTypes'
-import { VrmBodyPlayback } from './VrmBodyPlayback'
+import { GeneratedBodyPlayback } from './GeneratedBodyPlayback'
+import type {
+  GeneratedBodyDebugState,
+  GeneratedMotionRequestContext,
+  VrmPerformanceDebugState,
+} from './GeneratedMotionTypes'
 import { VrmModelLoader } from './VrmModelLoader'
 
 export type {
-  VrmBodyActionDebugEntry,
-  VrmBodyActionDebugState,
+  GeneratedBodyDebugState,
+  GeneratedMotionRequestContext,
   VrmPerformanceDebugState,
-  VrmTransitionFrameTraceEntry,
-} from './AnimationDebugTypes'
-export type { VrmAnimationLoadContext, VrmRootMotionPolicy } from './VrmAnimationTypes'
+} from './GeneratedMotionTypes'
 
 export class VrmModel {
   vrm: VRM | null = null
@@ -40,8 +43,8 @@ export class VrmModel {
   private readonly facialRuntime = new AvatarFacialRuntime()
   private readonly modelLoader = new VrmModelLoader()
   private readonly performanceMonitor = new AvatarPerformanceMonitor()
-  private readonly bodyPlayback = new VrmBodyPlayback((count) =>
-    this.facialRuntime.notifyVrmaFacialTracksDisabled(count),
+  private readonly bodyPlayback = new GeneratedBodyPlayback((count) =>
+    this.facialRuntime.notifyBodyFacialChannelsRejected(count),
   )
 
   async load(scene: THREE.Scene, buffer: ArrayBuffer): Promise<void> {
@@ -54,13 +57,55 @@ export class VrmModel {
     this.facialRuntime.attach(vrm)
   }
 
-  loadAnimation(
-    buffer: ArrayBuffer,
-    loop = true,
-    blendDuration = 0.3,
-    context?: VrmAnimationLoadContext,
-  ): Promise<void> {
-    return this.bodyPlayback.loadAnimation(buffer, loop, blendDuration, context)
+  attachScene(scene: THREE.Scene): void {
+    if (this.vrm) scene.add(this.vrm.scene)
+    this.scene = scene
+  }
+
+  getHeadPosition(): THREE.Vector3 | null {
+    return (
+      this.vrm?.humanoid
+        .getNormalizedBoneNode('head')
+        ?.getWorldPosition(this.vrm.scene.position.clone()) ?? null
+    )
+  }
+
+  requestGeneratedMotion(id: string, context: GeneratedMotionRequestContext): Promise<void> {
+    return this.bodyPlayback.playProfile(id, context)
+  }
+
+  setPcmClock(clock: PcmPlaybackClock | null): void {
+    this.bodyPlayback.setClock(clock)
+  }
+  setBodyCameraMode(mode: string): void {
+    this.bodyPlayback.setCameraMode(mode)
+  }
+  setPresentationOnly(value: boolean): void {
+    this.bodyPlayback.setPresentationOnly(value)
+    this.facialRuntime.setPresentationOnly(value)
+  }
+  getBodyPresentation(): BodyPresentation | null {
+    return this.bodyPlayback.getPresentation()
+  }
+  applyBodyPresentation(value: BodyPresentation | null): void {
+    this.bodyPlayback.setMirror(value)
+  }
+  settleMotionCancellation(): Promise<void> {
+    return this.bodyPlayback.settleCancellation()
+  }
+
+  getEmbodimentAvailability() {
+    return this.bodyPlayback.getEmbodimentAvailability()
+  }
+  getMotionLibraryDebug() {
+    return this.bodyPlayback.getLibraryDebug()
+  }
+  recoverMotion(): void {
+    this.bodyPlayback.recover()
+  }
+
+  releaseSpeechPreparation(profileId: string): void {
+    this.bodyPlayback.releaseSpeechPreparation(profileId)
   }
 
   stopAnimation(): void {
@@ -75,7 +120,6 @@ export class VrmModel {
     this.performanceMonitor.updatePerformanceDebug(delta)
     this.facialRuntime.removeProceduralMotion()
     this.bodyPlayback.update(delta, () => {
-      this.updateProceduralMotion(delta)
       this.facialRuntime.updateProceduralMotion(delta)
     })
     this.facialRuntime.update(delta)
@@ -130,10 +174,6 @@ export class VrmModel {
 
   applyEmotion(emotionKey: string, vrmEmotion?: string): void {
     this.facialRuntime.applyEmotion(emotionKey, vrmEmotion)
-  }
-
-  private updateProceduralMotion(delta: number): void {
-    this.facialRuntime.updateProceduralMotion(delta)
   }
 
   setMouthWeight(weight: number): void {
@@ -233,7 +273,7 @@ export class VrmModel {
     return this.bodyPlayback.isAnimationPlaying()
   }
 
-  getBodyActionDebugState(): VrmBodyActionDebugState {
-    return this.bodyPlayback.getBodyActionDebugState()
+  getBodyMotionDebugState(): GeneratedBodyDebugState {
+    return this.bodyPlayback.getBodyMotionDebugState()
   }
 }

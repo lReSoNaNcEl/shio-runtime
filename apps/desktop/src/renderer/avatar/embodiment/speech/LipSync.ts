@@ -20,6 +20,12 @@ export interface LipSyncSession {
   playbackItemId: string
   normalizationReference: number
   durationMs: number
+  durationFinal?: boolean
+  getPcmPosition?: () => {
+    sourceSampleRate: number
+    sourceSampleOffset: number
+    state: string
+  } | null
 }
 
 export interface LipSyncStartRequest {
@@ -115,6 +121,7 @@ export class LipSync {
   private activityLogged = false
   private phraseElapsedMs = 0
   private phraseDurationMs = 1
+  private phrasePlan: ReturnType<typeof buildSpeechPhraseTimingPlan> | null = null
 
   constructor(output: LipSyncOutput) {
     this.output = output
@@ -141,6 +148,7 @@ export class LipSync {
   attach(request: LipSyncStartRequest): void {
     const { session, emotionKey, text } = request
     const plan = buildSpeechPhraseTimingPlan(text)
+    this.phrasePlan = plan
     if (this.activeSession) {
       if (this.activeSession.turnId !== session.turnId) {
         throw new Error(
@@ -154,7 +162,7 @@ export class LipSync {
       // turn session alive while replacing only the playback attachment;
       // resetting mouth state here would create an artificial closure between
       // chunks and would incorrectly trip the overlap invariant.
-      this.activeSession = { ...session }
+      this.activeSession = session
       this.analyser = session.analyser
       this.analyser.fftSize = 512
       this.analyser.smoothingTimeConstant = facialTuning.lipSync.analyserSmoothing
@@ -174,7 +182,7 @@ export class LipSync {
       return
     }
     this.playbackSeq += 1
-    this.activeSession = { ...session }
+    this.activeSession = session
     this.analyser = session.analyser
     this.analyser.fftSize = 512
     this.analyser.smoothingTimeConstant = facialTuning.lipSync.analyserSmoothing
@@ -217,6 +225,7 @@ export class LipSync {
       return false
     }
     const stopped = this.activeSession
+    this.phrasePlan = null
     this.activeSession = null
     this.analyser = null
     this.timeData = null
@@ -252,6 +261,19 @@ export class LipSync {
     return true
   }
 
+  restorePresentation(): void {
+    if (!this.activeSession || !this.phrasePlan) return
+    // The new VRM has a fresh facial envelope. Retain the AudioPlayer session
+    // and consumed PCM position, restoring only its presentation contribution.
+    this.output.startSpeechPhrase(this.phrasePlan)
+    this.output.updateSpeechPhrase(
+      0,
+      Math.min(1, this.phraseElapsedMs / this.phraseDurationMs),
+      this.speechEnergy,
+    )
+    this.output.setMouthWeights(this.smoothed)
+  }
+
   getActiveSession(): Readonly<LipSyncSession> | null {
     return this.activeSession ? { ...this.activeSession } : null
   }
@@ -263,7 +285,15 @@ export class LipSync {
   update(_delta: number): void {
     this.graceRemainingMs = Math.max(0, this.graceRemainingMs - Math.max(0, _delta) * 1000)
     if (this.activeSession) {
-      this.phraseElapsedMs += Math.max(0, _delta) * 1000
+      const position = this.activeSession.getPcmPosition?.()
+      this.phraseElapsedMs = position
+        ? (position.sourceSampleOffset / position.sourceSampleRate) * 1000
+        : this.phraseElapsedMs + Math.max(0, _delta) * 1000
+      if (position)
+        this.phraseDurationMs = Math.max(
+          this.activeSession.durationMs,
+          this.activeSession.durationFinal ? 1 : this.phraseElapsedMs + 1000,
+        )
       this.output.updateSpeechPhrase(
         _delta,
         Math.min(1, this.phraseElapsedMs / this.phraseDurationMs),

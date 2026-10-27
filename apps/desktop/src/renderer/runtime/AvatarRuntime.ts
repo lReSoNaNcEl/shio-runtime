@@ -1,6 +1,10 @@
 import type * as THREE from 'three'
 
-import type { CharacterEmbodimentIntent } from '../../shared/character-response'
+import type {
+  CharacterEmbodimentIntent,
+  EmbodimentIntentContext,
+} from '../../shared/character-response'
+import type { BodyPresentation } from '../../shared/motion'
 import type {
   AvatarRuntimeHealth,
   CharacterAvatarState,
@@ -9,10 +13,8 @@ import type {
   RuntimeEventCategory,
   RuntimeEventType,
 } from '../../shared/runtime'
-import type {
-  AnimationControllerDebugState,
-  AnimationPlaybackStatus,
-} from '../avatar/AvatarAnimationController'
+import type { PcmPlaybackClock } from '../audio/audioPlayer'
+import type { AnimationPlaybackStatus } from '../avatar/AvatarAnimationController'
 import type { AnimationCooldownState } from '../avatar/AvatarAnimationCooldownManager'
 import type { AvatarAnimationQueueDebugState } from '../avatar/AvatarAnimationQueue'
 import type { AvatarBehaviorEngineDecision } from '../avatar/AvatarBehaviorEngine'
@@ -39,7 +41,7 @@ import type {
 import type { TailBehaviorDebugState } from '../avatar/embodiment/secondary-motion/TailBehaviorRuntime'
 import type { LipSyncStartRequest, MouthWeights } from '../avatar/embodiment/speech/LipSync'
 import type {
-  VrmBodyActionDebugState,
+  GeneratedBodyDebugState,
   VrmPerformanceDebugState,
 } from '../avatar/rendering/three/VrmModel'
 import type { OverlayViewMode } from '../avatar/tuning/cameraTuning'
@@ -52,11 +54,9 @@ export interface AvatarRuntimeDebugState {
   mode: AvatarMode
   emotionKey: string
   currentBodyAnimation: string
-  currentBodyAnimationFile: string
-  currentBodyAnimationLoop: boolean
-  currentBodyAnimationStatus: AnimationPlaybackStatus
-  bodyActions: VrmBodyActionDebugState
-  animationAssetCache: AnimationControllerDebugState['assetCache']
+  requestedMotionContinuous: boolean
+  motionRequestStatus: AnimationPlaybackStatus
+  bodyMotion: GeneratedBodyDebugState
   previousBodyAnimation: string
   activeTransitionPolicy: string
   activeBlendDuration: number
@@ -97,6 +97,8 @@ export class AvatarRuntime {
   private lastEmotionProfile = 'neutral'
   private lastSpeakingGesturePhase = 'idle'
   private lastSpeakingGesture = 'none'
+  private pcmClock: PcmPlaybackClock | null = null
+  private diagnosticsElapsed = 0
 
   constructor(
     private readonly events: EventBus,
@@ -111,6 +113,32 @@ export class AvatarRuntime {
 
   update(delta: number, state?: CharacterState): void {
     this.controller.update(delta, state)
+    this.diagnosticsElapsed += delta
+    if (this.diagnosticsElapsed >= 0.1) {
+      this.diagnosticsElapsed = 0
+      const debug = this.controller.getDebugState()
+      this.health.setDiagnostics(
+        debug.bodyMotion.generated,
+        {
+          firstPcmAt: this.pcmClock?.firstPcmAt,
+          firstOutputAt: this.pcmClock?.firstOutputAt,
+          firstAudibleAt: this.pcmClock?.firstAudibleAt,
+          hardwareLatencyMs: this.pcmClock?.hardwareLatencyMs,
+          cueCount: this.pcmClock?.cueCount,
+          maxCueErrorMs: this.pcmClock?.maxCueErrorMs,
+          active: this.pcmClock?.state === 'playing',
+          sourceSampleOffset: this.pcmClock?.sourceSampleOffset ?? 0,
+          sourceSampleRate: this.pcmClock?.sourceSampleRate ?? 44100,
+          rawRms:
+            this.pcmClock?.state === 'playing'
+              ? Math.max(0, Math.min(1, debug.facial.mouthTuning.currentRawRms))
+              : 0,
+          mouthWeight: Math.max(...Object.values(debug.lipsyncWeights)),
+          blinkWeight: debug.facial.blink,
+        },
+        this.controller.getEmbodimentAvailability(),
+      )
+    }
     const phrase = this.controller.getSpeechPhraseSnapshot()
     if (phrase.phase !== this.lastPhrasePhase) {
       this.lastPhrasePhase = phrase.phase
@@ -134,6 +162,20 @@ export class AvatarRuntime {
     }
   }
 
+  setPcmClock(clock: PcmPlaybackClock | null): void {
+    this.pcmClock = clock
+    this.controller.setPcmClock(clock)
+  }
+  settleMotionCancellation(): Promise<void> {
+    return this.controller.settleMotionCancellation()
+  }
+  getBodyPresentation(): BodyPresentation | null {
+    return this.controller.getBodyPresentation()
+  }
+  applyBodyPresentation(value: BodyPresentation | null): void {
+    this.controller.applyBodyPresentation(value)
+  }
+
   async loadVrm(scene: THREE.Scene, buffer: ArrayBuffer): Promise<void> {
     this.health.markLoading()
     try {
@@ -146,8 +188,38 @@ export class AvatarRuntime {
     }
   }
 
+  attachScene(scene: THREE.Scene): void {
+    this.controller.attachScene(scene)
+  }
+  getHeadPosition(): THREE.Vector3 | null {
+    return this.controller.getHeadPosition()
+  }
+
+  getMotionLibraryDebug() {
+    return this.controller.getMotionLibraryDebug()
+  }
+  previewSequence(ids: readonly string[]): void {
+    this.controller.previewSequence(ids)
+  }
+  previewVariation(id: string, seed?: number): void {
+    this.controller.previewVariation(id, seed)
+  }
+  recoverMotion(): void {
+    this.controller.recoverMotion()
+  }
+  getHandBounds(side: 'left' | 'right'): THREE.Sphere | null {
+    return this.controller.getHandBounds(side)
+  }
+  getAvatarFrontSign(): -1 | 1 {
+    return this.controller.getAvatarFrontSign()
+  }
+
   getHealth(): AvatarRuntimeHealth {
     return this.health.getSnapshot()
+  }
+
+  setSpeechDelivery(emotion: string | null): void {
+    this.controller.setSpeechDelivery(emotion)
   }
 
   reportHealth(): void {
@@ -165,14 +237,6 @@ export class AvatarRuntime {
   dispose(): void {
     this.controller.dispose()
     this.health.markDisposed()
-  }
-
-  async loadAnimation(buffer: ArrayBuffer, loop = true): Promise<void> {
-    await this.controller.loadAnimation(buffer, loop)
-    this.publishAvatarEvent(
-      'RuntimeDebugEvent',
-      loop ? 'Animation Loaded: loop' : 'Animation Loaded',
-    )
   }
 
   stopAnimation(): void {
@@ -199,8 +263,11 @@ export class AvatarRuntime {
   }
 
   /** Stable semantic input; concrete gaze and clip selection remain internal. */
-  setEmbodimentIntent(intent: CharacterEmbodimentIntent | undefined): void {
-    this.controller.setEmbodimentIntent(intent)
+  setEmbodimentIntent(
+    intent: CharacterEmbodimentIntent | undefined,
+    context?: EmbodimentIntentContext,
+  ): void {
+    this.controller.setEmbodimentIntent(intent, context)
   }
 
   setBehaviorEmbodimentIntent(intent: CharacterEmbodimentIntent | undefined): void {

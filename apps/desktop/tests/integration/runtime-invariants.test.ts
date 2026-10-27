@@ -24,10 +24,12 @@ const HEALTHY: RuntimeInvariantInput = {
   conversationResponsePhase: 'speaking',
   playbackActive: true,
   activePlaybackId: 7,
-  bodyActiveActionCount: 1,
-  bodyWeightedActionCount: 1,
+  bodyActiveExecutionCount: 1,
+  bodyPoseOwnerCount: 1,
   bodyTransitionRemaining: 0,
-  bodyOwnershipGapCount: 0,
+  bodyUnderruns: 0,
+  bodyMotionState: 'ready',
+  bodyPresentationMode: 'primary',
   currentBodyAnimation: 'talk_loop',
   currentBehaviorId: 'speaking',
   mouthMax: 0.4,
@@ -74,6 +76,21 @@ interface Case {
 const cases: Case[] = [
   { name: 'HEALTHY baseline', expectId: null, input: HEALTHY },
   {
+    name: 'HEALTHY generated preparation without applied pose',
+    expectId: null,
+    input: withOverrides(HEALTHY, { bodyMotionState: 'loading', bodyPoseOwnerCount: 0 }),
+  },
+  {
+    name: 'HEALTHY Overlay presentation without generator',
+    expectId: null,
+    input: withOverrides(HEALTHY, { bodyPresentationMode: 'mirror', bodyActiveExecutionCount: 0 }),
+  },
+  {
+    name: 'INV-04 Overlay cannot own a generated execution',
+    expectId: 'INV-04-single-skeleton-owner',
+    input: withOverrides(HEALTHY, { bodyPresentationMode: 'mirror' }),
+  },
+  {
     name: 'INV-02 speaking but no playback',
     expectId: 'INV-02-noplayback-not-speaking',
     input: withOverrides(HEALTHY, { playbackActive: false, activePlaybackId: 0 }),
@@ -86,7 +103,7 @@ const cases: Case[] = [
   {
     name: 'INV-04 two skeleton owners, no transition',
     expectId: 'INV-04-single-skeleton-owner',
-    input: withOverrides(HEALTHY, { bodyWeightedActionCount: 2, bodyTransitionRemaining: 0 }),
+    input: withOverrides(HEALTHY, { bodyPoseOwnerCount: 2, bodyTransitionRemaining: 0 }),
   },
   {
     name: 'INV-05 character idle but avatar speaking',
@@ -135,8 +152,8 @@ const cases: Case[] = [
     name: 'INV-10 transition ownership gap',
     expectId: 'INV-10-transition-ownership',
     input: withOverrides(HEALTHY, {
-      bodyActiveActionCount: 1,
-      bodyWeightedActionCount: 0,
+      bodyActiveExecutionCount: 1,
+      bodyPoseOwnerCount: 0,
       bodyTransitionRemaining: 0.2,
     }),
   },

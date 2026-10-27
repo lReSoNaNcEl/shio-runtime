@@ -71,22 +71,45 @@ export class AvatarRuntimeHealthTracker {
     this.update({ status: 'disposed', modelLoaded: false, presentationAttached: false })
   }
 
+  setDiagnostics(
+    motion: AvatarRuntimeHealth['motion'],
+    speech: AvatarRuntimeHealth['speech'],
+    embodimentAvailability?: AvatarRuntimeHealth['embodimentAvailability'],
+  ): void {
+    this.update({ motion, speech, embodimentAvailability })
+  }
+
   private update(
     patch: Partial<
-      Pick<AvatarRuntimeHealth, 'lastFailure' | 'modelLoaded' | 'presentationAttached' | 'status'>
+      Pick<
+        AvatarRuntimeHealth,
+        | 'lastFailure'
+        | 'modelLoaded'
+        | 'presentationAttached'
+        | 'status'
+        | 'motion'
+        | 'speech'
+        | 'embodimentAvailability'
+      >
     >,
   ): void {
     if (this.health.status === 'disposed') return
     const status: AvatarRuntimeHealthStatus = patch.status ?? this.health.status
     const modelLoaded = patch.modelLoaded ?? this.health.modelLoaded
     const presentationAttached = patch.presentationAttached ?? this.health.presentationAttached
+    const motion = patch.motion ?? this.health.motion
     this.health = {
       ...this.health,
       ...patch,
       status,
       modelLoaded,
       presentationAttached,
-      operational: status === 'ready' && modelLoaded && presentationAttached,
+      operational:
+        status === 'ready' &&
+        modelLoaded &&
+        (motion
+          ? !motion.error && (motion.state === 'ready' || motion.state === 'mirror')
+          : presentationAttached),
       updatedAt: this.now().toISOString(),
     }
     this.onChange?.(this.getSnapshot())

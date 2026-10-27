@@ -234,6 +234,10 @@ export class MainConversationTurnService {
         signal: abortController.signal,
         traceId: turnId,
         onStreamEvent: (event) => {
+          if (event.type === 'embodiment-intent') {
+            emitStreamEvent?.({ ...event, turnId, requestId: characterRequestId(turnId) })
+            return
+          }
           const milestone =
             event.type === 'connected'
               ? 'llm_connected'

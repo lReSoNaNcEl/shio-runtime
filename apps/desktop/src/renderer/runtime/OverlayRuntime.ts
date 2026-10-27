@@ -2,6 +2,7 @@ import {
   type CharacterEmbodimentIntent,
   normalizeCharacterEmbodimentIntent,
 } from '../../shared/character-response'
+import { type BodyPresentation, bodyPresentationProjectionSchema } from '../../shared/motion'
 import type { EarImpulse } from '../avatar/embodiment/secondary-motion/EarBehaviorRuntime'
 import type { MouthWeights } from '../avatar/embodiment/speech/LipSync'
 import type { SceneManager } from '../avatar/rendering/three/SceneManager'
@@ -12,6 +13,7 @@ import type { AvatarMode } from './AvatarRuntime'
 export interface SyncedAvatarState {
   mode: AvatarMode
   emotionKey?: string
+  speechDeliveryEmotion?: string | null
   vrmEmotion?: string
   reaction?: 'user-interruption'
   reactionId?: string
@@ -29,6 +31,7 @@ export interface SyncedAvatarState {
  * by the string map delivered via overlay-settings updates.
  */
 export interface OverlaySettingsView {
+  vrmAssetHandle?: string
   overlayTransparentBackground?: string
   overlayScale?: string
   overlayViewMode?: string
@@ -37,6 +40,7 @@ export interface OverlaySettingsView {
 }
 
 export interface OverlayRemoteHandlers {
+  bodyPose?: (value: BodyPresentation | null) => void
   avatarState?: (state: SyncedAvatarState) => void
   mouthWeights?: (weights: MouthWeights) => void
   settings?: (cfg: OverlaySettingsView) => void
@@ -46,6 +50,13 @@ export class OverlayRuntime {
   private readonly overlayWindow =
     new URLSearchParams(window.location.search).get('overlay') === '1'
   private mouthPublishTimer = 0
+  private bodyPublishTimer = 0
+  private bodyPublished = false
+  private bodyPublishInFlight = false
+  private bodyReleaseInFlight = false
+  private pendingBodyPose: BodyPresentation | null | undefined
+  private bodyPublisherStopped = false
+  private modelAssetHandle = ''
   private lastMouthPublishSpeaking = false
   private lastMirrorLipSyncLogAt = 0
   private remoteUnsubscribers: Array<() => void> = []
@@ -71,6 +82,7 @@ export class OverlayRuntime {
 
   applySettings(scene: SceneManager | null, cfg: OverlaySettingsView): void {
     if (!this.overlayWindow) return
+    if (cfg.vrmAssetHandle !== undefined) this.modelAssetHandle = cfg.vrmAssetHandle
     const transparentBackground = cfg.overlayTransparentBackground !== 'false'
     document.documentElement.classList.toggle('overlay-solid-background', !transparentBackground)
     document.body.classList.toggle('overlay-solid-background', !transparentBackground)
@@ -84,17 +96,20 @@ export class OverlayRuntime {
   async loadInitialRemoteState(): Promise<{
     avatarState: SyncedAvatarState | null
     mouthWeights: MouthWeights | null
+    bodyPose: BodyPresentation | null
   }> {
-    if (!this.overlayWindow) return { avatarState: null, mouthWeights: null }
+    if (!this.overlayWindow) return { avatarState: null, mouthWeights: null, bodyPose: null }
 
-    const [avatarState, mouthWeights] = await Promise.all([
+    const [avatarState, mouthWeights, bodyPose] = await Promise.all([
       window.overlayApi.avatarState.get(),
       window.overlayApi.avatarMouth.get(),
+      window.overlayApi.avatarBody.get(),
     ])
 
     return {
       avatarState: this.parseAvatarState(avatarState),
       mouthWeights: this.parseMouthWeights(mouthWeights),
+      bodyPose: this.parseBodyPose(bodyPose),
     }
   }
 
@@ -103,6 +118,9 @@ export class OverlayRuntime {
     this.disposeRemoteSubscriptions()
 
     this.remoteUnsubscribers = [
+      window.overlayApi.avatarBody.onUpdated((value) => {
+        handlers.bodyPose?.(this.parseBodyPose(value))
+      }),
       window.overlayApi.avatarState.onUpdated((state) => {
         const parsed = this.parseAvatarState(state)
         if (parsed) handlers.avatarState?.(parsed)
@@ -121,12 +139,65 @@ export class OverlayRuntime {
   }
 
   dispose(): void {
+    if (!this.bodyPublisherStopped) {
+      this.bodyPublisherStopped = true
+      const needsRelease =
+        this.bodyPublished ||
+        this.pendingBodyPose === null ||
+        (this.bodyPublishInFlight && !this.bodyReleaseInFlight)
+      this.pendingBodyPose = needsRelease && !this.bodyReleaseInFlight ? null : undefined
+      this.bodyPublished = false
+      this.flushBodyPublication()
+    }
     this.disposeRemoteSubscriptions()
   }
 
   publishAvatarState(state: SyncedAvatarState): void {
     if (this.overlayWindow) return
     observeRendererPromise(window.api.avatarState.publish(state), 'publish Overlay avatar state')
+  }
+
+  publishBodyFrame(delta: number, value: BodyPresentation | null): void {
+    if (this.overlayWindow || this.bodyPublisherStopped) return
+    this.bodyPublishTimer += Math.max(0, delta)
+    const interval = 1 / 30
+    if (value && this.bodyPublishTimer < interval) return
+    if (!value && !this.bodyPublished) return
+    this.bodyPublishTimer = value ? this.bodyPublishTimer % interval : 0
+    this.bodyPublished = value !== null
+    this.pendingBodyPose = value
+    this.flushBodyPublication()
+  }
+
+  private flushBodyPublication(): void {
+    if (
+      (this.bodyPublisherStopped && this.pendingBodyPose !== null) ||
+      this.bodyPublishInFlight ||
+      this.pendingBodyPose === undefined
+    )
+      return
+    const value = this.pendingBodyPose
+    this.pendingBodyPose = undefined
+    this.bodyPublishInFlight = true
+    this.bodyReleaseInFlight = value === null
+    observeRendererPromise(this.publishBodyPose(value), 'publish Overlay body pose')
+  }
+
+  private async publishBodyPose(value: BodyPresentation | null): Promise<void> {
+    try {
+      await window.api.avatarBody.publish(value)
+    } finally {
+      this.bodyPublishInFlight = false
+      this.bodyReleaseInFlight = false
+      this.flushBodyPublication()
+    }
+  }
+
+  private parseBodyPose(value: unknown): BodyPresentation | null {
+    const parsed = bodyPresentationProjectionSchema.safeParse(value)
+    if (!parsed.success || parsed.data.modelAssetHandle !== this.modelAssetHandle) return null
+    const { modelAssetHandle: _assetHandle, ...pose } = parsed.data
+    return pose
   }
 
   publishMouthWeightsFrame(delta: number, speaking: boolean, weights: MouthWeights): void {
@@ -172,6 +243,8 @@ export class OverlayRuntime {
     }
     return {
       mode: value.mode,
+      speechDeliveryEmotion:
+        typeof value.speechDeliveryEmotion === 'string' ? value.speechDeliveryEmotion : null,
       emotionKey: typeof value.emotionKey === 'string' ? value.emotionKey : undefined,
       vrmEmotion: typeof value.vrmEmotion === 'string' ? value.vrmEmotion : undefined,
       reaction: value.reaction === 'user-interruption' ? value.reaction : undefined,

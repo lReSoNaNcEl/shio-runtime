@@ -1,6 +1,8 @@
 import { parse as parseJson5 } from 'json5'
 import { z } from 'zod'
 
+import { characterEmbodimentIntentSchema } from '../character-response/embodiment'
+
 export const CHARACTER_TOOL_IDS = [
   'project.search',
   'web.search',
@@ -78,6 +80,7 @@ export const characterToolPlanningResultSchema = z
   .object({
     requirement: characterToolRequirementSchema,
     plannedTools: initialCharacterToolPlanSchema.shape.plannedTools,
+    embodiment: characterEmbodimentIntentSchema.nullable().optional(),
   })
   .strict()
 

@@ -33,6 +33,8 @@ export const IPC_CHANNEL_CAPABILITIES = {
   'asr:recognize': mainOnly,
   'asr:get-streaming-connection': mainOnly,
   'avatar-mouth:get': overlayOnly,
+  'avatar-body:get': overlayOnly,
+  'avatar-body:publish': mainOnly,
   'avatar-mouth:publish': mainOnly,
   'avatar-runtime:publish-health': mainOnly,
   'avatar-state:get': overlayOnly,
@@ -73,6 +75,11 @@ export const IPC_CHANNEL_CAPABILITIES = {
   'memory:search': mainOnly,
   'memory:set-enabled': mainOnly,
   'memory:update': mainOnly,
+  'motion:status': mainOnly,
+  'motion:reroll': mainOnly,
+  'motion:start': mainOnly,
+  'motion:next': mainOnly,
+  'motion:stop': mainOnly,
   'overlay-presentation:config:get': overlayOnly,
   'overlay:apply-settings': mainOnly,
   'overlay:is-visible': mainOnly,
@@ -111,11 +118,10 @@ export const IPC_CHANNEL_CAPABILITIES = {
   'system:report-renderer-failure': mainOnly,
   'system:restart-application': mainOnly,
   'tts:cancel-synthesis': mainOnly,
-  'tts:synthesize-reply': mainOnly,
+  'tts:open-stream': mainOnly,
   'tts:warmup': mainOnly,
   'vrm:pick': mainOnly,
   'vrm:read': mainAndOverlay,
-  'vrma:pick': mainOnly,
 } as const
 
 export type IpcChannel = keyof typeof IPC_CHANNEL_CAPABILITIES

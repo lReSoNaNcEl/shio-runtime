@@ -1,0 +1,6 @@
+.venv/
+.python/
+.cache/
+.artifacts/
+.tmp/
+.ruff_cache/

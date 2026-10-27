@@ -40,7 +40,7 @@ import type {
   ConversationThread,
   ConversationThreadRuntimePort,
 } from '../shared/conversation-threads'
-import { normalizeEmotionTag, parseEmotionalReply, parseLeadingEmotionTag } from '../shared/emotion'
+import { parseEmotionalReply, parseLeadingEmotionTag } from '../shared/emotion'
 import { normalizeUiLocale, type UiLocale } from '../shared/localization'
 import type { HabitRecord, RelationshipContext } from '../shared/memory'
 import type { ProjectContextProviderResolver } from '../shared/plugins'
@@ -49,11 +49,8 @@ import type {
   ProjectEvidenceSource,
   ProjectReplyProvenance,
 } from '../shared/project-awareness'
+import type { AvatarRuntimeHealth } from '../shared/runtime'
 import type { ScreenContextImageMimeType } from '../shared/screen-context'
-import type {
-  SpeechAudioBoundaryTelemetry,
-  SpeechTextNormalizationTelemetry,
-} from '../shared/speech'
 import type { WebSearchProviderResolver } from '../shared/web-search'
 import type { BrowserWorkflowCoordinator } from './browser-control/workflow'
 import { containsCharacterProtocol } from './character/compatibility/LegacyDirectiveContainment'
@@ -68,6 +65,7 @@ import {
   SYSTEM_PROMPT,
 } from './character/prompting/CharacterPrompt'
 import { CharacterRequestComposer } from './character/prompting/CharacterRequestComposer'
+import { currentEmbodimentAvailability } from './character/prompting/EmbodimentAvailabilityPrompt'
 import { unfinishedGoalSnapshot } from './character/prompting/GoalAwarenessPrompt'
 import { memoryCapabilityPrompt } from './character/prompting/MemoryPromptPolicy'
 import { responsePolicyPrompt } from './character/prompting/ResponsePolicyPrompt'
@@ -88,8 +86,6 @@ import {
 } from './llm'
 import { mainLog } from './logging/safeLogger'
 import type { MemoryStore, MemoryToolBroker } from './memory'
-import type { SpeechSynthesisClient } from './speech/speechClient'
-import { classifySpeechUtterance, normalizeSpeechText } from './speech/text-normalization'
 
 export { presentActionResult as actionResultFallback }
 
@@ -102,8 +98,6 @@ interface CharacterLivingContext {
 }
 
 const SESSION_ID = 'default'
-const TTS_VOICE_ID = 'animevox_makima'
-const TTS_ENGINE = 'f5'
 
 export interface CharacterReplyInput {
   userText: string
@@ -307,7 +301,7 @@ export class Orchestrator {
   constructor(
     private llm: LLMProvider,
     private memory: MemoryStore,
-    private speech: SpeechSynthesisClient,
+    _speechRuntimeCompatibility: unknown,
     private settings: () => AppSettings,
     private projectContext?: ProjectContextProviderResolver,
     private capabilityContext?: ShioCapabilityProvider,
@@ -337,6 +331,7 @@ export class Orchestrator {
     private conversationThreads?: ConversationThreadRuntimePort,
     // Production composition enables this; the default preserves bounded legacy/test adapters.
     private toolPolicy: { enforceRequirements?: boolean } = {},
+    private avatarRuntimeHealth?: () => AvatarRuntimeHealth | null,
   ) {}
 
   async createReply(
@@ -420,6 +415,7 @@ export class Orchestrator {
         error: error instanceof Error ? error.message : String(error),
       })
     }
+    const embodimentAvailability = currentEmbodimentAvailability(this.avatarRuntimeHealth?.())
     const messages: ChatMessage[] = [
       ...new CharacterRequestComposer().compose({
         persona: SYSTEM_PROMPT,
@@ -448,6 +444,7 @@ export class Orchestrator {
         memory: semanticMemoryPrompt,
         capabilities: capabilityContext,
         capabilityContextUnavailable,
+        embodimentAvailability,
         world: livingContext.world,
         locale,
       }),
@@ -477,6 +474,7 @@ export class Orchestrator {
       imageBytes: promptSize.imageBytes,
     })
     let rawReplyText: string
+    let plannedEmbodiment: CharacterEmbodimentIntent | null | undefined
     let projectContext: ProjectContextPacket | null = null
     let actionGrounding: ActionReplyGrounding | undefined
     let turnToolEvidence: TurnToolEvidenceSummary | undefined
@@ -511,6 +509,7 @@ export class Orchestrator {
         // while the fallback keeps those adapters on the non-streaming path.
         providerId: this.settings().llm?.activeProvider ?? 'groq',
         messages,
+        embodimentAvailability,
         registry,
         createDispatcher: (signal) => {
           dispatcher = new CharacterToolDispatcher({
@@ -566,6 +565,7 @@ export class Orchestrator {
       })
       this.nativeCharacterToolsRejected = toolResult.nativeToolsRejected
       rawReplyText = toolResult.replyText
+      plannedEmbodiment = toolResult.embodiment
       turnToolEvidence = toolResult.toolEvidence
       assistantTurnKind = toolResult.assistantTurnKind
       providerIncidentCode = toolResult.providerIncidentCode
@@ -605,7 +605,12 @@ export class Orchestrator {
       rawReplyText = memoryLoopFailure(locale)
     }
 
-    const { replyText, embodimentIntent } = parseCharacterEmbodimentResponse(rawReplyText)
+    const parsedResponse = parseCharacterEmbodimentResponse(rawReplyText)
+    const { replyText } = parsedResponse
+    const embodimentIntent =
+      plannedEmbodiment !== undefined
+        ? (plannedEmbodiment ?? undefined)
+        : parsedResponse.embodimentIntent
     const visibleReplyText = parseEmotionalReply(replyText).visibleText
     if (!autonomous) {
       await this.memory.appendTurn(SESSION_ID, {
@@ -631,105 +636,6 @@ export class Orchestrator {
       ),
       assistantTurnKind,
       ...(providerIncidentCode ? { providerIncidentCode } : {}),
-    }
-  }
-
-  async synthesizeReply(
-    replyText: string,
-    emotionKey: string,
-    signal?: AbortSignal,
-  ): Promise<{
-    audioBuffer: ArrayBuffer
-    emotionKey: string
-    requestedEmotion?: string
-    textEmotion?: string
-    vrmEmotion?: string
-    latencyMs?: string
-    generatedLatencyMs?: string
-    cache?: string
-    normalization?: SpeechTextNormalizationTelemetry
-    audioBoundaries?: SpeechAudioBoundaryTelemetry
-  }> {
-    const cfg = this.settings()
-    const normalization = normalizeSpeechText({
-      text: replyText,
-      language: cfg.ttsLanguage,
-    })
-    if (normalization.diagnostics.fallbackReason) {
-      mainLog.warn('[speech-polish] text normalization fallback', {
-        category: normalization.diagnostics.fallbackReason,
-        inputCharacters: normalization.diagnostics.inputCharacters,
-        outputCharacters: normalization.diagnostics.outputCharacters,
-      })
-    }
-    const utteranceKind = classifySpeechUtterance(
-      normalization.text,
-      emotionKey,
-      normalization.utteranceKind === 'technical',
-    )
-    const speechResult = await this.speech.synthesize(
-      {
-        text: normalization.text,
-        language: cfg.ttsLanguage,
-        voiceId: TTS_VOICE_ID,
-        engine: TTS_ENGINE,
-        emotion: emotionKey,
-        utteranceKind,
-      },
-      signal,
-    )
-    mainLog.info('[emotion] TTS result', {
-      requestedEmotion: emotionKey,
-      ttsRequestedEmotion: speechResult.requestedEmotion,
-      ttsTextEmotion: speechResult.textEmotion,
-      returnedEmotion: speechResult.emotion,
-      latencyMs: speechResult.latencyMs,
-      rtf: speechResult.rtf,
-    })
-
-    return {
-      audioBuffer: speechResult.audioBuffer,
-      emotionKey: normalizeEmotionTag(speechResult.emotion ?? emotionKey),
-      requestedEmotion: speechResult.requestedEmotion,
-      textEmotion: speechResult.textEmotion,
-      vrmEmotion: speechResult.vrmEmotion,
-      latencyMs: speechResult.latencyMs,
-      generatedLatencyMs: speechResult.generatedLatencyMs,
-      cache: speechResult.cache,
-      normalization: {
-        version: normalization.diagnostics.version,
-        changed: normalization.diagnostics.changed,
-        inputCharacters: normalization.diagnostics.inputCharacters,
-        outputCharacters: normalization.diagnostics.outputCharacters,
-        appliedRuleCount: normalization.diagnostics.appliedRuleIds.length,
-        categories: normalization.diagnostics.categories,
-      },
-      audioBoundaries: speechResult.audioBoundaries,
-    }
-  }
-
-  async ask(userText: string): Promise<{
-    replyText: string
-    audioBuffer: ArrayBuffer
-    emotionKey: string
-    vrmEmotion?: string
-    latencyMs?: string
-    generatedLatencyMs?: string
-    cache?: string
-    grounding?: ReplyGrounding
-  }> {
-    const { replyText, emotionKey, grounding } = await this.createReply({ userText })
-    const speechResult = await this.synthesizeReply(replyText, emotionKey)
-
-    return {
-      replyText,
-      audioBuffer: speechResult.audioBuffer,
-      emotionKey: speechResult.emotionKey,
-      vrmEmotion: speechResult.vrmEmotion,
-      latencyMs: speechResult.latencyMs,
-      generatedLatencyMs: speechResult.generatedLatencyMs,
-      cache: speechResult.cache,
-      grounding,
     }
   }
 

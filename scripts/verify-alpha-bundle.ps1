@@ -1,18 +1,25 @@
-param([string]$BundlePath)
+param([string]$BundlePath, [switch]$ExperimentalWorktree)
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $manifest = Get-Content -Raw -Encoding UTF8 (Join-Path $repoRoot "launcher\release-manifest.json") | ConvertFrom-Json
 $expectedName = "Shio-Runtime-$($manifest.productVersion)-win-x64"
+if ($ExperimentalWorktree) { $expectedName += '-ardy-fish-experiment' }
 if (-not $BundlePath) { $BundlePath = Join-Path $repoRoot "release\$expectedName.zip" }
 if (-not (Test-Path -LiteralPath $BundlePath)) { throw "Bundle not found: $BundlePath" }
 
 $verifyRoot = Join-Path $repoRoot "release\alpha-verify"
-if (Test-Path -LiteralPath $verifyRoot) { Remove-Item -LiteralPath $verifyRoot -Recurse -Force }
+function Remove-VerifyScratch {
+    $resolved = [IO.Path]::GetFullPath($verifyRoot)
+    if (-not $resolved.StartsWith([IO.Path]::GetFullPath((Join-Path $repoRoot 'release')) + '\', [StringComparison]::OrdinalIgnoreCase)) { throw 'Unsafe verification path.' }
+    if ([IO.Directory]::Exists($resolved)) { [IO.Directory]::Delete('\\?\' + $resolved, $true) }
+}
+Remove-VerifyScratch
 New-Item -ItemType Directory -Force -Path $verifyRoot | Out-Null
 try {
-    Expand-Archive -LiteralPath $BundlePath -DestinationPath $verifyRoot
+    & tar.exe -xf $BundlePath -C $verifyRoot
+    if ($LASTEXITCODE -ne 0) { throw 'Bundle extraction failed.' }
     $root = Join-Path $verifyRoot $expectedName
     $required = @(
         "Start Shio Runtime.cmd",
@@ -20,6 +27,11 @@ try {
         "launcher\ShioLauncher.ps1",
         "launcher\release-manifest.json",
         "desktop\Shio Runtime.exe",
+        "desktop\resources\motion-source\worker.py",
+        "desktop\resources\motion-source\backend.py",
+        "desktop\resources\motion-source\research-pins.json",
+        "desktop\resources\motion-source\motion-profiles.json",
+        "desktop\resources\motion-source\requirements-research.lock.txt",
         "speech-pack\api\requirements.lock.txt",
         "speech-pack\api\requirements-torch-cu128.txt",
         "speech-pack\api\.env.release",
@@ -27,6 +39,7 @@ try {
         "speech-pack\api\scripts\doctor_strict.py",
         "docs\ALPHA-INSTALL.md",
         "docs\ALPHA-TROUBLESHOOTING.md"
+        "docs\EXPERIMENT-ARDY-FISH.md"
     )
     foreach ($relative in $required) {
         if (-not (Test-Path -LiteralPath (Join-Path $root $relative))) { throw "Missing bundle file: $relative" }
@@ -72,7 +85,7 @@ try {
     $forbiddenExtensions = @(
         ".key", ".pem", ".pfx", ".p12", ".cer", ".crt", ".log", ".db",
         ".sqlite", ".sqlite3", ".ckpt", ".safetensors", ".pt", ".pth", ".onnx",
-        ".tmp", ".temp", ".coverage"
+        ".tmp", ".temp", ".coverage", ".vrma"
     )
     $bad = Get-ChildItem -LiteralPath $root -Recurse -Force | Where-Object {
         $forbiddenNames -contains $_.Name -or
@@ -91,6 +104,7 @@ try {
     }
     $apiRoot = Join-Path $root "speech-pack\api"
     $tracked = & git -C $repoRoot ls-files -- "apps/api"
+    if ($ExperimentalWorktree) { $tracked = & git -C $repoRoot ls-files --cached --others --exclude-standard -- "apps/api" }
     if ($LASTEXITCODE -ne 0) { throw "Could not enumerate tracked API files." }
     $trackedSet = @{}
     foreach ($item in $tracked) {
@@ -105,6 +119,9 @@ try {
     $textFiles = Get-ChildItem -LiteralPath $root -Recurse -File |
         Where-Object { $_.Extension -in @(".txt", ".md", ".json", ".ps1", ".cmd", ".py") }
     foreach ($file in $textFiles) {
+        # Upstream documentation contains illustrative C:\Users\me paths; it is
+        # not locally generated application configuration or developer data.
+        if ($file.FullName.Contains('\app.asar.unpacked\node_modules\')) { continue }
         $text = Get-Content -Raw -ErrorAction SilentlyContinue -LiteralPath $file.FullName
         if ($text -match "[A-Za-z]:\\(Users|Web)\\") { throw "Absolute developer path found: $($file.FullName)" }
         if ($text -match "(?i)(api[_-]?key|github[_-]?token)\s*[:=]\s*[A-Za-z0-9_-]{12,}") {
@@ -113,5 +130,5 @@ try {
     }
     Write-Host "Verified: $BundlePath"
 } finally {
-    if (Test-Path -LiteralPath $verifyRoot) { Remove-Item -LiteralPath $verifyRoot -Recurse -Force }
+    Remove-VerifyScratch
 }

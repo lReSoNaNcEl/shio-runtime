@@ -1,4 +1,7 @@
-import type { CharacterEmbodimentIntent } from '../../shared/character-response'
+import type {
+  CharacterEmbodimentIntent,
+  EmbodimentIntentContext,
+} from '../../shared/character-response'
 import type { CharacterState } from '../../shared/runtime'
 import type { ReactionGestureTrigger } from '../avatar/AvatarController'
 import type { EarImpulse } from '../avatar/embodiment/secondary-motion/EarBehaviorRuntime'
@@ -9,12 +12,17 @@ import type { OverlayRuntime, SyncedAvatarState } from './OverlayRuntime'
 export type ConversationAvatarProjection = SyncedAvatarState
 
 export interface ConversationPresentationPort {
+  settleMotionCancellation?(): Promise<void>
+  setSpeechDelivery?(emotion: string | null): void
   applyCharacterState(
     state: CharacterState,
     options?: { lipSyncStart?: LipSyncStartRequest; stopLipSyncTurnId?: string },
   ): void
   publishAvatarState(state: SyncedAvatarState, intent?: CharacterEmbodimentIntent): void
-  setEmbodimentIntent(intent: CharacterEmbodimentIntent | undefined): void
+  setEmbodimentIntent(
+    intent: CharacterEmbodimentIntent | undefined,
+    context?: EmbodimentIntentContext,
+  ): void
   setBehaviorEmbodimentIntent(intent: CharacterEmbodimentIntent | undefined): void
   setBrowserScreenGaze(sessionId: string, active: boolean): void
   interruptLipSync(turnId: string): void
@@ -31,6 +39,7 @@ export class AvatarConversationPresentationPort implements ConversationPresentat
   private behaviorIntent: CharacterEmbodimentIntent | undefined
   private browserScreenGazeSessionId: string | undefined
   private browserScreenGazeActive = false
+  private speechDeliveryEmotion: string | null = null
 
   constructor(
     private readonly avatar: AvatarRuntime,
@@ -51,10 +60,13 @@ export class AvatarConversationPresentationPort implements ConversationPresentat
     this.publishOverlayProjection()
   }
 
-  setEmbodimentIntent(intent: CharacterEmbodimentIntent | undefined): void {
+  setEmbodimentIntent(
+    intent: CharacterEmbodimentIntent | undefined,
+    context?: EmbodimentIntentContext,
+  ): void {
     this.conversationIntent = intent
     this.behaviorIntent = undefined
-    this.contain('set embodiment intent', () => this.avatar.setEmbodimentIntent(intent))
+    this.contain('set embodiment intent', () => this.avatar.setEmbodimentIntent(intent, context))
     this.publishOverlayProjection()
   }
 
@@ -80,11 +92,27 @@ export class AvatarConversationPresentationPort implements ConversationPresentat
   }
 
   interruptLipSync(turnId: string): void {
+    this.setSpeechDelivery(null)
     this.contain('interrupt LipSync', () => this.avatar.interruptLipSync(turnId))
   }
 
   stopLipSync(turnId: string): void {
+    this.setSpeechDelivery(null)
     this.contain('stop LipSync', () => this.avatar.stopLipSync(turnId))
+  }
+
+  setSpeechDelivery(emotion: string | null): void {
+    this.speechDeliveryEmotion = emotion
+    this.contain('set audible speech delivery', () => this.avatar.setSpeechDelivery(emotion))
+    this.publishOverlayProjection()
+  }
+
+  async settleMotionCancellation(): Promise<void> {
+    try {
+      await this.avatar.settleMotionCancellation()
+    } catch (error) {
+      this.reportFailure('settle motion cancellation', error)
+    }
   }
 
   triggerUserInterruption(): void {
@@ -122,6 +150,7 @@ export class AvatarConversationPresentationPort implements ConversationPresentat
         behaviorEmbodimentIntent: this.behaviorIntent,
         browserScreenGazeSessionId: this.browserScreenGazeSessionId,
         browserScreenGazeActive: this.browserScreenGazeActive,
+        speechDeliveryEmotion: this.speechDeliveryEmotion,
       }),
     )
   }

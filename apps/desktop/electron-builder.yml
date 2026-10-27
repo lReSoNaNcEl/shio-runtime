@@ -13,6 +13,13 @@ asarUnpack:
   # between the virtual app.asar tree and its unpacked counterpart.
   - node_modules/**/*
 extraResources:
+  - from: motion
+    to: motion-source
+    filter:
+      - '*.py'
+      - '*.json'
+      - requirements-research.lock.txt
+      - licenses/**/*
   - from: resources/desktop-control
     to: app.asar.unpacked/desktop-control
     filter:

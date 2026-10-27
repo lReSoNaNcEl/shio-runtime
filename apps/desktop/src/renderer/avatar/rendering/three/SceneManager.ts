@@ -34,6 +34,13 @@ export class SceneManager {
   private readonly lookAtAnchor = new THREE.Object3D()
   private framedPosition: { x: number; y: number; z: number } | null = null
   private framedTarget: { x: number; y: number; z: number } | null = null
+  private handCameraTarget: (() => THREE.Sphere | null) | null = null
+  private handCameraRadius = 0
+  private handCameraFitDistance = 0
+  private modelHeight = 1.65
+  private modelBase = 0
+  private modelHeadY: number | null = null
+  private modelFrontSign: -1 | 1 = -1
   private lastTime = performance.now()
   private animCallbacks: Array<(delta: number) => void> = []
   private rafId = 0
@@ -114,6 +121,7 @@ export class SceneManager {
    * touch model state.
    */
   resetCamera(): void {
+    this.stopHandCamera()
     const position = this.framedPosition ?? avatarStartupTuning.camera.position
     const target = this.framedTarget ?? avatarStartupTuning.camera.target
     this.applyCameraView(position, target)
@@ -124,10 +132,11 @@ export class SceneManager {
   /**
    * Computes a front-facing, full-body framing from the loaded model's bounds so
    * the avatar fills a sensible fraction of the viewport instead of appearing
-   * tiny. VRM front faces -Z, so the camera sits on the -Z side. The result is
+   * tiny. Camera placement follows the loaded model's VRM front. The result is
    * cached and reused by {@link resetCamera}. Preview-only presentation concern.
    */
   frameLoadedModel(fillRatio = 0.72): void {
+    this.stopHandCamera()
     const box = new THREE.Box3()
     let hasMesh = false
     this.scene.traverse((obj) => {
@@ -146,20 +155,87 @@ export class SceneManager {
     const vFov = THREE.MathUtils.degToRad(this.camera.fov)
     const distance = height / Math.max(0.2, fillRatio) / (2 * Math.tan(vFov / 2))
     this.framedTarget = { x: 0, y: center.y, z: 0 }
-    this.framedPosition = { x: 0, y: center.y, z: -distance }
+    this.framedPosition = { x: 0, y: center.y, z: this.modelFrontSign * distance }
     this.applyCameraView(this.framedPosition, this.framedTarget)
     this.controls.target.set(0, center.y, 0)
     this.controls.update()
   }
 
+  /** Preview-only framing follows the composed hand; it never writes the rig. */
+  frameHand(getBounds: () => THREE.Sphere | null): void {
+    const bounds = getBounds()
+    if (!bounds) return
+    const target = bounds.center
+    this.handCameraTarget = getBounds
+    this.handCameraRadius = bounds.radius
+    const distance = this.handCameraDistance(bounds.radius)
+    this.handCameraFitDistance = distance
+    this.controls.minDistance = Math.max(0.08, this.modelHeight * 0.06)
+    this.applyCameraView(
+      {
+        x: target.x,
+        y: target.y + distance * 0.1,
+        z: target.z + this.modelFrontSign * distance,
+      },
+      target,
+      this.camera.fov,
+    )
+    this.controls.target.copy(target)
+    this.controls.update()
+  }
+
+  private stopHandCamera(): void {
+    this.handCameraTarget = null
+    this.handCameraRadius = 0
+    this.handCameraFitDistance = 0
+    this.controls.minDistance = 0.6
+  }
+
+  private updateHandCamera(): void {
+    const bounds = this.handCameraTarget?.()
+    if (!bounds) {
+      if (this.handCameraTarget) this.stopHandCamera()
+      return
+    }
+    const target = bounds.center
+    this.camera.position.add(target.clone().sub(this.controls.target))
+    this.controls.target.copy(target)
+    this.handCameraRadius = Math.max(this.handCameraRadius, bounds.radius)
+    const distance = this.handCameraDistance(this.handCameraRadius)
+    if (distance > this.handCameraFitDistance) {
+      this.handCameraFitDistance = distance
+      const offset = this.camera.position.clone().sub(target)
+      if (offset.length() < distance)
+        this.camera.position.copy(target).add(offset.setLength(distance))
+    }
+  }
+
+  private handCameraDistance(radius: number): number {
+    const vertical = THREE.MathUtils.degToRad(this.camera.fov) / 2
+    const horizontal = Math.atan(Math.tan(vertical) * Math.max(0.1, this.camera.aspect))
+    return Math.max(
+      this.modelHeight * 0.12,
+      (radius * 1.1) / Math.sin(Math.min(vertical, horizontal)),
+    )
+  }
+
   setOverlayCameraPreset(mode: OverlayViewMode, scale = 1): void {
+    this.stopHandCamera()
     const preset = overlayCameraPresets[mode] ?? overlayCameraPresets.bust
     const clampedScale = Math.max(preset.scaleMin, Math.min(preset.scaleMax, scale))
-    const target = preset.target
+    const ratio = this.modelHeight / 1.65
+    const target = {
+      x: preset.target.x * ratio,
+      y:
+        this.modelHeadY === null
+          ? this.modelBase + preset.target.y * ratio
+          : this.modelHeadY + (preset.target.y - 1.5) * ratio,
+      z: preset.target.z * ratio,
+    }
     const offset = {
-      x: preset.position.x - target.x,
-      y: preset.position.y - target.y,
-      z: preset.position.z - target.z,
+      x: (preset.position.x - preset.target.x) * ratio,
+      y: (preset.position.y - preset.target.y) * ratio,
+      z: (preset.position.z - preset.target.z) * ratio * -this.modelFrontSign,
     }
     this.applyCameraView(
       {
@@ -183,9 +259,25 @@ export class SceneManager {
   }
 
   configureAvatarModelQuality(): AvatarTextureQualityState {
+    const bounds = new THREE.Box3()
+    this.scene.traverse((object) => {
+      if ((object as THREE.Mesh).isMesh) bounds.expandByObject(object)
+    })
+    if (!bounds.isEmpty()) {
+      this.modelHeight = Math.max(0.2, bounds.max.y - bounds.min.y)
+      this.modelBase = bounds.min.y
+    }
     const state = this.quality.configureModel(this.scene, this.renderer)
     this.renderQualityLogPending = true
     return state
+  }
+
+  setAvatarHeadPosition(position: THREE.Vector3 | null): void {
+    this.modelHeadY = position?.y ?? null
+  }
+
+  setAvatarFrontSign(sign: -1 | 1): void {
+    this.modelFrontSign = sign
   }
 
   getRenderQualityDebugState(): AvatarRenderQualityDebugState {
@@ -221,6 +313,7 @@ export class SceneManager {
       this.lastTime = now
       const nextDpr = resolveEffectiveDpr(window.devicePixelRatio)
       if (nextDpr !== this.effectiveDpr) this.onResize()
+      this.updateHandCamera()
       this.controls.update()
       this.syncLookAtAnchor()
       for (const cb of this.animCallbacks) cb(delta)
@@ -254,6 +347,7 @@ export class SceneManager {
     if (this.disposed) return
     this.disposed = true
     this.stop()
+    this.handCameraTarget = null
     this.animCallbacks = []
     this.controls.dispose()
     this.renderer.dispose()

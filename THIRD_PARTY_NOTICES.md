@@ -24,3 +24,19 @@ bundle.
 The DeepSeek Harness packages are Developer Preview software. Shio pins the
 compatible DSH runtime family exactly and does not resolve or upgrade these packages
 at application runtime.
+
+The ARDY/Fish experiment adds independently installed model runtimes. Their exact
+revisions are recorded in `apps/desktop/motion/research-pins.json`, API config and
+the launcher manifest. Model weights and credentials are not bundled.
+
+| Component | Pinned revision | Upstream license notice |
+| --- | --- | --- |
+| NVIDIA ARDY source | `e706e27acc88070918308a10922b8f7174d0825e` | Apache-2.0; copied in Motion `licenses/ARDY-SOURCE-LICENSE.txt` |
+| ARDY SOMA RP 30FPS Horizon60 | `244215084b22fcd29ab743017330e87411fe168a` | NVIDIA Open Model License; Motion `licenses/ARDY-MODEL-LICENSE.txt` |
+| Meta Llama 3 8B Instruct | `8afb486c1db24fe5011ec46dfbe5b5dccdb575c2` | Llama 3 Community License and use policy; copied in Motion `licenses/` |
+| LLM2Vec mntp / supervised adapters | `31474e395ada192e8ed1586db6be79fb3b70c9c0` / `baa8ebf04a1c2500e61288e7dad65e8ae42601a7` | MIT model-card metadata; the base model has its own terms |
+| Fish S2 source | `541566932abbaebcb0a40e562a1f846738383f38` | Fish Audio Community License; API `licenses/FISH-SOURCE-LICENSE.md` |
+| Fish S2 Pro model | `1de9996b6be38b745688de084d87a5633f714e4e` | Fish Audio Research License; API `licenses/FISH-MODEL-LICENSE.md` |
+
+Source and model notices are distinct. The pinned Fish model notice is the
+March 7, 2026 research license; the source notice does not replace that notice.

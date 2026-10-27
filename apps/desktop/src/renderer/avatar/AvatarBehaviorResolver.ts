@@ -63,8 +63,8 @@ export interface AvatarBehaviorResolution {
   selectionReason: string
 }
 
-const FALLBACK_ANIMATION_ID: AnimationId = 'neutral_idle'
-const SPEAKING_FALLBACK_ANIMATION_ID: AnimationId = 'neutral2'
+const FALLBACK_ANIMATION_ID: AnimationId = 'presence_poised'
+const SPEAKING_FALLBACK_ANIMATION_ID: AnimationId = 'presence_speaking'
 
 export class AvatarBehaviorResolver {
   private cooldowns = new AvatarAnimationCooldownManager()
@@ -85,13 +85,12 @@ export class AvatarBehaviorResolver {
     const excludedIds = new Set(excludedAnimationIds)
     const selection = this.selectAnimation(candidates, excludedIds, manifestState)
     this.annotateCandidates(candidates, selection.animationId, excludedIds)
-    this.cooldowns.markPlayed(selection.animationId, now)
 
     return {
       behaviorId,
       candidates,
       animationId: selection.animationId,
-      loop: effect.loop,
+      loop: getAnimation(selection.animationId)?.loop ?? true,
       motionLayer: 'base',
       fallbackAnimationId: this.getFallbackAnimationId(manifestState, excludedIds),
       activeCooldowns: this.cooldowns.getActiveCooldowns(now),
@@ -111,7 +110,6 @@ export class AvatarBehaviorResolver {
     const excludedIds = new Set(excludedAnimationIds)
     const selection = this.selectAnimation(candidates, excludedIds, manifestState)
     this.annotateCandidates(candidates, selection.animationId, excludedIds)
-    this.cooldowns.markPlayed(selection.animationId, now)
     const entry = getAnimation(selection.animationId)
 
     return {
@@ -149,7 +147,6 @@ export class AvatarBehaviorResolver {
     const excludedIds = new Set(excludedAnimationIds)
     const selection = this.selectAnimation(candidates, excludedIds, manifestState, usage)
     this.annotateCandidates(candidates, selection.animationId, excludedIds)
-    this.cooldowns.markPlayed(selection.animationId, now)
     const entry = getAnimation(selection.animationId)
     return {
       behaviorId,
@@ -193,7 +190,6 @@ export class AvatarBehaviorResolver {
     const excludedIds = new Set(excludedAnimationIds)
     const selection = this.selectAnimation(candidates, excludedIds, manifestState, usage)
     this.annotateCandidates(candidates, selection.animationId, excludedIds)
-    this.cooldowns.markPlayed(selection.animationId, now)
     const entry = getAnimation(selection.animationId)
     return {
       behaviorId: this.normalizeBehavior(effect.behaviorId),
@@ -205,6 +201,10 @@ export class AvatarBehaviorResolver {
       activeCooldowns: this.cooldowns.getActiveCooldowns(now),
       selectionReason: `intent:${intent.gestureHint}/${intent.intensity}; ${selection.reason}`,
     }
+  }
+
+  recordStarted(animationId: AnimationId): void {
+    this.cooldowns.markPlayed(animationId)
   }
 
   clearCooldowns(): void {
@@ -348,13 +348,9 @@ export class AvatarBehaviorResolver {
       return { animationId: fallback, reason: `no manifest candidates -> fallback ${fallback}` }
     }
 
-    const leastRecent = weighted
-      .slice()
-      .sort((a, b) => (a.lastPlayedAt ?? 0) - (b.lastPlayedAt ?? 0))[0]
     return {
-      animationId:
-        leastRecent?.animationId ?? this.getFallbackAnimationId(mode, excludedAnimationIds),
-      reason: `all ${weighted.length} on cooldown -> least-recently-played`,
+      animationId: this.getFallbackAnimationId(mode, excludedAnimationIds),
+      reason: 'family cooldown; preserve presence',
     }
   }
 
@@ -422,8 +418,8 @@ export class AvatarBehaviorResolver {
     }
     if (allowed(preferred)) return preferred
     if (allowed(FALLBACK_ANIMATION_ID)) return FALLBACK_ANIMATION_ID
-    if (allowed('neutral2')) return 'neutral2'
-    return 'neutral_idle'
+    if (allowed('presence_speaking')) return 'presence_speaking'
+    return 'presence_poised'
   }
 
   private selectWeighted(candidates: AvatarBehaviorCandidate[]): AnimationId {

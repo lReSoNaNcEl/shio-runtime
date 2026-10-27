@@ -1,3 +1,4 @@
+import { getMotionProfile } from '../../shared/motion'
 import type { AvatarBehaviorId } from './AvatarBehaviorResolver'
 import type { AvatarMode } from './AvatarStateMachine'
 import type { AvatarBodyMotionLayer } from './embodiment/motion/AvatarMotionLayer'
@@ -34,6 +35,7 @@ export class AvatarAnimationQueue {
 
   request(
     input: Omit<AvatarAnimationQueueItem, 'id' | 'enqueueTime'>,
+    forceReplay = false,
   ): AvatarAnimationQueueDecision {
     const item: AvatarAnimationQueueItem = {
       ...input,
@@ -42,17 +44,18 @@ export class AvatarAnimationQueue {
     }
 
     this.removeObsoleteEntries(item.mode)
+    this.pruneExpired()
 
     if (!this.current) {
       this.current = item
       return { action: 'play', item, interruptedItem: null, reason: 'no current item' }
     }
 
-    if (this.isDuplicate(this.current, item)) {
+    if (!forceReplay && this.isDuplicate(this.current, item)) {
       return { action: 'ignored', item, interruptedItem: null, reason: 'already current' }
     }
 
-    if (this.shouldInterrupt(this.current, item)) {
+    if (forceReplay || this.shouldInterrupt(this.current, item)) {
       const interruptedItem = this.current
       this.current = item
       return { action: 'play', item, interruptedItem, reason: 'interrupt current' }
@@ -62,6 +65,13 @@ export class AvatarAnimationQueue {
       if (this.items.some((queued) => this.isDuplicate(queued, item))) {
         return { action: 'ignored', item, interruptedItem: null, reason: 'already queued' }
       }
+      const family = getMotionProfile(item.animationId)?.family
+      if (family)
+        this.items = this.items.filter(
+          (queued) => getMotionProfile(queued.animationId)?.family !== family,
+        )
+      if (this.items.length >= 2)
+        return { action: 'discard', item, interruptedItem: null, reason: 'pending intent limit' }
       this.items.push(item)
       return { action: 'queue', item, interruptedItem: null, reason: 'queued idle item' }
     }
@@ -76,6 +86,7 @@ export class AvatarAnimationQueue {
 
   completeCurrent(): AvatarAnimationQueueItem | null {
     this.current = null
+    this.pruneExpired()
     const next = this.items.shift() ?? null
     this.current = next
     return next
@@ -112,17 +123,23 @@ export class AvatarAnimationQueue {
     }
   }
 
+  private pruneExpired(): void {
+    const now = Date.now()
+    this.items = this.items.filter(
+      (item) =>
+        now - item.enqueueTime <=
+        (getMotionProfile(item.animationId)?.variationPolicy.intentTtlMs ?? 5000),
+    )
+  }
+
   private shouldInterrupt(
     current: AvatarAnimationQueueItem,
     next: AvatarAnimationQueueItem,
   ): boolean {
-    if (current.mode === 'speaking' && next.mode === 'idle') return true
-    if (!current.interruptible) return false
-    if (next.behaviorId === 'greeting' && current.mode === 'idle') return true
-    if (next.mode === 'speaking' && (current.mode === 'idle' || current.behaviorId === 'greeting'))
-      return true
-    if (next.mode === 'listening' || next.mode === 'thinking') return current.mode === 'idle'
-    return next.mode === 'idle' && current.mode === 'idle'
+    // Admission changes the conversational mode immediately. The common body
+    // executor still owns the protected phase and the physical recovery route.
+    if (next.mode !== current.mode) return true
+    return current.interruptible
   }
 
   private isDuplicate(a: AvatarAnimationQueueItem, b: AvatarAnimationQueueItem): boolean {

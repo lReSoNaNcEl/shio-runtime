@@ -1,11 +1,9 @@
-# FastAPI & Web
+# HTTP contract and validated configuration
 fastapi
 uvicorn[standard]
 python-multipart
 websockets
 httpx
-
-# Configuration
 pydantic
 pydantic-settings
 
@@ -13,19 +11,33 @@ pydantic-settings
 faster-whisper
 silero-vad
 
-# TTS: F5-TTS.
-# Install torch/torchaudio separately for your GPU, e.g. Blackwell RTX 50xx:
-#   pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu128
-setuptools<82  # torch 2.11 CUDA wheels require this upper bound
-f5-tts
-ruaccent
-transformers>=5.2
-huggingface-hub>=1.21
-datasets>=4.0
-numpy>=1.26,<2
+# Local Fish S2 Pro. Upstream model/source revisions are in app/config.py.
+# CUDA wheels remain pinned in requirements-torch-cu128.txt.
+setuptools<82
+numpy==1.26.4
 scipy==1.17.1
-onnx
-ml_dtypes
-
-# Audio Processing
-soundfile
+soundfile==0.12.1
+hydra-core==1.3.2
+omegaconf==2.3.0
+einops==0.8.2
+einx[torch]==0.2.2
+transformers==5.19.0
+tokenizers==0.23.3
+huggingface-hub==2.3.0
+# Arrow 26 wheels require NumPy 2 at import time; Fish pins NumPy 1.26.
+datasets==5.1.0
+pyarrow==25.0.0
+safetensors==0.8.0
+librosa==0.10.2
+loguru==0.7.3
+natsort==8.4.0
+pyrootutils==1.0.4
+resampy==0.4.3
+ormsgpack==1.13.0
+cachetools==7.2.5
+tiktoken==0.14.0
+descript-audio-codec==1.0.0
+# Official audiotools revision fixes its stale protobuf<3.20 package constraint.
+descript-audiotools @ https://github.com/descriptinc/audiotools/archive/348ebf2034ce24e2a91a553e3171cb00c0c71678.zip
+protobuf==4.25.9
+triton-windows==3.6.0.post26; sys_platform == 'win32'

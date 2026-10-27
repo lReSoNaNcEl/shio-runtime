@@ -1,20 +1,28 @@
+param([switch]$ExperimentalWorktree)
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $manifest = Get-Content -Raw -Encoding UTF8 (Join-Path $repoRoot "launcher\release-manifest.json") | ConvertFrom-Json
 $name = "Shio-Runtime-$($manifest.productVersion)-win-x64"
+if ($ExperimentalWorktree) { $name += '-ardy-fish-experiment' }
 $releaseRoot = Join-Path $repoRoot "release"
 $desktopReleaseRoot = Join-Path $repoRoot "apps\desktop\release"
-$stageRoot = Join-Path ([IO.Path]::GetTempPath()) "shio-alpha-staging-$PID"
+$stageRoot = Join-Path $releaseRoot ".staging.$PID"
 $bundleRoot = Join-Path $stageRoot $name
 $zipPath = Join-Path $releaseRoot "$name.zip"
+
+function Remove-BundleScratch {
+    $resolved = [IO.Path]::GetFullPath($stageRoot)
+    if (-not $resolved.StartsWith([IO.Path]::GetFullPath($releaseRoot) + '\', [StringComparison]::OrdinalIgnoreCase)) { throw 'Unsafe bundle staging path.' }
+    if ([IO.Directory]::Exists($resolved)) { [IO.Directory]::Delete('\\?\' + $resolved, $true) }
+}
 
 try {
 if (Test-Path -LiteralPath $stageRoot) {
     $resolved = [IO.Path]::GetFullPath($stageRoot)
-    if (-not $resolved.StartsWith([IO.Path]::GetFullPath([IO.Path]::GetTempPath()))) { throw "Unsafe staging path." }
-    Remove-Item -LiteralPath $stageRoot -Recurse -Force
+    if (-not $resolved.StartsWith([IO.Path]::GetFullPath($releaseRoot) + '\', [StringComparison]::OrdinalIgnoreCase)) { throw "Unsafe staging path." }
+    Remove-BundleScratch
 }
 New-Item -ItemType Directory -Force -Path $bundleRoot | Out-Null
 New-Item -ItemType Directory -Force -Path $releaseRoot | Out-Null
@@ -44,8 +52,9 @@ $launcherTarget = Join-Path $bundleRoot "launcher"
 New-Item -ItemType Directory -Force -Path $launcherTarget | Out-Null
 Copy-Item -LiteralPath (Join-Path $repoRoot "launcher\ShioLauncher.ps1") -Destination $launcherTarget
 Copy-Item -LiteralPath (Join-Path $repoRoot "launcher\release-manifest.json") -Destination $launcherTarget
-Copy-Item -LiteralPath (Join-Path $repoRoot "apps\desktop\release\win-unpacked") `
-    -Destination (Join-Path $bundleRoot "desktop") -Recurse
+# Windows PowerShell 5 Copy-Item fails on nested dependency paths over MAX_PATH.
+& robocopy.exe (Join-Path $repoRoot 'apps\desktop\release\win-unpacked') (Join-Path $bundleRoot 'desktop') /E /COPY:DAT /DCOPY:DAT /R:0 /W:0 /NFL /NDL /NJH /NJS | Out-Null
+if ($LASTEXITCODE -gt 7) { throw "Desktop bundle copy failed: $LASTEXITCODE" }
 
 $speechRoot = Join-Path $bundleRoot "speech-pack"
 New-Item -ItemType Directory -Force -Path $speechRoot | Out-Null
@@ -56,13 +65,15 @@ if (-not (Test-Path -LiteralPath $apiSource -PathType Container)) {
 }
 New-Item -ItemType Directory -Force -Path $apiTarget | Out-Null
 $trackedApiFiles = & git -C $repoRoot ls-files -- "apps/api"
+if ($ExperimentalWorktree) { $trackedApiFiles = & git -C $repoRoot ls-files --cached --others --exclude-standard -- "apps/api" }
 if ($LASTEXITCODE -ne 0) { throw "Could not enumerate tracked Speech Pack files." }
 if ($trackedApiFiles.Where({ -not $_.StartsWith("apps/api/") }).Count -ne 0) {
     throw "Tracked Speech Pack source escaped the canonical apps/api prefix."
 }
 $releaseFiles = $trackedApiFiles | Where-Object {
-    $_ -match '^apps/api/app/' -or
-    $_ -match '^apps/api/web/' -or
+    $_ -match '^apps/api/app/.*\.py$' -or
+    $_ -match '^apps/api/web/.*\.(html|js|css)$' -or
+    $_ -match '^apps/api/licenses/.*\.(txt|md)$' -or
     $_ -in @(
         "apps/api/.env.release",
         "apps/api/emotion_manifest.json",
@@ -90,6 +101,7 @@ foreach ($requiredSource in $requiredReleaseSources) {
     }
 }
 foreach ($tracked in $releaseFiles) {
+    if (-not (Test-Path -LiteralPath (Join-Path $repoRoot $tracked) -PathType Leaf)) { continue }
     $relative = $tracked.Substring("apps/api/".Length)
     $destination = Join-Path $apiTarget $relative
     New-Item -ItemType Directory -Force -Path (Split-Path -Parent $destination) | Out-Null
@@ -100,15 +112,14 @@ $docsTarget = Join-Path $bundleRoot "docs"
 New-Item -ItemType Directory -Force -Path $docsTarget | Out-Null
 Copy-Item (Join-Path $repoRoot "docs\ALPHA-INSTALL.md") $docsTarget
 Copy-Item (Join-Path $repoRoot "docs\ALPHA-TROUBLESHOOTING.md") $docsTarget
+Copy-Item (Join-Path $repoRoot "docs\EXPERIMENT-ARDY-FISH.md") $docsTarget
 
 if (Test-Path -LiteralPath $zipPath) { Remove-Item -LiteralPath $zipPath -Force }
-Compress-Archive -LiteralPath $bundleRoot -DestinationPath $zipPath -CompressionLevel Optimal
+& tar.exe -a -cf $zipPath -C $stageRoot $name
+if ($LASTEXITCODE -ne 0) { throw 'Bundle compression failed.' }
 Write-Host "Built: $zipPath"
 } finally {
     if (Test-Path -LiteralPath $stageRoot) {
-        Remove-Item -LiteralPath $stageRoot -Recurse -Force
-    }
-    if (Test-Path -LiteralPath $desktopReleaseRoot) {
-        Remove-Item -LiteralPath $desktopReleaseRoot -Recurse -Force
+        Remove-BundleScratch
     }
 }

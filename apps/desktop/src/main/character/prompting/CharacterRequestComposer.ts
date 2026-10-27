@@ -5,6 +5,7 @@ import type {
   WorldContextSnapshot,
 } from '../../../shared/alive'
 import type { ShioCapabilitySnapshot } from '../../../shared/capabilities'
+import type { EmbodimentAvailability } from '../../../shared/character-response'
 import type { ConversationThread } from '../../../shared/conversation-threads'
 import type { HabitRecord, RelationshipContext } from '../../../shared/memory'
 import type { ChatMessage } from '../../llm'
@@ -12,13 +13,15 @@ import {
   CAPABILITY_CONTEXT_UNAVAILABLE_PROMPT,
   characterCapabilityPrompt,
 } from './CapabilityPromptProjection'
+import { embodimentAvailabilityPrompt } from './EmbodimentAvailabilityPrompt'
 import { goalAwarenessPrompt } from './GoalAwarenessPrompt'
 
 export const CHARACTER_CONTEXT_BUDGET = Object.freeze({
   totalCharacters: 16_000,
   sections: Object.freeze({
     persona: 5_500,
-    responsePolicy: 2_000,
+    responsePolicy: 8_200,
+    embodiment: 1_400,
     mood: 900,
     relationship: 1_400,
     goals: 1_800,
@@ -38,11 +41,13 @@ export const CHARACTER_CONTEXT_ALLOCATION = Object.freeze({
     0: Object.freeze(['persona', 'responsePolicy', 'toolResults'] as const),
     1: Object.freeze(['goals', 'threads', 'project', 'world'] as const),
     2: Object.freeze(['memory', 'relationship', 'mood'] as const),
-    3: Object.freeze(['capabilities'] as const),
+    3: Object.freeze(['capabilities', 'embodiment'] as const),
   }),
   minimumCharacters: Object.freeze({
-    persona: 3_000,
-    responsePolicy: 1_200,
+    persona: 2_000,
+    // Keep the complete delivery/embodiment protocol even in a saturated turn.
+    responsePolicy: 7_400,
+    embodiment: 1_000,
     toolResults: 1_600,
     goals: 500,
     threads: 350,
@@ -70,6 +75,7 @@ export interface CharacterRequestContext {
   memory?: string | null
   capabilities?: ShioCapabilitySnapshot | null
   capabilityContextUnavailable?: boolean
+  embodimentAvailability?: EmbodimentAvailability
   project?: string | null
   world?: WorldContextSnapshot | null
   toolResults?: string | null
@@ -82,7 +88,7 @@ function bounded(value: string, maximum: number): string {
   if (normalized.length <= maximum) return normalized
   const marker = '[truncated]'
   if (maximum <= marker.length) return marker.slice(0, maximum)
-  return `${normalized.slice(0, maximum - marker.length - 1).trimEnd()}\n${marker}`
+  return `${normalized.slice(0, maximum - marker.length - 1)}\n${marker}`
 }
 
 function safeStrings(values: readonly string[], limit: number, maximum: number): readonly string[] {
@@ -211,6 +217,7 @@ export class CharacterRequestComposer {
       ],
       ['project', context.project],
       ['world', worldPrompt(context.world)],
+      ['embodiment', embodimentAvailabilityPrompt(context.embodimentAvailability)],
       ['toolResults', context.toolResults],
     ]
     const active = candidates.flatMap(([section, value]) => {
@@ -232,7 +239,7 @@ function allocateCharacters(
   active: readonly { section: CharacterContextSection; value: string }[],
 ): ReadonlyMap<CharacterContextSection, number> {
   const allocations = new Map<CharacterContextSection, number>()
-  let remaining = CHARACTER_CONTEXT_BUDGET.totalCharacters
+  let remaining = CHARACTER_CONTEXT_BUDGET.totalCharacters - Math.max(0, active.length - 1)
 
   for (const { section, value } of active) {
     const reserved = Math.min(

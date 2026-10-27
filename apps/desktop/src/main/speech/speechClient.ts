@@ -1,7 +1,14 @@
 import axios, { type AxiosInstance } from 'axios'
+import { z } from 'zod'
 
 import { type EmotionContract, emotionRegistry } from '../../shared/emotion'
-import type { SpeechAudioBoundaryTelemetry, SpeechUtteranceKind } from '../../shared/speech'
+import type {
+  SpeechStreamInput,
+  SpeechStreamOutput,
+  SpeechStreamStart,
+  SpeechStreamStartMessage,
+} from '../../shared/speech'
+import { SPEECH_EMOTIONS } from '../../shared/speech'
 import { observeAxiosNetwork } from '../diagnostics/observeAxiosNetwork'
 import { mainLog } from '../logging/safeLogger'
 import { type Health, HealthSchema, type Recognize, RecognizeSchema } from '../schemas'
@@ -11,12 +18,46 @@ export type { Health, Recognize }
 
 export const DEFAULT_TTS_VOICE_ID = 'animevox_makima'
 
-/**
- * Per-capability projection derived from a successful `/health` response. A
- * reachable service does not imply every engine is up: ASR, F5 (TTS), and the
- * streaming transport are reported independently so the renderer can render
- * partial availability.
- */
+const speechServerMessageSchema = z.discriminatedUnion('type', [
+  z
+    .object({
+      type: z.literal('ready'),
+      protocolVersion: z.literal(2),
+      sessionId: z.string().max(128),
+      engine: z.literal('fish-s2-pro'),
+      sampleRate: z.number().int().min(8000).max(48000),
+      channels: z.literal(1),
+      sampleFormat: z.literal('float32-le'),
+      modelId: z.string().max(200),
+      modelRevision: z.string().max(100),
+      sourceRevision: z.string().max(100),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('audio'),
+      sessionId: z.string().max(128),
+      turnId: z.string().max(100),
+      sequence: z.number().int().min(0).max(100_000),
+      samples: z.number().int().min(1).max(88_200),
+      sampleOffset: z.number().int().min(0).max(26_460_000),
+      emotion: z.enum(SPEECH_EMOTIONS).optional(),
+      textSequence: z.number().int().min(0).max(100_000).optional(),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('complete'),
+      sequence: z.number().int().min(0).max(100_000),
+      sessionId: z.string().max(128),
+    })
+    .strict(),
+  z.object({ type: z.literal('cancelled'), sessionId: z.string().max(128) }).strict(),
+  z
+    .object({ type: z.literal('error'), code: z.string().max(100), message: z.string().max(2000) })
+    .strict(),
+])
+
 export interface SpeechCapabilitiesProbe {
   serviceReachable: boolean
   recognition: boolean
@@ -25,37 +66,23 @@ export interface SpeechCapabilitiesProbe {
 }
 
 function isEngineOk(status: string | undefined): boolean {
-  if (!status) return true // absent = not reported as failed; treat as available
-  const s = status.toLowerCase()
-  return s === 'ok' || s === 'ready' || s === 'available' || s === 'up'
+  if (!status) return true
+  const normalized = status.toLowerCase()
+  return ['ok', 'ready', 'available', 'up'].includes(normalized)
 }
 
-/** Derive per-capability availability from a parsed `/health` payload. */
 export function deriveCapabilities(health: Health): SpeechCapabilitiesProbe {
-  const asrStatus = health.asr?.status
-  const f5Status = health.engines?.f5?.status
+  const asrReady = isEngineOk(health.asr?.status)
+  const synthesisReady =
+    health.synthesis?.engine === 'fish-s2-pro' &&
+    health.synthesis.streaming === true &&
+    isEngineOk(health.synthesis.status)
   return {
     serviceReachable: true,
-    recognition: isEngineOk(asrStatus),
-    synthesis: isEngineOk(f5Status),
-    // The streaming transport rides on the same service; if the service is
-    // reachable and ASR is up, streaming is considered available.
-    streaming: isEngineOk(asrStatus),
+    recognition: asrReady,
+    synthesis: synthesisReady,
+    streaming: asrReady && synthesisReady,
   }
-}
-
-export interface SynthesizeResult {
-  audioBuffer: ArrayBuffer
-  emotion?: string
-  requestedEmotion?: string
-  textEmotion?: string
-  vrmEmotion?: string
-  latencyMs?: string
-  generatedLatencyMs?: string
-  cache?: string
-  rtf?: string
-  durationSec?: string
-  audioBoundaries?: SpeechAudioBoundaryTelemetry
 }
 
 export interface VoiceWarmupResult {
@@ -67,19 +94,16 @@ export interface VoiceWarmupResult {
   error?: string
 }
 
-export interface SynthesizeParams {
-  text: string
-  language?: string
-  emotion?: string
-  voiceId?: string
-  speed?: number
-  pitch?: number
-  engine?: string
-  utteranceKind?: SpeechUtteranceKind
+export interface SpeechStreamConnection {
+  send(message: SpeechStreamInput): void
+  cancel(reason: string): Promise<void>
 }
 
-export interface SpeechSynthesisClient {
-  synthesize(params: SynthesizeParams, signal?: AbortSignal): Promise<SynthesizeResult>
+export interface SpeechStreamingClient {
+  openStream(
+    input: SpeechStreamStart,
+    onEvent: (event: SpeechStreamOutput) => void,
+  ): SpeechStreamConnection
 }
 
 interface RequestSignal {
@@ -109,22 +133,17 @@ function combineAbortSignals(signals: readonly AbortSignal[]): RequestSignal {
   }
 }
 
-export class SpeechClient implements SpeechSynthesisClient {
-  private http: AxiosInstance
+export class SpeechClient implements SpeechStreamingClient {
+  private readonly http: AxiosInstance
+  private readonly baseUrl: string
   private readonly lifecycle = new AbortController()
   private readonly disposeNetworkObserver: () => void
+  private readonly streams = new Set<SpeechStreamConnection>()
   private disposed = false
 
   constructor(baseUrl: string) {
-    // Force IPv4: Node inside Electron may resolve `localhost` to ::1 first, but
-    // uvicorn binds IPv4 (0.0.0.0) - that mismatch surfaces as AggregateError.
-    const ipv4Url = baseUrl.replace('://localhost', '://127.0.0.1')
-    this.http = axios.create({
-      baseURL: ipv4Url,
-      timeout: 120_000,
-      // The local speech backend should never be routed through a proxy.
-      proxy: false,
-    })
+    this.baseUrl = baseUrl.replace('://localhost', '://127.0.0.1').replace(/\/+$/u, '')
+    this.http = axios.create({ baseURL: this.baseUrl, timeout: 120_000, proxy: false })
     this.disposeNetworkObserver = observeAxiosNetwork(this.http, 'speech-api')
   }
 
@@ -132,14 +151,15 @@ export class SpeechClient implements SpeechSynthesisClient {
     if (this.disposed) return
     this.disposed = true
     this.lifecycle.abort(new Error('Speech client disposed'))
+    for (const stream of this.streams) stream.cancel('Speech client disposed')
+    this.streams.clear()
     this.disposeNetworkObserver()
   }
 
   async health(signal?: AbortSignal): Promise<Health> {
     const request = this.requestSignal(signal)
     try {
-      const res = await this.http.get('/health', { signal: request.signal })
-      return HealthSchema.parse(res.data)
+      return HealthSchema.parse((await this.http.get('/health', { signal: request.signal })).data)
     } catch (error) {
       throw normalizeSpeechError(error, 'health')
     } finally {
@@ -150,11 +170,11 @@ export class SpeechClient implements SpeechSynthesisClient {
   async emotions(signal?: AbortSignal): Promise<EmotionContract> {
     const request = this.requestSignal(signal)
     try {
-      const res = await this.http.get('/emotions', { signal: request.signal })
+      const data = (await this.http.get('/emotions', { signal: request.signal })).data
       return {
-        schemaVersion: Number(res.data?.schemaVersion),
-        defaultEmotion: String(res.data?.defaultEmotion ?? ''),
-        supported: Array.isArray(res.data?.supported) ? res.data.supported.map(String) : [],
+        schemaVersion: Number(data?.schemaVersion),
+        defaultEmotion: String(data?.defaultEmotion ?? ''),
+        supported: Array.isArray(data?.supported) ? data.supported.map(String) : [],
       }
     } catch (error) {
       throw normalizeSpeechError(error, 'health')
@@ -183,8 +203,9 @@ export class SpeechClient implements SpeechSynthesisClient {
     try {
       const form = new FormData()
       form.append('file', new Blob([wavBuffer], { type: 'audio/wav' }), 'audio.wav')
-      const res = await this.http.post('/recognize', form, { signal: request.signal })
-      return RecognizeSchema.parse(res.data)
+      return RecognizeSchema.parse(
+        (await this.http.post('/recognize', form, { signal: request.signal })).data,
+      )
     } catch (error) {
       throw normalizeSpeechError(error, 'recognition')
     } finally {
@@ -193,17 +214,13 @@ export class SpeechClient implements SpeechSynthesisClient {
   }
 
   async warmupVoice(
-    input: {
-      engine: string
-      voiceId: string
-      language: string
-    },
+    input: { engine: string; voiceId: string; language: string },
     signal?: AbortSignal,
   ): Promise<VoiceWarmupResult> {
     const request = this.requestSignal(signal)
     try {
-      const response = await this.http.post('/tts/warmup', input, { signal: request.signal })
-      return response.data as VoiceWarmupResult
+      return (await this.http.post('/tts/warmup', input, { signal: request.signal }))
+        .data as VoiceWarmupResult
     } catch (error) {
       throw normalizeSpeechError(error, 'synthesis')
     } finally {
@@ -211,129 +228,155 @@ export class SpeechClient implements SpeechSynthesisClient {
     }
   }
 
-  async synthesize(params: SynthesizeParams, signal?: AbortSignal): Promise<SynthesizeResult> {
-    try {
-      return await this.synthesizeInternal(params, signal)
-    } catch (error) {
-      throw normalizeSpeechError(error, 'synthesis')
+  openStream(
+    input: SpeechStreamStart,
+    onEvent: (event: SpeechStreamOutput) => void,
+  ): SpeechStreamConnection {
+    if (this.disposed) throw new Error('Speech client is disposed')
+    const socket = new WebSocket(`${this.baseUrl.replace(/^http/u, 'ws')}/tts/stream`)
+    socket.binaryType = 'arraybuffer'
+    let pendingAudio: Omit<Extract<SpeechStreamOutput, { type: 'audio' }>, 'type' | 'pcm'> | null =
+      null
+    let terminal = false
+    let cancelling = false
+    let readySeen = false
+    let expectedSequence = 0
+    let expectedOffset = 0
+    let cancelTimer: ReturnType<typeof setTimeout> | null = null
+    const queued: SpeechStreamInput[] = []
+    let resolveSettlement!: () => void
+    let rejectSettlement!: (error: Error) => void
+    const settlement = new Promise<void>((resolve, reject) => {
+      resolveSettlement = resolve
+      rejectSettlement = reject
+    })
+    // onEvent reports failures even when no cancellation caller awaits settlement.
+    void settlement.catch(() => undefined)
+    const finish = (failure?: Error): void => {
+      if (terminal) return
+      terminal = true
+      if (cancelTimer !== null) clearTimeout(cancelTimer)
+      cancelTimer = null
+      queued.length = 0
+      pendingAudio = null
+      this.streams.delete(connection)
+      if (failure) rejectSettlement(failure)
+      else resolveSettlement()
     }
-  }
-
-  private async synthesizeInternal(
-    params: SynthesizeParams,
-    signal?: AbortSignal,
-  ): Promise<SynthesizeResult> {
-    const request = this.requestSignal(signal)
-    try {
-      const res = await this.http.post(
-        '/synthesize',
-        {
-          text: params.text,
-          language: params.language ?? 'ru',
-          emotion: params.emotion ?? 'neutral',
-          voiceId: params.voiceId ?? DEFAULT_TTS_VOICE_ID,
-          speed: params.speed ?? 1.0,
-          pitch: params.pitch ?? 0,
-          engine: params.engine ?? 'f5',
-          utteranceKind: params.utteranceKind ?? 'normal',
-        },
-        { responseType: 'arraybuffer', signal: request.signal },
-      )
-      const data = res.data as ArrayBuffer | Buffer
-      const contentType = String(res.headers['content-type'] ?? '').toLowerCase()
-      const byteLength = Buffer.isBuffer(data) ? data.byteLength : data.byteLength
-      if (!contentType.startsWith('audio/') || byteLength < 44) {
-        throw new SpeechServiceError({
-          code: 'INVALID_RESPONSE',
-          operation: 'synthesis',
-          recoverable: false,
-          technicalMessage: `invalid audio (content-type=${contentType || 'missing'}, bytes=${byteLength})`,
-        })
-      }
-      // axios may return a Node Buffer; normalize to a standalone ArrayBuffer
-      if (Buffer.isBuffer(data)) {
-        const ab = new ArrayBuffer(data.byteLength)
-        new Uint8Array(ab).set(data)
-        return {
-          audioBuffer: ab,
-          emotion: res.headers['x-emotion'],
-          requestedEmotion: res.headers['x-requested-emotion'],
-          textEmotion: res.headers['x-text-emotion'],
-          vrmEmotion: res.headers['x-vrm-emotion'],
-          latencyMs: res.headers['x-latency-ms'],
-          generatedLatencyMs: res.headers['x-generated-latency-ms'],
-          cache: res.headers['x-cache'],
-          rtf: res.headers['x-rtf'],
-          durationSec: res.headers['x-duration-sec'],
-          audioBoundaries: parseAudioBoundaryTelemetry(res.headers),
+    const fail = (code: string, message: string): void => {
+      if (terminal) return
+      onEvent({ type: 'error', code, message })
+      finish(new Error(message))
+      socket.close()
+    }
+    const connection: SpeechStreamConnection = {
+      send: (message) => {
+        if (terminal || cancelling) return
+        if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message))
+        else {
+          if (queued.length >= 128) throw new Error('TTS input queue exceeded its bound')
+          queued.push(message)
         }
-      }
-      return {
-        audioBuffer: data,
-        emotion: res.headers['x-emotion'],
-        requestedEmotion: res.headers['x-requested-emotion'],
-        textEmotion: res.headers['x-text-emotion'],
-        vrmEmotion: res.headers['x-vrm-emotion'],
-        latencyMs: res.headers['x-latency-ms'],
-        generatedLatencyMs: res.headers['x-generated-latency-ms'],
-        cache: res.headers['x-cache'],
-        rtf: res.headers['x-rtf'],
-        durationSec: res.headers['x-duration-sec'],
-        audioBoundaries: parseAudioBoundaryTelemetry(res.headers),
-      }
-    } finally {
-      request.dispose()
+      },
+      cancel: (reason) => {
+        if (terminal || cancelling) return settlement
+        cancelling = true
+        queued.length = 0
+        pendingAudio = null
+        if (socket.readyState === WebSocket.OPEN)
+          socket.send(JSON.stringify({ type: 'cancel', reason }))
+        cancelTimer = setTimeout(
+          () => fail('cancel_timeout', 'Fish inference cancellation did not settle'),
+          5000,
+        )
+        return settlement
+      },
     }
+    this.streams.add(connection)
+    socket.addEventListener('open', () => {
+      if (terminal) {
+        socket.close()
+        return
+      }
+      const start: SpeechStreamStartMessage = { type: 'start', ...input }
+      socket.send(JSON.stringify(start))
+      if (cancelling)
+        socket.send(JSON.stringify({ type: 'cancel', reason: 'Cancelled before connection' }))
+      else for (const message of queued.splice(0)) socket.send(JSON.stringify(message))
+    })
+    socket.addEventListener('message', (message) => {
+      if (terminal) return
+      try {
+        if (typeof message.data === 'string') {
+          if (message.data.length > 16_384) throw new Error('Oversized TTS metadata')
+          const event = speechServerMessageSchema.parse(JSON.parse(message.data))
+          if ('sessionId' in event && event.sessionId !== input.sessionId)
+            throw new Error('Wrong TTS session')
+          if ('turnId' in event && event.turnId !== input.turnId) throw new Error('Wrong TTS turn')
+          if (event.type === 'cancelled' || event.type === 'complete') {
+            if (
+              !cancelling &&
+              event.type === 'complete' &&
+              (!readySeen || pendingAudio || event.sequence !== expectedSequence)
+            )
+              throw new Error('Invalid TTS completion sequence')
+            finish()
+            onEvent(event)
+            socket.close()
+            return
+          }
+          if (event.type === 'error') {
+            finish(new Error(event.message))
+            onEvent(event)
+            socket.close()
+            return
+          }
+          if (cancelling) return
+          if (event.type === 'ready') {
+            if (readySeen) throw new Error('Duplicate TTS ready message')
+            readySeen = true
+            onEvent(event)
+            return
+          }
+          if (
+            !readySeen ||
+            pendingAudio ||
+            event.sequence !== expectedSequence ||
+            event.sampleOffset !== expectedOffset
+          )
+            throw new Error('Invalid TTS audio metadata sequence or offset')
+          expectedSequence += 1
+          expectedOffset += event.samples
+          const { type: _type, ...metadata } = event
+          pendingAudio = metadata
+          return
+        }
+        if (cancelling) return
+        if (!(message.data instanceof ArrayBuffer) || !pendingAudio)
+          throw new Error('Unexpected binary TTS payload')
+        const metadata = pendingAudio
+        pendingAudio = null
+        if (
+          message.data.byteLength !== metadata.samples * Float32Array.BYTES_PER_ELEMENT ||
+          !new Float32Array(message.data).every(Number.isFinite)
+        )
+          throw new Error('Invalid PCM length or non-finite samples')
+        onEvent({ type: 'audio', ...metadata, pcm: message.data })
+      } catch (error) {
+        fail(
+          'invalid_stream_response',
+          error instanceof Error ? error.message : 'Invalid TTS stream',
+        )
+      }
+    })
+    socket.addEventListener('error', () => fail('stream_transport_error', 'TTS stream failed'))
+    socket.addEventListener('close', () => {
+      if (!terminal) fail('stream_closed', 'TTS stream closed before inference settlement')
+    })
+    return connection
   }
 
   private requestSignal(signal?: AbortSignal): RequestSignal {
     return combineAbortSignals(signal ? [this.lifecycle.signal, signal] : [this.lifecycle.signal])
   }
-}
-
-function parseAudioBoundaryTelemetry(
-  headers: Record<string, unknown>,
-): SpeechAudioBoundaryTelemetry | undefined {
-  const profile = headerString(headers, 'x-audio-boundary-profile')
-  if (!profile) return undefined
-  const values = [
-    headerNumber(headers, 'x-audio-leading-silence-ms'),
-    headerNumber(headers, 'x-audio-trailing-silence-ms'),
-    headerNumber(headers, 'x-audio-trimmed-leading-ms'),
-    headerNumber(headers, 'x-audio-trimmed-trailing-ms'),
-    headerNumber(headers, 'x-audio-fade-in-ms'),
-    headerNumber(headers, 'x-audio-fade-out-ms'),
-    headerNumber(headers, 'x-audio-postprocess-ms'),
-  ]
-  if (values.some((value) => value === undefined)) return undefined
-  const [
-    leadingSilenceMs,
-    trailingSilenceMs,
-    trimmedLeadingMs,
-    trimmedTrailingMs,
-    fadeInMs,
-    fadeOutMs,
-    postprocessMs,
-  ] = values as number[]
-  return {
-    profile,
-    leadingSilenceMs,
-    trailingSilenceMs,
-    trimmedLeadingMs,
-    trimmedTrailingMs,
-    fadeInMs,
-    fadeOutMs,
-    postprocessMs,
-  }
-}
-
-function headerString(headers: Record<string, unknown>, name: string): string | undefined {
-  const value = headers[name]
-  if (typeof value !== 'string' || !value.trim()) return undefined
-  return value
-}
-
-function headerNumber(headers: Record<string, unknown>, name: string): number | undefined {
-  const value = Number(headers[name])
-  return Number.isFinite(value) && value >= 0 ? value : undefined
 }

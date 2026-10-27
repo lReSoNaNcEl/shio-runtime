@@ -1,5 +1,4 @@
 import type {
-  AnimationControllerDebugState,
   AnimationPlaybackStatus,
   AvatarAnimationController,
 } from './AvatarAnimationController'
@@ -32,7 +31,7 @@ import type { EarBehaviorDebugState } from './embodiment/secondary-motion/EarBeh
 import type { TailBehaviorDebugState } from './embodiment/secondary-motion/TailBehaviorRuntime'
 import type { MouthWeights } from './embodiment/speech/LipSync'
 import type {
-  VrmBodyActionDebugState,
+  GeneratedBodyDebugState,
   VrmModel,
   VrmPerformanceDebugState,
 } from './rendering/three/VrmModel'
@@ -54,11 +53,9 @@ export interface AvatarControllerDebugState {
   mode: AvatarMode
   emotionKey: string
   currentBodyAnimation: string
-  currentBodyAnimationFile: string
-  currentBodyAnimationLoop: boolean
-  currentBodyAnimationStatus: AnimationPlaybackStatus
-  bodyActions: VrmBodyActionDebugState
-  animationAssetCache: AnimationControllerDebugState['assetCache']
+  requestedMotionContinuous: boolean
+  motionRequestStatus: AnimationPlaybackStatus
+  bodyMotion: GeneratedBodyDebugState
   previousBodyAnimation: string
   activeTransitionPolicy: string
   activeBlendDuration: number
@@ -117,15 +114,13 @@ export class AvatarDebugSnapshotBuilder {
     return {
       mode: input.stateMachine.getMode(),
       emotionKey: input.stateMachine.getEmotion(),
-      currentBodyAnimation: animation.activeAnimationId ?? animation.requestedAnimationId ?? 'none',
-      currentBodyAnimationFile: animation.activeFileName ?? animation.requestedFileName ?? 'none',
-      currentBodyAnimationLoop: animation.loop,
-      currentBodyAnimationStatus: animation.playbackStatus,
-      bodyActions: animation.bodyActions,
-      animationAssetCache: animation.assetCache,
+      currentBodyAnimation: animation.bodyMotion.appliedPose?.profileId ?? 'none',
+      requestedMotionContinuous: animation.loop,
+      motionRequestStatus: animation.playbackStatus,
+      bodyMotion: animation.bodyMotion,
       previousBodyAnimation: animation.previousAnimationId ?? 'none',
       activeTransitionPolicy: input.lastTransitionDecision?.policyId ?? 'none',
-      activeBlendDuration: animation.lastBlendDuration,
+      activeBlendDuration: animation.bodyMotion.transitionDuration,
       animationQueue: input.animationQueue.getDebugState(),
       speakingGestureScheduler: speakingGesture,
       behaviorEngine: input.behaviorEngine,
@@ -153,7 +148,7 @@ export class AvatarDebugSnapshotBuilder {
         currentAnimation: animation.activeAnimationId,
         requestedAnimation: animation.requestedAnimationId,
         currentTransition: input.lastTransitionDecision?.policyId ?? 'none',
-        transitionPending: animation.bodyActions.transitionRemaining > 0,
+        transitionPending: animation.bodyMotion.transitionRemaining > 0,
       }),
       behaviorTimeline: [...input.behaviorTimeline],
       animationFailures: animation.failedAnimationIds,

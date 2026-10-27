@@ -3,6 +3,14 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type { OverlayPresentationApi, OverlayPresentationConfig } from '../shared/ipc'
 
 const api = {
+  avatarBody: {
+    get: () => ipcRenderer.invoke('avatar-body:get'),
+    onUpdated: (callback: (value: unknown) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, value: unknown): void => callback(value)
+      ipcRenderer.on('avatar-body:updated', listener)
+      return () => ipcRenderer.removeListener('avatar-body:updated', listener)
+    },
+  },
   config: {
     get: () => ipcRenderer.invoke('overlay-presentation:config:get'),
     onUpdated: (callback: (config: OverlayPresentationConfig) => void) => {

@@ -25,8 +25,8 @@ function main(): void {
   })
   assert.equal(normalizeCharacterEmbodimentIntent({ intensity: 'maximum' }), undefined)
   assert.equal(
-    normalizeCharacterEmbodimentIntent({ intensity: 'normal', animationId: 'unsafe' })?.intensity,
-    'normal',
+    normalizeCharacterEmbodimentIntent({ intensity: 'normal', animationId: 'unsafe' }),
+    undefined,
   )
   assert.equal(
     parseCharacterEmbodimentResponse('[calm]Обычный legacy ответ.').embodimentIntent,

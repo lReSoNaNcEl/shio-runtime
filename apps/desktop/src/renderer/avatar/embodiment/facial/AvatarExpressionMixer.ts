@@ -51,8 +51,8 @@ export type {
  *   - LookAt      -> eye direction (owned by `vrm.lookAt`; the mixer never writes
  *                    look* expressions so gaze stays independent)
  *
- * Body (skeletal) animation is a separate pipeline entirely; VRMA facial tracks
- * are stripped before playback (see VrmModel.loadAnimation) so clips only drive
+ * Body (skeletal) animation is a separate pipeline entirely; generated facial channels
+ * are excluded by the typed body contract so generated motion only drives
  * bones.
  */
 
@@ -90,7 +90,7 @@ export class AvatarExpressionMixer {
   private lastFinal = new Map<string, FacialExpressionEntry>()
   /** Expression names the mixer wrote a non-zero value for last frame. */
   private writtenNames = new Set<string>()
-  private vrmaFacialTracksDisabled = 0
+  private bodyFacialChannelsRejected = 0
   private frame = 0
   private clockMs = 0
   private lastDeltaMs = 16.67
@@ -294,8 +294,8 @@ export class AvatarExpressionMixer {
     this.blinkTuning = debug
   }
 
-  notifyVrmaFacialTracksDisabled(count: number): void {
-    this.vrmaFacialTracksDisabled = count
+  notifyBodyFacialChannelsRejected(count: number): void {
+    this.bodyFacialChannelsRejected = count
   }
 
   /**
@@ -368,7 +368,7 @@ export class AvatarExpressionMixer {
     // emotions / blinks / mouth). Expressions the mixer never touches — e.g. the
     // model's own default eye/brow state — are LEFT ALONE, matching the previous
     // per-source behaviour and avoiding accidental suppression (eyes vanishing).
-    // VRMA facial curves are already stripped in VrmModel.loadAnimation, so the
+    // The typed body contract admits no facial curves, so the
     // mixer does not need to blanket-zero every expression to stay authoritative.
     const namesToWrite = new Set<string>([...this.writtenNames, ...final.keys()])
     for (const name of namesToWrite) {
@@ -493,7 +493,7 @@ export class AvatarExpressionMixer {
         cooldown: Number(this.blinkTuning.cooldown.toFixed(2)),
       },
       blinkExpressions: this.blinkNames.slice(),
-      vrmaFacialTracksDisabled: this.vrmaFacialTracksDisabled,
+      bodyFacialChannelsRejected: this.bodyFacialChannelsRejected,
       speakingEye: {
         enabled: this.speakingEyeDebug?.enabled ?? false,
         speaking: this.speakingEyeDebug?.speaking ?? false,

@@ -9,7 +9,8 @@ $ErrorActionPreference = "Stop"
 $LauncherRoot = $PSScriptRoot
 $BundleRoot = Split-Path -Parent $LauncherRoot
 $ManifestPath = Join-Path $LauncherRoot "release-manifest.json"
-$LocalRoot = Join-Path $env:LOCALAPPDATA "Shio Runtime"
+$LocalRoot = if ($env:SHIO_LOCAL_ROOT) { $env:SHIO_LOCAL_ROOT } else { Join-Path $env:LOCALAPPDATA "Shio Runtime" }
+if (-not [IO.Path]::IsPathRooted($LocalRoot)) { throw 'SHIO_LOCAL_ROOT must be absolute.' }
 $DataRoot = Join-Path $LocalRoot "Data"
 $LogsRoot = Join-Path $LocalRoot "Logs"
 $RuntimeRoot = Join-Path $LocalRoot "Runtime"
@@ -323,11 +324,10 @@ function Install-SpeechPack {
         Add-Content -LiteralPath (Join-Path $stagingApi ".env") -Encoding UTF8 -Value @(
             "SHIO_MODEL_ROOT=$((Join-Path $DataRoot 'models').Replace('\', '/'))",
             "SPEECH_PACK_VERSION=$($Manifest.speechPack.version)",
-            "F5_ALLOW_MOCK=false",
-            "F5_MODEL_REVISION=$($Manifest.speechPack.modelRevisions.f5)",
+            "TTS_DEFAULT_ENGINE=fish-s2-pro",
+            "FISH_MODEL_REVISION=$($Manifest.speechPack.modelRevisions.fish)",
             "WHISPER_MODEL_REVISION=$($Manifest.speechPack.modelRevisions.fasterWhisper)",
-            "F5_VOCODER_REVISION=$($Manifest.speechPack.modelRevisions.vocoder)",
-            "RUACCENT_MODEL_REVISION=$($Manifest.speechPack.modelRevisions.ruaccent)"
+            "FISH_SOURCE_REVISION=$($Manifest.speechPack.modelRevisions.fishSource)"
         )
         $persistentVoices = Join-Path $DataRoot "voices"
         New-Item -ItemType Directory -Force -Path $persistentVoices | Out-Null
@@ -407,8 +407,11 @@ function Test-Health {
         $health.contractVersion -eq $Manifest.speechPack.contractVersion -and
         $health.speechPackVersion -eq $Manifest.speechPack.version -and
         $health.asr.ready -eq $true -and
-        $health.engines.f5.ready -eq $true -and
-        $health.engines.f5.mode -eq "real"
+        $health.synthesis.ready -eq $true -and
+        $health.synthesis.engine -eq "fish-s2-pro" -and
+        $health.synthesis.streaming -eq $true -and
+        $health.synthesis.voiceCloning -eq $true -and
+        $health.synthesis.mode -eq "real"
     )
 }
 
@@ -512,6 +515,79 @@ function Ensure-Installed {
     return $paths
 }
 
+function Get-MotionPayloadHash {
+    param([string]$Source)
+    $names = @('worker.py', 'backend.py', 'research.py', 'research-pins.json', 'motion-profiles.json', 'requirements-research.lock.txt')
+    return (($names | ForEach-Object {
+        $file = Join-Path $Source $_
+        if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { Fail "Motion payload is incomplete: $_" }
+        (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash
+    }) -join ':')
+}
+
+function Install-MotionPack {
+    param($Manifest)
+    Assert-Platform
+    if (-not (Test-Nvidia)) { Fail "ARDY requires an NVIDIA GPU/driver." }
+    $python = Find-Python312
+    $source = Resolve-BundlePath $Manifest.motionPack.sourceRelativePath
+    $root = Join-Path $LocalRoot "Motion\$($Manifest.productVersion)"
+    $resolved = [IO.Path]::GetFullPath($root)
+    if (-not $resolved.StartsWith([IO.Path]::GetFullPath($LocalRoot) + '\', [StringComparison]::OrdinalIgnoreCase)) { Fail 'Unsafe Motion installation path.' }
+    $hash = Get-MotionPayloadHash $source
+    $active = Get-CimInstance Win32_Process -Filter "Name='python.exe'" | Where-Object { $_.ExecutablePath -and $_.ExecutablePath.StartsWith($resolved + '\', [StringComparison]::OrdinalIgnoreCase) }
+    if ($active) { Fail 'Close Shio Desktop before installing or repairing its Motion environment.' }
+    New-Item -ItemType Directory -Force -Path $root | Out-Null
+    foreach ($name in @('worker.py', 'backend.py', 'research.py', 'research-pins.json', 'motion-profiles.json', 'requirements-research.lock.txt')) {
+        Copy-Item -LiteralPath (Join-Path $source $name) -Destination (Join-Path $root $name) -Force
+    }
+    if (Test-Path -LiteralPath (Join-Path $source 'licenses')) { Copy-Item -LiteralPath (Join-Path $source 'licenses') -Destination $root -Recurse -Force }
+    $pins = Get-Content -Raw -LiteralPath (Join-Path $root 'research-pins.json') | ConvertFrom-Json
+    if ($pins.source.revision -ne $Manifest.motionPack.sourceRevision -or $pins.motion.revision -ne $Manifest.motionPack.checkpointRevision) { Fail 'Motion payload revisions differ from the launcher manifest.' }
+    $venv = Join-Path $root '.venv'
+    $motionPython = Join-Path $venv 'Scripts\python.exe'
+    if (-not (Test-Path -LiteralPath $motionPython)) {
+        & $python.File @($python.Args) -m venv $venv
+        if ($LASTEXITCODE -ne 0) { Fail 'Could not create the independent Motion environment.' }
+    }
+    $log = Join-Path $LogsRoot 'motion-install.log'
+    Invoke-Checked $motionPython @('-m', 'pip', 'install', '--upgrade', 'pip>=25.3,<26') $root $log
+    Invoke-Checked $motionPython @('-m', 'pip', 'install', "torch==$($Manifest.motionPack.torchVersion)", '--index-url', 'https://download.pytorch.org/whl/cu128') $root $log
+    Invoke-Checked $motionPython @('-m', 'pip', 'install', '-r', 'requirements-research.lock.txt') $root $log
+    Invoke-Checked $motionPython @('-m', 'pip', 'check') $root $log
+    if (-not $env:HF_TOKEN_PATH) {
+        $cachedToken = Join-Path $env:USERPROFILE '.cache\huggingface\token'
+        if (Test-Path -LiteralPath $cachedToken -PathType Leaf) { $env:HF_TOKEN_PATH = $cachedToken }
+    }
+    Write-LauncherLog 'Preparing pinned ARDY and LLM2Vec assets. The Hugging Face account must have access to Meta-Llama-3-8B-Instruct; credentials are never bundled.'
+    Invoke-Checked $motionPython @('research.py', 'prefetch') $root $log
+    Invoke-Checked $motionPython @('research.py', 'doctor', '--offline') $root $log
+    [IO.File]::WriteAllText((Join-Path $root 'installed.json'), (@{ payloadHash = $hash; sourceRevision = $pins.source.revision; checkpointRevision = $pins.motion.revision } | ConvertTo-Json), [Text.UTF8Encoding]::new($false))
+    $env:SHIO_MOTION_ROOT = $root
+}
+
+function Ensure-MotionInstalled {
+    param($Manifest)
+    $root = Join-Path $LocalRoot "Motion\$($Manifest.productVersion)"
+    $source = Resolve-BundlePath $Manifest.motionPack.sourceRelativePath
+    $marker = Join-Path $root 'installed.json'
+    $expected = Get-MotionPayloadHash $source
+    $installed = $null
+    if (Test-Path -LiteralPath $marker) { try { $installed = Get-Content -Raw -LiteralPath $marker | ConvertFrom-Json } catch { $installed = $null } }
+    if ($null -eq $installed -or $installed.payloadHash -ne $expected) { Install-MotionPack $Manifest }
+    $motionPython = Join-Path $root '.venv\Scripts\python.exe'
+    Invoke-Checked $motionPython @('research.py', 'doctor', '--offline') $root (Join-Path $LogsRoot 'motion-doctor.log')
+    $env:SHIO_MOTION_ROOT = $root
+}
+
+function Invoke-MotionDoctor {
+    param($Manifest)
+    $root = Join-Path $LocalRoot "Motion\$($Manifest.productVersion)"
+    $motionPython = Join-Path $root '.venv\Scripts\python.exe'
+    if (-not (Test-Path -LiteralPath $motionPython)) { Fail 'Motion Pack is not installed. Run install or repair.' }
+    Invoke-Checked $motionPython @('research.py', 'doctor', '--offline') $root (Join-Path $LogsRoot 'motion-doctor.log')
+}
+
 function Start-ManagedApi {
     param($Manifest, $Paths)
     $runtimeLog = Join-Path $LogsRoot "speech-api.log"
@@ -520,11 +596,9 @@ function Start-ManagedApi {
     Rotate-Log $runtimeErrorLog
     $env:SHIO_MODEL_ROOT = Join-Path $DataRoot "models"
     $env:SPEECH_PACK_VERSION = $Manifest.speechPack.version
-    $env:F5_MODEL_REVISION = $Manifest.speechPack.modelRevisions.f5
+    $env:FISH_MODEL_REVISION = $Manifest.speechPack.modelRevisions.fish
     $env:WHISPER_MODEL_REVISION = $Manifest.speechPack.modelRevisions.fasterWhisper
-    $env:F5_VOCODER_REVISION = $Manifest.speechPack.modelRevisions.vocoder
-    $env:RUACCENT_MODEL_REVISION = $Manifest.speechPack.modelRevisions.ruaccent
-    $env:F5_ALLOW_MOCK = "false"
+    $env:FISH_SOURCE_REVISION = $Manifest.speechPack.modelRevisions.fishSource
     $arguments = @(
         "-m", "uvicorn", "app.main:app", "--host", $Manifest.speechPack.host,
         "--port", [string]$Manifest.speechPack.port
@@ -566,6 +640,7 @@ function Start-Shio {
     $desktop = Resolve-BundlePath $Manifest.desktop.relativeExecutablePath
     if (-not (Test-Path -LiteralPath $desktop)) { Fail "Desktop executable is missing." }
     $paths = Ensure-Installed $Manifest
+    Ensure-MotionInstalled $Manifest
     $ownsApi = $false
     $classification = Get-HealthyApiClassification $Manifest $paths
     if ($classification -ne "unavailable") {
@@ -608,13 +683,14 @@ try {
     }
     switch ($Command) {
         "start" { Start-Shio $manifest }
-        "install" { Install-SpeechPack $manifest }
-        "repair" { Install-SpeechPack $manifest -Repair }
+        "install" { Install-SpeechPack $manifest; Install-MotionPack $manifest }
+        "repair" { Install-SpeechPack $manifest -Repair; Install-MotionPack $manifest }
         "doctor" {
             Assert-Platform
             $paths = Get-InstallPaths $manifest
             if (-not (Test-Path -LiteralPath $paths.Python)) { Fail "Speech Pack is not installed." }
             Invoke-StrictDoctor $paths.Python $paths.Api (Join-Path $paths.Root ".venv")
+            Invoke-MotionDoctor $manifest
         }
         "status" {
             $paths = Get-InstallPaths $manifest

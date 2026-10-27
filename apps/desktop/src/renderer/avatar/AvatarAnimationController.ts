@@ -1,11 +1,6 @@
-import {
-  type AnimationId,
-  getAnimation,
-  getAnimationUrl,
-  getRootMotionPolicy,
-} from './animationManifest'
+import { type AnimationId, getAnimation } from './animationManifest'
 import type { AvatarBodyMotionLayer } from './embodiment/motion/AvatarMotionLayer'
-import type { VrmBodyActionDebugState, VrmModel } from './rendering/three/VrmModel'
+import type { GeneratedBodyDebugState, VrmModel } from './rendering/three/VrmModel'
 
 export type AnimationPlaybackStatus = 'idle' | 'loading' | 'playing' | 'failed'
 
@@ -15,22 +10,16 @@ export interface AnimationControllerDebugState {
   /** Semantic key or manifest id most recently requested. */
   requestedAnimationId: string | null
   previousAnimationId: string | null
-  activeFileName: string | null
-  requestedFileName: string | null
   loop: boolean
   playbackStatus: AnimationPlaybackStatus
-  lastBlendDuration: number
   isPlaybackActive: boolean
-  bodyActions: VrmBodyActionDebugState
-  assetCache: {
-    fetches: number
-    hits: number
-    misses: number
-  }
+  bodyMotion: GeneratedBodyDebugState
   failedAnimationIds: string[]
 }
 
 export interface PlayManifestOptions {
+  seed?: number
+  speechBound?: boolean
   fallbackId?: AnimationId
   blendDuration?: number
   forceReplay?: boolean
@@ -46,70 +35,26 @@ export class AvatarAnimationController {
   private activeAnimationId: string | null = null
   private requestedAnimationId: string | null = null
   private previousAnimationId: string | null = null
-  private activeFileName: string | null = null
-  private requestedFileName: string | null = null
   private loop = false
-  private lastBlendDuration = 0.3
   private playbackStatus: AnimationPlaybackStatus = 'idle'
-  private cache = new Map<string, ArrayBuffer>()
-  private assetCacheStats = {
-    fetches: 0,
-    hits: 0,
-    misses: 0,
-  }
   private failedIds = new Set<string>()
   private requestId = 0
   private latestPlaybackRequest: Promise<void> = Promise.resolve()
 
   constructor(private vrmModel: VrmModel) {}
 
-  async loadExternal(buffer: ArrayBuffer, loop = true): Promise<void> {
-    this.requestId += 1
-    this.activeAnimationId = 'external'
-    this.requestedAnimationId = 'external'
-    this.previousAnimationId = null
-    this.activeFileName = 'external'
-    this.requestedFileName = 'external'
-    this.loop = loop
-    this.lastBlendDuration = 0.3
-    this.playbackStatus = 'playing'
-    this.failedIds.clear()
-    await this.vrmModel.loadAnimation(buffer, loop)
-  }
-
   stop(): void {
     this.requestId += 1
     this.activeAnimationId = null
     this.requestedAnimationId = null
     this.previousAnimationId = null
-    this.activeFileName = null
-    this.requestedFileName = null
     this.loop = false
     this.playbackStatus = 'idle'
     this.vrmModel.stopAnimation()
   }
 
-  /**
-   * Play a specific manifest animation directly by id (debug/preview path).
-   * Bypasses the semantic pools and plays exactly the requested clip.
-   */
-  async playManifest(
-    id: string,
-    loop: boolean,
-    fallbackId?: AnimationId,
-    blendDuration?: number,
-  ): Promise<void>
-  async playManifest(id: string, loop: boolean, options?: PlayManifestOptions): Promise<void>
-  playManifest(
-    id: string,
-    loop: boolean,
-    fallbackOrOptions?: AnimationId | PlayManifestOptions,
-    legacyBlendDuration = 0.3,
-  ): Promise<void> {
-    const options: PlayManifestOptions =
-      typeof fallbackOrOptions === 'object' && fallbackOrOptions !== null
-        ? fallbackOrOptions
-        : { fallbackId: fallbackOrOptions, blendDuration: legacyBlendDuration }
+  /** Request one semantic generated profile through the existing body owner. */
+  playManifest(id: string, loop: boolean, options: PlayManifestOptions = {}): Promise<void> {
     const request = this.executeManifestRequest(id, loop, options)
     this.latestPlaybackRequest = request
     return request
@@ -144,16 +89,10 @@ export class AvatarAnimationController {
     const blendDuration = options.blendDuration ?? 0.3
     const forceReplay = options.forceReplay ?? false
     const entry = getAnimation(id)
-    const url = getAnimationUrl(id)
     this.requestedAnimationId = id
-    this.requestedFileName = entry?.file ?? null
     this.loop = loop
-    this.lastBlendDuration = blendDuration
 
-    // Re-selecting the currently-active looping clip must NOT restart it. Reloading
-    // would reset the action to t=0 and crossfade, producing a visible jerk / hip
-    // pop ("falls from the ceiling"). Keep the already-playing loop as-is. This is
-    // exactly what happens when the idle orchestrator re-picks the current pose.
+    // Preserve an already running presence unless an explicit variation was requested.
     if (
       !forceReplay &&
       loop &&
@@ -167,11 +106,18 @@ export class AvatarAnimationController {
       return
     }
 
-    if (!this.vrmModel.isLoaded() || !entry || !url) {
-      if (entry && !url) this.failedIds.add(id)
-      this.playbackStatus = entry && !url ? 'failed' : this.playbackStatus
+    if (!this.vrmModel.isLoaded() || !entry) {
       if (fallbackId && fallbackId !== id)
-        await this.playManifest(fallbackId, true, undefined, blendDuration)
+        await this.playManifest(fallbackId, true, {
+          ...options,
+          fallbackId: undefined,
+          motionLayer: 'base',
+          requestReason: `${options.requestReason ?? 'unspecified'}; fallback from ${id}`,
+        })
+      else {
+        this.activeAnimationId = null
+        this.playbackStatus = 'failed'
+      }
       return
     }
 
@@ -182,71 +128,52 @@ export class AvatarAnimationController {
     )
 
     try {
-      const buffer = await this.loadBuffer(url)
       if (!this.vrmModel.isLoaded() || requestId !== this.requestId) return
       this.previousAnimationId = this.activeAnimationId
       this.activeAnimationId = id
-      this.activeFileName = entry.file
-      this.playbackStatus = 'playing'
-      await this.vrmModel.loadAnimation(buffer, loop, blendDuration, {
+      await this.vrmModel.requestGeneratedMotion(id, {
         animationId: id,
-        file: entry.file,
+        blendDuration,
+        speechBound: options.speechBound,
+        seed: options.seed,
         behaviorId: options.behaviorId ?? 'unknown',
         source: options.requestSource ?? 'unknown',
         reason: options.requestReason ?? 'unspecified',
         previousAnimationId: options.previousAnimationId ?? this.previousAnimationId,
         forceReplay,
         frame: options.frame,
-        rootMotionPolicy: getRootMotionPolicy(entry),
         motionLayer: options.motionLayer ?? 'base',
       })
+      if (requestId === this.requestId) this.playbackStatus = 'playing'
     } catch (e) {
       if (requestId !== this.requestId) return
       console.warn(`Failed to preview animation "${id}"`, e)
       this.failedIds.add(id)
       this.activeAnimationId = null
-      this.activeFileName = null
       this.playbackStatus = 'failed'
       if (fallbackId && fallbackId !== id)
-        await this.playManifest(fallbackId, true, undefined, blendDuration)
+        await this.playManifest(fallbackId, true, {
+          ...options,
+          fallbackId: undefined,
+          motionLayer: 'base',
+          requestReason: `${options.requestReason ?? 'unspecified'}; fallback from ${id}`,
+        })
     }
   }
 
   getDebugState(): AnimationControllerDebugState {
-    if (this.playbackStatus === 'playing' && !this.vrmModel.isAnimationPlaying()) {
-      this.playbackStatus = 'idle'
-    }
-
     return {
       activeAnimationId: this.activeAnimationId,
       requestedAnimationId: this.requestedAnimationId,
       previousAnimationId: this.previousAnimationId,
-      activeFileName: this.activeFileName,
-      requestedFileName: this.requestedFileName,
       loop: this.loop,
-      playbackStatus: this.playbackStatus,
-      lastBlendDuration: this.lastBlendDuration,
+      playbackStatus:
+        this.playbackStatus === 'playing' && !this.vrmModel.isAnimationPlaying()
+          ? 'idle'
+          : this.playbackStatus,
       isPlaybackActive: this.vrmModel.isAnimationPlaying(),
-      bodyActions: this.vrmModel.getBodyActionDebugState(),
-      assetCache: { ...this.assetCacheStats },
+      bodyMotion: this.vrmModel.getBodyMotionDebugState(),
       failedAnimationIds: [...this.failedIds],
     }
-  }
-
-  private async loadBuffer(url: string): Promise<ArrayBuffer> {
-    const cached = this.cache.get(url)
-    this.assetCacheStats.fetches += 1
-    if (cached) {
-      this.assetCacheStats.hits += 1
-      return cached.slice(0)
-    }
-
-    this.assetCacheStats.misses += 1
-    const res = await fetch(url)
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
-
-    const buffer = await res.arrayBuffer()
-    this.cache.set(url, buffer)
-    return buffer.slice(0)
   }
 }

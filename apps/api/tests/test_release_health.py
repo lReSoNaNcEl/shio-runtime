@@ -1,4 +1,5 @@
 from unittest import IsolatedAsyncioTestCase
+from unittest.mock import patch
 
 from app.config import settings
 from app.routes import health
@@ -7,28 +8,39 @@ from app.routes import health
 class ReleaseHealthTests(IsolatedAsyncioTestCase):
     def setUp(self):
         health.health_state.asr_ready = False
-        health.health_state.f5_ready = False
-        health.health_state.f5_mode = "unavailable"
+        health.health_state.fish_ready = False
+        health.health_state.fish_mode = "unavailable"
 
     async def test_health_exposes_stable_identity_and_explicit_readiness(self):
         health.set_asr_ready(True)
-        health.set_engine_ready("f5", True, "real")
+        health.set_engine_ready("fish-s2-pro", True, "real")
 
-        payload = await health.health_check()
+        with patch.object(
+            health,
+            "engine_status",
+            return_value="ready" if health.health_state.fish_ready else "unavailable",
+        ):
+            payload = await health.health_check()
 
         self.assertEqual(payload["serviceId"], settings.SERVICE_ID)
         self.assertEqual(payload["contractVersion"], settings.CONTRACT_VERSION)
         self.assertEqual(payload["speechPackVersion"], settings.SPEECH_PACK_VERSION)
         self.assertTrue(payload["ready"])
         self.assertTrue(payload["asr"]["ready"])
-        self.assertTrue(payload["engines"]["f5"]["ready"])
-        self.assertEqual(payload["engines"]["f5"]["mode"], "real")
+        self.assertTrue(payload["synthesis"]["ready"])
+        self.assertEqual(payload["synthesis"]["mode"], "real")
+        self.assertEqual(payload["synthesis"]["engine"], "fish-s2-pro")
 
-    async def test_mock_f5_is_not_overall_ready(self):
+    async def test_unavailable_fish_is_not_overall_ready(self):
         health.set_asr_ready(True)
-        health.set_engine_ready("f5", True, "mock")
+        health.set_engine_ready("fish-s2-pro", False, "unavailable")
 
-        payload = await health.health_check()
+        with patch.object(
+            health,
+            "engine_status",
+            return_value="ready" if health.health_state.fish_ready else "unavailable",
+        ):
+            payload = await health.health_check()
 
         self.assertFalse(payload["ready"])
-        self.assertEqual(payload["engines"]["f5"]["mode"], "mock")
+        self.assertEqual(payload["synthesis"]["mode"], "unavailable")

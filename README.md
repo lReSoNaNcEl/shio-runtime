@@ -85,7 +85,7 @@ details without logging credentials or full browser/DOM snapshots.
 - Node.js 24.x
 - npm 11.x
 - Python 3.12
-- CUDA-capable GPU recommended (F5-TTS and faster-whisper default to CUDA)
+- NVIDIA CUDA GPU for the ARDY/Fish experiment; measured profile and RAM/VRAM requirements are in [the experiment guide](docs/EXPERIMENT-ARDY-FISH.md)
 - PowerShell examples below assume Windows
 
 Developed with:
@@ -196,10 +196,10 @@ npm run api:dev
 The API starts at `http://localhost:8000`. Stop it with `Ctrl+C`; the launcher
 forwards the signal so uvicorn shuts down and port 8000 is released.
 
-> **First run may be slow.** On the first `api:dev` the F5-TTS model (`F5_MODEL_ID`,
-> default `Misha24-10/F5-TTS_RUSSIAN`) and the ASR model are downloaded into the
-> Hugging Face cache / `apps/api/models/`. These weights are not stored in Git,
-> so the first startup can take a while before the service becomes ready.
+> **Prepare models explicitly.** Run `npm run api:prefetch` and
+> `npm run api:voices:sync` before starting the API. Fish loading and compile
+> warmup are reported by `/health`. ARDY has its own isolated environment and
+> prefetch commands: see [the experiment guide](docs/EXPERIMENT-ARDY-FISH.md).
 
 **Terminal 2 — Desktop**
 
@@ -324,9 +324,8 @@ apps/api/.env       (from apps/api/.env.example)
 
 ### Desktop → API URL
 
-The Desktop client connects to `http://localhost:8000`. The URL can be overridden
-with the environment variable `PYTHON_SPEECH_URL`. Despite its legacy name, it now
-points to the service located in `apps/api`.
+The Desktop client connects to `http://127.0.0.1:8000`. Override this with the
+main-process environment variable `SHIO_SPEECH_API_URL` and restart Desktop.
 
 ### API host and port
 
@@ -361,11 +360,12 @@ environment override.
 VOICE_DATASET_REVISION=
 ```
 
-### F5-TTS model
+### Fish and ARDY models
 
-The TTS engine loads the F5 model from `F5_MODEL_ID`
-(default `Misha24-10/F5-TTS_RUSSIAN`). The weights are downloaded on the first API
-run and are not committed (see below).
+Fish model/source revisions are pinned in API configuration and the launcher
+manifest. ARDY and its exact LLM2Vec base/adapters are pinned independently in
+`apps/desktop/motion/research-pins.json`. LLM2Vec conditions motion; it does not
+replace the Character LLM provider. Models are prepared explicitly and run offline.
 
 ## Files not stored in Git
 
@@ -374,7 +374,7 @@ run and are not committed (see below).
 API virtual environments
 node_modules
 build output
-F5 model weights and Hugging Face model caches (apps/api/models/)
+Fish/ASR weights (apps/api/models/) and ARDY/LLM2Vec assets (apps/desktop/motion/.cache/)
 voice reference assets (apps/api/voices/**/reference.wav|.txt)
 generated and temporary audio
 runtime logs
@@ -393,9 +393,10 @@ GET  /voices
 GET  /emotions
 GET  /voices/status
 POST /voices/sync
-POST /synthesize
+POST /tts/warmup
+WS   /tts/stream   (protocol 2; HTTP service contract 2.1)
 POST /recognize
-WS   /ws
+WS   /ws/asr       (/ws compatibility alias)
 ```
 
 ## API checks
@@ -408,8 +409,9 @@ npm run api:test
 ```
 
 Then verify the read-only endpoints respond: `/health`, `/voices`, `/emotions`.
-Run a short `/synthesize` smoke test only after backend changes (F5 engine, audio
-encoding, or synthesis lifecycle).
+For explicitly requested live validation, verify actual early PCM and playback
+from `/tts/stream`, input continuation, cancellation settlement, ASR, and the
+joint Electron/ARDY/Fish profile described in the experiment guide.
 
 ## Architecture
 
