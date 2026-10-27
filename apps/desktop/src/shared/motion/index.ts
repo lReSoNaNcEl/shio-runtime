@@ -6,6 +6,7 @@ import { motionCatalogSchema, motionFormatSchema, motionPhaseSchema } from './ca
 
 export * from './catalog.generated'
 export * from './catalogSchema'
+export * from './physicalAction'
 export const MOTION_CATALOG = motionCatalogSchema.parse(rawCatalog)
 export const MOTION_CATALOG_REVISION = MOTION_CATALOG.catalogRevision
 export const MOTION_FORMAT = MOTION_CATALOG.format
@@ -21,7 +22,7 @@ export const motionPlanIdentitySchema = z
   .object({
     executionId: z.string().min(1).max(128),
     planRevision: identity,
-    catalogRevision: z.literal('standing-v2-2026-10-27'),
+    catalogRevision: z.literal('living-v3-2026-10-27'),
     phaseId: motionPhaseSchema,
     handScoreRevision: z.string().min(1).max(80),
     handRigCalibrationRevision: z.literal('vrm-normalized-hands-v1'),
@@ -38,7 +39,7 @@ export type MotionPlanIdentity = z.infer<typeof motionPlanIdentitySchema>
 export const motionReadySchema = z
   .object({
     type: z.literal('ready'),
-    catalogRevision: z.literal('standing-v2-2026-10-27'),
+    catalogRevision: z.literal('living-v3-2026-10-27'),
     format: motionFormatSchema,
   })
   .strict()
@@ -120,6 +121,21 @@ export const generatedMotionHealthSchema = z
     inferenceMs: z.number().finite().min(0).max(120000),
     epoch: identity,
     seed: identity.nullable(),
+    physical: z
+      .object({
+        executionId: z.string().min(1).max(128),
+        generator: z.literal('procedural'),
+        direction: z.enum(['clockwise', 'counterclockwise']),
+        actionHeading: finite.min(-7).max(7),
+        support: z.enum(['left', 'right', 'double']),
+        steps: finite.int().min(0).max(24),
+        maxRootSpeedMps: finite.min(0).max(100),
+        maxRootAccelerationMps2: finite.min(0).max(10000),
+        maxSupportDriftM: finite.min(0).max(10),
+        outcome: z.enum(['completed', 'superseded', 'cancelled', 'timed-out', 'failed']).nullable(),
+      })
+      .strict()
+      .optional(),
     planning: z
       .object({
         phaseId: motionPhaseSchema.nullable(),
@@ -202,9 +218,11 @@ export const BODY_BONE_NAMES = [
   'leftToes',
   ...HAND_BONE_NAMES,
 ] as const
-export const bodyPresentationSchema = z
+const bodyPresentationBaseSchema = z
   .object({
-    lease: motionLeaseSchema,
+    lease: motionLeaseSchema.nullable(),
+    compositionSource: z.literal('local').optional(),
+    localGeneration: z.number().int().min(1).max(2_147_483_647).optional(),
     profileId: motionProfileSchema,
     frame: finite.min(0).max(2_147_483_647),
     composedAtMs: finite.min(0).max(1_000_000_000_000).optional(),
@@ -218,12 +236,37 @@ export const bodyPresentationSchema = z
     bones: z.partialRecord(z.enum(BODY_BONE_NAMES), quaternion),
     hipsPosition: point,
     chestPosition: point.optional(),
+    stage: z
+      .object({
+        position: point,
+        orientation: quaternion,
+        continuousHeading: finite.min(-1000).max(1000),
+        generator: z.literal('procedural'),
+      })
+      .strict()
+      .optional(),
   })
   .strict()
+const validBodySource = (value: z.infer<typeof bodyPresentationBaseSchema>) =>
+  value.lease
+    ? value.compositionSource === undefined && value.localGeneration === undefined
+    : value.compositionSource === 'local' &&
+      value.localGeneration !== undefined &&
+      value.frame === 0 &&
+      value.executionId === undefined &&
+      value.phaseId === undefined &&
+      value.outcome === undefined &&
+      value.localRecovery !== true
+export const bodyPresentationSchema = bodyPresentationBaseSchema.refine(
+  validBodySource,
+  'Invalid body composition source',
+)
 export type BodyPresentation = z.infer<typeof bodyPresentationSchema>
-export const bodyPresentationProjectionSchema = bodyPresentationSchema.extend({
-  modelAssetHandle: z.string().max(256),
-})
+export const bodyPresentationProjectionSchema = bodyPresentationBaseSchema
+  .extend({
+    modelAssetHandle: z.string().max(256),
+  })
+  .refine(validBodySource, 'Invalid body composition source')
 export type BodyPresentationProjection = z.infer<typeof bodyPresentationProjectionSchema>
 export type MotionStatus = {
   state:

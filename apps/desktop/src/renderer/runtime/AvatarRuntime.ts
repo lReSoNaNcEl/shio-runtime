@@ -201,8 +201,12 @@ export class AvatarRuntime {
   previewSequence(ids: readonly string[]): void {
     this.controller.previewSequence(ids)
   }
-  previewVariation(id: string, seed?: number): void {
-    this.controller.previewVariation(id, seed)
+  previewVariation(
+    id: string,
+    seed?: number,
+    bodyAction?: import('../../shared/motion').BodyTurnIntent,
+  ): void {
+    this.controller.previewVariation(id, seed, bodyAction)
   }
   recoverMotion(): void {
     this.controller.recoverMotion()

@@ -253,7 +253,8 @@ export class ArdyMotionService {
       throw new Error('ARDY_STALE_SESSION')
     const profile = getMotionProfile(profileId)
     const parsedPlan = motionPlanIdentitySchema.safeParse(requestedPlan)
-    if (!profile || !parsedPlan.success) throw new Error('ARDY_INVALID_PLAN')
+    if (!profile || profile.physicalAction || !parsedPlan.success)
+      throw new Error('ARDY_INVALID_PLAN')
     const plan = parsedPlan.data
     if (
       plan.handScoreRevision !== profile.handScore.revision ||

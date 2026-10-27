@@ -92,6 +92,7 @@ export function AvatarPreviewView({ onOpenSettings }: { onOpenSettings: () => vo
   const [groupFilter, setGroupFilter] = useState<GroupFilter>('all')
   const [query, setQuery] = useState('')
   const [variationSeed, setVariationSeed] = useState(Number.NaN)
+  const [turnDirection, setTurnDirection] = useState<'clockwise' | 'counterclockwise'>('clockwise')
   const [availabilityFilter, setAvailabilityFilter] = useState<AvailabilityFilter>('all')
   const [motion, setMotion] = useState<GeneratedMotionHealth>()
   const [library, setLibrary] = useState<MotionLibraryDebug>()
@@ -429,11 +430,38 @@ export function AvatarPreviewView({ onOpenSettings }: { onOpenSettings: () => vo
               </InlineAlert>
             ) : null}
             <div className="preview-primary-actions">
+              {selected?.physicalAction && (
+                <Picker
+                  label={t('avatarPreview.turn.direction')}
+                  value={turnDirection}
+                  onChange={(value) => {
+                    if (value === 'clockwise' || value === 'counterclockwise')
+                      setTurnDirection(value)
+                  }}
+                >
+                  <PickerItem id="clockwise">{t('avatarPreview.turn.clockwise')}</PickerItem>
+                  <PickerItem id="counterclockwise">
+                    {t('avatarPreview.turn.counterclockwise')}
+                  </PickerItem>
+                </Picker>
+              )}
               <Button
                 variant="accent"
                 isDisabled={!canPlay}
                 onPress={() => {
-                  if (generatorUnavailable) controller.previewAvatarVariation(selectedId)
+                  if (selected?.physicalAction)
+                    controller.previewAvatarVariation(
+                      selectedId,
+                      Number.isNaN(variationSeed) ? undefined : variationSeed,
+                      {
+                        action: 'turn-in-place',
+                        turns: 1,
+                        direction: turnDirection,
+                        tempo: 1,
+                        finishFacing: 'viewer',
+                      },
+                    )
+                  else if (generatorUnavailable) controller.previewAvatarVariation(selectedId)
                   else controller.previewAvatarAnimation(selectedId)
                 }}
               >
@@ -448,6 +476,15 @@ export function AvatarPreviewView({ onOpenSettings }: { onOpenSettings: () => vo
                   controller.previewAvatarVariation(
                     selectedId,
                     Number.isNaN(variationSeed) ? undefined : variationSeed,
+                    selected?.physicalAction
+                      ? {
+                          action: 'turn-in-place',
+                          turns: 1,
+                          direction: turnDirection,
+                          tempo: 1,
+                          finishFacing: 'viewer',
+                        }
+                      : undefined,
                   )
                 }
               >

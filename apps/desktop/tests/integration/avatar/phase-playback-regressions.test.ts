@@ -305,6 +305,43 @@ describe('generated phase timing regressions', () => {
     expect(owner.getLibraryDebug().outcome).toBe('superseded')
   })
 
+  it('does not replan behind a committed presence forecast when PCM starts during interruption', async () => {
+    const { owner, next } = fixture()
+    const phases = ['prepare', 'stroke', 'hold', 'recover']
+    let accepted: Parameters<MotionApi['next']>[0]['plan'] | undefined
+    next.mockImplementation(async (input) => {
+      if (
+        accepted?.executionId === input.plan.executionId &&
+        phases.indexOf(input.plan.phaseId) < phases.indexOf(accepted.phaseId)
+      )
+        return { ok: false, error: 'ARDY_STALE_PLAN' }
+      accepted = input.plan
+      return { ok: true, chunk: chunk(input) }
+    })
+    await owner.playProfile('presence_thinking', context('presence_thinking'))
+    for (let frame = 0; frame < 300; frame++) {
+      owner.update(0.02, () => undefined)
+      await flush()
+      if (owner.getLibraryDebug().phase === 'stroke' && accepted?.phaseId === 'hold') break
+    }
+    expect(owner.getLibraryDebug().phase).toBe('stroke')
+    expect(accepted?.phaseId).toBe('hold')
+    owner.recover()
+    owner.setClock(
+      createPcmPlaybackClock({
+        turnId: 'opening',
+        playbackId: 'fresh-pcm',
+        state: 'playing',
+        sourceSampleOffset: 882,
+      }),
+    )
+    for (let frame = 0; frame < 12; frame++) {
+      owner.update(0.02, () => undefined)
+      await flush()
+    }
+    expect(owner.getBodyMotionDebugState().generated.error).toBeNull()
+  })
+
   it('supersedes queued automatic presence when a newer manual preview is requested', async () => {
     const { owner } = fixture()
     await owner.playProfile('presence_listening', context('presence_listening'))
@@ -379,6 +416,34 @@ describe('generated phase timing regressions', () => {
     expect(owner.getLibraryDebug().outcome).toBe('failed')
     expect(owner.getBodyMotionDebugState().generated?.error).toBe('ARDY_SPATIAL_TARGET_UNREACHED')
     expect(owner.getPresentation()?.phaseId).not.toBe('stroke')
+  })
+
+  it('holds an already delivered gesture while its post-accent horizon arrives within the provider budget', async () => {
+    vi.useFakeTimers({ toFake: ['performance', 'setTimeout', 'clearTimeout'] })
+    const { owner, next } = fixture()
+    next.mockImplementation(async (input) => {
+      if (input.plan.phaseId === 'hold') await new Promise((resolve) => setTimeout(resolve, 2000))
+      return { ok: true, chunk: chunk(input) }
+    })
+    await owner.playProfile('greet_wave_soft', context('greet_wave_soft', true))
+    const observed = new Set<string | null>()
+    for (let frame = 1; frame <= 350; frame++) {
+      owner.setClock(
+        createPcmPlaybackClock({
+          turnId: 'post-accent',
+          playbackId: 'post-accent-pcm',
+          state: 'playing',
+          sourceSampleOffset: frame * 882,
+        }),
+      )
+      owner.update(0.02, () => undefined)
+      observed.add(owner.getLibraryDebug().phase)
+      await vi.advanceTimersByTimeAsync(20)
+      await flush()
+    }
+    expect(observed).toContain('stroke')
+    expect(observed).toContain('hold')
+    expect(owner.getBodyMotionDebugState().generated.error).toBeNull()
   })
 
   it('allows initial audible preparation the Main-owned readiness budget before failing', async () => {
@@ -814,43 +879,48 @@ describe('generated phase timing regressions', () => {
     expect(error).toBeNull()
   })
 
-  it('does not replay elapsed speech time after a delayed horizon arrives', async () => {
-    const { owner, next } = fixture()
-    await owner.playProfile('presence_warm', context('presence_warm', true))
-    await flush()
-    let release: ((reply: MotionReply) => void) | undefined
-    let delayed: Parameters<MotionApi['next']>[0] | undefined
-    next.mockImplementationOnce((input) => {
-      delayed = input
-      return new Promise((resolve) => {
-        release = resolve
+  it.each(['presence_warm', 'greet_wave_soft'])(
+    'does not replay elapsed speech time after a delayed %s horizon arrives',
+    async (profileId) => {
+      const { owner, next } = fixture()
+      await owner.playProfile(profileId, context(profileId, true))
+      await flush()
+      let release: ((reply: MotionReply) => void) | undefined
+      let delayed: Parameters<MotionApi['next']>[0] | undefined
+      next.mockImplementationOnce((input) => {
+        delayed = input
+        return new Promise((resolve) => {
+          release = resolve
+        })
       })
-    })
-    owner.setClock({
-      turnId: 'turn-1',
-      playbackId: 'pcm-1',
-      sourceSampleRate: 44_100,
-      sourceSampleOffset: 4410,
-      state: 'playing',
-    })
-    owner.update(0.05, () => undefined)
-    const held = owner.getBodyMotionDebugState().sourceTimeSeconds ?? 0
-    owner.setClock({
-      turnId: 'turn-1',
-      playbackId: 'pcm-1',
-      sourceSampleRate: 44_100,
-      sourceSampleOffset: 132300,
-      state: 'playing',
-    })
-    owner.update(0.05, () => undefined)
-    expect(owner.getBodyMotionDebugState().generated?.error).toBe('ARDY_AUDIBLE_UNDERRUN')
-    if (!release || !delayed) throw new Error('Missing delayed horizon')
-    release({ ok: true, chunk: chunk(delayed) })
-    await flush()
-    owner.update(0.05, () => undefined)
-    expect(owner.getBodyMotionDebugState().sourceTimeSeconds).toBeLessThanOrEqual(held + 0.1)
-    expect(owner.getLibraryDebug().phase).not.toBe('stroke')
-  })
+      owner.setClock({
+        turnId: 'turn-1',
+        playbackId: 'pcm-1',
+        sourceSampleRate: 44_100,
+        sourceSampleOffset: 4410,
+        state: 'playing',
+      })
+      owner.update(0.05, () => undefined)
+      const held = owner.getBodyMotionDebugState().sourceTimeSeconds ?? 0
+      owner.setClock({
+        turnId: 'turn-1',
+        playbackId: 'pcm-1',
+        sourceSampleRate: 44_100,
+        sourceSampleOffset: 132300,
+        state: 'playing',
+      })
+      owner.update(0.05, () => undefined)
+      expect(owner.getBodyMotionDebugState().generated?.error).toBe(
+        profileId === 'presence_warm' ? null : 'ARDY_AUDIBLE_UNDERRUN',
+      )
+      if (!release || !delayed) throw new Error('Missing delayed horizon')
+      release({ ok: true, chunk: chunk(delayed) })
+      await flush()
+      owner.update(0.05, () => undefined)
+      expect(owner.getBodyMotionDebugState().sourceTimeSeconds).toBeLessThanOrEqual(held + 0.1)
+      expect(owner.getLibraryDebug().phase).not.toBe('stroke')
+    },
+  )
 
   it('rejects a queued request on stop and ignores a late generated horizon', async () => {
     const { owner, next } = fixture()

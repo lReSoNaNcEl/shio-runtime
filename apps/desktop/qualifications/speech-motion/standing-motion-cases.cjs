@@ -19,7 +19,7 @@ const PRESERVATION_CASES = Object.freeze([
 
 /** Planning data is never proof of qualification. Every case starts pending. */
 function createStandingQualificationPlan(catalog, profileIds) {
-  assert.equal(catalog.schemaVersion, 2, 'Standing qualification requires the phase contract')
+  assert.equal(catalog.schemaVersion, 3, 'Standing qualification requires the phase contract')
   const profiles = profileIds
     ? profileIds.map((id) => {
         const profile = catalog.profiles.find((entry) => entry.id === id)

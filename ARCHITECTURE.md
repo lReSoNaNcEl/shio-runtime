@@ -1330,11 +1330,127 @@ Overlay consumes the same body position, delivery and composed mouth projection.
 
 #### Phased motion composition
 
+**Conversational liveness recovery — implemented 27 October 2026 after live failure; live qualification ongoing.**
+A failed generated-body attempt must not permanently latch all automatic presence and
+speech motion unavailable. The same body owner may attempt a fresh internal generation
+after a bounded failure backoff and successful cancellation settlement; no stale accent
+is retried and an unsettled process cancellation remains a hard stop. Error diagnostics
+remain visible until a fresh attempt. This grants no Conversation Admission or Action
+authority and adds no worker or behavior selector.
+
+Composed body presentation is Avatar output, not proof of a live inference lease. The
+primary Avatar owner must publish its bounded local body/breath projection also during
+warmup, ordinary stop and provider failure. Such output has an explicit local source and
+model generation, no ARDY lease, execution success, phase or consumed-source claim.
+Main validates the existing authorized sender, strict shape, current model asset and
+generation monotonicity. Generated projections retain the exact Main-owned lease check.
+Overlay consumes either projection and never starts another breath or body generator.
+Model replacement and renderer reset invalidate both sources through the existing
+presentation lifecycle. Facial and Spring Bone ownership remain unchanged.
+
+**Speech gesture entry correction — implemented after live repro, 27 October 2026; qualification ongoing.**
+An explicit, fresh speech-bound gesture supersedes queued ordinary presence and may
+start bounded preparation from the currently admissible presence pose. It does not
+wait for an intermediate thinking/rest loop or for its future accent hand shape to
+be reached before preparation starts. The same final filter, hand transition,
+contact constraints and consumed-PCM expiry remain authoritative. This applies only
+to interruptible presence, never a protected gesture stroke or a manual preview.
+Ordinary presence has no expiring communicative accent. While its next source horizon
+is pending, it may hold source time and continue the same local breathing projection
+within the existing provider deadline. It never banks PCM for catch-up. Gesture
+deadlines still reject a stale accent; a normal presence wait must not be reported as
+the failure of a requested gesture or permanently disable the body.
+An accepted forecast is a committed forward phase boundary. If audible PCM starts
+while presence is being interrupted, clock rebinding must preserve that forecast
+until promotion or local recovery; it cannot request an earlier phase from Main.
+Main's monotonic plan validation remains authoritative and is not weakened.
+Preparation and post-accent hold may wait within the existing bounded provider
+deadline while retaining the last admissible pose and local breath. The shorter
+audible accent deadline applies to stroke entry; a delayed hold is not a new accent.
+Consumed time is rebased rather than replayed, and speech completion still cancels
+unconsumed work and enters local recovery.
+
+**Contrasting emotion demonstration — decision after live repro, 27 October 2026.**
+Character Response Generation remains the semantic owner of delivery selection. Its
+bounded protocol instruction must distinguish performing an explicitly requested
+emotion demonstration from narrating emotion names. Related canonical emotions may
+share one VRM facial family; a demonstration should use at most three contrasting
+families within the existing segment budget. No natural-language emotion parser,
+second model, facial writer or new routing path is added. AudioPlayer's consumed PCM
+continues to schedule delivery, AvatarExpressionMixer owns final facial values and
+Overlay consumes the same typed delivery projection. Qualification observes actual
+VRM expression weights in both renderers, rather than counting emotion labels alone.
+
+**Living motion decision — 27 October 2026; implementation present, artistic acceptance pending.**
+**Pose-adaptive turn planning — implemented 27 October 2026, replacing the rejected fixed-step fallback.**
+The body executor uses a bounded receding-horizon footstep planner, calibrated from
+the current rig proportions, foot contact extents, actual pose and acquired contacts.
+Each landing triggers fresh candidate evaluation for both support choices, admissible
+foot placements, heading progress and timing. Step count, first support, stride and
+weight transfer are outputs of feasibility/cost evaluation, never a stored angle or
+step sequence. Budget bounds stop planning; they do not prescribe its choreography.
+The planner jointly checks leg reach, stance separation, hip/foot twist, sole support,
+foot clearance and an explicit simplified COM/ZMP balance model. VRM supplies no
+authoritative masses/inertias; the geometric COM proxy and resulting balance limits
+must be documented rather than described as a full multibody physics simulation.
+Continuous root and heading segments preserve boundary derivatives. Only verified
+landing commits a contact; inability to find a feasible plan produces honest bounded
+stabilization/failure. Interruption replans the remaining viewer-facing goal from the
+actual pose. The planner returns transient kinematic data to the existing final body
+writer; it has no clock, pose writer, process, semantic authority or external capability.
+Qualification must demonstrate different plans for changed stance/proportions and
+initial load, cadence independence, contacts, balance, cancellation and real videos.
+Candidate search may forecast the next contact horizon incrementally within a bounded
+renderer work budget. Such a forecast has no execution or contact authority: its goal
+and predicted landing must still match the actually verified landing before adoption.
+Cancellation, goal changes, model detach and mismatch invalidate the pending search.
+No second clock, Worker/process, pose writer or unbounded frame-blocking search is added.
+**Turn continuity correction — implemented after visual rejection, 27 October 2026; artistic acceptance pending.**
+The same body executor plans continuous position/velocity/acceleration through
+support transfers, carry integration remainder across step boundaries, and enter/leave
+the calibrated crouch without a frame-wise root-height clamp. Fixed foot contacts do
+not qualify a trajectory with visible joint acceleration discontinuities. Upper-body
+contact projection may constrain its limb chain but may not rewrite a validated
+full-body root path; leg reach/contact verification still rejects an invalid result.
+Physical completion and artistic acceptance remain separate. No additional temporal
+pose writer, generator, Runtime or relaxation of contact/joint checks is introduced.
+The existing Body Animation Domain will compare identical transient SOMA horizons at
+source, coordinate-retargeted, anatomical, temporal and final composition boundaries.
+Opt-in qualification instrumentation is injected locally and never adds raw poses to
+Runtime Health, IPC diagnostics, Character State or conversation history. Physical
+joint/contact constraints remain separate from catalog-driven artistic amplitude.
+One source-velocity-aware temporal integrator will replace cascaded artistic damping;
+the final swept contact guard remains authoritative and cannot silently impose a
+second ordinary tracking filter. Consumed PCM remains the conversational clock.
+
+The same canonical motion catalog will additionally declare a bounded turn-in-place
+action with explicit rig, posture, support, root, direction, tempo, completion and
+interruption contracts. This is an extension of the existing body executor, not a new
+Runtime, Action Runtime tool or independent animation catalog. Standing profiles keep
+their anchored double-support policy. The body owner will accumulate continuous
+heading and alternate support acquisition/release, preserving planted world-space foot
+position and orientation with model-calibrated leg IK. A pinned-model capability probe
+must precede choosing generated turning; if its contact/heading accuracy is inadequate,
+the selected bounded procedural footstep trajectory is reported honestly as procedural.
+Neither an elapsed timer nor scene rotation alone proves a completed physical turn.
+Completion requires actual heading, contacts, reachability and stable recovery; an
+interruption/failure retains its terminal reason after recovery. Model replacement
+invalidates execution identities and clears model-specific support targets.
+
+The primary body composer will project only its bounded stage transform, continuous
+heading, execution identity and monotonic presentation timestamp alongside the existing
+composed bones. Overlay interpolates that same result and owns no second trajectory or
+generator. Gaze, facial, head, breathing and secondary-motion ownership are unchanged.
+Character may request only validated semantic action parameters through its existing
+embodiment contract and current availability; it never receives bones, trajectories or
+raw conditioning. Draft actions remain unavailable to automatic selection until the
+required physical and visual qualification is accepted.
+
 **Decision — 26 October 2026; Runtime implementation — 27 October 2026; preset qualification ongoing**
 
 The animation-library revision implements phase-based motion execution inside the existing Avatar Runtime Body Animation Domain, following the separately reviewed target decision and code Work Items. Generated playback provides the explicit preparation/completion lifecycle, executable transition timing and phase-aware hand composition described below. Deterministic implementation checks do not complete the separate real-rig, artistic and joint speech qualification; preset activation remains conditional on those results.
 
-This revision is limited to standing presence and gestures with both feet supported. Seated motions, sit-down/stand-up sequences, locomotion and changes to a different support class are outside its implementation scope. The artistic preset and its qualification cases are planning data; they do not introduce another canonical source of architectural meaning.
+The currently implemented revision is limited to standing presence and gestures with both feet supported. The living-motion decision above plans the separate turn-in-place support class; seated motions, sit-down/stand-up sequences and walking remain outside the implementation scope. The artistic preset and its qualification cases are planning data; they do not introduce another canonical source of architectural meaning.
 
 Character Response Generation and existing typed Behavior projections supply bounded semantic intent. Avatar Runtime translates an admitted intent into a physically compatible movement; it does not infer dialogue meaning through phrase or keyword routing. The animation catalog is the canonical source for profile availability, entry/exit conditions, motion families, required rig capabilities, constraints, hand scores and bounded variation. Renderer UI and worker-readable data derive from that source.
 

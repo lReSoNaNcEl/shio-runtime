@@ -36,6 +36,7 @@ def main() -> int:
     conditioning = [
         {"id": f"{p['id']}:{phase}", "prompt": phase_prompt(p, phase), "stationary": True}
         for p in profiles.values()
+        if not p.get("physicalAction")
         for phase in ("prepare", "stroke", "hold", "recover")
     ]
     backend.warmup(conditioning)

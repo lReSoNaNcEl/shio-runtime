@@ -33,11 +33,14 @@ describe('motion library owner availability', () => {
       for (const profile of MOTION_PROFILES) profile.qualification.state = 'qualified'
       Reflect.set(owner, 'phase', 'ready')
       Reflect.set(owner, 'lease', { modelGeneration: 1 })
+      Reflect.set(owner, 'playing', true)
       const advertised = owner.getEmbodimentAvailability().availableSemanticIntents
       expect(advertised).toContain('greeting')
       expect(advertised).toContain('peace')
       expect(advertised).not.toContain('kiss')
       expect(advertised).not.toContain('stretch')
+      Reflect.set(owner, 'phase', 'loading')
+      expect(owner.getEmbodimentAvailability().availableSemanticIntents).toEqual(advertised)
       Reflect.set(owner, 'error', 'ARDY_SPATIAL_TARGET_UNREACHED')
       expect(owner.getEmbodimentAvailability().availableSemanticIntents).toEqual([])
       expect(owner.getEmbodimentAvailability().unavailableReasons).toEqual(['motion-unavailable'])

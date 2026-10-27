@@ -5,7 +5,10 @@ const fs = require('node:fs')
 const path = require('node:path')
 const { _electron } = require('playwright-core')
 const { installGeometryProbe, loadRigGeometry } = require('./rig-geometry.cjs')
-const { recordPage } = require('../motion-ab/record.cjs')
+const { recordCanvas } = require('./record-canvas.cjs')
+const { captureWindow } = require('./capture-window.cjs')
+const { qualifyLiving } = require('./living-cases.cjs')
+const { replayDynamics } = require('./dynamics-replay.cjs')
 const { SEMANTIC_EMBODIMENT_CASES } = require('./semantic-embodiment-cases.cjs')
 const { FIXED_SEEDS, createStandingQualificationPlan } = require('./standing-motion-cases.cjs')
 const emotionNames = require('../../emotion_manifest.json').emotions.map((emotion) => emotion.id)
@@ -45,7 +48,20 @@ assert(
 const selectedSemanticCases = semanticCaseIds.map((id) =>
   SEMANTIC_EMBODIMENT_CASES.find((entry) => entry.id === id),
 )
-const bodyStabilityOnly = process.argv.includes('--body-stability-only')
+const turnCases = process.argv.includes('--turn-cases')
+const turnSeedArgument = process.argv.find((value) => value.startsWith('--turn-seeds='))
+const turnSeeds = turnSeedArgument?.slice('--turn-seeds='.length).split(',').map(Number)
+assert(
+  !turnSeeds ||
+    (turnCases &&
+      turnSeeds.length > 0 &&
+      turnSeeds.every((seed) => [17, 101, 271, 503].includes(seed))),
+  'Unknown turn fixture seed',
+)
+const livingCases = process.argv.includes('--living-cases')
+const dynamicsReplay = process.argv.includes('--dynamics-replay')
+const bodyStabilityOnly =
+  process.argv.includes('--body-stability-only') || turnCases || livingCases || dynamicsReplay
 const bodySeconds = option('body-seconds', 18)
 // Capture both hand scores during the short accent before reviewing wider views.
 const accentCameras = ['Right hand', 'Left hand', 'Full body', 'Bust', 'Face']
@@ -129,6 +145,7 @@ const environment = {
   SHIO_MOTION_ROOT: process.env.SHIO_MOTION_ROOT || path.join(desktop, 'motion'),
 }
 delete environment.ELECTRON_RUN_AS_NODE
+const launchDesktop = process.env.SHIO_QUALIFICATION_DESKTOP_ROOT || desktop
 const report = {
   modelFixture: {
     source: fixtureArgument
@@ -185,11 +202,37 @@ for (const relative of [
   'qualifications/speech-motion/rig-geometry.cjs',
   'qualifications/speech-motion/semantic-embodiment-cases.cjs',
   'qualifications/speech-motion/standing-motion-cases.cjs',
+  'qualifications/speech-motion/record-canvas.cjs',
+  'qualifications/speech-motion/living-cases.cjs',
+  'qualifications/speech-motion/dynamics-replay.cjs',
   'qualifications/motion-ab/record.cjs',
 ])
   report.build[relative] = createHash('sha256')
     .update(fs.readFileSync(path.join(desktop, relative)))
     .digest('hex')
+if (launchDesktop !== desktop) {
+  const emitted = [
+    'out/main/index.js',
+    'out/preload/index.js',
+    'out/preload/overlay.js',
+    'out/renderer/index.html',
+    ...fs
+      .readdirSync(path.join(launchDesktop, 'out/renderer/assets'))
+      .filter((name) => /\.(?:js|css)$/u.test(name))
+      .map((name) => `out/renderer/assets/${name}`),
+  ]
+  report.instrumentedBuild = Object.fromEntries(
+    emitted.map((relative) => [
+      relative,
+      createHash('sha256')
+        .update(fs.readFileSync(path.join(launchDesktop, relative)))
+        .digest('hex'),
+    ]),
+  )
+  report.instrumentedSnapshot = JSON.parse(
+    fs.readFileSync(path.join(launchDesktop, '../../snapshot.json')),
+  )
+}
 const persist = () =>
   fs.writeFileSync(path.join(directory, 'report.json'), JSON.stringify(report, null, 2))
 const log = (value) => {
@@ -727,7 +770,7 @@ function overlayPage() {
 async function overlayProjection() {
   return overlayPage().evaluate(async () => {
     const pose = await window.overlayApi.avatarBody.get()
-    if (!pose) return null
+    if (!pose?.lease) return null
     const hands = {
       left: { boneCount: 0, nonNeutralBones: 0, totalAngle: 0, maximumAngle: 0 },
       right: { boneCount: 0, nonNeutralBones: 0, totalAngle: 0, maximumAngle: 0 },
@@ -1047,6 +1090,270 @@ async function focusedPresentation() {
   await probeActualWindows()
   log({ focusedPresentation: true, profiles: profiles.length })
 }
+async function qualifyTurns() {
+  await page.waitForFunction(() => !!window.__motionAbController)
+  await page.locator('.app-sidebar').getByRole('button', { name: 'Avatar', exact: true }).click()
+  await page.getByRole('button', { name: 'Full body', exact: true }).click()
+  const turnLibrary = page.locator('.animation-library')
+  await turnLibrary.getByRole('searchbox').fill('Full body turn')
+  await turnLibrary.getByText('Full body turn', { exact: true }).click()
+  if (process.argv.includes('--hide-windows'))
+    await application.evaluate(({ BrowserWindow }) => {
+      for (const window of BrowserWindow.getAllWindows()) window.hide()
+    })
+  report.turns = []
+  report.turnSource = 'typed Debug Preview; real production body executor; procedural fallback'
+  for (const fixture of [
+    { direction: 'clockwise', seed: 17 },
+    { direction: 'counterclockwise', seed: 101 },
+    { direction: 'clockwise', seed: 271, interrupt: true },
+    { direction: 'clockwise', seed: 503, speech: true },
+  ].filter((fixture) => !turnSeeds || turnSeeds.includes(fixture.seed))) {
+    if (report.turns.length) {
+      await page.evaluate(() => window.__motionAbController.reloadPreviewModel())
+      await ready()
+    }
+    const stopTurnVideo = recordVideo
+      ? await recordCanvas(overlayPage(), path.join(directory, `turn-${fixture.seed}.webm`))
+      : null
+    const stopMainTurnVideo =
+      recordVideo && !fixture.speech
+        ? await recordCanvas(page, path.join(directory, `turn-${fixture.seed}-full-body.webm`))
+        : null
+    await page.evaluate((fixture) => {
+      const c = window.__motionAbController
+      const a = c.avatarRuntime.controller
+      const state = {
+        samples: [],
+        maxDrift: 0,
+        supportChanges: 0,
+        maxMouth: 0,
+        consumedSamples: 0,
+        done: false,
+        speechDone: false,
+        maxFrameIntervalMs: 0,
+      }
+      let previousSupport,
+        anchors = {},
+        previousExecution
+      const frame = () => {
+        const now = performance.now()
+        if (state.lastFrameAt !== undefined)
+          state.maxFrameIntervalMs = Math.max(state.maxFrameIntervalMs, now - state.lastFrameAt)
+        state.lastFrameAt = now
+        state.planning = a.vrmModel.bodyPlayback.turn?.getPlanningDebug() ?? state.planning
+        const pose = a.getBodyPresentation()
+        const debug = a.vrmModel.getBodyMotionDebugState()
+        const physical = debug.generated.physical
+        if (physical && physical.executionId === state.executionId) {
+          state.physical = physical
+          state.done ||= physical.outcome !== null
+        }
+        if (
+          pose?.profileId === 'turn_in_place' &&
+          pose.lease?.seed === fixture.seed &&
+          pose.executionId === physical?.executionId
+        ) {
+          state.executionId = pose.executionId
+          if (pose.executionId !== previousExecution) {
+            previousExecution = pose.executionId
+            anchors = {}
+          }
+          const support = physical.support
+          for (const side of ['left', 'right']) {
+            const foot = a.vrmModel.vrm.humanoid.getRawBoneNode(`${side}Foot`)
+            const position = foot.getWorldPosition(foot.position.clone())
+            if (support === 'double' || support === side) {
+              anchors[side] ??= position.clone()
+              state.maxDrift = Math.max(state.maxDrift, position.distanceTo(anchors[side]))
+            } else delete anchors[side]
+          }
+          if (previousSupport !== undefined && support !== previousSupport) state.supportChanges++
+          previousSupport = support
+          if (state.samples.length < 1800)
+            state.samples.push({
+              atMs: performance.now(),
+              heading: physical.actionHeading,
+              phase: pose.phaseId,
+              support,
+              outcome: physical.outcome,
+              executionId: pose.executionId,
+            })
+          state.physical = physical
+          state.done ||= physical.outcome !== null
+        }
+        state.maxMouth = Math.max(state.maxMouth, ...Object.values(a.getMouthWeights()))
+        state.consumedSamples = Math.max(
+          state.consumedSamples,
+          c.player.getPcmClock()?.sourceSampleOffset ?? 0,
+        )
+        state.frame = requestAnimationFrame(frame)
+      }
+      window.__turnProbe = state
+      frame()
+      c.previewAvatarVariation('turn_in_place', fixture.seed, {
+        action: 'turn-in-place',
+        turns: 1,
+        direction: fixture.direction,
+        tempo: 1,
+        finishFacing: 'viewer',
+      })
+    }, fixture)
+    let interrupted = false,
+      speechStarted = false,
+      stopSpeechVideo
+    const screenshots = new Set()
+    const deadline = Date.now() + 45000
+    let state
+    while (Date.now() < deadline) {
+      state = await page.evaluate(() => {
+        const { frame, samples, ...state } = window.__turnProbe
+        return { ...state, latest: samples.at(-1), sampleCount: samples.length }
+      })
+      if (fixture.interrupt && !interrupted && Math.abs(state.latest?.heading ?? 0) > 1.2) {
+        await page.getByRole('button', { name: 'Stop', exact: true }).click()
+        interrupted = true
+      }
+      if (fixture.speech && !speechStarted && state.latest?.phase === 'stroke') {
+        stopSpeechVideo = await recordCanvas(page, path.join(directory, 'turn-with-fish.webm'))
+        await page.evaluate(() => {
+          const c = window.__motionAbController
+          const text =
+            'Конечно! Смотри, я плавно переношу вес и поворачиваюсь вокруг себя. Теперь снова смотрю на тебя. Мы можем спокойно продолжать наш разговор, пока движение завершается.'
+          c.characterResponse.createReply = async (turnId, _user, _screen, onEvent) => {
+            const base = { turnId, requestId: `fixture:${turnId}`, at: Date.now(), llmRound: 0 }
+            onEvent?.({ ...base, type: 'text-delta', delta: { text, emotion: 'calm' } })
+            onEvent?.({ ...base, type: 'completed' })
+            return {
+              replyText: `[calm]${text}`,
+              displayText: text,
+              speechText: text,
+              emotionKey: 'calm',
+              segments: [
+                {
+                  id: 'fixture',
+                  index: 0,
+                  emotion: 'calm',
+                  text,
+                  boundaryAfter: 'sentence',
+                  targetMaxGapMs: 0,
+                },
+              ],
+            }
+          }
+          void c.sendText('Шио, можешь покрутиться вокруг себя?').then(
+            () => {
+              window.__turnProbe.speechDone = true
+            },
+            () => {
+              window.__turnProbe.speechDone = true
+              window.__turnProbe.speechFailed = true
+            },
+          )
+        })
+        speechStarted = true
+      }
+      const quadrant = Math.floor(Math.abs(state.latest?.heading ?? 0) / (Math.PI / 2))
+      if (quadrant > 0 && !screenshots.has(quadrant)) {
+        screenshots.add(quadrant)
+        await page.screenshot({
+          path: path.join(directory, `turn-${fixture.seed}-${quadrant}.png`),
+        })
+      }
+      if (state.done && (!fixture.speech || state.speechDone)) break
+      await pause(40)
+    }
+    if (stopSpeechVideo) report.turnSpeechVideo = await stopSpeechVideo()
+    const full = await page.evaluate(() => {
+      const state = window.__turnProbe
+      cancelAnimationFrame(state.frame)
+      const { frame, ...result } = state
+      return result
+    })
+    const expected = fixture.interrupt ? 'cancelled' : 'completed'
+    await pause(200)
+    const mainPose = await page.evaluate(() => {
+      const model = window.__motionAbController.avatarRuntime.controller.vrmModel.vrm
+      const hips = model.humanoid.getNormalizedBoneNode('hips')
+      return {
+        stage: model.scene.quaternion.toArray(),
+        hips: hips.position.toArray(),
+        feet: ['leftFoot', 'rightFoot'].map((name) => {
+          const foot = model.humanoid.getNormalizedBoneNode(name)
+          return foot.getWorldPosition(foot.position.clone()).toArray()
+        }),
+      }
+    })
+    const overlayPose = await overlayPage().evaluate(() => {
+      const model = window.__qualificationModels?.findLast(
+        (candidate) =>
+          candidate.vrm && candidate.getBodyMotionDebugState().presentationMode === 'mirror',
+      )?.vrm
+      if (!model) return null
+      const hips = model.humanoid.getNormalizedBoneNode('hips')
+      return {
+        stage: model.scene.quaternion.toArray(),
+        hips: hips.position.toArray(),
+        feet: ['leftFoot', 'rightFoot'].map((name) => {
+          const foot = model.humanoid.getNormalizedBoneNode(name)
+          return foot.getWorldPosition(foot.position.clone()).toArray()
+        }),
+      }
+    })
+    const distance = (a, b) => Math.hypot(...a.map((v, i) => v - b[i]))
+    const overlay = overlayPose
+      ? {
+          rootDistanceM: distance(mainPose.hips, overlayPose.hips),
+          stageAngleRad:
+            2 *
+            Math.acos(
+              Math.min(
+                1,
+                Math.abs(mainPose.stage.reduce((sum, v, i) => sum + v * overlayPose.stage[i], 0)),
+              ),
+            ),
+          feetDistanceM: mainPose.feet.map((v, i) => distance(v, overlayPose.feet[i])),
+        }
+      : null
+    const passed =
+      full.physical?.outcome === expected &&
+      full.physical.maxRootAccelerationMps2 < 8.5 &&
+      full.maxDrift < 0.003 &&
+      full.supportChanges >= 2 &&
+      (fixture.interrupt ||
+        Math.abs(Math.abs(full.physical.actionHeading) - 2 * Math.PI) < 0.002) &&
+      (!fixture.speech ||
+        (full.consumedSamples > 44100 && full.maxMouth > 0.05 && !full.speechFailed))
+    const video = stopTurnVideo ? await stopTurnVideo() : null
+    const mainVideo = stopMainTurnVideo ? await stopMainTurnVideo() : null
+    report.turns.push({
+      ...fixture,
+      ...full,
+      video,
+      mainVideo,
+      overlay,
+      passed:
+        passed &&
+        !!overlay &&
+        overlay.rootDistanceM < 0.012 &&
+        overlay.stageAngleRad < 0.03 &&
+        overlay.feetDistanceM.every((v) => v < 0.012),
+      visualAcceptance: 'pending',
+    })
+    log({
+      turn: fixture,
+      outcome: full.physical?.outcome,
+      maxDrift: full.maxDrift,
+      supportChanges: full.supportChanges,
+      passed,
+    })
+    for (const theme of ['light', 'dark']) {
+      await page.evaluate((uiTheme) => window.api.config.save({ uiTheme }), theme)
+      await page.screenshot({ path: path.join(directory, `turn-${fixture.seed}-${theme}.png`) })
+    }
+  }
+}
+
 async function bodyStability() {
   report.bodyStability = []
   const geometry = await loadRigGeometry(
@@ -1107,7 +1414,7 @@ async function bodyStability() {
             if (
               !pose ||
               pose.profileId !== id ||
-              pose.lease.seed !== requestedSeed ||
+              pose.lease?.seed !== requestedSeed ||
               pose.executionId === preceding?.executionId
             )
               return
@@ -1329,8 +1636,8 @@ async function bodyStability() {
 ;(async () => {
   application = await _electron.launch({
     executablePath: process.env.SHIO_QUALIFICATION_DESKTOP_EXECUTABLE || require('electron'),
-    args: process.env.SHIO_QUALIFICATION_DESKTOP_EXECUTABLE ? [] : [desktop],
-    cwd: desktop,
+    args: process.env.SHIO_QUALIFICATION_DESKTOP_EXECUTABLE ? [] : [launchDesktop],
+    cwd: launchDesktop,
     env: environment,
     timeout: 30000,
   })
@@ -1417,18 +1724,24 @@ async function bodyStability() {
       if (!(await window.api.overlay.isVisible()).visible) await window.api.overlay.toggle()
     })
     await pause(6000)
-    if (recordVideo) {
+    if (recordVideo && !turnCases && !livingCases && !dynamicsReplay) {
       const overlay = application.windows().find((target) => target.url().includes('overlay=1'))
       assert(overlay, 'Overlay unavailable for video recording')
-      stopRecording = await recordPage(overlay, path.join(directory, 'overlay.mp4'), environment)
+      stopRecording = await recordCanvas(overlay, path.join(directory, 'overlay.webm'))
     }
     for (const target of application.windows()) {
       await frameProbe(target)
-      await target.screenshot({
-        path: path.join(directory, `start-${target === page ? 'main' : 'overlay'}.png`),
-      })
+      await captureWindow(
+        application,
+        target,
+        path.join(directory, `start-${target === page ? 'main' : 'overlay'}.png`),
+      )
     }
-    if (bodyStabilityOnly) await bodyStability()
+    if (livingCases)
+      await qualifyLiving({ application, page, directory, report, pause, recordVideo })
+    else if (dynamicsReplay) await replayDynamics({ page, desktop, directory, report, pause })
+    else if (turnCases) await qualifyTurns()
+    else if (bodyStabilityOnly) await bodyStability()
     else if (focused && !modelOnly) await focusedPresentation()
     for (let index = 0; !bodyStabilityOnly && index < responseCount; index++) {
       await response(index)
@@ -1462,12 +1775,14 @@ async function bodyStability() {
           return stats ? { ...stats, elapsedMs: performance.now() - stats.startedAt } : null
         }),
       })
-      await target.screenshot({
-        path: path.join(directory, `end-${target === page ? 'main' : 'overlay'}.png`),
-      })
+      await captureWindow(
+        application,
+        target,
+        path.join(directory, `end-${target === page ? 'main' : 'overlay'}.png`),
+      )
     }
     report.elapsedSeconds = (Date.now() - start) / 1000
-    if (bodyStabilityOnly) {
+    if (bodyStabilityOnly && !turnCases && !livingCases && !dynamicsReplay) {
       report.bodyStabilityAcceptance = report.bodyStability.map((entry) => {
         const opening = entry.geometry.hold?.right?.indexMiddleOpeningDeg?.last
         const correctV = entry.profileId !== 'peace_single' || (opening >= 12 && opening <= 45)
@@ -1534,7 +1849,16 @@ async function bodyStability() {
     }
     report.passed =
       report.failures.length === 0 &&
-      (!bodyStabilityOnly || report.bodyStabilityAcceptance.every((entry) => entry.passed)) &&
+      (!bodyStabilityOnly ||
+        (livingCases
+          ? report.living.every((entry) => entry.passed)
+          : dynamicsReplay
+            ? report.dynamicsReplay.videos.every(
+                (entry) => entry.frames > 0 && entry.errors.length === 0,
+              )
+            : turnCases
+              ? report.turns.every((entry) => entry.passed)
+              : report.bodyStabilityAcceptance.every((entry) => entry.passed))) &&
       (bodyStabilityOnly || report.responses.length >= responseCount) &&
       (bodyStabilityOnly || report.elapsedSeconds >= duration) &&
       (!componentSmoke || report.componentEvidence.motionErrors.length === 0)
@@ -1564,7 +1888,7 @@ async function bodyStability() {
           report.passed = false
         }
       } catch (error) {
-        report.failures.push(`Video recording failed: ${error.name}`)
+        report.failures.push(`Video recording failed: ${error.message}`)
         report.passed = false
       }
     }

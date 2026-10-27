@@ -4,6 +4,7 @@ import {
   initialMarkdownProtocolState,
   scanMarkdownProtocol,
 } from '../character-stream/MarkdownProtocolScope'
+import { bodyTurnIntentSchema } from '../motion/physicalAction'
 import { EMOTION_INTENSITIES } from '../speech/emotions.generated'
 import { containInternalReasoning } from './reasoning'
 
@@ -48,6 +49,7 @@ export const characterEmbodimentIntentSchema = z
     intensity: z.enum(EMBODIMENT_INTENSITIES),
     gestureHint: z.enum(EMBODIMENT_GESTURE_HINTS).optional(),
     gazeHint: z.enum(EMBODIMENT_GAZE_HINTS).optional(),
+    bodyAction: bodyTurnIntentSchema.optional(),
   })
   .strict()
 /** Provider-agnostic visual proposal; Avatar Runtime owns concrete execution. */
@@ -82,6 +84,7 @@ export const embodimentAvailabilitySchema = z
       .array(z.enum(EMBODIMENT_GESTURE_HINTS))
       .max(24)
       .refine((values) => new Set(values).size === values.length),
+    availableBodyActions: z.array(z.literal('turn-in-place')).max(1).optional(),
     unavailableReasons: z
       .array(z.enum(EMBODIMENT_UNAVAILABLE_REASONS))
       .max(5)
@@ -99,9 +102,11 @@ export function parseEarlyEmbodimentEnvelope(
   if (payload.length > EMBODIMENT_ENVELOPE_MAX_CHARACTERS) return undefined
   try {
     const input: unknown = JSON.parse(payload)
-    const keys = [...payload.matchAll(/"(version|intensity|gestureHint|gazeHint)"\s*:/gu)].map(
-      (match) => match[1],
-    )
+    const keys = [
+      ...payload.matchAll(
+        /"(version|intensity|gestureHint|gazeHint|bodyAction|action|turns|direction|tempo|finishFacing)"\s*:/gu,
+      ),
+    ].map((match) => match[1])
     if (new Set(keys).size !== keys.length) return undefined
     const parsed = earlyIntentSchema.safeParse(input)
     if (!parsed.success) return undefined

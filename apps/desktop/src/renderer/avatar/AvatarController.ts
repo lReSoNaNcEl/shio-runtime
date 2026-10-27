@@ -321,6 +321,23 @@ export class AvatarController {
     this.gaze.setBehaviorIntent(undefined)
     this.lastCharacterStateKey = null
     this.applyCurrentGaze()
+    if (
+      intent?.bodyAction &&
+      key &&
+      key !== this.processedIntentKey &&
+      this.getEmbodimentAvailability().availableBodyActions?.includes(intent.bodyAction.action)
+    ) {
+      this.processedIntentKey = key
+      this.playback.previewAnimation({
+        animationId: 'turn_in_place',
+        loop: false,
+        mode: 'idle',
+        frame: this.frame,
+        bodyAction: intent.bodyAction,
+        requestSource: 'character-state',
+      })
+      return
+    }
     this.prepareConversationGesture()
   }
 
@@ -550,13 +567,18 @@ export class AvatarController {
     })
   }
 
-  previewVariation(id: string, seed?: number): void {
+  previewVariation(
+    id: string,
+    seed?: number,
+    bodyAction?: import('../../shared/motion').BodyTurnIntent,
+  ): void {
     this.releasePreparedGesture()
     this.processedIntentKey = this.conversationIntentKey()
     this.previewPlan = []
     this.playback.previewAnimation({
       animationId: id,
       seed,
+      bodyAction,
       loop: getAnimation(id)?.loop ?? false,
       mode: this.lastEffect?.mode ?? 'idle',
       frame: this.frame,

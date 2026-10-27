@@ -119,8 +119,12 @@ def test_new_execution_requires_preparation_but_keeps_source_history():
 
 
 def test_all_profiles_have_distinct_trusted_phase_conditioning_and_explicit_bilateral_hands():
-    assert len(PROFILES) == 28
+    assert len(PROFILES) == 29
     for profile in PROFILES.values():
+        if profile.get("physicalAction"):
+            assert profile["qualification"]["state"] == "draft"
+            assert profile["supportPolicy"]["contacts"] == "alternating-feet"
+            continue
         assert profile["supportPolicy"]["contacts"] == "both-feet-planted"
         assert profile["supportPolicy"]["allowStep"] is False
         assert profile["qualification"]["state"] == "qualified"

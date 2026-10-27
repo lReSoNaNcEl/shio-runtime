@@ -1,6 +1,7 @@
 import { z } from 'zod'
 
 import { EMBODIMENT_GESTURE_HINTS } from '../character-response/embodiment'
+import { physicalActionProfileSchema } from './physicalAction'
 
 export const MOTION_PHASE_IDS = ['prepare', 'stroke', 'hold', 'recover'] as const
 export const motionPhaseSchema = z.enum(MOTION_PHASE_IDS)
@@ -108,6 +109,7 @@ export const motionCatalogProfileSchema = z
       'rest',
     ]),
     kind: z.enum(['presence', 'gesture']),
+    physicalAction: physicalActionProfileSchema.optional(),
     labels,
     descriptions: labels,
     description: z.string().min(1).max(600),
@@ -115,22 +117,50 @@ export const motionCatalogProfileSchema = z
     entryPostures: z.tuple([z.literal('standing')]),
     exitPosture: z.literal('standing'),
     requiredRigCapabilities: z
-      .array(z.enum(['body-standing', 'left-hand', 'right-hand', 'left-fingers', 'right-fingers']))
-      .length(5),
-    supportPolicy: z
-      .object({
-        contacts: z.literal('both-feet-planted'),
-        allowStep: z.literal(false),
-        maxVerticalRootM: finite.min(0).max(0.02),
-      })
-      .strict(),
-    rootPolicy: z
-      .object({
-        mode: z.literal('anchored-standing'),
-        frame: z.literal('model-stage'),
-        maxHorizontalM: finite.min(0).max(0.01),
-      })
-      .strict(),
+      .array(
+        z.enum([
+          'body-standing',
+          'left-hand',
+          'right-hand',
+          'left-fingers',
+          'right-fingers',
+          'dynamic-support',
+        ]),
+      )
+      .min(5)
+      .max(6),
+    supportPolicy: z.union([
+      z
+        .object({
+          contacts: z.literal('both-feet-planted'),
+          allowStep: z.literal(false),
+          maxVerticalRootM: finite.min(0).max(0.02),
+        })
+        .strict(),
+      z
+        .object({
+          contacts: z.literal('alternating-feet'),
+          allowStep: z.literal(true),
+          maxVerticalRootM: finite.min(0).max(0.08),
+        })
+        .strict(),
+    ]),
+    rootPolicy: z.union([
+      z
+        .object({
+          mode: z.literal('anchored-standing'),
+          frame: z.literal('model-stage'),
+          maxHorizontalM: finite.min(0).max(0.01),
+        })
+        .strict(),
+      z
+        .object({
+          mode: z.literal('turn-in-place'),
+          frame: z.literal('model-stage'),
+          maxHorizontalM: finite.min(0).max(0.25),
+        })
+        .strict(),
+    ]),
     phases: z.array(phase).length(4),
     handScore: z
       .object({
@@ -191,6 +221,21 @@ export const motionCatalogProfileSchema = z
   })
   .strict()
   .superRefine((p, ctx) => {
+    if (
+      p.physicalAction
+        ? p.kind !== 'gesture' ||
+          p.rootPolicy.mode !== 'turn-in-place' ||
+          p.supportPolicy.contacts !== 'alternating-feet' ||
+          !p.requiredRigCapabilities.includes('dynamic-support') ||
+          p.automaticSelection
+        : p.rootPolicy.mode !== 'anchored-standing' ||
+          p.supportPolicy.contacts !== 'both-feet-planted' ||
+          p.requiredRigCapabilities.includes('dynamic-support')
+    )
+      ctx.addIssue({
+        code: 'custom',
+        message: 'Physical action and standing support policies cannot be mixed',
+      })
     if (p.phases.some((v, i) => v.id !== MOTION_PHASE_IDS[i]))
       ctx.addIssue({
         code: 'custom',
@@ -232,7 +277,7 @@ export const motionCatalogProfileSchema = z
       ctx.addIssue({ code: 'custom', message: 'A protected stroke cannot also be interruptible' })
     if (!p.automaticSelection && p.defaultWeight !== 0)
       ctx.addIssue({ code: 'custom', message: 'Manual profile cannot carry automatic weight' })
-    if (new Set(p.requiredRigCapabilities).size !== 5)
+    if (new Set(p.requiredRigCapabilities).size !== (p.physicalAction ? 6 : 5))
       ctx.addIssue({
         code: 'custom',
         message: 'Both calibrated hands and all fingers are required',
@@ -266,7 +311,7 @@ export const motionFormatSchema = z
 const edge = z.tuple([motionHandZoneSchema, motionHandZoneSchema])
 export const motionCatalogSchema = z
   .object({
-    schemaVersion: z.literal(2),
+    schemaVersion: z.literal(3),
     catalogRevision: boundedId,
     format: motionFormatSchema,
     handRigCalibration: z

@@ -1,3 +1,4 @@
+import type { BodyTurnIntent } from '../../shared/motion'
 import { type AnimationId, getAnimation } from './animationManifest'
 import type { AvatarBodyMotionLayer } from './embodiment/motion/AvatarMotionLayer'
 import type { GeneratedBodyDebugState, VrmModel } from './rendering/three/VrmModel'
@@ -18,6 +19,7 @@ export interface AnimationControllerDebugState {
 }
 
 export interface PlayManifestOptions {
+  bodyAction?: BodyTurnIntent
   seed?: number
   speechBound?: boolean
   fallbackId?: AnimationId
@@ -136,6 +138,7 @@ export class AvatarAnimationController {
         blendDuration,
         speechBound: options.speechBound,
         seed: options.seed,
+        bodyAction: options.bodyAction,
         behaviorId: options.behaviorId ?? 'unknown',
         source: options.requestSource ?? 'unknown',
         reason: options.requestReason ?? 'unspecified',

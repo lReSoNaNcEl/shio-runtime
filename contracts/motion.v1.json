@@ -1,6 +1,6 @@
 {
-  "schemaVersion": 2,
-  "catalogRevision": "standing-v2-2026-10-27",
+  "schemaVersion": 3,
+  "catalogRevision": "living-v3-2026-10-27",
   "format": {
     "protocolVersion": 2,
     "sourceRevision": "e706e27acc88070918308a10922b8f7174d0825e",
@@ -4014,7 +4014,7 @@
       "phases": [
         {
           "id": "prepare",
-          "minMs": 1800,
+          "minMs": 650,
           "maxMs": 3000,
           "exitConditions": [
             "both-hands-target-reached",
@@ -4649,7 +4649,7 @@
       "phases": [
         {
           "id": "prepare",
-          "minMs": 1800,
+          "minMs": 650,
           "maxMs": 3000,
           "exitConditions": [
             "both-hands-target-reached",
@@ -5284,7 +5284,7 @@
       "phases": [
         {
           "id": "prepare",
-          "minMs": 1400,
+          "minMs": 550,
           "maxMs": 2600,
           "exitConditions": [
             "both-hands-target-reached",
@@ -5919,7 +5919,7 @@
       "phases": [
         {
           "id": "prepare",
-          "minMs": 1400,
+          "minMs": 600,
           "maxMs": 2600,
           "exitConditions": [
             "both-hands-target-reached",
@@ -6554,7 +6554,7 @@
       "phases": [
         {
           "id": "prepare",
-          "minMs": 1400,
+          "minMs": 550,
           "maxMs": 2600,
           "exitConditions": [
             "both-hands-target-reached",
@@ -7189,7 +7189,7 @@
       "phases": [
         {
           "id": "prepare",
-          "minMs": 1400,
+          "minMs": 550,
           "maxMs": 2600,
           "exitConditions": [
             "both-hands-target-reached",
@@ -7824,7 +7824,7 @@
       "phases": [
         {
           "id": "prepare",
-          "minMs": 1400,
+          "minMs": 550,
           "maxMs": 2600,
           "exitConditions": [
             "both-hands-target-reached",
@@ -8459,7 +8459,7 @@
       "phases": [
         {
           "id": "prepare",
-          "minMs": 1400,
+          "minMs": 550,
           "maxMs": 2600,
           "exitConditions": [
             "both-hands-target-reached",
@@ -9094,7 +9094,7 @@
       "phases": [
         {
           "id": "prepare",
-          "minMs": 1800,
+          "minMs": 700,
           "maxMs": 3000,
           "exitConditions": [
             "both-hands-target-reached",
@@ -9729,7 +9729,7 @@
       "phases": [
         {
           "id": "prepare",
-          "minMs": 1400,
+          "minMs": 600,
           "maxMs": 2600,
           "exitConditions": [
             "both-hands-target-reached",
@@ -10364,7 +10364,7 @@
       "phases": [
         {
           "id": "prepare",
-          "minMs": 1400,
+          "minMs": 550,
           "maxMs": 2600,
           "exitConditions": [
             "both-hands-target-reached",
@@ -10999,7 +10999,7 @@
       "phases": [
         {
           "id": "prepare",
-          "minMs": 1800,
+          "minMs": 700,
           "maxMs": 3000,
           "exitConditions": [
             "both-hands-target-reached",
@@ -11634,7 +11634,7 @@
       "phases": [
         {
           "id": "prepare",
-          "minMs": 2200,
+          "minMs": 650,
           "maxMs": 4000,
           "exitConditions": [
             "both-hands-target-reached",
@@ -12269,7 +12269,7 @@
       "phases": [
         {
           "id": "prepare",
-          "minMs": 1400,
+          "minMs": 550,
           "maxMs": 2600,
           "exitConditions": [
             "both-hands-target-reached",
@@ -12904,7 +12904,7 @@
       "phases": [
         {
           "id": "prepare",
-          "minMs": 1400,
+          "minMs": 550,
           "maxMs": 2600,
           "exitConditions": [
             "both-hands-target-reached",
@@ -13539,7 +13539,7 @@
       "phases": [
         {
           "id": "prepare",
-          "minMs": 1400,
+          "minMs": 550,
           "maxMs": 2600,
           "exitConditions": [
             "both-hands-target-reached",
@@ -14174,7 +14174,7 @@
       "phases": [
         {
           "id": "prepare",
-          "minMs": 1400,
+          "minMs": 550,
           "maxMs": 2600,
           "exitConditions": [
             "both-hands-target-reached",
@@ -14809,7 +14809,7 @@
       "phases": [
         {
           "id": "prepare",
-          "minMs": 1800,
+          "minMs": 650,
           "maxMs": 3000,
           "exitConditions": [
             "both-hands-target-reached",
@@ -15444,7 +15444,7 @@
       "phases": [
         {
           "id": "prepare",
-          "minMs": 2200,
+          "minMs": 650,
           "maxMs": 4000,
           "exitConditions": [
             "both-hands-target-reached",
@@ -16079,7 +16079,7 @@
       "phases": [
         {
           "id": "prepare",
-          "minMs": 1800,
+          "minMs": 650,
           "maxMs": 3000,
           "exitConditions": [
             "both-hands-target-reached",
@@ -16714,7 +16714,7 @@
       "phases": [
         {
           "id": "prepare",
-          "minMs": 1800,
+          "minMs": 800,
           "maxMs": 3000,
           "exitConditions": [
             "both-hands-target-reached",
@@ -17349,7 +17349,7 @@
       "phases": [
         {
           "id": "prepare",
-          "minMs": 1400,
+          "minMs": 600,
           "maxMs": 2600,
           "exitConditions": [
             "both-hands-target-reached",
@@ -17949,6 +17949,661 @@
         "en": "Both shoulders and forearms open moderately for a small standing stretch below shoulder height, then completely return."
       },
       "libraryGroup": "special"
+    },
+    {
+      "id": "turn_in_place",
+      "family": "playful",
+      "kind": "gesture",
+      "labels": {
+        "ru": "Полный поворот",
+        "en": "Full body turn"
+      },
+      "description": "One bounded full-body turn with alternating foot support.",
+      "semanticIntent": null,
+      "entryPostures": [
+        "standing"
+      ],
+      "exitPosture": "standing",
+      "requiredRigCapabilities": [
+        "body-standing",
+        "left-hand",
+        "right-hand",
+        "left-fingers",
+        "right-fingers",
+        "dynamic-support"
+      ],
+      "supportPolicy": {
+        "contacts": "alternating-feet",
+        "allowStep": true,
+        "maxVerticalRootM": 0.08
+      },
+      "rootPolicy": {
+        "mode": "turn-in-place",
+        "frame": "model-stage",
+        "maxHorizontalM": 0.25
+      },
+      "phases": [
+        {
+          "id": "prepare",
+          "minMs": 500,
+          "maxMs": 2000,
+          "exitConditions": [
+            "both-hands-target-reached",
+            "body-phase-ready"
+          ]
+        },
+        {
+          "id": "stroke",
+          "minMs": 6500,
+          "maxMs": 15000,
+          "exitConditions": [
+            "both-hands-target-reached",
+            "body-phase-ready"
+          ]
+        },
+        {
+          "id": "hold",
+          "minMs": 150,
+          "maxMs": 1500,
+          "exitConditions": [
+            "both-hands-target-reached",
+            "body-phase-ready"
+          ]
+        },
+        {
+          "id": "recover",
+          "minMs": 600,
+          "maxMs": 3000,
+          "exitConditions": [
+            "standing-stable",
+            "both-hands-recovered",
+            "wrists-recovered",
+            "fingers-recovered"
+          ]
+        }
+      ],
+      "handScore": {
+        "revision": "turn_in_place-hands-v1",
+        "calibrationRevision": "vrm-normalized-hands-v1",
+        "phases": {
+          "prepare": {
+            "left": {
+              "role": "support",
+              "wristEuler": [
+                0,
+                0,
+                0
+              ],
+              "fingers": {
+                "thumb": {
+                  "curl": [
+                    0.22,
+                    0.194,
+                    0.154
+                  ],
+                  "spread": -0.015,
+                  "opposition": 0.18
+                },
+                "index": {
+                  "curl": [
+                    0.28,
+                    0.246,
+                    0.196
+                  ],
+                  "spread": -0.04,
+                  "opposition": 0
+                },
+                "middle": {
+                  "curl": [
+                    0.32,
+                    0.282,
+                    0.224
+                  ],
+                  "spread": -0.015,
+                  "opposition": 0
+                },
+                "ring": {
+                  "curl": [
+                    0.38,
+                    0.334,
+                    0.266
+                  ],
+                  "spread": -0.015,
+                  "opposition": 0
+                },
+                "little": {
+                  "curl": [
+                    0.43,
+                    0.378,
+                    0.301
+                  ],
+                  "spread": -0.04,
+                  "opposition": 0
+                }
+              },
+              "timing": {
+                "start": 0,
+                "end": 1
+              },
+              "workspace": "relaxed",
+              "palmFacing": "free",
+              "fingerDirection": "free"
+            },
+            "right": {
+              "role": "support",
+              "wristEuler": [
+                0,
+                0,
+                0
+              ],
+              "fingers": {
+                "thumb": {
+                  "curl": [
+                    0.22,
+                    0.194,
+                    0.154
+                  ],
+                  "spread": 0.015,
+                  "opposition": 0.18
+                },
+                "index": {
+                  "curl": [
+                    0.28,
+                    0.246,
+                    0.196
+                  ],
+                  "spread": 0.04,
+                  "opposition": 0
+                },
+                "middle": {
+                  "curl": [
+                    0.32,
+                    0.282,
+                    0.224
+                  ],
+                  "spread": 0.015,
+                  "opposition": 0
+                },
+                "ring": {
+                  "curl": [
+                    0.38,
+                    0.334,
+                    0.266
+                  ],
+                  "spread": 0.015,
+                  "opposition": 0
+                },
+                "little": {
+                  "curl": [
+                    0.43,
+                    0.378,
+                    0.301
+                  ],
+                  "spread": 0.04,
+                  "opposition": 0
+                }
+              },
+              "timing": {
+                "start": 0,
+                "end": 1
+              },
+              "workspace": "relaxed",
+              "palmFacing": "free",
+              "fingerDirection": "free"
+            }
+          },
+          "stroke": {
+            "left": {
+              "role": "support",
+              "wristEuler": [
+                0,
+                0,
+                0
+              ],
+              "fingers": {
+                "thumb": {
+                  "curl": [
+                    0.22,
+                    0.194,
+                    0.154
+                  ],
+                  "spread": -0.015,
+                  "opposition": 0.18
+                },
+                "index": {
+                  "curl": [
+                    0.28,
+                    0.246,
+                    0.196
+                  ],
+                  "spread": -0.04,
+                  "opposition": 0
+                },
+                "middle": {
+                  "curl": [
+                    0.32,
+                    0.282,
+                    0.224
+                  ],
+                  "spread": -0.015,
+                  "opposition": 0
+                },
+                "ring": {
+                  "curl": [
+                    0.38,
+                    0.334,
+                    0.266
+                  ],
+                  "spread": -0.015,
+                  "opposition": 0
+                },
+                "little": {
+                  "curl": [
+                    0.43,
+                    0.378,
+                    0.301
+                  ],
+                  "spread": -0.04,
+                  "opposition": 0
+                }
+              },
+              "timing": {
+                "start": 0,
+                "end": 1
+              },
+              "workspace": "relaxed",
+              "palmFacing": "free",
+              "fingerDirection": "free"
+            },
+            "right": {
+              "role": "support",
+              "wristEuler": [
+                0,
+                0,
+                0
+              ],
+              "fingers": {
+                "thumb": {
+                  "curl": [
+                    0.22,
+                    0.194,
+                    0.154
+                  ],
+                  "spread": 0.015,
+                  "opposition": 0.18
+                },
+                "index": {
+                  "curl": [
+                    0.28,
+                    0.246,
+                    0.196
+                  ],
+                  "spread": 0.04,
+                  "opposition": 0
+                },
+                "middle": {
+                  "curl": [
+                    0.32,
+                    0.282,
+                    0.224
+                  ],
+                  "spread": 0.015,
+                  "opposition": 0
+                },
+                "ring": {
+                  "curl": [
+                    0.38,
+                    0.334,
+                    0.266
+                  ],
+                  "spread": 0.015,
+                  "opposition": 0
+                },
+                "little": {
+                  "curl": [
+                    0.43,
+                    0.378,
+                    0.301
+                  ],
+                  "spread": 0.04,
+                  "opposition": 0
+                }
+              },
+              "timing": {
+                "start": 0,
+                "end": 1
+              },
+              "workspace": "relaxed",
+              "palmFacing": "free",
+              "fingerDirection": "free"
+            }
+          },
+          "hold": {
+            "left": {
+              "role": "support",
+              "wristEuler": [
+                0,
+                0,
+                0
+              ],
+              "fingers": {
+                "thumb": {
+                  "curl": [
+                    0.22,
+                    0.194,
+                    0.154
+                  ],
+                  "spread": -0.015,
+                  "opposition": 0.18
+                },
+                "index": {
+                  "curl": [
+                    0.28,
+                    0.246,
+                    0.196
+                  ],
+                  "spread": -0.04,
+                  "opposition": 0
+                },
+                "middle": {
+                  "curl": [
+                    0.32,
+                    0.282,
+                    0.224
+                  ],
+                  "spread": -0.015,
+                  "opposition": 0
+                },
+                "ring": {
+                  "curl": [
+                    0.38,
+                    0.334,
+                    0.266
+                  ],
+                  "spread": -0.015,
+                  "opposition": 0
+                },
+                "little": {
+                  "curl": [
+                    0.43,
+                    0.378,
+                    0.301
+                  ],
+                  "spread": -0.04,
+                  "opposition": 0
+                }
+              },
+              "timing": {
+                "start": 0,
+                "end": 1
+              },
+              "workspace": "relaxed",
+              "palmFacing": "free",
+              "fingerDirection": "free"
+            },
+            "right": {
+              "role": "support",
+              "wristEuler": [
+                0,
+                0,
+                0
+              ],
+              "fingers": {
+                "thumb": {
+                  "curl": [
+                    0.22,
+                    0.194,
+                    0.154
+                  ],
+                  "spread": 0.015,
+                  "opposition": 0.18
+                },
+                "index": {
+                  "curl": [
+                    0.28,
+                    0.246,
+                    0.196
+                  ],
+                  "spread": 0.04,
+                  "opposition": 0
+                },
+                "middle": {
+                  "curl": [
+                    0.32,
+                    0.282,
+                    0.224
+                  ],
+                  "spread": 0.015,
+                  "opposition": 0
+                },
+                "ring": {
+                  "curl": [
+                    0.38,
+                    0.334,
+                    0.266
+                  ],
+                  "spread": 0.015,
+                  "opposition": 0
+                },
+                "little": {
+                  "curl": [
+                    0.43,
+                    0.378,
+                    0.301
+                  ],
+                  "spread": 0.04,
+                  "opposition": 0
+                }
+              },
+              "timing": {
+                "start": 0,
+                "end": 1
+              },
+              "workspace": "relaxed",
+              "palmFacing": "free",
+              "fingerDirection": "free"
+            }
+          },
+          "recover": {
+            "left": {
+              "role": "support",
+              "wristEuler": [
+                0,
+                0,
+                0
+              ],
+              "fingers": {
+                "thumb": {
+                  "curl": [
+                    0.22,
+                    0.194,
+                    0.154
+                  ],
+                  "spread": -0.015,
+                  "opposition": 0.18
+                },
+                "index": {
+                  "curl": [
+                    0.28,
+                    0.246,
+                    0.196
+                  ],
+                  "spread": -0.04,
+                  "opposition": 0
+                },
+                "middle": {
+                  "curl": [
+                    0.32,
+                    0.282,
+                    0.224
+                  ],
+                  "spread": -0.015,
+                  "opposition": 0
+                },
+                "ring": {
+                  "curl": [
+                    0.38,
+                    0.334,
+                    0.266
+                  ],
+                  "spread": -0.015,
+                  "opposition": 0
+                },
+                "little": {
+                  "curl": [
+                    0.43,
+                    0.378,
+                    0.301
+                  ],
+                  "spread": -0.04,
+                  "opposition": 0
+                }
+              },
+              "timing": {
+                "start": 0,
+                "end": 1
+              },
+              "workspace": "relaxed",
+              "palmFacing": "free",
+              "fingerDirection": "free"
+            },
+            "right": {
+              "role": "support",
+              "wristEuler": [
+                0,
+                0,
+                0
+              ],
+              "fingers": {
+                "thumb": {
+                  "curl": [
+                    0.22,
+                    0.194,
+                    0.154
+                  ],
+                  "spread": 0.015,
+                  "opposition": 0.18
+                },
+                "index": {
+                  "curl": [
+                    0.28,
+                    0.246,
+                    0.196
+                  ],
+                  "spread": 0.04,
+                  "opposition": 0
+                },
+                "middle": {
+                  "curl": [
+                    0.32,
+                    0.282,
+                    0.224
+                  ],
+                  "spread": 0.015,
+                  "opposition": 0
+                },
+                "ring": {
+                  "curl": [
+                    0.38,
+                    0.334,
+                    0.266
+                  ],
+                  "spread": 0.015,
+                  "opposition": 0
+                },
+                "little": {
+                  "curl": [
+                    0.43,
+                    0.378,
+                    0.301
+                  ],
+                  "spread": 0.04,
+                  "opposition": 0
+                }
+              },
+              "timing": {
+                "start": 0,
+                "end": 1
+              },
+              "workspace": "relaxed",
+              "palmFacing": "free",
+              "fingerDirection": "free"
+            }
+          }
+        }
+      },
+      "entryHands": "relaxed",
+      "accentHands": "relaxed",
+      "exitHands": "relaxed",
+      "cameraPolicy": [
+        "full",
+        "bust",
+        "face"
+      ],
+      "interruptionPolicy": {
+        "interruptiblePhases": [
+          "prepare",
+          "hold",
+          "recover"
+        ],
+        "recoveryRequired": true,
+        "protectedPhase": "stroke"
+      },
+      "variationPolicy": {
+        "amplitudeMin": 0.75,
+        "amplitudeMax": 1.05,
+        "tempoMin": 0.85,
+        "tempoMax": 1.1,
+        "fixedLeadSide": "right",
+        "mirrorQualified": false,
+        "cooldownFamilyMs": 0,
+        "intentTtlMs": 3000
+      },
+      "qualification": {
+        "state": "draft",
+        "rigProfiles": [
+          "vrm-normalized-hands-v1"
+        ]
+      },
+      "conditioningRefs": {
+        "templateId": "turn-in-place-procedural-v1",
+        "prompt": "A person turns once in place with alternating footsteps and returns to stable standing."
+      },
+      "behaviorTags": [
+        "behavior:idle",
+        "behavior:neutral",
+        "idle-orchestration"
+      ],
+      "usage": {
+        "speaking": false,
+        "reaction": false,
+        "idle": false,
+        "extendedIdle": false
+      },
+      "automaticSelection": false,
+      "defaultWeight": 0,
+      "descriptions": {
+        "ru": "Один оборот с переносом веса и переступаниями. Процедурная кинематика; визуальная приёмка ожидается.",
+        "en": "One full turn with weight transfer and alternating steps. Procedural kinematics; visual acceptance pending."
+      },
+      "libraryGroup": "special",
+      "physicalAction": {
+        "action": "turn-in-place",
+        "turns": 1,
+        "directions": [
+          "clockwise",
+          "counterclockwise"
+        ],
+        "tempoMin": 0.75,
+        "tempoMax": 1.2,
+        "completion": [
+          "heading-reached",
+          "feet-grounded",
+          "standing-stable"
+        ],
+        "interruption": "land-and-stabilize",
+        "generator": "procedural"
+      }
     }
   ],
   "handWorkspaces": {

@@ -1,6 +1,9 @@
 import type { TranslationKey } from './ru'
 
 export const enMessages: Record<TranslationKey, string> = {
+  'avatarPreview.turn.direction': 'Turn direction',
+  'avatarPreview.turn.clockwise': 'Clockwise',
+  'avatarPreview.turn.counterclockwise': 'Counterclockwise',
   'plugins.browserControl.name': 'Browser Control',
   'plugins.browserControl.description':
     'A persistent isolated Google Chrome session with semantic and visual control.',

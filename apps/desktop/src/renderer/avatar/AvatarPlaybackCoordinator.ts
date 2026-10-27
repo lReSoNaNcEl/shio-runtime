@@ -1,3 +1,4 @@
+import type { BodyTurnIntent } from '../../shared/motion'
 import type { AvatarAnimationController } from './AvatarAnimationController'
 import {
   AvatarAnimationQueue,
@@ -35,6 +36,7 @@ interface PlaybackRequestInput {
 }
 
 interface DirectPlaybackInput {
+  bodyAction?: BodyTurnIntent
   seed?: number
   item: AvatarAnimationQueueItem
   fallbackAnimationId?: AnimationId
@@ -392,6 +394,8 @@ export class AvatarPlaybackCoordinator {
   }
 
   previewAnimation(input: {
+    bodyAction?: BodyTurnIntent
+    requestSource?: AvatarPlaybackRequestSource
     seed?: number
     animationId: string
     loop: boolean
@@ -422,8 +426,9 @@ export class AvatarPlaybackCoordinator {
     this.playQueuedItem({
       item,
       fallbackAnimationId,
-      source: 'debug-preview',
+      source: input.requestSource ?? 'debug-preview',
       reason: 'manual debug preview',
+      bodyAction: input.bodyAction,
       seed: input.seed,
       frame: input.frame,
       forceReplay: true,
@@ -493,6 +498,7 @@ export class AvatarPlaybackCoordinator {
           (input.item.mode === 'speaking' || input.item.mode === 'awaitingSpeech'),
         forceReplay: input.forceReplay,
         seed: input.seed,
+        bodyAction: input.bodyAction,
         requestSource: input.source,
         requestReason: `${input.reason}; transition: ${effectiveTransition.policyId}`,
         behaviorId: input.item.behaviorId,

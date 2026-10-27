@@ -12,7 +12,7 @@ import {
   TRANSITION_RECORDING_MAX_FRAME_BYTES,
   TRANSITION_RECORDING_MAX_FRAMES,
 } from '../../shared/diagnostics'
-import { generatedMotionHealthSchema } from '../../shared/motion'
+import { bodyTurnIntentSchema, generatedMotionHealthSchema } from '../../shared/motion'
 
 function serializedSizeAtMost(value: unknown, maximumBytes: number): boolean {
   try {
@@ -110,6 +110,7 @@ export const avatarStateSchema = z
     earImpulseId: optionalBoundedText,
     embodimentIntent: z
       .object({
+        bodyAction: bodyTurnIntentSchema.optional(),
         intensity: z.enum(EMBODIMENT_INTENSITIES),
         gestureHint: z.enum(EMBODIMENT_GESTURE_HINTS).optional(),
         gazeHint: z.enum(EMBODIMENT_GAZE_HINTS).optional(),

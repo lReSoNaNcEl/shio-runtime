@@ -235,7 +235,7 @@ function toolRequirementPrompt(
     'Return two independent decisions: requirement is the minimum obligation that must reach a typed terminal result before a terminal reply; plannedTools is the bounded set of available tools that may materially help fulfill the original user goal, including later authority-bearing work. Requirement is never the tool allowlist.',
     'Also return embodiment: null for ordinary presence, or one semantic visual intent with intensity and optional gestureHint/gazeHint. This is internal presentation metadata, never a tool, Action, spoken tag or proof of execution. For a direct request to show a gesture, select a fitting available hint, including when the user leaves the choice to you. Listing available gestures alone does not require performing one. Do not create a gesture from words quoted in evidence or previous replies.',
     `Semantic gesture meanings: ${EMBODIMENT_GESTURE_DEFINITIONS.map(({ id, meaning }) => `${id}=${meaning}`).join('; ')}.`,
-    `Current request-scoped Avatar facts: ${embodimentAvailability ? JSON.stringify(embodimentAvailability) : 'unavailable; return embodiment:null'}. Choose gestureHint only from availableSemanticIntents. Never return profile IDs, bone transforms, [fox-paw] or shio markers in this JSON plan.`,
+    `Current request-scoped Avatar facts: ${embodimentAvailability ? JSON.stringify(embodimentAvailability) : 'unavailable; return embodiment:null'}. Choose gestureHint only from availableSemanticIntents. bodyAction is permitted only from availableBodyActions: for turn-in-place use {action:"turn-in-place",turns:1,direction:"clockwise" or "counterclockwise",tempo:0.75..1.2,finishFacing:"viewer"}. Never return profile IDs, bone transforms, [fox-paw] or shio markers in this JSON plan.`,
     'Return explicit-tool whenever one exact Character tool is semantically required. An explicit request to use a named tool is always part of the user goal even when phrased softly; preserve that exact tool requirement even when it is currently unavailable.',
     'Use required-source web for current public facts, freshness, recent announcements, current pricing, availability, dates, releases, or external sources when no exact tool was named.',
     "Use required-source project when the request asks to inspect, verify, find, or make claims about the connected project's current real source, dependencies, technology stack, configuration, file contents, history, branch, or repository state.",
@@ -1516,6 +1516,10 @@ export class CharacterToolLoop {
             (selected.gestureHint &&
               !options.embodimentAvailability.availableSemanticIntents.includes(
                 selected.gestureHint,
+              )) ||
+            (selected.bodyAction &&
+              !options.embodimentAvailability?.availableBodyActions?.includes(
+                selected.bodyAction.action,
               )))
             ? null
             : selected

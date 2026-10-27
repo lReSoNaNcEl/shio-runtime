@@ -28,5 +28,6 @@ export const MOTION_PROFILE_IDS = [
   'peace_single',
   'kiss_air_soft',
   'stretch_small',
+  'turn_in_place',
 ] as const
 export type MotionProfileId = (typeof MOTION_PROFILE_IDS)[number]

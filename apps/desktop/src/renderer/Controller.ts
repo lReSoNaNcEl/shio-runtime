@@ -1157,8 +1157,12 @@ export class Controller {
     this.updateOverlayMotionHud()
   }
 
-  previewAvatarVariation(id: string, seed?: number): void {
-    this.avatarRuntime.previewVariation(id, seed)
+  previewAvatarVariation(
+    id: string,
+    seed?: number,
+    bodyAction?: import('../shared/motion').BodyTurnIntent,
+  ): void {
+    this.avatarRuntime.previewVariation(id, seed, bodyAction)
     this.updateOverlayMotionHud()
   }
 

@@ -31,7 +31,7 @@ REQUEST_FIELDS = {
     "protocolVersion",
     "plan",
 }
-CATALOG_REVISION = "standing-v2-2026-10-27"
+CATALOG_REVISION = "living-v3-2026-10-27"
 CALIBRATION_REVISION = "vrm-normalized-hands-v1"
 
 
@@ -65,6 +65,8 @@ def validate_request(value: object, profiles: dict) -> dict:
     ):
         raise ValueError("Invalid motion plan identity")
     profile = profiles[value["profileId"]]
+    if profile.get("physicalAction"):
+        raise ValueError("Procedural actions do not accept neural horizons")
     if (
         p["catalogRevision"] != CATALOG_REVISION
         or p["phaseId"] not in PHASES
@@ -122,7 +124,7 @@ def phase_prompt(profile: dict, phase: str) -> str:
 def load_catalog():
     catalog = json.loads((ROOT / "motion-profiles.json").read_text(encoding="utf-8"))
     if (
-        catalog["schemaVersion"] != 2
+        catalog["schemaVersion"] != 3
         or catalog["catalogRevision"] != CATALOG_REVISION
         or catalog["format"]["protocolVersion"] != 2
     ):

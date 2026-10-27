@@ -1,4 +1,7 @@
 export const ruMessages = {
+  'avatarPreview.turn.direction': 'Направление поворота',
+  'avatarPreview.turn.clockwise': 'По часовой стрелке',
+  'avatarPreview.turn.counterclockwise': 'Против часовой стрелки',
   'plugins.browserControl.name': 'Управление браузером',
   'plugins.browserControl.description':
     'Постоянная изолированная сессия Google Chrome с семантическим и визуальным управлением.',

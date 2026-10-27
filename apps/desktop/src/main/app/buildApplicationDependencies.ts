@@ -814,7 +814,17 @@ export function buildApplicationDependencies(): ApplicationDependencies {
         },
         getAvatarBody: () => lastAvatarBody,
         publishAvatarBody: (owner, value) => {
-          if (value && !ardy.owns(owner, value.lease)) return false
+          if (value?.lease && !ardy.owns(owner, value.lease)) return false
+          if (
+            value &&
+            lastAvatarBody &&
+            lastAvatarBody.modelAssetHandle === getRendererConfig().vrmAssetHandle
+          ) {
+            const previous =
+              lastAvatarBody.lease?.avatarGeneration ?? lastAvatarBody.localGeneration ?? 0
+            const current = value.lease?.avatarGeneration ?? value.localGeneration ?? 0
+            if (current < previous) return false
+          }
           lastAvatarBody = value
             ? { ...value, modelAssetHandle: getRendererConfig().vrmAssetHandle }
             : null

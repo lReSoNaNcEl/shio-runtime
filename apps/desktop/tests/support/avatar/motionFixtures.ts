@@ -50,7 +50,7 @@ export function createMotionPlan(overrides: Partial<MotionPlanIdentity> = {}): M
   return {
     executionId: 'fixture',
     planRevision: 0,
-    catalogRevision: 'standing-v2-2026-10-27',
+    catalogRevision: 'living-v3-2026-10-27',
     phaseId: 'prepare',
     handScoreRevision: 'presence_poised-hands-v1',
     handRigCalibrationRevision: 'vrm-normalized-hands-v1',
