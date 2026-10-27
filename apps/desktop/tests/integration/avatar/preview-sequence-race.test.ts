@@ -1,8 +1,18 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { AvatarController } from '../../../src/renderer/avatar/AvatarController'
 import type { MotionLibraryDebug } from '../../../src/renderer/avatar/MotionLibraryDebug'
 import type { VrmModel } from '../../../src/renderer/avatar/rendering/three/VrmModel'
+import { createDeferred, type Deferred } from '../../support/Deferred'
+
+const controllers: AvatarController[] = []
+const requests: Deferred<void>[] = []
+afterEach(async () => {
+  for (const controller of controllers.splice(0)) controller.dispose()
+  const pending = requests.splice(0)
+  for (const request of pending) request.resolve()
+  await Promise.all(pending.map((request) => request.promise))
+})
 
 function debug(overrides: Partial<MotionLibraryDebug> = {}): MotionLibraryDebug {
   return {
@@ -24,9 +34,14 @@ function debug(overrides: Partial<MotionLibraryDebug> = {}): MotionLibraryDebug 
 const sequence = ['greet_wave_soft', 'agree_soft', 'reassure_palm']
 function fixture() {
   const controller = new AvatarController()
+  controllers.push(controller)
   const model = (controller as unknown as { vrmModel: VrmModel }).vrmModel
   vi.spyOn(model, 'isLoaded').mockReturnValue(true)
-  vi.spyOn(model, 'requestGeneratedMotion').mockImplementation(() => new Promise(() => undefined))
+  vi.spyOn(model, 'requestGeneratedMotion').mockImplementation(() => {
+    const request = createDeferred<void>()
+    requests.push(request)
+    return request.promise
+  })
   let state = debug()
   vi.spyOn(controller, 'getMotionLibraryDebug').mockImplementation(() => state)
   const preview = vi.spyOn(controller, 'previewAnimation')

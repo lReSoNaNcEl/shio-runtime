@@ -1,4 +1,3 @@
-import type { VRM } from '@pixiv/three-vrm'
 import * as THREE from 'three'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -9,29 +8,22 @@ import { MotionPhaseExecution } from '../../../src/renderer/avatar/MotionPhaseEx
 import { GeneratedBodyPlayback } from '../../../src/renderer/avatar/rendering/three/GeneratedBodyPlayback'
 import type { VrmModel } from '../../../src/renderer/avatar/rendering/three/VrmModel'
 import {
-  BODY_BONE_NAMES,
   getMotionProfile,
   type MotionApi,
   type MotionChunk,
   type MotionLease,
   type MotionReply,
 } from '../../../src/shared/motion'
+import { createMinimalVrm } from '../../support/avatar/minimalVrm'
+import { createMotionChunk, createMotionLease } from '../../support/avatar/motionFixtures'
+
+const owners: GeneratedBodyPlayback[] = []
 
 function bodyFixture() {
-  const scene = new THREE.Scene()
-  const bones = new Map<string, THREE.Object3D>()
-  for (const name of BODY_BONE_NAMES) {
-    const bone = new THREE.Object3D()
-    scene.add(bone)
-    bones.set(name, bone)
-  }
-  bones.get('hips')?.position.set(0, 0.9887084839474641, 0)
+  const { bones, vrm } = createMinimalVrm()
   const owner = new GeneratedBodyPlayback(() => undefined)
-  owner.attach({
-    scene,
-    meta: { metaVersion: '1' },
-    humanoid: { getNormalizedBoneNode: (name: string) => bones.get(name) ?? null },
-  } as unknown as VRM)
+  owners.push(owner)
+  owner.attach(vrm)
   return { owner, bones }
 }
 
@@ -39,7 +31,13 @@ async function flush() {
   for (let round = 0; round < 12; round++) await Promise.resolve()
 }
 
-afterEach(() => vi.unstubAllGlobals())
+afterEach(async () => {
+  for (const owner of owners.splice(0)) {
+    owner.detach()
+    await owner.settleCancellation()
+  }
+  vi.unstubAllGlobals()
+})
 
 describe('fixed Preview variation seeds and physical recovery', () => {
   it('forwards an explicit seed through the shared Preview coordinator to the model port', async () => {
@@ -67,13 +65,7 @@ describe('fixed Preview variation seeds and physical recovery', () => {
   })
 
   it('passes fixed seeds to initial Main start and existing-lease reroll', async () => {
-    let lease: MotionLease = {
-      sessionId: 'fixed-seed',
-      epoch: 1,
-      modelGeneration: 1,
-      avatarGeneration: 1,
-      seed: 0,
-    }
+    let lease: MotionLease = createMotionLease({ sessionId: 'fixed-seed', seed: 0 })
     const start = vi.fn(async (input: Parameters<MotionApi['start']>[0]) => {
       lease = { ...lease, avatarGeneration: input.avatarGeneration, seed: input.seed ?? 9 }
       return { ok: true as const, lease }
@@ -84,28 +76,16 @@ describe('fixed Preview variation seeds and physical recovery', () => {
     })
     const next = vi.fn(async (input: Parameters<MotionApi['next']>[0]): Promise<MotionReply> => {
       const fromFrame = input.fromFrame ?? 0
-      const chunk: MotionChunk = {
+      const chunk: MotionChunk = createMotionChunk({
         ...input.lease,
-        protocolVersion: 2,
         plan: input.plan,
-        type: 'motion',
         id: fromFrame + 1,
         reset: fromFrame === 0,
         fromFrame,
         startFrame: fromFrame,
         profileId: input.profileId,
-        skeleton: 'soma30-standard-tpose-v1',
-        fps: 30,
-        rotations: Array.from({ length: 60 }, () => Array.from({ length: 30 }, () => [0, 0, 0, 1])),
-        rootPositions: Array.from({ length: 60 }, () => [0, 0.9887084839474641, 0]),
-        footContacts: Array.from({ length: 60 }, () => ({
-          leftHeel: 1,
-          leftToe: 1,
-          rightHeel: 1,
-          rightToe: 1,
-        })),
         inferenceMs: 10,
-      }
+      })
       return { ok: true, chunk }
     })
     vi.stubGlobal('window', {

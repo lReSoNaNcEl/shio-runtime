@@ -16,9 +16,7 @@ import {
 import { rendererUploadBody } from '../../src/main/diagnostics/RendererNetworkObserver'
 import { IPC_CHANNEL_CAPABILITIES, IpcAuthorization } from '../../src/main/ipc/IpcAuthorization'
 
-const desktopRoot = process.cwd().endsWith('apps\\desktop')
-  ? process.cwd()
-  : join(process.cwd(), 'apps', 'desktop')
+const desktopRoot = join(import.meta.dirname, '../..')
 
 function source(relativePath: string): string {
   return readFileSync(join(desktopRoot, relativePath), 'utf8')

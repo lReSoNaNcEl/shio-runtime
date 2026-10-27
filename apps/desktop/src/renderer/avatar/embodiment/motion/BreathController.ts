@@ -23,6 +23,7 @@ export class BreathController {
   private vrm: VRM | null = null
   private phase = 0
   private offsetY = 0
+  private smoothedY = 0
   private speed = 0.2
   private intensity = 0.008
   private weight = 1
@@ -41,6 +42,7 @@ export class BreathController {
     this.vrm = vrm
     this.phase = this.random.next()
     this.offsetY = 0
+    this.smoothedY = 0
     this.randomizeCycle()
   }
 
@@ -49,6 +51,7 @@ export class BreathController {
     this.vrm = null
     this.phase = 0
     this.offsetY = 0
+    this.smoothedY = 0
   }
 
   setProfile(profile: BreathProfile): void {
@@ -78,11 +81,16 @@ export class BreathController {
     const target = this.resolveBreathEnvelope() * this.intensity * this.weight * this.cycleAmplitude
     const blend = 1 - Math.exp(-Math.max(0, this.smoothing) * Math.max(0, delta))
     const limit = Math.abs(this.intensity * this.weight) * 1.15
-    const next = Math.max(-limit, Math.min(limit, this.offsetY + (target - this.offsetY) * blend))
+    // Removing last frame's bone contribution must not reset the envelope.
+    const next = Math.max(
+      -limit,
+      Math.min(limit, this.smoothedY + (target - this.smoothedY) * blend),
+    )
     const chest = this.vrm.humanoid.getNormalizedBoneNode('chest')
 
     if (chest) chest.position.y += next - this.offsetY
     this.offsetY = next
+    this.smoothedY = next
   }
 
   getDebugState(): BreathDebugState {

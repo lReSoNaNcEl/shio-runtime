@@ -147,6 +147,17 @@ export class AvatarAnimationController {
       if (requestId === this.requestId) this.playbackStatus = 'playing'
     } catch (e) {
       if (requestId !== this.requestId) return
+      if (
+        e instanceof Error &&
+        ['ARDY_SPEECH_WINDOW_MISSED', 'ARDY_SPEECH_ENDED', 'ARDY_superseded'].includes(e.message)
+      ) {
+        // Timing expiry is an ordinary skipped intent, not a defective profile.
+        // The queue owner resumes presence after the body's recovery settles.
+        console.debug(`[ANIMDBG] skipped id=${id} reason=${e.message}`)
+        this.activeAnimationId = null
+        this.playbackStatus = 'idle'
+        return
+      }
       console.warn(`Failed to preview animation "${id}"`, e)
       this.failedIds.add(id)
       this.activeAnimationId = null

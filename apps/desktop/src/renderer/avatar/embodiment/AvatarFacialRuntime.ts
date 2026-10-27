@@ -66,6 +66,7 @@ export class AvatarFacialRuntime {
   private externalMouthComposed = false
 
   detach(): void {
+    this.speechEnergy = 0
     this.blinkController.detach()
     this.expressionController.detach()
     this.expressionMixer.detach()
@@ -222,6 +223,11 @@ export class AvatarFacialRuntime {
     const wasSpeaking = this.proceduralMode === 'speaking'
     const isSpeaking = mode === 'speaking'
     this.proceduralMode = mode
+    // A new speech session must wait for its own playback analyser sample.
+    if (!isSpeaking || !wasSpeaking) {
+      this.headMotionRuntime.setSpeechEnergy(0)
+      this.proceduralMotionController.setSpeechEnergy(0)
+    }
     if (!wasSpeaking && isSpeaking) this.lipSyncVariationController.startSpeechSegment()
     else if (wasSpeaking && !isSpeaking) this.lipSyncVariationController.endSpeech()
     this.updateEffectiveBlinkProfile()
@@ -291,7 +297,13 @@ export class AvatarFacialRuntime {
   }
 
   setSpeechEnergy(energy: number): void {
-    this.speechEnergy = Math.max(0, Math.min(1, energy))
+    this.speechEnergy = Number.isFinite(energy) ? Math.max(0, Math.min(1, energy)) : 0
+    this.headMotionRuntime.setSpeechEnergy(
+      this.proceduralMode === 'speaking' ? this.speechEnergy : 0,
+    )
+    this.proceduralMotionController.setSpeechEnergy(
+      this.speechEnergy * this.currentEmbodimentProfile.head.energyScale,
+    )
   }
 
   startSpeechPhrase(plan: SpeechPhraseTimingPlan): void {

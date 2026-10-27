@@ -6,7 +6,8 @@ import { dirname, join, resolve } from 'node:path'
 import { describe, it } from 'vitest'
 
 function verifyFixture(reference: string, includeWorklet = true) {
-  const output = resolve('out')
+  const desktopRoot = resolve(import.meta.dirname, '../../..')
+  const output = join(desktopRoot, 'out')
   mkdirSync(output, { recursive: true })
   const root = mkdtempSync(join(output, 'speech-assets-test-'))
   try {
@@ -24,9 +25,14 @@ function verifyFixture(reference: string, includeWorklet = true) {
         join(root, 'assets/pcmStreamWorklet-test.js'),
         "registerProcessor('shio-pcm-stream-player', Player)",
       )
-    return spawnSync(process.execPath, [resolve('scripts/verify-speech-assets.mjs'), root], {
-      encoding: 'utf8',
-    })
+    return spawnSync(
+      process.execPath,
+      [join(desktopRoot, 'scripts/verify-speech-assets.mjs'), root],
+      {
+        encoding: 'utf8',
+        timeout: 10_000,
+      },
+    )
   } finally {
     assert.equal(dirname(root), output)
     assert(root.startsWith(join(output, 'speech-assets-test-')))

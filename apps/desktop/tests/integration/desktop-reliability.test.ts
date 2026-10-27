@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { describe, it } from 'vitest'
+import { describe, it, vi } from 'vitest'
 
 import {
   rendererFailureReportSchema,
@@ -21,9 +21,7 @@ import { OverlayRuntime } from '../../src/renderer/runtime/OverlayRuntime'
 import { TransitionRecorder } from '../../src/renderer/runtime/TransitionRecorder'
 import { parseCharacterEmbodimentResponse } from '../../src/shared/character-response'
 
-const desktopRoot = process.cwd().endsWith('apps\\desktop')
-  ? process.cwd()
-  : join(process.cwd(), 'apps', 'desktop')
+const desktopRoot = join(import.meta.dirname, '../..')
 
 function source(relativePath: string): string {
   return readFileSync(join(desktopRoot, relativePath), 'utf8')
@@ -354,16 +352,13 @@ function assertOverlaySubscriptionCleanup(): void {
   const subscription = () => () => {
     cleanupCount += 1
   }
-  Object.defineProperty(globalThis, 'window', {
-    configurable: true,
-    value: {
-      location: { search: '?overlay=1' },
-      overlayApi: {
-        avatarState: { onUpdated: subscription },
-        avatarMouth: { onUpdated: subscription },
-        avatarBody: { onUpdated: subscription },
-        config: { onUpdated: subscription },
-      },
+  vi.stubGlobal('window', {
+    location: { search: '?overlay=1' },
+    overlayApi: {
+      avatarState: { onUpdated: subscription },
+      avatarMouth: { onUpdated: subscription },
+      avatarBody: { onUpdated: subscription },
+      config: { onUpdated: subscription },
     },
   })
   const runtime = new OverlayRuntime()
@@ -372,7 +367,7 @@ function assertOverlaySubscriptionCleanup(): void {
   assert.equal(cleanupCount, 4, 'resubscribe must release the previous listener set')
   runtime.dispose()
   assert.equal(cleanupCount, 8, 'dispose must release every active Overlay listener')
-  Reflect.deleteProperty(globalThis, 'window')
+  vi.unstubAllGlobals()
 }
 
 async function assertDetachedPromiseObserver(): Promise<void> {

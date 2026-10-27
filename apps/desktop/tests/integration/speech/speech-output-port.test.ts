@@ -119,9 +119,9 @@ async function latePcmCannotResumeCancelledPlayback(): Promise<void> {
       stopped += 1
     },
   } as unknown as AudioPlayer
-  ;(globalThis as unknown as { window: unknown }).window = {
+  vi.stubGlobal('window', {
     api: { tts: { openStream: () => messagePort } },
-  }
+  })
   const output = new RuntimeSpeechOutputPort(
     { hasSpeakableContent: () => true } as unknown as SpeechRuntime,
     player,
@@ -197,9 +197,9 @@ async function textWaitsForServerReady(): Promise<void> {
     }),
     cancel: () => undefined,
   }
-  ;(globalThis as unknown as { window: unknown }).window = {
+  vi.stubGlobal('window', {
     api: { tts: { openStream: () => messagePort } },
-  }
+  })
   const output = new RuntimeSpeechOutputPort(
     { hasSpeakableContent: () => true } as unknown as SpeechRuntime,
     {

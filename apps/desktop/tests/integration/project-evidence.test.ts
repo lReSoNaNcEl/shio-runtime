@@ -197,7 +197,7 @@ async function main(): Promise<void> {
   assert.equal(store.getState().messages[0]?.grounding?.project?.snapshotCommit, 'abc1234567890')
 
   const conversationRuntimeSource = readFileSync(
-    join(process.cwd(), 'src/renderer/runtime/ConversationRuntime.ts'),
+    join(import.meta.dirname, '../..', 'src/renderer/runtime/ConversationRuntime.ts'),
     'utf8',
   )
   const fallbackMessageIndex = conversationRuntimeSource.indexOf(
@@ -209,12 +209,12 @@ async function main(): Promise<void> {
   )
   assert(fallbackMessageIndex >= 0 && fallbackSynthesisIndex > fallbackMessageIndex)
   const chatSource = readFileSync(
-    join(process.cwd(), 'src/renderer/components/chat/ChatMessageList.tsx'),
+    join(import.meta.dirname, '../..', 'src/renderer/components/chat/ChatMessageList.tsx'),
     'utf8',
   )
   assert.match(chatSource, /message\.role === 'assistant' && message\.grounding\?\.project/)
   const evidenceBarSource = readFileSync(
-    join(process.cwd(), 'src/renderer/components/chat/ProjectEvidenceBar.tsx'),
+    join(import.meta.dirname, '../..', 'src/renderer/components/chat/ProjectEvidenceBar.tsx'),
     'utf8',
   )
   assert.match(evidenceBarSource, /freshnessAtGeneration === 'stale'/)

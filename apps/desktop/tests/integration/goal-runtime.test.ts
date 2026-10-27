@@ -213,7 +213,10 @@ function main(): void {
     )
 
     for (const source of ['GoalRuntime.ts', 'EventWatchService.ts']) {
-      const text = readFileSync(join(process.cwd(), 'src/main/alive', source), 'utf8')
+      const text = readFileSync(
+        join(import.meta.dirname, '../..', 'src/main/alive', source),
+        'utf8',
+      )
       assert.doesNotMatch(text, /ActionRuntime|DesktopControl|BrowserAdapter|ShellAdapter/u)
     }
     store.close()

@@ -92,16 +92,21 @@ export class AvatarSpeakingGestureScheduler {
       this.schedulerDecision = 'closing; no new speaking clip'
       return null
     }
+    if (deltaMs <= 0) return null
 
     if (this.emphasisPending && this.emphasisCooldownMs <= 0) {
       this.emphasisPending = false
       this.phase = 'emphasis'
+      this.emphasisCooldownMs = speakingGestureTuning.emphasisCooldownMs
     } else if (
       this.isLongReply(state) &&
       this.elapsedMs >= this.holdingSwitchAtMs &&
       this.holdingSwitches < speakingGestureTuning.maxHoldingSwitches
     ) {
       this.phase = 'holding'
+      // A rejected/duplicate selection consumes this scheduling opportunity too.
+      // Only actual playback is recorded as a successful selection below.
+      this.holdingSwitches += 1
     } else {
       this.phase = this.elapsedMs < this.openingHoldMs ? 'opening' : 'holding'
       this.schedulerDecision =
@@ -144,9 +149,6 @@ export class AvatarSpeakingGestureScheduler {
     this.lastScheduledAnimation = input.animationId
     this.skippedCandidates = [...input.skippedCandidates]
     this.selectionReason = input.selectionReason
-    if (input.phase === 'holding') this.holdingSwitches += 1
-    if (input.phase === 'emphasis')
-      this.emphasisCooldownMs = speakingGestureTuning.emphasisCooldownMs
     this.nextGestureInMs =
       input.phase === 'opening'
         ? Math.max(0, this.holdingSwitchAtMs - this.elapsedMs)

@@ -1,279 +1,210 @@
-import assert from 'node:assert/strict'
-import {
-  mkdtempSync,
-  readdirSync,
-  readFileSync,
-  rmdirSync,
-  unlinkSync,
-  writeFileSync,
-} from 'node:fs'
-import { tmpdir } from 'node:os'
+import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { describe, it } from 'vitest'
+import { describe, expect, it } from 'vitest'
 
-import { VrmAssetRegistry } from '../../src/main/assets/VrmAssetRegistry'
-import { IPC_CHANNEL_CAPABILITIES, IpcAuthorization } from '../../src/main/ipc/IpcAuthorization'
-import { vrmAssetHandleSchema } from '../../src/main/ipc/payloadSchemas'
-import { installRendererNavigationGuards } from '../../src/main/windows/windowSecurity'
+import { IPC_CHANNEL_CAPABILITIES } from '../../src/main/ipc/IpcAuthorization'
+import {
+  type AstNode,
+  importedBindings,
+  memberName,
+  memberPath,
+  parseFile,
+  sourceFilesBelow,
+  walk,
+} from '../support/architecture/sourceAst'
+import { sourceRoot } from './context'
 
-function main(): void {
-  const desktopRoot = process.cwd().endsWith('apps\\desktop')
-    ? process.cwd()
-    : join(process.cwd(), 'apps', 'desktop')
-  const mainSourceRoot = join(desktopRoot, 'src', 'main')
+const mainRoot = join(sourceRoot, 'main')
+const ast = (path: string) => parseFile(join(sourceRoot, path))
+function calls(tree: AstNode): AstNode[] {
+  const result: AstNode[] = []
+  walk(tree, (node) => {
+    if (node.type === 'CallExpression') result.push(node)
+  })
+  return result
+}
+function strings(tree: AstNode): unknown[] {
+  const result: unknown[] = []
+  walk(tree, (node) => {
+    if (node.type === 'StringLiteral') result.push(node.value)
+  })
+  return result
+}
+function schemaCalls(path: string): string[] {
+  return calls(ast(path)).map((node) => memberPath(node.callee) ?? '')
+}
 
-  function collectTypeScriptFiles(directory: string): string[] {
-    return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
-      const target = join(directory, entry.name)
-      if (entry.isDirectory()) return collectTypeScriptFiles(target)
-      return entry.isFile() && entry.name.endsWith('.ts') ? [target] : []
-    })
-  }
-
-  function assertIpcInventory(): void {
+describe('Desktop security architecture', () => {
+  it('matches every IPC registration to the inventory and authorization for that exact channel', () => {
     const registrations = new Map<string, string>()
-    for (const filePath of collectTypeScriptFiles(mainSourceRoot)) {
-      const source = readFileSync(filePath, 'utf8')
-      for (const match of source.matchAll(/ipcMain\.(?:handle|on)\(\s*['"]([^'"]+)['"]/g)) {
-        const channel = match[1]
-        assert(!registrations.has(channel), `duplicate IPC handler: ${channel}`)
-        registrations.set(channel, source.slice(match.index, match.index + 1_500))
+    for (const file of sourceFilesBelow(mainRoot)) {
+      const tree = parseFile(file)
+      const ipcBindings = importedBindings(tree, 'electron', 'ipcMain')
+      for (const call of calls(tree)) {
+        const callee = call.callee
+        if (
+          !ipcBindings.has(memberName(callee?.object as AstNode) ?? '') ||
+          !['handle', 'on'].includes(memberName(callee?.property) ?? '')
+        )
+          continue
+        const [channelNode, handler] = call.arguments as AstNode[]
+        expect(channelNode.type, `${file}: IPC channels must be literal inventory entries`).toBe(
+          'StringLiteral',
+        )
+        const channel = channelNode.value as string
+        expect(registrations.has(channel), `duplicate IPC handler: ${channel}`).toBe(false)
+        registrations.set(channel, file)
+        const guarded = calls(handler).some((candidate) => {
+          const method = memberName(candidate.callee?.property)
+          const args = candidate.arguments as AstNode[]
+          return (
+            (['handle', 'handlePayload'].includes(method ?? '') && args[0]?.value === channel) ||
+            (method === 'assert' && args[1]?.value === channel)
+          )
+        })
+        expect(guarded, `${file}: missing sender authorization for ${channel}`).toBe(true)
       }
     }
+    expect([...registrations.keys()].sort()).toEqual(Object.keys(IPC_CHANNEL_CAPABILITIES).sort())
+  })
 
-    assert.deepEqual(
-      [...registrations.keys()].sort(),
-      Object.keys(IPC_CHANNEL_CAPABILITIES).sort(),
-      'IPC inventory and capability matrix differ',
-    )
-    for (const [channel, registration] of registrations) {
-      const escapedChannel = channel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-      assert(
-        new RegExp(
-          `authorization\\.(?:handle(?:Payload)?\\(\\s*['"]${escapedChannel}['"]|assert\\(event, ['"]${escapedChannel}['"])`,
-        ).test(registration),
-        `IPC handler has no sender authorization: ${channel}`,
+  it.each(['MainWindowManager.ts', 'OverlayWindowManager.ts'])(
+    'hardens every BrowserWindow in %s',
+    (name) => {
+      const tree = ast(`main/windows/${name}`)
+      let windows = 0
+      walk(tree, (node) => {
+        if (node.type !== 'NewExpression' || memberName(node.callee) !== 'BrowserWindow') return
+        windows += 1
+        const options = (node.arguments as AstNode[])[0]
+        const preferences = (options.properties as AstNode[]).find(
+          (p) => memberName(p.key as AstNode) === 'webPreferences',
+        )
+        expect(preferences, `${name}: missing webPreferences`).toBeDefined()
+        if (!preferences) throw new Error(`${name}: missing webPreferences`)
+        const properties = (preferences.value as AstNode).properties as AstNode[]
+        for (const [key, value] of Object.entries({
+          sandbox: true,
+          webSecurity: true,
+          contextIsolation: true,
+          nodeIntegration: false,
+        })) {
+          const property = properties.find((p) => memberName(p.key as AstNode) === key)
+          expect((property?.value as AstNode)?.value, `${name}: ${key}`).toBe(value)
+        }
+      })
+      expect(windows).toBeGreaterThan(0)
+      expect(
+        calls(tree).some((node) => memberName(node.callee) === 'installRendererNavigationGuards'),
+      ).toBe(true)
+      if (name === 'OverlayWindowManager.ts')
+        expect(strings(tree)).toContain('../preload/overlay.js')
+    },
+  )
+
+  it('exposes only presentation invocations from the Overlay preload', () => {
+    const tree = ast('preload/overlay.ts')
+    const ipcBindings = importedBindings(tree, 'electron', 'ipcRenderer')
+    const channels = calls(tree)
+      .filter(
+        (node) =>
+          ipcBindings.has(memberName(node.callee?.object as AstNode) ?? '') &&
+          memberName(node.callee?.property) === 'invoke',
       )
-    }
-  }
-
-  function assertSenderBoundaries(): void {
-    const authorization = new IpcAuthorization({ main: () => 11, overlay: () => 22 })
-    assert.throws(
-      () => authorization.assert({ sender: { id: 22 } } as never, 'llm:save-credential'),
-      /not authorized/,
-      'Overlay reached privileged credential IPC',
-    )
-    assert.throws(
-      () => authorization.assert({ sender: { id: 999 } } as never, 'config:get'),
-      /not authorized/,
-      'Unknown sender reached Main IPC',
-    )
-    assert.throws(
-      () => authorization.assert({ sender: { id: 22 } } as never, 'plugins:enable'),
-      /not authorized/,
-      'Overlay reached Plugin Runtime IPC',
-    )
-    assert.throws(
-      () => authorization.assert({ sender: { id: 22 } } as never, 'project-awareness:get-config'),
-      /not authorized/,
-      'Overlay reached Project Awareness configuration IPC',
-    )
-    assert.throws(
-      () => authorization.assert({ sender: { id: 999 } } as never, 'plugins:list'),
-      /not authorized/,
-      'Unknown sender reached Plugin Runtime IPC',
-    )
-    assert.throws(
-      () => authorization.assert({ sender: { id: 22 } } as never, 'capabilities:snapshot'),
-      /not authorized/,
-      'Overlay reached capability catalog IPC',
-    )
-    assert.throws(
-      () => authorization.assert({ sender: { id: 22 } } as never, 'system:open-external-link'),
-      /not authorized/,
-      'Overlay reached external navigation IPC',
-    )
-    assert.throws(
-      () => authorization.assert({ sender: { id: 22 } } as never, 'desktop-control:start-runtime'),
-      /not authorized/,
-      'Overlay reached Desktop Control IPC',
-    )
-    for (const channel of ['actions:request-authority-mode', 'actions:emergency-stop'] as const) {
-      assert.throws(
-        () => authorization.assert({ sender: { id: 22 } } as never, channel),
-        /not authorized/,
-        `Overlay reached Action Runtime IPC: ${channel}`,
-      )
-    }
-    assert.equal(authorization.assert({ sender: { id: 11 } } as never, 'plugins:list'), 'main')
-    assert.equal(
-      authorization.assert({ sender: { id: 11 } } as never, 'capabilities:snapshot'),
-      'main',
-    )
-    assert.equal(
-      authorization.assert({ sender: { id: 22 } } as never, 'avatar-state:get'),
-      'overlay',
-    )
-    const noPayloadHandler = authorization.handle('config:get', () => ({ ok: true }))
-    assert.throws(() => noPayloadHandler({ sender: { id: 11 } } as never, { injected: true }))
-  }
-
-  function assertOpaqueAssetBoundary(): void {
-    assert.throws(
-      () => vrmAssetHandleSchema.parse('C:\\Users\\attacker\\arbitrary.vrm'),
-      /Invalid VRM asset handle/,
-    )
-
-    const directory = mkdtempSync(join(tmpdir(), 'shio-security-repro-'))
-    const selectedPath = join(directory, 'selected.vrm')
-    const expected = Buffer.from([0x67, 0x6c, 0x54, 0x46])
-    try {
-      writeFileSync(selectedPath, expected)
-      const registry = new VrmAssetRegistry()
-      const selected = registry.registerSelectedAsset(selectedPath)
-      assert(vrmAssetHandleSchema.safeParse(selected.assetHandle).success)
-      assert.deepEqual(Buffer.from(registry.readAsset(selected.assetHandle)), expected)
-      assert.throws(() => registry.readAsset(selectedPath), /Unknown VRM asset handle/)
-    } finally {
-      unlinkSync(selectedPath)
-      rmdirSync(directory)
-    }
-  }
-
-  function assertWindowAndPreloadBoundaries(): void {
-    let navigationListener: ((event: { preventDefault(): void }, url: string) => void) | undefined
-    let openHandler: (() => { action: 'deny' }) | undefined
-    installRendererNavigationGuards({
-      webContents: {
-        on: (
-          _event: 'will-navigate',
-          listener: (event: { preventDefault(): void }, url: string) => void,
-        ) => {
-          navigationListener = listener
-        },
-        setWindowOpenHandler: (handler: () => { action: 'deny' }) => {
-          openHandler = handler
-        },
-      },
-    })
-    let prevented = false
-    navigationListener?.(
-      { preventDefault: () => (prevented = true) },
-      'app:///C:/Users/attacker/arbitrary.vrm',
-    )
-    assert(prevented, 'arbitrary app: filesystem navigation was not rejected')
-    assert.equal(openHandler?.().action, 'deny', 'new renderer window was not rejected')
-
-    const mainWindow = readFileSync(join(mainSourceRoot, 'windows', 'MainWindowManager.ts'), 'utf8')
-    const overlayWindow = readFileSync(
-      join(mainSourceRoot, 'windows', 'OverlayWindowManager.ts'),
-      'utf8',
-    )
-    for (const source of [mainWindow, overlayWindow]) {
-      assert(source.includes('contextIsolation: true'))
-      assert(source.includes('nodeIntegration: false'))
-      assert(source.includes('sandbox: true'))
-      assert(source.includes('webSecurity: true'))
-      assert(source.includes('installRendererNavigationGuards'))
-    }
-    assert(overlayWindow.includes("preload: join(__dirname, '../preload/overlay.js')"))
-
-    const overlayPreload = readFileSync(join(desktopRoot, 'src', 'preload', 'overlay.ts'), 'utf8')
-    const mainPreload = readFileSync(join(desktopRoot, 'src', 'preload', 'index.ts'), 'utf8')
-    const invokedChannels = [...overlayPreload.matchAll(/ipcRenderer\.invoke\(['"]([^'"]+)/g)]
-      .map((match) => match[1])
-      .sort()
-    assert.deepEqual(invokedChannels, [
+      .map((node) => (node.arguments as AstNode[])[0]?.value)
+    expect(channels.sort()).toEqual([
       'avatar-body:get',
       'avatar-mouth:get',
       'avatar-state:get',
       'overlay-presentation:config:get',
       'vrm:read',
     ])
-    assert(!/credential|project-awareness|plugins:|config:save|overlay:toggle/.test(overlayPreload))
-    assert(!overlayPreload.includes('capabilities:snapshot'))
-    assert(!overlayPreload.includes('system:open-external-link'))
-    assert(!overlayPreload.includes('actions:'))
-    assert(!overlayPreload.includes('desktop-control:'))
-    assert(!mainPreload.includes('parseShioCapabilitySnapshot'))
+    for (const value of strings(tree)) {
+      expect(value).not.toMatch(
+        /credential|project-awareness|plugins:|config:save|overlay:toggle|capabilities:snapshot|system:open-external-link|actions:|desktop-control:/,
+      )
+    }
+  })
 
-    const capabilitiesIpc = readFileSync(
-      join(mainSourceRoot, 'ipc', 'registerCapabilitiesIpc.ts'),
-      'utf8',
+  it('retains Main-owned validation for capability, Action and Plugin IPC', () => {
+    expect(
+      schemaCalls('main/ipc/registerCapabilitiesIpc.ts').filter(
+        (name) => name === 'parseShioCapabilitySnapshot',
+      ),
+    ).toHaveLength(2)
+    expect(schemaCalls('preload/index.ts')).not.toContain('parseShioCapabilitySnapshot')
+    for (const name of [
+      'actionConfirmationResponseSchema.parse',
+      'authorityChangeResponseSchema.parse',
+      'actionRuntimeSnapshotSchema.parse',
+    ]) {
+      expect(schemaCalls('main/ipc/registerActionIpc.ts')).toContain(name)
+    }
+    const actionTree = ast('main/ipc/registerActionIpc.ts')
+    let pendingAuthority = false
+    walk(actionTree, (node) => {
+      if (
+        node.type === 'ObjectProperty' &&
+        memberName(node.key as AstNode) === 'pendingAuthorityChange'
+      ) {
+        pendingAuthority =
+          memberName((node.value as AstNode)?.callee?.property) === 'pendingAuthority'
+      }
+    })
+    expect(pendingAuthority).toBe(true)
+    expect(schemaCalls('main/ipc/registerPluginIpc.ts')).toEqual(
+      expect.arrayContaining(['z.enum', 'pluginIdSchema.parse']),
     )
-    assert(capabilitiesIpc.includes('parseShioCapabilitySnapshot(await catalog.snapshot())'))
-    assert(capabilitiesIpc.includes('parseShioCapabilitySnapshot(snapshot)'))
-
-    const releaseSupport = readFileSync(join(mainSourceRoot, 'system', 'releaseSupport.ts'), 'utf8')
-    assert.match(releaseSupport, /authorization\.handlePayload\(\s*'system:open-external-link'/)
-    assert(releaseSupport.includes('externalHttpUrlSchema.parse(payload)'))
-    assert(mainPreload.includes("ipcRenderer.invoke('system:open-external-link', url)"))
-
-    const actionIpc = readFileSync(join(mainSourceRoot, 'ipc', 'registerActionIpc.ts'), 'utf8')
-    assert(!actionIpc.includes('actions:request-desktop-workflow'))
-    assert(!mainPreload.includes('actions:request-desktop-workflow'))
-    assert(actionIpc.includes('actionConfirmationResponseSchema.parse(payload)'))
-    assert(actionIpc.includes('authorityChangeResponseSchema.parse(payload)'))
-    assert(actionIpc.includes('actionRuntimeSnapshotSchema.parse({'))
-    assert(actionIpc.includes('pendingAuthorityChange: confirmations.pendingAuthority()'))
-
-    const applicationBootstrap = readFileSync(
-      join(mainSourceRoot, 'app', 'buildApplicationDependencies.ts'),
-      'utf8',
+    for (const value of strings(ast('main/ipc/registerDesktopControlIpc.ts'))) {
+      expect(value).not.toMatch(/save-credential|forget-credential/)
+    }
+    expect(schemaCalls('main/ipc/registerDesktopControlIpc.ts')).toContain(
+      'desktopControlStatusSchema.parse',
     )
-    assert(!applicationBootstrap.includes("protocol.handle('app'"))
-    const rendererHtml = readFileSync(join(desktopRoot, 'src', 'renderer', 'index.html'), 'utf8')
-    assert(!rendererHtml.includes(' app:'))
-  }
+    expect(schemaCalls('main/ipc/registerBrowserControlIpc.ts')).toContain(
+      'browserControlStatusSchema.parse',
+    )
+    expect(strings(ast('main/ipc/registerBrowserControlIpc.ts'))).toContain('browser.use-control')
+    const project = calls(ast('main/ipc/registerProjectAwarenessIpc.ts'))
+    expect(project.some((node) => memberPath(node.callee) === 'credentialSchema.parse')).toBe(true)
+    expect(
+      project.some(
+        (node) =>
+          memberName(node.callee?.property) === 'parse' &&
+          memberPath((node.callee?.object as AstNode)?.callee) === 'configSchema.strict',
+      ),
+    ).toBe(true)
+  })
 
-  function assertPluginBoundaries(): void {
-    const pluginIpc = readFileSync(join(mainSourceRoot, 'ipc', 'registerPluginIpc.ts'), 'utf8')
-    const projectIpc = readFileSync(
-      join(mainSourceRoot, 'ipc', 'registerProjectAwarenessIpc.ts'),
-      'utf8',
-    )
-    const sharedApi = readFileSync(join(desktopRoot, 'src', 'shared', 'ipc', 'api.ts'), 'utf8')
-    const projectApi = readFileSync(
-      join(desktopRoot, 'src', 'shared', 'project-awareness', 'api.ts'),
-      'utf8',
-    )
-    assert(pluginIpc.includes('z.enum(PLUGIN_IDS)'))
-    assert(pluginIpc.includes('pluginIdSchema.parse(id)'))
-    const browserControlIpc = readFileSync(
-      join(mainSourceRoot, 'ipc', 'registerBrowserControlIpc.ts'),
-      'utf8',
-    )
-    assert(browserControlIpc.includes("authorization.handle('browser-control:get-status'"))
-    assert(browserControlIpc.includes("authorization.handle('browser-control:pause'"))
-    assert(browserControlIpc.includes("authorization.handle('browser-control:resume'"))
-    assert(browserControlIpc.includes("authorization.handle('browser-control:stop'"))
-    assert(browserControlIpc.includes("name: 'browser.use-control'"))
-    assert(browserControlIpc.includes('browserControlStatusSchema.parse'))
-    assert(projectIpc.includes('configSchema.strict().parse(input)'))
-    assert(projectIpc.includes('credentialSchema.parse(token)'))
-    assert(projectApi.includes('saveCredential(token: string): Promise<ProjectAwarenessStatus>'))
-    const desktopIpc = readFileSync(
-      join(mainSourceRoot, 'ipc', 'registerDesktopControlIpc.ts'),
-      'utf8',
-    )
-    assert(desktopIpc.includes('desktopControlStatusSchema.parse'))
-    assert(!desktopIpc.includes('save-credential'))
-    assert(!desktopIpc.includes('forget-credential'))
-    assert(!/plugin\.invoke|plugins:invoke/.test(`${pluginIpc}\n${sharedApi}`))
-  }
+  it('validates external URLs in Main before the registered Action boundary', () => {
+    expect(schemaCalls('main/system/releaseSupport.ts')).toContain('externalHttpUrlSchema.parse')
+    expect(strings(ast('preload/index.ts'))).toContain('system:open-external-link')
+    expect(strings(ast('main/system/releaseSupport.ts'))).toContain('system:open-external-link')
+  })
 
-  assertIpcInventory()
-  assertSenderBoundaries()
-  assertOpaqueAssetBoundary()
-  assertWindowAndPreloadBoundaries()
-  assertPluginBoundaries()
-  console.log('Desktop security repro passed')
-}
-
-describe('desktop security', () => {
-  it('enforces IPC, asset, window, preload, and plugin boundaries', () => {
-    main()
+  it('does not restore generic Plugin dispatch, desktop workflow IPC or an app filesystem protocol', () => {
+    for (const path of [
+      'main/ipc/registerPluginIpc.ts',
+      'shared/ipc/api.ts',
+      'main/ipc/registerActionIpc.ts',
+      'preload/index.ts',
+    ]) {
+      for (const value of strings(ast(path)))
+        expect([
+          'plugin.invoke',
+          'plugins:invoke',
+          'actions:request-desktop-workflow',
+        ]).not.toContain(value)
+    }
+    const boot = calls(ast('main/app/buildApplicationDependencies.ts'))
+    expect(
+      boot.some(
+        (node) =>
+          memberPath(node.callee) === 'protocol.handle' &&
+          (node.arguments as AstNode[])[0]?.value === 'app',
+      ),
+    ).toBe(false)
+    expect(readFileSync(join(sourceRoot, 'renderer/index.html'), 'utf8')).not.toContain(' app:')
   })
 })

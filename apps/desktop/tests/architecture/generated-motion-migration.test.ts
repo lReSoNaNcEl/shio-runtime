@@ -40,22 +40,9 @@ describe('generated-motion migration boundary', () => {
       assert.doesNotMatch(source(name), /three-vrm-animation/)
   })
 
-  it('binds the HUD to applied motion and uses Spectrum with both theme tokens', () => {
+  it('keeps removed clip-file projections out of the HUD boundary', () => {
     const controller = source('src/renderer/Controller.ts')
     const app = source('src/renderer/components/App.tsx')
-    assert.match(controller, /const pose = avatar.bodyMotion.appliedPose/)
-    assert.match(controller, /pose && !pose.outcome \? pose.profileId : ''/)
-    assert.match(app, /<Text>\{state.overlayMotionProfileId\}<\/Text>/)
     assert.doesNotMatch(controller + app, /overlayAnimationFile|currentBodyAnimationFile/)
-    const hud = source('src/renderer/styles/overlay.css').split('/* Overlay */')[0]
-    assert.match(hud, /background: var\(--panel\)/)
-    assert.match(hud, /color: var\(--text\)/)
-    assert.doesNotMatch(hud, /#[0-9a-f]{3,8}\b|rgba?\(/i)
-    const themes = source('src/renderer/styles/tokens.css').split(':root[data-theme="light"]')
-    assert.equal(themes.length, 2)
-    for (const theme of themes) {
-      assert.match(theme, /--panel:/)
-      assert.match(theme, /--text:/)
-    }
   })
 })

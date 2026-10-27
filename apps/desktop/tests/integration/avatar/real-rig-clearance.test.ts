@@ -11,8 +11,33 @@ import { GeneratedBodyPlayback } from '../../../src/renderer/avatar/rendering/th
 import { GeneratedBodySafety } from '../../../src/renderer/avatar/rendering/three/GeneratedBodySafety'
 import { getMotionProfile, type MotionApi, type MotionProfileId } from '../../../src/shared/motion'
 import { greenFoxRig } from '../../support/avatar/greenFoxRig'
+import {
+  createMockMotionApi,
+  createMotionChunk,
+  createMotionLease,
+} from '../../support/avatar/motionFixtures'
 
-afterEach(() => {
+const owners: GeneratedBodyPlayback[] = []
+const rigs: VRM[] = []
+
+function trackedRig(...args: Parameters<typeof greenFoxRig>) {
+  const rig = greenFoxRig(...args)
+  rigs.push(rig)
+  return rig
+}
+
+function createOwner() {
+  const owner = new GeneratedBodyPlayback(() => undefined)
+  owners.push(owner)
+  return owner
+}
+
+afterEach(async () => {
+  for (const owner of owners.splice(0)) {
+    owner.detach()
+    await owner.settleCancellation()
+  }
+  for (const rig of rigs.splice(0)) VRMUtils.deepDispose(rig.scene)
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
 })
@@ -34,11 +59,12 @@ it('matches calibration through the production VRM loader and normalized hierarc
     '',
   )
   const vrm = gltf.userData.vrm as VRM
+  rigs.push(vrm)
   VRMUtils.removeUnnecessaryJoints(vrm.scene)
-  const reference = calibrateBodyClearance(greenFoxRig())
+  const reference = calibrateBodyClearance(trackedRig())
   const actual = calibrateBodyClearance(vrm)
   if (!process.env.SHIO_TEST_VRM_PATH) expect(actual.halfWidth).toBeCloseTo(reference.halfWidth, 5)
-  const owner = new GeneratedBodyPlayback(() => undefined)
+  const owner = createOwner()
   owner.attach(vrm)
   for (const side of ['left', 'right'] as const) {
     const hand = vrm.humanoid.getNormalizedBoneNode(`${side}Hand`)
@@ -59,11 +85,10 @@ it('matches calibration through the production VRM loader and normalized hierarc
     if (!normalized || !raw) throw new Error('Missing arm')
     expect(normalized.distanceTo(raw), name).toBeLessThan(0.001)
   }
-  VRMUtils.deepDispose(vrm.scene)
 })
 
 it('measures bind skin in the same frame even when normalized arms have already lowered', () => {
-  const vrm = greenFoxRig()
+  const vrm = trackedRig()
   const before = calibrateBodyClearance(vrm)
   const arm = vrm.humanoid.getNormalizedBoneNode('rightUpperArm')
   if (!arm) throw new Error('Missing arm')
@@ -76,7 +101,7 @@ it('measures bind skin in the same frame even when normalized arms have already 
 })
 
 it('keeps the calibrated standing reference relaxed with a wide costume envelope', () => {
-  const vrm = greenFoxRig()
+  const vrm = trackedRig()
   const measured = calibrateBodyClearance(vrm)
   vi.spyOn(clearanceCalibration, 'calibrateBodyClearance').mockReturnValue({
     ...measured,
@@ -84,7 +109,7 @@ it('keeps the calibrated standing reference relaxed with a wide costume envelope
     halfDepth: 0.12,
     armRadius: { left: 0.06, right: 0.06 },
   })
-  const owner = new GeneratedBodyPlayback(() => undefined)
+  const owner = createOwner()
   owner.attach(vrm)
   for (const side of ['left', 'right'] as const) {
     const shoulder = vrm.humanoid.getNormalizedBoneNode(`${side}UpperArm`)
@@ -103,8 +128,8 @@ it('keeps the calibrated standing reference relaxed with a wide costume envelope
 })
 
 it('keeps the actual standing reference beside the body instead of a lateral A-pose', () => {
-  const vrm = greenFoxRig(process.env.SHIO_TEST_VRM_PATH)
-  const owner = new GeneratedBodyPlayback(() => undefined)
+  const vrm = trackedRig(process.env.SHIO_TEST_VRM_PATH)
+  const owner = createOwner()
   owner.attach(vrm)
   const hips = vrm.humanoid.getNormalizedBoneNode('hips')
   const chest = vrm.humanoid.getNormalizedBoneNode('chest')
@@ -155,7 +180,7 @@ it('keeps the actual standing reference beside the body instead of a lateral A-p
 it.each(['left', 'right'] as const)(
   'bounds a folded %s neural wrist in its anatomical frame',
   (side) => {
-    const vrm = greenFoxRig()
+    const vrm = trackedRig()
     const safety = new GeneratedBodySafety()
     safety.attach(vrm)
     const hand = vrm.humanoid.getNormalizedBoneNode(`${side}Hand`)
@@ -180,28 +205,17 @@ async function bodyFixture(
     | readonly [number, number, number]
     | ((frame: number) => readonly [number, number, number]) = [0, 0, 0],
 ) {
-  const lease = {
-    sessionId: 'real-bind',
-    epoch: 1,
-    modelGeneration: 1,
-    avatarGeneration: 1,
-    seed: 17,
-  }
+  const lease = createMotionLease({ sessionId: 'real-bind', seed: 17 })
   const elbowAngle = isolateCoordinates ? 0.24 : Math.PI / 4
   const next: MotionApi['next'] = async (input) => ({
     ok: true,
-    chunk: {
+    chunk: createMotionChunk({
       ...input.lease,
-      protocolVersion: 2,
-      type: 'motion',
-      id: 1,
       profileId: input.profileId,
       plan: input.plan,
       reset: input.fromFrame === 0,
       fromFrame: input.fromFrame ?? 0,
       startFrame: input.fromFrame ?? 0,
-      fps: 30,
-      skeleton: 'soma30-standard-tpose-v1',
       inferenceMs: 1,
       rotations: Array.from({ length: 60 }, (_, frame) => {
         const source =
@@ -227,17 +241,11 @@ async function bodyFixture(
         })
       }),
       rootPositions: Array.from({ length: 60 }, () => [0, 0.9887084839474641 - rootDropM, 0]),
-      footContacts: Array.from({ length: 60 }, () => ({
-        leftHeel: 1,
-        leftToe: 1,
-        rightHeel: 1,
-        rightToe: 1,
-      })),
-    },
+    }),
   })
   vi.stubGlobal('window', {
     api: {
-      motion: { start: async () => ({ ok: true, lease }), next, stop: async () => ({ ok: true }) },
+      motion: createMockMotionApi({ lease, next }),
     },
   })
   // Isolate the coordinate transfer; contact correctness is tested above on the same rig.
@@ -245,7 +253,7 @@ async function bodyFixture(
     vi.spyOn(GeneratedBodySafety.prototype, 'apply').mockImplementation(() => undefined)
     vi.spyOn(GeneratedBodySafety.prototype, 'constrainTarget').mockImplementation(() => undefined)
   }
-  const owner = new GeneratedBodyPlayback(() => undefined)
+  const owner = createOwner()
   owner.attach(vrm)
   await owner.playProfile(profileId, {
     animationId: profileId,
@@ -262,7 +270,7 @@ async function bodyFixture(
 }
 
 it('retargets both SOMA30 forearms forward on the real VRM0 bind hierarchy', async () => {
-  const vrm = greenFoxRig()
+  const vrm = trackedRig()
   vrm.scene.rotation.y = 1.1
   vrm.scene.updateMatrixWorld(true)
   const owner = await bodyFixture(vrm, true)
@@ -289,7 +297,7 @@ it('retargets both SOMA30 forearms forward on the real VRM0 bind hierarchy', asy
 })
 
 it('recovers to the calibrated admissible rest pose on the real rig', async () => {
-  const vrm = greenFoxRig()
+  const vrm = trackedRig()
   const owner = await bodyFixture(vrm)
   const tick = async () => {
     owner.update(0.025, () => undefined)
@@ -317,8 +325,8 @@ it.each([
   [-0.8, -1.1, -1.4],
   [1.5, 0.6, 0.2],
 ] as const)('returns from an admissible off-axis arm pose (%s, %s, %s)', (x, y, z) => {
-  const vrm = greenFoxRig(process.env.SHIO_TEST_VRM_PATH)
-  const owner = new GeneratedBodyPlayback(() => undefined)
+  const vrm = trackedRig(process.env.SHIO_TEST_VRM_PATH)
+  const owner = createOwner()
   owner.attach(vrm)
   const safety = Reflect.get(owner, 'bodySafety') as GeneratedBodySafety
   const bones = ['rightUpperArm', 'rightLowerArm', 'rightHand'].map((name) => {
@@ -371,7 +379,7 @@ it.each([
 it.each([1 / 30, 0.1])(
   'finishes raised-hand recovery with %s second render intervals',
   async (delta) => {
-    const vrm = greenFoxRig(process.env.SHIO_TEST_VRM_PATH)
+    const vrm = trackedRig(process.env.SHIO_TEST_VRM_PATH)
     const owner = await bodyFixture(vrm, false, 'greet_wave_soft')
     for (let frame = 0; frame < 300 && owner.getLibraryDebug().phase !== 'hold'; frame++) {
       owner.update(1 / 60, () => undefined)
@@ -397,7 +405,7 @@ it.each([1 / 30, 0.1])(
 )
 
 it('latches a motion failure when planted support cannot be recovered', async () => {
-  const vrm = greenFoxRig()
+  const vrm = trackedRig()
   const owner = await bodyFixture(vrm)
   for (let frame = 0; frame < 160; frame++) {
     owner.update(1 / 60, () => undefined)
@@ -444,6 +452,7 @@ it.each([
       '',
     )
     const vrm = gltf.userData.vrm as VRM
+    rigs.push(vrm)
     VRMUtils.removeUnnecessaryJoints(vrm.scene)
     const owner = await bodyFixture(vrm, false, 'kiss_air_soft', false, 0, (frame) => [
       x * Math.sin(frame * 0.13),
@@ -472,14 +481,13 @@ it.each([
     expect(contacts).toBe(0)
     owner.detach()
     await owner.settleCancellation()
-    VRMUtils.deepDispose(vrm.scene)
   },
 )
 
 it('bounds wall time independently of a throttled recovery integration clock', async () => {
   let now = 0
   vi.spyOn(performance, 'now').mockImplementation(() => now)
-  const vrm = greenFoxRig()
+  const vrm = trackedRig()
   const owner = await bodyFixture(vrm)
   for (let frame = 0; frame < 160; frame++) {
     owner.update(1 / 60, () => undefined)
@@ -500,7 +508,7 @@ it('bounds wall time independently of a throttled recovery integration clock', a
 })
 
 it('enters generated standing without a knee snap at the straight-leg singularity', async () => {
-  const vrm = greenFoxRig(process.env.SHIO_TEST_VRM_PATH)
+  const vrm = trackedRig(process.env.SHIO_TEST_VRM_PATH)
   const owner = await bodyFixture(vrm, false, 'presence_warm', false, 0.018)
   const knees = ['leftLowerLeg', 'rightLowerLeg'].map((name) =>
     vrm.humanoid.getNormalizedBoneNode(name as 'leftLowerLeg' | 'rightLowerLeg'),
@@ -524,7 +532,7 @@ it('enters generated standing without a knee snap at the straight-leg singularit
 })
 
 it('holds an actual constrained arm while consumed PCM is buffering', async () => {
-  const vrm = greenFoxRig(process.env.SHIO_TEST_VRM_PATH)
+  const vrm = trackedRig(process.env.SHIO_TEST_VRM_PATH)
   const owner = await bodyFixture(vrm, false, 'greet_wave_soft', true)
   const clock = {
     turnId: 'turn-1',
@@ -573,7 +581,7 @@ it('holds an actual constrained arm while consumed PCM is buffering', async () =
 it('recovers root height at the same pace at 30 Hz and 360 Hz', async () => {
   const remaining = []
   for (const rate of [30, 360]) {
-    const vrm = greenFoxRig(process.env.SHIO_TEST_VRM_PATH)
+    const vrm = trackedRig(process.env.SHIO_TEST_VRM_PATH)
     const hips = vrm.humanoid.getNormalizedBoneNode('hips')
     if (!hips) throw new Error('Missing hips')
     const anchor = hips.position.y
@@ -598,7 +606,7 @@ it('recovers root height at the same pace at 30 Hz and 360 Hz', async () => {
 })
 
 it('keeps actual body motion during breathing instead of freezing on the contact boundary', async () => {
-  const vrm = greenFoxRig()
+  const vrm = trackedRig()
   const owner = await bodyFixture(vrm)
   const chest = vrm.humanoid.getNormalizedBoneNode('chest')
   const arm = vrm.humanoid.getNormalizedBoneNode('rightUpperArm')
@@ -624,7 +632,7 @@ it('keeps actual body motion during breathing instead of freezing on the contact
 })
 
 it('keeps contact correction continuous across a slowly changing neural arm target', () => {
-  const vrm = greenFoxRig()
+  const vrm = trackedRig()
   const safety = new GeneratedBodySafety()
   safety.attach(vrm)
   const upper = vrm.humanoid.getNormalizedBoneNode('rightUpperArm')
@@ -650,7 +658,7 @@ it('keeps contact correction continuous across a slowly changing neural arm targ
 })
 
 it('keeps a moving torso and clavicle from causing an unlimited arm repair', () => {
-  const vrm = greenFoxRig()
+  const vrm = trackedRig()
   const safety = new GeneratedBodySafety()
   safety.attach(vrm)
   const bone = (name: Parameters<VRM['humanoid']['getNormalizedBoneNode']>[0]) => {
@@ -692,7 +700,7 @@ it.each([
   ['left', 1.1],
   ['right', 1.1],
 ] as const)('keeps the %s forearm out of the actual upper chest at model yaw %s', (side, yaw) => {
-  const vrm = greenFoxRig()
+  const vrm = trackedRig()
   vrm.scene.rotation.y = yaw
   vrm.scene.updateMatrixWorld(true)
   const inverseModel = vrm.scene.matrixWorld.clone().invert()

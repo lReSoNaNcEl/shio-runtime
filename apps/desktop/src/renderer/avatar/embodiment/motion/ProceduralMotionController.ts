@@ -55,8 +55,13 @@ export class ProceduralMotionController {
   }
 
   setMode(mode: AvatarProceduralMode): void {
+    if (mode !== 'speaking' || this.mode !== 'speaking') this.microMotion.setSpeechEnergy(0)
     this.mode = mode
     this.applyProfile()
+  }
+
+  setSpeechEnergy(energy: number): void {
+    this.microMotion.setSpeechEnergy(this.mode === 'speaking' ? energy : 0)
   }
 
   setBodyMotionLayer(layer: AvatarBodyMotionLayer): void {

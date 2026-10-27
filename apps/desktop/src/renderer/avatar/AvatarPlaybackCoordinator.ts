@@ -329,8 +329,16 @@ export class AvatarPlaybackCoordinator {
 
     // Rejected startup has no execution to bind. All other terminal outcomes
     // must belong to the exact execution accepted for this queue item.
-    if (!context?.executionId || context.executionId !== execution?.executionId) return
-    const outcome = execution?.outcome
+    const skippedStartup =
+      context?.executionId === null &&
+      animation.playbackStatus === 'idle' &&
+      animation.activeAnimationId === null
+    if (
+      !skippedStartup &&
+      (!context?.executionId || context.executionId !== execution?.executionId)
+    )
+      return
+    const outcome = skippedStartup ? 'superseded' : execution?.outcome
     if (!outcome) return
     if (outcome !== 'completed' && outcome !== 'superseded') {
       this.reset()

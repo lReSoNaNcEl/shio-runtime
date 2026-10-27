@@ -1,75 +1,39 @@
 import assert from 'node:assert/strict'
 
-import { describe, it } from 'vitest'
+import { afterEach, beforeEach, describe, it, vi } from 'vitest'
 
 import { AudioPlayer, type PlaybackSession } from '../../../src/renderer/audio/audioPlayer'
+import { createDeferred } from '../../support/Deferred'
+import { installAudioEnvironment } from '../../support/speech/audioEnvironment'
 
-class FakeAnalyser {
-  fftSize = 0
-  connect(): void {}
-  disconnect(): void {}
+let environment: ReturnType<typeof installAudioEnvironment>
+
+const players: AudioPlayer[] = []
+
+function createPlayer(): AudioPlayer {
+  const player = new AudioPlayer()
+  players.push(player)
+  return player
 }
 
-class FakeWorkletPort {
-  onmessage: ((event: MessageEvent<unknown>) => void) | null = null
-  readonly sent: Array<{ type: string; pcm?: ArrayBuffer }> = []
+beforeEach(() => {
+  environment = installAudioEnvironment()
+})
 
-  postMessage(message: { type: string; pcm?: ArrayBuffer }): void {
-    this.sent.push(message)
-  }
-
-  emit(message: { type: string; samples?: number }): void {
-    this.onmessage?.({ data: message } as MessageEvent<unknown>)
-  }
-}
-
-const createdWorklets: FakeAudioWorkletNode[] = []
-
-class FakeAudioWorkletNode {
-  readonly port = new FakeWorkletPort()
-  connected = false
-
-  constructor() {
-    createdWorklets.push(this)
-  }
-
-  connect(): void {
-    this.connected = true
-  }
-
-  disconnect(): void {
-    this.connected = false
-  }
-}
-
-class FakeAudioContext {
-  state = 'running'
-  destination = {}
-  audioWorklet = { addModule: async () => undefined }
-
-  createAnalyser(): AnalyserNode {
-    return new FakeAnalyser() as unknown as AnalyserNode
-  }
-
-  async resume(): Promise<void> {}
-
-  async close(): Promise<void> {
-    this.state = 'closed'
-  }
-}
+afterEach(async () => {
+  for (const player of players.splice(0)) await player.dispose()
+  assert.ok(environment.contexts.every((context) => context.state === 'closed'))
+  assert.ok(environment.worklets.every((node) => !node.connected && node.port.onmessage === null))
+  vi.unstubAllGlobals()
+})
 
 async function boundedBufferAndSynchronousCancellation(): Promise<void> {
-  createdWorklets.length = 0
-  const globals = globalThis as unknown as Record<string, unknown>
-  globals.AudioContext = FakeAudioContext
-  globals.AudioWorkletNode = FakeAudioWorkletNode
-  globals.window = { clearInterval: () => undefined }
-  const player = new AudioPlayer()
+  const player = createPlayer()
   const playback = await player.startPcmStream(10, {
     turnId: 'turn:pcm',
     onReady: () => undefined,
   })
-  const node = createdWorklets[0]
+  const node = environment.worklets[0]
   assert.ok(node)
 
   await playback.append(new Float32Array(10).buffer)
@@ -99,17 +63,12 @@ async function boundedBufferAndSynchronousCancellation(): Promise<void> {
 }
 
 async function oversizedProviderChunkIsReframedForBoundedPlayback(): Promise<void> {
-  createdWorklets.length = 0
-  const globals = globalThis as unknown as Record<string, unknown>
-  globals.AudioContext = FakeAudioContext
-  globals.AudioWorkletNode = FakeAudioWorkletNode
-  globals.window = { clearInterval: () => undefined }
-  const player = new AudioPlayer()
+  const player = createPlayer()
   const playback = await player.startPcmStream(10, {
     turnId: 'turn:oversized-pcm',
     onReady: () => undefined,
   })
-  const node = createdWorklets[0]
+  const node = environment.worklets[0]
   assert.ok(node)
 
   let appendComplete = false
@@ -137,26 +96,23 @@ async function oversizedProviderChunkIsReframedForBoundedPlayback(): Promise<voi
 }
 
 async function streamingSessionPublishesAdaptiveMetrics(): Promise<void> {
-  createdWorklets.length = 0
-  const globals = globalThis as unknown as Record<string, unknown>
-  globals.AudioContext = FakeAudioContext
-  globals.AudioWorkletNode = FakeAudioWorkletNode
-  globals.window = { clearInterval: () => undefined }
-  const player = new AudioPlayer()
+  const player = createPlayer()
   const sessions: PlaybackSession[] = []
+  const ready = createDeferred<void>()
   const playback = await player.startPcmStream(100, {
     turnId: 'turn:adaptive-pcm',
     onReady: (value) => {
       sessions.push(value)
+      ready.resolve()
     },
   })
-  const node = createdWorklets[0]
+  const node = environment.worklets[0]
   assert.ok(node)
 
   await playback.append(new Float32Array(100).fill(0.2).buffer)
   assert.equal(sessions.length, 0, 'buffering alone must not announce audible playback')
   node.port.emit({ type: 'started' })
-  await new Promise((resolve) => setTimeout(resolve, 0))
+  await ready.promise
   const session = sessions[0]
   assert.ok(session)
   assert.ok(Math.abs(session.normalizationReference - 0.2) < 0.001)
@@ -171,6 +127,62 @@ async function streamingSessionPublishesAdaptiveMetrics(): Promise<void> {
 }
 
 describe('PCM stream playback', () => {
+  it('advances the source clock only from audible position, holds on underrun and completes exactly', async () => {
+    const player = createPlayer()
+    const started = createDeferred<void>()
+    const playback = await player.startPcmStream(100, {
+      turnId: 'clock',
+      onReady: () => undefined,
+      onStarted: () => started.resolve(),
+    })
+    const node = environment.worklets[0]
+    await playback.append(new Float32Array(100).buffer)
+    assert.equal(player.getPcmClock()?.state, 'buffering')
+    node.port.emit({ type: 'started' })
+    await started.promise
+    node.port.emit({ type: 'consumed', samples: 40 })
+    assert.equal(
+      player.getPcmClock()?.sourceSampleOffset,
+      0,
+      'transport credit is not audible time',
+    )
+    node.port.emit({ type: 'position', sampleOffset: 40 })
+    assert.equal(player.getPcmClock()?.sourceSampleOffset, 40)
+    node.port.emit({ type: 'underrun' })
+    assert.equal(player.getPcmClock()?.state, 'buffering')
+    assert.equal(player.getPcmClock()?.sourceSampleOffset, 40)
+    node.port.emit({ type: 'position', sampleOffset: 60 })
+    assert.equal(player.getPcmClock()?.state, 'playing')
+    const completion = playback.finish()
+    node.port.emit({ type: 'ended' })
+    await completion
+    assert.equal(player.getPcmClock()?.state, 'ended')
+    assert.equal(player.getPcmClock()?.sourceSampleOffset, 100)
+    assert.equal(player.isBusy(), false)
+  })
+
+  it('ignores a queued worklet event after cancellation and replacement', async () => {
+    const player = createPlayer()
+    const first = await player.startPcmStream(100, { turnId: 'first', onReady: () => undefined })
+    const staleListener = environment.worklets[0].port.onmessage
+    assert.ok(staleListener)
+    const completion = first.finish()
+    first.cancel('conversation-interrupted')
+    await completion
+    const second = await player.startPcmStream(100, { turnId: 'second', onReady: () => undefined })
+    const clock = player.getPcmClock()
+    for (const data of [
+      { type: 'position', sampleOffset: 99 },
+      { type: 'ended' },
+      { type: 'error' },
+    ])
+      staleListener({ data } as MessageEvent<unknown>)
+    assert.deepEqual(player.getPcmClock(), clock)
+    assert.equal(player.getPlaybackDebug().turnId, 'second')
+    assert.equal(first.session.getPcmPosition?.(), null)
+    second.cancel('conversation-interrupted')
+  })
+
   it(
     'bounds buffered PCM and synchronously invalidates playback ownership on cancel',
     boundedBufferAndSynchronousCancellation,

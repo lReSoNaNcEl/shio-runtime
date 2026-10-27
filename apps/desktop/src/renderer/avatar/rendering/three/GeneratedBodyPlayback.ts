@@ -60,6 +60,11 @@ interface Binding {
   safe: THREE.Quaternion
 }
 
+interface SpeechPreparationOrigin {
+  playbackId: string | null
+  offset: number
+}
+
 /** Bounded generated body owner; the facial Runtime still composes after it. */
 export class GeneratedBodyPlayback {
   private vrm: VRM | null = null
@@ -94,6 +99,7 @@ export class GeneratedBodyPlayback {
     id: string
     context: GeneratedMotionRequestContext
     at: number
+    speechOrigin: SpeechPreparationOrigin
     resolve: () => void
     reject: (error: Error) => void
   }> = []
@@ -123,6 +129,7 @@ export class GeneratedBodyPlayback {
   private clockBase = 0
   private audibleClockStarted = false
   private speechFinished = false
+  private speechOrigin: SpeechPreparationOrigin = { playbackId: null, offset: 0 }
   private replan = false
   private replanFrom: number | null = null
   private forecast: { phaseId: MotionPhaseId; startFrame: number } | null = null
@@ -330,7 +337,18 @@ export class GeneratedBodyPlayback {
 
   setClock(clock: PcmPlaybackClock | null): void {
     if (!clock || clock.state === 'cancelled' || clock.state === 'ended') {
-      if (this.clock && this.context?.speechBound) {
+      if (clock && this.clock && clock.playbackId !== this.clock.playbackId) return
+      const endedPlayback = clock?.playbackId ?? this.clock?.playbackId
+      const newEnd = !!endedPlayback && (!!this.clock || endedPlayback !== this.clockId)
+      // The audible turn also owns gestures still waiting behind another body
+      // execution. They must never start after that turn has finished.
+      if (newEnd)
+        this.pendingProfiles = this.pendingProfiles.filter((pending) => {
+          if (!pending.context.speechBound) return true
+          pending.reject(new Error('ARDY_SPEECH_ENDED'))
+          return false
+        })
+      if (newEnd && this.context?.speechBound) {
         if (clock?.state === 'cancelled') this.stopAnimation()
         else {
           this.speechFinished = true
@@ -340,6 +358,7 @@ export class GeneratedBodyPlayback {
         }
       }
       this.clock = null
+      if (endedPlayback) this.clockId = endedPlayback
       this.audibleClockStarted = false
       return
     }
@@ -350,6 +369,49 @@ export class GeneratedBodyPlayback {
       this.clockBase = this.cursor - (clock.sourceSampleOffset * 30) / clock.sourceSampleRate
     }
     this.clock = clock
+    this.pendingProfiles = this.pendingProfiles.filter((pending) => {
+      if (
+        !pending.context.speechBound ||
+        !this.speechWindowMissed(pending.id, pending.speechOrigin)
+      )
+        return true
+      pending.reject(new Error('ARDY_SPEECH_WINDOW_MISSED'))
+      this.rejectedReason = 'speech-window-missed'
+      return false
+    })
+    if (
+      this.playing &&
+      this.context?.speechBound &&
+      this.execution?.phase === 'prepare' &&
+      this.speechWindowMissed(this.profileId, this.speechOrigin)
+    ) {
+      // Expire only an unstarted accent. Queue/inference wait counts against
+      // the same catalog preparation budget in actually consumed speech time.
+      // A protected stroke keeps its normal lifecycle and physical constraints.
+      this.rejectedReason = 'speech-window-missed'
+      this.execution.requestRecovery('speech-ended')
+      if (this.execution.advance(0, false)) this.invalidatePhase()
+    }
+  }
+
+  private speechWindowMissed(id: string, origin: SpeechPreparationOrigin): boolean {
+    const clock = this.clock
+    const profile = getMotionProfile(id)
+    if (!clock || profile?.kind !== 'gesture') return false
+    origin.playbackId ??= clock.playbackId
+    if (origin.playbackId !== clock.playbackId) return true
+    const budget = profile.phases.find((phase) => phase.id === 'prepare')
+    return (
+      !!budget &&
+      ((clock.sourceSampleOffset - origin.offset) * 1000) / clock.sourceSampleRate > budget.maxMs
+    )
+  }
+
+  private captureSpeechOrigin(): SpeechPreparationOrigin {
+    return {
+      playbackId: this.clock?.playbackId ?? null,
+      offset: this.clock?.sourceSampleOffset ?? 0,
+    }
   }
 
   playProfile(id: string, context: GeneratedMotionRequestContext): Promise<void> {
@@ -382,7 +444,14 @@ export class GeneratedBodyPlayback {
           reject(new Error('ARDY_QUEUE_FULL'))
           return
         }
-        this.pendingProfiles.push({ id, context, at: performance.now(), resolve, reject })
+        this.pendingProfiles.push({
+          id,
+          context,
+          at: performance.now(),
+          speechOrigin: this.captureSpeechOrigin(),
+          resolve,
+          reject,
+        })
         const currentZone = execution.profile.accentHands
         const targetZone = profile.accentHands
         const bridge = MOTION_CATALOG.transitionGraph.bridgeEdges.some(
@@ -400,7 +469,11 @@ export class GeneratedBodyPlayback {
     return this.beginProfile(id, context)
   }
 
-  private beginProfile(id: string, context: GeneratedMotionRequestContext): Promise<void> {
+  private beginProfile(
+    id: string,
+    context: GeneratedMotionRequestContext,
+    speechOrigin = this.captureSpeechOrigin(),
+  ): Promise<void> {
     const profile = getMotionProfile(id)
     if (!profile) return Promise.reject(new Error('ARDY_INVALID_PROFILE'))
     this.readiness?.reject(new Error('ARDY_PROFILE_SUPERSEDED'))
@@ -408,6 +481,7 @@ export class GeneratedBodyPlayback {
     this.profileId = motionProfileSchema.parse(id)
     this.context = context
     this.speechFinished = false
+    this.speechOrigin = speechOrigin
     this.composedSpeechClock = null
     if (this.clock)
       this.clockBase =
@@ -700,7 +774,10 @@ export class GeneratedBodyPlayback {
         this.rejectedReason = 'stale-intent'
         continue
       }
-      void this.beginProfile(next.id, next.context).then(next.resolve, next.reject)
+      void this.beginProfile(next.id, next.context, next.speechOrigin).then(
+        next.resolve,
+        next.reject,
+      )
       return
     }
   }
@@ -1483,11 +1560,16 @@ export class GeneratedBodyPlayback {
     if (!this.replan && nextPlan) {
       if (this.generatedEnd >= boundary) {
         if (!this.forecast) {
+          // Do not advertise a forecast until its request can actually start.
+          // Both old horizons may be needed to bridge to the boundary; in that
+          // case keep them and retry once the current one has been consumed.
+          const retained = this.queue.filter((queued) => queued.startFrame < boundary)
+          if (retained.length >= 2) return
           this.forecast = { phaseId: nextPlan.phaseId, startFrame: boundary }
           fromFrame = boundary
           // Replace only the unconsumed suffix of the old steering plan. A
           // straddling horizon remains available as the physical lead-in.
-          this.queue = this.queue.filter((queued) => queued.startFrame < boundary)
+          this.queue = retained
           const tail = this.queue.at(-1)
           this.generatedEnd = tail ? tail.startFrame + 60 : Math.floor(this.cursor)
         }

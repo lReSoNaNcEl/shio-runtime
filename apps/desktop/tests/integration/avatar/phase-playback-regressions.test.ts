@@ -1,70 +1,48 @@
-import type { VRM } from '@pixiv/three-vrm'
 import * as THREE from 'three'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import type { MotionPhaseExecution } from '../../../src/renderer/avatar/MotionPhaseExecution'
 import { GeneratedBodyPlayback } from '../../../src/renderer/avatar/rendering/three/GeneratedBodyPlayback'
 import { GeneratedBodySafety } from '../../../src/renderer/avatar/rendering/three/GeneratedBodySafety'
 import type { GeneratedMotionRequestContext } from '../../../src/renderer/avatar/rendering/three/GeneratedMotionTypes'
 import {
-  BODY_BONE_NAMES,
   getMotionProfile,
   type MotionApi,
   type MotionChunk,
   type MotionReply,
 } from '../../../src/shared/motion'
+import { createMinimalVrm } from '../../support/avatar/minimalVrm'
+import {
+  createMockMotionApi,
+  createMotionChunk,
+  createMotionLease,
+} from '../../support/avatar/motionFixtures'
+import { createPcmPlaybackClock } from '../../support/speech/pcmClock'
 
-const lease = {
-  sessionId: 'phase-regression',
-  epoch: 1,
-  modelGeneration: 1,
-  avatarGeneration: 1,
-  seed: 42,
-}
+const lease = createMotionLease({ sessionId: 'phase-regression' })
 function chunk(input: Parameters<MotionApi['next']>[0]): MotionChunk {
   const fromFrame = input.fromFrame ?? 0
-  return {
+  return createMotionChunk({
     ...input.lease,
-    type: 'motion',
     id: fromFrame + 1,
     reset: fromFrame === 0,
     fromFrame,
     startFrame: fromFrame,
     profileId: input.profileId,
-    protocolVersion: 2,
-    skeleton: 'soma30-standard-tpose-v1',
-    fps: 30,
     plan: input.plan,
-    rotations: Array.from({ length: 60 }, () => Array.from({ length: 30 }, () => [0, 0, 0, 1])),
     rootPositions: Array.from({ length: 60 }, () => [0, 0.95, 0]),
-    footContacts: Array.from({ length: 60 }, () => ({
-      leftHeel: 1,
-      leftToe: 1,
-      rightHeel: 1,
-      rightToe: 1,
-    })),
     inferenceMs: 1,
-  }
+  })
 }
 const owners: GeneratedBodyPlayback[] = []
 function fixture() {
-  const scene = new THREE.Scene()
-  const bones = new Map<string, THREE.Object3D>()
-  for (const name of [...BODY_BONE_NAMES, 'neck', 'head']) {
-    const bone = new THREE.Object3D()
-    scene.add(bone)
-    bones.set(name, bone)
-  }
-  bones.get('hips')?.position.set(0, 0.95, 0)
-  const vrm = {
-    scene,
-    meta: { metaVersion: '1' },
-    humanoid: { getNormalizedBoneNode: (name: string) => bones.get(name) },
-  } as unknown as VRM
-  const next = vi.fn<MotionApi['next']>(async (input) => ({ ok: true, chunk: chunk(input) }))
-  const stop = vi.fn(async () => ({ ok: true }))
-  vi.stubGlobal('window', {
-    api: { motion: { start: async () => ({ ok: true, lease }), next, stop } },
+  const { bones, vrm } = createMinimalVrm({ hipsHeight: 0.95, extraBones: ['neck', 'head'] })
+  const motion = createMockMotionApi({
+    lease,
+    next: async (input) => ({ ok: true, chunk: chunk(input) }),
   })
+  const { next } = motion
+  vi.stubGlobal('window', { api: { motion } })
   const owner = new GeneratedBodyPlayback(() => undefined)
   owners.push(owner)
   owner.attach(vrm)
@@ -97,6 +75,160 @@ afterEach(async () => {
 })
 
 describe('generated phase timing regressions', () => {
+  it('preserves a new preparation across repeated idle or previous-turn terminal clocks', async () => {
+    const { owner } = fixture()
+    const ended = createPcmPlaybackClock({
+      turnId: 'previous-turn',
+      playbackId: 'previous-pcm',
+      sourceSampleOffset: 44100,
+      state: 'ended',
+    })
+    owner.setClock(ended)
+    await owner.playProfile('greet_wave_soft', context('greet_wave_soft', true))
+    owner.setClock(ended)
+    owner.setClock(null)
+    expect(owner.getLibraryDebug().phase).toBe('prepare')
+    expect(owner.getLibraryDebug().outcome).toBeNull()
+  })
+
+  it('releases preparation when speech ends before any nonterminal PCM clock was published', async () => {
+    const { owner } = fixture()
+    await owner.playProfile('greet_wave_soft', context('greet_wave_soft', true))
+    owner.setClock({
+      turnId: 'empty-turn',
+      playbackId: 'empty-pcm',
+      sourceSampleRate: 44100,
+      sourceSampleOffset: 0,
+      state: 'ended',
+    })
+    expect(owner.getLibraryDebug().phase).toBe('recover')
+  })
+
+  it('expires a queued opening gesture by consumed PCM, including time spent waiting for the body', async () => {
+    const { owner } = fixture()
+    await owner.playProfile('presence_poised', context('presence_poised'))
+    owner.update(0.02, () => undefined)
+    const clock = createPcmPlaybackClock({
+      turnId: 'long-turn',
+      playbackId: 'long-pcm',
+    })
+    owner.setClock(clock)
+    let rejection: string | null = null
+    void owner
+      .playProfile('greet_wave_soft', context('greet_wave_soft', true))
+      .catch((error: Error) => {
+        rejection = error.message
+      })
+    owner.setClock({ ...clock, state: 'playing', sourceSampleOffset: 4 * 44100 })
+    await flush()
+    expect(rejection).toBe('ARDY_SPEECH_WINDOW_MISSED')
+    expect(owner.getLibraryDebug().rejectedReason).toBe('speech-window-missed')
+  })
+
+  it('recovers a late opening preparation without applying its delayed result', async () => {
+    const { owner, next } = fixture()
+    let release: ((reply: MotionReply) => void) | undefined
+    let pending: Parameters<MotionApi['next']>[0] | undefined
+    next.mockImplementation((input) => {
+      pending = input
+      return new Promise((resolve) => {
+        release = resolve
+      })
+    })
+    const starting = owner
+      .playProfile('greet_wave_soft', context('greet_wave_soft', true))
+      .catch(() => undefined)
+    await flush()
+    owner.setClock({
+      turnId: 'turn',
+      playbackId: 'pcm',
+      sourceSampleRate: 44100,
+      sourceSampleOffset: 4 * 44100,
+      state: 'playing',
+    })
+    expect(owner.getLibraryDebug().phase).toBe('recover')
+    expect(owner.getLibraryDebug().rejectedReason).toBe('speech-window-missed')
+    if (!release || !pending) throw new Error('Missing delayed generation')
+    release({ ok: true, chunk: chunk(pending) })
+    await flush()
+    for (let frame = 0; frame < 250; frame++) {
+      owner.update(0.02, () => undefined)
+      await flush()
+      expect(owner.getPresentation()?.phaseId).not.toBe('stroke')
+    }
+    await starting
+  })
+
+  it.each(['ended', 'cancelled'] as const)(
+    'drops a queued speech gesture when PCM is %s while ordinary presence owns the body',
+    async (state) => {
+      const { owner } = fixture()
+      await owner.playProfile('presence_poised', context('presence_poised'))
+      owner.update(0.02, () => undefined)
+      const clock = {
+        turnId: 'short-turn',
+        playbackId: 'short-pcm',
+        sourceSampleRate: 44100,
+        sourceSampleOffset: 4410,
+        state: 'playing' as const,
+      }
+      owner.setClock(clock)
+      let rejection: string | null = null
+      void owner
+        .playProfile('greet_wave_soft', context('greet_wave_soft', true))
+        .catch((error: Error) => {
+          rejection = error.message
+        })
+      owner.setClock({ ...clock, state })
+      await flush()
+      expect(rejection).toBe('ARDY_SPEECH_ENDED')
+      for (let frame = 0; frame < 150; frame++) {
+        owner.update(0.02, () => undefined)
+        await flush()
+        expect(owner.getLibraryDebug().runningProfileId).not.toBe('greet_wave_soft')
+      }
+    },
+  )
+
+  it('requests a deferred forecast from its planned boundary after queue space opens', async () => {
+    const { owner, next } = fixture()
+    await owner.playProfile('presence_warm', context('presence_warm', true))
+    await flush()
+    const internal = owner as unknown as {
+      execution: MotionPhaseExecution | null
+      localEpoch: number
+      cursor: number
+      generatedEnd: number
+      queue: MotionChunk[]
+      replan: boolean
+      forecast: { startFrame: number } | null
+      pump(): void
+    }
+    const execution = internal.execution
+    if (!execution) throw new Error('Missing execution')
+    execution.ready = true
+    execution.elapsedMs = execution.budget.minMs - 400
+    const plan = execution.plan(`${lease.sessionId}:${internal.localEpoch}`)
+    const input = { lease, profileId: 'presence_warm' as const, plan }
+    internal.cursor = 59
+    internal.generatedEnd = 120
+    internal.queue = [chunk({ ...input, fromFrame: 0 }), chunk({ ...input, fromFrame: 60 })]
+    internal.replan = false
+    next.mockClear()
+
+    internal.pump()
+    // Both horizons are needed up to the planned boundary; no forecast may be
+    // promoted until there is room to actually request it.
+    expect(internal.forecast).toBeNull()
+    expect(next).not.toHaveBeenCalled()
+
+    internal.queue.shift()
+    internal.cursor = 60
+    internal.pump()
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ fromFrame: 72 }))
+    await flush()
+  })
+
   it('removes a cancelled speech preparation from the actual body queue before it can start', async () => {
     const { owner } = fixture()
     await owner.playProfile('presence_poised', context('presence_poised'))

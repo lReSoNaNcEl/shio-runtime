@@ -394,19 +394,25 @@ async function main(): Promise<void> {
     assert.equal(lifecycleProviderSignal?.aborted, true)
 
     for (const source of ['BehaviorRuntime.ts', 'ExperienceRuntime.ts', 'FastBrainRuntime.ts']) {
-      const text = readFileSync(join(process.cwd(), 'src/main/alive', source), 'utf8')
+      const text = readFileSync(
+        join(import.meta.dirname, '../..', 'src/main/alive', source),
+        'utf8',
+      )
       assert.doesNotMatch(text, /ActionRuntime|ConversationRuntime|\.execute\s*\(/u)
     }
     const behaviorSource = readFileSync(
-      join(process.cwd(), 'src/main/alive/BehaviorRuntime.ts'),
+      join(import.meta.dirname, '../..', 'src/main/alive/BehaviorRuntime.ts'),
       'utf8',
     )
     assert.doesNotMatch(behaviorSource, /conversationActive|audioActive/u)
-    const facadeSource = readFileSync(join(process.cwd(), 'src/main/alive/AliveFacade.ts'), 'utf8')
+    const facadeSource = readFileSync(
+      join(import.meta.dirname, '../..', 'src/main/alive/AliveFacade.ts'),
+      'utf8',
+    )
     assert.match(facadeSource, /world\.conversationActive\s*\|\|\s*world\.audioActive/u)
     assert.match(facadeSource, /'initiative-gate'/u)
     const schedulerSource = readFileSync(
-      join(process.cwd(), 'src/main/alive/ScheduledTaskRuntime.ts'),
+      join(import.meta.dirname, '../..', 'src/main/alive/ScheduledTaskRuntime.ts'),
       'utf8',
     )
     assert.doesNotMatch(schedulerSource, /AutonomyEnvelope/u)

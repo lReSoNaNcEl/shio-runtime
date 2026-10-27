@@ -29,7 +29,7 @@
 - `apps/desktop/src/renderer/avatar/rendering/three/GeneratedBodyPlayback.ts`
 - `apps/desktop/src/renderer/avatar/rendering/three/GeneratedBodySafety.ts`
 - `apps/desktop/src/renderer/avatar/rendering/three/VrmModel.ts`
-- `apps/desktop/tests/unit/avatar/generated-motion.test.ts`
+- `apps/desktop/tests/integration/avatar/generated-motion.test.ts`
 - `apps/desktop/tests/unit/avatar/generated-body-safety.test.ts`
 - `apps/desktop/qualifications/speech-motion/qualify.cjs`
 

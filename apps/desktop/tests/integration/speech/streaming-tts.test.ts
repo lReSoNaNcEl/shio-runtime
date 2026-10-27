@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 
-import { describe, it } from 'vitest'
+import { describe, it, vi } from 'vitest'
 
 import { SpeechApplicationService } from '../../../src/main/app/SpeechApplicationService'
 import type { SpeechClientManager } from '../../../src/main/speech/SpeechClientManager'
@@ -118,7 +118,7 @@ async function characterResponseWaitsForTerminalStreamEvent(): Promise<void> {
   let subscribed = true
   let replyResolved = false
   const receivedEvents: CharacterReplyStreamEvent[] = []
-  ;(globalThis as unknown as { window: unknown }).window = {
+  vi.stubGlobal('window', {
     api: {
       llm: {
         onReplyStreamEvent: (listener: (event: CharacterReplyStreamEvent) => void) => {
@@ -136,7 +136,7 @@ async function characterResponseWaitsForTerminalStreamEvent(): Promise<void> {
         }),
       },
     },
-  }
+  })
 
   const response = new MainCharacterResponsePort()
     .createReply('turn:ipc-order', 'Ответь подробно.', undefined, (event) => {
@@ -222,9 +222,9 @@ async function conversationStartsSpeechBeforeGenerationCompletes(): Promise<void
     },
     stopCurrent: () => undefined,
   }
-  ;(globalThis as unknown as { window: unknown }).window = {
+  vi.stubGlobal('window', {
     api: { latency: { record: async () => undefined } },
-  }
+  })
   const generation = new Promise<{
     replyText: string
     displayText: string

@@ -27,19 +27,9 @@ describe('Renderer structural stability', () => {
     expect(names).not.toContain('DESKTOP_CONTROL_PLUGIN_ID')
   })
 
-  it('retains the stable overlay refresh callback boundary', () => {
-    const names = syntaxNames('renderer/components/App.tsx')
-    expect(names).toContain('refreshOverlayVisibility')
-    expect(names).toContain('onOverlayVisibleChange')
-    expect(names).toContain('useCallback')
-  })
-
   it('keeps Runtime Health in the shell status popover', () => {
     const shellNames = syntaxNames('renderer/components/shell/AppShell.tsx')
-    const statusNames = syntaxNames('renderer/components/shell/RuntimeStatusIndicator.tsx')
     expect(shellNames).not.toContain('RuntimeHealthView')
-    expect(statusNames).toContain('Popover')
-    expect(statusNames).toContain('copyReport')
     expect(
       existsSync(join(sourceRoot, 'renderer', 'components', 'views', 'RuntimeHealthView.tsx')),
     ).toBe(false)

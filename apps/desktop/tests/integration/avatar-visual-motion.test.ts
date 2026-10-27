@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 
 import type { VRM } from '@pixiv/three-vrm'
 import * as THREE from 'three'
-import { describe, it } from 'vitest'
+import { afterEach, describe, it } from 'vitest'
 
 import type { AvatarAnimationController } from '../../src/renderer/avatar/AvatarAnimationController'
 import { AvatarAnimationQueue } from '../../src/renderer/avatar/AvatarAnimationQueue'
@@ -27,68 +27,75 @@ import {
 import type { VrmModel } from '../../src/renderer/avatar/rendering/three/VrmModel'
 import { avatarLookAtTuning } from '../../src/renderer/avatar/tuning/motionTuning'
 
-function main(): void {
-  assert.deepEqual(AVATAR_MOTION_LAYERS, [
-    'base',
-    'gesture',
-    'reaction',
-    'procedural',
-    'gaze',
-    'facial',
-    'secondary',
-  ])
-  const baseAuthority = resolveAvatarMotionAuthority({
-    bodyLayer: 'base',
-    directedGaze: false,
-    screenGaze: false,
-  })
-  const gestureAuthority = resolveAvatarMotionAuthority({
-    bodyLayer: 'gesture',
-    directedGaze: false,
-    screenGaze: false,
-  })
-  const reactionAuthority = resolveAvatarMotionAuthority({
-    bodyLayer: 'reaction',
-    directedGaze: false,
-    screenGaze: false,
-  })
-  const screenAuthority = resolveAvatarMotionAuthority({
-    bodyLayer: 'base',
-    directedGaze: true,
-    screenGaze: true,
-  })
-  assert.ok(gestureAuthority.proceduralUpperBodyWeight < baseAuthority.proceduralUpperBodyWeight)
-  assert.ok(
-    reactionAuthority.proceduralUpperBodyWeight < gestureAuthority.proceduralUpperBodyWeight,
-  )
-  assert.ok(screenAuthority.proceduralHeadWeight < gestureAuthority.proceduralHeadWeight)
-  console.log('Motion layer contract and priorities: PASS')
+const resources: Array<{ dispose(): void }> = []
+afterEach(() => {
+  for (const resource of resources.splice(0)) resource.dispose()
+})
 
-  const gazeArbiter = new AvatarGazeArbiter()
-  gazeArbiter.setBrowserScreenGaze('browser-session-a', true)
-  assert.equal(gazeArbiter.resolve('idle'), 'screen')
-  assert.equal(
-    gazeArbiter.resolve('listening'),
-    undefined,
-    'user speech must win over browser gaze',
-  )
-  gazeArbiter.setConversationIntent({ intensity: 'subtle', gazeHint: 'user' })
-  assert.equal(gazeArbiter.resolve('speaking'), 'user')
-  gazeArbiter.setConversationIntent(undefined)
-  assert.equal(
-    gazeArbiter.resolve('speaking'),
-    'screen',
-    'browser gaze must resume after commentary',
-  )
-  gazeArbiter.setBrowserScreenGaze('stale-browser-session', false)
-  assert.equal(
-    gazeArbiter.resolve('idle'),
-    'screen',
-    'stale release must not clear the active session',
-  )
-  gazeArbiter.setBrowserScreenGaze('browser-session-a', false)
-  assert.equal(gazeArbiter.resolve('idle'), undefined)
-  console.log('Conversation, user speech, and bounded browser gaze arbitration: PASS')
+describe('avatar visual motion', () => {
+  it('prioritizes procedural motion across body and gaze layers', () => {
+    assert.deepEqual(AVATAR_MOTION_LAYERS, [
+      'base',
+      'gesture',
+      'reaction',
+      'procedural',
+      'gaze',
+      'facial',
+      'secondary',
+    ])
+    const baseAuthority = resolveAvatarMotionAuthority({
+      bodyLayer: 'base',
+      directedGaze: false,
+      screenGaze: false,
+    })
+    const gestureAuthority = resolveAvatarMotionAuthority({
+      bodyLayer: 'gesture',
+      directedGaze: false,
+      screenGaze: false,
+    })
+    const reactionAuthority = resolveAvatarMotionAuthority({
+      bodyLayer: 'reaction',
+      directedGaze: false,
+      screenGaze: false,
+    })
+    const screenAuthority = resolveAvatarMotionAuthority({
+      bodyLayer: 'base',
+      directedGaze: true,
+      screenGaze: true,
+    })
+    assert.ok(gestureAuthority.proceduralUpperBodyWeight < baseAuthority.proceduralUpperBodyWeight)
+    assert.ok(
+      reactionAuthority.proceduralUpperBodyWeight < gestureAuthority.proceduralUpperBodyWeight,
+    )
+    assert.ok(screenAuthority.proceduralHeadWeight < gestureAuthority.proceduralHeadWeight)
+  })
+
+  it('arbitrates conversation and browser gaze by session', () => {
+    const gazeArbiter = new AvatarGazeArbiter()
+    gazeArbiter.setBrowserScreenGaze('browser-session-a', true)
+    assert.equal(gazeArbiter.resolve('idle'), 'screen')
+    assert.equal(
+      gazeArbiter.resolve('listening'),
+      undefined,
+      'user speech must win over browser gaze',
+    )
+    gazeArbiter.setConversationIntent({ intensity: 'subtle', gazeHint: 'user' })
+    assert.equal(gazeArbiter.resolve('speaking'), 'user')
+    gazeArbiter.setConversationIntent(undefined)
+    assert.equal(
+      gazeArbiter.resolve('speaking'),
+      'screen',
+      'browser gaze must resume after commentary',
+    )
+    gazeArbiter.setBrowserScreenGaze('stale-browser-session', false)
+    assert.equal(
+      gazeArbiter.resolve('idle'),
+      'screen',
+      'stale release must not clear the active session',
+    )
+    gazeArbiter.setBrowserScreenGaze('browser-session-a', false)
+    assert.equal(gazeArbiter.resolve('idle'), undefined)
+  })
 
   function makeHumanoidVrm(): {
     vrm: VRM
@@ -160,53 +167,56 @@ function main(): void {
     return { micro: micro.getDebugState(), breath: breath.getDebugState() }
   }
 
-  const at30 = simulateProcedural(30)
-  const at60 = simulateProcedural(60)
-  const at120 = simulateProcedural(120)
-  for (const key of [
-    'spinePitch',
-    'spineRoll',
-    'chestYaw',
-    'shoulderLeft',
-    'shoulderRight',
-  ] as const) {
-    assert.ok(Math.abs(at30.micro[key] - at60.micro[key]) < 0.0015)
-    assert.ok(Math.abs(at60.micro[key] - at120.micro[key]) < 0.0015)
-  }
-  assert.ok(Math.abs(at30.breath.offsetY - at120.breath.offsetY) < 0.0015)
-  console.log('10-minute procedural bounds and FPS envelope: PASS')
+  it('keeps procedural motion bounded across frame rates', () => {
+    const at30 = simulateProcedural(30)
+    const at60 = simulateProcedural(60)
+    const at120 = simulateProcedural(120)
+    for (const key of [
+      'spinePitch',
+      'spineRoll',
+      'chestYaw',
+      'shoulderLeft',
+      'shoulderRight',
+    ] as const) {
+      assert.ok(Math.abs(at30.micro[key] - at60.micro[key]) < 0.0015)
+      assert.ok(Math.abs(at60.micro[key] - at120.micro[key]) < 0.0015)
+    }
+    assert.ok(Math.abs(at30.breath.offsetY - at120.breath.offsetY) < 0.0015)
+  })
 
-  const firstRig = makeHumanoidVrm()
-  const secondRig = makeHumanoidVrm()
-  const staleController = new MicroMotionController(42)
-  staleController.attach(firstRig.vrm)
-  for (let frame = 0; frame < 180; frame += 1) staleController.update(1 / 60)
-  staleController.attach(secondRig.vrm)
-  const firstSpineAfterDetach = firstRig.bones.spine.rotation.clone()
-  for (let frame = 0; frame < 180; frame += 1) staleController.update(1 / 60)
-  assert.equal(firstRig.bones.spine.rotation.x, firstSpineAfterDetach.x)
-  assert.equal(firstRig.bones.spine.rotation.z, firstSpineAfterDetach.z)
-  assert.ok(Math.abs(firstRig.bones.spine.rotation.x) < 1e-8)
-  assert.ok(Math.abs(firstRig.bones.spine.rotation.z) < 1e-8)
-  console.log('Procedural VRM swap clears stale rig refs: PASS')
+  it('releases the old rig on procedural model replacement', () => {
+    const firstRig = makeHumanoidVrm()
+    const secondRig = makeHumanoidVrm()
+    const staleController = new MicroMotionController(42)
+    staleController.attach(firstRig.vrm)
+    for (let frame = 0; frame < 180; frame += 1) staleController.update(1 / 60)
+    staleController.attach(secondRig.vrm)
+    const firstSpineAfterDetach = firstRig.bones.spine.rotation.clone()
+    for (let frame = 0; frame < 180; frame += 1) staleController.update(1 / 60)
+    assert.equal(firstRig.bones.spine.rotation.x, firstSpineAfterDetach.x)
+    assert.equal(firstRig.bones.spine.rotation.z, firstSpineAfterDetach.z)
+    assert.ok(Math.abs(firstRig.bones.spine.rotation.x) < 1e-8)
+    assert.ok(Math.abs(firstRig.bones.spine.rotation.z) < 1e-8)
+  })
 
-  const priorityRig = makeHumanoidVrm()
-  const procedural = new ProceduralMotionController()
-  procedural.attach(priorityRig.vrm)
-  procedural.setBodyMotionLayer('gesture')
-  procedural.setLookAtMode('screenFocus')
-  procedural.update(1 / 60)
-  const suppressed = procedural.getDebugState()
-  assert.equal(suppressed.bodyLayer, 'gesture')
-  assert.equal(suppressed.lookAtMode, 'screenFocus')
-  assert.equal(suppressed.microMotion.upperBodyAuthority, 0.24)
-  assert.equal(suppressed.microMotion.headAuthority, 0.04)
-  procedural.setBodyMotionLayer('base')
-  procedural.setLookAtMode('userFocus')
-  assert.equal(procedural.getDebugState().microMotion.upperBodyAuthority, 1)
-  assert.equal(procedural.getDebugState().microMotion.headAuthority, 0.32)
-  procedural.detach()
-  console.log('Procedural controller gesture/gaze priority: PASS')
+  it('applies gesture and gaze authority to procedural motion', () => {
+    const priorityRig = makeHumanoidVrm()
+    const procedural = new ProceduralMotionController()
+    procedural.attach(priorityRig.vrm)
+    procedural.setBodyMotionLayer('gesture')
+    procedural.setLookAtMode('screenFocus')
+    procedural.update(1 / 60)
+    const suppressed = procedural.getDebugState()
+    assert.equal(suppressed.bodyLayer, 'gesture')
+    assert.equal(suppressed.lookAtMode, 'screenFocus')
+    assert.equal(suppressed.microMotion.upperBodyAuthority, 0.24)
+    assert.equal(suppressed.microMotion.headAuthority, 0.04)
+    procedural.setBodyMotionLayer('base')
+    procedural.setLookAtMode('userFocus')
+    assert.equal(procedural.getDebugState().microMotion.upperBodyAuthority, 1)
+    assert.equal(procedural.getDebugState().microMotion.headAuthority, 0.32)
+    procedural.detach()
+  })
 
   function makeTailScene(prefix: string): THREE.Group {
     const scene = new THREE.Group()
@@ -220,141 +230,106 @@ function main(): void {
     return scene
   }
 
-  const missingTail = new TailBehaviorRuntime(55)
-  missingTail.attach({ scene: new THREE.Group() } as unknown as VRM)
-  for (let frame = 0; frame < 600; frame += 1) missingTail.update(1 / 60)
-  assert.equal(missingTail.getDebugState().available, false)
+  it('bounds optional tail motion and releases a replaced rig', () => {
+    const missingTail = new TailBehaviorRuntime(55)
+    missingTail.attach({ scene: new THREE.Group() } as unknown as VRM)
+    for (let frame = 0; frame < 600; frame += 1) missingTail.update(1 / 60)
+    assert.equal(missingTail.getDebugState().available, false)
 
-  const tailA = makeTailScene('A')
-  const tailB = makeTailScene('B')
-  const tail = new TailBehaviorRuntime(56)
-  tail.attach({ scene: tailA } as unknown as VRM)
-  for (let frame = 0; frame < 10 * 60 * 120; frame += 1) {
-    tail.update(1 / 120)
-    const state = tail.getDebugState()
-    assert.ok(Number.isFinite(state.yawOffset))
-    assert.ok(Number.isFinite(state.rollOffset))
-    assert.ok(Math.abs(state.yawOffset) <= state.limit)
-    assert.ok(Math.abs(state.rollOffset) <= 0.055)
-  }
-  assert.equal(tail.getDebugState().available, true)
-  tail.attach({ scene: tailB } as unknown as VRM)
-  const tailARotations = tailA.children[0]?.rotation.clone()
-  for (let frame = 0; frame < 600; frame += 1) tail.update(1 / 60)
-  assert.ok(tailARotations)
-  assert.ok(tailA.children[0])
-  assert.equal(tailA.children[0].rotation.y, tailARotations.y)
-  assert.equal(tailA.children[0].rotation.z, tailARotations.z)
-  assert.ok(Math.abs(tailA.children[0].rotation.y) < 1e-8)
-  assert.ok(Math.abs(tailA.children[0].rotation.z) < 1e-8)
-  assert.ok(Math.abs(tail.getDebugState().yawOffset) <= tail.getDebugState().limit)
-  console.log('Optional/missing tail and VRM swap lifecycle: PASS')
-
-  const gazeTarget = new THREE.Object3D()
-  const gazeBase = new THREE.Object3D()
-  const gaze = new LookTargetResolver(99)
-  const screen = gaze.resolve({
-    deltaMs: 16,
-    mode: 'screenFocus',
-    modeTuning: avatarLookAtTuning.modes.screenFocus,
-    baseTarget: gazeBase,
-    target: gazeTarget,
+    const tailA = makeTailScene('A')
+    const tailB = makeTailScene('B')
+    const tail = new TailBehaviorRuntime(56)
+    tail.attach({ scene: tailA } as unknown as VRM)
+    for (let frame = 0; frame < 10 * 60 * 120; frame += 1) {
+      tail.update(1 / 120)
+      const state = tail.getDebugState()
+      assert.ok(Number.isFinite(state.yawOffset))
+      assert.ok(Number.isFinite(state.rollOffset))
+      assert.ok(Math.abs(state.yawOffset) <= state.limit)
+      assert.ok(Math.abs(state.rollOffset) <= 0.055)
+    }
+    assert.equal(tail.getDebugState().available, true)
+    tail.attach({ scene: tailB } as unknown as VRM)
+    const tailARotations = tailA.children[0]?.rotation.clone()
+    for (let frame = 0; frame < 600; frame += 1) tail.update(1 / 60)
+    assert.ok(tailARotations)
+    assert.ok(tailA.children[0])
+    assert.equal(tailA.children[0].rotation.y, tailARotations.y)
+    assert.equal(tailA.children[0].rotation.z, tailARotations.z)
+    assert.ok(Math.abs(tailA.children[0].rotation.y) < 1e-8)
+    assert.ok(Math.abs(tailA.children[0].rotation.z) < 1e-8)
+    assert.ok(Math.abs(tail.getDebugState().yawOffset) <= tail.getDebugState().limit)
   })
-  assert.equal(screen.targetKind, 'screenContext')
-  for (let frame = 0; frame < 180; frame += 1) {
-    const current = gaze.resolve({
-      deltaMs: 1000 / 60,
+
+  it('releases screen-aware gaze', () => {
+    const gazeTarget = new THREE.Object3D()
+    const gazeBase = new THREE.Object3D()
+    const gaze = new LookTargetResolver(99)
+    const screen = gaze.resolve({
+      deltaMs: 16,
       mode: 'screenFocus',
       modeTuning: avatarLookAtTuning.modes.screenFocus,
       baseTarget: gazeBase,
       target: gazeTarget,
     })
-    assert.equal(current.targetKind, 'screenContext')
-  }
-  const released = gaze.resolve({
-    deltaMs: 16,
-    mode: 'userFocus',
-    modeTuning: avatarLookAtTuning.modes.userFocus,
-    baseTarget: gazeBase,
-    target: gazeTarget,
-  })
-  assert.notEqual(released.targetKind, 'screenContext')
-  console.log('Screen-aware gaze ownership and release: PASS')
-
-  for (const [input, expected] of [
-    [1, 1],
-    [1.25, 1.25],
-    [1.5, 1.5],
-    [2, 2],
-    [3, 2],
-  ] as const) {
-    assert.equal(resolveEffectiveDpr(input), expected)
-  }
-  assert.deepEqual(computeDrawingBufferSize(800, 600, 1.5), { width: 1200, height: 900 })
-  assert.deepEqual(computeDrawingBufferSize(1600, 900, resolveEffectiveDpr(3)), {
-    width: 3200,
-    height: 1800,
-  })
-
-  const uniformTexture = new THREE.Texture()
-  const material = new THREE.ShaderMaterial({
-    uniforms: { map: { value: uniformTexture } },
-  })
-  const textureMesh = new THREE.Mesh(new THREE.BufferGeometry(), material)
-  const textureRoot = new THREE.Group()
-  textureRoot.add(textureMesh)
-  const quality = new AvatarRendererQuality()
-  const textureQuality = quality.configureModel(textureRoot, {
-    capabilities: { getMaxAnisotropy: () => 16 },
-  } as unknown as THREE.WebGLRenderer)
-  assert.equal(textureQuality.textureCount, 1)
-  assert.equal(textureQuality.anisotropy, 8)
-  assert.equal(uniformTexture.anisotropy, 8)
-  assert.equal(uniformTexture.version, 1)
-  console.log('Bounded DPR, backing-size, and MToon-uniform texture audit: PASS')
-
-  const queue = new AvatarAnimationQueue()
-  const idle = queue.request({
-    animationId: 'presence_poised',
-    behaviorId: 'idle',
-    mode: 'idle',
-    loop: true,
-    motionLayer: 'base',
-    interruptible: true,
-  })
-  assert.equal(idle.action, 'play')
-  const speaking = queue.request({
-    animationId: 'presence_speaking',
-    behaviorId: 'neutral',
-    mode: 'speaking',
-    loop: true,
-    motionLayer: 'base',
-    interruptible: false,
-  })
-  assert.equal(speaking.action, 'play')
-  const recovery = queue.request({
-    animationId: 'presence_poised',
-    behaviorId: 'idle',
-    mode: 'idle',
-    loop: true,
-    motionLayer: 'base',
-    interruptible: true,
-  })
-  assert.equal(recovery.action, 'play')
-
-  function assertLayerRecovery(layer: 'gesture' | 'reaction'): void {
-    const layeredQueue = new AvatarAnimationQueue()
-    const layered = layeredQueue.request({
-      animationId: `${layer}-clip`,
-      behaviorId: layer === 'reaction' ? 'surprised' : 'neutral',
-      mode: 'idle',
-      loop: false,
-      motionLayer: layer,
-      interruptible: false,
+    assert.equal(screen.targetKind, 'screenContext')
+    for (let frame = 0; frame < 180; frame += 1) {
+      const current = gaze.resolve({
+        deltaMs: 1000 / 60,
+        mode: 'screenFocus',
+        modeTuning: avatarLookAtTuning.modes.screenFocus,
+        baseTarget: gazeBase,
+        target: gazeTarget,
+      })
+      assert.equal(current.targetKind, 'screenContext')
+    }
+    const released = gaze.resolve({
+      deltaMs: 16,
+      mode: 'userFocus',
+      modeTuning: avatarLookAtTuning.modes.userFocus,
+      baseTarget: gazeBase,
+      target: gazeTarget,
     })
-    assert.equal(layered.action, 'play')
-    assert.equal(layeredQueue.getCurrent()?.motionLayer, layer)
-    const returnToIdle = layeredQueue.request({
+    assert.notEqual(released.targetKind, 'screenContext')
+  })
+
+  it('bounds rendering resolution and configures textures', () => {
+    for (const [input, expected] of [
+      [1, 1],
+      [1.25, 1.25],
+      [1.5, 1.5],
+      [2, 2],
+      [3, 2],
+    ] as const) {
+      assert.equal(resolveEffectiveDpr(input), expected)
+    }
+    assert.deepEqual(computeDrawingBufferSize(800, 600, 1.5), { width: 1200, height: 900 })
+    assert.deepEqual(computeDrawingBufferSize(1600, 900, resolveEffectiveDpr(3)), {
+      width: 3200,
+      height: 1800,
+    })
+
+    const uniformTexture = new THREE.Texture()
+    const material = new THREE.ShaderMaterial({
+      uniforms: { map: { value: uniformTexture } },
+    })
+    const textureMesh = new THREE.Mesh(new THREE.BufferGeometry(), material)
+    resources.push(uniformTexture, material, textureMesh.geometry)
+    const textureRoot = new THREE.Group()
+    textureRoot.add(textureMesh)
+    const quality = new AvatarRendererQuality()
+    const textureQuality = quality.configureModel(textureRoot, {
+      capabilities: { getMaxAnisotropy: () => 16 },
+    } as unknown as THREE.WebGLRenderer)
+    assert.equal(textureQuality.textureCount, 1)
+    assert.equal(textureQuality.anisotropy, 8)
+    assert.equal(uniformTexture.anisotropy, 8)
+    assert.equal(uniformTexture.version, 1)
+  })
+
+  it('returns queued gestures and reactions to base motion', () => {
+    const queue = new AvatarAnimationQueue()
+    const idle = queue.request({
       animationId: 'presence_poised',
       behaviorId: 'idle',
       mode: 'idle',
@@ -362,85 +337,118 @@ function main(): void {
       motionLayer: 'base',
       interruptible: true,
     })
-    assert.equal(returnToIdle.action, 'queue')
-    assert.equal(layeredQueue.completeCurrent()?.motionLayer, 'base')
-  }
-
-  assertLayerRecovery('gesture')
-  assertLayerRecovery('reaction')
-
-  let oneShotPlaybackActive = true
-  const oneShotPlaybackCalls: Array<{
-    animationId: string
-    loop: boolean
-    motionLayer: string | undefined
-  }> = []
-  const oneShotAnimationController = {
-    getDebugState: () => ({
-      isPlaybackActive: oneShotPlaybackActive,
-      playbackStatus: oneShotPlaybackActive ? 'playing' : 'idle',
-      activeAnimationId: 'stretch_small',
-    }),
-    playManifest: (
-      animationId: string,
-      loop: boolean,
-      options?: { motionLayer?: string },
-    ): Promise<void> => {
-      oneShotPlaybackCalls.push({ animationId, loop, motionLayer: options?.motionLayer })
-      return Promise.resolve()
-    },
-  } as unknown as AvatarAnimationController
-  const oneShotVrmModel = {
-    setBodyMotionLayer: () => undefined,
-    getBodyMotionDebugState: () => ({
-      transitionRemaining: 0,
-      motionExecution: {
-        profileId: 'stretch_small',
-        executionId: 'stretch-execution',
-        runningProfileId: oneShotPlaybackActive ? 'stretch_small' : null,
-        outcome: oneShotPlaybackActive ? null : 'completed',
-      },
-    }),
-  } as unknown as VrmModel
-  const oneShotCoordinator = new AvatarPlaybackCoordinator(
-    oneShotAnimationController,
-    oneShotVrmModel,
-  )
-  oneShotCoordinator.requestResolvedBehavior({
-    effect: { mode: 'idle' } as AvatarStateEffect,
-    resolved: {
-      animationId: 'stretch_small',
+    assert.equal(idle.action, 'play')
+    const speaking = queue.request({
+      animationId: 'presence_speaking',
+      behaviorId: 'neutral',
+      mode: 'speaking',
+      loop: true,
+      motionLayer: 'base',
+      interruptible: false,
+    })
+    assert.equal(speaking.action, 'play')
+    const recovery = queue.request({
+      animationId: 'presence_poised',
       behaviorId: 'idle',
-      loop: false,
-      motionLayer: 'gesture',
-      fallbackAnimationId: 'presence_poised',
-      selectionReason: 'focused one-shot recovery repro',
-      candidates: [],
-      activeCooldowns: [],
-    } as AvatarBehaviorResolution,
-    source: 'idle-orchestrator',
-    reason: 'focused one-shot recovery repro',
-    frame: 1,
-    interruptible: false,
-  })
-  oneShotCoordinator.advanceQueue(1)
-  oneShotPlaybackActive = false
-  oneShotCoordinator.advanceQueue(2)
-  assert.deepEqual(oneShotPlaybackCalls.at(-1), {
-    animationId: 'presence_poised',
-    loop: true,
-    motionLayer: 'base',
-  })
-  assert.equal(oneShotCoordinator.getQueue().getCurrent()?.animationId, 'presence_poised')
-  assert.equal(oneShotCoordinator.getQueue().getCurrent()?.loop, true)
-  console.log('Unqueued one-shot immediate base-motion recovery: PASS')
-  console.log('Idle/speaking/gesture/reaction recovery regression: PASS')
+      mode: 'idle',
+      loop: true,
+      motionLayer: 'base',
+      interruptible: true,
+    })
+    assert.equal(recovery.action, 'play')
 
-  console.log('Avatar Visual & Motion 3.0 focused repro: PASS')
-}
+    function assertLayerRecovery(layer: 'gesture' | 'reaction'): void {
+      const layeredQueue = new AvatarAnimationQueue()
+      const layered = layeredQueue.request({
+        animationId: `${layer}-clip`,
+        behaviorId: layer === 'reaction' ? 'surprised' : 'neutral',
+        mode: 'idle',
+        loop: false,
+        motionLayer: layer,
+        interruptible: false,
+      })
+      assert.equal(layered.action, 'play')
+      assert.equal(layeredQueue.getCurrent()?.motionLayer, layer)
+      const returnToIdle = layeredQueue.request({
+        animationId: 'presence_poised',
+        behaviorId: 'idle',
+        mode: 'idle',
+        loop: true,
+        motionLayer: 'base',
+        interruptible: true,
+      })
+      assert.equal(returnToIdle.action, 'queue')
+      assert.equal(layeredQueue.completeCurrent()?.motionLayer, 'base')
+    }
 
-describe('avatar visual motion', () => {
-  it('preserves layered motion authority and playback recovery', () => {
-    main()
+    assertLayerRecovery('gesture')
+    assertLayerRecovery('reaction')
+  })
+
+  it('recovers an unqueued one-shot to base motion', () => {
+    let oneShotPlaybackActive = true
+    const oneShotPlaybackCalls: Array<{
+      animationId: string
+      loop: boolean
+      motionLayer: string | undefined
+    }> = []
+    const oneShotAnimationController = {
+      getDebugState: () => ({
+        isPlaybackActive: oneShotPlaybackActive,
+        playbackStatus: oneShotPlaybackActive ? 'playing' : 'idle',
+        activeAnimationId: 'stretch_small',
+      }),
+      playManifest: (
+        animationId: string,
+        loop: boolean,
+        options?: { motionLayer?: string },
+      ): Promise<void> => {
+        oneShotPlaybackCalls.push({ animationId, loop, motionLayer: options?.motionLayer })
+        return Promise.resolve()
+      },
+    } as unknown as AvatarAnimationController
+    const oneShotVrmModel = {
+      setBodyMotionLayer: () => undefined,
+      getBodyMotionDebugState: () => ({
+        transitionRemaining: 0,
+        motionExecution: {
+          profileId: 'stretch_small',
+          executionId: 'stretch-execution',
+          runningProfileId: oneShotPlaybackActive ? 'stretch_small' : null,
+          outcome: oneShotPlaybackActive ? null : 'completed',
+        },
+      }),
+    } as unknown as VrmModel
+    const oneShotCoordinator = new AvatarPlaybackCoordinator(
+      oneShotAnimationController,
+      oneShotVrmModel,
+    )
+    oneShotCoordinator.requestResolvedBehavior({
+      effect: { mode: 'idle' } as AvatarStateEffect,
+      resolved: {
+        animationId: 'stretch_small',
+        behaviorId: 'idle',
+        loop: false,
+        motionLayer: 'gesture',
+        fallbackAnimationId: 'presence_poised',
+        selectionReason: 'focused one-shot recovery repro',
+        candidates: [],
+        activeCooldowns: [],
+      } as AvatarBehaviorResolution,
+      source: 'idle-orchestrator',
+      reason: 'focused one-shot recovery repro',
+      frame: 1,
+      interruptible: false,
+    })
+    oneShotCoordinator.advanceQueue(1)
+    oneShotPlaybackActive = false
+    oneShotCoordinator.advanceQueue(2)
+    assert.deepEqual(oneShotPlaybackCalls.at(-1), {
+      animationId: 'presence_poised',
+      loop: true,
+      motionLayer: 'base',
+    })
+    assert.equal(oneShotCoordinator.getQueue().getCurrent()?.animationId, 'presence_poised')
+    assert.equal(oneShotCoordinator.getQueue().getCurrent()?.loop, true)
   })
 })

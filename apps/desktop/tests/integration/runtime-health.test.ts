@@ -27,9 +27,7 @@ import type {
 } from '../../src/shared/plugins'
 import { PROJECT_AWARENESS_PLUGIN_ID } from '../../src/shared/plugins'
 
-const desktopRoot = process.cwd().endsWith('apps\\desktop')
-  ? process.cwd()
-  : join(process.cwd(), 'apps', 'desktop')
+const desktopRoot = join(import.meta.dirname, '../..')
 
 function source(relativePath: string): Promise<string> {
   return readFile(join(desktopRoot, relativePath), 'utf8')

@@ -47,6 +47,7 @@ interface HeadMotionGeneratorContext {
   deltaMs: number
   profile: HeadMotionProfile
   elapsedMs: number
+  speechEnergy: number
   random: () => number
 }
 
@@ -153,13 +154,28 @@ class SpeakingNodGenerator implements HeadMotionGenerator {
   private elapsedMs = 0
   private durationMs = 1
   private amplitude = 0
+  private armed = true
 
   update(context: HeadMotionGeneratorContext): HeadMotionGeneratorContribution {
     const tuning = headMotionTuning.generators.speakingNod
     this.nextEventMs -= context.deltaMs
     const weight = headMotionTuning.profiles[context.profile].generatorWeights.speakingNod
-    if (weight > 0 && this.nextEventMs <= 0 && this.elapsedMs <= 0) {
-      this.amplitude = tuning.pitchAmplitude * (0.65 + context.random() * 0.35)
+    if (context.speechEnergy < tuning.rearmEnergy || weight === 0) {
+      this.armed = true
+      this.elapsedMs = 0
+    }
+    if (
+      weight > 0 &&
+      this.armed &&
+      context.speechEnergy >= tuning.triggerEnergy &&
+      this.nextEventMs <= 0 &&
+      this.elapsedMs <= 0
+    ) {
+      this.armed = false
+      this.amplitude =
+        tuning.pitchAmplitude *
+        (0.65 + context.random() * 0.35) *
+        Math.min(1, context.speechEnergy / tuning.fullEnergy)
       this.durationMs = randomRange(context.random, tuning.durationMs.min, tuning.durationMs.max)
       this.elapsedMs = this.durationMs
       this.nextEventMs = randomRange(context.random, tuning.intervalMs.min, tuning.intervalMs.max)
@@ -263,6 +279,7 @@ export class HeadMotionRuntime {
   private attentionImpulseMs = 0
   private attentionImpulseCooldownMs = 0
   private authorityWeight = 1
+  private speechEnergy = 0
   private emotionHeadProfile: EmotionEmbodimentProfile['head'] = {
     energyScale: 1,
     nodBias: 1,
@@ -291,6 +308,19 @@ export class HeadMotionRuntime {
   detach(): void {
     this.remove()
     this.vrm = null
+    this.speechEnergy = 0
+    this.resolver = new HeadMotionResolver()
+    this.currentPose = zeroPose()
+    this.elapsedMs = 0
+    this.debug = {
+      ...this.debug,
+      activeGenerators: [],
+      yawOffset: 0,
+      pitchOffset: 0,
+      rollOffset: 0,
+      motionEnergy: 0,
+      attentionImpulseActive: false,
+    }
     this.attentionImpulseMs = 0
     this.attentionImpulseCooldownMs = 0
   }
@@ -301,6 +331,10 @@ export class HeadMotionRuntime {
 
   setAuthorityWeight(weight: number): void {
     this.authorityWeight = THREE.MathUtils.clamp(weight, 0, 1)
+  }
+
+  setSpeechEnergy(energy: number): void {
+    this.speechEnergy = Number.isFinite(energy) ? THREE.MathUtils.clamp(energy, 0, 1) : 0
   }
 
   applyEmotionProfile(profile: EmotionEmbodimentProfile): void {
@@ -338,6 +372,7 @@ export class HeadMotionRuntime {
       deltaMs: delta * 1000,
       profile: this.profile,
       elapsedMs: this.elapsedMs,
+      speechEnergy: this.attentionImpulseMs > 0 ? 0 : this.speechEnergy,
       random: () => this.nextRandom(),
     })
     const blend = 1 - Math.exp(-headMotionTuning.smoothing * delta)

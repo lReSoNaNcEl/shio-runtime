@@ -220,6 +220,26 @@ describe('generated preview startup lifecycle', () => {
     expect(owner.getQueue().getCurrent()).toBeNull()
   })
 
+  it('releases a skipped startup only after its body recovery, without a duplicate blocker', async () => {
+    const { animations, owner, reject, setActive } = pending()
+    owner.previewAnimation({
+      animationId: 'greet_wave_soft',
+      loop: false,
+      mode: 'speaking',
+      frame: 1,
+    })
+    setActive(true)
+    reject(new Error('ARDY_SPEECH_WINDOW_MISSED'))
+    await animations.waitForLatestPlaybackRequest(100)
+    owner.advanceQueue(2)
+    expect(owner.getQueue().getCurrent()?.animationId).toBe('greet_wave_soft')
+    setActive(false)
+    owner.advanceQueue(3)
+    expect(owner.getQueue().getCurrent()).toBeNull()
+    expect(owner.getCurrentContext()).toBeNull()
+    expect(animations.getDebugState().failedAnimationIds).toEqual([])
+  })
+
   it('does not resurrect a cancelled preview when an earlier readiness result arrives', async () => {
     const { animations, resolve, setActive } = pending()
     const request = animations.playManifest('fox_paw_single', false, {
@@ -255,6 +275,29 @@ describe('generated preview startup lifecycle', () => {
 })
 
 describe('generated fallback request context', () => {
+  it.each(['ARDY_SPEECH_WINDOW_MISSED', 'ARDY_SPEECH_ENDED', 'ARDY_superseded'])(
+    'does not blacklist a valid gesture or start a failure fallback for %s',
+    async (reason) => {
+      const requestGeneratedMotion = vi.fn(async () => {
+        throw new Error(reason)
+      })
+      const model = {
+        isLoaded: () => true,
+        isAnimationPlaying: () => false,
+        getBodyMotionDebugState: () => ({}),
+        requestGeneratedMotion,
+      } as unknown as VrmModel
+      const animations = new AvatarAnimationController(model)
+      await animations.playManifest('greet_wave_soft', false, {
+        speechBound: true,
+        fallbackId: 'presence_speaking',
+      })
+      expect(animations.getDebugState().failedAnimationIds).toEqual([])
+      expect(animations.getDebugState().playbackStatus).toBe('idle')
+      expect(requestGeneratedMotion).toHaveBeenCalledTimes(1)
+    },
+  )
+
   it.each(['agree_soft', 'missing-profile'])(
     'preserves speech binding and provenance when %s falls back',
     async (profileId) => {

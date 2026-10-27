@@ -9,7 +9,7 @@ import {
   motionChunkSchema,
   motionNextSchema,
   motionVariationSchema,
-} from '../../../src/shared/motion'
+} from '../../src/shared/motion'
 
 function catalogCopy() {
   return structuredClone(MOTION_CATALOG)

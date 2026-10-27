@@ -75,3 +75,27 @@ export function memberName(node: AstNode | undefined): string | null {
   if (node.type === 'StringLiteral') return typeof node.value === 'string' ? node.value : null
   return null
 }
+
+export function memberPath(node: AstNode | undefined): string | null {
+  if (!node) return null
+  if (node.type === 'MemberExpression' || node.type === 'OptionalMemberExpression') {
+    const object = memberPath(node.object as AstNode)
+    const property = memberName(node.property)
+    return object && property ? `${object}.${property}` : null
+  }
+  return memberName(node)
+}
+
+export function importedBindings(ast: AstNode, source: string, name: string): Set<string> {
+  const bindings = new Set<string>()
+  walk(ast, (node) => {
+    if (node.type !== 'ImportDeclaration' || importedSource(node) !== source) return
+    for (const specifier of node.specifiers as AstNode[]) {
+      if (memberName(specifier.imported as AstNode) === name) {
+        const local = memberName(specifier.local as AstNode)
+        if (local) bindings.add(local)
+      }
+    }
+  })
+  return bindings
+}

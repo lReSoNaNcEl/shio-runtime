@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 
 import { APIError } from 'openai'
-import { describe, it } from 'vitest'
+import { beforeEach, describe, it, vi } from 'vitest'
 
 import type { ChatMessage, LLMProvider } from '../../src/main/llm'
 import { LlmResponseError } from '../../src/main/llm'
@@ -23,9 +23,8 @@ import type { CharacterReplyStreamEvent } from '../../src/shared/character-strea
 import type { AppSettings } from '../../src/shared/config'
 import { deriveTurnRecoveryCapabilities } from '../../src/shared/conversation'
 
-Object.defineProperty(globalThis, 'window', {
-  configurable: true,
-  value: {
+beforeEach(() => {
+  vi.stubGlobal('window', {
     api: {
       llm: {
         cancelReply: async () => ({ ok: true as const }),
@@ -37,7 +36,7 @@ Object.defineProperty(globalThis, 'window', {
         cancelSynthesis: async () => ({ ok: true as const }),
       },
     },
-  },
+  })
 })
 
 class FakeProvider implements LLMProvider {

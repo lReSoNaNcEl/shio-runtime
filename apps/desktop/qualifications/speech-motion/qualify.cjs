@@ -5,6 +5,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 const { _electron } = require('playwright-core')
 const { installGeometryProbe, loadRigGeometry } = require('./rig-geometry.cjs')
+const { recordPage } = require('../motion-ab/record.cjs')
 const { SEMANTIC_EMBODIMENT_CASES } = require('./semantic-embodiment-cases.cjs')
 const { FIXED_SEEDS, createStandingQualificationPlan } = require('./standing-motion-cases.cjs')
 const emotionNames = require('../../emotion_manifest.json').emotions.map((emotion) => emotion.id)
@@ -22,6 +23,7 @@ const responseCount = option('warm-responses', 20)
 const componentSmoke = process.argv.includes('--component-smoke')
 const shortSpeech = process.argv.includes('--short-speech')
 const audibleOutput = process.argv.includes('--audible')
+const recordVideo = process.argv.includes('--record-video')
 const replaceModelDuringSpeech = process.argv.includes('--replace-model-during-speech')
 const semanticCasesRequested = process.argv.includes('--semantic-cases')
 const modelsOnly = process.argv.includes('--models-only')
@@ -183,6 +185,7 @@ for (const relative of [
   'qualifications/speech-motion/rig-geometry.cjs',
   'qualifications/speech-motion/semantic-embodiment-cases.cjs',
   'qualifications/speech-motion/standing-motion-cases.cjs',
+  'qualifications/motion-ab/record.cjs',
 ])
   report.build[relative] = createHash('sha256')
     .update(fs.readFileSync(path.join(desktop, relative)))
@@ -196,6 +199,7 @@ const log = (value) => {
 const pause = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds))
 let application,
   page,
+  stopRecording,
   lastSampleAt = 0,
   lastResourceAt = 0
 let blinkStartedAt = null,
@@ -1413,6 +1417,11 @@ async function bodyStability() {
       if (!(await window.api.overlay.isVisible()).visible) await window.api.overlay.toggle()
     })
     await pause(6000)
+    if (recordVideo) {
+      const overlay = application.windows().find((target) => target.url().includes('overlay=1'))
+      assert(overlay, 'Overlay unavailable for video recording')
+      stopRecording = await recordPage(overlay, path.join(directory, 'overlay.mp4'), environment)
+    }
     for (const target of application.windows()) {
       await frameProbe(target)
       await target.screenshot({
@@ -1543,6 +1552,22 @@ async function bodyStability() {
       .catch(() => '')
     throw failure
   } finally {
+    if (stopRecording) {
+      try {
+        report.video = await stopRecording()
+        if (
+          report.video.exitCode !== 0 ||
+          report.video.frames === 0 ||
+          report.video.errors.length
+        ) {
+          report.failures.push('Video recording failed')
+          report.passed = false
+        }
+      } catch (error) {
+        report.failures.push(`Video recording failed: ${error.name}`)
+        report.passed = false
+      }
+    }
     await application.close()
     report.finishedAt = new Date().toISOString()
     log({ report: path.join(directory, 'report.json'), passed: report.passed ?? false })

@@ -39,6 +39,12 @@ export const microMotionProfiles: Record<AvatarProceduralMode, MicroMotionProfil
   },
 }
 
+export const speechBodyTuning = {
+  maxPitch: 0.004,
+  attack: 5,
+  release: 8,
+} as const
+
 export const avatarLookAtTuning = {
   saccadeDurationMs: 190,
   overshootDurationMs: 210,
@@ -221,7 +227,10 @@ export const headMotionTuning = {
     },
     speakingNod: {
       pitchAmplitude: 0.026,
-      intervalMs: { min: 900, max: 1700 },
+      intervalMs: { min: 2800, max: 5200 },
+      triggerEnergy: 0.15,
+      rearmEnergy: 0.07,
+      fullEnergy: 0.5,
       durationMs: { min: 260, max: 460 },
       releaseSmoothing: 8,
     },

@@ -25,9 +25,7 @@ const model: DshModelConfiguration = {
 
 async function main(): Promise<void> {
   const temporaryRoot = await mkdtemp(join(tmpdir(), 'shio-dsh-repro-'))
-  const desktopRoot = process.cwd().endsWith('apps\\desktop')
-    ? process.cwd()
-    : join(process.cwd(), 'apps', 'desktop')
+  const desktopRoot = join(import.meta.dirname, '../..')
   const profileDirectory = join(desktopRoot, 'resources', 'desktop-control')
   const resources: DshLaunchResources = {
     command: process.execPath,

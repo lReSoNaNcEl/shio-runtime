@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import type { PcmPlaybackClock } from '../../../src/renderer/audio/audioPlayer'
 import { AvatarController } from '../../../src/renderer/avatar/AvatarController'
 import type { AvatarPlaybackCoordinator } from '../../../src/renderer/avatar/AvatarPlaybackCoordinator'
 import type {
@@ -10,9 +9,15 @@ import type {
 import type { MotionLibraryDebug } from '../../../src/renderer/avatar/MotionLibraryDebug'
 import type { VrmModel } from '../../../src/renderer/avatar/rendering/three/VrmModel'
 import { MOTION_CATALOG_REVISION } from '../../../src/shared/motion'
+import { createDeferred, type Deferred } from '../../support/Deferred'
+import { createPcmPlaybackClock } from '../../support/speech/pcmClock'
+
+const controllers: AvatarController[] = []
+const requests: Deferred<void>[] = []
 
 function fixture() {
   const controller = new AvatarController()
+  controllers.push(controller)
   const {
     vrmModel: model,
     lipSync,
@@ -23,13 +28,7 @@ function fixture() {
     playback: AvatarPlaybackCoordinator
   }
   let session: LipSyncSession | null = null
-  const clock: PcmPlaybackClock = {
-    turnId: 'turn-a',
-    playbackId: 'pcm-a',
-    sourceSampleRate: 44100,
-    sourceSampleOffset: 0,
-    state: 'buffering',
-  }
+  const clock = createPcmPlaybackClock()
   const motion: MotionLibraryDebug = {
     profileId: 'presence_poised',
     runningProfileId: 'presence_poised',
@@ -60,9 +59,11 @@ function fixture() {
     unavailableReasons: [],
     qualification: 'qualified',
   })
-  const request = vi
-    .spyOn(model, 'requestGeneratedMotion')
-    .mockImplementation(() => new Promise(() => undefined))
+  const request = vi.spyOn(model, 'requestGeneratedMotion').mockImplementation(() => {
+    const pending = createDeferred<void>()
+    requests.push(pending)
+    return pending.promise
+  })
   const propose = (eligibility: 'opening' | 'future-only' = 'opening', turnId = 'turn-a') =>
     controller.setEmbodimentIntent(
       { intensity: 'normal', gestureHint: 'greeting' },
@@ -85,7 +86,13 @@ function fixture() {
   return { controller, model, playback, request, propose, start, clock, motion }
 }
 
-afterEach(() => vi.restoreAllMocks())
+afterEach(async () => {
+  for (const controller of controllers.splice(0)) controller.dispose()
+  const pending = requests.splice(0)
+  for (const request of pending) request.resolve()
+  await Promise.all(pending.map((request) => request.promise))
+  vi.restoreAllMocks()
+})
 
 describe('conversational gesture preparation and late admission', () => {
   it('prepares before PCM and adopts the exact pending execution once, despite its own cooldown', () => {

@@ -23,8 +23,8 @@ export interface AvatarMotionAuthority {
 
 /**
  * Procedural motion is deliberately the lowest-authority body contribution.
- * Explicit gesture/reaction clips and directed gaze reduce it without changing
- * the currently selected semantic behavior.
+ * Generated gestures reduce only their body channels. ARDY excludes head/neck;
+ * directed gaze retains authority over those independent contributions.
  */
 export function resolveAvatarMotionAuthority(input: {
   bodyLayer: AvatarBodyMotionLayer
@@ -36,15 +36,9 @@ export function resolveAvatarMotionAuthority(input: {
     gesture: 0.24,
     reaction: 0.08,
   }
-  const headByLayer: Record<AvatarBodyMotionLayer, number> = {
-    base: 1,
-    gesture: 0.42,
-    reaction: 0.18,
-  }
-
   const gazeWeight = input.screenGaze ? 0.04 : input.directedGaze ? 0.32 : 1
   return {
     proceduralUpperBodyWeight: upperBodyByLayer[input.bodyLayer],
-    proceduralHeadWeight: Math.min(headByLayer[input.bodyLayer], gazeWeight),
+    proceduralHeadWeight: gazeWeight,
   }
 }

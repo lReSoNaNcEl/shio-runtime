@@ -871,13 +871,13 @@ export class AvatarController {
   private updateSpeakingGestureSession(state?: CharacterState): void {
     if (this.stateMachine.getMode() !== 'speaking' || this.lastEffect?.mode !== 'speaking') return
     const clock = this.pcmClock
-    if (clock?.playbackId !== this.scheduledPlaybackId) {
-      this.scheduledPlaybackId = clock?.playbackId ?? ''
-      this.scheduledPcmOffset = clock?.sourceSampleOffset ?? 0
+    if (clock?.state !== 'playing') return
+    if (clock.playbackId !== this.scheduledPlaybackId) {
+      this.scheduledPlaybackId = clock.playbackId
+      this.scheduledPcmOffset = clock.sourceSampleOffset
     }
-    const offset = clock?.sourceSampleOffset ?? this.scheduledPcmOffset
-    const consumedDelta =
-      Math.max(0, offset - this.scheduledPcmOffset) / (clock?.sourceSampleRate ?? 44100)
+    const offset = clock.sourceSampleOffset
+    const consumedDelta = Math.max(0, offset - this.scheduledPcmOffset) / clock.sourceSampleRate
     this.scheduledPcmOffset = offset
     const decision = this.speakingGestures.update(consumedDelta, this.lastEffect, state)
     if (this.canAdmitLateGesture(state)) {

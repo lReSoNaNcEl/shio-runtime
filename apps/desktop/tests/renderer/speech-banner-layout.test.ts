@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import postcss, { type AtRule, type Rule } from 'postcss'
 import { describe, expect, it } from 'vitest'
 
-import { sourceRoot } from './context'
+import { sourceRoot } from '../architecture/context'
 
 function declarations(rule: Rule): Map<string, string> {
   const values = new Map<string, string>()

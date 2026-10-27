@@ -1,5 +1,6 @@
 import type { VRM } from '@pixiv/three-vrm'
 
+import { speechBodyTuning } from '../../tuning/motionTuning'
 import { BoundedRandomMotionChannel, SeededRandom, smoothUnit } from './SeededMotion'
 
 export interface MicroMotionProfile {
@@ -18,6 +19,7 @@ export interface MicroMotionDebugState {
   headYaw: number
   upperBodyAuthority: number
   headAuthority: number
+  speechPitch: number
 }
 
 let microMotionInstanceSequence = 0
@@ -30,6 +32,8 @@ export class MicroMotionController {
   private upperBodyAuthority = 1
   private headAuthority = 1
   private lookAtActive = false
+  private speechEnergy = 0
+  private speechPitch = 0
   private spinePitch = 0
   private spineRoll = 0
   private chestYaw = 0
@@ -104,12 +108,18 @@ export class MicroMotionController {
     this.shoulderRightChannel.reset()
     this.resetOffsets()
     this.clearImpulse()
+    this.speechEnergy = 0
+    this.speechPitch = 0
   }
 
   setProfile(profile: MicroMotionProfile): void {
     this.swayWeight = profile.swayWeight ?? this.swayWeight
     this.postureWeight = profile.postureWeight ?? this.postureWeight
     this.shoulderWeight = profile.shoulderWeight ?? this.shoulderWeight
+  }
+
+  setSpeechEnergy(energy: number): void {
+    this.speechEnergy = Number.isFinite(energy) ? clamp01(energy) : 0
   }
 
   setAuthority(upperBodyWeight: number, headWeight: number): void {
@@ -184,13 +194,19 @@ export class MicroMotionController {
       headYaw: this.headOffsetY,
       upperBodyAuthority: this.upperBodyAuthority,
       headAuthority: this.headAuthority,
+      speechPitch: this.speechPitch * this.upperBodyAuthority,
     }
   }
 
   private updateBody(delta: number): void {
     if (!this.vrm?.humanoid) return
     const authority = this.upperBodyAuthority
-    const nextSpinePitch = this.spinePitchChannel.update(delta) * this.postureWeight * authority
+    const target = -this.speechEnergy * speechBodyTuning.maxPitch
+    const smoothing = this.speechEnergy > 0 ? speechBodyTuning.attack : speechBodyTuning.release
+    this.speechPitch +=
+      (target - this.speechPitch) * (1 - Math.exp(-smoothing * Math.max(0, delta)))
+    const nextSpinePitch =
+      (this.spinePitchChannel.update(delta) * this.postureWeight + this.speechPitch) * authority
     const nextSpineRoll = this.spineRollChannel.update(delta) * this.swayWeight * authority
     const nextChestYaw = this.chestYawChannel.update(delta) * this.postureWeight * authority
     const nextShoulderLeft =

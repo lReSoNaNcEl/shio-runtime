@@ -35,6 +35,8 @@ Protocol probe ждёт server-owned close после terminal acknowledgement: 
 
 По умолчанию финальный звук отключён только у принадлежащих тесту Electron WebContents. Fish inference, AudioPlayer, consumed PCM и analyser/LipSync остаются настоящими; это не субъективная проверка звучания. Для прослушивания добавьте `--audible`. Громкость ОС и пользовательская конфигурация не меняются.
 
+Опция `--record-video` записывает принадлежащий runner Overlay в `overlay.mp4` через ffmpeg; запись без звука, 10 кадров/с. Пропуски таймера могут сократить длительность файла относительно `video.durationMs` в отчёте, поэтому для измерения синхронизации используют PCM и timestamps диагностики, а не шкалу видео. Запись помогает сравнивать крупные движения, но не подтверждает качество звука, синхронизацию фонем или отсутствие мелкой дрожи. Ошибка записи отмечается в отчёте как failure.
+
 Результаты находятся в `apps/desktop/motion/.artifacts/joint-*/report.json` и соседних изображениях. Hash и версия fixture, реальные seeds, execution/phase/outcome, FK wrist/palm/finger aggregates, contacts и численные thresholds сохраняются отдельно от художественной приёмки. Raw poses используются только transient и в отчёт не записываются.
 
 Новые отчёты также фиксируют SHA-256 самого runner и его geometry/semantic/standing fixtures. После обычного ответа runner проверяет отсутствие служебных emotion/voice/embodiment markers в видимом чате и сохраняет только boolean результата, не полный текст ответа.

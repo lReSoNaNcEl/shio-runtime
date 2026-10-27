@@ -46,7 +46,7 @@ SafeCharacterStreamFilter убирает canonical bracketed gesture literals, �
 - `apps/desktop/src/renderer/avatar/AvatarController.ts`, `AvatarPlaybackCoordinator.ts`: preparation, adoption, поздняя граница, release и отсутствие replay.
 - `apps/desktop/src/renderer/avatar/rendering/three/VrmModel.ts`, `GeneratedBodyPlayback.ts`: release совпадающей pending speech preparation у body owner.
 - `apps/desktop/src/shared/character-stream/SafeCharacterStreamFilter.ts`: containment literals без authority.
-- `tests/integration/embodiment-stream.test.ts`, `tests/unit/avatar/conversational-gesture.test.ts`, `tests/unit/avatar/phase-playback-regressions.test.ts`, `tests/unit/character-response/gesture-literal-containment.test.ts`: production-owner regressions.
+- `tests/integration/embodiment-stream.test.ts`, `tests/integration/avatar/conversational-gesture.test.ts`, `tests/integration/avatar/phase-playback-regressions.test.ts`, `tests/unit/character-response/gesture-literal-containment.test.ts`: production-owner regressions.
 
 ## Проверки
 

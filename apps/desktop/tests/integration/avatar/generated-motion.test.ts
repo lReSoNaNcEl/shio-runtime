@@ -1,4 +1,3 @@
-import type { VRM } from '@pixiv/three-vrm'
 import * as THREE from 'three'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -6,15 +5,17 @@ import { GeneratedBodyPlayback } from '../../../src/renderer/avatar/rendering/th
 import { GeneratedBodySafety } from '../../../src/renderer/avatar/rendering/three/GeneratedBodySafety'
 import type { GeneratedMotionRequestContext } from '../../../src/renderer/avatar/rendering/three/GeneratedMotionTypes'
 import {
-  BODY_BONE_NAMES,
   bodyPresentationSchema,
   getMotionProfile,
   type MotionChunk,
   type MotionPlanIdentity,
   motionChunkSchema,
 } from '../../../src/shared/motion'
+import { createMinimalVrm } from '../../support/avatar/minimalVrm'
+import { createMotionChunk, createMotionLease } from '../../support/avatar/motionFixtures'
+import { createDeferred, type Deferred } from '../../support/Deferred'
 
-const lease = { sessionId: 'test', epoch: 1, modelGeneration: 1, avatarGeneration: 1, seed: 42 }
+const lease = createMotionLease()
 const context: GeneratedMotionRequestContext = {
   animationId: 'presence_poised',
   blendDuration: 0.3,
@@ -26,49 +27,20 @@ const context: GeneratedMotionRequestContext = {
   motionLayer: 'base',
 }
 function chunk(startFrame = 0): MotionChunk {
-  return {
-    ...lease,
-    protocolVersion: 2,
-    plan: {
-      executionId: 'fixture',
-      planRevision: 0,
-      catalogRevision: 'standing-v2-2026-10-27',
-      phaseId: 'prepare',
-      handScoreRevision: 'presence_poised-hands-v1',
-      handRigCalibrationRevision: 'vrm-normalized-hands-v1',
-      clockDomain: 'local',
-      playbackId: null,
-      continuityAnchor: 'anchor',
-    },
-    type: 'motion',
-    id: 1,
-    reset: startFrame === 0,
-    fromFrame: startFrame,
-    profileId: 'presence_poised',
-    skeleton: 'soma30-standard-tpose-v1',
-    fps: 30,
-    startFrame,
-    rotations: Array.from({ length: 60 }, () => Array.from({ length: 30 }, () => [0, 0, 0, 1])),
-    rootPositions: Array.from({ length: 60 }, () => [0, 0.9887084839474641, 0]),
-    footContacts: Array.from({ length: 60 }, () => ({
-      leftHeel: 1,
-      leftToe: 1,
-      rightHeel: 1,
-      rightToe: 1,
-    })),
-    inferenceMs: 100,
-  }
+  return createMotionChunk({ ...lease, reset: startFrame === 0, fromFrame: startFrame, startFrame })
 }
+const owners: GeneratedBodyPlayback[] = []
+const pendingHorizons: Array<{
+  deferred: Deferred<{ ok: boolean; chunk: MotionChunk }>
+  chunk: MotionChunk
+}> = []
+
 function fixture(metaVersion = '1', sceneYaw = 0, hierarchy = false) {
-  const scene = new THREE.Scene()
-  scene.rotation.y = sceneYaw
-  const bones = new Map<string, THREE.Object3D>()
-  for (const name of [...BODY_BONE_NAMES, 'head', 'neck', 'leftEye', 'jaw']) {
-    const bone = new THREE.Object3D()
-    scene.add(bone)
-    bones.set(name, bone)
-  }
-  bones.get('hips')?.position.set(0, 0.9887084839474641, 0)
+  const { bones, vrm } = createMinimalVrm({
+    metaVersion,
+    sceneYaw,
+    extraBones: ['head', 'neck', 'leftEye', 'jaw'],
+  })
   if (hierarchy) {
     const connect = (name: string, parent: string, position: [number, number, number]) => {
       const bone = bones.get(name)
@@ -90,11 +62,6 @@ function fixture(metaVersion = '1', sceneYaw = 0, hierarchy = false) {
       connect(`${side}Foot`, `${side}LowerLeg`, [0, -0.44, 0])
     }
   }
-  const vrm = {
-    scene,
-    meta: { metaVersion },
-    humanoid: { getNormalizedBoneNode: (name: string) => bones.get(name) },
-  } as unknown as VRM
   const next = vi.fn(
     async ({
       fromFrame,
@@ -128,6 +95,7 @@ function fixture(metaVersion = '1', sceneYaw = 0, hierarchy = false) {
     },
   })
   const owner = new GeneratedBodyPlayback(() => undefined)
+  owners.push(owner)
   owner.attach(vrm)
   return { owner, bones, next, stop }
 }
@@ -141,7 +109,17 @@ async function tick(owner: GeneratedBodyPlayback, count = 1) {
   }
 }
 
-afterEach(() => vi.unstubAllGlobals())
+afterEach(async () => {
+  for (const owner of owners.splice(0)) {
+    owner.detach()
+    await owner.settleCancellation()
+  }
+  const pending = pendingHorizons.splice(0)
+  for (const horizon of pending) horizon.deferred.resolve({ ok: true, chunk: horizon.chunk })
+  await Promise.all(pending.map(({ deferred }) => deferred.promise))
+  await flush()
+  vi.unstubAllGlobals()
+})
 describe('generated-motion diagnostic ownership', () => {
   it('reports the applied profile while a replacement is preparing', async () => {
     const { owner } = fixture()
@@ -651,7 +629,14 @@ describe('generated body timeline', () => {
     for (let frame = 0; frame < 70 && owner.getLibraryDebug().phase !== 'stroke'; frame++)
       await tick(owner)
     expect(owner.getLibraryDebug().phase).toBe('stroke')
-    next.mockImplementation(() => new Promise(() => undefined))
+    next.mockImplementation((input) => {
+      const deferred = createDeferred<{ ok: boolean; chunk: MotionChunk }>()
+      pendingHorizons.push({
+        deferred,
+        chunk: motionChunkSchema.parse({ ...chunk(input.fromFrame), profileId: input.profileId }),
+      })
+      return deferred.promise
+    })
     // A SOMA horizon can retain up to two seconds of usable lead-in.
     await tick(owner, 60)
     expect(owner.getBodyMotionDebugState().generated?.state).toBe('loading')

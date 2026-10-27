@@ -23,6 +23,7 @@ import {
   desktopWorkflowRequestSchema,
 } from '../../src/shared/actions'
 import type { RuntimeEventInput } from '../../src/shared/runtime'
+import { createDeferred } from '../support/Deferred'
 
 async function main(): Promise<void> {
   let mode: DesktopAuthorityMode = 'confirm'
@@ -264,16 +265,22 @@ async function main(): Promise<void> {
     authorityMode: () => mode,
     cancelPendingConfirmations: () => confirmations.cancelAll(),
   })
+  const timeoutExecution = createDeferred<void>()
   undefinedTool.register({
     name: 'timeout',
     description: 'Timeout probe',
     validate: (payload) => z.undefined().parse(payload),
     timeoutMs: 10,
-    execute: () => new Promise(() => undefined),
+    execute: () => timeoutExecution.promise,
   })
-  const timeoutResult = await undefinedTool.execute({ name: 'timeout', payload: undefined })
-  assert.equal(timeoutResult.status, 'timeout')
-  assert.equal(timeoutResult.errorCode, 'ACTION_TIMEOUT')
+  try {
+    const timeoutResult = await undefinedTool.execute({ name: 'timeout', payload: undefined })
+    assert.equal(timeoutResult.status, 'timeout')
+    assert.equal(timeoutResult.errorCode, 'ACTION_TIMEOUT')
+  } finally {
+    timeoutExecution.resolve()
+    await timeoutExecution.promise
+  }
 
   mode = 'confirm'
   const delegatedConfirmations: Parameters<ActionConfirmationBroker['requestAction']>[0][] = []
