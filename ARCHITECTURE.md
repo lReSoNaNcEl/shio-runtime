@@ -1468,7 +1468,48 @@ Cancellation immediately invalidates old inference results and aborts owned prov
 
 #### Planned Character LLM embodiment prompting
 
-**Typed conversational gesture decision and preparation — implemented 27 October 2026; deterministic validation complete, live validation not requested for this correction.** The same Character LLM may select one bounded semantic embodiment intent, or explicit absence, in its existing initial typed requirement/tool-planning result using the exact request-scoped Avatar availability. This is additional data in an existing model call, not a new planner, Runtime, tool capability, provider request or retry policy. It grants no tool authority. Invalid, absent or unsupported visual data never invalidates an otherwise valid tool plan or causes an extra provider call solely to repair embodiment. The existing safe response path forwards the validated decision at the first actual Character prose, before that prose reaches speech; provider failures before prose, tool-only rounds, empty responses and cancellations cannot present it as a performed gesture. A supplied typed decision is authoritative for that turn, including explicit absence; legacy early envelopes remain a compatibility input when no typed visual decision was supplied. External evidence never chooses this decision.
+**Conversational selection review correction — implemented 27 October 2026 after review of 1025d9a; visual qualification remains pending.**
+The canonical catalog's actual profile kind determines body composition authority in
+every resolver path, including cooldown fallbacks. A presence selected for speaking
+or reaction usage retains base authority; usage never turns it into a gesture.
+The final composer derives authority from the actually applied profile, not a queued
+replacement request. Pending gesture preparation cannot suppress the preceding
+presence before generated gesture output is applied.
+Communicative acts continue to come from the same Character LLM's typed semantic
+intent. The LLM may propose a fitting conversational gesture while explaining,
+comparing, agreeing or expressing a reaction without requiring an explicit animation
+request. Emotion alone must not invent greeting, agreement or disagreement. Missing
+semantic intent takes compatible continuous presence, not a fabricated semantic act.
+
+Conversation qualification must observe the unmodified Character response path in
+ordinary Chat with real LLM, Fish and ARDY. It records typed intent, selection, actual
+applied profile/layer, execution and prepare/stroke/hold plus final local joint and
+world-space hand displacement. A named profile, advancing cursor or preparation-only
+sample cannot qualify a gesture. Fixed typed fixtures remain executor tests and must
+be reported separately. Physical/numerical pass and visual readability stay distinct;
+five minutes of real conversation and return to idle are required acceptance evidence.
+No new Runtime, semantic router, pose writer or relaxation of anatomical safety is added.
+Conversational qualification metadata is scoped to conversationally eligible profiles.
+A draft manual physical action cannot mark the already qualified conversational
+families unqualified; its body-action availability remains separately gated.
+
+**Short-response preparation timing — implemented after real prepare-only repro, 27 October 2026; real-provider stroke observed, visual qualification remains pending.**
+For a validated direct-answer plan with no planned tools, the existing turn may forward
+its qualified semantic hand-gesture intent immediately after planning, before prose.
+This starts speech-bound preparation only: no physical action, accent, completion or
+user-visible claim is authorized until actual consumed PCM. The existing admitted-turn
+identity, expiry and cleanup release preparation on provider failure, empty reply,
+cancellation or replacement. Tool-bearing plans still defer the visual proposal until
+actual Character prose. There is no extra model call, speech delay or new intent owner.
+
+**Conversational camera boundary — user correction, 27 October 2026.**
+Conversational gestures never move or widen the presentation camera. Existing
+user-selected framing and camera controls retain their behavior. Qualification
+observes raw-hand motion and fingertip visibility in that unchanged framing;
+cropping remains an explicit readability failure rather than being hidden by
+automatic camera motion or a changed acceptance threshold.
+
+**Typed conversational gesture decision and preparation — implemented 27 October 2026; deterministic validation complete, live validation not requested for this correction.** The same Character LLM may select one bounded semantic embodiment intent, or explicit absence, in its existing initial typed requirement/tool-planning result using the exact request-scoped Avatar availability. This is additional data in an existing model call, not a new planner, Runtime, tool capability, provider request or retry policy. It grants no tool authority. Invalid, absent or unsupported visual data never invalidates an otherwise valid tool plan or causes an extra provider call solely to repair embodiment. Except for bounded direct-answer preparation specified above, the existing safe response path forwards the validated decision at the first actual Character prose, before that prose reaches speech; provider failures before prose, tool-only rounds, empty responses and cancellations cannot present it as a performed gesture. A supplied typed decision is authoritative for that turn, including explicit absence; legacy early envelopes remain a compatibility input when no typed visual decision was supplied. External evidence never chooses this decision.
 
 Within the existing Avatar owner, a fresh opening proposal may begin one speech-bound preparation while waiting for the first PCM. Preparation may move toward its admissible target but never consumes an opening stroke before audible playback. Repeated state/delivery updates adopt the same pending execution instead of restarting it or rejecting it against its own cooldown. A late proposal is eligible only for a subsequent active-speech gesture boundary, once, under the existing readiness, camera, cooldown, support, cancellation and expiry checks. It cannot replace a protected stroke, replay an opening accent or begin after speech completion. Prepared/proposed identities are transient turn-bound controller coordination, not another Character State or physical pose owner. Model replacement, foreign turns, manual preview, expiry, cancellation and speech end release matching preparation. Known bracketed gesture literals are contained as malformed internal syntax without interpreting prose as a command; quoted code and ordinary links remain literal.
 

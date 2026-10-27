@@ -20,6 +20,7 @@ import {
   motionProfileSchema,
 } from '../../../../shared/motion'
 import type { PcmPlaybackClock } from '../../../audio/audioPlayer'
+import type { AvatarBodyMotionLayer } from '../../embodiment/motion/AvatarMotionLayer'
 import type { MotionLibraryDebug } from '../../MotionLibraryDebug'
 import { type MotionOutcome, MotionPhaseExecution } from '../../MotionPhaseExecution'
 import { GeneratedBodySafety } from './GeneratedBodySafety'
@@ -763,6 +764,19 @@ export class GeneratedBodyPlayback {
     return { available: true, reason: null }
   }
 
+  getAppliedMotionLayer(): AvatarBodyMotionLayer {
+    const id = this.presentationOnly
+      ? this.mirror?.profileId
+      : this.playing
+        ? this.appliedProfileId
+        : null
+    return id && getMotionProfile(id)?.kind === 'gesture'
+      ? this.context?.motionLayer === 'reaction'
+        ? 'reaction'
+        : 'gesture'
+      : 'base'
+  }
+
   validateFinalComposition(delta = 1 / 60): void {
     if (this.presentationOnly || !this.playing) return
     this.bodySafety.setHandTargets(
@@ -823,6 +837,16 @@ export class GeneratedBodyPlayback {
       (profile) => this.profileAvailability(profile.id, true).available,
     )
     const qualified = compatible.filter((profile) => profile.qualification.state === 'qualified')
+    const conversational = compatible.filter(
+      (profile) =>
+        profile.semanticIntent &&
+        profile.automaticSelection &&
+        profile.defaultWeight > 0 &&
+        profile.usage.speaking,
+    )
+    const qualifiedConversation = conversational.filter(
+      (profile) => profile.qualification.state === 'qualified',
+    )
     // A phase forecast/recovery is physical scheduling, not disappearance of
     // supported semantics. The request may prepare/queue against the same lease.
     const ready = this.lease !== null && !this.error && this.playing
@@ -833,14 +857,8 @@ export class GeneratedBodyPlayback {
       availableSemanticIntents: ready
         ? [
             ...new Set(
-              qualified
-                .filter(
-                  (profile) =>
-                    profile.automaticSelection &&
-                    profile.defaultWeight > 0 &&
-                    profile.usage.speaking &&
-                    this.profileAvailability(profile.id).available,
-                )
+              qualifiedConversation
+                .filter((profile) => this.profileAvailability(profile.id).available)
                 .flatMap((profile) => (profile.semanticIntent ? [profile.semanticIntent] : [])),
             ),
           ]
@@ -853,11 +871,13 @@ export class GeneratedBodyPlayback {
           ? ['rig-unsupported']
           : !ready
             ? ['motion-unavailable']
-            : qualified.length < compatible.length
+            : qualifiedConversation.length === 0
               ? ['unqualified']
               : [],
       qualification:
-        compatible.length > 0 && qualified.length === compatible.length ? 'qualified' : 'draft',
+        conversational.length > 0 && qualifiedConversation.length === conversational.length
+          ? 'qualified'
+          : 'draft',
     }
   }
 

@@ -95,6 +95,16 @@ afterEach(async () => {
 })
 
 describe('conversational gesture preparation and late admission', () => {
+  it('releases an anticipatory preparation when its admitted turn clears the proposal', () => {
+    const f = fixture()
+    const release = vi.spyOn(f.model, 'releaseSpeechPreparation')
+    f.propose()
+    f.controller.setEmbodimentIntent(undefined)
+    expect(release).toHaveBeenCalledWith('greet_wave_soft')
+    f.request.mockClear()
+    f.start()
+    expect(f.request.mock.calls.some(([id]) => id === 'greet_wave_soft')).toBe(false)
+  })
   it('prepares before PCM and adopts the exact pending execution once, despite its own cooldown', () => {
     const f = fixture()
     f.propose()

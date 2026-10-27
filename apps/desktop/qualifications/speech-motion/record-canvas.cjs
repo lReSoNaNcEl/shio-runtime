@@ -4,7 +4,7 @@ const sinks = new WeakMap()
 const registered = new WeakSet()
 
 /** Chromium timestamps and real WebAudio, without a synthetic 10-FPS write clock. */
-async function recordCanvas(page, filename) {
+async function recordCanvas(page, filename, { captureFps = 60 } = {}) {
   const sink = { filename, bytes: 0 }
   sinks.set(page, sink)
   if (!registered.has(page))
@@ -15,7 +15,7 @@ async function recordCanvas(page, filename) {
       fs.appendFileSync(current.filename, buffer)
     })
   registered.add(page)
-  await page.evaluate(async () => {
+  await page.evaluate(async (captureFps) => {
     const canvas = document.querySelector('canvas')
     if (!canvas) throw new Error('No rendered VRM canvas to record')
     const audio = new AudioContext()
@@ -25,7 +25,7 @@ async function recordCanvas(page, filename) {
     silentGain.gain.value = 0
     silence.connect(silentGain).connect(destination)
     silence.start()
-    const stream = canvas.captureStream(60)
+    const stream = canvas.captureStream(captureFps)
     stream.addTrack(destination.stream.getAudioTracks()[0])
     const connect = AudioNode.prototype.connect
     const captured = new Map()
@@ -70,6 +70,7 @@ async function recordCanvas(page, filename) {
       })
     }
     const started = performance.now()
+    const startedAt = Date.now()
     recorder.start(250)
     window.__stopMotionVideo = async () => {
       if (recorder.state !== 'inactive')
@@ -90,12 +91,13 @@ async function recordCanvas(page, filename) {
       await audio.close()
       return {
         frames,
+        startedAt,
         durationMs: performance.now() - started,
         audioSources: captured.size,
         errors,
       }
     }
-  })
+  }, captureFps)
   let stopped
   return () =>
     (stopped ??= (async () => {
@@ -121,7 +123,7 @@ async function recordCanvas(page, filename) {
       const frames = Number(probe.streams[0]?.nb_read_frames ?? 0)
       return {
         file: filename,
-        requestedFps: 60,
+        requestedFps: captureFps,
         timestampSource: 'Chromium MediaRecorder',
         ...result,
         renderCallbacks: result.frames,

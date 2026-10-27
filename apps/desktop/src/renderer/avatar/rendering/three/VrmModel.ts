@@ -120,6 +120,7 @@ export class VrmModel {
     this.performanceMonitor.updatePerformanceDebug(delta)
     this.facialRuntime.removeProceduralMotion()
     this.bodyPlayback.update(delta, () => {
+      this.facialRuntime.setBodyMotionLayer(this.bodyPlayback.getAppliedMotionLayer())
       this.facialRuntime.updateProceduralMotion(delta)
     })
     this.facialRuntime.update(delta)

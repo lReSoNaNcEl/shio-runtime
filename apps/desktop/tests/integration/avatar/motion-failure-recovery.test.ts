@@ -87,6 +87,7 @@ describe('ordinary conversation body liveness', () => {
       })
       expect(body.getLibraryDebug().runningProfileId).toBe('explain_one_palm')
       expect(body.getLibraryDebug().phase).toBe('prepare')
+      expect(body.getAppliedMotionLayer()).toBe('base')
       expect(await thinking).toBe('ARDY_PROFILE_SUPERSEDED')
       for (let frame = 0; frame < 8; frame++) {
         await new Promise<void>((resolve) => setImmediate(resolve))
@@ -94,6 +95,7 @@ describe('ordinary conversation body liveness', () => {
       }
       await gesture
       expect(body.getLibraryDebug().executionId).not.toBeNull()
+      expect(body.getAppliedMotionLayer()).toBe('gesture')
     } finally {
       body.detach()
       await body.settleCancellation()

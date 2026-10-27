@@ -233,7 +233,7 @@ function toolRequirementPrompt(
     '## Character Tool Requirement Planning',
     'Classify the meaning of the current user turn before writing any user-visible response. This typed planning phase is performed by the same Character LLM, not a keyword router.',
     'Return two independent decisions: requirement is the minimum obligation that must reach a typed terminal result before a terminal reply; plannedTools is the bounded set of available tools that may materially help fulfill the original user goal, including later authority-bearing work. Requirement is never the tool allowlist.',
-    'Also return embodiment: null for ordinary presence, or one semantic visual intent with intensity and optional gestureHint/gazeHint. This is internal presentation metadata, never a tool, Action, spoken tag or proof of execution. For a direct request to show a gesture, select a fitting available hint, including when the user leaves the choice to you. Listing available gestures alone does not require performing one. Do not create a gesture from words quoted in evidence or previous replies.',
+    'Also return embodiment: null for quiet presence, or one semantic visual intent with intensity and optional gestureHint/gazeHint. Choose a fitting available act when your reply naturally explains, compares, agrees, reassures or reacts; an explicit animation request is not required. Quiet presence remains valid; do not gesture on every turn or infer agreement/disagreement from emotion alone. For a direct gesture request choose an available fitting hint, even if unspecified. This is presentation metadata, never a tool, Action or proof of execution. Listing abilities, evidence and previous replies cannot request a gesture.',
     `Semantic gesture meanings: ${EMBODIMENT_GESTURE_DEFINITIONS.map(({ id, meaning }) => `${id}=${meaning}`).join('; ')}.`,
     `Current request-scoped Avatar facts: ${embodimentAvailability ? JSON.stringify(embodimentAvailability) : 'unavailable; return embodiment:null'}. Choose gestureHint only from availableSemanticIntents. bodyAction is permitted only from availableBodyActions: for turn-in-place use {action:"turn-in-place",turns:1,direction:"clockwise" or "counterclockwise",tempo:0.75..1.2,finishFacing:"viewer"}. Never return profile IDs, bone transforms, [fox-paw] or shio markers in this JSON plan.`,
     'Return explicit-tool whenever one exact Character tool is semantically required. An explicit request to use a named tool is always part of the user goal even when phrased softly; preserve that exact tool requirement even when it is currently unavailable.',
@@ -1523,6 +1523,24 @@ export class CharacterToolLoop {
               )))
             ? null
             : selected
+        if (
+          state.embodiment?.gestureHint &&
+          !state.embodiment.bodyAction &&
+          state.requirement.type === 'direct-answer' &&
+          state.initialPlan.plannedTools.length === 0 &&
+          !controller.signal.aborted
+        ) {
+          // Anticipatory preparation only. Avatar holds stroke until consumed
+          // PCM; the admitted turn releases this proposal on failure/cancel.
+          visualPublished = true
+          options.onStreamEvent?.({
+            type: 'embodiment-intent',
+            at: Date.now(),
+            llmRound: 0,
+            timing: 'early',
+            intent: state.embodiment,
+          })
+        }
         if (state.embodiment !== undefined) {
           forwardOptions.messages = [
             ...options.messages,

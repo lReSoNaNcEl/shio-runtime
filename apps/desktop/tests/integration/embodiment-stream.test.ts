@@ -55,6 +55,7 @@ describe('provider-neutral early embodiment transport', () => {
     streamOverride?: NonNullable<LLMProvider['stream']>,
     events: CharacterToolLoopStreamEvent[] = [],
     signal?: AbortSignal,
+    requirement: unknown = { type: 'direct-answer' },
   ) {
     const complete = vi.fn(async () => ({
       content: '',
@@ -63,7 +64,7 @@ describe('provider-neutral early embodiment transport', () => {
           id: 'plan',
           name: 'character_tool_requirement',
           argumentsJson: JSON.stringify({
-            requirement: { type: 'direct-answer' },
+            requirement,
             plannedTools: [],
             embodiment,
           }),
@@ -123,7 +124,13 @@ describe('provider-neutral early embodiment transport', () => {
     const selected = { intensity: 'normal', gestureHint: 'fox-paw' }
     const { events, result, complete } = await plannedRun(selected)
     expect(events.filter((event) => event.type === 'embodiment-intent')).toEqual([
-      { type: 'embodiment-intent', at: 2, llmRound: 0, timing: 'early', intent: selected },
+      {
+        type: 'embodiment-intent',
+        at: expect.any(Number),
+        llmRound: 0,
+        timing: 'early',
+        intent: selected,
+      },
     ])
     expect(events.findIndex((event) => event.type === 'embodiment-intent')).toBeLessThan(
       events.findIndex((event) => event.type === 'text-delta'),
@@ -136,6 +143,38 @@ describe('provider-neutral early embodiment transport', () => {
     const { events, result } = await plannedRun(null, `[happy]${envelope}Привет!`)
     expect(events.filter((event) => event.type === 'embodiment-intent')).toEqual([])
     expect(result.embodiment).toBeNull()
+  })
+
+  it('starts direct-answer preparation before requesting prose, without a second semantic decision', async () => {
+    const events: CharacterToolLoopStreamEvent[] = []
+    await plannedRun(
+      { intensity: 'normal', gestureHint: 'greeting' },
+      '',
+      async function* () {
+        expect(events.filter((event) => event.type === 'embodiment-intent')).toHaveLength(1)
+        yield { type: 'text-delta', at: 2, text: '[happy]Привет!' }
+        yield { type: 'completed', at: 3, finishReason: 'stop' }
+      },
+      events,
+    )
+    expect(events.filter((event) => event.type === 'embodiment-intent')).toHaveLength(1)
+  })
+
+  it('defers a source-bearing plan until actual Character prose', async () => {
+    const events: CharacterToolLoopStreamEvent[] = []
+    await plannedRun(
+      { intensity: 'normal', gestureHint: 'greeting' },
+      '',
+      async function* () {
+        expect(events.filter((event) => event.type === 'embodiment-intent')).toHaveLength(0)
+        yield { type: 'text-delta', at: 2, text: '[happy]Привет!' }
+        yield { type: 'completed', at: 3, finishReason: 'stop' }
+      },
+      events,
+      undefined,
+      { type: 'source-preferred', source: 'web' },
+    )
+    expect(events.filter((event) => event.type === 'embodiment-intent')).toHaveLength(1)
   })
 
   it('publishes one typed selection instead of two conflicting gesture decisions', async () => {
@@ -201,7 +240,7 @@ describe('provider-neutral early embodiment transport', () => {
     ).toEqual([])
   })
 
-  it('does not release a planned visual proposal for a tool-only round', async () => {
+  it('does not attach completion or prose to an unexpected tool-only result after direct-answer preparation', async () => {
     const { events, result } = await plannedRun(
       { intensity: 'normal', gestureHint: 'fox-paw' },
       '',
@@ -217,9 +256,8 @@ describe('provider-neutral early embodiment transport', () => {
         yield { type: 'completed', at: 4, finishReason: 'tool_calls' }
       },
     )
-    expect(
-      events.filter((event) => event.type === 'embodiment-intent' || event.type === 'text-delta'),
-    ).toEqual([])
+    expect(events.filter((event) => event.type === 'text-delta')).toEqual([])
+    expect(events.filter((event) => event.type === 'embodiment-intent')).toHaveLength(1)
     expect(result.embodiment).toBeNull()
   })
 
@@ -228,11 +266,11 @@ describe('provider-neutral early embodiment transport', () => {
       { intensity: 'normal', gestureHint: 'fox-paw' },
       '[happy]',
     )
-    expect(events.filter((event) => event.type === 'embodiment-intent')).toEqual([])
+    expect(events.filter((event) => event.type === 'embodiment-intent')).toHaveLength(1)
     expect(result.embodiment).toBeNull()
   })
 
-  it('keeps a planned gesture private when the provider fails before prose', async () => {
+  it('emits no prose when a provider fails after direct-answer preparation', async () => {
     const events: CharacterToolLoopStreamEvent[] = []
     const failure = new LlmResponseError({
       provider: 'groq',
@@ -251,9 +289,8 @@ describe('provider-neutral early embodiment transport', () => {
         events,
       ),
     ).rejects.toBe(failure)
-    expect(
-      events.filter((event) => event.type === 'embodiment-intent' || event.type === 'text-delta'),
-    ).toEqual([])
+    expect(events.filter((event) => event.type === 'text-delta')).toEqual([])
+    expect(events.filter((event) => event.type === 'embodiment-intent')).toHaveLength(1)
   })
 
   it('discards a planned gesture and queued prose after caller cancellation', async () => {
@@ -272,8 +309,7 @@ describe('provider-neutral early embodiment transport', () => {
         abort.signal,
       ),
     ).rejects.toMatchObject({ code: 'CANCELLED' })
-    expect(
-      events.filter((event) => event.type === 'embodiment-intent' || event.type === 'text-delta'),
-    ).toEqual([])
+    expect(events.filter((event) => event.type === 'text-delta')).toEqual([])
+    expect(events.filter((event) => event.type === 'embodiment-intent')).toHaveLength(1)
   })
 })

@@ -26,6 +26,22 @@ function fixture(missingBone?: string) {
 afterEach(() => vi.unstubAllGlobals())
 
 describe('motion library owner availability', () => {
+  it('does not label qualified conversational families unqualified because a manual physical action is draft', () => {
+    const { owner } = fixture()
+    Reflect.set(owner, 'lease', { modelGeneration: 1 })
+    Reflect.set(owner, 'playing', true)
+    try {
+      expect(owner.getEmbodimentAvailability()).toMatchObject({
+        qualification: 'qualified',
+        unavailableReasons: [],
+        availableBodyActions: [],
+      })
+      expect(owner.getEmbodimentAvailability().availableSemanticIntents).toContain('greeting')
+    } finally {
+      Reflect.set(owner, 'lease', null)
+      owner.detach()
+    }
+  })
   it('advertises only qualified intents the conversational selector can execute', () => {
     const states = MOTION_PROFILES.map((profile) => profile.qualification.state)
     const { owner } = fixture()
