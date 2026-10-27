@@ -1,8 +1,9 @@
 import type * as THREE from 'three'
 
-import type {
-  CharacterEmbodimentIntent,
-  EmbodimentIntentContext,
+import {
+  type CharacterEmbodimentIntent,
+  EMBODIMENT_PROPOSAL_TTL_MS,
+  type EmbodimentIntentContext,
 } from '../../shared/character-response'
 import { type BodyPresentation, getMotionProfile } from '../../shared/motion'
 import type { CharacterState } from '../../shared/runtime'
@@ -36,6 +37,7 @@ import { AvatarGazeArbiter } from './embodiment/gaze/AvatarGazeArbiter'
 import type { EarAxisOverride, EarImpulse } from './embodiment/secondary-motion/EarBehaviorRuntime'
 import { LipSync, type LipSyncStartRequest, type MouthWeights } from './embodiment/speech/LipSync'
 import type { SpeechPhrasePhase } from './embodiment/speech/PhraseEnvelopeController'
+import type { ConversationViewConfig } from './rendering/three/ConversationFraming'
 import { previewHandBounds } from './rendering/three/previewHandBounds'
 import { VrmModel } from './rendering/three/VrmModel'
 import type { OverlayViewMode } from './tuning/cameraTuning'
@@ -305,7 +307,7 @@ export class AvatarController {
     const activeTurn = this.lipSync.getActiveSession()?.turnId
     if (
       context &&
-      (Date.now() - context.receivedAt > 10000 ||
+      (Date.now() - context.receivedAt > EMBODIMENT_PROPOSAL_TTL_MS ||
         context.receivedAt > Date.now() + 1000 ||
         (activeTurn && activeTurn !== context.turnId))
     )
@@ -613,10 +615,15 @@ export class AvatarController {
   }
   private advancePreviewSequence(): void {
     const debug = this.getMotionLibraryDebug()
+    const applied = this.vrmModel.getBodyMotionDebugState().appliedPose
+    const appliedGesture =
+      getMotionProfile(debug.runningProfileId ?? '')?.kind !== 'gesture' ||
+      (applied?.executionId === debug.executionId && applied?.phaseId === 'stroke')
     if (
       debug.executionId &&
       debug.executionId !== this.lastStartedExecutionId &&
-      this.vrmModel.isAnimationPlaying()
+      this.vrmModel.isAnimationPlaying() &&
+      appliedGesture
     ) {
       this.lastStartedExecutionId = debug.executionId
       if (debug.runningProfileId)
@@ -691,6 +698,17 @@ export class AvatarController {
   setCameraMode(cameraMode: OverlayViewMode | undefined): void {
     this.vrmModel.setBodyCameraMode(cameraMode ?? 'full')
     this.behaviorResolver.setCameraMode(cameraMode)
+  }
+  setConversationView(config: ConversationViewConfig): void {
+    this.vrmModel.setConversationView(config)
+    if (config.overlayViewMode)
+      this.behaviorResolver.setCameraMode(
+        config.overlayViewMode === 'portrait'
+          ? 'face'
+          : config.overlayViewMode === 'face'
+            ? 'face'
+            : 'bust',
+      )
   }
 
   setPcmClock(clock: PcmPlaybackClock | null): void {
@@ -1037,7 +1055,10 @@ export class AvatarController {
   }
 
   private effectiveEmbodimentIntent(): CharacterEmbodimentIntent | undefined {
-    if (this.intentContext && Date.now() - this.intentContext.receivedAt > 10000)
+    if (
+      this.intentContext &&
+      Date.now() - this.intentContext.receivedAt > EMBODIMENT_PROPOSAL_TTL_MS
+    )
       return this.behaviorEmbodimentIntent
     return this.conversationEmbodimentIntent ?? this.behaviorEmbodimentIntent
   }
@@ -1055,7 +1076,8 @@ export class AvatarController {
   ): AvatarBehaviorResolution | null {
     const intent = this.effectiveEmbodimentIntent()
     if (
-      (this.intentContext && Date.now() - this.intentContext.receivedAt > 10000) ||
+      (this.intentContext &&
+        Date.now() - this.intentContext.receivedAt > EMBODIMENT_PROPOSAL_TTL_MS) ||
       !intent?.gestureHint ||
       !this.vrmModel.isLoaded() ||
       !this.getEmbodimentAvailability().availableSemanticIntents.includes(intent.gestureHint)
@@ -1119,7 +1141,7 @@ export class AvatarController {
       !!this.preparedGesture &&
       this.preparedGesture.key === this.conversationIntentKey() &&
       !!this.intentContext &&
-      Date.now() - this.intentContext.receivedAt <= 10000 &&
+      Date.now() - this.intentContext.receivedAt <= EMBODIMENT_PROPOSAL_TTL_MS &&
       !!this.conversationEmbodimentIntent?.gestureHint &&
       this.playback.getCurrentContext() === this.preparedGesture.playback &&
       animation.activeAnimationId === this.preparedGesture.resolved.animationId &&

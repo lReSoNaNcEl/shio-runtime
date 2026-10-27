@@ -16,6 +16,26 @@ function catalogCopy() {
 }
 
 describe('standing motion contract v2', () => {
+  it('rejects compact workspace parameters that escape the bounded rig-relative region', () => {
+    for (const extent of [0, 1.01, NaN]) {
+      const catalog = catalogCopy()
+      catalog.profiles[0].handScore.phases.stroke.right.workspaceExtentScale = extent
+      expect(motionCatalogSchema.safeParse(catalog).success).toBe(false)
+    }
+    for (const offset of [
+      [0.251, 0, 0],
+      [0, -0.251, 0],
+      [0, 0, Infinity],
+    ]) {
+      const catalog = catalogCopy()
+      catalog.profiles[0].handScore.phases.stroke.right.workspaceOffset = offset as [
+        number,
+        number,
+        number,
+      ]
+      expect(motionCatalogSchema.safeParse(catalog).success).toBe(false)
+    }
+  })
   it('rejects missing workspaces and physically parallel hand orientation constraints', () => {
     const missing = catalogCopy()
     Reflect.deleteProperty(missing.profiles[0].handScore.phases.stroke.right, 'workspace')
@@ -49,11 +69,16 @@ describe('standing motion contract v2', () => {
   })
 
   it('derives exactly the new standing preset with both complete hands and honest qualification', () => {
-    expect(MOTION_PROFILE_IDS).toHaveLength(29)
+    expect(MOTION_PROFILE_IDS).toHaveLength(32)
     expect(MOTION_PROFILES.map((p) => p.id)).toEqual([...MOTION_PROFILE_IDS])
     for (const profile of MOTION_PROFILES) {
       expect(profile.exitPosture).toBe('standing')
-      expect(profile.qualification.state).toBe(profile.physicalAction ? 'draft' : 'qualified')
+      if (profile.id.endsWith('_close') && profile.qualification.state === 'draft') {
+        expect(profile.automaticSelection).toBe(false)
+        expect(profile.defaultWeight).toBe(0)
+      } else {
+        expect(profile.qualification.state).toBe(profile.physicalAction ? 'draft' : 'qualified')
+      }
       expect(profile.phases.map((p) => p.id)).toEqual(['prepare', 'stroke', 'hold', 'recover'])
       for (const score of Object.values(profile.handScore.phases)) {
         expect(Object.keys(score).sort()).toEqual(['left', 'right'])

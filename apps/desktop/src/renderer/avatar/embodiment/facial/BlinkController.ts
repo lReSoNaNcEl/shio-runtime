@@ -128,6 +128,10 @@ export class BlinkController {
 
   private blinkCount = 0
   private doubleBlinkCount = 0
+  private asymmetry = 0
+  private eventAsymmetry = 0
+  private winkSide: 'left' | 'right' | null = null
+  private winkCooldownMs = 0
 
   constructor(profile: EffectiveBlinkProfile = DEFAULT_PROFILE, rng: RandomSource = Math.random) {
     this.rng = rng
@@ -138,6 +142,8 @@ export class BlinkController {
 
   /** Begin blink scheduling for a freshly loaded model. */
   attach(): void {
+    this.winkSide = null
+    this.winkCooldownMs = 0
     this.phase = 'idle'
     this.sequenceState = 'none'
     this.pendingSecondBlink = false
@@ -148,6 +154,8 @@ export class BlinkController {
   }
 
   detach(): void {
+    this.winkSide = null
+    this.winkCooldownMs = 0
     this.setWeight(0)
     this.phase = 'idle'
     this.sequenceState = 'none'
@@ -159,6 +167,18 @@ export class BlinkController {
   /** Current blink weight (0..1) for the Expression Mixer to apply. */
   getWeight(): number {
     return this.weight
+  }
+
+  setAsymmetry(amount: number): void {
+    this.asymmetry = Math.max(0, Math.min(0.2, Number.isFinite(amount) ? amount : 0))
+  }
+
+  getBilateralWeights(): [number, number] {
+    if (this.winkSide) return this.winkSide === 'left' ? [this.weight, 0] : [0, this.weight]
+    return [
+      this.weight * (1 - Math.max(0, this.eventAsymmetry)),
+      this.weight * (1 - Math.max(0, -this.eventAsymmetry)),
+    ]
   }
 
   /**
@@ -194,6 +214,7 @@ export class BlinkController {
       return
     }
     const deltaMs = Math.max(0, delta) * 1000
+    this.winkCooldownMs = Math.max(0, this.winkCooldownMs - deltaMs)
     this.cooldownRemainingMs = Math.max(0, this.cooldownRemainingMs - deltaMs)
 
     if (this.phase !== 'idle') {
@@ -219,6 +240,7 @@ export class BlinkController {
    * double-blink sequence) unless {@link sequence} is explicitly requested.
    */
   force(duration = 1.2, sequence = false): void {
+    this.winkSide = null
     this.activeSnapshot = this.configuredProfile
     this.weightCeiling = this.activeSnapshot.blinkMax
     const total =
@@ -230,9 +252,31 @@ export class BlinkController {
     this.sequenceState = 'none'
   }
 
+  /** One expressive eyelid event; never interrupts a physiological blink. */
+  requestWink(side: 'left' | 'right'): boolean {
+    if (
+      !this.active ||
+      this.phase !== 'idle' ||
+      this.sequenceState !== 'none' ||
+      this.cooldownRemainingMs > 0 ||
+      this.winkCooldownMs > 0
+    )
+      return false
+    this.activeSnapshot = this.configuredProfile
+    this.weightCeiling = 1
+    this.beginBlinkPhases(1.2, 1, 'forced')
+    this.blinkTargetWeight = 0.95
+    this.winkSide = side
+    this.winkCooldownMs = 6000
+    this.pendingSecondBlink = false
+    this.resetSchedule()
+    return true
+  }
+
   setActive(active: boolean): void {
     this.active = active
     if (!active) {
+      this.winkSide = null
       this.phase = 'idle'
       this.sequenceState = 'none'
       this.pendingSecondBlink = false
@@ -298,7 +342,9 @@ export class BlinkController {
     weightScale: number,
     reason: BlinkTriggerReason,
   ): void {
+    this.winkSide = null
     const p = this.activeSnapshot
+    this.eventAsymmetry = this.asymmetry ? (this.rng() * 2 - 1) * this.asymmetry : 0
     this.closingMs = p.closingMs * durationScale
     this.closedMs = p.closedMs * durationScale
     this.openingMs = p.openingMs * durationScale
@@ -356,6 +402,7 @@ export class BlinkController {
       return
     }
     // End of the (single or double) event — apply the normal cooldown.
+    this.winkSide = null
     this.sequenceState = 'none'
     this.cooldownRemainingMs = this.activeSnapshot.cooldownMs
     // Adopt any profile that arrived mid-blink for the next event.

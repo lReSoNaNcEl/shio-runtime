@@ -4,6 +4,8 @@ import type { MotionPhaseId } from '../../../../shared/motion'
 
 export type MotionClass = 'presence' | 'gesture' | 'reaction' | 'full-body'
 export interface MotionFilterContext {
+  /** Remaining authored preparation time for an admitted active hand workspace. */
+  reachSeconds?: number
   motionClass: MotionClass
   phase: MotionPhaseId
   sourceSpeeds?: ReadonlyMap<THREE.Object3D, number>
@@ -77,10 +79,15 @@ export class AdaptiveMotionFilter {
       (presence ? 1.6 : reaction ? 8 : 6) * (torso ? 0.35 : shoulder ? 0.6 : wrist ? 0.75 : 1)
     const sourceSpeed = context.sourceSpeeds?.get(bone) ?? sourceVelocity.length()
     sourceVelocity.clampLength(0, sourceSpeed)
+    const reachingSpeed =
+      !presence && context.phase === 'prepare' && Number.isFinite(context.reachSeconds)
+        ? error.length() / Math.max(0.25, context.reachSeconds ?? 0.25)
+        : 0
     const speed = Math.min(
       ceiling,
       Math.max(
         presence ? 0.15 : 0.6,
+        reachingSpeed,
         sourceSpeed * 1.25 + Math.min(presence ? 0.25 : 0.8, error.length() * 3),
       ),
     )

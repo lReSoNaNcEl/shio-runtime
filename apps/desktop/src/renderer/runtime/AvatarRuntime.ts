@@ -40,6 +40,7 @@ import type {
 } from '../avatar/embodiment/secondary-motion/EarBehaviorRuntime'
 import type { TailBehaviorDebugState } from '../avatar/embodiment/secondary-motion/TailBehaviorRuntime'
 import type { LipSyncStartRequest, MouthWeights } from '../avatar/embodiment/speech/LipSync'
+import type { ConversationViewConfig } from '../avatar/rendering/three/ConversationFraming'
 import type {
   GeneratedBodyDebugState,
   VrmPerformanceDebugState,
@@ -330,6 +331,9 @@ export class AvatarRuntime {
 
   setCameraMode(cameraMode: OverlayViewMode | undefined): void {
     this.controller.setCameraMode(cameraMode)
+  }
+  setConversationView(config: ConversationViewConfig): void {
+    this.controller.setConversationView(config)
   }
 
   stopLipSync(turnId: string): boolean {

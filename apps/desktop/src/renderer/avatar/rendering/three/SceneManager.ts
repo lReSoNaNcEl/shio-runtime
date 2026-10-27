@@ -1,7 +1,7 @@
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 
-import { type OverlayViewMode, overlayCameraPresets } from '../../tuning/cameraTuning'
+import { type OverlayViewMode, resolveOverlayCameraView } from '../../tuning/cameraTuning'
 import { avatarStartupTuning } from '../../tuning/startupTuning'
 import {
   AvatarRendererQuality,
@@ -221,31 +221,17 @@ export class SceneManager {
 
   setOverlayCameraPreset(mode: OverlayViewMode, scale = 1): void {
     this.stopHandCamera()
-    const preset = overlayCameraPresets[mode] ?? overlayCameraPresets.bust
-    const clampedScale = Math.max(preset.scaleMin, Math.min(preset.scaleMax, scale))
-    const ratio = this.modelHeight / 1.65
-    const target = {
-      x: preset.target.x * ratio,
-      y:
-        this.modelHeadY === null
-          ? this.modelBase + preset.target.y * ratio
-          : this.modelHeadY + (preset.target.y - 1.5) * ratio,
-      z: preset.target.z * ratio,
-    }
-    const offset = {
-      x: (preset.position.x - preset.target.x) * ratio,
-      y: (preset.position.y - preset.target.y) * ratio,
-      z: (preset.position.z - preset.target.z) * ratio * -this.modelFrontSign,
-    }
-    this.applyCameraView(
+    const { position, target, fov } = resolveOverlayCameraView(
+      mode,
       {
-        x: target.x + offset.x / clampedScale,
-        y: target.y + offset.y / clampedScale,
-        z: target.z + offset.z / clampedScale,
+        height: this.modelHeight,
+        base: this.modelBase,
+        headY: this.modelHeadY,
+        frontSign: this.modelFrontSign,
       },
-      target,
-      preset.fov,
+      scale,
     )
+    this.applyCameraView(position, target, fov)
     this.controls.target.set(target.x, target.y, target.z)
     this.controls.update()
   }

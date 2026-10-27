@@ -631,6 +631,27 @@ it('keeps actual body motion during breathing instead of freezing on the contact
   })
 })
 
+it('keeps a clearance reserve while reaching beside the face under breathing translations', async () => {
+  const vrm = trackedRig(process.env.SHIO_TEST_VRM_PATH)
+  const owner = await bodyFixture(vrm, false, 'greet_wave_close')
+  const chest = vrm.humanoid.getNormalizedBoneNode('chest')
+  if (!chest) throw new Error('Missing chest')
+  const rest = chest.position.clone()
+  let contacts = 0
+  for (let frame = 0; frame < 400; frame++) {
+    owner.update(1 / 60, () => {
+      chest.position.copy(rest)
+      chest.position.y += 0.003 * Math.sin(frame * 0.02)
+      chest.position.z += 0.001 * Math.cos(frame * 0.03)
+    })
+    vrm.humanoid.update()
+    vrm.scene.updateMatrixWorld(true)
+    contacts += owner.getBodyMotionDebugState().generated?.safety?.unresolvedArmContacts ?? 0
+    for (let turn = 0; turn < 8; turn++) await Promise.resolve()
+  }
+  expect(contacts).toBe(0)
+})
+
 it('keeps contact correction continuous across a slowly changing neural arm target', () => {
   const vrm = trackedRig()
   const safety = new GeneratedBodySafety()

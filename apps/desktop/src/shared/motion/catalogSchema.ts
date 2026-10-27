@@ -33,6 +33,15 @@ export const motionHandTargetSchema = z
   .object({
     role: z.enum(['lead', 'support', 'bilateral']),
     workspace: motionHandZoneSchema,
+    workspaceExtentScale: finite.min(0.25).max(1).optional(),
+    workspaceTrajectory: z.literal('relative-source').optional(),
+    workspaceOffset: z
+      .tuple([
+        finite.min(-0.25).max(0.25),
+        finite.min(-0.25).max(0.25),
+        finite.min(-0.25).max(0.25),
+      ])
+      .optional(),
     palmFacing: z.enum(['free', 'forward', 'up', 'inward']),
     fingerDirection: z.enum(['free', 'up', 'forward']),
     timing: z

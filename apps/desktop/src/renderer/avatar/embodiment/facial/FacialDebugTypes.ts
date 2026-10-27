@@ -1,9 +1,17 @@
+import type { FacialActingValues } from '../../../../shared/facial-acting'
 import type { BlinkDebugState } from './BlinkController'
 import type { FacialProfile, MouthWeights, VisemeName } from './FacialProfile'
+import type { FacialRigCapabilities } from './FacialRigCapabilities'
 import type { MouthClosureDebug } from './MouthClosureController'
 import type { SpeakingEyeDebug } from './SpeakingEyeController'
 
-export type ExpressionSource = 'autoBlink' | 'lipSync' | 'emotion' | 'lookAt' | 'speakingEye'
+export type ExpressionSource =
+  | 'autoBlink'
+  | 'lipSync'
+  | 'emotion'
+  | 'lookAt'
+  | 'speakingEye'
+  | 'facialActing'
 
 export type SourceLifecycleStatus = 'inactive' | 'active' | 'decaying' | 'reset'
 
@@ -75,6 +83,8 @@ export interface MouthTuningDebug {
 export type BlinkTuningDebug = BlinkDebugState
 
 export interface FacialDebugState {
+  actingCapabilities?: FacialRigCapabilities | null
+  facialActing?: FacialActingValues
   currentProfile: string
   expressionBlend: Record<string, number>
   supportedExpressions: string[]

@@ -2,6 +2,11 @@ import type { VRM } from '@pixiv/three-vrm'
 import type * as THREE from 'three'
 
 import {
+  FACIAL_ACTING_CHANNELS,
+  type FacialActingPresentation,
+} from '../../../shared/facial-acting'
+import type { PcmPlaybackClock } from '../../audio/audioPlayer'
+import {
   type EmotionEmbodimentProfile,
   resolveEmotionEmbodimentProfile,
 } from '../EmotionEmbodimentProfile'
@@ -11,6 +16,7 @@ import { AvatarExpressionMixer, type FacialDebugState } from './facial/AvatarExp
 import { BlinkController } from './facial/BlinkController'
 import { resolveEffectiveBlinkProfile } from './facial/BlinkProfileResolver'
 import { ExpressionController } from './facial/ExpressionController'
+import { FacialActingController } from './facial/FacialActingController'
 import { completeMouthWeights, type MouthWeights } from './facial/FacialProfile'
 import { MouthClosureController } from './facial/MouthClosureController'
 import { SpeakingEyeController } from './facial/SpeakingEyeController'
@@ -42,6 +48,11 @@ import type { SpeechPhraseTimingPlan } from './speech/SpeechPhraseTiming'
 import type { AvatarProceduralMode } from './types'
 
 export class AvatarFacialRuntime {
+  private facialActingController = new FacialActingController()
+  private presentationOnly = false
+  private mirroredActing: FacialActingPresentation | null = null
+  private mirrorActingFrom: FacialActingPresentation | null = null
+  private mirrorActingElapsed = 0
   private blinkController = new BlinkController()
   private expressionController = new ExpressionController()
   private expressionMixer = new AvatarExpressionMixer()
@@ -66,6 +77,9 @@ export class AvatarFacialRuntime {
   private externalMouthComposed = false
 
   detach(): void {
+    this.facialActingController.reset()
+    this.mirroredActing = null
+    this.mirrorActingFrom = null
     this.speechEnergy = 0
     this.blinkController.detach()
     this.expressionController.detach()
@@ -112,9 +126,11 @@ export class AvatarFacialRuntime {
     this.expressionController.setSpeechEnergy(this.speechEnergy)
     this.expressionController.update(delta)
     this.expressionMixer.setEmotion(this.expressionController.getValues())
-    this.blinkController.update(delta)
+    if (!this.presentationOnly) this.blinkController.update(delta)
     this.expressionMixer.setBlinkDebug(this.blinkController.getDebugState())
     this.expressionMixer.setBlink(this.blinkController.getWeight())
+    if (!this.presentationOnly)
+      this.expressionMixer.setBilateralBlink(...this.blinkController.getBilateralWeights())
 
     // Speaking Eye Micro-Expression — small drifting squint layered under Blink.
     const speaking = this.proceduralMode === 'speaking'
@@ -158,11 +174,50 @@ export class AvatarFacialRuntime {
     }
     this.expressionMixer.setMouthClosureDebug(this.mouthClosureController.getDebugState())
 
+    if (this.presentationOnly) {
+      const mirror = this.mirroredActing
+      this.mirrorActingElapsed += Math.max(0, delta)
+      const blend = Math.min(1, this.mirrorActingElapsed * 30)
+      const from = this.mirrorActingFrom ?? mirror
+      const acting = Object.fromEntries(
+        FACIAL_ACTING_CHANNELS.map((name) => [
+          name,
+          (from?.acting[name] ?? 0) +
+            ((mirror?.acting[name] ?? 0) - (from?.acting[name] ?? 0)) * blend,
+        ]),
+      )
+      this.expressionMixer.setFacialActing(acting, true)
+      const left =
+        (from?.blinkLeft ?? 0) + ((mirror?.blinkLeft ?? 0) - (from?.blinkLeft ?? 0)) * blend
+      const right =
+        (from?.blinkRight ?? 0) + ((mirror?.blinkRight ?? 0) - (from?.blinkRight ?? 0)) * blend
+      this.expressionMixer.setBlink(Math.max(left, right))
+      this.expressionMixer.setBilateralBlink(left, right)
+    } else {
+      this.expressionMixer.setFacialActing(
+        this.facialActingController.update(delta, this.currentEmotionKey, speaking),
+      )
+    }
     this.expressionMixer.apply()
   }
 
   setPresentationOnly(value: boolean): void {
+    this.presentationOnly = value
     this.proceduralMotionController.setPresentationOnly(value)
+  }
+
+  setPcmClock(clock: PcmPlaybackClock | null): void {
+    this.facialActingController.setClock(clock)
+  }
+
+  getActingPresentation(): FacialActingPresentation {
+    return this.expressionMixer.getActingPresentation()
+  }
+
+  applyActingPresentation(value: FacialActingPresentation | null): void {
+    this.mirrorActingFrom = this.expressionMixer.getActingPresentation()
+    this.mirroredActing = value
+    this.mirrorActingElapsed = 0
   }
 
   removeProceduralMotion(): void {
@@ -243,14 +298,23 @@ export class AvatarFacialRuntime {
   }
 
   applyEmotion(emotionKey: string, vrmEmotion?: string): void {
+    const entering = emotionKey !== this.currentEmotionKey
     this.currentEmotionKey = emotionKey
     const embodiment = resolveEmotionEmbodimentProfile(emotionKey)
     this.currentEmbodimentProfile = embodiment
     this.lipSyncVariationController.setEmotion(embodiment.lipSyncProfile)
-    this.expressionController.applyEmotion(embodiment.facialKey, vrmEmotion)
+    this.expressionController.applyEmotion(emotionKey, vrmEmotion)
     const profile = this.expressionController.getProfile()
     this.expressionMixer.setFacialProfile(profile)
+    this.blinkController.setAsymmetry(profile.eyeProfile.blinkAsymmetry)
     this.updateEffectiveBlinkProfile()
+    if (
+      entering &&
+      !this.presentationOnly &&
+      profile.id === 'chuckle' &&
+      this.expressionMixer.supportsBilateralBlink()
+    )
+      this.blinkController.requestWink('left')
     this.earBehaviorRuntime.applyEmotion(embodiment)
     this.tailBehaviorRuntime.applyEmotion(embodiment.id)
     this.headMotionRuntime.applyEmotionProfile(embodiment)

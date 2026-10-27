@@ -17,6 +17,7 @@ const requests: Deferred<void>[] = []
 
 function fixture() {
   const controller = new AvatarController()
+  controller.setConversationView({ overlayViewMode: 'bust' })
   controllers.push(controller)
   const {
     vrmModel: model,
@@ -95,6 +96,22 @@ afterEach(async () => {
 })
 
 describe('conversational gesture preparation and late admission', () => {
+  it('accepts a fresh same-turn proposal after an unperformed preparation expired', () => {
+    let now = 1000
+    vi.spyOn(Date, 'now').mockImplementation(() => now)
+    const f = fixture()
+    f.propose()
+    now += 10001
+    f.controller.update(0)
+    f.request.mockClear()
+    f.propose()
+    expect(f.request).toHaveBeenCalledWith(
+      'greet_wave_soft',
+      expect.objectContaining({ speechBound: true }),
+    )
+    f.start()
+    expect(f.request.mock.calls.filter(([id]) => id === 'greet_wave_soft')).toHaveLength(1)
+  })
   it('releases an anticipatory preparation when its admitted turn clears the proposal', () => {
     const f = fixture()
     const release = vi.spyOn(f.model, 'releaseSpeechPreparation')

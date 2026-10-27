@@ -23,6 +23,7 @@ import type { SpeechPhrasePhase } from '../../embodiment/speech/PhraseEnvelopeCo
 import type { SpeechPhraseTimingPlan } from '../../embodiment/speech/SpeechPhraseTiming'
 import type { AvatarProceduralMode } from '../../embodiment/types'
 import { AvatarPerformanceMonitor } from './AvatarPerformanceMonitor'
+import type { ConversationViewConfig } from './ConversationFraming'
 import { GeneratedBodyPlayback } from './GeneratedBodyPlayback'
 import type {
   GeneratedBodyDebugState,
@@ -76,19 +77,25 @@ export class VrmModel {
 
   setPcmClock(clock: PcmPlaybackClock | null): void {
     this.bodyPlayback.setClock(clock)
+    this.facialRuntime.setPcmClock(clock)
   }
   setBodyCameraMode(mode: string): void {
     this.bodyPlayback.setCameraMode(mode)
+  }
+  setConversationView(config: ConversationViewConfig): void {
+    this.bodyPlayback.setConversationView(config)
   }
   setPresentationOnly(value: boolean): void {
     this.bodyPlayback.setPresentationOnly(value)
     this.facialRuntime.setPresentationOnly(value)
   }
   getBodyPresentation(): BodyPresentation | null {
-    return this.bodyPlayback.getPresentation()
+    const body = this.bodyPlayback.getPresentation()
+    return body ? { ...body, facialActing: this.facialRuntime.getActingPresentation() } : null
   }
   applyBodyPresentation(value: BodyPresentation | null): void {
     this.bodyPlayback.setMirror(value)
+    this.facialRuntime.applyActingPresentation(value?.facialActing ?? null)
   }
   settleMotionCancellation(): Promise<void> {
     return this.bodyPlayback.settleCancellation()
@@ -169,8 +176,10 @@ export class VrmModel {
     this.scene = null
   }
 
-  setBodyMotionLayer(layer: AvatarBodyMotionLayer): void {
-    this.facialRuntime.setBodyMotionLayer(layer)
+  setBodyMotionLayer(_requestedLayer: AvatarBodyMotionLayer): void {
+    // Coordinator notifications may arrive between composed frames. A request
+    // still waiting for body application has no authority over current presence.
+    this.facialRuntime.setBodyMotionLayer(this.bodyPlayback.getAppliedMotionLayer())
   }
 
   applyEmotion(emotionKey: string, vrmEmotion?: string): void {

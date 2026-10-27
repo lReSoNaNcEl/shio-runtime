@@ -1,6 +1,6 @@
 {
   "schemaVersion": 3,
-  "catalogRevision": "living-v3-2026-10-27",
+  "catalogRevision": "expressive-v4-2026-10-27",
   "format": {
     "protocolVersion": 2,
     "sourceRevision": "e706e27acc88070918308a10922b8f7174d0825e",
@@ -2983,7 +2983,7 @@
       "entryHands": "relaxed",
       "accentHands": "raised",
       "exitHands": "relaxed",
-      "cameraPolicy": ["full", "bust", "face"],
+      "cameraPolicy": ["full", "bust"],
       "interruptionPolicy": {
         "interruptiblePhases": ["prepare", "hold", "recover"],
         "recoveryRequired": true,
@@ -4663,7 +4663,7 @@
       "entryHands": "relaxed",
       "accentHands": "front",
       "exitHands": "relaxed",
-      "cameraPolicy": ["full", "bust", "face"],
+      "cameraPolicy": ["full", "bust"],
       "interruptionPolicy": {
         "interruptiblePhases": ["prepare", "hold", "recover"],
         "recoveryRequired": true,
@@ -10123,7 +10123,7 @@
       "entryHands": "relaxed",
       "accentHands": "raised",
       "exitHands": "relaxed",
-      "cameraPolicy": ["full", "bust", "face"],
+      "cameraPolicy": ["full", "bust"],
       "interruptionPolicy": {
         "interruptiblePhases": ["prepare", "hold", "recover"],
         "recoveryRequired": true,
@@ -12272,6 +12272,1293 @@
         "interruption": "land-and-stabilize",
         "generator": "procedural"
       }
+    },
+    {
+      "id": "greet_wave_close",
+      "family": "greeting",
+      "kind": "gesture",
+      "labels": {
+        "ru": "Приветствие рядом с лицом",
+        "en": "Close greeting"
+      },
+      "description": "The right hand makes a small greeting wave beside the cheek, outside the face, then lowers.",
+      "semanticIntent": "greeting",
+      "entryPostures": ["standing"],
+      "exitPosture": "standing",
+      "requiredRigCapabilities": [
+        "body-standing",
+        "left-hand",
+        "right-hand",
+        "left-fingers",
+        "right-fingers"
+      ],
+      "supportPolicy": {
+        "contacts": "both-feet-planted",
+        "allowStep": false,
+        "maxVerticalRootM": 0.015
+      },
+      "rootPolicy": {
+        "mode": "anchored-standing",
+        "frame": "model-stage",
+        "maxHorizontalM": 0.01
+      },
+      "phases": [
+        {
+          "id": "prepare",
+          "minMs": 650,
+          "maxMs": 3000,
+          "exitConditions": ["both-hands-target-reached", "body-phase-ready"]
+        },
+        {
+          "id": "stroke",
+          "minMs": 800,
+          "maxMs": 1350,
+          "exitConditions": ["both-hands-target-reached", "body-phase-ready"]
+        },
+        {
+          "id": "hold",
+          "minMs": 250,
+          "maxMs": 400,
+          "exitConditions": ["both-hands-target-reached", "body-phase-ready"]
+        },
+        {
+          "id": "recover",
+          "minMs": 900,
+          "maxMs": 4500,
+          "exitConditions": [
+            "standing-stable",
+            "both-hands-recovered",
+            "wrists-recovered",
+            "fingers-recovered"
+          ]
+        }
+      ],
+      "handScore": {
+        "revision": "greet_wave_close-hands-v1",
+        "calibrationRevision": "vrm-normalized-hands-v1",
+        "phases": {
+          "prepare": {
+            "left": {
+              "role": "support",
+              "wristEuler": [0, 0, 0],
+              "fingers": {
+                "thumb": {
+                  "curl": [0.22, 0.194, 0.154],
+                  "spread": -0.015,
+                  "opposition": 0.18
+                },
+                "index": {
+                  "curl": [0.28, 0.246, 0.196],
+                  "spread": -0.04,
+                  "opposition": 0
+                },
+                "middle": {
+                  "curl": [0.32, 0.282, 0.224],
+                  "spread": -0.015,
+                  "opposition": 0
+                },
+                "ring": {
+                  "curl": [0.38, 0.334, 0.266],
+                  "spread": -0.015,
+                  "opposition": 0
+                },
+                "little": {
+                  "curl": [0.43, 0.378, 0.301],
+                  "spread": -0.04,
+                  "opposition": 0
+                }
+              },
+              "timing": {
+                "start": 0,
+                "end": 1
+              },
+              "workspace": "relaxed",
+              "palmFacing": "free",
+              "fingerDirection": "free"
+            },
+            "right": {
+              "role": "lead",
+              "wristEuler": [-0.08, 0.12, 0.06],
+              "fingers": {
+                "thumb": {
+                  "curl": [0.12, 0.106, 0.084],
+                  "spread": 0.015,
+                  "opposition": 0.18
+                },
+                "index": {
+                  "curl": [0.08, 0.07, 0.056],
+                  "spread": 0.04,
+                  "opposition": 0
+                },
+                "middle": {
+                  "curl": [0.1, 0.088, 0.07],
+                  "spread": 0.015,
+                  "opposition": 0
+                },
+                "ring": {
+                  "curl": [0.14, 0.123, 0.098],
+                  "spread": 0.015,
+                  "opposition": 0
+                },
+                "little": {
+                  "curl": [0.18, 0.158, 0.126],
+                  "spread": 0.04,
+                  "opposition": 0
+                }
+              },
+              "timing": {
+                "start": 0,
+                "end": 1
+              },
+              "workspace": "face",
+              "palmFacing": "forward",
+              "fingerDirection": "up",
+              "workspaceExtentScale": 0.5,
+              "workspaceOffset": [0, -0.25, 0],
+              "workspaceTrajectory": "relative-source"
+            }
+          },
+          "stroke": {
+            "left": {
+              "role": "support",
+              "wristEuler": [0, 0, 0],
+              "fingers": {
+                "thumb": {
+                  "curl": [0.22, 0.194, 0.154],
+                  "spread": -0.015,
+                  "opposition": 0.18
+                },
+                "index": {
+                  "curl": [0.28, 0.246, 0.196],
+                  "spread": -0.04,
+                  "opposition": 0
+                },
+                "middle": {
+                  "curl": [0.32, 0.282, 0.224],
+                  "spread": -0.015,
+                  "opposition": 0
+                },
+                "ring": {
+                  "curl": [0.38, 0.334, 0.266],
+                  "spread": -0.015,
+                  "opposition": 0
+                },
+                "little": {
+                  "curl": [0.43, 0.378, 0.301],
+                  "spread": -0.04,
+                  "opposition": 0
+                }
+              },
+              "timing": {
+                "start": 0,
+                "end": 1
+              },
+              "workspace": "relaxed",
+              "palmFacing": "free",
+              "fingerDirection": "free"
+            },
+            "right": {
+              "role": "lead",
+              "wristEuler": [-0.08, 0.12, 0.06],
+              "fingers": {
+                "thumb": {
+                  "curl": [0.12, 0.106, 0.084],
+                  "spread": 0.015,
+                  "opposition": 0.18
+                },
+                "index": {
+                  "curl": [0.08, 0.07, 0.056],
+                  "spread": 0.04,
+                  "opposition": 0
+                },
+                "middle": {
+                  "curl": [0.1, 0.088, 0.07],
+                  "spread": 0.015,
+                  "opposition": 0
+                },
+                "ring": {
+                  "curl": [0.14, 0.123, 0.098],
+                  "spread": 0.015,
+                  "opposition": 0
+                },
+                "little": {
+                  "curl": [0.18, 0.158, 0.126],
+                  "spread": 0.04,
+                  "opposition": 0
+                }
+              },
+              "timing": {
+                "start": 0,
+                "end": 1
+              },
+              "workspace": "face",
+              "palmFacing": "forward",
+              "fingerDirection": "up",
+              "workspaceExtentScale": 0.5,
+              "workspaceOffset": [0, -0.25, 0],
+              "workspaceTrajectory": "relative-source"
+            }
+          },
+          "hold": {
+            "left": {
+              "role": "support",
+              "wristEuler": [0, 0, 0],
+              "fingers": {
+                "thumb": {
+                  "curl": [0.22, 0.194, 0.154],
+                  "spread": -0.015,
+                  "opposition": 0.18
+                },
+                "index": {
+                  "curl": [0.28, 0.246, 0.196],
+                  "spread": -0.04,
+                  "opposition": 0
+                },
+                "middle": {
+                  "curl": [0.32, 0.282, 0.224],
+                  "spread": -0.015,
+                  "opposition": 0
+                },
+                "ring": {
+                  "curl": [0.38, 0.334, 0.266],
+                  "spread": -0.015,
+                  "opposition": 0
+                },
+                "little": {
+                  "curl": [0.43, 0.378, 0.301],
+                  "spread": -0.04,
+                  "opposition": 0
+                }
+              },
+              "timing": {
+                "start": 0,
+                "end": 1
+              },
+              "workspace": "relaxed",
+              "palmFacing": "free",
+              "fingerDirection": "free"
+            },
+            "right": {
+              "role": "lead",
+              "wristEuler": [-0.08, 0.12, 0.06],
+              "fingers": {
+                "thumb": {
+                  "curl": [0.12, 0.106, 0.084],
+                  "spread": 0.015,
+                  "opposition": 0.18
+                },
+                "index": {
+                  "curl": [0.08, 0.07, 0.056],
+                  "spread": 0.04,
+                  "opposition": 0
+                },
+                "middle": {
+                  "curl": [0.1, 0.088, 0.07],
+                  "spread": 0.015,
+                  "opposition": 0
+                },
+                "ring": {
+                  "curl": [0.14, 0.123, 0.098],
+                  "spread": 0.015,
+                  "opposition": 0
+                },
+                "little": {
+                  "curl": [0.18, 0.158, 0.126],
+                  "spread": 0.04,
+                  "opposition": 0
+                }
+              },
+              "timing": {
+                "start": 0,
+                "end": 1
+              },
+              "workspace": "face",
+              "palmFacing": "forward",
+              "fingerDirection": "up",
+              "workspaceExtentScale": 0.5,
+              "workspaceOffset": [0, -0.25, 0],
+              "workspaceTrajectory": "relative-source"
+            }
+          },
+          "recover": {
+            "left": {
+              "role": "support",
+              "wristEuler": [0, 0, 0],
+              "fingers": {
+                "thumb": {
+                  "curl": [0.22, 0.194, 0.154],
+                  "spread": -0.015,
+                  "opposition": 0.18
+                },
+                "index": {
+                  "curl": [0.28, 0.246, 0.196],
+                  "spread": -0.04,
+                  "opposition": 0
+                },
+                "middle": {
+                  "curl": [0.32, 0.282, 0.224],
+                  "spread": -0.015,
+                  "opposition": 0
+                },
+                "ring": {
+                  "curl": [0.38, 0.334, 0.266],
+                  "spread": -0.015,
+                  "opposition": 0
+                },
+                "little": {
+                  "curl": [0.43, 0.378, 0.301],
+                  "spread": -0.04,
+                  "opposition": 0
+                }
+              },
+              "timing": {
+                "start": 0,
+                "end": 1
+              },
+              "workspace": "relaxed",
+              "palmFacing": "free",
+              "fingerDirection": "free"
+            },
+            "right": {
+              "role": "lead",
+              "wristEuler": [0, 0, 0],
+              "fingers": {
+                "thumb": {
+                  "curl": [0.22, 0.194, 0.154],
+                  "spread": 0.015,
+                  "opposition": 0.18
+                },
+                "index": {
+                  "curl": [0.28, 0.246, 0.196],
+                  "spread": 0.04,
+                  "opposition": 0
+                },
+                "middle": {
+                  "curl": [0.32, 0.282, 0.224],
+                  "spread": 0.015,
+                  "opposition": 0
+                },
+                "ring": {
+                  "curl": [0.38, 0.334, 0.266],
+                  "spread": 0.015,
+                  "opposition": 0
+                },
+                "little": {
+                  "curl": [0.43, 0.378, 0.301],
+                  "spread": 0.04,
+                  "opposition": 0
+                }
+              },
+              "timing": {
+                "start": 0,
+                "end": 1
+              },
+              "workspace": "relaxed",
+              "palmFacing": "free",
+              "fingerDirection": "free"
+            }
+          }
+        }
+      },
+      "entryHands": "relaxed",
+      "accentHands": "face",
+      "exitHands": "relaxed",
+      "cameraPolicy": ["face"],
+      "interruptionPolicy": {
+        "interruptiblePhases": ["prepare", "hold", "recover"],
+        "recoveryRequired": true,
+        "protectedPhase": "stroke"
+      },
+      "variationPolicy": {
+        "amplitudeMin": 0.75,
+        "amplitudeMax": 1.05,
+        "tempoMin": 0.85,
+        "tempoMax": 1.1,
+        "fixedLeadSide": "right",
+        "mirrorQualified": false,
+        "cooldownFamilyMs": 60000,
+        "intentTtlMs": 6000
+      },
+      "qualification": {
+        "state": "qualified",
+        "rigProfiles": ["vrm-normalized-hands-v1"]
+      },
+      "conditioningRefs": {
+        "templateId": "greet_wave_close-v1",
+        "prompt": "A person stands upright with both feet fully planted, no stepping or jumping. The right hand makes a small greeting wave beside the cheek, outside the face, then lowers. Keep the elbow close to the torso and the hand beside rather than across the eyes."
+      },
+      "behaviorTags": ["gesture:greeting"],
+      "usage": {
+        "speaking": true,
+        "reaction": true,
+        "idle": false,
+        "extendedIdle": false
+      },
+      "automaticSelection": true,
+      "defaultWeight": 1,
+      "descriptions": {
+        "ru": "Правая ладонь делает небольшой приветственный взмах сбоку от щеки и возвращается вниз.",
+        "en": "The right hand makes a small greeting wave beside the cheek, outside the face, then lowers."
+      },
+      "libraryGroup": "conversation"
+    },
+    {
+      "id": "explain_point_close",
+      "family": "explanation",
+      "kind": "gesture",
+      "labels": {
+        "ru": "Поясняющий акцент пальцем",
+        "en": "Close explaining point"
+      },
+      "description": "The right index finger points upward beside the cheek for one small explanatory beat, elbow stays below the shoulder, then the hand lowers.",
+      "semanticIntent": "explain",
+      "entryPostures": ["standing"],
+      "exitPosture": "standing",
+      "requiredRigCapabilities": [
+        "body-standing",
+        "left-hand",
+        "right-hand",
+        "left-fingers",
+        "right-fingers"
+      ],
+      "supportPolicy": {
+        "contacts": "both-feet-planted",
+        "allowStep": false,
+        "maxVerticalRootM": 0.015
+      },
+      "rootPolicy": {
+        "mode": "anchored-standing",
+        "frame": "model-stage",
+        "maxHorizontalM": 0.01
+      },
+      "phases": [
+        {
+          "id": "prepare",
+          "minMs": 550,
+          "maxMs": 2600,
+          "exitConditions": ["both-hands-target-reached", "body-phase-ready"]
+        },
+        {
+          "id": "stroke",
+          "minMs": 800,
+          "maxMs": 1300,
+          "exitConditions": ["both-hands-target-reached", "body-phase-ready"]
+        },
+        {
+          "id": "hold",
+          "minMs": 250,
+          "maxMs": 400,
+          "exitConditions": ["both-hands-target-reached", "body-phase-ready"]
+        },
+        {
+          "id": "recover",
+          "minMs": 900,
+          "maxMs": 4500,
+          "exitConditions": [
+            "standing-stable",
+            "both-hands-recovered",
+            "wrists-recovered",
+            "fingers-recovered"
+          ]
+        }
+      ],
+      "handScore": {
+        "revision": "explain_point_close-hands-v1",
+        "calibrationRevision": "vrm-normalized-hands-v1",
+        "phases": {
+          "prepare": {
+            "left": {
+              "role": "support",
+              "wristEuler": [0, 0, 0],
+              "fingers": {
+                "thumb": {
+                  "curl": [0.22, 0.194, 0.154],
+                  "spread": -0.015,
+                  "opposition": 0.18
+                },
+                "index": {
+                  "curl": [0.28, 0.246, 0.196],
+                  "spread": -0.04,
+                  "opposition": 0
+                },
+                "middle": {
+                  "curl": [0.32, 0.282, 0.224],
+                  "spread": -0.015,
+                  "opposition": 0
+                },
+                "ring": {
+                  "curl": [0.38, 0.334, 0.266],
+                  "spread": -0.015,
+                  "opposition": 0
+                },
+                "little": {
+                  "curl": [0.43, 0.378, 0.301],
+                  "spread": -0.04,
+                  "opposition": 0
+                }
+              },
+              "timing": {
+                "start": 0,
+                "end": 1
+              },
+              "workspace": "relaxed",
+              "palmFacing": "free",
+              "fingerDirection": "free"
+            },
+            "right": {
+              "role": "lead",
+              "wristEuler": [-0.08, 0.12, 0.06],
+              "fingers": {
+                "thumb": {
+                  "curl": [0.35, 0.5, 0.4],
+                  "spread": 0.015,
+                  "opposition": 0.35
+                },
+                "index": {
+                  "curl": [0.06, 0.06, 0.06],
+                  "spread": 0,
+                  "opposition": 0
+                },
+                "middle": {
+                  "curl": [1.05, 1.05, 0.65],
+                  "spread": 0.015,
+                  "opposition": 0
+                },
+                "ring": {
+                  "curl": [1.05, 1.05, 0.65],
+                  "spread": 0.015,
+                  "opposition": 0
+                },
+                "little": {
+                  "curl": [1.05, 1.05, 0.65],
+                  "spread": 0.04,
+                  "opposition": 0
+                }
+              },
+              "timing": {
+                "start": 0,
+                "end": 1
+              },
+              "workspace": "face",
+              "palmFacing": "forward",
+              "fingerDirection": "up",
+              "workspaceExtentScale": 0.5,
+              "workspaceOffset": [0, -0.25, 0],
+              "workspaceTrajectory": "relative-source"
+            }
+          },
+          "stroke": {
+            "left": {
+              "role": "support",
+              "wristEuler": [0, 0, 0],
+              "fingers": {
+                "thumb": {
+                  "curl": [0.22, 0.194, 0.154],
+                  "spread": -0.015,
+                  "opposition": 0.18
+                },
+                "index": {
+                  "curl": [0.28, 0.246, 0.196],
+                  "spread": -0.04,
+                  "opposition": 0
+                },
+                "middle": {
+                  "curl": [0.32, 0.282, 0.224],
+                  "spread": -0.015,
+                  "opposition": 0
+                },
+                "ring": {
+                  "curl": [0.38, 0.334, 0.266],
+                  "spread": -0.015,
+                  "opposition": 0
+                },
+                "little": {
+                  "curl": [0.43, 0.378, 0.301],
+                  "spread": -0.04,
+                  "opposition": 0
+                }
+              },
+              "timing": {
+                "start": 0,
+                "end": 1
+              },
+              "workspace": "relaxed",
+              "palmFacing": "free",
+              "fingerDirection": "free"
+            },
+            "right": {
+              "role": "lead",
+              "wristEuler": [-0.08, 0.12, 0.06],
+              "fingers": {
+                "thumb": {
+                  "curl": [0.35, 0.5, 0.4],
+                  "spread": 0.015,
+                  "opposition": 0.35
+                },
+                "index": {
+                  "curl": [0.06, 0.06, 0.06],
+                  "spread": 0,
+                  "opposition": 0
+                },
+                "middle": {
+                  "curl": [1.05, 1.05, 0.65],
+                  "spread": 0.015,
+                  "opposition": 0
+                },
+                "ring": {
+                  "curl": [1.05, 1.05, 0.65],
+                  "spread": 0.015,
+                  "opposition": 0
+                },
+                "little": {
+                  "curl": [1.05, 1.05, 0.65],
+                  "spread": 0.04,
+                  "opposition": 0
+                }
+              },
+              "timing": {
+                "start": 0,
+                "end": 1
+              },
+              "workspace": "face",
+              "palmFacing": "forward",
+              "fingerDirection": "up",
+              "workspaceExtentScale": 0.5,
+              "workspaceOffset": [0, -0.25, 0],
+              "workspaceTrajectory": "relative-source"
+            }
+          },
+          "hold": {
+            "left": {
+              "role": "support",
+              "wristEuler": [0, 0, 0],
+              "fingers": {
+                "thumb": {
+                  "curl": [0.22, 0.194, 0.154],
+                  "spread": -0.015,
+                  "opposition": 0.18
+                },
+                "index": {
+                  "curl": [0.28, 0.246, 0.196],
+                  "spread": -0.04,
+                  "opposition": 0
+                },
+                "middle": {
+                  "curl": [0.32, 0.282, 0.224],
+                  "spread": -0.015,
+                  "opposition": 0
+                },
+                "ring": {
+                  "curl": [0.38, 0.334, 0.266],
+                  "spread": -0.015,
+                  "opposition": 0
+                },
+                "little": {
+                  "curl": [0.43, 0.378, 0.301],
+                  "spread": -0.04,
+                  "opposition": 0
+                }
+              },
+              "timing": {
+                "start": 0,
+                "end": 1
+              },
+              "workspace": "relaxed",
+              "palmFacing": "free",
+              "fingerDirection": "free"
+            },
+            "right": {
+              "role": "lead",
+              "wristEuler": [-0.08, 0.12, 0.06],
+              "fingers": {
+                "thumb": {
+                  "curl": [0.35, 0.5, 0.4],
+                  "spread": 0.015,
+                  "opposition": 0.35
+                },
+                "index": {
+                  "curl": [0.06, 0.06, 0.06],
+                  "spread": 0,
+                  "opposition": 0
+                },
+                "middle": {
+                  "curl": [1.05, 1.05, 0.65],
+                  "spread": 0.015,
+                  "opposition": 0
+                },
+                "ring": {
+                  "curl": [1.05, 1.05, 0.65],
+                  "spread": 0.015,
+                  "opposition": 0
+                },
+                "little": {
+                  "curl": [1.05, 1.05, 0.65],
+                  "spread": 0.04,
+                  "opposition": 0
+                }
+              },
+              "timing": {
+                "start": 0,
+                "end": 1
+              },
+              "workspace": "face",
+              "palmFacing": "forward",
+              "fingerDirection": "up",
+              "workspaceExtentScale": 0.5,
+              "workspaceOffset": [0, -0.25, 0],
+              "workspaceTrajectory": "relative-source"
+            }
+          },
+          "recover": {
+            "left": {
+              "role": "support",
+              "wristEuler": [0, 0, 0],
+              "fingers": {
+                "thumb": {
+                  "curl": [0.22, 0.194, 0.154],
+                  "spread": -0.015,
+                  "opposition": 0.18
+                },
+                "index": {
+                  "curl": [0.28, 0.246, 0.196],
+                  "spread": -0.04,
+                  "opposition": 0
+                },
+                "middle": {
+                  "curl": [0.32, 0.282, 0.224],
+                  "spread": -0.015,
+                  "opposition": 0
+                },
+                "ring": {
+                  "curl": [0.38, 0.334, 0.266],
+                  "spread": -0.015,
+                  "opposition": 0
+                },
+                "little": {
+                  "curl": [0.43, 0.378, 0.301],
+                  "spread": -0.04,
+                  "opposition": 0
+                }
+              },
+              "timing": {
+                "start": 0,
+                "end": 1
+              },
+              "workspace": "relaxed",
+              "palmFacing": "free",
+              "fingerDirection": "free"
+            },
+            "right": {
+              "role": "lead",
+              "wristEuler": [0, 0, 0],
+              "fingers": {
+                "thumb": {
+                  "curl": [0.22, 0.194, 0.154],
+                  "spread": 0.015,
+                  "opposition": 0.18
+                },
+                "index": {
+                  "curl": [0.28, 0.246, 0.196],
+                  "spread": 0.04,
+                  "opposition": 0
+                },
+                "middle": {
+                  "curl": [0.32, 0.282, 0.224],
+                  "spread": 0.015,
+                  "opposition": 0
+                },
+                "ring": {
+                  "curl": [0.38, 0.334, 0.266],
+                  "spread": 0.015,
+                  "opposition": 0
+                },
+                "little": {
+                  "curl": [0.43, 0.378, 0.301],
+                  "spread": 0.04,
+                  "opposition": 0
+                }
+              },
+              "timing": {
+                "start": 0,
+                "end": 1
+              },
+              "workspace": "relaxed",
+              "palmFacing": "free",
+              "fingerDirection": "free"
+            }
+          }
+        }
+      },
+      "entryHands": "relaxed",
+      "accentHands": "face",
+      "exitHands": "relaxed",
+      "cameraPolicy": ["face"],
+      "interruptionPolicy": {
+        "interruptiblePhases": ["prepare", "hold", "recover"],
+        "recoveryRequired": true,
+        "protectedPhase": "stroke"
+      },
+      "variationPolicy": {
+        "amplitudeMin": 0.75,
+        "amplitudeMax": 1.05,
+        "tempoMin": 0.85,
+        "tempoMax": 1.1,
+        "fixedLeadSide": "right",
+        "mirrorQualified": false,
+        "cooldownFamilyMs": 10000,
+        "intentTtlMs": 6000
+      },
+      "qualification": {
+        "state": "qualified",
+        "rigProfiles": ["vrm-normalized-hands-v1"]
+      },
+      "conditioningRefs": {
+        "templateId": "explain_point_close-v1",
+        "prompt": "A person stands upright with both feet planted, no stepping. The right index finger points upward beside the cheek for one small explanatory beat, elbow stays below the shoulder, then the hand lowers. Keep the hand outside the face, never lift the elbow above the shoulder."
+      },
+      "behaviorTags": ["gesture:explain"],
+      "usage": {
+        "speaking": true,
+        "reaction": true,
+        "idle": false,
+        "extendedIdle": false
+      },
+      "automaticSelection": true,
+      "defaultWeight": 1,
+      "descriptions": {
+        "ru": "Указательный палец поднимается рядом со щекой в небольшом поясняющем акценте; локоть остаётся ниже плеча, затем кисть опускается.",
+        "en": "The right index finger points upward beside the cheek for one small explanatory beat, elbow stays below the shoulder, then the hand lowers."
+      },
+      "libraryGroup": "conversation"
+    },
+    {
+      "id": "celebrate_close",
+      "family": "celebration",
+      "kind": "gesture",
+      "labels": {
+        "ru": "Сдержанная радость рядом с лицом",
+        "en": "Close celebration"
+      },
+      "description": "The right open hand rises beside the cheek for one compact joyful accent, then lowers.",
+      "semanticIntent": "celebrate",
+      "entryPostures": ["standing"],
+      "exitPosture": "standing",
+      "requiredRigCapabilities": [
+        "body-standing",
+        "left-hand",
+        "right-hand",
+        "left-fingers",
+        "right-fingers"
+      ],
+      "supportPolicy": {
+        "contacts": "both-feet-planted",
+        "allowStep": false,
+        "maxVerticalRootM": 0.015
+      },
+      "rootPolicy": {
+        "mode": "anchored-standing",
+        "frame": "model-stage",
+        "maxHorizontalM": 0.01
+      },
+      "phases": [
+        {
+          "id": "prepare",
+          "minMs": 650,
+          "maxMs": 3000,
+          "exitConditions": ["both-hands-target-reached", "body-phase-ready"]
+        },
+        {
+          "id": "stroke",
+          "minMs": 800,
+          "maxMs": 1300,
+          "exitConditions": ["both-hands-target-reached", "body-phase-ready"]
+        },
+        {
+          "id": "hold",
+          "minMs": 250,
+          "maxMs": 400,
+          "exitConditions": ["both-hands-target-reached", "body-phase-ready"]
+        },
+        {
+          "id": "recover",
+          "minMs": 900,
+          "maxMs": 4500,
+          "exitConditions": [
+            "standing-stable",
+            "both-hands-recovered",
+            "wrists-recovered",
+            "fingers-recovered"
+          ]
+        }
+      ],
+      "handScore": {
+        "revision": "celebrate_close-hands-v1",
+        "calibrationRevision": "vrm-normalized-hands-v1",
+        "phases": {
+          "prepare": {
+            "left": {
+              "role": "support",
+              "wristEuler": [0, 0, 0],
+              "fingers": {
+                "thumb": {
+                  "curl": [0.22, 0.194, 0.154],
+                  "spread": -0.015,
+                  "opposition": 0.18
+                },
+                "index": {
+                  "curl": [0.28, 0.246, 0.196],
+                  "spread": -0.04,
+                  "opposition": 0
+                },
+                "middle": {
+                  "curl": [0.32, 0.282, 0.224],
+                  "spread": -0.015,
+                  "opposition": 0
+                },
+                "ring": {
+                  "curl": [0.38, 0.334, 0.266],
+                  "spread": -0.015,
+                  "opposition": 0
+                },
+                "little": {
+                  "curl": [0.43, 0.378, 0.301],
+                  "spread": -0.04,
+                  "opposition": 0
+                }
+              },
+              "timing": {
+                "start": 0,
+                "end": 1
+              },
+              "workspace": "relaxed",
+              "palmFacing": "free",
+              "fingerDirection": "free"
+            },
+            "right": {
+              "role": "lead",
+              "wristEuler": [-0.08, 0.12, 0.06],
+              "fingers": {
+                "thumb": {
+                  "curl": [0.12, 0.106, 0.084],
+                  "spread": 0.015,
+                  "opposition": 0.18
+                },
+                "index": {
+                  "curl": [0.08, 0.07, 0.056],
+                  "spread": 0.04,
+                  "opposition": 0
+                },
+                "middle": {
+                  "curl": [0.1, 0.088, 0.07],
+                  "spread": 0.015,
+                  "opposition": 0
+                },
+                "ring": {
+                  "curl": [0.14, 0.123, 0.098],
+                  "spread": 0.015,
+                  "opposition": 0
+                },
+                "little": {
+                  "curl": [0.18, 0.158, 0.126],
+                  "spread": 0.04,
+                  "opposition": 0
+                }
+              },
+              "timing": {
+                "start": 0,
+                "end": 1
+              },
+              "workspace": "face",
+              "palmFacing": "forward",
+              "fingerDirection": "up",
+              "workspaceExtentScale": 0.5,
+              "workspaceOffset": [0, -0.25, 0],
+              "workspaceTrajectory": "relative-source"
+            }
+          },
+          "stroke": {
+            "left": {
+              "role": "support",
+              "wristEuler": [0, 0, 0],
+              "fingers": {
+                "thumb": {
+                  "curl": [0.22, 0.194, 0.154],
+                  "spread": -0.015,
+                  "opposition": 0.18
+                },
+                "index": {
+                  "curl": [0.28, 0.246, 0.196],
+                  "spread": -0.04,
+                  "opposition": 0
+                },
+                "middle": {
+                  "curl": [0.32, 0.282, 0.224],
+                  "spread": -0.015,
+                  "opposition": 0
+                },
+                "ring": {
+                  "curl": [0.38, 0.334, 0.266],
+                  "spread": -0.015,
+                  "opposition": 0
+                },
+                "little": {
+                  "curl": [0.43, 0.378, 0.301],
+                  "spread": -0.04,
+                  "opposition": 0
+                }
+              },
+              "timing": {
+                "start": 0,
+                "end": 1
+              },
+              "workspace": "relaxed",
+              "palmFacing": "free",
+              "fingerDirection": "free"
+            },
+            "right": {
+              "role": "lead",
+              "wristEuler": [-0.08, 0.12, 0.06],
+              "fingers": {
+                "thumb": {
+                  "curl": [0.12, 0.106, 0.084],
+                  "spread": 0.015,
+                  "opposition": 0.18
+                },
+                "index": {
+                  "curl": [0.08, 0.07, 0.056],
+                  "spread": 0.04,
+                  "opposition": 0
+                },
+                "middle": {
+                  "curl": [0.1, 0.088, 0.07],
+                  "spread": 0.015,
+                  "opposition": 0
+                },
+                "ring": {
+                  "curl": [0.14, 0.123, 0.098],
+                  "spread": 0.015,
+                  "opposition": 0
+                },
+                "little": {
+                  "curl": [0.18, 0.158, 0.126],
+                  "spread": 0.04,
+                  "opposition": 0
+                }
+              },
+              "timing": {
+                "start": 0,
+                "end": 1
+              },
+              "workspace": "face",
+              "palmFacing": "forward",
+              "fingerDirection": "up",
+              "workspaceExtentScale": 0.5,
+              "workspaceOffset": [0, -0.25, 0],
+              "workspaceTrajectory": "relative-source"
+            }
+          },
+          "hold": {
+            "left": {
+              "role": "support",
+              "wristEuler": [0, 0, 0],
+              "fingers": {
+                "thumb": {
+                  "curl": [0.22, 0.194, 0.154],
+                  "spread": -0.015,
+                  "opposition": 0.18
+                },
+                "index": {
+                  "curl": [0.28, 0.246, 0.196],
+                  "spread": -0.04,
+                  "opposition": 0
+                },
+                "middle": {
+                  "curl": [0.32, 0.282, 0.224],
+                  "spread": -0.015,
+                  "opposition": 0
+                },
+                "ring": {
+                  "curl": [0.38, 0.334, 0.266],
+                  "spread": -0.015,
+                  "opposition": 0
+                },
+                "little": {
+                  "curl": [0.43, 0.378, 0.301],
+                  "spread": -0.04,
+                  "opposition": 0
+                }
+              },
+              "timing": {
+                "start": 0,
+                "end": 1
+              },
+              "workspace": "relaxed",
+              "palmFacing": "free",
+              "fingerDirection": "free"
+            },
+            "right": {
+              "role": "lead",
+              "wristEuler": [-0.08, 0.12, 0.06],
+              "fingers": {
+                "thumb": {
+                  "curl": [0.12, 0.106, 0.084],
+                  "spread": 0.015,
+                  "opposition": 0.18
+                },
+                "index": {
+                  "curl": [0.08, 0.07, 0.056],
+                  "spread": 0.04,
+                  "opposition": 0
+                },
+                "middle": {
+                  "curl": [0.1, 0.088, 0.07],
+                  "spread": 0.015,
+                  "opposition": 0
+                },
+                "ring": {
+                  "curl": [0.14, 0.123, 0.098],
+                  "spread": 0.015,
+                  "opposition": 0
+                },
+                "little": {
+                  "curl": [0.18, 0.158, 0.126],
+                  "spread": 0.04,
+                  "opposition": 0
+                }
+              },
+              "timing": {
+                "start": 0,
+                "end": 1
+              },
+              "workspace": "face",
+              "palmFacing": "forward",
+              "fingerDirection": "up",
+              "workspaceExtentScale": 0.5,
+              "workspaceOffset": [0, -0.25, 0],
+              "workspaceTrajectory": "relative-source"
+            }
+          },
+          "recover": {
+            "left": {
+              "role": "support",
+              "wristEuler": [0, 0, 0],
+              "fingers": {
+                "thumb": {
+                  "curl": [0.22, 0.194, 0.154],
+                  "spread": -0.015,
+                  "opposition": 0.18
+                },
+                "index": {
+                  "curl": [0.28, 0.246, 0.196],
+                  "spread": -0.04,
+                  "opposition": 0
+                },
+                "middle": {
+                  "curl": [0.32, 0.282, 0.224],
+                  "spread": -0.015,
+                  "opposition": 0
+                },
+                "ring": {
+                  "curl": [0.38, 0.334, 0.266],
+                  "spread": -0.015,
+                  "opposition": 0
+                },
+                "little": {
+                  "curl": [0.43, 0.378, 0.301],
+                  "spread": -0.04,
+                  "opposition": 0
+                }
+              },
+              "timing": {
+                "start": 0,
+                "end": 1
+              },
+              "workspace": "relaxed",
+              "palmFacing": "free",
+              "fingerDirection": "free"
+            },
+            "right": {
+              "role": "lead",
+              "wristEuler": [0, 0, 0],
+              "fingers": {
+                "thumb": {
+                  "curl": [0.22, 0.194, 0.154],
+                  "spread": 0.015,
+                  "opposition": 0.18
+                },
+                "index": {
+                  "curl": [0.28, 0.246, 0.196],
+                  "spread": 0.04,
+                  "opposition": 0
+                },
+                "middle": {
+                  "curl": [0.32, 0.282, 0.224],
+                  "spread": 0.015,
+                  "opposition": 0
+                },
+                "ring": {
+                  "curl": [0.38, 0.334, 0.266],
+                  "spread": 0.015,
+                  "opposition": 0
+                },
+                "little": {
+                  "curl": [0.43, 0.378, 0.301],
+                  "spread": 0.04,
+                  "opposition": 0
+                }
+              },
+              "timing": {
+                "start": 0,
+                "end": 1
+              },
+              "workspace": "relaxed",
+              "palmFacing": "free",
+              "fingerDirection": "free"
+            }
+          }
+        }
+      },
+      "entryHands": "relaxed",
+      "accentHands": "face",
+      "exitHands": "relaxed",
+      "cameraPolicy": ["face"],
+      "interruptionPolicy": {
+        "interruptiblePhases": ["prepare", "hold", "recover"],
+        "recoveryRequired": true,
+        "protectedPhase": "stroke"
+      },
+      "variationPolicy": {
+        "amplitudeMin": 0.75,
+        "amplitudeMax": 1.05,
+        "tempoMin": 0.85,
+        "tempoMax": 1.1,
+        "fixedLeadSide": "right",
+        "mirrorQualified": false,
+        "cooldownFamilyMs": 45000,
+        "intentTtlMs": 6000
+      },
+      "qualification": {
+        "state": "qualified",
+        "rigProfiles": ["vrm-normalized-hands-v1"]
+      },
+      "conditioningRefs": {
+        "templateId": "celebrate_close-v1",
+        "prompt": "A person stands upright with both feet fully planted, no stepping or jumping. The right open hand rises beside the cheek for one compact joyful accent, then lowers. Keep the elbow close to the torso and the hand beside rather than across the eyes."
+      },
+      "behaviorTags": ["gesture:celebrate"],
+      "usage": {
+        "speaking": true,
+        "reaction": true,
+        "idle": false,
+        "extendedIdle": false
+      },
+      "automaticSelection": true,
+      "defaultWeight": 1,
+      "descriptions": {
+        "ru": "Правая раскрытая ладонь слегка поднимается сбоку от щеки в коротком радостном акценте и опускается.",
+        "en": "The right open hand rises beside the cheek for one compact joyful accent, then lowers."
+      },
+      "libraryGroup": "reactions"
     }
   ],
   "handWorkspaces": {

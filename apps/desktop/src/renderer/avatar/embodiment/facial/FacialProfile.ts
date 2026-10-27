@@ -14,12 +14,7 @@ export interface FacialProfile {
     eyeContactBias: number
     eyeOpenness: number
     lookAwayBias: number
-    /**
-     * RESERVED — NOT APPLIED. Kept for a future bilateral/asymmetric blink.
-     * The Blink Domain drives a single combined eyelid weight; no per-eye
-     * (left/right) blink is implemented, so this value has no runtime effect
-     * and is intentionally not surfaced as an active effect in the Debug HUD.
-     */
+    /** Bounded bilateral blink depth variation, applied only with independent eyelids. */
     blinkAsymmetry: number
   }
   mouthProfile: {
@@ -325,6 +320,16 @@ export type FacialProfileId = keyof typeof FACIAL_PROFILES
 export const DEFAULT_FACIAL_PROFILE_ID: FacialProfileId = 'neutral'
 
 const PROFILE_ALIASES: Record<string, FacialProfileId> = {
+  shy: 'embarrassed',
+  amused: 'chuckle',
+  sleepy: 'neutral',
+  excited: 'happy',
+  worried: 'sad',
+  confused: 'confusion',
+  proud: 'approval',
+  pouting: 'angry',
+  loving: 'approval',
+  dazed: 'confusion',
   calm: 'neutral',
   warm: 'approval',
   crying: 'sad',

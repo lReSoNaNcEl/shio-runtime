@@ -270,6 +270,9 @@ Architecture and ownership:
   body/finger/chest projection with bounded interpolation; it never adds a second
   independent breathing or upper-body motion layer. Correction diagnostics expose
   bounded counts only, never raw poses.
+- Facial acting binds are capability-gated and owned by AvatarExpressionMixer.
+  Overlay consumes the primary composed acting and bilateral eyelid projection;
+  it never starts a second randomized facial actor.
 - New Project evidence UI uses React Spectrum 2, and every new evidence or Plugin UI
   string is added in both Russian and English.
 - Preserve the existing HTTP contract with `apps/api` unless the task

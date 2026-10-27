@@ -75,6 +75,71 @@ afterEach(async () => {
 })
 
 describe('generated phase timing regressions', () => {
+  it('does not consume a gesture family cooldown for unperformed preparation', async () => {
+    const { owner } = fixture()
+    await owner.playProfile('greet_wave_soft', context('greet_wave_soft', true))
+    owner.update(0.02, () => undefined)
+    await flush()
+    expect(owner.getEmbodimentAvailability().availableSemanticIntents).toContain('greeting')
+    vi.spyOn(GeneratedBodySafety.prototype, 'handTargetsReached').mockReturnValue(true)
+    let appliedStroke = false
+    for (let frame = 0; frame < 150; frame++) {
+      owner.setClock(createPcmPlaybackClock({ sourceSampleOffset: frame * 882 }))
+      owner.update(0.02, () => undefined)
+      await flush()
+      if (owner.getBodyMotionDebugState().appliedPose?.phaseId === 'stroke') {
+        appliedStroke = true
+        break
+      }
+    }
+    expect(appliedStroke).toBe(true)
+    expect(owner.getEmbodimentAvailability().availableSemanticIntents).not.toContain('greeting')
+  })
+  it('does not repay held preparation time by jumping through the audible stroke', async () => {
+    vi.useFakeTimers({ toFake: ['performance', 'setTimeout', 'clearTimeout'] })
+    vi.spyOn(GeneratedBodySafety.prototype, 'handTargetsReached').mockImplementation(
+      () => performance.now() >= 2300,
+    )
+    const { owner, next } = fixture()
+    const requests: unknown[] = []
+    next.mockImplementation(async (input) => {
+      requests.push({ at: performance.now(), from: input.fromFrame, plan: input.plan })
+      if (input.fromFrame !== 0) await new Promise((resolve) => setTimeout(resolve, 500))
+      return { ok: true, chunk: chunk(input) }
+    })
+    await owner.playProfile('greet_wave_soft', context('greet_wave_soft', true))
+    let firstStroke: number | undefined
+    for (let ms = 0; ms < 4500; ms += 20) {
+      owner.setClock(
+        createPcmPlaybackClock({
+          turnId: 'delayed-turn',
+          playbackId: 'delayed-pcm',
+          state: 'playing',
+          sourceSampleOffset: (ms + 20) * 44.1,
+        }),
+      )
+      owner.update(0.02, () => undefined)
+      await vi.advanceTimersByTimeAsync(20)
+      await flush()
+      const pose = owner.getPresentation()
+      if (pose?.phaseId === 'stroke') firstStroke ??= pose.frame
+      const error = owner.getBodyMotionDebugState().generated?.error
+      expect(
+        error,
+        JSON.stringify({
+          ms,
+          requests,
+          planning: owner.getBodyMotionDebugState().generated?.planning,
+        }),
+      ).toBeNull()
+    }
+    const requestedStroke = next.mock.calls.find(
+      ([request]) => request.plan.phaseId === 'stroke',
+    )?.[0]
+    expect(requestedStroke).toBeDefined()
+    expect(firstStroke).toBeDefined()
+    expect((firstStroke ?? Infinity) - (requestedStroke?.fromFrame ?? 0)).toBeLessThan(1.5)
+  })
   it('preserves a new preparation across repeated idle or previous-turn terminal clocks', async () => {
     const { owner } = fixture()
     const ended = createPcmPlaybackClock({

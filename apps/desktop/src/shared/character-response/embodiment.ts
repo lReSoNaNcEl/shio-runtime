@@ -8,6 +8,8 @@ import { bodyTurnIntentSchema } from '../motion/physicalAction'
 import { EMOTION_INTENSITIES } from '../speech/emotions.generated'
 import { containInternalReasoning } from './reasoning'
 
+export const EMBODIMENT_PROPOSAL_TTL_MS = 10000
+
 export const EMBODIMENT_INTENSITIES = EMOTION_INTENSITIES
 /** Canonical semantic vocabulary. Physical catalog entries map to these meanings. */
 export const EMBODIMENT_GESTURE_DEFINITIONS = [

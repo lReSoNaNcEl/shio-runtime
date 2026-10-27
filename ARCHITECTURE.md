@@ -1509,6 +1509,130 @@ observes raw-hand motion and fingertip visibility in that unchanged framing;
 cropping remains an explicit readability failure rather than being hidden by
 automatic camera motion or a changed acceptance threshold.
 
+**Continuous expressive embodiment review — implemented 28 October 2026 after 1868536; joint artistic qualification remains separate.**
+The existing generated-body owner must qualify phase handoff against consumed PCM,
+accepted horizon coverage and actual provider latency. Reproduced queue defects are
+corrected there without increasing the stroke waiting deadline or replaying expired
+accents. Generation failure retains autonomous procedural presence and performs the
+existing bounded recovery; inference readiness never authorizes a late semantic act.
+Gesture selection may inspect the fixed presentation frustum and calibrated expected
+hand workspaces before execution. A physically valid but invisible act is not a
+readable candidate. Any compact workspace is resolved before the execution starts,
+remains anatomically admissible, and shares the existing body/hand phase cursor.
+Changing a Preview camera never warps or clamps an executing trajectory. Facial or
+head presence may remain expressive when no appropriate visible hand act is available;
+it cannot be reported as a performed explicit hand gesture.
+
+The existing Facial domain audits supported expressions and their actual bound
+morph/material contributions on model attachment. Unsupported or zero-effect facial
+controls are reported honestly rather than amplified. Bounded brow, eyelid and mouth
+acting contributions are capability-gated, have attack/release and cancellation, and
+compose through AvatarExpressionMixer alone. Blink closure and LipSync retain their
+own authority; facial acting cannot reopen a blink or replace phoneme articulation.
+The same semantic emotion and consumed speech timing drive both presentations; an
+Overlay never starts a second unsynchronized facial actor. No new top-level Runtime,
+Character State dimension, TTS contract or raw-geometry diagnostics is introduced.
+The 2D branch is a behavior reference, not a renderer to copy. Numerical transport,
+physical readiness and artistic acceptance are separate qualification results.
+
+**Facial binding audit decision — implemented after measured model audit, 28 October 2026.**
+The selected VRM0 contains functional ARKit brow, eyelid and mouth-corner targets
+that its VRM expression groups do not expose. The Mixer may register transient,
+private expression binds for an exact allowlist of those existing targets after
+checking nonzero geometry deltas. It unregisters only its own declarations on
+detach. This changes no asset or skin weights, writes no morph influence outside
+the Mixer and never invents an unsupported channel. The bounded acting/eyelid
+presentation travels with the existing composed body projection so Overlay consumes
+the primary actor's values rather than running another random facial sequence.
+Facial profile resolution preserves the original semantic emotion and its existing
+facial aliases. The six-category body/ear modulation projection must not collapse
+distinct facial profiles such as laugh and chuckle into happy. That projection
+remains valid for its existing body/secondary-motion owners, not facial selection.
+
+**Audible phase-handoff correction — implemented after deterministic reproduction, 28 October 2026.**
+A ready forecast can cap the applied cursor at its boundary while physical preparation
+is still reaching its admissible pose. Consumed PCM continues during this hold. That
+unapplied interval is discarded from the body's clock origin at the cap; it must not
+be repaid as a jump into the following stroke. The next phase begins at its already
+prepared boundary and advances only with subsequently consumed PCM. This does not
+alter audio, increase phase deadlines, accelerate an expired gesture, or relax queue,
+anatomical, speech-window and cancellation checks.
+
+**Compact hand candidates — implemented and manually qualified 28 October 2026; joint conversation acceptance remains separate.**
+Greeting, explanation and celebration may have separate close-framing catalog
+candidates using the existing rig-relative face workspace and the same semantic
+family/cooldown. Their conditioning and hand score are declared before execution;
+an optional bounded workspaceExtentScale may inset a hand target inside that
+existing region, with a bounded rig-relative workspaceOffset for a compact
+gesture's authored height/lateral placement. Defaults retain the original region;
+both expected visibility and physical admission share these parameters. Compact
+open palms need room for their fingertips and must not obscure the eyes;
+wrist-only visibility is insufficient.
+they are not viewport clamps on a running gesture. Wide and close candidates have
+different camera eligibility. New candidates remain manual draft profiles until
+real-rig physical and readability checks support promotion. The fixed-frustum
+visibility check remains authoritative after camera-policy filtering.
+
+**Admitted preparation reaching — implemented after compact-candidate failure, 28 October 2026.**
+The neural source can stop at a ready forecast while IK is still reaching an admitted
+hand workspace. Zero neural speed must not impose an unrelated sub-radian-per-second
+cap on that physical preparation. For active nonrelaxed gesture arms in preparation,
+the existing temporal tracker may derive its correction speed from actual angular
+error and remaining authored preparation time. Existing anatomical projection,
+collision sweep, joint speed ceilings and acceleration envelopes remain authoritative.
+Ordinary source tracking, presence, stroke and recovery retain their existing policy;
+no elapsed audio or waiting time is accumulated for catch-up.
+
+**Swept clearance reserve — implemented after measured tangent contact, 28 October 2026.**
+During acceleration-filtered gesture/reaction composition, the body collision sweep retains the same
+3 mm clearance used by bounded surface sliding, rather than integrating to an
+exact zero-clearance tangent, including recovery of that gesture. Legacy direct
+recovery and presence/full-body sweeps keep their existing policy. This reserve
+absorbs small breathing/attachment translations between frames without permitting
+penetration or unbounded repair. The same sweep rejects unsafe paths and allows
+only outward progress from a preexisting contact. Contact diagnostics and zero-contact
+qualification remain unchanged.
+
+**Expressive wink — implemented 28 October 2026.**
+An entering amused/chuckle facial profile may request one bounded unilateral Blink
+event when the model exposes bilateral eyelid expressions. The existing Blink
+controller owns its envelope, cooldown and cancellation; it cannot interrupt an
+ongoing blink/sequence. The composed eyelid pair is mirrored to Overlay. Repeated
+updates of the same emotion do not restart the event, and no unsupported rig is
+given an imitation wink through head or eye-wide movement.
+
+**Compact source trajectory preservation — implemented 28 October 2026; joint readability qualification remains separate.**
+Absolute projection of a distant generated wrist onto a narrow compact region
+can erase its stroke at a box boundary. An explicitly authored compact target
+may instead preserve source displacement relative to its phase-entry source
+anchor, starting at the previously admitted offset. The bounded mapping stays
+inside the declared region. A tighter preparation region can leave physical
+travel room in the stroke region; changing extents rescales the admitted offset
+so the same hand position remains the phase-entry anchor. It
+advances only with the body source cursor, and still
+passes anatomical projection, acceleration filtering and collision sweep. It
+never creates an independent rhythmic gesture or replays waiting audio time.
+The existing Character planning prompt also clarifies that its initial typed
+visual decision is authoritative; explicit available gesture requests must be
+represented there rather than promised in later prose. No intent parser or
+second semantic planner is introduced.
+
+**Pre-speech proposal reaffirmation — implemented after observed provider latency, 28 October 2026.**
+An anticipatory proposal can expire physically before the provider's first prose
+and first PCM. At first actual Character prose only, Main may reaffirm the same
+validated typed visual decision if its original delivery TTL has already expired.
+The existing shared10s TTL is unchanged; timely preparations receive no duplicate
+event. This is renewed delivery of the original current-turn proposal before any
+speech, not semantic replanning, an extended physical hold or a late audible
+accent. Empty/tool-only/failing/cancelled responses cannot reaffirm it.
+
+**Performed gesture cooldown — implemented 28 October 2026.**
+Body family and Avatar selection cooldowns commit when a gesture's stroke is
+actually applied, rather than when its preparation merely starts. Expired
+unperformed preparation may therefore be proposed again by the same still-admitted
+turn at first prose; a performed stroke keeps its normal cooldown. Presence,
+bounded queues, physical phase protection and cancellation retain their owners.
+
 **Typed conversational gesture decision and preparation — implemented 27 October 2026; deterministic validation complete, live validation not requested for this correction.** The same Character LLM may select one bounded semantic embodiment intent, or explicit absence, in its existing initial typed requirement/tool-planning result using the exact request-scoped Avatar availability. This is additional data in an existing model call, not a new planner, Runtime, tool capability, provider request or retry policy. It grants no tool authority. Invalid, absent or unsupported visual data never invalidates an otherwise valid tool plan or causes an extra provider call solely to repair embodiment. Except for bounded direct-answer preparation specified above, the existing safe response path forwards the validated decision at the first actual Character prose, before that prose reaches speech; provider failures before prose, tool-only rounds, empty responses and cancellations cannot present it as a performed gesture. A supplied typed decision is authoritative for that turn, including explicit absence; legacy early envelopes remain a compatibility input when no typed visual decision was supplied. External evidence never chooses this decision.
 
 Within the existing Avatar owner, a fresh opening proposal may begin one speech-bound preparation while waiting for the first PCM. Preparation may move toward its admissible target but never consumes an opening stroke before audible playback. Repeated state/delivery updates adopt the same pending execution instead of restarting it or rejecting it against its own cooldown. A late proposal is eligible only for a subsequent active-speech gesture boundary, once, under the existing readiness, camera, cooldown, support, cancellation and expiry checks. It cannot replace a protected stroke, replay an opening accent or begin after speech completion. Prepared/proposed identities are transient turn-bound controller coordination, not another Character State or physical pose owner. Model replacement, foreign turns, manual preview, expiry, cancellation and speech end release matching preparation. Known bracketed gesture literals are contained as malformed internal syntax without interpreting prose as a command; quoted code and ordinary links remain literal.

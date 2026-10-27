@@ -31,6 +31,8 @@ export interface SyncedAvatarState {
  * by the string map delivered via overlay-settings updates.
  */
 export interface OverlaySettingsView {
+  overlayWidth?: string
+  overlayHeight?: string
   vrmAssetHandle?: string
   overlayTransparentBackground?: string
   overlayScale?: string

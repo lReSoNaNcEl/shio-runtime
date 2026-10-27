@@ -654,6 +654,7 @@ export class Controller {
   }
 
   private applyOverlayConfigProjection(cfg: OverlaySettingsView): void {
+    this.avatarRuntime.setConversationView(cfg)
     const overlayCameraMode =
       cfg.overlayViewMode === 'bust' ||
       cfg.overlayViewMode === 'face' ||

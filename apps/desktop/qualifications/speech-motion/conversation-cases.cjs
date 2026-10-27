@@ -35,14 +35,19 @@ async function qualifyConversation({
       expectedHint: 'greeting',
     },
     {
+      id: 'surprise',
+      at: 165,
+      text: 'Представь: знакомый кот только что совершенно отчётливо произнёс твоё имя! Как бы ты удивилась? Ответь одной-двумя фразами.',
+    },
+    {
       id: 'emotion',
-      at: 190,
+      at: 210,
       text: 'Ура, у нас всё получилось с первой попытки! Очень рад поделиться с тобой. Как тебе такая новость? Ответь коротко.',
       requireGesture: true,
     },
     {
       id: 'settle',
-      at: 250,
+      at: 260,
       text: 'Спасибо, я немного помолчу. Ответь одним коротким предложением.',
     },
   ]
@@ -59,12 +64,27 @@ async function qualifyConversation({
     source: 'Unmodified CharacterResponsePort; actual Main LLM, Fish, ARDY; Chat + Overlay',
     cases: [],
     visualAcceptance: 'pending',
+    selectedView: await page.evaluate(async () => {
+      const config = await window.api.config.get()
+      return {
+        mode: config.overlayViewMode,
+        scale: config.overlayScale,
+        width: config.overlayWidth,
+        height: config.overlayHeight,
+      }
+    }),
+    facialCapabilities: await page.evaluate(
+      () =>
+        window.__motionAbController.avatarRuntime.controller.vrmModel.getFacialDebugState()
+          .actingCapabilities,
+    ),
   }
   await overlay.evaluate(() => {
     const c = window.__motionAbController,
       model = c.avatarRuntime.controller.vrmModel
     const state = {
       executions: {},
+      facial: {},
       camera: {
         position: c.scene.camera.position.toArray(),
         quaternion: c.scene.camera.quaternion.toArray(),
@@ -76,6 +96,16 @@ async function qualifyConversation({
     }
     const distance = (x, y) => Math.hypot(...x.map((value, i) => value - y[i]))
     const frame = () => {
+      model.vrm.scene.traverse((mesh) => {
+        if (!mesh.morphTargetDictionary) return
+        for (const [name, index] of Object.entries(mesh.morphTargetDictionary)) {
+          if (!/^(brow|eyeWide|eyeSquint|mouthSmile|mouthDimple|mouthFrown)/.test(name)) continue
+          const value = mesh.morphTargetInfluences?.[index] ?? 0
+          state.facial[name] ??= { min: 1, max: 0 }
+          state.facial[name].min = Math.min(state.facial[name].min, value)
+          state.facial[name].max = Math.max(state.facial[name].max, value)
+        }
+      })
       const camera = state.camera
       camera.maxPositionDelta = Math.max(
         camera.maxPositionDelta,
@@ -162,6 +192,7 @@ async function qualifyConversation({
         idleChestMin: Infinity,
         idleChestMax: -Infinity,
         layerViolations: 0,
+        bodyEvents: [],
       }
       const angle = (x, y) =>
         2 * Math.acos(Math.min(1, Math.abs(x.reduce((sum, value, i) => sum + value * y[i], 0))))
@@ -231,6 +262,54 @@ async function qualifyConversation({
           now = performance.now()
         const current = state.cases[state.current]
         const generated = model.getBodyMotionDebugState().generated
+        if (current) {
+          const facial = model.getFacialDebugState()
+          if (!current.facialProfiles.includes(facial.currentProfile))
+            current.facialProfiles.push(facial.currentProfile)
+          for (const [name, value] of Object.entries(facial.facialActing ?? {})) {
+            current.facialActing[name] ??= { min: 1, max: 0 }
+            current.facialActing[name].min = Math.min(current.facialActing[name].min, value)
+            current.facialActing[name].max = Math.max(current.facialActing[name].max, value)
+          }
+          for (const warning of facial.stuckWarnings)
+            if (!current.facialWarnings.includes(warning)) current.facialWarnings.push(warning)
+        }
+        const signature = JSON.stringify([
+          body.execution?.id,
+          body.execution?.phase,
+          body.execution?.revision,
+          body.execution?.ready,
+          body.profileVersion,
+          body.inFlightPhase,
+          body.forecast,
+          body.queue.map((chunk) => [
+            chunk.startFrame,
+            chunk.plan.phaseId,
+            chunk.plan.planRevision,
+          ]),
+        ])
+        if (signature !== state.lastBodyEvent && state.bodyEvents.length < 3000) {
+          state.lastBodyEvent = signature
+          state.bodyEvents.push({
+            atMs: now,
+            caseId: state.current,
+            cursor: body.cursor,
+            generatedEnd: body.generatedEnd,
+            clockBase: body.clockBase,
+            sourceSampleOffset: clock?.sourceSampleOffset,
+            phase: body.execution?.phase,
+            ready: body.execution?.ready,
+            elapsedMs: body.execution?.elapsedMs,
+            revision: body.execution?.revision,
+            version: body.profileVersion,
+            phaseAppliedFrame: body.phaseAppliedFrame,
+            forecast: body.forecast,
+            inFlightPhase: body.inFlightPhase,
+            executionId: body.execution?.id,
+            inferenceMs: body.lastInferenceMs,
+            queue: body.queue.map((chunk) => ({ start: chunk.startFrame, plan: chunk.plan })),
+          })
+        }
         if (current && generated.error && !current.errors.includes(generated.error)) {
           current.errors.push(generated.error)
           current.errorStates.push({
@@ -325,10 +404,10 @@ async function qualifyConversation({
               playing: clock?.state,
               availability: a.getEmbodimentAvailability(),
               error: generated.error,
+              facial: pose.facialActing,
             })
           }
         }
-        state.frame = requestAnimationFrame(frame)
       }
       state.begin = (fixture) => {
         state.current = fixture.id
@@ -341,6 +420,9 @@ async function qualifyConversation({
           executions: {},
           consumedSamples: 0,
           mouthPeak: 0,
+          facialProfiles: [],
+          facialActing: {},
+          facialWarnings: [],
           done: false,
           availabilityAtAdmission: a.getEmbodimentAvailability(),
         }
@@ -356,7 +438,7 @@ async function qualifyConversation({
         )
       }
       state.stop = () => {
-        cancelAnimationFrame(state.frame)
+        clearInterval(state.frame)
         unsubscribe()
         body.dynamicsObserver = originalObserver
         body.pump = originalPump
@@ -365,6 +447,9 @@ async function qualifyConversation({
       }
       window.__conversationProbe = state
       frame()
+      // Primary Avatar composition is timer-owned even when Chat is occluded.
+      // A paint-throttled RAF probe can see only one frame of a valid stroke.
+      state.frame = setInterval(frame, 1000 / 60)
     },
     motionProfiles.map(({ id, kind }) => ({ id, kind })),
   )
@@ -429,18 +514,22 @@ async function qualifyConversation({
       const visibleInOverlay = overlayEvidence.some(
         (value) => value.rawHandExcursionM >= 0.035 && value.visibleStrokeFraction >= 0.6,
       )
-      const passed =
+      const technicalPassed =
         result.done &&
         !result.errors.length &&
+        !result.facialWarnings.length &&
         result.consumedSamples > 10000 &&
-        result.mouthPeak > 0.05 &&
-        hintMatches &&
-        (!fixture.requireGesture || (visibleSemanticGesture && visibleInOverlay))
+        result.mouthPeak > 0.05
+      const readabilityPassed =
+        hintMatches && (!fixture.requireGesture || (visibleSemanticGesture && visibleInOverlay))
+      const passed = technicalPassed && readabilityPassed
       report.conversation.cases.push({
         id: fixture.id,
         ...result,
         executions,
         overlayEvidence,
+        technicalPassed,
+        readabilityPassed,
         passed,
         visualAcceptance: 'pending',
       })
@@ -469,6 +558,9 @@ async function qualifyConversation({
     captured = await page.evaluate(() => window.__conversationProbe.stop())
     report.conversation.overlayExecutions = await overlay.evaluate(() =>
       window.__conversationOverlayProbe.stop(),
+    )
+    report.conversation.overlayFacial = await overlay.evaluate(
+      () => window.__conversationOverlayProbe.facial,
     )
     report.conversation.camera = await overlay.evaluate(
       () => window.__conversationOverlayProbe.camera,
@@ -532,8 +624,8 @@ async function qualifyConversation({
       note: 'Select actual high-rate captured frames; no invented body poses.',
     }
   }
-  report.conversation.passed =
-    report.conversation.cases.every((entry) => entry.passed) &&
+  report.conversation.technicalPassed =
+    report.conversation.cases.every((entry) => entry.technicalPassed) &&
     report.conversation.returnedToPresence &&
     captured.layerViolations === 0 &&
     captured.idleChestMax - captured.idleChestMin > 0.002 &&
@@ -542,5 +634,10 @@ async function qualifyConversation({
     report.conversation.camera.maxFovDelta === 0 &&
     duration >= 300 &&
     video.measuredAverageFps >= 60
+  report.conversation.readabilityPassed = report.conversation.cases.every(
+    (entry) => entry.readabilityPassed,
+  )
+  report.conversation.passed =
+    report.conversation.technicalPassed && report.conversation.readabilityPassed
 }
 module.exports = { qualifyConversation }

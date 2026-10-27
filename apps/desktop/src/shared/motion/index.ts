@@ -1,6 +1,7 @@
 import { z } from 'zod'
 
 import rawCatalog from '../../../motion/motion-profiles.json'
+import { facialActingPresentationSchema } from '../facial-acting'
 import { MOTION_PROFILE_IDS } from './catalog.generated'
 import { motionCatalogSchema, motionFormatSchema, motionPhaseSchema } from './catalogSchema'
 
@@ -22,7 +23,7 @@ export const motionPlanIdentitySchema = z
   .object({
     executionId: z.string().min(1).max(128),
     planRevision: identity,
-    catalogRevision: z.literal('living-v3-2026-10-27'),
+    catalogRevision: z.literal(MOTION_CATALOG_REVISION),
     phaseId: motionPhaseSchema,
     handScoreRevision: z.string().min(1).max(80),
     handRigCalibrationRevision: z.literal('vrm-normalized-hands-v1'),
@@ -39,7 +40,7 @@ export type MotionPlanIdentity = z.infer<typeof motionPlanIdentitySchema>
 export const motionReadySchema = z
   .object({
     type: z.literal('ready'),
-    catalogRevision: z.literal('living-v3-2026-10-27'),
+    catalogRevision: z.literal(MOTION_CATALOG_REVISION),
     format: motionFormatSchema,
   })
   .strict()
@@ -236,6 +237,7 @@ const bodyPresentationBaseSchema = z
     bones: z.partialRecord(z.enum(BODY_BONE_NAMES), quaternion),
     hipsPosition: point,
     chestPosition: point.optional(),
+    facialActing: facialActingPresentationSchema.optional(),
     stage: z
       .object({
         position: point,

@@ -23,6 +23,13 @@ import type { PcmPlaybackClock } from '../../../audio/audioPlayer'
 import type { AvatarBodyMotionLayer } from '../../embodiment/motion/AvatarMotionLayer'
 import type { MotionLibraryDebug } from '../../MotionLibraryDebug'
 import { type MotionOutcome, MotionPhaseExecution } from '../../MotionPhaseExecution'
+import {
+  type ConversationView,
+  type ConversationViewConfig,
+  conversationCamera,
+  gestureRegionsVisible,
+  resolveConversationView,
+} from './ConversationFraming'
 import { GeneratedBodySafety } from './GeneratedBodySafety'
 import { calibrateFingerSpreadSigns, GeneratedHandPose } from './GeneratedHandPose'
 import type { GeneratedBodyDebugState, GeneratedMotionRequestContext } from './GeneratedMotionTypes'
@@ -117,6 +124,7 @@ export class GeneratedBodyPlayback {
     reject: (error: Error) => void
   }> = []
   private familyStarted = new Map<string, number>()
+  private familyRecordedExecutionId: string | null = null
   private recoveryPose = new Map<THREE.Object3D, THREE.Quaternion>()
   private transitionRoute: string[] = []
   private rejectedReason: string | null = null
@@ -155,6 +163,8 @@ export class GeneratedBodyPlayback {
   private rekeying = false
   private context: GeneratedMotionRequestContext | null = null
   private camera = 'full'
+  private conversationView: ConversationView | null = null
+  private projectedConversationCamera: THREE.PerspectiveCamera | null = null
   private presentationOnly = false
   private mirror: BodyPresentation | null = null
   private mirrorFrom: BodyPresentation | null = null
@@ -201,6 +211,7 @@ export class GeneratedBodyPlayback {
   }
 
   attach(vrm: VRM): void {
+    this.projectedConversationCamera = null
     this.vrm = vrm
     this.turn = null
     this.stage = undefined
@@ -319,6 +330,10 @@ export class GeneratedBodyPlayback {
 
   setCameraMode(mode: string): void {
     this.camera = mode
+  }
+  setConversationView(config: ConversationViewConfig): void {
+    this.conversationView = resolveConversationView(config, this.conversationView)
+    this.projectedConversationCamera = null
   }
   setPresentationOnly(value: boolean): void {
     this.presentationOnly = value
@@ -480,6 +495,7 @@ export class GeneratedBodyPlayback {
       context.forceReplay ||
         context.source === 'debug-preview' ||
         context.source === 'debug-reroll',
+      context.source !== 'debug-preview' && context.source !== 'debug-reroll',
     )
     if (
       profile.kind === 'gesture' &&
@@ -712,6 +728,7 @@ export class GeneratedBodyPlayback {
   private profileAvailability(
     id: string,
     repeat = false,
+    conversational = false,
   ): { available: boolean; reason: string | null } {
     const profile = getMotionProfile(id)
     const vrm = this.vrm
@@ -752,8 +769,30 @@ export class GeneratedBodyPlayback {
     )
     if (anchors.some((name) => !vrm.humanoid.getNormalizedBoneNode(name)))
       return { available: false, reason: 'rig-unsupported' }
-    if (!profile.cameraPolicy.includes(this.camera as 'full' | 'bust' | 'face'))
+    const cameraMode =
+      conversational && this.conversationView
+        ? this.conversationView.mode === 'portrait'
+          ? 'face'
+          : this.conversationView.mode
+        : this.camera === 'portrait'
+          ? 'face'
+          : this.camera
+    if (
+      (conversational || !repeat) &&
+      !profile.cameraPolicy.includes(cameraMode as 'full' | 'bust' | 'face')
+    )
       return { available: false, reason: 'camera-incompatible' }
+    if (conversational && profile.kind === 'gesture' && this.conversationView) {
+      this.projectedConversationCamera ??= conversationCamera(vrm, this.conversationView)
+      if (
+        this.projectedConversationCamera &&
+        !gestureRegionsVisible(
+          this.projectedConversationCamera,
+          this.bodySafety.expectedGesturePoints(profile),
+        )
+      )
+        return { available: false, reason: 'camera-incompatible' }
+    }
     if (
       !repeat &&
       profile.kind === 'gesture' &&
@@ -807,6 +846,10 @@ export class GeneratedBodyPlayback {
               ? 'reaction'
               : 'gesture',
         phase: this.localRecovery ? 'recover' : this.appliedPhaseId,
+        reachSeconds:
+          this.execution?.phase === 'prepare' && this.execution.id === this.appliedExecutionId
+            ? Math.max(0.25, (this.execution.budget.minMs - this.execution.elapsedMs) / 1000)
+            : undefined,
         sourceSpeeds: this.sourceSpeeds,
         onProjected: this.dynamicsObserver
           ? (bone) => {
@@ -834,7 +877,7 @@ export class GeneratedBodyPlayback {
 
   getEmbodimentAvailability(): EmbodimentAvailability {
     const compatible = MOTION_PROFILES.filter(
-      (profile) => this.profileAvailability(profile.id, true).available,
+      (profile) => this.profileAvailability(profile.id, true, true).available,
     )
     const qualified = compatible.filter((profile) => profile.qualification.state === 'qualified')
     const conversational = compatible.filter(
@@ -858,7 +901,7 @@ export class GeneratedBodyPlayback {
         ? [
             ...new Set(
               qualifiedConversation
-                .filter((profile) => this.profileAvailability(profile.id).available)
+                .filter((profile) => this.profileAvailability(profile.id, false, true).available)
                 .flatMap((profile) => (profile.semanticIntent ? [profile.semanticIntent] : [])),
             ),
           ]
@@ -922,7 +965,11 @@ export class GeneratedBodyPlayback {
       const profile = getMotionProfile(next.id)
       if (
         !profile ||
-        !this.profileAvailability(next.id, next.context.forceReplay).available ||
+        !this.profileAvailability(
+          next.id,
+          next.context.forceReplay,
+          next.context.source !== 'debug-preview' && next.context.source !== 'debug-reroll',
+        ).available ||
         now - next.at > profile.variationPolicy.intentTtlMs
       ) {
         next.reject(new Error('ARDY_STALE_INTENT'))
@@ -1160,8 +1207,17 @@ export class GeneratedBodyPlayback {
             chunk.startFrame === this.forecast?.startFrame &&
             chunk.plan.phaseId === this.forecast.phaseId,
         )
-      )
-        desired = Math.min(desired, this.forecast.startFrame - 0.00001)
+      ) {
+        const capped = Math.min(desired, this.forecast.startFrame - 0.00001)
+        if (audibleClock && capped < desired) {
+          // Physical preparation can hold this boundary while PCM advances.
+          // Discard that unapplied interval; promotion must not repay it by
+          // jumping through the ready stroke and exhausting its horizon.
+          this.clockBase =
+            capped - (audibleClock.sourceSampleOffset * 30) / audibleClock.sourceSampleRate
+        }
+        desired = capped
+      }
       this.cursor = Math.max(this.cursor, Math.min(this.generatedEnd, desired))
     }
     if (this.localRecovery && this.playing && this.execution && this.vrm) {
@@ -1240,8 +1296,16 @@ export class GeneratedBodyPlayback {
           return
         }
       }
-      if (this.phaseAppliedFrame === null && execution.phase === 'prepare')
+      if (
+        phaseReady &&
+        execution.profile.kind === 'gesture' &&
+        this.appliedExecutionId === execution.id &&
+        this.appliedPhaseId === 'stroke' &&
+        this.familyRecordedExecutionId !== execution.id
+      ) {
         this.familyStarted.set(execution.profile.family, performance.now())
+        this.familyRecordedExecutionId = execution.id
+      }
       if (phaseReady) this.phaseAppliedFrame = this.cursor
       const recovered =
         execution.phase !== 'recover' ||

@@ -5,6 +5,24 @@ import { AdaptiveMotionFilter } from '../../../src/renderer/avatar/rendering/thr
 
 const axis = new THREE.Vector3(0, 0, 1)
 describe('single source-aware body tracking', () => {
+  it('reaches an admitted preparation target when the held neural source has zero velocity', () => {
+    const filter = new AdaptiveMotionFilter(),
+      bone = new THREE.Object3D()
+    const target = new THREE.Quaternion().setFromAxisAngle(axis, 1.8)
+    let speed = 0
+    for (let frame = 0; frame < 72; frame++) {
+      const previous = bone.quaternion.clone()
+      filter.step(bone, previous, target, 1 / 60, {
+        motionClass: 'gesture',
+        phase: 'prepare',
+        sourceSpeeds: new Map([[bone, 0]]),
+        reachSeconds: Math.max(0.25, 0.8 - frame / 60),
+      })
+      speed = Math.max(speed, previous.angleTo(bone.quaternion) * 60)
+    }
+    expect(bone.quaternion.angleTo(target)).toBeLessThan(0.05)
+    expect(speed).toBeLessThanOrEqual(6.001)
+  })
   it('preserves a fast admissible stroke rather than stretching it over seconds', () => {
     const filter = new AdaptiveMotionFilter()
     const bone = new THREE.Object3D()

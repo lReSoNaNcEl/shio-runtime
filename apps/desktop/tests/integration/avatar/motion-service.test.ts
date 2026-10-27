@@ -16,7 +16,7 @@ import {
 const plan: MotionPlanIdentity = {
   executionId: 'execution',
   planRevision: 0,
-  catalogRevision: MOTION_CATALOG_REVISION as 'living-v3-2026-10-27',
+  catalogRevision: MOTION_CATALOG_REVISION,
   phaseId: 'prepare',
   handScoreRevision: getMotionProfile('presence_poised')?.handScore.revision ?? 'missing-score',
   handRigCalibrationRevision: 'vrm-normalized-hands-v1',

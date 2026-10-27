@@ -29,5 +29,8 @@ export const MOTION_PROFILE_IDS = [
   'kiss_air_soft',
   'stretch_small',
   'turn_in_place',
+  'greet_wave_close',
+  'explain_point_close',
+  'celebrate_close',
 ] as const
 export type MotionProfileId = (typeof MOTION_PROFILE_IDS)[number]

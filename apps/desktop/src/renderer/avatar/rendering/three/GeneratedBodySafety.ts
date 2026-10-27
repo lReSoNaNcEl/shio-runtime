@@ -4,6 +4,7 @@ import * as THREE from 'three'
 import { MOTION_CATALOG, type MotionPhaseId, type MotionProfile } from '../../../../shared/motion'
 import { AdaptiveMotionFilter, type MotionFilterContext } from './AdaptiveMotionFilter'
 import { type BodyClearanceCalibration, calibrateBodyClearance } from './GeneratedBodyCalibration'
+import { WorkspaceTrajectory } from './WorkspaceTrajectory'
 
 type Limb = {
   upper: THREE.Object3D
@@ -32,6 +33,7 @@ type Torso = {
   width: number
 }
 type ArmPose = { upper: THREE.Quaternion; lower: THREE.Quaternion; end: THREE.Quaternion }
+type HandTarget = MotionProfile['handScore']['phases'][MotionPhaseId]['left']
 type HandGoal = {
   center: THREE.Vector3
   axes: THREE.Vector3[]
@@ -58,7 +60,11 @@ export class GeneratedBodySafety {
   private previousRoot: THREE.Vector3 | null = null
   private recovering = false
   private handTargets: MotionProfile['handScore']['phases'][MotionPhaseId] | null = null
-  private workspaceSolutions = new Map<Limb, { offset: THREE.Vector3; pole: number }>()
+  private workspaceSolutions = new Map<
+    Limb,
+    { offset: THREE.Vector3; pole: number; extents?: number[] }
+  >()
+  private workspaceTrajectories = new Map<Limb, WorkspaceTrajectory>()
   private readonly temporalFilter = new AdaptiveMotionFilter()
   private readonly jointKinds = new Map<THREE.Object3D, 'torso' | 'shoulder' | 'arm' | 'wrist'>()
 
@@ -199,6 +205,7 @@ export class GeneratedBodySafety {
     this.jointKinds.clear()
     this.handTargets = null
     this.workspaceSolutions.clear()
+    this.workspaceTrajectories.clear()
     this.vrm = null
     this.arms = []
     this.legs = []
@@ -352,8 +359,20 @@ export class GeneratedBodySafety {
       for (const bone of this.chain) {
         motion.onProjected?.(bone)
         const previous = this.previousChain.get(bone)
-        if (previous)
-          this.temporalFilter.step(bone, previous, bone.quaternion.clone(), delta, context)
+        if (previous) {
+          const reaching = this.arms.some((arm) => {
+            const target = this.handTargets?.[arm.side === 1 ? 'left' : 'right']
+            return (
+              target &&
+              target.workspace !== 'relaxed' &&
+              [arm.upper, arm.lower, arm.end].includes(bone)
+            )
+          })
+          this.temporalFilter.step(bone, previous, bone.quaternion.clone(), delta, {
+            ...context,
+            reachSeconds: reaching ? motion.reachSeconds : undefined,
+          })
+        }
       }
     }
     if (motion) {
@@ -367,7 +386,10 @@ export class GeneratedBodySafety {
       this.previousRoot.copy(
         vrm.humanoid.getNormalizedBoneNode('hips')?.position ?? this.previousRoot,
       )
-    this.sweepChain(delta)
+    this.sweepChain(
+      delta,
+      motion?.motionClass === 'gesture' || motion?.motionClass === 'reaction' ? 0.003 : 0,
+    )
     if (motion && advanceCandidate)
       for (const bone of this.chain) {
         const previous = this.previousChain.get(bone)
@@ -385,6 +407,7 @@ export class GeneratedBodySafety {
   setHandTargets(profile: MotionProfile | undefined, phase: MotionPhaseId): void {
     this.recovering = phase === 'recover'
     const targets = profile?.handScore.phases[phase] ?? null
+    if (targets !== this.handTargets) this.workspaceTrajectories.clear()
     if (targets !== this.handTargets)
       for (const arm of this.arms) {
         const side = arm.side === 1 ? 'left' : 'right'
@@ -421,9 +444,34 @@ export class GeneratedBodySafety {
     return true
   }
 
-  private handGoal(arm: Limb): HandGoal | null {
-    const side = arm.side === 1 ? 'left' : 'right'
-    const target = this.handTargets?.[side]
+  /** Prospective workspace samples only; never changes active constraints or pose. */
+  expectedGesturePoints(profile: MotionProfile): THREE.Vector3[][] {
+    return this.arms.flatMap((arm) => {
+      const side = arm.side === 1 ? 'left' : 'right'
+      const target = profile.handScore.phases.stroke[side]
+      if (target.role === 'support' || target.workspace === 'relaxed') return []
+      const goal = this.handGoal(arm, target)
+      if (!goal) return []
+      const tip = goal.center
+        .clone()
+        .addScaledVector(goal.fingers ?? goal.axes[1], goal.length * 0.25)
+      const points = [goal.center, tip]
+      for (const x of [-1, 1])
+        for (const y of [-1, 1])
+          for (const z of [-1, 1]) {
+            const point = goal.center.clone()
+            for (const [index, sign] of [x, y, z].entries())
+              point.addScaledVector(goal.axes[index], sign * goal.extents[index])
+            points.push(point)
+          }
+      return [points]
+    })
+  }
+
+  private handGoal(
+    arm: Limb,
+    target: HandTarget | undefined = this.handTargets?.[arm.side === 1 ? 'left' : 'right'],
+  ): HandGoal | null {
     const torso = this.torso()
     if (!target || target.workspace === 'relaxed' || !torso || !this.vrm) return null
     const workspace = MOTION_CATALOG.handWorkspaces[target.workspace]
@@ -436,7 +484,12 @@ export class GeneratedBodySafety {
     const axes = [torso.x, torso.y, torso.front]
     const center = anchor.getWorldPosition(new THREE.Vector3())
     for (const [index, axis] of axes.entries())
-      center.addScaledVector(axis, workspace.center[index] * length * (index === 0 ? arm.side : 1))
+      center.addScaledVector(
+        axis,
+        (workspace.center[index] + (target.workspaceOffset?.[index] ?? 0)) *
+          length *
+          (index === 0 ? arm.side : 1),
+      )
     // The catalog's anatomical chest anchor lies inside the garment. Hover
     // regions must start outside the measured surface, including limb thickness.
     if (workspace.anchor === 'chest' || workspace.anchor === 'hips') {
@@ -475,7 +528,9 @@ export class GeneratedBodySafety {
       center,
       axes,
       length,
-      extents: workspace.halfExtents.map((value) => value * length),
+      extents: workspace.halfExtents.map(
+        (value) => value * length * (target.workspaceExtentScale ?? 1),
+      ),
       palm,
       fingers,
     }
@@ -498,13 +553,29 @@ export class GeneratedBodySafety {
         arm.fingerAxis.clone().applyQuaternion(orientation).dot(goal.fingers) >= 0.75
       // A semantic workspace describes an admissible region, not a fixed IK
       // pose. Preserve the live source trajectory when it already satisfies it.
-      if (withinWorkspace && palmAdmitted && fingersAdmitted) continue
-      const nearest = new THREE.Vector3(
+      const relative = this.handTargets?.[arm.side === 1 ? 'left' : 'right']?.workspaceTrajectory
+      if (!relative && withinWorkspace && palmAdmitted && fingersAdmitted) continue
+      let nearest = new THREE.Vector3(
         ...(goal.axes.map((axis, index) =>
           clamp(offset.dot(axis) / goal.extents[index], -0.9, 0.9),
         ) as [number, number, number]),
       )
       const previous = this.workspaceSolutions.get(arm)
+      if (relative) {
+        let trajectory = this.workspaceTrajectories.get(arm)
+        if (!trajectory) {
+          const start = previous?.offset.clone() ?? new THREE.Vector3()
+          if (previous?.extents)
+            for (let index = 0; index < 3; index++)
+              start.setComponent(
+                index,
+                (start.getComponent(index) * previous.extents[index]) / goal.extents[index],
+              )
+          trajectory = new WorkspaceTrajectory(wrist.clone(), start)
+          this.workspaceTrajectories.set(arm, trajectory)
+        }
+        nearest = trajectory.sample(wrist, goal.axes, goal.extents)
+      }
       const candidates = [
         { offset: nearest, pole: previous?.pole ?? 0.5 },
         ...(previous ? [previous] : []),
@@ -578,7 +649,8 @@ export class GeneratedBodySafety {
           fingerError +
           (contact ? 5 : 0) +
           (blockedPath ? 3 : 0) +
-          (palmError > 0.2 || fingerError > 0.25 ? 2 : 0)
+          (palmError > 0.2 || fingerError > 0.25 ? 2 : 0) +
+          (relative ? candidate.offset.distanceToSquared(nearest) * 0.04 : 0)
         if (score < bestScore) {
           bestScore = score
           best = this.armPose(arm)
@@ -597,7 +669,7 @@ export class GeneratedBodySafety {
       arm.lower.quaternion.copy(best.lower)
       arm.end.quaternion.copy(best.end)
       arm.upper.updateMatrixWorld(true)
-      if (solution) this.workspaceSolutions.set(arm, solution)
+      if (solution) this.workspaceSolutions.set(arm, { ...solution, extents: [...goal.extents] })
     }
   }
 
@@ -664,7 +736,7 @@ export class GeneratedBodySafety {
     arm.end.updateMatrixWorld(true)
   }
 
-  private sweepChain(delta: number): void {
+  private sweepChain(delta: number, clearance = 0): void {
     const hips = this.vrm?.humanoid.getNormalizedBoneNode('hips')
     if (!hips || !this.previousRoot || !this.previousChain.size || !Number.isFinite(delta)) return
     const candidate = new Map(this.chain.map((bone) => [bone, bone.quaternion.clone()]))
@@ -681,14 +753,16 @@ export class GeneratedBodySafety {
     set(0)
     const initialTorso = this.torso()
     const initialMetrics = this.arms.map((arm) =>
-      initialTorso ? (this.contact(arm, initialTorso)?.metric ?? 1) : 1,
+      initialTorso ? (this.contact(arm, initialTorso, clearance)?.metric ?? 1) : 1,
     )
     const clear = (): boolean => {
       const torso = this.torso()
       return (
         !torso ||
         this.arms.every((arm, index) => {
-          const contact = this.contact(arm, torso)
+          // Preserve the surface-sliding reserve across breathing/attachment
+          // translations; an exact tangent is not a stable resting clearance.
+          const contact = this.contact(arm, torso, clearance)
           if (!contact) return true
           // A moving attachment may invalidate the old pose by micrometres.
           // Permit bounded outward progress; never deepen an existing contact.

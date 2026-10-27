@@ -1,5 +1,6 @@
-import type { VRM } from '@pixiv/three-vrm'
+import { type VRM, VRMExpression, VRMExpressionMorphTargetBind } from '@pixiv/three-vrm'
 
+import type { FacialActingPresentation, FacialActingValues } from '../../../../shared/facial-acting'
 import { facialTuning } from '../../tuning/facialTuning'
 import { resolveEffectiveBlinkProfile } from './BlinkProfileResolver'
 import type {
@@ -18,6 +19,7 @@ import {
   VISEME_NAMES,
   type VisemeName,
 } from './FacialProfile'
+import { type FacialRigCapabilities, inspectFacialRig } from './FacialRigCapabilities'
 import type { MouthClosureDebug } from './MouthClosureController'
 import type { SpeakingEyeDebug } from './SpeakingEyeController'
 
@@ -63,6 +65,12 @@ const MOUTH_NAMES = VISEME_NAMES
 const LOOKAT_NAMES = new Set(['lookUp', 'lookDown', 'lookLeft', 'lookRight'])
 
 export class AvatarExpressionMixer {
+  private ownedActingExpressions = new Map<keyof FacialActingValues, VRMExpression>()
+  private acting: FacialActingValues = {}
+  private composedActing = false
+  private actingCapabilities: FacialRigCapabilities | null = null
+  private appliedActing: FacialActingValues = {}
+  private blinkPair: [number, number] | null = null
   private vrm: VRM | null = null
   private blinkNames: string[] = []
   private blinkNameSet = new Set<string>()
@@ -176,6 +184,20 @@ export class AvatarExpressionMixer {
     this.vrm = vrm
 
     const manager = vrm.expressionManager
+    const rig = inspectFacialRig(vrm)
+    this.actingCapabilities = rig.capabilities
+    if (manager)
+      for (const [channel, binds] of rig.binds) {
+        const name = `__shioActing_${channel}`
+        if (manager.expressionMap[name]) continue
+        const expression = new VRMExpression(name)
+        for (const { mesh, index } of binds)
+          expression.addBind(
+            new VRMExpressionMorphTargetBind({ primitives: [mesh], index, weight: 1 }),
+          )
+        manager.registerExpression(expression)
+        this.ownedActingExpressions.set(channel, expression)
+      }
     const allNames = Object.keys(manager?.expressionMap ?? {})
     this.supportedNames = new Set(allNames)
     this.blinkNames = this.resolveBlinkNames(allNames)
@@ -194,6 +216,16 @@ export class AvatarExpressionMixer {
   }
 
   detach(): void {
+    for (const expression of this.ownedActingExpressions.values()) {
+      this.vrm?.expressionManager?.setValue(expression.expressionName, 0)
+      expression.clearAppliedWeight()
+      this.vrm?.expressionManager?.unregisterExpression(expression)
+    }
+    this.ownedActingExpressions.clear()
+    this.acting = {}
+    this.appliedActing = {}
+    this.actingCapabilities = null
+    this.blinkPair = null
     this.vrm = null
     this.blinkNames = []
     this.blinkNameSet = new Set()
@@ -228,9 +260,17 @@ export class AvatarExpressionMixer {
     this.refreshMouthLifecycle(delta)
     this.refreshEmotionLifecycle(delta)
     this.refreshSpeakingEyeLifecycle()
+    const acting = this.getSourceState('facialActing')
+    if (acting.lastUpdateFrame < this.frame - 1) {
+      this.acting = {}
+      acting.active = false
+      acting.raw = {}
+      acting.status = 'reset'
+    }
   }
 
   setBlink(weight: number): void {
+    this.blinkPair = null
     const raw = this.clamp(weight)
     this.blinkWeight = Math.min(this.blinkTuning.blinkMax || 1, raw)
     this.blinkTuning = {
@@ -240,6 +280,24 @@ export class AvatarExpressionMixer {
       weight: this.blinkWeight,
     }
     this.markSource('autoBlink', { blink: raw })
+  }
+
+  setBilateralBlink(left: number, right: number): void {
+    this.blinkPair = [this.clamp(left), this.clamp(right)]
+  }
+
+  setFacialActing(values: FacialActingValues, composed = false): void {
+    this.acting = values
+    this.composedActing = composed
+    this.markSource('facialActing', values)
+  }
+
+  getActingPresentation(): FacialActingPresentation {
+    return {
+      acting: { ...this.appliedActing },
+      blinkLeft: this.blinkPair?.[0] ?? this.blinkWeight,
+      blinkRight: this.blinkPair?.[1] ?? this.blinkWeight,
+    }
   }
 
   setMouth(weights: Partial<MouthWeights>): void {
@@ -338,12 +396,23 @@ export class AvatarExpressionMixer {
     // eyes ease back to the *current* drifting squint after a blink rather than
     // to one fixed openness.
     const eyeValues = new Map<string, FacialExpressionEntry>()
-    if (this.blinkWeight > 0.001) {
-      for (const name of this.blinkNames) {
+    const bilateral =
+      this.blinkPair &&
+      this.supportedNames.has('blinkLeft') &&
+      this.supportedNames.has('blinkRight')
+    const blinks: Array<[string, number]> =
+      bilateral && this.blinkPair
+        ? [
+            ['blinkLeft', this.blinkPair[0]],
+            ['blinkRight', this.blinkPair[1]],
+          ]
+        : this.blinkNames.map((name) => [name, this.blinkWeight])
+    for (const [name, weight] of blinks) {
+      if (weight > 0.001) {
         if (!this.isSupportedExpression(name)) continue
         eyeValues.set(name, {
           expression: name,
-          value: this.clamp(this.blinkWeight),
+          value: this.clamp(weight),
           source: 'autoBlink',
         })
       }
@@ -362,6 +431,27 @@ export class AvatarExpressionMixer {
     this.mergeSquint(eyeValues, this.squintLeftName, this.appliedSquintLeft)
     this.mergeSquint(eyeValues, this.squintRightName, this.appliedSquintRight)
     for (const entry of eyeValues.values()) final.set(entry.expression, entry)
+
+    this.appliedActing = {}
+    for (const [channel, expression] of this.ownedActingExpressions) {
+      let value = this.clamp(this.acting[channel] ?? 0)
+      if (!this.composedActing) {
+        if (channel.startsWith('eye')) {
+          const blink = channel.endsWith('Left') ? this.blinkPair?.[0] : this.blinkPair?.[1]
+          value *= 1 - (blink ?? this.blinkWeight)
+        }
+        if (channel.startsWith('mouth'))
+          value *= closureGain * Math.max(0.35, 1 - this.maxValue(this.mouth))
+      }
+      if (value > 0.001) {
+        this.appliedActing[channel] = value
+        final.set(expression.expressionName, {
+          expression: expression.expressionName,
+          value,
+          source: 'facialActing',
+        })
+      }
+    }
 
     // Write ONLY the expressions the mixer owns this frame, plus a zero for any
     // it wrote last frame but no longer contributes (to release finished
@@ -398,6 +488,10 @@ export class AvatarExpressionMixer {
     )
   }
 
+  supportsBilateralBlink(): boolean {
+    return this.supportedNames.has('blinkLeft') && this.supportedNames.has('blinkRight')
+  }
+
   getDebugState(): FacialDebugState {
     const sources = new Set<ExpressionSource>()
     for (const entry of this.lastFinal.values()) sources.add(entry.source)
@@ -410,6 +504,8 @@ export class AvatarExpressionMixer {
 
     return {
       currentProfile: this.currentProfile.id,
+      actingCapabilities: this.actingCapabilities,
+      facialActing: { ...this.appliedActing },
       expressionBlend: this.diagnostics.roundValues(this.currentProfile.expressionWeights),
       supportedExpressions: [...this.supportedNames].sort(),
       supportedVisemes: MOUTH_NAMES.filter((name) => this.supportedNames.has(name)),
@@ -535,7 +631,14 @@ export class AvatarExpressionMixer {
 
   private resetLifecycle(): void {
     this.sourceLifecycle = new Map()
-    for (const source of ['autoBlink', 'lipSync', 'emotion', 'lookAt', 'speakingEye'] as const) {
+    for (const source of [
+      'autoBlink',
+      'lipSync',
+      'emotion',
+      'lookAt',
+      'speakingEye',
+      'facialActing',
+    ] as const) {
       this.sourceLifecycle.set(source, {
         active: false,
         lastUpdateFrame: -1,

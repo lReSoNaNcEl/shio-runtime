@@ -28,6 +28,7 @@ describe('standing semantic motion selection', () => {
     'keeps the %s act distinct from emotion and legacy gesture aliases',
     (gestureHint, profileId) => {
       const resolver = new AvatarBehaviorResolver()
+      resolver.setCameraMode('bust')
       const selected = resolver.resolveEmbodimentIntent(
         speaking,
         { intensity: 'subtle', gestureHint },
@@ -51,6 +52,7 @@ describe('standing semantic motion selection', () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-10-26T12:00:00Z'))
     const resolver = new AvatarBehaviorResolver()
+    resolver.setCameraMode('bust')
     const request = () =>
       resolver.resolveEmbodimentIntent(
         speaking,

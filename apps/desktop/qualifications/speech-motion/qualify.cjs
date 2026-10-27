@@ -9,6 +9,7 @@ const { recordCanvas } = require('./record-canvas.cjs')
 const { captureWindow } = require('./capture-window.cjs')
 const { qualifyLiving } = require('./living-cases.cjs')
 const { qualifyConversation } = require('./conversation-cases.cjs')
+const { qualifyCloseCandidates } = require('./close-candidates.cjs')
 const { replayDynamics } = require('./dynamics-replay.cjs')
 const { SEMANTIC_EMBODIMENT_CASES } = require('./semantic-embodiment-cases.cjs')
 const { FIXED_SEEDS, createStandingQualificationPlan } = require('./standing-motion-cases.cjs')
@@ -61,12 +62,14 @@ assert(
 )
 const livingCases = process.argv.includes('--living-cases')
 const conversationCases = process.argv.includes('--conversation-cases')
+const closeCases = process.argv.includes('--close-cases')
 const dynamicsReplay = process.argv.includes('--dynamics-replay')
 const bodyStabilityOnly =
   process.argv.includes('--body-stability-only') ||
   turnCases ||
   livingCases ||
   conversationCases ||
+  closeCases ||
   dynamicsReplay
 const bodySeconds = option('body-seconds', 18)
 // Capture both hand scores during the short accent before reviewing wider views.
@@ -120,6 +123,13 @@ fs.mkdirSync(directory, { recursive: true })
 fs.mkdirSync(path.join(profile, 'credentials'), { recursive: true })
 const original = path.join(process.env.APPDATA, 'shio-runtime-desktop')
 const config = JSON.parse(fs.readFileSync(path.join(original, 'config.json'), 'utf8'))
+const qualificationView = process.argv
+  .find((value) => value.startsWith('--view-mode='))
+  ?.split('=')[1]
+if (qualificationView) {
+  assert(['face', 'bust', 'portrait'].includes(qualificationView), 'Unknown qualification view')
+  config.overlayViewMode = qualificationView
+}
 config.setup = { ...config.setup, completed: true }
 config.uiLocale = 'en'
 config.uiTheme = 'dark'
@@ -1730,7 +1740,14 @@ async function bodyStability() {
       if (!(await window.api.overlay.isVisible()).visible) await window.api.overlay.toggle()
     })
     await pause(6000)
-    if (recordVideo && !turnCases && !livingCases && !conversationCases && !dynamicsReplay) {
+    if (
+      recordVideo &&
+      !turnCases &&
+      !livingCases &&
+      !conversationCases &&
+      !closeCases &&
+      !dynamicsReplay
+    ) {
       const overlay = application.windows().find((target) => target.url().includes('overlay=1'))
       assert(overlay, 'Overlay unavailable for video recording')
       stopRecording = await recordCanvas(overlay, path.join(directory, 'overlay.webm'))
@@ -1743,7 +1760,8 @@ async function bodyStability() {
         path.join(directory, `start-${target === page ? 'main' : 'overlay'}.png`),
       )
     }
-    if (conversationCases)
+    if (closeCases) await qualifyCloseCandidates({ application, page, directory, report, pause })
+    else if (conversationCases)
       await qualifyConversation({
         application,
         page,
@@ -1798,7 +1816,14 @@ async function bodyStability() {
       )
     }
     report.elapsedSeconds = (Date.now() - start) / 1000
-    if (bodyStabilityOnly && !turnCases && !livingCases && !conversationCases && !dynamicsReplay) {
+    if (
+      bodyStabilityOnly &&
+      !turnCases &&
+      !livingCases &&
+      !conversationCases &&
+      !closeCases &&
+      !dynamicsReplay
+    ) {
       report.bodyStabilityAcceptance = report.bodyStability.map((entry) => {
         const opening = entry.geometry.hold?.right?.indexMiddleOpeningDeg?.last
         const correctV = entry.profileId !== 'peace_single' || (opening >= 12 && opening <= 45)
@@ -1866,17 +1891,19 @@ async function bodyStability() {
     report.passed =
       report.failures.length === 0 &&
       (!bodyStabilityOnly ||
-        (conversationCases
-          ? report.conversation.passed
-          : livingCases
-            ? report.living.every((entry) => entry.passed)
-            : dynamicsReplay
-              ? report.dynamicsReplay.videos.every(
-                  (entry) => entry.frames > 0 && entry.errors.length === 0,
-                )
-              : turnCases
-                ? report.turns.every((entry) => entry.passed)
-                : report.bodyStabilityAcceptance.every((entry) => entry.passed))) &&
+        (closeCases
+          ? report.closeCandidates.passed
+          : conversationCases
+            ? report.conversation.passed
+            : livingCases
+              ? report.living.every((entry) => entry.passed)
+              : dynamicsReplay
+                ? report.dynamicsReplay.videos.every(
+                    (entry) => entry.frames > 0 && entry.errors.length === 0,
+                  )
+                : turnCases
+                  ? report.turns.every((entry) => entry.passed)
+                  : report.bodyStabilityAcceptance.every((entry) => entry.passed))) &&
       (bodyStabilityOnly || report.responses.length >= responseCount) &&
       (bodyStabilityOnly || report.elapsedSeconds >= duration) &&
       (!componentSmoke || report.componentEvidence.motionErrors.length === 0)

@@ -160,6 +160,33 @@ describe('provider-neutral early embodiment transport', () => {
     expect(events.filter((event) => event.type === 'embodiment-intent')).toHaveLength(1)
   })
 
+  it('reaffirms an expired anticipatory proposal once at first prose without another model decision', async () => {
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(1000)
+    try {
+      const events: CharacterToolLoopStreamEvent[] = []
+      await plannedRun(
+        { intensity: 'normal', gestureHint: 'greeting' },
+        '',
+        async function* () {
+          clock.mockReturnValue(12000)
+          yield { type: 'text-delta', at: 12000, text: '[happy]Привет!' }
+          yield { type: 'text-delta', at: 12020, text: ' Рада видеть.' }
+          yield { type: 'completed', at: 12030, finishReason: 'stop' }
+        },
+        events,
+      )
+      const intents = events.filter((event) => event.type === 'embodiment-intent')
+      expect(intents).toHaveLength(2)
+      expect(intents.map((event) => event.intent)).toEqual([
+        { intensity: 'normal', gestureHint: 'greeting' },
+        { intensity: 'normal', gestureHint: 'greeting' },
+      ])
+      expect(intents.map((event) => event.at)).toEqual([1000, 12000])
+    } finally {
+      clock.mockRestore()
+    }
+  })
+
   it('defers a source-bearing plan until actual Character prose', async () => {
     const events: CharacterToolLoopStreamEvent[] = []
     await plannedRun(

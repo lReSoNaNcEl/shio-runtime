@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { AvatarBehaviorResolver } from '../../../src/renderer/avatar/AvatarBehaviorResolver'
 import type { AvatarStateEffect } from '../../../src/renderer/avatar/AvatarStateMachine'
 import { resolveAvatarMotionAuthority } from '../../../src/renderer/avatar/embodiment/motion/AvatarMotionLayer'
+import { VrmModel } from '../../../src/renderer/avatar/rendering/three/VrmModel'
 
 const effect: AvatarStateEffect = {
   mode: 'speaking',
@@ -13,6 +14,11 @@ const effect: AvatarStateEffect = {
 }
 
 describe('selected profile composition authority', () => {
+  it('does not grant queued request authority between composition frames', () => {
+    const model = new VrmModel()
+    model.setBodyMotionLayer('gesture')
+    expect(Reflect.get(Reflect.get(model, 'facialRuntime'), 'bodyMotionLayer')).toBe('base')
+  })
   it.each(['behavior:neutral', 'behavior:happy'])(
     'keeps %s presence at full continuous-presence authority',
     (tag) => {
@@ -59,6 +65,7 @@ describe('selected profile composition authority', () => {
 
   it('maps an actual semantic act to its gesture and does not infer disagreement from anger', () => {
     const resolver = new AvatarBehaviorResolver()
+    resolver.setCameraMode('bust')
     expect(
       resolver.resolveEmbodimentIntent(
         effect,

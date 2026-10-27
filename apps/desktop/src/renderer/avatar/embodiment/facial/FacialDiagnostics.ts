@@ -56,6 +56,7 @@ export class FacialDiagnostics {
       emotion: 'Emotion',
       lookAt: 'LookAt',
       speakingEye: 'SpeakingEye',
+      facialActing: 'FacialActing',
     }
     for (const [source, state] of lifecycle) {
       if (state.status === state.loggedStatus) continue
