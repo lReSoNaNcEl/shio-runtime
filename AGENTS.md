@@ -13,7 +13,9 @@ rules.
 - `launcher` — release installation and process coordination.
 - `scripts` — repository and release tooling.
 - `docs` — product, architecture, and release documentation.
-- `ARCHITECTURE.md` is the canonical architecture document.
+- `ARCHITECTURE.md` is the protected canonical architecture consolidation;
+  original architecture documents remain authoritative for architectural meaning
+  under the Shio Runtime Documentation Editing Policy.
 
 ## Desktop application rules
 
@@ -448,23 +450,51 @@ Voice registry and references:
 - Desktop must not import or read API implementation files directly.
 - API must not depend on Desktop source code.
 - Do not merge their runtime lifecycles.
-- Do not change runtime ownership or move responsibility between components
-  without first rereading `ARCHITECTURE.md`.
+- Runtime ownership and component responsibilities must remain consistent with
+  the governing architecture. Apply the change-control policy below to conflicts.
 
-Before any architecture-related change, reread `ARCHITECTURE.md`. If a change touches
-runtime boundaries or the Desktop–API contract, the final report must include an
-`Architecture Review` section stating either that there is no conflict, or describing
-the conflict found.
+### Architecture Change Control
 
-Architecture-first implementation order is mandatory: first describe the deliberate
-target decision in `ARCHITECTURE.md` and check it against the existing architecture;
-then create or revise the implementation plan and trace each Work Item to that
-decision; only after the plan/architecture consistency review may implementation code
-be changed. Mark planned contracts as planned rather than claiming they are already
-implemented. A later architectural conflict returns to the architecture and plan
-review before dependent code changes. Review reports and plans do not become a second
-canonical architecture source. Keep architecture documentation and intentional
-Runtime behavior changes in separate Work Items.
+`ARCHITECTURE.md` is the protected canonical architecture consolidation and is
+READ-ONLY by default for AI agents. The original architecture documents remain
+authoritative for architectural meaning, according to the Shio Runtime
+Documentation Editing Policy.
+
+For ordinary feature implementation, bug fixes, refactoring, optimization,
+testing, and qualification:
+
+1. Read `AGENTS.md` and the relevant `ARCHITECTURE.md` sections.
+2. Identify the applicable architecture invariants.
+3. Verify the proposed implementation against them before changing code.
+4. Implement only within the existing architectural boundaries.
+5. Do not edit `ARCHITECTURE.md` as part of ordinary development.
+6. Record implementation details, evidence, and the implementation plan in
+   separate work-item reports. These reports do not define architectural meaning.
+
+Architecture-first means REVIEW FIRST, not EDIT FIRST.
+
+If the requested implementation conflicts with the architecture:
+
+- Identify the exact conflicting invariant or section.
+- Stop only the conflicting portion of work; continue independent compliant work.
+- Explain the conflict and available alternatives.
+- Do not rewrite architecture to legitimize the implementation.
+- Request separate, explicit user authorization for the architectural change.
+
+Only a direct user request specifically authorizing modification of architectural
+documentation permits such changes. General permission to implement a feature
+does not authorize architectural-document modification. Editorial changes also
+require that authorization, must preserve architectural meaning, and must follow
+the Shio Runtime Documentation Editing Policy.
+
+Agents must never modify `AGENTS.md` merely to bypass these rules. A governance
+change requires a direct user instruction authorizing that change.
+
+The final Architecture Review identifies the applicable invariants and reports
+compliance or exact conflicts, including Runtime ownership and the Desktop–API
+contract where relevant. It does not require an architecture file edit. Keep any
+separately authorized architectural-document change and intentional Runtime
+behavior change in separate Work Items.
 
 ## 3. Behavior-preserving work
 
@@ -570,26 +600,28 @@ maintainability.
 
 ## 11. Documentation
 
-If a change alters architecture, introduces a new contract, or changes ownership,
-update `ARCHITECTURE.md` and the corresponding rules in this manual when needed.
+Apply Architecture Change Control in section 2. `ARCHITECTURE.md` and the original
+architectural specifications are protected documents, not implementation logs.
+Original documents remain authoritative for architectural meaning under the Shio
+Runtime Documentation Editing Policy; the canonical consolidation does not grant
+an agent authority to reinterpret them.
 
-`ARCHITECTURE.md` is the single canonical architecture document and the sole source
-of architectural meaning. When editing it, editorial improvements are allowed —
-restructuring, reordering, removing duplication, unifying terminology, consolidating
-each concept into exactly one primary definition, adding cross-references, and
-normalizing headings, lists, tables, and wording. These edits must never change
-architectural meaning: do not introduce concepts absent from the architecture, rename
-Runtime names / layers / principles / terminology, add new architectural layers,
-reinterpret or extend existing ideas, reassign responsibilities or ownership, or alter
-Runtime behavior, contracts, boundaries, or guarantees. Whenever editorial convenience
-conflicts with architectural accuracy, architectural accuracy takes precedence.
+Ordinary development updates separate implementation/work-item reports with RCA,
+tests, qualification evidence, limitations, and an Architecture Review. It must
+not update protected architectural documents or agent governance automatically.
 
-This restriction applies to editorial work only: an editorial edit must not silently
-change an architectural decision. It does not freeze the architecture. When
-`ARCHITECTURE.md` is confirmed to diverge from the actual architecture, that divergence
-must be fixed — but as a separate, deliberate change that explicitly records what was
-stale, why, and what the corrected decision is (not smuggled in under an editorial or
-refactoring task). Keeping a known-outdated statement in place is itself a defect.
+If implementation and architecture diverge, report the exact divergence and
+propose compliant alternatives. Do not automatically edit either specification
+to match implementation. Follow section 2 for the conflicting portion of work
+and for separate, explicit authorization of architectural-document changes.
+
+When the user specifically authorizes editorial work, follow the Shio Runtime
+Documentation Editing Policy and preserve architectural meaning. Restructuring,
+deduplication, cross-references, terminology consolidation, and wording changes
+may not introduce new concepts or layers, rename Runtime/domain responsibilities,
+reassign ownership, or alter contracts, behavior, boundaries, or guarantees.
+Editorial convenience never overrides architectural accuracy, and editorial
+authorization does not authorize an architectural decision change.
 
 ## 12. Release management
 
@@ -642,8 +674,9 @@ instructions. Do not use release notes as a substitute for the changelog.
    `main` synchronized with `origin/main`.
 2. Select the next version and channel explicitly.
 3. Update every version source, `CHANGELOG.md`, and the channel release notes.
-   Update installation, troubleshooting, architecture, and requirements
-   documentation when the release changes those areas.
+   Update installation, troubleshooting, and requirements documentation when the
+   release changes those areas. Protected architectural-document edits remain
+   subject to the separate, explicit authorization required by section 2.
 4. Regenerate and commit lock files when direct dependencies changed.
 5. Run the full required validation for every affected application. For a
    Desktop/API bundle, validate both applications and the launcher.
@@ -732,7 +765,8 @@ Root Cause (если был баг)
 
 Known mistakes and risks — do not repeat them.
 
-- Always reread `ARCHITECTURE.md` before architecture changes.
+- Review relevant architecture invariants before implementation; keep protected
+  architecture documents read-only unless specifically authorized under section 2.
 - When the user explicitly requests live validation after refactoring, do not stop at
   a passing build; run the required live smoke test when runtime behavior is involved.
 - Do not move helper methods without checking all call sites.
