@@ -302,6 +302,35 @@ describe('generated body timeline', () => {
     owner.detach()
     await owner.settleCancellation()
   })
+  it('integrates body safety at a continuous cadence between quantized PCM reports', async () => {
+    const { owner } = fixture()
+    const safety = vi.spyOn(GeneratedBodySafety.prototype, 'apply')
+    try {
+      await owner.playProfile('presence_poised', context)
+      for (let frame = 0; frame < 120; frame++) {
+        owner.setClock({
+          turnId: 'turn',
+          playbackId: 'pcm',
+          sourceSampleRate: 44100,
+          sourceSampleOffset: Math.floor(
+            ((Math.floor(((frame / 60) * 48000) / 512) * 512) / 48000) * 44100,
+          ),
+          state: 'playing',
+        })
+        owner.update(1 / 60, () => undefined)
+        await flush()
+      }
+      const steady = safety.mock.calls.slice(-60)
+      expect(steady).toHaveLength(60)
+      for (const [seconds, , advancing] of steady) {
+        expect(advancing).toBe(true)
+        expect(seconds).toBeGreaterThan(0.015)
+        expect(seconds).toBeLessThan(0.018)
+      }
+    } finally {
+      safety.mockRestore()
+    }
+  })
   it('invalidates queued poses immediately and awaits real adapter cancellation', async () => {
     const { owner, stop } = fixture()
     await owner.playProfile('presence_poised', context)

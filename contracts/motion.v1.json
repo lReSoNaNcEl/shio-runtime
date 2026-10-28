@@ -1,6 +1,6 @@
 {
   "schemaVersion": 3,
-  "catalogRevision": "expressive-v4-2026-10-27",
+  "catalogRevision": "expressive-v5-2026-10-28",
   "format": {
     "protocolVersion": 2,
     "sourceRevision": "e706e27acc88070918308a10922b8f7174d0825e",
@@ -4052,7 +4052,7 @@
         }
       ],
       "handScore": {
-        "revision": "greet_wave_soft-hands-v2",
+        "revision": "greet_wave_soft-centred-v3",
         "calibrationRevision": "vrm-normalized-hands-v1",
         "phases": {
           "prepare": {
@@ -4178,7 +4178,13 @@
               },
               "workspace": "raised",
               "palmFacing": "forward",
-              "fingerDirection": "up"
+              "fingerDirection": "up",
+              "workspaceOffset": [
+                -0.25,
+                0,
+                0
+              ],
+              "workspaceTrajectory": "relative-source"
             }
           },
           "stroke": {
@@ -4304,7 +4310,13 @@
               },
               "workspace": "raised",
               "palmFacing": "forward",
-              "fingerDirection": "up"
+              "fingerDirection": "up",
+              "workspaceOffset": [
+                -0.25,
+                0,
+                0
+              ],
+              "workspaceTrajectory": "relative-source"
             }
           },
           "hold": {
@@ -4430,7 +4442,13 @@
               },
               "workspace": "raised",
               "palmFacing": "forward",
-              "fingerDirection": "up"
+              "fingerDirection": "up",
+              "workspaceOffset": [
+                -0.25,
+                0,
+                0
+              ],
+              "workspaceTrajectory": "relative-source"
             }
           },
           "recover": {
@@ -6591,7 +6609,7 @@
         }
       ],
       "handScore": {
-        "revision": "explain_one_palm-hands-v2",
+        "revision": "explain_one_palm-centred-v3",
         "calibrationRevision": "vrm-normalized-hands-v1",
         "phases": {
           "prepare": {
@@ -6717,7 +6735,13 @@
               },
               "workspace": "front",
               "palmFacing": "up",
-              "fingerDirection": "forward"
+              "fingerDirection": "forward",
+              "workspaceOffset": [
+                -0.25,
+                0,
+                0
+              ],
+              "workspaceTrajectory": "relative-source"
             }
           },
           "stroke": {
@@ -6843,7 +6867,13 @@
               },
               "workspace": "front",
               "palmFacing": "up",
-              "fingerDirection": "forward"
+              "fingerDirection": "forward",
+              "workspaceOffset": [
+                -0.25,
+                0,
+                0
+              ],
+              "workspaceTrajectory": "relative-source"
             }
           },
           "hold": {
@@ -6969,7 +6999,13 @@
               },
               "workspace": "front",
               "palmFacing": "up",
-              "fingerDirection": "forward"
+              "fingerDirection": "forward",
+              "workspaceOffset": [
+                -0.25,
+                0,
+                0
+              ],
+              "workspaceTrajectory": "relative-source"
             }
           },
           "recover": {
@@ -14845,7 +14881,7 @@
         }
       ],
       "handScore": {
-        "revision": "celebrate_petite-hands-v2",
+        "revision": "celebrate_petite-centred-v3",
         "calibrationRevision": "vrm-normalized-hands-v1",
         "phases": {
           "prepare": {
@@ -14971,7 +15007,13 @@
               },
               "workspace": "raised",
               "palmFacing": "forward",
-              "fingerDirection": "up"
+              "fingerDirection": "up",
+              "workspaceOffset": [
+                -0.25,
+                0,
+                0
+              ],
+              "workspaceTrajectory": "relative-source"
             }
           },
           "stroke": {
@@ -15097,7 +15139,13 @@
               },
               "workspace": "raised",
               "palmFacing": "forward",
-              "fingerDirection": "up"
+              "fingerDirection": "up",
+              "workspaceOffset": [
+                -0.25,
+                0,
+                0
+              ],
+              "workspaceTrajectory": "relative-source"
             }
           },
           "hold": {
@@ -15223,7 +15271,13 @@
               },
               "workspace": "raised",
               "palmFacing": "forward",
-              "fingerDirection": "up"
+              "fingerDirection": "up",
+              "workspaceOffset": [
+                -0.25,
+                0,
+                0
+              ],
+              "workspaceTrajectory": "relative-source"
             }
           },
           "recover": {

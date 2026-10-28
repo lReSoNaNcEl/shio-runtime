@@ -45,6 +45,9 @@ function fixture() {
     underruns: 0,
   }
   vi.spyOn(model, 'isLoaded').mockReturnValue(true)
+  vi.spyOn(model, 'isConversationalMotionAvailable').mockImplementation((id) =>
+    ['greet_wave_soft', 'fox_paw'].includes(id),
+  )
   vi.spyOn(model, 'update').mockImplementation(() => undefined)
   vi.spyOn(lipSync, 'update').mockImplementation(() => undefined)
   vi.spyOn(lipSync, 'getActiveSession').mockImplementation(() => session)

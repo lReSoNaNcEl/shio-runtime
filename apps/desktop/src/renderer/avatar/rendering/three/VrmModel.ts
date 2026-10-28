@@ -104,6 +104,9 @@ export class VrmModel {
   getEmbodimentAvailability() {
     return this.bodyPlayback.getEmbodimentAvailability()
   }
+  isConversationalMotionAvailable(id: string): boolean {
+    return this.bodyPlayback.isConversationalMotionAvailable(id)
+  }
   getMotionLibraryDebug() {
     return this.bodyPlayback.getLibraryDebug()
   }

@@ -171,6 +171,7 @@ export class AvatarBehaviorResolver {
     intent: CharacterEmbodimentIntent,
     usage: 'speaking' | 'reaction',
     excludedAnimationIds: readonly string[] = [],
+    isProfileAvailable?: (id: AnimationId) => boolean,
   ): AvatarBehaviorResolution | null {
     if (!intent.gestureHint) return null
     const now = Date.now()
@@ -178,7 +179,7 @@ export class AvatarBehaviorResolver {
     const byGesture = getAnimationsByBehaviorTagForState(
       `gesture:${intent.gestureHint}`,
       manifestState,
-    )
+    ).filter((entry) => !isProfileAvailable || isProfileAvailable(entry.id as AnimationId))
     const intensityMatches = byGesture.filter((entry) =>
       entry.behaviorTags?.includes(`intensity:${intent.intensity}`),
     )

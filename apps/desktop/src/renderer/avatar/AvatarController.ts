@@ -1089,6 +1089,7 @@ export class AvatarController {
       intent,
       'speaking',
       excluded,
+      (id) => this.vrmModel.isConversationalMotionAvailable(id),
     )
     return resolved && getMotionProfile(resolved.animationId)?.kind === 'gesture' ? resolved : null
   }

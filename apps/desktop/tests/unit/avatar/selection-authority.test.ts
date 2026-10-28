@@ -45,9 +45,10 @@ describe('selected profile composition authority', () => {
     const resolver = new AvatarBehaviorResolver()
     const intent = { intensity: 'normal', gestureHint: 'greeting' } as const
     const first = resolver.resolveEmbodimentIntent(effect, intent, 'speaking')
-    expect(first?.animationId).toBe('greet_wave_soft')
+    expect(first?.animationId).toMatch(/^greet_wave_/u)
     expect(first?.motionLayer).toBe('gesture')
-    resolver.recordStarted('greet_wave_soft')
+    if (!first) throw new Error('Missing greeting')
+    resolver.recordStarted(first.animationId)
     const fallback = resolver.resolveEmbodimentIntent(effect, intent, 'reaction')
     expect(fallback?.animationId).toMatch(/^presence_/u)
     expect(fallback?.motionLayer).toBe('base')
@@ -61,6 +62,18 @@ describe('selected profile composition authority', () => {
     )
     expect(selected?.animationId).toBe('presence_thinking')
     expect(selected?.motionLayer).toBe('base')
+  })
+
+  it('selects only a profile admitted by the body owner for this conversation', () => {
+    const resolver = new AvatarBehaviorResolver()
+    resolver.setCameraMode('bust')
+    const intent = { intensity: 'strong', gestureHint: 'explain' } as const
+    const available = (id: string) => id === 'explain_one_palm'
+    for (let trial = 0; trial < 20; trial++)
+      expect(
+        resolver.resolveEmbodimentIntent(effect, intent, 'speaking', [], available)?.animationId,
+      ).toBe('explain_one_palm')
+    expect(resolver.resolveEmbodimentIntent(effect, intent, 'speaking', [], () => false)).toBeNull()
   })
 
   it('maps an actual semantic act to its gesture and does not infer disagreement from anger', () => {

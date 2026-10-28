@@ -91,7 +91,12 @@ export class AdaptiveMotionFilter {
         sourceSpeed * 1.25 + Math.min(presence ? 0.25 : 0.8, error.length() * 3),
       ),
     )
-    const desired = sourceVelocity.addScaledVector(error, presence ? 14 : 24).clampLength(0, speed)
+    // Tiny projected presence deltas contain hinge/contact noise. Feeding their
+    // derivative forward made quiet idle visibly vibrate. Position tracking
+    // retains its slow neural motion; expressive acts retain source velocity.
+    const desired = (presence ? new THREE.Vector3() : sourceVelocity)
+      .addScaledVector(error, presence ? 14 : 24)
+      .clampLength(0, speed)
     const change = desired.sub(state.velocity).clampLength(0, acceleration * dt)
     // A decreasing tracking envelope is a braking request, not permission to
     // instantaneously clip actual velocity at a phase/horizon boundary.

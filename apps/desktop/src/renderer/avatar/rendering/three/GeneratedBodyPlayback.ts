@@ -23,6 +23,7 @@ import type { PcmPlaybackClock } from '../../../audio/audioPlayer'
 import type { AvatarBodyMotionLayer } from '../../embodiment/motion/AvatarMotionLayer'
 import type { MotionLibraryDebug } from '../../MotionLibraryDebug'
 import { type MotionOutcome, MotionPhaseExecution } from '../../MotionPhaseExecution'
+import { ConsumedMotionClock } from './ConsumedMotionClock'
 import {
   type ConversationView,
   type ConversationViewConfig,
@@ -35,6 +36,7 @@ import { calibrateFingerSpreadSigns, GeneratedHandPose } from './GeneratedHandPo
 import type { GeneratedBodyDebugState, GeneratedMotionRequestContext } from './GeneratedMotionTypes'
 import type { MotionDynamicsObserver, MotionDynamicsStage } from './MotionDynamicsObserver'
 import { plantLeg } from './plantLeg'
+import { sourceHandDisplacements } from './SourceHandDisplacements'
 import { standingArmRange } from './StandingMotionStyle'
 import { TurnInPlaceMotion } from './TurnInPlaceMotion'
 
@@ -87,6 +89,8 @@ export class GeneratedBodyPlayback {
   private safeHands: ReadonlyMap<VRMHumanBoneName, THREE.Quaternion> = new Map()
   private readonly bodySafety = new GeneratedBodySafety()
   private readonly sourceSpeeds = new Map<THREE.Object3D, number>()
+  private sourcePathChunk: MotionChunk | null = null
+  private sourceHandPaths = new Map<THREE.Object3D, THREE.Vector3[]>()
   private turn: TurnInPlaceMotion | null = null
   private physical:
     | (ReturnType<TurnInPlaceMotion['getStatus']> & { executionId: string })
@@ -149,6 +153,8 @@ export class GeneratedBodyPlayback {
   private traceAt = -Infinity
   private maxHipsDeltaY = 0
   private clock: PcmPlaybackClock | null = null
+  private readonly motionClock = new ConsumedMotionClock()
+  private sampledClock: PcmPlaybackClock | null = null
   private clockId = ''
   private clockBase = 0
   private audibleClockStarted = false
@@ -218,6 +224,8 @@ export class GeneratedBodyPlayback {
     this.physical = undefined
     this.mirrorHeading = 0
     this.sourceSpeeds.clear()
+    this.sourcePathChunk = null
+    this.sourceHandPaths.clear()
     this.avatarGeneration += 1
     vrm.scene.updateMatrixWorld(true)
     const axis = new THREE.Vector3(0, 0, 1)
@@ -425,11 +433,15 @@ export class GeneratedBodyPlayback {
         }
       }
       this.clock = null
+      this.motionClock.reset()
+      this.sampledClock = null
       if (endedPlayback) this.clockId = endedPlayback
       this.audibleClockStarted = false
       return
     }
     if (clock.playbackId !== this.clockId) {
+      this.motionClock.reset()
+      this.sampledClock = null
       this.clockId = clock.playbackId
       this.audibleClockStarted = false
       this.speechFinished = false
@@ -595,9 +607,10 @@ export class GeneratedBodyPlayback {
     this.speechFinished = false
     this.speechOrigin = speechOrigin
     this.composedSpeechClock = null
-    if (this.clock)
+    const bodyClock = this.sampledClock ?? this.clock
+    if (bodyClock)
       this.clockBase =
-        this.cursor - (this.clock.sourceSampleOffset * 30) / this.clock.sourceSampleRate
+        this.cursor - (bodyClock.sourceSampleOffset * 30) / bodyClock.sourceSampleRate
     this.playing = true
     this.error = null
     this.rejectedReason = null
@@ -822,8 +835,11 @@ export class GeneratedBodyPlayback {
       getMotionProfile(this.appliedProfileId),
       this.localRecovery ? 'recover' : (this.appliedPhaseId ?? 'prepare'),
     )
+    this.bodySafety.setSourceHandPaths(this.localRecovery ? new Map() : this.sourceHandPaths)
     const pcm =
-      !this.localRecovery && this.clock && this.clock.sourceSampleOffset > 0 ? this.clock : null
+      !this.localRecovery && this.sampledClock && this.clock && this.clock.sourceSampleOffset > 0
+        ? this.sampledClock
+        : null
     const samePlayback = pcm && this.composedSpeechClock?.playbackId === pcm.playbackId
     const consumedDelta =
       pcm && samePlayback
@@ -833,7 +849,9 @@ export class GeneratedBodyPlayback {
               (this.composedSpeechClock?.offset ?? pcm.sourceSampleOffset)) /
               pcm.sourceSampleRate,
           )
-        : delta
+        : pcm
+          ? 0
+          : delta
     this.bodySafety.apply(
       consumedDelta > 0 ? Math.min(0.05, consumedDelta) : delta,
       getMotionProfile(this.profileId)?.kind === 'presence' ? 0.35 : 1,
@@ -873,6 +891,10 @@ export class GeneratedBodyPlayback {
     this.composedSpeechClock = pcm
       ? { playbackId: pcm.playbackId, offset: pcm.sourceSampleOffset }
       : null
+  }
+
+  isConversationalMotionAvailable(id: string): boolean {
+    return this.profileAvailability(id, false, true).available
   }
 
   getEmbodimentAvailability(): EmbodimentAvailability {
@@ -1000,6 +1022,8 @@ export class GeneratedBodyPlayback {
     this.playing = false
     this.localRecovery = false
     this.queue.length = 0
+    this.sourcePathChunk = null
+    this.sourceHandPaths.clear()
     this.replanFrom = null
     this.forecast = null
     this.started = false
@@ -1007,6 +1031,8 @@ export class GeneratedBodyPlayback {
     this.cursor = 0
     this.generatedEnd = 0
     this.clock = null
+    this.motionClock.reset()
+    this.sampledClock = null
     this.clockId = ''
     this.readiness?.reject(new Error(reason))
     this.readiness = null
@@ -1035,6 +1061,21 @@ export class GeneratedBodyPlayback {
   }
 
   update(delta: number, beforeDiagnostics: () => void): void {
+    if (!this.presentationOnly) {
+      const sample = this.motionClock.sample(this.clock, delta)
+      this.sampledClock =
+        sample && this.clock ? { ...this.clock, sourceSampleOffset: sample.offset } : null
+      if (sample?.discontinuity && this.sampledClock) {
+        this.composedSpeechClock = null
+        this.clockBase =
+          this.cursor -
+          (this.sampledClock.sourceSampleOffset * 30) / this.sampledClock.sourceSampleRate
+        if (this.context?.speechBound && this.execution?.profile.kind === 'gesture') {
+          this.error = 'ARDY_AUDIBLE_UNDERRUN'
+          this.execution.requestFailureRecovery()
+        }
+      }
+    }
     // Recompose from the last uncorrected base even while a horizon/PCM waits.
     // Feeding last frame's contact/IK result back through safety caused a snap
     // whenever the generator paused at a phase boundary.
@@ -1108,7 +1149,8 @@ export class GeneratedBodyPlayback {
     }
     if (this.started && this.playing && !this.localRecovery) {
       const recovering = this.execution?.phase === 'recover'
-      const audibleClock = this.clock && this.clock.sourceSampleOffset > 0 ? this.clock : null
+      const audibleClock =
+        this.clock && this.clock.sourceSampleOffset > 0 ? this.sampledClock : null
       const audible = audibleClock !== null
       if (audibleClock && !this.audibleClockStarted) {
         this.clockBase =
@@ -1471,6 +1513,42 @@ export class GeneratedBodyPlayback {
     const elapsed =
       this.lastPoseFrame === null ? 1 / 30 : Math.max(0, (this.cursor - this.lastPoseFrame) / 30)
     const profile = MOTION_PROFILES.find((entry) => entry.id === chunk.profileId)
+    if (this.sourcePathChunk !== chunk) {
+      this.sourcePathChunk = chunk
+      this.sourceHandPaths.clear()
+      const phase = profile?.phases.find((value) => value.id === chunk.plan.phaseId)
+      for (const side of ['left', 'right'] as const) {
+        if (
+          profile?.handScore.phases[chunk.plan.phaseId][side].workspaceTrajectory !==
+          'relative-source'
+        )
+          continue
+        const chain = ['Shoulder', 'UpperArm', 'LowerArm', 'Hand'].map((part) =>
+          this.bindings.find((binding) => binding.name === `${side}${part}`),
+        )
+        if (chain.some((binding) => !binding)) continue
+        const segments = chain
+          .slice(0, 3)
+          .flatMap((binding, index) =>
+            binding && chain[index + 1]
+              ? [{ ...binding, child: chain[index + 1]?.bone as THREE.Object3D }]
+              : [],
+          )
+        const hand = chain[3]
+        if (hand)
+          this.sourceHandPaths.set(
+            hand.bone,
+            sourceHandDisplacements(
+              chunk,
+              segments,
+              vrm.scene.getWorldQuaternion(new THREE.Quaternion()),
+              vrm.meta.metaVersion === '0',
+              Math.max(0, Math.floor(this.cursor - chunk.startFrame)),
+              Math.min(60, Math.ceil(((phase?.maxMs ?? 2000) * 30) / 1000)),
+            ),
+          )
+      }
+    }
     this.transitionElapsed = Math.min(this.transitionDuration, this.transitionElapsed + elapsed)
     this.lastPoseFrame = this.cursor
     this.appliedProfileId = chunk.profileId

@@ -160,6 +160,10 @@ for (const entry of source.cases) {
   const physicalSafety = new GeneratedBodySafety()
   physicalSafety.attach(physicalRig)
   const feet = planted(physicalRig)
+  const wristRigs = Object.fromEntries(
+    ['artistic', 'admissible', 'final'].map((stage) => [stage, greenFoxRig(model)]),
+  )
+  const wristPoints: Record<string, Array<{ frame: number; point: THREE.Vector3 }>> = {}
   const chunks = entry.chunks.map((captured, index) => {
     const { phase, ...data } = captured
     const execution = replay.execution
@@ -190,6 +194,22 @@ for (const entry of source.cases) {
       replay.apply(chunk, 1 / 60, step / 120)
       const safetyAt = performance.now()
       owner.validateFinalComposition(1 / 60)
+      for (const [stage, rig] of Object.entries(wristRigs)) {
+        for (const sample of frameSamples.filter((value) => value.stage === stage))
+          rig.humanoid.getNormalizedBoneNode(sample.bone)?.quaternion.fromArray(sample.rotation)
+        rig.scene.updateMatrixWorld(true)
+        for (const side of ['left', 'right'] as const) {
+          const hand = rig.humanoid.getNormalizedBoneNode(`${side}Hand`)
+          if (hand) {
+            const key = `${stage}:${side}`
+            wristPoints[key] ??= []
+            wristPoints[key].push({
+              frame: replay.cursor,
+              point: hand.getWorldPosition(new THREE.Vector3()),
+            })
+          }
+        }
+      }
       timings.push({
         retargetMs: safetyAt - retargetAt,
         finalSafetyMs: performance.now() - safetyAt,
@@ -261,6 +281,31 @@ for (const entry of source.cases) {
     replayMs: performance.now() - started,
     contactCorrectionFrames: corrections,
     unresolvedArmContacts: contacts,
+    strokeWrists: Object.fromEntries(
+      Object.entries(wristPoints).map(([key, points]) => {
+        const stroke = points.filter((value) => value.frame >= 60 && value.frame < 120)
+        return [
+          key,
+          {
+            excursionM: Math.max(
+              0,
+              ...stroke.map((value) => value.point.distanceTo(stroke[0].point)),
+            ),
+            travelM: stroke
+              .slice(1)
+              .reduce((sum, value, i) => sum + value.point.distanceTo(stroke[i].point), 0),
+          },
+        ]
+      }),
+    ),
+    strokeWindows: Object.fromEntries(
+      [800, 1200, 1600, 2000].map((ms) => {
+        const points = (wristPoints['final:right'] ?? []).filter(
+          (value) => value.frame >= 60 && value.frame < 60 + (ms * 30) / 1000,
+        )
+        return [ms, Math.max(0, ...points.map((value) => value.point.distanceTo(points[0].point)))]
+      }),
+    ),
     producerWaitMs: null,
     producerWaitNote:
       'Offline replay measures composition; wall waiting is measured by the live runner.',

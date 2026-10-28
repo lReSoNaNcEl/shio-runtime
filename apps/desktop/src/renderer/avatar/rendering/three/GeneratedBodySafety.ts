@@ -65,6 +65,7 @@ export class GeneratedBodySafety {
     { offset: THREE.Vector3; pole: number; extents?: number[] }
   >()
   private workspaceTrajectories = new Map<Limb, WorkspaceTrajectory>()
+  private sourceHandPaths: ReadonlyMap<THREE.Object3D, readonly THREE.Vector3[]> = new Map()
   private readonly temporalFilter = new AdaptiveMotionFilter()
   private readonly jointKinds = new Map<THREE.Object3D, 'torso' | 'shoulder' | 'arm' | 'wrist'>()
 
@@ -206,6 +207,7 @@ export class GeneratedBodySafety {
     this.handTargets = null
     this.workspaceSolutions.clear()
     this.workspaceTrajectories.clear()
+    this.sourceHandPaths = new Map()
     this.vrm = null
     this.arms = []
     this.legs = []
@@ -423,6 +425,10 @@ export class GeneratedBodySafety {
     this.handTargets = targets
   }
 
+  setSourceHandPaths(paths: ReadonlyMap<THREE.Object3D, readonly THREE.Vector3[]>): void {
+    this.sourceHandPaths = paths
+  }
+
   handTargetsReached(): boolean {
     for (const arm of this.arms) {
       const goal = this.handGoal(arm)
@@ -571,7 +577,11 @@ export class GeneratedBodySafety {
                 index,
                 (start.getComponent(index) * previous.extents[index]) / goal.extents[index],
               )
-          trajectory = new WorkspaceTrajectory(wrist.clone(), start)
+          trajectory = new WorkspaceTrajectory(wrist.clone(), start, {
+            displacements: this.sourceHandPaths.get(arm.end) ?? [],
+            axes: goal.axes,
+            extents: goal.extents,
+          })
           this.workspaceTrajectories.set(arm, trajectory)
         }
         nearest = trajectory.sample(wrist, goal.axes, goal.extents)

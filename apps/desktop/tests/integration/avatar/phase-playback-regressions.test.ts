@@ -84,7 +84,7 @@ describe('generated phase timing regressions', () => {
     vi.spyOn(GeneratedBodySafety.prototype, 'handTargetsReached').mockReturnValue(true)
     let appliedStroke = false
     for (let frame = 0; frame < 150; frame++) {
-      owner.setClock(createPcmPlaybackClock({ sourceSampleOffset: frame * 882 }))
+      owner.setClock(createPcmPlaybackClock({ sourceSampleOffset: frame * 882, state: 'playing' }))
       owner.update(0.02, () => undefined)
       await flush()
       if (owner.getBodyMotionDebugState().appliedPose?.phaseId === 'stroke') {

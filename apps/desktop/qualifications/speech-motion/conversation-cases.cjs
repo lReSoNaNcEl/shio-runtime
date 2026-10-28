@@ -158,7 +158,7 @@ async function qualifyConversation({
     frame()
   })
   await page.evaluate(
-    (profiles) => {
+    ({ profiles, qualityTrace }) => {
       const c = window.__motionAbController,
         a = c.avatarRuntime.controller,
         model = a.vrmModel,
@@ -200,6 +200,29 @@ async function qualifyConversation({
       const previousStages = new Map(),
         originalObserver = body.dynamicsObserver
       const originalPump = body.pump
+      const originalUpdate = body.update
+      if (qualityTrace) {
+        state.qualityFrames = []
+        body.update = function (delta, ...args) {
+          originalUpdate.call(this, delta, ...args)
+          if (state.qualityFrames.length >= 24000) return
+          const clock = c.player.getPcmClock()
+          state.qualityFrames.push({
+            atMs: performance.now(),
+            delta,
+            playbackId: clock?.playbackId,
+            pcm: clock?.sourceSampleOffset,
+            sampleRate: clock?.sourceSampleRate,
+            state: clock?.state,
+            sourceFrame: this.cursor,
+            profile: this.appliedProfileId,
+            phase: this.appliedPhaseId,
+            rotations: Object.fromEntries(
+              Object.entries(bones).map(([name, bone]) => [name, bone.quaternion.toArray()]),
+            ),
+          })
+        }
+      }
       state.requests = []
       body.pump = function (...args) {
         const active = this.inFlight
@@ -256,6 +279,25 @@ async function qualifyConversation({
         }
       })
       let lastSample = 0
+      const spatialGoals = () =>
+        body.bodySafety.arms.map((arm) => {
+          const goal = body.bodySafety.handGoal(arm)
+          if (!goal) return null
+          const offset = arm.end.getWorldPosition(arm.end.position.clone()).sub(goal.center)
+          const rotation = arm.end.getWorldQuaternion(arm.end.quaternion.clone())
+          return {
+            side: arm.side,
+            positionViolationM: Math.max(
+              ...goal.axes.map((axis, i) => Math.abs(offset.dot(axis)) - goal.extents[i]),
+            ),
+            palmDot: goal.palm
+              ? arm.palmAxis.clone().applyQuaternion(rotation).dot(goal.palm)
+              : null,
+            fingerDot: goal.fingers
+              ? arm.fingerAxis.clone().applyQuaternion(rotation).dot(goal.fingers)
+              : null,
+          }
+        })
       const frame = () => {
         const pose = a.getBodyPresentation(),
           clock = c.player.getPcmClock(),
@@ -307,6 +349,9 @@ async function qualifyConversation({
             inFlightPhase: body.inFlightPhase,
             executionId: body.execution?.id,
             inferenceMs: body.lastInferenceMs,
+            spatialGoals: spatialGoals(),
+            fingersReached: body.handPose.targetsReached(),
+            bodyReached: body.bodySafety.handTargetsReached(),
             queue: body.queue.map((chunk) => ({ start: chunk.startFrame, plan: chunk.plan })),
           })
         }
@@ -315,6 +360,7 @@ async function qualifyConversation({
           current.errorStates.push({
             atMs: now,
             error: generated.error,
+            spatialGoals: spatialGoals(),
             planning: generated.planning,
             cursor: body.cursor,
             generatedEnd: body.generatedEnd,
@@ -442,6 +488,7 @@ async function qualifyConversation({
         unsubscribe()
         body.dynamicsObserver = originalObserver
         body.pump = originalPump
+        body.update = originalUpdate
         const { begin, stop, frame, ...result } = state
         return result
       }
@@ -451,7 +498,10 @@ async function qualifyConversation({
       // A paint-throttled RAF probe can see only one frame of a valid stroke.
       state.frame = setInterval(frame, 1000 / 60)
     },
-    motionProfiles.map(({ id, kind }) => ({ id, kind })),
+    {
+      profiles: motionProfiles.map(({ id, kind }) => ({ id, kind })),
+      qualityTrace: process.argv.includes('--motion-quality-trace'),
+    },
   )
   const audioFile = path.join(directory, 'conversation-audio.webm'),
     videoFile = path.join(directory, 'conversation-raw.webm')
@@ -639,5 +689,58 @@ async function qualifyConversation({
   )
   report.conversation.passed =
     report.conversation.technicalPassed && report.conversation.readabilityPassed
+  if (process.argv.includes('--fixed-preview-smoke')) {
+    const camera = () =>
+      overlay.evaluate(() => {
+        const value = window.__motionAbController.scene.camera
+        return [value.position.toArray(), value.quaternion.toArray(), value.fov]
+      })
+    const before = await camera()
+    const originalModel = await page.evaluate(() => {
+      window.__smokePrimaryModel = window.__motionAbController.avatarRuntime.controller.vrmModel
+      return !!window.__smokePrimaryModel.vrm
+    })
+    await page.locator('.app-sidebar').getByRole('button', { name: 'Avatar', exact: true }).click()
+    await page.waitForFunction(() => document.querySelectorAll('canvas').length === 1)
+    const smoke = { modelLoaded: originalModel, previewAttached: true, phases: [], errors: [] }
+    await page.evaluate(() =>
+      window.__motionAbController.avatarRuntime.previewVariation('greet_wave_close', 17),
+    )
+    const deadline = Date.now() + 30000
+    while (Date.now() < deadline) {
+      const state = await page.evaluate(() => {
+        const model = window.__motionAbController.avatarRuntime.controller.vrmModel
+        const body = model.getBodyMotionDebugState()
+        return {
+          sameModel: model === window.__smokePrimaryModel,
+          applied: body.appliedPose,
+          error: body.generated?.error,
+        }
+      })
+      assert(state.sameModel, 'Attaching Preview replaced the primary model')
+      if (state.error && !smoke.errors.includes(state.error)) smoke.errors.push(state.error)
+      if (state.applied?.profileId === 'greet_wave_close') {
+        const phase = state.applied.phaseId
+        if (!smoke.phases.includes(phase)) smoke.phases.push(phase)
+        if (phase === 'stroke' && !smoke.strokeCaptured) {
+          await captureWindow(application, page, path.join(directory, 'fixed-preview-stroke.png'))
+          smoke.strokeCaptured = true
+        }
+        if (smoke.phases.includes('stroke') && phase === 'recover') break
+      }
+      await pause(40)
+    }
+    smoke.health = await page.evaluate(
+      async () => (await window.api.system.getRuntimeSupportBundle()).avatarRuntime.health,
+    )
+    smoke.cameraUnchanged = JSON.stringify(before) === JSON.stringify(await camera())
+    smoke.passed =
+      smoke.modelLoaded &&
+      smoke.previewAttached &&
+      smoke.strokeCaptured &&
+      smoke.cameraUnchanged &&
+      !smoke.errors.length
+    report.conversation.fixedPreviewSmoke = smoke
+  }
 }
 module.exports = { qualifyConversation }
