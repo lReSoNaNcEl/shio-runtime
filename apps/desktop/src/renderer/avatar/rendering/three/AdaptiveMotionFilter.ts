@@ -7,6 +7,7 @@ export interface MotionFilterContext {
   /** Remaining authored preparation time for an admitted active hand workspace. */
   reachSeconds?: number
   motionClass: MotionClass
+  sourceProvider?: 'ardy' | 'motionbricks'
   phase: MotionPhaseId
   sourceSpeeds?: ReadonlyMap<THREE.Object3D, number>
   onIntegrated?: (bone: THREE.Object3D) => void
@@ -101,7 +102,10 @@ export class AdaptiveMotionFilter {
     // The analytic step is stable at different render rates, and velocity
     // feed-forward preserves a moving stroke without a second filter or clock.
     const feed = presence ? new THREE.Vector3() : sourceVelocity
-    const frequency = presence ? 28 : 48
+    // Measured MotionBricks standing output contains rapid pose noise even
+    // with held goals. Use the same tracker at a calm presence bandwidth;
+    // expressive phases keep their existing timing and source feed-forward.
+    const frequency = presence ? (context.sourceProvider === 'motionbricks' ? 8 : 28) : 48
     const relativeVelocity = state.velocity.clone().sub(feed)
     const initialError = error.clone().addScaledVector(feed, -dt)
     const decay = Math.exp(-frequency * dt)

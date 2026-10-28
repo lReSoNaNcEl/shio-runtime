@@ -62,7 +62,7 @@ async function qualifyConversation({
   )
   const cases = fixtures.filter((item) => !subset || subset.includes(item.id))
   report.conversation = {
-    source: 'Unmodified CharacterResponsePort; actual Main LLM, Fish, ARDY; Chat + Overlay',
+    source: `Unmodified CharacterResponsePort; actual Main LLM, Fish, ${report.motionProvider || 'ardy'}; Chat + Overlay`,
     cases: [],
     visualAcceptance: 'pending',
     selectedView: await page.evaluate(async () => {
@@ -509,8 +509,14 @@ async function qualifyConversation({
   let stopAudio, stopVideo, captured
   const stabilizationTrace = process.argv.includes('--stabilization-trace')
   if (stabilizationTrace) {
-    await installStabilizationProbe(page, { maxFrames: 24000 })
-    await installStabilizationProbe(overlay, { maxFrames: 24000 })
+    await installStabilizationProbe(page, {
+      maxFrames: 24000,
+      captureFingers: report.nativeSomaHand,
+    })
+    await installStabilizationProbe(overlay, {
+      maxFrames: 24000,
+      captureFingers: report.nativeSomaHand,
+    })
   }
   const started = Date.now()
   try {

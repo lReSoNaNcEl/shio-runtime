@@ -5,6 +5,39 @@ import { AdaptiveMotionFilter } from '../../../src/renderer/avatar/rendering/thr
 
 const axis = new THREE.Vector3(0, 0, 1)
 describe('single source-aware body tracking', () => {
+  it('rejects rapid MotionBricks presence noise while retaining a slow sway and unchanged gesture timing', () => {
+    const run = (sourceProvider: 'ardy' | 'motionbricks', motionClass: 'presence' | 'gesture') => {
+      const filter = new AdaptiveMotionFilter()
+      const bone = new THREE.Object3D()
+      const angles: number[] = []
+      for (let frame = 0; frame < 1200; frame++) {
+        const time = frame / 60
+        const angle =
+          0.03 * Math.sin(2 * Math.PI * 0.2 * time) + 0.002 * Math.sin(2 * Math.PI * 10 * time)
+        const previous = bone.quaternion.clone()
+        filter.step(bone, previous, new THREE.Quaternion().setFromAxisAngle(axis, angle), 1 / 60, {
+          motionClass,
+          phase: 'hold',
+          sourceProvider,
+        })
+        filter.reconcile(bone, previous, 1 / 60)
+        if (frame >= 300) angles.push(2 * Math.atan2(bone.quaternion.z, bone.quaternion.w))
+      }
+      return angles
+    }
+    const previous = run('ardy', 'presence')
+    const candidate = run('motionbricks', 'presence')
+    const highEnergy = (angles: number[]) =>
+      angles
+        .slice(2)
+        .reduce(
+          (sum, angle, index) => sum + (angle - 2 * angles[index + 1] + angles[index]) ** 2,
+          0,
+        )
+    expect(highEnergy(candidate)).toBeLessThan(highEnergy(previous) * 0.1)
+    expect(Math.max(...candidate) - Math.min(...candidate)).toBeGreaterThan(0.056)
+    expect(run('motionbricks', 'gesture')).toEqual(run('ardy', 'gesture'))
+  })
   it.each([60, 90, 120])(
     'tracks a slow neural path while rejecting tiny source chatter at %i Hz',
     (hz) => {

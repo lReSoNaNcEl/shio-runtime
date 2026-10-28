@@ -36,6 +36,7 @@ import { calibrateFingerSpreadSigns, GeneratedHandPose } from './GeneratedHandPo
 import type { GeneratedBodyDebugState, GeneratedMotionRequestContext } from './GeneratedMotionTypes'
 import type { MotionDynamicsObserver, MotionDynamicsStage } from './MotionDynamicsObserver'
 import { plantLeg } from './plantLeg'
+import { SomaHandRetargeting } from './SomaHandRetargeting'
 import { sourceHandDisplacements } from './SourceHandDisplacements'
 import { standingArmRange } from './StandingMotionStyle'
 import { sampleSourceRotation } from './sampleSourceRotation'
@@ -87,6 +88,8 @@ export class GeneratedBodyPlayback {
   private bindings: Binding[] = []
   private presentationBones: Array<[VRMHumanBoneName, THREE.Object3D]> = []
   private handPose = new GeneratedHandPose()
+  private somaHands: SomaHandRetargeting | null = null
+  private speechEnergy = 0
   private safeHands: ReadonlyMap<VRMHumanBoneName, THREE.Quaternion> = new Map()
   private readonly bodySafety = new GeneratedBodySafety()
   private readonly sourceSpeeds = new Map<THREE.Object3D, number>()
@@ -101,6 +104,7 @@ export class GeneratedBodyPlayback {
   private mirrorHeading = 0
   private lastPoseFrame: number | null = null
   private appliedProfileId: MotionProfileId = 'presence_poised'
+  private appliedSourceProvider: MotionChunk['sourceProvider']
   private appliedPhaseId: MotionPhaseId = 'prepare'
   private appliedExecutionId: string | undefined
   private appliedOutcome: MotionOutcome | null = null
@@ -137,6 +141,7 @@ export class GeneratedBodyPlayback {
   private transitionElapsed = 0
   private transitionDuration = 0.3
   private transitionPose = new Map<THREE.Object3D, THREE.Quaternion>()
+  private transitionHands = new Map<THREE.Object3D, THREE.Quaternion>()
   private lastUnderrun = false
   private underruns = 0
   private missedSpeechFrames = 0
@@ -219,6 +224,8 @@ export class GeneratedBodyPlayback {
   }
 
   attach(vrm: VRM): void {
+    this.appliedSourceProvider = undefined
+    this.transitionHands.clear()
     this.projectedConversationCamera = null
     this.vrm = vrm
     this.turn = null
@@ -247,6 +254,7 @@ export class GeneratedBodyPlayback {
     )
     const spreadSigns = calibrateFingerSpreadSigns(vrm)
     this.handPose = new GeneratedHandPose(handRest, spreadSigns)
+    this.somaHands = new SomaHandRetargeting(vrm)
     const safeHandPose = new GeneratedHandPose(handRest, spreadSigns)
     safeHandPose.sample('presence_poised', 0, 0, vrm.meta.metaVersion)
     this.safeHands = safeHandPose.sample('presence_poised', 0.35, 0, vrm.meta.metaVersion)
@@ -320,9 +328,12 @@ export class GeneratedBodyPlayback {
   }
 
   detach(): void {
+    this.appliedSourceProvider = undefined
+    this.transitionHands.clear()
     this.turn = null
     this.stopAnimation()
     this.vrm = null
+    this.somaHands = null
     this.bindings = []
     this.presentationBones = []
     this.mirror = null
@@ -436,6 +447,7 @@ export class GeneratedBodyPlayback {
         }
       }
       this.clock = null
+      this.speechEnergy = 0
       this.motionClock.reset()
       this.sampledClock = null
       if (endedPlayback) this.clockId = endedPlayback
@@ -474,6 +486,13 @@ export class GeneratedBodyPlayback {
       this.execution.requestRecovery('speech-ended')
       if (this.execution.advance(0, false)) this.invalidatePhase()
     }
+  }
+
+  setSpeechEnergy(energy: number): void {
+    const bounded = Number.isFinite(energy) ? THREE.MathUtils.clamp(energy, 0, 1) : 0
+    // Acoustic modulation is deliberately slower than individual PCM energy
+    // reports. It steers future targets, never individual joint samples.
+    this.speechEnergy += (bounded - this.speechEnergy) * 0.08
   }
 
   private speechWindowMissed(id: string, origin: SpeechPreparationOrigin): boolean {
@@ -631,6 +650,11 @@ export class GeneratedBodyPlayback {
     this.transitionDuration = Math.max(0.05, Math.min(2, context.blendDuration ?? 0.3))
     this.transitionPose = new Map(
       this.bindings.map((binding) => [binding.bone, binding.bone.quaternion.clone()]),
+    )
+    this.transitionHands = new Map(
+      this.presentationBones
+        .filter(([name]) => HAND_BONE_NAMES.some((hand) => hand === name))
+        .map(([, bone]) => [bone, bone.quaternion.clone()]),
     )
     // Only an execution boundary may seed the filter from the applied pose.
     // Per-frame IK/procedural corrections must not feed back into neural smoothing.
@@ -866,6 +890,7 @@ export class GeneratedBodyPlayback {
             : getMotionProfile(this.profileId)?.libraryGroup === 'reactions'
               ? 'reaction'
               : 'gesture',
+        sourceProvider: this.appliedSourceProvider,
         phase: this.localRecovery ? 'recover' : this.appliedPhaseId,
         reachSeconds:
           this.execution?.phase === 'prepare' && this.execution.id === this.appliedExecutionId
@@ -1560,6 +1585,7 @@ export class GeneratedBodyPlayback {
     this.transitionElapsed = Math.min(this.transitionDuration, this.transitionElapsed + elapsed)
     this.lastPoseFrame = this.cursor
     this.appliedProfileId = chunk.profileId
+    this.appliedSourceProvider = chunk.sourceProvider
     this.appliedPhaseId = chunk.plan.phaseId
     if (this.appliedExecutionId !== chunk.plan.executionId) this.appliedOutcome = null
     this.appliedExecutionId = chunk.plan.executionId
@@ -1754,9 +1780,20 @@ export class GeneratedBodyPlayback {
       const hips = vrm.humanoid.getNormalizedBoneNode('hips')
       if (hips) hips.position.lerp(this.rootAnchor, smooth)
     }
+    const sourceHands = this.somaHands?.sample(chunk, frame, fraction, following)
     for (const [name, bone] of this.presentationBones) {
-      const rotation = hand.get(name)
-      if (rotation) bone.quaternion.copy(rotation)
+      const rotation = sourceHands?.get(name) ?? hand.get(name)
+      if (rotation) {
+        const from =
+          sourceHands && this.transitionElapsed < this.transitionDuration
+            ? this.transitionHands.get(bone)
+            : undefined
+        if (from)
+          bone.quaternion
+            .copy(from)
+            .slerp(rotation, this.transitionElapsed / this.transitionDuration)
+        else bone.quaternion.copy(rotation)
+      }
     }
     this.captureBasePose()
   }
@@ -2089,7 +2126,17 @@ export class GeneratedBodyPlayback {
     this.inFlight = true
     this.inFlightPhase = plan.phaseId
     void window.api.motion
-      .next({ lease, profileId, fromFrame, plan })
+      .next({
+        lease,
+        profileId,
+        fromFrame,
+        plan,
+        activity: {
+          energy: this.clock?.state === 'playing' ? this.speechEnergy : 0,
+          playbackId: this.clock?.playbackId ?? null,
+          speaking: this.clock?.state === 'playing' && this.clock.sourceSampleOffset > 0,
+        },
+      })
       .then((result) => {
         if (epoch !== this.localEpoch || !this.vrm) return
         if (!result.ok) throw new Error(result.error)

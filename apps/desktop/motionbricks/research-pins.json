@@ -1,0 +1,35 @@
+{
+  "status": "research-only-not-qualified",
+  "source": {
+    "repository": "NVlabs/motionbricks",
+    "revision": "54fc563aeaaf819a753d72cc9fdc6713989cdd43",
+    "version": "0.2.0"
+  },
+  "motion": {
+    "model": "mmm_v6_soma_fp16.onnx",
+    "sha256": "6c9f78e23decbda8e1cfd1b0cc96980ea4b24b3ca2c808d03b058f48f82fc9ef",
+    "onnxOpset": 17,
+    "nativeFps": 30,
+    "nativeContextFrames": 4,
+    "nativeValidFrames": [18, 58]
+  },
+  "hand": {
+    "repository": "NVlabs/SOMA-X",
+    "sourceRevision": "56a3d957a549c66425b500fddf7f3183bc6fbdff",
+    "assetRepository": "nvidia/SOMA-X",
+    "assetRevision": "f81a01796f652260ff930d5318d6c6b845a505ed",
+    "priorSha256": "233e9225c1da05c6a3dd98107b9f027f2366e3b972bbe67e0d164e5d28619fff",
+    "templateSha256": "a952cb7bdf4ccd801e355d53122d395b985b69d0d9181439edad5081bb171856",
+    "components": 32,
+    "wristExcluded": true
+  },
+  "runtime": {
+    "python": "3.12.13",
+    "tensorrt-cu12": "10.8.0.43",
+    "warp-lang": "1.17.0",
+    "newton": "1.6.0",
+    "numpy": "2.4.3",
+    "scipy": "1.17.1",
+    "usd-core": "26.3"
+  }
+}

@@ -99,11 +99,23 @@ export interface ApplicationDependencies {
 }
 
 export function buildApplicationDependencies(): ApplicationDependencies {
+  const motionProvider = process.env.SHIO_EXPERIMENT_MOTION_PROVIDER?.trim() || 'ardy'
+  if (!['ardy', 'motionbricks'].includes(motionProvider))
+    throw new Error('Invalid SHIO_EXPERIMENT_MOTION_PROVIDER')
+  if (app.isPackaged && motionProvider !== 'ardy')
+    throw new Error('Experimental MotionBricks requires a development checkout')
   const motionRoot =
     process.env.SHIO_MOTION_ROOT?.trim() ||
-    (app.isPackaged ? join(app.getPath('userData'), 'motion') : join(app.getAppPath(), 'motion'))
+    (app.isPackaged
+      ? join(app.getPath('userData'), 'motion')
+      : join(app.getAppPath(), motionProvider === 'motionbricks' ? 'motionbricks' : 'motion'))
   if (!isAbsolute(motionRoot)) throw new Error('SHIO_MOTION_ROOT must be absolute')
-  const ardy = new ArdyMotionService(motionRoot, () => getRendererConfig().vrmAssetHandle)
+  const ardy = new ArdyMotionService(
+    motionRoot,
+    () => getRendererConfig().vrmAssetHandle,
+    motionProvider as 'ardy' | 'motionbricks',
+    motionProvider === 'motionbricks' && process.env.SHIO_EXPERIMENT_SOMA_HAND === '1',
+  )
   const environmentConfig = resolveEnvironmentConfig()
   let win: BrowserWindow | null = null
   let quitting = false

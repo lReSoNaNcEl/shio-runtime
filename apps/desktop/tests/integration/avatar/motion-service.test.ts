@@ -27,7 +27,7 @@ const plan: MotionPlanIdentity = {
 
 import { ArdyMotionService } from '../../../src/main/motion/ArdyMotionService'
 
-function fixture(autoReady = true) {
+function fixture(autoReady = true, provider: 'ardy' | 'motionbricks' = 'ardy') {
   const child = Object.assign(new EventEmitter(), {
     stdout: new EventEmitter(),
     stderr: new EventEmitter(),
@@ -45,7 +45,7 @@ function fixture(autoReady = true) {
     child.stdout.emit(
       'data',
       Buffer.from(
-        `${JSON.stringify({ type: 'ready', catalogRevision: MOTION_CATALOG_REVISION, format: MOTION_FORMAT })}\n`,
+        `${JSON.stringify({ type: 'ready', catalogRevision: MOTION_CATALOG_REVISION, format: provider === 'motionbricks' ? { ...MOTION_FORMAT, sourceRevision: '54fc563aeaaf819a753d72cc9fdc6713989cdd43', modelRevision: '6c9f78e23decbda8e1cfd1b0cc96980ea4b24b3ca2c808d03b058f48f82fc9ef' } : MOTION_FORMAT })}\n`,
       ),
     )
   mocks.spawn.mockImplementation(() => {
@@ -53,7 +53,7 @@ function fixture(autoReady = true) {
     return child
   })
   let asset = 'asset-one'
-  const service = new ArdyMotionService('D:/fixture/motion', () => asset)
+  const service = new ArdyMotionService('D:/fixture/motion', () => asset, provider)
   return {
     child,
     service,
@@ -71,6 +71,47 @@ afterEach(() => {
 })
 
 describe('Main-owned ARDY lifecycle', () => {
+  it('accepts the pinned MotionBricks identity only with explicit provider selection', async () => {
+    const { service } = fixture(true, 'motionbricks')
+    expect((await service.start(10, 2, 17)).seed).toBe(17)
+    await service.dispose()
+  })
+
+  it.runIf(process.platform === 'win32')(
+    'settles the exact experimental Python process tree before releasing the GPU lease',
+    async () => {
+      const { service, child } = fixture(true, 'motionbricks')
+      Object.assign(child, { pid: 12345 })
+      await service.start(10, 2, 17)
+      const terminator = new EventEmitter()
+      mocks.spawn.mockImplementationOnce(() => {
+        queueMicrotask(() => {
+          child.exitCode = 0
+          child.emit('exit', 0)
+          terminator.emit('exit', 0)
+        })
+        return terminator
+      })
+      await service.dispose()
+      expect(mocks.spawn.mock.calls[1][1]).toEqual(['/PID', '12345', '/T', '/F'])
+      expect(mocks.spawn.mock.calls[1][2].windowsHide).toBe(true)
+      expect(service.status().state).toBe('closed')
+    },
+  )
+
+  it('rejects a MotionBricks worker behind the default ARDY provider', async () => {
+    const { service, child } = fixture(false)
+    const starting = service.start(10, 2, 17)
+    child.stdout.emit(
+      'data',
+      Buffer.from(
+        `${JSON.stringify({ type: 'ready', catalogRevision: MOTION_CATALOG_REVISION, format: { ...MOTION_FORMAT, sourceRevision: '54fc563aeaaf819a753d72cc9fdc6713989cdd43', modelRevision: '6c9f78e23decbda8e1cfd1b0cc96980ea4b24b3ca2c808d03b058f48f82fc9ef' } })}\n`,
+      ),
+    )
+    await expect(starting).rejects.toThrow('ARDY_INIT_FAILED')
+    await service.dispose()
+  })
+
   it('allows a measured cold conditioning rebuild beyond the former two-minute cutoff', async () => {
     vi.useFakeTimers()
     const { child, service, ready } = fixture(false)

@@ -41,7 +41,18 @@ export const motionReadySchema = z
   .object({
     type: z.literal('ready'),
     catalogRevision: z.literal(MOTION_CATALOG_REVISION),
-    format: motionFormatSchema,
+    handModelRevision: z
+      .literal('233e9225c1da05c6a3dd98107b9f027f2366e3b972bbe67e0d164e5d28619fff')
+      .optional(),
+    format: z.union([
+      motionFormatSchema,
+      motionFormatSchema.extend({
+        sourceRevision: z.literal('54fc563aeaaf819a753d72cc9fdc6713989cdd43'),
+        modelRevision: z.literal(
+          '6c9f78e23decbda8e1cfd1b0cc96980ea4b24b3ca2c808d03b058f48f82fc9ef',
+        ),
+      }),
+    ]),
   })
   .strict()
 export const motionLeaseSchema = z
@@ -69,12 +80,21 @@ export const motionStartSchema = z
     seed: identity.optional(),
   })
   .strict()
+export const motionActivitySchema = z
+  .object({
+    energy: z.number().finite().min(0).max(1),
+    playbackId: z.string().min(1).max(128).nullable(),
+    speaking: z.boolean(),
+  })
+  .strict()
+export type MotionActivity = z.infer<typeof motionActivitySchema>
 export const motionNextSchema = z
   .object({
     lease: motionLeaseSchema,
     profileId: motionProfileSchema,
     fromFrame: identity.optional(),
     plan: motionPlanIdentitySchema,
+    activity: motionActivitySchema.optional(),
   })
   .strict()
 const finite = z.number().finite()
@@ -91,9 +111,20 @@ export const motionChunkSchema = motionLeaseSchema
     fromFrame: identity,
     profileId: motionProfileSchema,
     skeleton: z.literal('soma30-standard-tpose-v1'),
+    sourceProvider: z.enum(['ardy', 'motionbricks']).optional(),
     fps: z.literal(30),
     startFrame: identity,
     rotations: z.array(z.array(quaternion).length(30)).length(60),
+    handDeltas: z
+      .object({
+        modelRevision: z.literal(
+          '233e9225c1da05c6a3dd98107b9f027f2366e3b972bbe67e0d164e5d28619fff',
+        ),
+        basis: z.object({ left: quaternion, right: quaternion }).strict(),
+        rotations: z.array(z.array(quaternion).length(30)).length(60),
+      })
+      .strict()
+      .optional(),
     rootPositions: z.array(point).length(60),
     footContacts: z
       .array(

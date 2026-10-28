@@ -7,10 +7,12 @@ import {
   getMotionProfile,
   MOTION_INFERENCE_DEADLINE_MS,
   MOTION_PHASE_IDS,
+  type MotionActivity,
   type MotionChunk,
   type MotionLease,
   type MotionPlanIdentity,
   type MotionStatus,
+  motionActivitySchema,
   motionChunkSchema,
   motionPlanIdentitySchema,
   motionReadySchema,
@@ -53,6 +55,8 @@ export class ArdyMotionService {
   constructor(
     private readonly root: string,
     private readonly currentAssetHandle: () => string = () => '',
+    private readonly provider: 'ardy' | 'motionbricks' = 'ardy',
+    private readonly nativeHands = false,
   ) {}
 
   owns(owner: number, lease: MotionLease): boolean {
@@ -97,6 +101,7 @@ export class ArdyMotionService {
     this.state = 'loading'
     this.error = null
     const environment: Record<string, string> = {
+      SHIO_MOTION_SOMA_HAND: this.provider === 'motionbricks' && this.nativeHands ? '1' : '0',
       PYTHONUTF8: '1',
       PYTHONUNBUFFERED: '1',
       HF_HUB_OFFLINE: '1',
@@ -137,7 +142,7 @@ export class ArdyMotionService {
       child.stdout.on('data', (data: Buffer) => {
         if (this.process !== child) return
         buffer += data.toString('utf8')
-        if (Buffer.byteLength(buffer) > 262_144) {
+        if (Buffer.byteLength(buffer) > (this.provider === 'motionbricks' ? 524_288 : 262_144)) {
           void this.stopProcess('ARDY_PROTOCOL_ERROR')
           return
         }
@@ -151,7 +156,16 @@ export class ArdyMotionService {
               this.state = 'warming'
               continue
             }
-            if (value.type === 'ready' && !started && motionReadySchema.safeParse(value).success) {
+            const ready = value.type === 'ready' ? motionReadySchema.safeParse(value) : null
+            if (ready?.success && !started) {
+              const expectedSource =
+                this.provider === 'motionbricks'
+                  ? '54fc563aeaaf819a753d72cc9fdc6713989cdd43'
+                  : 'e706e27acc88070918308a10922b8f7174d0825e'
+              if (ready.data.format.sourceRevision !== expectedSource)
+                throw new Error('MOTION_PROVIDER_IDENTITY_MISMATCH')
+              if (Boolean(ready.data.handModelRevision) !== this.nativeHands)
+                throw new Error('MOTION_HAND_PROVIDER_IDENTITY_MISMATCH')
               started = true
               clearTimeout(deadline)
               this.state = 'ready'
@@ -160,6 +174,8 @@ export class ArdyMotionService {
             }
             if (value.type === 'error') throw new Error('ARDY_INFERENCE_FAILED')
             const chunk = motionChunkSchema.parse(value)
+            if (Boolean(chunk.handDeltas) !== this.nativeHands)
+              throw new Error('MOTION_HAND_PROVIDER_IDENTITY_MISMATCH')
             const pending = this.pending
             if (
               !pending ||
@@ -177,7 +193,7 @@ export class ArdyMotionService {
             clearTimeout(pending.timeout)
             this.pending = null
             this.state = 'ready'
-            pending.resolve(chunk)
+            pending.resolve({ ...chunk, sourceProvider: this.provider })
           } catch {
             void this.stopProcess('ARDY_PROTOCOL_ERROR')
           }
@@ -244,6 +260,7 @@ export class ArdyMotionService {
     profileId: string,
     requestedFrame?: number,
     requestedPlan?: MotionPlanIdentity,
+    requestedActivity?: MotionActivity,
   ): Promise<MotionChunk> {
     if (
       !this.owns(owner, lease) ||
@@ -256,6 +273,12 @@ export class ArdyMotionService {
     if (!profile || profile.physicalAction || !parsedPlan.success)
       throw new Error('ARDY_INVALID_PLAN')
     const plan = parsedPlan.data
+    const activity =
+      this.provider !== 'motionbricks' || requestedActivity === undefined
+        ? undefined
+        : motionActivitySchema.parse(requestedActivity)
+    if (activity && plan.clockDomain === 'speech' && activity.playbackId !== plan.playbackId)
+      throw new Error('MOTION_STALE_ACTIVITY')
     if (
       plan.handScoreRevision !== profile.handScore.revision ||
       plan.handRigCalibrationRevision !== profile.handScore.calibrationRevision
@@ -313,6 +336,7 @@ export class ArdyMotionService {
         seed: lease.seed,
         reset: frame === 0,
         fromFrame: frame,
+        ...(this.provider === 'motionbricks' && activity ? { activity } : {}),
       }
       child.stdin.write(`${JSON.stringify(request)}\n`, (error) => {
         if (error) void this.stopProcess('ARDY_CHANNEL_FAILED')
@@ -386,6 +410,29 @@ export class ArdyMotionService {
         return
       }
       const deadline = setTimeout(() => reject(new Error('ARDY_TERMINATION_FAILED')), 5000)
+      // Windows virtualenv launchers own a second Python process. Kill the exact
+      // experimental process tree before allowing the next GPU provider lease.
+      if (this.provider === 'motionbricks' && process.platform === 'win32' && child.pid) {
+        const terminator = spawn(
+          join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'taskkill.exe'),
+          ['/PID', String(child.pid), '/T', '/F'],
+          { windowsHide: true, stdio: 'ignore', env: { SystemRoot: process.env.SystemRoot } },
+        )
+        terminator.once('error', () => {
+          clearTimeout(deadline)
+          reject(new Error('ARDY_TERMINATION_FAILED'))
+        })
+        terminator.once('exit', (status) => {
+          clearTimeout(deadline)
+          if (status !== 0) {
+            reject(new Error('ARDY_TERMINATION_FAILED'))
+            return
+          }
+          if (this.process === child) this.process = null
+          resolve()
+        })
+        return
+      }
       child.once('exit', () => {
         clearTimeout(deadline)
         if (this.process === child) this.process = null

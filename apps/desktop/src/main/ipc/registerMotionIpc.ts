@@ -50,6 +50,7 @@ export function registerMotionIpc(
               input.profileId,
               input.fromFrame,
               input.plan,
+              input.activity,
             ),
           }
         } catch (error) {

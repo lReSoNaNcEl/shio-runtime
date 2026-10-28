@@ -166,6 +166,21 @@ const environment = {
 delete environment.ELECTRON_RUN_AS_NODE
 const launchDesktop = process.env.SHIO_QUALIFICATION_DESKTOP_ROOT || desktop
 const report = {
+  motionProvider: process.env.SHIO_EXPERIMENT_MOTION_PROVIDER || 'ardy',
+  nativeSomaHand:
+    process.env.SHIO_EXPERIMENT_MOTION_PROVIDER === 'motionbricks' &&
+    process.env.SHIO_EXPERIMENT_SOMA_HAND === '1',
+  motionPins: JSON.parse(
+    fs.readFileSync(
+      path.join(
+        desktop,
+        process.env.SHIO_EXPERIMENT_MOTION_PROVIDER === 'motionbricks'
+          ? 'motionbricks/research-pins.json'
+          : 'motion/research-pins.json',
+      ),
+      'utf8',
+    ),
+  ),
   git: {
     head: execFileSync('git', ['rev-parse', 'HEAD'], {
       cwd: repository,
@@ -220,6 +235,15 @@ const report = {
   },
 }
 for (const relative of [
+  ...(process.env.SHIO_EXPERIMENT_MOTION_PROVIDER === 'motionbricks'
+    ? [
+        'motionbricks/worker.py',
+        'motionbricks/backend.py',
+        'motionbricks/conversion.py',
+        'motionbricks/hand_prior.py',
+        'motionbricks/research-pins.json',
+      ]
+    : []),
   'out/main/index.js',
   'out/preload/index.js',
   'out/preload/overlay.js',

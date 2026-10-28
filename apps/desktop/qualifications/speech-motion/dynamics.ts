@@ -24,6 +24,8 @@ const sourceFile = path.resolve(option('source') ?? '')
 const output = path.resolve(option('output') ?? path.join(path.dirname(sourceFile), 'baseline'))
 const model = path.resolve(option('vrm') ?? 'src/renderer/assets/vrm/green_fox.vrm')
 const proceduralMode = option('procedural') ?? 'none'
+const trackingPolicy = option('tracking-policy') ?? 'source'
+if (!['source', 'previous'].includes(trackingPolicy)) throw new Error('Unknown tracking policy')
 if (!['none', 'breathing', 'micro', 'full'].includes(proceduralMode))
   throw new Error('Unknown procedural diagnostic mode')
 const source = JSON.parse(readFileSync(sourceFile, 'utf8')) as {
@@ -176,6 +178,7 @@ for (const entry of source.cases) {
     execution.phase = phase
     return motionChunkSchema.parse({
       ...data,
+      sourceProvider: trackingPolicy === 'previous' ? undefined : data.sourceProvider,
       ...lease,
       type: 'motion',
       id: index,
@@ -291,8 +294,8 @@ for (const entry of source.cases) {
   })
   summary.push({
     profileId: profile.id,
-    samples: 360,
-    sourceFramesConsumed: 180,
+    samples: chunks.length * 120,
+    sourceFramesConsumed: chunks.length * 60,
     replayMs: performance.now() - started,
     contactCorrectionFrames: corrections,
     unresolvedArmContacts: contacts,
@@ -339,6 +342,7 @@ writeFileSync(
       pins: source.pins,
       seed: source.seed,
       proceduralMode,
+      trackingPolicy,
       rendererFps: 60,
       artisticAcceptance: 'pending',
       cases: summary,

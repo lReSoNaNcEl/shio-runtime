@@ -27,6 +27,16 @@ async function installStabilizationProbe(page, options = {}) {
       'leftHand',
       'rightHand',
       'head',
+      ...(options.captureFingers
+        ? ['left', 'right'].flatMap((side) =>
+            ['Thumb', 'Index', 'Middle', 'Ring', 'Little'].flatMap((finger) =>
+              (finger === 'Thumb'
+                ? ['Metacarpal', 'Proximal', 'Distal']
+                : ['Proximal', 'Intermediate', 'Distal']
+              ).map((part) => `${side}${finger}${part}`),
+            ),
+          )
+        : []),
     ]
     const bones = names.map((name) => vrm.humanoid.getNormalizedBoneNode(name))
     const raw = names.map((name) => vrm.humanoid.getRawBoneNode(name))
