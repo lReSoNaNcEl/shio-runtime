@@ -80,13 +80,60 @@ export const motionStartSchema = z
     seed: identity.optional(),
   })
   .strict()
+export const motionProsodySchema = z
+  .object({
+    throughSample: z
+      .number()
+      .int()
+      .min(0)
+      .max(2 ** 48),
+    sampleRate: z.number().int().min(8000).max(192000),
+    envelope: z.array(z.number().finite().min(0).max(1)).min(1).max(12),
+    phase: z.enum(['onset', 'speech', 'pause']),
+    accent: z.number().finite().min(0).max(1),
+    leadMs: z.number().finite().min(0).max(4000),
+    available: z
+      .object({
+        startSample: z
+          .number()
+          .int()
+          .min(0)
+          .max(2 ** 48),
+        stepSamples: z.number().int().min(1).max(9600),
+        energy: z.array(z.number().finite().min(0).max(1)).min(1).max(30),
+        finalSample: z
+          .number()
+          .int()
+          .min(0)
+          .max(2 ** 48)
+          .nullable(),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict()
+  .refine(
+    (value) =>
+      !value.available ||
+      (value.available.stepSamples <= value.sampleRate * 0.05 + 1 &&
+        Math.abs(value.available.startSample - value.throughSample) <= value.sampleRate &&
+        (value.available.finalSample === null ||
+          value.available.finalSample >= value.available.startSample)),
+    'Invalid available PCM context',
+  )
+export type MotionProsody = z.infer<typeof motionProsodySchema>
 export const motionActivitySchema = z
   .object({
     energy: z.number().finite().min(0).max(1),
     playbackId: z.string().min(1).max(128).nullable(),
     speaking: z.boolean(),
+    prosody: motionProsodySchema.optional(),
   })
   .strict()
+  .refine(
+    (value) => !value.prosody || value.playbackId !== null,
+    'Prosody requires playback identity',
+  )
 export type MotionActivity = z.infer<typeof motionActivitySchema>
 export const motionNextSchema = z
   .object({
@@ -141,6 +188,16 @@ export const motionChunkSchema = motionLeaseSchema
     plan: motionPlanIdentitySchema,
     protocolVersion: z.literal(2),
     inferenceMs: finite.min(0).max(120_000),
+    timings: z
+      .object({
+        planningMs: finite.min(0).max(120000),
+        generationMs: finite.min(0).max(120000),
+        conversionMs: finite.min(0).max(120000),
+        handMs: finite.min(0).max(120000),
+        endpointFrames: z.number().int().min(0).max(57),
+      })
+      .strict()
+      .optional(),
   })
   .strict()
 export type MotionChunk = z.infer<typeof motionChunkSchema>

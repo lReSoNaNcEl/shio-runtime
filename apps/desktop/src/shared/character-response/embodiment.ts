@@ -9,6 +9,8 @@ import { EMOTION_INTENSITIES } from '../speech/emotions.generated'
 import { containInternalReasoning } from './reasoning'
 
 export const EMBODIMENT_PROPOSAL_TTL_MS = 10000
+export const EMBODIMENT_CONVERSATION_GUIDANCE =
+  'Choose the main communicative purpose of the CURRENT reply, independently of a polite opening or a previous turn. A substantive explanation can use explain, contrasting alternatives can use compare, and sharing an achievement can use celebrate when available. Do not replace an explanation with thanks merely because the preceding exchange was warm. Brief acknowledgements and ordinary small talk can remain quiet. This is a semantic choice, never bone timing or a claim that a gesture was executed.'
 
 export const EMBODIMENT_INTENSITIES = EMOTION_INTENSITIES
 /** Canonical semantic vocabulary. Physical catalog entries map to these meanings. */

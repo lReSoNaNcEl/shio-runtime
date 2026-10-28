@@ -239,6 +239,8 @@ for (const relative of [
     ? [
         'motionbricks/worker.py',
         'motionbricks/backend.py',
+        'motionbricks/targets.py',
+        'motionbricks/activity.py',
         'motionbricks/conversion.py',
         'motionbricks/hand_prior.py',
         'motionbricks/research-pins.json',
@@ -266,6 +268,7 @@ for (const relative of [
   'qualifications/speech-motion/dynamics-replay.cjs',
   'qualifications/speech-motion/stabilization-cases.cjs',
   'qualifications/speech-motion/conversation-cases.cjs',
+  'qualifications/speech-motion/living-v2-cases.cjs',
   'src/renderer/avatar/rendering/three/sampleSourceRotation.ts',
   'src/renderer/avatar/rendering/three/AdaptiveMotionFilter.ts',
   'src/renderer/avatar/rendering/three/GeneratedBodyPlayback.ts',
@@ -309,6 +312,9 @@ let application,
   stopRecording,
   lastSampleAt = 0,
   lastResourceAt = 0
+let resourceTimer = null,
+  pendingResourceSample = null
+const fingerRecordings = []
 let blinkStartedAt = null,
   priorInference = null,
   openCaptured = false,
@@ -329,6 +335,7 @@ const sleepSample = async (period = 200) => {
     }
   })
   report.samples.push({ at: Date.now(), motion: value.motion, avatar: value.avatar })
+  if (process.argv.includes('--living-v2-telemetry')) report.latency = value.latency
   if (componentSmoke) {
     const health = value.avatar.health
     const weight = health?.speech?.blinkWeight ?? 0
@@ -373,7 +380,10 @@ const sleepSample = async (period = 200) => {
     }
   }
 
-  if (Date.now() - lastResourceAt > 30000) {
+  if (
+    Date.now() - lastResourceAt >
+    (process.argv.includes('--living-v2-telemetry') ? 5000 : 30000)
+  ) {
     lastResourceAt = Date.now()
     const processes = await application.evaluate(({ app }) =>
       app.getAppMetrics().map((metric) => ({
@@ -1581,6 +1591,16 @@ async function bodyStability() {
         },
         { id: profile.id, requestedSeed },
       )
+      let stopFingerRecording = null
+      if (process.argv.includes('--finger-close-up')) {
+        await page.getByRole('button', { name: 'Right hand', exact: true }).click()
+        stopFingerRecording = await recordCanvas(
+          page,
+          path.join(directory, `fingers-${profile.id}-${requestedSeed}.webm`),
+          { captureFps: 60 },
+        )
+        fingerRecordings.push(stopFingerRecording)
+      }
       await page.getByRole('button', { name: 'Generate variation', exact: true }).click()
       let readinessFailure = null
       try {
@@ -1611,7 +1631,7 @@ async function bodyStability() {
           Date.now() >
             until - bodySeconds * 1000 + capture * Math.min(4000, (bodySeconds * 1000) / 3)
         ) {
-          if (capture === 0) {
+          if (capture === 0 && !stopFingerRecording) {
             for (const camera of accentCameras) {
               await page.getByRole('button', { name: camera, exact: true }).click()
               await pause(50)
@@ -1667,6 +1687,7 @@ async function bodyStability() {
       evidence.readinessFailure = readinessFailure
       evidence.actualProfileAtEnd = (await overlayProjection())?.profileId ?? null
       evidence.views = views
+      if (stopFingerRecording) evidence.fingerVideo = await stopFingerRecording()
       const planned = report.standingQualification.cases.find(
         (entry) => entry.profileId === profile.id && entry.seed === requestedSeed,
       )
@@ -1808,6 +1829,28 @@ async function bodyStability() {
         target,
         path.join(directory, `start-${target === page ? 'main' : 'overlay'}.png`),
       )
+    }
+    if (process.argv.includes('--living-v2-telemetry')) {
+      report.resourceSampling = {
+        intervalMs: 1500,
+        deviceGpuIntervalMs: 5000,
+        scope:
+          'Whole-device GPU series; per-process WDDM attribution unavailable. Includes Fish, renderer and motion.',
+        errors: 0,
+      }
+      resourceTimer = setInterval(() => {
+        if (pendingResourceSample) return
+        pendingResourceSample = sleepSample(1000)
+          .then(
+            () => undefined,
+            () => {
+              report.resourceSampling.errors++
+            },
+          )
+          .finally(() => {
+            pendingResourceSample = null
+          })
+      }, 1500)
     }
     if (stabilizationCases)
       await qualifyStabilization({ application, page, directory, report, pause, duration })
@@ -1976,6 +2019,16 @@ async function bodyStability() {
       .catch(() => '')
     throw failure
   } finally {
+    if (resourceTimer) clearInterval(resourceTimer)
+    if (pendingResourceSample) await pendingResourceSample
+    for (const stop of fingerRecordings) {
+      try {
+        await stop()
+      } catch {
+        report.failures.push('Finger video finalization failed')
+        report.passed = false
+      }
+    }
     if (stopRecording) {
       try {
         report.video = await stopRecording()

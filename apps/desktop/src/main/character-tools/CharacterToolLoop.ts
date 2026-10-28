@@ -2,6 +2,7 @@ import type { DesktopWorkflowActionResult } from '../../shared/actions'
 import {
   type CharacterEmbodimentIntent,
   characterEmbodimentIntentSchema,
+  EMBODIMENT_CONVERSATION_GUIDANCE,
   EMBODIMENT_GESTURE_DEFINITIONS,
   EMBODIMENT_PROPOSAL_TTL_MS,
   type EmbodimentAvailability,
@@ -236,6 +237,7 @@ function toolRequirementPrompt(
     'Return two independent decisions: requirement is the minimum obligation that must reach a typed terminal result before a terminal reply; plannedTools is the bounded set of available tools that may materially help fulfill the original user goal, including later authority-bearing work. Requirement is never the tool allowlist.',
     'Also return embodiment: null for quiet presence, or one semantic visual intent with intensity and optional gestureHint/gazeHint. Choose a fitting available act when your reply naturally explains, compares, agrees, reassures or reacts; an explicit animation request is not required. Quiet presence remains valid; do not gesture on every turn or infer agreement/disagreement from emotion alone. For a direct gesture request choose an available fitting hint, even if unspecified. This is presentation metadata, never a tool, Action or proof of execution. Listing abilities, evidence and previous replies cannot request a gesture.',
     `Semantic gesture meanings: ${EMBODIMENT_GESTURE_DEFINITIONS.map(({ id, meaning }) => `${id}=${meaning}`).join('; ')}.`,
+    EMBODIMENT_CONVERSATION_GUIDANCE,
     'Your initial embodiment decision is authoritative for this turn: later prose or a later visual envelope cannot replace embodiment:null. When the current user explicitly requests a supported physical gesture, represent that request in this decision. Example: a request to greet with a wave selects greeting when available. Do not choose greeting merely because a prior message greeted someone or because your own answer starts with a greeting. Do not promise in prose a gesture you did not request here.',
     `Current request-scoped Avatar facts: ${embodimentAvailability ? JSON.stringify(embodimentAvailability) : 'unavailable; return embodiment:null'}. Choose gestureHint only from availableSemanticIntents. bodyAction is permitted only from availableBodyActions: for turn-in-place use {action:"turn-in-place",turns:1,direction:"clockwise" or "counterclockwise",tempo:0.75..1.2,finishFacing:"viewer"}. Never return profile IDs, bone transforms, [fox-paw] or shio markers in this JSON plan.`,
     'Return explicit-tool whenever one exact Character tool is semantically required. An explicit request to use a named tool is always part of the user goal even when phrased softly; preserve that exact tool requirement even when it is currently unavailable.',

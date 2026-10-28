@@ -24,6 +24,7 @@ import type { AvatarBodyMotionLayer } from '../../embodiment/motion/AvatarMotion
 import type { MotionLibraryDebug } from '../../MotionLibraryDebug'
 import { type MotionOutcome, MotionPhaseExecution } from '../../MotionPhaseExecution'
 import { ConsumedMotionClock } from './ConsumedMotionClock'
+import { ConsumedSpeechProsody } from './ConsumedSpeechProsody'
 import {
   type ConversationView,
   type ConversationViewConfig,
@@ -74,6 +75,7 @@ interface Binding {
   restInModel: THREE.Quaternion
   filteredLocal: THREE.Quaternion
   safe: THREE.Quaternion
+  calibratedSafe: THREE.Quaternion
   sourceTarget?: THREE.Quaternion
 }
 
@@ -90,6 +92,7 @@ export class GeneratedBodyPlayback {
   private handPose = new GeneratedHandPose()
   private somaHands: SomaHandRetargeting | null = null
   private speechEnergy = 0
+  private readonly speechProsody = new ConsumedSpeechProsody()
   private safeHands: ReadonlyMap<VRMHumanBoneName, THREE.Quaternion> = new Map()
   private readonly bodySafety = new GeneratedBodySafety()
   private readonly sourceSpeeds = new Map<THREE.Object3D, number>()
@@ -275,6 +278,7 @@ export class GeneratedBodyPlayback {
           restInModel: bone.getWorldQuaternion(new THREE.Quaternion()).premultiply(inverseModel),
           filteredLocal: safe.clone(),
           safe,
+          calibratedSafe: safe.clone(),
         },
       ]
     })
@@ -291,6 +295,7 @@ export class GeneratedBodyPlayback {
     // Recovery must reach a pose admitted by the calibrated contact constraints.
     for (const binding of this.bindings) {
       binding.safe.copy(binding.bone.quaternion)
+      binding.calibratedSafe.copy(binding.bone.quaternion)
       binding.filteredLocal.copy(binding.bone.quaternion)
     }
     vrm.scene.updateMatrixWorld(true)
@@ -318,6 +323,7 @@ export class GeneratedBodyPlayback {
     for (const binding of this.bindings)
       if (/Leg|Foot|Toes/u.test(binding.name)) {
         binding.safe.copy(binding.bone.quaternion)
+        binding.calibratedSafe.copy(binding.bone.quaternion)
         binding.filteredLocal.copy(binding.bone.quaternion)
       }
     this.onFacialChannelsRejected(0)
@@ -448,6 +454,7 @@ export class GeneratedBodyPlayback {
       }
       this.clock = null
       this.speechEnergy = 0
+      this.speechProsody.reset()
       this.motionClock.reset()
       this.sampledClock = null
       if (endedPlayback) this.clockId = endedPlayback
@@ -493,6 +500,7 @@ export class GeneratedBodyPlayback {
     // Acoustic modulation is deliberately slower than individual PCM energy
     // reports. It steers future targets, never individual joint samples.
     this.speechEnergy += (bounded - this.speechEnergy) * 0.08
+    this.speechProsody.observe(this.clock, bounded)
   }
 
   private speechWindowMissed(id: string, origin: SpeechPreparationOrigin): boolean {
@@ -731,6 +739,39 @@ export class GeneratedBodyPlayback {
     this.replan = true
     if (this.execution?.phase === 'recover') {
       this.localRecovery = true
+      if (
+        this.appliedSourceProvider === 'motionbricks' &&
+        this.execution.profile.kind === 'gesture' &&
+        !this.execution.profile.physicalAction &&
+        !this.execution.wantsRecovery &&
+        !this.execution.hasTimedOut
+      ) {
+        // A completed act may settle into a small, model-calibrated variation
+        // of standing instead of mechanically choosing identical arms again.
+        // This transient rest target never accumulates away from calibration.
+        for (const binding of this.bindings) {
+          if (!/Arm|Shoulder/u.test(binding.name)) continue
+          const angle = binding.calibratedSafe.angleTo(binding.bone.quaternion)
+          const maximum = binding.name.includes('LowerArm')
+            ? 0.18
+            : binding.name.includes('UpperArm')
+              ? 0.08
+              : 0.04
+          binding.safe
+            .copy(binding.calibratedSafe)
+            .slerp(binding.bone.quaternion, Math.min(0.15, maximum / Math.max(1e-8, angle)))
+        }
+      }
+      if (this.appliedSourceProvider === 'motionbricks' && this.somaHands)
+        this.handPose.reset(
+          new Map(
+            this.presentationBones
+              .filter(([name]) =>
+                HAND_BONE_NAMES.includes(name as (typeof HAND_BONE_NAMES)[number]),
+              )
+              .map(([name, bone]) => [name, bone.quaternion.clone()]),
+          ),
+        )
       this.execution.ready = true
       this.recoveryRoot.copy(
         this.vrm?.humanoid.getNormalizedBoneNode('hips')?.position ?? this.baseRoot,
@@ -817,13 +858,22 @@ export class GeneratedBodyPlayback {
         : this.camera === 'portrait'
           ? 'face'
           : this.camera
+    const measuredConversationView =
+      conversational &&
+      !!this.conversationView &&
+      profile.kind === 'gesture' &&
+      !profile.physicalAction &&
+      this.appliedSourceProvider === 'motionbricks'
     if (
       (conversational || !repeat) &&
-      !profile.cameraPolicy.includes(cameraMode as 'full' | 'bust' | 'face')
+      !profile.cameraPolicy.includes(cameraMode as 'full' | 'bust' | 'face') &&
+      !measuredConversationView
     )
       return { available: false, reason: 'camera-incompatible' }
     if (conversational && profile.kind === 'gesture' && this.conversationView) {
       this.projectedConversationCamera ??= conversationCamera(vrm, this.conversationView)
+      if (measuredConversationView && !this.projectedConversationCamera)
+        return { available: false, reason: 'camera-incompatible' }
       if (
         this.projectedConversationCamera &&
         !gestureRegionsVisible(
@@ -880,7 +930,11 @@ export class GeneratedBodyPlayback {
           ? 0
           : delta
     this.bodySafety.apply(
-      consumedDelta > 0 ? Math.min(0.05, consumedDelta) : delta,
+      Math.min(
+        0.05,
+        this.appliedSourceProvider === 'motionbricks' ? delta : Infinity,
+        consumedDelta > 0 ? consumedDelta : delta,
+      ),
       getMotionProfile(this.profileId)?.kind === 'presence' ? 0.35 : 1,
       consumedDelta > 0,
       {
@@ -1060,6 +1114,7 @@ export class GeneratedBodyPlayback {
     this.cursor = 0
     this.generatedEnd = 0
     this.clock = null
+    this.speechProsody.reset()
     this.motionClock.reset()
     this.sampledClock = null
     this.clockId = ''
@@ -2087,7 +2142,17 @@ export class GeneratedBodyPlayback {
       ? (this.replanFrom ?? Math.floor(this.cursor / 4) * 4)
       : this.generatedEnd
     let plan = this.plan()
-    const nextPlan = this.execution.forecastPlan(`${lease.sessionId}:${this.localEpoch}`)
+    const physicalPreparationPending =
+      this.appliedSourceProvider === 'motionbricks' &&
+      this.execution.profile.kind === 'gesture' &&
+      this.execution.phase === 'prepare' &&
+      (!this.bodySafety.handTargetsReached() || !this.handPose.targetsReached())
+    // Native generation takes tens of milliseconds. Forecasting an accent
+    // while the physical hand is still travelling binds it to stale prosody.
+    // Keep generating preparation and plan the stroke from actual readiness.
+    const nextPlan = physicalPreparationPending
+      ? null
+      : this.execution.forecastPlan(`${lease.sessionId}:${this.localEpoch}`)
     // A long SOMA horizon can already cover the next phase boundary even while
     // the queue has ample motion. Forecast that boundary before the normal
     // prefetch threshold or short phases expire before their replacement arrives.
@@ -2135,6 +2200,7 @@ export class GeneratedBodyPlayback {
           energy: this.clock?.state === 'playing' ? this.speechEnergy : 0,
           playbackId: this.clock?.playbackId ?? null,
           speaking: this.clock?.state === 'playing' && this.clock.sourceSampleOffset > 0,
+          prosody: this.speechProsody.snapshot(this.clock, fromFrame - this.cursor),
         },
       })
       .then((result) => {

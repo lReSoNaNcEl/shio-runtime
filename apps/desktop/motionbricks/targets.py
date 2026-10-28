@@ -4,9 +4,27 @@ Only typed catalog workspace/phase and bounded acoustic metadata are consumed.
 This module does not classify text, select conversation intent, or apply VRM pose.
 """
 
+import hashlib
+
 import numpy as np
+from activity import accent_deadline_ms
 from conversion import world_poses
 from scipy.spatial.transform import Rotation
+
+
+def target_token_count(profile, phase, activity=None):
+    """Native endpoint must occur inside the consumed expressive phase.
+
+    SOMA drops three boundary frames at either end: valid = 4*tokens-6.
+    Frame zero repeats the context, so endpoint time is (valid-1)/30.
+    Presence deliberately retains its previously accepted model policy.
+    """
+    if profile["kind"] == "presence":
+        return None
+    milliseconds = next(p["minMs"] for p in profile["phases"] if p["id"] == phase)
+    if phase == "stroke":
+        milliseconds = accent_deadline_ms(activity, milliseconds) or milliseconds
+    return int(np.clip(np.floor((milliseconds * 30 / 1000 + 7) / 4), 6, 16))
 
 
 def between(source, target):
@@ -21,11 +39,93 @@ def between(source, target):
 
 
 class TargetPlanner:
-    def __init__(self, names, parents, standing):
+    def __init__(self, names, parents, standing, workspaces):
         self.names, self.parents, self.standing = names, parents, standing
         self.anchor = world_poses(standing[None], parents)[0]
+        self.workspaces = workspaces
+        self.reset()
 
-    def goal(self, history, profile, phase, seed, activity):
+    def reset(self):
+        self.goals = {}
+        self.variations = {}
+
+    def destinations(self, world, profile, phase, seed, plan):
+        execution = (plan or {}).get("executionId", profile["id"])
+        identity = (execution, phase)
+        if identity in self.goals:
+            return self.goals[identity]
+        digest = hashlib.sha256(f"{seed}:{execution}:{profile['id']}".encode()).digest()
+        rng = np.random.default_rng(int.from_bytes(digest[:8], "little"))
+        # One choice per admitted execution, not a new random target at each
+        # autoregressive block. The network owns all trajectories between goals.
+        variation = self.variations.setdefault(execution, rng.uniform(-0.12, 0.12, 3))
+        destinations = {}
+        for side in ("left", "right"):
+            sign = 1 if side == "left" else -1
+            score = profile["handScore"]["phases"][phase][side]
+            upper, lower, hand = [
+                self.names.index(side.capitalize() + suffix)
+                for suffix in ("Arm", "ForeArm", "Hand")
+            ]
+            shoulder, elbow, wrist = world[-1, [upper, lower, hand], :3]
+            length = np.linalg.norm(elbow - shoulder) + np.linalg.norm(wrist - elbow)
+            if score["workspace"] == "relaxed":
+                # A supporting hand can keep a comfortable attained pose. It
+                # need not reset to the same standing reference after every act.
+                destinations[side] = wrist.copy()
+                continue
+            space = self.workspaces[score["workspace"]]
+            anchor = {
+                "hips": "Hips",
+                "chest": "Spine2",
+                "neck": "Neck1",
+                "head": "Head",
+            }[space["anchor"]]
+            center = np.array(space["center"]) + np.array(
+                score.get("workspaceOffset", [0, 0, 0])
+            )
+            center *= length
+            center[0] *= sign
+            center += world[-1, self.names.index(anchor), :3]
+            if score["workspace"] == "face":
+                # Same ipsilateral shoulder calibration as the Avatar region.
+                # A centre below the chin forced this rig's wrist to its limit.
+                center[0] = shoulder[0]
+            extents = (
+                np.array(space["halfExtents"])
+                * length
+                * score.get("workspaceExtentScale", 1)
+            )
+            # Deliberately different preparatory and communicative pose goals
+            # inside the SAME catalog region. Raising the arm is not the stroke.
+            direction = np.array([sign * 0.65, 0.35, 0.35])
+            if score["fingerDirection"] == "up":
+                direction = np.array([sign * 0.45, 0.7, 0.2])
+            # Communicative endpoint preferences, not animation curves. Close
+            # profiles can share a physical region without sharing an act.
+            semantic = profile["semanticIntent"]
+            if semantic == "greeting":
+                direction = np.array([sign * 0.9, 0.12, 0.15])
+            elif semantic in ("celebrate", "delight"):
+                direction = np.array([sign * 0.3, 0.9, 0.15])
+            elif semantic == "compare":
+                direction = np.array([sign * 0.85, -sign * 0.2, 0.3])
+            direction += variation
+            stage = -0.85 if phase == "prepare" else 0.85
+            target = center + extents * direction * stage
+            if phase == "prepare":
+                velocity = (world[-1, hand, :3] - world[-2, hand, :3]) * 30
+                target += np.clip(velocity * 0.08, -extents * 0.15, extents * 0.15)
+            destinations[side] = target
+        self.goals[identity] = destinations
+        # Forecast/replan can revisit an exact phase; retain bounded identities.
+        while len(self.goals) > 12:
+            del self.goals[next(iter(self.goals))]
+        while len(self.variations) > 6:
+            del self.variations[next(iter(self.variations))]
+        return destinations
+
+    def goal(self, history, profile, phase, seed, activity, plan=None):
         goal = history[-1].copy()
         world = world_poses(history, self.parents)
         current = world[-1]
@@ -44,7 +144,7 @@ class TargetPlanner:
             goal[joint] = self.standing[joint]
         score = profile["handScore"]["phases"][phase]
         rng = np.random.default_rng(seed)
-        amplitude = float(rng.uniform(0.90, 1.02))
+        destinations = self.destinations(world, profile, phase, seed, plan)
         for side in ("left", "right"):
             sign = 1 if side == "left" else -1
             upper, lower, hand = [
@@ -53,26 +153,32 @@ class TargetPlanner:
             ]
             shoulder, elbow, wrist = current[[upper, lower, hand], :3]
             zone = score[side]["workspace"]
-            # These are a few bounded pose goals, not stored animation curves.
-            offsets = {
-                "front": [sign * 0.04, -0.24, 0.32],
-                "raised": [sign * 0.12, 0.12, 0.22],
-                "heart": [-sign * 0.12, -0.12, 0.20],
-                "side": [sign * 0.36, -0.10, 0.10],
-                "waist": [-sign * 0.10, -0.36, 0.15],
-                "face": [-sign * 0.04, 0.03, 0.20],
-            }
             length1, length2 = (
                 np.linalg.norm(elbow - shoulder),
                 np.linalg.norm(wrist - elbow),
             )
             scale = (length1 + length2) / 0.60
             if zone == "relaxed":
-                target = wrist * 0.75 + self.anchor[hand, :3] * 0.25
+                target = (
+                    wrist * 0.75 + self.anchor[hand, :3] * 0.25
+                    if profile["kind"] == "presence"
+                    else destinations[side].copy()
+                )
             else:
-                target = shoulder + np.array(offsets[zone]) * scale * amplitude
-                if phase == "prepare":
-                    target = wrist + (target - wrist) * 0.55
+                target = destinations[side].copy()
+                prosody = (activity or {}).get("prosody")
+                if phase == "stroke" and prosody and prosody["leadMs"] <= 250:
+                    # A fresh consumed accent modulates the existing semantic
+                    # goal only. No extrapolated beat or late accent is queued.
+                    space = self.workspaces[zone]
+                    extent = (
+                        np.array(space["halfExtents"])
+                        * (length1 + length2)
+                        * score[side].get("workspaceExtentScale", 1)
+                    )
+                    target += (
+                        extent * np.array([sign * 0.15, 0.2, 0.1]) * prosody["accent"]
+                    )
             if profile["kind"] == "presence":
                 if activity and activity["speaking"] and activity["energy"] > 0.025:
                     energy = activity["energy"]
@@ -89,8 +195,9 @@ class TargetPlanner:
                     )
                 else:
                     target = wrist * 0.9 + target * 0.1
-            velocity = (world[-1, hand, :3] - world[-2, hand, :3]) * 30
-            target += np.clip(velocity * 0.08, -0.02 * scale, 0.02 * scale)
+            if profile["kind"] == "presence":
+                velocity = (world[-1, hand, :3] - world[-2, hand, :3]) * 30
+                target += np.clip(velocity * 0.08, -0.02 * scale, 0.02 * scale)
             vector = target - shoulder
             distance = float(
                 np.clip(

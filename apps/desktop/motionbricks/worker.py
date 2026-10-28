@@ -4,9 +4,10 @@ import json
 import sys
 from pathlib import Path
 
+from activity import validate_activity
+
 ROOT = Path(__file__).resolve().parent
 sys.path.append(str(ROOT.parent / "motion"))
-from protocol import load_catalog, validate_continuation, validate_request
 
 WIRE = sys.stdout
 
@@ -19,6 +20,7 @@ def output(value):
 def main():
     sys.stdout = sys.stderr
     from backend import MODEL, SOURCE, MotionBricksBackend
+    from protocol import load_catalog, validate_continuation, validate_request
 
     catalog = load_catalog()
     profiles = {entry["id"]: entry for entry in catalog["profiles"]}
@@ -54,22 +56,9 @@ def main():
                     ValueError("Non-finite JSON")
                 ),
             )
-            activity = raw.pop("activity", None) if isinstance(raw, dict) else None
-            if activity is not None and (
-                not isinstance(activity, dict)
-                or set(activity) != {"energy", "playbackId", "speaking"}
-                or type(activity["energy"]) not in (int, float)
-                or not 0 <= activity["energy"] <= 1
-                or type(activity["speaking"]) is not bool
-                or (
-                    activity["playbackId"] is not None
-                    and (
-                        not isinstance(activity["playbackId"], str)
-                        or not 1 <= len(activity["playbackId"]) <= 128
-                    )
-                )
-            ):
-                raise ValueError("Invalid bounded acoustic activity")
+            activity = validate_activity(
+                raw.pop("activity", None) if isinstance(raw, dict) else None
+            )
             request = validate_request(raw, profiles)
             if (
                 activity
@@ -93,6 +82,7 @@ def main():
                 request["fromFrame"],
                 request["seed"],
                 activity,
+                request["plan"],
             )
             previous = request
             output({"type": "motion", **request, **chunk})

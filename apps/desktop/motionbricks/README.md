@@ -83,6 +83,17 @@ generation latency. `engineStartupMs` измеряет конструктор en
 
 ## Границы и текущая готовность
 
+Воспроизводимый development launch текущего эксперимента (Speech API уже запущен):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File apps/desktop/motionbricks/dev.ps1 -Build
+```
+
+Скрипт задаёт MotionBricks + native Hand только в своём process environment и
+восстанавливает его при выходе. Он не меняет packaged defaults, provider Fish/ASR,
+Character config или пользовательскую камеру. Подробности v2 и незакрытые gates:
+`docs/LIVING-CHARACTER-V2-2026-10-28.md`.
+
 - Main выбирает один worker, проверяет source/model identity и bounded NDJSON.
   Windows cancellation завершает точное дерево experimental Python processes.
 - Model работает с четырьмя native context poses и pose goals. Валидные native

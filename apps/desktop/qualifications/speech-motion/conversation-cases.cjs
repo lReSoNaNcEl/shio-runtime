@@ -52,6 +52,9 @@ async function qualifyConversation({
       text: 'Спасибо, я немного помолчу. Ответь одним коротким предложением.',
     },
   ]
+  if (process.argv.includes('--living-v2')) {
+    fixtures.splice(0, fixtures.length, ...require('./living-v2-cases.cjs'))
+  }
   const subset = process.argv
     .find((arg) => arg.startsWith('--conversation-case-ids='))
     ?.split('=')[1]
@@ -511,11 +514,13 @@ async function qualifyConversation({
   if (stabilizationTrace) {
     await installStabilizationProbe(page, {
       maxFrames: 24000,
-      captureFingers: report.nativeSomaHand,
+      frameStride: process.argv.includes('--body-trace-only') ? 2 : 1,
+      captureFingers: report.nativeSomaHand && !process.argv.includes('--body-trace-only'),
     })
     await installStabilizationProbe(overlay, {
       maxFrames: 24000,
-      captureFingers: report.nativeSomaHand,
+      frameStride: process.argv.includes('--body-trace-only') ? 2 : 1,
+      captureFingers: report.nativeSomaHand && !process.argv.includes('--body-trace-only'),
     })
   }
   const started = Date.now()

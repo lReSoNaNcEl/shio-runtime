@@ -11,6 +11,23 @@ describe('experimental motion boundaries', () => {
       expect(motionActivitySchema.safeParse({ ...activity, energy }).success).toBe(false)
     }
     expect(motionActivitySchema.safeParse({ ...activity, pcm: [0.1] }).success).toBe(false)
+    const prosody = {
+      throughSample: 44100,
+      sampleRate: 44100,
+      envelope: [0.1, 0.2],
+      phase: 'speech',
+      accent: 0.2,
+      leadMs: 100,
+    }
+    expect(motionActivitySchema.safeParse({ ...activity, prosody }).success).toBe(true)
+    for (const invalid of [
+      { ...prosody, envelope: Array(13).fill(0.1) },
+      { ...prosody, accent: Number.NaN },
+      { ...prosody, throughSample: -1 },
+      { ...prosody, leadMs: 4001 },
+      { ...prosody, text: 'untrusted' },
+    ])
+      expect(motionActivitySchema.safeParse({ ...activity, prosody: invalid }).success).toBe(false)
   })
 
   it('rejects unpinned priors, invalid basis rotations and oversized hand horizons', () => {

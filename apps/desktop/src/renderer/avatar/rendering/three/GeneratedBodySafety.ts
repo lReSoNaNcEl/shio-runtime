@@ -2,7 +2,11 @@ import type { VRM } from '@pixiv/three-vrm'
 import * as THREE from 'three'
 
 import { MOTION_CATALOG, type MotionPhaseId, type MotionProfile } from '../../../../shared/motion'
-import { AdaptiveMotionFilter, type MotionFilterContext } from './AdaptiveMotionFilter'
+import {
+  AdaptiveMotionFilter,
+  MOTIONBRICKS_CONVERSATION_MAX_JOINT_SPEED,
+  type MotionFilterContext,
+} from './AdaptiveMotionFilter'
 import { type BodyClearanceCalibration, calibrateBodyClearance } from './GeneratedBodyCalibration'
 import { WorkspaceTrajectory } from './WorkspaceTrajectory'
 
@@ -60,6 +64,7 @@ export class GeneratedBodySafety {
   private previousRoot: THREE.Vector3 | null = null
   private recovering = false
   private handTargets: MotionProfile['handScore']['phases'][MotionPhaseId] | null = null
+  private sourceProvider: MotionFilterContext['sourceProvider']
   private workspaceSolutions = new Map<
     Limb,
     { offset: THREE.Vector3; pole: number; extents?: number[] }
@@ -205,6 +210,7 @@ export class GeneratedBodySafety {
     this.temporalFilter.reset()
     this.jointKinds.clear()
     this.handTargets = null
+    this.sourceProvider = undefined
     this.workspaceSolutions.clear()
     this.workspaceTrajectories.clear()
     this.sourceHandPaths = new Map()
@@ -270,6 +276,11 @@ export class GeneratedBodySafety {
     this.unresolvedArmContacts = 0
     const vrm = this.vrm
     if (!vrm) return
+    if (motion?.sourceProvider !== this.sourceProvider) {
+      this.sourceProvider = motion?.sourceProvider
+      this.workspaceTrajectories.clear()
+      this.workspaceSolutions.clear()
+    }
     if (!advanceCandidate)
       for (const bone of this.chain) {
         const previous = this.previousChain.get(bone)
@@ -381,6 +392,8 @@ export class GeneratedBodySafety {
       for (const limb of [...this.arms, ...this.legs])
         this.projectHinge(limb, limb.lower.quaternion)
       for (const arm of this.arms) this.projectWrist(arm, arm.end.quaternion)
+      if (motion.sourceProvider === 'motionbricks' && motion.motionClass !== 'presence')
+        this.boundProjectedArmSteps(delta)
       for (const bone of this.chain) motion.onIntegrated?.(bone)
     }
     vrm.scene.updateMatrixWorld(true)
@@ -404,6 +417,33 @@ export class GeneratedBodySafety {
       : 0
     this.previousChain = new Map(this.chain.map((bone) => [bone, bone.quaternion.clone()]))
     this.previousRoot = vrm.humanoid.getNormalizedBoneNode('hips')?.position.clone() ?? null
+  }
+
+  /** Anatomical projection is part of the one temporal constraint pass. A
+   * hinge/twist boundary must not teleport an already integrated candidate. */
+  private boundProjectedArmSteps(delta: number): void {
+    const maximum = MOTIONBRICKS_CONVERSATION_MAX_JOINT_SPEED * Math.max(0, Math.min(0.05, delta))
+    for (const arm of this.arms) {
+      for (const bone of [arm.upper, arm.lower, arm.end]) {
+        const previous = this.previousChain.get(bone)
+        if (!previous || previous.angleTo(bone.quaternion) <= maximum + 1e-9) continue
+        const target = bone.quaternion.clone()
+        let lower = 0,
+          upper = 1
+        const accepted = previous.clone()
+        for (let i = 0; i < 14; i++) {
+          const fraction = (lower + upper) / 2
+          bone.quaternion.copy(previous).slerp(target, fraction)
+          if (bone === arm.lower) this.projectHinge(arm, bone.quaternion)
+          else if (bone === arm.end) this.projectWrist(arm, bone.quaternion)
+          if (previous.angleTo(bone.quaternion) <= maximum) {
+            lower = fraction
+            accepted.copy(bone.quaternion)
+          } else upper = fraction
+        }
+        bone.quaternion.copy(accepted)
+      }
+    }
   }
 
   setHandTargets(profile: MotionProfile | undefined, phase: MotionPhaseId): void {
@@ -496,6 +536,16 @@ export class GeneratedBodySafety {
           length *
           (index === 0 ? arm.side : 1),
       )
+    if (this.sourceProvider === 'motionbricks' && target.workspace === 'face') {
+      // The old centre below the chin required maximum wrist deviation on the
+      // loaded rig. Only one box corner could satisfy palm/finger orientation,
+      // erasing the neural stroke. Move the same-sized region toward its own
+      // measured shoulder; hinge, wrist, reach, contact and sweep stay intact.
+      const origin = anchor.getWorldPosition(new THREE.Vector3())
+      const lateral = center.clone().sub(origin).dot(torso.x) * arm.side
+      const shoulderLateral = shoulder.clone().sub(origin).dot(torso.x) * arm.side
+      center.addScaledVector(torso.x, arm.side * Math.max(0, shoulderLateral - lateral))
+    }
     // The catalog's anatomical chest anchor lies inside the garment. Hover
     // regions must start outside the measured surface, including limb thickness.
     if (workspace.anchor === 'chest' || workspace.anchor === 'hips') {

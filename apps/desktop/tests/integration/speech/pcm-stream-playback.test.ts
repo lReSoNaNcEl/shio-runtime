@@ -183,6 +183,24 @@ describe('PCM stream playback', () => {
     second.cancel('conversation-interrupted')
   })
 
+  it('exposes bounded submitted energy without treating availability or credit as consumption', async () => {
+    const player = createPlayer()
+    const playback = await player.startPcmStream(1000, {
+      turnId: 'energy',
+      onReady: () => undefined,
+    })
+    await playback.append(new Float32Array(1000).fill(0.1).buffer)
+    assert.equal(player.getPcmClock()?.sourceSampleOffset, 0)
+    assert.equal(player.getPcmClock()?.availableEnergy?.energy.length, 20)
+    environment.worklets[0].port.emit({ type: 'consumed', samples: 1000 })
+    assert.equal(player.getPcmClock()?.sourceSampleOffset, 0)
+    environment.worklets[0].port.emit({ type: 'position', sampleOffset: 250 })
+    assert.equal(player.getPcmClock()?.availableEnergy?.startSample, 250)
+    assert.equal(player.getPcmClock()?.sourceSampleOffset, 250)
+    playback.cancel('conversation-interrupted')
+    assert.equal(player.getPcmClock()?.availableEnergy, undefined)
+  })
+
   it(
     'bounds buffered PCM and synchronously invalidates playback ownership on cancel',
     boundedBufferAndSynchronousCancellation,

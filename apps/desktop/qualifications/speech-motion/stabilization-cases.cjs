@@ -51,6 +51,7 @@ async function installStabilizationProbe(page, options = {}) {
       overflow: false,
       frozen: null,
       recording: true,
+      observedFrames: 0,
       horizons: [],
       staticInputMaxComponentDelta: 0,
     }
@@ -64,12 +65,23 @@ async function installStabilizationProbe(page, options = {}) {
     }
     const wrap = (owner, method, replacement) => {
       const original = owner[method]
-      owner[method] = replacement(original)
+      const wrapped = replacement(original)
+      owner[method] = function (...args) {
+        const started = performance.now()
+        try {
+          return wrapped.apply(this, args)
+        } finally {
+          if (current)
+            current.timings[method] = (current.timings[method] ?? 0) + performance.now() - started
+        }
+      }
       restorers.push(() => {
         owner[method] = original
       })
     }
     const observer = body.dynamicsObserver
+    if (body.somaHands) wrap(body.somaHands, 'sample', (original) => original)
+    wrap(body, 'validateFinalComposition', (original) => original)
     body.dynamicsObserver = (sample) => {
       observer?.(sample)
       if (!current) return
@@ -172,11 +184,14 @@ async function installStabilizationProbe(page, options = {}) {
       (original) =>
         function (delta) {
           if (!state.recording) return original.call(this, delta)
+          state.observedFrames++
+          if (state.observedFrames % (options.frameStride ?? 1) !== 0)
+            return original.call(this, delta)
           if (state.frames.length >= (options.maxFrames ?? 10000)) {
             state.overflow = true
             return original.call(this, delta)
           }
-          current = { at: performance.now(), delta, stages: {} }
+          current = { at: performance.now(), delta, stages: {}, timings: {} }
           const started = performance.now()
           original.call(this, delta)
           if (options.staticSource && current.stages.source) {
@@ -242,6 +257,8 @@ async function installStabilizationProbe(page, options = {}) {
       timeOrigin: state.timeOrigin,
       overflow: state.overflow,
       frameCount: state.frames.length,
+      frameStride: options.frameStride ?? 1,
+      observedFrames: state.observedFrames,
       horizonCount: state.horizons.length,
       staticInputMaxComponentDelta: state.staticInputMaxComponentDelta,
     })

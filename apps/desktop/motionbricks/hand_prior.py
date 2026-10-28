@@ -6,6 +6,7 @@ from pathlib import Path
 
 import numpy as np
 from pxr import Usd, UsdSkel
+from scipy.optimize import lsq_linear
 from scipy.spatial.transform import Rotation
 
 MODEL = "233e9225c1da05c6a3dd98107b9f027f2366e3b972bbe67e0d164e5d28619fff"
@@ -91,22 +92,68 @@ class HandPrior:
         self.history = {
             side: {index: np.zeros(32) for index in range(-4, 0)} for side in self.sides
         }
+        self.phases = {}
 
-    def target_coefficients(self, side, score):
+    def target_expmap(self, side, score):
         prior = self.sides[side]
         target = prior["mean"].copy()
+        basis = Rotation.from_quat(prior["basis"]).as_matrix()
+        across, along, normal = basis.T
         groups = ((0, 3), (5, 8), (10, 13), (15, 18), (20, 23))
         for finger, (start, end) in zip(FINGERS, groups):
             curls = score["fingers"][finger]["curl"]
             for order, joint in enumerate(range(start, end)):
                 direction = prior["mean"][joint]
                 norm = np.linalg.norm(direction)
-                if norm > 1e-5:
-                    target[joint] = direction / norm * float(curls[min(order, 2)])
+                axis = direction / norm if norm > 1e-5 else across
+                curl = Rotation.from_rotvec(axis * float(curls[min(order, 2)]))
+                # Positive contract spread points toward the index side of
+                # the measured palm, independently of left/right bind axes.
+                spread = (
+                    -normal * float(score["fingers"][finger]["spread"])
+                    if order == 0
+                    else np.zeros(3)
+                )
+                opposition = (
+                    along * float(score["fingers"][finger]["opposition"])
+                    if finger == "thumb" and order == 0
+                    else np.zeros(3)
+                )
+                target[joint] = (
+                    Rotation.from_rotvec(spread)
+                    * Rotation.from_rotvec(opposition)
+                    * curl
+                ).as_rotvec()
+        return target
+
+    def project(self, side, target):
+        prior = self.sides[side]
         coefficients = (
-            (target - prior["mean"]).reshape(-1) @ prior["components"].T
+            (target - prior["mean"]).reshape(-1, 72) @ prior["components"].T
         ) / prior["deviations"]
-        return np.clip(coefficients, -1.5, 1.5)
+        return np.clip(coefficients, -2.5, 2.5)
+
+    def target_coefficients(self, side, score):
+        prior = self.sides[side]
+        target = self.target_expmap(side, score)
+        weights = np.full((24, 3), 0.15)
+        for start in (0, 5, 10, 15, 20):
+            weights[start : start + 3] = 1
+        matrix = prior["components"].T * prior["deviations"]
+        # Clipping the unconstrained PCA projection independently biased peace
+        # fingers back toward the mean. Fit once per phase inside the SAME native
+        # coefficient bounds, preserving all selected MCP/PIP/DIP targets.
+        fitted = lsq_linear(
+            matrix * weights.reshape(-1, 1),
+            (target - prior["mean"]).ravel() * weights.ravel(),
+            bounds=(-2.5, 2.5),
+            method="bvls",
+            tol=1e-6,
+            max_iter=64,
+        )
+        if not fitted.success or not np.isfinite(fitted.x).all():
+            raise ValueError("SOMA hand target is not representable")
+        return fitted.x
 
     def decode(self, side, coefficients):
         prior = self.sides[side]
@@ -138,18 +185,61 @@ class HandPrior:
             .reshape(-1, 15, 4)
         )
 
-    def generate(self, frame, score):
+    def generate(self, frame, profile, phase, plan=None, activity=None):
+        score = profile["handScore"]["phases"][phase]
+        execution = (plan or {}).get("executionId", profile["id"])
         sides = []
         for side in self.sides:
             if frame - 1 not in self.history[side]:
                 raise ValueError("Unavailable exact hand history")
             current = self.history[side][frame - 1]
-            target = self.target_coefficients(side, score[side])
+            key = (execution, phase, side)
+            if key not in self.phases or frame < self.phases[key][0]:
+                self.phases[key] = (
+                    frame,
+                    current.copy(),
+                    self.target_coefficients(side, score[side]),
+                )
+            origin_frame, origin, fitted = self.phases[key]
+            prior = self.sides[side]
+            initial = (
+                prior["mean"].reshape(-1)
+                + (origin * prior["deviations"]) @ prior["components"]
+            ).reshape(24, 3)
+            target = (
+                prior["mean"].reshape(-1)
+                + (fitted * prior["deviations"]) @ prior["components"]
+            ).reshape(24, 3)
+            if phase == "prepare":
+                target = initial + (target - initial) * 0.55
             # Temporal articulation is application-authored, separate from the
-            # statistical prior. One body/source clock samples both domains.
-            t = np.clip(np.arange(1, 61) / 30.0, 0, 1)
-            blend = t**3 * (10 + t * (-15 + 6 * t))
-            coefficients = current[None] + blend[:, None] * (target - current)[None]
+            # statistical prior. Per-finger timing shares the EXACT body phase
+            # and source cursor, including horizon replacement/rollback.
+            seconds = (np.arange(frame, frame + 60) - origin_frame + 1) / 30
+            duration = (
+                next(p["minMs"] for p in profile["phases"] if p["id"] == phase) / 1000
+            )
+            poses = np.repeat(initial[None], 60, axis=0)
+            for finger, start in enumerate((0, 5, 10, 15, 20)):
+                timing = score[side]["timing"]
+                delay = (
+                    duration * timing["start"] + (0.025, 0, 0.018, 0.04, 0.065)[finger]
+                )
+                reach = min(
+                    0.8,
+                    max(
+                        0.22,
+                        duration
+                        * (timing["end"] - timing["start"])
+                        * (0.75, 0.58, 0.64, 0.82, 0.92)[finger],
+                    ),
+                )
+                t = np.clip((seconds - delay) / reach, 0, 1)
+                blend = t**3 * (10 + t * (-15 + 6 * t))
+                poses[:, start : start + 3] = initial[start : start + 3] + blend[
+                    :, None, None
+                ] * (target[start : start + 3] - initial[start : start + 3])
+            coefficients = self.project(side, poses)
             for index, value in enumerate(coefficients):
                 self.history[side][frame + index] = value.copy()
             self.history[side] = {
@@ -158,6 +248,8 @@ class HandPrior:
                 if frame - 120 <= index < frame + 60
             }
             sides.append(self.decode(side, coefficients))
+        while len(self.phases) > 12:
+            del self.phases[next(iter(self.phases))]
         return {
             "modelRevision": MODEL,
             "basis": {

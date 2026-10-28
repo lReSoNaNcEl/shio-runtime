@@ -5,6 +5,23 @@ import { AdaptiveMotionFilter } from '../../../src/renderer/avatar/rendering/thr
 
 const axis = new THREE.Vector3(0, 0, 1)
 describe('single source-aware body tracking', () => {
+  it('allows a large MotionBricks preparation to take physical time without slowing the stroke tracker', () => {
+    const filter = new AdaptiveMotionFilter()
+    const bone = new THREE.Object3D()
+    const target = new THREE.Quaternion().setFromAxisAngle(axis, 2.4)
+    for (let frame = 0; frame < 150; frame++) {
+      const previous = bone.quaternion.clone()
+      filter.step(bone, previous, target, 1 / 60, {
+        sourceProvider: 'motionbricks',
+        motionClass: 'gesture',
+        phase: 'prepare',
+        reachSeconds: 0.55,
+        sourceSpeeds: new Map([[bone, 6]]),
+      })
+      expect(previous.angleTo(bone.quaternion) * 60).toBeLessThanOrEqual(1.501)
+    }
+    expect(bone.quaternion.angleTo(target)).toBeLessThan(0.03)
+  })
   it('rejects rapid MotionBricks presence noise while retaining a slow sway and unchanged gesture timing', () => {
     const run = (sourceProvider: 'ardy' | 'motionbricks', motionClass: 'presence' | 'gesture') => {
       const filter = new AdaptiveMotionFilter()

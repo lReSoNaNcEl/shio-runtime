@@ -7,6 +7,7 @@ semantic/prosodic target planner. Bundled evaluation poses stay research-only.
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import subprocess
 import sys
@@ -41,6 +42,7 @@ class MotionBricksBackend:
             SOMA_N1_FP16_ONNX_PATH,
         )
         from motionbricks.model.soma.engine import MotionBricksSOMAEngine
+        from motionbricks.model.config import MotionBricksInferenceConfig
 
         with SOMA_N1_FP16_ONNX_PATH.open("rb") as stream:
             if hashlib.file_digest(stream, "sha256").hexdigest() != MODEL:
@@ -49,6 +51,7 @@ class MotionBricksBackend:
         wp.init()
         wp.set_device("cuda:0")
         self.np, self.wp = np, wp
+        self.inference_config = MotionBricksInferenceConfig
         self.rig = load_skeleton_from_usd(
             get_asset_file("human", "soma_base_skel_minimal_no_root.usd"),
             SOMA_SKELETON_PRIM_PATH,
@@ -86,7 +89,12 @@ class MotionBricksBackend:
         self.origin = self.initial[0, :3].copy()
         from targets import TargetPlanner
 
-        self.planner = TargetPlanner(self.rig.joint_names, self.parents, self.initial)
+        workspaces = json.loads(
+            (ROOT.parent / "motion/motion-profiles.json").read_text()
+        )["handWorkspaces"]
+        self.planner = TargetPlanner(
+            self.rig.joint_names, self.parents, self.initial, workspaces
+        )
         self.hand = None
         if os.environ.get("SHIO_MOTION_SOMA_HAND") == "1":
             from hand_prior import HandPrior
@@ -96,11 +104,13 @@ class MotionBricksBackend:
     def reset(self, seed):
         self.seed = seed
         self.history = {index: self.initial.copy() for index in range(-4, 0)}
+        self.planner.reset()
         if self.hand:
             self.hand.reset()
 
-    def generate(self, profile, phase, frame, seed, activity=None):
+    def generate(self, profile, phase, frame, seed, activity=None, plan=None):
         from conversion import canonical_rotations
+        from targets import target_token_count
 
         np, wp, engine = self.np, self.wp, self.engine
         if any(index not in self.history for index in range(frame - 4, frame)):
@@ -112,24 +122,36 @@ class MotionBricksBackend:
         source, contacts = [], []
         count, sequence = 0, 0
         started = time.perf_counter()
+        planning_ms, generation_ms = 0.0, 0.0
+        tokens = target_token_count(profile, phase, activity)
+        config = (
+            self.inference_config(allowed_token_counts=(tokens,)) if tokens else None
+        )
         with wp.ScopedStream(engine.stream):
             while count < 60:
+                planning_at = time.perf_counter()
                 goal = self.planner.goal(
                     context_np,
                     profile,
                     phase,
                     self.seed + (frame // 4 + sequence) * 101,
                     activity,
+                    plan,
                 )
+                planning_ms += (time.perf_counter() - planning_at) * 1000
+                generation_at = time.perf_counter()
                 self.context.update_from_poses(
                     wp.array(context_np, dtype=wp.transform), stream=engine.stream
                 )
                 self.target.update_from_poses(
                     wp.array(goal[None], dtype=wp.transform), stream=engine.stream
                 )
-                engine.generate_animation(self.context, self.target, self.output)
+                engine.generate_animation(
+                    self.context, self.target, self.output, config=config
+                )
                 poses = self.output.poses[: self.output.num_frames].numpy()
                 feet = self.output.foot_contacts[: self.output.num_frames].numpy()
+                generation_ms += (time.perf_counter() - generation_at) * 1000
                 # Frame zero repeats the last context; do not stall at every join.
                 take = min(60 - count, len(poses) - 1)
                 source.append(poses[1 : take + 1])
@@ -138,11 +160,13 @@ class MotionBricksBackend:
                 count += take
                 sequence += 1
             local = np.concatenate(source)
+            conversion_at = time.perf_counter()
             world, rotations = canonical_rotations(
                 local, self.parents, self.reference_world, self.indices
             )
             positions = world[:, 0, :3] - self.origin
             positions[:, 1] += 0.9887084839474641
+            conversion_ms = (time.perf_counter() - conversion_at) * 1000
             for index, pose in enumerate(local):
                 self.history[frame + index] = pose.copy()
             self.history = {
@@ -169,11 +193,20 @@ class MotionBricksBackend:
                     for row in feet
                 ],
                 "inferenceMs": (time.perf_counter() - started) * 1000,
+                "timings": {
+                    "planningMs": planning_ms,
+                    "generationMs": generation_ms,
+                    "conversionMs": conversion_ms,
+                    "handMs": 0.0,
+                    "endpointFrames": tokens * 4 - 7 if tokens else 0,
+                },
             }
             if self.hand:
+                hand_at = time.perf_counter()
                 result["handDeltas"] = self.hand.generate(
-                    frame, profile["handScore"]["phases"][phase]
+                    frame, profile, phase, plan, activity
                 )
+                result["timings"]["handMs"] = (time.perf_counter() - hand_at) * 1000
                 result["inferenceMs"] = (time.perf_counter() - started) * 1000
             return result
 

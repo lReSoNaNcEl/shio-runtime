@@ -75,6 +75,30 @@ afterEach(async () => {
 })
 
 describe('generated phase timing regressions', () => {
+  it('plans a native speech stroke from physical readiness instead of forecasting a stale accent during arm travel', async () => {
+    const { owner, next } = fixture()
+    next.mockImplementation(async (input) => ({
+      ok: true,
+      chunk: { ...chunk(input), sourceProvider: 'motionbricks' },
+    }))
+    const reached = vi
+      .spyOn(GeneratedBodySafety.prototype, 'handTargetsReached')
+      .mockReturnValue(false)
+    await owner.playProfile('greet_wave_soft', context('greet_wave_soft', true))
+    for (let frame = 1; frame <= 30; frame++) {
+      owner.setClock(createPcmPlaybackClock({ state: 'playing', sourceSampleOffset: frame * 2205 }))
+      owner.update(0.05, () => undefined)
+      await flush()
+    }
+    expect(next.mock.calls.some(([input]) => input.plan.phaseId === 'stroke')).toBe(false)
+    reached.mockReturnValue(true)
+    for (let frame = 31; frame <= 35; frame++) {
+      owner.setClock(createPcmPlaybackClock({ state: 'playing', sourceSampleOffset: frame * 2205 }))
+      owner.update(0.05, () => undefined)
+      await flush()
+    }
+    expect(next.mock.calls.some(([input]) => input.plan.phaseId === 'stroke')).toBe(true)
+  })
   it('does not consume a gesture family cooldown for unperformed preparation', async () => {
     const { owner } = fixture()
     await owner.playProfile('greet_wave_soft', context('greet_wave_soft', true))
