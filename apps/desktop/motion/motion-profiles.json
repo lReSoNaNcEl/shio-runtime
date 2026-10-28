@@ -1,6 +1,6 @@
 {
   "schemaVersion": 3,
-  "catalogRevision": "expressive-v5-2026-10-28",
+  "catalogRevision": "expressive-v6-2026-10-28",
   "format": {
     "protocolVersion": 2,
     "sourceRevision": "e706e27acc88070918308a10922b8f7174d0825e",
@@ -2640,8 +2640,8 @@
         },
         {
           "id": "stroke",
-          "minMs": 800,
-          "maxMs": 1350,
+          "minMs": 2000,
+          "maxMs": 2600,
           "exitConditions": ["both-hands-target-reached", "body-phase-ready"]
         },
         {
@@ -4326,8 +4326,8 @@
         },
         {
           "id": "stroke",
-          "minMs": 800,
-          "maxMs": 1300,
+          "minMs": 2000,
+          "maxMs": 2600,
           "exitConditions": ["both-hands-target-reached", "body-phase-ready"]
         },
         {
@@ -4752,8 +4752,8 @@
         },
         {
           "id": "stroke",
-          "minMs": 1100,
-          "maxMs": 1600,
+          "minMs": 2000,
+          "maxMs": 2600,
           "exitConditions": ["both-hands-target-reached", "body-phase-ready"]
         },
         {
@@ -9792,8 +9792,8 @@
         },
         {
           "id": "stroke",
-          "minMs": 800,
-          "maxMs": 1300,
+          "minMs": 2000,
+          "maxMs": 2600,
           "exitConditions": ["both-hands-target-reached", "body-phase-ready"]
         },
         {

@@ -14,6 +14,20 @@ function advance(value: MotionPhaseExecution, milliseconds: number, target = tru
 }
 
 describe('phased motion execution lifecycle', () => {
+  it.each(['greet_wave_soft', 'explain_one_palm', 'explain_balance', 'celebrate_petite'])(
+    'consumes the complete SOMA horizon for %s even when its hand target is already reached',
+    (profile) => {
+      const value = execution(profile)
+      value.ready = true
+      advance(value, value.budget.minMs)
+      expect(value.phase).toBe('stroke')
+      value.ready = true
+      advance(value, (59 / 30) * 1000)
+      expect(value.phase).toBe('stroke')
+      advance(value, 1000 / 30)
+      expect(value.phase).toBe('hold')
+    },
+  )
   it('forecasts only the next generated phase without advancing execution or outcomes', () => {
     const value = execution()
     expect(value.forecastPlan('anchor')).toBeNull()

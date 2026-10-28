@@ -38,6 +38,7 @@ import type { MotionDynamicsObserver, MotionDynamicsStage } from './MotionDynami
 import { plantLeg } from './plantLeg'
 import { sourceHandDisplacements } from './SourceHandDisplacements'
 import { standingArmRange } from './StandingMotionStyle'
+import { sampleSourceRotation } from './sampleSourceRotation'
 import { TurnInPlaceMotion } from './TurnInPlaceMotion'
 
 // SOMA30 standard T-pose, Y up, metres, world xyzw rotations. No head/neck,
@@ -90,6 +91,7 @@ export class GeneratedBodyPlayback {
   private readonly bodySafety = new GeneratedBodySafety()
   private readonly sourceSpeeds = new Map<THREE.Object3D, number>()
   private sourcePathChunk: MotionChunk | null = null
+  private sourcePreviousRotations: MotionChunk['rotations'][number] | undefined
   private sourceHandPaths = new Map<THREE.Object3D, THREE.Vector3[]>()
   private turn: TurnInPlaceMotion | null = null
   private physical:
@@ -225,6 +227,7 @@ export class GeneratedBodyPlayback {
     this.mirrorHeading = 0
     this.sourceSpeeds.clear()
     this.sourcePathChunk = null
+    this.sourcePreviousRotations = undefined
     this.sourceHandPaths.clear()
     this.avatarGeneration += 1
     vrm.scene.updateMatrixWorld(true)
@@ -1023,6 +1026,7 @@ export class GeneratedBodyPlayback {
     this.localRecovery = false
     this.queue.length = 0
     this.sourcePathChunk = null
+    this.sourcePreviousRotations = undefined
     this.sourceHandPaths.clear()
     this.replanFrom = null
     this.forecast = null
@@ -1514,6 +1518,10 @@ export class GeneratedBodyPlayback {
       this.lastPoseFrame === null ? 1 / 30 : Math.max(0, (this.cursor - this.lastPoseFrame) / 30)
     const profile = MOTION_PROFILES.find((entry) => entry.id === chunk.profileId)
     if (this.sourcePathChunk !== chunk) {
+      this.sourcePreviousRotations =
+        this.sourcePathChunk && this.sourcePathChunk.startFrame + 60 === chunk.startFrame
+          ? this.sourcePathChunk.rotations[59]
+          : undefined
       this.sourcePathChunk = chunk
       this.sourceHandPaths.clear()
       const phase = profile?.phases.find((value) => value.id === chunk.plan.phaseId)
@@ -1573,6 +1581,13 @@ export class GeneratedBodyPlayback {
         ? chunk.rotations[frame + 1]
         : (this.queue.find((item) => item.startFrame === chunk.startFrame + 60)?.rotations[0] ??
           chunk.rotations[frame])
+    const before = frame > 0 ? chunk.rotations[frame - 1] : this.sourcePreviousRotations
+    const after =
+      frame < 58
+        ? chunk.rotations[frame + 2]
+        : this.queue.find((item) => item.startFrame === chunk.startFrame + 60)?.rotations[
+            frame - 58
+          ]
     const targetWorld = new Map<THREE.Object3D, THREE.Quaternion>()
     const localTargets: THREE.Quaternion[] = []
     const modelWorld = vrm.scene.getWorldQuaternion(new THREE.Quaternion())
@@ -1586,6 +1601,15 @@ export class GeneratedBodyPlayback {
           .normalize()
           .slerp(new THREE.Quaternion().fromArray(next[binding.index]).normalize(), fraction)
         this.observe('source', binding, raw)
+        sampleSourceRotation(
+          raw,
+          before?.[binding.index],
+          chunk.rotations[frame][binding.index],
+          next[binding.index],
+          after?.[binding.index],
+          fraction,
+        )
+        this.observe('reconstructed', binding, raw)
         if (vrm.meta.metaVersion === '0') raw.set(-raw.x, raw.y, -raw.z, raw.w)
         raw.multiply(binding.restInModel).premultiply(modelWorld)
         rawWorld.set(binding.bone, raw.clone())
@@ -1600,9 +1624,14 @@ export class GeneratedBodyPlayback {
       }
     }
     for (const binding of this.bindings) {
-      this.q.fromArray(chunk.rotations[frame][binding.index]).normalize()
-      this.nextQ.fromArray(next[binding.index]).normalize()
-      this.q.slerp(this.nextQ, fraction)
+      sampleSourceRotation(
+        this.q,
+        before?.[binding.index],
+        chunk.rotations[frame][binding.index],
+        next[binding.index],
+        after?.[binding.index],
+        fraction,
+      )
       if (profile?.rootPolicy.mode === 'anchored-standing' && binding.index <= 3) {
         // Bound anatomical lean separately from yaw. Independent 17-degree
         // world clamps allowed adjacent trunk segments to counter-bend sharply.

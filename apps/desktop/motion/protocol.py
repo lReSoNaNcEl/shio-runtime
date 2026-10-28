@@ -31,7 +31,7 @@ REQUEST_FIELDS = {
     "protocolVersion",
     "plan",
 }
-CATALOG_REVISION = "expressive-v5-2026-10-28"
+CATALOG_REVISION = "expressive-v6-2026-10-28"
 CALIBRATION_REVISION = "vrm-normalized-hands-v1"
 
 

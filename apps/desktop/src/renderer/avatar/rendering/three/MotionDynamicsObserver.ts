@@ -3,6 +3,7 @@ import type { VRMHumanBoneName } from '@pixiv/three-vrm'
 /** Injected by offline qualification only. Never projected through Health or IPC. */
 export type MotionDynamicsStage =
   | 'source'
+  | 'reconstructed'
   | 'retargeted'
   | 'anatomical'
   | 'artistic'

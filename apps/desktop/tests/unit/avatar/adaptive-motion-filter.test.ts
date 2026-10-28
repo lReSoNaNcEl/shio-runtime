@@ -5,6 +5,43 @@ import { AdaptiveMotionFilter } from '../../../src/renderer/avatar/rendering/thr
 
 const axis = new THREE.Vector3(0, 0, 1)
 describe('single source-aware body tracking', () => {
+  it.each([60, 90, 120])(
+    'tracks a slow neural path while rejecting tiny source chatter at %i Hz',
+    (hz) => {
+      const filter = new AdaptiveMotionFilter(),
+        bone = new THREE.Object3D()
+      let sumError = 0,
+        samples = 0,
+        maximumStep = 0
+      const errors: number[] = []
+      for (let frame = 0; frame < hz * 4; frame++) {
+        const time = frame / hz
+        const slow = 0.03 * Math.sin(time * 2)
+        const target = new THREE.Quaternion().setFromAxisAngle(
+          axis,
+          slow + 0.001 * Math.sin(time * 2 * Math.PI * 12),
+        )
+        const previous = bone.quaternion.clone()
+        filter.step(bone, previous, target, 1 / hz, { motionClass: 'presence', phase: 'hold' })
+        filter.reconcile(bone, previous, 1 / hz)
+        if (time > 1) {
+          sumError +=
+            bone.quaternion.angleTo(new THREE.Quaternion().setFromAxisAngle(axis, slow)) ** 2
+          maximumStep = Math.max(maximumStep, previous.angleTo(bone.quaternion) * hz)
+          samples++
+          errors.push(2 * Math.atan2(bone.quaternion.z, bone.quaternion.w) - slow)
+        }
+      }
+      const high = errors
+        .slice(2)
+        .map((value, index) => value - 2 * errors[index + 1] + errors[index])
+      expect(Math.sqrt(sumError / samples)).toBeLessThan(0.004)
+      // The unfiltered 12 Hz input has a 0.00138 rad second difference at
+      // 60 Hz. Retain the slow path while rejecting at least 85% of chatter.
+      expect(Math.max(...high.map(Math.abs))).toBeLessThan(0.0002)
+      expect(maximumStep).toBeLessThan(0.07)
+    },
+  )
   it('reaches an admitted preparation target when the held neural source has zero velocity', () => {
     const filter = new AdaptiveMotionFilter(),
       bone = new THREE.Object3D()

@@ -16,6 +16,7 @@ export interface MotionFilterContext {
 interface State {
   target: THREE.Quaternion
   velocity: THREE.Vector3
+  integrated?: THREE.Quaternion
 }
 const log = (rotation: THREE.Quaternion): THREE.Vector3 => {
   const q = rotation.clone().normalize()
@@ -94,14 +95,37 @@ export class AdaptiveMotionFilter {
     // Tiny projected presence deltas contain hinge/contact noise. Feeding their
     // derivative forward made quiet idle visibly vibrate. Position tracking
     // retains its slow neural motion; expressive acts retain source velocity.
-    const desired = (presence ? new THREE.Vector3() : sourceVelocity)
-      .addScaledVector(error, presence ? 14 : 24)
+    // Solve the existing position/velocity tracker as a critically damped
+    // system. A velocity command followed instantaneously within the envelope
+    // transmits 30 Hz source corners (and their derivative) into the body.
+    // The analytic step is stable at different render rates, and velocity
+    // feed-forward preserves a moving stroke without a second filter or clock.
+    const feed = presence ? new THREE.Vector3() : sourceVelocity
+    const frequency = presence ? 28 : 48
+    const relativeVelocity = state.velocity.clone().sub(feed)
+    const initialError = error.clone().addScaledVector(feed, -dt)
+    const decay = Math.exp(-frequency * dt)
+    const remainder = initialError
+      .clone()
+      .multiplyScalar(1 + frequency * dt)
+      .addScaledVector(relativeVelocity, -dt)
+      .multiplyScalar(decay)
+    const desired = relativeVelocity
+      .clone()
+      .multiplyScalar(1 - frequency * dt)
+      .addScaledVector(initialError, frequency * frequency * dt)
+      .multiplyScalar(decay)
+      .add(feed)
+    const limited =
+      desired.length() > speed || desired.distanceTo(state.velocity) > acceleration * dt
+    const change = desired
       .clampLength(0, speed)
-    const change = desired.sub(state.velocity).clampLength(0, acceleration * dt)
+      .sub(state.velocity)
+      .clampLength(0, acceleration * dt)
     // A decreasing tracking envelope is a braking request, not permission to
     // instantaneously clip actual velocity at a phase/horizon boundary.
     state.velocity.add(change)
-    const step = state.velocity.clone().multiplyScalar(dt)
+    const step = limited ? state.velocity.clone().multiplyScalar(dt) : error.clone().sub(remainder)
     const angle = step.length()
     bone.quaternion.copy(previous)
     if (angle > 1e-10)
@@ -109,13 +133,18 @@ export class AdaptiveMotionFilter {
         .premultiply(new THREE.Quaternion().setFromAxisAngle(step.divideScalar(angle), angle))
         .normalize()
     state.target.copy(target)
+    state.integrated = bone.quaternion.clone()
     this.states.set(bone, state)
   }
 
   /** A contact sweep may shorten integration. Never retain rejected momentum. */
   reconcile(bone: THREE.Object3D, previous: THREE.Quaternion, seconds: number): void {
     const state = this.states.get(bone)
-    if (state && seconds > 0)
+    if (
+      state &&
+      seconds > 0 &&
+      (!state.integrated || 1 - Math.abs(state.integrated.dot(bone.quaternion)) > 1e-12)
+    )
       state.velocity
         .copy(log(bone.quaternion.clone().multiply(previous.clone().invert())))
         .divideScalar(Math.min(0.05, seconds))

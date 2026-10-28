@@ -9,6 +9,7 @@ const { recordCanvas } = require('./record-canvas.cjs')
 const { captureWindow } = require('./capture-window.cjs')
 const { qualifyLiving } = require('./living-cases.cjs')
 const { qualifyConversation } = require('./conversation-cases.cjs')
+const { qualifyStabilization } = require('./stabilization-cases.cjs')
 const { qualifyCloseCandidates } = require('./close-candidates.cjs')
 const { replayDynamics } = require('./dynamics-replay.cjs')
 const { SEMANTIC_EMBODIMENT_CASES } = require('./semantic-embodiment-cases.cjs')
@@ -64,13 +65,15 @@ const livingCases = process.argv.includes('--living-cases')
 const conversationCases = process.argv.includes('--conversation-cases')
 const closeCases = process.argv.includes('--close-cases')
 const dynamicsReplay = process.argv.includes('--dynamics-replay')
+const stabilizationCases = process.argv.includes('--stabilization-cases')
 const bodyStabilityOnly =
   process.argv.includes('--body-stability-only') ||
   turnCases ||
   livingCases ||
   conversationCases ||
   closeCases ||
-  dynamicsReplay
+  dynamicsReplay ||
+  stabilizationCases
 const bodySeconds = option('body-seconds', 18)
 // Capture both hand scores during the short accent before reviewing wider views.
 const accentCameras = ['Right hand', 'Left hand', 'Full body', 'Bust', 'Face']
@@ -163,6 +166,21 @@ const environment = {
 delete environment.ELECTRON_RUN_AS_NODE
 const launchDesktop = process.env.SHIO_QUALIFICATION_DESKTOP_ROOT || desktop
 const report = {
+  git: {
+    head: execFileSync('git', ['rev-parse', 'HEAD'], {
+      cwd: repository,
+      encoding: 'utf8',
+      windowsHide: true,
+    }).trim(),
+    productionDiffSha256: createHash('sha256')
+      .update(
+        execFileSync('git', ['diff', '--', 'apps/desktop/src', 'apps/desktop/motion/backend.py'], {
+          cwd: repository,
+          windowsHide: true,
+        }),
+      )
+      .digest('hex'),
+  },
   modelFixture: {
     source: fixtureArgument
       ? 'explicit-qualification-fixture'
@@ -212,6 +230,7 @@ for (const relative of [
     .map((filename) => `out/renderer/assets/${filename}`),
   'motion/worker.py',
   'motion/backend.py',
+  'motion/protocol.py',
   'motion/research-pins.json',
   'motion/motion-profiles.json',
   'qualifications/speech-motion/qualify.cjs',
@@ -221,6 +240,11 @@ for (const relative of [
   'qualifications/speech-motion/record-canvas.cjs',
   'qualifications/speech-motion/living-cases.cjs',
   'qualifications/speech-motion/dynamics-replay.cjs',
+  'qualifications/speech-motion/stabilization-cases.cjs',
+  'qualifications/speech-motion/conversation-cases.cjs',
+  'src/renderer/avatar/rendering/three/sampleSourceRotation.ts',
+  'src/renderer/avatar/rendering/three/AdaptiveMotionFilter.ts',
+  'src/renderer/avatar/rendering/three/GeneratedBodyPlayback.ts',
   'qualifications/motion-ab/record.cjs',
 ])
   report.build[relative] = createHash('sha256')
@@ -1746,7 +1770,8 @@ async function bodyStability() {
       !livingCases &&
       !conversationCases &&
       !closeCases &&
-      !dynamicsReplay
+      !dynamicsReplay &&
+      !stabilizationCases
     ) {
       const overlay = application.windows().find((target) => target.url().includes('overlay=1'))
       assert(overlay, 'Overlay unavailable for video recording')
@@ -1760,7 +1785,10 @@ async function bodyStability() {
         path.join(directory, `start-${target === page ? 'main' : 'overlay'}.png`),
       )
     }
-    if (closeCases) await qualifyCloseCandidates({ application, page, directory, report, pause })
+    if (stabilizationCases)
+      await qualifyStabilization({ application, page, directory, report, pause, duration })
+    else if (closeCases)
+      await qualifyCloseCandidates({ application, page, directory, report, pause })
     else if (conversationCases)
       await qualifyConversation({
         application,
@@ -1822,7 +1850,8 @@ async function bodyStability() {
       !livingCases &&
       !conversationCases &&
       !closeCases &&
-      !dynamicsReplay
+      !dynamicsReplay &&
+      !stabilizationCases
     ) {
       report.bodyStabilityAcceptance = report.bodyStability.map((entry) => {
         const opening = entry.geometry.hold?.right?.indexMiddleOpeningDeg?.last
@@ -1891,19 +1920,21 @@ async function bodyStability() {
     report.passed =
       report.failures.length === 0 &&
       (!bodyStabilityOnly ||
-        (closeCases
-          ? report.closeCandidates.passed
-          : conversationCases
-            ? report.conversation.passed
-            : livingCases
-              ? report.living.every((entry) => entry.passed)
-              : dynamicsReplay
-                ? report.dynamicsReplay.videos.every(
-                    (entry) => entry.frames > 0 && entry.errors.length === 0,
-                  )
-                : turnCases
-                  ? report.turns.every((entry) => entry.passed)
-                  : report.bodyStabilityAcceptance.every((entry) => entry.passed))) &&
+        (stabilizationCases
+          ? report.stabilization.technicalPassed
+          : closeCases
+            ? report.closeCandidates.passed
+            : conversationCases
+              ? report.conversation.passed
+              : livingCases
+                ? report.living.every((entry) => entry.passed)
+                : dynamicsReplay
+                  ? report.dynamicsReplay.videos.every(
+                      (entry) => entry.frames > 0 && entry.errors.length === 0,
+                    )
+                  : turnCases
+                    ? report.turns.every((entry) => entry.passed)
+                    : report.bodyStabilityAcceptance.every((entry) => entry.passed))) &&
       (bodyStabilityOnly || report.responses.length >= responseCount) &&
       (bodyStabilityOnly || report.elapsedSeconds >= duration) &&
       (!componentSmoke || report.componentEvidence.motionErrors.length === 0)

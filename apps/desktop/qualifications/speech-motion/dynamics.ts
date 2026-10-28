@@ -5,6 +5,7 @@ import path from 'node:path'
 import type { VRM } from '@pixiv/three-vrm'
 import * as THREE from 'three'
 
+import { ProceduralMotionController } from '../../src/renderer/avatar/embodiment/motion/ProceduralMotionController'
 import { MotionPhaseExecution } from '../../src/renderer/avatar/MotionPhaseExecution'
 import { GeneratedBodyPlayback } from '../../src/renderer/avatar/rendering/three/GeneratedBodyPlayback'
 import { GeneratedBodySafety } from '../../src/renderer/avatar/rendering/three/GeneratedBodySafety'
@@ -22,6 +23,9 @@ const option = (name: string) => process.argv.find((v) => v.startsWith(`--${name
 const sourceFile = path.resolve(option('source') ?? '')
 const output = path.resolve(option('output') ?? path.join(path.dirname(sourceFile), 'baseline'))
 const model = path.resolve(option('vrm') ?? 'src/renderer/assets/vrm/green_fox.vrm')
+const proceduralMode = option('procedural') ?? 'none'
+if (!['none', 'breathing', 'micro', 'full'].includes(proceduralMode))
+  throw new Error('Unknown procedural diagnostic mode')
 const source = JSON.parse(readFileSync(sourceFile, 'utf8')) as {
   seed: number
   pins: unknown
@@ -150,6 +154,8 @@ for (const entry of source.cases) {
     },
   )
   owner.attach(vrm)
+  const procedural = new ProceduralMotionController()
+  procedural.attach(vrm)
   const replay = owner as unknown as ReplayAccess
   replay.playing = true
   replay.profileId = profile.id
@@ -191,7 +197,16 @@ for (const entry of source.cases) {
       frameSamples = []
       replay.cursor = chunk.startFrame + step / 2
       const retargetAt = performance.now()
+      procedural.remove()
       replay.apply(chunk, 1 / 60, step / 120)
+      if (proceduralMode === 'full') procedural.update(1 / 60)
+      else if (proceduralMode !== 'none') {
+        const channel = Reflect.get(
+          procedural,
+          proceduralMode === 'breathing' ? 'breath' : 'microMotion',
+        ) as { update(seconds: number): void }
+        channel.update(1 / 60)
+      }
       const safetyAt = performance.now()
       owner.validateFinalComposition(1 / 60)
       for (const [stage, rig] of Object.entries(wristRigs)) {
@@ -323,6 +338,7 @@ writeFileSync(
       vrmSha256: hash(model),
       pins: source.pins,
       seed: source.seed,
+      proceduralMode,
       rendererFps: 60,
       artisticAcceptance: 'pending',
       cases: summary,

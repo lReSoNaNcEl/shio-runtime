@@ -16,8 +16,10 @@ const pcm = (seconds: number, state: PcmPlaybackClock['state'] = 'playing'): Pcm
 describe('consumed body presentation time', () => {
   it.each([
     [60, 512 / 48000],
+    [90, 512 / 48000],
     [120, 512 / 48000],
     [60, 0.032],
+    [90, 0.032],
     [120, 0.032],
   ])('removes packet-cadence stop/start at %i Hz with %f s reports', (hz, quantum) => {
     const sampler = new ConsumedMotionClock(),

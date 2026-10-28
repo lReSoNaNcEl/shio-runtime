@@ -6,6 +6,7 @@ const { recordCanvas } = require('./record-canvas.cjs')
 const { recordAudio } = require('./record-audio.cjs')
 const { captureWindow } = require('./capture-window.cjs')
 const { assessGesture } = require('./conversation-evidence.cjs')
+const { installStabilizationProbe, saveStabilizationProbe } = require('./stabilization-cases.cjs')
 
 async function qualifyConversation({
   application,
@@ -506,6 +507,11 @@ async function qualifyConversation({
   const audioFile = path.join(directory, 'conversation-audio.webm'),
     videoFile = path.join(directory, 'conversation-raw.webm')
   let stopAudio, stopVideo, captured
+  const stabilizationTrace = process.argv.includes('--stabilization-trace')
+  if (stabilizationTrace) {
+    await installStabilizationProbe(page, { maxFrames: 24000 })
+    await installStabilizationProbe(overlay, { maxFrames: 24000 })
+  }
   const started = Date.now()
   try {
     stopAudio = await recordAudio(page, audioFile)
@@ -605,6 +611,25 @@ async function qualifyConversation({
     }
     while (Date.now() - started < duration * 1000) await pause(200)
   } finally {
+    if (stabilizationTrace)
+      await Promise.all([
+        page.evaluate(() => window.__stabilizationProbe.stop()),
+        overlay.evaluate(() => window.__stabilizationProbe.stop()),
+      ])
+    if (stopAudio) report.conversation.audio = await stopAudio()
+    if (stopVideo) report.conversation.video = await stopVideo()
+    if (stabilizationTrace) {
+      for (const [id, target] of [
+        ['primary', page],
+        ['overlay', overlay],
+      ]) {
+        const data = await saveStabilizationProbe(
+          target,
+          path.join(directory, `conversation-${id}.json`),
+        )
+        assert(!data.overflow, 'Stabilization trace overflow')
+      }
+    }
     captured = await page.evaluate(() => window.__conversationProbe.stop())
     report.conversation.overlayExecutions = await overlay.evaluate(() =>
       window.__conversationOverlayProbe.stop(),
@@ -617,8 +642,6 @@ async function qualifyConversation({
     )
     report.conversation.trace = captured
     report.conversation.elapsedMs = Date.now() - started
-    if (stopAudio) report.conversation.audio = await stopAudio()
-    if (stopVideo) report.conversation.video = await stopVideo()
     fs.writeFileSync(path.join(directory, 'report.json'), JSON.stringify(report, null, 2))
   }
   const video = report.conversation.video,

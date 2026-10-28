@@ -334,7 +334,9 @@ describe('generated phase timing regressions', () => {
       accepted = input.plan
       return { ok: true, chunk: chunk(input) }
     })
-    await owner.playProfile('greet_wave_soft', context('greet_wave_soft', true))
+    // A short stroke leaves an overlapping horizon that can already commit hold.
+    // The two-second greeting consumes its complete horizon instead.
+    await owner.playProfile('agree_soft', context('agree_soft', true))
     for (let frame = 0; frame < 110; frame++) {
       owner.update(0.02, () => undefined)
       await flush()
