@@ -1,11 +1,9 @@
 import assert from 'node:assert/strict'
 
-import { APIError } from 'openai'
 import { beforeEach, describe, it, vi } from 'vitest'
 
 import type { ChatMessage, LLMProvider } from '../../src/main/llm'
 import { LlmResponseError } from '../../src/main/llm'
-import { runChatCompletionDetailed } from '../../src/main/llm/openai-compatible/request'
 import { InMemoryStore } from '../../src/main/memory/InMemoryStore'
 import { Orchestrator } from '../../src/main/orchestrator'
 import type { NormalizedScreenContextImage } from '../../src/main/screen-context/ImageNormalizer'
@@ -22,6 +20,7 @@ import {
 import type { CharacterReplyStreamEvent } from '../../src/shared/character-stream'
 import type { AppSettings } from '../../src/shared/config'
 import { deriveTurnRecoveryCapabilities } from '../../src/shared/conversation'
+import { WireHttpError as APIError, runChatCompletionDetailed } from '../support/llm/wireFixture'
 
 beforeEach(() => {
   vi.stubGlobal('window', {

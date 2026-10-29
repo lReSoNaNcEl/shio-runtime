@@ -47,6 +47,7 @@ apps/api/build/
 /apps/api/models/
 
 # Runtime and temporary data
+.cache/
 /logs/
 /temp/
 /tmp/

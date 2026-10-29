@@ -138,6 +138,17 @@ function installGeometryProbe(rig) {
           ) *
             180) /
           Math.PI,
+        indexMiddleSignedSpread: dot(
+          sub(
+            unit(sub(joints[`${side}IndexIntermediate`].p, joints[`${side}IndexProximal`].p)),
+            unit(sub(joints[`${side}MiddleIntermediate`].p, joints[`${side}MiddleProximal`].p)),
+          ),
+          unit(sub(joints[`${side}IndexProximal`].p, joints[`${side}LittleProximal`].p)),
+        ),
+        indexMiddleTipSpanM: dot(
+          sub(joints[`${side}IndexDistal`].p, joints[`${side}MiddleDistal`].p),
+          unit(sub(joints[`${side}IndexProximal`].p, joints[`${side}LittleProximal`].p)),
+        ),
       }
       for (const finger of ['Index', 'Middle', 'Ring', 'Little']) {
         const proximal = joints[`${side}${finger}Proximal`].p

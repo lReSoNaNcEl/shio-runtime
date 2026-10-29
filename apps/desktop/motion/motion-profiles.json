@@ -1,10 +1,10 @@
 {
   "schemaVersion": 3,
-  "catalogRevision": "expressive-v6-2026-10-28",
+  "catalogRevision": "expressive-v7-2026-10-29",
   "format": {
     "protocolVersion": 2,
-    "sourceRevision": "e706e27acc88070918308a10922b8f7174d0825e",
-    "modelRevision": "244215084b22fcd29ab743017330e87411fe168a",
+    "sourceRevision": "54fc563aeaaf819a753d72cc9fdc6713989cdd43",
+    "modelRevision": "6c9f78e23decbda8e1cfd1b0cc96980ea4b24b3ca2c808d03b058f48f82fc9ef",
     "skeleton": "soma30-standard-tpose-v1",
     "referencePose": "standard-tpose",
     "quaternionOrder": "xyzw",
@@ -17,7 +17,7 @@
     "units": "metres",
     "fps": 30,
     "horizonFrames": 60,
-    "historyFrames": 60,
+    "historyFrames": 4,
     "contactOrder": ["leftHeel", "leftToe", "rightHeel", "rightToe"]
   },
   "handRigCalibration": {
@@ -483,10 +483,6 @@
         "state": "qualified",
         "rigProfiles": ["vrm-normalized-hands-v1"]
       },
-      "conditioningRefs": {
-        "templateId": "presence_poised-v1",
-        "prompt": "A person stands upright with both feet fully planted, no stepping or jumping. Quiet upright standing, soft elbows and relaxed hands beside the hips."
-      },
       "behaviorTags": ["behavior:idle", "behavior:neutral", "idle-orchestration"],
       "usage": {
         "speaking": true,
@@ -902,10 +898,6 @@
       "qualification": {
         "state": "qualified",
         "rigProfiles": ["vrm-normalized-hands-v1"]
-      },
-      "conditioningRefs": {
-        "templateId": "presence_warm-v1",
-        "prompt": "A person stands upright with both feet fully planted, no stepping or jumping. Warm upright standing, slightly open shoulders and soft open hands without a greeting wave."
       },
       "behaviorTags": ["behavior:warm", "behavior:happy"],
       "usage": {
@@ -1323,10 +1315,6 @@
         "state": "qualified",
         "rigProfiles": ["vrm-normalized-hands-v1"]
       },
-      "conditioningRefs": {
-        "templateId": "presence_listening-v1",
-        "prompt": "A person stands upright with both feet fully planted, no stepping or jumping. Attentive standing with a small forward inclination and quiet relaxed arms."
-      },
       "behaviorTags": ["behavior:listening"],
       "usage": {
         "speaking": true,
@@ -1742,10 +1730,6 @@
       "qualification": {
         "state": "qualified",
         "rigProfiles": ["vrm-normalized-hands-v1"]
-      },
-      "conditioningRefs": {
-        "templateId": "presence_thinking-v1",
-        "prompt": "A person stands upright with both feet fully planted, no stepping or jumping. Thoughtful standing, right hand softly gathered before the waist, left arm relaxed; do not touch the face."
       },
       "behaviorTags": ["behavior:thinking", "gesture:think"],
       "usage": {
@@ -2163,10 +2147,6 @@
         "state": "qualified",
         "rigProfiles": ["vrm-normalized-hands-v1"]
       },
-      "conditioningRefs": {
-        "templateId": "presence_speaking-v1",
-        "prompt": "A person stands upright with both feet fully planted, no stepping or jumping. Quiet conversational standing with softly open hands below the chest, no repeated explanatory gesture."
-      },
       "behaviorTags": ["behavior:speaking"],
       "usage": {
         "speaking": true,
@@ -2582,10 +2562,6 @@
       "qualification": {
         "state": "qualified",
         "rigProfiles": ["vrm-normalized-hands-v1"]
-      },
-      "conditioningRefs": {
-        "templateId": "presence_restful-v1",
-        "prompt": "A person stands upright with both feet fully planted, no stepping or jumping. Restful upright standing, low shoulder amplitude and softly curved relaxed fingers."
       },
       "behaviorTags": ["behavior:calm", "behavior:whisper", "idle-presence"],
       "usage": {
@@ -3009,10 +2985,6 @@
         "state": "qualified",
         "rigProfiles": ["vrm-normalized-hands-v1"]
       },
-      "conditioningRefs": {
-        "templateId": "greet_wave_soft-v1",
-        "prompt": "A person stands upright with both feet fully planted, no stepping or jumping. Right hand rises to shoulder level, palm toward the listener, one or two small soft waving arcs, then clearly lowers."
-      },
       "behaviorTags": ["gesture:greeting"],
       "usage": {
         "speaking": true,
@@ -3428,10 +3400,6 @@
       "qualification": {
         "state": "qualified",
         "rigProfiles": ["vrm-normalized-hands-v1"]
-      },
-      "conditioningRefs": {
-        "templateId": "farewell_wave_soft-v1",
-        "prompt": "A person stands upright with both feet fully planted, no stepping or jumping. Right hand makes one slow warm farewell wave, a short readable hold, then returns beside the body."
       },
       "behaviorTags": ["gesture:farewell"],
       "usage": {
@@ -3849,10 +3817,6 @@
         "state": "qualified",
         "rigProfiles": ["vrm-normalized-hands-v1"]
       },
-      "conditioningRefs": {
-        "templateId": "agree_soft-v1",
-        "prompt": "A person stands upright with both feet fully planted, no stepping or jumping. A small right open palm accent communicates agreement and releases; keep the head neutral."
-      },
       "behaviorTags": ["gesture:agree"],
       "usage": {
         "speaking": true,
@@ -4268,10 +4232,6 @@
       "qualification": {
         "state": "qualified",
         "rigProfiles": ["vrm-normalized-hands-v1"]
-      },
-      "conditioningRefs": {
-        "templateId": "disagree_gentle-v1",
-        "prompt": "A person stands upright with both feet fully planted, no stepping or jumping. A small lateral right open palm movement, elbow near torso, expresses gentle disagreement and releases."
       },
       "behaviorTags": ["gesture:disagree"],
       "usage": {
@@ -4695,10 +4655,6 @@
         "state": "qualified",
         "rigProfiles": ["vrm-normalized-hands-v1"]
       },
-      "conditioningRefs": {
-        "templateId": "explain_one_palm-v1",
-        "prompt": "A person stands upright with both feet fully planted, no stepping or jumping. Right forearm lifts below the chest, palm turns up for one explanatory arc, then returns."
-      },
       "behaviorTags": ["gesture:explain"],
       "usage": {
         "speaking": true,
@@ -5114,10 +5070,6 @@
       "qualification": {
         "state": "qualified",
         "rigProfiles": ["vrm-normalized-hands-v1"]
-      },
-      "conditioningRefs": {
-        "templateId": "explain_balance-v1",
-        "prompt": "A person stands upright with both feet fully planted, no stepping or jumping. Both palms sequentially indicate two small spaces below the chest, then both hands release."
       },
       "behaviorTags": ["gesture:compare"],
       "usage": {
@@ -5535,10 +5487,6 @@
         "state": "qualified",
         "rigProfiles": ["vrm-normalized-hands-v1"]
       },
-      "conditioningRefs": {
-        "templateId": "invite_question-v1",
-        "prompt": "A person stands upright with both feet fully planted, no stepping or jumping. Right palm opens upward toward the listener, pauses to invite a response, then gently lowers without beckoning fingers."
-      },
       "behaviorTags": ["gesture:invite"],
       "usage": {
         "speaking": true,
@@ -5954,10 +5902,6 @@
       "qualification": {
         "state": "qualified",
         "rigProfiles": ["vrm-normalized-hands-v1"]
-      },
-      "conditioningRefs": {
-        "templateId": "reassure_palm-v1",
-        "prompt": "A person stands upright with both feet fully planted, no stepping or jumping. Right palm opens calmly forward and slightly downward in a supportive arc; stable torso, no reaching beyond the stage."
       },
       "behaviorTags": ["gesture:reassure"],
       "usage": {
@@ -6375,10 +6319,6 @@
         "state": "qualified",
         "rigProfiles": ["vrm-normalized-hands-v1"]
       },
-      "conditioningRefs": {
-        "templateId": "thank_heart_hover-v1",
-        "prompt": "A person stands upright with both feet fully planted, no stepping or jumping. Right hand softly gathers and hovers before the heart with clear space from the torso, pauses, then lowers."
-      },
       "behaviorTags": ["gesture:thanks"],
       "usage": {
         "speaking": true,
@@ -6794,10 +6734,6 @@
       "qualification": {
         "state": "qualified",
         "rigProfiles": ["vrm-normalized-hands-v1"]
-      },
-      "conditioningRefs": {
-        "templateId": "present_side-v1",
-        "prompt": "A person stands upright with both feet fully planted, no stepping or jumping. Right palm opens toward a small space beside the body within the camera frame, then returns."
       },
       "behaviorTags": ["gesture:present"],
       "usage": {
@@ -7215,10 +7151,6 @@
         "state": "qualified",
         "rigProfiles": ["vrm-normalized-hands-v1"]
       },
-      "conditioningRefs": {
-        "templateId": "delight_hands_open-v1",
-        "prompt": "A person stands upright with both feet fully planted, no stepping or jumping. Both hands open a little near the lower chest in quiet delight, shoulders soft, then release."
-      },
       "behaviorTags": ["gesture:delight"],
       "usage": {
         "speaking": true,
@@ -7634,10 +7566,6 @@
       "qualification": {
         "state": "qualified",
         "rigProfiles": ["vrm-normalized-hands-v1"]
-      },
-      "conditioningRefs": {
-        "templateId": "laugh_soft-v1",
-        "prompt": "A person stands upright with both feet fully planted, no stepping or jumping. A small shoulder and torso amusement accent, right hand softly approaches the upper torso without contact, left arm relaxed."
       },
       "behaviorTags": ["gesture:laugh"],
       "usage": {
@@ -8055,10 +7983,6 @@
         "state": "qualified",
         "rigProfiles": ["vrm-normalized-hands-v1"]
       },
-      "conditioningRefs": {
-        "templateId": "shy_gather-v1",
-        "prompt": "A person stands upright with both feet fully planted, no stepping or jumping. Both softly curved hands gather before the waist without interlacing or touching, briefly hold, then release."
-      },
       "behaviorTags": ["gesture:shy"],
       "usage": {
         "speaking": true,
@@ -8474,10 +8398,6 @@
       "qualification": {
         "state": "qualified",
         "rigProfiles": ["vrm-normalized-hands-v1"]
-      },
-      "conditioningRefs": {
-        "templateId": "curious_lean-v1",
-        "prompt": "A person stands upright with both feet fully planted, no stepping or jumping. A small forward inclination with right palm slightly open, then torso and hand return together."
       },
       "behaviorTags": ["gesture:curious"],
       "usage": {
@@ -8895,10 +8815,6 @@
         "state": "qualified",
         "rigProfiles": ["vrm-normalized-hands-v1"]
       },
-      "conditioningRefs": {
-        "templateId": "surprise_small-v1",
-        "prompt": "A person stands upright with both feet fully planted, no stepping or jumping. Both hands lift slightly and fingers open softly for a small surprise, then lower without stepping backward."
-      },
       "behaviorTags": ["gesture:surprise"],
       "usage": {
         "speaking": true,
@@ -9315,10 +9231,6 @@
         "state": "qualified",
         "rigProfiles": ["vrm-normalized-hands-v1"]
       },
-      "conditioningRefs": {
-        "templateId": "concern_soft-v1",
-        "prompt": "A person stands upright with both feet fully planted, no stepping or jumping. Right palm gently supports the listener with softly gathered fingers; restrained openness, no dismissive movement."
-      },
       "behaviorTags": ["gesture:concern"],
       "usage": {
         "speaking": true,
@@ -9734,10 +9646,6 @@
       "qualification": {
         "state": "qualified",
         "rigProfiles": ["vrm-normalized-hands-v1"]
-      },
-      "conditioningRefs": {
-        "templateId": "resolve_firm-v1",
-        "prompt": "A person stands upright with both feet fully planted, no stepping or jumping. A small firm right hand accent with gathered fingers but no fist or lunge, then relaxed release."
       },
       "behaviorTags": ["gesture:resolve"],
       "usage": {
@@ -10161,10 +10069,6 @@
         "state": "qualified",
         "rigProfiles": ["vrm-normalized-hands-v1"]
       },
-      "conditioningRefs": {
-        "templateId": "celebrate_petite-v1",
-        "prompt": "A person stands upright with both feet fully planted, no stepping or jumping. Right hand lifts a little and opens in a petite joyful accent, briefly holds and returns; no jump or dance."
-      },
       "behaviorTags": ["gesture:celebrate"],
       "usage": {
         "speaking": true,
@@ -10580,10 +10484,6 @@
       "qualification": {
         "state": "qualified",
         "rigProfiles": ["vrm-normalized-hands-v1"]
-      },
-      "conditioningRefs": {
-        "templateId": "fox_paw_single-v1",
-        "prompt": "A person stands upright with both feet fully planted, no stepping or jumping. Only the right arm bends below the chest with a gently flexed wrist and soft curled fingers like a fox paw, then releases."
       },
       "behaviorTags": ["gesture:fox-paw"],
       "usage": {
@@ -11001,10 +10901,6 @@
         "state": "qualified",
         "rigProfiles": ["vrm-normalized-hands-v1"]
       },
-      "conditioningRefs": {
-        "templateId": "peace_single-v1",
-        "prompt": "A person stands upright with both feet fully planted, no stepping or jumping. Only the right hand rises near the shoulder with index and middle fingers in a V, other fingers softly folded, then lowers and releases."
-      },
       "behaviorTags": ["gesture:peace"],
       "usage": {
         "speaking": true,
@@ -11420,10 +11316,6 @@
       "qualification": {
         "state": "qualified",
         "rigProfiles": ["vrm-normalized-hands-v1"]
-      },
-      "conditioningRefs": {
-        "templateId": "kiss_air_soft-v1",
-        "prompt": "A person stands upright with both feet fully planted, no stepping or jumping. Right hand approaches a space before the lips without contact, then turns outward and opens for an air kiss before lowering."
       },
       "behaviorTags": ["gesture:kiss"],
       "usage": {
@@ -11841,10 +11733,6 @@
         "state": "qualified",
         "rigProfiles": ["vrm-normalized-hands-v1"]
       },
-      "conditioningRefs": {
-        "templateId": "stretch_small-v1",
-        "prompt": "A person stands upright with both feet fully planted, no stepping or jumping. Both shoulders and forearms open moderately for a small standing stretch below shoulder height, then completely return."
-      },
       "behaviorTags": ["gesture:stretch"],
       "usage": {
         "speaking": false,
@@ -12261,10 +12149,6 @@
       "qualification": {
         "state": "draft",
         "rigProfiles": ["vrm-normalized-hands-v1"]
-      },
-      "conditioningRefs": {
-        "templateId": "turn-in-place-procedural-v1",
-        "prompt": "A person turns once in place with alternating footsteps and returns to stable standing."
       },
       "behaviorTags": ["behavior:idle", "behavior:neutral", "idle-orchestration"],
       "usage": {
@@ -12701,10 +12585,6 @@
         "state": "qualified",
         "rigProfiles": ["vrm-normalized-hands-v1"]
       },
-      "conditioningRefs": {
-        "templateId": "greet_wave_close-v1",
-        "prompt": "A person stands upright with both feet fully planted, no stepping or jumping. The right hand makes a small greeting wave beside the cheek, outside the face, then lowers. Keep the elbow close to the torso and the hand beside rather than across the eyes."
-      },
       "behaviorTags": ["gesture:greeting"],
       "usage": {
         "speaking": true,
@@ -13130,10 +13010,6 @@
         "state": "qualified",
         "rigProfiles": ["vrm-normalized-hands-v1"]
       },
-      "conditioningRefs": {
-        "templateId": "explain_point_close-v1",
-        "prompt": "A person stands upright with both feet planted, no stepping. The right index finger points upward beside the cheek for one small explanatory beat, elbow stays below the shoulder, then the hand lowers. Keep the hand outside the face, never lift the elbow above the shoulder."
-      },
       "behaviorTags": ["gesture:explain"],
       "usage": {
         "speaking": true,
@@ -13558,10 +13434,6 @@
       "qualification": {
         "state": "qualified",
         "rigProfiles": ["vrm-normalized-hands-v1"]
-      },
-      "conditioningRefs": {
-        "templateId": "celebrate_close-v1",
-        "prompt": "A person stands upright with both feet fully planted, no stepping or jumping. The right open hand rises beside the cheek for one compact joyful accent, then lowers. Keep the elbow close to the torso and the hand beside rather than across the eyes."
       },
       "behaviorTags": ["gesture:celebrate"],
       "usage": {

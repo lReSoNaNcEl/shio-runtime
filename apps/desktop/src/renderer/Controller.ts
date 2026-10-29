@@ -209,7 +209,7 @@ export class Controller {
     getControllerState: () => this.store.getState(),
     updateSnapshot: (alive) => this.set({ alive }),
     pushInitiative: (title) => this.pushMessage('meta', this.t('alive.initiative', { title })),
-    runBrowserInitiative: async (topic) => {
+    runAdmittedInitiative: async (topic) => {
       await this.conversationInput.admitAutonomousInitiative(topic)
     },
     presentation: this.conversationPresentation,

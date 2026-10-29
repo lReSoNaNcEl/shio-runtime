@@ -75,6 +75,9 @@ const bodyStabilityOnly =
   dynamicsReplay ||
   stabilizationCases
 const bodySeconds = option('body-seconds', 18)
+const fingerSide =
+  process.argv.find((value) => value.startsWith('--finger-side='))?.split('=')[1] ?? 'right'
+assert(['left', 'right'].includes(fingerSide), 'Unknown finger close-up side')
 // Capture both hand scores during the short accent before reviewing wider views.
 const accentCameras = ['Right hand', 'Left hand', 'Full body', 'Bust', 'Face']
 assert(Number.isFinite(bodySeconds) && bodySeconds >= 4 && bodySeconds <= 60)
@@ -133,6 +136,15 @@ if (qualificationView) {
   assert(['face', 'bust', 'portrait'].includes(qualificationView), 'Unknown qualification view')
   config.overlayViewMode = qualificationView
 }
+for (const [argument, key, minimum] of [
+  ['overlay-width', 'overlayWidth', 160],
+  ['overlay-height', 'overlayHeight', 220],
+]) {
+  if (!process.argv.some((value) => value.startsWith(`--${argument}=`))) continue
+  const value = option(argument, 0)
+  assert(Number.isInteger(value) && value >= minimum && value <= 1200, 'Invalid Overlay size')
+  config[key] = String(value)
+}
 config.setup = { ...config.setup, completed: true }
 config.uiLocale = 'en'
 config.uiTheme = 'dark'
@@ -149,6 +161,7 @@ if (fixtureArgument) {
 }
 if (process.env.SHIO_QUALIFICATION_LLM_MODEL) {
   const provider = process.env.SHIO_QUALIFICATION_LLM_PROVIDER || config.llm.activeProvider
+  config.llm.providers[provider] ??= { model: '', thinking: false, contextLimit: 8192 }
   config.llm.providers[provider].model = process.env.SHIO_QUALIFICATION_LLM_MODEL
 }
 if (process.env.SHIO_QUALIFICATION_LLM_PROVIDER)
@@ -161,11 +174,16 @@ for (const relative of ['Local State', 'credentials/llm-credentials.bin']) {
 const environment = {
   ...process.env,
   SHIO_DESKTOP_USER_DATA_ROOT: profile,
-  SHIO_MOTION_ROOT: process.env.SHIO_MOTION_ROOT || path.join(desktop, 'motion'),
+  SHIO_MOTION_ROOT: process.env.SHIO_MOTION_ROOT || path.join(desktop, 'motionbricks'),
 }
 delete environment.ELECTRON_RUN_AS_NODE
 const launchDesktop = process.env.SHIO_QUALIFICATION_DESKTOP_ROOT || desktop
 const report = {
+  motionProvider: 'motionbricks',
+  nativeSomaHand: process.env.SHIO_MOTION_SOMA_HAND !== '0',
+  motionPins: JSON.parse(
+    fs.readFileSync(path.join(desktop, 'motionbricks/research-pins.json'), 'utf8'),
+  ),
   git: {
     head: execFileSync('git', ['rev-parse', 'HEAD'], {
       cwd: repository,
@@ -174,7 +192,7 @@ const report = {
     }).trim(),
     productionDiffSha256: createHash('sha256')
       .update(
-        execFileSync('git', ['diff', '--', 'apps/desktop/src', 'apps/desktop/motion/backend.py'], {
+        execFileSync('git', ['diff', '--', 'apps/desktop/src', 'apps/desktop/motionbricks'], {
           cwd: repository,
           windowsHide: true,
         }),
@@ -220,6 +238,15 @@ const report = {
   },
 }
 for (const relative of [
+  'motionbricks/worker.py',
+  'motionbricks/backend.py',
+  'motionbricks/targets.py',
+  'motionbricks/activity.py',
+  'motionbricks/conversion.py',
+  'motionbricks/standing_pose.py',
+  'motionbricks/assets/standing-pose.soma.json',
+  'motionbricks/hand_prior.py',
+  'motionbricks/research-pins.json',
   'out/main/index.js',
   'out/preload/index.js',
   'out/preload/overlay.js',
@@ -228,11 +255,9 @@ for (const relative of [
     .readdirSync(path.join(desktop, 'out/renderer/assets'))
     .filter((filename) => /\.(?:js|css)$/u.test(filename))
     .map((filename) => `out/renderer/assets/${filename}`),
-  'motion/worker.py',
-  'motion/backend.py',
   'motion/protocol.py',
-  'motion/research-pins.json',
   'motion/motion-profiles.json',
+  'motionbricks/hand_prior.py',
   'qualifications/speech-motion/qualify.cjs',
   'qualifications/speech-motion/rig-geometry.cjs',
   'qualifications/speech-motion/semantic-embodiment-cases.cjs',
@@ -242,10 +267,14 @@ for (const relative of [
   'qualifications/speech-motion/dynamics-replay.cjs',
   'qualifications/speech-motion/stabilization-cases.cjs',
   'qualifications/speech-motion/conversation-cases.cjs',
+  'qualifications/speech-motion/living-v2-cases.cjs',
+  'qualifications/speech-motion/autonomous-living-cases.cjs',
+  'qualifications/speech-motion/autonomous-policy-smoke.cjs',
+  'qualifications/speech-motion/living-lifecycle-smoke.cjs',
+  'qualifications/speech-motion/living-facial-matrix.cjs',
   'src/renderer/avatar/rendering/three/sampleSourceRotation.ts',
   'src/renderer/avatar/rendering/three/AdaptiveMotionFilter.ts',
   'src/renderer/avatar/rendering/three/GeneratedBodyPlayback.ts',
-  'qualifications/motion-ab/record.cjs',
 ])
   report.build[relative] = createHash('sha256')
     .update(fs.readFileSync(path.join(desktop, relative)))
@@ -285,6 +314,9 @@ let application,
   stopRecording,
   lastSampleAt = 0,
   lastResourceAt = 0
+let resourceTimer = null,
+  pendingResourceSample = null
+const fingerRecordings = []
 let blinkStartedAt = null,
   priorInference = null,
   openCaptured = false,
@@ -305,6 +337,7 @@ const sleepSample = async (period = 200) => {
     }
   })
   report.samples.push({ at: Date.now(), motion: value.motion, avatar: value.avatar })
+  if (process.argv.includes('--living-v2-telemetry')) report.latency = value.latency
   if (componentSmoke) {
     const health = value.avatar.health
     const weight = health?.speech?.blinkWeight ?? 0
@@ -349,7 +382,10 @@ const sleepSample = async (period = 200) => {
     }
   }
 
-  if (Date.now() - lastResourceAt > 30000) {
+  if (
+    Date.now() - lastResourceAt >
+    (process.argv.includes('--living-v2-telemetry') ? 5000 : 30000)
+  ) {
     lastResourceAt = Date.now()
     const processes = await application.evaluate(({ app }) =>
       app.getAppMetrics().map((metric) => ({
@@ -422,10 +458,10 @@ async function ready(requireSpeech = true) {
     // Renderer reload first releases the previous owner. Its cancellation is an
     // expected transient until the replacement renderer attaches its model.
     if (state?.motion.state === 'unavailable' && state.motion.error) {
-      if (state.motion.error !== 'ARDY_CANCELLED') throw new Error(state.motion.error)
+      if (state.motion.error !== 'MOTION_CANCELLED') throw new Error(state.motion.error)
       cancelledSince ??= Date.now()
       if (Date.now() - cancelledSince > 5000)
-        throw new Error('ARDY_CANCELLED did not settle after model attachment')
+        throw new Error('MOTION_CANCELLED did not settle after model attachment')
     } else cancelledSince = null
     if (
       (!requireSpeech || (api.data?.asr?.ready && api.data?.synthesis?.ready)) &&
@@ -442,7 +478,9 @@ async function ready(requireSpeech = true) {
     await pause(300)
   }
   throw new Error(
-    requireSpeech ? 'ARDY/VRM/speech readiness timeout' : 'ARDY/VRM readiness timeout',
+    requireSpeech
+      ? 'MotionBricks/VRM/speech readiness timeout'
+      : 'MotionBricks/VRM readiness timeout',
   )
 }
 async function frameProbe(target) {
@@ -1414,6 +1452,48 @@ async function bodyStability() {
       await seed.fill(String(requestedSeed))
       await seed.press('Tab')
       const overlay = overlayPage()
+      if (process.argv.includes('--finger-warmup') && !report.fingerWarmup) {
+        await page
+          .getByRole('button', {
+            name: fingerSide === 'left' ? 'Left hand' : 'Right hand',
+            exact: true,
+          })
+          .click()
+        const stopWarmup = await recordCanvas(
+          page,
+          path.join(directory, `fingers-${fingerSide}-initialization.webm`),
+          { captureFps: 90 },
+        )
+        fingerRecordings.push(stopWarmup)
+        await overlay.evaluate(async (id) => {
+          const previous = await window.overlayApi.avatarBody.get()
+          window.__fingerWarmupOutcome = null
+          window.__fingerWarmupStop = window.overlayApi.avatarBody.onUpdated((pose) => {
+            if (
+              pose?.profileId === id &&
+              pose.executionId !== previous?.executionId &&
+              pose.outcome
+            )
+              window.__fingerWarmupOutcome = pose.outcome
+          })
+        }, profile.id)
+        await page.getByRole('button', { name: 'Generate variation', exact: true }).click()
+        let completed = null
+        const warmupDeadline = Date.now() + 30000
+        while (Date.now() < warmupDeadline) {
+          completed = await overlay.evaluate(() => window.__fingerWarmupOutcome)
+          if (completed) break
+          await pause(100)
+        }
+        await overlay.evaluate(() => window.__fingerWarmupStop())
+        report.fingerWarmup = {
+          purpose: 'First real variation and recorder initialization, retained separately',
+          outcome: completed,
+          video: await stopWarmup(),
+        }
+        persist()
+        assert.equal(completed, 'completed', 'Finger initialization motion did not complete')
+      }
       await overlay.evaluate(installGeometryProbe, geometry)
       await overlay.evaluate(
         async ({ id, requestedSeed }) => {
@@ -1557,6 +1637,21 @@ async function bodyStability() {
         },
         { id: profile.id, requestedSeed },
       )
+      let stopFingerRecording = null
+      if (process.argv.includes('--finger-close-up')) {
+        await page
+          .getByRole('button', {
+            name: fingerSide === 'left' ? 'Left hand' : 'Right hand',
+            exact: true,
+          })
+          .click()
+        stopFingerRecording = await recordCanvas(
+          page,
+          path.join(directory, `fingers-${fingerSide}-${profile.id}-${requestedSeed}.webm`),
+          { captureFps: 90 },
+        )
+        fingerRecordings.push(stopFingerRecording)
+      }
       await page.getByRole('button', { name: 'Generate variation', exact: true }).click()
       let readinessFailure = null
       try {
@@ -1587,7 +1682,7 @@ async function bodyStability() {
           Date.now() >
             until - bodySeconds * 1000 + capture * Math.min(4000, (bodySeconds * 1000) / 3)
         ) {
-          if (capture === 0) {
+          if (capture === 0 && !stopFingerRecording) {
             for (const camera of accentCameras) {
               await page.getByRole('button', { name: camera, exact: true }).click()
               await pause(50)
@@ -1643,6 +1738,7 @@ async function bodyStability() {
       evidence.readinessFailure = readinessFailure
       evidence.actualProfileAtEnd = (await overlayProjection())?.profileId ?? null
       evidence.views = views
+      if (stopFingerRecording) evidence.fingerVideo = await stopFingerRecording()
       const planned = report.standingQualification.cases.find(
         (entry) => entry.profileId === profile.id && entry.seed === requestedSeed,
       )
@@ -1685,7 +1781,7 @@ async function bodyStability() {
     page = await application.firstWindow()
     await application.evaluate(({ app, BrowserWindow }, audible) => {
       const prepare = (window) => {
-        window.setTitle('Shio · ARDY/Fish qualification')
+        window.setTitle('Shio · MotionBricks/Fish qualification')
         window.webContents.setAudioMuted(!audible)
         if (!window.webContents.getURL().includes('overlay=1')) window.setSize(1700, 1000)
         window.setFocusable(false)
@@ -1785,6 +1881,28 @@ async function bodyStability() {
         path.join(directory, `start-${target === page ? 'main' : 'overlay'}.png`),
       )
     }
+    if (process.argv.includes('--living-v2-telemetry')) {
+      report.resourceSampling = {
+        intervalMs: 1500,
+        deviceGpuIntervalMs: 5000,
+        scope:
+          'Whole-device GPU series; per-process WDDM attribution unavailable. Includes Fish, renderer and motion.',
+        errors: 0,
+      }
+      resourceTimer = setInterval(() => {
+        if (pendingResourceSample) return
+        pendingResourceSample = sleepSample(1000)
+          .then(
+            () => undefined,
+            () => {
+              report.resourceSampling.errors++
+            },
+          )
+          .finally(() => {
+            pendingResourceSample = null
+          })
+      }, 1500)
+    }
     if (stabilizationCases)
       await qualifyStabilization({ application, page, directory, report, pause, duration })
     else if (closeCases)
@@ -1805,6 +1923,18 @@ async function bodyStability() {
     else if (turnCases) await qualifyTurns()
     else if (bodyStabilityOnly) await bodyStability()
     else if (focused && !modelOnly) await focusedPresentation()
+    if (process.argv.includes('--living-lifecycle-smoke')) {
+      const { qualifyLivingLifecycle } = require('./living-lifecycle-smoke.cjs')
+      await qualifyLivingLifecycle({ application, page, report, pause })
+    }
+    if (process.argv.includes('--autonomous-policy-smoke') && !conversationCases) {
+      const { qualifyAutonomousPolicy } = require('./autonomous-policy-smoke.cjs')
+      await qualifyAutonomousPolicy({ application, page, directory, report, pause })
+    }
+    if (process.argv.includes('--living-facial-matrix')) {
+      const { qualifyLivingFacialMatrix } = require('./living-facial-matrix.cjs')
+      await qualifyLivingFacialMatrix({ page, directory, report, pause })
+    }
     for (let index = 0; !bodyStabilityOnly && index < responseCount; index++) {
       await response(index)
       if (index < responseCount - 1 && responseSpacing) await paceResponse()
@@ -1867,6 +1997,7 @@ async function bodyStability() {
           ...(entry.profileId === 'peace_single' ? { indexMiddleOpeningDeg: opening } : {}),
           passed:
             correctV &&
+            (!entry.fingerVideo || entry.fingerVideo.measuredAverageFps >= 60) &&
             entry.count >= 30 &&
             !entry.readinessFailure &&
             Object.entries(entry.steps)
@@ -1919,6 +2050,9 @@ async function bodyStability() {
     }
     report.passed =
       report.failures.length === 0 &&
+      (!report.livingLifecycle || report.livingLifecycle.passed) &&
+      (!report.autonomousPolicy || report.autonomousPolicy.passed) &&
+      (!report.livingFacialMatrix || report.livingFacialMatrix.technicalPassed) &&
       (!bodyStabilityOnly ||
         (stabilizationCases
           ? report.stabilization.technicalPassed
@@ -1952,6 +2086,16 @@ async function bodyStability() {
       .catch(() => '')
     throw failure
   } finally {
+    if (resourceTimer) clearInterval(resourceTimer)
+    if (pendingResourceSample) await pendingResourceSample
+    for (const stop of fingerRecordings) {
+      try {
+        await stop()
+      } catch {
+        report.failures.push('Finger video finalization failed')
+        report.passed = false
+      }
+    }
     if (stopRecording) {
       try {
         report.video = await stopRecording()

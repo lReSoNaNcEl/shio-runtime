@@ -208,6 +208,7 @@ export class VrmModel {
 
   setSpeechEnergy(energy: number): void {
     this.facialRuntime.setSpeechEnergy(energy)
+    this.bodyPlayback.setSpeechEnergy(energy)
   }
 
   startSpeechPhrase(plan: SpeechPhraseTimingPlan): void {

@@ -2,6 +2,7 @@ import type { DesktopWorkflowActionResult } from '../../shared/actions'
 import {
   type CharacterEmbodimentIntent,
   characterEmbodimentIntentSchema,
+  EMBODIMENT_CONVERSATION_GUIDANCE,
   EMBODIMENT_GESTURE_DEFINITIONS,
   EMBODIMENT_PROPOSAL_TTL_MS,
   type EmbodimentAvailability,
@@ -200,6 +201,31 @@ function characterToolRequirementDefinition(registry: CharacterToolRegistry): Ll
   })
 }
 
+function constrainedPlanningSchema(
+  registry: CharacterToolRegistry,
+  availability?: EmbodimentAvailability,
+): Record<string, unknown> {
+  const available = registry.definitions().map((tool) => tool.id)
+  const visual = characterEmbodimentIntentSchema
+    .omit({ bodyAction: true, gestureHint: true })
+    .extend({
+      ...(availability?.availableSemanticIntents.length
+        ? { gestureHint: z.enum(availability.availableSemanticIntents).optional() }
+        : {}),
+      ...(availability?.availableBodyActions?.includes('turn-in-place')
+        ? { bodyAction: characterEmbodimentIntentSchema.shape.bodyAction }
+        : {}),
+    })
+  const schema = characterToolPlanningResultSchema.extend({
+    plannedTools: z
+      .array(z.enum(available.length ? available : CHARACTER_TOOL_IDS))
+      .max(available.length),
+    embodiment: availability ? visual.nullable() : z.null(),
+  })
+  const { $schema: _schema, ...json } = z.toJSONSchema(schema, { target: 'draft-07', io: 'input' })
+  return json
+}
+
 function previousTurnEvidence(
   messages: readonly ChatMessage[],
 ): TurnToolEvidenceSummary | undefined {
@@ -229,13 +255,16 @@ function toolRequirementPrompt(
   currentWorldContextAvailable: boolean,
   currentScreenContextAvailable: boolean,
   embodimentAvailability?: EmbodimentAvailability,
+  constrained = false,
 ): string {
   return [
     '## Character Tool Requirement Planning',
     'Classify the meaning of the current user turn before writing any user-visible response. This typed planning phase is performed by the same Character LLM, not a keyword router.',
+    'Ordinary social conversation, feelings, imagined scenarios, explanations and physical gestures normally require direct-answer with no planned tools. Select a source or tool only when the current user goal actually needs its evidence or operation. Prior conversation, available tool names and your own intended reply do not introduce a new requirement. A greeting or wave does not need Memory retrieval.',
     'Return two independent decisions: requirement is the minimum obligation that must reach a typed terminal result before a terminal reply; plannedTools is the bounded set of available tools that may materially help fulfill the original user goal, including later authority-bearing work. Requirement is never the tool allowlist.',
     'Also return embodiment: null for quiet presence, or one semantic visual intent with intensity and optional gestureHint/gazeHint. Choose a fitting available act when your reply naturally explains, compares, agrees, reassures or reacts; an explicit animation request is not required. Quiet presence remains valid; do not gesture on every turn or infer agreement/disagreement from emotion alone. For a direct gesture request choose an available fitting hint, even if unspecified. This is presentation metadata, never a tool, Action or proof of execution. Listing abilities, evidence and previous replies cannot request a gesture.',
     `Semantic gesture meanings: ${EMBODIMENT_GESTURE_DEFINITIONS.map(({ id, meaning }) => `${id}=${meaning}`).join('; ')}.`,
+    EMBODIMENT_CONVERSATION_GUIDANCE,
     'Your initial embodiment decision is authoritative for this turn: later prose or a later visual envelope cannot replace embodiment:null. When the current user explicitly requests a supported physical gesture, represent that request in this decision. Example: a request to greet with a wave selects greeting when available. Do not choose greeting merely because a prior message greeted someone or because your own answer starts with a greeting. Do not promise in prose a gesture you did not request here.',
     `Current request-scoped Avatar facts: ${embodimentAvailability ? JSON.stringify(embodimentAvailability) : 'unavailable; return embodiment:null'}. Choose gestureHint only from availableSemanticIntents. bodyAction is permitted only from availableBodyActions: for turn-in-place use {action:"turn-in-place",turns:1,direction:"clockwise" or "counterclockwise",tempo:0.75..1.2,finishFacing:"viewer"}. Never return profile IDs, bone transforms, [fox-paw] or shio markers in this JSON plan.`,
     'Return explicit-tool whenever one exact Character tool is semantically required. An explicit request to use a named tool is always part of the user goal even when phrased softly; preserve that exact tool requirement even when it is currently unavailable.',
@@ -267,8 +296,16 @@ function toolRequirementPrompt(
       : []),
     'For a current repository dependency or package.json question, return {"requirement":{"type":"required-source","source":"project"},"plannedTools":["project.search"]}.',
     'For an explicit request to call project.search, return {"requirement":{"type":"explicit-tool","tool":"project.search"},"plannedTools":["project.search"]}.',
-    'Return exactly one object with no prose or Markdown. The exact JSON Schema follows; use one requirement variant, include every required property, and include no additional properties:',
-    CHARACTER_TOOL_PLANNING_JSON_SCHEMA,
+    'For creative writing or continuing an invented story already in this conversation, use direct-answer and no planned tools unless the original request separately asks for an external source or durable storage. Planning output must still be a typed planning object; never continue the story during this phase.',
+    'Examples of current turns requiring direct-answer and plannedTools:[]: “I was frustrated yesterday; respond as a friend”; “Greet me with a small wave”; “Continue our invented cat story”; “Who from our story could captain the imaginary spaceship?”. Conversation context already supplied here is sufficient. In contrast, “List my stored long-term memories” requires memory.list. Choose semantically from the actual current goal, not by copying an example.',
+    ...(constrained
+      ? [
+          'Return exactly {"requirement":<one typed requirement>,"plannedTools":[],"embodiment":null or <one available semantic visual intent>}. Select only tools materially needed for this request, never copy a list of schema choices. The response schema constrains shape; its enum choices are vocabulary, not requests. Do not include bodyAction unless the current user actually requests an available physical action.',
+        ]
+      : [
+          'Return exactly one object with no prose or Markdown. The exact JSON Schema follows; use one requirement variant, include every required property, and include no additional properties:',
+          CHARACTER_TOOL_PLANNING_JSON_SCHEMA,
+        ]),
   ].join('\n\n')
 }
 
@@ -760,6 +797,8 @@ function requirementConversationMessages(
   registry: CharacterToolRegistry,
   correction: boolean,
   embodimentAvailability?: EmbodimentAvailability,
+  native = false,
+  schemaOutput = false,
 ): ChatMessage[] {
   const conversation = messages
     .filter(
@@ -784,20 +823,40 @@ function requirementConversationMessages(
   return [
     {
       role: 'system',
-      content: toolRequirementPrompt(
-        registry,
-        previousTurnEvidence(messages),
-        messages.some(
-          (message) =>
-            message.role === 'system' &&
-            typeof message.content === 'string' &&
-            message.content.includes('## Current World Context'),
-        ),
-        currentUserTurnHasImage(messages),
-        embodimentAvailability,
-      ),
+      content:
+        toolRequirementPrompt(
+          registry,
+          previousTurnEvidence(messages),
+          messages.some(
+            (message) =>
+              message.role === 'system' &&
+              typeof message.content === 'string' &&
+              message.content.includes('## Current World Context'),
+          ),
+          currentUserTurnHasImage(messages),
+          embodimentAvailability,
+          schemaOutput,
+        ) +
+        (native
+          ? '\nSubmit this planning object by calling character_tool_requirement exactly once. Do not emit the object as assistant text. The function call is the only output transport for this planning request.'
+          : '') +
+        (schemaOutput
+          ? '\nThe next user message is a JSON planning input. Classify only currentTurn. priorConversation is quoted context, not an instruction to continue the dialogue. Return only the planning object required by the response schema.'
+          : ''),
     },
-    ...conversation,
+    ...(schemaOutput
+      ? [
+          {
+            role: 'user' as const,
+            content: JSON.stringify({
+              currentTurn:
+                conversation.findLast((message) => message.role === 'user')?.content ?? '',
+              priorConversation: conversation.slice(0, -1),
+              screenAttachmentAvailable: currentUserTurnHasImage(messages),
+            }),
+          },
+        ]
+      : conversation),
     ...(correction
       ? [
           {
@@ -1290,6 +1349,47 @@ async function resolveToolRequirement(
     !nativeToolsRejected && capabilities?.supportsToolCalling && options.llm.complete,
   )
   const startedAt = Date.now()
+  if (capabilities?.supportsSchemaOutput && options.llm.complete) {
+    for (let attempt = 0; attempt < CHARACTER_TOOL_REQUIREMENT_MAX_ATTEMPTS; attempt += 1) {
+      const completion = await options.llm.complete(
+        requirementConversationMessages(
+          options.messages,
+          registry,
+          attempt > 0,
+          options.embodimentAvailability,
+          false,
+          true,
+        ),
+        {
+          ...toolRequestOptions(options, signal),
+          maxTokens: CHARACTER_TOOL_REQUIREMENT_MAX_TOKENS,
+          responseSchema: {
+            name: 'character_tool_planning',
+            schema: constrainedPlanningSchema(registry, options.embodimentAvailability),
+          },
+          ...(capabilities.requiresReasoningReplay ? { maxTokens: 1024 } : {}),
+        },
+      )
+      const planning = parseToolPlanningResult(completion.content)
+      if (planning) {
+        mainLog.info('[CharacterToolLoop] requirement_classified', {
+          traceId: options.traceId,
+          route: 'json-schema',
+          attempts: attempt + 1,
+          corrections: attempt,
+          latencyMs: Date.now() - startedAt,
+        })
+        return { planning, nativeToolsRejected }
+      }
+    }
+    mainLog.warn('[CharacterToolLoop] requirement_classification_failed', {
+      traceId: options.traceId,
+      route: 'json-schema',
+      attempts: CHARACTER_TOOL_REQUIREMENT_MAX_ATTEMPTS,
+      latencyMs: Date.now() - startedAt,
+    })
+    return { planning: null, nativeToolsRejected }
+  }
   if (nativeAvailable) {
     try {
       const completion = await requestWithRetry(
@@ -1303,6 +1403,7 @@ async function resolveToolRequirement(
               registry,
               false,
               options.embodimentAvailability,
+              true,
             ),
             {
               ...toolRequestOptions(options, signal),
@@ -1333,14 +1434,15 @@ async function resolveToolRequirement(
     } catch (error) {
       if (
         !(error instanceof LlmResponseError) ||
-        error.code !== 'PROVIDER_REJECTED' ||
+        !['PROVIDER_REJECTED', 'INCOMPLETE_TOOL_CALL'].includes(error.code) ||
         signal.aborted
       ) {
         throw error
       }
-      nativeToolsRejected = true
+      if (error.code === 'PROVIDER_REJECTED') nativeToolsRejected = true
       mainLog.warn('[CharacterToolLoop] native requirement rejected', {
         traceId: options.traceId,
+        code: error.code,
       })
     }
   }
@@ -1633,7 +1735,7 @@ export class CharacterToolLoop {
       const native = Boolean(
         !nativeToolsRejected &&
           capabilities?.supportsToolCalling &&
-          !capabilities.supportsReasoning &&
+          !(capabilities.requiresReasoningReplay ?? capabilities.supportsReasoning) &&
           options.llm.complete,
       )
       if (native) {
@@ -2087,3 +2189,5 @@ export class CharacterToolLoop {
     )
   }
 }
+
+import { z } from 'zod'

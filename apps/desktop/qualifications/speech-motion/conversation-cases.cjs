@@ -17,6 +17,12 @@ async function qualifyConversation({
   duration,
   motionProfiles,
 }) {
+  const autonomousLiving = process.argv.includes('--autonomous-living')
+  const autonomousSmoke = process.argv.includes('--autonomous-living-smoke')
+  const autonomousInputs = autonomousLiving || autonomousSmoke
+  const recoveryChat = process.argv.includes('--recovery-chat-smoke')
+  assert(!autonomousLiving || !autonomousSmoke, 'Choose final or diagnostic living mode')
+  assert(!autonomousLiving || duration === 900, 'Autonomous Living requires 900 seconds')
   const overlay = application.windows().find((target) => target.url().includes('overlay=1'))
   assert(overlay, 'Real conversation requires Overlay')
   assert.equal(await page.locator('canvas').count(), 0, 'Avatar Preview must stay unmounted')
@@ -52,6 +58,30 @@ async function qualifyConversation({
       text: 'Спасибо, я немного помолчу. Ответь одним коротким предложением.',
     },
   ]
+  if (process.argv.includes('--living-v2')) {
+    fixtures.splice(0, fixtures.length, ...require('./living-v2-cases.cjs'))
+  }
+  if (autonomousInputs) {
+    fixtures.splice(0, fixtures.length, ...require('./autonomous-living-cases.cjs'))
+  }
+  if (recoveryChat) {
+    assert(!autonomousInputs, 'Use separate recovery and living qualification runs')
+    fixtures.splice(
+      0,
+      fixtures.length,
+      {
+        id: 'interrupted',
+        at: 0,
+        text: 'Объясни подробно, почему полезно учиться понемногу каждый день. Пять предложений.',
+        interruptAfterSeconds: 2,
+      },
+      {
+        id: 'after-stop',
+        at: 0,
+        text: 'Проверим продолжение после остановки. Скажи вслух одну фразу: как лучше отдохнуть после работы?',
+      },
+    )
+  }
   const subset = process.argv
     .find((arg) => arg.startsWith('--conversation-case-ids='))
     ?.split('=')[1]
@@ -60,9 +90,17 @@ async function qualifyConversation({
     !subset || subset.every((id) => fixtures.some((item) => item.id === id)),
     'Unknown conversation case',
   )
+  assert(!autonomousLiving || !subset, 'Final qualification requires the complete schedule')
+  assert(!autonomousSmoke || subset, 'Diagnostic living smoke requires an explicit subset')
   const cases = fixtures.filter((item) => !subset || subset.includes(item.id))
   report.conversation = {
-    source: 'Unmodified CharacterResponsePort; actual Main LLM, Fish, ARDY; Chat + Overlay',
+    inputPath:
+      autonomousInputs || recoveryChat ? 'existing Spectrum Chat UI' : 'Controller.sendText',
+    acceptanceScope:
+      autonomousSmoke || subset ? 'diagnostic subset; no final acceptance' : 'full scenario',
+    autonomyMode: 'off; proactive initiative requires separate policy qualification',
+    schedule: cases.map(({ id, at }) => ({ id, at })),
+    source: `Unmodified CharacterResponsePort; actual Main LLM, Fish, ${report.motionProvider || 'motionbricks'}; Chat + Overlay`,
     cases: [],
     visualAcceptance: 'pending',
     selectedView: await page.evaluate(async () => {
@@ -97,6 +135,14 @@ async function qualifyConversation({
     }
     const distance = (x, y) => Math.hypot(...x.map((value, i) => value - y[i]))
     const frame = () => {
+      // Observe each produced pose once. High-refresh display RAFs must not run
+      // repeated mesh traversal and FK allocations for the same 60-Hz composition.
+      const stamp = model.bodyPlayback.mirror?.composedAtMs
+      if (stamp === state.lastStamp) {
+        state.frame = requestAnimationFrame(frame)
+        return
+      }
+      state.lastStamp = stamp
       model.vrm.scene.traverse((mesh) => {
         if (!mesh.morphTargetDictionary) return
         for (const [name, index] of Object.entries(mesh.morphTargetDictionary)) {
@@ -159,7 +205,7 @@ async function qualifyConversation({
     frame()
   })
   await page.evaluate(
-    ({ profiles, qualityTrace }) => {
+    ({ profiles, qualityTrace, recoveryRepro, uiDriven, sampleIntervalMs }) => {
       const c = window.__motionAbController,
         a = c.avatarRuntime.controller,
         model = a.vrmModel,
@@ -194,6 +240,25 @@ async function qualifyConversation({
         idleChestMax: -Infinity,
         layerViolations: 0,
         bodyEvents: [],
+        clockDiscontinuities: [],
+      }
+      const originalClockSample = body.motionClock.sample
+      const clockRing = []
+      body.motionClock.sample = function (clock, delta) {
+        const result = originalClockSample.call(this, clock, delta)
+        clockRing.push({
+          delta,
+          playbackId: clock?.playbackId,
+          consumed: clock?.sourceSampleOffset,
+          sampleRate: clock?.sourceSampleRate,
+          state: clock?.state,
+          offset: result?.offset,
+          discontinuity: result?.discontinuity,
+        })
+        if (clockRing.length > 32) clockRing.shift()
+        if (result?.discontinuity && state.clockDiscontinuities.length < 40)
+          state.clockDiscontinuities.push({ atMs: performance.now(), frames: [...clockRing] })
+        return result
       }
       const angle = (x, y) =>
         2 * Math.acos(Math.min(1, Math.abs(x.reduce((sum, value, i) => sum + value * y[i], 0))))
@@ -202,6 +267,78 @@ async function qualifyConversation({
         originalObserver = body.dynamicsObserver
       const originalPump = body.pump
       const originalUpdate = body.update
+      const originalInvalidatePhase = body.invalidatePhase
+      const originalFinishExecution = body.finishExecution
+      const originalSafetyApply = body.bodySafety.apply
+      const targetHistory = []
+      let targetHistoryIndex = 0
+      if (recoveryRepro) {
+        state.recoveryRepros = []
+        state.failureStages = []
+        state.comparisonPreparation = []
+        let constraintFrame = 0
+        body.bodySafety.apply = function (seconds, speed, advanceCandidate, ...args) {
+          state.constraintStep = {
+            id: ++constraintFrame,
+            seconds,
+            advanceCandidate,
+            sampledPcm: body.sampledClock?.sourceSampleOffset,
+          }
+          return originalSafetyApply.call(this, seconds, speed, advanceCandidate, ...args)
+        }
+        const captureRecovery = (point) => {
+          if (state.recoveryRepros.length >= 96) return
+          if (body.error && state.failureStages.length < 8)
+            state.failureStages.push({
+              error: body.error,
+              caseId: state.current,
+              atMs: performance.now(),
+              clockHistory: clockRing.slice(),
+              stages: targetHistory
+                .filter((row) => row && performance.now() - row.atMs < 2500)
+                .sort((a, b) => a.atMs - b.atMs),
+            })
+          state.recoveryRepros.push({
+            point,
+            atMs: performance.now(),
+            caseId: state.current,
+            executionId: body.execution?.id,
+            profileId: body.profileId,
+            phase: body.execution?.phase,
+            elapsedMs: body.execution?.elapsedMs,
+            budget: body.execution?.budget,
+            blocker: body.recoveryBlocker(),
+            chain: body.bodySafety.chain.map((bone) => {
+              const binding = body.bindings.find((entry) => entry.bone === bone)
+              const filter = body.bodySafety.temporalFilter.states.get(bone)
+              return {
+                name: binding?.name ?? bone.name,
+                position: bone.position.toArray(),
+                quaternion: bone.quaternion.toArray(),
+                safe: binding?.safe.toArray(),
+                calibratedSafe: binding?.calibratedSafe.toArray(),
+                recoveryPose: body.recoveryPose.get(bone)?.toArray(),
+                basePose: body.basePose.get(bone)?.toArray(),
+                sourceTarget: binding?.sourceTarget?.toArray(),
+                target: filter?.target.toArray(),
+                velocity: filter?.velocity.toArray(),
+                integrated: filter?.integrated?.toArray(),
+                previous: body.bodySafety.previousChain.get(bone)?.toArray(),
+                sourceSpeed: body.sourceSpeeds.get(bone),
+              }
+            }),
+          })
+        }
+        body.invalidatePhase = function (...args) {
+          const result = originalInvalidatePhase.apply(this, args)
+          if (this.localRecovery) captureRecovery('entry')
+          return result
+        }
+        body.finishExecution = function (outcome, ...args) {
+          if (outcome === 'timed-out') captureRecovery('timed-out')
+          return originalFinishExecution.call(this, outcome, ...args)
+        }
+      }
       if (qualityTrace) {
         state.qualityFrames = []
         body.update = function (delta, ...args) {
@@ -246,6 +383,34 @@ async function qualifyConversation({
       body.dynamicsObserver = (sample) => {
         originalObserver?.(sample)
         if (!names.includes(sample.bone)) return
+        if (
+          recoveryRepro &&
+          body.execution?.profile.kind === 'gesture' &&
+          ['admissible', 'temporal', 'final'].includes(sample.stage)
+        ) {
+          targetHistory[targetHistoryIndex++ % 12000] = {
+            ...sample,
+            atMs: performance.now(),
+            executionId: body.execution.id,
+            profile: body.profileId,
+            phase: body.appliedPhaseId,
+            constraintStep: state.constraintStep,
+          }
+        }
+        if (
+          recoveryRepro &&
+          body.execution?.profile.id === 'explain_balance' &&
+          body.execution.phase === 'prepare' &&
+          ['admissible', 'temporal', 'final'].includes(sample.stage) &&
+          state.comparisonPreparation.length < 12000
+        )
+          state.comparisonPreparation.push({
+            ...sample,
+            atMs: performance.now(),
+            elapsedMs: body.execution.elapsedMs,
+            executionId: body.execution.id,
+            constraintStep: state.constraintStep,
+          })
         const key = `${sample.stage}:${sample.bone}`,
           previous = previousStages.get(key)
         state.sourceStages[key] ??= { travelRad: 0, peakRadS: 0, samples: 0 }
@@ -270,6 +435,8 @@ async function qualifyConversation({
         if (!current) return
         current.turnId ??= event.turnId
         if (event.turnId !== current.turnId) return
+        if (event.type === 'text-delta')
+          current.textDeltaCharacters = (current.textDeltaCharacters ?? 0) + event.delta.text.length
         if (event.type === 'embodiment-intent') {
           current.intent = event.intent
           current.events.push({
@@ -369,6 +536,23 @@ async function qualifyConversation({
             inFlightPhase: body.inFlightPhase,
             inferenceMs: generated.inferenceMs,
             sourceSampleOffset: clock?.sourceSampleOffset,
+            recoveryTargets: body.bindings
+              .filter((binding) => /Arm|Shoulder|Hand/u.test(binding.name))
+              .map((binding) => {
+                const target = binding.safe
+                  .clone()
+                  .multiply(
+                    body.handPose.getWristOffsets().get(binding.name) ??
+                      binding.safe.clone().identity(),
+                  )
+                const projected = target.clone()
+                body.bodySafety.constrainTarget(binding.bone, projected)
+                return {
+                  bone: binding.name,
+                  errorRad: binding.bone.quaternion.angleTo(target),
+                  rejectedTargetRad: projected.angleTo(target),
+                }
+              }),
             queue: body.queue.map((chunk) => ({
               start: chunk.startFrame,
               phase: chunk.plan.phaseId,
@@ -394,6 +578,7 @@ async function qualifyConversation({
           if (current && pose.executionId && profile?.kind === 'gesture') {
             current.executions[pose.executionId] ??= {
               profileId: pose.profileId,
+              firstObservedMs: now,
               phases: [],
               joints: {},
               hands: {},
@@ -434,7 +619,7 @@ async function qualifyConversation({
               }
             }
           }
-          if (now - lastSample >= 50 && state.samples.length < 12000) {
+          if (now - lastSample >= sampleIntervalMs && state.samples.length < 12000) {
             lastSample = now
             const requested = a.playback.getCurrentContext()
             state.samples.push({
@@ -456,6 +641,47 @@ async function qualifyConversation({
           }
         }
       }
+      const originalSendText = c.sendText
+      const response = c.conversationRuntime.deps.characterResponse
+      const originalCreateReply = response.createReply
+      response.createReply = async function (...args) {
+        const current = state.cases[state.current]
+        const draft = await originalCreateReply.apply(this, args)
+        if (current)
+          current.replyEvidence = {
+            speechCharacters: draft.speechText.length,
+            displayCharacters: draft.displayText.length,
+            replyCharacters: draft.replyText.length,
+          }
+        return draft
+      }
+      c.sendText = function (...args) {
+        const current = state.cases[state.current]
+        const work = originalSendText.apply(this, args)
+        void work.then(
+          (result) => {
+            if (!current) return
+            current.resultStatus = result.status
+            current.playbackCompleted = result.playbackCompleted
+            current.completedMs = performance.now()
+            current.synthesisFailures = c.diagnostics.timeline
+              .filter(
+                (event) =>
+                  event.label === 'synthesis_degraded' && event.detail?.includes(current.turnId),
+              )
+              .map((event) => event.detail.slice(0, 256))
+            if (result.status === 'failed') current.errors.push(result.failure.code)
+            current.done = true
+          },
+          (error) => {
+            if (!current) return
+            current.errors.push(String(error))
+            current.completedMs = performance.now()
+            current.done = true
+          },
+        )
+        return work
+      }
       state.begin = (fixture) => {
         state.current = fixture.id
         const current = {
@@ -474,15 +700,7 @@ async function qualifyConversation({
           availabilityAtAdmission: a.getEmbodimentAvailability(),
         }
         state.cases[fixture.id] = current
-        void c.sendText(fixture.text).then(
-          () => {
-            current.done = true
-          },
-          (error) => {
-            current.errors.push(String(error))
-            current.done = true
-          },
-        )
+        if (!uiDriven) void c.sendText(fixture.text).catch(() => {})
       }
       state.stop = () => {
         clearInterval(state.frame)
@@ -490,6 +708,12 @@ async function qualifyConversation({
         body.dynamicsObserver = originalObserver
         body.pump = originalPump
         body.update = originalUpdate
+        body.motionClock.sample = originalClockSample
+        body.invalidatePhase = originalInvalidatePhase
+        body.finishExecution = originalFinishExecution
+        body.bodySafety.apply = originalSafetyApply
+        c.sendText = originalSendText
+        response.createReply = originalCreateReply
         const { begin, stop, frame, ...result } = state
         return result
       }
@@ -502,15 +726,48 @@ async function qualifyConversation({
     {
       profiles: motionProfiles.map(({ id, kind }) => ({ id, kind })),
       qualityTrace: process.argv.includes('--motion-quality-trace'),
+      recoveryRepro: process.argv.includes('--recovery-repro'),
+      uiDriven: autonomousInputs || recoveryChat,
+
+      sampleIntervalMs: Math.max(50, Math.ceil((duration * 1000) / 11000)),
     },
   )
   const audioFile = path.join(directory, 'conversation-audio.webm'),
     videoFile = path.join(directory, 'conversation-raw.webm')
   let stopAudio, stopVideo, captured
   const stabilizationTrace = process.argv.includes('--stabilization-trace')
+  assert(
+    !process.argv.includes('--stabilization-summary') || stabilizationTrace,
+    'Compact telemetry requires --stabilization-trace',
+  )
   if (stabilizationTrace) {
-    await installStabilizationProbe(page, { maxFrames: 24000 })
-    await installStabilizationProbe(overlay, { maxFrames: 24000 })
+    const summaryOnly = process.argv.includes('--stabilization-summary')
+    // Bound retained diagnostics across the entire run. Video/FPS capture stays
+    // independent; declare the stride instead of silently truncating the tail.
+    const frameStride = autonomousLiving
+      ? 1
+      : Math.max(
+          process.argv.includes('--body-trace-only') ? 2 : 1,
+          Math.ceil(((duration + 120) * 144) / 23000),
+        )
+    report.conversation.diagnosticFrameStride = frameStride
+    const minIntervalMs = autonomousLiving ? 1000 / 30 : 0
+    const maxFrames = autonomousLiving ? Math.ceil((duration + 120) * 30) + 1 : 24000
+    report.conversation.diagnosticSampling = { minIntervalMs, maxFrames, summaryOnly }
+    await installStabilizationProbe(page, {
+      maxFrames,
+      minIntervalMs,
+      frameStride,
+      summaryOnly,
+      captureFingers: report.nativeSomaHand && !process.argv.includes('--body-trace-only'),
+    })
+    await installStabilizationProbe(overlay, {
+      maxFrames,
+      minIntervalMs,
+      frameStride,
+      summaryOnly,
+      captureFingers: report.nativeSomaHand && !process.argv.includes('--body-trace-only'),
+    })
   }
   const started = Date.now()
   try {
@@ -519,15 +776,110 @@ async function qualifyConversation({
     for (const fixture of cases) {
       const scheduled = duration >= 300 ? fixture.at : 0
       while ((Date.now() - started) / 1000 < scheduled) await pause(200)
+      if (autonomousLiving && fixture.id === 'question-1') {
+        const quietStart = report.conversation.cases.find(
+          (entry) => entry.id === 'idle-entry',
+        )?.completedMs
+        assert(Number.isFinite(quietStart), 'The idle-entry turn did not finish')
+        let quietEnd
+        do {
+          const state = await page.evaluate(() => ({
+            at: performance.now(),
+            turnId:
+              window.__motionAbController.conversationRuntime.getActiveResponseSnapshot().turnId,
+            clock: window.__motionAbController.player.getPcmClock()?.state,
+          }))
+          assert(state.turnId === null, 'A conversation interrupted the continuous idle window')
+          assert(!['playing', 'buffering'].includes(state.clock), 'Speech interrupted idle')
+          quietEnd = state.at
+          if (quietEnd - quietStart < 120000) await pause(200)
+        } while (quietEnd - quietStart < 120000)
+        report.conversation.continuousIdle = {
+          startedMs: quietStart,
+          endedMs: quietEnd,
+          durationMs: quietEnd - quietStart,
+          note: 'Actual completed speech to next input; schedule may extend beyond 900 s.',
+        }
+      }
       await page.evaluate((fixture) => window.__conversationProbe.begin(fixture), fixture)
+      if (autonomousInputs || recoveryChat) {
+        await page.locator('#controls-input input').fill(fixture.text)
+        await page.locator('#controls-input input').press('Enter')
+      }
       const deadline = Date.now() + 120000
+      let interrupted = false
       while (
         Date.now() < deadline &&
         !(await page.evaluate(
           () => window.__conversationProbe.cases[window.__conversationProbe.current].done,
         ))
-      )
+      ) {
+        if (fixture.interruptAfterSeconds && !interrupted) {
+          const elapsed = await page.evaluate(() => {
+            const current = window.__conversationProbe.cases[window.__conversationProbe.current]
+            const clock = window.__motionAbController.player.getPcmClock()
+            return clock && clock.turnId === current.turnId && clock.state === 'playing'
+              ? clock.sourceSampleOffset / clock.sourceSampleRate
+              : 0
+          })
+          if (elapsed >= fixture.interruptAfterSeconds) {
+            await page.evaluate(() => {
+              window.__conversationProbe.cases[window.__conversationProbe.current].stopRequestedMs =
+                performance.now()
+            })
+            await page.getByRole('button', { name: "Stop Shio's response", exact: true }).click()
+            interrupted = true
+          }
+        }
         await pause(200)
+      }
+      if (
+        await page.evaluate(
+          () => window.__conversationProbe.cases[window.__conversationProbe.current].done,
+        )
+      ) {
+        const settledBy = Date.now() + 15000
+        let motionSettled = false
+        let lastState
+        while (Date.now() < settledBy) {
+          const state = await page.evaluate(() => {
+            const body = window.__motionAbController.avatarRuntime.controller.vrmModel.bodyPlayback
+            return {
+              layer: body.getAppliedMotionLayer(),
+              profileId: body.profileId,
+              profileKind: body.execution?.profile.kind,
+              phase: body.execution?.phase,
+              playing: body.playing,
+              outcome: body.execution?.outcome,
+              error: body.error,
+              recoveryBlocker: body.localRecovery ? body.recoveryBlocker() : null,
+            }
+          })
+          lastState = state
+          // Ended executions keep their last phase name; an inactive ended
+          // recover is a settled base, while a live blocked recover is not.
+          const ended =
+            !state.playing && ['completed', 'superseded', 'cancelled'].includes(state.outcome)
+          const activeBase =
+            state.playing &&
+            state.profileKind === 'presence' &&
+            ['prepare', 'stroke', 'hold'].includes(state.phase)
+          if (state.layer === 'base' && !state.error && (activeBase || ended)) {
+            motionSettled = true
+            break
+          }
+          await pause(100)
+        }
+        await page.evaluate(
+          ({ settled, state }) => {
+            const current = window.__conversationProbe.cases[window.__conversationProbe.current]
+            current.motionSettled = settled
+            current.motionSettlementState = state
+            if (!settled) current.errors.push('CONVERSATION_BODY_RECOVERY_TIMEOUT')
+          },
+          { settled: motionSettled, state: lastState },
+        )
+      }
       const result = await page.evaluate(
         () => window.__conversationProbe.cases[window.__conversationProbe.current],
       )
@@ -575,12 +927,15 @@ async function qualifyConversation({
         !result.errors.length &&
         !result.facialWarnings.length &&
         result.consumedSamples > 10000 &&
-        result.mouthPeak > 0.05
+        result.mouthPeak > 0.05 &&
+        (!fixture.interruptAfterSeconds || interrupted)
       const readabilityPassed =
         hintMatches && (!fixture.requireGesture || (visibleSemanticGesture && visibleInOverlay))
       const passed = technicalPassed && readabilityPassed
       report.conversation.cases.push({
         id: fixture.id,
+        scheduledAtSeconds: fixture.at,
+        interrupted,
         ...result,
         executions,
         overlayEvidence,
@@ -610,6 +965,9 @@ async function qualifyConversation({
       if (!result.done) break
     }
     while (Date.now() - started < duration * 1000) await pause(200)
+  } catch (error) {
+    report.conversation.runError = error.message
+    throw error
   } finally {
     if (stabilizationTrace)
       await Promise.all([
@@ -617,7 +975,13 @@ async function qualifyConversation({
         overlay.evaluate(() => window.__stabilizationProbe.stop()),
       ])
     if (stopAudio) report.conversation.audio = await stopAudio()
-    if (stopVideo) report.conversation.video = await stopVideo()
+    if (stopVideo) {
+      try {
+        report.conversation.video = await stopVideo()
+      } catch (error) {
+        report.conversation.videoError = error.message
+      }
+    }
     if (stabilizationTrace) {
       for (const [id, target] of [
         ['primary', page],
@@ -644,6 +1008,7 @@ async function qualifyConversation({
     report.conversation.elapsedMs = Date.now() - started
     fs.writeFileSync(path.join(directory, 'report.json'), JSON.stringify(report, null, 2))
   }
+  assert(!report.conversation.videoError, report.conversation.videoError)
   const video = report.conversation.video,
     audio = report.conversation.audio
   const lastSampleMs = captured.samples.at(-1)?.atMs ?? 0
@@ -706,6 +1071,7 @@ async function qualifyConversation({
     report.conversation.camera.maxQuaternionDelta < 0.000001 &&
     report.conversation.camera.maxFovDelta === 0 &&
     duration >= 300 &&
+    (!autonomousLiving || report.conversation.continuousIdle?.durationMs >= 120000) &&
     video.measuredAverageFps >= 60
   report.conversation.readabilityPassed = report.conversation.cases.every(
     (entry) => entry.readabilityPassed,
@@ -764,6 +1130,12 @@ async function qualifyConversation({
       smoke.cameraUnchanged &&
       !smoke.errors.length
     report.conversation.fixedPreviewSmoke = smoke
+    report.conversation.passed &&= smoke.passed
+  }
+  if (process.argv.includes('--autonomous-policy-smoke')) {
+    const { qualifyAutonomousPolicy } = require('./autonomous-policy-smoke.cjs')
+    await qualifyAutonomousPolicy({ application, page, directory, report, pause })
+    report.conversation.passed &&= report.autonomousPolicy.passed
   }
 }
 module.exports = { qualifyConversation }

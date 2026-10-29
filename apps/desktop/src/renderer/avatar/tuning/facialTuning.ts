@@ -58,12 +58,14 @@ export const facialTuning = {
     statsHighThreshold: 0.7,
     statsOpenThreshold: 0.4,
     statsClosedThreshold: 0.15,
+    // Per-viseme ceilings. At 0.36 ordinary speech peaks saturated the cap, so
+    // the mouth read as a constant slit; these keep the audio-driven dynamics.
     clamps: {
-      aa: 0.36,
-      ih: 0.27,
-      ou: 0.29,
-      ee: 0.25,
-      oh: 0.28,
+      aa: 0.62,
+      ih: 0.44,
+      ou: 0.48,
+      ee: 0.4,
+      oh: 0.48,
     },
     emotionProfiles: {
       whisper: { gainScale: 0.45, openBias: 0, roundBias: 0.03 },

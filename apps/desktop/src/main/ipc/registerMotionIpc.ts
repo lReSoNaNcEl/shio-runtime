@@ -7,11 +7,11 @@ import {
   motionStopSchema,
   motionVariationSchema,
 } from '../../shared/motion'
-import type { ArdyMotionService } from '../motion/ArdyMotionService'
+import type { GeneratedMotionService } from '../motion/GeneratedMotionService'
 import type { IpcAuthorization } from './IpcAuthorization'
 
 export function registerMotionIpc(
-  service: ArdyMotionService,
+  service: GeneratedMotionService,
   authorization: IpcAuthorization,
 ): void {
   ipcMain.handle(
@@ -30,7 +30,7 @@ export function registerMotionIpc(
             lease: await service.start(event.sender.id, input.avatarGeneration, input.seed),
           }
         } catch (error) {
-          return { ok: false, error: error instanceof Error ? error.message : 'ARDY_UNAVAILABLE' }
+          return { ok: false, error: error instanceof Error ? error.message : 'MOTION_UNAVAILABLE' }
         }
       },
     ),
@@ -50,10 +50,11 @@ export function registerMotionIpc(
               input.profileId,
               input.fromFrame,
               input.plan,
+              input.activity,
             ),
           }
         } catch (error) {
-          return { ok: false, error: error instanceof Error ? error.message : 'ARDY_UNAVAILABLE' }
+          return { ok: false, error: error instanceof Error ? error.message : 'MOTION_UNAVAILABLE' }
         }
       },
     ),
@@ -75,7 +76,7 @@ export function registerMotionIpc(
         try {
           return { ok: true, lease: await service.reroll(event.sender.id, input.lease, input.seed) }
         } catch {
-          return { ok: false, error: 'ARDY_STALE_SESSION' }
+          return { ok: false, error: 'MOTION_STALE_SESSION' }
         }
       },
     ),

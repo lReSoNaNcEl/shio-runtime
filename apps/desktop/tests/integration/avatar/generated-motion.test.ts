@@ -187,6 +187,27 @@ describe('generated-motion diagnostic ownership', () => {
   })
 })
 describe('generated body timeline', () => {
+  it('never integrates more physical time than the render interval when consumed PCM catches up', () => {
+    const { owner } = fixture()
+    const clock = {
+      playbackId: 'pcm',
+      turnId: 'turn',
+      sourceSampleOffset: 4410,
+      sourceSampleRate: 44100,
+      state: 'playing',
+    }
+    Reflect.set(owner, 'playing', true)
+    Reflect.set(owner, 'lease', lease)
+    Reflect.set(owner, 'appliedLease', lease)
+    Reflect.set(owner, 'appliedSourceProvider', 'motionbricks')
+    Reflect.set(owner, 'clock', clock)
+    Reflect.set(owner, 'sampledClock', clock)
+    Reflect.set(owner, 'composedSpeechClock', { playbackId: 'pcm', offset: 0 })
+    const apply = vi.spyOn(Reflect.get(owner, 'bodySafety') as GeneratedBodySafety, 'apply')
+    owner.validateFinalComposition(1 / 60)
+    expect(apply.mock.calls[0][0]).toBeCloseTo(1 / 60)
+    expect(apply.mock.calls[0][2]).toBe(true)
+  })
   it('keeps generated joint output identical across Preview camera modes', async () => {
     const poses = []
     for (const camera of ['full', 'bust', 'face']) {

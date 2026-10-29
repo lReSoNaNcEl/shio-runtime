@@ -42,6 +42,10 @@ export default defineConfig({
     root: resolve(__dirname, 'src/renderer'),
     // macros() MUST run before react() so the S2 style() macro is evaluated at build time
     plugins: [macros.vite(), react()],
+    optimizeDeps: {
+      // Dependency scanning runs before macro transforms; style is a Node-only build-time import.
+      exclude: ['@react-spectrum/s2/style'],
+    },
     build: {
       rollupOptions: {
         input: {

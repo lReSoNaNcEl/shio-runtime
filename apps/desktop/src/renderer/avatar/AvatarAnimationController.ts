@@ -152,7 +152,9 @@ export class AvatarAnimationController {
       if (requestId !== this.requestId) return
       if (
         e instanceof Error &&
-        ['ARDY_SPEECH_WINDOW_MISSED', 'ARDY_SPEECH_ENDED', 'ARDY_superseded'].includes(e.message)
+        ['MOTION_SPEECH_WINDOW_MISSED', 'MOTION_SPEECH_ENDED', 'MOTION_superseded'].includes(
+          e.message,
+        )
       ) {
         // Timing expiry is an ordinary skipped intent, not a defective profile.
         // The queue owner resumes presence after the body's recovery settles.

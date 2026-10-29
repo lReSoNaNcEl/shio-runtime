@@ -19,26 +19,24 @@ npm run typecheck   # all TypeScript projects, including tests
 Speech base URL is Main-owned `SHIO_SPEECH_API_URL`, default `http://127.0.0.1:8000`.
 Changing it requires restart. Renderer settings cannot supply an endpoint.
 
-This experimental branch uses real ARDY generated SOMA30 body motion and Fish
+This experimental branch uses MotionBricks with native SOMA-X Hand and Fish
 S2 Pro streaming PCM while retaining Three.js, VRM, facial mixing, gaze and
 LipSync. `AudioPlayer` owns playback and the consumed-sample clock. The primary
 Avatar Runtime retains its skeleton with Preview closed; Overlay mirrors the
 same validated body pose and mouth weights. No physical animation clips remain.
-See [setup and qualification](../../docs/EXPERIMENT-ARDY-FISH.md).
+See [MotionBricks setup](motionbricks/README.md) and the
+[current migration status](../../docs/SHIO-MOTIONBRICKS-AI-SDK-MIGRATION-2026-10-29.md).
 
 From the repository root:
 
 ```powershell
-npm run motion:research:install
-npm run motion:research:prefetch
-npm run motion:research:doctor -- --offline
-npm run motion:research:test
 npm run motion:catalog:check
 ```
 
-The independent Motion environment is `apps/desktop/motion/.venv`; it never uses
-the Speech API environment. Packaged launchers set Main-owned `SHIO_MOTION_ROOT`
-to their installed Motion directory. No runtime model download occurs in Electron.
+The independent Motion environment is `apps/desktop/motionbricks/.venv`; it never
+uses the Speech API environment. Character providers use the Vercel AI SDK
+through the existing Main-owned LlmGateway. Configure a supported cloud provider
+and model in Settings.
 
 ## Product surfaces
 
@@ -69,7 +67,10 @@ to their installed Motion directory. No runtime model download occurs in Electro
 
 Development requires the locked Desktop dependencies installed with `npm install`
 in this directory (or `npm run desktop:install` at the repository root). The Windows
-package bundles the pinned DSH shell family and `playwright-core`. Both environments
+package bundles DSH `0.2.2-alpha.2` and `playwright-core`. DSH uses a Shio-owned
+minimal Cordis composition; only PowerShell is model-facing. The alpha SDK launches
+the owned runtime entry point through `dshBin` with an explicit child environment.
+Both environments
 still require:
 
 - an active OpenAI-compatible provider, model, and API key in Shio Settings;

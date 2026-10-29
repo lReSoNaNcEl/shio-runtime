@@ -140,7 +140,7 @@ class ShioSdkJsonRpcServer {
       timeoutMs: request.timeoutMs,
       stdoutMaxBytes: SHELL_OUTPUT_MAX_BYTES,
     })
-    const result = await this.ctx.shell.run(spec)
+    const result = await (await this.ctx.shell.execute(spec)).result()
     return {
       exitCode: result.exitCode,
       signal: result.signal,

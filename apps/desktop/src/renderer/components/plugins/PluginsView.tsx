@@ -16,7 +16,7 @@ import ProjectIcon from '@react-spectrum/s2/icons/Project'
 import { type ReactNode, useEffect, useState } from 'react'
 
 import { type BrowserControlStatus } from '../../../shared/browser-control'
-import { type DesktopControlStatus } from '../../../shared/desktop-control'
+import { type DesktopControlStatus, DSH_RUNTIME_VERSION } from '../../../shared/desktop-control'
 import {
   BROWSER_CONTROL_PLUGIN_ID,
   DESKTOP_CONTROL_PLUGIN_ID,
@@ -49,7 +49,7 @@ const HEALTH: Record<
 
 const EMPTY_DESKTOP_STATUS: DesktopControlStatus = {
   enabled: false,
-  runtime: { state: 'stopped', packagedRuntimeAvailable: false, version: '0.1.1-rc.2' },
+  runtime: { state: 'stopped', packagedRuntimeAvailable: false, version: DSH_RUNTIME_VERSION },
   automationEngine: 'needs-setup',
   computerControl: 'needs-setup',
   shell: { executableAvailable: false },

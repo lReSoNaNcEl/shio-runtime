@@ -7,6 +7,7 @@ const { recordCanvas } = require('./record-canvas.cjs')
 /** Opt-in, bounded instrumentation of the existing isolated qualification model.
  * No production exports, IPC, pose archive or second animation owner. */
 async function installStabilizationProbe(page, options = {}) {
+  assert(!options.summaryOnly || !options.staticSource, 'Static-source analysis needs full poses')
   await page.evaluate((options) => {
     const c = window.__motionAbController,
       model = c.avatarRuntime.controller.vrmModel
@@ -27,6 +28,16 @@ async function installStabilizationProbe(page, options = {}) {
       'leftHand',
       'rightHand',
       'head',
+      ...(options.captureFingers
+        ? ['left', 'right'].flatMap((side) =>
+            ['Thumb', 'Index', 'Middle', 'Ring', 'Little'].flatMap((finger) =>
+              (finger === 'Thumb'
+                ? ['Metacarpal', 'Proximal', 'Distal']
+                : ['Proximal', 'Intermediate', 'Distal']
+              ).map((part) => `${side}${finger}${part}`),
+            ),
+          )
+        : []),
     ]
     const bones = names.map((name) => vrm.humanoid.getNormalizedBoneNode(name))
     const raw = names.map((name) => vrm.humanoid.getRawBoneNode(name))
@@ -41,8 +52,13 @@ async function installStabilizationProbe(page, options = {}) {
       overflow: false,
       frozen: null,
       recording: true,
+      observedFrames: 0,
       horizons: [],
+      pipelineTimings: [],
+      pipelineOverflow: false,
       staticInputMaxComponentDelta: 0,
+      renderDeltasMs: [],
+      renderDeltaOverflow: false,
     }
     const capturedHorizons = new WeakSet()
     let current = null
@@ -50,19 +66,30 @@ async function installStabilizationProbe(page, options = {}) {
     const pose = (nodes) =>
       nodes.flatMap((bone) => (bone ? bone.quaternion.toArray() : [null, null, null, null]))
     const snapshot = (stage, nodes = bones) => {
-      if (current) current.stages[stage] = pose(nodes)
+      if (current && !options.summaryOnly) current.stages[stage] = pose(nodes)
     }
     const wrap = (owner, method, replacement) => {
       const original = owner[method]
-      owner[method] = replacement(original)
+      const wrapped = replacement(original)
+      owner[method] = function (...args) {
+        const started = performance.now()
+        try {
+          return wrapped.apply(this, args)
+        } finally {
+          if (current)
+            current.timings[method] = (current.timings[method] ?? 0) + performance.now() - started
+        }
+      }
       restorers.push(() => {
         owner[method] = original
       })
     }
     const observer = body.dynamicsObserver
+    if (body.somaHands) wrap(body.somaHands, 'sample', (original) => original)
+    wrap(body, 'validateFinalComposition', (original) => original)
     body.dynamicsObserver = (sample) => {
       observer?.(sample)
-      if (!current) return
+      if (!current || options.summaryOnly) return
       const index = names.indexOf(sample.bone)
       if (index < 0) return
       current.stages[sample.stage] ??= Array(names.length * 4).fill(null)
@@ -76,11 +103,20 @@ async function installStabilizationProbe(page, options = {}) {
       'apply',
       (original) =>
         function (chunk, ...args) {
-          if (!capturedHorizons.has(chunk) && state.horizons.length < 512) {
+          if (!capturedHorizons.has(chunk)) {
             capturedHorizons.add(chunk)
-            state.horizons.push(structuredClone(chunk))
+            if (!options.summaryOnly && state.horizons.length < 512)
+              state.horizons.push(structuredClone(chunk))
+            if (state.pipelineTimings.length < 10000)
+              state.pipelineTimings.push({
+                at: performance.now(),
+                startFrame: chunk.startFrame,
+                inferenceMs: chunk.inferenceMs,
+                ...chunk.timings,
+              })
+            else state.pipelineOverflow = true
           }
-          if (current) {
+          if (current && !options.summaryOnly) {
             const index = Math.min(59, Math.max(0, Math.floor(this.cursor - chunk.startFrame)))
             current.actualArdy = names.flatMap((name) => {
               const binding = this.bindings.find((value) => value.name === name)
@@ -152,7 +188,7 @@ async function installStabilizationProbe(page, options = {}) {
           const result = original.apply(this, args)
           snapshot('finalVrm')
           snapshot('rawVrm', raw)
-          if (current) current.springs = pose(springs)
+          if (current && !options.summaryOnly) current.springs = pose(springs)
           return result
         },
     )
@@ -162,11 +198,22 @@ async function installStabilizationProbe(page, options = {}) {
       (original) =>
         function (delta) {
           if (!state.recording) return original.call(this, delta)
+          state.observedFrames++
+          if (options.summaryOnly) {
+            if (state.renderDeltasMs.length < 120000) state.renderDeltasMs.push(delta * 1000)
+            else state.renderDeltaOverflow = true
+          }
+          if (state.observedFrames % (options.frameStride ?? 1) !== 0)
+            return original.call(this, delta)
+          const now = performance.now()
+          if (now - (state.lastCapturedAt ?? -Infinity) < (options.minIntervalMs ?? 0))
+            return original.call(this, delta)
           if (state.frames.length >= (options.maxFrames ?? 10000)) {
             state.overflow = true
             return original.call(this, delta)
           }
-          current = { at: performance.now(), delta, stages: {} }
+          state.lastCapturedAt = now
+          current = { at: now, delta, stages: {}, timings: {} }
           const started = performance.now()
           original.call(this, delta)
           if (options.staticSource && current.stages.source) {
@@ -182,6 +229,10 @@ async function installStabilizationProbe(page, options = {}) {
           current.costMs = performance.now() - started
           current.sourceFrame = body.cursor
           current.pcm = c.player.getPcmClock()
+          if (options.summaryOnly && current.pcm) {
+            const { turnId, playbackId, sourceSampleRate, sourceSampleOffset, state } = current.pcm
+            current.pcm = { turnId, playbackId, sourceSampleRate, sourceSampleOffset, state }
+          }
           current.sampledPcm = body.sampledClock?.sourceSampleOffset ?? null
           current.profile = body.appliedProfileId
           current.phase = body.appliedPhaseId
@@ -196,6 +247,19 @@ async function installStabilizationProbe(page, options = {}) {
               }
             : null
           current.safety = safety.getDebugState()
+          if (options.summaryOnly) {
+            // Four bone positions per sample: hand and head excursion from the
+            // hips measure visible gesture and attention coverage cheaply.
+            current.positions = ['hips', 'leftHand', 'rightHand', 'head'].flatMap((name) => {
+              const bone = vrm.humanoid.getNormalizedBoneNode(name)
+              return bone
+                ? bone.getWorldPosition(bone.position.clone()).toArray()
+                : [null, null, null]
+            })
+            state.frames.push(current)
+            current = null
+            return
+          }
           current.poles = safety.arms.map((arm) => safety.workspaceSolutions.get(arm)?.pole ?? null)
           current.workspaces = safety.arms.map((arm) => {
             const goal = safety.handGoal(arm),
@@ -232,7 +296,16 @@ async function installStabilizationProbe(page, options = {}) {
       timeOrigin: state.timeOrigin,
       overflow: state.overflow,
       frameCount: state.frames.length,
+      frameStride: options.frameStride ?? 1,
+      observedFrames: state.observedFrames,
       horizonCount: state.horizons.length,
+      pipelineHorizonCount: state.pipelineTimings.length,
+      pipelineTimings: state.pipelineTimings,
+      pipelineOverflow: state.pipelineOverflow,
+      minIntervalMs: options.minIntervalMs ?? 0,
+      summaryOnly: options.summaryOnly === true,
+      renderDeltasMs: state.renderDeltasMs,
+      renderDeltaOverflow: state.renderDeltaOverflow,
       staticInputMaxComponentDelta: state.staticInputMaxComponentDelta,
     })
     state.take = (offset, count) => state.frames.slice(offset, offset + Math.min(128, count))
@@ -240,6 +313,9 @@ async function installStabilizationProbe(page, options = {}) {
     state.release = () => {
       state.frames = []
       state.horizons = []
+      state.renderDeltasMs = []
+      state.pipelineTimings = []
+      state.frozen = null
     }
     window.__stabilizationProbe = state
   }, options)
@@ -411,7 +487,7 @@ async function qualifyStabilization({ application, page, directory, report, paus
   )
 }
 
-/** Visual comparison of diagnostic compositions only. Production keeps live ARDY. */
+/** Visual comparison of diagnostic compositions only. Production keeps live MotionBricks. */
 async function qualifyIdenticalSource({ page, overlay, directory, report, pause }) {
   const root = path.resolve(__dirname, '../../motion/.artifacts/stabilization-2026-10-28')
   const before = JSON.parse(fs.readFileSync(path.join(root, 'full/report.json')))
@@ -433,7 +509,7 @@ async function qualifyIdenticalSource({ page, overlay, directory, report, pause 
     kind: 'identical-source-ab',
     sourceSha256: before.sourceSha256,
     scope:
-      'Diagnostic captured ARDY, baseline/candidate exact composition series; shared fixed root and relaxed fingers. This is not final live inference qualification.',
+      'Diagnostic captured MotionBricks, baseline/candidate exact composition series; shared fixed root and relaxed fingers. This is not final live inference qualification.',
     cases: [],
     artisticAcceptance: 'PENDING USER REVIEW',
   }

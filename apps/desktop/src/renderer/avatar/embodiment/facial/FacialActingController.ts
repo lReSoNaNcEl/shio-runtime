@@ -137,11 +137,24 @@ export class FacialActingController {
     for (const name of new Set([...Object.keys(this.values), ...Object.keys(target)])) {
       const channel = name as keyof FacialActingValues
       const side = name.endsWith('Left') ? 1 : name.endsWith('Right') ? -1 : 0
+      // A reaction settles at different rates across facial regions. This is
+      // emotion acting in the existing owner, never a syllable-driven actor.
+      const regionalEnvelope =
+        name.startsWith('eyeWide') && emotion === 'surprised'
+          ? 0.7 + 0.3 * Math.exp(-this.reactionAge / 1.1)
+          : name.startsWith('brow') && emotion !== 'neutral'
+            ? 0.78 + 0.22 * Math.exp(-this.reactionAge / 1.5)
+            : name.startsWith('mouthSmile') && ['happy', 'embarrassed'].includes(emotion)
+              ? 0.88 + 0.12 * Math.exp(-this.reactionAge / 3)
+              : 1
       const desired = Math.min(
         0.85,
         Math.max(
           0,
-          (target[channel] ?? 0) * (this.variation + side * this.asymmetry) * (1 + reaction * 0.2),
+          (target[channel] ?? 0) *
+            regionalEnvelope *
+            (this.variation + side * this.asymmetry) *
+            (1 + reaction * 0.2),
         ),
       )
       const current = this.values[channel] ?? 0

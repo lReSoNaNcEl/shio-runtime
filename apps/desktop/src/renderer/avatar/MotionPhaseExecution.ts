@@ -30,7 +30,7 @@ export class MotionPhaseExecution {
 
   get budget() {
     const budget = this.profile.phases.find((phase) => phase.id === this.phase)
-    if (!budget) throw new Error('ARDY_INVALID_PHASE_BUDGET')
+    if (!budget) throw new Error('MOTION_INVALID_PHASE_BUDGET')
     return budget
   }
   get progress(): number {

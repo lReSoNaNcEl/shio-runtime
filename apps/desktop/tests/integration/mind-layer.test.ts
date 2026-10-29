@@ -21,6 +21,7 @@ import type { LlmRequestOptions } from '../../src/main/llm'
 import type {
   AttentionCandidate,
   AutonomySettings,
+  BehaviorCommand,
   ExperienceAppraisal,
   ExperienceEvent,
   MoodState,
@@ -772,6 +773,90 @@ function candidate(
 }
 
 describe('Mind layer', () => {
+  it.each(['full', 'suggest'] as const)(
+    'projects the actual Main Gate outcome for a scheduled initiative (%s)',
+    async (mode) => {
+      const directory = mkdtempSync(join(tmpdir(), 'shio-initiative-projection-'))
+      const store = new AliveStore(join(directory, 'alive.sqlite'))
+      const facade = new AliveFacade(store, () => {
+        throw new Error('A single reminder candidate needs no model arbitration')
+      })
+      const commands: BehaviorCommand[] = []
+      facade.onBehavior((command) => commands.push(command))
+      try {
+        facade.updateSettings({ ...settings, mode })
+        facade.updateWorld({
+          appFocused: true,
+          userIdleMs: 0,
+          conversationActive: false,
+          audioActive: false,
+          observedAt: Date.now(),
+        })
+        facade.createTask({ kind: 'reminder', title: 'Approved reminder', dueAt: Date.now() })
+        facade.start()
+        await waitUntil(() =>
+          commands.some((command) => command.intent.kind === 'conversation-candidate'),
+        )
+        const command = commands.find((entry) => entry.intent.kind === 'conversation-candidate')
+        assert.equal(command?.initiativeDisposition, mode === 'full' ? 'admit' : 'preview')
+      } finally {
+        facade.dispose()
+        rmSync(directory, { recursive: true, force: true })
+      }
+    },
+  )
+  it.each(['conversationActive', 'audioActive'] as const)(
+    'keeps nonverbal busy arbitration in Main composition (%s)',
+    (busy) => {
+      const directory = mkdtempSync(join(tmpdir(), 'shio-nonverbal-busy-'))
+      const store = new AliveStore(join(directory, 'alive.sqlite'))
+      const facade = new AliveFacade(store, () => {
+        throw new Error('Nonverbal selection must not call an LLM')
+      })
+      const commands: string[] = []
+      facade.onBehavior((command) => commands.push(command.intent.kind))
+      try {
+        facade.updateSettings(settings)
+        const activity = {
+          appFocused: true,
+          userIdleMs: 0,
+          conversationActive: false,
+          audioActive: false,
+          observedAt: Date.now(),
+        }
+        facade.updateWorld({ ...activity, [busy]: true })
+        facade.reportExperience({
+          type: 'conversation-interrupted',
+          turnId: 'busy-turn',
+          eventId: 'busy-reaction',
+          at: activity.observedAt,
+        })
+        assert.deepEqual(commands, [])
+        facade.updateWorld({ ...activity, observedAt: Date.now() })
+        facade.reportExperience({
+          type: 'conversation-interrupted',
+          turnId: 'idle-turn',
+          eventId: 'idle-reaction',
+          at: Date.now(),
+        })
+        assert.deepEqual(commands, ['embodiment'])
+      } finally {
+        facade.dispose()
+        rmSync(directory, { recursive: true, force: true })
+      }
+    },
+  )
+  it('defers Experience embodiment without consuming its cooldown when its owner suppresses it', () => {
+    const behavior = new BehaviorRuntime()
+    const reaction = appraisal('busy-reaction', {
+      salience: 0.9,
+      embodimentHint: { intensity: 'subtle', gestureHint: 'think', gazeHint: 'away' },
+    })
+    const input = { appraisal: reaction, mood: mood(), settings, world, at: 1_000 }
+    assert.equal(behavior.decide({ ...input, embodimentAllowed: false }).intent.kind, 'none')
+    assert.equal(behavior.decide({ ...input, at: 1_001 }).intent.kind, 'embodiment')
+    assert.equal(behavior.decide({ ...input, at: 1_002 }).intent.kind, 'none')
+  })
   it('preserves Alive appraisal and behavior boundaries', async () => {
     await main()
   })

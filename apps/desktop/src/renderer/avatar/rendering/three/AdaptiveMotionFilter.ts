@@ -3,10 +3,12 @@ import * as THREE from 'three'
 import type { MotionPhaseId } from '../../../../shared/motion'
 
 export type MotionClass = 'presence' | 'gesture' | 'reaction' | 'full-body'
+export const MOTIONBRICKS_CONVERSATION_MAX_JOINT_SPEED = 1.5
 export interface MotionFilterContext {
-  /** Remaining authored preparation time for an admitted active hand workspace. */
+  /** Remaining authored time for preparation or deterministic presence recovery. */
   reachSeconds?: number
   motionClass: MotionClass
+  sourceProvider?: 'motionbricks'
   phase: MotionPhaseId
   sourceSpeeds?: ReadonlyMap<THREE.Object3D, number>
   onIntegrated?: (bone: THREE.Object3D) => void
@@ -76,12 +78,18 @@ export class AdaptiveMotionFilter {
       (torso ? 0.3 : shoulder ? 0.6 : 1) *
       geometry *
       phaseScale
-    const ceiling =
-      (presence ? 1.6 : reaction ? 8 : 6) * (torso ? 0.35 : shoulder ? 0.6 : wrist ? 0.75 : 1)
+    const ceiling = Math.min(
+      (presence ? 1.6 : reaction ? 8 : 6) * (torso ? 0.35 : shoulder ? 0.6 : wrist ? 0.75 : 1),
+      context.sourceProvider === 'motionbricks' && !presence
+        ? MOTIONBRICKS_CONVERSATION_MAX_JOINT_SPEED
+        : Infinity,
+    )
     const sourceSpeed = context.sourceSpeeds?.get(bone) ?? sourceVelocity.length()
     sourceVelocity.clampLength(0, sourceSpeed)
     const reachingSpeed =
-      !presence && context.phase === 'prepare' && Number.isFinite(context.reachSeconds)
+      ((!presence && context.phase === 'prepare') ||
+        (presence && context.phase === 'recover' && context.sourceProvider === 'motionbricks')) &&
+      Number.isFinite(context.reachSeconds)
         ? error.length() / Math.max(0.25, context.reachSeconds ?? 0.25)
         : 0
     const speed = Math.min(
@@ -101,7 +109,10 @@ export class AdaptiveMotionFilter {
     // The analytic step is stable at different render rates, and velocity
     // feed-forward preserves a moving stroke without a second filter or clock.
     const feed = presence ? new THREE.Vector3() : sourceVelocity
-    const frequency = presence ? 28 : 48
+    // Measured MotionBricks standing output contains rapid pose noise even
+    // with held goals. Use the same tracker at a calm presence bandwidth;
+    // expressive phases keep their existing timing and source feed-forward.
+    const frequency = presence ? (context.sourceProvider === 'motionbricks' ? 8 : 28) : 48
     const relativeVelocity = state.velocity.clone().sub(feed)
     const initialError = error.clone().addScaledVector(feed, -dt)
     const decay = Math.exp(-frequency * dt)

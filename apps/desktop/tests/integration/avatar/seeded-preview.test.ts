@@ -9,6 +9,7 @@ import { GeneratedBodyPlayback } from '../../../src/renderer/avatar/rendering/th
 import type { VrmModel } from '../../../src/renderer/avatar/rendering/three/VrmModel'
 import {
   getMotionProfile,
+  HAND_BONE_NAMES,
   type MotionApi,
   type MotionChunk,
   type MotionLease,
@@ -40,6 +41,53 @@ afterEach(async () => {
 })
 
 describe('fixed Preview variation seeds and physical recovery', () => {
+  it('settles a completed native act into bounded standing variation without accumulating or adopting a failed act', () => {
+    const { owner, bones } = bodyFixture()
+    const profile = getMotionProfile('explain_one_palm')
+    if (!profile) throw new Error('Missing profile')
+    const execution = new MotionPhaseExecution('rest-variation', profile)
+    execution.phase = 'recover'
+    Reflect.set(owner, 'execution', execution)
+    Reflect.set(owner, 'appliedSourceProvider', 'motionbricks')
+    const lower = bones.get('rightLowerArm')
+    if (!lower) throw new Error('Missing arm')
+    lower.quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), 1.5)
+    const bindings = Reflect.get(owner, 'bindings') as Array<{
+      name: string
+      safe: THREE.Quaternion
+      calibratedSafe: THREE.Quaternion
+    }>
+    const binding = bindings.find((entry) => entry.name === 'rightLowerArm')
+    if (!binding) throw new Error('Missing binding')
+    Reflect.get(owner, 'invalidatePhase').call(owner)
+    expect(binding.safe.angleTo(binding.calibratedSafe)).toBeGreaterThan(0.05)
+    expect(binding.safe.angleTo(binding.calibratedSafe)).toBeLessThanOrEqual(0.181)
+    const admitted = binding.safe.clone()
+    execution.requestFailureRecovery()
+    lower.quaternion.setFromAxisAngle(new THREE.Vector3(1, 0, 0), 2)
+    Reflect.get(owner, 'invalidatePhase').call(owner)
+    expect(binding.safe.angleTo(admitted)).toBeLessThan(1e-7)
+  })
+  it('starts native-hand recovery from the actual composed fingers instead of the hidden procedural target', () => {
+    const { vrm, bones } = createMinimalVrm({ extraBones: [...HAND_BONE_NAMES] })
+    const owner = new GeneratedBodyPlayback(() => undefined)
+    owners.push(owner)
+    owner.attach(vrm)
+    const profile = getMotionProfile('peace_single')
+    if (!profile) throw new Error('Missing profile')
+    const execution = new MotionPhaseExecution('native-hand-recovery', profile)
+    execution.phase = 'recover'
+    Reflect.set(owner, 'execution', execution)
+    Reflect.set(owner, 'appliedSourceProvider', 'motionbricks')
+    Reflect.set(owner, 'somaHands', {})
+    const finger = bones.get('rightIndexProximal')
+    if (!finger) throw new Error('Missing finger')
+    finger.quaternion.setFromAxisAngle(new THREE.Vector3(0, 0, 1), 0.9)
+    const composed = finger.quaternion.clone()
+    Reflect.get(owner, 'invalidatePhase').call(owner)
+    const hand = Reflect.get(owner, 'handPose').sampleScore(profile.id, execution.id, 'recover', 0)
+    expect(hand.get('rightIndexProximal').angleTo(composed)).toBeLessThan(1e-7)
+  })
   it('forwards an explicit seed through the shared Preview coordinator to the model port', async () => {
     const request = vi.fn(async () => undefined)
     const model = {
@@ -133,7 +181,9 @@ describe('fixed Preview variation seeds and physical recovery', () => {
     expect(owner.getLibraryDebug().outcome).toBeNull()
     owner.update(0.05, () => undefined)
     expect(owner.getLibraryDebug().outcome).toBe('timed-out')
-    expect(owner.getBodyMotionDebugState().generated?.error).toBe('ARDY_RECOVERY_TARGET_UNREACHED')
+    expect(owner.getBodyMotionDebugState().generated?.error).toBe(
+      'MOTION_RECOVERY_TARGET_UNREACHED',
+    )
     owner.detach()
   })
 })

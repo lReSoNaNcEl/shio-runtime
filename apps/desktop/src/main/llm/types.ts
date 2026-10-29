@@ -68,6 +68,7 @@ export interface LlmCompletion {
 }
 
 export interface LlmCompletionOptions extends LlmRequestOptions {
+  responseSchema?: { name: string; schema: Record<string, unknown> }
   tools?: readonly LlmToolDefinition[]
   toolChoice?: 'auto' | 'none' | 'required'
 }

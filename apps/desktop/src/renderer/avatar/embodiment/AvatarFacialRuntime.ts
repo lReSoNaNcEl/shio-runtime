@@ -204,6 +204,7 @@ export class AvatarFacialRuntime {
   setPresentationOnly(value: boolean): void {
     this.presentationOnly = value
     this.proceduralMotionController.setPresentationOnly(value)
+    this.headMotionRuntime.setPresentationOnly(value)
   }
 
   setPcmClock(clock: PcmPlaybackClock | null): void {
@@ -231,6 +232,8 @@ export class AvatarFacialRuntime {
     this.proceduralMotionController.update(delta)
     this.lookAtRuntime.update(delta)
     this.headMotionRuntime.update(delta)
+    // The torso follows the head orientation on the next frame (smoothed both ways).
+    this.proceduralMotionController.setOrientation(this.headMotionRuntime.getTorsoPose())
     this.earBehaviorRuntime.update(delta)
     this.tailBehaviorRuntime.update(delta)
   }

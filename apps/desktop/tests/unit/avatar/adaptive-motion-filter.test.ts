@@ -5,6 +5,81 @@ import { AdaptiveMotionFilter } from '../../../src/renderer/avatar/rendering/thr
 
 const axis = new THREE.Vector3(0, 0, 1)
 describe('single source-aware body tracking', () => {
+  it('returns a quiet presence wrist within its existing recovery budget without raising its speed ceiling', () => {
+    const filter = new AdaptiveMotionFilter()
+    const bone = new THREE.Object3D()
+    const from = new THREE.Quaternion().setFromAxisAngle(axis, 0.8)
+    const rest = new THREE.Quaternion()
+    bone.quaternion.copy(from)
+    for (let frame = 0; frame < 156; frame++) {
+      const elapsed = frame / 60
+      const t = Math.min(1, (elapsed + 1 / 60) / 0.9)
+      const previous = bone.quaternion.clone()
+      filter.step(bone, previous, from.clone().slerp(rest, t * t * (3 - 2 * t)), 1 / 60, {
+        sourceProvider: 'motionbricks',
+        motionClass: 'presence',
+        phase: 'recover',
+        reachSeconds: Math.max(0.25, 0.9 - elapsed),
+        sourceSpeeds: new Map([[bone, 0]]),
+        jointKinds: new Map([[bone, 'wrist']]),
+      })
+      expect(previous.angleTo(bone.quaternion) * 60).toBeLessThanOrEqual(1.201)
+    }
+    expect(bone.quaternion.angleTo(rest)).toBeLessThan(0.06)
+  })
+  it('allows a large MotionBricks preparation to take physical time without slowing the stroke tracker', () => {
+    const filter = new AdaptiveMotionFilter()
+    const bone = new THREE.Object3D()
+    const target = new THREE.Quaternion().setFromAxisAngle(axis, 2.4)
+    for (let frame = 0; frame < 150; frame++) {
+      const previous = bone.quaternion.clone()
+      filter.step(bone, previous, target, 1 / 60, {
+        sourceProvider: 'motionbricks',
+        motionClass: 'gesture',
+        phase: 'prepare',
+        reachSeconds: 0.55,
+        sourceSpeeds: new Map([[bone, 6]]),
+      })
+      expect(previous.angleTo(bone.quaternion) * 60).toBeLessThanOrEqual(1.501)
+    }
+    expect(bone.quaternion.angleTo(target)).toBeLessThan(0.03)
+  })
+  it('rejects rapid MotionBricks presence noise while retaining a slow sway and unchanged gesture timing', () => {
+    const run = (
+      sourceProvider: 'motionbricks' | undefined,
+      motionClass: 'presence' | 'gesture',
+    ) => {
+      const filter = new AdaptiveMotionFilter()
+      const bone = new THREE.Object3D()
+      const angles: number[] = []
+      for (let frame = 0; frame < 1200; frame++) {
+        const time = frame / 60
+        const angle =
+          0.03 * Math.sin(2 * Math.PI * 0.2 * time) + 0.002 * Math.sin(2 * Math.PI * 10 * time)
+        const previous = bone.quaternion.clone()
+        filter.step(bone, previous, new THREE.Quaternion().setFromAxisAngle(axis, angle), 1 / 60, {
+          motionClass,
+          phase: 'hold',
+          sourceProvider,
+        })
+        filter.reconcile(bone, previous, 1 / 60)
+        if (frame >= 300) angles.push(2 * Math.atan2(bone.quaternion.z, bone.quaternion.w))
+      }
+      return angles
+    }
+    const previous = run(undefined, 'presence')
+    const candidate = run('motionbricks', 'presence')
+    const highEnergy = (angles: number[]) =>
+      angles
+        .slice(2)
+        .reduce(
+          (sum, angle, index) => sum + (angle - 2 * angles[index + 1] + angles[index]) ** 2,
+          0,
+        )
+    expect(highEnergy(candidate)).toBeLessThan(highEnergy(previous) * 0.1)
+    expect(Math.max(...candidate) - Math.min(...candidate)).toBeGreaterThan(0.056)
+    expect(run('motionbricks', 'gesture')).toEqual(run(undefined, 'gesture'))
+  })
   it.each([60, 90, 120])(
     'tracks a slow neural path while rejecting tiny source chatter at %i Hz',
     (hz) => {

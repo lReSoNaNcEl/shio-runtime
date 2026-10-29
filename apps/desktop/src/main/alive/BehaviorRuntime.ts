@@ -40,6 +40,7 @@ interface BehaviorDecisionInput {
   world: WorldContextSnapshot
   at: number
   conversationAllowed?: boolean
+  embodimentAllowed?: boolean
 }
 
 interface MoodBehaviorProfile {
@@ -139,6 +140,7 @@ export class BehaviorRuntime {
         )
       : profile.nonverbalCooldownMs
     if (
+      input.embodimentAllowed !== false &&
       embodimentHint &&
       appraisal.salience >= profile.nonverbalThreshold &&
       (appraisal.salience >= 0.75 ||

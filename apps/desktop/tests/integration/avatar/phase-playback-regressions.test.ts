@@ -75,6 +75,30 @@ afterEach(async () => {
 })
 
 describe('generated phase timing regressions', () => {
+  it('plans a native speech stroke from physical readiness instead of forecasting a stale accent during arm travel', async () => {
+    const { owner, next } = fixture()
+    next.mockImplementation(async (input) => ({
+      ok: true,
+      chunk: { ...chunk(input), sourceProvider: 'motionbricks' },
+    }))
+    const reached = vi
+      .spyOn(GeneratedBodySafety.prototype, 'handTargetsReached')
+      .mockReturnValue(false)
+    await owner.playProfile('greet_wave_soft', context('greet_wave_soft', true))
+    for (let frame = 1; frame <= 30; frame++) {
+      owner.setClock(createPcmPlaybackClock({ state: 'playing', sourceSampleOffset: frame * 2205 }))
+      owner.update(0.05, () => undefined)
+      await flush()
+    }
+    expect(next.mock.calls.some(([input]) => input.plan.phaseId === 'stroke')).toBe(false)
+    reached.mockReturnValue(true)
+    for (let frame = 31; frame <= 35; frame++) {
+      owner.setClock(createPcmPlaybackClock({ state: 'playing', sourceSampleOffset: frame * 2205 }))
+      owner.update(0.05, () => undefined)
+      await flush()
+    }
+    expect(next.mock.calls.some(([input]) => input.plan.phaseId === 'stroke')).toBe(true)
+  })
   it('does not consume a gesture family cooldown for unperformed preparation', async () => {
     const { owner } = fixture()
     await owner.playProfile('greet_wave_soft', context('greet_wave_soft', true))
@@ -186,7 +210,7 @@ describe('generated phase timing regressions', () => {
       })
     owner.setClock({ ...clock, state: 'playing', sourceSampleOffset: 4 * 44100 })
     await flush()
-    expect(rejection).toBe('ARDY_SPEECH_WINDOW_MISSED')
+    expect(rejection).toBe('MOTION_SPEECH_WINDOW_MISSED')
     expect(owner.getLibraryDebug().rejectedReason).toBe('speech-window-missed')
   })
 
@@ -246,7 +270,7 @@ describe('generated phase timing regressions', () => {
         })
       owner.setClock({ ...clock, state })
       await flush()
-      expect(rejection).toBe('ARDY_SPEECH_ENDED')
+      expect(rejection).toBe('MOTION_SPEECH_ENDED')
       for (let frame = 0; frame < 150; frame++) {
         owner.update(0.02, () => undefined)
         await flush()
@@ -317,7 +341,7 @@ describe('generated phase timing regressions', () => {
       await flush()
       witnessed ||= owner.getLibraryDebug().runningProfileId === 'greet_wave_soft'
     }
-    expect(await pending).toMatchObject({ message: 'ARDY_STALE_INTENT' })
+    expect(await pending).toMatchObject({ message: 'MOTION_STALE_INTENT' })
     expect(witnessed).toBe(false)
   })
 
@@ -330,7 +354,7 @@ describe('generated phase timing regressions', () => {
         accepted?.executionId === input.plan.executionId &&
         phases.indexOf(input.plan.phaseId) < phases.indexOf(accepted.phaseId)
       )
-        return { ok: false, error: 'ARDY_STALE_PLAN' }
+        return { ok: false, error: 'MOTION_STALE_PLAN' }
       accepted = input.plan
       return { ok: true, chunk: chunk(input) }
     })
@@ -381,7 +405,7 @@ describe('generated phase timing regressions', () => {
         accepted?.executionId === input.plan.executionId &&
         phases.indexOf(input.plan.phaseId) < phases.indexOf(accepted.phaseId)
       )
-        return { ok: false, error: 'ARDY_STALE_PLAN' }
+        return { ok: false, error: 'MOTION_STALE_PLAN' }
       accepted = input.plan
       return { ok: true, chunk: chunk(input) }
     })
@@ -432,7 +456,7 @@ describe('generated phase timing regressions', () => {
       await flush()
       witnessed ||= owner.getPresentation()?.profileId === 'agree_soft'
     }
-    expect(automaticFailure).toBe('ARDY_PROFILE_SUPERSEDED')
+    expect(automaticFailure).toBe('MOTION_PROFILE_SUPERSEDED')
     expect(witnessed).toBe(true)
   })
 
@@ -481,7 +505,7 @@ describe('generated phase timing regressions', () => {
       await flush()
     }
     expect(owner.getLibraryDebug().outcome).toBe('failed')
-    expect(owner.getBodyMotionDebugState().generated?.error).toBe('ARDY_SPATIAL_TARGET_UNREACHED')
+    expect(owner.getBodyMotionDebugState().generated?.error).toBe('MOTION_SPATIAL_TARGET_UNREACHED')
     expect(owner.getPresentation()?.phaseId).not.toBe('stroke')
   })
 
@@ -978,7 +1002,7 @@ describe('generated phase timing regressions', () => {
       })
       owner.update(0.05, () => undefined)
       expect(owner.getBodyMotionDebugState().generated?.error).toBe(
-        profileId === 'presence_warm' ? null : 'ARDY_AUDIBLE_UNDERRUN',
+        profileId === 'presence_warm' ? null : 'MOTION_AUDIBLE_UNDERRUN',
       )
       if (!release || !delayed) throw new Error('Missing delayed horizon')
       release({ ok: true, chunk: chunk(delayed) })

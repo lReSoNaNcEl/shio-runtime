@@ -1,3 +1,5 @@
+import { setTimeout as delay } from 'node:timers/promises'
+
 import axios, { type AxiosInstance } from 'axios'
 import { z } from 'zod'
 
@@ -140,6 +142,7 @@ export class SpeechClient implements SpeechStreamingClient {
   private readonly disposeNetworkObserver: () => void
   private readonly streams = new Set<SpeechStreamConnection>()
   private disposed = false
+  private recoveryReadinessRequired = false
 
   constructor(baseUrl: string) {
     this.baseUrl = baseUrl.replace('://localhost', '://127.0.0.1').replace(/\/+$/u, '')
@@ -233,8 +236,8 @@ export class SpeechClient implements SpeechStreamingClient {
     onEvent: (event: SpeechStreamOutput) => void,
   ): SpeechStreamConnection {
     if (this.disposed) throw new Error('Speech client is disposed')
-    const socket = new WebSocket(`${this.baseUrl.replace(/^http/u, 'ws')}/tts/stream`)
-    socket.binaryType = 'arraybuffer'
+    let socket: WebSocket | null = null
+    const recoveryWait = new AbortController()
     let pendingAudio: Omit<Extract<SpeechStreamOutput, { type: 'audio' }>, 'type' | 'pcm'> | null =
       null
     let terminal = false
@@ -255,6 +258,7 @@ export class SpeechClient implements SpeechStreamingClient {
     const finish = (failure?: Error): void => {
       if (terminal) return
       terminal = true
+      recoveryWait.abort()
       if (cancelTimer !== null) clearTimeout(cancelTimer)
       cancelTimer = null
       queued.length = 0
@@ -267,12 +271,12 @@ export class SpeechClient implements SpeechStreamingClient {
       if (terminal) return
       onEvent({ type: 'error', code, message })
       finish(new Error(message))
-      socket.close()
+      socket?.close()
     }
     const connection: SpeechStreamConnection = {
       send: (message) => {
         if (terminal || cancelling) return
-        if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message))
+        if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message))
         else {
           if (queued.length >= 128) throw new Error('TTS input queue exceeded its bound')
           queued.push(message)
@@ -283,6 +287,17 @@ export class SpeechClient implements SpeechStreamingClient {
         cancelling = true
         queued.length = 0
         pendingAudio = null
+        if (!socket) {
+          // No inference was started while waiting; cancellation needs no server round trip.
+          queueMicrotask(() => {
+            if (terminal) return
+            finish()
+            onEvent({ type: 'cancelled', sessionId: input.sessionId })
+          })
+          recoveryWait.abort()
+          return settlement
+        }
+        this.recoveryReadinessRequired = true
         if (socket.readyState === WebSocket.OPEN)
           socket.send(JSON.stringify({ type: 'cancel', reason }))
         cancelTimer = setTimeout(
@@ -293,87 +308,144 @@ export class SpeechClient implements SpeechStreamingClient {
       },
     }
     this.streams.add(connection)
-    socket.addEventListener('open', () => {
-      if (terminal) {
-        socket.close()
-        return
-      }
-      const start: SpeechStreamStartMessage = { type: 'start', ...input }
-      socket.send(JSON.stringify(start))
-      if (cancelling)
-        socket.send(JSON.stringify({ type: 'cancel', reason: 'Cancelled before connection' }))
-      else for (const message of queued.splice(0)) socket.send(JSON.stringify(message))
-    })
-    socket.addEventListener('message', (message) => {
-      if (terminal) return
-      try {
-        if (typeof message.data === 'string') {
-          if (message.data.length > 16_384) throw new Error('Oversized TTS metadata')
-          const event = speechServerMessageSchema.parse(JSON.parse(message.data))
-          if ('sessionId' in event && event.sessionId !== input.sessionId)
-            throw new Error('Wrong TTS session')
-          if ('turnId' in event && event.turnId !== input.turnId) throw new Error('Wrong TTS turn')
-          if (event.type === 'cancelled' || event.type === 'complete') {
+    const connect = (): void => {
+      const activeSocket = new WebSocket(`${this.baseUrl.replace(/^http/u, 'ws')}/tts/stream`)
+      socket = activeSocket
+      activeSocket.binaryType = 'arraybuffer'
+      activeSocket.addEventListener('open', () => {
+        if (terminal) {
+          activeSocket.close()
+          return
+        }
+        const start: SpeechStreamStartMessage = { type: 'start', ...input }
+        activeSocket.send(JSON.stringify(start))
+        if (cancelling)
+          activeSocket.send(
+            JSON.stringify({ type: 'cancel', reason: 'Cancelled before connection' }),
+          )
+        else for (const message of queued.splice(0)) activeSocket.send(JSON.stringify(message))
+      })
+      activeSocket.addEventListener('message', (message) => {
+        if (terminal) return
+        try {
+          if (typeof message.data === 'string') {
+            if (message.data.length > 16_384) throw new Error('Oversized TTS metadata')
+            const event = speechServerMessageSchema.parse(JSON.parse(message.data))
+            if ('sessionId' in event && event.sessionId !== input.sessionId)
+              throw new Error('Wrong TTS session')
+            if ('turnId' in event && event.turnId !== input.turnId)
+              throw new Error('Wrong TTS turn')
+            if (event.type === 'cancelled' || event.type === 'complete') {
+              if (
+                !cancelling &&
+                event.type === 'complete' &&
+                (!readySeen || pendingAudio || event.sequence !== expectedSequence)
+              )
+                throw new Error('Invalid TTS completion sequence')
+              finish()
+              onEvent(event)
+              activeSocket.close()
+              return
+            }
+            if (event.type === 'error') {
+              finish(new Error(event.message))
+              onEvent(event)
+              activeSocket.close()
+              return
+            }
+            if (cancelling) return
+            if (event.type === 'ready') {
+              if (readySeen) throw new Error('Duplicate TTS ready message')
+              readySeen = true
+              onEvent(event)
+              return
+            }
             if (
-              !cancelling &&
-              event.type === 'complete' &&
-              (!readySeen || pendingAudio || event.sequence !== expectedSequence)
+              !readySeen ||
+              pendingAudio ||
+              event.sequence !== expectedSequence ||
+              event.sampleOffset !== expectedOffset
             )
-              throw new Error('Invalid TTS completion sequence')
-            finish()
-            onEvent(event)
-            socket.close()
-            return
-          }
-          if (event.type === 'error') {
-            finish(new Error(event.message))
-            onEvent(event)
-            socket.close()
+              throw new Error('Invalid TTS audio metadata sequence or offset')
+            expectedSequence += 1
+            expectedOffset += event.samples
+            const { type: _type, ...metadata } = event
+            pendingAudio = metadata
             return
           }
           if (cancelling) return
-          if (event.type === 'ready') {
-            if (readySeen) throw new Error('Duplicate TTS ready message')
-            readySeen = true
-            onEvent(event)
-            return
-          }
+          if (!(message.data instanceof ArrayBuffer) || !pendingAudio)
+            throw new Error('Unexpected binary TTS payload')
+          const metadata = pendingAudio
+          pendingAudio = null
           if (
-            !readySeen ||
-            pendingAudio ||
-            event.sequence !== expectedSequence ||
-            event.sampleOffset !== expectedOffset
+            message.data.byteLength !== metadata.samples * Float32Array.BYTES_PER_ELEMENT ||
+            !new Float32Array(message.data).every(Number.isFinite)
           )
-            throw new Error('Invalid TTS audio metadata sequence or offset')
-          expectedSequence += 1
-          expectedOffset += event.samples
-          const { type: _type, ...metadata } = event
-          pendingAudio = metadata
-          return
+            throw new Error('Invalid PCM length or non-finite samples')
+          onEvent({ type: 'audio', ...metadata, pcm: message.data })
+        } catch (error) {
+          fail(
+            'invalid_stream_response',
+            error instanceof Error ? error.message : 'Invalid TTS stream',
+          )
         }
-        if (cancelling) return
-        if (!(message.data instanceof ArrayBuffer) || !pendingAudio)
-          throw new Error('Unexpected binary TTS payload')
-        const metadata = pendingAudio
-        pendingAudio = null
-        if (
-          message.data.byteLength !== metadata.samples * Float32Array.BYTES_PER_ELEMENT ||
-          !new Float32Array(message.data).every(Number.isFinite)
-        )
-          throw new Error('Invalid PCM length or non-finite samples')
-        onEvent({ type: 'audio', ...metadata, pcm: message.data })
-      } catch (error) {
-        fail(
-          'invalid_stream_response',
-          error instanceof Error ? error.message : 'Invalid TTS stream',
-        )
-      }
-    })
-    socket.addEventListener('error', () => fail('stream_transport_error', 'TTS stream failed'))
-    socket.addEventListener('close', () => {
-      if (!terminal) fail('stream_closed', 'TTS stream closed before inference settlement')
-    })
+      })
+      activeSocket.addEventListener('error', (event) => {
+        const error = 'error' in event && event.error instanceof Error ? event.error : null
+        mainLog.error('[SpeechClient] stream transport failed', {
+          errorName: error?.name.slice(0, 80),
+          reason: error?.message.slice(0, 240),
+          cause: error?.cause instanceof Error ? error.cause.message.slice(0, 240) : undefined,
+        })
+        fail('stream_transport_error', 'TTS stream failed')
+      })
+      activeSocket.addEventListener('close', () => {
+        if (!terminal) fail('stream_closed', 'TTS stream closed before inference settlement')
+      })
+    }
+    if (this.recoveryReadinessRequired) {
+      // Cancellation destroys the real Fish worker. Its acknowledgement precedes
+      // the API-owned reload/warmup; poll readiness before this turn's only stream.
+      void this.waitForSynthesisRecovery(recoveryWait.signal).then(
+        () => {
+          if (terminal || cancelling) return
+          this.recoveryReadinessRequired = false
+          try {
+            connect()
+          } catch (error) {
+            fail(
+              'stream_transport_error',
+              error instanceof Error ? error.message : 'TTS stream failed',
+            )
+          }
+        },
+        (error: unknown) => {
+          if (!terminal && !cancelling)
+            fail(
+              'synthesis_recovery_failed',
+              error instanceof Error ? error.message : 'Fish recovery failed',
+            )
+        },
+      )
+    } else connect()
     return connection
+  }
+
+  private async waitForSynthesisRecovery(signal: AbortSignal): Promise<void> {
+    const request = combineAbortSignals([signal, AbortSignal.timeout(120_000)])
+    try {
+      while (true) {
+        request.signal.throwIfAborted()
+        const health = await this.health(request.signal)
+        if (deriveCapabilities(health).synthesis) return
+        if (!['loading', 'warming'].includes(health.synthesis?.status ?? ''))
+          throw new Error('Fish synthesis recovery is unavailable')
+        await delay(500, undefined, { signal: request.signal })
+      }
+    } finally {
+      request.dispose()
+    }
   }
 
   private requestSignal(signal?: AbortSignal): RequestSignal {

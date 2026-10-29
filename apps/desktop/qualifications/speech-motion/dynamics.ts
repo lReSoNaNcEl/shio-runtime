@@ -24,12 +24,17 @@ const sourceFile = path.resolve(option('source') ?? '')
 const output = path.resolve(option('output') ?? path.join(path.dirname(sourceFile), 'baseline'))
 const model = path.resolve(option('vrm') ?? 'src/renderer/assets/vrm/green_fox.vrm')
 const proceduralMode = option('procedural') ?? 'none'
+const trackingPolicy = option('tracking-policy') ?? 'source'
+if (!['source', 'previous'].includes(trackingPolicy)) throw new Error('Unknown tracking policy')
 if (!['none', 'breathing', 'micro', 'full'].includes(proceduralMode))
   throw new Error('Unknown procedural diagnostic mode')
 const source = JSON.parse(readFileSync(sourceFile, 'utf8')) as {
   seed: number
   pins: unknown
-  cases: Array<{ profileId: string; chunks: Array<MotionChunk & { phase: MotionPhaseId }> }>
+  cases: Array<{
+    profileId: string
+    chunks: Array<MotionChunk & { phase: MotionPhaseId; consumedFrames?: number }>
+  }>
 }
 const lease = {
   sessionId: 'qualification',
@@ -167,15 +172,19 @@ for (const entry of source.cases) {
   physicalSafety.attach(physicalRig)
   const feet = planted(physicalRig)
   const wristRigs = Object.fromEntries(
-    ['artistic', 'admissible', 'final'].map((stage) => [stage, greenFoxRig(model)]),
+    ['retargeted', 'artistic', 'admissible', 'temporal', 'final'].map((stage) => [
+      stage,
+      greenFoxRig(model),
+    ]),
   )
   const wristPoints: Record<string, Array<{ frame: number; point: THREE.Vector3 }>> = {}
   const chunks = entry.chunks.map((captured, index) => {
-    const { phase, ...data } = captured
+    const { phase, consumedFrames: _consumedFrames, ...data } = captured
     const execution = replay.execution
     execution.phase = phase
     return motionChunkSchema.parse({
       ...data,
+      sourceProvider: trackingPolicy === 'previous' ? undefined : data.sourceProvider,
       ...lease,
       type: 'motion',
       id: index,
@@ -189,16 +198,21 @@ for (const entry of source.cases) {
   replay.queue = chunks
   let corrections = 0,
     contacts = 0
+  const strokeIndex = entry.chunks.findIndex((chunk) => chunk.phase === 'stroke')
+  const strokeStart = entry.chunks[strokeIndex]?.startFrame ?? 60
+  const strokeEnd = strokeStart + (entry.chunks[strokeIndex]?.consumedFrames ?? 60)
   const timings: Array<{ retargetMs: number; finalSafetyMs: number }> = []
   const started = performance.now()
   for (const [index, chunk] of chunks.entries()) {
     replay.execution.phase = entry.chunks[index].phase
-    for (let step = 0; step < 120; step++) {
+    const count = entry.chunks[index].consumedFrames ?? 60
+    for (let step = 0; step < count * 2; step++) {
       frameSamples = []
       replay.cursor = chunk.startFrame + step / 2
+      replay.execution.elapsedMs = (step * 1000) / 60
       const retargetAt = performance.now()
       procedural.remove()
-      replay.apply(chunk, 1 / 60, step / 120)
+      replay.apply(chunk, 1 / 60, step / (count * 2))
       if (proceduralMode === 'full') procedural.update(1 / 60)
       else if (proceduralMode !== 'none') {
         const channel = Reflect.get(
@@ -280,7 +294,7 @@ for (const entry of source.cases) {
       strokeStages: Object.fromEntries(
         Object.entries(byStage).map(([name, values]) => [
           name,
-          metrics(values.filter((v) => v.sourceFrame >= 60 && v.sourceFrame < 120)),
+          metrics(values.filter((v) => v.sourceFrame >= strokeStart && v.sourceFrame < strokeEnd)),
         ]),
       ),
       tracking: tracking(byStage.artistic, byStage.final),
@@ -291,14 +305,20 @@ for (const entry of source.cases) {
   })
   summary.push({
     profileId: profile.id,
-    samples: 360,
-    sourceFramesConsumed: 180,
+    samples: entry.chunks.reduce((sum, chunk) => sum + (chunk.consumedFrames ?? 60) * 2, 0),
+    sourceFramesConsumed: entry.chunks.reduce(
+      (sum, chunk) => sum + (chunk.consumedFrames ?? 60),
+      0,
+    ),
+    strokeRange: [strokeStart, strokeEnd],
     replayMs: performance.now() - started,
     contactCorrectionFrames: corrections,
     unresolvedArmContacts: contacts,
     strokeWrists: Object.fromEntries(
       Object.entries(wristPoints).map(([key, points]) => {
-        const stroke = points.filter((value) => value.frame >= 60 && value.frame < 120)
+        const stroke = points.filter(
+          (value) => value.frame >= strokeStart && value.frame < strokeEnd,
+        )
         return [
           key,
           {
@@ -316,7 +336,9 @@ for (const entry of source.cases) {
     strokeWindows: Object.fromEntries(
       [800, 1200, 1600, 2000].map((ms) => {
         const points = (wristPoints['final:right'] ?? []).filter(
-          (value) => value.frame >= 60 && value.frame < 60 + (ms * 30) / 1000,
+          (value) =>
+            value.frame >= strokeStart &&
+            value.frame < Math.min(strokeEnd, strokeStart + (ms * 30) / 1000),
         )
         return [ms, Math.max(0, ...points.map((value) => value.point.distanceTo(points[0].point)))]
       }),
@@ -339,6 +361,7 @@ writeFileSync(
       pins: source.pins,
       seed: source.seed,
       proceduralMode,
+      trackingPolicy,
       rendererFps: 60,
       artisticAcceptance: 'pending',
       cases: summary,

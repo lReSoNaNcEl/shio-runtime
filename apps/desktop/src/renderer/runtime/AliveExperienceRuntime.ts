@@ -10,7 +10,7 @@ interface AliveExperienceRuntimeDeps {
   getControllerState: () => ControllerState
   updateSnapshot: (snapshot: AliveSnapshot) => void
   pushInitiative: (title: string) => void
-  runBrowserInitiative: (topic: string) => Promise<void>
+  runAdmittedInitiative: (topic: string) => Promise<void>
   presentation: ConversationPresentationPort
   recordEvent: (label: string, detail?: string) => void
 }
@@ -106,10 +106,10 @@ export class AliveExperienceRuntime {
         this.deps.presentation.setBehaviorEmbodimentIntent(command.intent.intent)
       }
     } else if (command.intent.kind === 'conversation-candidate') {
-      if (command.embodimentPresence?.source === 'browser-computer-use') {
+      if (command.initiativeDisposition === 'admit') {
         observeRendererPromise(
-          this.deps.runBrowserInitiative(command.intent.topic),
-          'run browser computer-use initiative',
+          this.deps.runAdmittedInitiative(command.intent.topic),
+          'run admitted autonomous initiative',
         )
       } else {
         this.deps.pushInitiative(command.intent.topic)

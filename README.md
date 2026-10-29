@@ -2,13 +2,13 @@
 
 Desktop AI character runtime with a local ASR/TTS service.
 
-The repository contains two independent applications:
+The development repository contains:
 
 - `apps/desktop` — Electron desktop client;
-- `apps/api` — local FastAPI service for speech recognition and synthesis.
+- `apps/api` — independent FastAPI service for speech recognition and synthesis;
 
-They communicate only through an HTTP API. Neither application imports or directly
-reads the implementation files of the other. See [ARCHITECTURE.md](./ARCHITECTURE.md)
+Desktop and Speech API communicate only through HTTP; neither imports or reads
+the other's implementation. Character Runtime remains in Desktop. See [ARCHITECTURE.md](./ARCHITECTURE.md)
 and [AGENTS.md](./AGENTS.md).
 
 ## Repository layout
@@ -17,7 +17,8 @@ and [AGENTS.md](./AGENTS.md).
 shio-runtime/
 ├─ apps/
 │  ├─ desktop/          Electron + React + Three.js application
-│  └─ api/              Python Speech API application
+│  ├─ api/              Python Speech API application
+│  └─ llm/              Local model assets and inference lifecycle
 ├─ launcher/            Release installation and process coordination
 ├─ scripts/             Repository and release tooling
 ├─ docs/                Product, architecture, and release documentation
@@ -85,7 +86,7 @@ details without logging credentials or full browser/DOM snapshots.
 - Node.js 24.x
 - npm 11.x
 - Python 3.12
-- NVIDIA CUDA GPU for the ARDY/Fish experiment; measured profile and RAM/VRAM requirements are in [the experiment guide](docs/EXPERIMENT-ARDY-FISH.md)
+- NVIDIA CUDA GPU for MotionBricks + Fish; setup and current limitations are in [the MotionBricks guide](apps/desktop/motionbricks/README.md)
 - PowerShell examples below assume Windows
 
 Developed with:
@@ -198,8 +199,8 @@ forwards the signal so uvicorn shuts down and port 8000 is released.
 
 > **Prepare models explicitly.** Run `npm run api:prefetch` and
 > `npm run api:voices:sync` before starting the API. Fish loading and compile
-> warmup are reported by `/health`. ARDY has its own isolated environment and
-> prefetch commands: see [the experiment guide](docs/EXPERIMENT-ARDY-FISH.md).
+> warmup are reported by `/health`. MotionBricks has its own isolated environment:
+> see [the development guide](apps/desktop/motionbricks/README.md).
 
 **Terminal 2 — Desktop**
 
@@ -360,12 +361,13 @@ environment override.
 VOICE_DATASET_REVISION=
 ```
 
-### Fish and ARDY models
+### Fish and MotionBricks models
 
-Fish model/source revisions are pinned in API configuration and the launcher
-manifest. ARDY and its exact LLM2Vec base/adapters are pinned independently in
-`apps/desktop/motion/research-pins.json`. LLM2Vec conditions motion; it does not
-replace the Character LLM provider. Models are prepared explicitly and run offline.
+Fish model/source revisions remain pinned independently in Speech API configuration.
+MotionBricks and native SOMA-X Hand pins are in
+`apps/desktop/motionbricks/research-pins.json`. The single standing reference is
+versioned separately; runtime requires no evaluation BVH, VRMA clips or text encoder.
+See [MotionBricks setup](apps/desktop/motionbricks/README.md).
 
 ## Files not stored in Git
 
@@ -374,7 +376,7 @@ replace the Character LLM provider. Models are prepared explicitly and run offli
 API virtual environments
 node_modules
 build output
-Fish/ASR weights (apps/api/models/) and ARDY/LLM2Vec assets (apps/desktop/motion/.cache/)
+Fish/ASR weights (apps/api/models/) and MotionBricks/SOMA-X assets (apps/desktop/motionbricks/.cache/)
 voice reference assets (apps/api/voices/**/reference.wav|.txt)
 generated and temporary audio
 runtime logs
@@ -411,7 +413,7 @@ npm run api:test
 Then verify the read-only endpoints respond: `/health`, `/voices`, `/emotions`.
 For explicitly requested live validation, verify actual early PCM and playback
 from `/tts/stream`, input continuation, cancellation settlement, ASR, and the
-joint Electron/ARDY/Fish profile described in the experiment guide.
+joint Electron/MotionBricks/Fish profile described in the experiment guide.
 
 ## Architecture
 

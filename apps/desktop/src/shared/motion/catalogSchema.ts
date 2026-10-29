@@ -212,9 +212,6 @@ export const motionCatalogProfileSchema = z
         rigProfiles: z.array(z.literal('vrm-normalized-hands-v1')).length(1),
       })
       .strict(),
-    conditioningRefs: z
-      .object({ templateId: boundedId, prompt: z.string().min(1).max(600) })
-      .strict(),
     behaviorTags: z.array(z.string().min(1).max(64)).max(8),
     usage: z
       .object({
@@ -296,8 +293,8 @@ export type MotionProfile = z.infer<typeof motionCatalogProfileSchema>
 export const motionFormatSchema = z
   .object({
     protocolVersion: z.literal(2),
-    sourceRevision: z.literal('e706e27acc88070918308a10922b8f7174d0825e'),
-    modelRevision: z.literal('244215084b22fcd29ab743017330e87411fe168a'),
+    sourceRevision: z.literal('54fc563aeaaf819a753d72cc9fdc6713989cdd43'),
+    modelRevision: z.literal('6c9f78e23decbda8e1cfd1b0cc96980ea4b24b3ca2c808d03b058f48f82fc9ef'),
     skeleton: z.literal('soma30-standard-tpose-v1'),
     referencePose: z.literal('standard-tpose'),
     quaternionOrder: z.literal('xyzw'),
@@ -308,7 +305,7 @@ export const motionFormatSchema = z
     units: z.literal('metres'),
     fps: z.literal(30),
     horizonFrames: z.literal(60),
-    historyFrames: z.literal(60),
+    historyFrames: z.literal(4),
     contactOrder: z.tuple([
       z.literal('leftHeel'),
       z.literal('leftToe'),

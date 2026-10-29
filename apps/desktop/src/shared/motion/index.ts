@@ -41,6 +41,9 @@ export const motionReadySchema = z
   .object({
     type: z.literal('ready'),
     catalogRevision: z.literal(MOTION_CATALOG_REVISION),
+    handModelRevision: z
+      .literal('233e9225c1da05c6a3dd98107b9f027f2366e3b972bbe67e0d164e5d28619fff')
+      .optional(),
     format: motionFormatSchema,
   })
   .strict()
@@ -69,12 +72,68 @@ export const motionStartSchema = z
     seed: identity.optional(),
   })
   .strict()
+export const motionProsodySchema = z
+  .object({
+    throughSample: z
+      .number()
+      .int()
+      .min(0)
+      .max(2 ** 48),
+    sampleRate: z.number().int().min(8000).max(192000),
+    envelope: z.array(z.number().finite().min(0).max(1)).min(1).max(12),
+    phase: z.enum(['onset', 'speech', 'pause']),
+    accent: z.number().finite().min(0).max(1),
+    leadMs: z.number().finite().min(0).max(4000),
+    available: z
+      .object({
+        startSample: z
+          .number()
+          .int()
+          .min(0)
+          .max(2 ** 48),
+        stepSamples: z.number().int().min(1).max(9600),
+        energy: z.array(z.number().finite().min(0).max(1)).min(1).max(30),
+        finalSample: z
+          .number()
+          .int()
+          .min(0)
+          .max(2 ** 48)
+          .nullable(),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict()
+  .refine(
+    (value) =>
+      !value.available ||
+      (value.available.stepSamples <= value.sampleRate * 0.05 + 1 &&
+        Math.abs(value.available.startSample - value.throughSample) <= value.sampleRate &&
+        (value.available.finalSample === null ||
+          value.available.finalSample >= value.available.startSample)),
+    'Invalid available PCM context',
+  )
+export type MotionProsody = z.infer<typeof motionProsodySchema>
+export const motionActivitySchema = z
+  .object({
+    energy: z.number().finite().min(0).max(1),
+    playbackId: z.string().min(1).max(128).nullable(),
+    speaking: z.boolean(),
+    prosody: motionProsodySchema.optional(),
+  })
+  .strict()
+  .refine(
+    (value) => !value.prosody || value.playbackId !== null,
+    'Prosody requires playback identity',
+  )
+export type MotionActivity = z.infer<typeof motionActivitySchema>
 export const motionNextSchema = z
   .object({
     lease: motionLeaseSchema,
     profileId: motionProfileSchema,
     fromFrame: identity.optional(),
     plan: motionPlanIdentitySchema,
+    activity: motionActivitySchema.optional(),
   })
   .strict()
 const finite = z.number().finite()
@@ -91,9 +150,20 @@ export const motionChunkSchema = motionLeaseSchema
     fromFrame: identity,
     profileId: motionProfileSchema,
     skeleton: z.literal('soma30-standard-tpose-v1'),
+    sourceProvider: z.literal('motionbricks').optional(),
     fps: z.literal(30),
     startFrame: identity,
     rotations: z.array(z.array(quaternion).length(30)).length(60),
+    handDeltas: z
+      .object({
+        modelRevision: z.literal(
+          '233e9225c1da05c6a3dd98107b9f027f2366e3b972bbe67e0d164e5d28619fff',
+        ),
+        basis: z.object({ left: quaternion, right: quaternion }).strict(),
+        rotations: z.array(z.array(quaternion).length(30)).length(60),
+      })
+      .strict()
+      .optional(),
     rootPositions: z.array(point).length(60),
     footContacts: z
       .array(
@@ -110,6 +180,16 @@ export const motionChunkSchema = motionLeaseSchema
     plan: motionPlanIdentitySchema,
     protocolVersion: z.literal(2),
     inferenceMs: finite.min(0).max(120_000),
+    timings: z
+      .object({
+        planningMs: finite.min(0).max(120000),
+        generationMs: finite.min(0).max(120000),
+        conversionMs: finite.min(0).max(120000),
+        handMs: finite.min(0).max(120000),
+        endpointFrames: z.number().int().min(0).max(57),
+      })
+      .strict()
+      .optional(),
   })
   .strict()
 export type MotionChunk = z.infer<typeof motionChunkSchema>
@@ -219,6 +299,8 @@ export const BODY_BONE_NAMES = [
   'leftToes',
   ...HAND_BONE_NAMES,
 ] as const
+/** Composed procedural head/neck, mirrored so Overlay never runs a second head actor. */
+export const HEAD_PRESENTATION_BONE_NAMES = ['neck', 'head'] as const
 const bodyPresentationBaseSchema = z
   .object({
     lease: motionLeaseSchema.nullable(),
@@ -235,6 +317,7 @@ const bodyPresentationBaseSchema = z
       .nullable()
       .optional(),
     bones: z.partialRecord(z.enum(BODY_BONE_NAMES), quaternion),
+    headBones: z.partialRecord(z.enum(HEAD_PRESENTATION_BONE_NAMES), quaternion).optional(),
     hipsPosition: point,
     chestPosition: point.optional(),
     facialActing: facialActingPresentationSchema.optional(),

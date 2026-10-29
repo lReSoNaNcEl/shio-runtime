@@ -635,7 +635,7 @@ export const enMessages: Record<TranslationKey, string> = {
   'rendererError.openLogs': 'Open logs folder',
   'rendererError.restartHint': 'If the error returns, send the error ID and the copied diagnostic.',
 
-  'diagnostics.motion.body': 'ARDY motion',
+  'diagnostics.motion.body': 'MotionBricks motion',
   'diagnostics.motion.continuous': 'Continuous presence requested',
   'diagnostics.motion.requestStatus': 'Motion request status',
   'diagnostics.tabs.events': 'Event Stream',
@@ -1120,9 +1120,9 @@ export const enMessages: Record<TranslationKey, string> = {
   'settings.developerRuntime.title': 'Runtime and diagnostics',
   'settings.developerRuntime.description':
     'Speech API connection, service HUD, and access to local logs.',
-  'settings.developerAnimationHud.title': 'Show active ARDY profile',
+  'settings.developerAnimationHud.title': 'Show active MotionBricks profile',
   'settings.developerAnimationHud.description':
-    'Displays the active ARDY motion profile above the avatar in Overlay. Use Diagnostics for runtime inspection.',
+    'Displays the active MotionBricks motion profile above the avatar in Overlay. Use Diagnostics for runtime inspection.',
   'settings.saveFailed': 'Could not save settings',
   'settings.general.empty': 'General application settings do not need further configuration.',
   'settings.advanced.description': 'Diagnostics and advanced Runtime settings.',

@@ -229,7 +229,7 @@ describe('generated preview startup lifecycle', () => {
       frame: 1,
     })
     setActive(true)
-    reject(new Error('ARDY_SPEECH_WINDOW_MISSED'))
+    reject(new Error('MOTION_SPEECH_WINDOW_MISSED'))
     await animations.waitForLatestPlaybackRequest(100)
     owner.advanceQueue(2)
     expect(owner.getQueue().getCurrent()?.animationId).toBe('greet_wave_soft')
@@ -256,7 +256,7 @@ describe('generated preview startup lifecycle', () => {
   it('reports a failed generated horizon instead of claiming playback started', async () => {
     const { animations, owner, reject } = pending()
     owner.previewAnimation({ animationId: 'greet_wave_soft', loop: false, mode: 'idle', frame: 1 })
-    reject(new Error('ARDY_INFERENCE_FAILED'))
+    reject(new Error('MOTION_INFERENCE_FAILED'))
     await animations.waitForLatestPlaybackRequest(100)
     expect(animations.getDebugState().playbackStatus).toBe('failed')
     owner.advanceQueue(2)
@@ -266,7 +266,7 @@ describe('generated preview startup lifecycle', () => {
   it('releases a failed presence startup without leaving a duplicate blocker', async () => {
     const { animations, owner, reject } = pending()
     owner.previewAnimation({ animationId: 'presence_poised', loop: true, mode: 'idle', frame: 1 })
-    reject(new Error('ARDY_INFERENCE_FAILED'))
+    reject(new Error('MOTION_INFERENCE_FAILED'))
     await animations.waitForLatestPlaybackRequest(100)
     owner.advanceQueue(2)
     expect(owner.getQueue().getCurrent()).toBeNull()
@@ -275,7 +275,7 @@ describe('generated preview startup lifecycle', () => {
 })
 
 describe('generated fallback request context', () => {
-  it.each(['ARDY_SPEECH_WINDOW_MISSED', 'ARDY_SPEECH_ENDED', 'ARDY_superseded'])(
+  it.each(['MOTION_SPEECH_WINDOW_MISSED', 'MOTION_SPEECH_ENDED', 'MOTION_superseded'])(
     'does not blacklist a valid gesture or start a failure fallback for %s',
     async (reason) => {
       const requestGeneratedMotion = vi.fn(async () => {
@@ -302,7 +302,7 @@ describe('generated fallback request context', () => {
     'preserves speech binding and provenance when %s falls back',
     async (profileId) => {
       const requestGeneratedMotion = vi.fn(async (id: string) => {
-        if (id === 'agree_soft') throw new Error('ARDY_cooldown')
+        if (id === 'agree_soft') throw new Error('MOTION_cooldown')
       })
       const model = {
         isLoaded: () => true,

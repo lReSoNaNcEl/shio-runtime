@@ -66,68 +66,72 @@ export function LlmSettingsSection({
             styles={fullWidth}
           />
         )}
-        <div className="settings-field">
-          <span className="settings-label">{credentialLabel}</span>
-          <div className="settings-row">
-            {showCredentialInput ? (
-              <TextField
-                aria-label={credentialLabel}
-                value={state.keyInput}
-                onChange={actions.setKeyInput}
-                type="password"
-                placeholder={usesApiToken ? t('settings.llm.newToken') : t('settings.llm.newKey')}
-                UNSAFE_className="grow"
-              />
-            ) : (
-              <TextField
-                aria-label={credentialLabel}
-                value="••••••••"
-                isReadOnly
-                UNSAFE_className="grow"
-              />
-            )}
-            {showCredentialInput ? (
-              <ActionButton
-                onPress={() =>
-                  observeRendererPromise(actions.saveCredential(), 'save LLM credential')
-                }
-                isDisabled={!state.keyInput.trim() || credential?.secureStorageAvailable === false}
-              >
-                <Text>
-                  {usesApiToken ? t('settings.llm.saveToken') : t('settings.llm.saveKey')}
-                </Text>
-              </ActionButton>
-            ) : (
-              <>
-                <ActionButton onPress={() => actions.setEditingKey(true)}>
-                  <Text>
-                    {usesApiToken ? t('settings.llm.replaceToken') : t('settings.llm.replaceKey')}
-                  </Text>
-                </ActionButton>
+        {activeProfile?.requiresApiKey !== false && (
+          <div className="settings-field">
+            <span className="settings-label">{credentialLabel}</span>
+            <div className="settings-row">
+              {showCredentialInput ? (
+                <TextField
+                  aria-label={credentialLabel}
+                  value={state.keyInput}
+                  onChange={actions.setKeyInput}
+                  type="password"
+                  placeholder={usesApiToken ? t('settings.llm.newToken') : t('settings.llm.newKey')}
+                  UNSAFE_className="grow"
+                />
+              ) : (
+                <TextField
+                  aria-label={credentialLabel}
+                  value="••••••••"
+                  isReadOnly
+                  UNSAFE_className="grow"
+                />
+              )}
+              {showCredentialInput ? (
                 <ActionButton
                   onPress={() =>
-                    observeRendererPromise(actions.forgetCredential(), 'forget LLM credential')
+                    observeRendererPromise(actions.saveCredential(), 'save LLM credential')
+                  }
+                  isDisabled={
+                    !state.keyInput.trim() || credential?.secureStorageAvailable === false
                   }
                 >
                   <Text>
-                    {usesApiToken ? t('settings.llm.deleteToken') : t('settings.llm.deleteKey')}
+                    {usesApiToken ? t('settings.llm.saveToken') : t('settings.llm.saveKey')}
                   </Text>
                 </ActionButton>
-              </>
+              ) : (
+                <>
+                  <ActionButton onPress={() => actions.setEditingKey(true)}>
+                    <Text>
+                      {usesApiToken ? t('settings.llm.replaceToken') : t('settings.llm.replaceKey')}
+                    </Text>
+                  </ActionButton>
+                  <ActionButton
+                    onPress={() =>
+                      observeRendererPromise(actions.forgetCredential(), 'forget LLM credential')
+                    }
+                  >
+                    <Text>
+                      {usesApiToken ? t('settings.llm.deleteToken') : t('settings.llm.deleteKey')}
+                    </Text>
+                  </ActionButton>
+                </>
+              )}
+            </div>
+            {credential?.configured && !state.editingKey && (
+              <span className="settings-hint" role="status">
+                {usesApiToken ? t('settings.llm.tokenConfigured') : t('settings.llm.keyConfigured')}
+              </span>
+            )}
+            {credential?.lastError && (
+              <span className="settings-hint">{t('settings.llm.secureStorageError')}</span>
+            )}
+            {credential?.secureStorageAvailable === false && (
+              <span className="settings-hint">{t('settings.llm.secureStorageUnavailable')}</span>
             )}
           </div>
-          {credential?.configured && !state.editingKey && (
-            <span className="settings-hint" role="status">
-              {usesApiToken ? t('settings.llm.tokenConfigured') : t('settings.llm.keyConfigured')}
-            </span>
-          )}
-          {credential?.lastError && (
-            <span className="settings-hint">{t('settings.llm.secureStorageError')}</span>
-          )}
-          {credential?.secureStorageAvailable === false && (
-            <span className="settings-hint">{t('settings.llm.secureStorageUnavailable')}</span>
-          )}
-        </div>
+        )}
         <div className="settings-field">
           <ModelComboBox
             label={t('common.model')}

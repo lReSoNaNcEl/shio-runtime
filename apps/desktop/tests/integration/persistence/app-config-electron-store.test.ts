@@ -43,6 +43,39 @@ function credentialStore() {
 }
 
 describe('App config electron-store migration', () => {
+  it('removes a retired provider on load while preserving saved provider choices', async () => {
+    const directory = temporaryUserData()
+    const configPath = join(directory, 'config.json')
+    const config = await import('../../../src/main/config')
+    const defaults = config.freshDefaults()
+    writeFileSync(
+      configPath,
+      JSON.stringify({
+        ...defaults,
+        llm: {
+          ...defaults.llm,
+          activeProvider: 'retired-provider',
+          providers: {
+            ...defaults.llm.providers,
+            mistral: { model: 'saved-model', accountId: '' },
+            'retired-provider': { model: 'retired-model', contextLimit: 8192 },
+          },
+        },
+      }),
+    )
+    const loaded = await config.loadConfig(credentialStore() as never)
+    expect(loaded.llm.activeProvider).toBe('groq')
+    expect(loaded.llm.providers.mistral.model).toBe('saved-model')
+    expect(loaded.llm.providers).not.toHaveProperty('retired-provider')
+    const saved = readFileSync(configPath, 'utf8')
+    expect(saved).not.toContain('retired-provider')
+    expect(saved).not.toContain('retired-model')
+    vi.resetModules()
+    const restarted = await import('../../../src/main/config')
+    await restarted.loadConfig(credentialStore() as never)
+    expect(readFileSync(configPath, 'utf8')).toBe(saved)
+  })
+
   it('keeps fresh defaults, the exact path, and restart persistence', async () => {
     const directory = temporaryUserData()
     const configPath = join(directory, 'config.json')

@@ -1,3 +1,5 @@
+import { type AvailablePcmEnergy, PcmEnergyTimeline } from './PcmEnergyTimeline'
+
 export interface PlaybackSession {
   playbackId: string
   turnId: string
@@ -11,6 +13,7 @@ export interface PlaybackSession {
 }
 
 export interface PcmPlaybackClock {
+  availableEnergy?: AvailablePcmEnergy
   firstPcmAt?: number
   firstOutputAt?: number
   firstAudibleAt?: number
@@ -78,9 +81,18 @@ export class AudioPlayer {
   private playbackSeq = 0
   private workletLoaded: Promise<void> | null = null
   private pcmClock: PcmPlaybackClock | null = null
+  private pcmEnergy: PcmEnergyTimeline | null = null
 
   getPcmClock(): PcmPlaybackClock | null {
-    return this.pcmClock ? { ...this.pcmClock } : null
+    if (!this.pcmClock) return null
+    const availableEnergy =
+      this.pcmClock.state === 'playing' || this.pcmClock.state === 'buffering'
+        ? this.pcmEnergy?.snapshot(
+            this.pcmClock.sourceSampleOffset,
+            this.activePlayback?.normalizationReference ?? 0.12,
+          )
+        : undefined
+    return { ...this.pcmClock, ...(availableEnergy ? { availableEnergy } : {}) }
   }
 
   constructor() {
@@ -158,6 +170,7 @@ export class AudioPlayer {
         processorOptions: { sourceSampleRate: sampleRate },
       })
       active.streamNode = node
+      this.pcmEnergy = new PcmEnergyTimeline(sampleRate)
       this.pcmClock = {
         turnId: options.turnId,
         playbackId: active.playbackId,
@@ -339,6 +352,7 @@ export class AudioPlayer {
               ? source.slice(offset, offset + pushSamples).buffer
               : pcm
             bufferedSamples += pushSamples
+            this.pcmEnergy?.append(source, offset, pushSamples)
             submittedSamples += pushSamples
             node.port.postMessage({ type: 'push', pcm: pushPcm }, [pushPcm])
           }
@@ -347,6 +361,7 @@ export class AudioPlayer {
           if (!finished) {
             finished = true
             session.durationFinal = true
+            this.pcmEnergy?.finish()
             node.port.postMessage({ type: 'finish' })
           }
           await ended
@@ -369,6 +384,7 @@ export class AudioPlayer {
     // still pending. Every later async continuation fails assertOwner and can
     // never create or start a stale source after interruption.
     this.activePlayback = null
+    this.pcmEnergy = null
     if (this.pcmClock?.playbackId === active.playbackId && this.pcmClock.state !== 'ended')
       this.pcmClock.state = 'cancelled'
     this.clearProgressTimer()
@@ -543,6 +559,7 @@ export class AudioPlayer {
     active.settle = null
     active.cancelStream = null
     this.activePlayback = null
+    this.pcmEnergy = null
     console.log(`[audio] playbackId=${active.playbackId} turnId=${active.turnId} released`)
   }
 

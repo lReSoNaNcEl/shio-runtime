@@ -11,6 +11,7 @@ export class ConsumedMotionClock {
   private consumed = 0
   private position = 0
   private priming = true
+  private compositorCredit = 0
 
   reset(): void {
     this.playbackId = ''
@@ -18,6 +19,7 @@ export class ConsumedMotionClock {
     this.consumed = 0
     this.position = 0
     this.priming = true
+    this.compositorCredit = 0
   }
 
   sample(
@@ -36,8 +38,21 @@ export class ConsumedMotionClock {
       this.consumed = consumed
       this.position = consumed
       this.priming = true
+      this.compositorCredit = 0
     }
     const consumedStep = consumed - this.consumed
+    // Worklet reports can lag several compositor frames, including consecutive
+    // frames below 50 ms. Conserve their unreported elapsed time until the
+    // consumed cursor catches up; retain at most the existing 250-ms bound.
+    const previousCompositorCredit = this.compositorCredit
+    this.compositorCredit =
+      clock.state === 'playing' && seconds >= 0 && seconds <= 0.25
+        ? Math.min(
+            0.25,
+            Math.max(0, previousCompositorCredit + seconds - Math.max(0, consumedStep)),
+          )
+        : 0
+    const compositorElapsed = seconds >= 0 && seconds <= 0.25 ? seconds : 0
     if (
       clock.state === 'playing' &&
       this.priming &&
@@ -50,30 +65,16 @@ export class ConsumedMotionClock {
       this.position = Math.max(this.position, consumed - RESERVE)
       this.priming = false
     }
-    if (
-      clock.state === 'playing' &&
-      seconds > 0.05 &&
-      seconds <= 0.25 &&
-      consumedStep > 0 &&
-      consumedStep <= seconds + RESERVE &&
-      consumed - this.position > MAX_LAG
-    ) {
-      // A slow compositor frame is different from a jump in the audio clock.
-      // Drop its unrendered interval, retaining the same bounded reserve. The
-      // physical integrator still limits its own step to 50 ms; phase/expiry
-      // observes consumed time rather than freezing indefinitely at low FPS.
-      this.consumed = consumed
-      this.position = Math.max(this.position, consumed - RESERVE)
-      this.priming = false
-      return { offset: this.position * clock.sourceSampleRate, discontinuity: false }
-    }
-    let discontinuity = consumed < this.consumed || consumed - this.position > MAX_LAG + dt + 1e-6
+    const discontinuity =
+      consumed < this.consumed ||
+      consumedStep > MAX_LAG + compositorElapsed + previousCompositorCredit + 1e-6
     this.consumed = consumed
     if (discontinuity) {
       // Discard skipped audible time. The owner rebases source sampling and
       // recovers an interrupted accent; no large integration step is returned.
       this.position = consumed
       this.priming = true
+      this.compositorCredit = 0
     }
     if (clock.state === 'playing' && !discontinuity) {
       const available = Math.max(0, consumed - this.position)
@@ -87,9 +88,11 @@ export class ConsumedMotionClock {
       }
     }
     if (consumed - this.position > MAX_LAG + 1e-6) {
-      this.position = consumed
-      this.priming = true
-      discontinuity = true
+      // Bounded presentation lag is not a jump in AudioPlayer's source clock.
+      // Normal packet jitter can exceed the reserve; discard its unrendered
+      // tail without interrupting the act or integrating banked time.
+      this.position = consumed - RESERVE
+      this.priming = false
     }
     return { offset: this.position * clock.sourceSampleRate, discontinuity }
   }

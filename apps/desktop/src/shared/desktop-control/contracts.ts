@@ -3,7 +3,7 @@ import { z } from 'zod'
 import type { DesktopAuthorityMode, DesktopWorkflowExecution } from '../actions'
 import { LLM_PROVIDER_IDS } from '../llm'
 
-export const DSH_RUNTIME_VERSION = '0.1.1-rc.2' as const
+export const DSH_RUNTIME_VERSION = '0.2.2-alpha.2' as const
 
 export const desktopControlRuntimeStateSchema = z.enum([
   'stopped',

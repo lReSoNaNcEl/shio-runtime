@@ -63,11 +63,17 @@ def run_worker(source: str, model: str, device: str, compile: bool, requests, re
         torchaudio.load = load_audio
         from fish_speech.conversation import Conversation
         from fish_speech.inference_engine import TTSInferenceEngine
+        from fish_speech.models.dac import modded_dac
         from fish_speech.models.dac.inference import load_model as load_decoder
         from fish_speech.models.text2semantic import inference
         from fish_speech.utils.schema import ServeReferenceAudio, ServeTTSRequest
         from loguru import logger
 
+        from app.tts.fish_memory import (
+            install_bounded_waveform_decode,
+            install_speech_context,
+            release_unused_codec_masks,
+        )
         from app.tts.fish_streaming import install_streaming_decode
 
         logger.remove()
@@ -87,7 +93,11 @@ def run_worker(source: str, model: str, device: str, compile: bool, requests, re
         )
 
         precision = torch.bfloat16 if device.startswith("cuda") else torch.float32
-        decoder = load_decoder("modded_dac_vq", str(Path(model) / "codec.pth"), device)
+        install_speech_context(inference)
+        decoder = load_decoder("modded_dac_vq", str(Path(model) / "codec.pth"), "cpu")
+        release_unused_codec_masks(decoder, modded_dac.WindowLimitedTransformer)
+        decoder.to(device)
+        install_bounded_waveform_decode(decoder, modded_dac)
         import json
 
         validation = (

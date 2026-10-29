@@ -178,16 +178,13 @@ async function defaultCreateHarness({
 }): Promise<HarnessRuntime> {
   const sdk = await import('@deepseek-ai/dsh-sdk-client')
   const harness = new sdk.DeepSeekHarness({
-    launch: {
-      command: resources.command,
-      args: [resources.runtimeScript],
-      cwd: resources.profileDirectory,
-      env: environment,
-      requestTimeoutMs,
-      shutdownTimeoutMs: 1_500,
-      disposeEofGraceMs: 6_000,
-      disposeGraceMs: 3_000,
-    },
+    dshBin: resources.runtimeScript,
+    processCwd: resources.profileDirectory,
+    env: environment,
+    requestTimeoutMs,
+    shutdownTimeoutMs: 1_500,
+    disposeEofGraceMs: 6_000,
+    disposeGraceMs: 3_000,
     cwd: resources.workspaceDirectory,
     provider: 'shio-settings',
     model: model.model,

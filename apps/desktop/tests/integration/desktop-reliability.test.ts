@@ -402,7 +402,7 @@ async function main(): Promise<void> {
 
 describe('desktop reliability contracts', () => {
   it.each(['underrun', 'late-chunk', 'error'])(
-    'records a bounded ARDY %s using its actual diagnostic signal',
+    'records a bounded generated motion %s using its actual diagnostic signal',
     (signal) => {
       let captured: unknown = null
       const recorder = new TransitionRecorder(async (payload) => {
@@ -413,7 +413,7 @@ describe('desktop reliability contracts', () => {
         const avatar = realisticAvatarDebugState(frame, 0)
         if (signal === 'underrun') avatar.bodyMotion.motionExecution.underruns = 1
         if (signal === 'late-chunk') avatar.bodyMotion.generated.lateChunks = 1
-        if (signal === 'error') avatar.bodyMotion.generated.error = 'ARDY_INFERENCE_FAILED'
+        if (signal === 'error') avatar.bodyMotion.generated.error = 'MOTION_INFERENCE_FAILED'
         recorder.observe(frame, avatar, null)
       }
       const recording = transitionRecordingSchema.parse(captured)
@@ -423,7 +423,7 @@ describe('desktop reliability contracts', () => {
           ? /horizon underrun/
           : signal === 'late-chunk'
             ? /late generated chunk/
-            : /ARDY_INFERENCE_FAILED/,
+            : /MOTION_INFERENCE_FAILED/,
       )
       assert(recording.frames.every((frame) => Object.hasOwn(frame.avatar, 'bodyMotion')))
     },
@@ -432,7 +432,7 @@ describe('desktop reliability contracts', () => {
     const tracker = new AvatarRuntimeHealthTracker()
     tracker.markReady(true)
     const motion = {
-      error: 'ARDY_SPATIAL_TARGET_UNREACHED',
+      error: 'MOTION_SPATIAL_TARGET_UNREACHED',
       state: 'ready' as const,
       queueFrames: 0,
       lateChunks: 0,

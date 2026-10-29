@@ -65,6 +65,28 @@ function torsoClearance(bones: Map<string, THREE.Object3D>, scene: THREE.Scene):
 }
 
 describe('generated body anatomical safety', () => {
+  it('keeps a MotionBricks arm velocity bounded after hinge and wrist projection across phases', () => {
+    const { bones, safety } = fixture()
+    safety.apply(Infinity)
+    const arm = bone(bones, 'leftUpperArm')
+    const lower = bone(bones, 'leftLowerArm')
+    const hand = bone(bones, 'leftHand')
+    let previous = [arm, lower, hand].map((node) => node.quaternion.clone())
+    for (let frame = 0; frame < 240; frame++) {
+      arm.quaternion.setFromEuler(new THREE.Euler(-0.3, 0.8, 1.1))
+      lower.quaternion.setFromEuler(new THREE.Euler(0.7, frame < 120 ? 2.8 : -2.8, 0.9))
+      hand.quaternion.setFromEuler(new THREE.Euler(1.2, -1.2, 1.2))
+      safety.apply(1 / 60, 1, true, {
+        motionClass: 'gesture',
+        sourceProvider: 'motionbricks',
+        phase: frame < 80 ? 'prepare' : frame < 160 ? 'stroke' : 'recover',
+      })
+      for (const [index, node] of [arm, lower, hand].entries())
+        expect(previous[index].angleTo(node.quaternion) * 60).toBeLessThanOrEqual(1.501)
+      previous = [arm, lower, hand].map((node) => node.quaternion.clone())
+      expect(safety.getDebugState().unresolvedArmContacts).toBe(0)
+    }
+  })
   it('escapes a contact introduced by a moving attachment without freezing the whole chain', () => {
     const { bones, safety } = fixture()
     bone(bones, 'leftUpperArm').rotation.z = 1.15

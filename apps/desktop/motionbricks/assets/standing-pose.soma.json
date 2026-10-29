@@ -1,0 +1,165 @@
+{
+  "calibrationVersion": "vrma-soma-standing-v1",
+  "skeletonIdentity": "soma30-standard-tpose-v1",
+  "source": {
+    "branch": "main",
+    "gitRevision": "39310f0d7a17616c30e2becdeeda845670353320",
+    "path": "apps/desktop/src/renderer/assets/vrma/breathing_idle.vrma",
+    "sha256": "438014d4e77a408b63670c761980baf9cd8298663366daea68bc299b2eebed8d",
+    "sampledTimestampSeconds": 1.3333333730697632,
+    "metadata": {
+      "generator": "FBX2glTF v0.9.7",
+      "version": "2.0"
+    },
+    "rightsStatus": "Repository provenance verified; original author/license not documented in source metadata. No redistribution license inferred."
+  },
+  "method": "VRMA world rotation * inverse rest world; normalized Y-up world delta * SOMA world bind; preserve SOMA lengths; root X/Z zero; lowest toe on floor. No source translation, fingers, head or face.",
+  "jointNames": [
+    "Hips",
+    "Spine1",
+    "Spine2",
+    "Chest",
+    "Neck1",
+    "Neck2",
+    "Head",
+    "HeadEnd",
+    "Jaw",
+    "LeftEye",
+    "RightEye",
+    "LeftShoulder",
+    "LeftArm",
+    "LeftForeArm",
+    "LeftHand",
+    "LeftHandThumb1",
+    "LeftHandThumb2",
+    "LeftHandThumb3",
+    "LeftHandThumbEnd",
+    "LeftHandIndex1",
+    "LeftHandIndex2",
+    "LeftHandIndex3",
+    "LeftHandIndex4",
+    "LeftHandIndexEnd",
+    "LeftHandMiddle1",
+    "LeftHandMiddle2",
+    "LeftHandMiddle3",
+    "LeftHandMiddle4",
+    "LeftHandMiddleEnd",
+    "LeftHandRing1",
+    "LeftHandRing2",
+    "LeftHandRing3",
+    "LeftHandRing4",
+    "LeftHandRingEnd",
+    "LeftHandPinky1",
+    "LeftHandPinky2",
+    "LeftHandPinky3",
+    "LeftHandPinky4",
+    "LeftHandPinkyEnd",
+    "RightShoulder",
+    "RightArm",
+    "RightForeArm",
+    "RightHand",
+    "RightHandThumb1",
+    "RightHandThumb2",
+    "RightHandThumb3",
+    "RightHandThumbEnd",
+    "RightHandIndex1",
+    "RightHandIndex2",
+    "RightHandIndex3",
+    "RightHandIndex4",
+    "RightHandIndexEnd",
+    "RightHandMiddle1",
+    "RightHandMiddle2",
+    "RightHandMiddle3",
+    "RightHandMiddle4",
+    "RightHandMiddleEnd",
+    "RightHandRing1",
+    "RightHandRing2",
+    "RightHandRing3",
+    "RightHandRing4",
+    "RightHandRingEnd",
+    "RightHandPinky1",
+    "RightHandPinky2",
+    "RightHandPinky3",
+    "RightHandPinky4",
+    "RightHandPinkyEnd",
+    "LeftLeg",
+    "LeftShin",
+    "LeftFoot",
+    "LeftToeBase",
+    "LeftToeEnd",
+    "RightLeg",
+    "RightShin",
+    "RightFoot",
+    "RightToeBase",
+    "RightToeEnd"
+  ],
+  "parents": [
+    -1, 0, 1, 2, 3, 4, 5, 6, 6, 6, 6, 3, 11, 12, 13, 14, 15, 16, 17, 14, 19, 20, 21, 22, 14, 24, 25,
+    26, 27, 14, 29, 30, 31, 32, 14, 34, 35, 36, 37, 3, 39, 40, 41, 42, 43, 44, 45, 42, 47, 48, 49,
+    50, 42, 52, 53, 54, 55, 42, 57, 58, 59, 60, 42, 62, 63, 64, 65, 0, 67, 68, 69, 70, 0, 72, 73,
+    74, 75
+  ],
+  "referenceSha256": "6c091cc568c4763a54ceef7090684bf362e7744f812117d0abf7f9afa647a240",
+  "rootHeightM": 0.9730546007372057,
+  "worldDeltas": {
+    "Hips": [
+      -0.028005065748228617, -0.0019010974811469253, -0.01741221417121217, 0.9994543095702078
+    ],
+    "Spine1": [
+      -0.016865526129692946, -0.001584902878357161, -0.0195398578837851, 0.9996655621082065
+    ],
+    "Spine2": [
+      -0.004356128699688682, -0.01994227108996589, -0.021147219858776635, 0.999567969204081
+    ],
+    "Chest": [
+      0.008226916705780123, -0.038269708705443176, -0.022305965298597012, 0.9989845800357554
+    ],
+    "LeftShoulder": [
+      0.011009511606515282, -0.042606653841240405, -0.02347697602858939, 0.9987553731015377
+    ],
+    "LeftArm": [0.15369158316108816, -0.1401149857135509, -0.6084542107300785, 0.7658525716407611],
+    "LeftForeArm": [
+      0.0027509953102476947, -0.3202990853098761, -0.6275588326055106, 0.7096272539814608
+    ],
+    "LeftHand": [
+      0.14670300767404856, -0.26667383316264487, -0.6661661050126468, 0.6808715112104553
+    ],
+    "RightShoulder": [
+      0.03395640860513599, 0.05129643543552864, -0.01194267973062002, 0.9980345737634051
+    ],
+    "RightArm": [0.18981898396434377, 0.18141289101379382, 0.5497412640044317, 0.7929960018509371],
+    "RightForeArm": [
+      0.04365442616843729, 0.37726325884661166, 0.5799492743245739, 0.7207118451994106
+    ],
+    "RightHand": [0.08879111218576134, 0.2624917475297716, 0.5904373619289541, 0.7580223891904244],
+    "LeftLeg": [
+      -0.14186309359862018, 0.024900233915702626, 0.016204168098716307, 0.9894403801956947
+    ],
+    "LeftShin": [0.14796953129276894, 0.11344990612937073, 0.02942375759132097, 0.982022596021824],
+    "LeftFoot": [
+      -5.1631482676957336e-8, 0.1374179538128397, -1.0733756362901749e-8, 0.9905131528505261
+    ],
+    "LeftToeBase": [
+      -0.002080456591932106, 0.13741775724898012, 0.00028863447617989696, 0.9905109531868734
+    ],
+    "RightLeg": [
+      -0.1418806625718843, -0.11999617516488745, -0.05944528745981756, 0.9807838973661734
+    ],
+    "RightShin": [
+      0.11067553272185097, -0.16513577231163581, -0.04345433096864845, 0.9790775374197088
+    ],
+    "RightFoot": [
+      -4.90672236114556e-8, -0.1986015221826074, -1.6221659571158398e-8, 0.9800803208853592
+    ],
+    "RightToeBase": [
+      -5.101581808924366e-7, -0.19860150258325743, -8.628167408319953e-8, 0.9800803248567971
+    ]
+  },
+  "supportMetrics": {
+    "footHeightDifferenceM": 0.0024630984239582196,
+    "supportWidthM": 0.4003293994407864,
+    "hipsAboveSupportM": 0.9555697886498933,
+    "hipsLateralOffsetM": 0.03995766108009202,
+    "highestHandAboveHipsM": -0.07099693122425998
+  }
+}

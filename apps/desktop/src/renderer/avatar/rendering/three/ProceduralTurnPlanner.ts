@@ -165,7 +165,7 @@ export class ProceduralTurnPlanner {
     readonly tempo: number,
   ) {
     const hips = vrm.humanoid.getNormalizedBoneNode('hips')
-    if (!hips) throw new Error('ARDY_RIG_UNSUPPORTED')
+    if (!hips) throw new Error('MOTION_RIG_UNSUPPORTED')
     vrm.scene.updateMatrixWorld(true)
     const root = hips.getWorldPosition(new THREE.Vector3())
     this.reference = vrm.scene.getWorldQuaternion(new THREE.Quaternion())
@@ -196,7 +196,7 @@ export class ProceduralTurnPlanner {
       const upper = vrm.humanoid.getNormalizedBoneNode(`${side}UpperLeg`)
       const lower = vrm.humanoid.getNormalizedBoneNode(`${side}LowerLeg`)
       const foot = vrm.humanoid.getNormalizedBoneNode(`${side}Foot`)
-      if (!upper || !lower || !foot) throw new Error('ARDY_RIG_UNSUPPORTED')
+      if (!upper || !lower || !foot) throw new Error('MOTION_RIG_UNSUPPORTED')
       const hip = upper.getWorldPosition(new THREE.Vector3()),
         knee = lower.getWorldPosition(new THREE.Vector3()),
         ankle = foot.getWorldPosition(new THREE.Vector3())
@@ -217,7 +217,7 @@ export class ProceduralTurnPlanner {
       }
     })
     this.legLength = Math.min(...this.legs.map((leg) => leg.upperLength + leg.lowerLength))
-    if (this.legLength < 0.15 || this.legLength > 2.5) throw new Error('ARDY_RIG_UNSUPPORTED')
+    if (this.legLength < 0.15 || this.legLength > 2.5) throw new Error('MOTION_RIG_UNSUPPORTED')
     this.floor = Math.min(...this.legs.map((leg) => root.y + leg.restOffset.y))
     this.centre = root.clone()
     this.centre.y = this.floor
