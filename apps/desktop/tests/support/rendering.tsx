@@ -4,22 +4,43 @@ import type { ReactNode } from 'react'
 import { LocalizationContext } from '../../src/renderer/localization/LocalizationProvider'
 import { toIntlLocale, translate, type UiLocale } from '../../src/shared/localization'
 
+function wrap(children: ReactNode, locale: UiLocale, theme: 'light' | 'dark') {
+  return (
+    <LocalizationContext.Provider
+      value={{
+        locale,
+        intlLocale: toIntlLocale(locale),
+        t: (key, params) => translate(locale, key, params),
+      }}
+    >
+      <Provider colorScheme={theme} locale={toIntlLocale(locale)}>
+        {children}
+      </Provider>
+    </LocalizationContext.Provider>
+  )
+}
+
+const wrappers = {
+  en: {
+    light: function EnglishLight({ children }: { children: ReactNode }) {
+      return wrap(children, 'en', 'light')
+    },
+    dark: function EnglishDark({ children }: { children: ReactNode }) {
+      return wrap(children, 'en', 'dark')
+    },
+  },
+  ru: {
+    light: function RussianLight({ children }: { children: ReactNode }) {
+      return wrap(children, 'ru', 'light')
+    },
+    dark: function RussianDark({ children }: { children: ReactNode }) {
+      return wrap(children, 'ru', 'dark')
+    },
+  },
+}
+
 export function localizedWrapper(locale: UiLocale = 'en', theme: 'light' | 'dark' = 'light') {
-  return function Wrapper({ children }: { children: ReactNode }) {
-    return (
-      <LocalizationContext.Provider
-        value={{
-          locale,
-          intlLocale: toIntlLocale(locale),
-          t: (key, params) => translate(locale, key, params),
-        }}
-      >
-        <Provider colorScheme={theme} locale={toIntlLocale(locale)}>
-          {children}
-        </Provider>
-      </LocalizationContext.Provider>
-    )
-  }
+  return wrappers[locale][theme]
 }
 
 export function stubWindowProperty(name: 'api' | 'overlayApi', value: unknown): () => void {

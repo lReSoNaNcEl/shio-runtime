@@ -23,7 +23,7 @@ export interface AvatarMotionAuthority {
 
 /**
  * Procedural motion is deliberately the lowest-authority body contribution.
- * Generated gestures reduce only their body channels. ARDY excludes head/neck;
+ * Generated gestures reduce only their body channels. MotionBricks excludes head/neck;
  * directed gaze retains authority over those independent contributions.
  */
 export function resolveAvatarMotionAuthority(input: {

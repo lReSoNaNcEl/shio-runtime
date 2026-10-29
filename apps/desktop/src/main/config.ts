@@ -212,6 +212,7 @@ export async function loadConfig(llmCredentialStore: LlmCredentialStore): Promis
         rawSaved.overlayViewMode === 'front' ||
         (rawSaved.uiTheme !== 'dark' && rawSaved.uiTheme !== 'light') ||
         rawSaved.setup === undefined ||
+        (!migrated && JSON.stringify(saved.llm) !== JSON.stringify(llm)) ||
         legacyProjectFound
       _config = {
         ...freshDefaults(),

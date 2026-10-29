@@ -181,7 +181,9 @@ describe('fixed Preview variation seeds and physical recovery', () => {
     expect(owner.getLibraryDebug().outcome).toBeNull()
     owner.update(0.05, () => undefined)
     expect(owner.getLibraryDebug().outcome).toBe('timed-out')
-    expect(owner.getBodyMotionDebugState().generated?.error).toBe('ARDY_RECOVERY_TARGET_UNREACHED')
+    expect(owner.getBodyMotionDebugState().generated?.error).toBe(
+      'MOTION_RECOVERY_TARGET_UNREACHED',
+    )
     owner.detach()
   })
 })

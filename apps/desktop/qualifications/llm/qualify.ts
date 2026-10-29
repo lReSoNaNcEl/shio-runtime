@@ -14,8 +14,8 @@
  * no key is reported SKIPPED ("Missing API key"), not as a suite failure.
  */
 
+import { createAiSdkAdapter } from '../../src/main/llm/AiSdkAdapter'
 import { LlmResponseError } from '../../src/main/llm/errors'
-import { OpenAICompatibleClient } from '../../src/main/llm/openai-compatible/OpenAICompatibleClient'
 import { getProviderDefinition } from '../../src/main/llm/registry'
 import type { ChatMessage } from '../../src/main/llm/types'
 import type { LlmProviderId } from '../../src/shared/llm'
@@ -149,8 +149,8 @@ function readApiKey(lp: LiveProvider): string | null {
   return null
 }
 
-function make(lp: LiveProvider, key: string, model: string): OpenAICompatibleClient {
-  return new OpenAICompatibleClient({
+function make(lp: LiveProvider, key: string, model: string): ReturnType<typeof createAiSdkAdapter> {
+  return createAiSdkAdapter({
     definition: getProviderDefinition(lp.id),
     apiKey: key,
     model,
@@ -216,7 +216,7 @@ async function timedChat(
     if (wait) await sleep(wait)
     try {
       const started = Date.now()
-      const parsed = await provider.chatDetailed(messages, opts)
+      const parsed = await provider.complete(messages, { maxTokens: opts?.maxTokens })
       logCall(lp.displayName, model, Date.now() - started, parsed)
       return {
         content: parsed.content,
@@ -503,7 +503,7 @@ async function runProviderConformance(lp: LiveProvider): Promise<ProviderReport>
   try {
     let badKeyOk = false
     try {
-      await make(lp, 'sk-invalid-key-000000000000', chatModel).chatDetailed([user('hi')], {
+      await make(lp, 'sk-invalid-key-000000000000', chatModel).complete([user('hi')], {
         maxTokens: 16,
       })
     } catch (e) {
@@ -511,7 +511,7 @@ async function runProviderConformance(lp: LiveProvider): Promise<ProviderReport>
     }
     let badModelOk = false
     try {
-      await make(lp, key, 'this-model-does-not-exist-zzz').chatDetailed([user('hi')], {
+      await make(lp, key, 'this-model-does-not-exist-zzz').complete([user('hi')], {
         maxTokens: 16,
       })
     } catch (e) {

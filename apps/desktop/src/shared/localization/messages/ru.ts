@@ -633,7 +633,7 @@ export const ruMessages = {
   'rendererError.restartHint':
     'Если ошибка повторится, пришлите код ошибки и скопированную диагностику.',
 
-  'diagnostics.motion.body': 'Движение ARDY',
+  'diagnostics.motion.body': 'Движение MotionBricks',
   'diagnostics.motion.continuous': 'Запрошено непрерывное присутствие',
   'diagnostics.motion.requestStatus': 'Состояние заявки на движение',
   'diagnostics.tabs.events': 'Поток событий',
@@ -1118,9 +1118,9 @@ export const ruMessages = {
   'settings.developerRuntime.title': 'Runtime и диагностика',
   'settings.developerRuntime.description':
     'Подключение Speech API, служебный HUD и доступ к локальным логам.',
-  'settings.developerAnimationHud.title': 'Показывать активный профиль ARDY',
+  'settings.developerAnimationHud.title': 'Показывать активный профиль MotionBricks',
   'settings.developerAnimationHud.description':
-    'Показывает текущий профиль движения ARDY над аватаром в Overlay. Для диагностики используйте раздел Diagnostics.',
+    'Показывает текущий профиль движения MotionBricks над аватаром в Overlay. Для диагностики используйте раздел Diagnostics.',
   'settings.saveFailed': 'Не удалось сохранить настройки',
   'settings.general.empty': 'Общие настройки приложения пока не требуют отдельной конфигурации.',
   'settings.advanced.description': 'Диагностика и расширенные параметры Runtime.',

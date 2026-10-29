@@ -161,6 +161,7 @@ if (fixtureArgument) {
 }
 if (process.env.SHIO_QUALIFICATION_LLM_MODEL) {
   const provider = process.env.SHIO_QUALIFICATION_LLM_PROVIDER || config.llm.activeProvider
+  config.llm.providers[provider] ??= { model: '', thinking: false, contextLimit: 8192 }
   config.llm.providers[provider].model = process.env.SHIO_QUALIFICATION_LLM_MODEL
 }
 if (process.env.SHIO_QUALIFICATION_LLM_PROVIDER)
@@ -173,25 +174,15 @@ for (const relative of ['Local State', 'credentials/llm-credentials.bin']) {
 const environment = {
   ...process.env,
   SHIO_DESKTOP_USER_DATA_ROOT: profile,
-  SHIO_MOTION_ROOT: process.env.SHIO_MOTION_ROOT || path.join(desktop, 'motion'),
+  SHIO_MOTION_ROOT: process.env.SHIO_MOTION_ROOT || path.join(desktop, 'motionbricks'),
 }
 delete environment.ELECTRON_RUN_AS_NODE
 const launchDesktop = process.env.SHIO_QUALIFICATION_DESKTOP_ROOT || desktop
 const report = {
-  motionProvider: process.env.SHIO_EXPERIMENT_MOTION_PROVIDER || 'ardy',
-  nativeSomaHand:
-    process.env.SHIO_EXPERIMENT_MOTION_PROVIDER === 'motionbricks' &&
-    process.env.SHIO_EXPERIMENT_SOMA_HAND === '1',
+  motionProvider: 'motionbricks',
+  nativeSomaHand: process.env.SHIO_MOTION_SOMA_HAND !== '0',
   motionPins: JSON.parse(
-    fs.readFileSync(
-      path.join(
-        desktop,
-        process.env.SHIO_EXPERIMENT_MOTION_PROVIDER === 'motionbricks'
-          ? 'motionbricks/research-pins.json'
-          : 'motion/research-pins.json',
-      ),
-      'utf8',
-    ),
+    fs.readFileSync(path.join(desktop, 'motionbricks/research-pins.json'), 'utf8'),
   ),
   git: {
     head: execFileSync('git', ['rev-parse', 'HEAD'], {
@@ -201,7 +192,7 @@ const report = {
     }).trim(),
     productionDiffSha256: createHash('sha256')
       .update(
-        execFileSync('git', ['diff', '--', 'apps/desktop/src', 'apps/desktop/motion/backend.py'], {
+        execFileSync('git', ['diff', '--', 'apps/desktop/src', 'apps/desktop/motionbricks'], {
           cwd: repository,
           windowsHide: true,
         }),
@@ -247,17 +238,15 @@ const report = {
   },
 }
 for (const relative of [
-  ...(process.env.SHIO_EXPERIMENT_MOTION_PROVIDER === 'motionbricks'
-    ? [
-        'motionbricks/worker.py',
-        'motionbricks/backend.py',
-        'motionbricks/targets.py',
-        'motionbricks/activity.py',
-        'motionbricks/conversion.py',
-        'motionbricks/hand_prior.py',
-        'motionbricks/research-pins.json',
-      ]
-    : []),
+  'motionbricks/worker.py',
+  'motionbricks/backend.py',
+  'motionbricks/targets.py',
+  'motionbricks/activity.py',
+  'motionbricks/conversion.py',
+  'motionbricks/standing_pose.py',
+  'motionbricks/assets/standing-pose.soma.json',
+  'motionbricks/hand_prior.py',
+  'motionbricks/research-pins.json',
   'out/main/index.js',
   'out/preload/index.js',
   'out/preload/overlay.js',
@@ -266,10 +255,7 @@ for (const relative of [
     .readdirSync(path.join(desktop, 'out/renderer/assets'))
     .filter((filename) => /\.(?:js|css)$/u.test(filename))
     .map((filename) => `out/renderer/assets/${filename}`),
-  'motion/worker.py',
-  'motion/backend.py',
   'motion/protocol.py',
-  'motion/research-pins.json',
   'motion/motion-profiles.json',
   'motionbricks/hand_prior.py',
   'qualifications/speech-motion/qualify.cjs',
@@ -289,7 +275,6 @@ for (const relative of [
   'src/renderer/avatar/rendering/three/sampleSourceRotation.ts',
   'src/renderer/avatar/rendering/three/AdaptiveMotionFilter.ts',
   'src/renderer/avatar/rendering/three/GeneratedBodyPlayback.ts',
-  'qualifications/motion-ab/record.cjs',
 ])
   report.build[relative] = createHash('sha256')
     .update(fs.readFileSync(path.join(desktop, relative)))
@@ -473,10 +458,10 @@ async function ready(requireSpeech = true) {
     // Renderer reload first releases the previous owner. Its cancellation is an
     // expected transient until the replacement renderer attaches its model.
     if (state?.motion.state === 'unavailable' && state.motion.error) {
-      if (state.motion.error !== 'ARDY_CANCELLED') throw new Error(state.motion.error)
+      if (state.motion.error !== 'MOTION_CANCELLED') throw new Error(state.motion.error)
       cancelledSince ??= Date.now()
       if (Date.now() - cancelledSince > 5000)
-        throw new Error('ARDY_CANCELLED did not settle after model attachment')
+        throw new Error('MOTION_CANCELLED did not settle after model attachment')
     } else cancelledSince = null
     if (
       (!requireSpeech || (api.data?.asr?.ready && api.data?.synthesis?.ready)) &&
@@ -493,7 +478,9 @@ async function ready(requireSpeech = true) {
     await pause(300)
   }
   throw new Error(
-    requireSpeech ? 'ARDY/VRM/speech readiness timeout' : 'ARDY/VRM readiness timeout',
+    requireSpeech
+      ? 'MotionBricks/VRM/speech readiness timeout'
+      : 'MotionBricks/VRM readiness timeout',
   )
 }
 async function frameProbe(target) {
@@ -1794,7 +1781,7 @@ async function bodyStability() {
     page = await application.firstWindow()
     await application.evaluate(({ app, BrowserWindow }, audible) => {
       const prepare = (window) => {
-        window.setTitle('Shio · ARDY/Fish qualification')
+        window.setTitle('Shio · MotionBricks/Fish qualification')
         window.webContents.setAudioMuted(!audible)
         if (!window.webContents.getURL().includes('overlay=1')) window.setSize(1700, 1000)
         window.setFocusable(false)

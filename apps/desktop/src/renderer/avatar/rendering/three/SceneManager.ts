@@ -10,6 +10,11 @@ import {
   resolveEffectiveDpr,
 } from './AvatarRendererQuality'
 
+// Composition has its own fixed clock. Avoid saturating the shared inference GPU
+// merely because the display drives RAF at 240 Hz or faster.
+const MAX_PRESENTATION_FPS = 90
+const PRESENTATION_FRAME_MS = 1000 / MAX_PRESENTATION_FPS
+
 export interface AvatarRenderQualityDebugState {
   cssWidth: number
   cssHeight: number
@@ -41,8 +46,7 @@ export class SceneManager {
   private modelBase = 0
   private modelHeadY: number | null = null
   private modelFrontSign: -1 | 1 = -1
-  private lastTime = performance.now()
-  private animCallbacks: Array<(delta: number) => void> = []
+  private nextRenderAt = 0
   private rafId = 0
   private resizeObserver: ResizeObserver
   private effectiveDpr = 1
@@ -240,10 +244,6 @@ export class SceneManager {
     this.renderer.setClearColor(0x1a1a2e, enabled ? 0 : 1)
   }
 
-  onAddAnimation(cb: (delta: number) => void): void {
-    this.animCallbacks.push(cb)
-  }
-
   configureAvatarModelQuality(): AvatarTextureQualityState {
     const bounds = new THREE.Box3()
     this.scene.traverse((object) => {
@@ -290,19 +290,20 @@ export class SceneManager {
   start(): void {
     if (this.running || this.disposed) return
     this.running = true
-    this.lastTime = performance.now()
+    this.nextRenderAt = performance.now()
     const loop = (): void => {
       if (!this.running || this.disposed) return
       this.rafId = requestAnimationFrame(loop)
       const now = performance.now()
-      const delta = Math.min(0.1, Math.max(0, (now - this.lastTime) / 1000))
-      this.lastTime = now
+      if (now + 0.25 < this.nextRenderAt) return
+      this.nextRenderAt +=
+        Math.max(1, Math.floor((now - this.nextRenderAt) / PRESENTATION_FRAME_MS) + 1) *
+        PRESENTATION_FRAME_MS
       const nextDpr = resolveEffectiveDpr(window.devicePixelRatio)
       if (nextDpr !== this.effectiveDpr) this.onResize()
       this.updateHandCamera()
       this.controls.update()
       this.syncLookAtAnchor()
-      for (const cb of this.animCallbacks) cb(delta)
       this.renderer.render(this.scene, this.camera)
       if (this.renderQualityLogPending) {
         this.renderQualityLogPending = false
@@ -334,7 +335,6 @@ export class SceneManager {
     this.disposed = true
     this.stop()
     this.handCameraTarget = null
-    this.animCallbacks = []
     this.controls.dispose()
     this.renderer.dispose()
     this.renderer.forceContextLoss()

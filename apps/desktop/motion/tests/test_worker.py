@@ -2,7 +2,7 @@ import copy
 
 import pytest
 
-from protocol import load_catalog, phase_prompt, validate_continuation, validate_request
+from protocol import load_catalog, validate_continuation, validate_request
 
 CATALOG = load_catalog()
 PROFILES = {p["id"]: p for p in CATALOG["profiles"]}
@@ -118,7 +118,7 @@ def test_new_execution_requires_preparation_but_keeps_source_history():
     validate_continuation(a, b)
 
 
-def test_all_profiles_have_distinct_trusted_phase_conditioning_and_explicit_bilateral_hands():
+def test_all_profiles_have_explicit_bilateral_hands():
     assert len(PROFILES) == 32
     for profile in PROFILES.values():
         if profile.get("physicalAction"):
@@ -131,10 +131,6 @@ def test_all_profiles_have_distinct_trusted_phase_conditioning_and_explicit_bila
         if profile["qualification"]["state"] == "draft":
             assert not profile["automaticSelection"]
             assert profile["defaultWeight"] == 0
-        prompts = {
-            phase_prompt(profile, phase) for phase in ("prepare", "stroke", "hold", "recover")
-        }
-        assert len(prompts) == 4
         for phase in profile["handScore"]["phases"].values():
             assert set(phase) == {"left", "right"}
             for hand in phase.values():

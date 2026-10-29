@@ -8,26 +8,37 @@ bundle.
 
 | Component | Locked version | License | Source |
 | --- | ---: | --- | --- |
+| `ai` | 7.0.156 | Apache-2.0 | <https://github.com/vercel/ai> |
+| `@ai-sdk/openai-compatible` | 3.0.80 | Apache-2.0 | <https://github.com/vercel/ai> |
 | `streamdown` | 2.5.0 | Apache-2.0 | <https://github.com/vercel/streamdown> |
 | `rehype-harden` | 1.1.8 | MIT | <https://github.com/vercel-labs/markdown-sanitizers> |
 | `playwright-core` | 1.62.1 | Apache-2.0 | <https://github.com/microsoft/playwright> |
-| `@deepseek-ai/cordis` | 4.0.1 | MIT | <https://github.com/deepseek-ai/deepseek-harness> |
-| `@deepseek-ai/cordis-plugin-include` | 1.0.6 | MIT | <https://github.com/deepseek-ai/deepseek-harness> |
-| `@deepseek-ai/cordis-plugin-loader` | 1.0.2 | MIT | <https://github.com/deepseek-ai/deepseek-harness> |
-| `@deepseek-ai/dsh-llm-pi-ai` | 0.1.1-rc.2 | MIT | <https://github.com/deepseek-ai/deepseek-harness> |
-| `@deepseek-ai/dsh-pwsh-local` | 0.1.1-rc.2 | MIT | <https://github.com/deepseek-ai/deepseek-harness> |
-| `@deepseek-ai/dsh-tool-pwsh` | 0.1.1-rc.2 | MIT | <https://github.com/deepseek-ai/deepseek-harness> |
-| `@deepseek-ai/dsh-subprocess-local` | 0.1.1-rc.2 | MIT | <https://github.com/deepseek-ai/deepseek-harness> |
-| `@deepseek-ai/dsh-shell` and `@deepseek-ai/dsh-shell-env` | 0.1.1-rc.2 | MIT | <https://github.com/deepseek-ai/deepseek-harness> |
-| `@deepseek-ai/dsh-*` runtime family used by Shio | 0.1.1-rc.2 | MIT | <https://github.com/deepseek-ai/deepseek-harness> |
+| `@deepseek-ai/cordis` | 4.0.6-alpha.1 | MIT | <https://github.com/deepseek-ai/deepseek-harness> |
+| `@deepseek-ai/cordis-plugin-include` | 1.0.11-alpha.1 | MIT | <https://github.com/deepseek-ai/deepseek-harness> |
+| `@deepseek-ai/cordis-plugin-loader` | 1.0.7-alpha.1 | MIT | <https://github.com/deepseek-ai/deepseek-harness> |
+| `@deepseek-ai/cordis-plugin-timer` | 1.1.8-alpha.1 | MIT | <https://github.com/deepseek-ai/deepseek-harness> |
+| `@deepseek-ai/dsh-llm-pi-ai` | 0.2.2-alpha.2 | MIT | <https://github.com/deepseek-ai/deepseek-harness> |
+| `@deepseek-ai/dsh-pwsh-local` | 0.2.2-alpha.2 | MIT | <https://github.com/deepseek-ai/deepseek-harness> |
+| `@deepseek-ai/dsh-tool-pwsh` | 0.2.2-alpha.2 | MIT | <https://github.com/deepseek-ai/deepseek-harness> |
+| `@deepseek-ai/dsh-subprocess-local` | 0.2.2-alpha.2 | MIT | <https://github.com/deepseek-ai/deepseek-harness> |
+| `@deepseek-ai/dsh-shell` and `@deepseek-ai/dsh-shell-env` | 0.2.2-alpha.2 | MIT | <https://github.com/deepseek-ai/deepseek-harness> |
+| `@deepseek-ai/dsh-*` runtime family used by Shio | 0.2.2-alpha.2 | MIT | <https://github.com/deepseek-ai/deepseek-harness> |
 
 The DeepSeek Harness packages are Developer Preview software. Shio pins the
 compatible DSH runtime family exactly and does not resolve or upgrade these packages
 at application runtime.
 
-The ARDY/Fish experiment adds independently installed model runtimes. Their exact
-revisions are recorded in `apps/desktop/motion/research-pins.json`, API config and
-the launcher manifest. Model weights and credentials are not bundled.
+The active experimental development stack uses MotionBricks and SOMA-X Hand;
+source/model pins are in `apps/desktop/motionbricks/research-pins.json`. Source,
+model and evaluation-sample licenses are distinct; see
+`docs/EXPERIMENT-MOTIONBRICKS-SOMAX-LICENSING-2026-10-28.md`. The new standing pose
+has exact repository provenance in its metadata, but the source VRMA's original
+redistribution license is not established.
+
+The following ARDY/LLM2Vec rows document the removed historical experiment. Its
+copied notices remain accessible in Git at `7fd6a1490589e03d7b4790ec16667c955bb1c253`
+under `apps/desktop/motion/licenses/`; they are no longer active dependencies.
+Speech API rows remain applicable independently.
 
 | Component | Pinned revision | Upstream license notice |
 | --- | --- | --- |

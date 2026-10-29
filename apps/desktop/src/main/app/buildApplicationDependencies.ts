@@ -59,7 +59,7 @@ import {
 } from '../llm'
 import { mainLog } from '../logging/safeLogger'
 import { createMemoryStore, createSemanticMemoryRuntime, MemoryToolBroker } from '../memory'
-import { ArdyMotionService } from '../motion/ArdyMotionService'
+import { GeneratedMotionService } from '../motion/GeneratedMotionService'
 import { Orchestrator } from '../orchestrator'
 import { PluginCapabilityRegistry, PluginRegistryStore, PluginRuntime } from '../plugins'
 import {
@@ -99,22 +99,17 @@ export interface ApplicationDependencies {
 }
 
 export function buildApplicationDependencies(): ApplicationDependencies {
-  const motionProvider = process.env.SHIO_EXPERIMENT_MOTION_PROVIDER?.trim() || 'ardy'
-  if (!['ardy', 'motionbricks'].includes(motionProvider))
-    throw new Error('Invalid SHIO_EXPERIMENT_MOTION_PROVIDER')
-  if (app.isPackaged && motionProvider !== 'ardy')
-    throw new Error('Experimental MotionBricks requires a development checkout')
   const motionRoot =
     process.env.SHIO_MOTION_ROOT?.trim() ||
     (app.isPackaged
-      ? join(app.getPath('userData'), 'motion')
-      : join(app.getAppPath(), motionProvider === 'motionbricks' ? 'motionbricks' : 'motion'))
+      ? join(app.getPath('userData'), 'motionbricks')
+      : join(app.getAppPath(), 'motionbricks'))
   if (!isAbsolute(motionRoot)) throw new Error('SHIO_MOTION_ROOT must be absolute')
-  const ardy = new ArdyMotionService(
+  const motion = new GeneratedMotionService(
     motionRoot,
     () => getRendererConfig().vrmAssetHandle,
-    motionProvider as 'ardy' | 'motionbricks',
-    motionProvider === 'motionbricks' && process.env.SHIO_EXPERIMENT_SOMA_HAND === '1',
+    process.env.SHIO_MOTION_SOMA_HAND !== '0',
+    process.env.SHIO_MOTION_ENABLED !== '0',
   )
   const environmentConfig = resolveEnvironmentConfig()
   let win: BrowserWindow | null = null
@@ -568,7 +563,7 @@ export function buildApplicationDependencies(): ApplicationDependencies {
       const cleanupResults = await Promise.allSettled([
         conversationTurnService?.dispose() ?? Promise.resolve(),
         speechApplicationService?.dispose() ?? Promise.resolve(),
-        ardy.dispose(),
+        motion.dispose(),
         actionRuntime?.emergencyStop() ?? Promise.resolve(),
         pluginRuntime?.dispose() ?? Promise.resolve(),
         Promise.resolve().then(() => aliveRuntime?.dispose()),
@@ -626,12 +621,15 @@ export function buildApplicationDependencies(): ApplicationDependencies {
       if (!isMainFrame) return
       lastAvatarBody = null
       overlayWindows.send('avatar-body:updated', null)
-      observeMainPromise(ardy.releaseOwner(rendererId), 'release ARDY before renderer navigation')
+      observeMainPromise(
+        motion.releaseOwner(rendererId),
+        'release generated motion before renderer navigation',
+      )
     })
     win.webContents.once('destroyed', () => {
       lastAvatarBody = null
       overlayWindows.send('avatar-body:updated', null)
-      observeMainPromise(ardy.releaseOwner(rendererId), 'release ARDY renderer owner')
+      observeMainPromise(motion.releaseOwner(rendererId), 'release generated motion renderer owner')
       networkObserver.dispose()
       if (rendererNetworkObserver === networkObserver) rendererNetworkObserver = null
       screenContextService.disposeRenderer(rendererId)
@@ -639,7 +637,10 @@ export function buildApplicationDependencies(): ApplicationDependencies {
     win.webContents.on('render-process-gone', () => {
       lastAvatarBody = null
       overlayWindows.send('avatar-body:updated', null)
-      observeMainPromise(ardy.releaseOwner(rendererId), 'release ARDY after renderer failure')
+      observeMainPromise(
+        motion.releaseOwner(rendererId),
+        'release generated motion after renderer failure',
+      )
     })
 
     projectAwareness = getProjectAwareness()
@@ -801,8 +802,9 @@ export function buildApplicationDependencies(): ApplicationDependencies {
   }
 
   const initialize = async (): Promise<void> => {
-    registerMotionIpc(ardy, ipcAuthorization)
-    observeMainPromise(ardy.warmup(), 'warm up ARDY')
+    registerMotionIpc(motion, ipcAuthorization)
+    if (process.env.SHIO_MOTION_ENABLED !== '0')
+      observeMainPromise(motion.warmup(), 'warm up generated motion')
     registerRuntimeHealthIpc((health) => {
       lastAvatarRuntimeHealth = health
       capabilityCatalog.invalidate()
@@ -826,7 +828,7 @@ export function buildApplicationDependencies(): ApplicationDependencies {
         },
         getAvatarBody: () => lastAvatarBody,
         publishAvatarBody: (owner, value) => {
-          if (value?.lease && !ardy.owns(owner, value.lease)) return false
+          if (value?.lease && !motion.owns(owner, value.lease)) return false
           if (
             value &&
             lastAvatarBody &&

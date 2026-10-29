@@ -25,9 +25,9 @@ const plan: MotionPlanIdentity = {
   continuityAnchor: 'anchor',
 }
 
-import { ArdyMotionService } from '../../../src/main/motion/ArdyMotionService'
+import { GeneratedMotionService } from '../../../src/main/motion/GeneratedMotionService'
 
-function fixture(autoReady = true, provider: 'ardy' | 'motionbricks' = 'ardy') {
+function fixture(autoReady = true) {
   const child = Object.assign(new EventEmitter(), {
     stdout: new EventEmitter(),
     stderr: new EventEmitter(),
@@ -45,7 +45,7 @@ function fixture(autoReady = true, provider: 'ardy' | 'motionbricks' = 'ardy') {
     child.stdout.emit(
       'data',
       Buffer.from(
-        `${JSON.stringify({ type: 'ready', catalogRevision: MOTION_CATALOG_REVISION, format: provider === 'motionbricks' ? { ...MOTION_FORMAT, sourceRevision: '54fc563aeaaf819a753d72cc9fdc6713989cdd43', modelRevision: '6c9f78e23decbda8e1cfd1b0cc96980ea4b24b3ca2c808d03b058f48f82fc9ef' } : MOTION_FORMAT })}\n`,
+        `${JSON.stringify({ type: 'ready', catalogRevision: MOTION_CATALOG_REVISION, format: MOTION_FORMAT })}\n`,
       ),
     )
   mocks.spawn.mockImplementation(() => {
@@ -53,7 +53,7 @@ function fixture(autoReady = true, provider: 'ardy' | 'motionbricks' = 'ardy') {
     return child
   })
   let asset = 'asset-one'
-  const service = new ArdyMotionService('D:/fixture/motion', () => asset, provider)
+  const service = new GeneratedMotionService('D:/fixture/motion', () => asset, false)
   return {
     child,
     service,
@@ -70,9 +70,26 @@ afterEach(() => {
   vi.unstubAllEnvs()
 })
 
-describe('Main-owned ARDY lifecycle', () => {
-  it('accepts the pinned MotionBricks identity only with explicit provider selection', async () => {
-    const { service } = fixture(true, 'motionbricks')
+it('reports explicit disabled state and cannot start a worker through renderer demand', async () => {
+  const service = new GeneratedMotionService('D:/fixture/motionbricks', () => '', true, false)
+  await expect(service.start(10, 2)).rejects.toThrow('MOTION_DISABLED')
+  expect(service.status().error).toBe('MOTION_DISABLED')
+  expect(mocks.spawn).not.toHaveBeenCalled()
+  await service.dispose()
+})
+
+it('preserves inference failure separately from a malformed worker protocol', async () => {
+  const { service, child } = fixture()
+  const lease = await service.start(10, 2, 17)
+  const pending = service.next(10, lease, 'presence_poised', undefined, plan)
+  child.stdout.emit('data', Buffer.from('{"type":"error","code":"ValueError"}\n'))
+  await expect(pending).rejects.toThrow('MOTION_INFERENCE_FAILED')
+  await service.dispose()
+})
+
+describe('Main-owned generated motion lifecycle', () => {
+  it('accepts the pinned MotionBricks identity without provider selection', async () => {
+    const { service } = fixture(true)
     expect((await service.start(10, 2, 17)).seed).toBe(17)
     await service.dispose()
   })
@@ -80,7 +97,7 @@ describe('Main-owned ARDY lifecycle', () => {
   it.runIf(process.platform === 'win32')(
     'settles the exact experimental Python process tree before releasing the GPU lease',
     async () => {
-      const { service, child } = fixture(true, 'motionbricks')
+      const { service, child } = fixture(true)
       Object.assign(child, { pid: 12345 })
       await service.start(10, 2, 17)
       const terminator = new EventEmitter()
@@ -99,20 +116,20 @@ describe('Main-owned ARDY lifecycle', () => {
     },
   )
 
-  it('rejects a MotionBricks worker behind the default ARDY provider', async () => {
+  it('rejects a worker with an unqualified source identity', async () => {
     const { service, child } = fixture(false)
     const starting = service.start(10, 2, 17)
     child.stdout.emit(
       'data',
       Buffer.from(
-        `${JSON.stringify({ type: 'ready', catalogRevision: MOTION_CATALOG_REVISION, format: { ...MOTION_FORMAT, sourceRevision: '54fc563aeaaf819a753d72cc9fdc6713989cdd43', modelRevision: '6c9f78e23decbda8e1cfd1b0cc96980ea4b24b3ca2c808d03b058f48f82fc9ef' } })}\n`,
+        `${JSON.stringify({ type: 'ready', catalogRevision: MOTION_CATALOG_REVISION, format: { ...MOTION_FORMAT, sourceRevision: 'unqualified-source' } })}\n`,
       ),
     )
-    await expect(starting).rejects.toThrow('ARDY_INIT_FAILED')
+    await expect(starting).rejects.toThrow('MOTION_INIT_FAILED')
     await service.dispose()
   })
 
-  it('allows a measured cold conditioning rebuild beyond the former two-minute cutoff', async () => {
+  it('allows a measured cold TensorRT engine build beyond the former two-minute cutoff', async () => {
     vi.useFakeTimers()
     const { child, service, ready } = fixture(false)
     const starting = service.start(10, 2, 17)
@@ -126,9 +143,9 @@ describe('Main-owned ARDY lifecycle', () => {
   it('reserves one owner during startup and cancels the real pending worker', async () => {
     const { child, service } = fixture(false)
     const starting = service.start(10, 2).catch((error) => error)
-    await expect(service.start(11, 2)).rejects.toThrow('ARDY_BUSY')
+    await expect(service.start(11, 2)).rejects.toThrow('MOTION_BUSY')
     await service.stop(10, { avatarGeneration: 2 })
-    expect((await starting).message).toMatch(/ARDY_INIT_FAILED|ARDY_CANCELLED/u)
+    expect((await starting).message).toMatch(/MOTION_INIT_FAILED|MOTION_CANCELLED/u)
     expect(child.kill).toHaveBeenCalledOnce()
     await service.dispose()
   })
@@ -144,7 +161,7 @@ describe('Main-owned ARDY lifecycle', () => {
     expect(environment.HF_HUB_OFFLINE).toBe('1')
     replaceAsset()
     await expect(service.next(10, lease, 'presence_poised', undefined, plan)).rejects.toThrow(
-      'ARDY_STALE_SESSION',
+      'MOTION_STALE_SESSION',
     )
     await service.dispose()
   })
@@ -157,7 +174,7 @@ describe('Main-owned ARDY lifecycle', () => {
       .next(10, lease, 'presence_poised', undefined, plan)
       .catch((error) => error)
     await vi.advanceTimersByTimeAsync(2501)
-    expect((await pending).message).toBe('ARDY_DEADLINE_MISS')
+    expect((await pending).message).toBe('MOTION_DEADLINE_MISS')
     expect(child.kill).toHaveBeenCalledOnce()
     expect(service.status().session).toBeNull()
     await service.dispose()
@@ -188,7 +205,7 @@ describe('Main-owned ARDY lifecycle', () => {
       inferenceMs: 100,
     }
     child.stdout.emit('data', Buffer.from(`${JSON.stringify(chunk)}\n`))
-    expect((await pending).message).toBe('ARDY_PROTOCOL_ERROR')
+    expect((await pending).message).toBe('MOTION_STALE_OR_INVALID_CHUNK')
     expect(child.kill).toHaveBeenCalledOnce()
     await service.dispose()
   })
@@ -213,7 +230,7 @@ it('rejects backward phases and same-revision playback changes before provider w
   await holding
   await expect(
     service.next(10, lease, 'presence_poised', 16, { ...plan, phaseId: 'stroke' }),
-  ).rejects.toThrow('ARDY_STALE_PLAN')
+  ).rejects.toThrow('MOTION_STALE_PLAN')
   await expect(
     service.next(10, lease, 'presence_poised', 16, {
       ...plan,
@@ -221,7 +238,7 @@ it('rejects backward phases and same-revision playback changes before provider w
       clockDomain: 'speech',
       playbackId: 'p',
     }),
-  ).rejects.toThrow('ARDY_STALE_PLAN')
+  ).rejects.toThrow('MOTION_STALE_PLAN')
   const clockChanged = service.next(10, lease, 'presence_poised', 16, {
     ...plan,
     planRevision: 1,
@@ -240,9 +257,9 @@ it('accepts an exact bounded seed without replacing the generator lease and reje
   const seeded = await service.reroll(10, lease, 0)
   expect(seeded).toEqual({ ...lease, seed: 0 })
   expect(seeded.sessionId).toBe(lease.sessionId)
-  await expect(service.reroll(10, seeded, -1)).rejects.toThrow('ARDY_INVALID_SEED')
-  await expect(service.reroll(10, seeded, 2_147_483_648)).rejects.toThrow('ARDY_INVALID_SEED')
-  await expect(service.reroll(10, seeded, Number.NaN)).rejects.toThrow('ARDY_INVALID_SEED')
+  await expect(service.reroll(10, seeded, -1)).rejects.toThrow('MOTION_INVALID_SEED')
+  await expect(service.reroll(10, seeded, 2_147_483_648)).rejects.toThrow('MOTION_INVALID_SEED')
+  await expect(service.reroll(10, seeded, Number.NaN)).rejects.toThrow('MOTION_INVALID_SEED')
   expect(service.status().session?.seed).toBe(0)
   await service.dispose()
 })

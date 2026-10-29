@@ -44,15 +44,7 @@ export const motionReadySchema = z
     handModelRevision: z
       .literal('233e9225c1da05c6a3dd98107b9f027f2366e3b972bbe67e0d164e5d28619fff')
       .optional(),
-    format: z.union([
-      motionFormatSchema,
-      motionFormatSchema.extend({
-        sourceRevision: z.literal('54fc563aeaaf819a753d72cc9fdc6713989cdd43'),
-        modelRevision: z.literal(
-          '6c9f78e23decbda8e1cfd1b0cc96980ea4b24b3ca2c808d03b058f48f82fc9ef',
-        ),
-      }),
-    ]),
+    format: motionFormatSchema,
   })
   .strict()
 export const motionLeaseSchema = z
@@ -158,7 +150,7 @@ export const motionChunkSchema = motionLeaseSchema
     fromFrame: identity,
     profileId: motionProfileSchema,
     skeleton: z.literal('soma30-standard-tpose-v1'),
-    sourceProvider: z.enum(['ardy', 'motionbricks']).optional(),
+    sourceProvider: z.literal('motionbricks').optional(),
     fps: z.literal(30),
     startFrame: identity,
     rotations: z.array(z.array(quaternion).length(30)).length(60),

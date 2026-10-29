@@ -100,7 +100,7 @@ async function qualifyConversation({
       autonomousSmoke || subset ? 'diagnostic subset; no final acceptance' : 'full scenario',
     autonomyMode: 'off; proactive initiative requires separate policy qualification',
     schedule: cases.map(({ id, at }) => ({ id, at })),
-    source: `Unmodified CharacterResponsePort; actual Main LLM, Fish, ${report.motionProvider || 'ardy'}; Chat + Overlay`,
+    source: `Unmodified CharacterResponsePort; actual Main LLM, Fish, ${report.motionProvider || 'motionbricks'}; Chat + Overlay`,
     cases: [],
     visualAcceptance: 'pending',
     selectedView: await page.evaluate(async () => {
@@ -728,6 +728,7 @@ async function qualifyConversation({
       qualityTrace: process.argv.includes('--motion-quality-trace'),
       recoveryRepro: process.argv.includes('--recovery-repro'),
       uiDriven: autonomousInputs || recoveryChat,
+
       sampleIntervalMs: Math.max(50, Math.ceil((duration * 1000) / 11000)),
     },
   )

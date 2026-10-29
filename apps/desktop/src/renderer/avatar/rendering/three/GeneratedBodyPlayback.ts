@@ -461,7 +461,7 @@ export class GeneratedBodyPlayback {
       if (newEnd)
         this.pendingProfiles = this.pendingProfiles.filter((pending) => {
           if (!pending.context.speechBound) return true
-          pending.reject(new Error('ARDY_SPEECH_ENDED'))
+          pending.reject(new Error('MOTION_SPEECH_ENDED'))
           return false
         })
       if (newEnd && this.context?.speechBound) {
@@ -498,7 +498,7 @@ export class GeneratedBodyPlayback {
         !this.speechWindowMissed(pending.id, pending.speechOrigin)
       )
         return true
-      pending.reject(new Error('ARDY_SPEECH_WINDOW_MISSED'))
+      pending.reject(new Error('MOTION_SPEECH_WINDOW_MISSED'))
       this.rejectedReason = 'speech-window-missed'
       return false
     })
@@ -567,12 +567,12 @@ export class GeneratedBodyPlayback {
   playProfile(id: string, context: GeneratedMotionRequestContext): Promise<void> {
     if (this.presentationOnly) return Promise.resolve()
     const profile = getMotionProfile(id)
-    if (!profile) return Promise.reject(new Error('ARDY_INVALID_PROFILE'))
+    if (!profile) return Promise.reject(new Error('MOTION_INVALID_PROFILE'))
     if (
       context.bodyAction &&
       (!profile.physicalAction || !bodyTurnIntentSchema.safeParse(context.bodyAction).success)
     )
-      return Promise.reject(new Error('ARDY_INVALID_BODY_ACTION'))
+      return Promise.reject(new Error('MOTION_INVALID_BODY_ACTION'))
     const availability = this.profileAvailability(
       id,
       context.forceReplay ||
@@ -586,10 +586,10 @@ export class GeneratedBodyPlayback {
       context.source !== 'debug-preview' &&
       context.source !== 'debug-reroll'
     )
-      return Promise.reject(new Error('ARDY_qualification-required'))
+      return Promise.reject(new Error('MOTION_qualification-required'))
     if (!availability.available) {
       this.rejectedReason = availability.reason
-      return Promise.reject(new Error(`ARDY_${availability.reason}`))
+      return Promise.reject(new Error(`MOTION_${availability.reason}`))
     }
     if (this.profileId === id && this.playing && !context.forceReplay) return Promise.resolve()
     const execution = this.execution
@@ -605,15 +605,15 @@ export class GeneratedBodyPlayback {
             pending.context.source !== 'debug-preview' &&
             pending.context.source !== 'debug-reroll'
           ) {
-            pending.reject(new Error('ARDY_PROFILE_SUPERSEDED'))
+            pending.reject(new Error('MOTION_PROFILE_SUPERSEDED'))
             return false
           }
           if (!manual && getMotionProfile(pending.id)?.family !== profile.family) return true
-          pending.reject(new Error('ARDY_PROFILE_SUPERSEDED'))
+          pending.reject(new Error('MOTION_PROFILE_SUPERSEDED'))
           return false
         })
         if (this.pendingProfiles.length >= 2) {
-          reject(new Error('ARDY_QUEUE_FULL'))
+          reject(new Error('MOTION_QUEUE_FULL'))
           return
         }
         this.pendingProfiles.push({
@@ -683,8 +683,8 @@ export class GeneratedBodyPlayback {
     speechOrigin = this.captureSpeechOrigin(),
   ): Promise<void> {
     const profile = getMotionProfile(id)
-    if (!profile) return Promise.reject(new Error('ARDY_INVALID_PROFILE'))
-    this.readiness?.reject(new Error('ARDY_PROFILE_SUPERSEDED'))
+    if (!profile) return Promise.reject(new Error('MOTION_INVALID_PROFILE'))
+    this.readiness?.reject(new Error('MOTION_PROFILE_SUPERSEDED'))
     this.profileVersion += 1
     this.profileId = motionProfileSchema.parse(id)
     this.turn = null
@@ -762,7 +762,7 @@ export class GeneratedBodyPlayback {
   private plan(): MotionPlanIdentity {
     const execution = this.execution
     const lease = this.lease
-    if (!execution || !lease) throw new Error('ARDY_INVALID_PLAN_STATE')
+    if (!execution || !lease) throw new Error('MOTION_INVALID_PLAN_STATE')
     return execution.plan(`${lease.sessionId}:${this.localEpoch}`)
   }
 
@@ -873,7 +873,7 @@ export class GeneratedBodyPlayback {
   releaseSpeechPreparation(profileId: string): void {
     this.pendingProfiles = this.pendingProfiles.filter((pending) => {
       if (pending.id !== profileId || !pending.context.speechBound) return true
-      pending.reject(new Error('ARDY_STALE_INTENT'))
+      pending.reject(new Error('MOTION_STALE_INTENT'))
       return false
     })
     if (this.profileId !== profileId || !this.context?.speechBound) return
@@ -895,7 +895,7 @@ export class GeneratedBodyPlayback {
       !this.playing &&
       this.error &&
       (this.phase === 'degraded' || !this.lease) &&
-      (this.error === 'ARDY_CANCEL_FAILED' || performance.now() < this.retryGenerationAt)
+      (this.error === 'MOTION_CANCEL_FAILED' || performance.now() < this.retryGenerationAt)
     )
       return { available: false, reason: 'generator-unavailable' }
     if (!profile || profile.qualification.state === 'disabled')
@@ -1142,7 +1142,7 @@ export class GeneratedBodyPlayback {
     this.playing = false
     this.turn = null
     this.queue = []
-    this.readiness?.reject(new Error(`ARDY_${outcome}`))
+    this.readiness?.reject(new Error(`MOTION_${outcome}`))
     this.readiness = null
     const now = performance.now()
     while (this.pendingProfiles.length) {
@@ -1158,7 +1158,7 @@ export class GeneratedBodyPlayback {
         ).available ||
         now - next.at > profile.variationPolicy.intentTtlMs
       ) {
-        next.reject(new Error('ARDY_STALE_INTENT'))
+        next.reject(new Error('MOTION_STALE_INTENT'))
         this.rejectedReason = 'stale-intent'
         continue
       }
@@ -1170,8 +1170,8 @@ export class GeneratedBodyPlayback {
     }
   }
 
-  stopAnimation(reason = 'ARDY_CANCELLED'): void {
-    if (this.turn && reason === 'ARDY_CANCELLED') {
+  stopAnimation(reason = 'MOTION_CANCELLED'): void {
+    if (this.turn && reason === 'MOTION_CANCELLED') {
       this.turn.requestStop('cancelled')
       for (const pending of this.pendingProfiles) pending.reject(new Error(reason))
       this.pendingProfiles = []
@@ -1211,16 +1211,16 @@ export class GeneratedBodyPlayback {
         ? window.api.motion
             .stop(lease ?? { avatarGeneration: this.avatarGeneration })
             .then((result) => {
-              if (!result.ok) throw new Error('ARDY_CANCEL_FAILED')
+              if (!result.ok) throw new Error('MOTION_CANCEL_FAILED')
             })
             .catch((error: unknown) => {
-              this.error = 'ARDY_CANCEL_FAILED'
+              this.error = 'MOTION_CANCEL_FAILED'
               throw error
             })
         : this.cancellation
     this.cancellation = Promise.all([stop, pendingStartup])
     void this.cancellation.catch(() => {
-      this.error = 'ARDY_CANCEL_FAILED'
+      this.error = 'MOTION_CANCEL_FAILED'
     })
     // A cancelled turn never applies another generated frame.
     // Cancellation holds the last valid body pose.
@@ -1241,7 +1241,7 @@ export class GeneratedBodyPlayback {
           this.cursor -
           (this.sampledClock.sourceSampleOffset * 30) / this.sampledClock.sourceSampleRate
         if (this.context?.speechBound && this.execution?.profile.kind === 'gesture') {
-          this.error = 'ARDY_AUDIBLE_UNDERRUN'
+          this.error = 'MOTION_AUDIBLE_UNDERRUN'
           this.execution.requestFailureRecovery()
         }
       }
@@ -1418,7 +1418,7 @@ export class GeneratedBodyPlayback {
             ? MOTION_INFERENCE_DEADLINE_MS
             : 400
         if (performance.now() - this.phaseWallStarted > readinessDeadline) {
-          this.error = 'ARDY_PHASE_DEADLINE_MISSED'
+          this.error = 'MOTION_PHASE_DEADLINE_MISSED'
           this.execution?.requestFailureRecovery()
         }
       }
@@ -1449,7 +1449,7 @@ export class GeneratedBodyPlayback {
         if (this.missedSpeechFrames >= 3) this.execution?.requestFailureRecovery()
         this.clockBase =
           this.cursor - (audibleClock.sourceSampleOffset * 30) / audibleClock.sourceSampleRate
-        if (!presence) this.error = 'ARDY_AUDIBLE_UNDERRUN'
+        if (!presence) this.error = 'MOTION_AUDIBLE_UNDERRUN'
         desired = this.cursor
       }
       if (
@@ -1488,7 +1488,7 @@ export class GeneratedBodyPlayback {
         this.execution.outcome = 'timed-out'
       this.phase = 'ready'
       if (this.execution.outcome === 'timed-out') {
-        this.error ??= 'ARDY_RECOVERY_TARGET_UNREACHED'
+        this.error ??= 'MOTION_RECOVERY_TARGET_UNREACHED'
         this.phase = 'degraded'
       }
       if (this.execution.outcome) this.finishExecution(this.execution.outcome)
@@ -1590,13 +1590,13 @@ export class GeneratedBodyPlayback {
           performance.now() - this.targetWaitStarted >
           execution.budget.maxMs - execution.budget.minMs
         ) {
-          this.error = 'ARDY_SPATIAL_TARGET_UNREACHED'
+          this.error = 'MOTION_SPATIAL_TARGET_UNREACHED'
           execution.requestFailureRecovery()
         }
       } else this.targetWaitStarted = null
       if (phaseReady && canAccent && execution.advance(phaseDelta, targetsReached)) {
         this.invalidatePhase()
-        if (execution.hasTimedOut) this.error = 'ARDY_SPATIAL_TARGET_UNREACHED'
+        if (execution.hasTimedOut) this.error = 'MOTION_SPATIAL_TARGET_UNREACHED'
       } else if (!canAccent)
         execution.elapsedMs = Math.min(
           execution.budget.minMs,
@@ -1620,7 +1620,7 @@ export class GeneratedBodyPlayback {
       performance.now() - this.phaseWallStarted > 120000
     ) {
       this.finishExecution('timed-out')
-      this.error = 'ARDY_PHASE_READINESS_TIMEOUT'
+      this.error = 'MOTION_PHASE_READINESS_TIMEOUT'
       this.phase = 'degraded'
     }
     if (this.playing && !this.localRecovery) this.pump()
@@ -1801,11 +1801,9 @@ export class GeneratedBodyPlayback {
     const modelWorld = vrm.scene.getWorldQuaternion(new THREE.Quaternion())
     // Full conversational arm range during consumed speech, fading over
     // CONVERSATIONAL_RELEASE_SECONDS of source time after it ends. Only the
-    // MotionBricks talk targets use it; the ARDY standing range is unchanged.
+    // MotionBricks talk targets use this bounded range.
     this.conversationalReach =
-      this.clock?.state === 'playing' &&
-      !this.speechFinished &&
-      chunk.sourceProvider === 'motionbricks'
+      this.clock?.state === 'playing' && !this.speechFinished
         ? 1
         : Math.max(0, this.conversationalReach - elapsed / CONVERSATIONAL_RELEASE_SECONDS)
     // Raw and coordinate-only samples exist solely during injected qualification.
@@ -2112,7 +2110,7 @@ export class GeneratedBodyPlayback {
     this.trackFinalSpeed(dt)
     this.physical = { ...turn.getStatus(), executionId: execution.id }
     this.stage = turn.getStage()
-    // Procedural elapsed time is not consumed ARDY history. Advancing this
+    // Procedural elapsed time is not consumed generated history. Advancing this
     // cursor made the next neural request jump beyond Main's accepted history.
     execution.phase = turn.phase
     execution.elapsedMs = turn.phaseElapsed * 1000
@@ -2134,7 +2132,7 @@ export class GeneratedBodyPlayback {
       }
       this.capturePresentation()
       if (outcome === 'failed' || outcome === 'timed-out') {
-        this.error = 'ARDY_TURN_PHYSICAL_CONDITION_UNREACHED'
+        this.error = 'MOTION_TURN_PHYSICAL_CONDITION_UNREACHED'
         this.phase = 'degraded'
       }
       this.finishExecution(outcome)
@@ -2368,7 +2366,7 @@ export class GeneratedBodyPlayback {
           chunk.avatarGeneration !== lease.avatarGeneration ||
           JSON.stringify(chunk.plan) !== JSON.stringify(plan)
         )
-          throw new Error('ARDY_STALE_CHUNK')
+          throw new Error('MOTION_STALE_CHUNK')
         this.lastInferenceMs = chunk.inferenceMs
         this.generationFailures = 0
         this.retryGenerationAt = 0
@@ -2384,7 +2382,7 @@ export class GeneratedBodyPlayback {
         // Keep the displayed horizon while preparing a transition. Replace only
         // future overlapping horizons; a straddling old chunk covers the lead-in.
         this.queue = this.queue.filter((queued) => queued.startFrame < chunk.startFrame)
-        if (this.queue.length >= 2) throw new Error('ARDY_HORIZON_OVERFLOW')
+        if (this.queue.length >= 2) throw new Error('MOTION_HORIZON_OVERFLOW')
         this.queue.push(chunk)
         this.generatedEnd = chunk.startFrame + 60
         this.phase = 'ready'
@@ -2407,7 +2405,7 @@ export class GeneratedBodyPlayback {
   }
 
   private fail(error: unknown): void {
-    const code = error instanceof Error ? error.message : 'ARDY_FAILED'
+    const code = error instanceof Error ? error.message : 'MOTION_FAILED'
     this.stopAnimation(code)
     if (this.execution) this.execution.outcome = 'failed'
     this.presentation = null

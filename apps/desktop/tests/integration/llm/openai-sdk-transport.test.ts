@@ -1,8 +1,12 @@
-import OpenAI from 'openai'
+import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
+import type { LanguageModel } from 'ai'
 import { describe, expect, it } from 'vitest'
 
 import type { LlmResponseError } from '../../../src/main/llm'
-import { runChatCompletion } from '../../../src/main/llm/openai-compatible/request'
+import {
+  runChatCompletion,
+  runChatCompletionDetailed,
+} from '../../../src/main/llm/openai-compatible/request'
 import { runChatCompletionStream } from '../../../src/main/llm/openai-compatible/stream'
 import type { LlmStreamOptions } from '../../../src/main/llm/types'
 import type { CharacterStreamEvent } from '../../../src/shared/character-stream'
@@ -17,7 +21,7 @@ const capabilities = {
   recommendedMaxTokens: 256,
 }
 
-function config(client: OpenAI) {
+function config(client: LanguageModel) {
   return {
     provider: 'groq' as const,
     displayName: 'Groq',
@@ -25,20 +29,32 @@ function config(client: OpenAI) {
     model: 'test-model',
     capabilities,
     messages: [{ role: 'user' as const, content: 'hello' }],
+    tools: [
+      {
+        name: 'memory_list',
+        description: 'List',
+        parameters: { type: 'object', properties: { limit: { type: 'number' } } },
+      },
+      {
+        name: 'web_search',
+        description: 'Search',
+        parameters: { type: 'object', properties: { query: { type: 'string' } } },
+      },
+    ],
   }
 }
 
-function sdk(fetchImpl: typeof fetch): OpenAI {
-  return new OpenAI({
+function sdk(fetchImpl: typeof fetch): LanguageModel {
+  return createOpenAICompatible({
+    name: 'fixture',
     apiKey: 'sdk-test-key',
     baseURL: 'https://provider.example/v1',
     fetch: fetchImpl,
-    maxRetries: 0,
-  })
+  }).chatModel('test-model')
 }
 
 async function collect(
-  client: OpenAI,
+  client: LanguageModel,
   options?: LlmStreamOptions,
 ): Promise<CharacterStreamEvent[]> {
   const events: CharacterStreamEvent[] = []
@@ -52,7 +68,86 @@ function sse(...values: unknown[]): Response {
   })
 }
 
-describe('official OpenAI SDK transport', () => {
+describe('official Vercel AI SDK transport', () => {
+  it('sends a strict response schema and rejects prose instead of a planning object', async () => {
+    let request: Record<string, unknown> = {}
+    let content = '{"decision":"direct"}'
+    const client = createOpenAICompatible({
+      name: 'fixture',
+      baseURL: 'https://fixture.invalid/v1',
+      supportsStructuredOutputs: true,
+      fetch: async (_input, init) => {
+        request = JSON.parse(String(init?.body))
+        return new Response(
+          JSON.stringify({
+            choices: [{ message: { role: 'assistant', content }, finish_reason: 'stop' }],
+          }),
+          { headers: { 'Content-Type': 'application/json' } },
+        )
+      },
+    }).chatModel('fixture-model')
+    const responseSchema = {
+      name: 'planning',
+      schema: {
+        type: 'object',
+        properties: { decision: { type: 'string' } },
+        required: ['decision'],
+        additionalProperties: false,
+      },
+    }
+    const run = () =>
+      runChatCompletionDetailed({ ...config(client), tools: [] }, { responseSchema })
+    expect((await run()).content).toBe(content)
+    expect(request.response_format).toMatchObject({
+      type: 'json_schema',
+      json_schema: { name: 'planning', schema: responseSchema.schema },
+    })
+    expect(request.tools).toBeUndefined()
+    content = 'Let me continue the story.'
+    await expect(run()).rejects.toMatchObject({ code: 'PROVIDER_REJECTED' })
+  })
+  it('distinguishes a model that omits a required tool from a transport rejection', async () => {
+    const client = sdk(
+      async () =>
+        new Response(
+          JSON.stringify({
+            choices: [
+              {
+                message: {
+                  role: 'assistant',
+                  content: 'A plain answer instead of the required tool.',
+                },
+                finish_reason: 'stop',
+              },
+            ],
+          }),
+          { headers: { 'Content-Type': 'application/json' } },
+        ),
+    )
+    await expect(
+      runChatCompletion({ ...config(client), toolChoice: 'required' }),
+    ).rejects.toMatchObject({ code: 'INCOMPLETE_TOOL_CALL', recoverable: false })
+  })
+
+  it('delivers no text after cancellation at the first-byte boundary', async () => {
+    const controller = new AbortController()
+    const client = sdk(async () =>
+      sse(
+        { choices: [{ delta: { content: 'must-not-leak' }, finish_reason: null }] },
+        { choices: [{ delta: {}, finish_reason: 'stop' }] },
+      ),
+    )
+    const delivered: string[] = []
+    await expect(async () => {
+      for await (const event of runChatCompletionStream(config(client), {
+        signal: controller.signal,
+      })) {
+        if (event.type === 'first-byte') controller.abort()
+        if (event.type === 'text-delta') delivered.push(event.text)
+      }
+    }).rejects.toMatchObject({ code: 'CANCELLED' })
+    expect(delivered).toEqual([])
+  })
   it('uses Chat Completions with maxRetries=0 and Shio HTTP normalization', async () => {
     let attempts = 0
     let requestedPath = ''
@@ -77,9 +172,9 @@ describe('official OpenAI SDK transport', () => {
     const payload = [
       'data: {"choices":[{"delta":{"content":"[warm]Готово "},"finish_reason":null}]}',
       '',
-      'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call-1","function":{"name":"memory_","arguments":"{\\"limit\\":"}}]},"finish_reason":null}]}',
+      'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call-1","function":{"name":"memory_list","arguments":"{\\"limit\\":"}}]},"finish_reason":null}]}',
       '',
-      'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"name":"list","arguments":"8}"}}]},"finish_reason":"tool_calls"}],"usage":{"total_tokens":12}}',
+      'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"8}"}}]},"finish_reason":"tool_calls"}],"usage":{"total_tokens":12}}',
       '',
       '',
     ].join('\n')
@@ -125,10 +220,18 @@ describe('official OpenAI SDK transport', () => {
   it('cancels provider work when the stream consumer exits early', async () => {
     let cancelled = false
     const client = sdk(
-      async () =>
+      async (_input, init) =>
         new Response(
           new ReadableStream({
             start(controller) {
+              init?.signal?.addEventListener(
+                'abort',
+                () => {
+                  cancelled = true
+                  controller.close()
+                },
+                { once: true },
+              )
               controller.enqueue(
                 new TextEncoder().encode(
                   'data: {"choices":[{"delta":{"content":"one"},"finish_reason":null}]}\n\n',
@@ -160,12 +263,13 @@ describe('official OpenAI SDK transport', () => {
                 tool_calls: [
                   {
                     index: 0,
-                    function: { name: 'memory_', arguments: '{"limit":' },
+                    id: 'call-a',
+                    function: { name: 'memory_list', arguments: '{"limit":' },
                   },
                   {
                     index: 1,
                     id: 'call-b',
-                    function: { name: 'web_', arguments: '{"query":"' },
+                    function: { name: 'web_search', arguments: '{"query":"' },
                   },
                 ],
               },
@@ -178,8 +282,8 @@ describe('official OpenAI SDK transport', () => {
             {
               delta: {
                 tool_calls: [
-                  { index: 0, id: 'call-a', function: { name: 'list', arguments: '8}' } },
-                  { index: 1, function: { name: 'search', arguments: 'now"}' } },
+                  { index: 0, id: 'call-a', function: { arguments: '8}' } },
+                  { index: 1, function: { arguments: 'now"}' } },
                 ],
               },
               finish_reason: 'tool_calls',
@@ -241,7 +345,7 @@ describe('official OpenAI SDK transport', () => {
     await expect(collect(client)).rejects.toMatchObject({ code, recoverable: false })
   })
 
-  it('tolerates one bounded unknown chunk when the stream has valid meaning', async () => {
+  it('rejects an unsupported wire chunk even when valid content follows', async () => {
     const client = sdk(async () =>
       sse(
         { provider_bookkeeping: true },
@@ -249,9 +353,7 @@ describe('official OpenAI SDK transport', () => {
         { choices: [{ delta: {}, finish_reason: 'stop' }] },
       ),
     )
-    const events = await collect(client)
-    expect(events.find((event) => event.type === 'text-delta')).toMatchObject({ text: 'valid' })
-    expect(events.at(-1)).toMatchObject({ type: 'completed', finishReason: 'stop' })
+    await expect(collect(client)).rejects.toMatchObject({ code: 'INVALID_STREAM_CHUNK' })
   })
 
   it.each([

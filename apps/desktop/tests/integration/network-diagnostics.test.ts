@@ -154,7 +154,7 @@ async function assertFetchLifecycle(): Promise<void> {
   const response = await observed('https://provider.example/v1/chat/completions?token=secret', {
     method: 'POST',
     headers: { Authorization: 'Bearer request-secret', 'Content-Type': 'application/json' },
-    body: JSON.stringify({ prompt: 'safe', apiKey: 'body-secret' }),
+    body: JSON.stringify({ prompt: 'private-character-context', apiKey: 'body-secret' }),
   })
 
   assert.equal(response.bodyUsed, false, 'observed Fetch consumed the one-shot SSE body')
@@ -164,9 +164,13 @@ async function assertFetchLifecycle(): Promise<void> {
   assert.equal(request.target, 'https://provider.example/v1/chat/completions')
   const details = diagnostics.details(request.id)
   assert.ok(details)
+  assert.equal(details.requestBody.kind, 'unavailable')
   assert.equal(details.responseBody.kind, 'unavailable')
   assert.equal(details.responseBody.contentType, 'text/event-stream')
-  assert.doesNotMatch(JSON.stringify(details), /request-secret|body-secret|token=secret/u)
+  assert.doesNotMatch(
+    JSON.stringify(details),
+    /request-secret|body-secret|private-character-context|token=secret/u,
+  )
 }
 
 function assertIpcAndUiBoundary(): void {

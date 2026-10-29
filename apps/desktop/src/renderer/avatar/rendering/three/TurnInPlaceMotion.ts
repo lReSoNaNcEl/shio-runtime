@@ -86,7 +86,7 @@ export class TurnInPlaceMotion {
   ) {
     this.intent = bodyTurnIntentSchema.parse(request)
     const hips = vrm.humanoid.getNormalizedBoneNode('hips')
-    if (!hips) throw new Error('ARDY_RIG_UNSUPPORTED')
+    if (!hips) throw new Error('MOTION_RIG_UNSUPPORTED')
     this.hips = hips
     vrm.scene.updateMatrixWorld(true)
     this.initialStage = vrm.scene.quaternion.clone()
@@ -102,7 +102,7 @@ export class TurnInPlaceMotion {
       const upper = vrm.humanoid.getNormalizedBoneNode(`${side}UpperLeg`)
       const lower = vrm.humanoid.getNormalizedBoneNode(`${side}LowerLeg`)
       const foot = vrm.humanoid.getNormalizedBoneNode(`${side}Foot`)
-      if (!upper || !lower || !foot) throw new Error('ARDY_RIG_UNSUPPORTED')
+      if (!upper || !lower || !foot) throw new Error('MOTION_RIG_UNSUPPORTED')
       return {
         upper,
         lower,

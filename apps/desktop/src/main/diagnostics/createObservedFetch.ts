@@ -22,9 +22,11 @@ export function createObservedFetch(
       target,
       requestHeaders: safeNetworkHeaders(headers),
       requestBody:
-        init?.body === undefined
-          ? { kind: request?.body ? 'unavailable' : 'empty' }
-          : previewNetworkBody(init.body, headers),
+        source === 'llm'
+          ? { kind: 'unavailable' }
+          : init?.body === undefined
+            ? { kind: request?.body ? 'unavailable' : 'empty' }
+            : previewNetworkBody(init.body, headers),
     })
 
     try {

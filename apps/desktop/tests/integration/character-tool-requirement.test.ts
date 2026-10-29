@@ -9,6 +9,7 @@ import { CharacterToolDispatcher } from '../../src/main/character-tools/Characte
 import { CharacterToolLoop } from '../../src/main/character-tools/CharacterToolLoop'
 import { CharacterToolRegistry } from '../../src/main/character-tools/CharacterToolRegistry'
 import type { ChatMessage, LLMProvider, LlmCapabilities, LlmCompletion } from '../../src/main/llm'
+import { LlmResponseError } from '../../src/main/llm/errors'
 import { createSemanticMemoryRuntime, MemoryToolBroker } from '../../src/main/memory'
 import type { PersistentGoal } from '../../src/shared/alive'
 import {
@@ -31,6 +32,67 @@ const capabilities: LlmCapabilities = {
   supportsVision: false,
   recommendedMaxTokens: 1_024,
 }
+
+describe('constrained planning transport', () => {
+  it('quotes prior prose and carries attached-image availability without bypassing domain validation', async () => {
+    let planningRequests = 0
+    const currentRegistry = () => registry(false)
+    const result = await new CharacterToolLoop().run({
+      llm: {
+        capabilities: () => ({ ...capabilities, supportsSchemaOutput: true }),
+        chat: async () => '[calm]Красный квадрат.',
+        complete: async (messages, options) => {
+          if (!options?.responseSchema) return textCompletion('[calm]Красный квадрат.')
+          planningRequests += 1
+          assert.equal(options.tools, undefined)
+          const properties = options.responseSchema.schema.properties as Record<
+            string,
+            { maxItems?: number }
+          >
+          assert.equal(properties.plannedTools.maxItems, 0)
+          // Availability constrains the plan, never erases an exact unavailable-tool requirement.
+          assert(JSON.stringify(options.responseSchema.schema).includes('memory.list'))
+          assert.equal(messages.filter((message) => message.role === 'user').length, 1)
+          const input = JSON.parse(String(messages[1].content))
+          assert.equal(input.screenAttachmentAvailable, true)
+          assert.equal(input.currentTurn, 'Что на приложенной картинке?')
+          assert.equal(input.priorConversation[0].content, 'Продолжай историю!')
+          return textCompletion(
+            JSON.stringify({
+              requirement: { type: 'direct-answer' },
+              plannedTools: [],
+              embodiment: null,
+              ...(planningRequests === 1 ? { unexpectedAuthority: true } : {}),
+            }),
+          )
+        },
+      },
+      providerId: 'mistral',
+      messages: [
+        { role: 'assistant', content: 'Продолжай историю!' },
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: 'Что на приложенной картинке?' },
+            { type: 'image', mimeType: 'image/png', bytes: new Uint8Array([1]) },
+          ],
+        },
+      ],
+      registry: currentRegistry,
+      createDispatcher: () =>
+        ({ registerPlannedTools: () => undefined, dispose: () => undefined }) as never,
+      traceId: 'schema-planning',
+      requestOptions: {},
+      nativeToolsRejected: false,
+      enforceToolRequirements: true,
+      failureReply: 'FAILURE',
+      limitReply: 'LIMIT',
+    })
+    assert.equal(planningRequests, 2)
+    assert.equal(result.assistantTurnKind, 'character')
+    assert.equal(result.replyText, '[calm]Красный квадрат.')
+  })
+})
 
 function registry(webAvailable: boolean): CharacterToolRegistry {
   return new CharacterToolRegistry({
@@ -63,12 +125,13 @@ function textCompletion(content: string): LlmCompletion {
 async function runWebRequirement(options: {
   web: WebSearchProvider
   complete: LLMProvider['complete']
+  capabilities?: LlmCapabilities
   requirement?: CharacterToolRequirement
 }) {
   const currentRegistry = () => registry(true)
   return new CharacterToolLoop().run({
     llm: {
-      capabilities: () => capabilities,
+      capabilities: () => options.capabilities ?? capabilities,
       chat: async () =>
         JSON.stringify(options.requirement ?? { type: 'explicit-tool', tool: 'web.search' }),
       complete: async (messages, requestOptions) => {
@@ -119,6 +182,54 @@ async function runWebRequirement(options: {
 }
 
 describe('Character Tool Requirement', () => {
+  it('uses structured planning for one missing native call without disabling future native tools', async () => {
+    const currentRegistry = () => registry(false)
+    const result = await new CharacterToolLoop().run({
+      llm: {
+        capabilities: () => capabilities,
+        complete: async (messages) => {
+          assert(
+            messages.some((message) =>
+              String(message.content).includes('calling character_tool_requirement exactly once'),
+            ),
+          )
+          throw new LlmResponseError({
+            provider: 'mistral',
+            code: 'INCOMPLETE_TOOL_CALL',
+            message: 'Required call missing',
+          })
+        },
+        chat: async (messages) =>
+          String(messages[0].content).includes('Character Tool Requirement Planning')
+            ? JSON.stringify({
+                requirement: { type: 'direct-answer' },
+                plannedTools: [],
+                embodiment: null,
+              })
+            : '[calm]Продолжение истории.',
+      },
+      providerId: 'mistral',
+      messages: [{ role: 'user', content: 'Продолжи нашу вымышленную историю.' }],
+      registry: currentRegistry,
+      createDispatcher: (signal) =>
+        new CharacterToolDispatcher({
+          registry: currentRegistry,
+          traceId: 'missing-native-call',
+          userGoal: 'Продолжить историю',
+          signal,
+        }),
+      traceId: 'missing-native-call',
+      requestOptions: {},
+      nativeToolsRejected: false,
+      enforceToolRequirements: true,
+      requirementFailureReply: () => 'REQUIREMENT_FAILURE',
+      failureReply: 'TOOL_FAILURE',
+      limitReply: 'TOOL_LIMIT',
+    })
+    assert.equal(result.nativeToolsRejected, false)
+    assert.equal(result.replyText, '[calm]Продолжение истории.')
+  })
+
   it('calls memory.list without an invented kind and returns stored records', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'shio-memory-list-requirement-'))
     const runtime = createSemanticMemoryRuntime(join(directory, 'memory.sqlite'))
@@ -793,68 +904,74 @@ describe('Character Tool Requirement', () => {
     assert.equal(JSON.stringify(prior), priorBytes)
   })
 
-  it('rejects an unsourced draft and requires the explicitly requested web.search call', async () => {
-    let searchCount = 0
-    let responseRound = 0
-    const web: WebSearchProvider = {
-      status: () => ({
-        availability: 'available',
-        diagnostics: {
-          parserSignature: 'fixture/v1',
-          parserState: 'valid-results',
-          consecutiveFailureCount: 0,
+  it.each([false, true])(
+    'requires the native web.search call with reasoning capability=%s and replay disabled',
+    async (supportsReasoning) => {
+      let searchCount = 0
+      let responseRound = 0
+      const web: WebSearchProvider = {
+        status: () => ({
+          availability: 'available',
+          diagnostics: {
+            parserSignature: 'fixture/v1',
+            parserState: 'valid-results',
+            consecutiveFailureCount: 0,
+          },
+        }),
+        search: async () => {
+          searchCount += 1
+          return {
+            results: [
+              {
+                title: 'Fish Audio announcement',
+                url: 'https://example.test/fish-audio',
+                snippet: 'The offer ends on 31 August 2026.',
+                publishedAt: '2026-08-20T00:00:00.000Z',
+              },
+            ],
+            truncated: false,
+            provider: 'fixture',
+          }
         },
-      }),
-      search: async () => {
-        searchCount += 1
-        return {
-          results: [
-            {
-              title: 'Fish Audio announcement',
-              url: 'https://example.test/fish-audio',
-              snippet: 'The offer ends on 31 August 2026.',
-              publishedAt: '2026-08-20T00:00:00.000Z',
-            },
-          ],
-          truncated: false,
-          provider: 'fixture',
-        }
-      },
-    }
-    const result = await runWebRequirement({
-      web,
-      complete: async (messages) => {
-        responseRound += 1
-        if (responseRound === 1) {
-          return textCompletion('[calm]По памяти бесплатный доступ действует до 24 июля 2026.')
-        }
-        if (responseRound === 2) return webCall()
-        const toolIndex = messages.findIndex((message) => message.role === 'tool')
-        assert(toolIndex >= 0)
-        assert.equal(messages.at(-1)?.role, 'tool')
-        assert.equal(
-          messages.slice(toolIndex + 1).some((message) => message.role === 'system'),
-          false,
-        )
-        assert.match(String(messages.at(-1)?.content), /"requirementStatus":"succeeded"/u)
-        return textCompletion('[calm]По найденному источнику предложение действует до 31 августа.')
-      },
-    })
+      }
+      const result = await runWebRequirement({
+        web,
+        capabilities: { ...capabilities, supportsReasoning, requiresReasoningReplay: false },
+        complete: async (messages) => {
+          responseRound += 1
+          if (responseRound === 1) {
+            return textCompletion('[calm]По памяти бесплатный доступ действует до 24 июля 2026.')
+          }
+          if (responseRound === 2) return webCall()
+          const toolIndex = messages.findIndex((message) => message.role === 'tool')
+          assert(toolIndex >= 0)
+          assert.equal(messages.at(-1)?.role, 'tool')
+          assert.equal(
+            messages.slice(toolIndex + 1).some((message) => message.role === 'system'),
+            false,
+          )
+          assert.match(String(messages.at(-1)?.content), /"requirementStatus":"succeeded"/u)
+          return textCompletion(
+            '[calm]По найденному источнику предложение действует до 31 августа.',
+          )
+        },
+      })
 
-    assert.equal(searchCount, 1)
-    assert.equal(responseRound, 3)
-    assert.equal(result.calls, 1)
-    assert.equal(result.replyText.includes('24 июля'), false)
-    assert.equal(result.toolEvidence.requirement.type, 'explicit-tool')
-    assert.deepEqual(result.toolEvidence.executedTools, ['web.search'])
-    assert.deepEqual(result.toolEvidence.failedTools, [])
-    assert.deepEqual(result.toolEvidence.web, {
-      used: true,
-      succeeded: true,
-      resultCount: 1,
-      freshestSourceAt: Date.parse('2026-08-20T00:00:00.000Z'),
-    })
-  })
+      assert.equal(searchCount, 1)
+      assert.equal(responseRound, 3)
+      assert.equal(result.calls, 1)
+      assert.equal(result.replyText.includes('24 июля'), false)
+      assert.equal(result.toolEvidence.requirement.type, 'explicit-tool')
+      assert.deepEqual(result.toolEvidence.executedTools, ['web.search'])
+      assert.deepEqual(result.toolEvidence.failedTools, [])
+      assert.deepEqual(result.toolEvidence.web, {
+        used: true,
+        succeeded: true,
+        resultCount: 1,
+        freshestSourceAt: Date.parse('2026-08-20T00:00:00.000Z'),
+      })
+    },
+  )
 
   it('allows an honest terminal response after required web.search fails without retrying', async () => {
     let searchCount = 0

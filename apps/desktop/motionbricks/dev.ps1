@@ -15,17 +15,11 @@ if ($Build) {
         if ($LASTEXITCODE -ne 0) { throw 'Desktop build failed' }
     } finally { Pop-Location }
 }
-$previousProvider = $env:SHIO_EXPERIMENT_MOTION_PROVIDER
-$previousHand = $env:SHIO_EXPERIMENT_SOMA_HAND
 $previousRoot = $env:SHIO_MOTION_ROOT
 try {
-    $env:SHIO_EXPERIMENT_MOTION_PROVIDER = 'motionbricks'
-    $env:SHIO_EXPERIMENT_SOMA_HAND = '1'
     $env:SHIO_MOTION_ROOT = $PSScriptRoot
     & npm.cmd --prefix $desktopRoot run start
     if ($LASTEXITCODE -ne 0) { throw 'Experimental Desktop exited with an error' }
 } finally {
-    $env:SHIO_EXPERIMENT_MOTION_PROVIDER = $previousProvider
-    $env:SHIO_EXPERIMENT_SOMA_HAND = $previousHand
     $env:SHIO_MOTION_ROOT = $previousRoot
 }

@@ -90,7 +90,7 @@ describe('continuous presence composition', () => {
     },
   )
 
-  it('does not suppress independent head motion just because ARDY owns a body gesture', () => {
+  it('does not suppress independent head motion just because generated motion owns a body gesture', () => {
     for (const directedGaze of [false, true]) {
       for (const screenGaze of [false, true]) {
         const base = resolveAvatarMotionAuthority({ bodyLayer: 'base', directedGaze, screenGaze })

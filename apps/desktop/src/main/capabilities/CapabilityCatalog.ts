@@ -132,6 +132,7 @@ export class CapabilityCatalog {
   private publishedSignature = ''
   private dirty = false
   private refreshTask: Promise<void> | null = null
+  private disposed = false
 
   constructor(private readonly sources: CapabilityCatalogSources) {}
 
@@ -150,10 +151,12 @@ export class CapabilityCatalog {
   }
 
   invalidate(): void {
+    if (this.disposed) return
     this.dirty = true
     if (this.refreshTask) return
     this.refreshTask = this.refreshUntilClean()
       .catch((error) => {
+        if (this.disposed) return
         mainLog.warn('[CapabilityCatalog] projection refresh failed', {
           error: error instanceof Error ? error.message : String(error),
         })
@@ -165,13 +168,16 @@ export class CapabilityCatalog {
   }
 
   dispose(): void {
+    this.disposed = true
+    this.dirty = false
     this.listeners.clear()
   }
 
   private async refreshUntilClean(): Promise<void> {
-    while (this.dirty) {
+    while (this.dirty && !this.disposed) {
       this.dirty = false
       const snapshot = await this.buildSnapshot()
+      if (this.disposed) return
       const signature = JSON.stringify(snapshot.capabilities)
       if (signature === this.publishedSignature) continue
       this.publishedSignature = signature
@@ -180,6 +186,7 @@ export class CapabilityCatalog {
   }
 
   private async buildSnapshot(): Promise<ShioCapabilitySnapshot> {
+    if (this.disposed) throw new Error('CAPABILITY_CATALOG_DISPOSED')
     const settings = this.sources.settings()
     const readiness = this.sources.llmReadiness()
     const llmCapabilities = this.sources.llmCapabilities()
@@ -190,7 +197,9 @@ export class CapabilityCatalog {
       lastErrorCode: 'MEMORY_UNAVAILABLE' as const,
     }
     const plugins = await this.sources.plugins()
+    if (this.disposed) throw new Error('CAPABILITY_CATALOG_DISPOSED')
     const desktop = await this.sources.desktopControl()
+    if (this.disposed) throw new Error('CAPABILITY_CATALOG_DISPOSED')
     const avatarHealth = this.sources.avatarRuntimeHealth()
     const alive = this.sources.aliveStatus?.() ?? null
     const browserControlStatus = this.sources.browserControl()

@@ -1,7 +1,7 @@
 """Opt-in MotionBricks Adapter. No text, speech, face or Avatar ownership.
 
 Stage-2 targets are deliberately conservative. This is not yet a qualified
-semantic/prosodic target planner. Bundled evaluation poses stay research-only.
+semantic/prosodic target planner. The standing reference is derived offline.
 """
 
 from __future__ import annotations
@@ -34,7 +34,6 @@ class MotionBricksBackend:
         sys.path.insert(0, str(UPSTREAM))
         from conversion import world_poses
         from motionbricks.inference.builder import TensorRTBuildOptions
-        from motionbricks.io.bvh import load_bvh
         from motionbricks.io.usd import load_skeleton_from_usd
         from motionbricks.io.utils import SOMA_SKELETON_PRIM_PATH, get_asset_file
         from motionbricks.model.soma.contract import (
@@ -62,6 +61,11 @@ class MotionBricksBackend:
         self.indices = [
             self.rig.joint_index(name) for name in SOMA_N1_CONTRACT.joint_names
         ]
+        from standing_pose import load_standing_pose
+
+        self.initial = load_standing_pose(
+            self.reference, self.parents, self.rig.joint_names
+        )
         self.engine = MotionBricksSOMAEngine(
             SOMA_N1_FP16_ONNX_PATH,
             build_options=TensorRTBuildOptions(enable_fp16=True),
@@ -73,17 +77,6 @@ class MotionBricksBackend:
                 self.engine.create_input(self.rig),
             )
             self.output = self.engine.create_output(self.rig)
-            idle = load_bvh(
-                str(
-                    UPSTREAM
-                    / "assets/motions/soma/locomotion/idle/idle_loop_001__A268.bvh"
-                ),
-                self.rig,
-            )
-            initial = wp.empty_like(self.rig.reference_local_transforms)
-            idle.sample(0.0, initial, stream=self.engine.stream)
-            self.engine.synchronize()
-            self.initial = initial.numpy()
         self.history = {}
         self.seed = 0
         self.origin = self.initial[0, :3].copy()

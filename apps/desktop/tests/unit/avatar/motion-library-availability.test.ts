@@ -57,7 +57,7 @@ describe('motion library owner availability', () => {
       expect(advertised).not.toContain('stretch')
       Reflect.set(owner, 'phase', 'loading')
       expect(owner.getEmbodimentAvailability().availableSemanticIntents).toEqual(advertised)
-      Reflect.set(owner, 'error', 'ARDY_SPATIAL_TARGET_UNREACHED')
+      Reflect.set(owner, 'error', 'MOTION_SPATIAL_TARGET_UNREACHED')
       expect(owner.getEmbodimentAvailability().availableSemanticIntents).toEqual([])
       expect(owner.getEmbodimentAvailability().unavailableReasons).toEqual(['motion-unavailable'])
       Reflect.set(owner, 'phase', 'degraded')
@@ -145,7 +145,7 @@ describe('motion library owner availability', () => {
           forceReplay: false,
           motionLayer: 'gesture',
         }),
-      ).rejects.toThrow('ARDY_qualification-required')
+      ).rejects.toThrow('MOTION_qualification-required')
       expect(start).not.toHaveBeenCalled()
       expect(bones.get('rightHand')?.quaternion.toArray()).toEqual(before?.toArray())
       expect(owner.getLibraryDebug().executionId).toBeNull()

@@ -71,6 +71,8 @@ async function recordCanvas(page, filename, { captureFps = 60 } = {}) {
     }
     const started = performance.now()
     const startedAt = Date.now()
+    const drawCount = () => window.__motionAbController?.scene?.renderer?.info?.render?.frame
+    const initialDrawCount = drawCount()
     recorder.start(250)
     window.__stopMotionVideo = async () => {
       if (recorder.state !== 'inactive')
@@ -89,8 +91,13 @@ async function recordCanvas(page, filename, { captureFps = 60 } = {}) {
       for (const track of stream.getTracks()) track.stop()
       silence.stop()
       await audio.close()
+      const finalDrawCount = drawCount()
       return {
         frames,
+        presentationDraws:
+          Number.isFinite(initialDrawCount) && Number.isFinite(finalDrawCount)
+            ? finalDrawCount - initialDrawCount
+            : null,
         startedAt,
         durationMs: performance.now() - started,
         audioSources: captured.size,
@@ -126,7 +133,11 @@ async function recordCanvas(page, filename, { captureFps = 60 } = {}) {
         requestedFps: captureFps,
         timestampSource: 'Chromium MediaRecorder',
         ...result,
-        renderCallbacks: result.frames,
+        rafCallbacks: result.frames,
+        measuredPresentationFps:
+          result.presentationDraws === null
+            ? null
+            : result.presentationDraws / (result.durationMs / 1000),
         frames,
         measuredAverageFps: frames / (result.durationMs / 1000),
         bytes: sink.bytes,

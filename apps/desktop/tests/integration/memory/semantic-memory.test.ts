@@ -11,8 +11,6 @@ import {
   type LlmCompletionOptions,
   LlmResponseError,
 } from '../../../src/main/llm'
-import { runChatCompletionDetailed } from '../../../src/main/llm/openai-compatible/request'
-import { parseChatCompletion } from '../../../src/main/llm/openai-compatible/response'
 import {
   createMemoryStore,
   createSemanticMemoryRuntime,
@@ -31,6 +29,7 @@ import {
   type MemoryToolRequest,
 } from '../../../src/shared/memory'
 import { createTempDirectory } from '../../support'
+import { parseChatCompletion, runChatCompletionDetailed } from '../../support/llm/wireFixture'
 
 const TOOL_CAPABILITIES: LlmCapabilities = {
   supportsReasoning: false,
@@ -1012,7 +1011,7 @@ async function transportToolContract(): Promise<void> {
       },
     ],
   }
-  const parsed = parseChatCompletion('groq', 'Groq', raw)
+  const parsed = await parseChatCompletion('groq', 'Groq', raw)
   assert.equal(parsed.toolCalls[0]?.name, 'memory_list')
 
   let requestBody: Record<string, unknown> | null = null

@@ -31,7 +31,7 @@ REQUEST_FIELDS = {
     "protocolVersion",
     "plan",
 }
-CATALOG_REVISION = "expressive-v6-2026-10-28"
+CATALOG_REVISION = "expressive-v7-2026-10-29"
 CALIBRATION_REVISION = "vrm-normalized-hands-v1"
 
 
@@ -104,21 +104,6 @@ def validate_continuation(previous: dict | None, request: dict):
             raise ValueError("Stale phase plan")
     elif q["phaseId"] != "prepare":
         raise ValueError("New execution must prepare")
-
-
-def phase_prompt(profile: dict, phase: str) -> str:
-    instructions = {
-        "prepare": (
-            "Prepare slowly from the current pose; do not repeat the expressive accent yet."
-        ),
-        "stroke": "Perform one readable expressive accent from the prepared pose.",
-        "hold": "Hold the target softly without repeating the gesture or resetting arms.",
-        "recover": (
-            "Release and lower both arms smoothly to relaxed standing, "
-            "wrists and fingers relaxing together."
-        ),
-    }
-    return profile["conditioningRefs"]["prompt"] + " " + instructions[phase]
 
 
 def load_catalog():

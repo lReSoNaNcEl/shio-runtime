@@ -12,7 +12,7 @@ for (const name of ['apps/api/app/tts/f5_local.py', 'apps/api/app/routes/synthes
   assert(!fs.existsSync(path.join(root, name)), `Legacy execution path remains: ${name}`)
 }
 for (const name of existing) {
-  if (!/^apps\/desktop\/package(?:-lock)?\.json$/.test(name) && name !== 'apps/desktop/.env.example' && !/^(apps\/(api\/app|desktop\/src)\/|apps\/api\/requirements|apps\/api\/\.env\.(example|release)$|launcher\/|scripts\/(api-runner|motion-research))/.test(name)) continue
+  if (!/^apps\/desktop\/package(?:-lock)?\.json$/.test(name) && name !== 'apps/desktop/.env.example' && !/^(apps\/(api\/app|desktop\/src)\/|apps\/api\/requirements|apps\/api\/\.env\.(example|release)$|launcher\/|scripts\/api-runner)/.test(name)) continue
   if (!/\.(ts|tsx|js|mjs|py|json|txt|ps1|example|release)$/.test(name)) continue
   const source = fs.readFileSync(path.join(root, name), 'utf8')
   if (name.startsWith('apps/desktop/src/renderer/')) assert(!/rootMotionPolicy|legacyBlendDuration|activeFileName|currentBodyAnimationFile|animationAssetCache|clipCache|currentClip|lastLoadFile|ownershipGapCount|OverlayAnimationPolicy/.test(source), `Obsolete clip projection: ${name}`)

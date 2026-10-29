@@ -124,13 +124,13 @@ describe('ordinary conversation body liveness', () => {
     let now = 1000
     vi.spyOn(performance, 'now').mockImplementation(() => now)
     const api = createMockMotionApi()
-    api.next.mockResolvedValueOnce({ ok: false, error: 'ARDY_INFERENCE_FAILED' })
+    api.next.mockResolvedValueOnce({ ok: false, error: 'MOTION_INFERENCE_FAILED' })
     vi.stubGlobal('window', { api: { motion: api } })
     const body = new GeneratedBodyPlayback(() => undefined)
     body.attach(greenFoxRig())
     try {
       await expect(body.playProfile('presence_poised', context)).rejects.toThrow(
-        'ARDY_INFERENCE_FAILED',
+        'MOTION_INFERENCE_FAILED',
       )
       await body.settleCancellation()
       await expect(body.playProfile('presence_poised', context)).rejects.toThrow(
@@ -186,7 +186,7 @@ describe('ordinary conversation body liveness', () => {
       expect(body.getLibraryDebug().runningProfileId).toBe('explain_one_palm')
       expect(body.getLibraryDebug().phase).toBe('prepare')
       expect(body.getAppliedMotionLayer()).toBe('base')
-      expect(await thinking).toBe('ARDY_PROFILE_SUPERSEDED')
+      expect(await thinking).toBe('MOTION_PROFILE_SUPERSEDED')
       for (let frame = 0; frame < 8; frame++) {
         await new Promise<void>((resolve) => setImmediate(resolve))
         body.update(1 / 60, () => undefined)

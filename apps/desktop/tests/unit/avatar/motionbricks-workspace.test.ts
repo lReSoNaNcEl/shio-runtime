@@ -34,7 +34,7 @@ describe('MotionBricks anatomical close-workspace calibration', () => {
       safety.attach(vrm)
       safety.setHandTargets(getMotionProfile('explain_point_close'), 'stroke')
       const access = safety as unknown as {
-        sourceProvider: 'ardy' | 'motionbricks'
+        sourceProvider: 'motionbricks' | undefined
         arms: Array<{ side: number; upper: THREE.Object3D }>
         handGoal(arm: unknown): {
           center: THREE.Vector3
@@ -46,7 +46,7 @@ describe('MotionBricks anatomical close-workspace calibration', () => {
       }
       const arm = access.arms.find((entry) => entry.side === -1)
       expect(arm).toBeDefined()
-      access.sourceProvider = 'ardy'
+      access.sourceProvider = undefined
       const before = access.handGoal(arm)
       access.sourceProvider = 'motionbricks'
       const after = access.handGoal(arm)

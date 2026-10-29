@@ -20,8 +20,8 @@
     "desktop:check": "npm --prefix apps/desktop run check",
     "desktop:check:fix": "npm --prefix apps/desktop run check:fix",
     "desktop:test": "npm --prefix apps/desktop run test",
-    "desktop:test:fast": "npm --prefix apps/desktop run test:fast",
-    "desktop:test:regression": "npm --prefix apps/desktop run test:regression",
+    "desktop:test:fast": "npm --prefix apps/desktop run test:fast --",
+    "desktop:test:regression": "npm --prefix apps/desktop run test:regression --",
     "desktop:test:architecture": "npm --prefix apps/desktop run test:architecture",
     "desktop:qualify:browser": "npm --prefix apps/desktop run qualify:browser",
     "desktop:qualify:continuous-browser": "npm --prefix apps/desktop run qualify:continuous-browser",
@@ -59,17 +59,12 @@
     "format": "npm run desktop:format && npm run api:format",
     "format:check": "npm run desktop:format:check && npm run api:format:check",
     "check": "npm run lint && npm run format:check && npm run typecheck && npm run test",
-    "motion:research:install": "node scripts/motion-research.mjs install",
-    "motion:research:prefetch": "node scripts/motion-research.mjs prefetch",
-    "motion:research:doctor": "node scripts/motion-research.mjs doctor",
-    "motion:research:probe": "node scripts/motion-research.mjs probe",
-    "motion:research:test": "node scripts/motion-research.mjs test",
     "emotions:sync": "node scripts/sync-emotions.mjs",
     "motion:sync": "node scripts/sync-motion.mjs",
     "motion:catalog:check": "node scripts/sync-motion.mjs --check && node scripts/sync-emotions.mjs --check",
     "experiment:qualify": "npm --prefix apps/desktop run qualify:speech-motion --",
     "experiment:pack": "powershell -ExecutionPolicy Bypass -File scripts/build-alpha-bundle.ps1 -ExperimentalWorktree",
     "experiment:verify-package": "powershell -ExecutionPolicy Bypass -File scripts/verify-alpha-bundle.ps1 -ExperimentalWorktree",
-    "experiment:legacy-check": "node scripts/check-ardy-fish-legacy.mjs"
+    "experiment:legacy-check": "node scripts/check-generated-motion-legacy.mjs"
   }
 }

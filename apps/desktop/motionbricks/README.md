@@ -1,11 +1,14 @@
 # MotionBricks + SOMA-X Hand: исследовательский Adapter
 
-Только opt-in запуск из development checkout. По умолчанию приложение использует
-ARDY. В packaged приложении выбор экспериментального provider запрещён.
-Это не launcher-компонент и не второй Avatar Runtime.
+MotionBricks — единственный body provider в development checkout; SOMA-X Hand
+включён по умолчанию. Main владеет одним worker и его lifecycle, Avatar Runtime —
+retargeting/composition. Это не launcher-компонент и не второй Avatar Runtime.
+`SHIO_MOTION_ENABLED=0` отключает engine с явным `MOTION_DISABLED`;
+`SHIO_MOTION_SOMA_HAND=0` включает body-only диагностику без ARDY fallback.
 
-Результаты, ограничения и приёмка:
-`docs/EXPERIMENT-MOTIONBRICKS-SOMAX-2026-10-28.md`.
+Текущий статус, проверки и открытые пункты:
+`docs/SHIO-MOTIONBRICKS-AI-SDK-MIGRATION-2026-10-29.md`.
+Исходные результаты интеграции: `docs/EXPERIMENT-MOTIONBRICKS-SOMAX-2026-10-28.md`.
 Лицензии: `docs/EXPERIMENT-MOTIONBRICKS-SOMAX-LICENSING-2026-10-28.md`.
 Точные source/model/dependency pins: `research-pins.json`.
 
@@ -16,11 +19,11 @@ CPython 3.12.13, RTX 5090, driver 610.88, TensorRT 10.8.0.43, Warp 1.17.0.
 
 1. Подготовить отдельный checkout `NVlabs/motionbricks` в
    `apps/desktop/motionbricks/.cache/upstream` на commit
-   `54fc563aeaaf819a753d72cc9fdc6713989cdd43`. Не заменять его ARDY checkout.
+   `54fc563aeaaf819a753d72cc9fdc6713989cdd43`.
 2. В его корне выполнить `uv sync --locked`. Для локальных cache/Python assets
    задать `UV_CACHE_DIR` и `UV_PYTHON_INSTALL_DIR` внутри игнорируемой `.cache/`.
 3. Получить Git LFS assets: `motionbricks/assets/human/`,
-   `assets/motions/soma/`, оба `motionbricks/assets/onnx/soma/*.onnx`.
+   оба `motionbricks/assets/onnx/soma/*.onnx`.
    Если LFS передача ONNX зависает, те же файлы доступны через
    `https://media.githubusercontent.com/media/NVlabs/motionbricks/<COMMIT>/<PATH>`.
    Проверить SHA-256 из `research-pins.json` и основного отчёта перед заменой
@@ -36,14 +39,16 @@ CPython 3.12.13, RTX 5090, driver 610.88, TensorRT 10.8.0.43, Warp 1.17.0.
 
 В текущем worktree `.cache/upstream`, `.cache/hand` и `.venv` ссылаются на
 подготовленные assets внутри его `tmp/`. Эти junctions и большие assets не
-коммитятся. Текущая начальная standing pose получена из evaluation-only BVH;
-это исследовательская зависимость, не готовый shipping material.
+коммитятся. Standing reference хранится в `assets/standing-pose.soma.json`: один offline
+кадр из VRMA ветки main, точный SHA и hash файла внутри asset. BVH и VRMA
+playback в runtime не используются. Исходная лицензия VRMA не установлена;
+нахождение файла в Git не означает разрешение на его распространение.
+Повторное извлечение: `.venv/Scripts/python.exe apps/desktop/motionbricks/extract_standing_pose.py`
+из корня. Скрипт проверяет четыре кандидата, SOMA bind, опору и спокойствие кадра.
 
 ## Запуск
 
 ```powershell
-$env:SHIO_EXPERIMENT_MOTION_PROVIDER = 'motionbricks'
-$env:SHIO_EXPERIMENT_SOMA_HAND = '1' # опустить для body-only варианта B
 $env:SHIO_MOTION_ROOT = (Resolve-Path 'apps/desktop/motionbricks').Path
 $env:SHIO_DESKTOP_USER_DATA_ROOT = (Join-Path (Get-Location) 'tmp/motionbricks-manual-profile')
 npm run build
@@ -89,10 +94,10 @@ generation latency. `engineStartupMs` измеряет конструктор en
 powershell -ExecutionPolicy Bypass -File apps/desktop/motionbricks/dev.ps1 -Build
 ```
 
-Скрипт задаёт MotionBricks + native Hand только в своём process environment и
+Скрипт задаёт корень MotionBricks только в своём process environment и
 восстанавливает его при выходе. Он не меняет packaged defaults, provider Fish/ASR,
-Character config или пользовательскую камеру. Подробности v2 и незакрытые gates:
-`docs/LIVING-CHARACTER-V2-2026-10-28.md`.
+Character config или пользовательскую камеру. Текущие незакрытые gates перечислены
+в отчёте миграции; исторические сведения v2 — в `docs/LIVING-CHARACTER-V2-2026-10-28.md`.
 
 - Main выбирает один worker, проверяет source/model identity и bounded NDJSON.
   Windows cancellation завершает точное дерево experimental Python processes.

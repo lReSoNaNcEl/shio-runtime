@@ -149,7 +149,7 @@ describe('MotionBricks attainable rest variation', () => {
       appliedLease: MotionLease | null
       playing: boolean
       localRecovery: boolean
-      appliedSourceProvider: string
+      appliedSourceProvider: string | undefined
       appliedExecutionId: string
       profileId: string
       appliedProfileId: string
@@ -368,7 +368,7 @@ describe('MotionBricks attainable rest variation', () => {
       body.detach()
     }
   })
-  it.each(['motionbricks', 'ardy'] as const)(
+  it.each(['motionbricks', undefined] as const)(
     'preserves provider-scoped recovery context through the safety filter (%s)',
     (source) => {
       const body = new GeneratedBodyPlayback(() => undefined)
@@ -378,7 +378,7 @@ describe('MotionBricks attainable rest variation', () => {
         appliedLease: MotionLease | null
         playing: boolean
         localRecovery: boolean
-        appliedSourceProvider: string
+        appliedSourceProvider: string | undefined
         appliedExecutionId: string
         execution: MotionPhaseExecution
         bodySafety: {
@@ -433,7 +433,7 @@ describe('MotionBricks attainable rest variation', () => {
           constrainTarget(bone: THREE.Object3D, rotation: THREE.Quaternion): void
         }
         execution: MotionPhaseExecution
-        appliedSourceProvider: string
+        appliedSourceProvider: string | undefined
         invalidatePhase(): void
       }
       try {

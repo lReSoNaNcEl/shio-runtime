@@ -94,6 +94,37 @@ const desktopControl: DesktopControlCapabilityProjection = {
   authorityMode: 'confirm',
 }
 
+describe('capability lifecycle', () => {
+  it('stops a pending refresh before accessing owners after disposal', async () => {
+    let releasePlugins: (value: []) => void = () => undefined
+    let lateOwnerReads = 0
+    const plugins = new Promise<[]>((resolve) => {
+      releasePlugins = resolve
+    })
+    const catalog = new CapabilityCatalog({
+      settings: () => settings,
+      llmReadiness: () => llmReadiness,
+      llmCapabilities: () => llmCapabilities,
+      plugins: () => plugins,
+      desktopControl: async () => {
+        lateOwnerReads += 1
+        return desktopControl
+      },
+      avatarRuntimeHealth: () => null,
+      browserControl: () => {
+        throw new Error('Disposed owner accessed')
+      },
+    })
+    catalog.invalidate()
+    catalog.dispose()
+    catalog.invalidate()
+    releasePlugins([])
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    assert.equal(lateOwnerReads, 0)
+    await assert.rejects(catalog.snapshot(), /CAPABILITY_CATALOG_DISPOSED/u)
+  })
+})
+
 function waitForCapability(
   catalog: CapabilityCatalog,
   id: string,

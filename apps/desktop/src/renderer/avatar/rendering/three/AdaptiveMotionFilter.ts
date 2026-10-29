@@ -8,7 +8,7 @@ export interface MotionFilterContext {
   /** Remaining authored time for preparation or deterministic presence recovery. */
   reachSeconds?: number
   motionClass: MotionClass
-  sourceProvider?: 'ardy' | 'motionbricks'
+  sourceProvider?: 'motionbricks'
   phase: MotionPhaseId
   sourceSpeeds?: ReadonlyMap<THREE.Object3D, number>
   onIntegrated?: (bone: THREE.Object3D) => void

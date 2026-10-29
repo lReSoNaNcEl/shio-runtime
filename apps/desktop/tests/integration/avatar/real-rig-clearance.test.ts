@@ -418,7 +418,7 @@ it('latches a motion failure when planted support cannot be recovered', async ()
     for (let turn = 0; turn < 8; turn++) await Promise.resolve()
   }
   expect(owner.getLibraryDebug().outcome).toBe('timed-out')
-  expect(owner.getBodyMotionDebugState().generated?.error).toBe('ARDY_RECOVERY_TARGET_UNREACHED')
+  expect(owner.getBodyMotionDebugState().generated?.error).toBe('MOTION_RECOVERY_TARGET_UNREACHED')
   owner.detach()
   await owner.settleCancellation()
   vrm.scene.traverse((node) => {
@@ -499,7 +499,7 @@ it('bounds wall time independently of a throttled recovery integration clock', a
   now = 11000
   owner.update(1 / 60, () => undefined)
   expect(owner.getLibraryDebug().outcome).toBe('timed-out')
-  expect(owner.getBodyMotionDebugState().generated?.error).toBe('ARDY_RECOVERY_TARGET_UNREACHED')
+  expect(owner.getBodyMotionDebugState().generated?.error).toBe('MOTION_RECOVERY_TARGET_UNREACHED')
   owner.detach()
   await owner.settleCancellation()
   vrm.scene.traverse((node) => {

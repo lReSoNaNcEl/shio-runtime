@@ -3,7 +3,7 @@
 import '@testing-library/jest-dom/vitest'
 
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { PluginsView } from '../../src/renderer/components/plugins/PluginsView'
 import { CapabilitiesView } from '../../src/renderer/components/views/CapabilitiesView'
@@ -17,6 +17,21 @@ import type { PluginStatus } from '../../src/shared/plugins'
 import { localizedWrapper, stubWindowProperty } from '../support/rendering'
 
 vi.mock('@react-spectrum/s2/style', () => ({ style: () => '' }))
+
+// JSDOM has no layout observer. These tests exercise confirmation, not scrolling.
+beforeEach(() => {
+  vi.stubGlobal(
+    'IntersectionObserver',
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+      takeRecords() {
+        return []
+      }
+    },
+  )
+})
 
 let restoreApi: () => void = () => undefined
 afterEach(() => {

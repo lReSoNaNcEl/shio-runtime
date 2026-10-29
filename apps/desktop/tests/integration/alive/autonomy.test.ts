@@ -19,7 +19,6 @@ import {
   type CharacterToolLoopStreamEvent,
 } from '../../../src/main/character-tools/CharacterToolLoop'
 import { CharacterToolRegistry } from '../../../src/main/character-tools/CharacterToolRegistry'
-import { runChatCompletionStream } from '../../../src/main/llm/openai-compatible/stream'
 import { createSemanticMemoryRuntime, MemoryToolBroker } from '../../../src/main/memory'
 import {
   type CharacterStreamEvent,
@@ -27,6 +26,7 @@ import {
   SpeechTextCommitBuffer,
 } from '../../../src/shared/character-stream'
 import { LatencyTelemetry } from '../../../src/shared/latency'
+import { runChatCompletionStream } from '../../support/llm/wireFixture'
 
 async function testSafeStreamFilter(): Promise<void> {
   const filter = new SafeCharacterStreamFilter()

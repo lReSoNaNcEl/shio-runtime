@@ -17,6 +17,8 @@
 
       "!node_modules",
       "!out",
+      // Release packaging is outside the development-only migration scope.
+      "!electron-builder.yml",
       "!runtime-debug",
       // Скомпилированные CJS-бандлы repro-харнессов: исходник — соседний .ts, файл не редактируется вручную.
       "!scripts/**/harness.cjs",

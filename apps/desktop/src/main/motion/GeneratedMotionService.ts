@@ -30,8 +30,8 @@ interface Pending {
   timeout: ReturnType<typeof setTimeout>
 }
 
-/** One Main-owned ARDY process. No renderer paths or arbitrary descriptions. */
-export class ArdyMotionService {
+/** One Main-owned MotionBricks process. No renderer paths or arbitrary descriptions. */
+export class GeneratedMotionService {
   private process: ChildProcessWithoutNullStreams | null = null
   private state: MotionStatus['state'] = 'unavailable'
   private error: string | null = null
@@ -55,8 +55,8 @@ export class ArdyMotionService {
   constructor(
     private readonly root: string,
     private readonly currentAssetHandle: () => string = () => '',
-    private readonly provider: 'ardy' | 'motionbricks' = 'ardy',
-    private readonly nativeHands = false,
+    private readonly nativeHands = true,
+    private readonly enabled = true,
   ) {}
 
   owns(owner: number, lease: MotionLease): boolean {
@@ -76,6 +76,10 @@ export class ArdyMotionService {
   }
 
   warmup(): Promise<void> {
+    if (!this.enabled) {
+      this.error = 'MOTION_DISABLED'
+      return Promise.reject(new Error(this.error))
+    }
     if (this.startup) return this.startup
     if (this.process && this.state === 'ready') return Promise.resolve()
     this.startup = this.initialize().finally(() => {
@@ -85,9 +89,9 @@ export class ArdyMotionService {
   }
 
   private async initialize(): Promise<void> {
-    if (this.closed) throw new Error('ARDY_CLOSED')
+    if (this.closed) throw new Error('MOTION_CLOSED')
     if (this.stopping) await this.stopping
-    if (this.closed) throw new Error('ARDY_CLOSED')
+    if (this.closed) throw new Error('MOTION_CLOSED')
     const python = join(
       this.root,
       '.venv',
@@ -95,18 +99,17 @@ export class ArdyMotionService {
     )
     if (!existsSync(python) || !existsSync(join(this.root, 'worker.py'))) {
       this.state = 'unavailable'
-      this.error = 'ARDY_ASSETS_MISSING'
+      this.error = 'MOTION_ASSETS_MISSING'
       throw new Error(this.error)
     }
     this.state = 'loading'
     this.error = null
     const environment: Record<string, string> = {
-      SHIO_MOTION_SOMA_HAND: this.provider === 'motionbricks' && this.nativeHands ? '1' : '0',
+      SHIO_MOTION_SOMA_HAND: this.nativeHands ? '1' : '0',
       PYTHONUTF8: '1',
       PYTHONUNBUFFERED: '1',
       HF_HUB_OFFLINE: '1',
       TRANSFORMERS_OFFLINE: '1',
-      TORCH_HOME: join(this.root, '.cache', 'torch'),
       TEMP: join(this.root, '.tmp'),
       TMP: join(this.root, '.tmp'),
     }
@@ -136,14 +139,14 @@ export class ArdyMotionService {
     await new Promise<void>((resolve, reject) => {
       let started = false
       const deadline = setTimeout(() => {
-        reject(new Error('ARDY_INIT_TIMEOUT'))
-        void this.stopProcess('ARDY_INIT_TIMEOUT')
+        reject(new Error('MOTION_INIT_TIMEOUT'))
+        void this.stopProcess('MOTION_INIT_TIMEOUT')
       }, 600_000)
       child.stdout.on('data', (data: Buffer) => {
         if (this.process !== child) return
         buffer += data.toString('utf8')
-        if (Buffer.byteLength(buffer) > (this.provider === 'motionbricks' ? 524_288 : 262_144)) {
-          void this.stopProcess('ARDY_PROTOCOL_ERROR')
+        if (Buffer.byteLength(buffer) > 524_288) {
+          void this.stopProcess('MOTION_PROTOCOL_ERROR')
           return
         }
         while (buffer.includes('\n')) {
@@ -158,10 +161,7 @@ export class ArdyMotionService {
             }
             const ready = value.type === 'ready' ? motionReadySchema.safeParse(value) : null
             if (ready?.success && !started) {
-              const expectedSource =
-                this.provider === 'motionbricks'
-                  ? '54fc563aeaaf819a753d72cc9fdc6713989cdd43'
-                  : 'e706e27acc88070918308a10922b8f7174d0825e'
+              const expectedSource = '54fc563aeaaf819a753d72cc9fdc6713989cdd43'
               if (ready.data.format.sourceRevision !== expectedSource)
                 throw new Error('MOTION_PROVIDER_IDENTITY_MISMATCH')
               if (Boolean(ready.data.handModelRevision) !== this.nativeHands)
@@ -172,7 +172,7 @@ export class ArdyMotionService {
               resolve()
               continue
             }
-            if (value.type === 'error') throw new Error('ARDY_INFERENCE_FAILED')
+            if (value.type === 'error') throw new Error('MOTION_INFERENCE_FAILED')
             const chunk = motionChunkSchema.parse(value)
             if (Boolean(chunk.handDeltas) !== this.nativeHands)
               throw new Error('MOTION_HAND_PROVIDER_IDENTITY_MISMATCH')
@@ -188,14 +188,24 @@ export class ArdyMotionService {
               !this.matches(chunk) ||
               chunk.startFrame !== pending.frame
             )
-              throw new Error('ARDY_STALE_OR_INVALID_CHUNK')
+              throw new Error('MOTION_STALE_OR_INVALID_CHUNK')
             this.expectedFrame = chunk.startFrame + chunk.rotations.length
             clearTimeout(pending.timeout)
             this.pending = null
             this.state = 'ready'
-            pending.resolve({ ...chunk, sourceProvider: this.provider })
-          } catch {
-            void this.stopProcess('ARDY_PROTOCOL_ERROR')
+            pending.resolve({ ...chunk, sourceProvider: 'motionbricks' })
+          } catch (error) {
+            const code =
+              error instanceof Error &&
+              [
+                'MOTION_INFERENCE_FAILED',
+                'MOTION_STALE_OR_INVALID_CHUNK',
+                'MOTION_PROVIDER_IDENTITY_MISMATCH',
+                'MOTION_HAND_PROVIDER_IDENTITY_MISMATCH',
+              ].includes(error.message)
+                ? error.message
+                : 'MOTION_PROTOCOL_ERROR'
+            void this.stopProcess(code)
           }
         }
       })
@@ -203,18 +213,18 @@ export class ArdyMotionService {
       child.stderr.on('data', () => undefined)
       child.once('error', () => {
         clearTimeout(deadline)
-        reject(new Error('ARDY_PROCESS_FAILED'))
-        void this.stopProcess('ARDY_PROCESS_FAILED')
+        reject(new Error('MOTION_PROCESS_FAILED'))
+        void this.stopProcess('MOTION_PROCESS_FAILED')
       })
       child.once('exit', () => {
         clearTimeout(deadline)
-        if (!started) reject(new Error('ARDY_INIT_FAILED'))
+        if (!started) reject(new Error('MOTION_INIT_FAILED'))
         if (this.process === child) {
           this.process = null
-          this.rejectPending('ARDY_PROCESS_EXITED')
+          this.rejectPending('MOTION_PROCESS_EXITED')
           if (!this.stopping) {
             this.state = 'failed'
-            this.error = 'ARDY_PROCESS_EXITED'
+            this.error = 'MOTION_PROCESS_EXITED'
           }
         }
       })
@@ -222,7 +232,7 @@ export class ArdyMotionService {
   }
 
   async start(owner: number, avatarGeneration: number, seed?: number): Promise<MotionLease> {
-    if (this.owner !== null) throw new Error('ARDY_BUSY')
+    if (this.owner !== null) throw new Error('MOTION_BUSY')
     this.owner = owner
     this.startingAvatar = avatarGeneration
     const reservation = this.epoch
@@ -236,7 +246,7 @@ export class ArdyMotionService {
       throw error
     }
     if (this.owner !== owner || this.epoch !== reservation || this.closed)
-      throw new Error('ARDY_CANCELLED')
+      throw new Error('MOTION_CANCELLED')
     this.startingAvatar = null
     this.assetHandle = this.currentAssetHandle()
     this.epoch += 1
@@ -267,25 +277,23 @@ export class ArdyMotionService {
       lease.seed !== this.lease?.seed ||
       lease.avatarGeneration !== this.lease?.avatarGeneration
     )
-      throw new Error('ARDY_STALE_SESSION')
+      throw new Error('MOTION_STALE_SESSION')
     const profile = getMotionProfile(profileId)
     const parsedPlan = motionPlanIdentitySchema.safeParse(requestedPlan)
     if (!profile || profile.physicalAction || !parsedPlan.success)
-      throw new Error('ARDY_INVALID_PLAN')
+      throw new Error('MOTION_INVALID_PLAN')
     const plan = parsedPlan.data
     const activity =
-      this.provider !== 'motionbricks' || requestedActivity === undefined
-        ? undefined
-        : motionActivitySchema.parse(requestedActivity)
+      requestedActivity === undefined ? undefined : motionActivitySchema.parse(requestedActivity)
     if (activity && plan.clockDomain === 'speech' && activity.playbackId !== plan.playbackId)
       throw new Error('MOTION_STALE_ACTIVITY')
     if (
       plan.handScoreRevision !== profile.handScore.revision ||
       plan.handRigCalibrationRevision !== profile.handScore.calibrationRevision
     )
-      throw new Error('ARDY_INCOMPATIBLE_HAND_SCORE')
+      throw new Error('MOTION_INCOMPATIBLE_HAND_SCORE')
     const previous = this.acceptedPlan
-    if (this.retiredExecutions.includes(plan.executionId)) throw new Error('ARDY_STALE_PLAN')
+    if (this.retiredExecutions.includes(plan.executionId)) throw new Error('MOTION_STALE_PLAN')
     if (previous) {
       const sameExecution = previous.executionId === plan.executionId
       if (
@@ -299,11 +307,11 @@ export class ArdyMotionService {
                 plan.playbackId !== previous.playbackId)))) ||
         (!sameExecution && plan.phaseId !== 'prepare')
       )
-        throw new Error('ARDY_STALE_PLAN')
+        throw new Error('MOTION_STALE_PLAN')
     }
-    if (this.pending) throw new Error('ARDY_BUSY')
+    if (this.pending) throw new Error('MOTION_BUSY')
     const child = this.process
-    if (!child || this.state !== 'ready') throw new Error('ARDY_NOT_READY')
+    if (!child || this.state !== 'ready') throw new Error('MOTION_NOT_READY')
     const id = ++this.requestId
     const frame = requestedFrame ?? this.expectedFrame
     if (
@@ -311,7 +319,7 @@ export class ArdyMotionService {
       frame < Math.max(0, this.expectedFrame - 120) ||
       frame > this.expectedFrame
     )
-      throw new Error('ARDY_INVALID_REPLAN')
+      throw new Error('MOTION_INVALID_REPLAN')
     if (previous && previous.executionId !== plan.executionId) {
       this.retiredExecutions.push(previous.executionId)
       if (this.retiredExecutions.length > 8) this.retiredExecutions.shift()
@@ -321,7 +329,7 @@ export class ArdyMotionService {
     this.state = 'generating'
     const generation = new Promise<MotionChunk>((resolve, reject) => {
       const timeout = setTimeout(() => {
-        void this.stopProcess('ARDY_DEADLINE_MISS')
+        void this.stopProcess('MOTION_DEADLINE_MISS')
       }, MOTION_INFERENCE_DEADLINE_MS)
       this.pending = { id, frame, profileId, seed: lease.seed, plan, resolve, reject, timeout }
       const request = {
@@ -336,10 +344,10 @@ export class ArdyMotionService {
         seed: lease.seed,
         reset: frame === 0,
         fromFrame: frame,
-        ...(this.provider === 'motionbricks' && activity ? { activity } : {}),
+        ...(activity ? { activity } : {}),
       }
       child.stdin.write(`${JSON.stringify(request)}\n`, (error) => {
-        if (error) void this.stopProcess('ARDY_CHANNEL_FAILED')
+        if (error) void this.stopProcess('MOTION_CHANNEL_FAILED')
       })
     })
     this.lastGeneration = generation.then(
@@ -352,9 +360,9 @@ export class ArdyMotionService {
   async reroll(owner: number, lease: MotionLease, seed?: number): Promise<MotionLease> {
     await this.lastGeneration
     if (!this.owns(owner, lease) || !this.lease || lease.seed !== this.lease.seed)
-      throw new Error('ARDY_STALE_SESSION')
+      throw new Error('MOTION_STALE_SESSION')
     if (seed !== undefined && !motionSeedSchema.safeParse(seed).success)
-      throw new Error('ARDY_INVALID_SEED')
+      throw new Error('MOTION_INVALID_SEED')
     this.lease.seed = seed ?? randomInt(0, 2_147_483_647)
     return { ...this.lease }
   }
@@ -376,12 +384,12 @@ export class ArdyMotionService {
           this.lease?.avatarGeneration !== lease.avatarGeneration
     )
       return false
-    await this.stopProcess('ARDY_CANCELLED')
+    await this.stopProcess('MOTION_CANCELLED')
     return true
   }
 
   async releaseOwner(owner: number): Promise<void> {
-    if (owner === this.owner) await this.stopProcess('ARDY_CANCELLED')
+    if (owner === this.owner) await this.stopProcess('MOTION_CANCELLED')
   }
 
   private rejectPending(code: string): void {
@@ -409,10 +417,10 @@ export class ArdyMotionService {
         resolve()
         return
       }
-      const deadline = setTimeout(() => reject(new Error('ARDY_TERMINATION_FAILED')), 5000)
+      const deadline = setTimeout(() => reject(new Error('MOTION_TERMINATION_FAILED')), 5000)
       // Windows virtualenv launchers own a second Python process. Kill the exact
       // experimental process tree before allowing the next GPU provider lease.
-      if (this.provider === 'motionbricks' && process.platform === 'win32' && child.pid) {
+      if (process.platform === 'win32' && child.pid) {
         const terminator = spawn(
           join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'taskkill.exe'),
           ['/PID', String(child.pid), '/T', '/F'],
@@ -420,12 +428,12 @@ export class ArdyMotionService {
         )
         terminator.once('error', () => {
           clearTimeout(deadline)
-          reject(new Error('ARDY_TERMINATION_FAILED'))
+          reject(new Error('MOTION_TERMINATION_FAILED'))
         })
         terminator.once('exit', (status) => {
           clearTimeout(deadline)
           if (status !== 0) {
-            reject(new Error('ARDY_TERMINATION_FAILED'))
+            reject(new Error('MOTION_TERMINATION_FAILED'))
             return
           }
           if (this.process === child) this.process = null
@@ -446,13 +454,13 @@ export class ArdyMotionService {
     // Every detached failure is contained and represented in owned state.
     void this.stopping.catch(() => {
       this.state = 'failed'
-      this.error = 'ARDY_TERMINATION_FAILED'
+      this.error = 'MOTION_TERMINATION_FAILED'
     })
     return this.stopping
   }
 
   async dispose(): Promise<void> {
     this.closed = true
-    await this.stopProcess('ARDY_CLOSED')
+    await this.stopProcess('MOTION_CLOSED')
   }
 }

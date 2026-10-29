@@ -1,9 +1,9 @@
 import { LLM_PROVIDER_IDS, type LlmProviderId, type ModelInfo } from '../../shared/llm'
+import { createAiSdkAdapter } from './AiSdkAdapter'
 import {
   applyCatalogCapabilityHints,
   resolveBaseCapabilities,
 } from './openai-compatible/capabilities'
-import { OpenAICompatibleClient } from './openai-compatible/OpenAICompatibleClient'
 import { cloudflareProvider } from './providers/cloudflare'
 import { groqProvider } from './providers/groq'
 import { mistralProvider } from './providers/mistral'
@@ -71,13 +71,14 @@ export function createLLMProvider(config: {
   apiKey: string
   model: string
   accountId?: string
+  capabilities?: LlmCapabilities
 }): LLMProvider {
-  return new OpenAICompatibleClient({
+  return createAiSdkAdapter({
     definition: getProviderDefinition(config.provider),
     apiKey: config.apiKey,
     model: config.model,
     connection: { accountId: config.accountId },
-    capabilities: resolveModelCapabilities(config.provider, config.model),
+    capabilities: config.capabilities ?? resolveModelCapabilities(config.provider, config.model),
   })
 }
 
@@ -85,7 +86,7 @@ export function createModelCatalog(
   id: LlmProviderId,
   connection: ProviderConnectionSettings = {},
 ): ModelCatalogProvider {
-  return new OpenAICompatibleClient({
+  return createAiSdkAdapter({
     definition: getProviderDefinition(id),
     apiKey: '',
     model: '',

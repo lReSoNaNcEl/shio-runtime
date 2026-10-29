@@ -45,7 +45,10 @@ describe('single source-aware body tracking', () => {
     expect(bone.quaternion.angleTo(target)).toBeLessThan(0.03)
   })
   it('rejects rapid MotionBricks presence noise while retaining a slow sway and unchanged gesture timing', () => {
-    const run = (sourceProvider: 'ardy' | 'motionbricks', motionClass: 'presence' | 'gesture') => {
+    const run = (
+      sourceProvider: 'motionbricks' | undefined,
+      motionClass: 'presence' | 'gesture',
+    ) => {
       const filter = new AdaptiveMotionFilter()
       const bone = new THREE.Object3D()
       const angles: number[] = []
@@ -64,7 +67,7 @@ describe('single source-aware body tracking', () => {
       }
       return angles
     }
-    const previous = run('ardy', 'presence')
+    const previous = run(undefined, 'presence')
     const candidate = run('motionbricks', 'presence')
     const highEnergy = (angles: number[]) =>
       angles
@@ -75,7 +78,7 @@ describe('single source-aware body tracking', () => {
         )
     expect(highEnergy(candidate)).toBeLessThan(highEnergy(previous) * 0.1)
     expect(Math.max(...candidate) - Math.min(...candidate)).toBeGreaterThan(0.056)
-    expect(run('motionbricks', 'gesture')).toEqual(run('ardy', 'gesture'))
+    expect(run('motionbricks', 'gesture')).toEqual(run(undefined, 'gesture'))
   })
   it.each([60, 90, 120])(
     'tracks a slow neural path while rejecting tiny source chatter at %i Hz',

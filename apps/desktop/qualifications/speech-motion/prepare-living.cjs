@@ -3,8 +3,8 @@ const { execFileSync } = require('node:child_process')
 const fs = require('node:fs')
 const path = require('node:path')
 
-// Same isolated snapshot technique as motion-ab/prepare.cjs. Test hooks never
-// enter the production build, packaged runtime or renderer IPC surface.
+// Build an isolated Desktop snapshot. Test hooks never enter the production
+// build, packaged runtime or renderer IPC surface.
 const desktop = path.resolve(__dirname, '../..')
 const repository = path.resolve(desktop, '../..')
 const root = path.join(repository, 'tmp', `living-motion-${Date.now()}`)
@@ -23,7 +23,7 @@ for (const file of [
 ])
   if (fs.existsSync(path.join(desktop, file)))
     fs.copyFileSync(path.join(desktop, file), path.join(target, file))
-for (const directory of ['motion', 'qualifications', 'node_modules'])
+for (const directory of ['motion', 'motionbricks', 'qualifications', 'node_modules'])
   fs.symlinkSync(path.join(desktop, directory), path.join(target, directory), 'junction')
 fs.cpSync(path.join(repository, 'contracts'), path.join(root, 'contracts'), { recursive: true })
 fs.copyFileSync(path.join(repository, 'package.json'), path.join(root, 'package.json'))
@@ -43,13 +43,22 @@ edit(
   '  async load(scene:',
   '  constructor() { const host = window as unknown as { __qualificationModels?: unknown[] }; (host.__qualificationModels ??= []).push(this) }\n  async load(scene:',
 )
+edit(
+  'src/main/orchestrator.ts',
+  "    mainLog.info('[emotion] LLM reply tag', { emotionKey, replyCharacters: replyText.length })",
+  "    mainLog.info('[emotion] LLM reply tag', { emotionKey, replyCharacters: replyText.length })\n    const qualificationHost=globalThis as unknown as {__qualificationTurnKinds?:Record<string,string>}; const origins=qualificationHost.__qualificationTurnKinds??={}; origins[traceId]=assistantTurnKind; for(const key of Object.keys(origins).slice(0,-64))delete origins[key]",
+)
 fs.writeFileSync(
   path.join(root, 'snapshot.json'),
   JSON.stringify(
     {
       target,
       productionUnchanged: true,
-      transforms: ['test-only Controller reference', 'test-only loaded-model references'],
+      transforms: [
+        'test-only Controller reference',
+        'test-only loaded-model references',
+        'test-only bounded Main assistant origin',
+      ],
     },
     null,
     2,

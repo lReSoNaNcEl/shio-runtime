@@ -487,7 +487,7 @@ async function qualifyStabilization({ application, page, directory, report, paus
   )
 }
 
-/** Visual comparison of diagnostic compositions only. Production keeps live ARDY. */
+/** Visual comparison of diagnostic compositions only. Production keeps live MotionBricks. */
 async function qualifyIdenticalSource({ page, overlay, directory, report, pause }) {
   const root = path.resolve(__dirname, '../../motion/.artifacts/stabilization-2026-10-28')
   const before = JSON.parse(fs.readFileSync(path.join(root, 'full/report.json')))
@@ -509,7 +509,7 @@ async function qualifyIdenticalSource({ page, overlay, directory, report, pause 
     kind: 'identical-source-ab',
     sourceSha256: before.sourceSha256,
     scope:
-      'Diagnostic captured ARDY, baseline/candidate exact composition series; shared fixed root and relaxed fingers. This is not final live inference qualification.',
+      'Diagnostic captured MotionBricks, baseline/candidate exact composition series; shared fixed root and relaxed fingers. This is not final live inference qualification.',
     cases: [],
     artisticAcceptance: 'PENDING USER REVIEW',
   }

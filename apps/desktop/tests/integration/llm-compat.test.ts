@@ -12,11 +12,10 @@
  */
 
 import axios, { type AxiosInstance } from 'axios'
-import type OpenAI from 'openai'
-import { APIError, APIUserAbortError } from 'openai'
 import { describe, it } from 'vitest'
 
 import type { ChatMessage, LlmProviderId } from '../../src/main/llm'
+import { createAiSdkAdapter } from '../../src/main/llm/AiSdkAdapter'
 import { normalizeLlmConfig } from '../../src/main/llm/config'
 import {
   classifyHttpFailure,
@@ -25,13 +24,11 @@ import {
   normalizeHttpErrorMessage,
 } from '../../src/main/llm/errors'
 import { prepareMessages } from '../../src/main/llm/openai-compatible/messageCompatibility'
-import { OpenAICompatibleClient } from '../../src/main/llm/openai-compatible/OpenAICompatibleClient'
 import {
   installLlmProxyResolver,
   proxyFromSystemRules,
   resolveLlmProxy,
 } from '../../src/main/llm/openai-compatible/proxy'
-import { runChatCompletion } from '../../src/main/llm/openai-compatible/request'
 import { normalizeFinishReason } from '../../src/main/llm/openai-compatible/response'
 import {
   enrichModelCatalog,
@@ -41,6 +38,12 @@ import {
   resolveModelCapabilities as resolveCapabilities,
   resolveProviderChatBaseUrl,
 } from '../../src/main/llm/registry'
+import type { WireClient } from '../support/llm/wireFixture'
+import {
+  WireHttpError as APIError,
+  WireAbortError as APIUserAbortError,
+  runChatCompletion,
+} from '../support/llm/wireFixture'
 
 let passed = 0
 let failed = 0
@@ -57,7 +60,7 @@ function check(name: string, cond: boolean, detail = ''): void {
 
 /** Fake AxiosInstance: `handler` returns response data or an Error to throw. */
 function fakeHttp(handler: (path: string, body: Record<string, unknown>) => unknown): {
-  http: Pick<OpenAI, 'chat'>
+  http: WireClient
   lastBody: () => Record<string, unknown>
 } {
   let captured: Record<string, unknown> = {}
@@ -80,11 +83,11 @@ function fakeHttp(handler: (path: string, body: Record<string, unknown>) => unkn
         },
       },
     },
-  } as unknown as Pick<OpenAI, 'chat'>
+  } as unknown as WireClient
   return { http, lastBody: () => captured }
 }
 
-function hangingHttp(): Pick<OpenAI, 'chat'> {
+function hangingHttp(): WireClient {
   return {
     chat: {
       completions: {
@@ -97,7 +100,7 @@ function hangingHttp(): Pick<OpenAI, 'chat'> {
           }),
       },
     },
-  } as unknown as Pick<OpenAI, 'chat'>
+  } as unknown as WireClient
 }
 
 function axiosErr(status: number, data?: unknown): Error {
@@ -238,7 +241,7 @@ async function runProviderBattery(pc: ProviderCase): Promise<void> {
       `got ${lastBody().max_tokens}`,
     )
     check('temperature sent for standard model', lastBody().temperature === 0.7)
-    check('provider lifecycle uses the bounded non-streaming path', lastBody().stream === false)
+    check('provider lifecycle uses the bounded non-streaming path', lastBody().stream !== true)
     check('non-reasoning model flagged correctly', caps.supportsReasoning === false)
     check('supportsSystemPrompt true', caps.supportsSystemPrompt === true)
   }
@@ -433,20 +436,20 @@ async function runProviderBattery(pc: ProviderCase): Promise<void> {
 /** Mistral models API: fake `http.get` to exercise success/error/malformed paths. */
 async function withMockedMistralGet<T>(
   handler: (path: string) => unknown,
-  fn: (p: OpenAICompatibleClient) => Promise<T>,
+  fn: (p: ReturnType<typeof createAiSdkAdapter>) => Promise<T>,
 ): Promise<T> {
-  const provider = new OpenAICompatibleClient({
+  const provider = createAiSdkAdapter({
     definition: getProviderDefinition('mistral'),
     apiKey: 'test-key',
     model: 'mistral-small-latest',
+    catalogHttp: {
+      get: async (path: string) => {
+        const result = handler(path)
+        if (result instanceof Error) throw result
+        return { data: result }
+      },
+    } as AxiosInstance,
   })
-  ;(provider as unknown as { http: { get: (path: string) => Promise<unknown> } }).http = {
-    get: async (path: string) => {
-      const r = handler(path)
-      if (r instanceof Error) throw r
-      return { data: r }
-    },
-  }
   return fn(provider)
 }
 
@@ -490,13 +493,17 @@ async function testMistralModelsApi(): Promise<void> {
   }
 
   {
-    const provider = new OpenAICompatibleClient({
+    const { http, lastBody } = fakeHttp(() => okResponse('[calm]ok'))
+    const provider = createAiSdkAdapter({
       definition: getProviderDefinition('mistral'),
       apiKey: 'test-key',
       model: 'mistral-medium-3.5',
+      fetch: async (_input, init) =>
+        new Response(
+          JSON.stringify(await http.chat.completions.create(JSON.parse(String(init?.body)))),
+          { headers: { 'Content-Type': 'application/json' } },
+        ),
     })
-    const { http, lastBody } = fakeHttp(() => okResponse('[calm]ok'))
-    ;(provider as unknown as { client: Pick<OpenAI, 'chat'> }).client = http
     await provider.chat(baseMessages('hi'))
     check(
       'chat request canonicalizes persisted dotted Mistral Medium 3.5 id',
@@ -948,12 +955,9 @@ function testFinishReasonNormalization(): void {
   console.log('\n=== finish_reason normalization (shared) ===')
   const map: [string, string][] = [
     ['stop', 'stop'],
-    ['end_turn', 'stop'],
     ['length', 'length'],
-    ['max_tokens', 'length'],
-    ['tool_calls', 'tool_calls'],
-    ['function_call', 'tool_calls'],
-    ['content_filter', 'content_filter'],
+    ['tool-calls', 'tool_calls'],
+    ['content-filter', 'content_filter'],
     ['error', 'error'],
     ['something_weird', 'unknown'],
   ]
