@@ -307,6 +307,8 @@ export const BODY_BONE_NAMES = [
   'leftToes',
   ...HAND_BONE_NAMES,
 ] as const
+/** Composed procedural head/neck, mirrored so Overlay never runs a second head actor. */
+export const HEAD_PRESENTATION_BONE_NAMES = ['neck', 'head'] as const
 const bodyPresentationBaseSchema = z
   .object({
     lease: motionLeaseSchema.nullable(),
@@ -323,6 +325,7 @@ const bodyPresentationBaseSchema = z
       .nullable()
       .optional(),
     bones: z.partialRecord(z.enum(BODY_BONE_NAMES), quaternion),
+    headBones: z.partialRecord(z.enum(HEAD_PRESENTATION_BONE_NAMES), quaternion).optional(),
     hipsPosition: point,
     chestPosition: point.optional(),
     facialActing: facialActingPresentationSchema.optional(),

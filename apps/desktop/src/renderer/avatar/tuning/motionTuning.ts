@@ -45,6 +45,35 @@ export const speechBodyTuning = {
   release: 8,
 } as const
 
+/**
+ * Upper-body posture: torso share of head orientation and weight shifts.
+ * Angles are radians (pelvis roll); the spine/chest compensate so the shoulders
+ * stay level. Speaking shifts more often than quiet presence.
+ */
+export const postureShiftTuning = {
+  spineShare: 0.4,
+  authoritySmoothing: 3,
+  // Torso keeps following attention during generated gestures, just less.
+  minimumAuthority: 0.55,
+  weightStiffness: 9,
+  // Engaged speech leans the upper body slightly toward the listener; the
+  // lean eases out in pauses. Negative spine pitch leans forward.
+  engagementLean: 0.045,
+  engagementSmoothing: 2.2,
+  weightShift: {
+    quiet: {
+      dwellSeconds: { min: 5, max: 11 },
+      centerChance: 0.3,
+      amplitude: { min: 0.025, max: 0.05 },
+    },
+    speaking: {
+      dwellSeconds: { min: 3, max: 6.5 },
+      centerChance: 0.25,
+      amplitude: { min: 0.03, max: 0.06 },
+    },
+  },
+} as const
+
 export const avatarLookAtTuning = {
   saccadeDurationMs: 190,
   overshootDurationMs: 210,
@@ -136,12 +165,20 @@ const generatorWeights = (
 
 export const headMotionTuning = {
   randomSeed: 1847,
-  yawLimit: 0.105,
-  pitchLimit: 0.087,
-  rollLimit: 0.07,
+  // Total procedural orientation (head + neck + torso share). Attention shifts
+  // turn the whole upper body, so the limits allow ordinary conversational
+  // head turns rather than the previous 6-degree drift envelope.
+  yawLimit: 0.38,
+  pitchLimit: 0.16,
+  rollLimit: 0.13,
   smoothing: 5.6,
   neckShare: 0.34,
   headShare: 0.66,
+  // Share of the resolved orientation carried by spine/chest instead of
+  // head/neck, so a head turn reads as the upper body re-orienting.
+  // MotionBricks now turns the spine toward the acting hand itself, so the
+  // procedural share is the smaller remainder of the head orientation.
+  torsoShare: { yaw: 0.32, pitch: 0.15, roll: 0.3 },
   attentionImpulse: {
     pose: { yaw: 0.018, pitch: -0.022, roll: 0.012 },
     attackMs: 100,
@@ -158,6 +195,7 @@ export const headMotionTuning = {
         speakingNod: 0,
         listeningTilt: 0,
         thinkingDrift: 0,
+        attentionShift: 1,
       }),
     },
     listening: {
@@ -168,6 +206,7 @@ export const headMotionTuning = {
         speakingNod: 0,
         listeningTilt: 1,
         thinkingDrift: 0,
+        attentionShift: 0.7,
       }),
     },
     thinking: {
@@ -178,6 +217,7 @@ export const headMotionTuning = {
         speakingNod: 0,
         listeningTilt: 0,
         thinkingDrift: 1,
+        attentionShift: 1,
       }),
     },
     speaking: {
@@ -188,6 +228,7 @@ export const headMotionTuning = {
         speakingNod: 1,
         listeningTilt: 0,
         thinkingDrift: 0,
+        attentionShift: 1,
       }),
     },
     userFocus: {
@@ -198,6 +239,7 @@ export const headMotionTuning = {
         speakingNod: 0,
         listeningTilt: 0.42,
         thinkingDrift: 0,
+        attentionShift: 0.6,
       }),
     },
   } satisfies Record<
@@ -243,6 +285,76 @@ export const headMotionTuning = {
       pose: { yaw: -0.012, pitch: -0.006, roll: -0.034 },
       smoothing: 2.9,
       nextEventMs: 0,
+    },
+    // Deliberate, held re-orientations of attention: turn, dwell, turn back.
+    // A critically damped spring gives eased starts and stops (no snap).
+    // Speaking amplitude follows consumed energy; pitch > 0 looks up.
+    attentionShift: {
+      stiffness: 30,
+      fullEnergy: 0.3,
+      oppositeSideChance: 0.65,
+      // Attention follows the visibly acting hand (renderer-measured pose):
+      // most new targets turn toward it; a gesture on the other side ends the
+      // current dwell after reactMs. Pitch < 0 looks slightly down.
+      gestureFocus: {
+        threshold: 0.3,
+        followChance: 0.75,
+        reactMs: 250,
+        cooldownMs: 1200,
+        pitch: -0.025,
+      },
+      profiles: {
+        idle: {
+          dwellMs: { min: 3500, max: 9000 },
+          centerChance: 0.45,
+          yaw: { min: 0.08, max: 0.22 },
+          pitch: 0.03,
+          pitchBias: 0,
+          roll: 0.05,
+        },
+        listening: {
+          dwellMs: { min: 2500, max: 6000 },
+          centerChance: 0.55,
+          yaw: { min: 0.05, max: 0.14 },
+          pitch: 0.02,
+          pitchBias: -0.015,
+          roll: 0.07,
+        },
+        thinking: {
+          dwellMs: { min: 1400, max: 3200 },
+          centerChance: 0.1,
+          yaw: { min: 0.15, max: 0.3 },
+          pitch: 0.03,
+          pitchBias: 0.07,
+          roll: 0.05,
+        },
+        speaking: {
+          dwellMs: { min: 1500, max: 3800 },
+          centerChance: 0.3,
+          yaw: { min: 0.11, max: 0.29 },
+          pitch: 0.035,
+          pitchBias: 0,
+          roll: 0.06,
+        },
+        userFocus: {
+          dwellMs: { min: 3000, max: 7000 },
+          centerChance: 0.7,
+          yaw: { min: 0.04, max: 0.1 },
+          pitch: 0.02,
+          pitchBias: 0,
+          roll: 0.04,
+        },
+      } satisfies Record<
+        HeadMotionProfile,
+        {
+          dwellMs: { min: number; max: number }
+          centerChance: number
+          yaw: { min: number; max: number }
+          pitch: number
+          pitchBias: number
+          roll: number
+        }
+      >,
     },
   },
 } as const

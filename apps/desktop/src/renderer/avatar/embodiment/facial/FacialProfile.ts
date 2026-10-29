@@ -114,7 +114,7 @@ export const FACIAL_PROFILES = {
   },
   happy: {
     id: 'happy',
-    expressionWeights: { happy: 0.54, relaxed: 0.14, surprised: 0.02 },
+    expressionWeights: { happy: 0.7, relaxed: 0.14, surprised: 0.02 },
     visemeBias: { ee: 0.01 },
     visemeScale: { aa: 0.96, ih: 0.94, ou: 0.88, ee: 0.96, oh: 0.88 },
     blinkProfile: blink({
@@ -135,7 +135,7 @@ export const FACIAL_PROFILES = {
   },
   laugh: {
     id: 'laugh',
-    expressionWeights: { happy: 0.64, relaxed: 0.12, surprised: 0.04 },
+    expressionWeights: { happy: 0.82, relaxed: 0.12, surprised: 0.04 },
     visemeBias: { aa: 0.04, ee: 0.015 },
     visemeScale: { aa: 1.04, ih: 0.96, ou: 0.9, ee: 1, oh: 0.94 },
     blinkProfile: blink({
@@ -156,7 +156,7 @@ export const FACIAL_PROFILES = {
   },
   chuckle: {
     id: 'chuckle',
-    expressionWeights: { happy: 0.42, relaxed: 0.18, surprised: 0.015 },
+    expressionWeights: { happy: 0.56, relaxed: 0.18, surprised: 0.015 },
     visemeBias: { aa: 0.02 },
     visemeScale: { aa: 0.98, ih: 0.94, ou: 0.88, ee: 0.96, oh: 0.88 },
     blinkProfile: blink({
@@ -175,7 +175,7 @@ export const FACIAL_PROFILES = {
   },
   embarrassed: {
     id: 'embarrassed',
-    expressionWeights: { happy: 0.1, sad: 0.05, relaxed: 0.12 },
+    expressionWeights: { happy: 0.24, sad: 0.08, relaxed: 0.14 },
     visemeBias: { ih: 0.01 },
     visemeScale: { aa: 0.82, ih: 0.86, ou: 0.84, ee: 0.85, oh: 0.82 },
     blinkProfile: blink({
@@ -196,7 +196,7 @@ export const FACIAL_PROFILES = {
   },
   thinking: {
     id: 'thinking',
-    expressionWeights: { relaxed: 0.4, sad: 0.04 },
+    expressionWeights: { relaxed: 0.5, sad: 0.06 },
     visemeBias: {},
     visemeScale: { aa: 0.86, ih: 0.86, ou: 0.88, ee: 0.85, oh: 0.88 },
     blinkProfile: blink({
@@ -216,7 +216,7 @@ export const FACIAL_PROFILES = {
   },
   angry: {
     id: 'angry',
-    expressionWeights: { angry: 0.72, sad: 0.08 },
+    expressionWeights: { angry: 0.82, sad: 0.08 },
     visemeBias: { aa: 0.03, oh: 0.02 },
     visemeScale: { aa: 1.08, ih: 0.96, ou: 1.02, ee: 0.94, oh: 1.04 },
     blinkProfile: blink({
@@ -236,7 +236,7 @@ export const FACIAL_PROFILES = {
   },
   sad: {
     id: 'sad',
-    expressionWeights: { sad: 0.68, relaxed: 0.08 },
+    expressionWeights: { sad: 0.82, relaxed: 0.08 },
     visemeBias: {},
     visemeScale: { aa: 0.84, ih: 0.84, ou: 0.88, ee: 0.82, oh: 0.88 },
     blinkProfile: blink({
@@ -256,7 +256,7 @@ export const FACIAL_PROFILES = {
   },
   surprised: {
     id: 'surprised',
-    expressionWeights: { surprised: 0.48, relaxed: 0.06 },
+    expressionWeights: { surprised: 0.7, relaxed: 0.06 },
     visemeBias: { aa: 0.025, oh: 0.03 },
     visemeScale: { aa: 1, ih: 0.9, ou: 0.98, ee: 0.9, oh: 1.02 },
     blinkProfile: blink({
@@ -276,7 +276,7 @@ export const FACIAL_PROFILES = {
   },
   approval: {
     id: 'approval',
-    expressionWeights: { happy: 0.34, relaxed: 0.24 },
+    expressionWeights: { happy: 0.48, relaxed: 0.24 },
     visemeBias: { ee: 0.01 },
     visemeScale: { aa: 0.92, ih: 0.92, ou: 0.88, ee: 0.94, oh: 0.88 },
     blinkProfile: blink({
@@ -295,7 +295,7 @@ export const FACIAL_PROFILES = {
   },
   confusion: {
     id: 'confusion',
-    expressionWeights: { surprised: 0.18, sad: 0.06, relaxed: 0.12 },
+    expressionWeights: { surprised: 0.3, sad: 0.08, relaxed: 0.14 },
     visemeBias: { ih: 0.01 },
     visemeScale: { aa: 0.86, ih: 0.94, ou: 0.86, ee: 0.92, oh: 0.88 },
     blinkProfile: blink({

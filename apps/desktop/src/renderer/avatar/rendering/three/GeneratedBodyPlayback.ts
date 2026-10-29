@@ -8,6 +8,7 @@ import {
   bodyTurnIntentSchema,
   getMotionProfile,
   HAND_BONE_NAMES,
+  HEAD_PRESENTATION_BONE_NAMES,
   MOTION_CATALOG,
   MOTION_INFERENCE_DEADLINE_MS,
   MOTION_PROFILES,
@@ -42,6 +43,11 @@ import { sourceHandDisplacements } from './SourceHandDisplacements'
 import { standingArmRange } from './StandingMotionStyle'
 import { sampleSourceRotation } from './sampleSourceRotation'
 import { TurnInPlaceMotion } from './TurnInPlaceMotion'
+
+type HeadPresentationBoneName = (typeof HEAD_PRESENTATION_BONE_NAMES)[number]
+
+/** Source seconds over which the conversational arm range fades after speech. */
+const CONVERSATIONAL_RELEASE_SECONDS = 1.6
 
 // SOMA30 standard T-pose, Y up, metres, world xyzw rotations. No head/neck,
 // facial, jaw, eye or finger source is admitted through this body mapping.
@@ -89,6 +95,7 @@ export class GeneratedBodyPlayback {
   private vrm: VRM | null = null
   private bindings: Binding[] = []
   private presentationBones: Array<[VRMHumanBoneName, THREE.Object3D]> = []
+  private headPresentationBones: Array<[HeadPresentationBoneName, THREE.Object3D]> = []
   private handPose = new GeneratedHandPose()
   private somaHands: SomaHandRetargeting | null = null
   private speechEnergy = 0
@@ -152,6 +159,7 @@ export class GeneratedBodyPlayback {
   private underruns = 0
   private missedSpeechFrames = 0
   private localRecovery = false
+  private conversationalReach = 0
   private maxJointSpeed = 0
   private readonly finalRotations = new Map<THREE.Object3D, THREE.Quaternion>()
   private error: string | null = null
@@ -256,6 +264,10 @@ export class GeneratedBodyPlayback {
       const bone = vrm.humanoid.getNormalizedBoneNode(name)
       return bone ? [[name, bone] as [VRMHumanBoneName, THREE.Object3D]] : []
     })
+    this.headPresentationBones = HEAD_PRESENTATION_BONE_NAMES.flatMap((name) => {
+      const bone = vrm.humanoid.getNormalizedBoneNode(name)
+      return bone ? [[name, bone] as [HeadPresentationBoneName, THREE.Object3D]] : []
+    })
     const handRest = new Map(
       this.presentationBones
         .filter(([name]) => HAND_BONE_NAMES.some((hand) => hand === name))
@@ -350,6 +362,7 @@ export class GeneratedBodyPlayback {
     this.somaHands = null
     this.bindings = []
     this.presentationBones = []
+    this.headPresentationBones = []
     this.mirror = null
     this.mirrorFrom = null
     this.handPose.reset()
@@ -460,6 +473,7 @@ export class GeneratedBodyPlayback {
           this.clockBase = this.cursor
         }
       }
+      if (newEnd) this.settleConversationalRest()
       this.clock = null
       this.speechEnergy = 0
       this.speechProsody.reset()
@@ -500,6 +514,25 @@ export class GeneratedBodyPlayback {
       this.rejectedReason = 'speech-window-missed'
       this.execution.requestRecovery('speech-ended')
       if (this.execution.advance(0, false)) this.invalidatePhase()
+    }
+  }
+
+  /** A conversational rest target raised during speech never survives it.
+   * Quiet presence returns to the small calibrated standing variation; the
+   * single temporal integrator turns the new target into a gradual settle. */
+  private settleConversationalRest(): void {
+    for (const binding of this.bindings) {
+      if (!/Arm|Shoulder/u.test(binding.name)) continue
+      const angle = binding.calibratedSafe.angleTo(binding.safe)
+      const maximum = binding.name.includes('LowerArm')
+        ? 0.18
+        : binding.name.includes('UpperArm')
+          ? 0.08
+          : 0.04
+      if (angle <= maximum) continue
+      const raised = binding.safe.clone()
+      binding.safe.copy(binding.calibratedSafe).slerp(raised, Math.min(0.15, maximum / angle))
+      this.bodySafety.constrainTarget(binding.bone, binding.safe)
     }
   }
 
@@ -761,12 +794,15 @@ export class GeneratedBodyPlayback {
     this.replan = true
     if (this.execution?.phase === 'recover') {
       this.localRecovery = true
+      // During consumed speech an act or presence handoff settles part-way,
+      // into the forearm-forward conversational base that speaking presence
+      // continues from, instead of dropping both arms to the hips each time.
+      const speaking = this.clock?.state === 'playing' && !this.speechFinished
       if (
         this.appliedSourceProvider === 'motionbricks' &&
-        this.execution.profile.kind === 'gesture' &&
         !this.execution.profile.physicalAction &&
-        !this.execution.wantsRecovery &&
-        !this.execution.hasTimedOut
+        !this.execution.hasTimedOut &&
+        (speaking || (this.execution.profile.kind === 'gesture' && !this.execution.wantsRecovery))
       ) {
         // A completed act may settle into a small, model-calibrated variation
         // of standing instead of mechanically choosing identical arms again.
@@ -775,13 +811,20 @@ export class GeneratedBodyPlayback {
           if (!/Arm|Shoulder/u.test(binding.name)) continue
           const angle = binding.calibratedSafe.angleTo(binding.bone.quaternion)
           const maximum = binding.name.includes('LowerArm')
-            ? 0.18
+            ? speaking
+              ? 0.9
+              : 0.18
             : binding.name.includes('UpperArm')
-              ? 0.08
+              ? speaking
+                ? 0.35
+                : 0.08
               : 0.04
           binding.safe
             .copy(binding.calibratedSafe)
-            .slerp(binding.bone.quaternion, Math.min(0.15, maximum / Math.max(1e-8, angle)))
+            .slerp(
+              binding.bone.quaternion,
+              Math.min(speaking ? 0.6 : 0.15, maximum / Math.max(1e-8, angle)),
+            )
           // Flex/twist constraints are not a quaternion geodesic. Admit the new
           // rest target itself, so recovery does not chase a rejected elbow.
           this.bodySafety.constrainTarget(binding.bone, binding.safe)
@@ -1260,6 +1303,17 @@ export class GeneratedBodyPlayback {
         for (const [name, bone] of this.presentationBones) {
           const value = this.mirror.bones[name as keyof typeof this.mirror.bones]
           const from = this.mirrorFrom?.bones[name as keyof typeof this.mirror.bones] ?? value
+          if (value && from) {
+            this.q.fromArray(from)
+            this.nextQ.fromArray(value)
+            bone.quaternion.copy(this.q.slerp(this.nextQ, blend)).normalize()
+          }
+        }
+        // The composed head/neck already contains the primary procedural head;
+        // Overlay presents it instead of running a second head actor.
+        for (const [name, bone] of this.headPresentationBones) {
+          const value = this.mirror.headBones?.[name]
+          const from = this.mirrorFrom?.headBones?.[name] ?? value
           if (value && from) {
             this.q.fromArray(from)
             this.nextQ.fromArray(value)
@@ -1745,6 +1799,15 @@ export class GeneratedBodyPlayback {
     const targetWorld = new Map<THREE.Object3D, THREE.Quaternion>()
     const localTargets: THREE.Quaternion[] = []
     const modelWorld = vrm.scene.getWorldQuaternion(new THREE.Quaternion())
+    // Full conversational arm range during consumed speech, fading over
+    // CONVERSATIONAL_RELEASE_SECONDS of source time after it ends. Only the
+    // MotionBricks talk targets use it; the ARDY standing range is unchanged.
+    this.conversationalReach =
+      this.clock?.state === 'playing' &&
+      !this.speechFinished &&
+      chunk.sourceProvider === 'motionbricks'
+        ? 1
+        : Math.max(0, this.conversationalReach - elapsed / CONVERSATIONAL_RELEASE_SECONDS)
     // Raw and coordinate-only samples exist solely during injected qualification.
     // This parallel calculation observes the candidate; it never applies a pose.
     if (this.dynamicsObserver) {
@@ -1822,12 +1885,20 @@ export class GeneratedBodyPlayback {
       // Smooth within the anatomical joint domain, before final contact/IK.
       // A raw target crossing the hinge/twist boundary must not snap the output.
       this.bodySafety.constrainTarget(binding.bone, this.q)
-      const maximum = profile ? standingArmRange(profile, chunk.plan.phaseId, binding.name) : null
+      const maximum = profile
+        ? standingArmRange(profile, chunk.plan.phaseId, binding.name, this.conversationalReach)
+        : null
       if (maximum !== null) {
-        const angle = binding.safe.angleTo(this.q)
+        // The conversational range is measured from calibrated standing, so a
+        // rest target left part-way by a wide act cannot hold the arms wide.
+        const center =
+          profile?.kind === 'presence' && this.conversationalReach > 0
+            ? binding.calibratedSafe
+            : binding.safe
+        const angle = center.angleTo(this.q)
         if (angle > maximum) {
           this.nextQ.copy(this.q)
-          this.q.copy(binding.safe).slerp(this.nextQ, maximum / angle)
+          this.q.copy(center).slerp(this.nextQ, maximum / angle)
         }
       }
       this.observe('artistic', binding, this.q)
@@ -2138,6 +2209,9 @@ export class GeneratedBodyPlayback {
         outcome: generated ? this.appliedOutcome : undefined,
         bones: Object.fromEntries(
           this.presentationBones.map(([name, bone]) => [name, bone.quaternion.toArray()]),
+        ),
+        headBones: Object.fromEntries(
+          this.headPresentationBones.map(([name, bone]) => [name, bone.quaternion.toArray()]),
         ),
         hipsPosition: hips?.position.toArray() ?? [0, 0, 0],
         chestPosition: this.vrm?.humanoid.getNormalizedBoneNode('chest')?.position.toArray(),

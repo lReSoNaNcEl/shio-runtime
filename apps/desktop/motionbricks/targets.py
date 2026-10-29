@@ -11,16 +11,51 @@ from activity import accent_deadline_ms
 from conversion import world_poses
 from scipy.spatial.transform import Rotation
 
+# Hips-anchored conversational base in arm lengths (lateral, up, forward):
+# forearms forward with both hands in front of the lower torso. While consumed
+# speech is active, presence moves from this base instead of from hands
+# hanging beside the hips. Beats are non-semantic speech-rhythm displacements.
+TALK_BASE = np.array([0.22, 0.30, 0.42])
+# Beat shapes (lateral, up, forward), in arm lengths: an opening of the palm
+# outward, a lift, and a forward press. One is chosen per beat, never per word.
+TALK_BEATS = {
+    "open": np.array([0.13, 0.08, 0.05]),
+    "lift": np.array([0.05, 0.2, 0.1]),
+    "press": np.array([0.06, -0.05, 0.16]),
+}
+TALK_SETTLE = np.array([-0.03, -0.06, -0.03])
+TALK_SUPPORT = 0.3
+# Shorter native blocks while talking: one beat or settle per ~0.7 s instead
+# of the default 0.9–1.7 s, so beats follow conversational rhythm.
+TALK_TOKENS = 7
+# Upper-body turn toward the acting hand (radians, about world up) and a small
+# forward lean on press beats, distributed over the spine chain.
+TORSO_JOINTS = (("Spine1", 0.3), ("Spine2", 0.35), ("Chest", 0.35))
+TALK_TORSO_YAW = 0.11
+TALK_LEAD_PERSISTENCE = 0.6
+GESTURE_TORSO_YAW = 0.12
+PRESS_LEAN = 0.06
+
+
+def speech_intensity(activity):
+    """Bounded beat amplitude from consumed speech metadata; pause is zero."""
+    prosody = activity.get("prosody") or {}
+    if prosody.get("phase") == "pause":
+        return 0.0
+    envelope = prosody.get("envelope") or [activity["energy"]]
+    level = max(activity["energy"], float(np.mean(envelope)))
+    return float(np.clip((level - 0.02) / 0.15, 0.35, 1.0))
+
 
 def target_token_count(profile, phase, activity=None):
     """Native endpoint must occur inside the consumed expressive phase.
 
     SOMA drops three boundary frames at either end: valid = 4*tokens-6.
     Frame zero repeats the context, so endpoint time is (valid-1)/30.
-    Presence deliberately retains its previously accepted model policy.
+    Quiet presence deliberately retains its previously accepted model policy.
     """
     if profile["kind"] == "presence":
-        return None
+        return TALK_TOKENS if activity and activity["speaking"] else None
     milliseconds = next(p["minMs"] for p in profile["phases"] if p["id"] == phase)
     if phase == "stroke":
         milliseconds = accent_deadline_ms(activity, milliseconds) or milliseconds
@@ -48,6 +83,58 @@ class TargetPlanner:
     def reset(self):
         self.goals = {}
         self.variations = {}
+        self.beat = 0
+        self.beat_lead = "right"
+        self.beat_shape = "open"
+
+    def torso_turn(self, profile, phase, score, talking, activity):
+        """Upper-body (yaw, lean) toward the acting hand, or None to keep the
+        network's own torso. Positive yaw turns toward the character's left."""
+        if talking:
+            intensity = speech_intensity(activity)
+            sign = {"left": 1, "right": -1}.get(self.beat_lead, 0)
+            out = self.beat % 2 == 1
+            yaw = sign * TALK_TORSO_YAW * intensity * (1.0 if out else 0.4)
+            lean = PRESS_LEAN * intensity if out and self.beat_shape == "press" else 0.0
+            return yaw, lean
+        if profile["kind"] == "gesture" and phase in ("prepare", "stroke", "hold"):
+            leads = [
+                side for side in ("left", "right") if score[side]["role"] == "lead"
+            ]
+            if len(leads) == 1:
+                sign = 1 if leads[0] == "left" else -1
+                return sign * GESTURE_TORSO_YAW * (
+                    0.6 if phase == "prepare" else 1.0
+                ), 0.0
+        return None
+
+    def talk_target(self, current, side, length, activity, out, rng):
+        """Conversational presence goal for one hand during consumed speech.
+
+        Alternate autoregressive blocks move the beat hand out from the base
+        and settle it back, so the network owns every trajectory in between.
+        """
+        sign = 1 if side == "left" else -1
+        hips = current[self.names.index("Hips"), :3]
+        offset = TALK_BASE * length
+        offset[0] *= sign
+        target = hips + offset
+        intensity = speech_intensity(activity)
+        mirror = np.array([sign, 1, 1])
+        if out and intensity > 0:
+            share = (
+                0.75
+                if self.beat_lead == "both"
+                else 1.0
+                if self.beat_lead == side
+                else TALK_SUPPORT
+            )
+            beat = TALK_BEATS[self.beat_shape] * length * mirror
+            target += beat * intensity * share * rng.uniform(0.8, 1.2)
+        else:
+            settle = TALK_SETTLE * length * mirror * (1 - 0.4 * intensity)
+            target += settle + rng.uniform(-0.02, 0.02, 3) * length
+        return target
 
     def destinations(self, world, profile, phase, seed, plan):
         execution = (plan or {}).get("executionId", profile["id"])
@@ -145,6 +232,34 @@ class TargetPlanner:
         score = profile["handScore"]["phases"][phase]
         rng = np.random.default_rng(seed)
         destinations = self.destinations(world, profile, phase, seed, plan)
+        talking = profile["kind"] == "presence" and bool(
+            activity and activity["speaking"]
+        )
+        if talking:
+            self.beat += 1
+            if self.beat % 2 == 1:
+                # A speaker favours one side for a few beats; the lead (and the
+                # torso turn that follows it) does not swivel every beat.
+                if self.beat_lead == "both" or rng.random() >= TALK_LEAD_PERSISTENCE:
+                    self.beat_lead = str(
+                        rng.choice(["right", "left", "both"], p=[0.45, 0.35, 0.2])
+                    )
+                self.beat_shape = str(rng.choice(list(TALK_BEATS), p=[0.4, 0.35, 0.25]))
+        else:
+            self.beat = 0
+        turn = self.torso_turn(profile, phase, score, talking, activity)
+        if turn is not None:
+            # The network turns the upper body toward the acting hand. Goals are
+            # relative to standing, so consecutive blocks never accumulate yaw.
+            yaw, lean = turn
+            for name, share in TORSO_JOINTS:
+                joint = self.names.index(name)
+                rotation = Rotation.from_rotvec([lean * share, yaw * share, 0.0])
+                goal[joint, 3:] = (
+                    rotation * Rotation.from_quat(self.standing[joint, 3:])
+                ).as_quat()
+            # Arm goals are solved from the turned shoulders.
+            current = world_poses(goal[None], self.parents)[0]
         for side in ("left", "right"):
             sign = 1 if side == "left" else -1
             upper, lower, hand = [
@@ -179,20 +294,16 @@ class TargetPlanner:
                     target += (
                         extent * np.array([sign * 0.15, 0.2, 0.1]) * prosody["accent"]
                     )
-            if profile["kind"] == "presence":
-                if activity and activity["speaking"] and activity["energy"] > 0.025:
-                    energy = activity["energy"]
-                    variation = float(rng.uniform(-1, 1))
-                    target += (
-                        np.array(
-                            [
-                                sign * variation * 0.01,
-                                0.015 * energy,
-                                0.02 + 0.04 * energy,
-                            ]
-                        )
-                        * scale
-                    )
+            if talking:
+                target = self.talk_target(
+                    current, side, length1 + length2, activity, self.beat % 2 == 1, rng
+                )
+            elif profile["kind"] == "presence":
+                rest = self.anchor[hand, :3]
+                if np.linalg.norm(wrist - rest) > 0.07 * scale:
+                    # Speech ended with raised conversational hands: settle
+                    # back over a few blocks instead of a 2.5%-per-block drift.
+                    target = wrist + (rest - wrist) * 0.5
                 else:
                     target = wrist * 0.9 + target * 0.1
             if profile["kind"] == "presence":

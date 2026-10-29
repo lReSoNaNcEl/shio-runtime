@@ -1,10 +1,14 @@
-import type { VRM } from '@pixiv/three-vrm'
+import type { VRM, VRMHumanBoneName } from '@pixiv/three-vrm'
 import * as THREE from 'three'
 
 import type { EmotionEmbodimentProfile } from '../../EmotionEmbodimentProfile'
 import { headMotionTuning } from '../../tuning/motionTuning'
 
 export type HeadMotionProfile = 'idle' | 'listening' | 'thinking' | 'speaking' | 'userFocus'
+/** Directed-gaze head authority at and above which attention shifts run in full. */
+const ATTENTION_FULL_AUTHORITY = 0.32
+/** Per-second smoothing of the measured acting-hand side. */
+const GESTURE_FOCUS_SMOOTHING = 4
 export type HeadAttentionImpulse = 'user-interruption'
 export type HeadMotionGeneratorId =
   | 'idleDrift'
@@ -13,6 +17,7 @@ export type HeadMotionGeneratorId =
   | 'speakingNod'
   | 'listeningTilt'
   | 'thinkingDrift'
+  | 'attentionShift'
 
 export interface HeadMotionPose {
   yaw: number
@@ -48,6 +53,8 @@ interface HeadMotionGeneratorContext {
   profile: HeadMotionProfile
   elapsedMs: number
   speechEnergy: number
+  /** Signed side of the visibly acting hand: +1 left, -1 right, 0 none/both. */
+  gestureFocus?: number
   random: () => number
 }
 
@@ -228,6 +235,102 @@ class ThinkingDriftGenerator implements HeadMotionGenerator {
   }
 }
 
+/**
+ * Held re-orientations of attention: choose a direction, ease into it with a
+ * critically damped spring, dwell, then turn again or return to centre. This is
+ * the large conversational head/upper-body turn; the other generators remain
+ * small texture on top of it.
+ */
+class AttentionShiftGenerator implements HeadMotionGenerator {
+  readonly id = 'attentionShift' as const
+  private pose: HeadMotionPose = zeroPose()
+  private velocity: HeadMotionPose = zeroPose()
+  private target: HeadMotionPose = zeroPose()
+  private dwellMs = 0
+  private lastSide = 0
+  private followCooldownMs = 0
+
+  update(context: HeadMotionGeneratorContext): HeadMotionGeneratorContribution {
+    const tuning = headMotionTuning.generators.attentionShift
+    const profile = tuning.profiles[context.profile]
+    const focus = context.gestureFocus ?? 0
+    const following = Math.abs(focus) >= tuning.gestureFocus.threshold
+    this.dwellMs -= context.deltaMs
+    this.followCooldownMs = Math.max(0, this.followCooldownMs - context.deltaMs)
+    // A new gesture on the other side ends the current dwell early, once.
+    if (
+      following &&
+      Math.sign(focus) !== Math.sign(this.target.yaw) &&
+      this.followCooldownMs <= 0 &&
+      this.dwellMs > tuning.gestureFocus.reactMs
+    ) {
+      this.dwellMs = tuning.gestureFocus.reactMs
+      this.followCooldownMs = tuning.gestureFocus.cooldownMs
+    }
+    if (this.dwellMs <= 0) {
+      const energy =
+        context.profile === 'speaking'
+          ? 0.6 + 0.4 * Math.min(1, context.speechEnergy / tuning.fullEnergy)
+          : 1
+      if (following && context.random() < tuning.gestureFocus.followChance) {
+        // Turn toward the acting hand, slightly down toward the gesture space.
+        const side = Math.sign(focus)
+        this.lastSide = side
+        const strength = Math.min(1, Math.abs(focus))
+        this.target = {
+          yaw:
+            side *
+            THREE.MathUtils.lerp(profile.yaw.min, profile.yaw.max, strength) *
+            Math.max(energy, 0.8),
+          pitch: tuning.gestureFocus.pitch + randomSigned(context.random, profile.pitch * 0.5),
+          roll: side * randomRange(context.random, 0.4, 1) * profile.roll,
+        }
+      } else if (context.random() < profile.centerChance) {
+        this.target = {
+          yaw: randomSigned(context.random, 0.03),
+          pitch: profile.pitchBias * 0.5 + randomSigned(context.random, profile.pitch * 0.3),
+          roll: randomSigned(context.random, profile.roll * 0.3),
+        }
+        this.lastSide = 0
+      } else {
+        const side =
+          this.lastSide !== 0 && context.random() < tuning.oppositeSideChance
+            ? -this.lastSide
+            : context.random() < 0.5
+              ? -1
+              : 1
+        this.lastSide = side
+        this.target = {
+          yaw: side * randomRange(context.random, profile.yaw.min, profile.yaw.max) * energy,
+          pitch: profile.pitchBias + randomSigned(context.random, profile.pitch),
+          // The head usually tilts into the turn, sometimes away from it.
+          roll:
+            side *
+            (context.random() < 0.7 ? 1 : -1) *
+            randomRange(context.random, 0.3, 1) *
+            profile.roll,
+        }
+      }
+      this.dwellMs = randomRange(context.random, profile.dwellMs.min, profile.dwellMs.max)
+    }
+
+    const stiffness = tuning.stiffness
+    const damping = 2 * Math.sqrt(stiffness)
+    const step = Math.min(0.05, Math.max(0, context.delta))
+    for (const axis of ['yaw', 'pitch', 'roll'] as const) {
+      this.velocity[axis] +=
+        (stiffness * (this.target[axis] - this.pose[axis]) - damping * this.velocity[axis]) * step
+      this.pose[axis] += this.velocity[axis] * step
+    }
+    return contribution(
+      this.id,
+      { ...this.pose },
+      headMotionTuning.profiles[context.profile].generatorWeights.attentionShift,
+      this.dwellMs,
+    )
+  }
+}
+
 class HeadMotionResolver {
   private generators: HeadMotionGenerator[] = [
     new IdleDriftGenerator(),
@@ -237,6 +340,13 @@ class HeadMotionResolver {
     new ListeningTiltGenerator(),
     new ThinkingDriftGenerator(),
   ]
+  private attention = new AttentionShiftGenerator()
+
+  /** Attention shifts are gaze-coordinated: the eyes may hold a directed target
+   * while the head and upper body re-orient, so they use their own authority. */
+  resolveAttention(context: HeadMotionGeneratorContext): HeadMotionGeneratorContribution {
+    return this.attention.update(context)
+  }
 
   resolve(context: HeadMotionGeneratorContext): {
     pose: HeadMotionPose
@@ -272,6 +382,10 @@ export class HeadMotionRuntime {
   private resolver = new HeadMotionResolver()
   private profile: HeadMotionProfile = 'idle'
   private randomState: number = headMotionTuning.randomSeed
+  private attentionRandomState: number = headMotionTuning.randomSeed ^ 0x5bd1e995
+  private presentationOnly = false
+  private torsoPose: HeadMotionPose = zeroPose()
+  private gestureFocus = 0
   private elapsedMs = 0
   private currentPose: HeadMotionPose = zeroPose()
   private appliedHeadPose: HeadMotionPose = zeroPose()
@@ -311,6 +425,8 @@ export class HeadMotionRuntime {
     this.speechEnergy = 0
     this.resolver = new HeadMotionResolver()
     this.currentPose = zeroPose()
+    this.torsoPose = zeroPose()
+    this.gestureFocus = 0
     this.elapsedMs = 0
     this.debug = {
       ...this.debug,
@@ -327,6 +443,18 @@ export class HeadMotionRuntime {
 
   setProfile(profile: HeadMotionProfile): void {
     this.profile = profile
+  }
+
+  /** Overlay presents the primary's composed head; it never writes its own. */
+  setPresentationOnly(value: boolean): void {
+    if (value === this.presentationOnly) return
+    this.remove()
+    this.presentationOnly = value
+  }
+
+  /** Share of the current orientation carried by the upper body (spine/chest). */
+  getTorsoPose(): HeadMotionPose {
+    return this.presentationOnly ? zeroPose() : { ...this.torsoPose }
   }
 
   setAuthorityWeight(weight: number): void {
@@ -367,13 +495,24 @@ export class HeadMotionRuntime {
       }
       return
     }
-    const resolved = this.resolver.resolve({
+    const context = {
       delta,
       deltaMs: delta * 1000,
       profile: this.profile,
       elapsedMs: this.elapsedMs,
       speechEnergy: this.attentionImpulseMs > 0 ? 0 : this.speechEnergy,
       random: () => this.nextRandom(),
+    }
+    const resolved = this.resolver.resolve(context)
+    if (!this.presentationOnly) {
+      const focus = this.measureGestureFocus()
+      this.gestureFocus +=
+        (focus - this.gestureFocus) * (1 - Math.exp(-GESTURE_FOCUS_SMOOTHING * delta))
+    }
+    const attention = this.resolver.resolveAttention({
+      ...context,
+      gestureFocus: this.gestureFocus,
+      random: () => this.nextAttentionRandom(),
     })
     const blend = 1 - Math.exp(-headMotionTuning.smoothing * delta)
     const emotionPose = {
@@ -383,36 +522,61 @@ export class HeadMotionRuntime {
       roll:
         resolved.pose.roll * this.emotionHeadProfile.energyScale * this.emotionHeadProfile.tiltBias,
     }
-    const targetPose = scalePose(
-      addPose(
-        emotionPose,
-        scalePose(headMotionTuning.attentionImpulse.pose, this.attentionImpulseEnvelope()),
+    // Directed gaze (eyes on the user) keeps full attention shifts; screen focus
+    // and other low-authority states scale them down proportionally.
+    const attentionAuthority = THREE.MathUtils.clamp(
+      this.authorityWeight / ATTENTION_FULL_AUTHORITY,
+      0,
+      1,
+    )
+    const targetPose = addPose(
+      scalePose(
+        addPose(
+          emotionPose,
+          scalePose(headMotionTuning.attentionImpulse.pose, this.attentionImpulseEnvelope()),
+        ),
+        this.authorityWeight,
       ),
-      this.authorityWeight,
+      scalePose(
+        attention.pose,
+        attention.weight * attentionAuthority * this.emotionHeadProfile.energyScale,
+      ),
     )
     this.currentPose = smoothPose(this.currentPose, targetPose, delta, headMotionTuning.smoothing)
     this.currentPose = clampPose(this.currentPose)
 
-    const neckPose = scalePose(this.currentPose, headMotionTuning.neckShare)
-    const headPose = scalePose(this.currentPose, headMotionTuning.headShare)
-    this.applyToBones(
-      addPose(headPose, scalePose(this.appliedHeadPose, -1)),
-      addPose(neckPose, scalePose(this.appliedNeckPose, -1)),
-    )
-    this.appliedHeadPose = headPose
-    this.appliedNeckPose = neckPose
+    const share = headMotionTuning.torsoShare
+    this.torsoPose = {
+      yaw: this.currentPose.yaw * share.yaw,
+      pitch: this.currentPose.pitch * share.pitch,
+      roll: this.currentPose.roll * share.roll,
+    }
+    const headTotal = addPose(this.currentPose, scalePose(this.torsoPose, -1))
+    const neckPose = scalePose(headTotal, headMotionTuning.neckShare)
+    const headPose = scalePose(headTotal, headMotionTuning.headShare)
+    if (!this.presentationOnly) {
+      this.applyToBones(
+        addPose(headPose, scalePose(this.appliedHeadPose, -1)),
+        addPose(neckPose, scalePose(this.appliedNeckPose, -1)),
+      )
+      this.appliedHeadPose = headPose
+      this.appliedNeckPose = neckPose
+    }
 
+    const activeGenerators = [...resolved.activeGenerators]
+    if (attention.weight > 0.001 && poseEnergy(attention.pose) > 0.0001)
+      activeGenerators.push('attentionShift')
     this.debug = {
       profile: this.profile,
-      activeGenerators: resolved.activeGenerators,
+      activeGenerators,
       yawOffset: this.currentPose.yaw,
       pitchOffset: this.currentPose.pitch,
       rollOffset: this.currentPose.roll,
       motionEnergy: poseEnergy(this.currentPose),
       currentBlend: blend,
-      generatorWeights: resolved.generatorWeights,
+      generatorWeights: { ...resolved.generatorWeights, attentionShift: attention.weight },
       smoothing: headMotionTuning.smoothing,
-      nextProceduralEventMs: resolved.nextEventMs,
+      nextProceduralEventMs: Math.min(resolved.nextEventMs, Math.max(0, attention.nextEventMs)),
       attentionImpulseActive: this.attentionImpulseMs > 0,
       authorityWeight: this.authorityWeight,
     }
@@ -444,6 +608,44 @@ export class HeadMotionRuntime {
   private nextRandom(): number {
     this.randomState = (1664525 * this.randomState + 1013904223) >>> 0
     return this.randomState / 4294967296
+  }
+
+  /**
+   * Which hand is visibly acting, from the composed pose this frame: +1 left,
+   * -1 right, near 0 when neither or both are raised. Read-only bone queries;
+   * the shoulder line defines the character side regardless of model facing.
+   */
+  private measureGestureFocus(): number {
+    const humanoid = this.vrm?.humanoid
+    if (!humanoid) return 0
+    const at = (name: VRMHumanBoneName): THREE.Vector3 | null =>
+      humanoid.getNormalizedBoneNode(name)?.getWorldPosition(new THREE.Vector3()) ?? null
+    const hips = at('hips')
+    const leftShoulder = at('leftUpperArm')
+    const rightShoulder = at('rightUpperArm')
+    const leftHand = at('leftHand')
+    const rightHand = at('rightHand')
+    if (!hips || !leftShoulder || !rightShoulder || !leftHand || !rightHand) return 0
+    const lateral = leftShoulder.clone().sub(rightShoulder)
+    const span = lateral.length()
+    if (span < 1e-4) return 0
+    lateral.divideScalar(span)
+    const up = new THREE.Vector3(0, 1, 0)
+    const forward = lateral.clone().cross(up).normalize()
+    const activity = (hand: THREE.Vector3): number => {
+      const offset = hand.clone().sub(hips)
+      return (
+        Math.max(0, offset.dot(up) / span - 0.15) + Math.max(0, offset.dot(forward) / span - 0.1)
+      )
+    }
+    const left = activity(leftHand)
+    const right = activity(rightHand)
+    return THREE.MathUtils.clamp((left - right) / Math.max(left + right, 0.5), -1, 1)
+  }
+
+  private nextAttentionRandom(): number {
+    this.attentionRandomState = (1664525 * this.attentionRandomState + 1013904223) >>> 0
+    return this.attentionRandomState / 4294967296
   }
 
   private attentionImpulseEnvelope(): number {
@@ -478,6 +680,7 @@ function zeroGeneratorWeights(): Record<HeadMotionGeneratorId, number> {
     speakingNod: 0,
     listeningTilt: 0,
     thinkingDrift: 0,
+    attentionShift: 0,
   }
 }
 

@@ -248,6 +248,14 @@ async function installStabilizationProbe(page, options = {}) {
             : null
           current.safety = safety.getDebugState()
           if (options.summaryOnly) {
+            // Four bone positions per sample: hand and head excursion from the
+            // hips measure visible gesture and attention coverage cheaply.
+            current.positions = ['hips', 'leftHand', 'rightHand', 'head'].flatMap((name) => {
+              const bone = vrm.humanoid.getNormalizedBoneNode(name)
+              return bone
+                ? bone.getWorldPosition(bone.position.clone()).toArray()
+                : [null, null, null]
+            })
             state.frames.push(current)
             current = null
             return

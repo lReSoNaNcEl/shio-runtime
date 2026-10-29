@@ -8,6 +8,7 @@ from pathlib import Path
 import numpy as np
 from activity import accent_deadline_ms, validate_activity
 from conversion import world_poses
+from scipy.spatial.transform import Rotation
 from targets import TargetPlanner, target_token_count
 
 
@@ -147,6 +148,119 @@ class PlannerTests(unittest.TestCase):
             target_token_count(self.profile("explain_point_close"), "stroke"), 7
         )
         self.assertIsNone(target_token_count(self.profile("presence_poised"), "stroke"))
+
+    def hand(self, goal, side):
+        return world_poses(goal[None], self.parents)[0][
+            self.names.index(side + "Hand"), :3
+        ]
+
+    def test_speaking_presence_raises_hands_and_alternates_beats(self):
+        profile = self.profile("presence_speaking")
+        activity = {
+            "energy": 0.12,
+            "playbackId": "a",
+            "speaking": True,
+            "prosody": {
+                "throughSample": 4410,
+                "sampleRate": 44100,
+                "envelope": [0.12, 0.15],
+                "phase": "speech",
+                "accent": 0,
+                "leadMs": 0,
+            },
+        }
+        hips = self.standing[0, :3]
+        shoulder = world_poses(self.standing[None], self.parents)[0][
+            self.names.index("RightArm"), :3
+        ]
+        goals = [
+            self.planner.goal(self.history, profile, "hold", seed, activity)
+            for seed in (17, 18, 19, 20)
+        ]
+        for goal in goals:
+            self.assertTrue(np.isfinite(goal).all())
+            for side in ("Left", "Right"):
+                hand = self.hand(goal, side)
+                # Forearms forward: hands in front of the torso, between the
+                # hips and the shoulders, independent of the rig's rest pose.
+                self.assertGreater(hand[2] - hips[2], 0.1)
+                self.assertGreater(hand[1], hips[1] + 0.05)
+                self.assertLess(hand[1], shoulder[1])
+        # Talking presence uses shorter native blocks; quiet presence keeps
+        # the model's own token choice.
+        self.assertEqual(target_token_count(profile, "hold", activity), 7)
+        self.assertIsNone(
+            target_token_count(profile, "hold", dict(activity, speaking=False))
+        )
+        beats = [self.hand(goal, "Right") for goal in goals]
+        self.assertGreater(
+            max(np.linalg.norm(a - b) for a, b in zip(beats, beats[1:])), 0.02
+        )
+
+    def chest_yaw(self, goal):
+        chest = world_poses(goal[None], self.parents)[0][self.names.index("Chest")]
+        forward = Rotation.from_quat(chest[3:]).apply([0, 0, 1])
+        return float(np.arctan2(forward[0], forward[2]))
+
+    def test_torso_turns_toward_acting_hand_without_accumulating(self):
+        gesture = self.profile("explain_one_palm")
+        stroke = self.planner.goal(self.history, gesture, "stroke", 17, None)
+        # Right-led act: the upper body turns toward the right (negative yaw).
+        self.assertLess(self.chest_yaw(stroke), -0.05)
+        presence = self.profile("presence_speaking")
+        activity = {
+            "energy": 0.2,
+            "playbackId": "a",
+            "speaking": True,
+            "prosody": {
+                "throughSample": 4410,
+                "sampleRate": 44100,
+                "envelope": [0.2],
+                "phase": "speech",
+                "accent": 0,
+                "leadMs": 0,
+            },
+        }
+        history = self.history
+        yaws = []
+        for seed in range(30, 50):
+            goal = self.planner.goal(history, presence, "hold", seed, activity)
+            yaws.append(self.chest_yaw(goal))
+            history = np.repeat(goal[None], 4, axis=0)
+        # Goals are relative to standing: bounded, never accumulating.
+        self.assertLess(max(abs(value) for value in yaws), 0.2)
+        self.assertGreater(max(abs(value) for value in yaws), 0.05)
+        quiet = self.profile("presence_poised")
+        idle = self.planner.goal(self.history, quiet, "hold", 7, None)
+        np.testing.assert_array_equal(
+            idle[self.names.index("Chest")], self.history[-1][self.names.index("Chest")]
+        )
+
+    def test_pause_settles_and_end_of_speech_returns_raised_hands(self):
+        profile = self.profile("presence_speaking")
+        activity = {
+            "energy": 0.0,
+            "playbackId": "a",
+            "speaking": True,
+            "prosody": {
+                "throughSample": 4410,
+                "sampleRate": 44100,
+                "envelope": [0.0],
+                "phase": "pause",
+                "accent": 0,
+                "leadMs": 0,
+            },
+        }
+        talking = self.planner.goal(self.history, profile, "hold", 17, activity)
+        history = np.repeat(talking[None], 4, axis=0)
+        silent = dict(activity, speaking=False, prosody=None)
+        settled = self.planner.goal(history, profile, "hold", 18, silent)
+        rest = self.hand(self.standing, "Right")
+        self.assertLess(
+            np.linalg.norm(self.hand(settled, "Right") - rest),
+            np.linalg.norm(self.hand(talking, "Right") - rest) * 0.75,
+        )
+        self.assertEqual(self.planner.beat, 0)
 
     def test_only_available_audible_accents_modulate_native_duration(self):
         energy = [0.1] * 30
