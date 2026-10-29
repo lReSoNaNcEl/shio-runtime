@@ -353,6 +353,8 @@ export interface BehaviorCommand {
   id: string
   at: number
   sourceEventId?: string
+  /** Main-owned Gate decision; absence never grants conversation admission. */
+  initiativeDisposition?: 'admit' | 'preview'
   embodimentPresence?: BehaviorEmbodimentPresence
   intent: BehaviorIntent
 }

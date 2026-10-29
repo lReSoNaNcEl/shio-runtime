@@ -113,6 +113,7 @@ export class GeneratedBodyPlayback {
   private appliedOutcome: MotionOutcome | null = null
   private queue: MotionChunk[] = []
   private lease: MotionLease | null = null
+  private appliedLease: MotionLease | null = null
   private avatarGeneration = 0
   private localEpoch = 0
   private profileVersion = 0
@@ -139,6 +140,8 @@ export class GeneratedBodyPlayback {
   private familyStarted = new Map<string, number>()
   private familyRecordedExecutionId: string | null = null
   private recoveryPose = new Map<THREE.Object3D, THREE.Quaternion>()
+  private readonly inverseProceduralPose = new Map<THREE.Object3D, THREE.Quaternion>()
+  private readonly proceduralRootOffset = new THREE.Vector3()
   private transitionRoute: string[] = []
   private rejectedReason: string | null = null
   private transitionElapsed = 0
@@ -227,6 +230,9 @@ export class GeneratedBodyPlayback {
   }
 
   attach(vrm: VRM): void {
+    this.appliedLease = null
+    this.inverseProceduralPose.clear()
+    this.proceduralRootOffset.set(0, 0, 0)
     this.appliedSourceProvider = undefined
     this.transitionHands.clear()
     this.projectedConversationCamera = null
@@ -334,6 +340,8 @@ export class GeneratedBodyPlayback {
   }
 
   detach(): void {
+    this.inverseProceduralPose.clear()
+    this.proceduralRootOffset.set(0, 0, 0)
     this.appliedSourceProvider = undefined
     this.transitionHands.clear()
     this.turn = null
@@ -583,22 +591,7 @@ export class GeneratedBodyPlayback {
           resolve,
           reject,
         })
-        if (
-          speechGesture &&
-          execution.profile.kind === 'presence' &&
-          this.context?.source !== 'debug-preview' &&
-          this.context?.source !== 'debug-reroll' &&
-          execution.profile.interruptionPolicy.interruptiblePhases.includes(execution.phase)
-        ) {
-          this.transitionRoute = [
-            execution.profile.accentHands,
-            'direct-presence-prepare',
-            'prepare',
-            profile.accentHands,
-          ]
-          this.finishExecution('superseded')
-          return
-        }
+        if (this.startPendingSpeechPreparation()) return
         const currentZone = execution.profile.accentHands
         const targetZone = profile.accentHands
         const bridge = MOTION_CATALOG.transitionGraph.bridgeEdges.some(
@@ -620,6 +613,35 @@ export class GeneratedBodyPlayback {
       })
     }
     return this.beginProfile(id, context)
+  }
+
+  private startPendingSpeechPreparation(): boolean {
+    const execution = this.execution
+    const pending = this.pendingProfiles[0]
+    const target = pending && getMotionProfile(pending.id)
+    if (
+      !this.playing ||
+      !this.started ||
+      this.turn !== null ||
+      execution?.profile.kind !== 'presence' ||
+      this.context?.source === 'debug-preview' ||
+      this.context?.source === 'debug-reroll' ||
+      !execution.profile.interruptionPolicy.interruptiblePhases.includes(execution.phase) ||
+      !pending?.context.speechBound ||
+      pending.context.source === 'debug-preview' ||
+      pending.context.source === 'debug-reroll' ||
+      target?.kind !== 'gesture' ||
+      target.physicalAction
+    )
+      return false
+    this.transitionRoute = [
+      execution.profile.accentHands,
+      'direct-presence-prepare',
+      'prepare',
+      target.accentHands,
+    ]
+    this.finishExecution('superseded')
+    return true
   }
 
   private beginProfile(
@@ -760,6 +782,9 @@ export class GeneratedBodyPlayback {
           binding.safe
             .copy(binding.calibratedSafe)
             .slerp(binding.bone.quaternion, Math.min(0.15, maximum / Math.max(1e-8, angle)))
+          // Flex/twist constraints are not a quaternion geodesic. Admit the new
+          // rest target itself, so recovery does not chase a rejected elbow.
+          this.bodySafety.constrainTarget(binding.bone, binding.safe)
         }
       }
       if (this.appliedSourceProvider === 'motionbricks' && this.somaHands)
@@ -776,11 +801,19 @@ export class GeneratedBodyPlayback {
       this.recoveryRoot.copy(
         this.vrm?.humanoid.getNormalizedBoneNode('hips')?.position ?? this.baseRoot,
       )
+      const appliedOrigin = this.appliedSourceProvider === 'motionbricks'
+      if (appliedOrigin) this.recoveryRoot.sub(this.proceduralRootOffset)
       this.recoveryPose = new Map(
-        this.bindings.map((binding) => [
-          binding.bone,
-          (this.basePose.get(binding.bone) ?? binding.bone.quaternion).clone(),
-        ]),
+        this.bindings.map((binding) => {
+          const origin = (
+            appliedOrigin
+              ? binding.bone.quaternion
+              : (this.basePose.get(binding.bone) ?? binding.bone.quaternion)
+          ).clone()
+          const inverse = this.inverseProceduralPose.get(binding.bone)
+          if (appliedOrigin && inverse) origin.premultiply(inverse)
+          return [binding.bone, origin]
+        }),
       )
       this.execution.setClock(null)
     }
@@ -896,7 +929,7 @@ export class GeneratedBodyPlayback {
   getAppliedMotionLayer(): AvatarBodyMotionLayer {
     const id = this.presentationOnly
       ? this.mirror?.profileId
-      : this.playing
+      : this.playing && this.lease !== null && this.appliedLease === this.lease
         ? this.appliedProfileId
         : null
     return id && getMotionProfile(id)?.kind === 'gesture'
@@ -907,7 +940,8 @@ export class GeneratedBodyPlayback {
   }
 
   validateFinalComposition(delta = 1 / 60): void {
-    if (this.presentationOnly || !this.playing) return
+    if (this.presentationOnly || !this.playing || !this.lease || this.appliedLease !== this.lease)
+      return
     this.bodySafety.setHandTargets(
       getMotionProfile(this.appliedProfileId),
       this.localRecovery ? 'recover' : (this.appliedPhaseId ?? 'prepare'),
@@ -947,7 +981,12 @@ export class GeneratedBodyPlayback {
         sourceProvider: this.appliedSourceProvider,
         phase: this.localRecovery ? 'recover' : this.appliedPhaseId,
         reachSeconds:
-          this.execution?.phase === 'prepare' && this.execution.id === this.appliedExecutionId
+          this.execution &&
+          this.execution.id === this.appliedExecutionId &&
+          (this.execution.phase === 'prepare' ||
+            (this.localRecovery &&
+              this.appliedSourceProvider === 'motionbricks' &&
+              this.execution.profile.kind === 'presence'))
             ? Math.max(0.25, (this.execution.budget.minMs - this.execution.elapsedMs) / 1000)
             : undefined,
         sourceSpeeds: this.sourceSpeeds,
@@ -1096,6 +1135,7 @@ export class GeneratedBodyPlayback {
       return
     }
     this.presentation = null
+    this.appliedLease = null
     if (this.execution && !this.execution.outcome) this.execution.outcome = 'cancelled'
     for (const pending of this.pendingProfiles) pending.reject(new Error(reason))
     this.pendingProfiles = []
@@ -1145,6 +1185,9 @@ export class GeneratedBodyPlayback {
   }
 
   update(delta: number, beforeDiagnostics: () => void): void {
+    // A queued speech accent may arrive during a protected presence stroke.
+    // Reconcile at the first permitted phase instead of completing a rest reset.
+    if (!this.presentationOnly) this.startPendingSpeechPreparation()
     if (!this.presentationOnly) {
       const sample = this.motionClock.sample(this.clock, delta)
       this.sampledClock =
@@ -1163,7 +1206,14 @@ export class GeneratedBodyPlayback {
     // Recompose from the last uncorrected base even while a horizon/PCM waits.
     // Feeding last frame's contact/IK result back through safety caused a snap
     // whenever the generator paused at a phase boundary.
-    if (!this.presentationOnly && this.playing && this.vrm && this.basePose.size) {
+    if (
+      !this.presentationOnly &&
+      this.playing &&
+      this.lease &&
+      this.appliedLease === this.lease &&
+      this.vrm &&
+      this.basePose.size
+    ) {
       for (const [bone, rotation] of this.basePose) bone.quaternion.copy(rotation)
       this.vrm.humanoid.getNormalizedBoneNode('hips')?.position.copy(this.baseRoot)
       this.vrm.scene.updateMatrixWorld(true)
@@ -1173,6 +1223,28 @@ export class GeneratedBodyPlayback {
       if (composed) return
       composed = true
       beforeDiagnostics()
+      if (
+        this.appliedSourceProvider === 'motionbricks' &&
+        !this.presentationOnly &&
+        this.lease &&
+        this.appliedLease === this.lease
+      ) {
+        // Retain the procedural transform, not a per-frame IK feedback pose.
+        // A recovery boundary can then start at the actual displayed body
+        // while the next composition still applies breathing/micro-motion once.
+        for (const binding of this.bindings) {
+          const base = this.basePose.get(binding.bone)
+          if (!base) continue
+          let inverse = this.inverseProceduralPose.get(binding.bone)
+          if (!inverse) {
+            inverse = new THREE.Quaternion()
+            this.inverseProceduralPose.set(binding.bone, inverse)
+          }
+          inverse.copy(base).multiply(this.nextQ.copy(binding.bone.quaternion).invert())
+        }
+        const hips = this.vrm?.humanoid.getNormalizedBoneNode('hips')
+        if (hips) this.proceduralRootOffset.copy(hips.position).sub(this.baseRoot)
+      }
       this.validateFinalComposition(delta)
     }
     if (this.turn && this.playing && !this.presentationOnly) {
@@ -1640,6 +1712,7 @@ export class GeneratedBodyPlayback {
     this.transitionElapsed = Math.min(this.transitionDuration, this.transitionElapsed + elapsed)
     this.lastPoseFrame = this.cursor
     this.appliedProfileId = chunk.profileId
+    this.appliedLease = this.lease
     this.appliedSourceProvider = chunk.sourceProvider
     this.appliedPhaseId = chunk.plan.phaseId
     if (this.appliedExecutionId !== chunk.plan.executionId) this.appliedOutcome = null
@@ -1896,6 +1969,7 @@ export class GeneratedBodyPlayback {
       this.started = true
       this.execution.ready = true
       this.appliedProfileId = this.profileId
+      this.appliedLease = this.lease
       this.appliedExecutionId = this.execution.id
       this.appliedOutcome = null
       this.phase = 'ready'
@@ -2048,18 +2122,20 @@ export class GeneratedBodyPlayback {
 
   private capturePresentation(): void {
     const hips = this.vrm?.humanoid.getNormalizedBoneNode('hips')
+    const lease = this.started && this.appliedLease === this.lease ? this.lease : null
+    const generated = lease !== null
     if (this.vrm)
       this.presentation = {
-        lease: this.lease && this.started ? { ...this.lease } : null,
-        compositionSource: this.lease && this.started ? undefined : 'local',
-        localGeneration: this.lease && this.started ? undefined : this.avatarGeneration,
-        profileId: this.lease && this.started ? this.appliedProfileId : 'presence_poised',
-        frame: this.lease && this.started ? this.cursor : 0,
+        lease: lease ? { ...lease } : null,
+        compositionSource: generated ? undefined : 'local',
+        localGeneration: generated ? undefined : this.avatarGeneration,
+        profileId: generated ? this.appliedProfileId : 'presence_poised',
+        frame: generated ? this.cursor : 0,
         composedAtMs: performance.now(),
-        phaseId: this.lease && this.started ? this.appliedPhaseId : undefined,
-        localRecovery: this.lease && this.started ? this.localRecovery : undefined,
-        executionId: this.lease && this.started ? this.appliedExecutionId : undefined,
-        outcome: this.lease && this.started ? this.appliedOutcome : undefined,
+        phaseId: generated ? this.appliedPhaseId : undefined,
+        localRecovery: generated ? this.localRecovery : undefined,
+        executionId: generated ? this.appliedExecutionId : undefined,
+        outcome: generated ? this.appliedOutcome : undefined,
         bones: Object.fromEntries(
           this.presentationBones.map(([name, bone]) => [name, bone.quaternion.toArray()]),
         ),

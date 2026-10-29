@@ -238,6 +238,7 @@ export class AliveFacade {
           world,
           at: event.at,
           conversationAllowed: false,
+          embodimentAllowed: !world.conversationActive && !world.audioActive,
         }),
       )
       this.publish()
@@ -268,13 +269,15 @@ export class AliveFacade {
         .then((decision) => {
           if (!['admit', 'preview'].includes(decision.outcome)) {
             const currentSettings = this.store.settings()
+            const currentWorld = this.world.snapshot(currentSettings)
             this.emitBehavior(
               this.behavior.decide({
                 ...observation,
                 settings: currentSettings,
-                world: this.world.snapshot(currentSettings),
+                world: currentWorld,
                 at: event.at,
                 conversationAllowed: false,
+                embodimentAllowed: !currentWorld.conversationActive && !currentWorld.audioActive,
               }),
             )
           }
@@ -465,7 +468,16 @@ export class AliveFacade {
       command.id,
       authority === 'explicit-user' ? authority : authority?.authority,
     )
-    for (const listener of this.behaviorListeners) listener(command)
+    const projection: BehaviorCommand = {
+      ...command,
+      initiativeDisposition:
+        command.intent.kind === 'conversation-candidate'
+          ? authority === 'explicit-user'
+            ? 'admit'
+            : authority?.outcome
+          : undefined,
+    }
+    for (const listener of this.behaviorListeners) listener(projection)
     return true
   }
 

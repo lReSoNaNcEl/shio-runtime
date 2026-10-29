@@ -1,10 +1,16 @@
 const fs = require('node:fs')
+const sinks = new WeakMap()
+const registered = new WeakSet()
 
 /** Read-only tap of the real AudioPlayer output, including an already connected graph. */
 async function recordAudio(page, filename) {
-  await page.exposeFunction('__conversationAudioChunk', (data) =>
-    fs.appendFileSync(filename, Buffer.from(data, 'base64')),
-  )
+  sinks.set(page, filename)
+  if (!registered.has(page)) {
+    await page.exposeFunction('__conversationAudioChunk', (data) =>
+      fs.appendFileSync(sinks.get(page), Buffer.from(data, 'base64')),
+    )
+    registered.add(page)
+  }
   await page.evaluate(() => {
     const analyser = window.__motionAbController.player.analyser
     const tap = analyser.context.createMediaStreamDestination()

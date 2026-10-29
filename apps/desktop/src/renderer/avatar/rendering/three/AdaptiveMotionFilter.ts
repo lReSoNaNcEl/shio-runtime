@@ -5,7 +5,7 @@ import type { MotionPhaseId } from '../../../../shared/motion'
 export type MotionClass = 'presence' | 'gesture' | 'reaction' | 'full-body'
 export const MOTIONBRICKS_CONVERSATION_MAX_JOINT_SPEED = 1.5
 export interface MotionFilterContext {
-  /** Remaining authored preparation time for an admitted active hand workspace. */
+  /** Remaining authored time for preparation or deterministic presence recovery. */
   reachSeconds?: number
   motionClass: MotionClass
   sourceProvider?: 'ardy' | 'motionbricks'
@@ -87,7 +87,9 @@ export class AdaptiveMotionFilter {
     const sourceSpeed = context.sourceSpeeds?.get(bone) ?? sourceVelocity.length()
     sourceVelocity.clampLength(0, sourceSpeed)
     const reachingSpeed =
-      !presence && context.phase === 'prepare' && Number.isFinite(context.reachSeconds)
+      ((!presence && context.phase === 'prepare') ||
+        (presence && context.phase === 'recover' && context.sourceProvider === 'motionbricks')) &&
+      Number.isFinite(context.reachSeconds)
         ? error.length() / Math.max(0.25, context.reachSeconds ?? 0.25)
         : 0
     const speed = Math.min(

@@ -39,6 +39,49 @@ Protocol probe ждёт server-owned close после terminal acknowledgement: 
 
 Результаты находятся в `apps/desktop/motion/.artifacts/joint-*/report.json` и соседних изображениях. Hash и версия fixture, реальные seeds, execution/phase/outcome, FK wrist/palm/finger aggregates, contacts и численные thresholds сохраняются отдельно от художественной приёмки. Raw poses используются только transient и в отчёт не записываются.
 
+Autonomous Living v1 использует полный 900-s сценарий через существующий Chat UI:
+
+```powershell
+$env:SHIO_EXPERIMENT_MOTION_PROVIDER = 'motionbricks'
+$env:SHIO_EXPERIMENT_SOMA_HAND = '1'
+$env:SHIO_MOTION_ROOT = (Resolve-Path 'apps/desktop/motionbricks').Path
+node apps/desktop/qualifications/speech-motion/prepare-living.cjs
+$env:SHIO_QUALIFICATION_DESKTOP_ROOT = (Get-Content 'apps/desktop/motion/.artifacts/living-motion/latest-snapshot.txt' -Raw).Trim()
+npm run experiment:qualify -- --conversation-cases --autonomous-living --duration-seconds=900 --warm-responses=1 --skip-profiles --living-v2-telemetry --body-trace-only --stabilization-trace --fixed-preview-smoke --autonomous-policy-smoke
+```
+
+`--autonomous-living` запрещает subset и требует 900 s. Schedule включает паузу без новых сообщений, Stop во время PCM и новый вопрос
+после Stop. Runner дополнительно ждёт 120 s после фактического завершения речи
+перед возвращением к вопросам; при медленном provider видео может быть длиннее
+900 s, и фактическая длительность фиксируется в отчёте. Ответы и intents
+создаёт настоящий Character LLM. `--recovery-chat-smoke` отдельно проверяет только
+Stop/new turn и не заменяет длительную qualification. `--autonomous-policy-smoke`
+после записи проверяет настоящие one-shot reminder через Scheduler/Gate/Admission:
+Off, Suspend и Privacy блокируют речь, Full допускает одну инициативу. Исходные
+settings восстанавливаются; пользовательский профиль не меняется. Quiet hours,
+cooldown и daily cap не отключаются. Если они не дают выполнить проверку, это
+честный непрошедший gate. Позитивный результат не доказывает художественное качество.
+
+Длительная diagnostic trace ограничивается 30-Hz sampling и полным duration budget;
+фактическая частота и overflow объявляются. Video/FPS capture остаётся независимой.
+
+Для обеих кистей выполните `--body-stability-only --finger-close-up` отдельно с
+`--finger-side=left` и `--finger-side=right`. Имена видео содержат сторону. Один
+ракурс поддерживающей кисти не заменяет проверку ведущей кисти соответствующего
+профиля. `--living-lifecycle-smoke` после основного набора проверяет model reload,
+Overlay reconnect и точечный fault/reload единственного Python worker именно
+этого worktree. Он не завершает чужие Python процессы или Speech API. Переход к
+новому worker должен закончиться одним inference owner и спокойной base-позой.
+
+`--finger-warmup` перед первым измеряемым close-up выполняет одну настоящую
+вариацию через тот же UI и сохраняет её целиком в `fingers-*-initialization.webm`.
+Это отдельное evidence первого запуска; его FPS не засчитывается как PASS.
+Затем каждый измеряемый жест снова исполняется целиком с prepare/stroke/hold/recover.
+В report явно записаны warmup outcome/video и actual measured FPS каждого клипа;
+порог 60 FPS и geometric thresholds сохраняются. Без этого флага измеряется
+первое исполнение, включая initialization stalls. Источник hand fit фиксируется
+SHA-256 `motionbricks/hand_prior.py` вместе с остальными build identities.
+
 Новые отчёты также фиксируют SHA-256 самого runner и его geometry/semantic/standing fixtures. После обычного ответа runner проверяет отсутствие служебных emotion/voice/embodiment markers в видимом чате и сохраняет только boolean результата, не полный текст ответа.
 
 `steps` сохраняет исходные angular deltas между IPC projections. `normalizedSteps` приводит их к 33.333 ms по monotonic времени primary composition: несколько coalesced render frames не считаются одним кадром. Исходные скачки, интервалы и снимки остаются в отчёте. Это проверка скорости composed projection, а не обещание постоянного FPS; frame probe отдельно сохраняет пропуски RAF и histogram.
@@ -48,3 +91,44 @@ Protocol probe ждёт server-owned close после terminal acknowledgement: 
 `component-smoke` позволяет продолжить проверку реального Fish и Avatar при отказе Character provider, но такой отказ остаётся в failures и не может дать общий pass. Наличие плана `standingQualification` или снимков не переводит профили в `qualified`: визуальная приёмка остаётся отдельной. Моргание проверяется по циклам закрытия/открытия при существующей настройке Blink, без требования насильно менять её амплитуду.
 
 Официальная VRM1 fixture в ночной проверке: [pixiv/three-vrm sample](https://github.com/pixiv/three-vrm/blob/ff42fae4fcee1fcbca2cd262c7f5f8cbddeaf5ab/packages/three-vrm/examples/models/VRM1_Constraint_Twist_Sample.vrm), SHA-256 `12c2b97e95e700783a6a550dc0eee2d7880aeedccef9ae67bc4c5a2f0f2631a2`. Модель не включается в git; её metadata разрешает everyone/avatar и redistribution по VRM Public License 1.0.
+
+Для безопасной регрессии закрытого stdout/stderr:
+
+```powershell
+node apps/desktop/qualifications/speech-motion/epipe-smoke.cjs
+```
+
+Это headless Electron fixture со штатным safe logger. Принадлежащий Node parent
+намеренно закрывает оба pipe. Неожиданное исключение записывается в файл и даёт
+FAIL/exit 1 до стандартного Electron dialog. Тест не запускает inference.
+
+`--overlay-width=840 --overlay-height=720 --view-mode=bust` выбирает более широкий
+обычный Overlay ракурс только в тестовом профиле, через существующие настройки.
+Он не меняет production camera или пользовательскую конфигурацию. Narrow view
+может честно исключить compare и другие жесты из runtime availability.
+
+`--stabilization-summary` вместе с `--stabilization-trace` сохраняет все render
+deltas, sampled CPU stage timings, consumed PCM cursor, lifecycle/safety counts,
+projection age и timing каждого consumed horizon. Полные poses/horizons в этом
+режиме не копируются. Это уменьшает влияние диагностических allocations на GC;
+для spectral/pose RCA сохранены отдельные полные traces и 120-s idle recordings.
+Baseline full-pose и summary-only performance нельзя сравнивать как эффект одной
+production поправки. Video/FPS и thresholds независимы от выбора trace.
+
+`--autonomous-living-smoke --conversation-case-ids=calm,explanation` — явно
+помеченный diagnostic subset через Chat UI, без финальной приёмки. Он не меняет
+120-s conversation deadline и не заменяет полный `--autonomous-living`.
+
+`--recovery-repro` сохраняет ограниченные числовые snapshots entry/timeout и
+последние стадии failed gesture для offline воспроизведения solver. Только этот
+opt-in diagnostic режим сохраняет pose/target values в отчёт; обычный report
+остаётся агрегированным. Все временные observers и wrappers восстанавливаются
+при stop. Эти hooks отсутствуют в production build.
+
+`--living-facial-matrix` отдельно задаёт девять semantic emotions через existing
+facial owner. Report сохраняет actual facial capabilities пользовательской VRM;
+missing independent channels нельзя считать проверенными по compound presets.
+Эта component matrix не подменяет ordinary Character LLM Chat или художественную
+оценку. Полный final run также использует `--living-lifecycle-smoke` и
+`--fixed-preview-smoke`; обе кисти проверяются отдельными полными close-ups на том
+же frozen snapshot.

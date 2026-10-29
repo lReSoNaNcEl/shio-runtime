@@ -6,7 +6,7 @@ from pathlib import Path
 
 import numpy as np
 from pxr import Usd, UsdSkel
-from scipy.optimize import lsq_linear
+from scipy.optimize import least_squares, lsq_linear
 from scipy.spatial.transform import Rotation
 
 MODEL = "233e9225c1da05c6a3dd98107b9f027f2366e3b972bbe67e0d164e5d28619fff"
@@ -84,11 +84,18 @@ class HandPrior:
                     np.stack((across, along, np.cross(across, along)), axis=-1)
                 ).as_quat()
                 prior["parents"] = parents
+                directions = positions[np.asarray(SELECTED) + 1] - positions[SELECTED]
+                lengths = np.linalg.norm(directions, axis=1)
+                if np.any(lengths < 1e-8):
+                    raise ValueError("Degenerate SOMA hand reference finger")
+                prior["directions"] = directions / lengths[:, None]
                 prior["deviations"] = np.sqrt(np.maximum(prior["eigenvalues"], 1e-12))
                 self.sides[side] = prior
         self.reset()
 
     def reset(self):
+        if not hasattr(self, "_fit_cache"):
+            self._fit_cache = {}
         self.history = {
             side: {index: np.zeros(32) for index in range(-4, 0)} for side in self.sides
         }
@@ -134,11 +141,29 @@ class HandPrior:
         return np.clip(coefficients, -2.5, 2.5)
 
     def target_coefficients(self, side, score):
+        key = (
+            side,
+            *(
+                float(value)
+                for finger in FINGERS
+                for value in (
+                    *score["fingers"][finger]["curl"],
+                    score["fingers"][finger]["spread"],
+                    score["fingers"][finger]["opposition"],
+                )
+            ),
+        )
+        if key in self._fit_cache:
+            return self._fit_cache[key].copy()
         prior = self.sides[side]
         target = self.target_expmap(side, score)
         weights = np.full((24, 3), 0.15)
         for start in (0, 5, 10, 15, 20):
             weights[start : start + 3] = 1
+            # MCP orientation moves the complete finger chain, including its
+            # spread/opposition. Equal per-joint error let distal PCA coupling
+            # erase the semantic opening at the base of otherwise straight fingers.
+            weights[start] = 3
         matrix = prior["components"].T * prior["deviations"]
         # Clipping the unconstrained PCA projection independently biased peace
         # fingers back toward the mean. Fit once per phase inside the SAME native
@@ -153,6 +178,88 @@ class HandPrior:
         )
         if not fitted.success or not np.isfinite(fitted.x).all():
             raise ValueError("SOMA hand target is not representable")
+        coefficients = fitted.x
+        contrasts = []
+        for index, (first, second) in enumerate(zip(FINGERS[1:], FINGERS[2:])):
+            a, b = score["fingers"][first], score["fingers"][second]
+            if float(a["spread"]) * float(b["spread"]) >= 0:
+                continue
+            # A small opposed spread is meaningful for straight fingers even
+            # when larger flexion targets dominate the ordinary expmap norm.
+            weight = min(
+                30.0,
+                3
+                * abs(float(a["spread"]) - float(b["spread"]))
+                / max(0.05, abs(float(a["curl"][0])) + abs(float(b["curl"][0]))),
+            )
+            if weight >= 3:
+                contrasts.append((3 * (index + 1), 3 * (index + 2), weight))
+        if contrasts:
+            coefficients = self._fit_contrasts(side, target, coefficients, contrasts)
+        self._fit_cache[key] = coefficients.copy()
+        if len(self._fit_cache) > 128:
+            del self._fit_cache[next(iter(self._fit_cache))]
+        return coefficients
+
+    def _fit_contrasts(self, side, target, initial, contrasts):
+        prior = self.sides[side]
+        across = Rotation.from_quat(prior["basis"]).as_matrix()[:, 0]
+        directions = prior["directions"]
+        desired = np.einsum(
+            "fij,fj->fi", self._world_delta(side, target[None])[0, SELECTED], directions
+        )
+        weights = np.tile([3, 1, 1], 5)[None, :, None]
+
+        def residual_batch(coefficients):
+            expmap = (
+                prior["mean"].reshape(-1)
+                + (coefficients * prior["deviations"]) @ prior["components"]
+            ).reshape(-1, 24, 3)
+            actual = np.einsum(
+                "nfij,fj->nfi", self._world_delta(side, expmap)[:, SELECTED], directions
+            )
+            pose = ((actual - desired) * weights).reshape(len(coefficients), -1)
+            gaps = [
+                weight
+                * (
+                    (
+                        actual[:, first]
+                        - actual[:, second]
+                        - desired[first]
+                        + desired[second]
+                    )
+                    @ across
+                )
+                for first, second, weight in contrasts
+            ]
+            return np.concatenate(
+                (pose, np.stack(gaps, axis=1), 0.02 * (coefficients - initial)), axis=1
+            )
+
+        def residual(coefficients):
+            return residual_batch(coefficients[None])[0]
+
+        def jacobian(coefficients):
+            # Batch finite differences through the native FK instead of running
+            # a separate Python/SciPy decode for each of the 32 coefficients.
+            steps = np.where(coefficients >= 2.5 - 1e-5, -1e-5, 1e-5)
+            probes = np.repeat(coefficients[None], 33, axis=0)
+            probes[1:] += np.diag(steps)
+            values = residual_batch(probes)
+            return ((values[1:] - values[0]) / steps[:, None]).T
+
+        fitted = least_squares(
+            residual,
+            initial,
+            jac=jacobian,
+            bounds=(-2.5, 2.5),
+            max_nfev=32,
+            ftol=1e-5,
+            xtol=1e-5,
+            gtol=1e-5,
+        )
+        if not fitted.success or not np.isfinite(fitted.x).all():
+            raise ValueError("SOMA hand contrast is not representable")
         return fitted.x
 
     def decode(self, side, coefficients):
@@ -161,7 +268,16 @@ class HandPrior:
             prior["mean"].reshape(-1)
             + (coefficients * prior["deviations"]) @ prior["components"]
         )
-        relative = np.tile(np.eye(3), (len(coefficients), 25, 1, 1))
+        delta = self._world_delta(side, expmap.reshape(-1, 24, 3))
+        return (
+            Rotation.from_matrix(delta[:, SELECTED].reshape(-1, 3, 3))
+            .as_quat()
+            .reshape(-1, 15, 4)
+        )
+
+    def _world_delta(self, side, expmap):
+        prior = self.sides[side]
+        relative = np.tile(np.eye(3), (len(expmap), 25, 1, 1))
         relative[:, 1:] = (
             Rotation.from_rotvec(expmap.reshape(-1, 3))
             .as_matrix()
@@ -178,12 +294,7 @@ class HandPrior:
         for joint, parent in enumerate(prior["parents"]):
             if parent >= 0:
                 world[:, joint] = world[:, parent] @ local[:, joint]
-        delta = world @ prior["reference_orient"].swapaxes(-2, -1)
-        return (
-            Rotation.from_matrix(delta[:, SELECTED].reshape(-1, 3, 3))
-            .as_quat()
-            .reshape(-1, 15, 4)
-        )
+        return world @ prior["reference_orient"].swapaxes(-2, -1)
 
     def generate(self, frame, profile, phase, plan=None, activity=None):
         score = profile["handScore"]["phases"][phase]
@@ -220,7 +331,12 @@ class HandPrior:
                 next(p["minMs"] for p in profile["phases"] if p["id"] == phase) / 1000
             )
             poses = np.repeat(initial[None], 60, axis=0)
-            for finger, start in enumerate((0, 5, 10, 15, 20)):
+            # Include native metacarpals and end joints in the same finger's
+            # transition. Updating only the 15 selected VRM joints made the final
+            # PCA projection discard correlated parts of the fitted endpoint.
+            for finger, (start, end) in enumerate(
+                ((0, 4), (4, 9), (9, 14), (14, 19), (19, 24))
+            ):
                 timing = score[side]["timing"]
                 delay = (
                     duration * timing["start"] + (0.025, 0, 0.018, 0.04, 0.065)[finger]
@@ -236,9 +352,9 @@ class HandPrior:
                 )
                 t = np.clip((seconds - delay) / reach, 0, 1)
                 blend = t**3 * (10 + t * (-15 + 6 * t))
-                poses[:, start : start + 3] = initial[start : start + 3] + blend[
-                    :, None, None
-                ] * (target[start : start + 3] - initial[start : start + 3])
+                poses[:, start:end] = initial[start:end] + blend[:, None, None] * (
+                    target[start:end] - initial[start:end]
+                )
             coefficients = self.project(side, poses)
             for index, value in enumerate(coefficients):
                 self.history[side][frame + index] = value.copy()

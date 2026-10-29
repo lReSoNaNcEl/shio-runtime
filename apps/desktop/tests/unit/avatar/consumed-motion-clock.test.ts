@@ -4,6 +4,9 @@ import { describe, expect, it } from 'vitest'
 import type { PcmPlaybackClock } from '../../../src/renderer/audio/audioPlayer'
 import { AdaptiveMotionFilter } from '../../../src/renderer/avatar/rendering/three/AdaptiveMotionFilter'
 import { ConsumedMotionClock } from '../../../src/renderer/avatar/rendering/three/ConsumedMotionClock'
+import delayedReport from '../../fixtures/avatar/consumed-clock-after-compositor-stall.json'
+import jitterWindows from '../../fixtures/avatar/consumed-clock-jitter-windows.json'
+import mediumFrames from '../../fixtures/avatar/consumed-clock-medium-frames.json'
 
 const pcm = (seconds: number, state: PcmPlaybackClock['state'] = 'playing'): PcmPlaybackClock => ({
   turnId: 'turn',
@@ -14,6 +17,59 @@ const pcm = (seconds: number, state: PcmPlaybackClock['state'] = 'playing'): Pcm
 })
 
 describe('consumed body presentation time', () => {
+  it('accepts the real delayed worklet burst after two sub-50-ms compositor frames', () => {
+    const sampler = new ConsumedMotionClock()
+    for (const frame of mediumFrames) {
+      const result = sampler.sample({ ...pcm(0), sourceSampleOffset: frame.consumed }, frame.delta)
+      expect(result?.discontinuity).toBe(false)
+      expect(result?.offset).toBeLessThanOrEqual(frame.consumed)
+      expect(frame.consumed - (result?.offset ?? 0)).toBeLessThanOrEqual(44100 * 0.05)
+    }
+  })
+  it.each(jitterWindows)(
+    'bounds presentation lag without calling packet cadence a source jump',
+    (...frames) => {
+      const sampler = new ConsumedMotionClock()
+      for (const frame of frames) {
+        const clock = { ...pcm(0), sourceSampleOffset: frame.consumed }
+        const result = sampler.sample(clock, frame.delta)
+        expect(result?.discontinuity).toBe(false)
+        expect((result?.offset ?? 0) - frame.consumed).toBeLessThanOrEqual(
+          Number.EPSILON * frame.consumed * 2,
+        )
+        expect(frame.consumed - (result?.offset ?? 0)).toBeLessThanOrEqual(44100 * 0.05)
+      }
+    },
+  )
+  it('accepts the real delayed worklet report after a long compositor frame', () => {
+    const sampler = new ConsumedMotionClock()
+    for (const frame of delayedReport) {
+      const clock = { ...pcm(0), sourceSampleOffset: frame.consumed }
+      const result = sampler.sample(clock, frame.delta)
+      expect(result?.discontinuity).toBe(false)
+      expect((result?.offset ?? 0) - frame.consumed).toBeLessThanOrEqual(
+        Number.EPSILON * frame.consumed * 2,
+      )
+      expect(frame.consumed - (result?.offset ?? 0)).toBeLessThanOrEqual(44100 * 0.05)
+    }
+  })
+  it('conserves delayed report time but clears it on buffering or a real clock jump', () => {
+    const sampler = new ConsumedMotionClock()
+    sampler.sample(pcm(0), 1 / 60)
+    sampler.sample(pcm(0.02), 0.086)
+    expect(sampler.sample(pcm(3), 0.011)?.discontinuity).toBe(true)
+    sampler.reset()
+    sampler.sample(pcm(0), 1 / 60)
+    sampler.sample(pcm(0.02), 0.086)
+    sampler.sample(pcm(0.02), 0.011)
+    expect(sampler.sample(pcm(0.11), 0.011)?.discontinuity).toBe(false)
+    expect(sampler.sample(pcm(3), 0.011)?.discontinuity).toBe(true)
+    sampler.reset()
+    sampler.sample(pcm(0), 1 / 60)
+    sampler.sample(pcm(0.02), 0.086)
+    sampler.sample(pcm(0.02, 'buffering'), 0.011)
+    expect(sampler.sample(pcm(0.11), 0.011)?.discontinuity).toBe(true)
+  })
   it.each([
     [60, 512 / 48000],
     [90, 512 / 48000],

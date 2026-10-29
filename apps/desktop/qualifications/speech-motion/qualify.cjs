@@ -75,6 +75,9 @@ const bodyStabilityOnly =
   dynamicsReplay ||
   stabilizationCases
 const bodySeconds = option('body-seconds', 18)
+const fingerSide =
+  process.argv.find((value) => value.startsWith('--finger-side='))?.split('=')[1] ?? 'right'
+assert(['left', 'right'].includes(fingerSide), 'Unknown finger close-up side')
 // Capture both hand scores during the short accent before reviewing wider views.
 const accentCameras = ['Right hand', 'Left hand', 'Full body', 'Bust', 'Face']
 assert(Number.isFinite(bodySeconds) && bodySeconds >= 4 && bodySeconds <= 60)
@@ -132,6 +135,15 @@ const qualificationView = process.argv
 if (qualificationView) {
   assert(['face', 'bust', 'portrait'].includes(qualificationView), 'Unknown qualification view')
   config.overlayViewMode = qualificationView
+}
+for (const [argument, key, minimum] of [
+  ['overlay-width', 'overlayWidth', 160],
+  ['overlay-height', 'overlayHeight', 220],
+]) {
+  if (!process.argv.some((value) => value.startsWith(`--${argument}=`))) continue
+  const value = option(argument, 0)
+  assert(Number.isInteger(value) && value >= minimum && value <= 1200, 'Invalid Overlay size')
+  config[key] = String(value)
 }
 config.setup = { ...config.setup, completed: true }
 config.uiLocale = 'en'
@@ -259,6 +271,7 @@ for (const relative of [
   'motion/protocol.py',
   'motion/research-pins.json',
   'motion/motion-profiles.json',
+  'motionbricks/hand_prior.py',
   'qualifications/speech-motion/qualify.cjs',
   'qualifications/speech-motion/rig-geometry.cjs',
   'qualifications/speech-motion/semantic-embodiment-cases.cjs',
@@ -269,6 +282,10 @@ for (const relative of [
   'qualifications/speech-motion/stabilization-cases.cjs',
   'qualifications/speech-motion/conversation-cases.cjs',
   'qualifications/speech-motion/living-v2-cases.cjs',
+  'qualifications/speech-motion/autonomous-living-cases.cjs',
+  'qualifications/speech-motion/autonomous-policy-smoke.cjs',
+  'qualifications/speech-motion/living-lifecycle-smoke.cjs',
+  'qualifications/speech-motion/living-facial-matrix.cjs',
   'src/renderer/avatar/rendering/three/sampleSourceRotation.ts',
   'src/renderer/avatar/rendering/three/AdaptiveMotionFilter.ts',
   'src/renderer/avatar/rendering/three/GeneratedBodyPlayback.ts',
@@ -1448,6 +1465,48 @@ async function bodyStability() {
       await seed.fill(String(requestedSeed))
       await seed.press('Tab')
       const overlay = overlayPage()
+      if (process.argv.includes('--finger-warmup') && !report.fingerWarmup) {
+        await page
+          .getByRole('button', {
+            name: fingerSide === 'left' ? 'Left hand' : 'Right hand',
+            exact: true,
+          })
+          .click()
+        const stopWarmup = await recordCanvas(
+          page,
+          path.join(directory, `fingers-${fingerSide}-initialization.webm`),
+          { captureFps: 90 },
+        )
+        fingerRecordings.push(stopWarmup)
+        await overlay.evaluate(async (id) => {
+          const previous = await window.overlayApi.avatarBody.get()
+          window.__fingerWarmupOutcome = null
+          window.__fingerWarmupStop = window.overlayApi.avatarBody.onUpdated((pose) => {
+            if (
+              pose?.profileId === id &&
+              pose.executionId !== previous?.executionId &&
+              pose.outcome
+            )
+              window.__fingerWarmupOutcome = pose.outcome
+          })
+        }, profile.id)
+        await page.getByRole('button', { name: 'Generate variation', exact: true }).click()
+        let completed = null
+        const warmupDeadline = Date.now() + 30000
+        while (Date.now() < warmupDeadline) {
+          completed = await overlay.evaluate(() => window.__fingerWarmupOutcome)
+          if (completed) break
+          await pause(100)
+        }
+        await overlay.evaluate(() => window.__fingerWarmupStop())
+        report.fingerWarmup = {
+          purpose: 'First real variation and recorder initialization, retained separately',
+          outcome: completed,
+          video: await stopWarmup(),
+        }
+        persist()
+        assert.equal(completed, 'completed', 'Finger initialization motion did not complete')
+      }
       await overlay.evaluate(installGeometryProbe, geometry)
       await overlay.evaluate(
         async ({ id, requestedSeed }) => {
@@ -1593,11 +1652,16 @@ async function bodyStability() {
       )
       let stopFingerRecording = null
       if (process.argv.includes('--finger-close-up')) {
-        await page.getByRole('button', { name: 'Right hand', exact: true }).click()
+        await page
+          .getByRole('button', {
+            name: fingerSide === 'left' ? 'Left hand' : 'Right hand',
+            exact: true,
+          })
+          .click()
         stopFingerRecording = await recordCanvas(
           page,
-          path.join(directory, `fingers-${profile.id}-${requestedSeed}.webm`),
-          { captureFps: 60 },
+          path.join(directory, `fingers-${fingerSide}-${profile.id}-${requestedSeed}.webm`),
+          { captureFps: 90 },
         )
         fingerRecordings.push(stopFingerRecording)
       }
@@ -1872,6 +1936,18 @@ async function bodyStability() {
     else if (turnCases) await qualifyTurns()
     else if (bodyStabilityOnly) await bodyStability()
     else if (focused && !modelOnly) await focusedPresentation()
+    if (process.argv.includes('--living-lifecycle-smoke')) {
+      const { qualifyLivingLifecycle } = require('./living-lifecycle-smoke.cjs')
+      await qualifyLivingLifecycle({ application, page, report, pause })
+    }
+    if (process.argv.includes('--autonomous-policy-smoke') && !conversationCases) {
+      const { qualifyAutonomousPolicy } = require('./autonomous-policy-smoke.cjs')
+      await qualifyAutonomousPolicy({ application, page, directory, report, pause })
+    }
+    if (process.argv.includes('--living-facial-matrix')) {
+      const { qualifyLivingFacialMatrix } = require('./living-facial-matrix.cjs')
+      await qualifyLivingFacialMatrix({ page, directory, report, pause })
+    }
     for (let index = 0; !bodyStabilityOnly && index < responseCount; index++) {
       await response(index)
       if (index < responseCount - 1 && responseSpacing) await paceResponse()
@@ -1934,6 +2010,7 @@ async function bodyStability() {
           ...(entry.profileId === 'peace_single' ? { indexMiddleOpeningDeg: opening } : {}),
           passed:
             correctV &&
+            (!entry.fingerVideo || entry.fingerVideo.measuredAverageFps >= 60) &&
             entry.count >= 30 &&
             !entry.readinessFailure &&
             Object.entries(entry.steps)
@@ -1986,6 +2063,9 @@ async function bodyStability() {
     }
     report.passed =
       report.failures.length === 0 &&
+      (!report.livingLifecycle || report.livingLifecycle.passed) &&
+      (!report.autonomousPolicy || report.autonomousPolicy.passed) &&
+      (!report.livingFacialMatrix || report.livingFacialMatrix.technicalPassed) &&
       (!bodyStabilityOnly ||
         (stabilizationCases
           ? report.stabilization.technicalPassed

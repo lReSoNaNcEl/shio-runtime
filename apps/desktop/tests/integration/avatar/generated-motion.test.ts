@@ -197,6 +197,8 @@ describe('generated body timeline', () => {
       state: 'playing',
     }
     Reflect.set(owner, 'playing', true)
+    Reflect.set(owner, 'lease', lease)
+    Reflect.set(owner, 'appliedLease', lease)
     Reflect.set(owner, 'appliedSourceProvider', 'motionbricks')
     Reflect.set(owner, 'clock', clock)
     Reflect.set(owner, 'sampledClock', clock)

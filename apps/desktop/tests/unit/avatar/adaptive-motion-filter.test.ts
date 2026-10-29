@@ -5,6 +5,28 @@ import { AdaptiveMotionFilter } from '../../../src/renderer/avatar/rendering/thr
 
 const axis = new THREE.Vector3(0, 0, 1)
 describe('single source-aware body tracking', () => {
+  it('returns a quiet presence wrist within its existing recovery budget without raising its speed ceiling', () => {
+    const filter = new AdaptiveMotionFilter()
+    const bone = new THREE.Object3D()
+    const from = new THREE.Quaternion().setFromAxisAngle(axis, 0.8)
+    const rest = new THREE.Quaternion()
+    bone.quaternion.copy(from)
+    for (let frame = 0; frame < 156; frame++) {
+      const elapsed = frame / 60
+      const t = Math.min(1, (elapsed + 1 / 60) / 0.9)
+      const previous = bone.quaternion.clone()
+      filter.step(bone, previous, from.clone().slerp(rest, t * t * (3 - 2 * t)), 1 / 60, {
+        sourceProvider: 'motionbricks',
+        motionClass: 'presence',
+        phase: 'recover',
+        reachSeconds: Math.max(0.25, 0.9 - elapsed),
+        sourceSpeeds: new Map([[bone, 0]]),
+        jointKinds: new Map([[bone, 'wrist']]),
+      })
+      expect(previous.angleTo(bone.quaternion) * 60).toBeLessThanOrEqual(1.201)
+    }
+    expect(bone.quaternion.angleTo(rest)).toBeLessThan(0.06)
+  })
   it('allows a large MotionBricks preparation to take physical time without slowing the stroke tracker', () => {
     const filter = new AdaptiveMotionFilter()
     const bone = new THREE.Object3D()
