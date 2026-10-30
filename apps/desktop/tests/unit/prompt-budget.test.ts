@@ -112,6 +112,7 @@ function main(): void {
     },
     goals,
     memory: `## Memory Context\nMEMORY_MARKER\n${memories}`,
+    sessionSummary: `SESSION_SUMMARY_MARKER ${'earlier turn '.repeat(200)}`,
     capabilities,
     project: `## Project Evidence\nPROJECT_MARKER\n${'project evidence '.repeat(1_000)}`,
     world: {
@@ -167,6 +168,7 @@ function main(): void {
     relationship: '## Relationship Context',
     goals: '## Goal Awareness Context',
     memory: '## Memory Context',
+    sessionSummary: '## Earlier In This Session',
     capabilities: '## Current Shio Capabilities',
     project: '## Project Evidence',
     world: '## Current World Context',

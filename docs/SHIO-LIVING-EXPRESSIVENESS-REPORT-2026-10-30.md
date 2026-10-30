@@ -513,7 +513,7 @@ N/A.
 
 ### Проверки
 
-Полный набор раздела 7 PASS (fast 365, regression 858, typecheck, build).
+Полный набор раздела 7 PASS (fast 363, regression 856, typecheck, build).
 Первый прогон regression упал на `browser-continuous-control.test.ts`
 (timing под нагрузкой, тест не связан с изменением). Отдельно он прошёл,
 повторный полный прогон зелёный.
@@ -530,3 +530,68 @@ N/A.
   проверены только unit-тестами на фейковых кандидатах.
 - Отдельного `LlmGateway.forRole()` нет: роль задаётся резолвером при
   сборке gateway в composition.
+
+## WI-12 Сжатие контекста сессии
+
+### Architecture Review
+
+- Хранение — только память процесса. Сохранение между рестартами — гейт G3,
+  не реализовано. Guard-тест проверяет, что модули окна и саммаризатора не
+  пишут в SQLite и файлы.
+- Semantic Memory v1 не затронута: саммари — conversational context, а не
+  long-term запись, и в Memory Runtime не попадает.
+- Character Request Composer остаётся ограниченным: новая секция
+  `sessionSummary` (бюджет 1400, минимум 300, tier 2). Сумма минимумов
+  (15 950) не превышает 16 000; `prompt-budget.test.ts` проверяет её
+  на насыщенном запросе.
+- В саммаризатор попадает только проза user/assistant. Failure-презентации
+  (`assistantTurnKind !== 'character'`), tool payloads, system-сообщения
+  и картинки исключены.
+- Вызов саммаризатора получает cancellation. `clear()` и shutdown прерывают
+  его и отбрасывают поздний результат.
+
+### Что изменено
+
+- `memory/ConversationContextWindow.ts` заменяет `InMemoryStore` в
+  composition.
+  - Последние 20 сообщений хранятся дословно, как раньше.
+  - Вытесненная проза копится (не больше 6000 символов) и сжимается одним
+    вызовом примерно раз в три хода, single-flight. Ходы, вытесненные во
+    время вызова, сворачиваются следующим.
+  - При сбое остаётся прежнее саммари и обычная обрезка, событие пишется
+    в лог.
+- `memory/SessionSummarizer.ts`: роль `sessionSummarizer` через
+  `LlmGateway` и `resolveRoleSettings` (пока совпадает с Character).
+  Промпт трактует ходы как данные; маркеры протокола из ответа вычищаются;
+  саммари не длиннее 1200 символов.
+- `MemoryStore.getSessionSummary` (необязательный), секция «Earlier In This
+  Session» в Composer; Orchestrator передаёт саммари в запрос.
+- Shutdown вызывает `conversationMemory.dispose()`.
+
+### Root Cause
+
+`InMemoryStore` обрезал историю до 20 сообщений, и начало длинного
+разговора бесследно терялось.
+
+### Почему фикс работает
+
+Вытесненные ходы не выбрасываются, а сворачиваются в ограниченное саммари,
+которое Composer добавляет в каждый следующий запрос.
+
+### Файлы
+
+`ConversationContextWindow.ts`, `SessionSummarizer.ts`, `MemoryStore.ts`,
+`memory/index.ts`, `CharacterRequestComposer.ts`, `orchestrator.ts`,
+`buildApplicationDependencies.ts`, `llm/roleSettings.ts`; тесты
+`conversation-context-window.test.ts`, `prompt-budget.test.ts`.
+
+### Проверки
+
+Полный набор раздела 7 PASS (fast 370, regression 863, typecheck, build).
+
+### Ограничения
+
+- Не проверял live: eval-кейс на 25 ходов (деталь из хода 2 на ходе 22)
+  не прогонялся.
+- Каждые ~3 хода после десятого добавляется один дополнительный запрос
+  к провайдеру Character. Отдельной настройки отключения нет.

@@ -354,6 +354,7 @@ export class Orchestrator {
     }
     const traceId = safeTraceId(options.traceId)
     const history = await this.memory.getHistory(SESSION_ID)
+    const sessionSummary = (await this.memory.getSessionSummary?.(SESSION_ID)) ?? null
 
     let capabilityContext: ShioCapabilitySnapshot | null = null
     let capabilityContextUnavailable = false
@@ -444,6 +445,7 @@ export class Orchestrator {
         foregroundGoalId: livingContext.world?.activeGoal?.id,
         thread: threadAwareness[0],
         memory: semanticMemoryPrompt,
+        sessionSummary,
         capabilities: capabilityContext,
         capabilityContextUnavailable,
         embodimentAvailability,

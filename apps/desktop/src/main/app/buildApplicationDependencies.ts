@@ -63,7 +63,13 @@ import {
   resolveProviderChatBaseUrl,
 } from '../llm'
 import { mainLog } from '../logging/safeLogger'
-import { createMemoryStore, createSemanticMemoryRuntime, MemoryToolBroker } from '../memory'
+import {
+  createLlmSessionSummarizer,
+  createMemoryStore,
+  createSemanticMemoryRuntime,
+  MemoryToolBroker,
+  type SessionSummarizer,
+} from '../memory'
 import { GeneratedMotionService } from '../motion/GeneratedMotionService'
 import { Orchestrator } from '../orchestrator'
 import { PluginCapabilityRegistry, PluginRegistryStore, PluginRuntime } from '../plugins'
@@ -139,7 +145,14 @@ export function buildApplicationDependencies(): ApplicationDependencies {
   let unsubscribeAliveCapabilities: (() => void) | null = null
   let unsubscribeLatencyIpc: (() => void) | null = null
   let prepareForQuitTask: Promise<void> | null = null
-  const conversationMemory = createMemoryStore()
+  let sessionSummarizer: SessionSummarizer | undefined
+  // In-process only: the summarizer role reuses the Character selection and credentials.
+  const conversationMemory = createMemoryStore({
+    summarizer: () =>
+      (sessionSummarizer ??= createLlmSessionSummarizer(
+        () => new LlmGateway(() => gatewaySettings(resolveRoleSettings('sessionSummarizer'))),
+      )),
+  })
   const semanticMemory = createSemanticMemoryRuntime(
     join(app.getPath('userData'), 'memory', 'semantic-memory.sqlite'),
   )
@@ -565,6 +578,7 @@ export function buildApplicationDependencies(): ApplicationDependencies {
       unsubscribeMemoryCapabilities?.()
       unsubscribeMemoryCapabilities = null
       capabilityCatalog.dispose()
+      conversationMemory.dispose()
 
       const cleanupOwners = [
         'conversation-turn-service',
