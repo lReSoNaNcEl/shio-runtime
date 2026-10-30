@@ -26,6 +26,7 @@
     "desktop:qualify:browser": "npm --prefix apps/desktop run qualify:browser",
     "desktop:qualify:continuous-browser": "npm --prefix apps/desktop run qualify:continuous-browser",
     "desktop:qualify:llm": "npm --prefix apps/desktop run qualify:llm",
+    "desktop:qualify:character": "npm --prefix apps/desktop run qualify:character",
     "desktop:qualify:living-presence": "npm --prefix apps/desktop run qualify:living-presence",
     "desktop:qualify:world-context": "npm --prefix apps/desktop run qualify:world-context",
     "desktop:benchmark:latency": "npm --prefix apps/desktop run benchmark:latency",

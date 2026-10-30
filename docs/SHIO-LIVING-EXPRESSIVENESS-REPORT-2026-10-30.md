@@ -595,3 +595,72 @@ N/A.
   не прогонялся.
 - Каждые ~3 хода после десятого добавляется один дополнительный запрос
   к провайдеру Character. Отдельной настройки отключения нет.
+
+## WI-10 Character eval
+
+### Architecture Review
+
+- Eval — qualification runner, а не часть Runtime. В CI и regression
+  не входит. Эвристики checker'ов оценивают уже записанный ответ и не
+  участвуют в runtime-роутинге.
+- Путь реальный: настоящий `Orchestrator` с `enforceRequirements: true`,
+  `CharacterRequestComposer`, `SYSTEM_PROMPT`, протокол и Tool Requirement
+  planning. Копий промпта нет.
+- Модели создаются той же фабрикой `createAiSdkAdapter`, что и в
+  `qualify.ts`. Реестр live-провайдеров вынесен в общий
+  `qualifications/llm/providers.ts` без копирования.
+- Credentials берутся только из env runner'а и в scorecard не попадают.
+
+### Что изменено
+
+- `character-eval/cases.ts`: 32 русских кейса как данные — приветствия,
+  техника, эмоции, подколы, жесты, инструменты (web/project), явная память,
+  длинные ответы, безопасность, самоидентичность.
+- `character-eval/checks.ts`: чистые checker'ы.
+  - Протокол: emotion-тег первым и канонический; не больше 3 сегментов
+    без повторов подряд; нет ремарок и утечек маркеров; ожидаемый класс
+    Tool Requirement.
+  - Персона и формат: женский род в самоописании; границы длины.
+  - Отдельный `protocolScore` для гейта регрессии.
+- `character-eval/run.ts`: прогон по всем провайдерам с ключом. TTFT
+  берётся из stream events. Опциональный LLM-judge задаётся через
+  `CHARACTER_EVAL_JUDGE_*`. Scorecard JSON и Markdown пишутся
+  в `apps/desktop/.artifacts/character-eval/` (добавлено в `.gitignore`).
+  С `CHARACTER_EVAL_BASELINE` при падении protocol score больше чем на 5%
+  код выхода 1.
+- Команда `npm run desktop:qualify:character`.
+
+### Root Cause
+
+N/A.
+
+### Почему фикс работает
+
+Каждый кейс прогоняется через тот же код, что и обычный ход Chat,
+поэтому scorecard отражает поведение модели в Shio, а не на копии промпта.
+
+### Файлы
+
+`qualifications/llm/character-eval/{cases,checks,run}.ts`,
+`qualifications/llm/providers.ts`, `qualifications/llm/qualify.ts`,
+`package.json` (оба), `.gitignore`; тест
+`tests/unit/llm/character-eval-checks.test.ts`.
+
+### Проверки
+
+Полный набор раздела 7: fast 377, regression 870, typecheck и build PASS.
+`desktop:check` сначала упал на двух import-ошибках в qualification-коде.
+После исправления повторно прошли `desktop:check`, typecheck тестов
+и сборка обоих runner'ов (`qualify.ts` и `character-eval/run.ts`).
+
+### Ограничения
+
+- **Baseline не снят**: в окружении нет ключей провайдеров
+  (`GROQ_API_KEY`, `CLOUDFLARE_API_TOKEN`, `OPENROUTER_API_KEY`,
+  `MISTRAL_API_KEY` не заданы). Ключи приложения хранятся в
+  зашифрованном store и runner их не читает. Поэтому M10 до и после
+  WI-8, WI-11 и WI-12 не сравнивался.
+- Runner проверен только запуском без провайдеров: сборка, загрузка
+  Orchestrator в Node и выход с кодом 0.
+- Проверка женского рода — эвристика по «я …л». Она пропускает формы без
+  местоимения «я».

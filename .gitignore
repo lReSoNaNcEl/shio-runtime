@@ -21,6 +21,7 @@ apps/desktop/dist/
 apps/desktop/build/*
 !apps/desktop/build/icon.ico
 apps/desktop/out/
+apps/desktop/.artifacts/
 apps/desktop/release/
 /release/
 
