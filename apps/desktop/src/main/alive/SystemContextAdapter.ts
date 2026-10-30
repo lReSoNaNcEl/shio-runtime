@@ -41,13 +41,3 @@ export interface SystemContextAdapter {
   observe(request?: SystemContextObservationRequest): Promise<SystemContextObservation>
   dispose?(): void
 }
-
-export class UnavailableSystemContextAdapter implements SystemContextAdapter {
-  async observe(): Promise<SystemContextObservation> {
-    return {
-      capturedAt: Date.now(),
-      globalUserIdleMs: 0,
-      status: 'degraded',
-    }
-  }
-}

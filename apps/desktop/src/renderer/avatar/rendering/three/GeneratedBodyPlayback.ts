@@ -114,7 +114,7 @@ export class GeneratedBodyPlayback {
   private mirrorHeading = 0
   private lastPoseFrame: number | null = null
   private appliedProfileId: MotionProfileId = 'presence_poised'
-  private appliedSourceProvider: MotionChunk['sourceProvider']
+  private appliedGeneratedSource = false
   private appliedPhaseId: MotionPhaseId = 'prepare'
   private appliedExecutionId: string | undefined
   private appliedOutcome: MotionOutcome | null = null
@@ -241,7 +241,7 @@ export class GeneratedBodyPlayback {
     this.appliedLease = null
     this.inverseProceduralPose.clear()
     this.proceduralRootOffset.set(0, 0, 0)
-    this.appliedSourceProvider = undefined
+    this.appliedGeneratedSource = false
     this.transitionHands.clear()
     this.projectedConversationCamera = null
     this.vrm = vrm
@@ -354,7 +354,7 @@ export class GeneratedBodyPlayback {
   detach(): void {
     this.inverseProceduralPose.clear()
     this.proceduralRootOffset.set(0, 0, 0)
-    this.appliedSourceProvider = undefined
+    this.appliedGeneratedSource = false
     this.transitionHands.clear()
     this.turn = null
     this.stopAnimation()
@@ -799,7 +799,7 @@ export class GeneratedBodyPlayback {
       // continues from, instead of dropping both arms to the hips each time.
       const speaking = this.clock?.state === 'playing' && !this.speechFinished
       if (
-        this.appliedSourceProvider === 'motionbricks' &&
+        this.appliedGeneratedSource &&
         !this.execution.profile.physicalAction &&
         !this.execution.hasTimedOut &&
         (speaking || (this.execution.profile.kind === 'gesture' && !this.execution.wantsRecovery))
@@ -830,7 +830,7 @@ export class GeneratedBodyPlayback {
           this.bodySafety.constrainTarget(binding.bone, binding.safe)
         }
       }
-      if (this.appliedSourceProvider === 'motionbricks' && this.somaHands)
+      if (this.appliedGeneratedSource && this.somaHands)
         this.handPose.reset(
           new Map(
             this.presentationBones
@@ -844,7 +844,7 @@ export class GeneratedBodyPlayback {
       this.recoveryRoot.copy(
         this.vrm?.humanoid.getNormalizedBoneNode('hips')?.position ?? this.baseRoot,
       )
-      const appliedOrigin = this.appliedSourceProvider === 'motionbricks'
+      const appliedOrigin = this.appliedGeneratedSource
       if (appliedOrigin) this.recoveryRoot.sub(this.proceduralRootOffset)
       this.recoveryPose = new Map(
         this.bindings.map((binding) => {
@@ -939,7 +939,7 @@ export class GeneratedBodyPlayback {
       !!this.conversationView &&
       profile.kind === 'gesture' &&
       !profile.physicalAction &&
-      this.appliedSourceProvider === 'motionbricks'
+      this.appliedGeneratedSource
     if (
       (conversational || !repeat) &&
       !profile.cameraPolicy.includes(cameraMode as 'full' | 'bust' | 'face') &&
@@ -1009,7 +1009,7 @@ export class GeneratedBodyPlayback {
     this.bodySafety.apply(
       Math.min(
         0.05,
-        this.appliedSourceProvider === 'motionbricks' ? delta : Infinity,
+        this.appliedGeneratedSource ? delta : Infinity,
         consumedDelta > 0 ? consumedDelta : delta,
       ),
       getMotionProfile(this.profileId)?.kind === 'presence' ? 0.35 : 1,
@@ -1021,14 +1021,14 @@ export class GeneratedBodyPlayback {
             : getMotionProfile(this.profileId)?.libraryGroup === 'reactions'
               ? 'reaction'
               : 'gesture',
-        sourceProvider: this.appliedSourceProvider,
+        generatedSource: this.appliedGeneratedSource,
         phase: this.localRecovery ? 'recover' : this.appliedPhaseId,
         reachSeconds:
           this.execution &&
           this.execution.id === this.appliedExecutionId &&
           (this.execution.phase === 'prepare' ||
             (this.localRecovery &&
-              this.appliedSourceProvider === 'motionbricks' &&
+              this.appliedGeneratedSource &&
               this.execution.profile.kind === 'presence'))
             ? Math.max(0.25, (this.execution.budget.minMs - this.execution.elapsedMs) / 1000)
             : undefined,
@@ -1267,7 +1267,7 @@ export class GeneratedBodyPlayback {
       composed = true
       beforeDiagnostics()
       if (
-        this.appliedSourceProvider === 'motionbricks' &&
+        this.appliedGeneratedSource &&
         !this.presentationOnly &&
         this.lease &&
         this.appliedLease === this.lease
@@ -1767,7 +1767,7 @@ export class GeneratedBodyPlayback {
     this.lastPoseFrame = this.cursor
     this.appliedProfileId = chunk.profileId
     this.appliedLease = this.lease
-    this.appliedSourceProvider = chunk.sourceProvider
+    this.appliedGeneratedSource = chunk.sourceProvider === 'motionbricks'
     this.appliedPhaseId = chunk.plan.phaseId
     if (this.appliedExecutionId !== chunk.plan.executionId) this.appliedOutcome = null
     this.appliedExecutionId = chunk.plan.executionId
@@ -2291,7 +2291,7 @@ export class GeneratedBodyPlayback {
       : this.generatedEnd
     let plan = this.plan()
     const physicalPreparationPending =
-      this.appliedSourceProvider === 'motionbricks' &&
+      this.appliedGeneratedSource &&
       this.execution.profile.kind === 'gesture' &&
       this.execution.phase === 'prepare' &&
       (!this.bodySafety.handTargetsReached() || !this.handPose.targetsReached())

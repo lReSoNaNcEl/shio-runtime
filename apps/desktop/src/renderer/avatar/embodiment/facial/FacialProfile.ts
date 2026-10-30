@@ -351,10 +351,6 @@ export function getFacialProfile(key?: string): FacialProfile {
   return FACIAL_PROFILES[resolveFacialProfileId(key)]
 }
 
-export function createZeroMouthWeights(): MouthWeights {
-  return { aa: 0, ih: 0, ou: 0, ee: 0, oh: 0 }
-}
-
 export function completeMouthWeights(weights: Partial<MouthWeights>): MouthWeights {
   return {
     aa: weights.aa ?? 0,

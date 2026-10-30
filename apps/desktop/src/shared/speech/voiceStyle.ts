@@ -7,8 +7,3 @@ export function normalizeVoiceStyle(value: string): string | undefined {
     return undefined
   return style
 }
-
-/** Final/history containment also covers malformed and unfinished markers. */
-export function stripVoiceStyleMarkers(text: string): string {
-  return text.replace(/\[voice:[^\]]*(?:\]|$)/giu, '')
-}

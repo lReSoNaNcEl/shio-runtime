@@ -16,7 +16,7 @@ describe('single source-aware body tracking', () => {
       const t = Math.min(1, (elapsed + 1 / 60) / 0.9)
       const previous = bone.quaternion.clone()
       filter.step(bone, previous, from.clone().slerp(rest, t * t * (3 - 2 * t)), 1 / 60, {
-        sourceProvider: 'motionbricks',
+        generatedSource: true,
         motionClass: 'presence',
         phase: 'recover',
         reachSeconds: Math.max(0.25, 0.9 - elapsed),
@@ -34,7 +34,7 @@ describe('single source-aware body tracking', () => {
     for (let frame = 0; frame < 150; frame++) {
       const previous = bone.quaternion.clone()
       filter.step(bone, previous, target, 1 / 60, {
-        sourceProvider: 'motionbricks',
+        generatedSource: true,
         motionClass: 'gesture',
         phase: 'prepare',
         reachSeconds: 0.55,
@@ -45,10 +45,7 @@ describe('single source-aware body tracking', () => {
     expect(bone.quaternion.angleTo(target)).toBeLessThan(0.03)
   })
   it('rejects rapid MotionBricks presence noise while retaining a slow sway and unchanged gesture timing', () => {
-    const run = (
-      sourceProvider: 'motionbricks' | undefined,
-      motionClass: 'presence' | 'gesture',
-    ) => {
+    const run = (generatedSource: boolean, motionClass: 'presence' | 'gesture') => {
       const filter = new AdaptiveMotionFilter()
       const bone = new THREE.Object3D()
       const angles: number[] = []
@@ -60,15 +57,15 @@ describe('single source-aware body tracking', () => {
         filter.step(bone, previous, new THREE.Quaternion().setFromAxisAngle(axis, angle), 1 / 60, {
           motionClass,
           phase: 'hold',
-          sourceProvider,
+          generatedSource,
         })
         filter.reconcile(bone, previous, 1 / 60)
         if (frame >= 300) angles.push(2 * Math.atan2(bone.quaternion.z, bone.quaternion.w))
       }
       return angles
     }
-    const previous = run(undefined, 'presence')
-    const candidate = run('motionbricks', 'presence')
+    const previous = run(false, 'presence')
+    const candidate = run(true, 'presence')
     const highEnergy = (angles: number[]) =>
       angles
         .slice(2)
@@ -78,7 +75,7 @@ describe('single source-aware body tracking', () => {
         )
     expect(highEnergy(candidate)).toBeLessThan(highEnergy(previous) * 0.1)
     expect(Math.max(...candidate) - Math.min(...candidate)).toBeGreaterThan(0.056)
-    expect(run('motionbricks', 'gesture')).toEqual(run(undefined, 'gesture'))
+    expect(run(true, 'gesture')).toEqual(run(false, 'gesture'))
   })
   it.each([60, 90, 120])(
     'tracks a slow neural path while rejecting tiny source chatter at %i Hz',

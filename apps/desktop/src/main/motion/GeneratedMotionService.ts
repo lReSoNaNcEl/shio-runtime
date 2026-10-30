@@ -5,6 +5,7 @@ import { join } from 'node:path'
 
 import {
   getMotionProfile,
+  MOTION_FORMAT,
   MOTION_INFERENCE_DEADLINE_MS,
   MOTION_PHASE_IDS,
   type MotionActivity,
@@ -161,8 +162,7 @@ export class GeneratedMotionService {
             }
             const ready = value.type === 'ready' ? motionReadySchema.safeParse(value) : null
             if (ready?.success && !started) {
-              const expectedSource = '54fc563aeaaf819a753d72cc9fdc6713989cdd43'
-              if (ready.data.format.sourceRevision !== expectedSource)
+              if (ready.data.format.sourceRevision !== MOTION_FORMAT.sourceRevision)
                 throw new Error('MOTION_PROVIDER_IDENTITY_MISMATCH')
               if (Boolean(ready.data.handModelRevision) !== this.nativeHands)
                 throw new Error('MOTION_HAND_PROVIDER_IDENTITY_MISMATCH')
@@ -412,12 +412,34 @@ export class GeneratedMotionService {
     this.error = code
     this.rejectPending(code)
     const child = this.process
-    this.stopping = new Promise<void>((resolve, reject) => {
+    // Termination policy: only a confirmed exit of the exact process tree releases the GPU
+    // lease. A failed or unconfirmed termination fails closed: `stopping` stays rejected, so
+    // every warmup reports MOTION_TERMINATION_FAILED instead of starting a second worker.
+    // A later confirmation of the same tree lifts that block.
+    let blocked = false
+    const stopping: Promise<void> = new Promise<void>((resolve, reject) => {
       if (!child || child.exitCode !== null) {
         resolve()
         return
       }
-      const deadline = setTimeout(() => reject(new Error('MOTION_TERMINATION_FAILED')), 5000)
+      const confirm = () => {
+        clearTimeout(deadline)
+        if (this.process === child) this.process = null
+        if (!blocked) {
+          resolve()
+          return
+        }
+        if (this.stopping !== stopping) return
+        this.stopping = null
+        this.state = this.closed ? 'closed' : 'unavailable'
+      }
+      const fail = () => {
+        clearTimeout(deadline)
+        if (blocked) return
+        blocked = true
+        reject(new Error('MOTION_TERMINATION_FAILED'))
+      }
+      const deadline = setTimeout(fail, 5000)
       // Windows virtualenv launchers own a second Python process. Kill the exact
       // experimental process tree before allowing the next GPU provider lease.
       if (process.platform === 'win32' && child.pid) {
@@ -426,37 +448,26 @@ export class GeneratedMotionService {
           ['/PID', String(child.pid), '/T', '/F'],
           { windowsHide: true, stdio: 'ignore', env: { SystemRoot: process.env.SystemRoot } },
         )
-        terminator.once('error', () => {
-          clearTimeout(deadline)
-          reject(new Error('MOTION_TERMINATION_FAILED'))
-        })
-        terminator.once('exit', (status) => {
-          clearTimeout(deadline)
-          if (status !== 0) {
-            reject(new Error('MOTION_TERMINATION_FAILED'))
-            return
-          }
-          if (this.process === child) this.process = null
-          resolve()
-        })
+        terminator.once('error', fail)
+        // A nonzero taskkill status leaves the launcher's child tree unconfirmed; the root
+        // process exit alone does not prove the GPU-owning Python process is gone.
+        terminator.once('exit', (status) => (status === 0 ? confirm() : fail()))
         return
       }
-      child.once('exit', () => {
-        clearTimeout(deadline)
-        if (this.process === child) this.process = null
-        resolve()
-      })
+      child.once('exit', confirm)
       child.kill('SIGKILL')
     }).then(() => {
       this.stopping = null
       this.state = this.closed ? 'closed' : 'unavailable'
     })
+    this.stopping = stopping
     // Every detached failure is contained and represented in owned state.
-    void this.stopping.catch(() => {
+    void stopping.catch(() => {
+      if (this.stopping !== stopping) return
       this.state = 'failed'
       this.error = 'MOTION_TERMINATION_FAILED'
     })
-    return this.stopping
+    return stopping
   }
 
   async dispose(): Promise<void> {

@@ -17,7 +17,7 @@ describe('MotionBricks anatomical close-workspace calibration', () => {
     camera.updateMatrixWorld(true)
     Reflect.set(body, 'projectedConversationCamera', camera)
     expect(body.isConversationalMotionAvailable('explain_one_palm')).toBe(false)
-    Reflect.set(body, 'appliedSourceProvider', 'motionbricks')
+    Reflect.set(body, 'appliedGeneratedSource', true)
     expect(body.isConversationalMotionAvailable('explain_one_palm')).toBe(true)
     camera.fov = 1
     camera.updateProjectionMatrix()
@@ -34,7 +34,7 @@ describe('MotionBricks anatomical close-workspace calibration', () => {
       safety.attach(vrm)
       safety.setHandTargets(getMotionProfile('explain_point_close'), 'stroke')
       const access = safety as unknown as {
-        sourceProvider: 'motionbricks' | undefined
+        generatedSource: boolean
         arms: Array<{ side: number; upper: THREE.Object3D }>
         handGoal(arm: unknown): {
           center: THREE.Vector3
@@ -46,9 +46,9 @@ describe('MotionBricks anatomical close-workspace calibration', () => {
       }
       const arm = access.arms.find((entry) => entry.side === -1)
       expect(arm).toBeDefined()
-      access.sourceProvider = undefined
+      access.generatedSource = false
       const before = access.handGoal(arm)
-      access.sourceProvider = 'motionbricks'
+      access.generatedSource = true
       const after = access.handGoal(arm)
       expect(after.extents).toEqual(before.extents)
       expect(after.palm.toArray()).toEqual(before.palm.toArray())

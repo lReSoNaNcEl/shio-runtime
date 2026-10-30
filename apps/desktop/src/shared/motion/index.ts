@@ -12,6 +12,9 @@ export const MOTION_CATALOG = motionCatalogSchema.parse(rawCatalog)
 export const MOTION_CATALOG_REVISION = MOTION_CATALOG.catalogRevision
 export const MOTION_FORMAT = MOTION_CATALOG.format
 export const MOTION_INFERENCE_DEADLINE_MS = 2500
+/** Pinned native SOMA-X hand prior; the worker and chunks must report exactly this identity. */
+const MOTION_HAND_MODEL_REVISION =
+  '233e9225c1da05c6a3dd98107b9f027f2366e3b972bbe67e0d164e5d28619fff' as const
 
 export const MOTION_PROFILES = MOTION_CATALOG.profiles
 export const motionProfileSchema = z.enum(MOTION_PROFILE_IDS)
@@ -41,9 +44,7 @@ export const motionReadySchema = z
   .object({
     type: z.literal('ready'),
     catalogRevision: z.literal(MOTION_CATALOG_REVISION),
-    handModelRevision: z
-      .literal('233e9225c1da05c6a3dd98107b9f027f2366e3b972bbe67e0d164e5d28619fff')
-      .optional(),
+    handModelRevision: z.literal(MOTION_HAND_MODEL_REVISION).optional(),
     format: motionFormatSchema,
   })
   .strict()
@@ -156,9 +157,7 @@ export const motionChunkSchema = motionLeaseSchema
     rotations: z.array(z.array(quaternion).length(30)).length(60),
     handDeltas: z
       .object({
-        modelRevision: z.literal(
-          '233e9225c1da05c6a3dd98107b9f027f2366e3b972bbe67e0d164e5d28619fff',
-        ),
+        modelRevision: z.literal(MOTION_HAND_MODEL_REVISION),
         basis: z.object({ left: quaternion, right: quaternion }).strict(),
         rotations: z.array(z.array(quaternion).length(30)).length(60),
       })

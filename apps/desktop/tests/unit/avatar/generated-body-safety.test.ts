@@ -78,7 +78,7 @@ describe('generated body anatomical safety', () => {
       hand.quaternion.setFromEuler(new THREE.Euler(1.2, -1.2, 1.2))
       safety.apply(1 / 60, 1, true, {
         motionClass: 'gesture',
-        sourceProvider: 'motionbricks',
+        generatedSource: true,
         phase: frame < 80 ? 'prepare' : frame < 160 ? 'stroke' : 'recover',
       })
       for (const [index, node] of [arm, lower, hand].entries())

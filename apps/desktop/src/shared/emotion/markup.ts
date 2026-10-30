@@ -1,10 +1,6 @@
 import type { EmotionKey } from './contracts'
 import { emotionRegistry } from './registry'
 
-export function normalizeEmotionTag(tag?: string): EmotionKey {
-  return emotionRegistry.normalize(tag)
-}
-
 export function parseLeadingEmotionTag(text: string): EmotionKey {
   return emotionRegistry.parseLeadingEmotionTag(text)
 }

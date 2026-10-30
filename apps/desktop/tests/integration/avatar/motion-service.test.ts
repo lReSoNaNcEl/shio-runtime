@@ -27,20 +27,22 @@ const plan: MotionPlanIdentity = {
 
 import { GeneratedMotionService } from '../../../src/main/motion/GeneratedMotionService'
 
-function fixture(autoReady = true) {
+function workerChild(exitOnKill = true) {
   const child = Object.assign(new EventEmitter(), {
     stdout: new EventEmitter(),
     stderr: new EventEmitter(),
     stdin: { write: vi.fn((_line: string, callback: (error?: Error) => void) => callback()) },
     exitCode: null as number | null,
+    pid: undefined as number | undefined,
     kill: vi.fn(() => {
-      queueMicrotask(() => {
-        child.exitCode = 0
-        child.emit('exit', 0)
-      })
+      if (exitOnKill) queueMicrotask(() => exit())
       return true
     }),
   })
+  const exit = () => {
+    child.exitCode = 0
+    child.emit('exit', 0)
+  }
   const ready = () =>
     child.stdout.emit(
       'data',
@@ -48,6 +50,11 @@ function fixture(autoReady = true) {
         `${JSON.stringify({ type: 'ready', catalogRevision: MOTION_CATALOG_REVISION, format: MOTION_FORMAT })}\n`,
       ),
     )
+  return { child, ready, exit }
+}
+
+function fixture(autoReady = true) {
+  const { child, ready } = workerChild()
   mocks.spawn.mockImplementation(() => {
     if (autoReady) queueMicrotask(ready)
     return child
@@ -262,4 +269,113 @@ it('accepts an exact bounded seed without replacing the generator lease and reje
   await expect(service.reroll(10, seeded, Number.NaN)).rejects.toThrow('MOTION_INVALID_SEED')
   expect(service.status().session?.seed).toBe(0)
   await service.dispose()
+})
+
+describe('MotionBricks worker termination failure policy', () => {
+  /** Every worker spawn yields a fresh child; taskkill spawns yield a controllable terminator. */
+  function terminationFixture(options: { pid?: number; exitOnKill?: boolean } = {}) {
+    const workers: ReturnType<typeof workerChild>[] = []
+    const terminators: EventEmitter[] = []
+    mocks.spawn.mockImplementation((command: string) => {
+      if (command.endsWith('taskkill.exe')) {
+        const terminator = new EventEmitter()
+        terminators.push(terminator)
+        return terminator
+      }
+      const worker = workerChild(options.exitOnKill ?? true)
+      worker.child.pid = options.pid
+      workers.push(worker)
+      queueMicrotask(worker.ready)
+      return worker.child
+    })
+    const service = new GeneratedMotionService('D:/fixture/motion', () => 'asset', false)
+    return { service, workers, terminators }
+  }
+
+  it.runIf(process.platform === 'win32')(
+    'fails closed when taskkill cannot confirm the worker tree and starts no second worker',
+    async () => {
+      const { service, workers, terminators } = terminationFixture({ pid: 4242 })
+      const lease = await service.start(10, 2, 17)
+      const stopping = service.stop(10, lease)
+      terminators[0].emit('exit', 128)
+      await expect(stopping).rejects.toThrow('MOTION_TERMINATION_FAILED')
+      expect(service.status()).toMatchObject({
+        state: 'failed',
+        error: 'MOTION_TERMINATION_FAILED',
+      })
+      await expect(service.start(11, 2)).rejects.toThrow('MOTION_TERMINATION_FAILED')
+      expect(workers).toHaveLength(1)
+      // The late exit of the launcher root alone does not prove the GPU-owning tree is gone.
+      workers[0].exit()
+      await expect(service.start(11, 2)).rejects.toThrow('MOTION_TERMINATION_FAILED')
+      expect(workers).toHaveLength(1)
+      expect(service.status().state).toBe('failed')
+    },
+  )
+
+  it.runIf(process.platform === 'win32')(
+    'fails closed when taskkill itself cannot be launched',
+    async () => {
+      const { service, workers, terminators } = terminationFixture({ pid: 4242 })
+      const lease = await service.start(10, 2, 17)
+      const stopping = service.stop(10, lease)
+      terminators[0].emit('error', new Error('spawn failed'))
+      await expect(stopping).rejects.toThrow('MOTION_TERMINATION_FAILED')
+      await expect(service.start(11, 2)).rejects.toThrow('MOTION_TERMINATION_FAILED')
+      expect(workers).toHaveLength(1)
+    },
+  )
+
+  it.runIf(process.platform === 'win32')(
+    'lifts the block when a timed-out taskkill later confirms the worker tree exit',
+    async () => {
+      vi.useFakeTimers()
+      const { service, workers, terminators } = terminationFixture({ pid: 4242 })
+      const lease = await service.start(10, 2, 17)
+      const stopping = service.stop(10, lease).catch((error) => error)
+      await vi.advanceTimersByTimeAsync(5001)
+      expect((await stopping).message).toBe('MOTION_TERMINATION_FAILED')
+      expect(service.status().state).toBe('failed')
+      terminators[0].emit('exit', 0)
+      expect(service.status().state).toBe('unavailable')
+      expect((await service.start(11, 3, 5)).seed).toBe(5)
+      expect(workers).toHaveLength(2)
+      const disposing = service.dispose()
+      terminators[1].emit('exit', 0)
+      await disposing
+      expect(service.status().state).toBe('closed')
+    },
+  )
+
+  it('lifts the block when an unconfirmed worker exits after the termination deadline', async () => {
+    vi.useFakeTimers()
+    const { service, workers } = terminationFixture({ exitOnKill: false })
+    const lease = await service.start(10, 2, 17)
+    const stopping = service.stop(10, lease).catch((error) => error)
+    await vi.advanceTimersByTimeAsync(5001)
+    expect((await stopping).message).toBe('MOTION_TERMINATION_FAILED')
+    await expect(service.start(11, 2)).rejects.toThrow('MOTION_TERMINATION_FAILED')
+    expect(workers).toHaveLength(1)
+    workers[0].exit()
+    expect(service.status().state).toBe('unavailable')
+    expect((await service.start(11, 3, 5)).seed).toBe(5)
+    expect(workers).toHaveLength(2)
+    const disposing = service.dispose()
+    workers[1].exit()
+    await disposing
+    expect(service.status().state).toBe('closed')
+  })
+
+  it('reports a closed service after a confirmed late exit during application shutdown', async () => {
+    vi.useFakeTimers()
+    const { service, workers } = terminationFixture({ exitOnKill: false })
+    await service.start(10, 2, 17)
+    const disposing = service.dispose().catch((error) => error)
+    await vi.advanceTimersByTimeAsync(5001)
+    expect((await disposing).message).toBe('MOTION_TERMINATION_FAILED')
+    workers[0].exit()
+    expect(service.status().state).toBe('closed')
+    await expect(service.start(11, 2)).rejects.toThrow('MOTION_CLOSED')
+  })
 })

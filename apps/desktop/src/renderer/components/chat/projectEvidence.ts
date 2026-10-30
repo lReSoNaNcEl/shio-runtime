@@ -19,7 +19,3 @@ export function groupProjectEvidence(
   }
   return [...grouped].map(([path, ranges]) => ({ path, ranges }))
 }
-
-export function evidenceFileName(path: string): string {
-  return path.split('/').at(-1) || path
-}

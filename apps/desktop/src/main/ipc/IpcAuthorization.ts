@@ -4,7 +4,6 @@ import { z } from 'zod'
 export type IpcSenderRole = 'main' | 'overlay'
 
 export const IPC_ONE_PAYLOAD = z.tuple([z.unknown()])
-export const IPC_THREE_PAYLOADS = z.tuple([z.unknown(), z.unknown(), z.unknown()])
 const IPC_NO_PAYLOAD = z.tuple([])
 
 const mainOnly = ['main'] as const

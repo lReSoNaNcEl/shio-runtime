@@ -613,7 +613,6 @@ export const ruMessages = {
   'app.section.diagnostics.subtitle': 'Снимки Runtime, события и сетевые запросы',
   'app.section.settings.subtitle': 'Конфигурация приложения и персонажа',
   'app.speechRecovered': 'Распознавание речи снова доступно',
-  'app.openAvatarSettings': 'Открыть настройки аватара',
 
   'rendererError.title': 'Интерфейс Shio аварийно остановлен',
   'rendererError.description':

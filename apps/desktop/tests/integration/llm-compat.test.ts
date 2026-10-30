@@ -15,7 +15,7 @@ import axios, { type AxiosInstance } from 'axios'
 import { describe, it } from 'vitest'
 
 import type { ChatMessage, LlmProviderId } from '../../src/main/llm'
-import { createAiSdkAdapter } from '../../src/main/llm/AiSdkAdapter'
+import { createAiSdkAdapter, createModelCatalogClient } from '../../src/main/llm/AiSdkAdapter'
 import { normalizeLlmConfig } from '../../src/main/llm/config'
 import {
   classifyHttpFailure,
@@ -436,13 +436,11 @@ async function runProviderBattery(pc: ProviderCase): Promise<void> {
 /** Mistral models API: fake `http.get` to exercise success/error/malformed paths. */
 async function withMockedMistralGet<T>(
   handler: (path: string) => unknown,
-  fn: (p: ReturnType<typeof createAiSdkAdapter>) => Promise<T>,
+  fn: (p: ReturnType<typeof createModelCatalogClient>) => Promise<T>,
 ): Promise<T> {
-  const provider = createAiSdkAdapter({
+  const provider = createModelCatalogClient({
     definition: getProviderDefinition('mistral'),
-    apiKey: 'test-key',
-    model: 'mistral-small-latest',
-    catalogHttp: {
+    http: {
       get: async (path: string) => {
         const result = handler(path)
         if (result instanceof Error) throw result

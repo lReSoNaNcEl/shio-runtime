@@ -39,6 +39,7 @@ export {
   getProviderDefinition,
   getProviderProfile,
   hasLoadedModelCatalog,
+  invalidateModelCatalog,
   isLlmProviderId,
   normalizeProviderAccountId,
   PROVIDER_PROFILES,

@@ -14,7 +14,7 @@
  * no key is reported SKIPPED ("Missing API key"), not as a suite failure.
  */
 
-import { createAiSdkAdapter } from '../../src/main/llm/AiSdkAdapter'
+import { createAiSdkAdapter, createModelCatalogClient } from '../../src/main/llm/AiSdkAdapter'
 import { LlmResponseError } from '../../src/main/llm/errors'
 import { getProviderDefinition } from '../../src/main/llm/registry'
 import type { ChatMessage } from '../../src/main/llm/types'
@@ -149,12 +149,16 @@ function readApiKey(lp: LiveProvider): string | null {
   return null
 }
 
+function connectionFor(lp: LiveProvider) {
+  return { accountId: lp.accountIdEnv ? process.env[lp.accountIdEnv]?.trim() : undefined }
+}
+
 function make(lp: LiveProvider, key: string, model: string): ReturnType<typeof createAiSdkAdapter> {
   return createAiSdkAdapter({
     definition: getProviderDefinition(lp.id),
     apiKey: key,
     model,
-    connection: { accountId: lp.accountIdEnv ? process.env[lp.accountIdEnv]?.trim() : undefined },
+    connection: connectionFor(lp),
   })
 }
 
@@ -278,7 +282,10 @@ async function runProviderConformance(lp: LiveProvider): Promise<ProviderReport>
 
   // 1. Dynamic model catalog — auth + catalog endpoint + provider-owned namespace.
   try {
-    const models = await make(lp, key, chatModel).fetchModels(key)
+    const models = await createModelCatalogClient({
+      definition: getProviderDefinition(lp.id),
+      connection: connectionFor(lp),
+    }).fetchModels(key)
     const exclusivelyProviderOwned =
       !lp.catalogModelPattern || models.every((model) => lp.catalogModelPattern?.test(model.id))
     add(

@@ -71,7 +71,7 @@ export class GeneratedBodySafety {
   private holding = false
   private holdAnchors = new Map<Limb, THREE.Vector3>()
   private handTargets: MotionProfile['handScore']['phases'][MotionPhaseId] | null = null
-  private sourceProvider: MotionFilterContext['sourceProvider']
+  private generatedSource = false
   private workspaceSolutions = new Map<
     Limb,
     { offset: THREE.Vector3; pole: number; extents?: number[]; forearmRoll?: number }
@@ -219,7 +219,7 @@ export class GeneratedBodySafety {
     this.temporalFilter.reset()
     this.jointKinds.clear()
     this.handTargets = null
-    this.sourceProvider = undefined
+    this.generatedSource = false
     this.workspaceSolutions.clear()
     this.workspaceTrajectories.clear()
     this.sourceHandPaths = new Map()
@@ -285,8 +285,8 @@ export class GeneratedBodySafety {
     this.unresolvedArmContacts = 0
     const vrm = this.vrm
     if (!vrm) return
-    if (motion?.sourceProvider !== this.sourceProvider) {
-      this.sourceProvider = motion?.sourceProvider
+    if ((motion?.generatedSource === true) !== this.generatedSource) {
+      this.generatedSource = motion?.generatedSource === true
       this.workspaceTrajectories.clear()
       this.workspaceSolutions.clear()
       this.holdAnchors.clear()
@@ -380,9 +380,7 @@ export class GeneratedBodySafety {
     if (motion && advanceCandidate && Number.isFinite(delta)) {
       const context = { ...motion, jointKinds: this.jointKinds }
       const recoveringPresence =
-        this.recovering &&
-        motion.sourceProvider === 'motionbricks' &&
-        motion.motionClass === 'presence'
+        this.recovering && motion.generatedSource === true && motion.motionClass === 'presence'
       for (const bone of this.chain) {
         motion.onProjected?.(bone)
         const previous = this.previousChain.get(bone)
@@ -406,7 +404,7 @@ export class GeneratedBodySafety {
       for (const limb of [...this.arms, ...this.legs])
         this.projectHinge(limb, limb.lower.quaternion)
       for (const arm of this.arms) this.projectWrist(arm, arm.end.quaternion)
-      if (motion.sourceProvider === 'motionbricks' && motion.motionClass !== 'presence')
+      if (motion.generatedSource === true && motion.motionClass !== 'presence')
         this.boundProjectedArmSteps(delta)
       for (const bone of this.chain) motion.onIntegrated?.(bone)
     }
@@ -426,8 +424,7 @@ export class GeneratedBodySafety {
       }
     for (const arm of this.arms) {
       const applied = this.armPose(arm)
-      if (this.sourceProvider === 'motionbricks')
-        applied.wristWorld = arm.end.getWorldPosition(new THREE.Vector3())
+      if (this.generatedSource) applied.wristWorld = arm.end.getWorldPosition(new THREE.Vector3())
       this.previousArms.set(arm, applied)
     }
     const finalTorso = this.torso()
@@ -557,7 +554,7 @@ export class GeneratedBodySafety {
           length *
           (index === 0 ? arm.side : 1),
       )
-    if (this.sourceProvider === 'motionbricks' && target.workspace === 'face') {
+    if (this.generatedSource && target.workspace === 'face') {
       // The old centre below the chin required maximum wrist deviation on the
       // loaded rig. Only one box corner could satisfy palm/finger orientation,
       // erasing the neural stroke. Move the same-sized region toward its own
@@ -631,7 +628,7 @@ export class GeneratedBodySafety {
       // A semantic workspace describes an admissible region, not a fixed IK
       // pose. Preserve the live source trajectory when it already satisfies it.
       const relative = this.handTargets?.[arm.side === 1 ? 'left' : 'right']?.workspaceTrajectory
-      const holdApplied = this.sourceProvider === 'motionbricks' && this.holding && !relative
+      const holdApplied = this.generatedSource && this.holding && !relative
       if (!holdApplied && !relative && withinWorkspace && palmAdmitted && fingersAdmitted) continue
       let nearest = new THREE.Vector3(
         ...(goal.axes.map((axis, index) =>
@@ -814,10 +811,9 @@ export class GeneratedBodySafety {
         forearm.dot(current.clone().cross(desired)),
         current.dot(desired),
       )
-      const previousRoll =
-        this.sourceProvider === 'motionbricks'
-          ? this.workspaceSolutions.get(arm)?.forearmRoll
-          : undefined
+      const previousRoll = this.generatedSource
+        ? this.workspaceSolutions.get(arm)?.forearmRoll
+        : undefined
       // The selected target precedes the acceleration-limited applied pose.
       // Preserve its angle branch while evaluating candidates; a wrapped
       // source roll must not demand a jump between opposite anatomical limits.
@@ -861,11 +857,7 @@ export class GeneratedBodySafety {
         // Wrist orientation moves neither endpoint of the tested arm capsule.
         // Its already projected/filtered recovery step must not inherit a
         // torso sweep's unrelated positional fraction and lose its velocity.
-        if (
-          this.sourceProvider === 'motionbricks' &&
-          this.recovering &&
-          this.jointKinds.get(bone) === 'wrist'
-        )
+        if (this.generatedSource && this.recovering && this.jointKinds.get(bone) === 'wrist')
           continue
         const previous = this.previousChain.get(bone)
         const next = candidate.get(bone)
@@ -913,7 +905,7 @@ export class GeneratedBodySafety {
         else upper = middle
       }
       set(lower)
-      if (this.sourceProvider === 'motionbricks' && this.recovering) {
+      if (this.generatedSource && this.recovering) {
         // One arm's contact must not freeze a separately admissible arm. Keep
         // the accepted root/torso, then sweep each limb's remaining bounded
         // step against both arms and the recomputed torso clearance.
@@ -1104,8 +1096,7 @@ export class GeneratedBodySafety {
           ? limb.maximum
           : -0.02
     let requestedTwist = wrap(2 * Math.atan2(projection, delta.w))
-    const previous =
-      this.sourceProvider === 'motionbricks' ? this.previousArms.get(limb)?.lower : undefined
+    const previous = this.generatedSource ? this.previousArms.get(limb)?.lower : undefined
     if (previous) {
       const reference = previous.clone().multiply(limb.rest.clone().invert()).normalize()
       const component = new THREE.Vector3(reference.x, reference.y, reference.z).dot(limb.flexAxis)
@@ -1306,7 +1297,7 @@ export class GeneratedBodySafety {
       .clone()
       .sub(shoulder)
       .addScaledVector(direction, -pole.clone().sub(shoulder).dot(direction))
-    const previous = this.sourceProvider === 'motionbricks' ? this.previousArms.get(arm) : undefined
+    const previous = this.generatedSource ? this.previousArms.get(arm) : undefined
     if (previous) {
       const parent = arm.upper.parent
       const transported = arm.lower.position.clone().applyQuaternion(previous.upper)

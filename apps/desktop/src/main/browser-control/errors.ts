@@ -59,7 +59,3 @@ export class BrowserAutomationError extends Error {
     this.name = 'BrowserAutomationError'
   }
 }
-
-export function browserAutomationMessage(code: BrowserAutomationErrorCode): string {
-  return PUBLIC_MESSAGES[code]
-}

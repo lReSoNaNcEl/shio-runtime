@@ -1,6 +1,5 @@
 import {
   ActionButton,
-  Button,
   Heading,
   Menu,
   MenuItem,
@@ -294,14 +293,5 @@ export function SectionHeading({
       </div>
       {subtitle ? <Text>{subtitle}</Text> : null}
     </div>
-  )
-}
-
-export function OpenSettingsButton({ onPress }: { onPress: () => void }) {
-  const { t } = useTranslation()
-  return (
-    <Button variant="secondary" onPress={onPress}>
-      {t('app.openAvatarSettings')}
-    </Button>
   )
 }

@@ -33,7 +33,7 @@ describe('MotionBricks attainable rest variation', () => {
       const safety = (
         body as unknown as {
           bodySafety: {
-            sourceProvider: string
+            generatedSource: boolean
             arms: Arm[]
             workspaceSolutions: Map<
               Arm,
@@ -46,7 +46,7 @@ describe('MotionBricks attainable rest variation', () => {
         }
       ).bodySafety
       try {
-        safety.sourceProvider = 'motionbricks'
+        safety.generatedSource = true
         safety.setHandTargets(getMotionProfile('explain_balance'), 'prepare')
         const arm = safety.arms[side]
         const goal = safety.handGoal(arm)
@@ -106,7 +106,7 @@ describe('MotionBricks attainable rest variation', () => {
       const safety = (
         body as unknown as {
           bodySafety: {
-            sourceProvider: string
+            generatedSource: boolean
             arms: Arm[]
             previousArms: Map<Arm, unknown>
             armPose(arm: Arm): { lower: THREE.Quaternion }
@@ -115,7 +115,7 @@ describe('MotionBricks attainable rest variation', () => {
         }
       ).bodySafety
       try {
-        safety.sourceProvider = 'motionbricks'
+        safety.generatedSource = true
         const arm = safety.arms[side]
         const pose = (twist: number) =>
           new THREE.Quaternion()
@@ -149,7 +149,7 @@ describe('MotionBricks attainable rest variation', () => {
       appliedLease: MotionLease | null
       playing: boolean
       localRecovery: boolean
-      appliedSourceProvider: string | undefined
+      appliedGeneratedSource: boolean
       appliedExecutionId: string
       profileId: string
       appliedProfileId: string
@@ -171,7 +171,7 @@ describe('MotionBricks attainable rest variation', () => {
       access.appliedExecutionId = access.execution.id
       access.profileId = profile.id
       access.appliedProfileId = profile.id
-      access.appliedSourceProvider = 'motionbricks'
+      access.appliedGeneratedSource = true
       access.playing = true
       access.localRecovery = true
       access.recoveryPose = new Map(
@@ -221,7 +221,7 @@ describe('MotionBricks attainable rest variation', () => {
       const safety = (
         body as unknown as {
           bodySafety: {
-            sourceProvider: string
+            generatedSource: boolean
             arms: Arm[]
             previousArms: Map<unknown, unknown>
             setHandTargets(
@@ -238,7 +238,7 @@ describe('MotionBricks attainable rest variation', () => {
       ).bodySafety
       try {
         const profile = getMotionProfile('explain_balance')
-        safety.sourceProvider = 'motionbricks'
+        safety.generatedSource = true
         safety.setHandTargets(profile, 'prepare')
         safety.projectHandWorkspaces()
         expect(safety.handTargetsReached()).toBe(true)
@@ -284,7 +284,7 @@ describe('MotionBricks attainable rest variation', () => {
     const safety = (
       body as unknown as {
         bodySafety: {
-          sourceProvider: string
+          generatedSource: boolean
           arms: Arm[]
           previousArms: Map<Arm, Pose>
           armPose(arm: Arm): Pose
@@ -294,7 +294,7 @@ describe('MotionBricks attainable rest variation', () => {
       }
     ).bodySafety
     try {
-      safety.sourceProvider = 'motionbricks'
+      safety.generatedSource = true
       const arm = safety.arms[side]
       const shoulder = arm.upper.getWorldPosition(new THREE.Vector3())
       const a = shoulder.distanceTo(arm.lower.getWorldPosition(new THREE.Vector3()))
@@ -322,7 +322,7 @@ describe('MotionBricks attainable rest variation', () => {
     body.attach(greenFoxRig())
     const access = body as unknown as {
       bodySafety: {
-        sourceProvider: string
+        generatedSource: boolean
         recovering: boolean
         arms: Array<{ upper: THREE.Object3D; lower: THREE.Object3D; end: THREE.Object3D }>
         torso(): { center: THREE.Vector3 }
@@ -332,7 +332,7 @@ describe('MotionBricks attainable rest variation', () => {
     }
     try {
       const safety = access.bodySafety
-      safety.sourceProvider = 'motionbricks'
+      safety.generatedSource = true
       safety.recovering = true
       const arm = safety.arms[0]
       const torso = safety.torso()
@@ -368,9 +368,9 @@ describe('MotionBricks attainable rest variation', () => {
       body.detach()
     }
   })
-  it.each(['motionbricks', undefined] as const)(
-    'preserves provider-scoped recovery context through the safety filter (%s)',
-    (source) => {
+  it.each([true, false] as const)(
+    'preserves generated-source recovery context through the safety filter (generated: %s)',
+    (generated) => {
       const body = new GeneratedBodyPlayback(() => undefined)
       body.attach(greenFoxRig())
       const access = body as unknown as {
@@ -378,7 +378,7 @@ describe('MotionBricks attainable rest variation', () => {
         appliedLease: MotionLease | null
         playing: boolean
         localRecovery: boolean
-        appliedSourceProvider: string | undefined
+        appliedGeneratedSource: boolean
         appliedExecutionId: string
         execution: MotionPhaseExecution
         bodySafety: {
@@ -398,11 +398,11 @@ describe('MotionBricks attainable rest variation', () => {
         access.appliedExecutionId = access.execution.id
         access.playing = true
         access.localRecovery = true
-        access.appliedSourceProvider = source
+        access.appliedGeneratedSource = generated
         const apply = vi.spyOn(access.bodySafety, 'apply')
         const filter = vi.spyOn(access.bodySafety.temporalFilter, 'step')
         body.validateFinalComposition(1 / 60)
-        const expected = source === 'motionbricks' ? 0.5 : undefined
+        const expected = generated ? 0.5 : undefined
         expect(apply.mock.calls[0][3].reachSeconds).toBe(expected)
         const wrists = filter.mock.calls.filter(
           ([bone, , , , context]) => context.jointKinds?.get(bone) === 'wrist',
@@ -433,7 +433,7 @@ describe('MotionBricks attainable rest variation', () => {
           constrainTarget(bone: THREE.Object3D, rotation: THREE.Quaternion): void
         }
         execution: MotionPhaseExecution
-        appliedSourceProvider: string | undefined
+        appliedGeneratedSource: boolean
         invalidatePhase(): void
       }
       try {
@@ -451,7 +451,7 @@ describe('MotionBricks attainable rest variation', () => {
         access.bodySafety.constrainTarget(lower.bone, lower.bone.quaternion)
         access.execution = new MotionPhaseExecution('rest-variation', profile)
         access.execution.phase = 'recover'
-        access.appliedSourceProvider = 'motionbricks'
+        access.appliedGeneratedSource = true
         access.invalidatePhase()
         const admitted = lower.safe.clone()
         access.bodySafety.constrainTarget(lower.bone, admitted)

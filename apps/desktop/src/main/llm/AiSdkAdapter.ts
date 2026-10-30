@@ -14,6 +14,7 @@ import type {
   LlmCompletionOptions,
   LlmRequestOptions,
   LlmStreamOptions,
+  ModelCatalogProvider,
   ProviderConnectionSettings,
   ProviderDefinition,
 } from './types'
@@ -25,7 +26,25 @@ export interface AiSdkAdapterConfig {
   connection?: ProviderConnectionSettings
   capabilities?: LlmCapabilities
   fetch?: typeof fetch
-  catalogHttp?: AxiosInstance
+}
+
+export interface ModelCatalogClientConfig {
+  definition: ProviderDefinition
+  connection?: ProviderConnectionSettings
+  http?: AxiosInstance
+}
+
+/** Catalog listing only: no SDK provider or chat model is constructed for it. */
+export function createModelCatalogClient(config: ModelCatalogClientConfig): ModelCatalogProvider {
+  const connection = config.connection ?? {}
+  const http = config.http ?? axios.create({ timeout: 60_000 })
+  if (!config.http) {
+    installLlmProxyResolver(http)
+    observeAxiosNetwork(http, 'llm')
+  }
+  return {
+    fetchModels: (apiKey: string) => config.definition.fetchModels(http, apiKey, connection),
+  }
 }
 
 /** Transport only: schemas have no execute callbacks; Shio retains its Tool Loop. */
@@ -49,11 +68,6 @@ export function createAiSdkAdapter(config: AiSdkAdapterConfig) {
     }),
   })
   const client = provider.chatModel(model)
-  const http = config.catalogHttp ?? axios.create({ timeout: 60_000 })
-  if (!config.catalogHttp) {
-    installLlmProxyResolver(http)
-    observeAxiosNetwork(http, 'llm')
-  }
   const request = (messages: readonly ChatMessage[]) => {
     if (definition.profile.requiresApiKey && !config.apiKey.trim())
       throw new LlmCredentialMissingError()
@@ -75,6 +89,5 @@ export function createAiSdkAdapter(config: AiSdkAdapterConfig) {
       runChatCompletionDetailed(request(messages), options),
     stream: (messages: readonly ChatMessage[], options: LlmStreamOptions = {}) =>
       runChatCompletionStream(request(messages), options),
-    fetchModels: (apiKey: string) => definition.fetchModels(http, apiKey, connection),
   }
 }

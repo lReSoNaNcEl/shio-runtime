@@ -63,5 +63,3 @@ export class PluginRegistryStore {
     this.store.write(document)
   }
 }
-
-export const pluginRegistrySchemaVersion = REGISTRY_SCHEMA_VERSION

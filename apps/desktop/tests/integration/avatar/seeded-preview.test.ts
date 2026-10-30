@@ -48,7 +48,7 @@ describe('fixed Preview variation seeds and physical recovery', () => {
     const execution = new MotionPhaseExecution('rest-variation', profile)
     execution.phase = 'recover'
     Reflect.set(owner, 'execution', execution)
-    Reflect.set(owner, 'appliedSourceProvider', 'motionbricks')
+    Reflect.set(owner, 'appliedGeneratedSource', true)
     const lower = bones.get('rightLowerArm')
     if (!lower) throw new Error('Missing arm')
     lower.quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), 1.5)
@@ -78,7 +78,7 @@ describe('fixed Preview variation seeds and physical recovery', () => {
     const execution = new MotionPhaseExecution('native-hand-recovery', profile)
     execution.phase = 'recover'
     Reflect.set(owner, 'execution', execution)
-    Reflect.set(owner, 'appliedSourceProvider', 'motionbricks')
+    Reflect.set(owner, 'appliedGeneratedSource', true)
     Reflect.set(owner, 'somaHands', {})
     const finger = bones.get('rightIndexProximal')
     if (!finger) throw new Error('Missing finger')

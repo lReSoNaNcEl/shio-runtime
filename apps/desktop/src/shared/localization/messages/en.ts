@@ -616,7 +616,6 @@ export const enMessages: Record<TranslationKey, string> = {
   'app.section.diagnostics.subtitle': 'Runtime snapshots, events, and network requests',
   'app.section.settings.subtitle': 'Application and character configuration',
   'app.speechRecovered': 'Speech recognition is available again',
-  'app.openAvatarSettings': 'Open Avatar settings',
 
   'rendererError.title': 'The Shio interface stopped unexpectedly',
   'rendererError.description':

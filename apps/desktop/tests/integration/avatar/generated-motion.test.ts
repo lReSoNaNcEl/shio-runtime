@@ -199,7 +199,7 @@ describe('generated body timeline', () => {
     Reflect.set(owner, 'playing', true)
     Reflect.set(owner, 'lease', lease)
     Reflect.set(owner, 'appliedLease', lease)
-    Reflect.set(owner, 'appliedSourceProvider', 'motionbricks')
+    Reflect.set(owner, 'appliedGeneratedSource', true)
     Reflect.set(owner, 'clock', clock)
     Reflect.set(owner, 'sampledClock', clock)
     Reflect.set(owner, 'composedSpeechClock', { playbackId: 'pcm', offset: 0 })

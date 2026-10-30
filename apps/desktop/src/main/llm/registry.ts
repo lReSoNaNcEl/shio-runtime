@@ -1,5 +1,5 @@
 import { LLM_PROVIDER_IDS, type LlmProviderId, type ModelInfo } from '../../shared/llm'
-import { createAiSdkAdapter } from './AiSdkAdapter'
+import { createAiSdkAdapter, createModelCatalogClient } from './AiSdkAdapter'
 import {
   applyCatalogCapabilityHints,
   resolveBaseCapabilities,
@@ -24,11 +24,34 @@ const PROVIDER_DEFINITIONS: Record<LlmProviderId, ProviderDefinition> = {
   mistral: mistralProvider,
 }
 
-const catalogCapabilityHints = new Map<string, ModelCatalogEntry['capabilities']>()
-const loadedModelCatalogs = new Set<LlmProviderId>()
+interface ModelCatalogSnapshot {
+  identity: string
+  hints: Map<string, ModelCatalogEntry['capabilities']>
+}
 
-function modelCapabilityKey(providerId: LlmProviderId, modelId: string): string {
-  return `${providerId}:${modelId.trim().toLowerCase()}`
+// One snapshot per provider. Hints apply only to the exact catalog identity they came from;
+// a newer catalog replaces the whole snapshot so removed models drop their hints.
+const modelCatalogSnapshots = new Map<LlmProviderId, ModelCatalogSnapshot>()
+
+function modelCapabilityKey(modelId: string): string {
+  return modelId.trim().toLowerCase()
+}
+
+function modelCatalogIdentity(
+  providerId: LlmProviderId,
+  connection: ProviderConnectionSettings,
+): string {
+  return normalizeProviderAccountId(providerId, connection.accountId ?? '')
+}
+
+function currentCatalogHints(
+  providerId: LlmProviderId,
+  connection: ProviderConnectionSettings,
+): ModelCatalogSnapshot['hints'] | undefined {
+  const snapshot = modelCatalogSnapshots.get(providerId)
+  return snapshot?.identity === modelCatalogIdentity(providerId, connection)
+    ? snapshot.hints
+    : undefined
 }
 
 export const PROVIDER_PROFILES = Object.values(PROVIDER_DEFINITIONS).map(
@@ -78,7 +101,9 @@ export function createLLMProvider(config: {
     apiKey: config.apiKey,
     model: config.model,
     connection: { accountId: config.accountId },
-    capabilities: config.capabilities ?? resolveModelCapabilities(config.provider, config.model),
+    capabilities:
+      config.capabilities ??
+      resolveModelCapabilities(config.provider, config.model, { accountId: config.accountId }),
   })
 }
 
@@ -86,17 +111,13 @@ export function createModelCatalog(
   id: LlmProviderId,
   connection: ProviderConnectionSettings = {},
 ): ModelCatalogProvider {
-  return createAiSdkAdapter({
-    definition: getProviderDefinition(id),
-    apiKey: '',
-    model: '',
-    connection,
-  })
+  return createModelCatalogClient({ definition: getProviderDefinition(id), connection })
 }
 
 export function resolveModelCapabilities(
   providerId: LlmProviderId,
   modelId: string,
+  connection: ProviderConnectionSettings = {},
 ): LlmCapabilities {
   const definition = getProviderDefinition(providerId)
   const normalizedModelId = normalizeProviderModelId(providerId, modelId)
@@ -108,19 +129,32 @@ export function resolveModelCapabilities(
   return applyCatalogCapabilityHints(
     providerId,
     resolved,
-    catalogCapabilityHints.get(modelCapabilityKey(providerId, normalizedModelId)),
+    currentCatalogHints(providerId, connection)?.get(modelCapabilityKey(normalizedModelId)),
   )
 }
 
-export function hasLoadedModelCatalog(providerId: LlmProviderId): boolean {
-  return loadedModelCatalogs.has(providerId)
+export function hasLoadedModelCatalog(
+  providerId: LlmProviderId,
+  connection: ProviderConnectionSettings = {},
+): boolean {
+  return currentCatalogHints(providerId, connection) !== undefined
+}
+
+/** Drops catalog hints after a credential change; the next refresh reloads the catalog. */
+export function invalidateModelCatalog(providerId: LlmProviderId): void {
+  modelCatalogSnapshots.delete(providerId)
 }
 
 export function enrichModelCatalog(
   providerId: LlmProviderId,
   models: readonly ModelCatalogEntry[],
+  connection: ProviderConnectionSettings = {},
 ): ModelInfo[] {
-  loadedModelCatalogs.add(providerId)
+  const hints: ModelCatalogSnapshot['hints'] = new Map()
+  modelCatalogSnapshots.set(providerId, {
+    identity: modelCatalogIdentity(providerId, connection),
+    hints,
+  })
   const canonicalModels = new Map<string, ModelCatalogEntry>()
   for (const model of models) {
     const sourceId = model.id.trim()
@@ -130,7 +164,6 @@ export function enrichModelCatalog(
   }
   return [...canonicalModels.values()].map((model) => {
     const id = model.id
-    const key = modelCapabilityKey(providerId, id)
     if (
       model.capabilities?.supportsImageGeneration !== undefined ||
       model.capabilities?.supportsVision !== undefined ||
@@ -138,11 +171,9 @@ export function enrichModelCatalog(
       model.capabilities?.supportsStreaming !== undefined ||
       model.capabilities?.supportsToolCalling !== undefined
     ) {
-      catalogCapabilityHints.set(key, model.capabilities)
-    } else {
-      catalogCapabilityHints.delete(key)
+      hints.set(modelCapabilityKey(id), model.capabilities)
     }
-    const capabilities = resolveModelCapabilities(providerId, id)
+    const capabilities = resolveModelCapabilities(providerId, id, connection)
     return {
       ...model,
       capabilities: {

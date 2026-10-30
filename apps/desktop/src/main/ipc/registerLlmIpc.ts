@@ -6,6 +6,7 @@ import { getConfig, getRendererConfig } from '../config'
 import {
   createModelCatalog,
   enrichModelCatalog,
+  invalidateModelCatalog,
   isLlmProviderId,
   type LlmCredentialStore,
   type LlmGateway,
@@ -95,6 +96,7 @@ export function registerLlmIpc({
           const models: ModelInfo[] = enrichModelCatalog(
             provider,
             await catalog.fetchModels(apiKey),
+            { accountId },
           )
           return { ok: true, models }
         } catch (error) {
@@ -131,6 +133,7 @@ export function registerLlmIpc({
       async (_event, payload: unknown) => {
         const { provider, apiKey } = credentialSchema.parse(payload)
         const status = await credentials().save(provider, apiKey)
+        invalidateModelCatalog(provider)
         window.webContents.send('config:updated', getRendererConfig())
         onCapabilitiesChanged?.()
         return status
@@ -143,7 +146,9 @@ export function registerLlmIpc({
       'llm:forget-credential',
       IPC_ONE_PAYLOAD,
       async (_event, provider: unknown) => {
-        const status = await credentials().forget(providerSchema.parse(provider))
+        const providerId = providerSchema.parse(provider)
+        const status = await credentials().forget(providerId)
+        invalidateModelCatalog(providerId)
         window.webContents.send('config:updated', getRendererConfig())
         onCapabilitiesChanged?.()
         return status
@@ -170,7 +175,7 @@ export function registerLlmIpc({
           const catalog = createModelCatalog(provider, { accountId })
           return {
             ok: true,
-            models: enrichModelCatalog(provider, await catalog.fetchModels(apiKey)),
+            models: enrichModelCatalog(provider, await catalog.fetchModels(apiKey), { accountId }),
           }
         } catch (error) {
           if (error instanceof ModelFetchError) {

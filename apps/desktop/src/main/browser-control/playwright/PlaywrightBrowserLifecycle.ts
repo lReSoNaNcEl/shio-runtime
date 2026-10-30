@@ -23,7 +23,3 @@ export async function launchOwnedBrowserContext(
   context.setDefaultNavigationTimeout(30_000)
   return context
 }
-
-export async function closeOwnedBrowserContext(context: BrowserContext | null): Promise<void> {
-  if (context) await context.close()
-}

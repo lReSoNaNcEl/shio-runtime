@@ -8,7 +8,8 @@ export interface MotionFilterContext {
   /** Remaining authored time for preparation or deterministic presence recovery. */
   reachSeconds?: number
   motionClass: MotionClass
-  sourceProvider?: 'motionbricks'
+  /** True while an applied MotionBricks chunk drives the body; false for local presence. */
+  generatedSource?: boolean
   phase: MotionPhaseId
   sourceSpeeds?: ReadonlyMap<THREE.Object3D, number>
   onIntegrated?: (bone: THREE.Object3D) => void
@@ -80,7 +81,7 @@ export class AdaptiveMotionFilter {
       phaseScale
     const ceiling = Math.min(
       (presence ? 1.6 : reaction ? 8 : 6) * (torso ? 0.35 : shoulder ? 0.6 : wrist ? 0.75 : 1),
-      context.sourceProvider === 'motionbricks' && !presence
+      context.generatedSource === true && !presence
         ? MOTIONBRICKS_CONVERSATION_MAX_JOINT_SPEED
         : Infinity,
     )
@@ -88,7 +89,7 @@ export class AdaptiveMotionFilter {
     sourceVelocity.clampLength(0, sourceSpeed)
     const reachingSpeed =
       ((!presence && context.phase === 'prepare') ||
-        (presence && context.phase === 'recover' && context.sourceProvider === 'motionbricks')) &&
+        (presence && context.phase === 'recover' && context.generatedSource === true)) &&
       Number.isFinite(context.reachSeconds)
         ? error.length() / Math.max(0.25, context.reachSeconds ?? 0.25)
         : 0
@@ -112,7 +113,7 @@ export class AdaptiveMotionFilter {
     // Measured MotionBricks standing output contains rapid pose noise even
     // with held goals. Use the same tracker at a calm presence bandwidth;
     // expressive phases keep their existing timing and source feed-forward.
-    const frequency = presence ? (context.sourceProvider === 'motionbricks' ? 8 : 28) : 48
+    const frequency = presence ? (context.generatedSource === true ? 8 : 28) : 48
     const relativeVelocity = state.velocity.clone().sub(feed)
     const initialError = error.clone().addScaledVector(feed, -dt)
     const decay = Math.exp(-frequency * dt)
