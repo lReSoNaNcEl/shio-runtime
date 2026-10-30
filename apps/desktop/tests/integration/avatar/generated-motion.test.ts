@@ -4,11 +4,14 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { GeneratedBodyPlayback } from '../../../src/renderer/avatar/rendering/three/GeneratedBodyPlayback'
 import { GeneratedBodySafety } from '../../../src/renderer/avatar/rendering/three/GeneratedBodySafety'
 import type { GeneratedMotionRequestContext } from '../../../src/renderer/avatar/rendering/three/GeneratedMotionTypes'
+import { resolveDeliveryStyle } from '../../../src/shared/embodiment'
 import {
   bodyPresentationSchema,
   getMotionProfile,
+  type MotionActivity,
   type MotionChunk,
   type MotionPlanIdentity,
+  motionActivitySchema,
   motionChunkSchema,
 } from '../../../src/shared/motion'
 import { createMinimalVrm } from '../../support/avatar/minimalVrm'
@@ -320,6 +323,31 @@ describe('generated body timeline', () => {
     owner.update(1, () => undefined)
     expect(owner.getBodyMotionDebugState().sourceTimeSeconds).toBeCloseTo(0.1)
     expect(bones.get('head')?.quaternion.toArray()).toEqual(before?.toArray())
+    owner.detach()
+    await owner.settleCancellation()
+  })
+  it('sends the audible delivery style only with consumed speech activity', async () => {
+    const { owner } = fixture()
+    const style = resolveDeliveryStyle('happy')
+    const activity = () =>
+      Reflect.apply(
+        Reflect.get(owner, 'motionActivity') as (frame: number) => MotionActivity,
+        owner,
+        [0],
+      )
+    owner.setDeliveryStyle(style)
+    expect(activity().style).toBeUndefined()
+    owner.setClock({
+      turnId: 'turn',
+      playbackId: 'pcm',
+      sourceSampleRate: 44100,
+      sourceSampleOffset: 4410,
+      state: 'playing',
+    })
+    expect(activity().style).toEqual(style)
+    expect(motionActivitySchema.safeParse(activity()).success).toBe(true)
+    owner.setDeliveryStyle(null)
+    expect(activity().style).toBeUndefined()
     owner.detach()
     await owner.settleCancellation()
   })

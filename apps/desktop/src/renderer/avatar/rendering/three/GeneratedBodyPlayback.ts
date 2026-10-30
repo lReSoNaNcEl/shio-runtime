@@ -2,6 +2,7 @@ import type { VRM, VRMHumanBoneName } from '@pixiv/three-vrm'
 import * as THREE from 'three'
 
 import type { EmbodimentAvailability } from '../../../../shared/character-response'
+import type { DeliveryStyle } from '../../../../shared/embodiment'
 import {
   BODY_BONE_NAMES,
   type BodyPresentation,
@@ -12,6 +13,7 @@ import {
   MOTION_CATALOG,
   MOTION_INFERENCE_DEADLINE_MS,
   MOTION_PROFILES,
+  type MotionActivity,
   type MotionChunk,
   type MotionLease,
   type MotionPhaseId,
@@ -228,11 +230,17 @@ export class GeneratedBodyPlayback {
   private readonly nextQ = new THREE.Quaternion()
   private readonly parentQ = new THREE.Quaternion()
   private attenuation: MotionAttenuationProbe = NOOP_MOTION_ATTENUATION_PROBE
+  private deliveryStyle: DeliveryStyle | null = null
 
   constructor(
     private readonly onFacialChannelsRejected: (count: number) => void,
     private readonly dynamicsObserver?: MotionDynamicsObserver,
   ) {}
+
+  /** Audible-segment delivery style, sent with consumed-speech activity only. */
+  setDeliveryStyle(style: DeliveryStyle | null): void {
+    this.deliveryStyle = style ? { ...style } : null
+  }
 
   /** Debug attribution only; the production probe is inactive and computes nothing. */
   setAttenuationProbe(probe: MotionAttenuationProbe): void {
@@ -1115,6 +1123,17 @@ export class GeneratedBodyPlayback {
         conversational.length > 0 && qualifiedConversation.length === conversational.length
           ? 'qualified'
           : 'draft',
+    }
+  }
+
+  private motionActivity(fromFrame: number): MotionActivity {
+    const speaking = this.clock?.state === 'playing' && this.clock.sourceSampleOffset > 0
+    return {
+      energy: this.clock?.state === 'playing' ? this.speechEnergy : 0,
+      playbackId: this.clock?.playbackId ?? null,
+      speaking,
+      prosody: this.speechProsody.snapshot(this.clock, fromFrame - this.cursor),
+      ...(speaking && this.deliveryStyle ? { style: { ...this.deliveryStyle } } : {}),
     }
   }
 
@@ -2361,12 +2380,7 @@ export class GeneratedBodyPlayback {
         profileId,
         fromFrame,
         plan,
-        activity: {
-          energy: this.clock?.state === 'playing' ? this.speechEnergy : 0,
-          playbackId: this.clock?.playbackId ?? null,
-          speaking: this.clock?.state === 'playing' && this.clock.sourceSampleOffset > 0,
-          prosody: this.speechProsody.snapshot(this.clock, fromFrame - this.cursor),
-        },
+        activity: this.motionActivity(fromFrame),
       })
       .then((result) => {
         if (epoch !== this.localEpoch || !this.vrm) return

@@ -56,6 +56,8 @@ export class PostureShiftController {
   private dwellSeconds = 0
   private speechEnergy = 0
   private lean = 0
+  /** Delivery style lean (-1..1): engaged styles lean in more, withdrawn ones less. */
+  private styleLean = 0
   private applied: Contribution = zero()
 
   attach(vrm: VRM): void {
@@ -73,6 +75,11 @@ export class PostureShiftController {
     this.dwellSeconds = 0
     this.speechEnergy = 0
     this.lean = 0
+    this.styleLean = 0
+  }
+
+  setDeliveryLean(lean: number | null): void {
+    this.styleLean = Number.isFinite(lean) ? Math.max(-1, Math.min(1, lean ?? 0)) : 0
   }
 
   setMode(mode: AvatarProceduralMode): void {
@@ -120,7 +127,9 @@ export class PostureShiftController {
       step
     this.weightShift += this.weightVelocity * step
     const leanTarget =
-      this.mode === 'speaking' ? -tuning.engagementLean * Math.min(1, this.speechEnergy / 0.3) : 0
+      this.mode === 'speaking'
+        ? -tuning.engagementLean * (1 + 0.6 * this.styleLean) * Math.min(1, this.speechEnergy / 0.3)
+        : 0
     this.lean += (leanTarget - this.lean) * (1 - Math.exp(-tuning.engagementSmoothing * step))
 
     const torso = this.authority

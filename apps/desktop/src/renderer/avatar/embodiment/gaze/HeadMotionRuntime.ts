@@ -1,6 +1,7 @@
 import type { VRM, VRMHumanBoneName } from '@pixiv/three-vrm'
 import * as THREE from 'three'
 
+import type { DeliveryStyle } from '../../../../shared/embodiment'
 import type { EmotionEmbodimentProfile } from '../../EmotionEmbodimentProfile'
 import { type MotionAttenuationProbe, NOOP_MOTION_ATTENUATION_PROBE } from '../../MotionAttenuation'
 import { headMotionTuning } from '../../tuning/motionTuning'
@@ -56,6 +57,8 @@ interface HeadMotionGeneratorContext {
   speechEnergy: number
   /** Signed side of the visibly acting hand: +1 left, -1 right, 0 none/both. */
   gestureFocus?: number
+  /** Audible delivery style: tempo shortens attention dwell, openness widens turns. */
+  delivery?: { dwellScale: number; amplitudeScale: number }
   random: () => number
 }
 
@@ -302,7 +305,11 @@ class AttentionShiftGenerator implements HeadMotionGenerator {
               : 1
         this.lastSide = side
         this.target = {
-          yaw: side * randomRange(context.random, profile.yaw.min, profile.yaw.max) * energy,
+          yaw:
+            side *
+            randomRange(context.random, profile.yaw.min, profile.yaw.max) *
+            energy *
+            (context.delivery?.amplitudeScale ?? 1),
           pitch: profile.pitchBias + randomSigned(context.random, profile.pitch),
           // The head usually tilts into the turn, sometimes away from it.
           roll:
@@ -312,7 +319,9 @@ class AttentionShiftGenerator implements HeadMotionGenerator {
             profile.roll,
         }
       }
-      this.dwellMs = randomRange(context.random, profile.dwellMs.min, profile.dwellMs.max)
+      this.dwellMs =
+        randomRange(context.random, profile.dwellMs.min, profile.dwellMs.max) *
+        (context.delivery?.dwellScale ?? 1)
     }
 
     const stiffness = tuning.stiffness
@@ -396,6 +405,7 @@ export class HeadMotionRuntime {
   private authorityWeight = 1
   private speechEnergy = 0
   private attenuation: MotionAttenuationProbe = NOOP_MOTION_ATTENUATION_PROBE
+  private delivery: { dwellScale: number; amplitudeScale: number } | undefined
   private emotionHeadProfile: EmotionEmbodimentProfile['head'] = {
     energyScale: 1,
     nodBias: 1,
@@ -463,6 +473,13 @@ export class HeadMotionRuntime {
     this.attenuation = probe
   }
 
+  /** Audible-segment delivery style; null restores the unstyled attention shifts. */
+  setDeliveryStyle(style: DeliveryStyle | null): void {
+    this.delivery = style
+      ? { dwellScale: 1.25 - 0.5 * style.tempo, amplitudeScale: 0.85 + 0.3 * style.openness }
+      : undefined
+  }
+
   setAuthorityWeight(weight: number): void {
     this.authorityWeight = THREE.MathUtils.clamp(weight, 0, 1)
   }
@@ -508,6 +525,7 @@ export class HeadMotionRuntime {
       elapsedMs: this.elapsedMs,
       speechEnergy: this.attentionImpulseMs > 0 ? 0 : this.speechEnergy,
       random: () => this.nextRandom(),
+      delivery: this.delivery,
     }
     const resolved = this.resolver.resolve(context)
     if (!this.presentationOnly) {

@@ -87,3 +87,83 @@ N/A (инструментирование и извлечение без изм�
 - Веса эмоций `FacialProfile` и амплитуды `MicroMotionController` в профиль
   не перенесены: это крупные таблицы, их перенос — отдельный механический шаг.
 - Счётчики фильтра накопительные с момента attach, а не оконные.
+
+## WI-2 Стиль подачи (Delivery Style)
+
+### Architecture Review
+
+- Avatar Runtime по-прежнему единственный владелец костей. Стиль — bounded
+  числа, которые модулируют цели MotionBricks и procedural-слои; он не пишет
+  кости и мимику.
+- Часы речи не изменены: стиль переключается только на звуковой границе
+  сегмента (существующий delivery cue `setSpeechDelivery`, вызванный по
+  consumed PCM) и уходит в воркер только вместе с `speaking`-activity.
+- MotionBricks остаётся единственным generated-body Adapter. Поле `style`
+  строго валидируется с обеих сторон: zod `motionActivitySchema` (Main,
+  `GeneratedMotionService`) и `activity.py` (ровно шесть осей, диапазоны из
+  сгенерированного контракта, лишние ключи отклоняются).
+- Mood модулирует только интенсивность подачи, не больше ±0,15 на ось, и
+  берётся из существующего `AliveSnapshot.mood`. Нового store нет.
+- `emotions.v3.json` и генерируемый API manifest не менялись.
+
+### Что изменено
+
+- `contracts/embodiment-style.v1.json`: шесть осей (`openness`, `height`,
+  `tempo`, `sharpness`, `asymmetry` — `0..1`, `lean` — `-1..1`) для всех
+  25 канонических эмоций, множители интенсивности и коэффициенты Mood.
+- `scripts/sync-embodiment-style.mjs`: проверяет контракт против
+  `emotions.v3.json`, генерирует `shared/embodiment/embodimentStyle.generated.ts`
+  и `motionbricks/embodiment_style.json` (оси и нейтральный стиль). Режим
+  `--check` подключён в `desktop:check`; root-скрипт `embodiment:sync`.
+- `shared/embodiment/deliveryStyle.ts`: чистая `resolveDeliveryStyle(emotion,
+  intensity, mood)` и zod-схема стиля.
+- `targets.py`: выбор формы бита взвешен стилем (`openness` → open, `height`
+  → lift, `sharpness` → press), разговорная база шире/выше по `openness`/
+  `height`, амплитуда бита по экспансивности, длина блока 6–9 токенов по
+  `tempo`, наклон press по `lean`, поворот торса и выбор ведущей руки по
+  `asymmetry`. Нейтральный стиль байт-в-байт воспроизводит прежние цели
+  (отдельный тест).
+- Renderer: `HeadMotionRuntime` — удержание attention shift по `tempo` и
+  ширина поворота по `openness` (±15–25%); `PostureShiftController` — наклон
+  вовлечённости по `lean`. Стиль передаётся через `VrmModel.setDeliveryStyle`.
+- Уши и хвост на стиль **не** переведены: у них есть свои emotion-таблицы
+  (`EmotionEmbodimentProfile`, `earBehaviorTuning`). Дублировать их стилем
+  ТЗ запрещает, а перевод таблиц — изменение поведения, которое нужно
+  принимать визуально.
+
+### Root Cause
+
+N/A.
+
+### Почему фикс работает
+
+Раньше подача тела зависела только от энергии речи: радость и грусть давали
+одинаковые биты. Теперь эмоция аудиального сегмента меняет высоту и ширину
+базы, форму и темп битов, наклон и удержание взгляда.
+
+### Файлы
+
+`contracts/embodiment-style.v1.json`, `scripts/sync-embodiment-style.mjs`,
+`shared/embodiment/*`, `shared/motion/index.ts`, `motionbricks/activity.py`,
+`motionbricks/targets.py`, `motionbricks/embodiment_style.json`,
+`GeneratedBodyPlayback.ts`, `VrmModel.ts`, `AvatarFacialRuntime.ts`,
+`HeadMotionRuntime.ts`, `PostureShiftController.ts`,
+`ProceduralMotionController.ts`, `AvatarController.ts`, `AvatarRuntime.ts`,
+`Controller.ts`, `package.json` (оба); тесты `delivery-style.test.ts`,
+`motionbricks-boundary.test.ts`, `generated-motion.test.ts`,
+`speech-head-motion.test.ts`, `motionbricks/test_targets.py`.
+
+### Проверки
+
+Python: `unittest test_targets test_hand_prior test_standing_pose` — 24 OK;
+Ruff check/format — OK. Desktop: `desktop:check` (с `sync-embodiment-style --check`),
+`desktop:format:check`, `desktop:imports:check`, `typecheck`, `desktop:test:fast` (308),
+`desktop:test:regression` (799), `build` — PASS.
+
+### Ограничения
+
+- Не проверял live. M2, M3, M11 не измерены. На синтетическом риге высота
+  кисти между `height=0.1` и `0.9` отличается больше чем на 3 см, а длина
+  блока между `tempo=0` и `1` — 9 против 6 токенов.
+- Интенсивность эмоции в delivery cue не передаётся, поэтому используется
+  `normal`.

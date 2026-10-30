@@ -7,7 +7,7 @@ This module does not classify text, select conversation intent, or apply VRM pos
 import hashlib
 
 import numpy as np
-from activity import accent_deadline_ms
+from activity import accent_deadline_ms, delivery_style
 from conversion import world_poses
 from scipy.spatial.transform import Rotation
 
@@ -35,6 +35,63 @@ TALK_TORSO_YAW = 0.11
 TALK_LEAD_PERSISTENCE = 0.6
 GESTURE_TORSO_YAW = 0.12
 PRESS_LEAN = 0.06
+BEAT_SHAPE_WEIGHTS = np.array([0.4, 0.35, 0.25])
+BEAT_LEAD_WEIGHTS = np.array([0.45, 0.35, 0.2])
+# Bounded delivery style (contracts/embodiment-style.v1.json). The neutral style
+# reproduces every constant above exactly; a style only reshapes speech beats.
+STYLE_BASE_SHIFT = np.array([0.12, 0.2, 0.0])
+
+
+def style_value(activity, axis):
+    return float(delivery_style(activity)[axis])
+
+
+def talk_tokens(activity):
+    """Beat block length from tempo: the neutral 7 tokens, bounded to 6..9."""
+    return int(
+        np.clip(round(TALK_TOKENS + 2 - 4 * style_value(activity, "tempo")), 6, 9)
+    )
+
+
+def talk_base(activity):
+    """Conversational base: openness widens it, height raises it."""
+    return TALK_BASE + STYLE_BASE_SHIFT * np.array(
+        [
+            style_value(activity, "openness") - 0.5,
+            style_value(activity, "height") - 0.5,
+            0.0,
+        ]
+    )
+
+
+def beat_shape_probabilities(activity):
+    """Openness favours open, height lift, and sharpness press beats."""
+    weights = BEAT_SHAPE_WEIGHTS * (
+        0.5
+        + np.array(
+            [
+                style_value(activity, "openness"),
+                style_value(activity, "height"),
+                style_value(activity, "sharpness"),
+            ]
+        )
+    )
+    return weights / weights.sum()
+
+
+def beat_lead_probabilities(activity):
+    """Asymmetric delivery favours one leading hand over both hands."""
+    weights = BEAT_LEAD_WEIGHTS * np.array(
+        [1.0, 1.0, 1.5 - style_value(activity, "asymmetry")]
+    )
+    return weights / weights.sum()
+
+
+def beat_amplitude(activity):
+    """Expansive (open, high) delivery enlarges beats; withdrawn shrinks them."""
+    return 0.75 + 0.25 * (
+        style_value(activity, "openness") + style_value(activity, "height")
+    )
 
 
 def speech_intensity(activity):
@@ -55,7 +112,7 @@ def target_token_count(profile, phase, activity=None):
     Quiet presence deliberately retains its previously accepted model policy.
     """
     if profile["kind"] == "presence":
-        return TALK_TOKENS if activity and activity["speaking"] else None
+        return talk_tokens(activity) if activity and activity["speaking"] else None
     milliseconds = next(p["minMs"] for p in profile["phases"] if p["id"] == phase)
     if phase == "stroke":
         milliseconds = accent_deadline_ms(activity, milliseconds) or milliseconds
@@ -94,8 +151,18 @@ class TargetPlanner:
             intensity = speech_intensity(activity)
             sign = {"left": 1, "right": -1}.get(self.beat_lead, 0)
             out = self.beat % 2 == 1
-            yaw = sign * TALK_TORSO_YAW * intensity * (1.0 if out else 0.4)
-            lean = PRESS_LEAN * intensity if out and self.beat_shape == "press" else 0.0
+            yaw = (
+                sign
+                * TALK_TORSO_YAW
+                * (0.6 + 0.8 * style_value(activity, "asymmetry"))
+                * intensity
+                * (1.0 if out else 0.4)
+            )
+            lean = (
+                PRESS_LEAN * (1 + 0.5 * style_value(activity, "lean")) * intensity
+                if out and self.beat_shape == "press"
+                else 0.0
+            )
             return yaw, lean
         if profile["kind"] == "gesture" and phase in ("prepare", "stroke", "hold"):
             leads = [
@@ -116,7 +183,7 @@ class TargetPlanner:
         """
         sign = 1 if side == "left" else -1
         hips = current[self.names.index("Hips"), :3]
-        offset = TALK_BASE * length
+        offset = talk_base(activity) * length
         offset[0] *= sign
         target = hips + offset
         intensity = speech_intensity(activity)
@@ -130,7 +197,13 @@ class TargetPlanner:
                 else TALK_SUPPORT
             )
             beat = TALK_BEATS[self.beat_shape] * length * mirror
-            target += beat * intensity * share * rng.uniform(0.8, 1.2)
+            target += (
+                beat
+                * intensity
+                * beat_amplitude(activity)
+                * share
+                * rng.uniform(0.8, 1.2)
+            )
         else:
             settle = TALK_SETTLE * length * mirror * (1 - 0.4 * intensity)
             target += settle + rng.uniform(-0.02, 0.02, 3) * length
@@ -242,9 +315,14 @@ class TargetPlanner:
                 # torso turn that follows it) does not swivel every beat.
                 if self.beat_lead == "both" or rng.random() >= TALK_LEAD_PERSISTENCE:
                     self.beat_lead = str(
-                        rng.choice(["right", "left", "both"], p=[0.45, 0.35, 0.2])
+                        rng.choice(
+                            ["right", "left", "both"],
+                            p=beat_lead_probabilities(activity),
+                        )
                     )
-                self.beat_shape = str(rng.choice(list(TALK_BEATS), p=[0.4, 0.35, 0.25]))
+                self.beat_shape = str(
+                    rng.choice(list(TALK_BEATS), p=beat_shape_probabilities(activity))
+                )
         else:
             self.beat = 0
         turn = self.torso_turn(profile, phase, score, talking, activity)

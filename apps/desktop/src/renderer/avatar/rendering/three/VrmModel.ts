@@ -1,6 +1,7 @@
 import type { VRM } from '@pixiv/three-vrm'
 import type * as THREE from 'three'
 
+import type { DeliveryStyle } from '../../../../shared/embodiment'
 import type { BodyPresentation } from '../../../../shared/motion'
 import type { PcmPlaybackClock } from '../../../audio/audioPlayer'
 import { AvatarFacialRuntime } from '../../embodiment/AvatarFacialRuntime'
@@ -89,6 +90,10 @@ export class VrmModel {
   setPresentationOnly(value: boolean): void {
     this.bodyPlayback.setPresentationOnly(value)
     this.facialRuntime.setPresentationOnly(value)
+  }
+  setDeliveryStyle(style: DeliveryStyle | null): void {
+    this.bodyPlayback.setDeliveryStyle(style)
+    this.facialRuntime.setDeliveryStyle(style)
   }
   getMotionFilterLimits() {
     return this.bodyPlayback.getFilterLimits()

@@ -1,6 +1,7 @@
 import type { VRM } from '@pixiv/three-vrm'
 import type * as THREE from 'three'
 
+import type { DeliveryStyle } from '../../../shared/embodiment'
 import {
   FACIAL_ACTING_CHANNELS,
   type FacialActingPresentation,
@@ -206,6 +207,11 @@ export class AvatarFacialRuntime {
     this.presentationOnly = value
     this.proceduralMotionController.setPresentationOnly(value)
     this.headMotionRuntime.setPresentationOnly(value)
+  }
+
+  setDeliveryStyle(style: DeliveryStyle | null): void {
+    this.headMotionRuntime.setDeliveryStyle(style)
+    this.proceduralMotionController.setDeliveryLean(style?.lean ?? null)
   }
 
   setAttenuationProbe(probe: MotionAttenuationProbe): void {

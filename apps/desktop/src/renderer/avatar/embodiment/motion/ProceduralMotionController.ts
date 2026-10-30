@@ -93,6 +93,10 @@ export class ProceduralMotionController {
   }
 
   /** Upper-body share of the current head orientation (from Head Motion). */
+  setDeliveryLean(lean: number | null): void {
+    this.posture.setDeliveryLean(lean)
+  }
+
   setOrientation(orientation: PostureOrientation): void {
     this.posture.setOrientation(orientation)
   }

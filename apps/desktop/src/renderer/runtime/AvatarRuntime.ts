@@ -229,6 +229,9 @@ export class AvatarRuntime {
     return this.health.getSnapshot()
   }
 
+  setDeliveryMood(mood: import('../../shared/embodiment').DeliveryMood | null): void {
+    this.controller.setDeliveryMood(mood)
+  }
   setSpeechDelivery(emotion: string | null): void {
     this.controller.setSpeechDelivery(emotion)
   }

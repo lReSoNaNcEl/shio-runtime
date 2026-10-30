@@ -207,7 +207,10 @@ export class Controller {
   })
   private aliveExperience = new AliveExperienceRuntime({
     getControllerState: () => this.store.getState(),
-    updateSnapshot: (alive) => this.set({ alive }),
+    updateSnapshot: (alive) => {
+      this.set({ alive })
+      this.avatarRuntime.setDeliveryMood(alive?.mood ?? null)
+    },
     pushInitiative: (title) => this.pushMessage('meta', this.t('alive.initiative', { title })),
     runAdmittedInitiative: async (topic) => {
       await this.conversationInput.admitAutonomousInitiative(topic)

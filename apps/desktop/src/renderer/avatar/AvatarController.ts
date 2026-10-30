@@ -5,6 +5,7 @@ import {
   EMBODIMENT_PROPOSAL_TTL_MS,
   type EmbodimentIntentContext,
 } from '../../shared/character-response'
+import { type DeliveryMood, resolveDeliveryStyle } from '../../shared/embodiment'
 import { type BodyPresentation, getMotionProfile } from '../../shared/motion'
 import type { CharacterState } from '../../shared/runtime'
 import type { PcmPlaybackClock } from '../audio/audioPlayer'
@@ -83,6 +84,7 @@ export class AvatarController {
   private behaviorEmbodimentIntent: CharacterEmbodimentIntent | undefined
   private lastCharacterState: CharacterState | undefined
   private speechDeliveryEmotion: string | null = null
+  private deliveryMood: DeliveryMood | null = null
   private pcmClock: PcmPlaybackClock | null = null
   private scheduledPcmOffset = 0
   private scheduledPlaybackId = ''
@@ -296,9 +298,18 @@ export class AvatarController {
       )
   }
 
+  /** Bounded Mood modulation of the delivery style; applies from the next audible segment. */
+  setDeliveryMood(mood: DeliveryMood | null): void {
+    this.deliveryMood = mood ? { ...mood } : null
+  }
+
   setSpeechDelivery(emotion: string | null): void {
     const changed = this.speechDeliveryEmotion !== emotion
     this.speechDeliveryEmotion = emotion
+    // The audible segment boundary (consumed PCM cue) is the only style switch.
+    this.vrmModel.setDeliveryStyle(
+      emotion ? resolveDeliveryStyle(emotion, 'normal', this.deliveryMood) : null,
+    )
     this.lipSync.setEmotion(emotion ?? this.lastCharacterState?.emotion ?? 'neutral')
     this.vrmModel.applyEmotion(emotion ?? this.lastCharacterState?.emotion ?? 'neutral')
     if (changed && emotion && this.stateMachine.getMode() === 'speaking') {

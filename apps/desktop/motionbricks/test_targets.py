@@ -197,6 +197,118 @@ class PlannerTests(unittest.TestCase):
             max(np.linalg.norm(a - b) for a, b in zip(beats, beats[1:])), 0.02
         )
 
+    def talking(self, style=None, energy=0.15):
+        activity = {
+            "energy": energy,
+            "playbackId": "a",
+            "speaking": True,
+            "prosody": {
+                "throughSample": 4410,
+                "sampleRate": 44100,
+                "envelope": [energy],
+                "phase": "speech",
+                "accent": 0,
+                "leadMs": 0,
+            },
+        }
+        if style is not None:
+            activity["style"] = style
+        return activity
+
+    def style(self, **axes):
+        neutral = {
+            "openness": 0.5,
+            "height": 0.5,
+            "tempo": 0.5,
+            "sharpness": 0.5,
+            "asymmetry": 0.5,
+            "lean": 0.0,
+        }
+        return {**neutral, **axes}
+
+    def mean_hand(self, activity, side="Right", seeds=range(60, 80)):
+        planner = TargetPlanner(
+            self.names, self.parents, self.standing, self.catalog["handWorkspaces"]
+        )
+        profile = self.profile("presence_speaking")
+        return np.mean(
+            [
+                self.hand(
+                    planner.goal(self.history, profile, "hold", seed, activity), side
+                )
+                for seed in seeds
+            ],
+            axis=0,
+        )
+
+    def test_neutral_style_reproduces_unstyled_speech_goals_exactly(self):
+        profile = self.profile("presence_speaking")
+        plain, styled = (
+            TargetPlanner(
+                self.names, self.parents, self.standing, self.catalog["handWorkspaces"]
+            )
+            for _ in range(2)
+        )
+        for seed in range(40, 52):
+            np.testing.assert_array_equal(
+                plain.goal(self.history, profile, "hold", seed, self.talking()),
+                styled.goal(
+                    self.history, profile, "hold", seed, self.talking(self.style())
+                ),
+            )
+
+    def test_height_raises_and_openness_widens_conversational_hands(self):
+        low = self.mean_hand(self.talking(self.style(height=0.1)))
+        high = self.mean_hand(self.talking(self.style(height=0.9)))
+        self.assertGreater(high[1] - low[1], 0.03)
+        narrow = self.mean_hand(self.talking(self.style(openness=0.1)))
+        wide = self.mean_hand(self.talking(self.style(openness=0.9)))
+        # The right hand moves toward negative x when it opens laterally.
+        self.assertGreater(narrow[0] - wide[0], 0.02)
+
+    def test_tempo_bounds_native_beat_blocks(self):
+        profile = self.profile("presence_speaking")
+        counts = [
+            target_token_count(profile, "hold", self.talking(self.style(tempo=tempo)))
+            for tempo in (0, 0.25, 0.5, 0.75, 1)
+        ]
+        self.assertEqual(counts[2], 7)
+        self.assertEqual(counts, sorted(counts, reverse=True))
+        self.assertTrue(all(6 <= count <= 9 for count in counts))
+        self.assertGreater(counts[0], counts[-1])
+
+    def test_styled_goals_are_deterministic_by_seed(self):
+        activity = self.talking(self.style(openness=0.8, sharpness=0.9, lean=0.6))
+        profile = self.profile("presence_speaking")
+        goals = []
+        for _ in range(2):
+            planner = TargetPlanner(
+                self.names, self.parents, self.standing, self.catalog["handWorkspaces"]
+            )
+            goals.append(
+                [
+                    planner.goal(self.history, profile, "hold", s, activity)
+                    for s in (3, 4)
+                ]
+            )
+        np.testing.assert_array_equal(goals[0], goals[1])
+
+    def test_style_validation_rejects_unknown_axes_and_out_of_range_values(self):
+        self.assertEqual(
+            validate_activity(self.talking(self.style()))["style"], self.style()
+        )
+        for bad in (
+            {**self.style(), "extra": 0.1},
+            {k: v for k, v in self.style().items() if k != "tempo"},
+            self.style(openness=1.2),
+            self.style(lean=-1.5),
+            self.style(height=float("nan")),
+            self.style(tempo=True),
+            "calm",
+        ):
+            with self.assertRaises(ValueError):
+                validate_activity(self.talking(bad))
+
     def chest_yaw(self, goal):
         chest = world_poses(goal[None], self.parents)[0][self.names.index("Chest")]
         forward = Rotation.from_quat(chest[3:]).apply([0, 0, 1])

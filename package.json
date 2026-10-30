@@ -61,6 +61,7 @@
     "check": "npm run lint && npm run format:check && npm run typecheck && npm run test",
     "emotions:sync": "node scripts/sync-emotions.mjs",
     "motion:sync": "node scripts/sync-motion.mjs",
+    "embodiment:sync": "node scripts/sync-embodiment-style.mjs",
     "motion:catalog:check": "node scripts/sync-motion.mjs --check && node scripts/sync-emotions.mjs --check",
     "experiment:qualify": "npm --prefix apps/desktop run qualify:speech-motion --",
     "experiment:pack": "powershell -ExecutionPolicy Bypass -File scripts/build-alpha-bundle.ps1 -ExperimentalWorktree",

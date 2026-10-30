@@ -109,4 +109,35 @@ describe('speech-driven head motion', () => {
     expect(reports.some(([requested, applied]) => applied < requested * 0.5)).toBe(true)
     runtime.detach()
   })
+
+  it('widens attention turns with an open delivery style and restores them when cleared', () => {
+    const run = (style: Parameters<HeadMotionRuntime['setDeliveryStyle']>[0]) => {
+      const head = new THREE.Object3D()
+      const vrm = {
+        humanoid: { getNormalizedBoneNode: (name: string) => (name === 'head' ? head : null) },
+      } as unknown as VRM
+      const runtime = new HeadMotionRuntime()
+      runtime.attach(vrm)
+      runtime.setProfile('speaking')
+      runtime.setSpeechEnergy(0.6)
+      runtime.setDeliveryStyle(style)
+      let peak = 0
+      for (let frame = 0; frame < 600; frame++) {
+        runtime.update(0.05)
+        peak = Math.max(peak, Math.abs(runtime.getDebugState().yawOffset))
+      }
+      runtime.detach()
+      return peak
+    }
+    const neutral = {
+      openness: 0.5,
+      height: 0.5,
+      tempo: 0.5,
+      sharpness: 0.5,
+      asymmetry: 0.5,
+      lean: 0,
+    }
+    expect(run({ ...neutral, openness: 1 })).toBeGreaterThan(run({ ...neutral, openness: 0 }))
+    expect(run(neutral)).toBeCloseTo(run(null), 9)
+  })
 })

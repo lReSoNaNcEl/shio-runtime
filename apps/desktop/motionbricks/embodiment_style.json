@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "axes": {
+    "openness": [0, 1],
+    "height": [0, 1],
+    "tempo": [0, 1],
+    "sharpness": [0, 1],
+    "asymmetry": [0, 1],
+    "lean": [-1, 1]
+  },
+  "default": {
+    "openness": 0.5,
+    "height": 0.5,
+    "tempo": 0.5,
+    "sharpness": 0.5,
+    "asymmetry": 0.5,
+    "lean": 0
+  }
+}

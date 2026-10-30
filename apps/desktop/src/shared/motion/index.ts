@@ -1,6 +1,7 @@
 import { z } from 'zod'
 
 import rawCatalog from '../../../motion/motion-profiles.json'
+import { deliveryStyleSchema } from '../embodiment/deliveryStyle'
 import { facialActingPresentationSchema } from '../facial-acting'
 import { MOTION_PROFILE_IDS } from './catalog.generated'
 import { motionCatalogSchema, motionFormatSchema, motionPhaseSchema } from './catalogSchema'
@@ -121,6 +122,8 @@ export const motionActivitySchema = z
     playbackId: z.string().min(1).max(128).nullable(),
     speaking: z.boolean(),
     prosody: motionProsodySchema.optional(),
+    /** Bounded delivery style of the audible segment; absent outside speech. */
+    style: deliveryStyleSchema.optional(),
   })
   .strict()
   .refine(

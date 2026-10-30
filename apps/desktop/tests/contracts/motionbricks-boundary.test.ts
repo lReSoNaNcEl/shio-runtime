@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
+import { resolveDeliveryStyle } from '../../src/shared/embodiment'
 import { motionActivitySchema, motionChunkSchema } from '../../src/shared/motion'
 import { createMotionChunk } from '../support/avatar/motionFixtures'
 
@@ -28,6 +29,20 @@ describe('experimental motion boundaries', () => {
       { ...prosody, text: 'untrusted' },
     ])
       expect(motionActivitySchema.safeParse({ ...activity, prosody: invalid }).success).toBe(false)
+  })
+
+  it('admits only the six bounded delivery style axes on the wire', () => {
+    const activity = { energy: 0.25, playbackId: 'current-playback', speaking: true }
+    const style = resolveDeliveryStyle('happy')
+    expect(motionActivitySchema.safeParse({ ...activity, style }).success).toBe(true)
+    for (const invalid of [
+      { ...style, openness: 1.1 },
+      { ...style, lean: -1.2 },
+      { ...style, tempo: Number.NaN },
+      { ...style, emotion: 'happy' },
+      { openness: 0.5 },
+    ])
+      expect(motionActivitySchema.safeParse({ ...activity, style: invalid }).success).toBe(false)
   })
 
   it('rejects unpinned priors, invalid basis rotations and oversized hand horizons', () => {
