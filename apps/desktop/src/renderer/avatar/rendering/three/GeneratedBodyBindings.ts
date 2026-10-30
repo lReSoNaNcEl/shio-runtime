@@ -1,6 +1,8 @@
 import type { VRM, VRMHumanBoneName } from '@pixiv/three-vrm'
 import * as THREE from 'three'
 
+import { HAND_BONE_NAMES, MOTION_CATALOG, type MotionProfile } from '../../../../shared/motion'
+
 /** SOMA30 to VRM bone bindings and planted-foot anchors of the generated body.
  * Moved verbatim from GeneratedBodyPlayback; the owner keeps all state. */
 
@@ -99,4 +101,91 @@ export function measurePlantedFeet(vrm: VRM, sign: number): PlantedFoot[] {
         ]
       : []
   })
+}
+
+/** Bounds standing root height so a planted knee never changes faster than
+ * 0.9 rad/s; the planted feet stay the support authority. */
+export function limitStandingRootY(
+  vrm: VRM | null,
+  plantedFeet: readonly PlantedFoot[],
+  rootAnchor: THREE.Vector3,
+  filteredRootY: number,
+  requested: number,
+  seconds: number,
+): number {
+  const hips = vrm?.humanoid.getNormalizedBoneNode('hips')
+  if (!hips) return requested
+  const parent = hips.parent
+  const up = new THREE.Vector3(0, 1, 0).applyQuaternion(
+    parent?.getWorldQuaternion(new THREE.Quaternion()) ?? new THREE.Quaternion(),
+  )
+  const scale = Math.max(0.001, Math.abs(parent?.getWorldScale(new THREE.Vector3()).y ?? 1))
+  let result = requested
+  for (const leg of plantedFeet) {
+    const origin = leg.upper
+      .getWorldPosition(new THREE.Vector3())
+      .addScaledVector(up, (rootAnchor.y - hips.position.y) * scale)
+    const a = leg.upper
+      .getWorldPosition(new THREE.Vector3())
+      .distanceTo(leg.lower.getWorldPosition(new THREE.Vector3()))
+    const b = leg.lower
+      .getWorldPosition(new THREE.Vector3())
+      .distanceTo(leg.foot.getWorldPosition(new THREE.Vector3()))
+    if (a < 0.001 || b < 0.001) continue
+    const bend = (value: number): number => {
+      const distance = origin
+        .clone()
+        .addScaledVector(up, (value - rootAnchor.y) * scale)
+        .distanceTo(leg.target)
+      return Math.acos(
+        THREE.MathUtils.clamp((distance * distance - a * a - b * b) / (2 * a * b), -1, 1),
+      )
+    }
+    const before = bend(filteredRootY),
+      after = bend(result)
+    const change = 0.9 * seconds
+    if (Math.abs(after - before) <= change) continue
+    const angle = before + Math.sign(after - before) * change
+    const distanceSquared = a * a + b * b + 2 * a * b * Math.cos(angle)
+    const delta = origin.clone().sub(leg.target)
+    const height = delta.dot(up)
+    const horizontalSquared = Math.max(0, delta.lengthSq() - height * height)
+    const allowed =
+      rootAnchor.y + (Math.sqrt(Math.max(0, distanceSquared - horizontalSquared)) - height) / scale
+    result = THREE.MathUtils.clamp(
+      allowed,
+      Math.min(filteredRootY, result),
+      Math.max(filteredRootY, result),
+    )
+  }
+  return result
+}
+
+/** Whether the rig has every bone the generated body and the profile's hand workspaces need. */
+export function profileRigSupported(vrm: VRM, profile: MotionProfile): boolean {
+  const required = [
+    ...HAND_BONE_NAMES,
+    'leftHand',
+    'rightHand',
+    'hips',
+    'spine',
+    'leftUpperLeg',
+    'leftLowerLeg',
+    'rightUpperLeg',
+    'rightLowerLeg',
+    'leftUpperArm',
+    'leftLowerArm',
+    'rightUpperArm',
+    'rightLowerArm',
+    'leftFoot',
+    'rightFoot',
+  ] as const
+  if (required.some((name) => !vrm.humanoid.getNormalizedBoneNode(name))) return false
+  const anchors = Object.values(profile.handScore.phases).flatMap((pair) =>
+    Object.values(pair)
+      .filter((hand) => hand.workspace !== 'relaxed')
+      .map((hand) => MOTION_CATALOG.handWorkspaces[hand.workspace].anchor),
+  )
+  if (anchors.some((name) => !vrm.humanoid.getNormalizedBoneNode(name))) return false
+  return true
 }

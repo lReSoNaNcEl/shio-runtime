@@ -44,8 +44,10 @@ import {
 import {
   type Binding,
   createBindings,
+  limitStandingRootY,
   measurePlantedFeet,
   type PlantedFoot,
+  profileRigSupported,
 } from './GeneratedBodyBindings'
 import { GeneratedBodySafety } from './GeneratedBodySafety'
 import { calibrateFingerSpreadSigns, GeneratedHandPose } from './GeneratedHandPose'
@@ -822,32 +824,7 @@ export class GeneratedBodyPlayback {
       return { available: false, reason: 'generator-unavailable' }
     if (!profile || profile.qualification.state === 'disabled')
       return { available: false, reason: 'disabled' }
-    const required = [
-      ...HAND_BONE_NAMES,
-      'leftHand',
-      'rightHand',
-      'hips',
-      'spine',
-      'leftUpperLeg',
-      'leftLowerLeg',
-      'rightUpperLeg',
-      'rightLowerLeg',
-      'leftUpperArm',
-      'leftLowerArm',
-      'rightUpperArm',
-      'rightLowerArm',
-      'leftFoot',
-      'rightFoot',
-    ] as const
-    if (required.some((name) => !vrm.humanoid.getNormalizedBoneNode(name)))
-      return { available: false, reason: 'rig-unsupported' }
-    const anchors = Object.values(profile.handScore.phases).flatMap((pair) =>
-      Object.values(pair)
-        .filter((hand) => hand.workspace !== 'relaxed')
-        .map((hand) => MOTION_CATALOG.handWorkspaces[hand.workspace].anchor),
-    )
-    if (anchors.some((name) => !vrm.humanoid.getNormalizedBoneNode(name)))
-      return { available: false, reason: 'rig-unsupported' }
+    if (!profileRigSupported(vrm, profile)) return { available: false, reason: 'rig-unsupported' }
     const cameraMode =
       conversational && this.conversationView
         ? this.conversationView.mode === 'portrait'
@@ -1888,7 +1865,11 @@ export class GeneratedBodyPlayback {
       // flexion. Filter translation before the single planted-foot solve.
       const rootDelta = (rootTarget - this.filteredRootY) * (1 - Math.exp(-3 * elapsed))
       const rootSeconds = Math.max(0, Math.min(elapsed, renderDelta, 0.05))
-      this.filteredRootY = this.limitStandingRootY(
+      this.filteredRootY = limitStandingRootY(
+        this.vrm,
+        this.plantedFeet,
+        this.rootAnchor,
+        this.filteredRootY,
         this.filteredRootY +
           THREE.MathUtils.clamp(rootDelta, -0.015 * rootSeconds, 0.015 * rootSeconds),
         rootSeconds,
@@ -2079,56 +2060,6 @@ export class GeneratedBodyPlayback {
       }
       this.finishExecution(outcome)
     } else this.capturePresentation()
-  }
-
-  private limitStandingRootY(requested: number, seconds: number): number {
-    const hips = this.vrm?.humanoid.getNormalizedBoneNode('hips')
-    if (!hips) return requested
-    const parent = hips.parent
-    const up = new THREE.Vector3(0, 1, 0).applyQuaternion(
-      parent?.getWorldQuaternion(new THREE.Quaternion()) ?? new THREE.Quaternion(),
-    )
-    const scale = Math.max(0.001, Math.abs(parent?.getWorldScale(new THREE.Vector3()).y ?? 1))
-    let result = requested
-    for (const leg of this.plantedFeet) {
-      const origin = leg.upper
-        .getWorldPosition(new THREE.Vector3())
-        .addScaledVector(up, (this.rootAnchor.y - hips.position.y) * scale)
-      const a = leg.upper
-        .getWorldPosition(new THREE.Vector3())
-        .distanceTo(leg.lower.getWorldPosition(new THREE.Vector3()))
-      const b = leg.lower
-        .getWorldPosition(new THREE.Vector3())
-        .distanceTo(leg.foot.getWorldPosition(new THREE.Vector3()))
-      if (a < 0.001 || b < 0.001) continue
-      const bend = (value: number): number => {
-        const distance = origin
-          .clone()
-          .addScaledVector(up, (value - this.rootAnchor.y) * scale)
-          .distanceTo(leg.target)
-        return Math.acos(
-          THREE.MathUtils.clamp((distance * distance - a * a - b * b) / (2 * a * b), -1, 1),
-        )
-      }
-      const before = bend(this.filteredRootY),
-        after = bend(result)
-      const change = 0.9 * seconds
-      if (Math.abs(after - before) <= change) continue
-      const angle = before + Math.sign(after - before) * change
-      const distanceSquared = a * a + b * b + 2 * a * b * Math.cos(angle)
-      const delta = origin.clone().sub(leg.target)
-      const height = delta.dot(up)
-      const horizontalSquared = Math.max(0, delta.lengthSq() - height * height)
-      const allowed =
-        this.rootAnchor.y +
-        (Math.sqrt(Math.max(0, distanceSquared - horizontalSquared)) - height) / scale
-      result = THREE.MathUtils.clamp(
-        allowed,
-        Math.min(this.filteredRootY, result),
-        Math.max(this.filteredRootY, result),
-      )
-    }
-    return result
   }
 
   private capturePresentation(): void {
