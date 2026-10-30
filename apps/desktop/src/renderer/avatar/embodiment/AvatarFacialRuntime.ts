@@ -10,6 +10,7 @@ import {
   type EmotionEmbodimentProfile,
   resolveEmotionEmbodimentProfile,
 } from '../EmotionEmbodimentProfile'
+import type { MotionAttenuationProbe } from '../MotionAttenuation'
 import { facialTuning } from '../tuning/facialTuning'
 import { phraseLipSyncTuning } from '../tuning/speechTuning'
 import { AvatarExpressionMixer, type FacialDebugState } from './facial/AvatarExpressionMixer'
@@ -205,6 +206,11 @@ export class AvatarFacialRuntime {
     this.presentationOnly = value
     this.proceduralMotionController.setPresentationOnly(value)
     this.headMotionRuntime.setPresentationOnly(value)
+  }
+
+  setAttenuationProbe(probe: MotionAttenuationProbe): void {
+    this.expressionMixer.setAttenuationProbe(probe)
+    this.headMotionRuntime.setAttenuationProbe(probe)
   }
 
   setPcmClock(clock: PcmPlaybackClock | null): void {

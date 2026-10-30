@@ -3,7 +3,14 @@ import * as THREE from 'three'
 
 import { MOTION_CATALOG, type MotionPhaseId, type MotionProfile } from '../../../../shared/motion'
 import {
+  type MotionAttenuationChannel,
+  type MotionAttenuationProbe,
+  motionAttenuationChannel,
+  NOOP_MOTION_ATTENUATION_PROBE,
+} from '../../MotionAttenuation'
+import {
   AdaptiveMotionFilter,
+  type AdaptiveMotionFilterLimits,
   MOTIONBRICKS_CONVERSATION_MAX_JOINT_SPEED,
   type MotionFilterContext,
 } from './AdaptiveMotionFilter'
@@ -80,6 +87,13 @@ export class GeneratedBodySafety {
   private sourceHandPaths: ReadonlyMap<THREE.Object3D, readonly THREE.Vector3[]> = new Map()
   private readonly temporalFilter = new AdaptiveMotionFilter()
   private readonly jointKinds = new Map<THREE.Object3D, 'torso' | 'shoulder' | 'arm' | 'wrist'>()
+  private readonly attenuationChannels = new Map<THREE.Object3D, MotionAttenuationChannel>()
+  private attenuation: MotionAttenuationProbe = NOOP_MOTION_ATTENUATION_PROBE
+
+  setAttenuationProbe(probe: MotionAttenuationProbe): void {
+    this.attenuation = probe
+    this.temporalFilter.setAttenuationProbe(probe, this.attenuationChannels)
+  }
 
   attach(vrm: VRM): void {
     this.recovering = false
@@ -198,6 +212,8 @@ export class GeneratedBodySafety {
       ] as const
     ).flatMap((name) => {
       const bone = vrm.humanoid.getNormalizedBoneNode(name)
+      const channel = motionAttenuationChannel(name)
+      if (bone && channel) this.attenuationChannels.set(bone, channel)
       if (bone)
         this.jointKinds.set(
           bone,
@@ -218,6 +234,7 @@ export class GeneratedBodySafety {
     this.holdAnchors.clear()
     this.temporalFilter.reset()
     this.jointKinds.clear()
+    this.attenuationChannels.clear()
     this.handTargets = null
     this.generatedSource = false
     this.workspaceSolutions.clear()
@@ -246,6 +263,10 @@ export class GeneratedBodySafety {
       armCorrections: this.armCorrections,
       unresolvedArmContacts: this.unresolvedArmContacts,
     }
+  }
+
+  getFilterLimits(): AdaptiveMotionFilterLimits {
+    return this.temporalFilter.getLimits()
   }
 
   /** Establish an admissible relaxed reference without solving into a raised gesture. */
@@ -313,7 +334,7 @@ export class GeneratedBodySafety {
     for (const limb of [...(advanceCandidate ? this.arms : []), ...this.legs])
       this.constrainHinge(limb)
     vrm.scene.updateMatrixWorld(true)
-    if (advanceCandidate) this.projectHandWorkspaces()
+    if (advanceCandidate) this.projectHandWorkspacesAttributed()
     const torso = this.torso()
     if (!torso) return
     const repairedArms = new Set<Limb>()
@@ -352,6 +373,14 @@ export class GeneratedBodySafety {
         this.placeArm(arm, target, pole, a, b)
       }
     }
+    if (this.attenuation.active && advanceCandidate)
+      for (const arm of this.arms)
+        this.attenuation.report(
+          'body-safety.contact',
+          arm.side === 1 ? 'leftHand' : 'rightHand',
+          1,
+          repairedArms.has(arm) ? 0 : 1,
+        )
     for (const arm of this.arms) {
       const previous = this.previousArms.get(arm)
       const before = arm.end.quaternion.clone()
@@ -607,6 +636,26 @@ export class GeneratedBodySafety {
       ),
       palm,
       fingers,
+    }
+  }
+
+  /** Attribution reports the workspace pull of each wrist in arm lengths. */
+  private projectHandWorkspacesAttributed(): void {
+    if (!this.attenuation.active) {
+      this.projectHandWorkspaces()
+      return
+    }
+    const before = this.arms.map((arm) => arm.end.getWorldPosition(new THREE.Vector3()))
+    this.projectHandWorkspaces()
+    for (const [index, arm] of this.arms.entries()) {
+      const length = arm.upper.getWorldPosition(new THREE.Vector3()).distanceTo(before[index]) || 1
+      const moved = arm.end.getWorldPosition(new THREE.Vector3()).distanceTo(before[index])
+      this.attenuation.report(
+        'body-safety.workspace',
+        arm.side === 1 ? 'leftHand' : 'rightHand',
+        1,
+        Math.max(0, 1 - moved / length),
+      )
     }
   }
 
@@ -1041,6 +1090,13 @@ export class GeneratedBodySafety {
     const previous = limb.lower.quaternion.clone()
     this.projectHinge(limb, limb.lower.quaternion)
     if (previous.angleTo(limb.lower.quaternion) > 1e-5) this.jointCorrections += 1
+    if (this.attenuation.active && this.arms.includes(limb))
+      this.attenuation.report(
+        'body-safety.hinge',
+        limb.side === 1 ? 'leftHand' : 'rightHand',
+        previous.angleTo(limb.rest),
+        limb.lower.quaternion.angleTo(limb.rest),
+      )
   }
 
   /** Project targets into the joint domain before temporal filtering. */

@@ -199,6 +199,12 @@ export class AvatarRuntime {
   getMotionLibraryDebug() {
     return this.controller.getMotionLibraryDebug()
   }
+  setMotionAttenuationEnabled(enabled: boolean): void {
+    this.controller.setMotionAttenuationEnabled(enabled)
+  }
+  getMotionAttenuation() {
+    return this.controller.getMotionAttenuation()
+  }
   previewSequence(ids: readonly string[]): void {
     this.controller.previewSequence(ids)
   }

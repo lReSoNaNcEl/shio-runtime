@@ -2,6 +2,7 @@ import type { VRM, VRMHumanBoneName } from '@pixiv/three-vrm'
 import * as THREE from 'three'
 
 import type { EmotionEmbodimentProfile } from '../../EmotionEmbodimentProfile'
+import { type MotionAttenuationProbe, NOOP_MOTION_ATTENUATION_PROBE } from '../../MotionAttenuation'
 import { headMotionTuning } from '../../tuning/motionTuning'
 
 export type HeadMotionProfile = 'idle' | 'listening' | 'thinking' | 'speaking' | 'userFocus'
@@ -394,6 +395,7 @@ export class HeadMotionRuntime {
   private attentionImpulseCooldownMs = 0
   private authorityWeight = 1
   private speechEnergy = 0
+  private attenuation: MotionAttenuationProbe = NOOP_MOTION_ATTENUATION_PROBE
   private emotionHeadProfile: EmotionEmbodimentProfile['head'] = {
     energyScale: 1,
     nodBias: 1,
@@ -455,6 +457,10 @@ export class HeadMotionRuntime {
   /** Share of the current orientation carried by the upper body (spine/chest). */
   getTorsoPose(): HeadMotionPose {
     return this.presentationOnly ? zeroPose() : { ...this.torsoPose }
+  }
+
+  setAttenuationProbe(probe: MotionAttenuationProbe): void {
+    this.attenuation = probe
   }
 
   setAuthorityWeight(weight: number): void {
@@ -542,6 +548,21 @@ export class HeadMotionRuntime {
         attention.weight * attentionAuthority * this.emotionHeadProfile.energyScale,
       ),
     )
+    if (this.attenuation.active) {
+      const requested = addPose(
+        addPose(
+          emotionPose,
+          scalePose(headMotionTuning.attentionImpulse.pose, this.attentionImpulseEnvelope()),
+        ),
+        scalePose(attention.pose, attention.weight * this.emotionHeadProfile.energyScale),
+      )
+      this.attenuation.report(
+        'head-authority',
+        'head',
+        poseEnergy(requested),
+        poseEnergy(clampPose(targetPose)),
+      )
+    }
     this.currentPose = smoothPose(this.currentPose, targetPose, delta, headMotionTuning.smoothing)
     this.currentPose = clampPose(this.currentPose)
 

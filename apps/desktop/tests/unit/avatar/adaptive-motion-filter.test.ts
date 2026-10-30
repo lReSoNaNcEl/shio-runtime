@@ -200,4 +200,58 @@ describe('single source-aware body tracking', () => {
       ).toBeLessThan(1e-7)
     })
   })
+
+  it('attributes a speed-bound presence step to the filter and counts its ceiling', () => {
+    const filter = new AdaptiveMotionFilter()
+    const bone = new THREE.Object3D()
+    const reports: Array<[number, number]> = []
+    filter.setAttenuationProbe(
+      {
+        active: true,
+        report: (_stage, _channel, requested, applied) => reports.push([requested, applied]),
+      },
+      new Map([[bone, 'rightHand' as const]]),
+    )
+    const target = new THREE.Quaternion().setFromAxisAngle(axis, 1.2)
+    for (let frame = 0; frame < 30; frame++)
+      filter.step(bone, bone.quaternion.clone(), target, 1 / 60, {
+        motionClass: 'presence',
+        phase: 'hold',
+        jointKinds: new Map([[bone, 'arm']]),
+      })
+    expect(reports.length).toBe(30)
+    expect(reports.some(([requested, applied]) => applied < requested)).toBe(true)
+    const limits = filter.getLimits()
+    expect(limits.frames).toBe(30)
+    expect(limits.speedLimited + limits.accelerationLimited).toBeGreaterThan(0)
+    expect(limits.generatedPresenceBandwidth).toBe(0)
+    filter.reset()
+    expect(filter.getLimits().frames).toBe(0)
+  })
+
+  it('reports an unlimited step with a retained ratio of one', () => {
+    const filter = new AdaptiveMotionFilter()
+    const bone = new THREE.Object3D()
+    const reports: Array<[number, number]> = []
+    filter.setAttenuationProbe(
+      {
+        active: true,
+        report: (_stage, _channel, requested, applied) => reports.push([requested, applied]),
+      },
+      new Map([[bone, 'leftHand' as const]]),
+    )
+    filter.step(
+      bone,
+      bone.quaternion.clone(),
+      new THREE.Quaternion().setFromAxisAngle(axis, 0.0005),
+      1 / 60,
+      {
+        motionClass: 'gesture',
+        phase: 'stroke',
+        jointKinds: new Map([[bone, 'arm']]),
+      },
+    )
+    const [requested, applied] = reports[0]
+    expect(applied).toBeCloseTo(requested, 6)
+  })
 })

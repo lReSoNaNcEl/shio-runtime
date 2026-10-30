@@ -1,9 +1,10 @@
 import type { VRMHumanBoneName } from '@pixiv/three-vrm'
 
 import type { MotionPhaseId, MotionProfile } from '../../../../shared/motion'
+import { expressivenessProfile } from '../../tuning/expressivenessProfile'
 
-const QUIET = { shoulder: 0.08, upper: 0.12, lower: 0.25 }
-const CONVERSATIONAL = { shoulder: 0.14, upper: 0.95, lower: 1.6 }
+const QUIET = expressivenessProfile.standingArmRange.quiet
+const CONVERSATIONAL = expressivenessProfile.standingArmRange.conversational
 
 /** Artistic range around calibrated rest; never an anatomical or contact limit.
  * `conversational` (0..1) is 1 during consumed speech, admitting the forearm-

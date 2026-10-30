@@ -1,6 +1,7 @@
 import { type VRM, VRMExpression, VRMExpressionMorphTargetBind } from '@pixiv/three-vrm'
 
 import type { FacialActingPresentation, FacialActingValues } from '../../../../shared/facial-acting'
+import { type MotionAttenuationProbe, NOOP_MOTION_ATTENUATION_PROBE } from '../../MotionAttenuation'
 import { facialTuning } from '../../tuning/facialTuning'
 import { resolveEffectiveBlinkProfile } from './BlinkProfileResolver'
 import type {
@@ -99,6 +100,7 @@ export class AvatarExpressionMixer {
   /** Expression names the mixer wrote a non-zero value for last frame. */
   private writtenNames = new Set<string>()
   private bodyFacialChannelsRejected = 0
+  private attenuation: MotionAttenuationProbe = NOOP_MOTION_ATTENUATION_PROBE
   private frame = 0
   private clockMs = 0
   private lastDeltaMs = 16.67
@@ -352,6 +354,10 @@ export class AvatarExpressionMixer {
     this.blinkTuning = debug
   }
 
+  setAttenuationProbe(probe: MotionAttenuationProbe): void {
+    this.attenuation = probe
+  }
+
   notifyBodyFacialChannelsRejected(count: number): void {
     this.bodyFacialChannelsRejected = count
   }
@@ -384,9 +390,18 @@ export class AvatarExpressionMixer {
     // Mouth domain (LipSync) — the Mouth Closure Envelope multiplies the final
     // mouth value so the lips briefly meet without rewriting the LipSync signal.
     const closureGain = 1 - this.mouthClosure
+    const attributing = this.attenuation.active
+    let requestedMouth = 0
+    let appliedMouth = 0
+    let requestedBrows = 0
+    let appliedBrows = 0
     for (const name of MOUTH_NAMES) {
       if (!this.isSupportedExpression(name)) continue
       const v = this.clamp(this.mouth[name] * closureGain)
+      if (attributing) {
+        requestedMouth += this.clamp(this.mouth[name])
+        appliedMouth += v
+      }
       if (v > 0.001) final.set(name, { expression: name, value: v, source: 'lipSync' })
     }
 
@@ -435,6 +450,7 @@ export class AvatarExpressionMixer {
     this.appliedActing = {}
     for (const [channel, expression] of this.ownedActingExpressions) {
       let value = this.clamp(this.acting[channel] ?? 0)
+      const requested = value
       if (!this.composedActing) {
         if (channel.startsWith('eye')) {
           const blink = channel.endsWith('Left') ? this.blinkPair?.[0] : this.blinkPair?.[1]
@@ -442,6 +458,13 @@ export class AvatarExpressionMixer {
         }
         if (channel.startsWith('mouth'))
           value *= closureGain * Math.max(0.35, 1 - this.maxValue(this.mouth))
+      }
+      if (attributing && channel.startsWith('mouth')) {
+        requestedMouth += requested
+        appliedMouth += value
+      } else if (attributing && channel.startsWith('brow')) {
+        requestedBrows += requested
+        appliedBrows += value
       }
       if (value > 0.001) {
         this.appliedActing[channel] = value
@@ -460,6 +483,10 @@ export class AvatarExpressionMixer {
     // per-source behaviour and avoiding accidental suppression (eyes vanishing).
     // The typed body contract admits no facial curves, so the
     // mixer does not need to blanket-zero every expression to stay authoritative.
+    if (attributing) {
+      this.attenuation.report('expression-mixer', 'mouth', requestedMouth, appliedMouth)
+      this.attenuation.report('expression-mixer', 'brows', requestedBrows, appliedBrows)
+    }
     const namesToWrite = new Set<string>([...this.writtenNames, ...final.keys()])
     for (const name of namesToWrite) {
       if (LOOKAT_NAMES.has(name)) continue

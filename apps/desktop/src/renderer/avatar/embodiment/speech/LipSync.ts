@@ -1,3 +1,4 @@
+import { type MotionAttenuationProbe, NOOP_MOTION_ATTENUATION_PROBE } from '../../MotionAttenuation'
 import { facialTuning } from '../../tuning/facialTuning'
 import { phraseLipSyncTuning } from '../../tuning/speechTuning'
 import type { FacialDebugState } from '../facial/AvatarExpressionMixer'
@@ -86,6 +87,7 @@ export class LipSync {
   private timeData: Uint8Array<ArrayBuffer> | null = null
   private freqData: Uint8Array<ArrayBuffer> | null = null
   private smoothed: MouthWeights = completeMouthWeights({})
+  private attenuation: MotionAttenuationProbe = NOOP_MOTION_ATTENUATION_PROBE
   private rawTarget: MouthWeights = completeMouthWeights({})
   private profiledTarget: MouthWeights = completeMouthWeights({})
   private blendedTarget: MouthWeights = completeMouthWeights({})
@@ -507,15 +509,27 @@ export class LipSync {
     }
   }
 
+  setAttenuationProbe(probe: MotionAttenuationProbe): void {
+    this.attenuation = probe
+  }
+
   private clampWeights(weights: MouthWeights): MouthWeights {
     const limited = this.limitPeak(weights)
-    return {
+    const clamped = {
       aa: Math.min(facialTuning.lipSync.clamps.aa, limited.aa),
       ih: Math.min(facialTuning.lipSync.clamps.ih, limited.ih),
       ou: Math.min(facialTuning.lipSync.clamps.ou, limited.ou),
       ee: Math.min(facialTuning.lipSync.clamps.ee, limited.ee),
       oh: Math.min(facialTuning.lipSync.clamps.oh, limited.oh),
     }
+    if (this.attenuation.active)
+      this.attenuation.report(
+        'lipsync-clamp',
+        'mouth',
+        Math.max(0, weights.aa + weights.ih + weights.ou + weights.ee + weights.oh),
+        Math.max(0, clamped.aa + clamped.ih + clamped.ou + clamped.ee + clamped.oh),
+      )
+    return clamped
   }
 
   private applyProceduralNoise(

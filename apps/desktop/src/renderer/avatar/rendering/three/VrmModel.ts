@@ -22,6 +22,7 @@ import type { TailBehaviorDebugState } from '../../embodiment/secondary-motion/T
 import type { SpeechPhrasePhase } from '../../embodiment/speech/PhraseEnvelopeController'
 import type { SpeechPhraseTimingPlan } from '../../embodiment/speech/SpeechPhraseTiming'
 import type { AvatarProceduralMode } from '../../embodiment/types'
+import type { MotionAttenuationProbe } from '../../MotionAttenuation'
 import { AvatarPerformanceMonitor } from './AvatarPerformanceMonitor'
 import type { ConversationViewConfig } from './ConversationFraming'
 import { GeneratedBodyPlayback } from './GeneratedBodyPlayback'
@@ -88,6 +89,13 @@ export class VrmModel {
   setPresentationOnly(value: boolean): void {
     this.bodyPlayback.setPresentationOnly(value)
     this.facialRuntime.setPresentationOnly(value)
+  }
+  getMotionFilterLimits() {
+    return this.bodyPlayback.getFilterLimits()
+  }
+  setMotionAttenuationProbe(probe: MotionAttenuationProbe): void {
+    this.bodyPlayback.setAttenuationProbe(probe)
+    this.facialRuntime.setAttenuationProbe(probe)
   }
   getBodyPresentation(): BodyPresentation | null {
     const body = this.bodyPlayback.getPresentation()

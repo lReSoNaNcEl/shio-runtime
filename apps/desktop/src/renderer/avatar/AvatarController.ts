@@ -37,6 +37,11 @@ import { AvatarGazeArbiter } from './embodiment/gaze/AvatarGazeArbiter'
 import type { EarAxisOverride, EarImpulse } from './embodiment/secondary-motion/EarBehaviorRuntime'
 import { LipSync, type LipSyncStartRequest, type MouthWeights } from './embodiment/speech/LipSync'
 import type { SpeechPhrasePhase } from './embodiment/speech/PhraseEnvelopeController'
+import {
+  MotionAttenuationAggregator,
+  type MotionAttenuationDebug,
+  NOOP_MOTION_ATTENUATION_PROBE,
+} from './MotionAttenuation'
 import type { ConversationViewConfig } from './rendering/three/ConversationFraming'
 import { previewHandBounds } from './rendering/three/previewHandBounds'
 import { VrmModel } from './rendering/three/VrmModel'
@@ -64,6 +69,7 @@ export class AvatarController {
   private playback = new AvatarPlaybackCoordinator(this.animations, this.vrmModel)
   private debugSnapshots = new AvatarDebugSnapshotBuilder()
   private lipSync = new LipSync(this.vrmModel)
+  private motionAttenuation: MotionAttenuationAggregator | null = null
   private stateEffects = new AvatarStateEffectApplier(this.vrmModel, this.lipSync)
   private stateMachine = new AvatarStateMachine()
   private gaze = new AvatarGazeArbiter()
@@ -549,6 +555,25 @@ export class AvatarController {
       mouthWeights: this.getMouthWeights(),
       behaviorTimeline: this.playback.getBehaviorTimeline(),
     })
+  }
+
+  /** Debug Preview only: production keeps every layer on the inactive probe. */
+  setMotionAttenuationEnabled(enabled: boolean): void {
+    if (enabled === (this.motionAttenuation !== null)) return
+    this.motionAttenuation = enabled
+      ? new MotionAttenuationAggregator({ now: () => performance.now() })
+      : null
+    const probe = this.motionAttenuation ?? NOOP_MOTION_ATTENUATION_PROBE
+    this.vrmModel.setMotionAttenuationProbe(probe)
+    this.lipSync.setAttenuationProbe(probe)
+  }
+
+  getMotionAttenuation(): MotionAttenuationDebug | null {
+    if (!this.motionAttenuation) return null
+    return {
+      ...this.motionAttenuation.snapshot(),
+      filterLimits: this.vrmModel.isLoaded() ? this.vrmModel.getMotionFilterLimits() : null,
+    }
   }
 
   previewMode(mode: DebugAvatarMode): void {

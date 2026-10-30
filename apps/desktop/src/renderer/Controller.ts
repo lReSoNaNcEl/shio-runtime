@@ -1153,6 +1153,14 @@ export class Controller {
     return this.avatarRuntime.getMotionLibraryDebug()
   }
 
+  setMotionAttenuationEnabled(enabled: boolean): void {
+    this.avatarRuntime.setMotionAttenuationEnabled(enabled)
+  }
+
+  getMotionAttenuation() {
+    return this.avatarRuntime.getMotionAttenuation()
+  }
+
   previewAvatarSequence(ids: readonly string[]): void {
     this.avatarRuntime.previewSequence(ids)
     this.updateOverlayMotionHud()

@@ -22,8 +22,14 @@ import {
 } from '../../../../shared/motion'
 import type { PcmPlaybackClock } from '../../../audio/audioPlayer'
 import type { AvatarBodyMotionLayer } from '../../embodiment/motion/AvatarMotionLayer'
+import {
+  type MotionAttenuationProbe,
+  motionAttenuationChannel,
+  NOOP_MOTION_ATTENUATION_PROBE,
+} from '../../MotionAttenuation'
 import type { MotionLibraryDebug } from '../../MotionLibraryDebug'
 import { type MotionOutcome, MotionPhaseExecution } from '../../MotionPhaseExecution'
+import { armRangeKey, expressivenessProfile } from '../../tuning/expressivenessProfile'
 import { ConsumedMotionClock } from './ConsumedMotionClock'
 import { ConsumedSpeechProsody } from './ConsumedSpeechProsody'
 import {
@@ -221,11 +227,24 @@ export class GeneratedBodyPlayback {
   private readonly q = new THREE.Quaternion()
   private readonly nextQ = new THREE.Quaternion()
   private readonly parentQ = new THREE.Quaternion()
+  private attenuation: MotionAttenuationProbe = NOOP_MOTION_ATTENUATION_PROBE
 
   constructor(
     private readonly onFacialChannelsRejected: (count: number) => void,
     private readonly dynamicsObserver?: MotionDynamicsObserver,
   ) {}
+
+  /** Debug attribution only; the production probe is inactive and computes nothing. */
+  setAttenuationProbe(probe: MotionAttenuationProbe): void {
+    this.attenuation = probe
+    this.bodySafety.setAttenuationProbe(probe)
+  }
+
+  private reportRestAttenuation(name: string, requested: number, fraction: number): void {
+    if (!this.attenuation.active) return
+    const channel = motionAttenuationChannel(name)
+    if (channel) this.attenuation.report('recover-rest', channel, requested, requested * fraction)
+  }
 
   private observe(stage: MotionDynamicsStage, binding: Binding, rotation: THREE.Quaternion): void {
     this.dynamicsObserver?.({
@@ -524,14 +543,13 @@ export class GeneratedBodyPlayback {
     for (const binding of this.bindings) {
       if (!/Arm|Shoulder/u.test(binding.name)) continue
       const angle = binding.calibratedSafe.angleTo(binding.safe)
-      const maximum = binding.name.includes('LowerArm')
-        ? 0.18
-        : binding.name.includes('UpperArm')
-          ? 0.08
-          : 0.04
+      const settle = expressivenessProfile.restAfterSpeech
+      const maximum = settle.maximum[armRangeKey(binding.name)]
       if (angle <= maximum) continue
       const raised = binding.safe.clone()
-      binding.safe.copy(binding.calibratedSafe).slerp(raised, Math.min(0.15, maximum / angle))
+      const fraction = Math.min(settle.retainedFraction, maximum / angle)
+      this.reportRestAttenuation(binding.name, angle, fraction)
+      binding.safe.copy(binding.calibratedSafe).slerp(raised, fraction)
       this.bodySafety.constrainTarget(binding.bone, binding.safe)
     }
   }
@@ -810,21 +828,11 @@ export class GeneratedBodyPlayback {
         for (const binding of this.bindings) {
           if (!/Arm|Shoulder/u.test(binding.name)) continue
           const angle = binding.calibratedSafe.angleTo(binding.bone.quaternion)
-          const maximum = binding.name.includes('LowerArm')
-            ? speaking
-              ? 0.9
-              : 0.18
-            : binding.name.includes('UpperArm')
-              ? speaking
-                ? 0.35
-                : 0.08
-              : 0.04
-          binding.safe
-            .copy(binding.calibratedSafe)
-            .slerp(
-              binding.bone.quaternion,
-              Math.min(speaking ? 0.6 : 0.15, maximum / Math.max(1e-8, angle)),
-            )
+          const rest = expressivenessProfile.restAfterAct[speaking ? 'speaking' : 'quiet']
+          const maximum = rest.maximum[armRangeKey(binding.name)]
+          const fraction = Math.min(rest.retainedFraction, maximum / Math.max(1e-8, angle))
+          this.reportRestAttenuation(binding.name, angle, fraction)
+          binding.safe.copy(binding.calibratedSafe).slerp(binding.bone.quaternion, fraction)
           // Flex/twist constraints are not a quaternion geodesic. Admit the new
           // rest target itself, so recovery does not chase a rejected elbow.
           this.bodySafety.constrainTarget(binding.bone, binding.safe)
@@ -1108,6 +1116,10 @@ export class GeneratedBodyPlayback {
           ? 'qualified'
           : 'draft',
     }
+  }
+
+  getFilterLimits() {
+    return this.bodySafety.getFilterLimits()
   }
 
   getLibraryDebug(): MotionLibraryDebug {
@@ -1894,6 +1906,11 @@ export class GeneratedBodyPlayback {
             ? binding.calibratedSafe
             : binding.safe
         const angle = center.angleTo(this.q)
+        if (this.attenuation.active) {
+          const channel = motionAttenuationChannel(binding.name)
+          if (channel)
+            this.attenuation.report('standing-arm-range', channel, angle, Math.min(angle, maximum))
+        }
         if (angle > maximum) {
           this.nextQ.copy(this.q)
           this.q.copy(center).slerp(this.nextQ, maximum / angle)

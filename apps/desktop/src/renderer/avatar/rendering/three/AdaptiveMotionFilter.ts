@@ -1,6 +1,11 @@
 import * as THREE from 'three'
 
 import type { MotionPhaseId } from '../../../../shared/motion'
+import {
+  type MotionAttenuationChannel,
+  type MotionAttenuationProbe,
+  NOOP_MOTION_ATTENUATION_PROBE,
+} from '../../MotionAttenuation'
 
 export type MotionClass = 'presence' | 'gesture' | 'reaction' | 'full-body'
 export const MOTIONBRICKS_CONVERSATION_MAX_JOINT_SPEED = 1.5
@@ -16,6 +21,26 @@ export interface MotionFilterContext {
   onProjected?: (bone: THREE.Object3D) => void
   jointKinds?: ReadonlyMap<THREE.Object3D, 'torso' | 'shoulder' | 'arm' | 'wrist'>
 }
+/** Cumulative bounded counters of which envelope limited tracked velocity. */
+export interface AdaptiveMotionFilterLimits {
+  frames: number
+  speedLimited: number
+  accelerationLimited: number
+  /** Presence speed ceiling (1.6 rad/s scaled by joint kind) bound the step. */
+  presenceCeiling: number
+  /** MOTIONBRICKS_CONVERSATION_MAX_JOINT_SPEED bound an expressive generated step. */
+  generatedSpeedCap: number
+  /** Frames of generated presence tracked at its calm bandwidth (8 instead of 28). */
+  generatedPresenceBandwidth: number
+}
+const emptyLimits = (): AdaptiveMotionFilterLimits => ({
+  frames: 0,
+  speedLimited: 0,
+  accelerationLimited: 0,
+  presenceCeiling: 0,
+  generatedSpeedCap: 0,
+  generatedPresenceBandwidth: 0,
+})
 interface State {
   target: THREE.Quaternion
   velocity: THREE.Vector3
@@ -37,9 +62,25 @@ const log = (rotation: THREE.Quaternion): THREE.Vector3 => {
  */
 export class AdaptiveMotionFilter {
   private readonly states = new Map<THREE.Object3D, State>()
+  private limits = emptyLimits()
+  private attenuation: MotionAttenuationProbe = NOOP_MOTION_ATTENUATION_PROBE
+  private attenuationChannels: ReadonlyMap<THREE.Object3D, MotionAttenuationChannel> = new Map()
 
   reset(): void {
     this.states.clear()
+    this.limits = emptyLimits()
+  }
+
+  setAttenuationProbe(
+    probe: MotionAttenuationProbe,
+    channels: ReadonlyMap<THREE.Object3D, MotionAttenuationChannel>,
+  ): void {
+    this.attenuation = probe
+    this.attenuationChannels = channels
+  }
+
+  getLimits(): AdaptiveMotionFilterLimits {
+    return { ...this.limits }
   }
 
   hold(): void {
@@ -79,12 +120,13 @@ export class AdaptiveMotionFilter {
       (torso ? 0.3 : shoulder ? 0.6 : 1) *
       geometry *
       phaseScale
-    const ceiling = Math.min(
-      (presence ? 1.6 : reaction ? 8 : 6) * (torso ? 0.35 : shoulder ? 0.6 : wrist ? 0.75 : 1),
+    const kindCeiling =
+      (presence ? 1.6 : reaction ? 8 : 6) * (torso ? 0.35 : shoulder ? 0.6 : wrist ? 0.75 : 1)
+    const generatedCap =
       context.generatedSource === true && !presence
         ? MOTIONBRICKS_CONVERSATION_MAX_JOINT_SPEED
-        : Infinity,
-    )
+        : Infinity
+    const ceiling = Math.min(kindCeiling, generatedCap)
     const sourceSpeed = context.sourceSpeeds?.get(bone) ?? sourceVelocity.length()
     sourceVelocity.clampLength(0, sourceSpeed)
     const reachingSpeed =
@@ -128,8 +170,18 @@ export class AdaptiveMotionFilter {
       .addScaledVector(initialError, frequency * frequency * dt)
       .multiplyScalar(decay)
       .add(feed)
-    const limited =
-      desired.length() > speed || desired.distanceTo(state.velocity) > acceleration * dt
+    const desiredSpeed = desired.length()
+    const speedLimited = desiredSpeed > speed
+    const accelerationLimited = desired.distanceTo(state.velocity) > acceleration * dt
+    const limited = speedLimited || accelerationLimited
+    this.limits.frames++
+    if (speedLimited) {
+      this.limits.speedLimited++
+      if (speed === ceiling && presence) this.limits.presenceCeiling++
+      else if (speed === ceiling && generatedCap < kindCeiling) this.limits.generatedSpeedCap++
+    }
+    if (accelerationLimited) this.limits.accelerationLimited++
+    if (presence && context.generatedSource === true) this.limits.generatedPresenceBandwidth++
     const change = desired
       .clampLength(0, speed)
       .sub(state.velocity)
@@ -137,6 +189,11 @@ export class AdaptiveMotionFilter {
     // A decreasing tracking envelope is a braking request, not permission to
     // instantaneously clip actual velocity at a phase/horizon boundary.
     state.velocity.add(change)
+    if (this.attenuation.active) {
+      const channel = this.attenuationChannels.get(bone)
+      if (channel)
+        this.attenuation.report('adaptive-filter', channel, desiredSpeed, state.velocity.length())
+    }
     const step = limited ? state.velocity.clone().multiplyScalar(dt) : error.clone().sub(remainder)
     const angle = step.length()
     bone.quaternion.copy(previous)

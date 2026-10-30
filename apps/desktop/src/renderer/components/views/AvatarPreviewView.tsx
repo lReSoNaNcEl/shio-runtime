@@ -30,6 +30,7 @@ import { type MotionLibraryDebug } from '../../avatar/MotionLibraryDebug'
 import { controller } from '../../Controller'
 import { useTranslation } from '../../localization/useTranslation'
 import { observeRendererPromise } from '../../reliability/observePromise'
+import { MotionAttenuationPanel } from './MotionAttenuationPanel'
 
 type Phase = 'closed' | 'loading' | 'ready' | 'error'
 type AvailabilityFilter = 'all' | 'available' | 'unavailable'
@@ -549,6 +550,7 @@ export function AvatarPreviewView({ onOpenSettings }: { onOpenSettings: () => vo
                   </div>
                 </DisclosurePanel>
               </Disclosure>
+              <MotionAttenuationPanel />
               <Disclosure isQuiet UNSAFE_className="preview-animation-details">
                 <DisclosureTitle level={4}>{t('avatarPreview.details')}</DisclosureTitle>
                 <DisclosurePanel>

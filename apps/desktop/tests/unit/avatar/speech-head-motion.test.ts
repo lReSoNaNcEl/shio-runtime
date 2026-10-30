@@ -84,4 +84,29 @@ describe('speech-driven head motion', () => {
     expect(starts).toBe(2)
     runtime.detach()
   })
+
+  it('attributes head authority scaling only while a probe is active', () => {
+    const head = new THREE.Object3D()
+    const vrm = {
+      humanoid: { getNormalizedBoneNode: (name: string) => (name === 'head' ? head : null) },
+    } as unknown as VRM
+    const runtime = new HeadMotionRuntime()
+    const reports: Array<[number, number]> = []
+    runtime.setAttenuationProbe({
+      active: true,
+      report: (_stage, _channel, requested, applied) => reports.push([requested, applied]),
+    })
+    runtime.attach(vrm)
+    runtime.setProfile('speaking')
+    runtime.setSpeechEnergy(0.6)
+    for (let frame = 0; frame < 20; frame++) runtime.update(0.05)
+    const full = reports.filter(([requested]) => requested > 1e-6)
+    expect(full.length).toBeGreaterThan(0)
+    expect(full.every(([requested, applied]) => applied <= requested + 1e-9)).toBe(true)
+    reports.length = 0
+    runtime.setAuthorityWeight(0.1)
+    for (let frame = 0; frame < 20; frame++) runtime.update(0.05)
+    expect(reports.some(([requested, applied]) => applied < requested * 0.5)).toBe(true)
+    runtime.detach()
+  })
 })

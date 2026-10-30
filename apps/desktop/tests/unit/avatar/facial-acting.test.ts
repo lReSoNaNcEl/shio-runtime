@@ -187,4 +187,27 @@ describe('capability-gated facial acting', () => {
       facialActingPresentationSchema.safeParse({ acting: {}, blinkLeft: 2, blinkRight: 0 }).success,
     ).toBe(false)
   })
+
+  it('attributes mouth closure and blink-protected acting to the Mixer only while probed', () => {
+    const { vrm } = rig()
+    const mixer = new AvatarExpressionMixer()
+    const reports: Array<[string, string, number, number]> = []
+    mixer.setAttenuationProbe({
+      active: true,
+      report: (stage, channel, requested, applied) =>
+        reports.push([stage, channel, requested, applied]),
+    })
+    mixer.attach(vrm)
+    mixer.beginFrame(0.02)
+    mixer.setFacialActing({ browInnerUp: 0.3, mouthSmileLeft: 0.4 })
+    mixer.apply()
+    expect(reports).toContainEqual(['expression-mixer', 'mouth', 0.4, 0.4])
+    expect(reports).toContainEqual(['expression-mixer', 'brows', 0.3, 0.3])
+    reports.length = 0
+    mixer.setMouthClosure(0.5)
+    mixer.apply()
+    const mouth = reports.find(([, channel]) => channel === 'mouth')
+    expect(mouth?.[3]).toBeLessThan(mouth?.[2] ?? 0)
+    mixer.detach()
+  })
 })
