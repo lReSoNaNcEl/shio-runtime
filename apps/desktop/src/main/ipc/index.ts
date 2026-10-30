@@ -11,12 +11,11 @@ import type { CapabilityCatalog } from '../capabilities'
 import { getConfig } from '../config'
 import type { DesktopControlPlugin } from '../desktop-control'
 import {
-  createLLMProvider,
   getProviderProfile,
   isLlmProviderId,
   type LlmCredentialStore,
-  type LlmGateway,
-  resolveLlmProviderAccountId,
+  LlmGateway,
+  resolveLlmRoleSettings,
 } from '../llm'
 import type { MemoryRuntime } from '../memory'
 import type { Orchestrator } from '../orchestrator'
@@ -181,13 +180,14 @@ export function registerIpcHandlers(
             ok: false,
             error: translate(getConfig().uiLocale, 'main.error.selectorProviderMissing'),
           }
-        const providerId = role.providerId
-        const credential = llmCredentialStore().resolve(providerId)
-        const accountId = resolveLlmProviderAccountId(
-          providerId,
-          config.llm.providers[providerId].accountId,
+        const selector = resolveLlmRoleSettings('backlogSelector', {
+          config: () => config.llm,
+          credential: (provider) => llmCredentialStore().resolve(provider),
+        })
+        if (
+          !selector.apiKey ||
+          (getProviderProfile(selector.provider).requiresAccountId && !selector.accountId)
         )
-        if (!credential.apiKey || (getProviderProfile(providerId).requiresAccountId && !accountId))
           return {
             ok: false,
             error: translate(getConfig().uiLocale, 'main.error.selectorKeyMissing'),
@@ -213,12 +213,12 @@ export function registerIpcHandlers(
             () => arbitrationController.abort(new Error('Backlog arbitration deadline exceeded')),
             role.timeoutMs,
           )
-          const provider = createLLMProvider({
-            provider: providerId,
-            apiKey: credential.apiKey,
-            model: role.model,
-            accountId,
-          })
+          const provider = new LlmGateway(() => ({
+            provider: selector.provider,
+            apiKey: selector.apiKey,
+            model: selector.model,
+            accountId: selector.accountId,
+          }))
           try {
             const raw = await provider.chat(
               [

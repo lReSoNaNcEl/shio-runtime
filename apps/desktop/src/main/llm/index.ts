@@ -46,6 +46,14 @@ export {
   resolveModelCapabilities,
   resolveProviderChatBaseUrl,
 } from './registry'
+export {
+  LLM_ROLE_IDS,
+  type LlmRoleId,
+  type LlmRoleSelection,
+  type LlmRoleSources,
+  type ResolvedLlmRoleSettings,
+  resolveLlmRoleSettings,
+} from './roleSettings'
 export type {
   ChatMessage,
   LLMProvider,

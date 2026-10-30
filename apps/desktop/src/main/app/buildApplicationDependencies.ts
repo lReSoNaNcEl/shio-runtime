@@ -52,9 +52,12 @@ import {
   LlmCredentialStore,
   LlmGateway,
   type LlmProviderId,
+  type LlmRoleId,
+  type LlmRoleSelection,
   LlmTurnCancelledError,
-  resolveLlmProviderAccountId,
+  type ResolvedLlmRoleSettings,
   resolveLlmReadiness,
+  resolveLlmRoleSettings,
   resolveProviderChatBaseUrl,
 } from '../llm'
 import { mainLog } from '../logging/safeLogger'
@@ -204,6 +207,26 @@ export function buildApplicationDependencies(): ApplicationDependencies {
     return llmCredentialStore
   }
 
+  /** The single composition point that resolves provider, model, key and account for a role. */
+  const resolveRoleSettings = (
+    role: LlmRoleId,
+    selection?: LlmRoleSelection,
+  ): ResolvedLlmRoleSettings =>
+    resolveLlmRoleSettings(
+      role,
+      {
+        config: () => getConfig().llm,
+        credential: (provider) => getLlmCredentialStore().resolve(provider),
+      },
+      selection,
+    )
+  const gatewaySettings = ({ provider, apiKey, model, accountId }: ResolvedLlmRoleSettings) => ({
+    provider,
+    apiKey,
+    model,
+    accountId,
+  })
+
   const buildProjectAwareness = (): ProjectAwarenessPlugin => {
     const directory = join(app.getPath('userData'), 'plugins', PROJECT_AWARENESS_MANIFEST.id)
     projectKnowledgeStore ??= new ProjectKnowledgeStore(
@@ -261,23 +284,23 @@ export function buildApplicationDependencies(): ApplicationDependencies {
       desktopControl = buildDesktopControlPlugin({
         adapter: new DshHarnessAdapter({
           model: () => {
-            const { activeProvider, providers } = getConfig().llm
-            const definition = getProviderDefinition(activeProvider)
-            const credential = getLlmCredentialStore().resolve(activeProvider)
-            const accountId = resolveLlmProviderAccountId(
-              activeProvider,
-              providers[activeProvider].accountId,
-            )
+            // DSH runs as the Character role and keeps its own credential handoff.
+            const character = resolveRoleSettings('character')
+            const definition = getProviderDefinition(character.provider)
+            const accountId = character.accountId ?? ''
             return {
-              provider: activeProvider,
+              provider: character.provider,
               providerDisplayName: definition.profile.displayName,
-              model: providers[activeProvider].model.trim(),
-              baseURL: resolveProviderChatBaseUrl(activeProvider, { accountId }).replace(/\/$/, ''),
-              apiKey: credential.apiKey,
+              model: character.model.trim(),
+              baseURL: resolveProviderChatBaseUrl(character.provider, { accountId }).replace(
+                /\/$/,
+                '',
+              ),
+              apiKey: character.apiKey,
               credentialConfigured:
-                credential.status.configured &&
+                character.credential.configured &&
                 (!definition.profile.requiresAccountId || Boolean(accountId)),
-              lastError: credential.status.lastError,
+              lastError: character.credential.lastError,
             }
           },
           resources: () => ({
@@ -318,20 +341,14 @@ export function buildApplicationDependencies(): ApplicationDependencies {
         ),
       })
       const resolveVisualModel = () => {
-        const config = getConfig().llm
-        const role = config.roles.computerUseVision
-        const automatic = !role.providerId
-        const provider = role.providerId || config.activeProvider
-        const providerSettings = config.providers[provider]
-        const credential = getLlmCredentialStore().resolve(provider)
-        const accountId = resolveLlmProviderAccountId(provider, providerSettings.accountId)
-        return {
+        const {
           automatic,
           provider,
-          apiKey: credential.apiKey,
-          model: automatic ? providerSettings.model.trim() : role.model.trim(),
-          accountId,
-        }
+          apiKey,
+          model,
+          accountId = '',
+        } = resolveRoleSettings('computerUseVision')
+        return { automatic, provider, apiKey, model, accountId }
       }
       const visualGateway = new LlmGateway(resolveVisualModel)
       const visualProvider = (): LlmGateway | undefined => {
@@ -444,20 +461,7 @@ export function buildApplicationDependencies(): ApplicationDependencies {
   }
 
   const buildOrchestrator = (): Orchestrator => {
-    llmGateway = new LlmGateway(() => {
-      const { activeProvider, providers } = getConfig().llm
-      const credential = getLlmCredentialStore().resolve(activeProvider)
-      const accountId = resolveLlmProviderAccountId(
-        activeProvider,
-        providers[activeProvider].accountId,
-      )
-      return {
-        provider: activeProvider,
-        apiKey: credential.apiKey,
-        model: providers[activeProvider].model,
-        accountId,
-      }
-    })
+    llmGateway = new LlmGateway(() => gatewaySettings(resolveRoleSettings('character')))
     const speech = getSpeechClientManager()
     observeMainPromise(speech.warnIfEmotionContractDrift(), 'check speech emotion contract')
     return new Orchestrator(
@@ -677,18 +681,7 @@ export function buildApplicationDependencies(): ApplicationDependencies {
       providerId?: LlmProviderId
       model?: string
     }): LlmGateway =>
-      new LlmGateway(() => {
-        const config = getConfig().llm
-        const provider = selection.providerId ?? config.activeProvider
-        const providerSettings = config.providers[provider]
-        const credential = getLlmCredentialStore().resolve(provider)
-        return {
-          provider,
-          apiKey: credential.apiKey,
-          model: selection.model?.trim() || providerSettings.model,
-          accountId: resolveLlmProviderAccountId(provider, providerSettings.accountId),
-        }
-      })
+      new LlmGateway(() => gatewaySettings(resolveRoleSettings('fastBrain', selection)))
     conversationTurnService = new MainConversationTurnService(
       resolveOrchestrator,
       resolveLlmGateway,
