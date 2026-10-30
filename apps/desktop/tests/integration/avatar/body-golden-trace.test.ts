@@ -32,11 +32,13 @@ const round = (value: number) => Math.round(value * 1e6) / 1e6
 const digest = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex')
 
 /** Deterministic, varied SOMA30 arm source: different frequencies per joint and side. */
-function sourceRotations(frame: number): number[][] {
+type Quaternion = [number, number, number, number]
+
+function sourceRotations(frame: number): Quaternion[] {
   return Array.from({ length: 30 }, (_, index) => {
     const lead = [17, 18, 19].includes(index)
     const support = [11, 12, 13].includes(index)
-    if (!lead && !support) return [0, 0, 0, 1]
+    if (!lead && !support) return [0, 0, 0, 1] as Quaternion
     const phase = frame / 30
     const sign = lead ? 1 : -1
     return new THREE.Quaternion()
@@ -47,7 +49,7 @@ function sourceRotations(frame: number): number[][] {
           sign * (0.4 + 0.5 * Math.sin(phase * 3.7 + index / 3)),
         ),
       )
-      .toArray()
+      .toArray() as Quaternion
   })
 }
 
