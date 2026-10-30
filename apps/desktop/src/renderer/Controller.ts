@@ -1168,6 +1168,10 @@ export class Controller {
     return this.avatarRuntime.getMotionAttenuation()
   }
 
+  captureAvatarKeypose(side: 'left' | 'right', anchor: 'hips' | 'chest' | 'neck' | 'head') {
+    return this.avatarRuntime.captureKeypose(side, anchor)
+  }
+
   previewAvatarSequence(ids: readonly string[]): void {
     this.avatarRuntime.previewSequence(ids)
     this.updateOverlayMotionHud()

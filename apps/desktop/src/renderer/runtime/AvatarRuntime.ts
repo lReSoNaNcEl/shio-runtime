@@ -205,6 +205,9 @@ export class AvatarRuntime {
   getMotionAttenuation() {
     return this.controller.getMotionAttenuation()
   }
+  captureKeypose(side: 'left' | 'right', anchor: 'hips' | 'chest' | 'neck' | 'head') {
+    return this.controller.captureKeypose(side, anchor)
+  }
   previewSequence(ids: readonly string[]): void {
     this.controller.previewSequence(ids)
   }

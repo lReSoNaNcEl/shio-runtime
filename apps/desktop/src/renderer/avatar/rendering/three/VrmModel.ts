@@ -2,7 +2,7 @@ import type { VRM } from '@pixiv/three-vrm'
 import type * as THREE from 'three'
 
 import type { DeliveryStyle } from '../../../../shared/embodiment'
-import type { BodyPresentation } from '../../../../shared/motion'
+import type { BodyPresentation, MotionKeypose } from '../../../../shared/motion'
 import type { PcmPlaybackClock } from '../../../audio/audioPlayer'
 import { AvatarFacialRuntime } from '../../embodiment/AvatarFacialRuntime'
 import type { FacialDebugState } from '../../embodiment/facial/FacialDebugTypes'
@@ -32,6 +32,12 @@ import type {
   GeneratedMotionRequestContext,
   VrmPerformanceDebugState,
 } from './GeneratedMotionTypes'
+import {
+  type KeyposeAnchor,
+  type KeyposeSide,
+  keyposeFromRig,
+  sampleKeyposeRig,
+} from './KeyposeAuthoring'
 import { VrmModelLoader } from './VrmModelLoader'
 
 export type {
@@ -94,6 +100,11 @@ export class VrmModel {
   setDeliveryStyle(style: DeliveryStyle | null): void {
     this.bodyPlayback.setDeliveryStyle(style)
     this.facialRuntime.setDeliveryStyle(style)
+  }
+  /** Debug Preview authoring only: the current arm pose as a rig-relative keypose. */
+  captureKeypose(side: KeyposeSide, anchor: KeyposeAnchor): MotionKeypose | null {
+    const sample = this.vrm ? sampleKeyposeRig(this.vrm, side, anchor) : null
+    return sample ? keyposeFromRig(sample, anchor) : null
   }
   getMotionFilterLimits() {
     return this.bodyPlayback.getFilterLimits()

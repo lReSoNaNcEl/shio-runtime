@@ -35,6 +35,10 @@ TALK_TORSO_YAW = 0.11
 TALK_LEAD_PERSISTENCE = 0.6
 GESTURE_TORSO_YAW = 0.12
 PRESS_LEAN = 0.06
+# Catalog workspace and keypose anchors on the SOMA skeleton.
+ANCHOR_JOINTS = {"hips": "Hips", "chest": "Spine2", "neck": "Neck1", "head": "Head"}
+# Seeded per-execution variation around an authored keypose, in arm lengths.
+KEYPOSE_VARIATION = 0.25
 BEAT_SHAPE_WEIGHTS = np.array([0.4, 0.35, 0.25])
 BEAT_LEAD_WEIGHTS = np.array([0.45, 0.35, 0.2])
 # Bounded delivery style (contracts/embodiment-style.v1.json). The neutral style
@@ -259,12 +263,7 @@ class TargetPlanner:
                 destinations[side] = wrist.copy()
                 continue
             space = self.workspaces[score["workspace"]]
-            anchor = {
-                "hips": "Hips",
-                "chest": "Spine2",
-                "neck": "Neck1",
-                "head": "Head",
-            }[space["anchor"]]
+            anchor = ANCHOR_JOINTS[space["anchor"]]
             center = np.array(space["center"]) + np.array(
                 score.get("workspaceOffset", [0, 0, 0])
             )
@@ -280,6 +279,12 @@ class TargetPlanner:
                 * length
                 * score.get("workspaceExtentScale", 1)
             )
+            keyposes = score.get("keyposes")
+            if keyposes:
+                destinations[side] = self.keypose_target(
+                    world, keyposes, sign, length, variation, rng, center, extents
+                )
+                continue
             # Deliberately different preparatory and communicative pose goals
             # inside the SAME catalog region. Raising the arm is not the stroke.
             direction = np.array([sign * 0.65, 0.35, 0.35])
@@ -308,6 +313,25 @@ class TargetPlanner:
         while len(self.variations) > 6:
             del self.variations[next(iter(self.variations))]
         return destinations
+
+    def keypose_target(
+        self, world, keyposes, sign, length, variation, rng, center, extents
+    ):
+        """An authored rig-relative goal, one per execution, inside the workspace.
+
+        Offsets are in arm lengths from the anchor (x lateral outward), so the same
+        keypose scales with each rig. The catalog workspace stays authoritative.
+        """
+        pose = (
+            keyposes[int(rng.integers(len(keyposes)))]
+            if len(keyposes) > 1
+            else keyposes[0]
+        )
+        offset = np.array(pose["offset"], dtype=float) * length
+        offset[0] *= sign
+        anchor = world[-1, self.names.index(ANCHOR_JOINTS[pose["anchor"]]), :3]
+        target = anchor + offset + variation * KEYPOSE_VARIATION * length
+        return np.clip(target, center - extents, center + extents)
 
     def goal(self, history, profile, phase, seed, activity, plan=None):
         goal = history[-1].copy()

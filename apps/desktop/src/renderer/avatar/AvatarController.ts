@@ -6,7 +6,7 @@ import {
   type EmbodimentIntentContext,
 } from '../../shared/character-response'
 import { type DeliveryMood, resolveDeliveryStyle } from '../../shared/embodiment'
-import { type BodyPresentation, getMotionProfile } from '../../shared/motion'
+import { type BodyPresentation, getMotionProfile, type MotionKeypose } from '../../shared/motion'
 import type { CharacterState } from '../../shared/runtime'
 import type { PcmPlaybackClock } from '../audio/audioPlayer'
 import { AvatarAnimationController } from './AvatarAnimationController'
@@ -626,6 +626,13 @@ export class AvatarController {
     const probe = this.motionAttenuation ?? NOOP_MOTION_ATTENUATION_PROBE
     this.vrmModel.setMotionAttenuationProbe(probe)
     this.lipSync.setAttenuationProbe(probe)
+  }
+
+  captureKeypose(
+    side: 'left' | 'right',
+    anchor: 'hips' | 'chest' | 'neck' | 'head',
+  ): MotionKeypose | null {
+    return this.vrmModel.captureKeypose(side, anchor)
   }
 
   getMotionAttenuation(): MotionAttenuationDebug | null {

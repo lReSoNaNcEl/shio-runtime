@@ -460,6 +460,56 @@ class PlannerTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 validate_activity(broken)
 
+    def keyposed_profile(self, offset=(0.2, 0.55, 0.45)):
+        profile = copy.deepcopy(self.profile("explain_one_palm"))
+        score = profile["handScore"]["phases"]["stroke"]
+        lead = "right" if score["right"]["role"] == "lead" else "left"
+        score[lead]["keyposes"] = [{"anchor": "chest", "offset": list(offset)}]
+        return profile, lead
+
+    def stroke_hand(self, planner, profile, lead, seed=5):
+        world = world_poses(planner.standing[None].repeat(4, axis=0), self.parents)
+        return planner.destinations(
+            world, profile, "stroke", seed, {"executionId": "k"}
+        )[lead]
+
+    def test_keypose_goal_scales_with_arm_length_on_different_rigs(self):
+        profile, lead = self.keyposed_profile()
+        small = self.stroke_hand(self.planner, profile, lead)
+        positions = self.standing.copy()
+        for name in ("LeftForeArm", "LeftHand", "RightForeArm", "RightHand"):
+            positions[self.names.index(name), :3] *= 1.5
+        larger = TargetPlanner(
+            self.names, self.parents, positions, self.catalog["handWorkspaces"]
+        )
+        large = self.stroke_hand(larger, profile, lead)
+        chest = world_poses(self.standing[None], self.parents)[0][
+            self.names.index("Spine2"), :3
+        ]
+        self.assertGreater(
+            np.linalg.norm(large - chest), np.linalg.norm(small - chest) * 1.2
+        )
+
+    def test_keypose_is_used_when_present_and_heuristic_remains_otherwise(self):
+        profile, lead = self.keyposed_profile()
+        plain = self.stroke_hand(self.planner, self.profile("explain_one_palm"), lead)
+        self.planner.reset()
+        keyposed = self.stroke_hand(self.planner, profile, lead)
+        self.assertGreater(np.linalg.norm(plain - keyposed), 0.01)
+        self.planner.reset()
+        np.testing.assert_array_equal(
+            keyposed, self.stroke_hand(self.planner, profile, lead)
+        )
+
+    def test_keypose_goal_stays_inside_the_catalog_workspace(self):
+        profile, lead = self.keyposed_profile(offset=(1.5, 1.5, 1.5))
+        far = self.stroke_hand(self.planner, profile, lead)
+        self.planner.reset()
+        near, _ = self.keyposed_profile(offset=(1.4, 1.4, 1.4))
+        near_target = self.stroke_hand(self.planner, near, lead)
+        # Both exceed the workspace, so both are clamped to the same box faces.
+        np.testing.assert_allclose(far, near_target, atol=1e-6)
+
 
 if __name__ == "__main__":
     unittest.main()

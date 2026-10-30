@@ -29,6 +29,26 @@ const finger = z
     opposition: finite.min(0).max(1.2),
   })
   .strict()
+const unitAxis = finite.min(-1).max(1)
+/** An authored generator goal, not a clip: the wrist offset from a body anchor in
+ * arm lengths (x lateral outward from the body midline, y up, z forward). */
+export const motionKeyposeSchema = z
+  .object({
+    anchor: z.enum(['hips', 'chest', 'neck', 'head']),
+    offset: z.tuple([
+      finite.min(-1.5).max(1.5),
+      finite.min(-1.5).max(1.5),
+      finite.min(-1.5).max(1.5),
+    ]),
+    /** Palm normal for authoring reference; palmFacing remains the runtime authority. */
+    palmNormal: z.tuple([unitAxis, unitAxis, unitAxis]).optional(),
+  })
+  .strict()
+  .refine(
+    (pose) => !pose.palmNormal || Math.abs(Math.hypot(...pose.palmNormal) - 1) <= 0.05,
+    'Keypose palm normal must be a unit vector',
+  )
+export type MotionKeypose = z.infer<typeof motionKeyposeSchema>
 export const motionHandTargetSchema = z
   .object({
     role: z.enum(['lead', 'support', 'bilateral']),
@@ -56,6 +76,8 @@ export const motionHandTargetSchema = z
     fingers: z
       .object({ thumb: finger, index: finger, middle: finger, ring: finger, little: finger })
       .strict(),
+    /** Optional authored goals for this phase; the worker picks one per execution. */
+    keyposes: z.array(motionKeyposeSchema).min(1).max(4).optional(),
   })
   .strict()
   .refine(

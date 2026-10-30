@@ -30,6 +30,7 @@ import { type MotionLibraryDebug } from '../../avatar/MotionLibraryDebug'
 import { controller } from '../../Controller'
 import { useTranslation } from '../../localization/useTranslation'
 import { observeRendererPromise } from '../../reliability/observePromise'
+import { KeyposeAuthoringPanel } from './KeyposeAuthoringPanel'
 import { MotionAttenuationPanel } from './MotionAttenuationPanel'
 
 type Phase = 'closed' | 'loading' | 'ready' | 'error'
@@ -551,6 +552,7 @@ export function AvatarPreviewView({ onOpenSettings }: { onOpenSettings: () => vo
                 </DisclosurePanel>
               </Disclosure>
               <MotionAttenuationPanel />
+              <KeyposeAuthoringPanel />
               <Disclosure isQuiet UNSAFE_className="preview-animation-details">
                 <DisclosureTitle level={4}>{t('avatarPreview.details')}</DisclosureTitle>
                 <DisclosurePanel>
