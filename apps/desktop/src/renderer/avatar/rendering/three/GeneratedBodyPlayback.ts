@@ -41,6 +41,12 @@ import {
   gestureRegionsVisible,
   resolveConversationView,
 } from './ConversationFraming'
+import {
+  type Binding,
+  createBindings,
+  measurePlantedFeet,
+  type PlantedFoot,
+} from './GeneratedBodyBindings'
 import { GeneratedBodySafety } from './GeneratedBodySafety'
 import { calibrateFingerSpreadSigns, GeneratedHandPose } from './GeneratedHandPose'
 import type { GeneratedBodyDebugState, GeneratedMotionRequestContext } from './GeneratedMotionTypes'
@@ -48,6 +54,11 @@ import type { MotionDynamicsObserver, MotionDynamicsStage } from './MotionDynami
 import { plantLeg } from './plantLeg'
 import { SomaHandRetargeting } from './SomaHandRetargeting'
 import { sourceHandDisplacements } from './SourceHandDisplacements'
+import {
+  captureSpeechOrigin,
+  type SpeechPreparationOrigin,
+  speechWindowMissed,
+} from './SpeechPreparationWindow'
 import { standingArmRange } from './StandingMotionStyle'
 import { sampleSourceRotation } from './sampleSourceRotation'
 import { TurnInPlaceMotion } from './TurnInPlaceMotion'
@@ -56,47 +67,6 @@ type HeadPresentationBoneName = (typeof HEAD_PRESENTATION_BONE_NAMES)[number]
 
 /** Source seconds over which the conversational arm range fades after speech. */
 const CONVERSATIONAL_RELEASE_SECONDS = 1.6
-
-// SOMA30 standard T-pose, Y up, metres, world xyzw rotations. No head/neck,
-// facial, jaw, eye or finger source is admitted through this body mapping.
-const BONES: ReadonlyArray<[number, VRMHumanBoneName]> = [
-  [0, 'hips'],
-  [1, 'spine'],
-  [2, 'chest'],
-  [3, 'upperChest'],
-  [16, 'rightShoulder'],
-  [17, 'rightUpperArm'],
-  [18, 'rightLowerArm'],
-  [19, 'rightHand'],
-  [10, 'leftShoulder'],
-  [11, 'leftUpperArm'],
-  [12, 'leftLowerArm'],
-  [13, 'leftHand'],
-  [26, 'rightUpperLeg'],
-  [27, 'rightLowerLeg'],
-  [28, 'rightFoot'],
-  [29, 'rightToes'],
-  [22, 'leftUpperLeg'],
-  [23, 'leftLowerLeg'],
-  [24, 'leftFoot'],
-  [25, 'leftToes'],
-]
-
-interface Binding {
-  index: number
-  name: VRMHumanBoneName
-  bone: THREE.Object3D
-  restInModel: THREE.Quaternion
-  filteredLocal: THREE.Quaternion
-  safe: THREE.Quaternion
-  calibratedSafe: THREE.Quaternion
-  sourceTarget?: THREE.Quaternion
-}
-
-interface SpeechPreparationOrigin {
-  playbackId: string | null
-  offset: number
-}
 
 /** Bounded generated body owner; the facial Runtime still composes after it. */
 export class GeneratedBodyPlayback {
@@ -211,14 +181,7 @@ export class GeneratedBodyPlayback {
   private rootAnchor = new THREE.Vector3()
   private chestAnchor = new THREE.Vector3()
   private filteredRootY = 0
-  private plantedFeet: Array<{
-    upper: THREE.Object3D
-    lower: THREE.Object3D
-    foot: THREE.Object3D
-    target: THREE.Vector3
-    orientation: THREE.Quaternion
-    pole: THREE.Vector3
-  }> = []
+  private plantedFeet: PlantedFoot[] = []
   private readiness: {
     version: number
     resolve: () => void
@@ -307,26 +270,7 @@ export class GeneratedBodyPlayback {
     safeHandPose.sample('presence_poised', 0, 0, vrm.meta.metaVersion)
     this.safeHands = safeHandPose.sample('presence_poised', 0.35, 0, vrm.meta.metaVersion)
     this.handPose.reset(this.safeHands)
-    this.bindings = BONES.flatMap(([index, name]) => {
-      const bone = vrm.humanoid.getNormalizedBoneNode(name)
-      if (!bone) return []
-      const safe = bone.quaternion.clone()
-      if (name === 'rightUpperArm')
-        safe.multiply(new THREE.Quaternion().setFromAxisAngle(axis, sign * 1.15))
-      if (name === 'leftUpperArm')
-        safe.multiply(new THREE.Quaternion().setFromAxisAngle(axis, -sign * 1.15))
-      return [
-        {
-          index,
-          name,
-          bone,
-          restInModel: bone.getWorldQuaternion(new THREE.Quaternion()).premultiply(inverseModel),
-          filteredLocal: safe.clone(),
-          safe,
-          calibratedSafe: safe.clone(),
-        },
-      ]
-    })
+    this.bindings = createBindings(vrm, axis, sign, inverseModel)
     this.rootAnchor.copy(
       vrm.humanoid.getNormalizedBoneNode('hips')?.position ?? new THREE.Vector3(),
     )
@@ -344,25 +288,7 @@ export class GeneratedBodyPlayback {
       binding.filteredLocal.copy(binding.bone.quaternion)
     }
     vrm.scene.updateMatrixWorld(true)
-    this.plantedFeet = (['left', 'right'] as const).flatMap((side) => {
-      const upper = vrm.humanoid.getNormalizedBoneNode(`${side}UpperLeg`)
-      const lower = vrm.humanoid.getNormalizedBoneNode(`${side}LowerLeg`)
-      const foot = vrm.humanoid.getNormalizedBoneNode(`${side}Foot`)
-      return upper && lower && foot
-        ? [
-            {
-              upper,
-              lower,
-              foot,
-              target: foot.getWorldPosition(new THREE.Vector3()),
-              orientation: foot.getWorldQuaternion(new THREE.Quaternion()),
-              pole: new THREE.Vector3(0, 0, sign).applyQuaternion(
-                vrm.scene.getWorldQuaternion(new THREE.Quaternion()),
-              ),
-            },
-          ]
-        : []
-    })
+    this.plantedFeet = measurePlantedFeet(vrm, sign)
     for (const leg of this.plantedFeet)
       plantLeg(leg.upper, leg.lower, leg.foot, leg.target, leg.orientation, leg.pole)
     for (const binding of this.bindings)
@@ -522,7 +448,7 @@ export class GeneratedBodyPlayback {
     this.pendingProfiles = this.pendingProfiles.filter((pending) => {
       if (
         !pending.context.speechBound ||
-        !this.speechWindowMissed(pending.id, pending.speechOrigin)
+        !speechWindowMissed(this.clock, pending.id, pending.speechOrigin)
       )
         return true
       pending.reject(new Error('MOTION_SPEECH_WINDOW_MISSED'))
@@ -533,7 +459,7 @@ export class GeneratedBodyPlayback {
       this.playing &&
       this.context?.speechBound &&
       this.execution?.phase === 'prepare' &&
-      this.speechWindowMissed(this.profileId, this.speechOrigin)
+      speechWindowMissed(this.clock, this.profileId, this.speechOrigin)
     ) {
       // Expire only an unstarted accent. Queue/inference wait counts against
       // the same catalog preparation budget in actually consumed speech time.
@@ -568,26 +494,6 @@ export class GeneratedBodyPlayback {
     // reports. It steers future targets, never individual joint samples.
     this.speechEnergy += (bounded - this.speechEnergy) * 0.08
     this.speechProsody.observe(this.clock, bounded)
-  }
-
-  private speechWindowMissed(id: string, origin: SpeechPreparationOrigin): boolean {
-    const clock = this.clock
-    const profile = getMotionProfile(id)
-    if (!clock || profile?.kind !== 'gesture') return false
-    origin.playbackId ??= clock.playbackId
-    if (origin.playbackId !== clock.playbackId) return true
-    const budget = profile.phases.find((phase) => phase.id === 'prepare')
-    return (
-      !!budget &&
-      ((clock.sourceSampleOffset - origin.offset) * 1000) / clock.sourceSampleRate > budget.maxMs
-    )
-  }
-
-  private captureSpeechOrigin(): SpeechPreparationOrigin {
-    return {
-      playbackId: this.clock?.playbackId ?? null,
-      offset: this.clock?.sourceSampleOffset ?? 0,
-    }
   }
 
   playProfile(id: string, context: GeneratedMotionRequestContext): Promise<void> {
@@ -646,7 +552,7 @@ export class GeneratedBodyPlayback {
           id,
           context,
           at: performance.now(),
-          speechOrigin: this.captureSpeechOrigin(),
+          speechOrigin: captureSpeechOrigin(this.clock),
           resolve,
           reject,
         })
@@ -706,7 +612,7 @@ export class GeneratedBodyPlayback {
   private beginProfile(
     id: string,
     context: GeneratedMotionRequestContext,
-    speechOrigin = this.captureSpeechOrigin(),
+    speechOrigin = captureSpeechOrigin(this.clock),
   ): Promise<void> {
     const profile = getMotionProfile(id)
     if (!profile) return Promise.reject(new Error('MOTION_INVALID_PROFILE'))
