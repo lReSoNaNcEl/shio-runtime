@@ -4,6 +4,7 @@ import type {
   MoodState,
   PersistentGoal,
 } from '../../shared/alive'
+import type { TurnAppraisal } from '../../shared/character-tools'
 import type { RelationshipContext } from '../../shared/memory'
 
 const RECENT_EXPERIENCE_WINDOW_MS = 30 * 60_000
@@ -13,7 +14,12 @@ export interface ExperiencePolicyContext {
   currentMood: MoodState
   goal?: PersistentGoal
   relationship?: RelationshipContext
+  /** Optional Character LLM nuance for a completed explicit user turn. */
+  turnAppraisal?: TurnAppraisal
 }
+
+/** A model nuance shifts the deterministic base by at most this much per dimension. */
+export const TURN_APPRAISAL_MAX_SHIFT = 0.5
 
 interface RecentExperience {
   similarityKey: string
@@ -32,15 +38,33 @@ export class ExperiencePolicy {
     const similar = recent.filter((entry) => entry.similarityKey === similarityKey(event))
     const failure = isFailureEvent(event)
     const repeatedFailures = failure ? similar.length : 0
-    const appraisal = applyContextualModifiers(baseAppraisal(event), event, context, {
+    const contextual = applyContextualModifiers(baseAppraisal(event), event, context, {
       similarCount: similar.length,
       repeatedFailures,
     })
+    const appraisal =
+      event.type === 'conversation-completed' && context.turnAppraisal
+        ? applyTurnAppraisal(contextual, context.turnAppraisal)
+        : contextual
     this.recent = [
       ...recent,
       { similarityKey: similarityKey(event), entityId: eventEntity(event), at: event.at },
     ].slice(-MAX_RECENT_EXPERIENCES)
     return bounded(appraisal)
+  }
+}
+
+/** Bounded modifier, never a replacement: each shift is confidence-weighted and capped. */
+function applyTurnAppraisal(base: ExperienceAppraisal, turn: TurnAppraisal): ExperienceAppraisal {
+  const confidence = unit(turn.confidence)
+  const shift = (value: number) =>
+    Math.max(-TURN_APPRAISAL_MAX_SHIFT, Math.min(TURN_APPRAISAL_MAX_SHIFT, value * confidence))
+  return {
+    ...base,
+    valence: base.valence + shift(turn.valence),
+    arousal: base.arousal + shift(turn.arousal),
+    novelty: base.novelty + shift(turn.novelty - base.novelty),
+    socialRelevance: base.socialRelevance + shift(turn.socialRelevance - base.socialRelevance),
   }
 }
 

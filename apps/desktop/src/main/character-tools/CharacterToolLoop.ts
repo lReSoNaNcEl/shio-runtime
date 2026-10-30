@@ -14,6 +14,7 @@ import type {
   CharacterToolId,
   CharacterToolRequirement,
   InitialCharacterToolPlan,
+  TurnAppraisal,
   TurnToolEvidenceSummary,
 } from '../../shared/character-tools'
 import type { AssistantTurnKind } from '../../shared/conversation'
@@ -80,6 +81,8 @@ const MIXED_TOOL_ROUND_TEXT_LIMIT = 120
 export interface CharacterToolLoopResult {
   replyText: string
   embodiment?: CharacterEmbodimentIntent | null
+  /** Planning nuance of a Character reply; never part of prose, history or renderer state. */
+  turnAppraisal?: TurnAppraisal
   projectContext?: ProjectContextPacket
   latestActionResult?: DesktopWorkflowActionResult
   nativeToolsRejected: boolean
@@ -136,6 +139,7 @@ type ResolvedCharacterToolLoopOptions = CharacterToolLoopOptions & {
 
 interface LoopState extends ToolEvidenceState {
   embodiment?: CharacterEmbodimentIntent | null
+  turnAppraisal?: TurnAppraisal
   initialPlan: InitialCharacterToolPlan
   projectContext?: ProjectContextPacket
   latestActionResult?: DesktopWorkflowActionResult
@@ -347,6 +351,10 @@ function withToolEvidence(
               ? state.embodiment
               : null,
         }
+      : {}),
+    ...(state.turnAppraisal &&
+    (!result.assistantTurnKind || result.assistantTurnKind === 'character')
+      ? { turnAppraisal: state.turnAppraisal }
       : {}),
     toolEvidence: toolEvidenceSummary(state),
   }
@@ -988,6 +996,7 @@ export class CharacterToolLoop {
         }
         state.requirement = resolved.planning.requirement
         state.initialPlan = resolved.planning.initialPlan
+        state.turnAppraisal = resolved.planning.turnAppraisal
         const selected = resolved.planning.embodiment
         state.embodiment =
           selected &&

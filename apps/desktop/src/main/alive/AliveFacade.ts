@@ -24,6 +24,7 @@ import type {
   ScheduledTask,
   UpdateGoalInput,
 } from '../../shared/alive'
+import type { TurnAppraisal } from '../../shared/character-tools'
 import type { RelationshipContext } from '../../shared/memory'
 import type { LlmGateway } from '../llm'
 import { observeMainPromise } from '../reliability/observePromise'
@@ -44,6 +45,7 @@ import {
 } from './ProactiveInitiativeGate'
 import { ScheduledTaskRuntime } from './ScheduledTaskRuntime'
 import type { SystemContextAdapter } from './SystemContextAdapter'
+import { TurnAppraisalRegistry } from './TurnAppraisalRegistry'
 import { type WorldContextProviders, WorldContextRuntime } from './WorldContextRuntime'
 
 export interface AliveFacadeOptions {
@@ -79,6 +81,7 @@ export class AliveFacade {
   private readonly lifecycleController = new AbortController()
   private readonly attentionRequests = new Map<string, AbortController>()
   private previousAmbientWorld: AliveSnapshot['world'] | null = null
+  private readonly turnAppraisals = new TurnAppraisalRegistry()
   private browserComputerUseScreenFocusActive = false
 
   constructor(
@@ -152,6 +155,7 @@ export class AliveFacade {
     this.scheduler.dispose()
     this.listeners.clear()
     this.behaviorListeners.clear()
+    this.turnAppraisals.clear()
     this.store.close()
   }
 
@@ -225,11 +229,20 @@ export class AliveFacade {
     if (idle) this.emitIdlePresentation(idle)
   }
 
+  /** Records the Character LLM's bounded nuance for an explicit user turn (Main only). */
+  recordTurnAppraisal(turnId: string, appraisal: TurnAppraisal, at = Date.now()): void {
+    this.turnAppraisals.record(turnId, appraisal, at)
+  }
+
   reportExperience(event: ExperienceEvent): ExperienceReport {
     if (event.type === 'browser-computer-use-event') this.trackBrowserComputerUsePresence(event)
     const settings = this.store.settings()
     const world = this.world.snapshot(settings)
-    const observation = this.experience.observe(event)
+    const turnAppraisal =
+      event.type === 'conversation-completed'
+        ? this.turnAppraisals.take(event.turnId, event.at)
+        : undefined
+    const observation = this.experience.observe(event, turnAppraisal ? { turnAppraisal } : {})
     const impulse = observation.appraisal.conversationalImpulse
     const conversationCandidate: ConversationCandidateDisposition = !impulse
       ? 'not-requested'

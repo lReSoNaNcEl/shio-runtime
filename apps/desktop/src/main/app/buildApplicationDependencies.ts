@@ -694,6 +694,7 @@ export function buildApplicationDependencies(): ApplicationDependencies {
       resolveLlmGateway,
       screenContextService,
       () => getRendererConfig().llm,
+      (turnId, appraisal) => aliveRuntime?.recordTurnAppraisal(turnId, appraisal),
     )
     speechApplicationService = new SpeechApplicationService(getSpeechClientManager)
     registerIpcHandlers(

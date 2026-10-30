@@ -76,11 +76,26 @@ export const initialCharacterToolPlanSchema = z
 /** Semantic work that may be needed for the original user goal, resolved before evidence. */
 export type InitialCharacterToolPlan = z.infer<typeof initialCharacterToolPlanSchema>
 
+/** The Character LLM's bounded semantic reading of how the current user turn feels.
+ * It is a nuance input to deterministic Experience appraisal, never text or authority. */
+export const turnAppraisalSchema = z
+  .object({
+    valence: z.number().finite().min(-1).max(1),
+    arousal: z.number().finite().min(-1).max(1),
+    socialRelevance: z.number().finite().min(0).max(1),
+    novelty: z.number().finite().min(0).max(1),
+    confidence: z.number().finite().min(0).max(1),
+  })
+  .strict()
+
+export type TurnAppraisal = z.infer<typeof turnAppraisalSchema>
+
 export const characterToolPlanningResultSchema = z
   .object({
     requirement: characterToolRequirementSchema,
     plannedTools: initialCharacterToolPlanSchema.shape.plannedTools,
     embodiment: characterEmbodimentIntentSchema.nullable().optional(),
+    turnAppraisal: turnAppraisalSchema.nullable().optional(),
   })
   .strict()
 

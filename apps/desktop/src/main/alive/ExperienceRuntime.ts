@@ -30,10 +30,14 @@ export class ExperienceRuntime {
     private readonly policy = new ExperiencePolicy(),
   ) {}
 
-  observe(event: ExperienceEvent): ExperienceObservation {
+  observe(
+    event: ExperienceEvent,
+    nuance: Pick<ExperiencePolicyContext, 'turnAppraisal'> = {},
+  ): ExperienceObservation {
     const currentMood = this.mood.snapshot(event.at)
     const appraisal = this.policy.appraise(event, {
       ...this.context(event),
+      ...nuance,
       currentMood,
     })
     const mood = this.mood.apply(appraisal, event.at)

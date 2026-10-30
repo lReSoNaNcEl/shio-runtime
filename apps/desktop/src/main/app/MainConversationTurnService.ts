@@ -1,4 +1,5 @@
 import { type CharacterReplyStreamEvent, characterRequestId } from '../../shared/character-stream'
+import type { TurnAppraisal } from '../../shared/character-tools'
 import type { AppSettings } from '../../shared/config'
 import type { AttachmentDisposition, CharacterReplyOrigin } from '../../shared/conversation'
 import { deriveTurnRecoveryCapabilities } from '../../shared/conversation'
@@ -82,6 +83,8 @@ export class MainConversationTurnService {
     private readonly llm: () => LlmGateway,
     private readonly screenContext: ScreenContextService,
     private readonly llmSettings: () => AppSettings['llm'],
+    /** Hands an explicit user turn's appraisal to Alive Experience inside Main. */
+    private readonly onTurnAppraisal?: (turnId: string, appraisal: TurnAppraisal) => void,
   ) {}
 
   isIdle(): boolean {
@@ -275,6 +278,8 @@ export class MainConversationTurnService {
         this.screenContext.completeTurn(rendererId, screenContextId, turnId)
         mainLog.info('Vision Request Completed', { turnId })
       }
+      if (origin === 'user' && result.turnAppraisal)
+        this.onTurnAppraisal?.(turnId, result.turnAppraisal)
       const { replyText, emotionKey, embodimentIntent, grounding } = result
       latencyTelemetry.record({
         name: 'llm_completed',

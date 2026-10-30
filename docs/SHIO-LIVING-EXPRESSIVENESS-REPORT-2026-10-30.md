@@ -365,7 +365,7 @@ N/A.
 
 ### Проверки
 
-Полный набор раздела 7 PASS (fast 342, regression 834, typecheck, build).
+Полный набор раздела 7 PASS (fast 341, regression 833, typecheck, build).
 
 ### Ограничения
 
@@ -378,3 +378,68 @@ N/A.
 - В continuous listening backchannel не работает: уровни `StreamingPcmCapture`
   не подключены, есть только onset по VAD сервера. Keypose «рука к подбородку»
   зависит от WI-4 и не сделан.
+
+## WI-8 Эмоциональная петля: оценка хода
+
+### Architecture Review
+
+- Experience Policy остаётся детерминированным источником базовой оценки.
+  Оценка модели — только bounded модификатор: сдвиг умножается на
+  `confidence` и ограничен ±0,5 по каждой оси. Без оценки результат
+  байт-в-байт прежний (тест).
+- Поле добавлено в существующий planning-вызов (тот же Character LLM,
+  дополнительного запроса нет). Обе транспортные формы — JSON Schema и
+  native tool — получают его из одной схемы `characterToolPlanningResultSchema`.
+- Оценка не попадает в чат, историю, renderer и diagnostics. Путь: Tool Loop
+  → Orchestrator → `MainConversationTurnService` → `AliveFacade` (в памяти
+  процесса, по `turnId`, не больше 16 записей, TTL 5 мин). Применяется,
+  когда renderer сообщает `conversation-completed` того же хода. IPC-ответ
+  renderer строится из явных полей и её не содержит (contract-тест).
+- Только явные пользовательские ходы: autonomous-ходы оценку не передают,
+  failure-презентации тоже (`assistantTurnKind !== 'character'`).
+- Relationship не затронут (гейт G3). Mood меняется только через
+  существующий `MoodRuntime.apply`.
+
+### Что изменено
+
+- `shared/character-tools`: `turnAppraisalSchema`
+  `{valence, arousal, socialRelevance, novelty, confidence}`.
+- `CharacterToolRequirementPlanning.ts`: поле в `CharacterToolPlanningResult`,
+  отдельный разбор в `parseToolPlanningValue` (невалидная оценка
+  отбрасывается, план остаётся валидным), одна строка смысла в planning prompt.
+- `CharacterToolLoop.ts`: только переносит разобранную оценку в результат.
+- `ExperiencePolicy.ts`: `applyTurnAppraisal` для `conversation-completed`.
+- `TurnAppraisalRegistry.ts` и `AliveFacade.recordTurnAppraisal`.
+- `MainConversationTurnService`: callback `onTurnAppraisal` для явных ходов,
+  подключён в `buildApplicationDependencies.ts`.
+
+### Root Cause
+
+`conversation-completed` всегда давал valence 0,25 и arousal −0,1 независимо
+от содержания разговора, поэтому Mood не различал похвалу и подкол (M8).
+
+### Почему фикс работает
+
+Character LLM уже семантически классифицирует ход в planning. Тот же вызов
+отдаёт числовую окраску, а детерминированная политика сдвигает базовую
+оценку в её сторону с ограничением.
+
+### Файлы
+
+`shared/character-tools/contracts.ts`, `CharacterToolRequirementPlanning.ts`,
+`CharacterToolLoop.ts`, `orchestrator.ts`, `ExperiencePolicy.ts`,
+`ExperienceRuntime.ts`, `TurnAppraisalRegistry.ts`, `AliveFacade.ts`,
+`MainConversationTurnService.ts`, `buildApplicationDependencies.ts`; тесты
+`turn-appraisal-planning.test.ts`, `turn-appraisal.test.ts`,
+`turn-appraisal-boundary.test.ts`, `character-tool-requirement.test.ts`.
+
+### Проверки
+
+Полный набор раздела 7 PASS (fast 352, regression 845, typecheck, build).
+
+### Ограничения
+
+- Не проверял live: M8 (5 похвал против 5 подколов) и M10 на реальных
+  моделях не измерены. Модели могут не заполнять необязательное поле.
+- Planning ограничен 300 токенами; оценка добавляет около 25 токенов.
+  Полный план с оценкой укладывается в лимит 2000 символов с запасом (тест).

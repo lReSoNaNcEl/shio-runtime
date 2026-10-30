@@ -94,6 +94,49 @@ describe('constrained planning transport', () => {
   })
 })
 
+describe('turn appraisal forwarding', () => {
+  it('forwards a planned appraisal with a Character reply and keeps it out of the prose', async () => {
+    const turnAppraisal = {
+      valence: -0.6,
+      arousal: 0.4,
+      socialRelevance: 0.8,
+      novelty: 0.3,
+      confidence: 0.75,
+    }
+    const result = await new CharacterToolLoop().run({
+      llm: {
+        capabilities: () => ({ ...capabilities, supportsSchemaOutput: true }),
+        chat: async () => '[pouting]Эй, не дразнись!',
+        complete: async (_messages, options) =>
+          options?.responseSchema
+            ? textCompletion(
+                JSON.stringify({
+                  requirement: { type: 'direct-answer' },
+                  plannedTools: [],
+                  embodiment: null,
+                  turnAppraisal,
+                }),
+              )
+            : textCompletion('[pouting]Эй, не дразнись!'),
+      },
+      providerId: 'mistral',
+      messages: [{ role: 'user', content: 'Ты медленная, как черепаха!' }],
+      registry: () => registry(false),
+      createDispatcher: () =>
+        ({ registerPlannedTools: () => undefined, dispose: () => undefined }) as never,
+      traceId: 'turn-appraisal',
+      requestOptions: {},
+      nativeToolsRejected: false,
+      enforceToolRequirements: true,
+      failureReply: 'FAILURE',
+      limitReply: 'LIMIT',
+    })
+    assert.equal(result.assistantTurnKind, 'character')
+    assert.deepEqual(result.turnAppraisal, turnAppraisal)
+    assert(!result.replyText.includes('valence'))
+  })
+})
+
 function registry(webAvailable: boolean): CharacterToolRegistry {
   return new CharacterToolRegistry({
     projectAvailable: false,

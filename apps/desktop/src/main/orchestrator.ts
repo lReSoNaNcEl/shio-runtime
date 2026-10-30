@@ -343,6 +343,8 @@ export class Orchestrator {
     embodimentIntent?: CharacterEmbodimentIntent
     grounding?: ReplyGrounding
     assistantTurnKind: AssistantTurnKind
+    /** Main-only nuance for Experience; the IPC reply never carries it. */
+    turnAppraisal?: CharacterToolLoopResult['turnAppraisal']
     providerIncidentCode?: CharacterToolLoopResult['providerIncidentCode']
   }> {
     const { userText, screenContext, origin = 'user' } = input
@@ -475,6 +477,7 @@ export class Orchestrator {
     })
     let rawReplyText: string
     let plannedEmbodiment: CharacterEmbodimentIntent | null | undefined
+    let turnAppraisal: CharacterToolLoopResult['turnAppraisal']
     let projectContext: ProjectContextPacket | null = null
     let actionGrounding: ActionReplyGrounding | undefined
     let turnToolEvidence: TurnToolEvidenceSummary | undefined
@@ -566,6 +569,7 @@ export class Orchestrator {
       this.nativeCharacterToolsRejected = toolResult.nativeToolsRejected
       rawReplyText = toolResult.replyText
       plannedEmbodiment = toolResult.embodiment
+      turnAppraisal = autonomous ? undefined : toolResult.turnAppraisal
       turnToolEvidence = toolResult.toolEvidence
       assistantTurnKind = toolResult.assistantTurnKind
       providerIncidentCode = toolResult.providerIncidentCode
@@ -635,6 +639,7 @@ export class Orchestrator {
         actionGrounding,
       ),
       assistantTurnKind,
+      ...(turnAppraisal && assistantTurnKind === 'character' ? { turnAppraisal } : {}),
       ...(providerIncidentCode ? { providerIncidentCode } : {}),
     }
   }
