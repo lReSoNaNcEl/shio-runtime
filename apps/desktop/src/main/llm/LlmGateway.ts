@@ -1,5 +1,10 @@
 import { LlmCapabilityError, LlmCredentialMissingError } from './errors'
 import {
+  type FailoverCandidate,
+  FailoverLlmProvider,
+  type FailoverObserver,
+} from './FailoverLlmProvider'
+import {
   createLLMProvider,
   createModelCatalog,
   enrichModelCatalog,
@@ -19,7 +24,15 @@ import type {
 } from './types'
 
 export class LlmGateway implements LLMProvider {
-  constructor(private readonly getSettings: () => LlmGatewaySettings) {}
+  /**
+   * @param getFallbacks ordered fallback settings of the same role; each passes the
+   * same admission in `prepare()` and serves only before the first response byte.
+   */
+  constructor(
+    private readonly getSettings: () => LlmGatewaySettings,
+    private readonly getFallbacks: () => readonly LlmGatewaySettings[] = () => [],
+    private readonly failoverObserver?: FailoverObserver,
+  ) {}
 
   getActiveCapabilities(): LlmCapabilities {
     const { provider, model, accountId } = this.getSettings()
@@ -40,6 +53,8 @@ export class LlmGateway implements LLMProvider {
   }
 
   async chat(messages: readonly ChatMessage[], options: LlmRequestOptions = {}): Promise<string> {
+    const failover = this.failover(messages)
+    if (failover) return failover.chat(messages, options)
     return this.prepare(messages).chat(messages, options)
   }
 
@@ -47,6 +62,8 @@ export class LlmGateway implements LLMProvider {
     messages: readonly ChatMessage[],
     options: LlmCompletionOptions = {},
   ): Promise<LlmCompletion> {
+    const failover = this.failover(messages)
+    if (failover) return failover.complete(messages, options)
     const active = this.prepare(messages)
     if (!active.complete) {
       return {
@@ -59,17 +76,34 @@ export class LlmGateway implements LLMProvider {
   }
 
   stream(messages: readonly ChatMessage[], options: LlmStreamOptions = {}) {
+    const failover = this.failover(messages, true)
+    if (failover) return failover.stream(messages, options)
     const active = this.prepare(messages, { streaming: true })
     if (!active.stream) throw new LlmCapabilityError()
     return active.stream(messages, options)
+  }
+
+  /** A role with fallbacks is served by the failover decorator over the same admission. */
+  private failover(
+    messages: readonly ChatMessage[],
+    streaming = false,
+  ): FailoverLlmProvider | null {
+    const fallbacks = this.getFallbacks()
+    if (fallbacks.length === 0) return null
+    const candidates: FailoverCandidate[] = [this.getSettings(), ...fallbacks].map((settings) => ({
+      label: `${settings.provider}/${settings.model}`,
+      provider: () => this.prepare(messages, { streaming }, settings),
+    }))
+    return new FailoverLlmProvider(() => candidates, this.failoverObserver)
   }
 
   /** Shared request admission: credentials, then streaming, then vision, then the adapter. */
   private prepare(
     messages: readonly ChatMessage[],
     { streaming = false }: { streaming?: boolean } = {},
+    settings: LlmGatewaySettings = this.getSettings(),
   ): LLMProvider {
-    const { provider, apiKey, model, accountId } = this.getSettings()
+    const { provider, apiKey, model, accountId } = settings
     const profile = getProviderProfile(provider)
     if (
       (profile.requiresApiKey && !apiKey.trim()) ||

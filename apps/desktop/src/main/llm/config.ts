@@ -5,6 +5,8 @@ import {
   type LlmProviderId,
   type LlmProviderPersistedSettings,
   type LlmPublicConfig,
+  type LlmRoleCandidate,
+  MAX_CHARACTER_FALLBACKS,
 } from '../../shared/llm'
 import { normalizeProviderAccountId, normalizeProviderModelId } from './registry'
 
@@ -36,8 +38,28 @@ export function defaultLlmConfig(): LlmPersistedConfig {
         timeoutMs: 15_000,
         maxSteps: 30,
       },
+      characterFallbacks: [],
     },
   }
+}
+
+/** Ordered, bounded, de-duplicated fallbacks; unknown providers and empty models are dropped. */
+function toCharacterFallbacks(value: unknown): LlmRoleCandidate[] {
+  if (!Array.isArray(value)) return []
+  const result: LlmRoleCandidate[] = []
+  for (const entry of value) {
+    if (!entry || typeof entry !== 'object') continue
+    const record = entry as Record<string, unknown>
+    if (typeof record.providerId !== 'string' || !isKnownProviderId(record.providerId)) continue
+    if (typeof record.model !== 'string') continue
+    const model = normalizeProviderModelId(record.providerId, record.model.trim())
+    if (!model || model.length > 500) continue
+    if (result.some((item) => item.providerId === record.providerId && item.model === model))
+      continue
+    result.push({ providerId: record.providerId, model })
+    if (result.length >= MAX_CHARACTER_FALLBACKS) break
+  }
+  return result
 }
 
 function toProviderSettings(
@@ -115,6 +137,7 @@ export function normalizeLlmConfig(value: unknown): LlmPersistedConfig {
         )
       }
     }
+    result.roles.characterFallbacks = toCharacterFallbacks(roleRecord.characterFallbacks)
     const computerUseVision = roleRecord.computerUseVision
     if (computerUseVision && typeof computerUseVision === 'object') {
       const visualValue = computerUseVision as Record<string, unknown>

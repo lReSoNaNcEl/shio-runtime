@@ -15,6 +15,7 @@ import { observeRendererPromise } from '../../../reliability/observePromise'
 import { LlmHealthStatus } from '../LlmHealthStatus'
 import { ModelComboBox } from '../ModelComboBox'
 import { type LlmSettingsActions, type LlmSettingsState } from '../state/settingsContracts'
+import { CharacterFallbackSettings } from './CharacterFallbackSettings'
 
 const fullWidth = style({ width: 'full' })
 
@@ -178,6 +179,7 @@ export function LlmSettingsSection({
           )}
         </div>
       </section>
+      <CharacterFallbackSettings state={state} actions={actions} />
     </div>
   )
 }

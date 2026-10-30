@@ -1562,6 +1562,14 @@ export const enMessages: Record<TranslationKey, string> = {
   'avatarPreview.attenuation.filter.generatedSpeedCap': 'MotionBricks speed cap',
   'avatarPreview.attenuation.filter.generatedPresenceBandwidth': 'Calm presence bandwidth',
   'avatarPreview.attenuation.filter.acceleration': 'Acceleration limit',
+  'settings.llm.fallback.title': 'Character fallback model',
+  'settings.llm.fallback.description':
+    'If the primary model fails on a rate limit, network, timeout or server error before its first byte, the next model in order answers. No new providers are added.',
+  'settings.llm.fallback.provider': 'Fallback {position} provider',
+  'settings.llm.fallback.keyMissing':
+    'No key is saved for this provider, so this fallback is skipped.',
+  'settings.llm.fallback.remove': 'Remove fallback',
+  'settings.llm.fallback.add': 'Add fallback model',
   'avatarPreview.handScore': 'Hand score',
   'avatarPreview.seed': 'Variation seed',
   'avatarPreview.queue': 'Queued frames',

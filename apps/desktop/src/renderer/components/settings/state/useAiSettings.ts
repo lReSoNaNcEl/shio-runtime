@@ -5,6 +5,7 @@ import type {
   ComputerUseVisionRoleConfig,
   LlmProviderId,
   LlmProviderPublicSettings,
+  LlmRoleCandidate,
   ModelInfo,
   ProviderProfile,
 } from '../../../../shared/llm'
@@ -28,11 +29,13 @@ export function useAiSettings() {
   const [computerUseVisionRole, setComputerUseVisionRole] = useState<ComputerUseVisionRoleConfig>(
     defaultComputerUseVisionRole,
   )
+  const [characterFallbacks, setCharacterFallbacks] = useState<LlmRoleCandidate[]>([])
 
   return {
     activeProvider,
     backlogModels,
     backlogRole,
+    characterFallbacks,
     computerUseVisionRole,
     editingKey,
     keyInput,
@@ -43,6 +46,7 @@ export function useAiSettings() {
     setActiveProvider,
     setBacklogModels,
     setBacklogRole,
+    setCharacterFallbacks,
     setComputerUseVisionRole,
     setEditingKey,
     setKeyInput,

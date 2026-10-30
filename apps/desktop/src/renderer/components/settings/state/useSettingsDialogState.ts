@@ -110,6 +110,7 @@ export function useSettingsDialogState({
     activeProvider,
     backlogModels,
     backlogRole,
+    characterFallbacks,
     computerUseVisionRole,
     editingKey,
     keyInput,
@@ -120,6 +121,7 @@ export function useSettingsDialogState({
     setActiveProvider,
     setBacklogModels,
     setBacklogRole,
+    setCharacterFallbacks,
     setComputerUseVisionRole,
     setEditingKey,
     setKeyInput,
@@ -176,6 +178,7 @@ export function useSettingsDialogState({
         setProviderSettings(cfg.llm.providers)
         setBacklogRole(cfg.llm?.roles?.backlogSelector ?? defaultBacklogSelectorRole)
         setComputerUseVisionRole(cfg.llm?.roles?.computerUseVision ?? defaultComputerUseVisionRole)
+        setCharacterFallbacks(cfg.llm?.roles?.characterFallbacks ?? [])
         setVrmName(cfg.vrmAssetName)
         setOverlayWidth(parseNumberSetting(cfg.overlayWidth, overlayDefaults.width, 250, 2000))
         setOverlayHeight(parseNumberSetting(cfg.overlayHeight, overlayDefaults.height, 250, 2000))
@@ -516,12 +519,21 @@ export function useSettingsDialogState({
           roles: {
             backlogSelector: backlogRole,
             computerUseVision: computerUseVisionRole,
+            characterFallbacks,
           },
         },
       }).catch(() => setSaveState('error'))
     }, 650)
     return () => window.clearTimeout(timer)
-  }, [activeProvider, providerSettings, backlogRole, computerUseVisionRole, isOpen, persistPatch])
+  }, [
+    activeProvider,
+    providerSettings,
+    backlogRole,
+    computerUseVisionRole,
+    characterFallbacks,
+    isOpen,
+    persistPatch,
+  ])
 
   useEffect(() => {
     if (!hydrated.current || !isOpen) return
@@ -642,6 +654,7 @@ export function useSettingsDialogState({
         backlogModels,
         selectedModel,
         health: llmHealth,
+        characterFallbacks,
       },
       actions: {
         setActiveProvider,
@@ -653,6 +666,7 @@ export function useSettingsDialogState({
         forgetCredential: forgetLlmCredential,
         loadModels,
         setBacklogRole,
+        setCharacterFallbacks,
       },
     },
     avatar: {

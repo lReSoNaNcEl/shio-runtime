@@ -25,6 +25,11 @@ export {
   normalizeHttpErrorMessage,
 } from './errors'
 export {
+  FailoverLlmProvider,
+  type FailoverObserver,
+  failoverDisposition,
+} from './FailoverLlmProvider'
+export {
   type LlmCredentialMap,
   type LlmCredentialProtector,
   LlmCredentialStore,
@@ -52,6 +57,7 @@ export {
   type LlmRoleSelection,
   type LlmRoleSources,
   type ResolvedLlmRoleSettings,
+  resolveLlmRoleFallbacks,
   resolveLlmRoleSettings,
 } from './roleSettings'
 export type {

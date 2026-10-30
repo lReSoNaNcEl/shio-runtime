@@ -6,6 +6,7 @@ import type {
   BacklogSelectorRoleConfig,
   LlmProviderId,
   LlmProviderPublicSettings,
+  LlmRoleCandidate,
   ModelInfo,
   ProviderProfile,
 } from '../../../../shared/llm'
@@ -89,6 +90,7 @@ export interface LlmSettingsState {
   backlogModels: ModelInfo[]
   selectedModel: string
   health: ControllerState['llmHealth']
+  characterFallbacks: LlmRoleCandidate[]
 }
 
 export interface LlmSettingsActions {
@@ -101,6 +103,7 @@ export interface LlmSettingsActions {
   forgetCredential: () => Promise<void>
   loadModels: (providerId: LlmProviderId) => Promise<void>
   setBacklogRole: Dispatch<SetStateAction<BacklogSelectorRoleConfig>>
+  setCharacterFallbacks: Dispatch<SetStateAction<LlmRoleCandidate[]>>
 }
 
 export interface AvatarSettingsState {

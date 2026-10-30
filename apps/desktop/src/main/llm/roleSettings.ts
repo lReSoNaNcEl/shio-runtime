@@ -9,6 +9,7 @@ export const LLM_ROLE_IDS = [
   'backlogSelector',
   'computerUseVision',
   'fastBrain',
+  'sessionSummarizer',
 ] as const
 export type LlmRoleId = (typeof LLM_ROLE_IDS)[number]
 
@@ -32,6 +33,37 @@ export interface ResolvedLlmRoleSettings extends LlmGatewaySettings {
 
 /** The single place that turns LLM config, credentials and account IDs into
  * gateway settings. Credentials are read from the Main-owned store only. */
+/** Ordered fallbacks of a role. Only the Character role has configured fallbacks. */
+export function resolveLlmRoleFallbacks(
+  role: LlmRoleId,
+  sources: LlmRoleSources,
+): ResolvedLlmRoleSettings[] {
+  if (role !== 'character') return []
+  const config = sources.config()
+  const accountIdFor = sources.accountId ?? resolveLlmProviderAccountId
+  const primary = config.activeProvider
+  return config.roles.characterFallbacks
+    .filter(
+      (candidate) =>
+        candidate.providerId !== primary ||
+        candidate.model !== config.providers[primary].model.trim(),
+    )
+    .map((candidate) => {
+      const credential = sources.credential(candidate.providerId)
+      return {
+        provider: candidate.providerId,
+        apiKey: credential.apiKey,
+        model: candidate.model,
+        accountId: accountIdFor(
+          candidate.providerId,
+          config.providers[candidate.providerId].accountId,
+        ),
+        automatic: false,
+        credential: credential.status,
+      }
+    })
+}
+
 export function resolveLlmRoleSettings(
   role: LlmRoleId,
   sources: LlmRoleSources,
@@ -55,6 +87,8 @@ export function resolveLlmRoleSettings(
     }
   }
   switch (role) {
+    // The session summarizer has no override yet; it shares the Character selection.
+    case 'sessionSummarizer':
     case 'character':
       return settingsFor(config.activeProvider, config.providers[config.activeProvider].model, true)
     case 'computerUseVision': {

@@ -443,3 +443,90 @@ Character LLM уже семантически классифицирует хо�
   моделях не измерены. Модели могут не заполнять необязательное поле.
 - Planning ограничен 300 токенами; оценка добавляет около 25 токенов.
   Полный план с оценкой укладывается в лимит 2000 символов с запасом (тест).
+
+## WI-9 Единый реестр ролей LLM
+
+Два коммита: извлечение резолвера без изменения поведения, затем резервные
+модели персонажа с failover.
+
+### Architecture Review
+
+- Список провайдеров не расширялся (решение пользователя от 30.10.2026):
+  резервы выбираются только из `groq`, `cloudflare`, `openrouter`, `mistral`,
+  поля `transport` нет.
+- LlmGateway и credential store принадлежат Main. Резолвер читает ключи
+  только из `LlmCredentialStore`; renderer видит лишь наличие ключа.
+- Providers создаёт только `LlmGateway`. Прямой `createLLMProvider` в IPC
+  backlog selector заменён на `LlmGateway` (architecture guard).
+- Failover переиспользует `LlmGateway.prepare()` для каждого кандидата:
+  ключ, streaming и vision проверяются в одном месте.
+- Fast Brain сохраняет строгий JSON и cancellation: меняется только способ
+  резолва настроек.
+
+### Что изменено
+
+- `llm/roleSettings.ts`: роли `character`, `backlogSelector`,
+  `computerUseVision`, `fastBrain`, `sessionSummarizer`. Чистая
+  `resolveLlmRoleSettings` заменяет ручной резолв в четырёх местах
+  `buildApplicationDependencies.ts` (Character, DSH, Browser vision,
+  Fast Brain) и в IPC backlog selector.
+  `resolveLlmRoleFallbacks` отдаёт упорядоченные резервы Character.
+- `llm/FailoverLlmProvider.ts`: декоратор с тем же контрактом `LLMProvider`.
+  - Переход к следующему кандидату — только до первого байта ответа:
+    `RATE_LIMITED`, `NETWORK_ERROR`, `TIMEOUT`, 5xx (`PROVIDER_REJECTED`,
+    recoverable).
+  - Кандидат пропускается без повтора при `AUTH_ERROR`, `ACCESS_DENIED`,
+    отсутствии ключа или нужной capability.
+  - Без перехода: `CANCELLED`, ошибки валидации и запроса, повреждённый
+    поток, любой сбой после первой дельты.
+  - События `connected` до первого байта удерживаются, поэтому текст
+    не дублируется.
+- `LlmGateway`: необязательные fallbacks и observer. Telemetry пишет,
+  какой кандидат обслужил запрос, без секретов.
+- Config: `roles.characterFallbacks` — до двух записей, упорядочено,
+  без дублей, неизвестные провайдеры и пустые модели отбрасываются.
+  Миграция идемпотентна. Валидация через существующий
+  `normalizeLlmConfig` при сохранении.
+- UI: секция «Резервная модель персонажа» в настройках LLM на Spectrum 2
+  (`Picker`, `TextField`, `ActionButton`), RU/EN. Предупреждает, если для
+  провайдера резерва нет ключа.
+
+### Root Cause
+
+N/A.
+
+### Почему фикс работает
+
+Ошибка 429 или сбой сети у основной модели раньше сразу превращались
+в честный отказ хода. Теперь до первого байта ход обслуживает следующий
+кандидат, а после первого байта поведение прежнее, поэтому повторов текста
+нет.
+
+### Файлы
+
+`llm/roleSettings.ts`, `llm/FailoverLlmProvider.ts`, `llm/LlmGateway.ts`,
+`llm/config.ts`, `llm/index.ts`, `shared/llm/providers.ts`,
+`buildApplicationDependencies.ts`, `ipc/index.ts`,
+`CharacterFallbackSettings.tsx`, `LlmSettingsSection.tsx`, состояние
+настроек, локализация; тесты `llm-role-settings.test.ts`,
+`failover-provider.test.ts`, `llm-ownership.test.ts`.
+
+### Проверки
+
+Полный набор раздела 7 PASS (fast 365, regression 858, typecheck, build).
+Первый прогон regression упал на `browser-continuous-control.test.ts`
+(timing под нагрузкой, тест не связан с изменением). Отдельно он прошёл,
+повторный полный прогон зелёный.
+
+### Ограничения
+
+- Не сделаны пресеты («Быстро», «Качество», «Экономно»). Им нужны
+  конкретные модели, которые есть у пользователя, и отдельный UX выбора;
+  без live-проверки это было бы угадыванием.
+- Резервы есть только у роли Character. Остальные роли резолвятся одним
+  кандидатом; `sessionSummarizer` использует настройки Character.
+- Модель резерва вводится текстом, без каталога моделей этого провайдера.
+- Не проверял live: переключение без рестарта и смоделированный 429
+  проверены только unit-тестами на фейковых кандидатах.
+- Отдельного `LlmGateway.forRole()` нет: роль задаётся резолвером при
+  сборке gateway в composition.

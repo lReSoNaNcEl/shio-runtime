@@ -54,9 +54,11 @@ import {
   type LlmProviderId,
   type LlmRoleId,
   type LlmRoleSelection,
+  type LlmRoleSources,
   LlmTurnCancelledError,
   type ResolvedLlmRoleSettings,
   resolveLlmReadiness,
+  resolveLlmRoleFallbacks,
   resolveLlmRoleSettings,
   resolveProviderChatBaseUrl,
 } from '../llm'
@@ -208,18 +210,16 @@ export function buildApplicationDependencies(): ApplicationDependencies {
   }
 
   /** The single composition point that resolves provider, model, key and account for a role. */
+  const roleSources: LlmRoleSources = {
+    config: () => getConfig().llm,
+    credential: (provider) => getLlmCredentialStore().resolve(provider),
+  }
   const resolveRoleSettings = (
     role: LlmRoleId,
     selection?: LlmRoleSelection,
-  ): ResolvedLlmRoleSettings =>
-    resolveLlmRoleSettings(
-      role,
-      {
-        config: () => getConfig().llm,
-        credential: (provider) => getLlmCredentialStore().resolve(provider),
-      },
-      selection,
-    )
+  ): ResolvedLlmRoleSettings => resolveLlmRoleSettings(role, roleSources, selection)
+  const roleFallbacks = (role: LlmRoleId): ResolvedLlmRoleSettings[] =>
+    resolveLlmRoleFallbacks(role, roleSources)
   const gatewaySettings = ({ provider, apiKey, model, accountId }: ResolvedLlmRoleSettings) => ({
     provider,
     apiKey,
@@ -461,7 +461,17 @@ export function buildApplicationDependencies(): ApplicationDependencies {
   }
 
   const buildOrchestrator = (): Orchestrator => {
-    llmGateway = new LlmGateway(() => gatewaySettings(resolveRoleSettings('character')))
+    llmGateway = new LlmGateway(
+      () => gatewaySettings(resolveRoleSettings('character')),
+      () => roleFallbacks('character').map(gatewaySettings),
+      {
+        // Non-secret telemetry: which candidate served after a pre-byte failure.
+        onFailover: (event) => mainLog.warn('[LlmGateway] character_failover', event),
+        onServed: (event) => {
+          if (event.attempt > 0) mainLog.info('[LlmGateway] character_fallback_served', event)
+        },
+      },
+    )
     const speech = getSpeechClientManager()
     observeMainPromise(speech.warnIfEmotionContractDrift(), 'check speech emotion contract')
     return new Orchestrator(

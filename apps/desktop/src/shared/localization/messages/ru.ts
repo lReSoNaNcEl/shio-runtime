@@ -1563,6 +1563,14 @@ export const ruMessages = {
   'avatarPreview.attenuation.filter.generatedSpeedCap': 'Потолок скорости MotionBricks',
   'avatarPreview.attenuation.filter.generatedPresenceBandwidth': 'Спокойная полоса presence',
   'avatarPreview.attenuation.filter.acceleration': 'Ограничение ускорения',
+  'settings.llm.fallback.title': 'Резервная модель персонажа',
+  'settings.llm.fallback.description':
+    'Если основная модель не ответила из-за лимита, сети, таймаута или ошибки сервера до первого байта, ответ возьмёт следующая модель по порядку. Новые провайдеры не добавляются.',
+  'settings.llm.fallback.provider': 'Провайдер резерва {position}',
+  'settings.llm.fallback.keyMissing':
+    'Для этого провайдера не сохранён ключ — резерв будет пропущен.',
+  'settings.llm.fallback.remove': 'Убрать резерв',
+  'settings.llm.fallback.add': 'Добавить резервную модель',
   'avatarPreview.handScore': 'Партитура кистей',
   'avatarPreview.seed': 'Seed вариации',
   'avatarPreview.queue': 'Кадров в очереди',

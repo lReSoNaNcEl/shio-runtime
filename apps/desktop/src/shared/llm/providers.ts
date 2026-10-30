@@ -105,6 +105,15 @@ export interface ComputerUseVisionRoleConfig {
   maxSteps: number
 }
 
+/** One ordered fallback for the Character role; existing providers only. */
+export interface LlmRoleCandidate {
+  providerId: LlmProviderId
+  model: string
+}
+
+/** Character fallbacks tried, in order, only before the first response byte. */
+export const MAX_CHARACTER_FALLBACKS = 2
+
 /**
  * Persisted, provider-independent LLM configuration. `activeProvider` selects
  * which entry of `providers` the Runtime uses. Switching provider never
@@ -116,6 +125,7 @@ export interface LlmPersistedConfig {
   roles: {
     backlogSelector: BacklogSelectorRoleConfig
     computerUseVision: ComputerUseVisionRoleConfig
+    characterFallbacks: LlmRoleCandidate[]
   }
 }
 
@@ -125,5 +135,6 @@ export interface LlmPublicConfig {
   roles: {
     backlogSelector: BacklogSelectorRoleConfig
     computerUseVision: ComputerUseVisionRoleConfig
+    characterFallbacks: LlmRoleCandidate[]
   }
 }
