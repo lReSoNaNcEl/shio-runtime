@@ -10,6 +10,7 @@ import type {
 } from '../../shared/alive'
 import type { CharacterEmbodimentIntent } from '../../shared/character-response'
 import { AmbientPresencePolicy } from './AmbientPresencePolicy'
+import { autonomyPolicyStop } from './autonomySuppression'
 
 const BASE_NONVERBAL_COOLDOWN_MS = 90_000
 const BROWSER_USE_NONVERBAL_COOLDOWN_MS = 5_000
@@ -68,10 +69,7 @@ export class BehaviorRuntime {
     const conversationalImpulse = appraisal.conversationalImpulse
     if (!conversationalImpulse) return 'not-requested'
     if (
-      settings.globallySuspended ||
-      settings.privacyMode ||
-      settings.mode === 'off' ||
-      insideQuietHours(settings, at) ||
+      autonomyPolicyStop(settings, at, { quietHours: true }) ||
       input.conversationAllowed === false
     ) {
       return 'suppressed-policy'
@@ -97,12 +95,7 @@ export class BehaviorRuntime {
     const { appraisal, mood, settings, at } = input
     const browserUseEvent = appraisal.origin === 'browser-computer-use'
     const conversationCandidate = this.assessConversationCandidate(input)
-    if (
-      settings.globallySuspended ||
-      settings.privacyMode ||
-      settings.mode === 'off' ||
-      insideQuietHours(settings, at)
-    ) {
+    if (autonomyPolicyStop(settings, at, { quietHours: true })) {
       return decision(
         command(at, appraisal.eventId, { kind: 'none' }, appraisal.embodimentPresence),
         conversationCandidate,
@@ -374,15 +367,4 @@ function boundedUnit(value: number): number {
 
 function bounded(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value))
-}
-
-function insideQuietHours(settings: AutonomySettings, now: number): boolean {
-  if (!settings.quietHours.enabled) return false
-  const hour = new Date(now).getHours()
-  const { startHour, endHour } = settings.quietHours
-  return startHour === endHour
-    ? true
-    : startHour < endHour
-      ? hour >= startHour && hour < endHour
-      : hour >= startHour || hour < endHour
 }

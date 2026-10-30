@@ -4,6 +4,7 @@ import type {
   MoodState,
   WorldContextSnapshot,
 } from '../../shared/alive'
+import { autonomyBusyStop, autonomyPolicyStop } from './autonomySuppression'
 
 const PRESENCE_COOLDOWN_MS = 30_000
 const RETURNED_IDLE_THRESHOLD_MS = 2 * 60_000
@@ -27,12 +28,12 @@ export class AmbientPresencePolicy {
   decide(input: AmbientPresenceInput): AmbientPresenceIntent | null {
     const { current, previous, settings, at } = input
     if (
-      settings.globallySuspended ||
-      settings.privacyMode ||
-      settings.mode === 'off' ||
-      current.conversationActive ||
-      current.audioActive ||
-      input.browserComputerUseScreenFocusActive ||
+      autonomyPolicyStop(settings, at, { quietHours: false }) ||
+      autonomyBusyStop({
+        conversationActive: current.conversationActive,
+        audioActive: current.audioActive,
+        browserComputerUseScreenFocusActive: input.browserComputerUseScreenFocusActive,
+      }) ||
       (this.lastSelectedAt !== null && at - this.lastSelectedAt < PRESENCE_COOLDOWN_MS)
     ) {
       return null

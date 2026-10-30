@@ -1,4 +1,5 @@
 import type { AutonomySettings, WorldContextSnapshot } from '../../shared/alive'
+import { insideQuietHours } from './autonomySuppression'
 
 export type AutonomyDecision =
   | { outcome: 'execute' }
@@ -39,17 +40,6 @@ export class AutonomyEnvelope {
     if (settings.mode === 'confirm') return { outcome: 'preview', reason: 'confirmation_required' }
     return { outcome: 'execute' }
   }
-}
-
-function insideQuietHours(settings: AutonomySettings, now: number): boolean {
-  if (!settings.quietHours.enabled) return false
-  const hour = new Date(now).getHours()
-  const { startHour, endHour } = settings.quietHours
-  return startHour === endHour
-    ? true
-    : startHour < endHour
-      ? hour >= startHour && hour < endHour
-      : hour >= startHour || hour < endHour
 }
 
 function nextLocalDay(now: number): number {
