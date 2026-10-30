@@ -95,6 +95,8 @@ export const motionProsodySchema = z
           .max(2 ** 48),
         stepSamples: z.number().int().min(1).max(9600),
         energy: z.array(z.number().finite().min(0).max(1)).min(1).max(30),
+        /** Pitch accent per energy bin from submitted-PCM analysis. */
+        accent: z.array(z.number().finite().min(0).max(1)).min(1).max(30).optional(),
         finalSample: z
           .number()
           .int()
@@ -112,7 +114,9 @@ export const motionProsodySchema = z
       (value.available.stepSamples <= value.sampleRate * 0.05 + 1 &&
         Math.abs(value.available.startSample - value.throughSample) <= value.sampleRate &&
         (value.available.finalSample === null ||
-          value.available.finalSample >= value.available.startSample)),
+          value.available.finalSample >= value.available.startSample) &&
+        (value.available.accent === undefined ||
+          value.available.accent.length === value.available.energy.length)),
     'Invalid available PCM context',
   )
 export type MotionProsody = z.infer<typeof motionProsodySchema>

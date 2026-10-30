@@ -74,7 +74,9 @@ def validate_activity(activity):
     available = (prosody or {}).get("available")
     if available is not None and (
         not isinstance(available, dict)
-        or set(available) != {"startSample", "stepSamples", "energy", "finalSample"}
+        or not {"startSample", "stepSamples", "energy", "finalSample"} <= set(available)
+        or set(available)
+        - {"startSample", "stepSamples", "energy", "finalSample", "accent"}
         or not number(available["startSample"], 0, 2**48, True)
         or not number(
             available["stepSamples"], 1, prosody["sampleRate"] * 0.05 + 1, True
@@ -82,6 +84,14 @@ def validate_activity(activity):
         or not isinstance(available["energy"], list)
         or not 1 <= len(available["energy"]) <= 30
         or not all(number(value, 0, 1) for value in available["energy"])
+        or (
+            "accent" in available
+            and (
+                not isinstance(available["accent"], list)
+                or len(available["accent"]) != len(available["energy"])
+                or not all(number(value, 0, 1) for value in available["accent"])
+            )
+        )
         or abs(available["startSample"] - prosody["throughSample"])
         > prosody["sampleRate"]
         or (
@@ -100,34 +110,51 @@ def delivery_style(activity):
     return (activity or {}).get("style") or NEUTRAL_STYLE
 
 
-def accent_deadline_ms(activity, maximum):
-    """Select only an already available sustained envelope maximum.
+MIN_ACCENT_MS = 580
+PITCH_ACCENT_MINIMUM = 0.25
+
+
+def available_accents(activity, minimum, maximum):
+    """(score, milliseconds) of already submitted accents inside [minimum, maximum].
 
     No prediction beyond the submitted buffer; an accent earlier than the
-    shortest native transition is discarded, never rescheduled late.
+    shortest native transition is discarded, never rescheduled late. A pitch
+    accent qualifies on its own; without pitch data only energy peaks do.
     """
     prosody = (activity or {}).get("prosody") or {}
     available = prosody.get("available")
     if not available or not activity["speaking"]:
-        return None
+        return []
     rate = prosody["sampleRate"]
     start = prosody["throughSample"] + prosody["leadMs"] * rate / 1000
     candidates = []
     energies = available["energy"]
+    pitches = available.get("accent")
     for i in range(1, len(energies) - 1):
         sample = available["startSample"] + (i + 0.5) * available["stepSamples"]
         if available["finalSample"] is not None and sample >= available["finalSample"]:
             continue
         milliseconds = (sample - start) * 1000 / rate
+        if not max(MIN_ACCENT_MS, minimum) <= milliseconds <= maximum:
+            continue
+        score = 0.0
         if (
-            580 <= milliseconds <= maximum
-            and energies[i] >= max(0.08, energies[i - 1], energies[i + 1])
+            energies[i] >= max(0.08, energies[i - 1], energies[i + 1])
             and energies[i] > min(energies[i - 1], energies[i + 1]) * 1.15
         ):
-            candidates.append(
-                (
-                    min(energies[i], (energies[i - 1] + energies[i + 1]) / 2),
-                    milliseconds,
-                )
-            )
+            score = min(energies[i], (energies[i - 1] + energies[i + 1]) / 2)
+        if (
+            pitches
+            and pitches[i] >= PITCH_ACCENT_MINIMUM
+            and pitches[i] >= max(pitches[i - 1], pitches[i + 1])
+        ):
+            score = max(score, pitches[i])
+        if score > 0:
+            candidates.append((score, milliseconds))
+    return candidates
+
+
+def accent_deadline_ms(activity, maximum):
+    """Select only an already available sustained envelope or pitch maximum."""
+    candidates = available_accents(activity, MIN_ACCENT_MS, maximum)
     return max(candidates)[1] if candidates else None

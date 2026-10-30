@@ -7,7 +7,7 @@ This module does not classify text, select conversation intent, or apply VRM pos
 import hashlib
 
 import numpy as np
-from activity import accent_deadline_ms, delivery_style
+from activity import accent_deadline_ms, available_accents, delivery_style
 from conversion import world_poses
 from scipy.spatial.transform import Rotation
 
@@ -46,11 +46,35 @@ def style_value(activity, axis):
     return float(delivery_style(activity)[axis])
 
 
+# A beat endpoint may move by at most one native token to meet a speech accent.
+BEAT_ACCENT_TOLERANCE_MS = 120
+
+
+def endpoint_ms(tokens):
+    """Native endpoint time of a block: valid frames 4*tokens-6, frame zero repeats."""
+    return (4 * tokens - 7) * 1000 / 30
+
+
 def talk_tokens(activity):
-    """Beat block length from tempo: the neutral 7 tokens, bounded to 6..9."""
-    return int(
+    """Beat block length 6..9: tempo chooses the preferred length, and the
+    strongest already submitted accent within one token of it moves the beat
+    endpoint onto that accent. No accent means the tempo length."""
+    preferred = int(
         np.clip(round(TALK_TOKENS + 2 - 4 * style_value(activity, "tempo")), 6, 9)
     )
+    options = range(max(6, preferred - 1), min(9, preferred + 1) + 1)
+    accents = available_accents(
+        activity,
+        endpoint_ms(options[0]) - BEAT_ACCENT_TOLERANCE_MS,
+        endpoint_ms(options[-1]) + BEAT_ACCENT_TOLERANCE_MS,
+    )
+    if not accents:
+        return preferred
+    _, accent = max(accents)
+    tokens = min(options, key=lambda count: abs(endpoint_ms(count) - accent))
+    if abs(endpoint_ms(tokens) - accent) > BEAT_ACCENT_TOLERANCE_MS:
+        return preferred
+    return tokens
 
 
 def talk_base(activity):

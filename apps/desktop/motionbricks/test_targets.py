@@ -6,10 +6,10 @@ import unittest
 from pathlib import Path
 
 import numpy as np
-from activity import accent_deadline_ms, validate_activity
+from activity import accent_deadline_ms, available_accents, validate_activity
 from conversion import world_poses
 from scipy.spatial.transform import Rotation
-from targets import TargetPlanner, target_token_count
+from targets import TargetPlanner, endpoint_ms, target_token_count
 
 
 class PlannerTests(unittest.TestCase):
@@ -403,6 +403,62 @@ class PlannerTests(unittest.TestCase):
         self.assertIsNone(accent_deadline_ms(activity, 800))
         activity["speaking"] = False
         self.assertIsNone(accent_deadline_ms(activity, 2000))
+
+    def pitch_activity(self, accent_bin=None, final=None, value=0.7):
+        accents = [0.0] * 30
+        if accent_bin is not None:
+            accents[accent_bin] = value
+        return {
+            "energy": 0.1,
+            "playbackId": "a",
+            "speaking": True,
+            "prosody": {
+                "throughSample": 44100,
+                "sampleRate": 44100,
+                "envelope": [0.1],
+                "phase": "speech",
+                "accent": 0,
+                "leadMs": 0,
+                "available": {
+                    "startSample": 44100,
+                    "stepSamples": 2205,
+                    "energy": [0.1] * 30,
+                    "accent": accents,
+                    "finalSample": final,
+                },
+            },
+        }
+
+    def test_talking_beat_endpoint_lands_on_an_available_pitch_accent(self):
+        profile = self.profile("presence_speaking")
+        # Bin centre (i + 0.5) * 50 ms after the consumed origin.
+        for accent_bin in (12, 14, 16, 18):
+            activity = self.pitch_activity(accent_bin)
+            validate_activity(activity)
+            tokens = target_token_count(profile, "hold", activity)
+            accent_ms = (accent_bin + 0.5) * 50
+            self.assertLessEqual(abs(endpoint_ms(tokens) - accent_ms), 120)
+            self.assertTrue(6 <= tokens <= 9)
+        self.assertEqual(target_token_count(profile, "hold", self.pitch_activity()), 7)
+
+    def test_beat_accents_respect_the_native_minimum_and_final_sample(self):
+        profile = self.profile("presence_speaking")
+        early = self.pitch_activity(8)
+        self.assertEqual(target_token_count(profile, "hold", early), 7)
+        self.assertEqual(available_accents(early, 0, 2000), [])
+        beyond_final = self.pitch_activity(16, final=44100 + 2205 * 14)
+        self.assertEqual(target_token_count(profile, "hold", beyond_final), 7)
+        weak = self.pitch_activity(16, value=0.1)
+        self.assertEqual(available_accents(weak, 0, 2000), [])
+
+    def test_stroke_deadline_accepts_pitch_accents_and_validates_alignment(self):
+        activity = self.pitch_activity(15)
+        self.assertAlmostEqual(accent_deadline_ms(activity, 800), 775)
+        for bad in ([0.1] * 29, [1.5] + [0.0] * 29, "accent"):
+            broken = copy.deepcopy(activity)
+            broken["prosody"]["available"]["accent"] = bad
+            with self.assertRaises(ValueError):
+                validate_activity(broken)
 
 
 if __name__ == "__main__":
