@@ -664,3 +664,58 @@ N/A.
   Orchestrator в Node и выход с кодом 0.
 - Проверка женского рода — эвристика по «я …л». Она пропускает формы без
   местоимения «я».
+
+## WI-11 Персона как данные и уровни протокола
+
+Сделан только коммит 1 — извлечение без изменения поведения.
+
+### Architecture Review
+
+- Персона bundled и Main-only. Renderer её не импортирует (contract-тест)
+  и не редактирует. Plugin manifests в prompt не попадают.
+- Character Request Composer не менялся: `SYSTEM_PROMPT` остаётся секцией
+  `persona` с прежним бюджетом. Скрипт синхронизации дополнительно
+  проверяет, что персона укладывается в 5500 символов.
+
+### Что изменено
+
+- `contracts/persona.v1.json`: текущие секции identity, selfConsistency,
+  personality, conversationStyle, creatorContext, safetyRules — дословно.
+- `scripts/sync-persona.mjs`: валидирует контракт (id, заголовки, длины
+  строк, отсутствие переводов строк внутри строк, бюджет) и генерирует
+  `persona.generated.ts`. `--check` подключён в `desktop:check`;
+  root-скрипт `persona:sync`.
+- `CharacterPrompt.ts` собирает `SYSTEM_PROMPT` из сгенерированных секций.
+  Contract-тест сверяет SHA-256 с прежним inline-промптом
+  (`b73abe5c…00e3`, 2125 символов): совпадает байт-в-байт.
+
+### Root Cause
+
+N/A.
+
+### Почему фикс работает
+
+Персона стала данными с одним источником правды, а результат совпадает
+с прежним промптом байт-в-байт.
+
+### Файлы
+
+`contracts/persona.v1.json`, `scripts/sync-persona.mjs`,
+`persona.generated.ts`, `CharacterPrompt.ts`, `package.json` (оба);
+тест `tests/contracts/persona-contract.test.ts`.
+
+### Проверки
+
+Полный набор раздела 7 PASS, включая `sync-persona.mjs --check`
+в `desktop:check`.
+
+### Ограничения
+
+- **Не сделан коммит 2**: speechHabits, catchphrases, avoidPhrases и
+  few-shot меняют prompt. ТЗ требует eval до и после, а регрессия
+  протокола больше 5% должна блокировать изменение. Baseline WI-10 снять
+  нельзя без ключей провайдеров в окружении, поэтому менять prompt вслепую
+  я не стал.
+- По той же причине не сделан `ResponsePolicyTier` (full / standard /
+  compact). Автоматический выбор compact для слабых моделей изменил бы
+  протокол без измерения.

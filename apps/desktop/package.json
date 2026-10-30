@@ -22,7 +22,7 @@
     "format:check": "biome format .",
     "imports": "biome check --write --formatter-enabled=false --linter-enabled=false .",
     "imports:check": "biome check --formatter-enabled=false --linter-enabled=false .",
-    "check": "biome check . && node ../../scripts/sync-embodiment-style.mjs --check",
+    "check": "biome check . && node ../../scripts/sync-embodiment-style.mjs --check && node ../../scripts/sync-persona.mjs --check",
     "check:fix": "biome check --write .",
     "test": "vitest run",
     "test:watch": "vitest",
