@@ -83,6 +83,12 @@ export class MicCapture {
   private processor: ScriptProcessorNode | null = null
   private chunks: Int16Array[] = []
   private recording = false
+  private levelListener: ((rms: number, at: number) => void) | null = null
+
+  /** Bounded RMS level per captured block for prosody-only listening reactions. */
+  setLevelListener(listener: ((rms: number, at: number) => void) | null): void {
+    this.levelListener = listener
+  }
 
   async start(deviceId?: string): Promise<void> {
     const audioConstraints: MediaTrackConstraints =
@@ -110,6 +116,11 @@ export class MicCapture {
         const input = e.inputBuffer.getChannelData(0)
         const ds = downsampleFloat32(input, this.audioCtx.sampleRate, ASR_SAMPLE_RATE)
         this.chunks.push(floatToInt16(ds))
+        if (this.levelListener) {
+          let sum = 0
+          for (let index = 0; index < input.length; index++) sum += input[index] * input[index]
+          this.levelListener(Math.sqrt(sum / Math.max(1, input.length)), performance.now())
+        }
       }
 
       this.source.connect(this.processor)

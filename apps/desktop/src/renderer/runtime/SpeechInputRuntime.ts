@@ -12,6 +12,8 @@ import type {
   ContinuousListeningFailure,
   ContinuousListeningRuntimeProjection,
 } from '../speech/continuous-listening/types'
+import { UserSpeechActivityMonitor } from '../speech/listening/UserSpeechActivity'
+import { UserSpeechReactionCoordinator } from '../speech/listening/UserSpeechReactionCoordinator'
 import type { CharacterStateReader, SpeechStateWriter } from './CharacterStateStore'
 import type {
   ConversationAvatarProjection,
@@ -59,10 +61,14 @@ export interface SpeechInputRuntimeDeps {
   recordRuntimeEvent: (label: string, detail?: string) => void
   /** Report a normalized Speech Adapter failure to the capabilities health component. */
   reportSpeechServiceError: (error: SerializedSpeechError) => void
+  /** Global Suspend or Privacy Mode silence listening reactions (ears, nods). */
+  listeningReactionsSuppressed?: () => boolean
 }
 
 export class SpeechInputRuntime {
   private micCapture = new MicCapture()
+  private readonly userSpeech = new UserSpeechActivityMonitor()
+  private readonly speechReactions: UserSpeechReactionCoordinator
   private streamingCapture = new StreamingPcmCapture()
   private micDeviceId = ''
   private speechRuntime: SpeechRuntime
@@ -124,6 +130,11 @@ export class SpeechInputRuntime {
     this.emptyRecordingMessage = deps.emptyRecordingMessage
     this.recordRuntimeEvent = deps.recordRuntimeEvent
     this.reportSpeechServiceError = deps.reportSpeechServiceError
+    this.speechReactions = new UserSpeechReactionCoordinator(this.userSpeech, this.presentation, {
+      shioSpeaking: () => this.characterState.get().mode === 'speaking',
+      suppressed: deps.listeningReactionsSuppressed ?? (() => false),
+    })
+    this.micCapture.setLevelListener((rms, at) => this.userSpeech.observeLevel(rms, at))
   }
 
   /** Register the owner's handler for irrecoverable streaming-transport loss. */
@@ -408,6 +419,9 @@ export class SpeechInputRuntime {
     this.startController?.abort(new DOMException('Speech input disposed', 'AbortError'))
     this.startController = null
     if (this.micCapture.isRecording()) this.micCapture.stop()
+    this.userSpeech.end(performance.now())
+    this.speechReactions.dispose()
+    this.micCapture.setLevelListener(null)
     observeRendererPromise(this.streamingCapture.stop(), 'dispose streaming capture')
     observeRendererPromise(this.streamingClient.stop(), 'dispose streaming client')
   }
@@ -442,6 +456,7 @@ export class SpeechInputRuntime {
 
     try {
       await this.micCapture.start(this.micDeviceId)
+      this.userSpeech.begin()
       this.enterAvatarMode('listening', 'listening')
       this.publishSpeechEvent('ListeningStarted')
       this.recordRuntimeEvent('Listening')
@@ -456,6 +471,7 @@ export class SpeechInputRuntime {
   private handleStreamingEvent(event: AsrStreamEvent): void {
     if (!this.continuousEnabled) return
     if (event.type === 'speech_started') {
+      this.userSpeech.observeExternalOnset(performance.now())
       this.updateContinuousProjection({
         transport: 'ready',
         activity: 'hearing-speech',
@@ -532,6 +548,7 @@ export class SpeechInputRuntime {
 
   private async stopAndRecognize(): Promise<RecognizedSpeech | null> {
     const wavBuf = this.micCapture.stop()
+    this.userSpeech.end(performance.now())
     this.publishSpeechEvent('ListeningFinished')
     this.recordRuntimeEvent('Listening Finished')
     // 44 bytes = empty WAV header only, so nothing was actually captured.

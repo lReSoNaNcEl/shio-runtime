@@ -24,6 +24,9 @@ export interface ConversationPresentationPort {
     context?: EmbodimentIntentContext,
   ): void
   setBehaviorEmbodimentIntent(intent: CharacterEmbodimentIntent | undefined): void
+  /** Listening reactions to the user's own speech prosody (never ASR text). */
+  reactToUserSpeechOnset?(): void
+  acknowledgeUserSpeech?(): void
   /** Executes a Main-selected idle activity gesture in the primary window only. */
   playIdleActivityGesture?(intent: CharacterEmbodimentIntent): void
   setBrowserScreenGaze(sessionId: string, active: boolean): void
@@ -78,6 +81,14 @@ export class AvatarConversationPresentationPort implements ConversationPresentat
       this.avatar.setBehaviorEmbodimentIntent(intent),
     )
     this.publishOverlayProjection()
+  }
+
+  reactToUserSpeechOnset(): void {
+    this.contain('react to user speech onset', () => this.avatar.reactToUserSpeechOnset())
+  }
+
+  acknowledgeUserSpeech(): void {
+    this.contain('acknowledge user speech', () => this.avatar.acknowledgeUserSpeech())
   }
 
   playIdleActivityGesture(intent: CharacterEmbodimentIntent): void {

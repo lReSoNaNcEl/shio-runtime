@@ -11,7 +11,7 @@ export type HeadMotionProfile = 'idle' | 'listening' | 'thinking' | 'speaking' |
 const ATTENTION_FULL_AUTHORITY = 0.32
 /** Per-second smoothing of the measured acting-hand side. */
 const GESTURE_FOCUS_SMOOTHING = 4
-export type HeadAttentionImpulse = 'user-interruption'
+export type HeadAttentionImpulse = 'user-interruption' | 'speech-onset' | 'backchannel-nod'
 export type HeadMotionGeneratorId =
   | 'idleDrift'
   | 'microTilt'
@@ -402,6 +402,7 @@ export class HeadMotionRuntime {
   private appliedNeckPose: HeadMotionPose = zeroPose()
   private attentionImpulseMs = 0
   private attentionImpulseCooldownMs = 0
+  private activeImpulse: HeadAttentionImpulse = 'user-interruption'
   private authorityWeight = 1
   private speechEnergy = 0
   private attenuation: MotionAttenuationProbe = NOOP_MOTION_ATTENUATION_PROBE
@@ -493,8 +494,14 @@ export class HeadMotionRuntime {
   }
 
   triggerAttentionImpulse(impulse: HeadAttentionImpulse): boolean {
-    if (impulse !== 'user-interruption' || this.attentionImpulseCooldownMs > 0) return false
-    const tuning = headMotionTuning.attentionImpulse
+    // A user interruption preempts a listening reaction; nothing preempts an interruption.
+    const preempts =
+      impulse === 'user-interruption' &&
+      this.activeImpulse !== 'user-interruption' &&
+      this.attentionImpulseMs > 0
+    if (this.attentionImpulseCooldownMs > 0 && !preempts) return false
+    this.activeImpulse = impulse
+    const tuning = this.impulseTuning()
     this.attentionImpulseMs = tuning.attackMs + tuning.holdMs + tuning.releaseMs
     this.attentionImpulseCooldownMs = tuning.cooldownMs
     this.debug = { ...this.debug, attentionImpulseActive: true }
@@ -555,10 +562,7 @@ export class HeadMotionRuntime {
     )
     const targetPose = addPose(
       scalePose(
-        addPose(
-          emotionPose,
-          scalePose(headMotionTuning.attentionImpulse.pose, this.attentionImpulseEnvelope()),
-        ),
+        addPose(emotionPose, scalePose(this.impulseTuning().pose, this.attentionImpulseEnvelope())),
         this.authorityWeight,
       ),
       scalePose(
@@ -568,10 +572,7 @@ export class HeadMotionRuntime {
     )
     if (this.attenuation.active) {
       const requested = addPose(
-        addPose(
-          emotionPose,
-          scalePose(headMotionTuning.attentionImpulse.pose, this.attentionImpulseEnvelope()),
-        ),
+        addPose(emotionPose, scalePose(this.impulseTuning().pose, this.attentionImpulseEnvelope())),
         scalePose(attention.pose, attention.weight * this.emotionHeadProfile.energyScale),
       )
       this.attenuation.report(
@@ -687,9 +688,15 @@ export class HeadMotionRuntime {
     return this.attentionRandomState / 4294967296
   }
 
+  private impulseTuning() {
+    return this.activeImpulse === 'user-interruption'
+      ? headMotionTuning.attentionImpulse
+      : headMotionTuning.listeningImpulses[this.activeImpulse]
+  }
+
   private attentionImpulseEnvelope(): number {
     if (this.attentionImpulseMs <= 0) return 0
-    const { attackMs, holdMs, releaseMs } = headMotionTuning.attentionImpulse
+    const { attackMs, holdMs, releaseMs } = this.impulseTuning()
     const durationMs = attackMs + holdMs + releaseMs
     const elapsed = durationMs - this.attentionImpulseMs
     if (elapsed < attackMs) return elapsed / Math.max(1, attackMs)

@@ -143,6 +143,10 @@ export class Controller {
     emptyRecordingMessage: () => this.t('speechInput.emptyRecording'),
     recordRuntimeEvent: (label, detail) => this.recordRuntimeEvent(label, detail),
     reportSpeechServiceError: (error) => this.reportSpeechServiceError(error),
+    listeningReactionsSuppressed: () => {
+      const settings = this.store.getState().alive?.settings
+      return Boolean(settings?.globallySuspended || settings?.privacyMode)
+    },
   })
   private microphoneDeviceService = new MicrophoneDeviceService((index) =>
     this.t('microphone.fallback', { index }),

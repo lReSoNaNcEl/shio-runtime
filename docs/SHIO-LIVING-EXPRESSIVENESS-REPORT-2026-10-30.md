@@ -306,3 +306,75 @@ Context (ambient presence с cooldown 30 с) или по редкому тайм
   «зевок». Для них нет embodiment intent в общем словаре, а перенос веса и
   движение хвоста уже идут procedural-слоями renderer постоянно. Зевку нужен
   новый motion-профиль и лицевой акт.
+
+## WI-5 Слушание и «думание»
+
+### Architecture Review
+
+- Второго `getUserMedia` нет: уровень берётся из существующего
+  `MicCapture` (RMS блока, без хранения аудио). Continuous listening
+  использует события VAD `speech_started` уже работающего streaming ASR.
+- Реакции чисто просодические: ASR-текст не используется нигде
+  (`UserSpeechActivity`, `UserProsodyBackchannelPolicy`).
+- Мимику по-прежнему пишет только Mixer: подтверждение — короткий слой
+  в `FacialActingController`, который уходит в Mixer как обычный acting.
+  Голову двигает `HeadMotionRuntime` через его impulse-механизм.
+- Реакции не допускают разговор и не меняют Character State: они идут через
+  `ConversationPresentationPort` (contained), не через writers.
+- Suspend и Privacy Mode глушат все реакции слушания; во время речи Shio
+  кивков нет.
+
+### Что изменено
+
+- `renderer/speech/listening/UserSpeechActivity.ts`: порт
+  `UserSpeechActivitySource` и `UserSpeechActivityMonitor` (VAD по RMS
+  с адаптивным порогом шума, одно onset-событие на высказывание, разрыв
+  больше 700 мс — новое высказывание).
+- `UserProsodyBackchannelPolicy`: чистая политика. Пауза 250–600 мс после
+  ≥ 1,2 с речи даёт одно подтверждение, cooldown 2–4 с из инжектированного RNG.
+- `UserSpeechReactionCoordinator`: связывает источник, политику и узкий sink
+  презентации; идемпотентный `dispose`.
+- Avatar: `reactToUserSpeechOnset` (ear impulse `direct-address` и подъём
+  головы `speech-onset`), `acknowledgeUserSpeech` (кивок `backchannel-nod`
+  и мимическое подтверждение). Новые импульсы головы — данные
+  в `headMotionTuning.listeningImpulses`; прерывание пользователем вытесняет
+  их.
+- `SpeechInputRuntime`: подключает монитор к `MicCapture` и событиям ASR,
+  снимает подписки в `dispose`. `Controller` передаёт подавление из
+  `AliveSnapshot.settings`.
+
+### Root Cause
+
+N/A.
+
+### Почему фикс работает
+
+Блок `MicCapture` ~85 мс, поэтому onset-реакция запускается в пределах
+одного-двух блоков после начала голоса. Это укладывается в цель 150 мс
+без сетевой задержки ASR.
+
+### Файлы
+
+`micCapture.ts`, `UserSpeechActivity.ts`, `UserProsodyBackchannelPolicy.ts`,
+`UserSpeechReactionCoordinator.ts`, `SpeechInputRuntime.ts`, `Controller.ts`,
+`ConversationPresentationPort.ts`, `AvatarRuntime.ts`, `AvatarController.ts`,
+`VrmModel.ts`, `AvatarFacialRuntime.ts`, `FacialActingController.ts`,
+`HeadMotionRuntime.ts`, `motionTuning.ts`; тесты
+`tests/unit/speech/listening-reactions.test.ts`, дополнения в
+`speech-head-motion.test.ts` и `facial-acting.test.ts`.
+
+### Проверки
+
+Полный набор раздела 7 PASS (fast 342, regression 834, typecheck, build).
+
+### Ограничения
+
+- Не проверял live, M5 и M6 не измерены.
+- Думание: режим `thinking` уже включается при распознавании (push-to-talk)
+  и в начале хода LLM, вместе с `thinkingDrift` и ear impulse
+  `thinking-entry`. Гистерезис 400 мс не добавлен. Переход
+  listening → thinking → speaking монотонный, поэтому мерцать нечему, а
+  задержка входа в thinking потребовала бы менять тайминг Character State.
+- В continuous listening backchannel не работает: уровни `StreamingPcmCapture`
+  не подключены, есть только onset по VAD сервера. Keypose «рука к подбородку»
+  зависит от WI-4 и не сделан.

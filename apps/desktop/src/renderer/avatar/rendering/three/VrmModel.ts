@@ -179,6 +179,9 @@ export class VrmModel {
   triggerHeadAttentionImpulse(impulse: HeadAttentionImpulse): boolean {
     return this.facialRuntime.triggerHeadAttentionImpulse(impulse)
   }
+  acknowledgeUserSpeech(): void {
+    this.facialRuntime.acknowledgeUserSpeech()
+  }
 
   setProceduralMode(mode: AvatarProceduralMode): void {
     this.facialRuntime.setProceduralMode(mode)

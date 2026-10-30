@@ -210,4 +210,17 @@ describe('capability-gated facial acting', () => {
     expect(mouth?.[3]).toBeLessThan(mouth?.[2] ?? 0)
     mixer.detach()
   })
+
+  it('layers a brief listening acknowledgement over the current acting and lets it decay', () => {
+    const acting = new FacialActingController(() => 0.5)
+    for (let frame = 0; frame < 30; frame++) acting.update(0.05, 'neutral', false)
+    const before = acting.update(0.05, 'neutral', false).mouthSmileLeft ?? 0
+    acting.acknowledge()
+    let peak = before
+    for (let frame = 0; frame < 8; frame++)
+      peak = Math.max(peak, acting.update(0.05, 'neutral', false).mouthSmileLeft ?? 0)
+    expect(peak).toBeGreaterThan(before + 0.03)
+    for (let frame = 0; frame < 40; frame++) acting.update(0.05, 'neutral', false)
+    expect(acting.update(0.05, 'neutral', false).mouthSmileLeft ?? 0).toBeLessThan(before + 0.005)
+  })
 })

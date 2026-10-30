@@ -284,6 +284,12 @@ export class AvatarRuntime {
     this.controller.setEmbodimentIntent(intent, context)
   }
 
+  reactToUserSpeechOnset(): boolean {
+    return this.controller.reactToUserSpeechOnset()
+  }
+  acknowledgeUserSpeech(): boolean {
+    return this.controller.acknowledgeUserSpeech()
+  }
   playIdleActivityGesture(intent: CharacterEmbodimentIntent): string | null {
     return this.controller.playIdleActivityGesture(intent)
   }

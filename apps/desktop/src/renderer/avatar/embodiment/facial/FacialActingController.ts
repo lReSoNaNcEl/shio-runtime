@@ -2,6 +2,16 @@ import type { FacialActingValues } from '../../../../shared/facial-acting'
 import type { PcmPlaybackClock } from '../../../audio/audioPlayer'
 import { getFacialProfile } from './FacialProfile'
 
+/** A brief listening acknowledgement layered over the current emotion acting. */
+const ACKNOWLEDGEMENT: FacialActingValues = {
+  browInnerUp: 0.12,
+  eyeSquintLeft: 0.06,
+  eyeSquintRight: 0.06,
+  mouthSmileLeft: 0.14,
+  mouthSmileRight: 0.12,
+}
+const ACKNOWLEDGEMENT_SECONDS = 0.6
+
 const targets: Record<string, FacialActingValues> = {
   neutral: { browInnerUp: 0.025, mouthDimpleLeft: 0.035, mouthDimpleRight: 0.035 },
   happy: {
@@ -84,8 +94,14 @@ export class FacialActingController {
   private clock: PcmPlaybackClock | null = null
   private lastPlayback = ''
   private lastOffset = 0
+  private acknowledgementAge = Number.POSITIVE_INFINITY
 
   constructor(private readonly random: () => number = Math.random) {}
+
+  /** Starts one short acknowledgement; it decays by itself in render time. */
+  acknowledge(): void {
+    this.acknowledgementAge = 0
+  }
 
   setClock(clock: PcmPlaybackClock | null): void {
     this.clock = clock
@@ -97,6 +113,7 @@ export class FacialActingController {
     this.lastPlayback = ''
     this.lastOffset = 0
     this.reactionAge = 10
+    this.acknowledgementAge = Number.POSITIVE_INFINITY
     this.nextVariation = 0
     this.emotion = 'neutral'
   }
@@ -131,7 +148,18 @@ export class FacialActingController {
       this.asymmetry = (this.random() - 0.5) * 0.14
       this.nextVariation = 1.2 + this.random() * 2.8
     }
-    const target = targets[emotion] ?? targets[getFacialProfile(emotion).id] ?? targets.neutral
+    const base = targets[emotion] ?? targets[getFacialProfile(emotion).id] ?? targets.neutral
+    this.acknowledgementAge += dt
+    const acknowledgement =
+      this.acknowledgementAge < ACKNOWLEDGEMENT_SECONDS
+        ? Math.sin((Math.PI * this.acknowledgementAge) / ACKNOWLEDGEMENT_SECONDS)
+        : 0
+    const target: FacialActingValues = acknowledgement > 0 ? { ...base } : base
+    if (acknowledgement > 0)
+      for (const [name, value] of Object.entries(ACKNOWLEDGEMENT) as Array<
+        [keyof FacialActingValues, number]
+      >)
+        target[name] = (target[name] ?? 0) + value * acknowledgement
     const reaction = Math.max(0, 1 - this.reactionAge / 1.4)
     const next: FacialActingValues = {}
     for (const name of new Set([...Object.keys(this.values), ...Object.keys(target)])) {

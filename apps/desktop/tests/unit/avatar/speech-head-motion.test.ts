@@ -140,4 +140,27 @@ describe('speech-driven head motion', () => {
     expect(run({ ...neutral, openness: 1 })).toBeGreaterThan(run({ ...neutral, openness: 0 }))
     expect(run(neutral)).toBeCloseTo(run(null), 9)
   })
+
+  it('nods for a backchannel, lifts at speech onset, and lets an interruption preempt them', () => {
+    const head = new THREE.Object3D()
+    const vrm = {
+      humanoid: { getNormalizedBoneNode: (name: string) => (name === 'head' ? head : null) },
+    } as unknown as VRM
+    const runtime = new HeadMotionRuntime()
+    runtime.attach(vrm)
+    runtime.setProfile('listening')
+    for (let frame = 0; frame < 40; frame++) runtime.update(0.05)
+    const rest = runtime.getDebugState().pitchOffset
+    expect(runtime.triggerAttentionImpulse('backchannel-nod')).toBe(true)
+    let lowest = rest
+    for (let frame = 0; frame < 6; frame++) {
+      runtime.update(0.05)
+      lowest = Math.min(lowest, runtime.getDebugState().pitchOffset)
+    }
+    expect(lowest).toBeLessThan(rest - 0.01)
+    expect(runtime.triggerAttentionImpulse('speech-onset')).toBe(false)
+    expect(runtime.triggerAttentionImpulse('user-interruption')).toBe(true)
+    expect(runtime.triggerAttentionImpulse('backchannel-nod')).toBe(false)
+    runtime.detach()
+  })
 })

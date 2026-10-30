@@ -489,6 +489,22 @@ export class AvatarController {
     return this.vrmModel.triggerEarImpulse(impulse, identity)
   }
 
+  /** The user started speaking: ears perk and the head lifts attentively, once per utterance. */
+  reactToUserSpeechOnset(): boolean {
+    if (this.stateMachine.getMode() === 'speaking') return false
+    const ears = this.triggerEarImpulse('direct-address')
+    const head = this.vrmModel.triggerHeadAttentionImpulse('speech-onset')
+    return ears || head
+  }
+
+  /** A prosodic pause in the user's speech: a small nod and a facial acknowledgement. */
+  acknowledgeUserSpeech(): boolean {
+    if (this.stateMachine.getMode() === 'speaking') return false
+    const nodded = this.vrmModel.triggerHeadAttentionImpulse('backchannel-nod')
+    if (nodded) this.vrmModel.acknowledgeUserSpeech()
+    return nodded
+  }
+
   triggerReactionGesture(trigger: ReactionGestureTrigger): string | null {
     if (trigger === 'user-interruption' || !this.lastEffect) return null
     const effect = { ...this.lastEffect, loop: false }

@@ -186,6 +186,24 @@ export const headMotionTuning = {
     releaseMs: 320,
     cooldownMs: 1_000,
   },
+  // Listening reactions to the user's own speech: an attentive lift at speech
+  // onset and a small acknowledging nod in a prosodic pause. Pitch > 0 looks up.
+  listeningImpulses: {
+    'speech-onset': {
+      pose: { yaw: 0, pitch: 0.028, roll: 0.022 },
+      attackMs: 90,
+      holdMs: 180,
+      releaseMs: 420,
+      cooldownMs: 600,
+    },
+    'backchannel-nod': {
+      pose: { yaw: 0, pitch: -0.075, roll: 0.01 },
+      attackMs: 130,
+      holdMs: 60,
+      releaseMs: 300,
+      cooldownMs: 900,
+    },
+  },
   profiles: {
     idle: {
       generatorWeights: generatorWeights({

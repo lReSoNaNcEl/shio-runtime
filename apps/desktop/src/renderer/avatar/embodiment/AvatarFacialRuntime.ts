@@ -289,6 +289,11 @@ export class AvatarFacialRuntime {
     return this.headMotionRuntime.triggerAttentionImpulse(impulse)
   }
 
+  /** Facial part of a listening backchannel; the Mixer still writes the final face. */
+  acknowledgeUserSpeech(): void {
+    this.facialActingController.acknowledge()
+  }
+
   setProceduralMode(mode: AvatarProceduralMode): void {
     const wasSpeaking = this.proceduralMode === 'speaking'
     const isSpeaking = mode === 'speaking'
