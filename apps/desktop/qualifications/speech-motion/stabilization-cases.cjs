@@ -229,6 +229,16 @@ async function installStabilizationProbe(page, options = {}) {
           current.costMs = performance.now() - started
           current.sourceFrame = body.cursor
           current.pcm = c.player.getPcmClock()
+          // Liveliness metrics: audible delivery emotion and submitted pitch accents (samples).
+          current.deliveryEmotion = c.avatarRuntime.controller.speechDeliveryEmotion ?? null
+          const available = current.pcm?.availableEnergy
+          current.accents = available?.accent
+            ? available.accent.flatMap((value, index) =>
+                value >= 0.25
+                  ? [Math.round(available.startSample + (index + 0.5) * available.stepSamples)]
+                  : [],
+              )
+            : []
           if (options.summaryOnly && current.pcm) {
             const { turnId, playbackId, sourceSampleRate, sourceSampleOffset, state } = current.pcm
             current.pcm = { turnId, playbackId, sourceSampleRate, sourceSampleOffset, state }
