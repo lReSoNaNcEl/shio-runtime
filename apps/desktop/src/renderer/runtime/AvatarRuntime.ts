@@ -284,6 +284,9 @@ export class AvatarRuntime {
     this.controller.setEmbodimentIntent(intent, context)
   }
 
+  playIdleActivityGesture(intent: CharacterEmbodimentIntent): string | null {
+    return this.controller.playIdleActivityGesture(intent)
+  }
   setBehaviorEmbodimentIntent(intent: CharacterEmbodimentIntent | undefined): void {
     this.controller.setBehaviorEmbodimentIntent(intent)
   }

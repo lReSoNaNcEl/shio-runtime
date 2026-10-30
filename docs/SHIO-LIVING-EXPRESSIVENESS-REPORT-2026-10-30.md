@@ -226,3 +226,83 @@ Python: 27 тестов OK, Ruff OK. Desktop: полный набор разде
   pitch-акцента (1,5 полутона, 0,25) подобран на синтетике.
 - Изменение поведения: разговорные биты теперь подстраиваются и под
   энергетические пики (раньше только stroke).
+
+## WI-6 Жизнь в простое
+
+Два коммита: сначала извлечение общего helper подавления без изменения
+поведения, затем политика idle-активностей.
+
+### Architecture Review
+
+- Семантику idle-активности выбирает Main (`IdleActivityPolicy` в составе
+  `BehaviorRuntime`). Renderer только исполняет команду: держит взгляд
+  ограниченное время и запускает один жест каталога.
+- Новый IPC-канал не создан: используется существующий `alive:behavior`
+  с `BehaviorCommand` и embodiment intent. Добавлены два bounded поля:
+  `idleActivityId` и `holdMs`.
+- Idle-активность не запрашивает разговор и не проходит Conversation
+  Admission: это nonverbal presentation, а не initiative.
+- Подавление общее: Suspend, Privacy, Off, quiet hours, активный разговор,
+  звук и browser screen focus. Helper `autonomySuppression.ts` теперь
+  используют `BehaviorRuntime`, `AmbientPresencePolicy` и `AutonomyEnvelope`
+  (во всех трёх было по копии `insideQuietHours`).
+- Overlay ничего не запускает: жест выполняет только primary window через
+  `ConversationPresentationPort.playIdleActivityGesture`, а Overlay получает
+  готовую проекцию.
+- Политика чистая: random source инжектируется (`seededRandom` для тестов),
+  время приходит с входом. `Date.now()` и `Math.random()` внутри политики
+  не вызываются.
+
+### Что изменено
+
+- `autonomySuppression.ts`: `autonomyPolicyStop` (с прежним порядком причин),
+  `autonomyBusyStop`, `insideQuietHours`.
+- `IdleActivityPolicy.ts`: registry-данные (`look-around`, `look-at-screen`,
+  `glance-at-user`, `curious-lean`, `stretch-small`) с частотой, весами Mood,
+  минимальной длительностью тишины, cooldown и hold. Пуассоновское
+  расписание с жёсткими границами: не чаще раза в 8 с и не реже раза в 25 с
+  при нейтральном настроении (20–45 с в зависимости от Mood). Mood меняет
+  общую частоту в пределах 0,5–1,5×; при низком arousal активностей меньше.
+  Одна активность не повторяется подряд.
+- `AliveFacade.updateWorld` (раз в 5 с от renderer): сначала ambient presence,
+  затем idle-активность. Idle-команды не пишутся в audit, иначе таблица
+  `alive_audit` росла бы каждые несколько секунд.
+- Renderer: `AliveExperienceRuntime` исполняет idle-команду (взгляд на
+  `holdMs`, ограниченный 0,5–10 с, затем освобождение; таймер снимается при
+  dispose и новой команде). `AvatarController.playIdleActivityGesture` играет
+  жест только в режиме idle, при наличии в `EmbodimentAvailability` и только
+  для профилей вида `gesture`. Общая с реакциями логика возврата вынесена
+  в `playReactionWithReturn`.
+
+### Root Cause
+
+N/A.
+
+### Почему фикс работает
+
+Раньше видимые действия в простое возникали только при изменении World
+Context (ambient presence с cooldown 30 с) или по редкому таймеру renderer.
+Теперь Main-политика гарантирует видимое действие хотя бы раз в ~25 с
+при нейтральном настроении.
+
+### Файлы
+
+`autonomySuppression.ts`, `IdleActivityPolicy.ts`, `BehaviorRuntime.ts`,
+`AmbientPresencePolicy.ts`, `AutonomyEnvelope.ts`, `AliveFacade.ts`,
+`shared/alive/contracts.ts`, `AliveExperienceRuntime.ts`,
+`ConversationPresentationPort.ts`, `AvatarRuntime.ts`, `AvatarController.ts`;
+тесты `autonomy-suppression.test.ts`, `idle-activity-policy.test.ts`,
+`alive-initiative-admission.test.ts`.
+
+### Проверки
+
+Полный набор раздела 7 PASS: fast 331, regression 823, typecheck, build.
+
+### Ограничения
+
+- Не проверял live, M7 не измерен. По симуляции на 5-секундных тиках
+  самый долгий промежуток не больше 30 с.
+- Из стартового набора ТЗ не сделаны «перенос веса», «взмах хвостом» и
+  «зевок». Для них нет embodiment intent в общем словаре, а перенос веса и
+  движение хвоста уже идут procedural-слоями renderer постоянно. Зевку нужен
+  новый motion-профиль и лицевой акт.

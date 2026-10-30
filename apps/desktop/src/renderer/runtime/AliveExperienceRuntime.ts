@@ -5,6 +5,7 @@ import type { ConversationPresentationPort } from './ConversationPresentationPor
 
 const WORLD_HEARTBEAT_MS = 5_000
 const SILENCE_THRESHOLD_MS = 60_000
+const IDLE_HOLD_LIMITS = [500, 10_000] as const
 
 interface AliveExperienceRuntimeDeps {
   getControllerState: () => ControllerState
@@ -23,6 +24,7 @@ export class AliveExperienceRuntime {
   private unsubscribeChanged: (() => void) | null = null
   private unsubscribeBehavior: (() => void) | null = null
   private started = false
+  private idleHold: number | null = null
 
   constructor(private readonly deps: AliveExperienceRuntimeDeps) {}
 
@@ -59,7 +61,32 @@ export class AliveExperienceRuntime {
     this.unsubscribeChanged = null
     this.unsubscribeBehavior?.()
     this.unsubscribeBehavior = null
+    this.clearIdleHold()
     this.removeActivityListeners()
+  }
+
+  private clearIdleHold(): void {
+    if (this.idleHold !== null) window.clearTimeout(this.idleHold)
+    this.idleHold = null
+  }
+
+  /** Executes a Main-selected idle activity: a held glance and/or one catalog gesture. */
+  private applyIdleActivity(command: BehaviorCommand): void {
+    if (command.intent.kind !== 'embodiment') return
+    const intent = command.intent.intent
+    this.clearIdleHold()
+    if (intent.gazeHint) {
+      this.deps.presentation.setBehaviorEmbodimentIntent(intent)
+      const hold = Math.max(
+        IDLE_HOLD_LIMITS[0],
+        Math.min(IDLE_HOLD_LIMITS[1], command.holdMs ?? IDLE_HOLD_LIMITS[0]),
+      )
+      this.idleHold = window.setTimeout(() => {
+        this.idleHold = null
+        this.deps.presentation.setBehaviorEmbodimentIntent(undefined)
+      }, hold)
+    }
+    if (intent.gestureHint) this.deps.presentation.playIdleActivityGesture?.(intent)
   }
 
   report(event: ExperienceEvent): void {
@@ -101,7 +128,10 @@ export class AliveExperienceRuntime {
         command.embodimentPresence.screenGazeActive,
       )
     }
-    if (command.intent.kind === 'embodiment') {
+    if (command.idleActivityId) {
+      this.applyIdleActivity(command)
+    } else if (command.intent.kind === 'embodiment') {
+      this.clearIdleHold()
       if (!command.embodimentPresence) {
         this.deps.presentation.setBehaviorEmbodimentIntent(command.intent.intent)
       }

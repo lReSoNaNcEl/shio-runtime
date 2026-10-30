@@ -11,6 +11,7 @@ import type {
 import type { CharacterEmbodimentIntent } from '../../shared/character-response'
 import { AmbientPresencePolicy } from './AmbientPresencePolicy'
 import { autonomyPolicyStop } from './autonomySuppression'
+import { type IdleActivityInput, IdleActivityPolicy } from './IdleActivityPolicy'
 
 const BASE_NONVERBAL_COOLDOWN_MS = 90_000
 const BROWSER_USE_NONVERBAL_COOLDOWN_MS = 5_000
@@ -56,9 +57,14 @@ interface MoodBehaviorProfile {
 
 export class BehaviorRuntime {
   private readonly ambientPresence = new AmbientPresencePolicy()
+  private readonly idleActivity: IdleActivityPolicy
   private lastNonverbalAt: number | null = null
   private lastConversationCandidateAt: number | null = null
   private browserUseConversationCandidateAt: number[] = []
+
+  constructor(idleRandom: () => number = Math.random) {
+    this.idleActivity = new IdleActivityPolicy(idleRandom)
+  }
 
   decide(input: BehaviorDecisionInput): BehaviorCommand {
     return this.decideWithDiagnostics(input).command
@@ -196,6 +202,25 @@ export class BehaviorRuntime {
         intent: presence.embodiment,
       }),
     }
+  }
+
+  /** Self-directed idle presence; it never requests conversation or Avatar state. */
+  observeIdle(input: IdleActivityInput): BehaviorCommand | null {
+    const selected = this.idleActivity.decide(input)
+    if (!selected) return null
+    return {
+      ...command(input.at, `idle-activity:${selected.activity.id}:${input.at}`, {
+        kind: 'embodiment',
+        intent: selected.intent,
+      }),
+      idleActivityId: selected.activity.id,
+      ...(selected.holdMs ? { holdMs: selected.holdMs } : {}),
+    }
+  }
+
+  /** Visible presence from another owner delays the next idle activity. */
+  notePresence(at: number): void {
+    this.idleActivity.notePresence(at)
   }
 
   private conversationGate(

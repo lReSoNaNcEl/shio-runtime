@@ -24,6 +24,8 @@ export interface ConversationPresentationPort {
     context?: EmbodimentIntentContext,
   ): void
   setBehaviorEmbodimentIntent(intent: CharacterEmbodimentIntent | undefined): void
+  /** Executes a Main-selected idle activity gesture in the primary window only. */
+  playIdleActivityGesture?(intent: CharacterEmbodimentIntent): void
   setBrowserScreenGaze(sessionId: string, active: boolean): void
   interruptLipSync(turnId: string): void
   stopLipSync(turnId: string): void
@@ -76,6 +78,10 @@ export class AvatarConversationPresentationPort implements ConversationPresentat
       this.avatar.setBehaviorEmbodimentIntent(intent),
     )
     this.publishOverlayProjection()
+  }
+
+  playIdleActivityGesture(intent: CharacterEmbodimentIntent): void {
+    this.contain('play idle activity gesture', () => this.avatar.playIdleActivityGesture(intent))
   }
 
   setBrowserScreenGaze(sessionId: string, active: boolean): void {

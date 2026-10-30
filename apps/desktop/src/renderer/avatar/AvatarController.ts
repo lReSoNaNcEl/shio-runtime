@@ -501,23 +501,56 @@ export class AvatarController {
     )
     if (!resolved || resolved.loop) return null
 
+    return this.playReactionWithReturn(effect, resolved, `semantic reaction:${trigger}`)
+  }
+
+  /** Executes one Main-selected idle activity gesture; semantics are never chosen here. */
+  playIdleActivityGesture(intent: CharacterEmbodimentIntent): string | null {
+    const hint = intent.gestureHint
+    if (
+      !hint ||
+      !this.lastEffect ||
+      this.stateMachine.getMode() !== 'idle' ||
+      this.hasPreparedGesture() ||
+      !this.vrmModel.isLoaded() ||
+      !this.getEmbodimentAvailability().availableSemanticIntents.includes(hint)
+    )
+      return null
+    const effect = { ...this.lastEffect, loop: false }
+    const resolved = this.behaviorResolver.resolveEmbodimentIntent(
+      effect,
+      intent,
+      'reaction',
+      [],
+      (id) => this.vrmModel.isConversationalMotionAvailable(id),
+    )
+    if (!resolved || resolved.loop || getMotionProfile(resolved.animationId)?.kind !== 'gesture')
+      return null
+    return this.playReactionWithReturn(effect, resolved, `idle activity:${hint}`)
+  }
+
+  private playReactionWithReturn(
+    effect: AvatarStateEffect,
+    resolved: AvatarBehaviorResolution,
+    reason: string,
+  ): string | null {
     const returnEffect = this.lastEffect
     const returnResolution = this.lastBehaviorResolution
     const decision = this.playback.requestResolvedBehavior({
       effect,
       resolved,
       source: 'state-effect',
-      reason: `semantic reaction:${trigger}`,
+      reason,
       frame: this.frame,
       interruptible: false,
     })
     if (decision.action !== 'play' && decision.action !== 'queue') return null
-    if (returnResolution) {
+    if (returnEffect && returnResolution) {
       this.playback.requestResolvedBehavior({
         effect: returnEffect,
         resolved: returnResolution,
         source: 'queue',
-        reason: `return after semantic reaction:${trigger}`,
+        reason: `return after ${reason}`,
         frame: this.frame,
         interruptible: this.isInterruptible(returnResolution),
       })

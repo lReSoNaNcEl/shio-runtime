@@ -356,6 +356,10 @@ export interface BehaviorCommand {
   /** Main-owned Gate decision; absence never grants conversation admission. */
   initiativeDisposition?: 'admit' | 'preview'
   embodimentPresence?: BehaviorEmbodimentPresence
+  /** Main-selected idle activity; the renderer only executes it. */
+  idleActivityId?: string
+  /** Transient idle presentation: the renderer releases the intent after this hold. */
+  holdMs?: number
   intent: BehaviorIntent
 }
 

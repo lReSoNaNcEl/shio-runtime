@@ -209,7 +209,20 @@ export class AliveFacade {
       browserComputerUseScreenFocusActive: this.browserComputerUseScreenFocusActive,
       at: input.observedAt,
     })
-    if (selected && this.emitBehavior(selected.command)) this.publish()
+    if (selected && this.emitBehavior(selected.command)) {
+      this.behavior.notePresence(input.observedAt)
+      this.publish()
+      return
+    }
+    const idle = this.behavior.observeIdle({
+      at: input.observedAt,
+      settings,
+      mood: this.experience.moodSnapshot(),
+      conversationActive: current.conversationActive,
+      audioActive: current.audioActive,
+      browserComputerUseScreenFocusActive: this.browserComputerUseScreenFocusActive,
+    })
+    if (idle) this.emitIdlePresentation(idle)
   }
 
   reportExperience(event: ExperienceEvent): ExperienceReport {
@@ -479,6 +492,12 @@ export class AliveFacade {
     }
     for (const listener of this.behaviorListeners) listener(projection)
     return true
+  }
+
+  /** Bounded idle presentation is not an initiative or side effect; it is not audited
+   * per activity, so the audit table does not grow every few seconds. */
+  private emitIdlePresentation(command: BehaviorCommand): void {
+    for (const listener of this.behaviorListeners) listener(command)
   }
 
   private emitGoalAttention(now: number): void {
