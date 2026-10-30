@@ -24,6 +24,7 @@ export function defaultLlmConfig(): LlmPersistedConfig {
   return {
     activeProvider: 'groq',
     providers,
+    speculativeDirectReply: false,
     roles: {
       backlogSelector: {
         enabled: false,
@@ -92,6 +93,7 @@ export function normalizeLlmConfig(value: unknown): LlmPersistedConfig {
   ) {
     result.activeProvider = record.activeProvider
   }
+  result.speculativeDirectReply = record.speculativeDirectReply === true
   const providers = record.providers
   if (providers && typeof providers === 'object') {
     const providerRecord = providers as Record<string, unknown>
@@ -185,6 +187,7 @@ export function toPublicLlmConfig(
   return {
     activeProvider: config.activeProvider,
     providers,
+    speculativeDirectReply: config.speculativeDirectReply,
     roles: config.roles,
   }
 }

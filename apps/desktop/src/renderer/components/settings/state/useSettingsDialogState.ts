@@ -124,6 +124,8 @@ export function useSettingsDialogState({
     setCharacterFallbacks,
     setComputerUseVisionRole,
     setEditingKey,
+    setSpeculativeDirectReply,
+    speculativeDirectReply,
     setKeyInput,
     setModelOptions,
     setModelsState,
@@ -179,6 +181,7 @@ export function useSettingsDialogState({
         setBacklogRole(cfg.llm?.roles?.backlogSelector ?? defaultBacklogSelectorRole)
         setComputerUseVisionRole(cfg.llm?.roles?.computerUseVision ?? defaultComputerUseVisionRole)
         setCharacterFallbacks(cfg.llm?.roles?.characterFallbacks ?? [])
+        setSpeculativeDirectReply(cfg.llm?.speculativeDirectReply === true)
         setVrmName(cfg.vrmAssetName)
         setOverlayWidth(parseNumberSetting(cfg.overlayWidth, overlayDefaults.width, 250, 2000))
         setOverlayHeight(parseNumberSetting(cfg.overlayHeight, overlayDefaults.height, 250, 2000))
@@ -516,6 +519,7 @@ export function useSettingsDialogState({
         llm: {
           activeProvider,
           providers: providerSettings,
+          speculativeDirectReply,
           roles: {
             backlogSelector: backlogRole,
             computerUseVision: computerUseVisionRole,
@@ -531,6 +535,7 @@ export function useSettingsDialogState({
     backlogRole,
     computerUseVisionRole,
     characterFallbacks,
+    speculativeDirectReply,
     isOpen,
     persistPatch,
   ])
@@ -655,6 +660,7 @@ export function useSettingsDialogState({
         selectedModel,
         health: llmHealth,
         characterFallbacks,
+        speculativeDirectReply,
       },
       actions: {
         setActiveProvider,
@@ -667,6 +673,7 @@ export function useSettingsDialogState({
         loadModels,
         setBacklogRole,
         setCharacterFallbacks,
+        setSpeculativeDirectReply,
       },
     },
     avatar: {

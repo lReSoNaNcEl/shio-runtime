@@ -1586,6 +1586,10 @@ export const enMessages: Record<TranslationKey, string> = {
   'avatarPreview.keypose.status.unavailable':
     'The model is not loaded or the rig lacks the required bones.',
   'avatarPreview.keypose.status.failed': 'Could not write to the clipboard.',
+  'settings.llm.speculative.title': 'Faster reply (experimental)',
+  'settings.llm.speculative.enable': 'Start the reply in parallel with planning',
+  'settings.llm.speculative.description':
+    'Shio prepares an ordinary reply while deciding whether tools are needed. It is shown only when the plan confirms a direct answer without tools or a gesture; otherwise the request is cancelled. It may spend extra tokens.',
   'avatarPreview.handScore': 'Hand score',
   'avatarPreview.seed': 'Variation seed',
   'avatarPreview.queue': 'Queued frames',

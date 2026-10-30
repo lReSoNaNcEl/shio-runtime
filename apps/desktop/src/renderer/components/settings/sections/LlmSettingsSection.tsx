@@ -4,6 +4,7 @@ import {
   Picker,
   PickerItem,
   ProgressCircle,
+  Switch,
   Text,
   TextField,
 } from '@react-spectrum/s2'
@@ -180,6 +181,18 @@ export function LlmSettingsSection({
         </div>
       </section>
       <CharacterFallbackSettings state={state} actions={actions} />
+      <section className="llm-settings-section" aria-labelledby="speculative-reply-title">
+        <Heading id="speculative-reply-title" level={3}>
+          {t('settings.llm.speculative.title')}
+        </Heading>
+        <Switch
+          isSelected={state.speculativeDirectReply}
+          onChange={actions.setSpeculativeDirectReply}
+        >
+          {t('settings.llm.speculative.enable')}
+        </Switch>
+        <Text UNSAFE_className="settings-hint">{t('settings.llm.speculative.description')}</Text>
+      </section>
     </div>
   )
 }

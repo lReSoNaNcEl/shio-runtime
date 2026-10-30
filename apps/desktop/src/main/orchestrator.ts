@@ -546,6 +546,7 @@ export class Orchestrator {
         requestOptions: options,
         nativeToolsRejected: this.nativeCharacterToolsRejected,
         enforceToolRequirements: !autonomous && this.toolPolicy.enforceRequirements,
+        speculativeDirectReply: !autonomous && this.settings().llm?.speculativeDirectReply === true,
         requirementFailureReply: (requirement, reason) =>
           presentToolRequirementFailure(requirement, reason, locale),
         onStreamEvent: options.onStreamEvent,

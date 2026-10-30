@@ -91,6 +91,7 @@ export interface LlmSettingsState {
   selectedModel: string
   health: ControllerState['llmHealth']
   characterFallbacks: LlmRoleCandidate[]
+  speculativeDirectReply: boolean
 }
 
 export interface LlmSettingsActions {
@@ -104,6 +105,7 @@ export interface LlmSettingsActions {
   loadModels: (providerId: LlmProviderId) => Promise<void>
   setBacklogRole: Dispatch<SetStateAction<BacklogSelectorRoleConfig>>
   setCharacterFallbacks: Dispatch<SetStateAction<LlmRoleCandidate[]>>
+  setSpeculativeDirectReply: (enabled: boolean) => void
 }
 
 export interface AvatarSettingsState {

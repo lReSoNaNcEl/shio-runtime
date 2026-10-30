@@ -1586,6 +1586,10 @@ export const ruMessages = {
   'avatarPreview.keypose.status.copied': 'Keypose скопирована в буфер обмена.',
   'avatarPreview.keypose.status.unavailable': 'Модель не загружена или у рига нет нужных костей.',
   'avatarPreview.keypose.status.failed': 'Не удалось записать в буфер обмена.',
+  'settings.llm.speculative.title': 'Ускоренный ответ (эксперимент)',
+  'settings.llm.speculative.enable': 'Начинать ответ параллельно с планированием',
+  'settings.llm.speculative.description':
+    'Shio заранее готовит обычный ответ, пока решает, нужны ли инструменты. Ответ показывается, только если план подтвердил прямой ответ без инструментов и жеста; иначе запрос отменяется. Может тратить лишние токены.',
   'avatarPreview.handScore': 'Партитура кистей',
   'avatarPreview.seed': 'Seed вариации',
   'avatarPreview.queue': 'Кадров в очереди',

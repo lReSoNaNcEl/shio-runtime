@@ -31,6 +31,7 @@ import {
   LlmTurnCancelledError,
 } from '../llm'
 import { mainLog } from '../logging/safeLogger'
+import { SpeculativeDirectReply } from './CharacterSpeculativeReply'
 import type {
   CharacterToolDispatcher,
   CharacterToolDispatchResult,
@@ -117,6 +118,8 @@ interface CharacterToolLoopOptions {
   nativeToolsRejected: boolean
   providerId: LlmProviderId
   enforceToolRequirements?: boolean
+  /** Experimental, off by default: start the direct reply in parallel with planning. */
+  speculativeDirectReply?: boolean
   embodimentAvailability?: EmbodimentAvailability
   requirementFailureReply?: (
     requirement: CharacterToolRequirement | undefined,
@@ -389,6 +392,141 @@ function requiredWorkExecutionResult(
     requiredWorkFailureReply(options, state, reason),
     'tool-requirement-failure',
   )
+}
+
+/** The validated typed visual decision a reply must stay consistent with. */
+function visualProposalMessage(embodiment: CharacterEmbodimentIntent | null): ChatMessage {
+  return {
+    role: 'system',
+    content: `## Current Typed Visual Proposal\n${JSON.stringify(embodiment)}\nThis is the validated pending visual selection for this reply, not proof of playback. Keep prose consistent with it. Do not emit another embodiment envelope or bracketed gesture ID. Null means ordinary presence. Never claim that execution completed.`,
+  }
+}
+
+const DIRECT_ANSWER: CharacterToolRequirement = { type: 'direct-answer' }
+const NO_PLANNED_TOOLS: InitialCharacterToolPlan = { plannedTools: [] }
+
+/** Which request serves a turn without planned tools: the plain direct stream when no
+ * tool is registered, the native tool round otherwise, or none for the structured path. */
+type DirectReplyRoute = 'direct' | 'native'
+
+function nativeToolRoute(options: CharacterToolLoopOptions, nativeToolsRejected: boolean): boolean {
+  const capabilities = options.llm.capabilities?.()
+  // Reasoning providers require their complete assistant thinking message to be replayed.
+  // The provider-neutral structured path avoids an incomplete native continuation.
+  return Boolean(
+    !nativeToolsRejected &&
+      capabilities?.supportsToolCalling &&
+      !(capabilities.requiresReasoningReplay ?? capabilities.supportsReasoning) &&
+      options.llm.complete,
+  )
+}
+
+function directReplyRoute(
+  options: CharacterToolLoopOptions,
+  registry: CharacterToolRegistry,
+  nativeToolsRejected: boolean,
+): DirectReplyRoute | null {
+  if (registry.definitions().length === 0) return 'direct'
+  return nativeToolRoute(options, nativeToolsRejected) ? 'native' : null
+}
+
+/** The one builder of a direct-answer request with no planned tools and a null visual
+ * decision: exactly what the turn sends on `route` when the plan proves that shape. */
+function directAnswerRequest(
+  options: CharacterToolLoopOptions,
+  registry: CharacterToolRegistry,
+  route: DirectReplyRoute,
+  signal: AbortSignal,
+): { messages: ChatMessage[]; requestOptions: LlmStreamOptions } {
+  return {
+    messages: withToolPrompts(
+      [...options.messages, visualProposalMessage(null)],
+      registry,
+      false,
+      DIRECT_ANSWER,
+      NO_PLANNED_TOOLS,
+    ),
+    requestOptions:
+      route === 'native'
+        ? { ...toolRequestOptions(options, signal), toolChoice: 'none' }
+        : forwardedRequestOptions(options, signal),
+  }
+}
+
+/** A speculative reply is released only when the plan made it the exact request. */
+function speculationMatches(
+  state: LoopState,
+  startedRoute: DirectReplyRoute,
+  route: DirectReplyRoute | null,
+): boolean {
+  return (
+    state.requirement.type === 'direct-answer' &&
+    state.initialPlan.plannedTools.length === 0 &&
+    state.embodiment === null &&
+    route === startedRoute
+  )
+}
+
+/** Starts a held-back direct reply in parallel with planning when the turn could use it. */
+function startSpeculation(
+  options: CharacterToolLoopOptions,
+  turnSignal: AbortSignal,
+  route: DirectReplyRoute | null,
+): { reply: SpeculativeDirectReply; route: DirectReplyRoute } | null {
+  if (
+    !options.speculativeDirectReply ||
+    !options.enforceToolRequirements ||
+    !route ||
+    !streamingAvailable(options)
+  )
+    return null
+  const registry = options.registry()
+  const reply = new SpeculativeDirectReply(
+    turnSignal,
+    (onEvent, signal) => {
+      const { messages, requestOptions } = directAnswerRequest(options, registry, route, signal)
+      return streamedCompletionWithSafeRetry(
+        { ...options, onStreamEvent: onEvent },
+        'character-speculative-reply',
+        messages,
+        signal,
+        0,
+        requestOptions,
+        true,
+      )
+    },
+    Date.now,
+    {
+      onReleased: (event) =>
+        mainLog.info('[CharacterToolLoop] speculative_reply_released', {
+          traceId: options.traceId,
+          ...event,
+        }),
+      onDiscarded: (event) =>
+        mainLog.info('[CharacterToolLoop] speculative_reply_discarded', {
+          traceId: options.traceId,
+          ...event,
+        }),
+    },
+  )
+  return { reply, route }
+}
+
+/** Serves a released speculation; a failure before visible text falls back to a fresh request. */
+async function consumeSpeculation(
+  reply: SpeculativeDirectReply,
+  sink: ((event: CharacterToolLoopStreamEvent) => void) | undefined,
+  signal: AbortSignal,
+  fallback: () => Promise<LlmCompletion>,
+): Promise<LlmCompletion> {
+  const pending = reply.release((event) => sink?.(event))
+  if (!pending) return fallback()
+  try {
+    return await pending
+  } catch (error) {
+    if (reply.hasForwardedText() || signal.aborted) throw error
+    return fallback()
+  }
 }
 
 function withToolPrompts(
@@ -971,6 +1109,15 @@ export class CharacterToolLoop {
       ...forwardOptions,
       dispatcher: options.createDispatcher(controller.signal),
     }
+    const currentRoute = () => directReplyRoute(options, options.registry(), nativeToolsRejected)
+    const speculation = startSpeculation(options, controller.signal, currentRoute())
+    // Only a speculation that the resolved plan matched is offered to the first request.
+    const releasable = () =>
+      speculation &&
+      !speculation.reply.signal.aborted &&
+      speculationMatches(state, speculation.route, currentRoute())
+        ? speculation.reply
+        : undefined
 
     try {
       if (options.enforceToolRequirements) {
@@ -1031,14 +1178,11 @@ export class CharacterToolLoop {
           })
         }
         if (state.embodiment !== undefined) {
-          forwardOptions.messages = [
-            ...options.messages,
-            {
-              role: 'system',
-              content: `## Current Typed Visual Proposal\n${JSON.stringify(state.embodiment)}\nThis is the validated pending visual selection for this reply, not proof of playback. Keep prose consistent with it. Do not emit another embodiment envelope or bracketed gesture ID. Null means ordinary presence. Never claim that execution completed.`,
-            },
-          ]
+          forwardOptions.messages = [...options.messages, visualProposalMessage(state.embodiment)]
           resolvedOptions.messages = forwardOptions.messages
+        }
+        if (speculation && !speculationMatches(state, speculation.route, currentRoute())) {
+          speculation.reply.discard('plan-mismatch')
         }
       } else {
         state.initialPlan = {
@@ -1078,15 +1222,25 @@ export class CharacterToolLoop {
             )
           : forwardOptions.messages
         if (streamingAvailable(options)) {
-          const completion = await streamedCompletionWithSafeRetry(
-            forwardOptions,
-            'character-reply-stream',
-            directMessages,
-            controller.signal,
-            0,
-            forwardedRequestOptions(options, controller.signal),
-            true,
-          )
+          const request = () =>
+            streamedCompletionWithSafeRetry(
+              forwardOptions,
+              'character-reply-stream',
+              directMessages,
+              controller.signal,
+              0,
+              forwardedRequestOptions(options, controller.signal),
+              true,
+            )
+          const prefetched = releasable()
+          const completion = prefetched
+            ? await consumeSpeculation(
+                prefetched,
+                forwardOptions.onStreamEvent,
+                controller.signal,
+                request,
+              )
+            : await request()
           return withToolEvidence(
             {
               replyText: completion.content,
@@ -1107,19 +1261,17 @@ export class CharacterToolLoop {
         return withToolEvidence({ replyText, nativeToolsRejected, rounds: 0, calls: 0 }, state)
       }
 
-      const capabilities = options.llm.capabilities?.()
-      // Reasoning providers require their complete assistant thinking message to be replayed.
-      // The provider-neutral structured path avoids an incomplete native continuation.
-      const native = Boolean(
-        !nativeToolsRejected &&
-          capabilities?.supportsToolCalling &&
-          !(capabilities.requiresReasoningReplay ?? capabilities.supportsReasoning) &&
-          options.llm.complete,
-      )
+      const native = nativeToolRoute(options, nativeToolsRejected)
       if (native) {
         try {
           return withToolEvidence(
-            await this.runNative(resolvedOptions, state, controller.signal, nativeToolsRejected),
+            await this.runNative(
+              resolvedOptions,
+              state,
+              controller.signal,
+              nativeToolsRejected,
+              releasable(),
+            ),
             state,
           )
         } catch (error) {
@@ -1217,6 +1369,8 @@ export class CharacterToolLoop {
     } finally {
       clearTimeout(deadline)
       options.signal?.removeEventListener('abort', abortFromTurn)
+      // A speculation that was never released aborts its upstream request here.
+      speculation?.reply.discard('plan-mismatch')
       resolvedOptions.dispatcher.dispose()
     }
   }
@@ -1226,6 +1380,7 @@ export class CharacterToolLoop {
     state: LoopState,
     signal: AbortSignal,
     nativeToolsRejected: boolean,
+    prefetched?: SpeculativeDirectReply,
   ): Promise<CharacterToolLoopExecutionResult> {
     const complete = options.llm.complete?.bind(options.llm)
     if (!complete) throw new Error('Native tool completion is unavailable')
@@ -1258,24 +1413,29 @@ export class CharacterToolLoop {
           ? { tools: nativeDefinitions, toolChoice: 'auto' as const }
           : { toolChoice: 'none' as const }),
       }
-      const completion = streamingAvailable(options)
-        ? await streamedCompletionWithSafeRetry(
-            options,
-            'character-tools-native-stream',
-            working,
-            signal,
-            state.rounds,
-            nativeRequestOptions,
-            !continuation,
-            statusBeforeRound === 'pending',
-          )
-        : await requestWithRetry(
-            options,
-            'character-tools-native',
-            signal,
-            () => complete(working, nativeRequestOptions),
-            !continuation,
-          )
+      const streamRound = () =>
+        streamedCompletionWithSafeRetry(
+          options,
+          'character-tools-native-stream',
+          working,
+          signal,
+          state.rounds,
+          nativeRequestOptions,
+          !continuation,
+          statusBeforeRound === 'pending',
+        )
+      const speculative = state.rounds === 0 ? prefetched : undefined
+      const completion = speculative
+        ? await consumeSpeculation(speculative, options.onStreamEvent, signal, streamRound)
+        : streamingAvailable(options)
+          ? await streamRound()
+          : await requestWithRetry(
+              options,
+              'character-tools-native',
+              signal,
+              () => complete(working, nativeRequestOptions),
+              !continuation,
+            )
       if (completion.toolCalls.length === 0) {
         if (statusBeforeRound === 'pending') {
           if (requirementCorrections >= CHARACTER_TOOL_REQUIREMENT_MAX_CORRECTIONS) {

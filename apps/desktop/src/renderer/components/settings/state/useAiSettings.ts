@@ -30,6 +30,7 @@ export function useAiSettings() {
     defaultComputerUseVisionRole,
   )
   const [characterFallbacks, setCharacterFallbacks] = useState<LlmRoleCandidate[]>([])
+  const [speculativeDirectReply, setSpeculativeDirectReply] = useState(false)
 
   return {
     activeProvider,
@@ -54,5 +55,7 @@ export function useAiSettings() {
     setModelsState,
     setProviders,
     setProviderSettings,
+    setSpeculativeDirectReply,
+    speculativeDirectReply,
   }
 }

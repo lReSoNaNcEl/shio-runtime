@@ -122,6 +122,8 @@ export const MAX_CHARACTER_FALLBACKS = 2
 export interface LlmPersistedConfig {
   activeProvider: LlmProviderId
   providers: Record<LlmProviderId, LlmProviderPersistedSettings>
+  /** Experimental: start a direct reply in parallel with planning (off by default). */
+  speculativeDirectReply: boolean
   roles: {
     backlogSelector: BacklogSelectorRoleConfig
     computerUseVision: ComputerUseVisionRoleConfig
@@ -132,6 +134,7 @@ export interface LlmPersistedConfig {
 export interface LlmPublicConfig {
   activeProvider: LlmProviderId
   providers: Record<LlmProviderId, LlmProviderPublicSettings>
+  speculativeDirectReply: boolean
   roles: {
     backlogSelector: BacklogSelectorRoleConfig
     computerUseVision: ComputerUseVisionRoleConfig
