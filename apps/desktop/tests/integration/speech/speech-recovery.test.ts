@@ -76,6 +76,44 @@ async function cancelStartedStream(): Promise<void> {
   await connection.cancel('interrupted')
 }
 
+describe('WebSocket handshake recovery', () => {
+  it('reconnects once before start and sends the queued input only on the new socket', async () => {
+    const events: SpeechStreamOutput[] = []
+    const connection = client.openStream(input, (event) => events.push(event))
+    connection.send({ type: 'text', sequence: 0, text: 'Один раз.' })
+    Socket.instances[0].dispatchEvent(new Event('error'))
+    await vi.waitUntil(() => Socket.instances.length === 2)
+    assert.deepEqual(Socket.instances[0].sent, [])
+    Socket.instances[1].open()
+    assert.deepEqual(Socket.instances[1].sent, [
+      { type: 'start', ...input },
+      { type: 'text', sequence: 0, text: 'Один раз.' },
+    ])
+    assert.deepEqual(events, [])
+  })
+
+  it('stops a pending reconnect on cancellation without opening another socket', async () => {
+    const events: SpeechStreamOutput[] = []
+    const connection = client.openStream(input, (event) => events.push(event))
+    Socket.instances[0].dispatchEvent(new Event('error'))
+    await connection.cancel('cancel during reconnect')
+    await new Promise((resolve) => setTimeout(resolve, 325))
+    assert.equal(Socket.instances.length, 1)
+    assert.deepEqual(events, [{ type: 'cancelled', sessionId: input.sessionId }])
+  })
+
+  it('reports a failure after start without replaying inference', async () => {
+    const events: SpeechStreamOutput[] = []
+    client.openStream(input, (event) => events.push(event))
+    Socket.instances[0].open()
+    Socket.instances[0].dispatchEvent(new Event('error'))
+    assert.equal(events.length, 1)
+    assert(events[0].type === 'error' && events[0].code === 'stream_transport_error')
+    await new Promise((resolve) => setTimeout(resolve, 325))
+    assert.equal(Socket.instances.length, 1)
+  })
+})
+
 describe('Fish recovery readiness after actual inference cancellation', () => {
   it('opens one new stream only after warming completes and sends queued text once', async () => {
     const probe = vi

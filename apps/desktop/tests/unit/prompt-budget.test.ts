@@ -84,11 +84,6 @@ function main(): void {
     relationship: {
       familiarity: 0.8,
       warmth: 0.9,
-      teasingComfort: 0.7,
-      recurringMotifs: Array.from(
-        { length: 3 },
-        (_, index) => `relationship-motif-${index}-${'r'.repeat(180)}`,
-      ),
       relevantSharedHistory: Array.from(
         { length: 3 },
         (_, index) => `shared-history-${index}-${'h'.repeat(240)}`,
@@ -122,10 +117,6 @@ function main(): void {
         processName: 'fixture.exe',
         windowTitle: `WORLD_MARKER ${'world '.repeat(300)}`,
       },
-      runningApplications: Array.from({ length: 8 }, (_, index) => ({
-        processName: `fixture-${index}.exe`,
-        displayName: `Fixture ${index} ${'application '.repeat(40)}`,
-      })),
       systemAdapter: 'available',
       freshness: { rendererMs: 0, systemMs: 0 },
     },

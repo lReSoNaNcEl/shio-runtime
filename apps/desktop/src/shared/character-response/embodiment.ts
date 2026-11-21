@@ -4,7 +4,7 @@ import {
   initialMarkdownProtocolState,
   scanMarkdownProtocol,
 } from '../character-stream/MarkdownProtocolScope'
-import { bodyTurnIntentSchema } from '../motion/physicalAction'
+import { bodyActionIdSchema, bodyActionIntentSchema } from '../motion/physicalAction'
 import { EMOTION_INTENSITIES } from '../speech/emotions.generated'
 import { containInternalReasoning } from './reasoning'
 
@@ -48,12 +48,24 @@ export const EMBODIMENT_GAZE_HINTS = ['user', 'screen', 'away'] as const
 export type EmbodimentIntensity = (typeof EMBODIMENT_INTENSITIES)[number]
 export type EmbodimentGazeHint = (typeof EMBODIMENT_GAZE_HINTS)[number]
 
+export const conversationPerformanceSchema = z
+  .object({
+    lean: z.number().min(-1).max(1),
+    lateralLean: z.number().min(-1).max(1),
+    gestureAmount: z.number().min(0).max(1),
+    handBias: z.number().min(-1).max(1),
+    pauseGaze: z.enum(EMBODIMENT_GAZE_HINTS).optional(),
+  })
+  .strict()
+export type ConversationPerformance = z.infer<typeof conversationPerformanceSchema>
+
 export const characterEmbodimentIntentSchema = z
   .object({
     intensity: z.enum(EMBODIMENT_INTENSITIES),
     gestureHint: z.enum(EMBODIMENT_GESTURE_HINTS).optional(),
     gazeHint: z.enum(EMBODIMENT_GAZE_HINTS).optional(),
-    bodyAction: bodyTurnIntentSchema.optional(),
+    performance: conversationPerformanceSchema.optional(),
+    bodyAction: bodyActionIntentSchema.optional(),
   })
   .strict()
 /** Provider-agnostic visual proposal; Avatar Runtime owns concrete execution. */
@@ -88,7 +100,8 @@ export const embodimentAvailabilitySchema = z
       .array(z.enum(EMBODIMENT_GESTURE_HINTS))
       .max(24)
       .refine((values) => new Set(values).size === values.length),
-    availableBodyActions: z.array(z.literal('turn-in-place')).max(1).optional(),
+    availableBodyActions: z.array(bodyActionIdSchema).max(2).optional(),
+    contextualMotion: z.literal(true).optional(),
     unavailableReasons: z
       .array(z.enum(EMBODIMENT_UNAVAILABLE_REASONS))
       .max(5)
@@ -108,7 +121,7 @@ export function parseEarlyEmbodimentEnvelope(
     const input: unknown = JSON.parse(payload)
     const keys = [
       ...payload.matchAll(
-        /"(version|intensity|gestureHint|gazeHint|bodyAction|action|turns|direction|tempo|finishFacing)"\s*:/gu,
+        /"(version|intensity|gestureHint|gazeHint|performance|lean|lateralLean|gestureAmount|handBias|pauseGaze|bodyAction|action|turns|direction|tempo|finishFacing|style)"\s*:/gu,
       ),
     ].map((match) => match[1])
     if (new Set(keys).size !== keys.length) return undefined

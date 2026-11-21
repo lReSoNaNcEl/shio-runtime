@@ -1,6 +1,7 @@
 import type { VRM } from '@pixiv/three-vrm'
 import type * as THREE from 'three'
 
+import type { ConversationPerformance } from '../../../../shared/character-response'
 import type { DeliveryStyle } from '../../../../shared/embodiment'
 import type { BodyPresentation, MotionKeypose } from '../../../../shared/motion'
 import type { PcmPlaybackClock } from '../../../audio/audioPlayer'
@@ -101,6 +102,15 @@ export class VrmModel {
     this.bodyPlayback.setDeliveryStyle(style)
     this.facialRuntime.setDeliveryStyle(style)
   }
+  setConversationPerformance(value: ConversationPerformance | undefined): void {
+    this.bodyPlayback.setConversationPerformance(value)
+  }
+  isSpeechPause(): boolean {
+    return this.bodyPlayback.isSpeechPause()
+  }
+  supportsContextualMotion(): boolean {
+    return this.bodyPlayback.supportsContextualMotion()
+  }
   /** Debug Preview authoring only: the current arm pose as a rig-relative keypose. */
   captureKeypose(side: KeyposeSide, anchor: KeyposeAnchor): MotionKeypose | null {
     const sample = this.vrm ? sampleKeyposeRig(this.vrm, side, anchor) : null
@@ -115,10 +125,17 @@ export class VrmModel {
   }
   getBodyPresentation(): BodyPresentation | null {
     const body = this.bodyPlayback.getPresentation()
-    return body ? { ...body, facialActing: this.facialRuntime.getActingPresentation() } : null
+    return body
+      ? {
+          ...body,
+          gazeMode: this.facialRuntime.getGazeMode(),
+          facialActing: this.facialRuntime.getActingPresentation(),
+        }
+      : null
   }
   applyBodyPresentation(value: BodyPresentation | null): void {
-    this.bodyPlayback.setMirror(value)
+    if (!this.bodyPlayback.setMirror(value)) return
+    this.facialRuntime.applyGazePresentation(value?.gazeMode)
     this.facialRuntime.applyActingPresentation(value?.facialActing ?? null)
   }
   settleMotionCancellation(): Promise<void> {

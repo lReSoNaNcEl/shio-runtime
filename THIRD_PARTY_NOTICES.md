@@ -28,12 +28,15 @@ The DeepSeek Harness packages are Developer Preview software. Shio pins the
 compatible DSH runtime family exactly and does not resolve or upgrade these packages
 at application runtime.
 
-The active experimental development stack uses MotionBricks and SOMA-X Hand;
-source/model pins are in `apps/desktop/motionbricks/research-pins.json`. Source,
-model and evaluation-sample licenses are distinct; see
-`docs/EXPERIMENT-MOTIONBRICKS-SOMAX-LICENSING-2026-10-28.md`. The new standing pose
-has exact repository provenance in its metadata, but the source VRMA's original
-redistribution license is not established.
+The FlashMotion Adapter pins the upstream source and weights in
+`contracts/motion.v1.json`. The source uses MIT. The published weights, text and
+speech inputs, and datasets have separate terms. [Model sources and terms](docs/FLASHMOTION-LIVING-V1-STAGE-1.md)
+The Russian-to-English word translation uses Marian `opus-mt-ru-en` at
+`fbd6dc73284f95536648512cc21d57f19191961a` under CC BY 4.0.
+[Model card](https://huggingface.co/Helsinki-NLP/opus-mt-ru-en)
+
+MotionBricks and SOMA-X Hand licensing is recorded in the
+[historical experiment report](docs/EXPERIMENT-MOTIONBRICKS-SOMAX-LICENSING-2026-10-28.md).
 
 The following ARDY/LLM2Vec rows document the removed historical experiment. Its
 copied notices remain accessible in Git at `7fd6a1490589e03d7b4790ec16667c955bb1c253`

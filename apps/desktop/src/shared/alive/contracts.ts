@@ -1,7 +1,6 @@
 import type { ComputerUseNotableObservation } from '../browser-computer-use'
 import type { CharacterEmbodimentIntent } from '../character-response'
 import type { EmotionKey } from '../emotion'
-import type { LlmProviderId } from '../llm'
 
 export type AutonomyMode = 'off' | 'suggest' | 'confirm' | 'full'
 
@@ -9,26 +8,6 @@ export interface AutonomySettings {
   mode: AutonomyMode
   globallySuspended: boolean
   privacyMode: boolean
-  quietHours: { enabled: boolean; startHour: number; endHour: number }
-  cooldownMs: number
-  maxDailyInitiatives: number
-  fastBrain: {
-    enabled: boolean
-    timeoutMs: number
-    maxTokens: number
-    providerId?: LlmProviderId
-    model?: string
-  }
-}
-
-export interface HabitSuggestion {
-  id: string
-  key: string
-  title: string
-  evidenceCount: number
-  status: 'pending' | 'approved' | 'rejected'
-  createdAt: number
-  updatedAt: number
 }
 
 export interface WorldContextSnapshot {
@@ -46,10 +25,6 @@ export interface WorldContextSnapshot {
     displayName?: string
     windowTitle?: string
   }
-  runningApplications?: readonly {
-    processName: string
-    displayName?: string
-  }[]
   activeBrowser?: {
     sessionActive: boolean
     url?: string
@@ -64,11 +39,6 @@ export interface WorldContextSnapshot {
     title?: string
     application?: string
   }
-  system?: {
-    cpuLoad?: number
-    memoryLoad?: number
-    gpuLoad?: number
-  }
   systemAdapter: 'available' | 'degraded' | 'unavailable'
   freshness: {
     rendererMs: number | null
@@ -77,11 +47,18 @@ export interface WorldContextSnapshot {
     systemSources?: {
       globalIdleMs: number | null
       foregroundApplicationMs: number | null
-      runningApplicationsMs: number | null
-      systemLoadMs: number | null
     }
   }
 }
+
+export interface RunningApplication {
+  processName: string
+  displayName?: string
+}
+
+export type RunningApplicationsDiagnostic =
+  | { status: 'available'; applications: readonly RunningApplication[] }
+  | { status: 'private' | 'unavailable' }
 
 export interface AliveAuditEntry {
   id: number
@@ -96,17 +73,14 @@ export interface AliveAuditEntry {
 export interface AliveRuntimeHealth {
   operational: boolean
   databaseVersion: number
-  pendingHabitSuggestions: number
   lastErrorCode?: string
 }
 
 export interface AliveSnapshot {
   settings: AutonomySettings
-  habitSuggestions: readonly HabitSuggestion[]
   mood: MoodState
   lastExperience?: ExperienceAppraisal
   world: WorldContextSnapshot
-  audit: readonly AliveAuditEntry[]
   health: AliveRuntimeHealth
 }
 
@@ -148,7 +122,7 @@ export type ExperienceEvent =
   | {
       type: 'meaningful-world-context-changed'
       at: number
-      change: 'foreground-application' | 'browser' | 'project' | 'media' | 'system'
+      change: 'foreground-application' | 'browser' | 'project' | 'media'
       eventId?: string
     }
 
@@ -229,12 +203,12 @@ export interface AttentionDecision {
   disposition: AttentionDisposition
   candidateId?: string
   confidence: number
-  source: 'deterministic' | 'model' | 'fallback'
+  source: 'deterministic'
   reason: string
   latencyMs: number
 }
 
-export interface FastBrainAttentionInput {
+export interface SpeechAttentionInput {
   utteranceId: string
   directAddress: boolean
   question: boolean
@@ -243,10 +217,10 @@ export interface FastBrainAttentionInput {
   cooldownActive: boolean
 }
 
-export interface FastBrainAttentionDecision {
+export interface SpeechAttentionDecision {
   shouldAttend: boolean
   confidence: number
-  source: 'disabled' | 'deterministic' | 'model' | 'fallback'
+  source: 'deterministic'
   reason: string
   latencyMs: number
 }

@@ -86,7 +86,7 @@ details without logging credentials or full browser/DOM snapshots.
 - Node.js 24.x
 - npm 11.x
 - Python 3.12
-- NVIDIA CUDA GPU for MotionBricks + Fish; setup and current limitations are in [the MotionBricks guide](apps/desktop/motionbricks/README.md)
+- NVIDIA CUDA GPU for FlashMotion and Fish. [Windows/WSL2 setup](docs/FLASHMOTION-LIVING-V1-STAGE-1.md)
 - PowerShell examples below assume Windows
 
 Developed with:
@@ -199,8 +199,8 @@ forwards the signal so uvicorn shuts down and port 8000 is released.
 
 > **Prepare models explicitly.** Run `npm run api:prefetch` and
 > `npm run api:voices:sync` before starting the API. Fish loading and compile
-> warmup are reported by `/health`. MotionBricks has its own isolated environment:
-> see [the development guide](apps/desktop/motionbricks/README.md).
+> warmup are reported by `/health`. FlashMotion uses an isolated WSL2 environment.
+> [Development setup](docs/FLASHMOTION-LIVING-V1-STAGE-1.md)
 
 **Terminal 2 — Desktop**
 
@@ -361,13 +361,11 @@ environment override.
 VOICE_DATASET_REVISION=
 ```
 
-### Fish and MotionBricks models
+### Fish and FlashMotion models
 
-Fish model/source revisions remain pinned independently in Speech API configuration.
-MotionBricks and native SOMA-X Hand pins are in
-`apps/desktop/motionbricks/research-pins.json`. The single standing reference is
-versioned separately; runtime requires no evaluation BVH, VRMA clips or text encoder.
-See [MotionBricks setup](apps/desktop/motionbricks/README.md).
+Speech API configuration pins the Fish revisions. `contracts/motion.v1.json`
+pins the FlashMotion source and weights, and the preparation script verifies
+the required files. [FlashMotion setup](docs/FLASHMOTION-LIVING-V1-STAGE-1.md)
 
 ## Files not stored in Git
 
@@ -376,7 +374,7 @@ See [MotionBricks setup](apps/desktop/motionbricks/README.md).
 API virtual environments
 node_modules
 build output
-Fish/ASR weights (apps/api/models/) and MotionBricks/SOMA-X assets (apps/desktop/motionbricks/.cache/)
+Fish/ASR weights (apps/api/models/) and FlashMotion assets (tmp/flashmotion/)
 voice reference assets (apps/api/voices/**/reference.wav|.txt)
 generated and temporary audio
 runtime logs
@@ -413,7 +411,7 @@ npm run api:test
 Then verify the read-only endpoints respond: `/health`, `/voices`, `/emotions`.
 For explicitly requested live validation, verify actual early PCM and playback
 from `/tts/stream`, input continuation, cancellation settlement, ASR, and the
-joint Electron/MotionBricks/Fish profile described in the experiment guide.
+joint Electron, FlashMotion and Fish profile. [Live qualification](docs/FLASHMOTION-LIVING-V1-STAGE-2.md)
 
 ## Architecture
 

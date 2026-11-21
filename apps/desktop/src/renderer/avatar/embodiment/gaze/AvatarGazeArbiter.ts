@@ -26,10 +26,15 @@ export class AvatarGazeArbiter {
     if (this.browserSessionId === sessionId) this.browserSessionId = null
   }
 
-  resolve(mode: AvatarMode): EmbodimentGazeHint | undefined {
+  resolve(
+    mode: AvatarMode,
+    pauseGaze?: EmbodimentGazeHint,
+    conversationActive = true,
+  ): EmbodimentGazeHint | undefined {
     if (mode === 'listening') return undefined
     return (
-      this.conversationHint ??
+      pauseGaze ??
+      (conversationActive ? this.conversationHint : undefined) ??
       this.behaviorHint ??
       (this.browserSessionId ? ('screen' as const) : undefined)
     )

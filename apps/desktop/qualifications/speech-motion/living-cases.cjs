@@ -17,7 +17,7 @@ async function qualifyLiving({ application, page, directory, report, pause, reco
   report.livingScope =
     'Delivery and executor transport fixtures only; not visible conversational gesture acceptance. Use --conversation-cases for that acceptance.'
   report.characterSource =
-    'Typed fixtures and the explicit emotion-chat real-LLM case through Conversation Admission; real Fish and MotionBricks'
+    'Typed fixtures and the explicit emotion-chat real-LLM case through Conversation Admission; real Fish and FlashMotion'
   const fixtures = [
     {
       id: 'emotion-chat',

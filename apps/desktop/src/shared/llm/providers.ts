@@ -5,9 +5,35 @@
  * neither side should redefine these.
  */
 
-export const LLM_PROVIDER_IDS = ['groq', 'cloudflare', 'openrouter', 'mistral'] as const
+export const LLM_PROVIDER_IDS = [
+  'groq',
+  'cloudflare',
+  'openrouter',
+  'mistral',
+  'codex-cli',
+] as const
 
 export type LlmProviderId = (typeof LLM_PROVIDER_IDS)[number]
+
+export const CODEX_REASONING_EFFORTS = [
+  'none',
+  'minimal',
+  'low',
+  'medium',
+  'high',
+  'xhigh',
+  'max',
+  'ultra',
+] as const
+export type CodexReasoningEffort = (typeof CODEX_REASONING_EFFORTS)[number]
+export function isCodexReasoningEffort(value: unknown): value is CodexReasoningEffort {
+  return CODEX_REASONING_EFFORTS.some((effort) => effort === value)
+}
+
+export interface ModelReasoningOptions {
+  levels: CodexReasoningEffort[]
+  defaultLevel?: CodexReasoningEffort
+}
 
 export interface ModelCapabilitySummary {
   supportsImageGeneration: boolean
@@ -19,6 +45,7 @@ export interface ModelCapabilitySummary {
 
 export interface ModelInfo {
   id: string
+  reasoning?: ModelReasoningOptions
   displayName?: string
   capabilities: ModelCapabilitySummary
 }
@@ -82,11 +109,23 @@ export interface LlmReadiness {
 
 export interface LlmProviderPersistedSettings {
   model: string
+  codexReasoningByModel?: Record<string, CodexReasoningEffort>
   accountId?: string
 }
 
 export interface LlmProviderPublicSettings extends LlmProviderPersistedSettings {
   credential: LlmCredentialStatus
+}
+
+export function withCodexReasoningEffort(
+  settings: LlmProviderPublicSettings,
+  model: string,
+  effort: CodexReasoningEffort | undefined,
+): LlmProviderPublicSettings {
+  const codexReasoningByModel = { ...settings.codexReasoningByModel }
+  if (effort) codexReasoningByModel[model] = effort
+  else delete codexReasoningByModel[model]
+  return { ...settings, codexReasoningByModel }
 }
 
 export interface BacklogSelectorRoleConfig {

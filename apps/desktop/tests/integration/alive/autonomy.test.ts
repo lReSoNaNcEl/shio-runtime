@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 
-import { describe, it } from 'vitest'
+import { describe, it, vi } from 'vitest'
 
 import { AliveRuntime } from '../../../src/main/alive/AliveRuntime'
 import { AliveStore } from '../../../src/main/alive/AliveStore'
@@ -250,23 +250,40 @@ async function testPersistenceAndEnvelope(): Promise<void> {
   try {
     const store = new AliveStore(databasePath)
     store.saveSettings({ ...store.settings(), privacyMode: true })
-    assert.deepEqual(store.legacyHabitRecords(), [])
     store.close()
+
+    const legacy = new DatabaseSync(databasePath)
+    legacy.prepare("UPDATE alive_settings SET value = ? WHERE key = 'autonomy'").run(
+      JSON.stringify({
+        mode: 'confirm',
+        globallySuspended: true,
+        privacyMode: true,
+        quietHours: { enabled: true, startHour: 22, endHour: 8 },
+        cooldownMs: 900_000,
+        maxDailyInitiatives: 0,
+      }),
+    )
+    legacy.close()
 
     const reopened = new AliveStore(databasePath)
     assert.equal(reopened.version(), 7)
-    assert.equal(reopened.settings().privacyMode, true)
+    const expected = { mode: 'confirm', globallySuspended: true, privacyMode: true }
+    assert.deepEqual(reopened.settings(), expected)
     reopened.close()
+
+    const persisted = new DatabaseSync(databasePath)
+    try {
+      const row = persisted.prepare("SELECT value FROM alive_settings WHERE key = 'autonomy'").get()
+      assert.deepEqual(JSON.parse(String(row?.value)), expected)
+    } finally {
+      persisted.close()
+    }
 
     const envelope = new AutonomyEnvelope()
     const settings = {
       mode: 'full' as const,
       globallySuspended: true,
       privacyMode: false,
-      quietHours: { enabled: false, startHour: 22, endHour: 8 },
-      cooldownMs: 60_000,
-      maxDailyInitiatives: 2,
-      fastBrain: { enabled: false, timeoutMs: 1_000, maxTokens: 64 },
     }
     const world = {
       capturedAt: 1,
@@ -284,8 +301,6 @@ async function testPersistenceAndEnvelope(): Promise<void> {
       settings,
       world,
       now: 1_000,
-      dailyInitiatives: 0,
-      lastInitiativeAt: null,
     }
     const decision = envelope.decide(baseInput)
     assert.equal(decision.outcome, 'defer')
@@ -295,12 +310,16 @@ async function testPersistenceAndEnvelope(): Promise<void> {
       envelope.decide({ ...baseInput, settings: { ...activeSettings, privacyMode: true } }).outcome,
       'defer',
     )
+    const viewing = {
+      ...baseInput,
+      confirmedWatchSession: true,
+      settings: { ...activeSettings, privacyMode: true },
+      now: 61_000,
+    }
+    assert.equal(envelope.decide(viewing).outcome, 'execute')
     assert.equal(
-      envelope.decide({
-        ...baseInput,
-        settings: { ...activeSettings, quietHours: { enabled: true, startHour: 22, endHour: 8 } },
-        now: new Date(2026, 0, 1, 23).getTime(),
-      }).outcome,
+      envelope.decide({ ...viewing, settings: { ...viewing.settings, globallySuspended: true } })
+        .outcome,
       'defer',
     )
     assert.equal(
@@ -308,22 +327,6 @@ async function testPersistenceAndEnvelope(): Promise<void> {
         ...baseInput,
         settings: activeSettings,
         world: { ...world, audioActive: true },
-      }).outcome,
-      'defer',
-    )
-    assert.equal(
-      envelope.decide({
-        ...baseInput,
-        settings: activeSettings,
-        lastInitiativeAt: baseInput.now - 1_000,
-      }).outcome,
-      'defer',
-    )
-    assert.equal(
-      envelope.decide({
-        ...baseInput,
-        settings: activeSettings,
-        dailyInitiatives: activeSettings.maxDailyInitiatives,
       }).outcome,
       'defer',
     )
@@ -357,7 +360,7 @@ function testGoalSchemaMigration(version: number): void {
         updated_at INTEGER NOT NULL
       );
       INSERT INTO alive_goals VALUES ('legacy-goal', 'Старая цель', '', 'active', 0, 1, 1);
-      INSERT INTO alive_settings VALUES ('autonomy', '{"privacyMode":true}');
+      INSERT INTO alive_settings VALUES ('autonomy', '{"privacyMode":true,"fastBrain":{"enabled":true}}');
       INSERT INTO alive_settings VALUES ('mood', '{"curiosity":0.7}');
       INSERT INTO alive_audit (id, at, category, event, outcome)
         VALUES (1, 100, 'behavior', 'initiative', 'selected');
@@ -373,18 +376,21 @@ function testGoalSchemaMigration(version: number): void {
     `)
     legacy.close()
     const migrated = new AliveStore(databasePath)
-    const runtime = new AliveRuntime(migrated, () => {
-      throw new Error('Unexpected arbitration')
-    })
+    const runtime = new AliveRuntime(migrated)
     const events: unknown[] = []
     runtime.onBehavior((event) => events.push(event))
     runtime.start()
     try {
+      const auditReads = vi.spyOn(migrated, 'recentAudit')
       const snapshot = runtime.snapshot()
       assert.equal(snapshot.health.operational, true)
       assert.equal(snapshot.settings.privacyMode, true)
+      assert.equal('fastBrain' in snapshot.settings, false)
       assert.equal(migrated.mood().curiosity, 0.7)
-      assert.equal(snapshot.audit[0]?.event, 'initiative')
+      assert.equal('audit' in snapshot, false)
+      assert.equal(auditReads.mock.calls.length, 0)
+      assert.equal(runtime.recentAudit()[0]?.event, 'initiative')
+      assert.equal(auditReads.mock.calls.length, 1)
       assert.doesNotMatch(JSON.stringify(snapshot), /Legacy reminder|Старая цель/u)
       assert.deepEqual(events, [])
     } finally {
@@ -438,5 +444,40 @@ describe('Alive and Autonomy integration', () => {
   it('bounds and orders the streaming speech queue', testStreamingSpeechQueue)
   it('persists autonomy settings and enforces the envelope', testPersistenceAndEnvelope)
   it.each([1, 5, 6])('removes retired tables on upgrade from v%s', testGoalSchemaMigration)
+  it('drops the retired habit table from a current Alive database', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'shio-alive-legacy-habits-'))
+    const databasePath = join(directory, 'alive.sqlite')
+    try {
+      const initial = new AliveStore(databasePath)
+      const settings = initial.settings()
+      initial.close()
+
+      const legacy = new DatabaseSync(databasePath)
+      try {
+        legacy.exec('CREATE TABLE alive_habits (habit_key TEXT PRIMARY KEY)')
+      } finally {
+        legacy.close()
+      }
+
+      const reopened = new AliveStore(databasePath)
+      try {
+        assert.deepEqual(reopened.settings(), settings)
+      } finally {
+        reopened.close()
+      }
+
+      const cleaned = new DatabaseSync(databasePath, { readOnly: true })
+      try {
+        assert.equal(
+          cleaned.prepare("SELECT name FROM sqlite_master WHERE name = 'alive_habits'").get(),
+          undefined,
+        )
+      } finally {
+        cleaned.close()
+      }
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
+  })
   it('aggregates bounded latency percentiles', testLatencyAggregation)
 })

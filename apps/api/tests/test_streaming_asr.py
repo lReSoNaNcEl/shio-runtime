@@ -40,6 +40,26 @@ class FakeWhisper:
 
 
 class StreamingASRSessionTests(unittest.TestCase):
+    def test_playback_sentence_crosses_visual_samples_and_decodes_once_at_the_pause(self):
+        whisper = FakeWhisper()
+        voiced_frames = 235  # about 7.5 seconds, across two visual sampling windows
+        session = StreamingASRSession(
+            whisper,
+            FakeVad([0.9] * voiced_frames + [0.0] * 21),
+            session_id="playback",
+            config=StreamingVADConfig(partial_results=False),
+        )
+        audio = np.full((voiced_frames + 21) * 512, 0.1, dtype=np.float32)
+        jobs = []
+        for chunk in np.array_split(audio, 8):
+            _, new_jobs = session.process_pcm(chunk)
+            jobs.extend(new_jobs)
+        self.assertEqual([(job.kind, job.reason) for job in jobs], [("final", "vad_silence")])
+        self.assertEqual(jobs[0].start_sample, 0)
+        self.assertGreaterEqual(jobs[0].end_sample, voiced_frames * 512)
+        session.transcribe(jobs[0])
+        self.assertEqual(len(whisper.calls), 1)
+
     def test_natural_pause_emits_one_final_then_speech_ended(self):
         # Six 32 ms voiced frames satisfy min_speech=180 ms; 21 silent frames
         # satisfy min_silence=650 ms.

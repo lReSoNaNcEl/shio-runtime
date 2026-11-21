@@ -53,6 +53,15 @@ export class ConsumedSpeechProsody {
       .slice(-12)
   }
 
+  isPause(clock: PcmPlaybackClock | null): boolean {
+    return (
+      clock?.state === 'playing' &&
+      clock.playbackId === this.playbackId &&
+      this.quietSince !== null &&
+      clock.sourceSampleOffset / clock.sourceSampleRate - this.quietSince >= 0.18
+    )
+  }
+
   snapshot(clock: PcmPlaybackClock | null, leadFrames: number): MotionProsody | undefined {
     const last = this.samples.at(-1)
     if (
@@ -69,12 +78,11 @@ export class ConsumedSpeechProsody {
       throughSample: last.offset,
       sampleRate: clock.sourceSampleRate,
       envelope: this.samples.map((sample) => sample.energy),
-      phase:
-        this.quietSince !== null && seconds - this.quietSince >= 0.18
-          ? 'pause'
-          : clock.sourceSampleOffset - this.onset < clock.sourceSampleRate * 0.25
-            ? 'onset'
-            : 'speech',
+      phase: this.isPause(clock)
+        ? 'pause'
+        : clock.sourceSampleOffset - this.onset < clock.sourceSampleRate * 0.25
+          ? 'onset'
+          : 'speech',
       accent:
         leadMs <= 250 && age <= 0.15
           ? this.accent * Math.max(0, 1 - (seconds - this.accentAt) / 0.25)

@@ -1,3 +1,4 @@
+import io
 import logging
 
 from fastapi import APIRouter, File, HTTPException, Query, UploadFile
@@ -58,20 +59,7 @@ async def recognize(
         # Read uploaded file
         contents = await file.read()
 
-        # Save to temp file and load
-        import tempfile
-
-        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
-            tmp.write(contents)
-            tmp_path = tmp.name
-
-        # Load audio
-        audio, sr = load_wav(tmp_path, sr=16000)
-
-        # Clean up
-        import os
-
-        os.unlink(tmp_path)
+        audio, sr = load_wav(io.BytesIO(contents), sr=16000)
 
         # Transcribe
         result = _whisper.transcribe(audio, sr=16000, language=language)

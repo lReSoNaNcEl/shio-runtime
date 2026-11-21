@@ -395,7 +395,7 @@ function requiredWorkExecutionResult(
 function visualProposalMessage(embodiment: CharacterEmbodimentIntent | null): ChatMessage {
   return {
     role: 'system',
-    content: `## Current Typed Visual Proposal\n${JSON.stringify(embodiment)}\nThis is the validated pending visual selection for this reply, not proof of playback. Keep prose consistent with it. Do not emit another embodiment envelope or bracketed gesture ID. Null means ordinary presence. Never claim that execution completed.`,
+    content: `## Current Typed Visual Proposal\n${JSON.stringify(embodiment)}\nSpeak dialogue only, without enacted stage directions, including in italics or asterisks. An accepted gestureHint or bodyAction is pending. Acknowledge the request in future tense and let the avatar show it. If asked to perform a movement with no matching selection here, briefly say it is unavailable. Never describe a performance as completed. Do not emit another visual envelope or bracketed gesture ID.`,
   }
 }
 
@@ -863,25 +863,40 @@ async function resolveToolRequirement(
   const startedAt = Date.now()
   if (capabilities?.supportsSchemaOutput && options.llm.complete) {
     for (let attempt = 0; attempt < CHARACTER_TOOL_REQUIREMENT_MAX_ATTEMPTS; attempt += 1) {
-      const completion = await options.llm.complete(
-        requirementConversationMessages(
-          options.messages,
-          registry,
-          attempt > 0,
-          options.embodimentAvailability,
-          false,
-          true,
-        ),
-        {
-          ...toolRequestOptions(options, signal),
-          maxTokens: CHARACTER_TOOL_REQUIREMENT_MAX_TOKENS,
-          responseSchema: {
-            name: 'character_tool_planning',
-            schema: constrainedPlanningSchema(registry, options.embodimentAvailability),
+      const completion = await options.llm
+        .complete(
+          requirementConversationMessages(
+            options.messages,
+            registry,
+            attempt > 0,
+            options.embodimentAvailability,
+            false,
+            true,
+          ),
+          {
+            ...toolRequestOptions(options, signal),
+            maxTokens: CHARACTER_TOOL_REQUIREMENT_MAX_TOKENS,
+            responseSchema: {
+              name: 'character_tool_planning',
+              schema: constrainedPlanningSchema(registry, options.embodimentAvailability),
+            },
+            ...(capabilities.requiresReasoningReplay ? { maxTokens: 1024 } : {}),
           },
-          ...(capabilities.requiresReasoningReplay ? { maxTokens: 1024 } : {}),
-        },
-      )
+        )
+        .catch((error: unknown) => {
+          if (
+            !(error instanceof LlmResponseError) ||
+            error.code !== 'PROVIDER_REJECTED' ||
+            signal.aborted
+          )
+            throw error
+          mainLog.warn('[CharacterToolLoop] schema requirement rejected', {
+            traceId: options.traceId,
+            code: error.code,
+          })
+          return null
+        })
+      if (!completion) break
       const planning = parseToolPlanningResult(completion.content)
       if (planning) {
         mainLog.info('[CharacterToolLoop] requirement_classified', {
@@ -900,7 +915,6 @@ async function resolveToolRequirement(
       attempts: CHARACTER_TOOL_REQUIREMENT_MAX_ATTEMPTS,
       latencyMs: Date.now() - startedAt,
     })
-    return { planning: null, nativeToolsRejected }
   }
   if (nativeAvailable) {
     try {
@@ -972,7 +986,10 @@ async function resolveToolRequirement(
       () =>
         options.llm.chat(messages, {
           ...toolRequestOptions(options, signal),
-          maxTokens: CHARACTER_TOOL_REQUIREMENT_MAX_TOKENS,
+          maxTokens:
+            capabilities?.supportsSchemaOutput && capabilities.supportsReasoning
+              ? 1024
+              : CHARACTER_TOOL_REQUIREMENT_MAX_TOKENS,
         }),
       attempt === 0,
     )
@@ -1145,6 +1162,7 @@ export class CharacterToolLoop {
         state.embodiment =
           selected &&
           (!options.embodimentAvailability ||
+            (selected.performance && !options.embodimentAvailability.contextualMotion) ||
             (selected.gestureHint &&
               !options.embodimentAvailability.availableSemanticIntents.includes(
                 selected.gestureHint,
@@ -1155,8 +1173,13 @@ export class CharacterToolLoop {
               )))
             ? null
             : selected
+        if (state.embodiment?.gestureHint && options.embodimentAvailability?.contextualMotion) {
+          const { performance: _performance, ...requested } = state.embodiment
+          state.embodiment = requested
+        }
         if (
-          state.embodiment?.gestureHint &&
+          (state.embodiment?.performance ||
+            (state.embodiment?.gestureHint && !options.embodimentAvailability?.contextualMotion)) &&
           !state.embodiment.bodyAction &&
           state.requirement.type === 'direct-answer' &&
           state.initialPlan.plannedTools.length === 0 &&

@@ -71,7 +71,6 @@ function applyContextualModifiers(
   const curiosity = unit(context.currentMood.curiosity)
   const frustration = unit(context.currentMood.frustration)
   const relationship = event.type.startsWith('conversation-') ? context.relationship : undefined
-  const motifCount = Math.min(4, relationship?.recurringMotifs.length ?? 0)
   const noveltyModifier =
     recent.similarCount === 0 ? 0.08 : -Math.min(0.18, recent.similarCount * 0.04)
   const failureSalience = Math.min(0.12, recent.repeatedFailures * 0.04)
@@ -92,8 +91,8 @@ function applyContextualModifiers(
     salience: base.salience + failureSalience + frustration * (isFailureEvent(event) ? 0.06 : 0),
     valence: base.valence + moodValence,
     arousal: base.arousal + failureArousal + frustration * (isFailureEvent(event) ? 0.04 : 0),
-    novelty: base.novelty + noveltyModifier + (curiosity - 0.55) * 0.06 - motifCount * 0.015,
-    socialRelevance: base.socialRelevance + relationshipSocial + motifCount * 0.01,
+    novelty: base.novelty + noveltyModifier + (curiosity - 0.55) * 0.06,
+    socialRelevance: base.socialRelevance + relationshipSocial,
     ...(conversationalImpulse ? { conversationalImpulse } : {}),
     ...(recent.repeatedFailures >= 2 && frustration >= 0.55 ? { emotionHint: 'angry' } : {}),
   }

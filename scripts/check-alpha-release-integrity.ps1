@@ -134,7 +134,8 @@ foreach ($required in @(
 )) {
     if (-not $launcher.Contains($required)) { throw "Launcher hardening guard missing: $required" }
 }
-if (-not $bundle.Contains("git -C `$repoRoot ls-files") -or $bundle.Contains("robocopy")) {
+if (-not $bundle.Contains("git -C `$repoRoot ls-files -- `"apps/api`"") -or
+    $bundle -match '(?im)robocopy[^\r\n]+\$(apiSource|apiTarget|speechRoot)') {
     throw "Speech Pack bundle is not assembled exclusively from tracked files."
 }
 foreach ($requiredLayoutGuard in @(

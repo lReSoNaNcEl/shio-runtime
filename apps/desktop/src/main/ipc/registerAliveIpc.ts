@@ -8,20 +8,6 @@ const autonomySettingsSchema = z.object({
   mode: z.enum(['off', 'suggest', 'confirm', 'full']),
   globallySuspended: z.boolean(),
   privacyMode: z.boolean(),
-  quietHours: z.object({
-    enabled: z.boolean(),
-    startHour: z.number().int().min(0).max(23),
-    endHour: z.number().int().min(0).max(23),
-  }),
-  cooldownMs: z.number().int().min(10_000).max(86_400_000),
-  maxDailyInitiatives: z.number().int().min(0).max(100),
-  fastBrain: z.object({
-    enabled: z.boolean(),
-    timeoutMs: z.number().int().min(250).max(5_000),
-    maxTokens: z.number().int().min(16).max(256),
-    providerId: z.enum(['groq', 'cloudflare', 'openrouter', 'mistral']).optional(),
-    model: z.string().trim().max(200).optional(),
-  }),
 })
 
 const worldSchema = z.object({
@@ -96,7 +82,7 @@ const experienceSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('meaningful-world-context-changed'),
     at: eventAt,
-    change: z.enum(['foreground-application', 'browser', 'project', 'media', 'system']),
+    change: z.enum(['foreground-application', 'browser', 'project', 'media']),
     eventId,
   }),
 ])
@@ -109,6 +95,16 @@ export function registerAliveIpc(
   ipcMain.handle(
     'alive:snapshot',
     authorization.handle('alive:snapshot', () => runtime.snapshot()),
+  )
+  ipcMain.handle(
+    'diagnostics:get-alive-audit',
+    authorization.handle('diagnostics:get-alive-audit', () => runtime.recentAudit()),
+  )
+  ipcMain.handle(
+    'diagnostics:get-running-applications',
+    authorization.handle('diagnostics:get-running-applications', () =>
+      runtime.getRunningApplications(),
+    ),
   )
   ipcMain.handle(
     'alive:update-settings',
@@ -131,15 +127,6 @@ export function registerAliveIpc(
     }),
   )
   ipcMain.handle(
-    'alive:decide-habit',
-    authorization.handlePayload('alive:decide-habit', IPC_ONE_PAYLOAD, (_event, input) => {
-      const parsed = z
-        .object({ id: z.string().uuid(), status: z.enum(['approved', 'rejected']) })
-        .parse(input)
-      return runtime.decideHabit(parsed.id, parsed.status)
-    }),
-  )
-  ipcMain.handle(
     'alive:evaluate-attention',
     authorization.handlePayload('alive:evaluate-attention', IPC_ONE_PAYLOAD, (_event, input) =>
       runtime.evaluateAttention(
@@ -156,13 +143,6 @@ export function registerAliveIpc(
       ),
     ),
   )
-  ipcMain.handle(
-    'alive:cancel-attention',
-    authorization.handlePayload('alive:cancel-attention', IPC_ONE_PAYLOAD, (_event, input) => ({
-      ok: runtime.cancelAttention(z.string().min(1).max(100).parse(input)),
-    })),
-  )
-
   const unsubscribeChanged = runtime.onChanged((snapshot) => {
     if (!window.isDestroyed()) window.webContents.send('alive:changed', snapshot)
   })
@@ -170,6 +150,8 @@ export function registerAliveIpc(
     if (!window.isDestroyed()) window.webContents.send('alive:behavior', command)
   })
   return () => {
+    ipcMain.removeHandler('diagnostics:get-alive-audit')
+    ipcMain.removeHandler('diagnostics:get-running-applications')
     unsubscribeChanged()
     unsubscribeBehavior()
   }

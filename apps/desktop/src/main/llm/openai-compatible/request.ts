@@ -75,6 +75,9 @@ export function sdkOptions(config: ChatRunConfig, options: LlmCompletionOptions)
     maxRetries: 0,
     ...(options.responseSchema
       ? {
+          ...(config.provider === 'openrouter' && config.capabilities.supportsReasoning
+            ? { providerOptions: { openrouter: { reasoning: { enabled: false } } } }
+            : {}),
           output: Output.object({
             name: options.responseSchema.name,
             schema: jsonSchema<Record<string, unknown>>(options.responseSchema.schema),

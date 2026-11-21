@@ -1,28 +1,26 @@
 import type {
+  AliveAuditEntry,
   AliveRuntimeHealth,
   AliveSnapshot,
   AttentionCandidate,
-  AttentionDecision,
   AutonomySettings,
   BehaviorCommand,
   ExperienceAppraisal,
   ExperienceEvent,
-  FastBrainAttentionDecision,
-  FastBrainAttentionInput,
-  HabitSuggestion,
   RendererWorldContextInput,
+  RunningApplicationsDiagnostic,
+  SpeechAttentionDecision,
+  SpeechAttentionInput,
 } from '../../shared/alive'
 import type { TurnAppraisal } from '../../shared/character-tools'
 import type { RelationshipContext } from '../../shared/memory'
-import type { LlmGateway } from '../llm'
 import { observeMainPromise } from '../reliability/observePromise'
 import type { AliveStore } from './AliveStore'
 import { AttentionArbiter } from './AttentionArbiter'
 import { AutonomyEnvelope } from './AutonomyEnvelope'
 import { BehaviorRuntime, type ConversationCandidateDisposition } from './BehaviorRuntime'
-import type { CompletedExperienceFact, ExperienceObservation } from './ExperienceRuntime'
+import type { ExperienceObservation } from './ExperienceRuntime'
 import { ExperienceRuntime } from './ExperienceRuntime'
-import { FastBrainRuntime } from './FastBrainRuntime'
 import { MoodRuntime } from './MoodRuntime'
 import {
   type ProactiveInitiativeApproval,
@@ -35,13 +33,7 @@ import { type WorldContextProviders, WorldContextRuntime } from './WorldContextR
 export interface AliveFacadeOptions {
   systemContextAdapter?: SystemContextAdapter
   worldContext?: WorldContextProviders
-  onCompletedExperienceFact?: ConstructorParameters<typeof ExperienceRuntime>[2]
   experienceContext?: () => RelationshipContext
-  proceduralMemory?: {
-    observeCompletedFact(fact: CompletedExperienceFact): void
-    habitSuggestions(): readonly HabitSuggestion[]
-    decideHabit(id: string, status: 'approved' | 'rejected'): void
-  }
 }
 
 export interface ExperienceReport extends ExperienceObservation {
@@ -55,37 +47,22 @@ export class AliveFacade {
   private readonly envelope = new AutonomyEnvelope()
   private readonly behavior = new BehaviorRuntime()
   private readonly experience: ExperienceRuntime
-  private readonly attention: AttentionArbiter
+  private readonly attention = new AttentionArbiter()
   private readonly initiativeGate: ProactiveInitiativeGate
   private readonly listeners = new Set<(snapshot: AliveSnapshot) => void>()
   private readonly behaviorListeners = new Set<(command: BehaviorCommand) => void>()
-  private readonly lifecycleController = new AbortController()
-  private readonly attentionRequests = new Map<string, AbortController>()
   private previousAmbientWorld: AliveSnapshot['world'] | null = null
   private readonly turnAppraisals = new TurnAppraisalRegistry()
   private browserComputerUseScreenFocusActive = false
 
   constructor(
     private readonly store: AliveStore,
-    llm: (selection: {
-      providerId?: AutonomySettings['fastBrain']['providerId']
-      model?: string
-    }) => LlmGateway,
-    private readonly options: AliveFacadeOptions = {},
+    options: AliveFacadeOptions = {},
   ) {
     this.world = new WorldContextRuntime(options.systemContextAdapter, options.worldContext)
-    this.experience = new ExperienceRuntime(
-      store,
-      new MoodRuntime(store),
-      (fact) => {
-        options.proceduralMemory?.observeCompletedFact(fact)
-        options.onCompletedExperienceFact?.(fact)
-      },
-      () => ({
-        relationship: options.experienceContext?.(),
-      }),
-    )
-    this.attention = new AttentionArbiter(new FastBrainRuntime(llm))
+    this.experience = new ExperienceRuntime(store, new MoodRuntime(store), () => ({
+      relationship: options.experienceContext?.(),
+    }))
     this.initiativeGate = new ProactiveInitiativeGate({
       store,
       envelope: this.envelope,
@@ -102,11 +79,6 @@ export class AliveFacade {
 
   dispose(): void {
     this.initiativeGate.dispose()
-    this.lifecycleController.abort(new DOMException('Alive Runtime disposed', 'AbortError'))
-    for (const controller of this.attentionRequests.values()) {
-      controller.abort(this.lifecycleController.signal.reason)
-    }
-    this.attentionRequests.clear()
     this.started = false
     this.world.dispose()
     this.listeners.clear()
@@ -127,16 +99,57 @@ export class AliveFacade {
 
   snapshot(): AliveSnapshot {
     const settings = this.store.settings()
-    const habits = this.options.proceduralMemory?.habitSuggestions() ?? Object.freeze([])
     return Object.freeze({
       settings,
-      habitSuggestions: habits,
       mood: this.experience.moodSnapshot(),
       lastExperience: this.experience.latest(),
       world: this.world.snapshot(settings),
-      audit: this.store.recentAudit(),
-      health: this.health(habits),
+      health: this.health(),
     })
+  }
+
+  recentAudit(): readonly AliveAuditEntry[] {
+    return this.store.recentAudit()
+  }
+
+  async getRunningApplications(): Promise<RunningApplicationsDiagnostic> {
+    if (!this.started) return { status: 'unavailable' }
+    if (this.store.settings().privacyMode) return { status: 'private' }
+    const applications = await this.world.listRunningApplications()
+    if (!this.started) return { status: 'unavailable' }
+    if (this.store.settings().privacyMode) return { status: 'private' }
+    return applications ? { status: 'available', applications } : { status: 'unavailable' }
+  }
+
+  canCommentOnPlayback() {
+    return this.initiativeGate.watchAllowedNow()
+  }
+
+  async admitWatchMoment(expiresAt: number, current: () => boolean): Promise<boolean> {
+    const now = Date.now()
+    const id = crypto.randomUUID()
+    const result = await this.initiativeGate.submit(
+      {
+        origin: 'watch-together',
+        entityId: id,
+        candidates: [
+          {
+            id,
+            source: 'experience',
+            summary: 'Shared viewing moment',
+            salience: 0.8,
+            novelty: 0.8,
+            urgency: 0.45,
+            socialRelevance: 0.8,
+            interruptibility: 'when-idle',
+            createdAt: now,
+            expiresAt,
+          },
+        ],
+      },
+      current,
+    )
+    return result.outcome === 'admit'
   }
 
   updateSettings(settings: AutonomySettings): AliveSnapshot {
@@ -262,54 +275,14 @@ export class AliveFacade {
     return report
   }
 
-  decideHabit(id: string, status: 'approved' | 'rejected'): AliveSnapshot {
-    if (!this.options.proceduralMemory) throw new Error('PROCEDURAL_MEMORY_UNAVAILABLE')
-    this.options.proceduralMemory.decideHabit(id, status)
-    this.store.audit('habit', 'suggestion_decided', status, id)
-    return this.publish()
+  evaluateAttention(input: SpeechAttentionInput): SpeechAttentionDecision {
+    return this.attention.evaluateSpeech(input)
   }
 
-  evaluateAttention(input: FastBrainAttentionInput): Promise<FastBrainAttentionDecision> {
-    this.lifecycleController.signal.throwIfAborted()
-    this.attentionRequests
-      .get(input.utteranceId)
-      ?.abort(new DOMException('Attention request superseded', 'AbortError'))
-    const controller = new AbortController()
-    const abortForLifecycle = (): void => controller.abort(this.lifecycleController.signal.reason)
-    this.lifecycleController.signal.addEventListener('abort', abortForLifecycle, { once: true })
-    this.attentionRequests.set(input.utteranceId, controller)
-    return this.attention
-      .evaluateLegacy(input, this.store.settings(), { signal: controller.signal })
-      .finally(() => {
-        this.lifecycleController.signal.removeEventListener('abort', abortForLifecycle)
-        if (this.attentionRequests.get(input.utteranceId) === controller) {
-          this.attentionRequests.delete(input.utteranceId)
-        }
-      })
-  }
-
-  cancelAttention(utteranceId: string): boolean {
-    const controller = this.attentionRequests.get(utteranceId)
-    if (!controller) return false
-    controller.abort(new DOMException('Attention request cancelled', 'AbortError'))
-    this.attentionRequests.delete(utteranceId)
-    return true
-  }
-
-  arbitrateAttention(candidates: readonly AttentionCandidate[]): Promise<AttentionDecision> {
-    const settings = this.store.settings()
-    const world = this.world.snapshot(settings)
-    return this.attention.decide(candidates, settings, {
-      busy: world.conversationActive || world.audioActive,
-      signal: this.lifecycleController.signal,
-    })
-  }
-
-  private health(habits: AliveSnapshot['habitSuggestions']): AliveRuntimeHealth {
+  private health(): AliveRuntimeHealth {
     return Object.freeze({
       operational: this.started,
       databaseVersion: this.store.version(),
-      pendingHabitSuggestions: habits.filter((habit) => habit.status === 'pending').length,
     })
   }
 

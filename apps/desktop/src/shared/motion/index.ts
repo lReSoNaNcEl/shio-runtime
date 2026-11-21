@@ -1,21 +1,20 @@
 import { z } from 'zod'
 
 import rawCatalog from '../../../motion/motion-profiles.json'
+import { conversationPerformanceSchema } from '../character-response/embodiment'
 import { deliveryStyleSchema } from '../embodiment/deliveryStyle'
 import { facialActingPresentationSchema } from '../facial-acting'
 import { MOTION_PROFILE_IDS } from './catalog.generated'
-import { motionCatalogSchema, motionFormatSchema, motionPhaseSchema } from './catalogSchema'
+import { motionCatalogSchema, motionPhaseSchema } from './catalogSchema'
+import { DANCE_HORIZON_FRAMES, danceStyleSchema } from './physicalAction'
 
 export * from './catalog.generated'
 export * from './catalogSchema'
 export * from './physicalAction'
 export const MOTION_CATALOG = motionCatalogSchema.parse(rawCatalog)
 export const MOTION_CATALOG_REVISION = MOTION_CATALOG.catalogRevision
-export const MOTION_FORMAT = MOTION_CATALOG.format
+export const FLASH_MOTION_FORMAT = MOTION_CATALOG.flashMotionFormat
 export const MOTION_INFERENCE_DEADLINE_MS = 2500
-/** Pinned native SOMA-X hand prior; the worker and chunks must report exactly this identity. */
-const MOTION_HAND_MODEL_REVISION =
-  '233e9225c1da05c6a3dd98107b9f027f2366e3b972bbe67e0d164e5d28619fff' as const
 
 export const MOTION_PROFILES = MOTION_CATALOG.profiles
 export const motionProfileSchema = z.enum(MOTION_PROFILE_IDS)
@@ -34,6 +33,7 @@ export const motionPlanIdentitySchema = z
     clockDomain: z.enum(['local', 'speech']),
     playbackId: z.string().min(1).max(128).nullable(),
     continuityAnchor: z.string().min(1).max(128),
+    danceStyle: danceStyleSchema.optional(),
   })
   .strict()
   .refine(
@@ -41,12 +41,13 @@ export const motionPlanIdentitySchema = z
     'Speech clock requires exact playback identity',
   )
 export type MotionPlanIdentity = z.infer<typeof motionPlanIdentitySchema>
-export const motionReadySchema = z
+export const flashMotionReadySchema = z
   .object({
     type: z.literal('ready'),
     catalogRevision: z.literal(MOTION_CATALOG_REVISION),
-    handModelRevision: z.literal(MOTION_HAND_MODEL_REVISION).optional(),
-    format: motionFormatSchema,
+    protocolVersion: z.literal(1),
+    sourceRevision: z.literal(FLASH_MOTION_FORMAT.sourceRevision),
+    weightsRevision: z.literal(FLASH_MOTION_FORMAT.weightsRevision),
   })
   .strict()
 export const motionLeaseSchema = z
@@ -125,6 +126,7 @@ export const motionActivitySchema = z
     energy: z.number().finite().min(0).max(1),
     playbackId: z.string().min(1).max(128).nullable(),
     speaking: z.boolean(),
+    sourceStartSample: z.number().int().min(0).max(26_460_000).optional(),
     prosody: motionProsodySchema.optional(),
     /** Bounded delivery style of the audible segment; absent outside speech. */
     style: deliveryStyleSchema.optional(),
@@ -157,20 +159,32 @@ export const motionChunkSchema = motionLeaseSchema
     reset: z.boolean(),
     fromFrame: identity,
     profileId: motionProfileSchema,
-    skeleton: z.literal('soma30-standard-tpose-v1'),
-    sourceProvider: z.literal('motionbricks').optional(),
+    skeleton: z.literal(FLASH_MOTION_FORMAT.skeleton),
+    sourceProvider: z.literal('flashmotion').optional(),
     fps: z.literal(30),
     startFrame: identity,
-    rotations: z.array(z.array(quaternion).length(30)).length(60),
-    handDeltas: z
+    rotations: z.array(z.array(quaternion).length(30)).min(8).max(DANCE_HORIZON_FRAMES),
+    flashMotion: z
       .object({
-        modelRevision: z.literal(MOTION_HAND_MODEL_REVISION),
-        basis: z.object({ left: quaternion, right: quaternion }).strict(),
-        rotations: z.array(z.array(quaternion).length(30)).length(60),
+        weightsRevision: z.literal(FLASH_MOTION_FORMAT.weightsRevision),
+        mode: z.enum(['t2m', 's2g']),
+        speech: z
+          .object({
+            playbackId: z.string().min(1).max(128),
+            startSample: z.number().int().min(0).max(26_460_000),
+            frames: z.number().int().min(1).max(60),
+          })
+          .strict()
+          .optional(),
+        fingers: z.array(z.array(quaternion).length(30)).min(8).max(60).optional(),
+        danceFeet: z
+          .array(z.tuple([point, point]))
+          .length(DANCE_HORIZON_FRAMES)
+          .optional(),
       })
       .strict()
       .optional(),
-    rootPositions: z.array(point).length(60),
+    rootPositions: z.array(point).min(8).max(DANCE_HORIZON_FRAMES),
     footContacts: z
       .array(
         z
@@ -182,7 +196,8 @@ export const motionChunkSchema = motionLeaseSchema
           })
           .strict(),
       )
-      .length(60),
+      .min(8)
+      .max(DANCE_HORIZON_FRAMES),
     plan: motionPlanIdentitySchema,
     protocolVersion: z.literal(2),
     inferenceMs: finite.min(0).max(120_000),
@@ -198,6 +213,38 @@ export const motionChunkSchema = motionLeaseSchema
       .optional(),
   })
   .strict()
+  .refine((chunk) => {
+    const frames = chunk.rotations.length
+    if (
+      frames % 4 !== 0 ||
+      chunk.rootPositions.length !== frames ||
+      chunk.footContacts.length !== frames
+    )
+      return false
+    const flash = chunk.flashMotion
+    if (chunk.profileId === 'dance_in_place')
+      return (
+        frames === DANCE_HORIZON_FRAMES &&
+        !!chunk.plan.danceStyle &&
+        chunk.plan.clockDomain === 'local' &&
+        chunk.plan.phaseId === 'prepare' &&
+        chunk.sourceProvider === 'flashmotion' &&
+        flash?.mode === 't2m' &&
+        !!flash.danceFeet &&
+        !flash.speech &&
+        !flash.fingers
+      )
+    if (flash?.danceFeet || chunk.plan.danceStyle || frames > 60) return false
+    if (!flash) return frames === 60
+    if (chunk.sourceProvider !== 'flashmotion') return false
+    if (flash.mode === 't2m') return !flash.speech && !flash.fingers
+    return Boolean(
+      flash.speech?.frames === frames &&
+        flash.fingers?.length === frames &&
+        chunk.plan.clockDomain === 'speech' &&
+        flash.speech.playbackId === chunk.plan.playbackId,
+    )
+  }, 'Invalid FlashMotion source or channel identity')
 export type MotionChunk = z.infer<typeof motionChunkSchema>
 export const generatedMotionHealthSchema = z
   .object({
@@ -208,11 +255,22 @@ export const generatedMotionHealthSchema = z
     inferenceMs: z.number().finite().min(0).max(120000),
     epoch: identity,
     seed: identity.nullable(),
+    flashMotion: z
+      .object({
+        weightsRevision: z.literal(FLASH_MOTION_FORMAT.weightsRevision),
+        mode: z.enum(['t2m', 's2g']).nullable(),
+        appliedSpeechSample: z.number().int().min(0).max(26_460_000).nullable(),
+        fingers: z.enum(['native', 'profile-constraint', 'neutral']).optional(),
+        performance: conversationPerformanceSchema.optional(),
+      })
+      .strict()
+      .optional(),
     physical: z
       .object({
         executionId: z.string().min(1).max(128),
-        generator: z.literal('procedural'),
-        direction: z.enum(['clockwise', 'counterclockwise']),
+        generator: z.enum(['procedural', 'flashmotion']),
+        direction: z.enum(['clockwise', 'counterclockwise']).optional(),
+        danceStyle: danceStyleSchema.optional(),
         actionHeading: finite.min(-7).max(7),
         support: z.enum(['left', 'right', 'double']),
         steps: finite.int().min(0).max(24),
@@ -222,6 +280,11 @@ export const generatedMotionHealthSchema = z
         outcome: z.enum(['completed', 'superseded', 'cancelled', 'timed-out', 'failed']).nullable(),
       })
       .strict()
+      .refine((value) =>
+        value.generator === 'procedural'
+          ? !!value.direction && !value.danceStyle
+          : !!value.danceStyle && !value.direction,
+      )
       .optional(),
     planning: z
       .object({
@@ -307,6 +370,16 @@ export const BODY_BONE_NAMES = [
 ] as const
 /** Composed procedural head/neck, mirrored so Overlay never runs a second head actor. */
 export const HEAD_PRESENTATION_BONE_NAMES = ['neck', 'head'] as const
+const avatarLookAtModeSchema = z.enum([
+  'idle',
+  'speaking',
+  'listening',
+  'thinking',
+  'userFocus',
+  'screenFocus',
+  'away',
+])
+export type AvatarLookAtMode = z.infer<typeof avatarLookAtModeSchema>
 const bodyPresentationBaseSchema = z
   .object({
     lease: motionLeaseSchema.nullable(),
@@ -324,6 +397,7 @@ const bodyPresentationBaseSchema = z
       .optional(),
     bones: z.partialRecord(z.enum(BODY_BONE_NAMES), quaternion),
     headBones: z.partialRecord(z.enum(HEAD_PRESENTATION_BONE_NAMES), quaternion).optional(),
+    gazeMode: avatarLookAtModeSchema.optional(),
     hipsPosition: point,
     chestPosition: point.optional(),
     facialActing: facialActingPresentationSchema.optional(),
@@ -332,7 +406,7 @@ const bodyPresentationBaseSchema = z
         position: point,
         orientation: quaternion,
         continuousHeading: finite.min(-1000).max(1000),
-        generator: z.literal('procedural'),
+        generator: z.enum(['procedural', 'flashmotion']),
       })
       .strict()
       .optional(),
@@ -373,6 +447,8 @@ export type MotionStatus = {
   epoch: number
   modelGeneration: number
   session: MotionLease | null
+  provider?: 'flashmotion'
+  weightsRevision?: string
 }
 export type MotionReply = { ok: true; chunk: MotionChunk } | { ok: false; error: string }
 export interface MotionApi {

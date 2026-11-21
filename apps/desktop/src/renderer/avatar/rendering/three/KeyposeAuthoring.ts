@@ -80,7 +80,7 @@ export function sampleKeyposeRig(
 }
 
 /** Rig pose → keypose: wrist offset from the anchor in arm lengths, x lateral outward.
- * The same convention as the MotionBricks targets planner, so a keypose scales with
+ * This convention lets a keypose scale with
  * each rig. Pure: it reads the sample and writes nothing. */
 export function keyposeFromRig(sample: KeyposeRigSample, anchor: KeyposeAnchor): MotionKeypose {
   const { across, up, forward } = basis(sample)

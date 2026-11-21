@@ -13,6 +13,7 @@ import type {
   ShioCapabilitySnapshot,
 } from '../../src/shared/capabilities'
 import { translate } from '../../src/shared/localization'
+import type { MemoryRecord } from '../../src/shared/memory'
 import type { PluginStatus } from '../../src/shared/plugins'
 import { localizedWrapper, stubWindowProperty } from '../support/rendering'
 
@@ -164,6 +165,48 @@ describe.each(['light', 'dark'] as const)('catalog behavior in %s theme', (theme
     expect(clear).toHaveBeenCalled()
   })
 
+  it('shows all explicit memory records in one list and searches across their categories', async () => {
+    const records = [
+      ['fact', 'I have a garden.'],
+      ['decision', 'We chose the bridge route.'],
+      ['commitment', 'We will revisit the bridge.'],
+      ['relationship', 'We explored the bridge together.'],
+    ] as const
+    const items: MemoryRecord[] = records.map(([kind, text], index) => ({
+      id: String(index),
+      kind,
+      text,
+      source: { type: 'manual' },
+      createdAt: '2026-11-21T09:00:00Z',
+      updatedAt: '2026-11-21T09:00:00Z',
+    }))
+    const list = vi.fn(async () => ({ ok: true, data: { items } }))
+    const search = vi.fn(async () => ({ ok: true, data: { items: items.slice(1) } }))
+    restoreApi = stubWindowProperty('api', {
+      memory: {
+        getStatus: vi.fn(async () => ({
+          ok: true,
+          data: { enabled: true, operational: true, recordCount: items.length },
+        })),
+        list,
+        search,
+      },
+    })
+    render(<MemoryView />, { wrapper: localizedWrapper('en', theme) })
+
+    await screen.findByText(items[0].text)
+    expect(screen.queryByRole('tablist')).not.toBeInTheDocument()
+    for (const item of items) expect(screen.getByText(item.text)).toBeInTheDocument()
+    expect(list).toHaveBeenCalledWith({ limit: 50 })
+
+    fireEvent.change(screen.getByRole('searchbox', { name: t('memory.search') }), {
+      target: { value: 'bridge' },
+    })
+    await waitFor(() => expect(screen.queryByText(items[0].text)).not.toBeInTheDocument())
+    expect(search).toHaveBeenCalledWith({ query: 'bridge', limit: 20 })
+    for (const item of items.slice(1)) expect(screen.getByText(item.text)).toBeInTheDocument()
+  })
+
   it('requires explicit confirmation before clearing semantic memory', async () => {
     const clearAll = vi.fn(async () => ({ ok: true, data: {} }))
     restoreApi = stubWindowProperty('api', {
@@ -176,7 +219,7 @@ describe.each(['light', 'dark'] as const)('catalog behavior in %s theme', (theme
         clearAll,
       },
     })
-    render(<MemoryView aliveSnapshot={null} />, { wrapper: localizedWrapper('en', theme) })
+    render(<MemoryView />, { wrapper: localizedWrapper('en', theme) })
     const more = await screen.findByRole('button', { name: t('memory.toolbar.more') })
     await waitFor(() => expect(more).toBeEnabled())
     fireEvent.click(more)

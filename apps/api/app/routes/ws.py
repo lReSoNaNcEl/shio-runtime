@@ -63,6 +63,7 @@ async def asr_stream_protocol() -> AsrStreamProtocolInfo:
                 "channels": 1,
                 "format": "pcm_s16le",
                 "language": "ru",
+                "partialResults": True,
             },
             "flush": {"type": "flush"},
             "stop": {"type": "stop"},
@@ -208,6 +209,7 @@ async def websocket_recognize(websocket: WebSocket):
                         and control.get("sampleRate") == 16_000
                         and control.get("channels") == 1
                         and control.get("format") == "pcm_s16le"
+                        and isinstance(control.get("partialResults", True), bool)
                     )
                     if not valid:
                         await websocket.send_json(
@@ -236,6 +238,7 @@ async def websocket_recognize(websocket: WebSocket):
                             post_roll_ms=settings.VAD_POST_ROLL_MS,
                             max_segment_ms=settings.VAD_MAX_SEGMENT_MS,
                             partial_interval_ms=settings.ASR_PARTIAL_INTERVAL_MS,
+                            partial_results=control.get("partialResults", True),
                         ),
                     )
                     audio_queue = asyncio.Queue(maxsize=settings.ASR_AUDIO_QUEUE_FRAMES)

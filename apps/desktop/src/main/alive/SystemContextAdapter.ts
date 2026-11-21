@@ -1,8 +1,6 @@
-export const SYSTEM_CONTEXT_PROBES = [
-  'foreground-application',
-  'running-applications',
-  'system-load',
-] as const
+import type { RunningApplication } from '../../shared/alive'
+
+export const SYSTEM_CONTEXT_PROBES = ['foreground-application', 'running-applications'] as const
 
 export type SystemContextProbe = (typeof SYSTEM_CONTEXT_PROBES)[number]
 
@@ -20,19 +18,11 @@ export interface SystemContextObservation {
     displayName?: string
     windowTitle?: string
   }
-  runningApplications?: readonly {
-    processName: string
-    displayName?: string
-  }[]
+  runningApplications?: readonly RunningApplication[]
   media?: {
     playing: boolean
     title?: string
     application?: string
-  }
-  system?: {
-    cpuLoad?: number
-    memoryLoad?: number
-    gpuLoad?: number
   }
   status: 'available' | 'degraded'
 }

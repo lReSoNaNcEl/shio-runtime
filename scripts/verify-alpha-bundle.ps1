@@ -5,7 +5,7 @@ $ErrorActionPreference = "Stop"
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $manifest = Get-Content -Raw -Encoding UTF8 (Join-Path $repoRoot "launcher\release-manifest.json") | ConvertFrom-Json
 $expectedName = "Shio-Runtime-$($manifest.productVersion)-win-x64"
-if ($ExperimentalWorktree) { $expectedName += '-ardy-fish-experiment' }
+if ($ExperimentalWorktree) { $expectedName += '-flashmotion-experiment' }
 if (-not $BundlePath) { $BundlePath = Join-Path $repoRoot "release\$expectedName.zip" }
 if (-not (Test-Path -LiteralPath $BundlePath)) { throw "Bundle not found: $BundlePath" }
 
@@ -27,11 +27,17 @@ try {
         "launcher\ShioLauncher.ps1",
         "launcher\release-manifest.json",
         "desktop\Shio Runtime.exe",
-        "desktop\resources\motion-source\worker.py",
-        "desktop\resources\motion-source\backend.py",
-        "desktop\resources\motion-source\research-pins.json",
-        "desktop\resources\motion-source\motion-profiles.json",
-        "desktop\resources\motion-source\requirements-research.lock.txt",
+        "desktop\resources\motion-runtime\flashmotion\worker.py",
+        "desktop\resources\motion-runtime\flashmotion\catalog.py",
+        "desktop\resources\motion-runtime\flashmotion\retarget.py",
+        "desktop\resources\motion-runtime\flashmotion\setup.sh",
+        "desktop\resources\motion-runtime\motion\protocol.py",
+        "desktop\resources\motion-runtime\motion\motion-profiles.json",
+        "desktop\resources\motion-runtime\qualifications\flashmotion\assets.py",
+        "desktop\resources\motion-runtime\qualifications\flashmotion\build_cuda.py",
+        "desktop\resources\motion-runtime\qualifications\flashmotion\rebuild_s2g_stats.py",
+        "desktop\resources\motion-runtime\qualifications\flashmotion\t2m.py",
+        "desktop\resources\motion-runtime\qualifications\flashmotion\timing.py",
         "speech-pack\api\requirements.lock.txt",
         "speech-pack\api\requirements-torch-cu128.txt",
         "speech-pack\api\.env.release",
@@ -39,15 +45,22 @@ try {
         "speech-pack\api\scripts\doctor_strict.py",
         "docs\ALPHA-INSTALL.md",
         "docs\ALPHA-TROUBLESHOOTING.md"
-        "docs\EXPERIMENT-ARDY-FISH.md"
     )
     foreach ($relative in $required) {
         if (-not (Test-Path -LiteralPath (Join-Path $root $relative))) { throw "Missing bundle file: $relative" }
     }
+    & node (Join-Path $repoRoot "scripts\verify-packaged-desktop-deps.mjs") `
+        (Join-Path $repoRoot "apps\desktop") (Join-Path $root "desktop\resources\app.asar.unpacked")
+    if ($LASTEXITCODE -ne 0) { throw "The packaged Electron dependency graph is incomplete." }
     $bundledManifest = Get-Content -Raw -Encoding UTF8 (Join-Path $root "launcher\release-manifest.json") | ConvertFrom-Json
     if ($bundledManifest.productVersion -ne $manifest.productVersion -or
         $bundledManifest.speechPack.version -ne $manifest.productVersion) {
         throw "Bundle version mismatch."
+    }
+    if ($bundledManifest.motionPack.provider -ne 'flashmotion' -or
+        $bundledManifest.motionPack.sourceRelativePath -ne 'desktop/resources/motion-runtime' -or
+        $bundledManifest.motionPack.distribution -ne 'ShioFlashMotionV1') {
+        throw "Bundle FlashMotion manifest mismatch."
     }
     $readme = Get-Content -Raw -Encoding UTF8 (Join-Path $root "README-FIRST.txt")
     if (-not $readme.Contains($manifest.productVersion)) {
@@ -60,6 +73,8 @@ try {
         "Windows 11 x64",
         "NVIDIA",
         "Python 3.12",
+        "WSL2",
+        "FlashMotion",
         "unsigned technical alpha",
         "first start",
         "Start Shio Runtime.cmd",
@@ -97,7 +112,7 @@ try {
             ))
     }
     if ($bad) { throw "Forbidden bundle content: $($bad[0].FullName)" }
-    foreach ($forbiddenPath in @("speech-pack\services", "services\api", "apps\api")) {
+    foreach ($forbiddenPath in @("speech-pack\services", "services\api", "apps\api", "desktop\resources\motion-source")) {
         if (Test-Path -LiteralPath (Join-Path $root $forbiddenPath)) {
             throw "Stale repository layout leaked into the bundle: $forbiddenPath"
         }
@@ -117,7 +132,7 @@ try {
         }
     }
     $textFiles = Get-ChildItem -LiteralPath $root -Recurse -File |
-        Where-Object { $_.Extension -in @(".txt", ".md", ".json", ".ps1", ".cmd", ".py") }
+        Where-Object { $_.Extension -in @(".txt", ".md", ".json", ".ps1", ".cmd", ".py", ".sh") }
     foreach ($file in $textFiles) {
         # Upstream documentation contains illustrative C:\Users\me paths; it is
         # not locally generated application configuration or developer data.

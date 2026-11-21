@@ -1,5 +1,6 @@
 import type { Display } from 'electron'
 
+import { DEFAULT_OVERLAY_HEIGHT, DEFAULT_OVERLAY_WIDTH } from '../../shared/config'
 import type { AppConfig } from '../config'
 
 export function numericWindowSetting(
@@ -17,8 +18,8 @@ export function resolveOverlayBounds(
   config: AppConfig,
   display: Display,
 ): { width: number; height: number; x: number; y: number } {
-  const width = numericWindowSetting(config.overlayWidth, 360, 160, 1200)
-  const height = numericWindowSetting(config.overlayHeight, 560, 220, 1200)
+  const width = numericWindowSetting(config.overlayWidth, DEFAULT_OVERLAY_WIDTH, 160, 1200)
+  const height = numericWindowSetting(config.overlayHeight, DEFAULT_OVERLAY_HEIGHT, 220, 1200)
   const margin = numericWindowSetting(config.overlayMargin, 24, 0, 200)
   const corner = config.overlayCorner ?? 'bottom-right'
   const x = corner.endsWith('left')

@@ -30,7 +30,9 @@ REQUEST_FIELDS = {
     "fromFrame",
     "protocolVersion",
     "plan",
+    "frames",
 }
+OPTIONAL_REQUEST_FIELDS = {"activity", "speech"}
 CATALOG_REVISION = "expressive-v8-2026-10-30"
 CALIBRATION_REVISION = "vrm-normalized-hands-v1"
 
@@ -44,7 +46,7 @@ def bounded_text(value, maximum=128):
 
 
 def validate_request(value: object, profiles: dict) -> dict:
-    if not isinstance(value, dict) or set(value) != REQUEST_FIELDS:
+    if not isinstance(value, dict) or set(value) - OPTIONAL_REQUEST_FIELDS != REQUEST_FIELDS:
         raise ValueError("Invalid motion request shape")
     if any(
         not bounded_identity(value[k])
@@ -58,15 +60,20 @@ def validate_request(value: object, profiles: dict) -> dict:
     if value["fromFrame"] % 4 or value["reset"] != (value["fromFrame"] == 0):
         raise ValueError("Invalid continuous frame boundary")
     p = value["plan"]
-    if not isinstance(p, dict) or set(p) != PLAN_FIELDS:
+    dance = value["profileId"] == "dance_in_place"
+    if not isinstance(p, dict) or set(p) != (
+        PLAN_FIELDS | {"danceStyle"} if dance else PLAN_FIELDS
+    ):
         raise ValueError("Invalid motion plan shape")
+    if dance and p.get("danceStyle") not in ("smooth", "playful", "energetic"):
+        raise ValueError("Invalid dance style")
     if not bounded_identity(p["planRevision"]) or any(
         not bounded_text(p[k]) for k in ("executionId", "continuityAnchor")
     ):
         raise ValueError("Invalid motion plan identity")
     profile = profiles[value["profileId"]]
-    if profile.get("physicalAction"):
-        raise ValueError("Procedural actions do not accept neural horizons")
+    if profile.get("physicalAction") and (p["clockDomain"] != "local" or p["phaseId"] != "prepare"):
+        raise ValueError("A physical action accepts only a local upper-body horizon")
     if (
         p["catalogRevision"] != CATALOG_REVISION
         or p["phaseId"] not in PHASES
@@ -80,6 +87,35 @@ def validate_request(value: object, profiles: dict) -> dict:
         raise ValueError("Incompatible playback identity")
     if p["clockDomain"] == "local" and p["playbackId"] is not None:
         raise ValueError("Local clock cannot retain playback authority")
+    if value["frames"] != (120 if dance else 24 if profile["kind"] == "presence" else 60):
+        raise ValueError("Invalid motion horizon")
+    if "activity" in value and not isinstance(value["activity"], dict):
+        raise ValueError("Invalid motion activity")
+    if "speech" in value:
+        speech = value["speech"]
+        if (
+            not isinstance(speech, dict)
+            or set(speech)
+            != {
+                "playbackId",
+                "startSample",
+                "frames",
+                "contextSamples",
+                "followingSamples",
+                "language",
+                "text",
+                "pcm",
+            }
+            or profile["kind"] != "presence"
+            or p["clockDomain"] != "speech"
+            or speech["playbackId"] != p["playbackId"]
+            or not bounded_identity(speech["startSample"])
+            or speech["startSample"] > 26_460_000
+            or not isinstance(speech["text"], str)
+            or len(speech["text"]) > 1200
+            or not bounded_text(speech["pcm"], 440_000)
+        ):
+            raise ValueError("Invalid speech window identity")
     return value
 
 
@@ -94,6 +130,7 @@ def validate_continuation(previous: dict | None, request: dict):
     if p["executionId"] == q["executionId"]:
         if (
             q["planRevision"] < p["planRevision"]
+            or q.get("danceStyle") != p.get("danceStyle")
             or PHASES.index(q["phaseId"]) < PHASES.index(p["phaseId"])
             or previous["profileId"] != request["profileId"]
             or (
@@ -111,7 +148,7 @@ def load_catalog():
     if (
         catalog["schemaVersion"] != 3
         or catalog["catalogRevision"] != CATALOG_REVISION
-        or catalog["format"]["protocolVersion"] != 2
+        or catalog["flashMotionFormat"]["protocolVersion"] != 1
     ):
         raise ValueError("Incompatible motion catalog")
     return catalog

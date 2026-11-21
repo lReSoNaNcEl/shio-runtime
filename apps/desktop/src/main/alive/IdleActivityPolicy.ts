@@ -152,7 +152,7 @@ export class IdleActivityPolicy {
 
   decide(input: IdleActivityInput): IdleActivitySelection | null {
     const { at, mood } = input
-    if (autonomyPolicyStop(input.settings, at, { quietHours: true }) || autonomyBusyStop(input)) {
+    if (autonomyPolicyStop(input.settings) || autonomyBusyStop(input)) {
       this.quietSince = null
       this.nextAt = null
       return null

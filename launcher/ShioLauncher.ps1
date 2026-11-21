@@ -515,77 +515,50 @@ function Ensure-Installed {
     return $paths
 }
 
-function Get-MotionPayloadHash {
-    param([string]$Source)
-    $names = @('worker.py', 'backend.py', 'research.py', 'research-pins.json', 'motion-profiles.json', 'requirements-research.lock.txt')
-    return (($names | ForEach-Object {
-        $file = Join-Path $Source $_
-        if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { Fail "Motion payload is incomplete: $_" }
-        (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash
-    }) -join ':')
+function Invoke-FlashMotionSetup {
+    param($Manifest, [ValidateSet('status', 'install', 'doctor')][string]$Operation)
+    $motion = $Manifest.motionPack
+    if ($motion.provider -ne 'flashmotion') { Fail 'FlashMotion release manifest is incompatible.' }
+    $distro = if ($env:SHIO_FLASHMOTION_WSL_DISTRO) { $env:SHIO_FLASHMOTION_WSL_DISTRO } else { $motion.distribution }
+    if ($distro -cnotmatch '^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$') { Fail 'Invalid FlashMotion WSL distribution name.' }
+    $wsl = Join-Path $env:SystemRoot 'System32\wsl.exe'
+    $source = Resolve-BundlePath $motion.sourceRelativePath
+    $runtime = Join-Path $source 'flashmotion'
+    if (-not (Test-Path -LiteralPath (Join-Path $runtime 'setup.sh') -PathType Leaf)) {
+        Fail 'FlashMotion runtime payload is incomplete.'
+    }
+    if (-not (Test-Path -LiteralPath $wsl -PathType Leaf)) {
+        Fail 'WSL2 is required for FlashMotion. See docs/ALPHA-INSTALL.md.'
+    }
+    $previousAssets = $env:SHIO_FLASHMOTION_ASSETS
+    $previousWslEnv = $env:WSLENV
+    Push-Location -LiteralPath $runtime
+    try {
+        $env:SHIO_FLASHMOTION_ASSETS = Join-Path $DataRoot 'FlashMotion'
+        $env:WSLENV = 'SHIO_FLASHMOTION_ASSETS/p'
+        # Windows PowerShell 5 turns native stderr into error records, including WSL startup warnings.
+        $ErrorActionPreference = 'Continue'
+        if ($Operation -eq 'status') {
+            & $wsl --distribution $distro --exec /bin/bash ./setup.sh status 2>&1 | Out-Null
+            return $LASTEXITCODE -eq 0
+        }
+        Write-LauncherLog "FlashMotion $Operation in $distro"
+        & $wsl --distribution $distro --exec /bin/bash ./setup.sh $Operation 2>&1 | Out-Host
+        if ($LASTEXITCODE -ne 0) {
+            Fail "FlashMotion $Operation failed. See docs/ALPHA-INSTALL.md and docs/ALPHA-TROUBLESHOOTING.md."
+        }
+    } finally {
+        $env:SHIO_FLASHMOTION_ASSETS = $previousAssets
+        $env:WSLENV = $previousWslEnv
+        Pop-Location
+    }
 }
 
-function Install-MotionPack {
+function Ensure-FlashMotionInstalled {
     param($Manifest)
-    Assert-Platform
-    if (-not (Test-Nvidia)) { Fail "ARDY requires an NVIDIA GPU/driver." }
-    $python = Find-Python312
-    $source = Resolve-BundlePath $Manifest.motionPack.sourceRelativePath
-    $root = Join-Path $LocalRoot "Motion\$($Manifest.productVersion)"
-    $resolved = [IO.Path]::GetFullPath($root)
-    if (-not $resolved.StartsWith([IO.Path]::GetFullPath($LocalRoot) + '\', [StringComparison]::OrdinalIgnoreCase)) { Fail 'Unsafe Motion installation path.' }
-    $hash = Get-MotionPayloadHash $source
-    $active = Get-CimInstance Win32_Process -Filter "Name='python.exe'" | Where-Object { $_.ExecutablePath -and $_.ExecutablePath.StartsWith($resolved + '\', [StringComparison]::OrdinalIgnoreCase) }
-    if ($active) { Fail 'Close Shio Desktop before installing or repairing its Motion environment.' }
-    New-Item -ItemType Directory -Force -Path $root | Out-Null
-    foreach ($name in @('worker.py', 'backend.py', 'research.py', 'research-pins.json', 'motion-profiles.json', 'requirements-research.lock.txt')) {
-        Copy-Item -LiteralPath (Join-Path $source $name) -Destination (Join-Path $root $name) -Force
+    if (-not (Invoke-FlashMotionSetup $Manifest status)) {
+        Invoke-FlashMotionSetup $Manifest install
     }
-    if (Test-Path -LiteralPath (Join-Path $source 'licenses')) { Copy-Item -LiteralPath (Join-Path $source 'licenses') -Destination $root -Recurse -Force }
-    $pins = Get-Content -Raw -LiteralPath (Join-Path $root 'research-pins.json') | ConvertFrom-Json
-    if ($pins.source.revision -ne $Manifest.motionPack.sourceRevision -or $pins.motion.revision -ne $Manifest.motionPack.checkpointRevision) { Fail 'Motion payload revisions differ from the launcher manifest.' }
-    $venv = Join-Path $root '.venv'
-    $motionPython = Join-Path $venv 'Scripts\python.exe'
-    if (-not (Test-Path -LiteralPath $motionPython)) {
-        & $python.File @($python.Args) -m venv $venv
-        if ($LASTEXITCODE -ne 0) { Fail 'Could not create the independent Motion environment.' }
-    }
-    $log = Join-Path $LogsRoot 'motion-install.log'
-    Invoke-Checked $motionPython @('-m', 'pip', 'install', '--upgrade', 'pip>=25.3,<26') $root $log
-    Invoke-Checked $motionPython @('-m', 'pip', 'install', "torch==$($Manifest.motionPack.torchVersion)", '--index-url', 'https://download.pytorch.org/whl/cu128') $root $log
-    Invoke-Checked $motionPython @('-m', 'pip', 'install', '-r', 'requirements-research.lock.txt') $root $log
-    Invoke-Checked $motionPython @('-m', 'pip', 'check') $root $log
-    if (-not $env:HF_TOKEN_PATH) {
-        $cachedToken = Join-Path $env:USERPROFILE '.cache\huggingface\token'
-        if (Test-Path -LiteralPath $cachedToken -PathType Leaf) { $env:HF_TOKEN_PATH = $cachedToken }
-    }
-    Write-LauncherLog 'Preparing pinned ARDY and LLM2Vec assets. The Hugging Face account must have access to Meta-Llama-3-8B-Instruct; credentials are never bundled.'
-    Invoke-Checked $motionPython @('research.py', 'prefetch') $root $log
-    Invoke-Checked $motionPython @('research.py', 'doctor', '--offline') $root $log
-    [IO.File]::WriteAllText((Join-Path $root 'installed.json'), (@{ payloadHash = $hash; sourceRevision = $pins.source.revision; checkpointRevision = $pins.motion.revision } | ConvertTo-Json), [Text.UTF8Encoding]::new($false))
-    $env:SHIO_MOTION_ROOT = $root
-}
-
-function Ensure-MotionInstalled {
-    param($Manifest)
-    $root = Join-Path $LocalRoot "Motion\$($Manifest.productVersion)"
-    $source = Resolve-BundlePath $Manifest.motionPack.sourceRelativePath
-    $marker = Join-Path $root 'installed.json'
-    $expected = Get-MotionPayloadHash $source
-    $installed = $null
-    if (Test-Path -LiteralPath $marker) { try { $installed = Get-Content -Raw -LiteralPath $marker | ConvertFrom-Json } catch { $installed = $null } }
-    if ($null -eq $installed -or $installed.payloadHash -ne $expected) { Install-MotionPack $Manifest }
-    $motionPython = Join-Path $root '.venv\Scripts\python.exe'
-    Invoke-Checked $motionPython @('research.py', 'doctor', '--offline') $root (Join-Path $LogsRoot 'motion-doctor.log')
-    $env:SHIO_MOTION_ROOT = $root
-}
-
-function Invoke-MotionDoctor {
-    param($Manifest)
-    $root = Join-Path $LocalRoot "Motion\$($Manifest.productVersion)"
-    $motionPython = Join-Path $root '.venv\Scripts\python.exe'
-    if (-not (Test-Path -LiteralPath $motionPython)) { Fail 'Motion Pack is not installed. Run install or repair.' }
-    Invoke-Checked $motionPython @('research.py', 'doctor', '--offline') $root (Join-Path $LogsRoot 'motion-doctor.log')
 }
 
 function Start-ManagedApi {
@@ -639,8 +612,8 @@ function Start-Shio {
     Assert-Platform
     $desktop = Resolve-BundlePath $Manifest.desktop.relativeExecutablePath
     if (-not (Test-Path -LiteralPath $desktop)) { Fail "Desktop executable is missing." }
+    Ensure-FlashMotionInstalled $Manifest
     $paths = Ensure-Installed $Manifest
-    Ensure-MotionInstalled $Manifest
     $ownsApi = $false
     $classification = Get-HealthyApiClassification $Manifest $paths
     if ($classification -ne "unavailable") {
@@ -683,17 +656,18 @@ try {
     }
     switch ($Command) {
         "start" { Start-Shio $manifest }
-        "install" { Install-SpeechPack $manifest; Install-MotionPack $manifest }
-        "repair" { Install-SpeechPack $manifest -Repair; Install-MotionPack $manifest }
+        "install" { Invoke-FlashMotionSetup $manifest install; Install-SpeechPack $manifest }
+        "repair" { Invoke-FlashMotionSetup $manifest install; Install-SpeechPack $manifest -Repair }
         "doctor" {
             Assert-Platform
             $paths = Get-InstallPaths $manifest
             if (-not (Test-Path -LiteralPath $paths.Python)) { Fail "Speech Pack is not installed." }
             Invoke-StrictDoctor $paths.Python $paths.Api (Join-Path $paths.Root ".venv")
-            Invoke-MotionDoctor $manifest
+            Invoke-FlashMotionSetup $manifest doctor
         }
         "status" {
             $paths = Get-InstallPaths $manifest
+            Write-Host "FlashMotion installed: $(Invoke-FlashMotionSetup $manifest status)"
             Write-Host "Speech Pack installed: $(Test-Path -LiteralPath $paths.State)"
             Write-Host "Speech API healthy:   $(Test-Health $manifest)"
             Write-Host "Managed ownership:    $($null -ne (Read-Ownership))"

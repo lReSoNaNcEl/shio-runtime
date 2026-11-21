@@ -42,6 +42,30 @@ describe('Desktop configuration migration', () => {
     expect(migrateLegacyDesktopSettings({ uiTheme: 'unknown' }).uiTheme).toBe('light')
   })
 
+  it('enlarges the old default Overlay bounds once while preserving custom sizing and zoom', () => {
+    const old = {
+      configSchemaVersion: 8,
+      overlayWidth: '360',
+      overlayHeight: '560',
+      overlayScale: '1.45',
+    }
+    expect(migrateLegacyDesktopSettings(old)).toMatchObject({
+      overlayWidth: '432',
+      overlayHeight: '672',
+      overlayScale: '1.45',
+    })
+    expect(migrateLegacyDesktopSettings({ ...old, overlayWidth: '380' })).toMatchObject({
+      overlayWidth: '380',
+      overlayHeight: '560',
+    })
+    expect(
+      migrateLegacyDesktopSettings({ ...old, configSchemaVersion: DESKTOP_CONFIG_SCHEMA_VERSION }),
+    ).toMatchObject({
+      overlayWidth: '360',
+      overlayHeight: '560',
+    })
+  })
+
   it('keeps the speech endpoint Main-owned environment configuration', () => {
     expect(resolveEnvironmentConfig({}).speechApiUrl).toBe(DEFAULT_SPEECH_API_URL)
     expect(

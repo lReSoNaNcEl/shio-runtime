@@ -37,7 +37,13 @@ export interface ModelCatalogClientConfig {
 /** Catalog listing only: no SDK provider or chat model is constructed for it. */
 export function createModelCatalogClient(config: ModelCatalogClientConfig): ModelCatalogProvider {
   const connection = config.connection ?? {}
-  const http = config.http ?? axios.create({ timeout: 60_000 })
+  const http =
+    config.http ??
+    axios.create({
+      baseURL:
+        config.definition.chat.resolveBaseUrl?.(connection) ?? config.definition.chat.baseUrl,
+      timeout: 60_000,
+    })
   if (!config.http) {
     installLlmProxyResolver(http)
     observeAxiosNetwork(http, 'llm')
@@ -61,7 +67,7 @@ export function createAiSdkAdapter(config: AiSdkAdapterConfig) {
     headers: definition.chat.headers,
     fetch: config.fetch ?? createOpenAISdkFetch(),
     includeUsage: true,
-    supportsStructuredOutputs: false,
+    supportsStructuredOutputs: capabilities.supportsSchemaOutput === true,
     transformRequestBody: (body) => ({
       ...body,
       ...(body.tools ? { parallel_tool_calls: false } : {}),

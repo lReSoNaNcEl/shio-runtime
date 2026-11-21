@@ -127,11 +127,16 @@ export function parseAsrStreamEvent(raw: unknown): AsrStreamParseResult {
 export interface StreamingAsrClientHandlers {
   onEvent: (event: AsrStreamEvent) => void
   onState: (state: StreamingAsrState) => void
+  onAudioGap?: () => void
   onProtocolDiagnostic?: (code: AsrStreamParseErrorCode) => void
 }
 
 const createSessionId = (): string =>
   globalThis.crypto?.randomUUID?.() ?? `asr-${Date.now()}-${Math.random().toString(16).slice(2)}`
+
+const sampleRate = 16_000
+const maxQueuedAudioMs = 500
+const maxQueuedBytes = (sampleRate * Int16Array.BYTES_PER_ELEMENT * maxQueuedAudioMs) / 1000
 
 export class StreamingAsrClient {
   private socket: WebSocket | null = null
@@ -145,8 +150,13 @@ export class StreamingAsrClient {
   private generation = 0
   private protocolDiagnosticCount = 0
   private malformedMessageCount = 0
+  private gapReported = false
+  private cancelHandshake: (() => void) | null = null
 
-  constructor(private readonly handlers: StreamingAsrClientHandlers) {}
+  constructor(
+    private readonly handlers: StreamingAsrClientHandlers,
+    private readonly partialResults = true,
+  ) {}
 
   async connect(baseUrl: string, language = 'ru', signal?: AbortSignal): Promise<void> {
     await this.stop()
@@ -160,20 +170,48 @@ export class StreamingAsrClient {
       .replace(/^https:/, 'wss:')
       .replace(/\/$/, '')
     this.reconnectAttempt = 0
+    this.gapReported = false
     await this.openSocket(false, generation, signal)
   }
 
-  sendPcm(frame: ArrayBuffer): void {
-    if (!this.socket || (this.state !== 'ready' && this.state !== 'listening')) return
-    if (this.socket.readyState !== WebSocket.OPEN) return
-    if (this.socket.bufferedAmount > 1_000_000) return
-    this.socket.send(frame)
+  sendPcm(frame: ArrayBuffer): boolean {
+    if (!this.shouldRun || !frame.byteLength) return false
+    const socket = this.socket
+    if (
+      !socket ||
+      socket.readyState !== WebSocket.OPEN ||
+      (this.state !== 'ready' && this.state !== 'listening')
+    ) {
+      this.reportGap()
+      return false
+    }
+    if (socket.bufferedAmount + frame.byteLength > maxQueuedBytes) {
+      // The WebSocket send queue cannot be drained locally. Retire this ASR
+      // session so a late final cannot join speech from opposite sides of a gap.
+      this.socket = null
+      this.sessionId = null
+      this.clearSocketHandlers(socket)
+      socket.close(1000)
+      this.reportGap()
+      this.scheduleReconnect(this.generation)
+      return false
+    }
+    socket.send(frame)
+    this.gapReported = false
     if (this.state === 'ready') this.setState('listening')
+    return true
+  }
+
+  private reportGap(): void {
+    if (this.gapReported) return
+    this.gapReported = true
+    this.handlers.onAudioGap?.()
   }
 
   async stop(): Promise<void> {
     this.generation += 1
     this.shouldRun = false
+    this.cancelHandshake?.()
     if (this.reconnectTimer !== null) window.clearTimeout(this.reconnectTimer)
     this.reconnectTimer = null
     const socket = this.socket
@@ -215,6 +253,7 @@ export class StreamingAsrClient {
         let settled = false
         let timeout: number | undefined
         const cleanup = (): void => {
+          if (this.cancelHandshake === abort) this.cancelHandshake = null
           if (timeout !== undefined) window.clearTimeout(timeout)
           signal?.removeEventListener('abort', abort)
         }
@@ -226,6 +265,7 @@ export class StreamingAsrClient {
         }
         const abort = (): void =>
           fail(signal?.reason ?? new DOMException('ASR start aborted', 'AbortError'))
+        this.cancelHandshake = abort
         timeout = window.setTimeout(() => fail(new Error('ASR WebSocket ready timeout')), 15_000)
         signal?.addEventListener('abort', abort, { once: true })
         socket.onerror = () => fail(new Error('ASR WebSocket connection failed'))
@@ -240,10 +280,11 @@ export class StreamingAsrClient {
               type: 'start',
               protocolVersion: 1,
               sessionId,
-              sampleRate: 16_000,
+              sampleRate,
               channels: 1,
               format: 'pcm_s16le',
               language: this.language,
+              ...(!this.partialResults && { partialResults: false }),
             }),
           )
         }
@@ -276,6 +317,7 @@ export class StreamingAsrClient {
 
   private installActiveHandlers(socket: WebSocket, generation: number): void {
     socket.onmessage = (message) => {
+      if (this.socket !== socket || generation !== this.generation) return
       const event = this.parseMessage(message.data, socket)
       if (!event) return
       if ('sessionId' in event && event.sessionId && event.sessionId !== this.sessionId) return

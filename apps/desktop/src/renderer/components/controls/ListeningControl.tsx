@@ -1,6 +1,7 @@
 import { Text, ToggleButton, Tooltip, TooltipTrigger } from '@react-spectrum/s2'
 import AlertTriangle from '@react-spectrum/s2/icons/AlertTriangle'
 import AudioWave from '@react-spectrum/s2/icons/AudioWave'
+import DeviceDesktop from '@react-spectrum/s2/icons/DeviceDesktop'
 import Microphone from '@react-spectrum/s2/icons/Microphone'
 import MicrophoneOff from '@react-spectrum/s2/icons/MicrophoneOff'
 
@@ -46,24 +47,31 @@ function ListeningStatusIcon({ projection }: { projection: ContinuousListeningPr
 export function ListeningControl({
   projection,
   onToggle,
+  watching,
 }: {
   projection: ContinuousListeningProjection
+  watching: boolean
   onToggle: () => void
 }) {
   const { t } = useTranslation()
   const status = stateText(projection, t)
-  const action = projection.desired ? t('streaming.toggle.disable') : t('streaming.toggle.enable')
+  const label = t(watching ? 'watch.active' : 'watch.title')
+  const action = t(watching ? 'watch.stop' : 'watch.title')
+  const visibleLabel =
+    watching && projection.activity !== 'idle'
+      ? t(projection.activity === 'hearing-speech' ? 'watch.hearing' : 'watch.recognizing')
+      : label
   return (
     <TooltipTrigger delay={200}>
       <ToggleButton
-        aria-label={`${t('streaming.control.label')}: ${status}. ${action}`}
-        isSelected={projection.desired}
+        aria-label={label}
+        isSelected={watching}
         isDisabled={projection.transport === 'stopping'}
         onChange={onToggle}
         UNSAFE_className={`listening-toggle streaming-${projection.transport} streaming-${projection.activity}`}
       >
-        <ListeningStatusIcon projection={projection} />
-        <Text>{t('streaming.control.label')}</Text>
+        {watching ? <ListeningStatusIcon projection={projection} /> : <DeviceDesktop />}
+        <Text>{visibleLabel}</Text>
       </ToggleButton>
       <Tooltip>{`${status} · ${action}`}</Tooltip>
     </TooltipTrigger>

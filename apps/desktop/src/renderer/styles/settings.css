@@ -810,17 +810,6 @@
   margin: 0;
 }
 
-.autonomy-settings-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.autonomy-advanced {
-  border: 1px solid var(--setup-border);
-  border-radius: 12px;
-}
-
 .autonomy-settings-loading {
   display: grid;
   min-height: 240px;
@@ -835,9 +824,5 @@
 
   .autonomy-master-action {
     justify-content: flex-start;
-  }
-
-  .autonomy-settings-grid {
-    grid-template-columns: 1fr;
   }
 }

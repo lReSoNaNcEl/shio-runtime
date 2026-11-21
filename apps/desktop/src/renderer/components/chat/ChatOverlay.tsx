@@ -1,3 +1,4 @@
+import { StatusLight } from '@react-spectrum/s2'
 import {
   type ClipboardEvent,
   type DragEvent,
@@ -32,6 +33,7 @@ import {
 import { useScreenContextAttachment } from './useScreenContextAttachment'
 
 interface Props {
+  playbackGaps?: number
   state: ControllerState
   capabilitySnapshot: ShioCapabilitySnapshot | null
   gateOpen?: boolean
@@ -48,6 +50,7 @@ export const ChatOverlay = forwardRef<ChatOverlayHandle, Props>(function ChatOve
   {
     state,
     capabilitySnapshot,
+    playbackGaps = 0,
     gateOpen = false,
     onOpenSpeechSettings,
     onOpenLlmSettings,
@@ -295,6 +298,29 @@ export const ChatOverlay = forwardRef<ChatOverlayHandle, Props>(function ChatOve
           />
         )}
         <ChatStatus state={state} />
+        {state.continuousListening.desired && (
+          <div aria-live="polite">
+            {state.continuousListening.activeMicrophone && (
+              <StatusLight variant="positive" size="S">
+                {t('streaming.activeMicrophone', {
+                  name:
+                    state.continuousListening.activeMicrophone.label ||
+                    t('streaming.unnamedDevice'),
+                })}
+              </StatusLight>
+            )}
+            {!!state.continuousListening.audioGapCount && (
+              <StatusLight variant="notice">
+                {t('watch.microphoneGaps', { count: state.continuousListening.audioGapCount })}
+              </StatusLight>
+            )}
+            {playbackGaps > 0 && (
+              <StatusLight variant="notice">
+                {t('watch.playbackGaps', { count: playbackGaps })}
+              </StatusLight>
+            )}
+          </div>
+        )}
         <ScreenContextInputFeedback
           error={screenContext.error}
           failure={turnFailure}

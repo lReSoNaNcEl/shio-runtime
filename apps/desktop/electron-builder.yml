@@ -13,13 +13,26 @@ asarUnpack:
   # between the virtual app.asar tree and its unpacked counterpart.
   - node_modules/**/*
 extraResources:
-  - from: motion
-    to: motion-source
+  - from: flashmotion
+    to: motion-runtime/flashmotion
     filter:
-      - '*.py'
-      - '*.json'
-      - requirements-research.lock.txt
-      - licenses/**/*
+      - worker.py
+      - catalog.py
+      - retarget.py
+      - setup.sh
+  - from: motion
+    to: motion-runtime/motion
+    filter:
+      - protocol.py
+      - motion-profiles.json
+  - from: qualifications/flashmotion
+    to: motion-runtime/qualifications/flashmotion
+    filter:
+      - assets.py
+      - build_cuda.py
+      - rebuild_s2g_stats.py
+      - t2m.py
+      - timing.py
   - from: resources/desktop-control
     to: app.asar.unpacked/desktop-control
     filter:

@@ -1,5 +1,5 @@
 import type {
-  BodyTurnIntent,
+  BodyActionIntent,
   GeneratedMotionHealth,
   MotionPhaseId,
 } from '../../../../shared/motion'
@@ -18,7 +18,7 @@ export interface GeneratedMotionRequestContext {
   forceReplay: boolean
   frame?: number
   motionLayer: AvatarBodyMotionLayer
-  bodyAction?: BodyTurnIntent
+  bodyAction?: BodyActionIntent
 }
 
 /** Bounded metadata from the single body owner; never poses or synthetic clips. */

@@ -75,6 +75,19 @@ export class AvatarBehaviorResolver {
     this.cameraMode = cameraMode
   }
 
+  resolveSpeakingPresence(effect: AvatarStateEffect): AvatarBehaviorResolution {
+    return {
+      behaviorId: this.normalizeBehavior(effect.behaviorId),
+      candidates: [],
+      animationId: SPEAKING_FALLBACK_ANIMATION_ID,
+      loop: true,
+      motionLayer: 'base',
+      fallbackAnimationId: FALLBACK_ANIMATION_ID,
+      activeCooldowns: this.getActiveCooldowns(),
+      selectionReason: 'speech-driven presence',
+    }
+  }
+
   resolve(
     effect: AvatarStateEffect,
     excludedAnimationIds: readonly string[] = [],

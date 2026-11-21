@@ -1,3 +1,7 @@
+import { z } from 'zod'
+
+export const speechVolumePercentSchema = z.number().int().min(0).max(100)
+
 export interface DeveloperModeDefaults {
   developerModeEnabled: string
   developerOverlayAnimationHudEnabled: string

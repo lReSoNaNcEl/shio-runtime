@@ -69,15 +69,23 @@ describe('standing motion contract v2', () => {
   })
 
   it('derives exactly the new standing preset with both complete hands and honest qualification', () => {
-    expect(MOTION_PROFILE_IDS).toHaveLength(32)
+    expect(MOTION_PROFILE_IDS).toHaveLength(33)
     expect(MOTION_PROFILES.map((p) => p.id)).toEqual([...MOTION_PROFILE_IDS])
     for (const profile of MOTION_PROFILES) {
       expect(profile.exitPosture).toBe('standing')
-      if (profile.id.endsWith('_close') && profile.qualification.state === 'draft') {
+      if (
+        (profile.id.endsWith('_close') || profile.id === 'dance_in_place') &&
+        profile.qualification.state === 'draft'
+      ) {
         expect(profile.automaticSelection).toBe(false)
         expect(profile.defaultWeight).toBe(0)
       } else {
-        expect(profile.qualification.state).toBe(profile.physicalAction ? 'draft' : 'qualified')
+        expect(profile.qualification.state).toBe('qualified')
+      }
+      if (profile.physicalAction) {
+        expect(profile.automaticSelection).toBe(false)
+        expect(profile.defaultWeight).toBe(0)
+        expect(Object.values(profile.usage).every((enabled) => !enabled)).toBe(true)
       }
       expect(profile.phases.map((p) => p.id)).toEqual(['prepare', 'stroke', 'hold', 'recover'])
       for (const score of Object.values(profile.handScore.phases)) {

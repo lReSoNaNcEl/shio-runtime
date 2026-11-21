@@ -33,10 +33,17 @@ interface Props {
   isOpen: boolean
   onDismiss: () => void
   onChangeModel: () => void
-  onAttach: (capture: ScreenContextCaptureDescriptor) => void
+  onWatch?: (sourceId: string, sourceName: string) => void
+  onAttach?: (capture: ScreenContextCaptureDescriptor) => void
 }
 
-export function ScreenContextPicker({ isOpen, onDismiss, onChangeModel, onAttach }: Props) {
+export function ScreenContextPicker({
+  isOpen,
+  onDismiss,
+  onChangeModel,
+  onAttach,
+  onWatch,
+}: Props) {
   const { t } = useTranslation()
   const [state, setState] = useState<PickerState>('checking-capability')
   const [sources, setSources] = useState<ScreenContextSource[]>([])
@@ -120,6 +127,13 @@ export function ScreenContextPicker({ isOpen, onDismiss, onChangeModel, onAttach
 
   const attach = async (): Promise<void> => {
     if (!selectedId) return
+    if (onWatch) {
+      const source = sources.find((candidate) => candidate.id === selectedId)
+      if (!source) return
+      onWatch(source.id, source.name)
+      onDismiss()
+      return
+    }
     setState('capturing')
     setErrorCode(null)
     const operationId = ++operationIdRef.current
@@ -140,7 +154,7 @@ export function ScreenContextPicker({ isOpen, onDismiss, onChangeModel, onAttach
         setState('error')
         return
       }
-      onAttach(result.value)
+      onAttach?.(result.value)
       onDismiss()
     } catch {
       if (operationId !== operationIdRef.current) return
@@ -157,9 +171,10 @@ export function ScreenContextPicker({ isOpen, onDismiss, onChangeModel, onAttach
     <DialogContainer onDismiss={onDismiss}>
       {isOpen && (
         <Dialog size="L" isDismissible>
-          <Heading>{t('screenContext.picker.title')}</Heading>
+          <Heading>{t(onWatch ? 'watch.title' : 'screenContext.picker.title')}</Heading>
           <Content>
             <div className="screen-context-picker">
+              {onWatch && <Text>{t('watch.description')}</Text>}
               {busy && (
                 <div className="screen-context-picker-state">
                   <ProgressCircle aria-label={t('common.loading')} isIndeterminate size="L" />
@@ -264,7 +279,7 @@ export function ScreenContextPicker({ isOpen, onDismiss, onChangeModel, onAttach
                   }
                   UNSAFE_className="shio-accent-button"
                 >
-                  {t('screenContext.picker.attach')}
+                  {t(onWatch ? 'watch.start' : 'screenContext.picker.attach')}
                 </Button>
               )}
             </div>

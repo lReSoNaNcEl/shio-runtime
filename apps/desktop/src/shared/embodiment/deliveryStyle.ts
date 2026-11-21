@@ -3,7 +3,7 @@ import { z } from 'zod'
 import type { MoodState } from '../alive'
 import { EMBODIMENT_STYLE_CONTRACT } from './embodimentStyle.generated'
 
-/** Bounded body-delivery axes shared by renderer embodiment and the MotionBricks worker. */
+/** Bounded body-delivery axes shared by renderer embodiment. */
 export const DELIVERY_STYLE_AXES = [
   'openness',
   'height',

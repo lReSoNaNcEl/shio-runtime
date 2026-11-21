@@ -81,7 +81,7 @@ export function registerIpcHandlers(
     })
     .strict()
     .superRefine((value, context) => {
-      if (value.origin === 'autonomous' && value.screenContextId) {
+      if (value.origin && value.origin !== 'user' && value.screenContextId) {
         context.addIssue({
           code: z.ZodIssueCode.custom,
           path: ['screenContextId'],
@@ -221,6 +221,7 @@ export function registerIpcHandlers(
             provider: selector.provider,
             apiKey: selector.apiKey,
             model: selector.model,
+            reasoningEffort: selector.reasoningEffort,
             accountId: selector.accountId,
           }))
           try {

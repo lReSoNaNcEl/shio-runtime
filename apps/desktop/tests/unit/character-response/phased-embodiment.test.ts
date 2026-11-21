@@ -56,6 +56,37 @@ describe('versioned semantic embodiment', () => {
     expect(filter.takeEmbodimentIntents()).toEqual([{ intent, timing: 'late' }])
   })
 
+  it('accepts bounded contextual movement without exposing it to speech', () => {
+    const expected = {
+      intensity: 'subtle',
+      gazeHint: 'user',
+      performance: {
+        lean: 0.25,
+        lateralLean: -0.2,
+        gestureAmount: 0.3,
+        handBias: -0.4,
+        pauseGaze: 'away',
+      },
+    }
+    const filter = new SafeCharacterStreamFilter()
+    const deltas = [
+      ...filter.push(
+        `[calm]<shio-intent>${JSON.stringify({ version: 2, ...expected })}</shio-intent>Я рядом.`,
+      ),
+      ...filter.flush(),
+    ]
+    expect(deltas.map((part) => part.text).join('')).toBe('Я рядом.')
+    expect(filter.takeEmbodimentIntents()).toEqual([{ intent: expected, timing: 'early' }])
+    for (const fields of [{ lean: 1.01 }, { handBias: -Infinity }, { gazeTarget: [0, 1, 2] }]) {
+      expect(
+        normalizeCharacterEmbodimentIntent({
+          ...expected,
+          performance: { ...expected.performance, ...fields },
+        }),
+      ).toBeUndefined()
+    }
+  })
+
   it('contains malformed, oversized, unknown, truncated and quoted controls', () => {
     for (const candidate of [
       envelope.replace('"version":2', '"version":3'),

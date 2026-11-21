@@ -155,7 +155,7 @@ export class ConversationAdmissionCoordinator {
     settle?: (result: ConversationCompletionResult) => void,
   ): ConversationAdmissionOutcome {
     if (input.source === 'continuous_listening' && buffered) return this.enqueueStreaming(buffered)
-    if (input.source === 'text_chat' || input.source === 'push_to_talk') {
+    if (input.source === 'text_chat' || input.source === 'push_to_talk' || input.watchVoice) {
       this.selector.cancel()
       if (input.source === 'text_chat') this.backlog.discardWeak()
       this.pendingExplicit?.settle?.({

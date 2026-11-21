@@ -43,33 +43,9 @@ export interface MemoryRuntimeStatus {
   lastErrorCode?: MemoryErrorCode
 }
 
-export type HabitType = 'routine' | 'shared-joke' | 'interaction-style' | 'recurring-topic'
-
-export interface HabitRecord {
-  id: string
-  key: string
-  type: HabitType
-  summary: string
-  evidenceCount: number
-  confidence: number
-  firstObservedAt: number
-  lastObservedAt: number
-  lastUsedAt?: number
-  status: 'candidate' | 'approved' | 'rejected' | 'disabled'
-}
-
-export interface CompletedMemoryFact {
-  eventId: string
-  kind: 'action-verified'
-  entityId: string
-  at: number
-}
-
 export interface RelationshipContext {
   familiarity: number
   warmth: number
-  teasingComfort: number
-  recurringMotifs: readonly string[]
   relevantSharedHistory: readonly string[]
 }
 

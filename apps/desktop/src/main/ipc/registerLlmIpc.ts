@@ -115,7 +115,7 @@ export function registerLlmIpc({
 
   const credentialSchema = z
     .object({
-      provider: providerSchema,
+      provider: providerSchema.refine((provider) => provider !== 'codex-cli'),
       accountId: accountIdSchema,
       apiKey: z
         .string()

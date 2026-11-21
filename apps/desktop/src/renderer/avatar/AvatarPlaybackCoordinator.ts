@@ -1,4 +1,4 @@
-import type { BodyTurnIntent } from '../../shared/motion'
+import type { BodyActionIntent } from '../../shared/motion'
 import type { AvatarAnimationController } from './AvatarAnimationController'
 import {
   AvatarAnimationQueue,
@@ -36,7 +36,7 @@ interface PlaybackRequestInput {
 }
 
 interface DirectPlaybackInput {
-  bodyAction?: BodyTurnIntent
+  bodyAction?: BodyActionIntent
   seed?: number
   item: AvatarAnimationQueueItem
   fallbackAnimationId?: AnimationId
@@ -394,7 +394,7 @@ export class AvatarPlaybackCoordinator {
   }
 
   previewAnimation(input: {
-    bodyAction?: BodyTurnIntent
+    bodyAction?: BodyActionIntent
     requestSource?: AvatarPlaybackRequestSource
     seed?: number
     animationId: string
@@ -404,18 +404,22 @@ export class AvatarPlaybackCoordinator {
   }): void {
     const previous = this.currentPlaybackContext
     const previousItem = this.animationQueue.getCurrent()
+    const requested = input.requestSource === 'character-state'
+    const source = input.requestSource ?? 'debug-preview'
+    const reason = requested ? 'explicit conversation motion' : 'manual debug preview'
     const fallbackAnimationId =
       previous?.completionFallbackAnimationId ??
       (previousItem?.loop
         ? (getAnimation(previousItem.animationId)?.id as AnimationId | undefined)
-        : undefined)
+        : undefined) ??
+      (requested ? 'presence_poised' : undefined)
     const item: AvatarAnimationQueueItem = {
       id: 0,
       animationId: input.animationId,
-      behaviorId: 'debug-preview',
+      behaviorId: requested ? 'requested-motion' : 'debug-preview',
       mode: input.mode,
       loop: input.loop,
-      motionLayer: 'base',
+      motionLayer: requested && !input.bodyAction ? 'gesture' : 'base',
       enqueueTime: Date.now(),
       interruptible: true,
     }
@@ -426,8 +430,8 @@ export class AvatarPlaybackCoordinator {
     this.playQueuedItem({
       item,
       fallbackAnimationId,
-      source: input.requestSource ?? 'debug-preview',
-      reason: 'manual debug preview',
+      source,
+      reason,
       bodyAction: input.bodyAction,
       seed: input.seed,
       frame: input.frame,
@@ -436,9 +440,9 @@ export class AvatarPlaybackCoordinator {
     this.recordPlaybackRequest({
       frame: input.frame,
       animationId: input.animationId,
-      behaviorId: 'debug-preview',
-      source: 'debug-preview',
-      reason: 'manual debug preview',
+      behaviorId: item.behaviorId,
+      source,
+      reason,
       accepted: true,
       decision: 'play',
       rejectionReason: null,

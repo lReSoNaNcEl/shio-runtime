@@ -7,6 +7,7 @@ import {
   type MotionPhaseId,
 } from '../../../../shared/motion'
 import type { MotionOutcome } from '../../MotionPhaseExecution'
+import { type PivotTurnPlan, planPivotTurn } from './PivotTurnPlan'
 import {
   ProceduralTurnPlanner,
   type TurnPlanningState,
@@ -77,12 +78,15 @@ export class TurnInPlaceMotion {
   private minimumBalanceMargin = Infinity
   private maxSearchSliceMs = 0
   private forecastMisses = 0
+  private pivot: PivotTurnPlan | null = null
+  private pivotSupporting = false
 
   constructor(
     private readonly vrm: VRM,
     request: BodyTurnIntent,
     _seed: number,
     private readonly baseHeading = 0,
+    preferPivot = false,
   ) {
     this.intent = bodyTurnIntentSchema.parse(request)
     const hips = vrm.humanoid.getNormalizedBoneNode('hips')
@@ -116,13 +120,26 @@ export class TurnInPlaceMotion {
     const floor = Math.min(...this.feet.map((foot) => foot.target.y))
     for (const foot of this.feet)
       foot.support = foot.target.y <= floor + this.planner.legLength * 0.015
-    this.selectPlan()
+    if (preferPivot && request.tempo >= 1)
+      this.pivot = planPivotTurn(
+        this.state(),
+        this.planner,
+        this.direction,
+        vrm.meta.metaVersion === '0' ? -1 : 1,
+      )
+    if (!this.pivot) this.selectPlan()
   }
 
   get preparationProgress(): number {
+    if (this.pivot) return Math.min(1, this.elapsed / this.pivot.takeoff)
     return this.phase === 'prepare' && this.plan
       ? Math.min(1, (this.elapsed - this.plan.start) / this.plan.transferDuration)
       : 1
+  }
+
+  get upperBodyProgress(): number {
+    if (this.pivot) return Math.min(1, this.elapsed / this.pivot.end)
+    return Math.min(1, this.elapsed / 3)
   }
 
   requestStop(outcome: 'cancelled' | 'superseded' = 'cancelled'): void {
@@ -131,6 +148,10 @@ export class TurnInPlaceMotion {
       this.forecast = null
       this.stabilized = false
       if (this.plan) this.plan.continuation = undefined
+      if (this.pivot && this.elapsed <= this.pivot.takeoff) {
+        this.pivot = null
+        this.selectPlan()
+      }
     }
   }
 
@@ -307,13 +328,19 @@ export class TurnInPlaceMotion {
   advance(seconds: number): void {
     if (this.outcome) return
     this.composeRoot()
+    if (this.pivot) {
+      this.advancePivot(this.pivot, seconds)
+      return
+    }
     this.pumpSearch()
     if (!this.plan) {
       if (!this.interrupt && this.forecast?.result === undefined) return
       this.selectPlan()
       if (!this.plan || this.outcome) return
     }
-    let remaining = Math.max(0, Math.min(0.05, seconds))
+    // The primary renderer may deliver a slow frame. Integrate the bounded
+    // elapsed interval in contact-checked substeps instead of slowing the turn.
+    let remaining = Math.max(0, Math.min(0.1, seconds))
     this.seconds = remaining
     if (
       performance.now() - this.wallStarted > 45000 ||
@@ -326,7 +353,7 @@ export class TurnInPlaceMotion {
     for (let segment = 0; remaining > 1e-10 && segment < 8 && !this.outcome; segment++) {
       const plan = this.plan
       if (!plan) break
-      const used = Math.min(remaining, Math.max(0, plan.end - this.elapsed))
+      const used = Math.min(remaining, 1 / 30, Math.max(0, plan.end - this.elapsed))
       this.elapsed += used
       this.phaseElapsed += used
       remaining -= used
@@ -359,7 +386,7 @@ export class TurnInPlaceMotion {
         this.failed = true
         this.interrupt ??= 'failed'
       }
-      if (this.elapsed < plan.end - 1e-9) break
+      if (this.elapsed < plan.end - 1e-9) continue
       // Verify the actual landing before acquiring it. Preserve elapsed remainder.
       if (this.recovering) {
         this.outcome = valid
@@ -383,6 +410,40 @@ export class TurnInPlaceMotion {
         foot.support = true
       }
       this.selectPlan()
+    }
+  }
+
+  private advancePivot(pivot: PivotTurnPlan, seconds: number): void {
+    let remaining = Math.max(0, Math.min(0.1, seconds))
+    this.seconds = remaining
+    while (remaining > 1e-9 && !this.outcome) {
+      const dt = Math.min(remaining, 1 / 60, pivot.end - this.elapsed)
+      remaining -= dt
+      this.elapsed += dt
+      const pose = pivot.sample(this.elapsed)
+      if (pose.supporting !== null && !this.pivotSupporting) this.contactReleases++
+      this.pivotSupporting = pose.supporting !== null
+      const phase =
+        this.elapsed >= pivot.landing ? 'recover' : this.pivotSupporting ? 'stroke' : 'prepare'
+      this.phaseElapsed = this.phase === phase ? this.phaseElapsed + dt : dt
+      this.phase = phase
+      this.heading = pose.heading
+      this.angularVelocity = pose.angularVelocity
+      this.angularAcceleration = pose.angularAcceleration
+      this.comVelocity.copy(pose.comVelocity)
+      this.comAcceleration.copy(pose.comAcceleration)
+      this.rootPosition.copy(pose.root)
+      this.balanceMargin = pose.balanceMargin
+      this.minimumBalanceMargin = Math.min(this.minimumBalanceMargin, pose.balanceMargin)
+      for (const [index, foot] of this.feet.entries()) {
+        foot.target.copy(pose.contacts[index].position)
+        foot.orientation.copy(pose.contacts[index].orientation)
+        foot.support = pose.supporting === null || pose.supporting === index
+      }
+      this.composeRoot()
+      if (!this.solveLegs()) this.failed = true
+      if (this.elapsed >= pivot.end - 1e-9)
+        this.outcome = this.failed ? 'failed' : (this.interrupt ?? 'completed')
     }
   }
 
@@ -415,7 +476,7 @@ export class TurnInPlaceMotion {
 
   private solveLegs(): boolean {
     let valid = this.balanceMargin >= -0.001
-    for (const leg of this.feet) {
+    for (const [index, leg] of this.feet.entries()) {
       const pole = new THREE.Vector3(
         0,
         0,
@@ -424,6 +485,15 @@ export class TurnInPlaceMotion {
       plantLeg(leg.upper, leg.lower, leg.foot, leg.target, leg.orientation, pole)
       const error = leg.foot.getWorldPosition(new THREE.Vector3()).distanceTo(leg.target)
       if (leg.support) this.maxSupportDrift = Math.max(this.maxSupportDrift, error)
+      if (this.pivot && this.pivotSupporting && index === this.pivot.stance) {
+        const contact = this.pivot.localPivot
+          .clone()
+          .applyQuaternion(leg.foot.getWorldQuaternion(new THREE.Quaternion()))
+          .add(leg.foot.getWorldPosition(new THREE.Vector3()))
+        const drift = contact.distanceTo(this.pivot.anchor)
+        this.maxSupportDrift = Math.max(this.maxSupportDrift, drift)
+        valid &&= drift <= 0.003
+      }
       valid &&=
         error <= 0.003 &&
         leg.foot.getWorldQuaternion(new THREE.Quaternion()).angleTo(leg.orientation) < 0.03

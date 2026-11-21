@@ -29,6 +29,7 @@ const VARIANT: Record<ApplicationHealth, 'positive' | 'notice' | 'negative'> = {
 const PROVIDER_NAME = {
   groq: 'Groq',
   mistral: 'Mistral',
+  'codex-cli': 'Codex CLI',
   openrouter: 'OpenRouter',
   cloudflare: 'Cloudflare',
 } as const

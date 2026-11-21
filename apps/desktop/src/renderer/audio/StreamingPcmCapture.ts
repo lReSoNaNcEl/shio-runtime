@@ -2,6 +2,7 @@ const TARGET_SAMPLE_RATE = 16_000
 
 export class StreamingPcmCapture {
   private stream: MediaStream | null = null
+  private captureDeviceId = 'default'
   private audioContext: AudioContext | null = null
   private source: MediaStreamAudioSourceNode | null = null
   private worklet: AudioWorkletNode | null = null
@@ -50,6 +51,16 @@ export class StreamingPcmCapture {
       },
       video: false,
     })
+    this.captureDeviceId = deviceId || 'default'
+    await this.startStream(stream, onFrame, onDeviceLost)
+  }
+
+  /** Takes ownership of an already granted audio source. */
+  async startStream(
+    stream: MediaStream,
+    onFrame: (frame: ArrayBuffer) => void,
+    onDeviceLost?: () => void,
+  ): Promise<void> {
     const audioContext = new AudioContext()
     try {
       if (audioContext.state === 'suspended') await audioContext.resume()
@@ -122,6 +133,19 @@ export class StreamingPcmCapture {
         this.audioContext.state !== 'closed' &&
         this.stream?.getAudioTracks().some((track) => track.readyState === 'live'),
     )
+  }
+
+  activeMicrophone(
+    selectedDeviceId: string,
+  ): { label: string; changePending: boolean } | undefined {
+    const track = this.stream?.getAudioTracks().find((candidate) => candidate.readyState === 'live')
+    if (!track) return undefined
+    const selection = selectedDeviceId || 'default'
+    return {
+      label: track.label.trim().slice(0, 160),
+      changePending:
+        selection !== this.captureDeviceId && selection !== track.getSettings().deviceId,
+    }
   }
 
   private handleNativeFrame(frame: Float32Array): void {

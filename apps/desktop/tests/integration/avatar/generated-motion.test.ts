@@ -7,6 +7,7 @@ import type { GeneratedMotionRequestContext } from '../../../src/renderer/avatar
 import { resolveDeliveryStyle } from '../../../src/shared/embodiment'
 import {
   bodyPresentationSchema,
+  FLASH_MOTION_FORMAT,
   getMotionProfile,
   type MotionActivity,
   type MotionChunk,
@@ -190,6 +191,47 @@ describe('generated-motion diagnostic ownership', () => {
   })
 })
 describe('generated body timeline', () => {
+  it('composes different contextual stances over one carrier while keeping both feet planted', async () => {
+    const { owner, bones, next } = fixture('1', 0, true)
+    next.mockImplementation(async (input) => ({
+      ok: true,
+      chunk: {
+        ...chunk(input.fromFrame),
+        profileId: input.profileId,
+        seed: input.lease.seed,
+        sourceProvider: 'flashmotion',
+        flashMotion: { mode: 't2m', weightsRevision: FLASH_MOTION_FORMAT.weightsRevision },
+      },
+    }))
+    await owner.playProfile('presence_poised', context)
+    await tick(owner, 40)
+    const foot = (side: string) =>
+      bones.get(`${side}Foot`)?.getWorldPosition(new THREE.Vector3()) ?? new THREE.Vector3()
+    const left = foot('left')
+    const right = foot('right')
+    owner.setConversationPerformance({
+      lean: 0.8,
+      lateralLean: -0.5,
+      gestureAmount: 0.32,
+      handBias: -0.6,
+    })
+    await tick(owner, 95)
+    const first = bones.get('spine')?.quaternion.clone()
+    expect(first).toBeDefined()
+    owner.setConversationPerformance({
+      lean: -0.8,
+      lateralLean: 0.5,
+      gestureAmount: 0.82,
+      handBias: 0.6,
+    })
+    await tick(owner, 95)
+    expect(
+      first?.angleTo(bones.get('spine')?.quaternion ?? new THREE.Quaternion()),
+    ).toBeGreaterThan(0.04)
+    expect(foot('left').distanceTo(left)).toBeLessThan(0.01)
+    expect(foot('right').distanceTo(right)).toBeLessThan(0.01)
+  })
+
   it('never integrates more physical time than the render interval when consumed PCM catches up', () => {
     const { owner } = fixture()
     const clock = {

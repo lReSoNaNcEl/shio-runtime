@@ -32,8 +32,6 @@ function world(overrides: Partial<WorldContextSnapshot> = {}): WorldContextSnaps
       systemSources: {
         globalIdleMs: 0,
         foregroundApplicationMs: 0,
-        runningApplicationsMs: null,
-        systemLoadMs: null,
       },
     },
     ...overrides,

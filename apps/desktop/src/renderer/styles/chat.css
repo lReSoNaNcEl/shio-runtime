@@ -807,6 +807,17 @@
   align-items: center;
   gap: 8px;
 }
+.watch-preview-content {
+  display: grid;
+  gap: 8px;
+  overflow-wrap: anywhere;
+}
+.watch-preview-frame {
+  display: block;
+  width: 100%;
+  max-height: 40vh;
+  object-fit: contain;
+}
 /* Align the chat header content (title + controls) to the same centered 1100px
    column as the messages/composer, so their left/right edges line up. */
 .section-header:has(.chat-header-controls) {

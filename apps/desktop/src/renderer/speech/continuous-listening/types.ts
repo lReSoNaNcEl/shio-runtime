@@ -17,6 +17,8 @@ export type ConversationInputSource =
 export interface ConversationInput {
   turnId: string
   text: string
+  sharedViewing?: boolean
+  watchVoice?: boolean
   source: ConversationInputSource
   /** Allowed only for text_chat; all speech, backlog, and debug paths omit it. */
   screenContextId?: string
@@ -123,6 +125,8 @@ export interface ContinuousListeningProjection {
   transport: ContinuousListeningTransport
   activity: ContinuousListeningActivity
   microphoneCaptured: boolean
+  activeMicrophone?: { label: string; changePending: boolean }
+  audioGapCount?: number
   failure?: ContinuousListeningFailure
 }
 

@@ -12,11 +12,18 @@ import {
 import { style } from '@react-spectrum/s2/style' with { type: 'macro' }
 import { type Key, useEffect, useMemo, useState } from 'react'
 
-import { type LlmProviderId, type ModelInfo, type ProviderProfile } from '../../../shared/llm'
+import {
+  type LlmProviderId,
+  type LlmProviderPublicSettings,
+  type ModelInfo,
+  type ProviderProfile,
+  withCodexReasoningEffort,
+} from '../../../shared/llm'
 import { controller } from '../../Controller'
 import { type ControllerState } from '../../controller/contracts'
 import { useTranslation } from '../../localization/useTranslation'
 import { observeRendererPromise } from '../../reliability/observePromise'
+import { CodexReasoningPicker } from '../settings/CodexReasoningPicker'
 import { ModelComboBox } from '../settings/ModelComboBox'
 
 const fullWidth = style({ width: 'full' })
@@ -74,7 +81,11 @@ export function SetupCenter({
           setMicrophones(availableDevices.filter((device) => device.kind === 'audioinput'))
           const selectedProvider = currentConfig.llm.activeProvider
           const selectedAccountId = currentConfig.llm.providers[selectedProvider].accountId ?? ''
-          if (currentConfig.llm.providers[selectedProvider].credential.configured) {
+          if (
+            availableProviders.find((item) => item.id === selectedProvider)?.modelsRequireApiKey ===
+              false ||
+            currentConfig.llm.providers[selectedProvider].credential.configured
+          ) {
             observeRendererPromise(
               window.api.llm.fetchModels(selectedProvider, selectedAccountId).then((result) => {
                 if (active && result.ok) setModels(result.models ?? [])
@@ -97,11 +108,10 @@ export function SetupCenter({
     providerProfile?.requiresAccountId !== true || /^[a-f0-9]{32}$/iu.test(accountId.trim())
   const aiComplete =
     accountIdReady &&
-    credentialConfigured &&
+    (providerProfile?.requiresApiKey === false || credentialConfigured) &&
     Boolean(model) &&
-    state.llmReadiness.reason !== 'missing-credential' &&
-    state.llmReadiness.reason !== 'model-missing' &&
-    state.llmReadiness.reason !== 'checking'
+    state.llmReadiness.providerId === provider &&
+    state.llmReadiness.reason === 'ready'
   const readinessCopy = useMemo(
     () => t(`setup.ai.status.${state.llmReadiness.reason}`),
     [state.llmReadiness.reason, t],
@@ -153,7 +163,10 @@ export function SetupCenter({
     await loadModels()
   }
 
-  const saveModel = async (nextModel: string): Promise<void> => {
+  const saveModel = async (
+    nextModel: string,
+    settings?: LlmProviderPublicSettings,
+  ): Promise<void> => {
     if (!config) return
     const nextLlm = {
       ...config.llm,
@@ -161,7 +174,7 @@ export function SetupCenter({
       providers: {
         ...config.llm.providers,
         [provider]: {
-          ...config.llm.providers[provider],
+          ...(settings ?? config.llm.providers[provider]),
           accountId: accountId.trim(),
           model: nextModel,
         },
@@ -286,7 +299,9 @@ export function SetupCenter({
               styles={fullWidth}
             />
           )}
-          {credentialConfigured && !replaceCredential ? (
+          {provider === 'codex-cli' ? (
+            <Text>{t('settings.llm.codexLogin')}</Text>
+          ) : credentialConfigured && !replaceCredential ? (
             <div className="setup-inline-row">
               <StatusLight variant="positive" size="S">
                 {t('setup.ai.credentialSaved')}
@@ -344,17 +359,35 @@ export function SetupCenter({
               showImageFilter
               showVisionFilter
               showCapabilityDetails={false}
-              onSelect={(id) => void saveModel(id)}
+              onSelect={(id) => observeRendererPromise(saveModel(id), 'save Setup Center model')}
             />
             <ActionButton
               UNSAFE_className="setup-model-action"
-              isDisabled={!credentialConfigured || !accountIdReady}
+              isDisabled={
+                (providerProfile?.modelsRequireApiKey !== false && !credentialConfigured) ||
+                !accountIdReady
+              }
               isPending={aiAction === 'busy'}
               onPress={() => observeRendererPromise(loadModels(), 'refresh Setup Center models')}
             >
               {t('setup.ai.refreshModels')}
             </ActionButton>
           </div>
+          {provider === 'codex-cli' && config && (
+            <CodexReasoningPicker
+              options={models.find((entry) => entry.id === model)?.reasoning}
+              value={config.llm.providers[provider].codexReasoningByModel?.[model]}
+              onChange={(effort) =>
+                observeRendererPromise(
+                  saveModel(
+                    model,
+                    withCodexReasoningEffort(config.llm.providers[provider], model, effort),
+                  ),
+                  'save Setup Center reasoning effort',
+                )
+              }
+            />
+          )}
           <StatusLight
             variant={
               aiComplete

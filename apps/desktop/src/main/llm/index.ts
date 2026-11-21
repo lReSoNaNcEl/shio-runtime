@@ -54,7 +54,6 @@ export {
 export {
   LLM_ROLE_IDS,
   type LlmRoleId,
-  type LlmRoleSelection,
   type LlmRoleSources,
   type ResolvedLlmRoleSettings,
   resolveLlmRoleFallbacks,

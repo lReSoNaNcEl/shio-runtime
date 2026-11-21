@@ -4,8 +4,10 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 
 import {
+  DANCE_HORIZON_FRAMES,
+  FLASH_MOTION_FORMAT,
+  flashMotionReadySchema,
   getMotionProfile,
-  MOTION_FORMAT,
   MOTION_INFERENCE_DEADLINE_MS,
   MOTION_PHASE_IDS,
   type MotionActivity,
@@ -16,22 +18,24 @@ import {
   motionActivitySchema,
   motionChunkSchema,
   motionPlanIdentitySchema,
-  motionReadySchema,
   motionSeedSchema,
 } from '../../shared/motion'
+import { FlashMotionSpeech } from './FlashMotionSpeech'
 
 interface Pending {
   id: number
   frame: number
+  maxFrames: number
   profileId: string
   seed: number
   plan: MotionPlanIdentity
+  speech?: { playbackId: string; startSample: number; frames: number }
   resolve: (chunk: MotionChunk) => void
   reject: (error: Error) => void
   timeout: ReturnType<typeof setTimeout>
 }
 
-/** One Main-owned MotionBricks process. No renderer paths or arbitrary descriptions. */
+/** Owns the single generated-motion process and its renderer lease. */
 export class GeneratedMotionService {
   private process: ChildProcessWithoutNullStreams | null = null
   private state: MotionStatus['state'] = 'unavailable'
@@ -56,8 +60,9 @@ export class GeneratedMotionService {
   constructor(
     private readonly root: string,
     private readonly currentAssetHandle: () => string = () => '',
-    private readonly nativeHands = true,
     private readonly enabled = true,
+    private readonly flashSpeech = new FlashMotionSpeech(),
+    private readonly assets?: string,
   ) {}
 
   owns(owner: number, lease: MotionLease): boolean {
@@ -73,6 +78,8 @@ export class GeneratedMotionService {
       epoch: this.epoch,
       modelGeneration: this.modelGeneration,
       session: this.lease ? { ...this.lease } : null,
+      provider: 'flashmotion',
+      weightsRevision: FLASH_MOTION_FORMAT.weightsRevision,
     }
   }
 
@@ -93,11 +100,11 @@ export class GeneratedMotionService {
     if (this.closed) throw new Error('MOTION_CLOSED')
     if (this.stopping) await this.stopping
     if (this.closed) throw new Error('MOTION_CLOSED')
-    const python = join(
-      this.root,
-      '.venv',
-      process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python',
-    )
+    const interpreter = '/opt/shio-flashmotion/bin/python'
+    const python =
+      process.platform === 'win32'
+        ? join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'wsl.exe')
+        : interpreter
     if (!existsSync(python) || !existsSync(join(this.root, 'worker.py'))) {
       this.state = 'unavailable'
       this.error = 'MOTION_ASSETS_MISSING'
@@ -106,13 +113,20 @@ export class GeneratedMotionService {
     this.state = 'loading'
     this.error = null
     const environment: Record<string, string> = {
-      SHIO_MOTION_SOMA_HAND: this.nativeHands ? '1' : '0',
       PYTHONUTF8: '1',
       PYTHONUNBUFFERED: '1',
       HF_HUB_OFFLINE: '1',
       TRANSFORMERS_OFFLINE: '1',
-      TEMP: join(this.root, '.tmp'),
-      TMP: join(this.root, '.tmp'),
+    }
+    const distribution = process.env.SHIO_FLASHMOTION_WSL_DISTRO || 'ShioFlashMotionV1'
+    if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/u.test(distribution)) {
+      this.state = 'unavailable'
+      this.error = 'MOTION_ASSETS_MISSING'
+      throw new Error(this.error)
+    }
+    if (this.assets) {
+      environment.SHIO_FLASHMOTION_ASSETS = this.assets
+      if (process.platform === 'win32') environment.WSLENV = 'SHIO_FLASHMOTION_ASSETS/p'
     }
     for (const key of [
       'PATH',
@@ -128,7 +142,15 @@ export class GeneratedMotionService {
     ]) {
       if (process.env[key]) environment[key] = process.env[key]
     }
-    const child = spawn(python, [join(this.root, 'worker.py')], {
+    const args = [
+      ...(process.platform === 'win32'
+        ? ['--distribution', distribution, '--exec', interpreter]
+        : []),
+      '-B',
+      '-u',
+      'worker.py',
+    ]
+    const child = spawn(python, args, {
       cwd: this.root,
       env: environment,
       windowsHide: true,
@@ -160,23 +182,31 @@ export class GeneratedMotionService {
               this.state = 'warming'
               continue
             }
-            const ready = value.type === 'ready' ? motionReadySchema.safeParse(value) : null
-            if (ready?.success && !started) {
-              if (ready.data.format.sourceRevision !== MOTION_FORMAT.sourceRevision)
+            if (value.type === 'ready' && !started) {
+              if (!flashMotionReadySchema.safeParse(value).success)
                 throw new Error('MOTION_PROVIDER_IDENTITY_MISMATCH')
-              if (Boolean(ready.data.handModelRevision) !== this.nativeHands)
-                throw new Error('MOTION_HAND_PROVIDER_IDENTITY_MISMATCH')
               started = true
               clearTimeout(deadline)
               this.state = 'ready'
               resolve()
               continue
             }
-            if (value.type === 'error') throw new Error('MOTION_INFERENCE_FAILED')
+            if (value.type === 'error') {
+              const code = String(value.code)
+              throw new Error(
+                [
+                  'MOTION_ASSETS_MISSING',
+                  'MOTION_ASSET_HASH_MISMATCH',
+                  'MOTION_OUT_OF_MEMORY',
+                ].includes(code)
+                  ? code
+                  : 'MOTION_INFERENCE_FAILED',
+              )
+            }
             const chunk = motionChunkSchema.parse(value)
-            if (Boolean(chunk.handDeltas) !== this.nativeHands)
-              throw new Error('MOTION_HAND_PROVIDER_IDENTITY_MISMATCH')
+            if (!chunk.flashMotion) throw new Error('MOTION_PROVIDER_IDENTITY_MISMATCH')
             const pending = this.pending
+            const speech = chunk.flashMotion?.speech
             if (
               !pending ||
               chunk.id !== pending.id ||
@@ -186,14 +216,25 @@ export class GeneratedMotionService {
               JSON.stringify(chunk.plan) !== JSON.stringify(pending.plan) ||
               chunk.fromFrame !== pending.frame ||
               !this.matches(chunk) ||
-              chunk.startFrame !== pending.frame
+              chunk.startFrame !== pending.frame ||
+              chunk.rotations.length > pending.maxFrames ||
+              (speech &&
+                (!pending.speech ||
+                  speech.playbackId !== pending.speech.playbackId ||
+                  speech.startSample !== pending.speech.startSample ||
+                  speech.frames > pending.speech.frames))
             )
               throw new Error('MOTION_STALE_OR_INVALID_CHUNK')
+            if (speech && !this.flashSpeech.matches(speech.playbackId)) {
+              this.rejectPending('MOTION_STALE_SPEECH_WINDOW')
+              this.state = 'ready'
+              continue
+            }
             this.expectedFrame = chunk.startFrame + chunk.rotations.length
             clearTimeout(pending.timeout)
             this.pending = null
             this.state = 'ready'
-            pending.resolve({ ...chunk, sourceProvider: 'motionbricks' })
+            pending.resolve(chunk)
           } catch (error) {
             const code =
               error instanceof Error &&
@@ -201,10 +242,16 @@ export class GeneratedMotionService {
                 'MOTION_INFERENCE_FAILED',
                 'MOTION_STALE_OR_INVALID_CHUNK',
                 'MOTION_PROVIDER_IDENTITY_MISMATCH',
-                'MOTION_HAND_PROVIDER_IDENTITY_MISMATCH',
+                'MOTION_ASSETS_MISSING',
+                'MOTION_ASSET_HASH_MISMATCH',
+                'MOTION_OUT_OF_MEMORY',
               ].includes(error.message)
                 ? error.message
                 : 'MOTION_PROTOCOL_ERROR'
+            if (!started) {
+              clearTimeout(deadline)
+              reject(new Error(code))
+            }
             void this.stopProcess(code)
           }
         }
@@ -280,9 +327,12 @@ export class GeneratedMotionService {
       throw new Error('MOTION_STALE_SESSION')
     const profile = getMotionProfile(profileId)
     const parsedPlan = motionPlanIdentitySchema.safeParse(requestedPlan)
-    if (!profile || profile.physicalAction || !parsedPlan.success)
-      throw new Error('MOTION_INVALID_PLAN')
+    if (!profile || !parsedPlan.success) throw new Error('MOTION_INVALID_PLAN')
     const plan = parsedPlan.data
+    if (profile.physicalAction && (plan.clockDomain !== 'local' || plan.phaseId !== 'prepare'))
+      throw new Error('MOTION_INVALID_PLAN')
+    const dance = profile.physicalAction?.action === 'dance-in-place'
+    if (dance !== (plan.danceStyle !== undefined)) throw new Error('MOTION_INVALID_PLAN')
     const activity =
       requestedActivity === undefined ? undefined : motionActivitySchema.parse(requestedActivity)
     if (activity && plan.clockDomain === 'speech' && activity.playbackId !== plan.playbackId)
@@ -300,6 +350,7 @@ export class GeneratedMotionService {
         previous.continuityAnchor !== plan.continuityAnchor ||
         (sameExecution &&
           (plan.planRevision < previous.planRevision ||
+            plan.danceStyle !== previous.danceStyle ||
             MOTION_PHASE_IDS.indexOf(plan.phaseId) < MOTION_PHASE_IDS.indexOf(previous.phaseId) ||
             this.acceptedProfile !== profileId ||
             (plan.planRevision === previous.planRevision &&
@@ -327,11 +378,31 @@ export class GeneratedMotionService {
     this.acceptedPlan = plan
     this.acceptedProfile = profileId
     this.state = 'generating'
+    const speech =
+      profile.kind === 'presence' &&
+      activity?.speaking &&
+      activity.sourceStartSample !== undefined &&
+      plan.clockDomain === 'speech' &&
+      plan.playbackId
+        ? this.flashSpeech.window(plan.playbackId, activity.sourceStartSample)
+        : undefined
+    const requestedFrames = dance ? DANCE_HORIZON_FRAMES : profile.kind === 'presence' ? 24 : 60
     const generation = new Promise<MotionChunk>((resolve, reject) => {
       const timeout = setTimeout(() => {
         void this.stopProcess('MOTION_DEADLINE_MISS')
       }, MOTION_INFERENCE_DEADLINE_MS)
-      this.pending = { id, frame, profileId, seed: lease.seed, plan, resolve, reject, timeout }
+      this.pending = {
+        id,
+        frame,
+        maxFrames: requestedFrames,
+        profileId,
+        seed: lease.seed,
+        plan,
+        speech,
+        resolve,
+        reject,
+        timeout,
+      }
       const request = {
         id,
         sessionId: lease.sessionId,
@@ -345,6 +416,8 @@ export class GeneratedMotionService {
         reset: frame === 0,
         fromFrame: frame,
         ...(activity ? { activity } : {}),
+        ...(speech ? { speech } : {}),
+        frames: requestedFrames,
       }
       child.stdin.write(`${JSON.stringify(request)}\n`, (error) => {
         if (error) void this.stopProcess('MOTION_CHANNEL_FAILED')
@@ -440,22 +513,9 @@ export class GeneratedMotionService {
         reject(new Error('MOTION_TERMINATION_FAILED'))
       }
       const deadline = setTimeout(fail, 5000)
-      // Windows virtualenv launchers own a second Python process. Kill the exact
-      // experimental process tree before allowing the next GPU provider lease.
-      if (process.platform === 'win32' && child.pid) {
-        const terminator = spawn(
-          join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'taskkill.exe'),
-          ['/PID', String(child.pid), '/T', '/F'],
-          { windowsHide: true, stdio: 'ignore', env: { SystemRoot: process.env.SystemRoot } },
-        )
-        terminator.once('error', fail)
-        // A nonzero taskkill status leaves the launcher's child tree unconfirmed; the root
-        // process exit alone does not prove the GPU-owning Python process is gone.
-        terminator.once('exit', (status) => (status === 0 ? confirm() : fail()))
-        return
-      }
+      // The Linux worker watches stdin independently of inference and exits on EOF.
       child.once('exit', confirm)
-      child.kill('SIGKILL')
+      child.stdin.end()
     }).then(() => {
       this.stopping = null
       this.state = this.closed ? 'closed' : 'unavailable'

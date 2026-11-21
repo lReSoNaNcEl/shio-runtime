@@ -79,7 +79,6 @@ describe('fixed Preview variation seeds and physical recovery', () => {
     execution.phase = 'recover'
     Reflect.set(owner, 'execution', execution)
     Reflect.set(owner, 'appliedGeneratedSource', true)
-    Reflect.set(owner, 'somaHands', {})
     const finger = bones.get('rightIndexProximal')
     if (!finger) throw new Error('Missing finger')
     finger.quaternion.setFromAxisAngle(new THREE.Vector3(0, 0, 1), 0.9)

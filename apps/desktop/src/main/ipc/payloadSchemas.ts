@@ -13,6 +13,7 @@ import {
   TRANSITION_RECORDING_MAX_FRAMES,
 } from '../../shared/diagnostics'
 import { bodyTurnIntentSchema, generatedMotionHealthSchema } from '../../shared/motion'
+import { speechVolumePercentSchema } from '../configDefaults'
 
 function serializedSizeAtMost(value: unknown, maximumBytes: number): boolean {
   try {
@@ -55,6 +56,7 @@ export const configSaveSchema = z
     uiLocale: z.enum(['ru', 'en']).optional(),
     uiTheme: z.enum(['dark', 'light']).optional(),
     ttsLanguage: z.string().min(1).max(20).optional(),
+    speechVolumePercent: speechVolumePercentSchema.optional(),
     ttsEngine: z.string().min(1).max(100).optional(),
     micDeviceId: z.string().max(1_000).optional(),
     overlayWidth: z.string().max(20).optional(),

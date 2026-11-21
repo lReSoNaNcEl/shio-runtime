@@ -20,6 +20,7 @@ def request():
         reset=True,
         fromFrame=0,
         protocolVersion=2,
+        frames=24,
         plan=dict(
             executionId="execution",
             planRevision=0,
@@ -67,6 +68,33 @@ def test_accepts_exact_bounded_request():
     assert validate_request(r, PROFILES) == r
 
 
+def test_turn_accepts_only_a_local_preparation_horizon():
+    r = request()
+    r.update(profileId="turn_in_place", frames=60)
+    r["plan"]["handScoreRevision"] = PROFILES["turn_in_place"]["handScore"]["revision"]
+    assert validate_request(r, PROFILES) == r
+    for patch in (
+        {"phaseId": "stroke"},
+        {"clockDomain": "speech", "playbackId": "speech"},
+    ):
+        with pytest.raises(ValueError):
+            validate_request(r | {"plan": r["plan"] | patch}, PROFILES)
+
+
+def test_dance_requires_an_exact_bounded_style_and_horizon():
+    r = request()
+    r.update(profileId="dance_in_place", frames=120)
+    r["plan"]["handScoreRevision"] = PROFILES["dance_in_place"]["handScore"]["revision"]
+    with pytest.raises(ValueError):
+        validate_request(r, PROFILES)
+    r["plan"]["danceStyle"] = "smooth"
+    assert validate_request(r, PROFILES) == r
+    with pytest.raises(ValueError):
+        validate_request(r | {"plan": r["plan"] | {"danceStyle": "user prompt"}}, PROFILES)
+    with pytest.raises(ValueError):
+        validate_request(r | {"frames": 60}, PROFILES)
+
+
 @pytest.mark.parametrize(
     "field,value",
     [
@@ -105,7 +133,7 @@ def test_continuation_rejects_old_phase_and_unknown_history_anchor():
 def test_new_execution_requires_preparation_but_keeps_source_history():
     a = request()
     b = copy.deepcopy(a)
-    b.update(id=2, reset=False, fromFrame=8, profileId="greet_wave_soft")
+    b.update(id=2, reset=False, fromFrame=8, profileId="greet_wave_soft", frames=60)
     b["plan"].update(
         executionId="next-execution",
         phaseId="stroke",
@@ -119,10 +147,11 @@ def test_new_execution_requires_preparation_but_keeps_source_history():
 
 
 def test_all_profiles_have_explicit_bilateral_hands():
-    assert len(PROFILES) == 32
+    assert len(PROFILES) == 33
     for profile in PROFILES.values():
         if profile.get("physicalAction"):
-            assert profile["qualification"]["state"] == "draft"
+            assert profile["qualification"]["state"] in {"qualified", "draft"}
+            assert not profile["automaticSelection"]
             assert profile["supportPolicy"]["contacts"] == "alternating-feet"
             continue
         assert profile["supportPolicy"]["contacts"] == "both-feet-planted"

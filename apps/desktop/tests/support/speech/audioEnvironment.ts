@@ -3,7 +3,9 @@ import { vi } from 'vitest'
 export class FakeAnalyser {
   fftSize = 0
   connected = false
-  connect(): void {
+  target?: unknown
+  connect(target: unknown): void {
+    this.target = target
     this.connected = true
   }
   disconnect(): void {
@@ -17,7 +19,9 @@ export class FakeBufferSource {
   connected = false
   started = false
   stopped = false
-  connect(): void {
+  target?: unknown
+  connect(target: unknown): void {
+    this.target = target
     this.connected = true
   }
   disconnect(): void {
@@ -76,6 +80,15 @@ export function installAudioEnvironment() {
     currentTime = 0
     destination = {}
     analyser = new FakeAnalyser()
+    speechGain = {
+      gain: {
+        cancelAndHoldAtTime: vi.fn(),
+        linearRampToValueAtTime: vi.fn(),
+        setValueAtTime: vi.fn(),
+      },
+      connect: vi.fn(),
+      disconnect: vi.fn(),
+    }
     audioWorklet = { addModule: vi.fn(async () => undefined) }
     decodeAudioData = vi.fn(async (_buffer: ArrayBuffer) => createAudioBuffer())
     close = vi.fn(async () => {
@@ -86,6 +99,9 @@ export function installAudioEnvironment() {
     }
     createAnalyser(): AnalyserNode {
       return this.analyser as unknown as AnalyserNode
+    }
+    createGain(): GainNode {
+      return this.speechGain as unknown as GainNode
     }
     createBufferSource(): AudioBufferSourceNode {
       const source = new FakeBufferSource()
@@ -103,7 +119,9 @@ export function installAudioEnvironment() {
     constructor() {
       worklets.push(this)
     }
-    connect(): void {
+    target?: unknown
+    connect(target: unknown): void {
+      this.target = target
       this.connected = true
     }
     disconnect(): void {

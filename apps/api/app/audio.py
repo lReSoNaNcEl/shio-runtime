@@ -5,7 +5,7 @@ import scipy.io.wavfile as wavfile
 import scipy.signal as signal
 
 
-def load_wav(file_path: str, sr: int = 16000) -> tuple[np.ndarray, int]:
+def load_wav(file_path: str | io.BytesIO, sr: int = 16000) -> tuple[np.ndarray, int]:
     """Load WAV file and resample to target sample rate."""
     import soundfile as sf
 

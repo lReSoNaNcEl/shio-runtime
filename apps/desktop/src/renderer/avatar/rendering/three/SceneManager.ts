@@ -43,6 +43,7 @@ export class SceneManager {
   private handCameraRadius = 0
   private handCameraFitDistance = 0
   private modelHeight = 1.65
+  private modelWidth = 1.1
   private modelBase = 0
   private modelHeadY: number | null = null
   private modelFrontSign: -1 | 1 = -1
@@ -53,6 +54,15 @@ export class SceneManager {
   private running = false
   private disposed = false
   private renderQualityLogPending = false
+  private overlayView: { mode: OverlayViewMode; scale: number } = { mode: 'bust', scale: 1 }
+  private danceFraming = false
+  private cameraTransition: {
+    at: number
+    from: THREE.Vector3
+    to: THREE.Vector3
+    fromTarget: THREE.Vector3
+    toTarget: THREE.Vector3
+  } | null = null
 
   constructor(canvas: HTMLCanvasElement) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true })
@@ -224,8 +234,19 @@ export class SceneManager {
   }
 
   setOverlayCameraPreset(mode: OverlayViewMode, scale = 1): void {
+    this.overlayView = { mode, scale }
+    if (this.danceFraming) return
+    this.cameraTransition = null
     this.stopHandCamera()
-    const { position, target, fov } = resolveOverlayCameraView(
+    const { position, target, fov } = this.resolveOverlayView()
+    this.applyCameraView(position, target, fov)
+    this.controls.target.set(target.x, target.y, target.z)
+    this.controls.update()
+  }
+
+  private resolveOverlayView() {
+    const { mode, scale } = this.overlayView
+    return resolveOverlayCameraView(
       mode,
       {
         height: this.modelHeight,
@@ -235,9 +256,41 @@ export class SceneManager {
       },
       scale,
     )
-    this.applyCameraView(position, target, fov)
-    this.controls.target.set(target.x, target.y, target.z)
-    this.controls.update()
+  }
+
+  setDanceFraming(active: boolean): void {
+    if (this.danceFraming === active) return
+    this.danceFraming = active
+    const normal = this.resolveOverlayView()
+    const vertical = Math.tan(THREE.MathUtils.degToRad(normal.fov) / 2)
+    const width = this.modelWidth + 0.38
+    const heightFit = (this.modelHeight / vertical) * 0.63
+    const widthFit = (width / (vertical * Math.max(this.camera.aspect, 0.1))) * 0.54
+    const distance = Math.min(
+      this.controls.maxDistance,
+      Math.max(heightFit, Math.min(widthFit, heightFit * 1.12)),
+    )
+    const y = this.modelBase + this.modelHeight / 2
+    const { position, target } = active
+      ? { position: { x: 0, y, z: distance * this.modelFrontSign }, target: { x: 0, y, z: 0 } }
+      : normal
+    this.cameraTransition = {
+      at: performance.now(),
+      from: this.camera.position.clone(),
+      to: new THREE.Vector3(position.x, position.y, position.z),
+      fromTarget: this.controls.target.clone(),
+      toTarget: new THREE.Vector3(target.x, target.y, target.z),
+    }
+  }
+
+  private updateDanceFraming(now: number): void {
+    const transition = this.cameraTransition
+    if (!transition) return
+    const t = THREE.MathUtils.clamp((now - transition.at) / 420, 0, 1)
+    const weight = t * t * (3 - 2 * t)
+    this.camera.position.lerpVectors(transition.from, transition.to, weight)
+    this.controls.target.lerpVectors(transition.fromTarget, transition.toTarget, weight)
+    if (t === 1) this.cameraTransition = null
   }
 
   setTransparentBackground(enabled: boolean): void {
@@ -252,6 +305,7 @@ export class SceneManager {
     if (!bounds.isEmpty()) {
       this.modelHeight = Math.max(0.2, bounds.max.y - bounds.min.y)
       this.modelBase = bounds.min.y
+      this.modelWidth = Math.max(0.2, bounds.max.x - bounds.min.x)
     }
     const state = this.quality.configureModel(this.scene, this.renderer)
     this.renderQualityLogPending = true
@@ -302,6 +356,7 @@ export class SceneManager {
       const nextDpr = resolveEffectiveDpr(window.devicePixelRatio)
       if (nextDpr !== this.effectiveDpr) this.onResize()
       this.updateHandCamera()
+      this.updateDanceFraming(now)
       this.controls.update()
       this.syncLookAtAnchor()
       this.renderer.render(this.scene, this.camera)

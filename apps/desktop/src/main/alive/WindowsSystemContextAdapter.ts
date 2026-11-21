@@ -24,7 +24,6 @@ interface WindowsObservationPayload {
     processName?: unknown
     displayName?: unknown
   }[]
-  system?: { cpuLoad?: unknown; memoryLoad?: unknown }
 }
 
 export interface WindowsSystemContextAdapterOptions {
@@ -46,7 +45,7 @@ export class WindowsSystemContextAdapter implements SystemContextAdapter {
   }
 
   async observe(
-    request: SystemContextObservationRequest = { probes: SYSTEM_CONTEXT_PROBES },
+    request: SystemContextObservationRequest = { probes: ['foreground-application'] },
   ): Promise<SystemContextObservation> {
     const now = this.options.now?.() ?? Date.now()
     const probes = uniqueProbes(request.probes)
@@ -78,7 +77,6 @@ export class WindowsSystemContextAdapter implements SystemContextAdapter {
       ...(sampledProbes.includes('running-applications')
         ? { runningApplications: runningApplications(payload.runningApplications) }
         : {}),
-      ...(sampledProbes.includes('system-load') ? { system: systemLoad(payload.system) } : {}),
       status,
     }
   }
@@ -135,7 +133,7 @@ function runningApplications(
   return Object.freeze(
     (Array.isArray(value) ? value : [])
       .flatMap((application) => {
-        const processName = boundedString(application.processName, 120)
+        const processName = boundedString(application?.processName, 120)
         if (!processName) return []
         const displayName = boundedString(application.displayName, 160)
         return [{ processName, ...(displayName ? { displayName } : {}) }]
@@ -144,23 +142,8 @@ function runningApplications(
   )
 }
 
-function systemLoad(
-  value: WindowsObservationPayload['system'],
-): NonNullable<SystemContextObservation['system']> {
-  return {
-    cpuLoad: boundedLoad(value?.cpuLoad),
-    memoryLoad: boundedLoad(value?.memoryLoad),
-  }
-}
-
 function boundedString(value: unknown, maximum: number): string | undefined {
   return typeof value === 'string' && value.trim() ? value.trim().slice(0, maximum) : undefined
-}
-
-function boundedLoad(value: unknown): number | undefined {
-  return typeof value === 'number' && Number.isFinite(value)
-    ? Math.max(0, Math.min(100, value))
-    : undefined
 }
 
 function retryDelay(consecutiveFailures: number): number {

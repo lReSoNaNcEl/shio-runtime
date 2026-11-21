@@ -100,7 +100,7 @@ async function qualifyConversation({
       autonomousSmoke || subset ? 'diagnostic subset; no final acceptance' : 'full scenario',
     autonomyMode: 'off; proactive initiative requires separate policy qualification',
     schedule: cases.map(({ id, at }) => ({ id, at })),
-    source: `Unmodified CharacterResponsePort; actual Main LLM, Fish, ${report.motionProvider || 'motionbricks'}; Chat + Overlay`,
+    source: `Unmodified CharacterResponsePort; actual Main LLM, Fish, ${report.motionProvider}; Chat + Overlay`,
     cases: [],
     visualAcceptance: 'pending',
     selectedView: await page.evaluate(async () => {
@@ -759,14 +759,14 @@ async function qualifyConversation({
       minIntervalMs,
       frameStride,
       summaryOnly,
-      captureFingers: report.nativeSomaHand && !process.argv.includes('--body-trace-only'),
+      captureFingers: !process.argv.includes('--body-trace-only'),
     })
     await installStabilizationProbe(overlay, {
       maxFrames,
       minIntervalMs,
       frameStride,
       summaryOnly,
-      captureFingers: report.nativeSomaHand && !process.argv.includes('--body-trace-only'),
+      captureFingers: !process.argv.includes('--body-trace-only'),
     })
   }
   const started = Date.now()

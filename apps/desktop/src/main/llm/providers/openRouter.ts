@@ -27,9 +27,15 @@ export const openRouterProvider: ProviderDefinition = {
     supportsStreaming: true,
     headers: { 'HTTP-Referer': 'Shio Runtime', 'X-Title': 'Shio Runtime' },
   },
-  fetchModels: async (http) => {
+  resolveCapabilities: (model, base) =>
+    model === 'nvidia/nemotron-3.5-super-vl:free'
+      ? { ...base, supportsReasoning: true, supportsSchemaOutput: true }
+      : base,
+  fetchModels: async (http, apiKey) => {
     try {
-      const response = await http.get('/models')
+      const response = await http.get('/models', {
+        headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : undefined,
+      })
       const parsed = OpenRouterModelsResponseSchema.parse(response.data)
       return parsed.data.filter(isFreeModel).map((model) => ({
         id: model.id,

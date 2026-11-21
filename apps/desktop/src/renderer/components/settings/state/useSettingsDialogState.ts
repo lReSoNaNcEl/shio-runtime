@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import type { AppSettings } from '../../../../shared/config'
-import type { LlmProviderId } from '../../../../shared/llm'
+import {
+  type CodexReasoningEffort,
+  type LlmProviderId,
+  withCodexReasoningEffort,
+} from '../../../../shared/llm'
 import type { OverlayViewMode } from '../../../avatar/tuning/cameraTuning'
 import { controller } from '../../../Controller'
 import { observeRendererPromise } from '../../../reliability/observePromise'
@@ -74,6 +78,8 @@ export function useSettingsDialogState({
   } = useDeveloperSettings()
   const {
     lang,
+    speechVolumePercent,
+    setSpeechVolumePercent,
     microphoneLevel,
     microphoneTestState,
     micId,
@@ -153,11 +159,12 @@ export function useSettingsDialogState({
   useEffect(() => {
     if (isOpen) return
     hydrated.current = false
+    setSpeechVolumePercent(null)
     microphoneTestSequence.current += 1
     microphoneTestRecording.current = null
     setMicrophoneTestState('idle')
     setMicrophoneLevel(0)
-  }, [isOpen, setMicrophoneLevel, setMicrophoneTestState])
+  }, [isOpen, setMicrophoneLevel, setMicrophoneTestState, setSpeechVolumePercent])
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: hydration targets stable React state setters owned by domain hooks.
   useEffect(() => {
@@ -169,6 +176,8 @@ export function useSettingsDialogState({
         if (!active) return
         setActiveSection(initialSection)
         setLang(cfg.ttsLanguage ?? defaultSettingsForm.ttsLanguage)
+        setSpeechVolumePercent(cfg.speechVolumePercent)
+        controller.setSpeechVolumePercent(cfg.speechVolumePercent)
         setUiLocale(cfg.uiLocale)
         setDeveloperModeEnabled(cfg.developerModeEnabled === 'true')
         setDeveloperOverlayAnimationHudEnabledState(
@@ -223,6 +232,18 @@ export function useSettingsDialogState({
     })
   }
 
+  const setCodexReasoningEffort = (
+    model: string,
+    effort: CodexReasoningEffort | undefined,
+  ): void => {
+    setProviderSettings((previous) => {
+      return {
+        ...previous,
+        'codex-cli': withCodexReasoningEffort(previous['codex-cli'], model, effort),
+      }
+    })
+  }
+
   const updateProviderAccountId = (id: LlmProviderId, accountId: string): void => {
     modelRequestSequence.current += 1
     setModelOptions([])
@@ -271,7 +292,7 @@ export function useSettingsDialogState({
     setModelOptions([])
     setModelsState(
       result.kind === 'auth'
-        ? providerSettings[providerId]?.credential.configured
+        ? profile?.requiresApiKey === false || providerSettings[providerId]?.credential.configured
           ? 'auth-error'
           : 'missing-key'
         : result.kind === 'access'
@@ -629,6 +650,7 @@ export function useSettingsDialogState({
     speech: {
       state: {
         language: lang,
+        speechVolumePercent,
         microphones: mics,
         microphoneId: micId,
         voiceWarmup,
@@ -638,6 +660,13 @@ export function useSettingsDialogState({
       },
       actions: {
         setLanguage: setLang,
+        setSpeechVolumePercent: (value) => {
+          setSpeechVolumePercent(value)
+          controller.setSpeechVolumePercent(value)
+        },
+        saveSpeechVolumePercent: (value) => {
+          void persistPatch({ speechVolumePercent: value }).catch(() => setSaveState('error'))
+        },
         setMicrophoneId: (id) => {
           setMicId(id)
           controller.setMicrophone(id === defaultSettingsForm.microphoneId ? '' : id)
@@ -665,6 +694,7 @@ export function useSettingsDialogState({
       actions: {
         setActiveProvider,
         updateProviderSettings,
+        setCodexReasoningEffort,
         updateProviderAccountId,
         setEditingKey,
         setKeyInput,

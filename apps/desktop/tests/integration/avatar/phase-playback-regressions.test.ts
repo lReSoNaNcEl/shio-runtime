@@ -79,7 +79,7 @@ describe('generated phase timing regressions', () => {
     const { owner, next } = fixture()
     next.mockImplementation(async (input) => ({
       ok: true,
-      chunk: { ...chunk(input), sourceProvider: 'motionbricks' },
+      chunk: { ...chunk(input), sourceProvider: 'flashmotion' },
     }))
     const reached = vi
       .spyOn(GeneratedBodySafety.prototype, 'handTargetsReached')

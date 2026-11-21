@@ -8,25 +8,26 @@ Character tools, verification, and Memory without creating a central brain.
 ## Runtime ownership
 
 - World Context Runtime owns bounded present-state context. A Main-owned
-  `SystemContextAdapter` supplies OS-level global idle, foreground/running application
-  metadata, and system load. Privacy Mode suppresses sensitive optional projections.
+  `SystemContextAdapter` supplies OS-level global idle and foreground application
+  metadata. System diagnostics can request the windowed-application list outside
+  Privacy Mode. Diagnostics reads the autonomy audit separately on demand.
 - Experience Runtime appraises completed typed events and may choose silence. Mood
   Runtime owns bounded persistent mood with baseline decay.
-- Attention Arbiter evaluates candidates from speech, world, experience, and behavior. Deterministic policy runs first; Fast Brain is used only for
-  ambiguous sets of two or more viable candidates and cannot call tools.
+- Attention Arbiter evaluates candidates from speech, world, experience, and
+  behavior using deterministic policy.
 - Behavior Runtime emits only `none`, semantic embodiment, or conversation-candidate intents. Conversation Admission and Avatar Runtime remain the
   execution owners for their domains.
 - Conversation Thread Runtime keeps a bounded, expiring record of interrupted topics.
-- Memory Runtime owns explicit Semantic Memory, hybrid retrieval, procedural habits,
-  and bounded Relationship Context. Embeddings are optional; lexical/FTS retrieval is
+- Memory Runtime owns explicit Semantic Memory, hybrid retrieval, and bounded
+  Relationship Context. Embeddings are optional; lexical/FTS retrieval is
   the operational fallback.
 
 ## Character and cross-tool flow
 
 `CharacterRequestComposer` applies per-section and total budgets to Persona, Response
 Policy, Mood, Relationship, conversational threads, Memory availability, Capabilities, Project, World,
-and Tool Results. A normal turn receives compact capability availability, at most one
-relevant unfinished thread, and at most a few cooled-down motifs.
+and Tool Results. A normal turn receives compact capability availability and at most
+one relevant unfinished thread.
 Complete stores are available only through typed tools.
 
 `ToolInfluenceContext` keeps original user intent distinct from evidence. Project,
@@ -46,13 +47,12 @@ Responses are size-bounded, parsed as inert HTML data, and reduced to untrusted 
 fields. Transport failure remains isolated from Chat and Browser Control. Opening or
 interacting with a selected URL remains Browser Control work.
 
-## Procedural continuity
+## Conversation continuity and Memory
 
-Only deduplicated completed typed facts count as habit evidence. Scheduling or starting
-work does not count. Three observations may create one candidate; approval or rejection
-is explicit. Approved motifs have `lastUsedAt` cooldown and remain separate from
-Semantic Memory facts. Relationship Context is Runtime-derived from bounded evidence;
-LLM-authored relationship scores are not persisted.
+Following manual Stop, the next character turn in the same chat may receive the last
+user request and the visible fragment of the interrupted reply. Long-term Memory
+writes require explicit user intent. Relationship Context uses bounded, explicitly
+stored relationship facts and Runtime-owned scores.
 
 ## Streaming speech and latency
 
@@ -65,7 +65,7 @@ worker identity without prompt, reply, audio, or credential content.
 
 ## UI and validation
 
-Autonomy policy, master pause, and Fast Brain controls are in Settings. Habit suggestions are in Memory.
+Autonomy policy and master pause are in Settings. Explicit long-term records are in Memory.
 
 Focused commands:
 

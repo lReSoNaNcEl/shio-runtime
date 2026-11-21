@@ -1,53 +1,43 @@
 const assert = require('node:assert/strict')
 const { execFileSync } = require('node:child_process')
 const path = require('node:path')
-const processEnvironment = Object.fromEntries(
-  Object.entries(process.env).filter(([key]) =>
-    /^(path|systemroot|windir|programfiles|programfiles\(x86\)|programw6432|systemdrive|comspec|temp|tmp)$/i.test(
-      key,
-    ),
-  ),
-)
 
-function ownedWorkers(ownerPid) {
-  const worker = path.resolve(__dirname, '../../motionbricks/worker.py')
-  const rows = JSON.parse(
-    execFileSync(
-      'powershell.exe',
-      [
-        '-NoProfile',
-        '-Command',
-        `$all = @(Get-CimInstance Win32_Process)
-$index = @{}
-foreach ($entry in $all) { $index[[int]$entry.ProcessId] = $entry }
-@($all | Where-Object {
-  if ($_.Name -ne 'python.exe' -or -not $_.CommandLine -or -not $_.CommandLine.Contains($env:SHIO_QA_WORKER)) { return $false }
-  $candidate = $_
-  for ($depth = 0; $depth -lt 16 -and $candidate; $depth++) {
-    if ($candidate.ParentProcessId -eq [int]$env:SHIO_QA_OWNER) { return $true }
-    $candidate = $index[[int]$candidate.ParentProcessId]
+const workerCommand = '^/opt/shio-flashmotion/bin/python -B -u worker.py$'
+const wsl = (...args) =>
+  execFileSync('wsl.exe', ['--distribution', 'ShioFlashMotionV1', '--exec', ...args], {
+    encoding: 'utf8',
+    windowsHide: true,
+    timeout: 5000,
+  }).trim()
+
+function workerFinder() {
+  const directory = wsl('wslpath', '-a', path.resolve(__dirname, '../../flashmotion'))
+  return () => {
+    let pids
+    try {
+      pids = wsl('pgrep', '-f', workerCommand).split(/\s+/u)
+    } catch (error) {
+      if (error.status === 1) return []
+      throw error
+    }
+    return pids.filter((pid) => {
+      if (!/^\d+$/u.test(pid)) return false
+      try {
+        return wsl('readlink', `/proc/${pid}/cwd`) === directory
+      } catch (error) {
+        if (error.status === 1) return false
+        throw error
+      }
+    })
   }
-  return $false
-} | Select-Object ProcessId,ParentProcessId) | ConvertTo-Json -Compress`,
-      ],
-      {
-        encoding: 'utf8',
-        windowsHide: true,
-        timeout: 10000,
-        env: { ...processEnvironment, SHIO_QA_WORKER: worker, SHIO_QA_OWNER: String(ownerPid) },
-      },
-    ).trim() || '[]',
-  )
-  const all = Array.isArray(rows) ? rows : [rows]
-  return all.filter((row) => !all.some((parent) => parent.ProcessId === row.ParentProcessId))
 }
 
-async function qualifyLivingLifecycle({ application, page, report, pause }) {
+async function qualifyLivingLifecycle({ page, report, pause }) {
   const result = { errors: [], provider: report.motionProvider }
   report.livingLifecycle = result
-  const workersForThisApp = () => ownedWorkers(application.process().pid)
   try {
-    assert.equal(report.motionProvider, 'motionbricks', 'Worker fault fixture is MotionBricks-only')
+    assert.equal(report.motionProvider, 'flashmotion')
+    const workersForThisApp = workerFinder()
     const ready = async (minimumGeneration) => {
       const deadline = Date.now() + 120000
       let lastState
@@ -110,12 +100,7 @@ async function qualifyLivingLifecycle({ application, page, report, pause }) {
     const beforeFault = await ready(result.reload.motion.modelGeneration)
     const workers = workersForThisApp()
     assert.equal(workers.length, 1, 'Fault injection requires one exact owned worker tree')
-    // Only the exact Python tree whose command names this worktree's worker.
-    execFileSync('taskkill.exe', ['/PID', String(workers[0].ProcessId), '/T', '/F'], {
-      windowsHide: true,
-      timeout: 10000,
-      env: processEnvironment,
-    })
+    wsl('kill', '-TERM', workers[0])
     await pause(1500)
     result.faultObserved = await page.evaluate(async () => ({
       motion: await window.api.motion.status(),

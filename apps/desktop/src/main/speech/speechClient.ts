@@ -243,6 +243,8 @@ export class SpeechClient implements SpeechStreamingClient {
     let terminal = false
     let cancelling = false
     let readySeen = false
+    let connectionRetried = false
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null
     let expectedSequence = 0
     let expectedOffset = 0
     let cancelTimer: ReturnType<typeof setTimeout> | null = null
@@ -259,6 +261,8 @@ export class SpeechClient implements SpeechStreamingClient {
       if (terminal) return
       terminal = true
       recoveryWait.abort()
+      if (reconnectTimer !== null) clearTimeout(reconnectTimer)
+      reconnectTimer = null
       if (cancelTimer !== null) clearTimeout(cancelTimer)
       cancelTimer = null
       queued.length = 0
@@ -310,14 +314,36 @@ export class SpeechClient implements SpeechStreamingClient {
     this.streams.add(connection)
     const connect = (): void => {
       const activeSocket = new WebSocket(`${this.baseUrl.replace(/^http/u, 'ws')}/tts/stream`)
+      let startSent = false
       socket = activeSocket
+      const onTransportFailure = (code: string, message: string): void => {
+        if (terminal || socket !== activeSocket) return
+        if (!startSent && !cancelling && !connectionRetried) {
+          // The opening handshake failed before a synthesis request was sent.
+          connectionRetried = true
+          socket = null
+          activeSocket.close()
+          reconnectTimer = setTimeout(() => {
+            reconnectTimer = null
+            if (terminal || cancelling) return
+            try {
+              connect()
+            } catch {
+              fail('stream_transport_error', 'TTS stream failed')
+            }
+          }, 300)
+          return
+        }
+        fail(code, message)
+      }
       activeSocket.binaryType = 'arraybuffer'
       activeSocket.addEventListener('open', () => {
-        if (terminal) {
+        if (terminal || socket !== activeSocket) {
           activeSocket.close()
           return
         }
         const start: SpeechStreamStartMessage = { type: 'start', ...input }
+        startSent = true
         activeSocket.send(JSON.stringify(start))
         if (cancelling)
           activeSocket.send(
@@ -326,7 +352,7 @@ export class SpeechClient implements SpeechStreamingClient {
         else for (const message of queued.splice(0)) activeSocket.send(JSON.stringify(message))
       })
       activeSocket.addEventListener('message', (message) => {
-        if (terminal) return
+        if (terminal || socket !== activeSocket) return
         try {
           if (typeof message.data === 'string') {
             if (message.data.length > 16_384) throw new Error('Oversized TTS metadata')
@@ -392,16 +418,18 @@ export class SpeechClient implements SpeechStreamingClient {
         }
       })
       activeSocket.addEventListener('error', (event) => {
+        if (terminal || socket !== activeSocket) return
         const error = 'error' in event && event.error instanceof Error ? event.error : null
         mainLog.error('[SpeechClient] stream transport failed', {
+          stage: startSent ? 'synthesis-started' : 'connecting',
           errorName: error?.name.slice(0, 80),
           reason: error?.message.slice(0, 240),
           cause: error?.cause instanceof Error ? error.cause.message.slice(0, 240) : undefined,
         })
-        fail('stream_transport_error', 'TTS stream failed')
+        onTransportFailure('stream_transport_error', 'TTS stream failed')
       })
       activeSocket.addEventListener('close', () => {
-        if (!terminal) fail('stream_closed', 'TTS stream closed before inference settlement')
+        onTransportFailure('stream_closed', 'TTS stream closed before inference settlement')
       })
     }
     if (this.recoveryReadinessRequired) {

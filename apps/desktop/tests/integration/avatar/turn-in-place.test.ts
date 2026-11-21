@@ -62,13 +62,19 @@ describe('actual-rig procedural turn support', () => {
     }
     try {
       await owner.playProfile('turn_in_place', context)
+      owner.setConversationView({ overlayViewMode: 'bust' })
+      expect(owner.getEmbodimentAvailability().availableBodyActions).toContain('turn-in-place')
       for (let frame = 0; frame < 2400 && owner.getLibraryDebug().outcome === null; frame++)
         owner.update(1 / 60, () => undefined)
       expect(owner.getLibraryDebug().outcome).toBe('completed')
       expect(owner.getBodyMotionDebugState().sourceTimeSeconds).toBe(0)
-      expect(api.next).not.toHaveBeenCalled()
+      expect(api.next).toHaveBeenCalledTimes(1)
+      expect(api.next.mock.calls[0][0]).toMatchObject({
+        profileId: 'turn_in_place',
+        plan: { clockDomain: 'local', phaseId: 'prepare' },
+      })
       await owner.playProfile('presence_poised', { ...context, animationId: 'presence_poised' })
-      expect(api.next.mock.calls[0][0].fromFrame).toBe(0)
+      expect(api.next.mock.calls[1][0].fromFrame).toBe(0)
       owner.detach()
       await owner.settleCancellation()
       owner.attach(greenFoxRig())

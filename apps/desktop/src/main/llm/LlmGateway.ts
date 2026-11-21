@@ -119,6 +119,6 @@ export class LlmGateway implements LLMProvider {
         message.content.some((part) => part.type === 'image'),
     )
     if (hasImage && !capabilities.supportsVision) throw new LlmCapabilityError()
-    return createLLMProvider({ provider, apiKey, model, accountId, capabilities })
+    return createLLMProvider({ ...settings, capabilities })
   }
 }

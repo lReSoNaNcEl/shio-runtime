@@ -65,7 +65,7 @@ function torsoClearance(bones: Map<string, THREE.Object3D>, scene: THREE.Scene):
 }
 
 describe('generated body anatomical safety', () => {
-  it('keeps a MotionBricks arm velocity bounded after hinge and wrist projection across phases', () => {
+  it('keeps a generated arm velocity bounded after hinge and wrist projection across phases', () => {
     const { bones, safety } = fixture()
     safety.apply(Infinity)
     const arm = bone(bones, 'leftUpperArm')

@@ -24,6 +24,67 @@ const TONE: Record<HealthSeverity, 'positive' | 'notice' | 'negative'> = {
   error: 'negative',
 }
 
+type DiagnosticRead =
+  | { status: 'available'; rows: readonly unknown[] }
+  | { status: 'private' | 'unavailable' }
+
+function DiagnosticReader({
+  title,
+  action,
+  empty,
+  load,
+}: {
+  title: string
+  action: string
+  empty: string
+  load(): Promise<DiagnosticRead>
+}) {
+  const { t } = useTranslation()
+  const [pending, setPending] = useState(false)
+  const [result, setResult] = useState<DiagnosticRead | null>(null)
+
+  const read = async (): Promise<void> => {
+    setPending(true)
+    setResult(null)
+    try {
+      setResult(await load())
+    } finally {
+      setPending(false)
+    }
+  }
+
+  return (
+    <section>
+      <div className="diagnostics-toolbar">
+        <Heading level={3}>{title}</Heading>
+        <Button
+          variant="secondary"
+          isPending={pending}
+          onPress={() =>
+            observeRendererPromise(read(), 'read System diagnostics on demand', () =>
+              setResult({ status: 'unavailable' }),
+            )
+          }
+        >
+          {action}
+        </Button>
+      </div>
+      {result?.status === 'available' &&
+        (result.rows.length ? (
+          <pre className="diagnostics-json">{JSON.stringify(result.rows, null, 2)}</pre>
+        ) : (
+          <Text>{empty}</Text>
+        ))}
+      {result?.status === 'unavailable' && (
+        <StatusLight variant="notice">{t('common.unavailable')}</StatusLight>
+      )}
+      {result?.status === 'private' && (
+        <StatusLight variant="neutral">{t('diagnostics.system.applications.private')}</StatusLight>
+      )}
+    </section>
+  )
+}
+
 /** Technical health details moved from the removed primary Runtime Health page. */
 export function SystemDiagnostics() {
   const { t } = useTranslation()
@@ -87,6 +148,30 @@ export function SystemDiagnostics() {
           </section>
         ))}
       </div>
+      <DiagnosticReader
+        title={t('diagnostics.system.audit.title')}
+        action={t('diagnostics.system.audit.load')}
+        empty={t('diagnostics.system.audit.empty')}
+        load={async () => ({
+          status: 'available',
+          rows: await window.api.diagnostics.getAliveAudit(),
+        })}
+      />
+      {state.alive?.settings.privacyMode ? (
+        <StatusLight variant="neutral">{t('diagnostics.system.applications.private')}</StatusLight>
+      ) : (
+        <DiagnosticReader
+          title={t('diagnostics.system.applications.title')}
+          action={t('diagnostics.system.applications.load')}
+          empty={t('diagnostics.system.applications.empty')}
+          load={async () => {
+            const result = await window.api.diagnostics.getRunningApplications()
+            return result.status === 'available'
+              ? { status: 'available', rows: result.applications }
+              : result
+          }}
+        />
+      )}
       {support.bundle && (
         <Disclosure UNSAFE_className="diagnostics-system-report">
           <DisclosureTitle>{t('health.support.copyRuntimeHealth')}</DisclosureTitle>

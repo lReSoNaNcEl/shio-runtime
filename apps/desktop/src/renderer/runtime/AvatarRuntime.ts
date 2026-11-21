@@ -214,7 +214,7 @@ export class AvatarRuntime {
   previewVariation(
     id: string,
     seed?: number,
-    bodyAction?: import('../../shared/motion').BodyTurnIntent,
+    bodyAction?: import('../../shared/motion').BodyActionIntent,
   ): void {
     this.controller.previewVariation(id, seed, bodyAction)
   }

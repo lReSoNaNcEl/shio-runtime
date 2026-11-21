@@ -70,6 +70,7 @@ export class AvatarFacialRuntime {
   private proceduralMode: AvatarProceduralMode = 'idle'
   private bodyMotionLayer: AvatarBodyMotionLayer = 'base'
   private lookAtMode: LookAtMode = 'idle'
+  private mirroredGazeMode: LookAtMode | undefined
   private speechEnergy = 0
   private antiStallActive = false
   private currentEmotionKey = 'neutral'
@@ -82,6 +83,7 @@ export class AvatarFacialRuntime {
     this.facialActingController.reset()
     this.mirroredActing = null
     this.mirrorActingFrom = null
+    this.mirroredGazeMode = undefined
     this.speechEnergy = 0
     this.blinkController.detach()
     this.expressionController.detach()
@@ -233,6 +235,14 @@ export class AvatarFacialRuntime {
     this.mirrorActingElapsed = 0
   }
 
+  applyGazePresentation(value: LookAtMode | undefined): void {
+    this.mirroredGazeMode = value
+  }
+
+  getGazeMode(): LookAtMode {
+    return (this.presentationOnly ? this.mirroredGazeMode : undefined) ?? this.lookAtMode
+  }
+
   removeProceduralMotion(): void {
     this.proceduralMotionController.remove()
     this.lookAtRuntime.remove()
@@ -242,6 +252,7 @@ export class AvatarFacialRuntime {
 
   updateProceduralMotion(delta: number): void {
     this.proceduralMotionController.update(delta)
+    this.lookAtRuntime.setMode(this.getGazeMode())
     this.lookAtRuntime.update(delta)
     this.headMotionRuntime.update(delta)
     // The torso follows the head orientation on the next frame (smoothed both ways).

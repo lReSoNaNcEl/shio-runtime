@@ -215,7 +215,6 @@ async function main(): Promise<void> {
       saveConfig: async () => ({ ok: true }),
       arbitrateBacklog: async () => ({ ok: false }),
       evaluateAttention: async () => ({ ok: false }),
-      cancelAttention: async () => ({ ok: true }),
       normalizeMicrophoneFailure: () => ({ reason: 'unknown' }),
       getMicrophoneAccessFailedMessage: () => '',
       createTurnId: (prefix: string) => prefix,

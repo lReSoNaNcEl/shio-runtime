@@ -186,7 +186,7 @@ export const motionCatalogProfileSchema = z
         .strict(),
       z
         .object({
-          mode: z.literal('turn-in-place'),
+          mode: z.enum(['turn-in-place', 'dance-in-place']),
           frame: z.literal('model-stage'),
           maxHorizontalM: finite.min(0).max(0.25),
         })
@@ -252,7 +252,7 @@ export const motionCatalogProfileSchema = z
     if (
       p.physicalAction
         ? p.kind !== 'gesture' ||
-          p.rootPolicy.mode !== 'turn-in-place' ||
+          p.rootPolicy.mode !== p.physicalAction.action ||
           p.supportPolicy.contacts !== 'alternating-feet' ||
           !p.requiredRigCapabilities.includes('dynamic-support') ||
           p.automaticSelection
@@ -312,36 +312,46 @@ export const motionCatalogProfileSchema = z
       })
   })
 export type MotionProfile = z.infer<typeof motionCatalogProfileSchema>
-export const motionFormatSchema = z
+const edge = z.tuple([motionHandZoneSchema, motionHandZoneSchema])
+export const flashMotionFormatSchema = z
   .object({
-    protocolVersion: z.literal(2),
-    sourceRevision: z.literal('54fc563aeaaf819a753d72cc9fdc6713989cdd43'),
-    modelRevision: z.literal('6c9f78e23decbda8e1cfd1b0cc96980ea4b24b3ca2c808d03b058f48f82fc9ef'),
-    skeleton: z.literal('soma30-standard-tpose-v1'),
-    referencePose: z.literal('standard-tpose'),
-    quaternionOrder: z.literal('xyzw'),
-    rotationSpace: z.literal('world'),
+    protocolVersion: z.literal(1),
+    sourceRevision: z.string().regex(/^[a-f0-9]{40}$/u),
+    weightsRevision: z.string().regex(/^[a-f0-9]{40}$/u),
+    skeleton: z.literal('flashmotion-vrm-body-v1'),
+    referencePose: z.literal('normalized-vrm-rest'),
     axes: z
       .object({ up: z.literal('y'), forward: z.literal('z'), handedness: z.literal('right') })
       .strict(),
     units: z.literal('metres'),
+    quaternionOrder: z.literal('xyzw'),
+    bodyRotationSpace: z.literal('world-delta'),
+    fingerRotationSpace: z.literal('local'),
     fps: z.literal(30),
     horizonFrames: z.literal(60),
-    historyFrames: z.literal(4),
-    contactOrder: z.tuple([
-      z.literal('leftHeel'),
-      z.literal('leftToe'),
-      z.literal('rightHeel'),
-      z.literal('rightToe'),
-    ]),
+    t2m: z
+      .object({
+        skeleton: z.literal('humanml3d-22'),
+        fps: z.literal(20),
+        channels: z.literal(263),
+        fingers: z.literal(false),
+      })
+      .strict(),
+    s2g: z
+      .object({
+        skeleton: z.literal('smplx-full55'),
+        fps: z.literal(30),
+        channels: z.literal(333),
+        fingers: z.literal(true),
+      })
+      .strict(),
   })
   .strict()
-const edge = z.tuple([motionHandZoneSchema, motionHandZoneSchema])
 export const motionCatalogSchema = z
   .object({
     schemaVersion: z.literal(3),
     catalogRevision: boundedId,
-    format: motionFormatSchema,
+    flashMotionFormat: flashMotionFormatSchema,
     handRigCalibration: z
       .object({
         revision: z.literal('vrm-normalized-hands-v1'),

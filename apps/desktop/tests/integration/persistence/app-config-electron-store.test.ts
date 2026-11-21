@@ -43,6 +43,21 @@ function credentialStore() {
 }
 
 describe('App config electron-store migration', () => {
+  it.each([undefined, -1, 110, '0'])(
+    'defaults invalid or missing speech volume (%s) and restores mute on restart',
+    async (value) => {
+      const directory = temporaryUserData()
+      writeFileSync(join(directory, 'config.json'), JSON.stringify({ speechVolumePercent: value }))
+      const first = await import('../../../src/main/config')
+      expect((await first.loadConfig(credentialStore() as never)).speechVolumePercent).toBe(100)
+      first.saveConfig({ speechVolumePercent: 0 })
+      first.saveConfig({ uiTheme: 'dark' })
+      vi.resetModules()
+      const restarted = await import('../../../src/main/config')
+      expect((await restarted.loadConfig(credentialStore() as never)).speechVolumePercent).toBe(0)
+    },
+  )
+
   it('removes a retired provider on load while preserving saved provider choices', async () => {
     const directory = temporaryUserData()
     const configPath = join(directory, 'config.json')

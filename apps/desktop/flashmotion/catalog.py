@@ -1,0 +1,42 @@
+"""Fixed descriptions for Shio's typed catalog. No conversation text enters T2M."""
+
+PROMPTS = {
+    "presence_poised": "a person stands quietly with their arms relaxed at their sides",
+    "presence_warm": "a person stands at ease, with a small relaxed sway",
+    "presence_listening": "a person stands still listening attentively, arms relaxed",
+    "presence_thinking": "a person stands thinking with one forearm slightly raised",
+    "presence_speaking": "a standing person makes small gestures while talking",
+    "presence_restful": "a person stands still, relaxed, with both arms at their sides",
+    "greet_wave_soft": "a person raises their right hand and waves hello, then lowers their hand",
+    "farewell_wave_soft": "a person waves goodbye softly with their right hand",
+    "agree_soft": "a standing person makes a gentle agreeing gesture with one hand",
+    "disagree_gentle": "a standing person gestures a gentle disagreement with one hand",
+    "explain_one_palm": "a person presents their right palm upward while explaining",
+    "explain_balance": "a person holds both palms up in front of their body",
+    "invite_question": "a person makes a gentle inviting gesture with their right palm",
+    "reassure_palm": "a standing person holds an open right palm forward reassuringly",
+    "thank_heart_hover": "a person moves their right hand near their chest in thanks",
+    "present_side": "a person extends their right arm slightly to present the space beside them",
+    "delight_hands_open": "a person lifts both forearms and opens their hands with quiet delight",
+    "laugh_soft": "a person laughs softly while holding their arms relaxed",
+    "shy_gather": "a standing person draws their hands in toward their chest shyly",
+    "curious_lean": "a person leans slightly forward in curiosity",
+    "surprise_small": "a standing person raises their forearms slightly in surprise",
+    "concern_soft": "a standing person moves one hand inward in concern",
+    "resolve_firm": "a person briefly lifts one hand with a resolute gesture",
+    "celebrate_petite": "a person lifts both forearms briefly in a restrained celebration",
+    "fox_paw_single": "a person raises their right hand near their shoulder in a paw gesture",
+    "peace_single": "a person raises their right hand beside their face with a peace sign",
+    "kiss_air_soft": "a person brings their right hand close to their mouth, then moves it forward",
+    "stretch_small": "a standing person stretches their arms slightly before relaxing",
+    "greet_wave_close": "a person waves hello with their right hand close to the shoulder",
+    "explain_point_close": "a person briefly raises their right hand near the chest while explaining",
+    "celebrate_close": "a person makes a small celebration with both hands near the chest",
+    "turn_in_place": "a standing person makes one flowing turn in place, naturally moving both arms for balance",
+}
+
+DANCE_PROMPTS = {
+    "smooth": "a person performs a smooth dance in place, small alternating side steps and expressive fluid coordinated arm movements",
+    "playful": "a person dances in place with cheerful rhythmic alternating steps and lively swinging arms, staying in one spot",
+    "energetic": "a person does energetic small fast dance steps in place, shifting side to side and moving their arms in rhythm",
+}

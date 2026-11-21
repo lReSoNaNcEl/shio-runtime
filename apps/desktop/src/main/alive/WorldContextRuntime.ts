@@ -1,29 +1,18 @@
 import type {
   AutonomySettings,
   RendererWorldContextInput,
+  RunningApplication,
   WorldContextSnapshot,
 } from '../../shared/alive'
 import type { BrowserObservation } from '../../shared/browser-control'
-import {
-  SYSTEM_CONTEXT_PROBES,
-  type SystemContextAdapter,
-  type SystemContextObservation,
-  type SystemContextProbe,
+import type {
+  SystemContextAdapter,
+  SystemContextObservation,
+  SystemContextProbe,
 } from './SystemContextAdapter'
 
 const SYSTEM_POLL_MS = 1_000
-const SYSTEM_PROBE_INTERVAL_MS: Readonly<Record<SystemContextProbe, number>> = Object.freeze({
-  'foreground-application': 2_000,
-  'running-applications': 30_000,
-  'system-load': 10_000,
-})
-
-interface SystemSourceObservedAt {
-  globalIdle: number | null
-  foregroundApplication: number | null
-  runningApplications: number | null
-  systemLoad: number | null
-}
+const FOREGROUND_POLL_MS = 2_000
 
 export interface WorldContextProviders {
   browser?(): BrowserObservation | null
@@ -33,18 +22,13 @@ export interface WorldContextProviders {
 export interface WorldContextRuntimeOptions {
   now?(): number
   pollIntervalMs?: number
-  probeIntervals?: Partial<Readonly<Record<SystemContextProbe, number>>>
 }
 
 export class WorldContextRuntime {
   private renderer: RendererWorldContextInput | null = null
   private system: SystemContextObservation | null = null
-  private readonly systemObservedAt: SystemSourceObservedAt = {
-    globalIdle: null,
-    foregroundApplication: null,
-    runningApplications: null,
-    systemLoad: null,
-  }
+  private lastForegroundAt: number | null = null
+  private applicationsRequest: Promise<readonly RunningApplication[] | null> | null = null
   private timer: ReturnType<typeof setTimeout> | null = null
   private running = false
   private disposed = false
@@ -78,6 +62,20 @@ export class WorldContextRuntime {
     }
   }
 
+  listRunningApplications(): Promise<readonly RunningApplication[] | null> {
+    if (!this.adapter || this.disposed) return Promise.resolve(null)
+    this.applicationsRequest ??= this.adapter
+      .observe({ probes: ['running-applications'] })
+      .then(
+        (observation) => (this.disposed ? null : (observation.runningApplications ?? null)),
+        () => null,
+      )
+      .finally(() => {
+        this.applicationsRequest = null
+      })
+    return this.applicationsRequest
+  }
+
   updateRenderer(input: RendererWorldContextInput): void {
     if (this.renderer && input.observedAt < this.renderer.observedAt) return
     this.renderer = { ...input }
@@ -89,10 +87,8 @@ export class WorldContextRuntime {
     const project = this.providers.project?.() ?? null
     const privacy = settings.privacyMode
     const systemSources = Object.freeze({
-      globalIdleMs: age(this.systemObservedAt.globalIdle, now),
-      foregroundApplicationMs: age(this.systemObservedAt.foregroundApplication, now),
-      runningApplicationsMs: age(this.systemObservedAt.runningApplications, now),
-      systemLoadMs: age(this.systemObservedAt.systemLoad, now),
+      globalIdleMs: age(this.system?.capturedAt ?? null, now),
+      foregroundApplicationMs: age(this.lastForegroundAt, now),
     })
     return Object.freeze({
       capturedAt: now,
@@ -104,13 +100,10 @@ export class WorldContextRuntime {
       privacyMode: privacy,
       lastUserActivityAt: Math.max(
         0,
-        (this.systemObservedAt.globalIdle ?? this.renderer?.observedAt ?? now) - globalUserIdleMs,
+        (this.system?.capturedAt ?? this.renderer?.observedAt ?? now) - globalUserIdleMs,
       ),
       ...(!privacy && this.system?.foregroundApplication
         ? { foregroundApplication: this.system.foregroundApplication }
-        : {}),
-      ...(!privacy && this.system?.runningApplications
-        ? { runningApplications: this.system.runningApplications }
         : {}),
       ...(browser
         ? {
@@ -125,7 +118,6 @@ export class WorldContextRuntime {
         : {}),
       ...(!privacy && project ? { activeProject: project } : {}),
       ...(!privacy && this.system?.media ? { media: this.system.media } : {}),
-      ...(this.system?.system ? { system: this.system.system } : {}),
       systemAdapter: this.system?.status ?? 'unavailable',
       freshness: Object.freeze({
         rendererMs: this.renderer ? Math.max(0, now - this.renderer.observedAt) : null,
@@ -142,7 +134,7 @@ export class WorldContextRuntime {
     try {
       const now = this.now()
       const observation = await this.adapter.observe({ probes: this.dueProbes(now, force) })
-      this.mergeSystemObservation(observation)
+      if (!this.disposed) this.mergeSystemObservation(observation)
     } catch {
       // Preserve the last bounded observation; failure is exposed through freshness/status.
       if (this.system) this.system = { ...this.system, status: 'degraded' }
@@ -159,45 +151,25 @@ export class WorldContextRuntime {
   }
 
   private dueProbes(now: number, force: boolean): readonly SystemContextProbe[] {
-    if (force) return SYSTEM_CONTEXT_PROBES
-    return SYSTEM_CONTEXT_PROBES.filter((probe) => {
-      const observedAt = probeObservedAt(this.systemObservedAt, probe)
-      const interval = Math.max(
-        100,
-        this.options.probeIntervals?.[probe] ?? SYSTEM_PROBE_INTERVAL_MS[probe],
-      )
-      return observedAt === null || now - observedAt >= interval
-    })
+    return force ||
+      this.lastForegroundAt === null ||
+      now - this.lastForegroundAt >= FOREGROUND_POLL_MS
+      ? ['foreground-application']
+      : []
   }
 
   private mergeSystemObservation(observation: SystemContextObservation): void {
-    const sampled = new Set(observation.sampledProbes ?? inferredSampledProbes(observation))
-    const previous = this.system
-    const foregroundApplication = sampled.has('foreground-application')
-      ? observation.foregroundApplication
-      : previous?.foregroundApplication
-    const runningApplications = sampled.has('running-applications')
-      ? observation.runningApplications
-      : previous?.runningApplications
-    const system = sampled.has('system-load') ? observation.system : previous?.system
-    this.systemObservedAt.globalIdle = observation.capturedAt
-    if (sampled.has('foreground-application')) {
-      this.systemObservedAt.foregroundApplication = observation.capturedAt
-    }
-    if (sampled.has('running-applications')) {
-      this.systemObservedAt.runningApplications = observation.capturedAt
-    }
-    if (sampled.has('system-load')) this.systemObservedAt.systemLoad = observation.capturedAt
+    const foregroundSampled =
+      observation.sampledProbes?.includes('foreground-application') ??
+      'foregroundApplication' in observation
+    if (foregroundSampled) this.lastForegroundAt = observation.capturedAt
     this.system = {
       capturedAt: observation.capturedAt,
       globalUserIdleMs: observation.globalUserIdleMs,
-      sampledProbes: Object.freeze([...sampled]),
-      ...(foregroundApplication ? { foregroundApplication } : {}),
-      ...(runningApplications ? { runningApplications } : {}),
-      ...((observation.media ?? previous?.media)
-        ? { media: observation.media ?? previous?.media }
-        : {}),
-      ...(system ? { system } : {}),
+      foregroundApplication: foregroundSampled
+        ? observation.foregroundApplication
+        : this.system?.foregroundApplication,
+      media: observation.media ?? this.system?.media,
       status: observation.status,
     }
   }
@@ -205,25 +177,6 @@ export class WorldContextRuntime {
   private now(): number {
     return this.options.now?.() ?? Date.now()
   }
-}
-
-function inferredSampledProbes(
-  observation: SystemContextObservation,
-): readonly SystemContextProbe[] {
-  return SYSTEM_CONTEXT_PROBES.filter((probe) => {
-    if (probe === 'foreground-application') return 'foregroundApplication' in observation
-    if (probe === 'running-applications') return 'runningApplications' in observation
-    return 'system' in observation
-  })
-}
-
-function probeObservedAt(
-  observedAt: SystemSourceObservedAt,
-  probe: SystemContextProbe,
-): number | null {
-  if (probe === 'foreground-application') return observedAt.foregroundApplication
-  if (probe === 'running-applications') return observedAt.runningApplications
-  return observedAt.systemLoad
 }
 
 function age(observedAt: number | null, now: number): number | null {

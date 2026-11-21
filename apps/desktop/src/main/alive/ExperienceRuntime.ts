@@ -3,13 +3,6 @@ import type { AliveStore } from './AliveStore'
 import { ExperiencePolicy, type ExperiencePolicyContext } from './ExperiencePolicy'
 import type { MoodRuntime } from './MoodRuntime'
 
-export interface CompletedExperienceFact {
-  eventId: string
-  kind: 'action-verified'
-  entityId: string
-  at: number
-}
-
 export interface ExperienceObservation {
   appraisal: ExperienceAppraisal
   mood: MoodState
@@ -25,7 +18,6 @@ export class ExperienceRuntime {
   constructor(
     private readonly store: AliveStore,
     private readonly mood: MoodRuntime,
-    private readonly onCompletedFact: (fact: CompletedExperienceFact) => void,
     private readonly contextProvider: ExperienceContextProvider = () => ({}),
     private readonly policy = new ExperiencePolicy(),
   ) {}
@@ -43,8 +35,6 @@ export class ExperienceRuntime {
     const mood = this.mood.apply(appraisal, event.at)
     this.lastAppraisal = appraisal
     this.store.audit('experience', event.type, appraisal.silence ? 'silence' : 'appraised')
-    const completed = completedFact(event, appraisal.eventId)
-    if (completed) this.onCompletedFact(completed)
     return { appraisal, mood }
   }
 
@@ -70,11 +60,4 @@ export class ExperienceRuntime {
       return {}
     }
   }
-}
-
-function completedFact(event: ExperienceEvent, eventId: string): CompletedExperienceFact | null {
-  if (event.type === 'action-verified') {
-    return { eventId, kind: event.type, entityId: event.actionId, at: event.at }
-  }
-  return null
 }

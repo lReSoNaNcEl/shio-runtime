@@ -12,6 +12,7 @@ import { PROVIDER_PROFILES } from '../llm/registry'
 import { mainLog } from '../logging/safeLogger'
 import type { CharacterReplyInput, Orchestrator } from '../orchestrator'
 import { ScreenContextError, type ScreenContextService } from '../screen-context'
+import type { WatchTogetherService } from '../watch-together/WatchTogetherService'
 
 export interface CharacterReplyRequest {
   turnId: string
@@ -97,6 +98,8 @@ export class MainConversationTurnService {
     private readonly llmSettings: () => AppSettings['llm'],
     /** Hands an explicit user turn's appraisal to Alive Experience inside Main. */
     private readonly onTurnAppraisal?: (turnId: string, appraisal: TurnAppraisal) => void,
+    private readonly takeWatchReply?: (turnId: string) => string | undefined,
+    private readonly takeWatchUserTurn?: WatchTogetherService['takeUserTurn'],
   ) {}
 
   isIdle(): boolean {
@@ -195,11 +198,12 @@ export class MainConversationTurnService {
       }
     }
 
+    const explicit = origin === 'user' || origin === 'watch-user'
     const interruptedTurn =
-      origin === 'user' && this.stoppedTurn?.rendererId === rendererId ? this.stoppedTurn : null
+      explicit && this.stoppedTurn?.rendererId === rendererId ? this.stoppedTurn : null
     const activeReply = {
       rendererId,
-      userText: origin === 'user' ? userText : undefined,
+      userText: explicit ? userText : undefined,
       streamedText: '',
       streamedCharacters: 0,
     }
@@ -243,9 +247,17 @@ export class MainConversationTurnService {
     let terminalResult = 'failure'
     let terminalCode = 'UNKNOWN'
     try {
+      const watchContext =
+        origin === 'watch-user' ? this.takeWatchUserTurn?.(turnId, userText) : undefined
+      if (origin === 'watch-user' && !watchContext) throw new LlmTurnCancelledError()
+      const signal = watchContext
+        ? AbortSignal.any([abortController.signal, watchContext.signal])
+        : abortController.signal
       const input: CharacterReplyInput = {
         userText,
         origin,
+        approvedWatchReply: origin === 'watch-together' ? this.takeWatchReply?.(turnId) : undefined,
+        watchContext,
         interruptedTurn: interruptedTurn?.context,
         screenContext: pendingCapture
           ? {
@@ -256,10 +268,10 @@ export class MainConversationTurnService {
           : undefined,
       }
       const result = await this.orchestrator().createReply(input, {
-        signal: abortController.signal,
+        signal,
         traceId: turnId,
         onStreamEvent: (event) => {
-          if (abortController.signal.aborted) return
+          if (signal.aborted) return
           if (event.type === 'text-delta' && activeReply.userText && emitStreamEvent) {
             activeReply.streamedCharacters += event.delta.text.length
             activeReply.streamedText = (activeReply.streamedText + event.delta.text).slice(
@@ -295,7 +307,7 @@ export class MainConversationTurnService {
           })
         },
       })
-      if (abortController.signal.aborted) throw new LlmTurnCancelledError()
+      if (signal.aborted) throw new LlmTurnCancelledError()
       if (result.providerIncidentCode) {
         this.recordLlmIncident(llmConfig.activeProvider, result.providerIncidentCode)
       } else if (result.assistantTurnKind === 'character') {
@@ -310,8 +322,7 @@ export class MainConversationTurnService {
         this.screenContext.completeTurn(rendererId, screenContextId, turnId)
         mainLog.info('Vision Request Completed', { turnId })
       }
-      if (origin === 'user' && result.turnAppraisal)
-        this.onTurnAppraisal?.(turnId, result.turnAppraisal)
+      if (explicit && result.turnAppraisal) this.onTurnAppraisal?.(turnId, result.turnAppraisal)
       const { replyText, emotionKey, embodimentIntent, grounding } = result
       latencyTelemetry.record({
         name: 'llm_completed',

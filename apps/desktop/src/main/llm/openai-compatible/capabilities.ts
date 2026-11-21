@@ -28,6 +28,7 @@ const NON_REASONING_BUDGET: Record<LlmProviderId, number> = {
   cloudflare: 1024,
   openrouter: 1024,
   mistral: 1024,
+  'codex-cli': 1024,
 }
 
 const REASONING_BUDGET: Record<LlmProviderId, number> = {
@@ -37,6 +38,7 @@ const REASONING_BUDGET: Record<LlmProviderId, number> = {
   cloudflare: 4096,
   openrouter: 4096,
   mistral: 4096,
+  'codex-cli': 4096,
 }
 
 const VISION_MODEL_PATTERNS: readonly RegExp[] = [

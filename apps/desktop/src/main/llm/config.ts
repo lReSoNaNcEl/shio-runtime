@@ -1,4 +1,5 @@
 import {
+  isCodexReasoningEffort,
   LLM_PROVIDER_IDS,
   type LlmCredentialStatus,
   type LlmPersistedConfig,
@@ -8,6 +9,7 @@ import {
   type LlmRoleCandidate,
   MAX_CHARACTER_FALLBACKS,
 } from '../../shared/llm'
+import { CODEX_MODEL, isCodexModelId } from './CodexCliProvider'
 import { normalizeProviderAccountId, normalizeProviderModelId } from './registry'
 
 export function emptyProviderSettings(): LlmProviderPersistedSettings {
@@ -21,6 +23,7 @@ function isKnownProviderId(value: string): value is LlmProviderId {
 export function defaultLlmConfig(): LlmPersistedConfig {
   const providers = {} as Record<LlmProviderId, LlmProviderPersistedSettings>
   for (const id of LLM_PROVIDER_IDS) providers[id] = emptyProviderSettings()
+  providers['codex-cli'].model = CODEX_MODEL
   return {
     activeProvider: 'groq',
     providers,
@@ -68,10 +71,23 @@ function toProviderSettings(
   value: unknown,
 ): LlmProviderPersistedSettings {
   const base = emptyProviderSettings()
+  if (providerId === 'codex-cli') base.model = CODEX_MODEL
   if (value && typeof value === 'object') {
     const record = value as Record<string, unknown>
+    const efforts = record.codexReasoningByModel
+    if (
+      providerId === 'codex-cli' &&
+      efforts &&
+      typeof efforts === 'object' &&
+      !Array.isArray(efforts)
+    ) {
+      const entries = Object.entries(efforts)
+        .filter(([id, level]) => isCodexModelId(id) && isCodexReasoningEffort(level))
+        .slice(0, 128)
+      if (entries.length) base.codexReasoningByModel = Object.fromEntries(entries)
+    }
     if (typeof record.model === 'string' && record.model) {
-      base.model = normalizeProviderModelId(providerId, record.model)
+      base.model = normalizeProviderModelId(providerId, record.model) || base.model
     }
     if (typeof record.accountId === 'string') {
       base.accountId = normalizeProviderAccountId(providerId, record.accountId)
@@ -180,6 +196,9 @@ export function toPublicLlmConfig(
   for (const id of LLM_PROVIDER_IDS) {
     providers[id] = {
       model: config.providers[id].model,
+      ...(config.providers[id].codexReasoningByModel && {
+        codexReasoningByModel: config.providers[id].codexReasoningByModel,
+      }),
       accountId: getAccountId(id, config.providers[id].accountId ?? ''),
       credential: getCredentialStatus(id),
     }

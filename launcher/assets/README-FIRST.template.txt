@@ -1,14 +1,15 @@
 SHIO RUNTIME {{PRODUCT_VERSION}} — READ FIRST
 
-Requirements: Windows 11 x64, NVIDIA GPU/driver, Python 3.12 x64, internet access.
+Requirements: Windows 11 x64, NVIDIA Blackwell GPU (compute capability 12.0),
+Python 3.12 x64, internet access and a dedicated Ubuntu 24.04 WSL2 distribution
+with the CUDA 12.8 build tools. See docs\ALPHA-INSTALL.md before first start.
 This is an unsigned technical alpha.
 
 Double-click "Start Shio Runtime.cmd".
-The first start installs the Fish Local Speech Pack and separate ARDY Motion Pack,
-and downloads large dependencies, models, and voice references. Later starts are faster.
-Experimental target: RTX 5090 32 GB, about 96 GiB RAM. Smaller GPUs are not qualified.
-ARDY requires Hugging Face access to Meta-Llama-3-8B-Instruct and a local HF token store.
-Its LLM2Vec encoder is independent of the Character LLM provider (including Groq).
+The first start prepares FlashMotion in WSL2 and installs the Fish Local Speech
+Pack in Windows. It compiles CUDA extensions and downloads large dependencies,
+models and voice references. Later starts reuse the prepared environments.
+Qualified hardware for the motion adapter: RTX 5090 32 GB.
 
 Commands from a terminal:
   "Start Shio Runtime.cmd" start
@@ -19,4 +20,4 @@ Commands from a terminal:
   "Start Shio Runtime.cmd" open-logs
 
 See docs\ALPHA-INSTALL.md and docs\ALPHA-TROUBLESHOOTING.md.
-Experimental details and licenses: docs\EXPERIMENT-ARDY-FISH.md.
+Third-party notices: desktop\resources\THIRD_PARTY_NOTICES.md.

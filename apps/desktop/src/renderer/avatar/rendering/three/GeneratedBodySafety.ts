@@ -11,7 +11,7 @@ import {
 import {
   AdaptiveMotionFilter,
   type AdaptiveMotionFilterLimits,
-  MOTIONBRICKS_CONVERSATION_MAX_JOINT_SPEED,
+  GENERATED_GESTURE_MAX_JOINT_SPEED,
   type MotionFilterContext,
 } from './AdaptiveMotionFilter'
 import { type HandGoal, type HandTarget, handWorkspaceGoal } from './BodyHandWorkspace'
@@ -439,7 +439,7 @@ export class GeneratedBodySafety {
   /** Anatomical projection is part of the one temporal constraint pass. A
    * hinge/twist boundary must not teleport an already integrated candidate. */
   private boundProjectedArmSteps(delta: number): void {
-    const maximum = MOTIONBRICKS_CONVERSATION_MAX_JOINT_SPEED * Math.max(0, Math.min(0.05, delta))
+    const maximum = GENERATED_GESTURE_MAX_JOINT_SPEED * Math.max(0, Math.min(0.05, delta))
     for (const arm of this.arms) {
       for (const bone of [arm.upper, arm.lower, arm.end]) {
         const previous = this.previousChain.get(bone)

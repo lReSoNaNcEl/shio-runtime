@@ -3,7 +3,7 @@ import * as THREE from 'three'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { GeneratedBodyPlayback } from '../../../src/renderer/avatar/rendering/three/GeneratedBodyPlayback'
-import { BODY_BONE_NAMES, MOTION_PROFILES } from '../../../src/shared/motion'
+import { BODY_BONE_NAMES, getMotionProfile, MOTION_PROFILES } from '../../../src/shared/motion'
 
 function fixture(missingBone?: string) {
   const scene = new THREE.Scene()
@@ -27,17 +27,22 @@ afterEach(() => vi.unstubAllGlobals())
 
 describe('motion library owner availability', () => {
   it('does not label qualified conversational families unqualified because a manual physical action is draft', () => {
+    const turn = getMotionProfile('turn_in_place')
+    if (!turn) throw new Error('Missing turn profile')
+    const turnState = turn.qualification.state
     const { owner } = fixture()
     Reflect.set(owner, 'lease', { modelGeneration: 1 })
     Reflect.set(owner, 'playing', true)
     try {
+      turn.qualification.state = 'draft'
       expect(owner.getEmbodimentAvailability()).toMatchObject({
         qualification: 'qualified',
         unavailableReasons: [],
-        availableBodyActions: [],
+        availableBodyActions: ['dance-in-place'],
       })
       expect(owner.getEmbodimentAvailability().availableSemanticIntents).toContain('greeting')
     } finally {
+      turn.qualification.state = turnState
       Reflect.set(owner, 'lease', null)
       owner.detach()
     }

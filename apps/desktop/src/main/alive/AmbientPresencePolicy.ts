@@ -10,7 +10,6 @@ const PRESENCE_COOLDOWN_MS = 30_000
 const RETURNED_IDLE_THRESHOLD_MS = 2 * 60_000
 const RELAXED_IDLE_THRESHOLD_MS = 5 * 60_000
 const ACTIVE_IDLE_THRESHOLD_MS = 15_000
-const SYSTEM_LOAD_DELTA = 0.35
 
 export interface AmbientPresenceInput {
   previous: WorldContextSnapshot
@@ -28,7 +27,7 @@ export class AmbientPresencePolicy {
   decide(input: AmbientPresenceInput): AmbientPresenceIntent | null {
     const { current, previous, settings, at } = input
     if (
-      autonomyPolicyStop(settings, at, { quietHours: false }) ||
+      autonomyPolicyStop(settings) ||
       autonomyBusyStop({
         conversationActive: current.conversationActive,
         audioActive: current.audioActive,
@@ -43,8 +42,7 @@ export class AmbientPresencePolicy {
       returnedToUser(previous, current, input.mood) ??
       relaxedAfterIdle(previous, current, input.mood) ??
       foregroundChanged(previous, current, input.mood) ??
-      mediaChanged(previous, current, input.mood) ??
-      systemLoadChanged(previous, current, input.mood)
+      mediaChanged(previous, current, input.mood)
     if (!intent) return null
     this.lastSelectedAt = at
     return Object.freeze(intent)
@@ -120,29 +118,6 @@ function mediaChanged(
       gazeHint: current.media?.playing ? 'screen' : 'away',
     },
   }
-}
-
-function systemLoadChanged(
-  previous: WorldContextSnapshot,
-  current: WorldContextSnapshot,
-  mood: MoodState,
-): AmbientPresenceIntent | null {
-  const before = highestLoad(previous)
-  const after = highestLoad(current)
-  if (before === null || after === null || after - before < SYSTEM_LOAD_DELTA) return null
-  return {
-    attention: 'screen',
-    energy: 'engaged',
-    curiosity: boundedUnit(0.45 + mood.curiosity * 0.35),
-    embodiment: { intensity: 'subtle', gestureHint: 'think', gazeHint: 'screen' },
-  }
-}
-
-function highestLoad(world: WorldContextSnapshot): number | null {
-  const values = [world.system?.cpuLoad, world.system?.gpuLoad, world.system?.memoryLoad].filter(
-    (value): value is number => value !== undefined,
-  )
-  return values.length > 0 ? Math.max(...values) : null
 }
 
 function boundedUnit(value: number): number {

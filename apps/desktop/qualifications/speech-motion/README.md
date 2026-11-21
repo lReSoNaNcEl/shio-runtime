@@ -42,9 +42,6 @@ Protocol probe ждёт server-owned close после terminal acknowledgement: 
 Autonomous Living v1 использует полный 900-s сценарий через существующий Chat UI:
 
 ```powershell
-$env:SHIO_EXPERIMENT_MOTION_PROVIDER = 'motionbricks'
-$env:SHIO_EXPERIMENT_SOMA_HAND = '1'
-$env:SHIO_MOTION_ROOT = (Resolve-Path 'apps/desktop/motionbricks').Path
 node apps/desktop/qualifications/speech-motion/prepare-living.cjs
 $env:SHIO_QUALIFICATION_DESKTOP_ROOT = (Get-Content 'apps/desktop/motion/.artifacts/living-motion/latest-snapshot.txt' -Raw).Trim()
 npm run experiment:qualify -- --conversation-cases --autonomous-living --duration-seconds=900 --warm-responses=1 --skip-profiles --living-v2-telemetry --body-trace-only --stabilization-trace --fixed-preview-smoke --autonomous-policy-smoke
@@ -58,9 +55,7 @@ npm run experiment:qualify -- --conversation-cases --autonomous-living --duratio
 Stop/new turn и не заменяет длительную qualification. `--autonomous-policy-smoke`
 после записи проверяет настоящие one-shot reminder через Scheduler/Gate/Admission:
 Off, Suspend и Privacy блокируют речь, Full допускает одну инициативу. Исходные
-settings восстанавливаются; пользовательский профиль не меняется. Quiet hours,
-cooldown и daily cap не отключаются. Если они не дают выполнить проверку, это
-честный непрошедший gate. Позитивный результат не доказывает художественное качество.
+settings восстанавливаются в тестовом профиле. Позитивный результат не доказывает художественное качество.
 
 Длительная diagnostic trace ограничивается 30-Hz sampling и полным duration budget;
 фактическая частота и overflow объявляются. Video/FPS capture остаётся независимой.
@@ -80,7 +75,7 @@ Overlay reconnect и точечный fault/reload единственного Py
 В report явно записаны warmup outcome/video и actual measured FPS каждого клипа;
 порог 60 FPS и geometric thresholds сохраняются. Без этого флага измеряется
 первое исполнение, включая initialization stalls. Источник hand fit фиксируется
-SHA-256 `motionbricks/hand_prior.py` вместе с остальными build identities.
+SHA-256 `flashmotion/retarget.py` вместе с остальными build identities.
 
 Новые отчёты также фиксируют SHA-256 самого runner и его geometry/semantic/standing fixtures. После обычного ответа runner проверяет отсутствие служебных emotion/voice/embodiment markers в видимом чате и сохраняет только boolean результата, не полный текст ответа.
 

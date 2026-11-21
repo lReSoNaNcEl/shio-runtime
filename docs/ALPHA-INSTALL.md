@@ -1,30 +1,35 @@
-# Alpha installation
+# Install the Windows alpha
 
-Requirements: Windows 11 x64, NVIDIA GPU with a working driver, Python 3.12 x64, and internet access.
+## Windows prerequisites
 
-The ARDY/Fish experimental bundle additionally installs a separate Motion Pack
-and requires gated Hugging Face access to Meta-Llama-3-8B-Instruct. Its qualified
-target is RTX 5090 32 GB with about 96 GiB system RAM; smaller hardware is not
-qualified. Follow [the experiment guide](EXPERIMENT-ARDY-FISH.md) for exact pins,
-licenses, setup and migration. The Llama encoder cannot be replaced by Groq Chat.
+Use Windows 11 x64, Python 3.12 x64 and an NVIDIA driver with CUDA support in WSL2. The FlashMotion installer compiles CUDA 12.8 extensions for compute capability 12.0. The qualified GPU is the RTX 5090 with 32 GB VRAM. Allow more than 30 GB for FlashMotion model files alone, plus space for WSL, Python packages, Speech models and installation caches.
 
-1. Extract the complete ZIP to a writable directory.
-2. Double-click `Start Shio Runtime.cmd`.
-3. Wait while the Fish Local Speech Pack and separate ARDY Motion Pack are installed and verified. The first run downloads large CUDA dependencies, revision-pinned models, and voice references. The launcher allows up to 120 minutes for each long download command, reports progress every 30 seconds, and retries transient failures.
-4. Desktop starts only after the local `/health` endpoint is compatible.
+1. Enable WSL2 and restart Windows if prompted. Download the Ubuntu 24.04 x64 WSL root filesystem and verify its SHA-256 against the publisher's list. [WSL installation](https://learn.microsoft.com/windows/wsl/install) · [Ubuntu 24.04 WSL image and checksums](https://cloud-images.ubuntu.com/wsl/releases/noble/current/)
+2. Import that archive into a new, dedicated distribution.
 
-The launcher installs versioned runtime files below `%LOCALAPPDATA%\Shio Runtime\SpeechPack`. Persistent voices and model caches remain below `%LOCALAPPDATA%\Shio Runtime\Data`; repair preserves them. Desktop can still be started directly; without Speech API its voice features show a degraded state.
+   ```powershell
+   wsl --import ShioFlashMotionV1 "$env:LOCALAPPDATA\ShioFlashMotionV1" .\ubuntu-noble-wsl-amd64-wsl.rootfs.tar.gz --version 2
+   wsl -d ShioFlashMotionV1 -u root
+   ```
 
-Motion environments live below `%LOCALAPPDATA%\Shio Runtime\Motion`. The
-launcher supplies `SHIO_MOTION_ROOT` to Electron Main. `SHIO_LOCAL_ROOT` may
-select an absolute isolated installation root for qualification. Doctor is
-read-only; install/repair own dependency and model downloads.
+3. Inside that distribution, install the build prerequisites. Install the NVIDIA driver on Windows. [NVIDIA CUDA on WSL](https://docs.nvidia.com/cuda/wsl-user-guide/index.html)
 
-Useful commands:
+   ```bash
+   apt-get update
+   apt-get install -y --no-install-recommends ca-certificates curl git
+   curl -fLsS -o /tmp/shio-cuda-keyring.deb https://developer.download.nvidia.com/compute/cuda/repos/wsl-ubuntu/x86_64/cuda-keyring_1.1-1_all.deb
+   dpkg -i /tmp/shio-cuda-keyring.deb
+   apt-get update
+   apt-get install -y --no-install-recommends python3.12-venv python3.12-dev build-essential ninja-build cuda-nvcc-12-8 cuda-cudart-dev-12-8
+   exit
+   ```
 
-```text
-Start Shio Runtime.cmd doctor
-Start Shio Runtime.cmd repair
-Start Shio Runtime.cmd status
-Start Shio Runtime.cmd open-logs
-```
+## First start
+
+1. Verify the ZIP checksum and extract the complete bundle to a local Windows drive accessible to WSL2.
+2. Run **Start Shio Runtime.cmd**. The launcher prepares FlashMotion in `/opt/shio-flashmotion` inside the dedicated distribution and stores verified model files under `%LOCALAPPDATA%\Shio Runtime\Data\FlashMotion`. It also installs the independent Windows Speech Pack and prepares Fish S2 Pro, faster-whisper and voice references. Keep the launcher open while it downloads files, compiles CUDA extensions and prepares the S2G normalizer.
+3. Open Runtime Health and check FlashMotion, Speech API, microphone, VRM and the configured language model. FlashMotion warms up after Desktop opens.
+
+From PowerShell, use `& '.\Start Shio Runtime.cmd' doctor` to check the dependencies and model files offline or `& '.\Start Shio Runtime.cmd' repair` to resume preparation. The launcher uses already verified files when available.
+
+A side-by-side qualification can select an equivalently prepared dedicated WSL2 distribution with `SHIO_FLASHMOTION_WSL_DISTRO`. Set an absolute Windows path in `SHIO_LOCAL_ROOT` to isolate launcher data for that run.

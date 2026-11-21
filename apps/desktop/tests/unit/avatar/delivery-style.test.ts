@@ -66,20 +66,14 @@ describe('delivery style', () => {
     expect(style).toEqual({ ...NEUTRAL_DELIVERY_STYLE })
   })
 
-  it('keeps generated TS and worker artifacts in sync with the contract', () => {
+  it('keeps generated delivery styles in sync with the contract', () => {
     const repository = join(desktopRoot, '..', '..')
     const contract = JSON.parse(
       readFileSync(join(repository, 'contracts', 'embodiment-style.v1.json'), 'utf8'),
     )
-    const worker = JSON.parse(
-      readFileSync(join(desktopRoot, 'motionbricks', 'embodiment_style.json'), 'utf8'),
-    )
+    expect(EMBODIMENT_STYLE_CONTRACT.schemaVersion).toEqual(contract.schemaVersion)
+    expect(EMBODIMENT_STYLE_CONTRACT.axes).toEqual(contract.axes)
     expect(EMBODIMENT_STYLE_CONTRACT.default).toEqual(contract.default)
     expect(EMBODIMENT_STYLE_CONTRACT.mood).toEqual(contract.mood)
-    expect(worker).toEqual({
-      schemaVersion: contract.schemaVersion,
-      axes: contract.axes,
-      default: contract.default,
-    })
   })
 })

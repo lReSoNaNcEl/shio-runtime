@@ -74,10 +74,7 @@ export class BehaviorRuntime {
     const { appraisal, mood, settings, at } = input
     const conversationalImpulse = appraisal.conversationalImpulse
     if (!conversationalImpulse) return 'not-requested'
-    if (
-      autonomyPolicyStop(settings, at, { quietHours: true }) ||
-      input.conversationAllowed === false
-    ) {
+    if (autonomyPolicyStop(settings) || input.conversationAllowed === false) {
       return 'suppressed-policy'
     }
     const profile = moodBehaviorProfile(appraisal, mood)
@@ -101,7 +98,7 @@ export class BehaviorRuntime {
     const { appraisal, mood, settings, at } = input
     const browserUseEvent = appraisal.origin === 'browser-computer-use'
     const conversationCandidate = this.assessConversationCandidate(input)
-    if (autonomyPolicyStop(settings, at, { quietHours: true })) {
+    if (autonomyPolicyStop(settings)) {
       return decision(
         command(at, appraisal.eventId, { kind: 'none' }, appraisal.embodimentPresence),
         conversationCandidate,

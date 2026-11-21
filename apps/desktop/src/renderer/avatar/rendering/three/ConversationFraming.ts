@@ -1,6 +1,7 @@
 import type { VRM } from '@pixiv/three-vrm'
 import { Box3, PerspectiveCamera, Vector3 } from 'three'
 
+import { DEFAULT_OVERLAY_HEIGHT, DEFAULT_OVERLAY_WIDTH } from '../../../../shared/config'
 import { type OverlayViewMode, resolveOverlayCameraView } from '../../tuning/cameraTuning'
 
 export interface ConversationViewConfig {
@@ -32,8 +33,8 @@ export function resolveConversationView(
       config.overlayViewMode === 'bust'
         ? config.overlayViewMode
         : (previous?.mode ?? 'bust'),
-    width: number(config.overlayWidth, previous?.width ?? 360, 100, 4096),
-    height: number(config.overlayHeight, previous?.height ?? 560, 100, 4096),
+    width: number(config.overlayWidth, previous?.width ?? DEFAULT_OVERLAY_WIDTH, 100, 4096),
+    height: number(config.overlayHeight, previous?.height ?? DEFAULT_OVERLAY_HEIGHT, 100, 4096),
     scale: number(config.overlayScale, previous?.scale ?? 1, 0.5, 3),
   }
 }

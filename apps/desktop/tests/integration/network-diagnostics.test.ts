@@ -62,7 +62,7 @@ function assertSafeMetadataBoundary(): void {
 
 async function assertAxiosLifecycle(): Promise<void> {
   const diagnostics = new NetworkRequestDiagnostics()
-  const client = axios.create({ baseURL: 'https://provider.example' })
+  const client = axios.create({ baseURL: 'https://provider.example/api/v1' })
   const dispose = observeAxiosNetwork(client, 'llm', diagnostics)
 
   await client.post(
@@ -106,7 +106,7 @@ async function assertAxiosLifecycle(): Promise<void> {
   assert.equal(requests[0].outcome, 'timeout')
   assert.equal(requests[1].outcome, 'success')
   assert.equal(requests[1].status, 200)
-  assert.equal(requests[1].target, 'https://provider.example/models')
+  assert.equal(requests[1].target, 'https://provider.example/api/v1/models')
   assert.doesNotMatch(JSON.stringify(requests), /secret|prompt|private transport details/i)
 
   const details = diagnostics.details(requests[1].id)

@@ -7,9 +7,9 @@ vi.mock('node:child_process', () => ({ spawn: mocks.spawn }))
 vi.mock('node:fs', () => ({ existsSync: mocks.exists }))
 
 import {
+  FLASH_MOTION_FORMAT,
   getMotionProfile,
   MOTION_CATALOG_REVISION,
-  MOTION_FORMAT,
   type MotionPlanIdentity,
 } from '../../../src/shared/motion'
 
@@ -26,30 +26,33 @@ const plan: MotionPlanIdentity = {
 }
 
 import { GeneratedMotionService } from '../../../src/main/motion/GeneratedMotionService'
+import { createMotionChunk } from '../../support/avatar/motionFixtures'
 
-function workerChild(exitOnKill = true) {
+const flashReady = {
+  type: 'ready',
+  catalogRevision: MOTION_CATALOG_REVISION,
+  protocolVersion: 1,
+  sourceRevision: FLASH_MOTION_FORMAT.sourceRevision,
+  weightsRevision: FLASH_MOTION_FORMAT.weightsRevision,
+}
+
+function workerChild(exitOnEof = true) {
   const child = Object.assign(new EventEmitter(), {
     stdout: new EventEmitter(),
     stderr: new EventEmitter(),
-    stdin: { write: vi.fn((_line: string, callback: (error?: Error) => void) => callback()) },
+    stdin: {
+      write: vi.fn((_line: string, callback: (error?: Error) => void) => callback()),
+      end: vi.fn(() => {
+        if (exitOnEof) queueMicrotask(exit)
+      }),
+    },
     exitCode: null as number | null,
-    pid: undefined as number | undefined,
-    kill: vi.fn(() => {
-      if (exitOnKill) queueMicrotask(() => exit())
-      return true
-    }),
   })
   const exit = () => {
     child.exitCode = 0
     child.emit('exit', 0)
   }
-  const ready = () =>
-    child.stdout.emit(
-      'data',
-      Buffer.from(
-        `${JSON.stringify({ type: 'ready', catalogRevision: MOTION_CATALOG_REVISION, format: MOTION_FORMAT })}\n`,
-      ),
-    )
+  const ready = () => child.stdout.emit('data', Buffer.from(`${JSON.stringify(flashReady)}\n`))
   return { child, ready, exit }
 }
 
@@ -60,7 +63,7 @@ function fixture(autoReady = true) {
     return child
   })
   let asset = 'asset-one'
-  const service = new GeneratedMotionService('D:/fixture/motion', () => asset, false)
+  const service = new GeneratedMotionService('D:/fixture/motion', () => asset)
   return {
     child,
     service,
@@ -71,6 +74,23 @@ function fixture(autoReady = true) {
   }
 }
 
+function response(request: Record<string, unknown>, seed = request.seed) {
+  const { frames, activity: _activity, speech: _speech, ...identity } = request
+  const chunk = createMotionChunk()
+  const size = typeof frames === 'number' ? frames : 24
+  return {
+    ...chunk,
+    ...identity,
+    seed,
+    startFrame: request.fromFrame,
+    sourceProvider: 'flashmotion',
+    flashMotion: { mode: 't2m', weightsRevision: FLASH_MOTION_FORMAT.weightsRevision },
+    rotations: chunk.rotations.slice(0, size),
+    rootPositions: chunk.rootPositions.slice(0, size),
+    footContacts: chunk.footContacts.slice(0, size),
+  }
+}
+
 afterEach(() => {
   vi.clearAllMocks()
   vi.useRealTimers()
@@ -78,7 +98,7 @@ afterEach(() => {
 })
 
 it('reports explicit disabled state and cannot start a worker through renderer demand', async () => {
-  const service = new GeneratedMotionService('D:/fixture/motionbricks', () => '', true, false)
+  const service = new GeneratedMotionService('D:/fixture/flashmotion', () => '', false)
   await expect(service.start(10, 2)).rejects.toThrow('MOTION_DISABLED')
   expect(service.status().error).toBe('MOTION_DISABLED')
   expect(mocks.spawn).not.toHaveBeenCalled()
@@ -95,53 +115,38 @@ it('preserves inference failure separately from a malformed worker protocol', as
 })
 
 describe('Main-owned generated motion lifecycle', () => {
-  it('accepts the pinned MotionBricks identity without provider selection', async () => {
+  it('accepts the pinned FlashMotion identity', async () => {
     const { service } = fixture(true)
     expect((await service.start(10, 2, 17)).seed).toBe(17)
     await service.dispose()
   })
 
-  it.runIf(process.platform === 'win32')(
-    'settles the exact experimental Python process tree before releasing the GPU lease',
-    async () => {
-      const { service, child } = fixture(true)
-      Object.assign(child, { pid: 12345 })
-      await service.start(10, 2, 17)
-      const terminator = new EventEmitter()
-      mocks.spawn.mockImplementationOnce(() => {
-        queueMicrotask(() => {
-          child.exitCode = 0
-          child.emit('exit', 0)
-          terminator.emit('exit', 0)
-        })
-        return terminator
-      })
-      await service.dispose()
-      expect(mocks.spawn.mock.calls[1][1]).toEqual(['/PID', '12345', '/T', '/F'])
-      expect(mocks.spawn.mock.calls[1][2].windowsHide).toBe(true)
-      expect(service.status().state).toBe('closed')
-    },
-  )
+  it('ends the worker input and waits for a confirmed process exit', async () => {
+    const { service, child } = fixture()
+    const lease = await service.start(10, 2, 17)
+    await service.stop(10, lease)
+    expect(child.stdin.end).toHaveBeenCalledOnce()
+    expect(service.status().state).toBe('unavailable')
+    await service.dispose()
+  })
 
   it('rejects a worker with an unqualified source identity', async () => {
     const { service, child } = fixture(false)
     const starting = service.start(10, 2, 17)
     child.stdout.emit(
       'data',
-      Buffer.from(
-        `${JSON.stringify({ type: 'ready', catalogRevision: MOTION_CATALOG_REVISION, format: { ...MOTION_FORMAT, sourceRevision: 'unqualified-source' } })}\n`,
-      ),
+      Buffer.from(`${JSON.stringify({ ...flashReady, sourceRevision: 'unqualified-source' })}\n`),
     )
-    await expect(starting).rejects.toThrow('MOTION_INIT_FAILED')
+    await expect(starting).rejects.toThrow('MOTION_PROVIDER_IDENTITY_MISMATCH')
     await service.dispose()
   })
 
-  it('allows a measured cold TensorRT engine build beyond the former two-minute cutoff', async () => {
+  it('allows cold model initialization within its longer startup deadline', async () => {
     vi.useFakeTimers()
     const { child, service, ready } = fixture(false)
     const starting = service.start(10, 2, 17)
     await vi.advanceTimersByTimeAsync(150_000)
-    expect(child.kill).not.toHaveBeenCalled()
+    expect(child.stdin.end).not.toHaveBeenCalled()
     ready()
     expect((await starting).seed).toBe(17)
     await service.dispose()
@@ -153,7 +158,7 @@ describe('Main-owned generated motion lifecycle', () => {
     await expect(service.start(11, 2)).rejects.toThrow('MOTION_BUSY')
     await service.stop(10, { avatarGeneration: 2 })
     expect((await starting).message).toMatch(/MOTION_INIT_FAILED|MOTION_CANCELLED/u)
-    expect(child.kill).toHaveBeenCalledOnce()
+    expect(child.stdin.end).toHaveBeenCalledOnce()
     await service.dispose()
   })
 
@@ -182,7 +187,7 @@ describe('Main-owned generated motion lifecycle', () => {
       .catch((error) => error)
     await vi.advanceTimersByTimeAsync(2501)
     expect((await pending).message).toBe('MOTION_DEADLINE_MISS')
-    expect(child.kill).toHaveBeenCalledOnce()
+    expect(child.stdin.end).toHaveBeenCalledOnce()
     expect(service.status().session).toBeNull()
     await service.dispose()
   })
@@ -194,26 +199,10 @@ describe('Main-owned generated motion lifecycle', () => {
       .next(10, lease, 'presence_poised', undefined, plan)
       .catch((error) => error)
     const request = JSON.parse(child.stdin.write.mock.calls[0][0])
-    const chunk = {
-      ...request,
-      type: 'motion',
-      seed: 43,
-      skeleton: 'soma30-standard-tpose-v1',
-      fps: 30,
-      startFrame: 0,
-      rotations: Array.from({ length: 60 }, () => Array.from({ length: 30 }, () => [0, 0, 0, 1])),
-      rootPositions: Array.from({ length: 60 }, () => [0, 1, 0]),
-      footContacts: Array.from({ length: 60 }, () => ({
-        leftHeel: 1,
-        leftToe: 1,
-        rightHeel: 1,
-        rightToe: 1,
-      })),
-      inferenceMs: 100,
-    }
+    const chunk = response(request, 43)
     child.stdout.emit('data', Buffer.from(`${JSON.stringify(chunk)}\n`))
     expect((await pending).message).toBe('MOTION_STALE_OR_INVALID_CHUNK')
-    expect(child.kill).toHaveBeenCalledOnce()
+    expect(child.stdin.end).toHaveBeenCalledOnce()
     await service.dispose()
   })
 })
@@ -222,12 +211,7 @@ it('rejects backward phases and same-revision playback changes before provider w
   const lease = await service.start(10, 2, 42)
   const respond = () => {
     const request = JSON.parse(child.stdin.write.mock.calls.at(-1)?.[0] ?? '{}')
-    child.stdout.emit(
-      'data',
-      Buffer.from(
-        `${JSON.stringify({ ...request, type: 'motion', skeleton: 'soma30-standard-tpose-v1', fps: 30, startFrame: request.fromFrame, rotations: Array.from({ length: 60 }, () => Array.from({ length: 30 }, () => [0, 0, 0, 1])), rootPositions: Array.from({ length: 60 }, () => [0, 1, 0]), footContacts: Array.from({ length: 60 }, () => ({ leftHeel: 1, leftToe: 1, rightHeel: 1, rightToe: 1 })), inferenceMs: 100 })}\n`,
-      ),
-    )
+    child.stdout.emit('data', Buffer.from(`${JSON.stringify(response(request))}\n`))
   }
   const first = service.next(10, lease, 'presence_poised', 0, plan)
   respond()
@@ -271,86 +255,22 @@ it('accepts an exact bounded seed without replacing the generator lease and reje
   await service.dispose()
 })
 
-describe('MotionBricks worker termination failure policy', () => {
-  /** Every worker spawn yields a fresh child; taskkill spawns yield a controllable terminator. */
-  function terminationFixture(options: { pid?: number; exitOnKill?: boolean } = {}) {
+describe('FlashMotion worker termination failure policy', () => {
+  function terminationFixture() {
     const workers: ReturnType<typeof workerChild>[] = []
-    const terminators: EventEmitter[] = []
-    mocks.spawn.mockImplementation((command: string) => {
-      if (command.endsWith('taskkill.exe')) {
-        const terminator = new EventEmitter()
-        terminators.push(terminator)
-        return terminator
-      }
-      const worker = workerChild(options.exitOnKill ?? true)
-      worker.child.pid = options.pid
+    mocks.spawn.mockImplementation(() => {
+      const worker = workerChild(false)
       workers.push(worker)
       queueMicrotask(worker.ready)
       return worker.child
     })
-    const service = new GeneratedMotionService('D:/fixture/motion', () => 'asset', false)
-    return { service, workers, terminators }
+    const service = new GeneratedMotionService('D:/fixture/motion', () => 'asset')
+    return { service, workers }
   }
-
-  it.runIf(process.platform === 'win32')(
-    'fails closed when taskkill cannot confirm the worker tree and starts no second worker',
-    async () => {
-      const { service, workers, terminators } = terminationFixture({ pid: 4242 })
-      const lease = await service.start(10, 2, 17)
-      const stopping = service.stop(10, lease)
-      terminators[0].emit('exit', 128)
-      await expect(stopping).rejects.toThrow('MOTION_TERMINATION_FAILED')
-      expect(service.status()).toMatchObject({
-        state: 'failed',
-        error: 'MOTION_TERMINATION_FAILED',
-      })
-      await expect(service.start(11, 2)).rejects.toThrow('MOTION_TERMINATION_FAILED')
-      expect(workers).toHaveLength(1)
-      // The late exit of the launcher root alone does not prove the GPU-owning tree is gone.
-      workers[0].exit()
-      await expect(service.start(11, 2)).rejects.toThrow('MOTION_TERMINATION_FAILED')
-      expect(workers).toHaveLength(1)
-      expect(service.status().state).toBe('failed')
-    },
-  )
-
-  it.runIf(process.platform === 'win32')(
-    'fails closed when taskkill itself cannot be launched',
-    async () => {
-      const { service, workers, terminators } = terminationFixture({ pid: 4242 })
-      const lease = await service.start(10, 2, 17)
-      const stopping = service.stop(10, lease)
-      terminators[0].emit('error', new Error('spawn failed'))
-      await expect(stopping).rejects.toThrow('MOTION_TERMINATION_FAILED')
-      await expect(service.start(11, 2)).rejects.toThrow('MOTION_TERMINATION_FAILED')
-      expect(workers).toHaveLength(1)
-    },
-  )
-
-  it.runIf(process.platform === 'win32')(
-    'lifts the block when a timed-out taskkill later confirms the worker tree exit',
-    async () => {
-      vi.useFakeTimers()
-      const { service, workers, terminators } = terminationFixture({ pid: 4242 })
-      const lease = await service.start(10, 2, 17)
-      const stopping = service.stop(10, lease).catch((error) => error)
-      await vi.advanceTimersByTimeAsync(5001)
-      expect((await stopping).message).toBe('MOTION_TERMINATION_FAILED')
-      expect(service.status().state).toBe('failed')
-      terminators[0].emit('exit', 0)
-      expect(service.status().state).toBe('unavailable')
-      expect((await service.start(11, 3, 5)).seed).toBe(5)
-      expect(workers).toHaveLength(2)
-      const disposing = service.dispose()
-      terminators[1].emit('exit', 0)
-      await disposing
-      expect(service.status().state).toBe('closed')
-    },
-  )
 
   it('lifts the block when an unconfirmed worker exits after the termination deadline', async () => {
     vi.useFakeTimers()
-    const { service, workers } = terminationFixture({ exitOnKill: false })
+    const { service, workers } = terminationFixture()
     const lease = await service.start(10, 2, 17)
     const stopping = service.stop(10, lease).catch((error) => error)
     await vi.advanceTimersByTimeAsync(5001)
@@ -369,7 +289,7 @@ describe('MotionBricks worker termination failure policy', () => {
 
   it('reports a closed service after a confirmed late exit during application shutdown', async () => {
     vi.useFakeTimers()
-    const { service, workers } = terminationFixture({ exitOnKill: false })
+    const { service, workers } = terminationFixture()
     await service.start(10, 2, 17)
     const disposing = service.dispose().catch((error) => error)
     await vi.advanceTimersByTimeAsync(5001)

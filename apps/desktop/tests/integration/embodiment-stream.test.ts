@@ -56,6 +56,7 @@ describe('provider-neutral early embodiment transport', () => {
     events: CharacterToolLoopStreamEvent[] = [],
     signal?: AbortSignal,
     requirement: unknown = { type: 'direct-answer' },
+    contextualMotion?: true,
   ) {
     const complete = vi.fn(async () => ({
       content: '',
@@ -108,6 +109,7 @@ describe('provider-neutral early embodiment transport', () => {
         catalogRevision: MOTION_CATALOG_REVISION,
         modelGeneration: 1,
         availableSemanticIntents: ['fox-paw', 'greeting'],
+        contextualMotion,
         unavailableReasons: [],
         qualification: 'qualified',
       },
@@ -143,6 +145,28 @@ describe('provider-neutral early embodiment transport', () => {
     const { events, result } = await plannedRun(null, `[happy]${envelope}Привет!`)
     expect(events.filter((event) => event.type === 'embodiment-intent')).toEqual([])
     expect(result.embodiment).toBeNull()
+  })
+
+  it('keeps the requested wave and discards simultaneous ambient performance', async () => {
+    const selected = { intensity: 'normal', gestureHint: 'greeting' }
+    const events: CharacterToolLoopStreamEvent[] = []
+    const { result } = await plannedRun(
+      { ...selected, performance: { lean: 0, lateralLean: 0, handBias: 0, gestureAmount: 0.8 } },
+      '',
+      async function* () {
+        expect(events.filter((event) => event.type === 'embodiment-intent')).toHaveLength(0)
+        yield { type: 'text-delta', at: 2, text: '[happy]Сейчас помашу.' }
+        yield { type: 'completed', at: 3, finishReason: 'stop' }
+      },
+      events,
+      undefined,
+      { type: 'direct-answer' },
+      true,
+    )
+    expect(result.embodiment).toEqual(selected)
+    expect(events.filter((event) => event.type === 'embodiment-intent')).toMatchObject([
+      { intent: selected },
+    ])
   })
 
   it('starts direct-answer preparation before requesting prose, without a second semantic decision', async () => {

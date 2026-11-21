@@ -1,3 +1,5 @@
+import { AsyncLocalStorage } from 'node:async_hooks'
+
 import axios, {
   type AxiosInstance,
   type AxiosResponse,
@@ -13,6 +15,9 @@ import {
   type NetworkRequestDiagnostics,
   networkRequestDiagnostics,
 } from './NetworkRequestDiagnostics'
+
+/** Suppress raw request and response previews while recognizing ambient playback. */
+export const transientMediaRequest = new AsyncLocalStorage<boolean>()
 
 export function safeNetworkTarget(url: string, baseUrl?: string): string | null {
   try {
@@ -91,7 +96,7 @@ export function observeAxiosNetwork(
 ): () => void {
   const requestIds = new WeakMap<object, string>()
   const requestInterceptor = http.interceptors.request.use((config) => {
-    const target = safeNetworkTarget(String(config.url ?? ''), config.baseURL)
+    const target = safeNetworkTarget(http.getUri(config))
     if (target) {
       requestIds.set(
         config,
@@ -100,7 +105,9 @@ export function observeAxiosNetwork(
           method: String(config.method ?? 'GET'),
           target,
           requestHeaders: safeNetworkHeaders(config.headers),
-          requestBody: previewNetworkBody(config.data, config.headers),
+          requestBody: transientMediaRequest.getStore()
+            ? { kind: 'unavailable' }
+            : previewNetworkBody(config.data, config.headers),
         }),
       )
     }
@@ -148,7 +155,11 @@ function completeAxiosRequest(
     outcome,
     status: response?.status,
     responseHeaders: response ? safeNetworkHeaders(response.headers) : undefined,
-    responseBody: response ? previewNetworkBody(response.data, response.headers) : undefined,
+    responseBody: transientMediaRequest.getStore()
+      ? { kind: 'unavailable' }
+      : response
+        ? previewNetworkBody(response.data, response.headers)
+        : undefined,
   })
 }
 

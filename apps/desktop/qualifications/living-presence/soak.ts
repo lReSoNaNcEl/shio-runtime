@@ -50,7 +50,6 @@ function snapshot(state: SoakState, at: number): WorldContextSnapshot {
       displayName: state.displayName,
     },
     media: { playing: state.mediaPlaying },
-    system: { cpuLoad: 0.2, memoryLoad: 0.4 },
     systemAdapter: 'available',
     freshness: {
       rendererMs: 0,
@@ -58,8 +57,6 @@ function snapshot(state: SoakState, at: number): WorldContextSnapshot {
       systemSources: {
         globalIdleMs: 0,
         foregroundApplicationMs: 0,
-        runningApplicationsMs: null,
-        systemLoadMs: 0,
       },
     },
   }

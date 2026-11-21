@@ -19,8 +19,10 @@ export function registerConfigIpc(
     authorization.handlePayload('config:save', IPC_ONE_PAYLOAD, (_event, payload: unknown) => {
       const partial = configSaveSchema.parse(payload) as Partial<AppSettings>
       saveConfig(partial)
-      window.webContents.send('config:updated', getRendererConfig())
-      onConfigChanged?.()
+      const keys = Object.keys(partial)
+      const changedKey = keys.length === 1 ? keys[0] : undefined
+      window.webContents.send('config:updated', getRendererConfig(), changedKey)
+      if (changedKey !== 'speechVolumePercent') onConfigChanged?.()
       return { ok: true }
     }),
   )

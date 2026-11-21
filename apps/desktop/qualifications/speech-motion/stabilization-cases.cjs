@@ -85,7 +85,6 @@ async function installStabilizationProbe(page, options = {}) {
       })
     }
     const observer = body.dynamicsObserver
-    if (body.somaHands) wrap(body.somaHands, 'sample', (original) => original)
     wrap(body, 'validateFinalComposition', (original) => original)
     body.dynamicsObserver = (sample) => {
       observer?.(sample)
@@ -497,7 +496,7 @@ async function qualifyStabilization({ application, page, directory, report, paus
   )
 }
 
-/** Visual comparison of diagnostic compositions only. Production keeps live MotionBricks. */
+/** Visual comparison of diagnostic compositions only. Production uses live FlashMotion. */
 async function qualifyIdenticalSource({ page, overlay, directory, report, pause }) {
   const root = path.resolve(__dirname, '../../motion/.artifacts/stabilization-2026-10-28')
   const before = JSON.parse(fs.readFileSync(path.join(root, 'full/report.json')))
@@ -519,7 +518,7 @@ async function qualifyIdenticalSource({ page, overlay, directory, report, pause 
     kind: 'identical-source-ab',
     sourceSha256: before.sourceSha256,
     scope:
-      'Diagnostic captured MotionBricks, baseline/candidate exact composition series; shared fixed root and relaxed fingers. This is not final live inference qualification.',
+      'Diagnostic captured generated motion, baseline/candidate exact composition series; shared fixed root and relaxed fingers. This is not final live inference qualification.',
     cases: [],
     artisticAcceptance: 'PENDING USER REVIEW',
   }

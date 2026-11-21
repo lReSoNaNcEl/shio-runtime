@@ -12,7 +12,7 @@
  */
 
 import axios, { type AxiosInstance } from 'axios'
-import { describe, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import type { ChatMessage, LlmProviderId } from '../../src/main/llm'
 import { createAiSdkAdapter, createModelCatalogClient } from '../../src/main/llm/AiSdkAdapter'
@@ -509,6 +509,42 @@ async function testMistralModelsApi(): Promise<void> {
     )
   }
 
+  {
+    const { http, lastBody } = fakeHttp(() => okResponse('{"ready":true}'))
+    const provider = createAiSdkAdapter({
+      definition: getProviderDefinition('openrouter'),
+      apiKey: 'test-key',
+      model: 'nvidia/nemotron-3.5-super-vl:free',
+      fetch: async (_input, init) =>
+        new Response(
+          JSON.stringify(await http.chat.completions.create(JSON.parse(String(init?.body)))),
+          { headers: { 'Content-Type': 'application/json' } },
+        ),
+    })
+    await provider.complete(baseMessages('hi'), {
+      responseSchema: {
+        name: 'test_plan',
+        schema: {
+          type: 'object',
+          properties: { ready: { type: 'boolean' } },
+          required: ['ready'],
+          additionalProperties: false,
+        },
+      },
+    })
+    const format = lastBody().response_format
+    check(
+      'Nemotron planning sends the response schema',
+      JSON.stringify(format).includes('"type":"json_schema"'),
+    )
+    check(
+      'Nemotron planning suppresses reasoning',
+      JSON.stringify(lastBody().reasoning) === '{"enabled":false}',
+    )
+    await provider.chat(baseMessages('hi'))
+    check('Nemotron prose leaves provider reasoning at its default', !lastBody().reasoning)
+  }
+
   // Auth failure.
   {
     let err: unknown
@@ -988,5 +1024,32 @@ async function main(): Promise<void> {
 describe('LLM provider compatibility', () => {
   it('passes the offline provider matrix', async () => {
     await main()
+  })
+
+  it('sends the OpenRouter model list request to the provider API', async () => {
+    const create = axios.create.bind(axios)
+    const request = vi.fn(async (config: import('axios').InternalAxiosRequestConfig) => ({
+      config,
+      data: { data: [{ id: 'publisher/model:free' }] },
+      headers: {},
+      status: 200,
+      statusText: 'OK',
+    }))
+    const factory = vi
+      .spyOn(axios, 'create')
+      .mockImplementationOnce((config) => create({ ...config, adapter: request }))
+    try {
+      const catalog = createModelCatalogClient({ definition: getProviderDefinition('openrouter') })
+      await expect(catalog.fetchModels('fixture-key')).resolves.toMatchObject([
+        { id: 'publisher/model:free' },
+      ])
+      await catalog.fetchModels('')
+      const [authenticated, anonymous] = request.mock.calls.map(([config]) => config)
+      expect(axios.getUri(authenticated)).toBe('https://openrouter.ai/api/v1/models')
+      expect(authenticated.headers.get('Authorization')).toBe('Bearer fixture-key')
+      expect(anonymous.headers.has('Authorization')).toBe(false)
+    } finally {
+      factory.mockRestore()
+    }
   })
 })

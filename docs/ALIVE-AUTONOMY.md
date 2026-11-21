@@ -2,7 +2,7 @@
 
 > Living Loop 2.0 extends this v1 operational record. See
 > [LIVING-LOOP-2.md](./LIVING-LOOP-2.md) for the current World, Experience, Attention,
-> conversation threads, procedural Memory, Web Search, and streaming-speech behavior.
+> conversation continuity, Semantic Memory, Web Search, and streaming-speech behavior.
 
 This document is the operational guide for the responsive and autonomous Core
 implemented by the `Alive & Autonomous v1` work item. `ARCHITECTURE.md` remains the
@@ -17,25 +17,24 @@ Version 1 includes:
 - incremental containment of internal Character protocols and emotion markers;
 - sentence/clause speech segmentation and a bounded two-audio producer/consumer
   queue;
-- Experience events, optional Fast Brain attention, bounded World Context, and
+- Experience events, deterministic attention, bounded World Context, and
   typed Behavior commands;
-- Autonomy Envelope and Smart Habit suggestions;
+- Autonomy Envelope;
 - safe correlated latency traces with p50, p95, and maximum summaries;
-- initiative controls in Settings and habit suggestions in Memory.
+- initiative controls in Settings.
 
 The API speech service and its HTTP contract are unchanged.
 
 ## Ownership and data flow
 
-Electron Main owns SQLite persistence, World Context, Autonomy policy,
-Fast Brain transport, and latency aggregation. Procedural habits are now owned
-by Memory Runtime. Fast Brain can use a
-separately selected low-cost provider/model while credentials continue to resolve only
-through the existing secure Main credential store. The renderer owns the
-single Conversation Admission, Conversation Runtime coordination, and presentation.
+Electron Main owns SQLite persistence, World Context, deterministic attention,
+Autonomy policy, and latency aggregation. The renderer owns the single Conversation
+Admission, Conversation Runtime coordination, and presentation.
 It reports only typed activity and experience facts.
 
-Character turns may receive one unresolved conversation thread. Substantive interruptions and explicit requests to return to a topic can open a thread. Resolution and expiry remove it from the next turn.
+Character turns may receive one unresolved conversation thread. Resolution and
+expiry remove it from subsequent turns. Manual Stop can continue within the current
+chat using the last user request and the visible part of the interrupted reply.
 
 Safe response flow:
 
@@ -68,22 +67,16 @@ Experience event and bounded World Context
 - `full`: eligible conversational initiatives may enter Conversation Admission after all
   policy checks. External side effects still require Action Runtime policy.
 - Global Suspend stops all initiatives, including new conversation candidates.
-- Privacy Mode disables optional Fast Brain model calls and proactive initiatives.
-- Quiet hours, conversation/audio activity, cooldown, and the daily cap suppress an initiative.
+- Privacy Mode disables proactive initiatives.
+- Active conversation or playback defers an initiative.
 
-Fast Brain is the optional AI attention filter for continuous listening. It evaluates
-one recognized utterance before a response starts and decides whether Shio should
-react. It is separate from Smart next-reply selection, which operates only after
-multiple utterances have accumulated while another response was busy and chooses or
-merges the next buffered utterance. Regular text chat uses neither mechanism.
+Deterministic attention evaluates recognized speech before a response starts.
+Smart next-reply selection is a separate setting for choosing or merging buffered
+utterances after a busy response. Regular text chat uses neither mechanism.
 
 ## Persistence and migration
 
-Electron Main stores autonomy settings, Mood, and audit records in `alive/alive.sqlite` below `userData`. Schema v7 removes the legacy goal and reminder tables, preserving settings, Mood, and audit records. Fresh profiles create only settings and audit tables. Conversation threads use their own store.
-
-Smart Habits count only typed, runtime-confirmed events. A suggestion appears after
-three observations and requires explicit approval or rejection. It never creates a
-semantic Memory fact automatically.
+Electron Main stores autonomy settings, Mood, and audit records in `alive/alive.sqlite` below `userData`. Schema v7 removes the legacy goal and reminder tables, preserving settings, Mood, and audit records. At startup, the store drops legacy timing fields from the autonomy record. Fresh profiles create only settings and audit tables. System diagnostics reads the audit on demand. Conversation threads use their own store.
 
 ## Privacy and diagnostics
 
@@ -104,7 +97,6 @@ full turn when the required milestones exist.
   violation; the Runtime does not replay duplicate text.
 - LLM and TTS cancellation abort upstream work. Queued or prepared speech is
   invalidated and stale playback cannot resume.
-- Optional Fast Brain failure falls back to deterministic attention.
 
 ## Validation
 
@@ -118,7 +110,7 @@ The deterministic suite covers normal SSE, upstream first-byte timeout abort, sp
 markers, emotion stripping, sentence/code/link segmentation, tool-round containment,
 ordered bounded speech playback, conversation thread continuity, SQLite
 restart and migration, Autonomy
-Suspend, habit evidence thresholds, and latency percentile aggregation.
+Suspend, and latency percentile aggregation.
 
 Required Desktop qualification before commit:
 
@@ -138,7 +130,7 @@ transport, and playback coordination, live qualification must additionally verif
 2. a tool round exposes and speaks no internal preamble;
 3. manual stop and voice barge-in stop LLM/TTS/playback with no late continuation;
 4. TTS outage preserves the complete text response and returns to a stable state;
-5. initiative preview, Full mode, quiet hours, Privacy Mode, and Global Suspend behave as configured;
+5. initiative preview, Full mode, Privacy Mode, and Global Suspend behave as configured;
 6. conversation threads survive interruption and disappear on resolution or expiry;
 7. VRM loading, idle, Speaking, LipSync, Overlay, Runtime Health, and application
    shutdown remain healthy.

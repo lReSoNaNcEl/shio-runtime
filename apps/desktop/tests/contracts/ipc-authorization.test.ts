@@ -63,6 +63,15 @@ describe('IPC caller and argument contract', () => {
       authorization.assert({ sender: { id: 22 } } as never, 'avatar-state:get'),
       'overlay',
     )
+    for (const channel of [
+      'diagnostics:get-alive-audit',
+      'diagnostics:get-running-applications',
+    ] as const) {
+      const handler = authorization.handle(channel, () => 'allowed')
+      assert.equal(handler({ sender: { id: 11 } } as never), 'allowed')
+      assert.throws(() => handler({ sender: { id: 22 } } as never), /not authorized/)
+      assert.throws(() => handler({ sender: { id: 11 } } as never, {}))
+    }
     const noPayloadHandler = authorization.handle('config:get', () => ({ ok: true }))
     assert.throws(() => noPayloadHandler({ sender: { id: 11 } } as never, { injected: true }))
   }

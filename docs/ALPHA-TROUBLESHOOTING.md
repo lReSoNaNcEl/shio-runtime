@@ -1,19 +1,10 @@
-# Alpha troubleshooting
+# Troubleshoot the Windows alpha
 
-- **Python not found:** install Python 3.12 x64 and enable the Python launcher.
-- **NVIDIA check failed:** install a compatible NVIDIA driver and confirm `nvidia-smi` works.
-- **Port 8000 is occupied:** stop the application using the port. The launcher never terminates an unowned process.
-- **Health timeout:** run `Start Shio Runtime.cmd open-logs` and inspect `speech-api.log` and `speech-api-error.log`.
-- **Missing model cache:** run `Start Shio Runtime.cmd repair`. Normal managed startup never downloads large model files; install/repair owns that work.
-- **Voice download failed:** check access to `huggingface.co` and retry. The launcher retries transient failures automatically and removes incomplete Speech Pack staging data after the final failure.
-- **Damaged installation:** run `Start Shio Runtime.cmd repair`. Repair replaces only a verified managed installation through staging and preserves persistent Data, voices, and model caches.
-- **Diagnostics:** run `Start Shio Runtime.cmd doctor`.
-- **ARDY encoder access denied:** grant the current Hugging Face account access to `meta-llama/Meta-Llama-3-8B-Instruct` and configure its local token store, then repair. Access to Llama 3.1 is a different grant. Do not send tokens in chat.
-- **Fish loading after Stop:** cancellation terminates the actual GPU worker. Loading/warming and delayed recovery are expected; wait for ready before the next session. Repeated failed status needs logs, not an F5 fallback.
-- **Motion degraded:** inspect Runtime Health queue/deadline/error and run Motion doctor. Safe pose is a failure presentation, not evidence of successful ARDY generation.
-- **Old F5 environment:** reinstall the experimental Speech Pack from its lock-file and migrate `.env` to Fish settings. Existing F5/Cosy configurations are not accepted silently.
+- **FlashMotion cannot find WSL2 or build tools.** Check that `wsl -l -v` lists `ShioFlashMotionV1` as WSL2. Install Python 3.12, Git and the CUDA 12.8 build tools inside that distribution. [Installation instructions](ALPHA-INSTALL.md)
+- **Download or compilation stopped.** Run `Start Shio Runtime.cmd repair`. It reuses verified assets. If a file reports a SHA-256 mismatch, move that named file out of `Data\FlashMotion` and rerun repair.
+- **FlashMotion reports unavailable or degraded.** Run `Start Shio Runtime.cmd doctor` for CUDA and asset checks. If it passes, check Runtime Health for warmup, deadlines and memory errors. A steady safe pose can be shown while the generator is warming up or unavailable.
+- **Speech Pack is preparing after Stop.** Fish cancellation stops the inference worker. Wait for Speech API to return to Ready before trying another utterance.
+- **Port 8000 is occupied.** The launcher reuses a compatible Speech API and reports an incompatible listener. Check the existing service before restarting it.
+- **Windows SmartScreen warns.** This alpha is unsigned. Verify the archive checksum and obtain the package from the maintainer.
 
-See [the ARDY/Fish guide](EXPERIMENT-ARDY-FISH.md) for resources, contracts and
-qualification limits. Do not infer low-memory support from a successful build.
-
-Do not post API keys, GitHub tokens, `.env` files, or private logs publicly.
+Open the launcher log folder with `Start Shio Runtime.cmd open-logs`. Share the error and bounded Runtime Health report for support.

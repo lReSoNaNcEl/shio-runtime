@@ -269,7 +269,7 @@ async function bodyFixture(
   return owner
 }
 
-it('retargets both SOMA30 forearms forward on the real VRM0 bind hierarchy', async () => {
+it('retargets both generated forearms forward on the real VRM0 bind hierarchy', async () => {
   const vrm = trackedRig()
   vrm.scene.rotation.y = 1.1
   vrm.scene.updateMatrixWorld(true)

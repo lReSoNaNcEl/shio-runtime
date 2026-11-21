@@ -28,6 +28,7 @@ export const MOTION_PROFILE_IDS = [
   'peace_single',
   'kiss_air_soft',
   'stretch_small',
+  'dance_in_place',
   'turn_in_place',
   'greet_wave_close',
   'explain_point_close',

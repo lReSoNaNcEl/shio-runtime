@@ -1,12 +1,18 @@
 import type { VRM, VRMHumanBoneName } from '@pixiv/three-vrm'
 import * as THREE from 'three'
 
-import type { EmbodimentAvailability } from '../../../../shared/character-response'
+import type {
+  ConversationPerformance,
+  EmbodimentAvailability,
+} from '../../../../shared/character-response'
 import type { DeliveryStyle } from '../../../../shared/embodiment'
 import {
   BODY_BONE_NAMES,
   type BodyPresentation,
+  bodyActionIntentSchema,
   bodyTurnIntentSchema,
+  FLASH_MOTION_FORMAT,
+  type GeneratedMotionHealth,
   getMotionProfile,
   HAND_BONE_NAMES,
   HEAD_PRESENTATION_BONE_NAMES,
@@ -41,6 +47,7 @@ import {
   gestureRegionsVisible,
   resolveConversationView,
 } from './ConversationFraming'
+import { DanceInPlaceMotion } from './DanceInPlaceMotion'
 import {
   type Binding,
   createBindings,
@@ -54,7 +61,6 @@ import { calibrateFingerSpreadSigns, GeneratedHandPose } from './GeneratedHandPo
 import type { GeneratedBodyDebugState, GeneratedMotionRequestContext } from './GeneratedMotionTypes'
 import type { MotionDynamicsObserver, MotionDynamicsStage } from './MotionDynamicsObserver'
 import { plantLeg } from './plantLeg'
-import { SomaHandRetargeting } from './SomaHandRetargeting'
 import { sourceHandDisplacements } from './SourceHandDisplacements'
 import {
   captureSpeechOrigin,
@@ -69,6 +75,15 @@ type HeadPresentationBoneName = (typeof HEAD_PRESENTATION_BONE_NAMES)[number]
 
 /** Source seconds over which the conversational arm range fades after speech. */
 const CONVERSATIONAL_RELEASE_SECONDS = 1.6
+const NATIVE_FINGER_WEIGHT = 0.65
+const PRESENCE_FINGER_SPEED = 4
+const GESTURE_FINGER_SPEED = 7
+const DEFAULT_CONVERSATION_PERFORMANCE: ConversationPerformance = {
+  lean: 0,
+  lateralLean: 0,
+  gestureAmount: 1,
+  handBias: 0,
+}
 
 /** Bounded generated body owner; the facial Runtime still composes after it. */
 export class GeneratedBodyPlayback {
@@ -77,7 +92,6 @@ export class GeneratedBodyPlayback {
   private presentationBones: Array<[VRMHumanBoneName, THREE.Object3D]> = []
   private headPresentationBones: Array<[HeadPresentationBoneName, THREE.Object3D]> = []
   private handPose = new GeneratedHandPose()
-  private somaHands: SomaHandRetargeting | null = null
   private speechEnergy = 0
   private readonly speechProsody = new ConsumedSpeechProsody()
   private safeHands: ReadonlyMap<VRMHumanBoneName, THREE.Quaternion> = new Map()
@@ -86,15 +100,19 @@ export class GeneratedBodyPlayback {
   private sourcePathChunk: MotionChunk | null = null
   private sourcePreviousRotations: MotionChunk['rotations'][number] | undefined
   private sourceHandPaths = new Map<THREE.Object3D, THREE.Vector3[]>()
-  private turn: TurnInPlaceMotion | null = null
-  private physical:
-    | (ReturnType<TurnInPlaceMotion['getStatus']> & { executionId: string })
-    | undefined
+  private physicalMotion: TurnInPlaceMotion | DanceInPlaceMotion | null = null
+  private readonly danceReferencePoses = new WeakMap<
+    DanceInPlaceMotion,
+    Map<THREE.Object3D, THREE.Quaternion>
+  >()
+  private physical: GeneratedMotionHealth['physical']
   private stage: BodyPresentation['stage']
   private mirrorHeading = 0
   private lastPoseFrame: number | null = null
   private appliedProfileId: MotionProfileId = 'presence_poised'
   private appliedGeneratedSource = false
+  private appliedFlashMotion: GeneratedMotionHealth['flashMotion']
+  private appliedFlashPlayback: string | null = null
   private appliedPhaseId: MotionPhaseId = 'prepare'
   private appliedExecutionId: string | undefined
   private appliedOutcome: MotionOutcome | null = null
@@ -196,6 +214,10 @@ export class GeneratedBodyPlayback {
   private readonly parentQ = new THREE.Quaternion()
   private attenuation: MotionAttenuationProbe = NOOP_MOTION_ATTENUATION_PROBE
   private deliveryStyle: DeliveryStyle | null = null
+  private conversationPerformance: ConversationPerformance | undefined
+  private readonly displayedPerformance = { ...DEFAULT_CONVERSATION_PERFORMANCE }
+  private readonly conversationTilt = new THREE.Quaternion()
+  private readonly conversationTiltEuler = new THREE.Euler()
 
   constructor(
     private readonly onFacialChannelsRejected: (count: number) => void,
@@ -205,6 +227,18 @@ export class GeneratedBodyPlayback {
   /** Audible-segment delivery style, sent with consumed-speech activity only. */
   setDeliveryStyle(style: DeliveryStyle | null): void {
     this.deliveryStyle = style ? { ...style } : null
+  }
+
+  setConversationPerformance(value: ConversationPerformance | undefined): void {
+    this.conversationPerformance = value
+  }
+
+  isSpeechPause(): boolean {
+    return this.speechProsody.isPause(this.clock)
+  }
+
+  supportsContextualMotion(): boolean {
+    return this.appliedFlashMotion !== undefined && !this.presentationOnly
   }
 
   /** Debug attribution only; the production probe is inactive and computes nothing. */
@@ -234,14 +268,18 @@ export class GeneratedBodyPlayback {
     this.inverseProceduralPose.clear()
     this.proceduralRootOffset.set(0, 0, 0)
     this.appliedGeneratedSource = false
+    this.appliedFlashMotion = undefined
+    this.appliedFlashPlayback = null
     this.transitionHands.clear()
     this.projectedConversationCamera = null
     this.vrm = vrm
-    this.turn = null
+    this.physicalMotion = null
     this.stage = undefined
     this.physical = undefined
     this.mirrorHeading = 0
     this.sourceSpeeds.clear()
+    this.conversationPerformance = undefined
+    Object.assign(this.displayedPerformance, DEFAULT_CONVERSATION_PERFORMANCE)
     this.sourcePathChunk = null
     this.sourcePreviousRotations = undefined
     this.sourceHandPaths.clear()
@@ -267,7 +305,6 @@ export class GeneratedBodyPlayback {
     )
     const spreadSigns = calibrateFingerSpreadSigns(vrm)
     this.handPose = new GeneratedHandPose(handRest, spreadSigns)
-    this.somaHands = new SomaHandRetargeting(vrm)
     const safeHandPose = new GeneratedHandPose(handRest, spreadSigns)
     safeHandPose.sample('presence_poised', 0, 0, vrm.meta.metaVersion)
     this.safeHands = safeHandPose.sample('presence_poised', 0.35, 0, vrm.meta.metaVersion)
@@ -310,11 +347,12 @@ export class GeneratedBodyPlayback {
     this.inverseProceduralPose.clear()
     this.proceduralRootOffset.set(0, 0, 0)
     this.appliedGeneratedSource = false
+    this.appliedFlashMotion = undefined
+    this.appliedFlashPlayback = null
     this.transitionHands.clear()
-    this.turn = null
+    this.physicalMotion = null
     this.stopAnimation()
     this.vrm = null
-    this.somaHands = null
     this.bindings = []
     this.presentationBones = []
     this.headPresentationBones = []
@@ -342,7 +380,7 @@ export class GeneratedBodyPlayback {
   setPresentationOnly(value: boolean): void {
     this.presentationOnly = value
   }
-  setMirror(value: BodyPresentation | null): void {
+  setMirror(value: BodyPresentation | null): boolean {
     if (value && this.vrm) {
       const sameSession = value.lease
         ? this.mirror?.lease?.sessionId === value.lease.sessionId &&
@@ -352,14 +390,14 @@ export class GeneratedBodyPlayback {
           this.mirror?.lease?.seed === value.lease.seed
         : this.mirror?.compositionSource === 'local' &&
           this.mirror.localGeneration === value.localGeneration
-      if (sameSession && value.frame < (this.mirror?.frame ?? 0)) return
+      if (sameSession && value.frame < (this.mirror?.frame ?? 0)) return false
       if (
         sameSession &&
         value.composedAtMs !== undefined &&
         this.mirror?.composedAtMs !== undefined &&
         value.composedAtMs < this.mirror.composedAtMs
       )
-        return
+        return false
       const frameDelta = sameSession ? value.frame - (this.mirror?.frame ?? value.frame) : 0
       const composedDelta =
         sameSession && value.composedAtMs !== undefined && this.mirror?.composedAtMs !== undefined
@@ -398,6 +436,7 @@ export class GeneratedBodyPlayback {
       this.phase = 'stopped'
       // Keep the last primary-composed pose; no second recovery clock in Overlay.
     }
+    return true
   }
   getPresentation(): BodyPresentation | null {
     return this.presentation
@@ -504,7 +543,8 @@ export class GeneratedBodyPlayback {
     if (!profile) return Promise.reject(new Error('MOTION_INVALID_PROFILE'))
     if (
       context.bodyAction &&
-      (!profile.physicalAction || !bodyTurnIntentSchema.safeParse(context.bodyAction).success)
+      (profile.physicalAction?.action !== context.bodyAction.action ||
+        !bodyActionIntentSchema.safeParse(context.bodyAction).success)
     )
       return Promise.reject(new Error('MOTION_INVALID_BODY_ACTION'))
     const availability = this.profileAvailability(
@@ -589,7 +629,7 @@ export class GeneratedBodyPlayback {
     if (
       !this.playing ||
       !this.started ||
-      this.turn !== null ||
+      this.physicalMotion !== null ||
       execution?.profile.kind !== 'presence' ||
       this.context?.source === 'debug-preview' ||
       this.context?.source === 'debug-reroll' ||
@@ -621,7 +661,7 @@ export class GeneratedBodyPlayback {
     this.readiness?.reject(new Error('MOTION_PROFILE_SUPERSEDED'))
     this.profileVersion += 1
     this.profileId = motionProfileSchema.parse(id)
-    this.turn = null
+    this.physicalMotion = null
     this.context = context
     this.speechFinished = false
     this.speechOrigin = speechOrigin
@@ -636,6 +676,11 @@ export class GeneratedBodyPlayback {
     this.execution = new MotionPhaseExecution(
       `${this.avatarGeneration}:${this.localEpoch}:${++this.executionSeq}`,
       profile,
+      profile.physicalAction?.action === 'dance-in-place'
+        ? context.bodyAction?.action === 'dance-in-place'
+          ? context.bodyAction.style
+          : 'playful'
+        : undefined,
     )
     this.phaseAppliedFrame = null
     this.targetWaitStarted = null
@@ -717,12 +762,17 @@ export class GeneratedBodyPlayback {
     this.profileVersion += 1
     const bridge = !this.clock && this.execution?.phase !== 'recover'
     const tail =
-      this.queue.find((chunk) => chunk.startFrame + 60 >= this.cursor + 60) ?? this.queue.at(-1)
-    const boundary = tail ? tail.startFrame + 60 : Math.floor(this.cursor / 4) * 4
+      this.queue.find((chunk) => chunk.startFrame + chunk.rotations.length >= this.cursor + 60) ??
+      this.queue.at(-1)
+    const boundary = tail
+      ? tail.startFrame + tail.rotations.length
+      : Math.floor(this.cursor / 4) * 4
     this.replanFrom = bridge ? Math.floor(boundary / 4) * 4 : null
     this.queue = bridge ? this.queue.filter((chunk) => chunk.startFrame < boundary) : []
     const remaining = this.queue.at(-1)
-    this.generatedEnd = remaining ? remaining.startFrame + 60 : Math.floor(this.cursor)
+    this.generatedEnd = remaining
+      ? remaining.startFrame + remaining.rotations.length
+      : Math.floor(this.cursor)
     this.phaseAppliedFrame = null
     this.phaseWallStarted = performance.now()
     this.replan = true
@@ -754,7 +804,7 @@ export class GeneratedBodyPlayback {
           this.bodySafety.constrainTarget(binding.bone, binding.safe)
         }
       }
-      if (this.appliedGeneratedSource && this.somaHands)
+      if (this.appliedGeneratedSource)
         this.handPose.reset(
           new Map(
             this.presentationBones
@@ -787,8 +837,8 @@ export class GeneratedBodyPlayback {
   }
 
   recover(): void {
-    if (this.turn) {
-      this.turn.requestStop('superseded')
+    if (this.physicalMotion) {
+      this.physicalMotion.requestStop('superseded')
       return
     }
     this.execution?.requestRecovery()
@@ -845,7 +895,12 @@ export class GeneratedBodyPlayback {
       !measuredConversationView
     )
       return { available: false, reason: 'camera-incompatible' }
-    if (conversational && profile.kind === 'gesture' && this.conversationView) {
+    if (
+      conversational &&
+      profile.kind === 'gesture' &&
+      !profile.physicalAction &&
+      this.conversationView
+    ) {
       this.projectedConversationCamera ??= conversationCamera(vrm, this.conversationView)
       if (measuredConversationView && !this.projectedConversationCamera)
         return { available: false, reason: 'camera-incompatible' }
@@ -921,6 +976,7 @@ export class GeneratedBodyPlayback {
               ? 'reaction'
               : 'gesture',
         generatedSource: this.appliedGeneratedSource,
+        flashMotion: this.appliedFlashMotion !== undefined,
         phase: this.localRecovery ? 'recover' : this.appliedPhaseId,
         reachSeconds:
           this.execution &&
@@ -977,7 +1033,8 @@ export class GeneratedBodyPlayback {
     )
     // A phase forecast/recovery is physical scheduling, not disappearance of
     // supported semantics. The request may prepare/queue against the same lease.
-    const ready = this.lease !== null && !this.error && this.playing
+    const canStartBodyAction = this.lease !== null && !this.error
+    const ready = canStartBodyAction && this.playing
     return {
       version: 2,
       catalogRevision: MOTION_CATALOG.catalogRevision,
@@ -991,13 +1048,21 @@ export class GeneratedBodyPlayback {
             ),
           ]
         : [],
-      availableBodyActions:
-        ready && qualified.some((profile) => profile.physicalAction) ? ['turn-in-place'] : [],
+      availableBodyActions: canStartBodyAction
+        ? [
+            ...new Set(
+              qualified.flatMap((profile) =>
+                profile.physicalAction ? [profile.physicalAction.action] : [],
+              ),
+            ),
+          ]
+        : [],
+      ...(ready && this.supportsContextualMotion() ? { contextualMotion: true as const } : {}),
       unavailableReasons: !this.vrm
         ? ['model-unavailable']
         : !compatible.length
           ? ['rig-unsupported']
-          : !ready
+          : !canStartBodyAction
             ? ['motion-unavailable']
             : qualifiedConversation.length === 0
               ? ['unqualified']
@@ -1015,6 +1080,14 @@ export class GeneratedBodyPlayback {
       energy: this.clock?.state === 'playing' ? this.speechEnergy : 0,
       playbackId: this.clock?.playbackId ?? null,
       speaking,
+      ...(speaking
+        ? {
+            sourceStartSample: Math.min(
+              26_460_000,
+              Math.max(0, Math.round((fromFrame - this.clockBase) * 1470)),
+            ),
+          }
+        : {}),
       prosody: this.speechProsody.snapshot(this.clock, fromFrame - this.cursor),
       ...(speaking && this.deliveryStyle ? { style: { ...this.deliveryStyle } } : {}),
     }
@@ -1054,7 +1127,7 @@ export class GeneratedBodyPlayback {
     if (this.execution?.id === this.appliedExecutionId) this.appliedOutcome = outcome
     if (this.execution) this.execution.outcome = outcome
     this.playing = false
-    this.turn = null
+    this.physicalMotion = null
     this.queue = []
     this.readiness?.reject(new Error(`MOTION_${outcome}`))
     this.readiness = null
@@ -1085,8 +1158,8 @@ export class GeneratedBodyPlayback {
   }
 
   stopAnimation(reason = 'MOTION_CANCELLED'): void {
-    if (this.turn && reason === 'MOTION_CANCELLED') {
-      this.turn.requestStop('cancelled')
+    if (this.physicalMotion && reason === 'MOTION_CANCELLED') {
+      this.physicalMotion.requestStop('cancelled')
       for (const pending of this.pendingProfiles) pending.reject(new Error(reason))
       this.pendingProfiles = []
       return
@@ -1204,8 +1277,18 @@ export class GeneratedBodyPlayback {
       }
       this.validateFinalComposition(delta)
     }
-    if (this.turn && this.playing && !this.presentationOnly) {
-      this.updateTurn(delta, beforeDiagnostics)
+    if (this.execution?.profile.physicalAction && this.playing && !this.presentationOnly) {
+      if (this.physicalMotion) this.updatePhysicalAction(delta, beforeDiagnostics)
+      else {
+        beforeDiagnostics()
+        if (this.vrm) {
+          this.vrm.humanoid.getNormalizedBoneNode('hips')?.position.copy(this.baseRoot)
+          this.vrm.scene.updateMatrixWorld(true)
+          for (const leg of this.plantedFeet)
+            plantLeg(leg.upper, leg.lower, leg.foot, leg.target, leg.orientation, leg.pole)
+        }
+        this.pump()
+      }
       return
     }
     if (this.playing && this.execution?.wantsRecovery && this.execution.advance(0, false))
@@ -1297,7 +1380,9 @@ export class GeneratedBodyPlayback {
             this.replan = true
             this.queue = this.queue.filter((chunk) => chunk.plan.phaseId === this.execution?.phase)
             const tail = this.queue.at(-1)
-            this.generatedEnd = tail ? tail.startFrame + 60 : Math.floor(this.cursor)
+            this.generatedEnd = tail
+              ? tail.startFrame + tail.rotations.length
+              : Math.floor(this.cursor)
             this.replanFrom = null
           }
         }
@@ -1319,7 +1404,7 @@ export class GeneratedBodyPlayback {
             chunk.plan.executionId === this.execution?.id &&
             (chunk.plan.phaseId === this.execution?.phase || !audible) &&
             chunk.startFrame <= coverageCursor &&
-            coverageCursor < chunk.startFrame + 60,
+            coverageCursor < chunk.startFrame + chunk.rotations.length,
         )
 
       if (waitingPhase && audibleClock) {
@@ -1409,10 +1494,14 @@ export class GeneratedBodyPlayback {
       if (this.lease && this.started) this.capturePresentation()
       return
     }
-    while (this.queue.length && this.queue[0].startFrame + 60 <= this.cursor) this.queue.shift()
+    while (
+      this.queue.length &&
+      this.queue[0].startFrame + this.queue[0].rotations.length <= this.cursor
+    )
+      this.queue.shift()
     const execution = this.execution
     const covers = (item: MotionChunk): boolean =>
-      item.startFrame <= this.cursor && this.cursor < item.startFrame + 60
+      item.startFrame <= this.cursor && this.cursor < item.startFrame + item.rotations.length
     const chunk =
       this.queue.findLast((item) => covers(item) && item.plan.phaseId === execution?.phase) ??
       this.queue.findLast((item) => covers(item) && item.plan.phaseId !== this.forecast?.phaseId)
@@ -1621,7 +1710,10 @@ export class GeneratedBodyPlayback {
     }
     for (const [name, bone] of this.presentationBones) {
       const rotation = fingers.get(name)
-      if (rotation) bone.quaternion.copy(rotation)
+      if (rotation) {
+        if (this.appliedFlashMotion) this.applyFlashFinger(bone, rotation, delta, true)
+        else bone.quaternion.copy(rotation)
+      }
     }
     this.vrm.humanoid
       .getNormalizedBoneNode('hips')
@@ -1634,13 +1726,32 @@ export class GeneratedBodyPlayback {
     const vrm = this.vrm
     const execution = this.execution
     if (!vrm || !execution || this.lastPoseFrame === this.cursor) return
+    const speech = chunk.flashMotion?.speech
+    let appliedSpeechSample: number | null = null
+    if (speech) {
+      const clock = this.clock
+      const offset = this.cursor - chunk.startFrame
+      const sample = Math.round(speech.startSample + offset * 1470)
+      if (
+        clock?.state !== 'playing' ||
+        clock.playbackId !== speech.playbackId ||
+        offset < 0 ||
+        offset >= speech.frames ||
+        Math.abs(clock.sourceSampleOffset - sample) > 2205
+      )
+        return
+      appliedSpeechSample = sample
+    }
     const elapsed =
       this.lastPoseFrame === null ? 1 / 30 : Math.max(0, (this.cursor - this.lastPoseFrame) / 30)
     const profile = MOTION_PROFILES.find((entry) => entry.id === chunk.profileId)
+    const contextualPresence = chunk.flashMotion !== undefined && profile?.kind === 'presence'
+    if (contextualPresence) this.updateConversationPerformance(renderDelta)
     if (this.sourcePathChunk !== chunk) {
       this.sourcePreviousRotations =
-        this.sourcePathChunk && this.sourcePathChunk.startFrame + 60 === chunk.startFrame
-          ? this.sourcePathChunk.rotations[59]
+        this.sourcePathChunk &&
+        this.sourcePathChunk.startFrame + this.sourcePathChunk.rotations.length === chunk.startFrame
+          ? this.sourcePathChunk.rotations.at(-1)
           : undefined
       this.sourcePathChunk = chunk
       this.sourceHandPaths.clear()
@@ -1672,7 +1783,7 @@ export class GeneratedBodyPlayback {
               vrm.scene.getWorldQuaternion(new THREE.Quaternion()),
               vrm.meta.metaVersion === '0',
               Math.max(0, Math.floor(this.cursor - chunk.startFrame)),
-              Math.min(60, Math.ceil(((phase?.maxMs ?? 2000) * 30) / 1000)),
+              Math.min(chunk.rotations.length, Math.ceil(((phase?.maxMs ?? 2000) * 30) / 1000)),
             ),
           )
       }
@@ -1681,7 +1792,23 @@ export class GeneratedBodyPlayback {
     this.lastPoseFrame = this.cursor
     this.appliedProfileId = chunk.profileId
     this.appliedLease = this.lease
-    this.appliedGeneratedSource = chunk.sourceProvider === 'motionbricks'
+    this.appliedGeneratedSource = chunk.sourceProvider !== undefined
+    this.appliedFlashPlayback = speech?.playbackId ?? null
+    this.appliedFlashMotion = chunk.flashMotion
+      ? {
+          weightsRevision: FLASH_MOTION_FORMAT.weightsRevision,
+          mode: chunk.flashMotion.mode,
+          appliedSpeechSample,
+          fingers: chunk.flashMotion.fingers
+            ? 'native'
+            : profile?.kind === 'gesture'
+              ? 'profile-constraint'
+              : 'neutral',
+          ...(contextualPresence && this.conversationPerformance
+            ? { performance: { ...this.displayedPerformance } }
+            : {}),
+        }
+      : undefined
     this.appliedPhaseId = chunk.plan.phaseId
     if (this.appliedExecutionId !== chunk.plan.executionId) this.appliedOutcome = null
     this.appliedExecutionId = chunk.plan.executionId
@@ -1694,28 +1821,20 @@ export class GeneratedBodyPlayback {
     )
     const wrists = this.handPose.getWristOffsets()
     const offset = this.cursor - chunk.startFrame
-    const frame = Math.min(59, Math.floor(offset)),
+    const lastFrame = chunk.rotations.length - 1
+    const frame = Math.min(lastFrame, Math.floor(offset)),
       fraction = offset - frame
-    const following =
-      frame < 59 ? chunk : this.queue.find((item) => item.startFrame === chunk.startFrame + 60)
-    const next =
-      frame < 59
-        ? chunk.rotations[frame + 1]
-        : (this.queue.find((item) => item.startFrame === chunk.startFrame + 60)?.rotations[0] ??
-          chunk.rotations[frame])
+    const nextChunk = this.queue.find(
+      (item) => item.startFrame === chunk.startFrame + chunk.rotations.length,
+    )
+    const following = frame < lastFrame ? chunk : nextChunk
+    const next = chunk.rotations[frame + 1] ?? nextChunk?.rotations[0] ?? chunk.rotations[frame]
     const before = frame > 0 ? chunk.rotations[frame - 1] : this.sourcePreviousRotations
-    const after =
-      frame < 58
-        ? chunk.rotations[frame + 2]
-        : this.queue.find((item) => item.startFrame === chunk.startFrame + 60)?.rotations[
-            frame - 58
-          ]
+    const after = chunk.rotations[frame + 2] ?? nextChunk?.rotations[frame - lastFrame + 1]
     const targetWorld = new Map<THREE.Object3D, THREE.Quaternion>()
     const localTargets: THREE.Quaternion[] = []
     const modelWorld = vrm.scene.getWorldQuaternion(new THREE.Quaternion())
-    // Full conversational arm range during consumed speech, fading over
-    // CONVERSATIONAL_RELEASE_SECONDS of source time after it ends. Only the
-    // MotionBricks talk targets use this bounded range.
+    // Full conversational arm range during consumed speech, fading in source time.
     this.conversationalReach =
       this.clock?.state === 'playing' && !this.speechFinished
         ? 1
@@ -1761,6 +1880,10 @@ export class GeneratedBodyPlayback {
         after?.[binding.index],
         fraction,
       )
+      const upperLimb = /Arm|Shoulder|Hand/u.test(binding.name)
+      if (contextualPresence && (upperLimb || (binding.index > 0 && binding.index <= 3))) {
+        this.q.premultiply(this.conversationTilt)
+      }
       if (profile?.rootPolicy.mode === 'anchored-standing' && binding.index <= 3) {
         // Bound anatomical lean separately from yaw. Independent 17-degree
         // world clamps allowed adjacent trunk segments to counter-bend sharply.
@@ -1794,6 +1917,8 @@ export class GeneratedBodyPlayback {
       this.q.premultiply(this.parentQ.invert()).normalize()
       const wrist = wrists.get(binding.name)
       if (wrist) this.q.multiply(wrist).normalize()
+      if (contextualPresence && upperLimb)
+        this.q.slerp(binding.calibratedSafe, 1 - this.conversationReach(binding.name))
       // Smooth within the anatomical joint domain, before final contact/IK.
       // A raw target crossing the hinge/twist boundary must not snap the output.
       this.bodySafety.constrainTarget(binding.bone, this.q)
@@ -1849,7 +1974,7 @@ export class GeneratedBodyPlayback {
     if (hips && profile) {
       const root = new THREE.Vector3().fromArray(chunk.rootPositions[frame])
       const nextRoot =
-        following?.rootPositions[frame < 59 ? frame + 1 : 0] ?? chunk.rootPositions[frame]
+        following?.rootPositions[frame < lastFrame ? frame + 1 : 0] ?? chunk.rootPositions[frame]
       root.lerp(new THREE.Vector3().fromArray(nextRoot), fraction)
       const scale = this.rootAnchor.y / 0.9887084839474641
       hips.position.copy(this.rootAnchor)
@@ -1900,22 +2025,85 @@ export class GeneratedBodyPlayback {
       const hips = vrm.humanoid.getNormalizedBoneNode('hips')
       if (hips) hips.position.lerp(this.rootAnchor, smooth)
     }
-    const sourceHands = this.somaHands?.sample(chunk, frame, fraction, following)
+    const fingers = chunk.flashMotion?.fingers
     for (const [name, bone] of this.presentationBones) {
-      const rotation = sourceHands?.get(name) ?? hand.get(name)
+      const index = HAND_BONE_NAMES.indexOf(name as (typeof HAND_BONE_NAMES)[number])
+      let rotation = hand.get(name)
+      if (chunk.flashMotion && index >= 0) {
+        rotation = profile?.kind === 'gesture' ? hand.get(name) : this.safeHands.get(name)
+        if (fingers) {
+          const from = fingers[frame][index]
+          const to =
+            fingers[frame + 1]?.[index] ?? following?.flashMotion?.fingers?.[0][index] ?? from
+          rotation = new THREE.Quaternion()
+            .fromArray(from)
+            .slerp(new THREE.Quaternion().fromArray(to), THREE.MathUtils.clamp(fraction, 0, 1))
+          if (vrm.meta.metaVersion === '0')
+            rotation.set(-rotation.x, rotation.y, -rotation.z, rotation.w)
+          const neutral = this.safeHands.get(name)
+          rotation =
+            neutral
+              ?.clone()
+              .slerp(
+                rotation.premultiply(neutral),
+                NATIVE_FINGER_WEIGHT * this.conversationReach(name),
+              )
+              .normalize() ?? rotation
+        }
+      }
       if (rotation) {
         const from =
-          sourceHands && this.transitionElapsed < this.transitionDuration
+          chunk.flashMotion && this.transitionElapsed < this.transitionDuration
             ? this.transitionHands.get(bone)
             : undefined
-        if (from)
-          bone.quaternion
-            .copy(from)
-            .slerp(rotation, this.transitionElapsed / this.transitionDuration)
-        else bone.quaternion.copy(rotation)
+        const target = from
+          ? from.clone().slerp(rotation, this.transitionElapsed / this.transitionDuration)
+          : rotation
+        if (chunk.flashMotion && index >= 0)
+          this.applyFlashFinger(bone, target, renderDelta, profile?.kind === 'presence')
+        else bone.quaternion.copy(target)
       }
     }
     this.captureBasePose()
+  }
+
+  private applyFlashFinger(
+    bone: THREE.Object3D,
+    target: THREE.Quaternion,
+    renderDelta: number,
+    presence: boolean,
+  ): void {
+    const previous = this.basePose.get(bone) ?? bone.quaternion
+    const seconds = Math.max(0, Math.min(1 / 30, renderDelta))
+    const speed = presence ? PRESENCE_FINGER_SPEED : GESTURE_FINGER_SPEED
+    const step = presence
+      ? Math.min(speed * seconds, previous.angleTo(target) * -Math.expm1(-18 * seconds))
+      : speed * seconds
+    bone.quaternion.copy(previous).rotateTowards(target, step).normalize()
+  }
+
+  private updateConversationPerformance(delta: number): void {
+    const target = this.conversationPerformance ?? DEFAULT_CONVERSATION_PERFORMANCE
+    const applied = this.displayedPerformance
+    const blend = -Math.expm1(-4 * Math.max(0, Math.min(0.05, delta)))
+    const pausing = this.conversationPerformance && this.isSpeechPause()
+    applied.lean = THREE.MathUtils.lerp(applied.lean, target.lean, blend)
+    applied.lateralLean = THREE.MathUtils.lerp(applied.lateralLean, target.lateralLean, blend)
+    applied.handBias = THREE.MathUtils.lerp(applied.handBias, target.handBias, blend)
+    applied.gestureAmount = THREE.MathUtils.lerp(
+      applied.gestureAmount,
+      target.gestureAmount * (pausing ? 0.65 : 1),
+      blend,
+    )
+    this.conversationTilt.setFromEuler(
+      this.conversationTiltEuler.set(applied.lean * 0.085, 0, applied.lateralLean * 0.07),
+    )
+  }
+
+  private conversationReach(name: string): number {
+    const { gestureAmount, handBias } = this.displayedPerformance
+    const side = name.startsWith('left') ? -1 : 1
+    return THREE.MathUtils.clamp(0.5 + 0.5 * gestureAmount + side * handBias * 0.2, 0.3, 1)
   }
 
   private captureBasePose(): void {
@@ -1940,45 +2128,99 @@ export class GeneratedBodyPlayback {
     }
   }
 
-  private startTurn(): void {
+  private startPhysicalAction(): void {
     if (!this.vrm || !this.execution || !this.lease) return
     try {
-      const intent = bodyTurnIntentSchema.parse(
-        this.context?.bodyAction ?? {
-          action: 'turn-in-place',
-          turns: 1,
-          direction: this.lease.seed % 2 ? 'clockwise' : 'counterclockwise',
-          tempo: 1,
-          finishFacing: 'viewer',
-        },
-      )
-      this.turn = new TurnInPlaceMotion(
-        this.vrm,
-        intent,
-        this.lease.seed,
-        this.stage?.continuousHeading ?? 0,
-      )
+      const source = this.queue[0]
+      const heading = this.stage?.continuousHeading ?? 0
+      const request = this.context?.bodyAction
+      if (this.execution.profile.physicalAction?.action === 'dance-in-place') {
+        if (!source?.flashMotion?.danceFeet) throw new Error('MOTION_DANCE_SOURCE_MISSING')
+        const intent =
+          request?.action === 'dance-in-place'
+            ? request
+            : { action: 'dance-in-place' as const, style: 'playful' as const, tempo: 1 }
+        const dance = new DanceInPlaceMotion(this.vrm, intent, source, heading)
+        this.danceReferencePoses.set(dance, this.measureDanceReferencePose(source, this.vrm))
+        this.physicalMotion = dance
+      } else {
+        const intent = bodyTurnIntentSchema.parse(
+          request ?? {
+            action: 'turn-in-place',
+            turns: 1,
+            direction: this.lease.seed % 2 ? 'clockwise' : 'counterclockwise',
+            tempo: 1.1,
+            finishFacing: 'viewer',
+          },
+        )
+        this.physicalMotion = new TurnInPlaceMotion(
+          this.vrm,
+          intent,
+          this.lease.seed,
+          heading,
+          true,
+        )
+      }
       this.started = true
       this.execution.ready = true
       this.appliedProfileId = this.profileId
       this.appliedLease = this.lease
       this.appliedExecutionId = this.execution.id
       this.appliedOutcome = null
+      const flash = source?.flashMotion
+      this.appliedFlashPlayback = null
+      this.appliedFlashMotion = flash && {
+        weightsRevision: FLASH_MOTION_FORMAT.weightsRevision,
+        mode: flash.mode,
+        fingers: 'neutral',
+        appliedSpeechSample: null,
+      }
       this.phase = 'ready'
       this.readiness?.resolve()
       this.readiness = null
     } catch (error) {
-      this.fail(error)
+      if (this.execution.profile.physicalAction?.action !== 'dance-in-place') this.fail(error)
+      else {
+        this.error = error instanceof Error ? error.message : 'MOTION_DANCE_SUPPORT_UNREACHED'
+        this.phase = 'degraded'
+        this.finishExecution('failed')
+      }
     }
   }
 
-  private updateTurn(delta: number, procedural: () => void): void {
-    const turn = this.turn,
+  private measureDanceReferencePose(source: MotionChunk, vrm: VRM) {
+    const centres = new Map<THREE.Object3D, THREE.Quaternion>()
+    let samples = 0
+    for (let frame = 0; frame < source.rotations.length; frame += 4) {
+      samples++
+      const modelRotations = new Map<THREE.Object3D, THREE.Quaternion>()
+      for (const binding of this.bindings) {
+        if (/Leg|Foot|Toes/u.test(binding.name)) continue
+        const q = new THREE.Quaternion()
+          .fromArray(source.rotations[frame][binding.index])
+          .normalize()
+        if (vrm.meta.metaVersion === '0') q.set(-q.x, q.y, -q.z, q.w)
+        q.multiply(binding.restInModel)
+        modelRotations.set(binding.bone, q)
+        const parent = binding.bone.parent
+        const rotation = parent && modelRotations.get(parent)
+        if (!rotation) continue
+        const local = rotation.clone().invert().multiply(q)
+        const centre = centres.get(binding.bone)
+        if (centre) centre.slerp(local, 1 / samples).normalize()
+        else centres.set(binding.bone, local)
+      }
+    }
+    return centres
+  }
+
+  private updatePhysicalAction(delta: number, procedural: () => void): void {
+    const turn = this.physicalMotion,
       execution = this.execution,
       vrm = this.vrm
     if (!turn || !execution || !vrm) return
     const dt = Math.max(0, Math.min(0.05, delta))
-    turn.advance(dt)
+    turn.advance(delta)
     const progress = turn.phase === 'prepare' ? turn.preparationProgress : 1
     const fingers = this.handPose.sampleScore(
       this.profileId,
@@ -1987,27 +2229,64 @@ export class GeneratedBodyPlayback {
       progress,
       vrm.meta.metaVersion,
     )
+    const source = this.queue[0]
+    const sourceWorld = new Map<THREE.Object3D, THREE.Quaternion>()
+    const dance = turn instanceof DanceInPlaceMotion ? turn : null
+    const reference = dance && this.danceReferencePoses.get(dance)
+    const upperBodyGain = dance?.upperBodyGain ?? 1
+    const sourceProgress = turn.upperBodyProgress
+    const position = sourceProgress * Math.max(0, (source?.rotations.length ?? 1) - 1)
+    const frame = Math.floor(position)
+    const blend = Math.min(1, turn.elapsed / 0.36)
+    const release = dance?.recoveryProgress ?? Math.max(0, (sourceProgress - 0.82) / 0.18)
     for (const binding of this.bindings) {
       if (/Leg|Foot|Toes/u.test(binding.name)) continue
+      const target = binding.safe.clone()
+      if (source) {
+        const current = source.rotations[frame][binding.index]
+        sampleSourceRotation(
+          this.q,
+          source.rotations[frame - 1]?.[binding.index],
+          current,
+          source.rotations[frame + 1]?.[binding.index] ?? current,
+          source.rotations[frame + 2]?.[binding.index],
+          position - frame,
+        )
+        if (vrm.meta.metaVersion === '0') this.q.set(-this.q.x, this.q.y, -this.q.z, this.q.w)
+        this.q.multiply(binding.restInModel)
+        sourceWorld.set(binding.bone, this.q.clone())
+        const parent = binding.bone.parent
+        const upper = /Arm|Shoulder|Hand/u.test(binding.name)
+        const torso = dance && /^(spine|chest|upperChest)$/u.test(binding.name)
+        if (parent && (upper || torso)) {
+          const parentRotation = sourceWorld.get(parent)
+          if (parentRotation) {
+            target.copy(this.q).premultiply(parentRotation.clone().invert()).normalize()
+            const centre = reference?.get(binding.bone)
+            if (centre) {
+              const offset = centre.clone().invert().multiply(target).normalize()
+              if (offset.w < 0) offset.set(-offset.x, -offset.y, -offset.z, -offset.w)
+              const axis = new THREE.Vector3(offset.x, offset.y, offset.z)
+              const length = axis.length()
+              const angle = 2 * Math.atan2(length, offset.w)
+              // Preserve the generator's centre of motion within the rig's range.
+              target.copy(centre)
+              if (torso) target.copy(binding.safe).rotateTowards(centre, 0.1)
+              if (length > 1e-8) {
+                const excursion = angle + 0.16 * Math.tanh((angle * (upperBodyGain - 1)) / 0.16)
+                target.multiply(offset.setFromAxisAngle(axis.divideScalar(length), excursion))
+              }
+            }
+            if (torso && target.angleTo(binding.safe) > 0.18)
+              target.copy(binding.safe.clone().rotateTowards(target, 0.18))
+          }
+        }
+      }
+      this.bodySafety.constrainTarget(binding.bone, target)
+      target.slerp(binding.safe, release * release * (3 - 2 * release))
       binding.bone.quaternion
         .copy(this.transitionPose.get(binding.bone) ?? binding.safe)
-        .slerp(binding.safe, progress * progress * (3 - 2 * progress))
-      if (turn.phase === 'stroke') {
-        if (binding.name === 'chest')
-          binding.bone.quaternion.multiply(
-            new THREE.Quaternion().setFromAxisAngle(
-              new THREE.Vector3(0, 1, 0),
-              Math.sin(turn.heading) * 0.045,
-            ),
-          )
-        if (binding.name.includes('UpperArm'))
-          binding.bone.quaternion.multiply(
-            new THREE.Quaternion().setFromAxisAngle(
-              new THREE.Vector3(1, 0, 0),
-              Math.sin(turn.heading) * 0.035,
-            ),
-          )
-      }
+        .slerp(target, blend * blend * (3 - 2 * blend))
       this.sourceSpeeds.set(
         binding.bone,
         binding.sourceTarget
@@ -2033,8 +2312,8 @@ export class GeneratedBodyPlayback {
     this.trackFinalSpeed(dt)
     this.physical = { ...turn.getStatus(), executionId: execution.id }
     this.stage = turn.getStage()
-    // Procedural elapsed time is not consumed generated history. Advancing this
-    // cursor made the next neural request jump beyond Main's accepted history.
+    // The prepared upper-body horizon is local to this action. Procedural
+    // elapsed time grants no credit to the continuous ordinary-motion cursor.
     execution.phase = turn.phase
     execution.elapsedMs = turn.phaseElapsed * 1000
     this.appliedPhaseId = turn.phase
@@ -2055,7 +2334,10 @@ export class GeneratedBodyPlayback {
       }
       this.capturePresentation()
       if (outcome === 'failed' || outcome === 'timed-out') {
-        this.error = 'MOTION_TURN_PHYSICAL_CONDITION_UNREACHED'
+        this.error =
+          turn instanceof DanceInPlaceMotion
+            ? 'MOTION_DANCE_SUPPORT_UNREACHED'
+            : 'MOTION_TURN_PHYSICAL_CONDITION_UNREACHED'
         this.phase = 'degraded'
       }
       this.finishExecution(outcome)
@@ -2150,10 +2432,8 @@ export class GeneratedBodyPlayback {
       return
     }
     if (!this.execution) return
-    if (getMotionProfile(this.profileId)?.physicalAction) {
-      if (!this.turn) this.startTurn()
-      return
-    }
+    if (this.physicalMotion) return
+    const preparingTurn = this.execution.profile.physicalAction !== undefined
     if (this.execution.wantsRecovery && this.forecast) return
     const epoch = this.localEpoch,
       version = this.profileVersion,
@@ -2171,18 +2451,23 @@ export class GeneratedBodyPlayback {
     // Native generation takes tens of milliseconds. Forecasting an accent
     // while the physical hand is still travelling binds it to stale prosody.
     // Keep generating preparation and plan the stroke from actual readiness.
-    const nextPlan = physicalPreparationPending
-      ? null
-      : this.execution.forecastPlan(`${lease.sessionId}:${this.localEpoch}`)
-    // A long SOMA horizon can already cover the next phase boundary even while
+    const nextPlan =
+      preparingTurn || physicalPreparationPending
+        ? null
+        : this.execution.forecastPlan(`${lease.sessionId}:${this.localEpoch}`)
+    // A long generated horizon can already cover the next phase boundary even while
     // the queue has ample motion. Forecast that boundary before the normal
     // prefetch threshold or short phases expire before their replacement arrives.
     const remaining =
       Math.max(0, this.execution.budget.minMs - this.execution.elapsedMs) / (1000 / 30)
     const boundary =
       this.forecast?.startFrame ?? Math.ceil((this.cursor + remaining - 0.000001) / 4) * 4
+    const prefetchFrames =
+      this.appliedFlashMotion && this.execution.profile.kind === 'presence' && this.sampledClock
+        ? 12
+        : 36
     if (
-      this.generatedEnd - this.cursor >= 36 &&
+      this.generatedEnd - this.cursor >= prefetchFrames &&
       !this.replan &&
       !(nextPlan && this.generatedEnd >= boundary)
     )
@@ -2201,7 +2486,9 @@ export class GeneratedBodyPlayback {
           // straddling horizon remains available as the physical lead-in.
           this.queue = retained
           const tail = this.queue.at(-1)
-          this.generatedEnd = tail ? tail.startFrame + 60 : Math.floor(this.cursor)
+          this.generatedEnd = tail
+            ? tail.startFrame + tail.rotations.length
+            : Math.floor(this.cursor)
         }
         plan = nextPlan
       }
@@ -2221,6 +2508,10 @@ export class GeneratedBodyPlayback {
       })
       .then((result) => {
         if (epoch !== this.localEpoch || !this.vrm) return
+        if (!result.ok && result.error === 'MOTION_STALE_SPEECH_WINDOW') {
+          this.replan = true
+          return
+        }
         if (!result.ok) throw new Error(result.error)
         const chunk = motionChunkSchema.parse(result.chunk)
         if (
@@ -2242,7 +2533,7 @@ export class GeneratedBodyPlayback {
           this.replan = true
           return
         }
-        if (this.started && chunk.startFrame + 60 <= this.cursor) {
+        if (this.started && chunk.startFrame + chunk.rotations.length <= this.cursor) {
           this.lateChunks += 1
           this.replan = true
           return
@@ -2252,8 +2543,12 @@ export class GeneratedBodyPlayback {
         this.queue = this.queue.filter((queued) => queued.startFrame < chunk.startFrame)
         if (this.queue.length >= 2) throw new Error('MOTION_HORIZON_OVERFLOW')
         this.queue.push(chunk)
-        this.generatedEnd = chunk.startFrame + 60
+        this.generatedEnd = chunk.startFrame + chunk.rotations.length
         this.phase = 'ready'
+        if (preparingTurn) {
+          this.startPhysicalAction()
+          return
+        }
         if (!this.started) {
           this.cursor = chunk.startFrame
           this.started = true
@@ -2269,6 +2564,7 @@ export class GeneratedBodyPlayback {
       .finally(() => {
         this.inFlight = false
         this.inFlightPhase = null
+        if (version !== this.profileVersion) this.pump()
       })
   }
 
@@ -2322,6 +2618,17 @@ export class GeneratedBodyPlayback {
         inferenceMs: this.lastInferenceMs,
         epoch: this.localEpoch,
         seed: this.lease?.seed ?? null,
+        flashMotion: this.appliedFlashMotion && {
+          ...this.appliedFlashMotion,
+          appliedSpeechSample:
+            this.clock?.state === 'playing' &&
+            this.clock.playbackId === this.appliedFlashPlayback &&
+            this.appliedFlashMotion.appliedSpeechSample !== null &&
+            Math.abs(this.clock.sourceSampleOffset - this.appliedFlashMotion.appliedSpeechSample) <=
+              2205
+              ? this.appliedFlashMotion.appliedSpeechSample
+              : null,
+        },
         physical: this.physical,
         planning: {
           phaseId: this.execution?.phase ?? null,

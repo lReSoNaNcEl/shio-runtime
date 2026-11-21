@@ -174,16 +174,12 @@ for (const relative of ['Local State', 'credentials/llm-credentials.bin']) {
 const environment = {
   ...process.env,
   SHIO_DESKTOP_USER_DATA_ROOT: profile,
-  SHIO_MOTION_ROOT: process.env.SHIO_MOTION_ROOT || path.join(desktop, 'motionbricks'),
 }
 delete environment.ELECTRON_RUN_AS_NODE
 const launchDesktop = process.env.SHIO_QUALIFICATION_DESKTOP_ROOT || desktop
 const report = {
-  motionProvider: 'motionbricks',
-  nativeSomaHand: process.env.SHIO_MOTION_SOMA_HAND !== '0',
-  motionPins: JSON.parse(
-    fs.readFileSync(path.join(desktop, 'motionbricks/research-pins.json'), 'utf8'),
-  ),
+  motionProvider: 'flashmotion',
+  motionPins: motionCatalog.flashMotionFormat,
   git: {
     head: execFileSync('git', ['rev-parse', 'HEAD'], {
       cwd: repository,
@@ -192,7 +188,7 @@ const report = {
     }).trim(),
     productionDiffSha256: createHash('sha256')
       .update(
-        execFileSync('git', ['diff', '--', 'apps/desktop/src', 'apps/desktop/motionbricks'], {
+        execFileSync('git', ['diff', '--', 'apps/desktop/src', 'apps/desktop/flashmotion'], {
           cwd: repository,
           windowsHide: true,
         }),
@@ -238,15 +234,10 @@ const report = {
   },
 }
 for (const relative of [
-  'motionbricks/worker.py',
-  'motionbricks/backend.py',
-  'motionbricks/targets.py',
-  'motionbricks/activity.py',
-  'motionbricks/conversion.py',
-  'motionbricks/standing_pose.py',
-  'motionbricks/assets/standing-pose.soma.json',
-  'motionbricks/hand_prior.py',
-  'motionbricks/research-pins.json',
+  'flashmotion/worker.py',
+  'flashmotion/retarget.py',
+  'flashmotion/catalog.py',
+  'qualifications/flashmotion/assets.py',
   'out/main/index.js',
   'out/preload/index.js',
   'out/preload/overlay.js',
@@ -257,7 +248,6 @@ for (const relative of [
     .map((filename) => `out/renderer/assets/${filename}`),
   'motion/protocol.py',
   'motion/motion-profiles.json',
-  'motionbricks/hand_prior.py',
   'qualifications/speech-motion/qualify.cjs',
   'qualifications/speech-motion/rig-geometry.cjs',
   'qualifications/speech-motion/semantic-embodiment-cases.cjs',
@@ -479,8 +469,8 @@ async function ready(requireSpeech = true) {
   }
   throw new Error(
     requireSpeech
-      ? 'MotionBricks/VRM/speech readiness timeout'
-      : 'MotionBricks/VRM readiness timeout',
+      ? 'FlashMotion/VRM/speech readiness timeout'
+      : 'FlashMotion/VRM readiness timeout',
   )
 }
 async function frameProbe(target) {
@@ -1781,7 +1771,7 @@ async function bodyStability() {
     page = await application.firstWindow()
     await application.evaluate(({ app, BrowserWindow }, audible) => {
       const prepare = (window) => {
-        window.setTitle('Shio · MotionBricks/Fish qualification')
+        window.setTitle('Shio · FlashMotion/Fish qualification')
         window.webContents.setAudioMuted(!audible)
         if (!window.webContents.getURL().includes('overlay=1')) window.setSize(1700, 1000)
         window.setFocusable(false)
@@ -1826,7 +1816,6 @@ async function bodyStability() {
         ...snapshot.settings,
         mode: 'off',
         globallySuspended: true,
-        fastBrain: { ...snapshot.settings.fastBrain, enabled: false },
       })
     })
     const actualProfile = await application.evaluate(({ app }) => app.getPath('userData'))
@@ -1925,7 +1914,7 @@ async function bodyStability() {
     else if (focused && !modelOnly) await focusedPresentation()
     if (process.argv.includes('--living-lifecycle-smoke')) {
       const { qualifyLivingLifecycle } = require('./living-lifecycle-smoke.cjs')
-      await qualifyLivingLifecycle({ application, page, report, pause })
+      await qualifyLivingLifecycle({ page, report, pause })
     }
     if (process.argv.includes('--autonomous-policy-smoke') && !conversationCases) {
       const { qualifyAutonomousPolicy } = require('./autonomous-policy-smoke.cjs')

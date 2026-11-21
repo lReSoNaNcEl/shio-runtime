@@ -16,10 +16,6 @@ import {
   ProgressCircle,
   SearchField,
   Switch,
-  Tab,
-  TabList,
-  TabPanel,
-  Tabs,
   Text,
   TextArea,
 } from '@react-spectrum/s2'
@@ -29,7 +25,6 @@ import Edit from '@react-spectrum/s2/icons/Edit'
 import More from '@react-spectrum/s2/icons/More'
 import { useEffect, useState } from 'react'
 
-import { type AliveSnapshot } from '../../../shared/alive'
 import { type TranslationKey } from '../../../shared/localization'
 import {
   MEMORY_KINDS,
@@ -63,32 +58,23 @@ type EditorState =
   | { mode: 'create'; kind: MemoryKind; text: string }
   | { mode: 'edit'; id: string; kind: MemoryKind; text: string }
 
-type MemoryTab = 'facts' | 'decisions' | 'memories' | 'habits'
-
-const MEMORY_TAB_KINDS: Record<Exclude<MemoryTab, 'habits'>, readonly MemoryKind[]> = {
-  facts: ['fact', 'preference'],
-  decisions: ['decision', 'commitment'],
-  memories: ['relationship'],
-}
-
 function errorMessage(code: MemoryErrorCode, t: (key: TranslationKey) => string): string {
   return t(ERROR_KEYS[code])
 }
 
-export function MemoryView({ aliveSnapshot }: { aliveSnapshot: AliveSnapshot | null }) {
+export function MemoryView() {
   const { intlLocale, t } = useTranslation()
   const [status, setStatus] = useState<MemoryRuntimeStatus | null>(null)
   const [items, setItems] = useState<readonly MemoryRecord[]>([])
   const [query, setQuery] = useState('')
-  const [activeTab, setActiveTab] = useState<MemoryTab>('facts')
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [editor, setEditor] = useState<EditorState | null>(null)
   const [forgetTarget, setForgetTarget] = useState<MemoryRecord | null>(null)
   const [clearConfirmation, setClearConfirmation] = useState(false)
-  const [habitBusyId, setHabitBusyId] = useState<string | null>(null)
-  const [habitError, setHabitError] = useState<string | null>(null)
+
+  const searchQuery = query.trim()
 
   useEffect(() => {
     let active = true
@@ -96,21 +82,15 @@ export function MemoryView({ aliveSnapshot }: { aliveSnapshot: AliveSnapshot | n
       observeRendererPromise(
         Promise.all([
           window.api.memory.getStatus(),
-          query.trim()
-            ? window.api.memory.search({ query: query.trim(), limit: 20 })
+          searchQuery
+            ? window.api.memory.search({ query: searchQuery, limit: 20 })
             : window.api.memory.list({ limit: 50 }),
         ]).then(([statusResult, recordsResult]) => {
           if (!active) return
           if (!statusResult.ok) throw new Error(errorMessage(statusResult.error.code, t))
           if (!recordsResult.ok) throw new Error(errorMessage(recordsResult.error.code, t))
           setStatus(statusResult.data)
-          setItems(
-            activeTab === 'habits'
-              ? []
-              : recordsResult.data.items.filter((item) =>
-                  MEMORY_TAB_KINDS[activeTab].includes(item.kind),
-                ),
-          )
+          setItems(recordsResult.data.items)
           setError(null)
           setLoading(false)
         }),
@@ -126,25 +106,19 @@ export function MemoryView({ aliveSnapshot }: { aliveSnapshot: AliveSnapshot | n
       active = false
       window.clearTimeout(timer)
     }
-  }, [activeTab, query, t])
+  }, [searchQuery, t])
 
   const refresh = async (): Promise<void> => {
     const [statusResult, recordsResult] = await Promise.all([
       window.api.memory.getStatus(),
-      query.trim()
-        ? window.api.memory.search({ query: query.trim(), limit: 20 })
+      searchQuery
+        ? window.api.memory.search({ query: searchQuery, limit: 20 })
         : window.api.memory.list({ limit: 50 }),
     ])
     if (!statusResult.ok) throw new Error(errorMessage(statusResult.error.code, t))
     if (!recordsResult.ok) throw new Error(errorMessage(recordsResult.error.code, t))
     setStatus(statusResult.data)
-    setItems(
-      activeTab === 'habits'
-        ? []
-        : recordsResult.data.items.filter((item) =>
-            MEMORY_TAB_KINDS[activeTab].includes(item.kind),
-          ),
-    )
+    setItems(recordsResult.data.items)
     setError(null)
   }
 
@@ -204,21 +178,6 @@ export function MemoryView({ aliveSnapshot }: { aliveSnapshot: AliveSnapshot | n
     })
   }
 
-  const decideHabit = (id: string, decision: 'approved' | 'rejected'): void => {
-    if (habitBusyId) return
-    setHabitBusyId(id)
-    setHabitError(null)
-    observeRendererPromise(
-      window.api.alive
-        .decideHabit(id, decision)
-        .catch((reason) => {
-          setHabitError(reason instanceof Error ? reason.message : String(reason))
-        })
-        .finally(() => setHabitBusyId(null)),
-      'decide habit suggestion',
-    )
-  }
-
   if (loading) {
     return (
       <div className="memory-loading page-container">
@@ -240,7 +199,7 @@ export function MemoryView({ aliveSnapshot }: { aliveSnapshot: AliveSnapshot | n
             {t(status?.enabled ? 'memory.toolbar.enabled' : 'memory.toolbar.disabled')}
           </Switch>
           <Text UNSAFE_className="memory-count">
-            {t('memory.resultsCount', { count: status?.recordCount ?? 0 })}
+            {t('memory.count', { count: status?.recordCount ?? 0 })}
           </Text>
         </div>
         <div className="memory-toolbar-actions">
@@ -294,154 +253,79 @@ export function MemoryView({ aliveSnapshot }: { aliveSnapshot: AliveSnapshot | n
         </InlineAlert>
       )}
 
-      <Tabs
-        aria-label={t('app.nav.memory')}
-        selectedKey={activeTab}
-        onSelectionChange={(key) => setActiveTab(String(key) as MemoryTab)}
-      >
-        <TabList UNSAFE_className="memory-tabs">
-          <Tab id="facts">{t('memory.tabs.facts')}</Tab>
-          <Tab id="decisions">{t('memory.tabs.decisions')}</Tab>
-          <Tab id="memories">{t('memory.tabs.memories')}</Tab>
-          <Tab id="habits">{t('memory.tabs.habits')}</Tab>
-        </TabList>
-        <TabPanel id={activeTab}>
-          {activeTab !== 'habits' && (
-            <section className="memory-library" aria-labelledby="memory-records-title">
-              <div className="memory-library-heading">
-                <Heading id="memory-records-title" level={2}>
-                  {t('memory.records.title')}
-                </Heading>
-                <Text UNSAFE_className="memory-count">
-                  {t('memory.resultsCount', {
-                    count: items.length,
-                  })}
+      <div className="memory-library">
+        <div className="memory-search">
+          <SearchField
+            aria-label={t('memory.search')}
+            placeholder={t('memory.searchPlaceholder')}
+            value={query}
+            onChange={setQuery}
+          />
+          {searchQuery && (
+            <Text UNSAFE_className="memory-count">
+              {t('memory.resultsCount', { count: items.length })}
+            </Text>
+          )}
+        </div>
+
+        {items.length === 0 ? (
+          <div className="memory-empty">
+            <Heading level={2}>
+              {t(searchQuery ? 'memory.empty.search' : 'memory.empty.title')}
+            </Heading>
+            {!searchQuery && <Text>{t('memory.empty.description')}</Text>}
+          </div>
+        ) : (
+          <div className="memory-grid">
+            {items.map((item) => (
+              <article className="memory-card" key={item.id}>
+                <div className="memory-card-heading">
+                  <Badge size="S" variant="gray">
+                    {t(KIND_KEYS[item.kind])}
+                  </Badge>
+                  <div className="memory-card-actions">
+                    <ActionButton
+                      isQuiet
+                      aria-label={t('memory.edit')}
+                      isDisabled={busy}
+                      onPress={() =>
+                        setEditor({
+                          mode: 'edit',
+                          id: item.id,
+                          kind: item.kind,
+                          text: item.text,
+                        })
+                      }
+                    >
+                      <Edit />
+                    </ActionButton>
+                    <ActionButton
+                      isQuiet
+                      aria-label={t('memory.forget')}
+                      isDisabled={busy}
+                      onPress={() => setForgetTarget(item)}
+                    >
+                      <Delete />
+                    </ActionButton>
+                  </div>
+                </div>
+                <Text UNSAFE_className="memory-card-text">{item.text}</Text>
+                <Text UNSAFE_className="memory-card-source">
+                  {t(
+                    item.source.type === 'conversation'
+                      ? 'memory.source.conversation'
+                      : 'memory.source.manual',
+                  )}{' '}
+                  ·{' '}
+                  {new Intl.DateTimeFormat(intlLocale, { dateStyle: 'medium' }).format(
+                    new Date(item.updatedAt),
+                  )}
                 </Text>
-              </div>
-              <div className="memory-filters">
-                <SearchField
-                  aria-label={t('memory.search')}
-                  placeholder={t('memory.searchPlaceholder')}
-                  value={query}
-                  onChange={setQuery}
-                />
-              </div>
-
-              {items.length === 0 ? (
-                <div className="memory-empty">
-                  <Heading level={3}>{t('memory.empty.title')}</Heading>
-                  <Text>
-                    {t(query.trim() ? 'memory.empty.search' : 'memory.empty.description')}
-                  </Text>
-                </div>
-              ) : (
-                <div className="memory-grid">
-                  {items.map((item) => (
-                    <article className="memory-card" key={item.id}>
-                      <div className="memory-card-heading">
-                        <Badge size="S" variant="gray">
-                          {t(KIND_KEYS[item.kind])}
-                        </Badge>
-                        <div className="memory-card-actions">
-                          <ActionButton
-                            isQuiet
-                            aria-label={t('memory.edit')}
-                            isDisabled={busy}
-                            onPress={() =>
-                              setEditor({
-                                mode: 'edit',
-                                id: item.id,
-                                kind: item.kind,
-                                text: item.text,
-                              })
-                            }
-                          >
-                            <Edit />
-                          </ActionButton>
-                          <ActionButton
-                            isQuiet
-                            aria-label={t('memory.forget')}
-                            isDisabled={busy}
-                            onPress={() => setForgetTarget(item)}
-                          >
-                            <Delete />
-                          </ActionButton>
-                        </div>
-                      </div>
-                      <Text UNSAFE_className="memory-card-text">{item.text}</Text>
-                      <Text UNSAFE_className="memory-card-source">
-                        {t(
-                          item.source.type === 'conversation'
-                            ? 'memory.source.conversation'
-                            : 'memory.source.manual',
-                        )}{' '}
-                        ·{' '}
-                        {new Intl.DateTimeFormat(intlLocale, { dateStyle: 'medium' }).format(
-                          new Date(item.updatedAt),
-                        )}
-                      </Text>
-                    </article>
-                  ))}
-                </div>
-              )}
-            </section>
-          )}
-
-          {activeTab === 'habits' && (
-            <section className="memory-habits" aria-labelledby="memory-habits-title">
-              <div className="memory-habits-heading">
-                <Heading id="memory-habits-title" level={2}>
-                  {t('memory.habits.title')}
-                </Heading>
-                <Text>{t('memory.habits.description')}</Text>
-              </div>
-              {habitError && (
-                <InlineAlert variant="negative" fillStyle="subtleFill">
-                  <Heading>{t('common.error')}</Heading>
-                  <Content>{habitError}</Content>
-                </InlineAlert>
-              )}
-              {(aliveSnapshot?.habitSuggestions.filter((habit) => habit.status === 'pending')
-                .length ?? 0) === 0 ? (
-                <div className="memory-habits-empty">
-                  <Text>{t('memory.habits.empty')}</Text>
-                </div>
-              ) : (
-                <div className="memory-habit-list">
-                  {aliveSnapshot?.habitSuggestions
-                    .filter((habit) => habit.status === 'pending')
-                    .map((habit) => (
-                      <article className="memory-habit-item" key={habit.id}>
-                        <div className="memory-habit-copy">
-                          <Text UNSAFE_className="memory-card-text">{habit.title}</Text>
-                          <Text UNSAFE_className="memory-card-source">
-                            {t('memory.habits.evidence', { count: habit.evidenceCount })}
-                          </Text>
-                        </div>
-                        <ButtonGroup>
-                          <Button
-                            variant="secondary"
-                            isDisabled={habitBusyId !== null}
-                            onPress={() => decideHabit(habit.id, 'rejected')}
-                          >
-                            {t('memory.reject')}
-                          </Button>
-                          <Button
-                            variant="primary"
-                            isDisabled={habitBusyId !== null}
-                            onPress={() => decideHabit(habit.id, 'approved')}
-                          >
-                            {t('memory.approve')}
-                          </Button>
-                        </ButtonGroup>
-                      </article>
-                    ))}
-                </div>
-              )}
-            </section>
-          )}
-        </TabPanel>
-      </Tabs>
+              </article>
+            ))}
+          </div>
+        )}
+      </div>
 
       <DialogContainer onDismiss={() => !busy && setEditor(null)}>
         {editor && (

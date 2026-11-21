@@ -1,11 +1,12 @@
+import { DEFAULT_OVERLAY_HEIGHT, DEFAULT_OVERLAY_WIDTH } from '../../../../shared/config'
 import type { BacklogSelectorRoleConfig, ComputerUseVisionRoleConfig } from '../../../../shared/llm'
 import type { OverlayViewMode } from '../../../avatar/tuning/cameraTuning'
 
 export const overlayViewModes: readonly OverlayViewMode[] = ['bust', 'face', 'portrait']
 
 export const overlayDefaults = {
-  width: 360,
-  height: 560,
+  width: DEFAULT_OVERLAY_WIDTH,
+  height: DEFAULT_OVERLAY_HEIGHT,
   margin: 24,
   opacityPercent: 100,
   transparentBackground: true,

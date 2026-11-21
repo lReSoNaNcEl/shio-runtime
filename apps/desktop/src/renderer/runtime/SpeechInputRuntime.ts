@@ -67,6 +67,15 @@ export interface SpeechInputRuntimeDeps {
 
 export class SpeechInputRuntime {
   private micCapture = new MicCapture()
+  private readonly voiceActivityListeners = new Set<(speaking: boolean) => void>()
+
+  onVoiceActivity(listener: (speaking: boolean) => void): () => void {
+    this.voiceActivityListeners.add(listener)
+    return () => {
+      this.voiceActivityListeners.delete(listener)
+    }
+  }
+
   private readonly userSpeech = new UserSpeechActivityMonitor()
   private readonly speechReactions: UserSpeechReactionCoordinator
   private streamingCapture = new StreamingPcmCapture()
@@ -100,9 +109,16 @@ export class SpeechInputRuntime {
   private lifecycleGeneration = 0
   private startController: AbortController | null = null
   private playbackCapturedSegments = new Set<string>()
+  private audioGapCount = 0
   private streamingClient = new StreamingAsrClient({
     onEvent: (event) => this.handleStreamingEvent(event),
     onState: (state) => this.handleStreamingState(state),
+    onAudioGap: () => {
+      if (!this.continuousEnabled) return
+      this.audioGapCount += 1
+      this.updateContinuousProjection(this.continuousProjection)
+      this.recordRuntimeEvent('Continuous ASR Audio Gap')
+    },
     onProtocolDiagnostic: (code) =>
       this.recordRuntimeEvent('Continuous ASR Protocol Rejected', code),
   })
@@ -151,6 +167,8 @@ export class SpeechInputRuntime {
 
   setMicrophone(deviceId: string, persist = true): void {
     this.micDeviceId = deviceId
+    if (this.continuousProjection.microphoneCaptured)
+      this.updateContinuousProjection(this.continuousProjection)
     if (persist) {
       observeRendererPromise(
         window.api.config.save({ micDeviceId: deviceId }),
@@ -175,6 +193,7 @@ export class SpeechInputRuntime {
     this.onContinuousDeviceLost = onDeviceLost ?? this.onContinuousDeviceLost
     if (enabled && this.continuousEnabled && this.streamingCapture.isAlive()) return
     const generation = ++this.lifecycleGeneration
+    this.audioGapCount = 0
     this.startController?.abort(new DOMException('Continuous start superseded', 'AbortError'))
     this.startController = null
     if (!enabled) {
@@ -316,6 +335,8 @@ export class SpeechInputRuntime {
         microphoneCaptured: this.streamingCapture.isAlive(),
       })
     } else if (state === 'reconnecting') {
+      this.playbackCapturedSegments.clear()
+      for (const listener of this.voiceActivityListeners) listener(false)
       this.updateContinuousProjection({
         transport: 'reconnecting',
         activity: 'idle',
@@ -420,6 +441,7 @@ export class SpeechInputRuntime {
     this.startController = null
     if (this.micCapture.isRecording()) this.micCapture.stop()
     this.userSpeech.end(performance.now())
+    this.voiceActivityListeners.clear()
     this.speechReactions.dispose()
     this.micCapture.setLevelListener(null)
     observeRendererPromise(this.streamingCapture.stop(), 'dispose streaming capture')
@@ -471,6 +493,7 @@ export class SpeechInputRuntime {
   private handleStreamingEvent(event: AsrStreamEvent): void {
     if (!this.continuousEnabled) return
     if (event.type === 'speech_started') {
+      for (const listener of this.voiceActivityListeners) listener(true)
       this.userSpeech.observeExternalOnset(performance.now())
       this.updateContinuousProjection({
         transport: 'ready',
@@ -489,6 +512,7 @@ export class SpeechInputRuntime {
       return
     }
     if (event.type === 'speech_ended') {
+      for (const listener of this.voiceActivityListeners) listener(false)
       this.updateContinuousProjection({
         transport: 'ready',
         activity: 'idle',
@@ -526,7 +550,7 @@ export class SpeechInputRuntime {
     if (event.type !== 'final') return
     this.updateContinuousProjection({
       transport: 'ready',
-      activity: 'recognizing',
+      activity: 'idle',
       microphoneCaptured: this.streamingCapture.isAlive(),
     })
     const stableId = `${event.sessionId}:${event.segmentId}`
@@ -623,8 +647,14 @@ export class SpeechInputRuntime {
   }
 
   private updateContinuousProjection(projection: ContinuousListeningRuntimeProjection): void {
-    this.continuousProjection = projection
-    this.onContinuousLifecycle?.({ ...projection })
+    this.continuousProjection = {
+      ...projection,
+      activeMicrophone: projection.microphoneCaptured
+        ? this.streamingCapture.activeMicrophone(this.micDeviceId)
+        : undefined,
+      audioGapCount: this.audioGapCount,
+    }
+    this.onContinuousLifecycle?.({ ...this.continuousProjection })
   }
 
   private throwIfStartSuperseded(generation: number, signal: AbortSignal): void {

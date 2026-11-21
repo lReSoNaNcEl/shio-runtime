@@ -1,12 +1,14 @@
 import type { ShioActionsApi } from '../actions'
 import type {
+  AliveAuditEntry,
   AliveSnapshot,
   AutonomySettings,
   BehaviorCommand,
   ExperienceEvent,
-  FastBrainAttentionDecision,
-  FastBrainAttentionInput,
   RendererWorldContextInput,
+  RunningApplicationsDiagnostic,
+  SpeechAttentionDecision,
+  SpeechAttentionInput,
 } from '../alive'
 import type { BrowserControlApi } from '../browser-control'
 import type { ShioCapabilitiesApi } from '../capabilities'
@@ -86,6 +88,7 @@ export interface OverlayPresentationApi {
 }
 
 export interface ShioRuntimeApi {
+  watchTogether: import('../watchTogether').WatchTogetherApi
   avatarBody: { publish: (value: BodyPresentation | null) => Promise<{ ok: boolean }> }
   motion: MotionApi
   alive: {
@@ -93,15 +96,15 @@ export interface ShioRuntimeApi {
     updateSettings: (settings: AutonomySettings) => Promise<AliveSnapshot>
     updateWorld: (input: RendererWorldContextInput) => Promise<{ ok: true }>
     reportExperience: (event: ExperienceEvent) => Promise<{ ok: true }>
-    decideHabit: (id: string, status: 'approved' | 'rejected') => Promise<AliveSnapshot>
-    evaluateAttention: (input: FastBrainAttentionInput) => Promise<FastBrainAttentionDecision>
-    cancelAttention: (utteranceId: string) => Promise<{ ok: boolean }>
+    evaluateAttention: (input: SpeechAttentionInput) => Promise<SpeechAttentionDecision>
     onChanged: (callback: (snapshot: AliveSnapshot) => void) => () => void
     onBehavior: (callback: (command: BehaviorCommand) => void) => () => void
   }
   actions: ShioActionsApi
   capabilities: ShioCapabilitiesApi
   diagnostics: {
+    getAliveAudit: () => Promise<readonly AliveAuditEntry[]>
+    getRunningApplications: () => Promise<RunningApplicationsDiagnostic>
     getNetworkRequests: () => Promise<NetworkRequestDiagnostic[]>
     getNetworkRequestDetails: (requestId: string) => Promise<NetworkRequestDiagnosticDetails | null>
   }
@@ -202,7 +205,9 @@ export interface ShioRuntimeApi {
   config: {
     get: () => Promise<AppSettings>
     save: (settings: Partial<AppSettings>) => Promise<{ ok: boolean; error?: string }>
-    onUpdated: (callback: (settings: AppSettings) => void) => () => void
+    onUpdated: (
+      callback: (settings: AppSettings, changedKey?: keyof AppSettings) => void,
+    ) => () => void
   }
   vrm: {
     pick: () => Promise<{

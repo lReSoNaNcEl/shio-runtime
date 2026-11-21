@@ -12,6 +12,7 @@ import type {
 import { translate } from '../../shared/localization'
 import type { BodyPresentationProjection } from '../../shared/motion'
 import type { AvatarRuntimeHealth } from '../../shared/runtime'
+import { watchBlockReason } from '../../shared/watchTogether'
 import {
   type ActionRuntime,
   type DesktopWorkflowAdapterResult,
@@ -47,13 +48,13 @@ import { registerLatencyIpc } from '../ipc/registerLatencyIpc'
 import { registerMotionIpc } from '../ipc/registerMotionIpc'
 import { registerOverlayIpc } from '../ipc/registerOverlayIpc'
 import { registerRuntimeHealthIpc } from '../ipc/registerRuntimeHealthIpc'
+import { registerWatchTogetherIpc } from '../ipc/registerWatchTogetherIpc'
 import {
-  getProviderDefinition,
+  getProviderProfile,
   LlmCredentialStore,
   LlmGateway,
   type LlmProviderId,
   type LlmRoleId,
-  type LlmRoleSelection,
   type LlmRoleSources,
   LlmTurnCancelledError,
   type ResolvedLlmRoleSettings,
@@ -62,6 +63,7 @@ import {
   resolveLlmRoleSettings,
   resolveProviderChatBaseUrl,
 } from '../llm'
+import { stopCodexRequests } from '../llm/CodexCliProvider'
 import { mainLog } from '../logging/safeLogger'
 import {
   createLlmSessionSummarizer,
@@ -70,6 +72,7 @@ import {
   MemoryToolBroker,
   type SessionSummarizer,
 } from '../memory'
+import { FlashMotionSpeech } from '../motion/FlashMotionSpeech'
 import { GeneratedMotionService } from '../motion/GeneratedMotionService'
 import { Orchestrator } from '../orchestrator'
 import { PluginCapabilityRegistry, PluginRegistryStore, PluginRuntime } from '../plugins'
@@ -86,6 +89,7 @@ import { observeMainPromise } from '../reliability/observePromise'
 import { ScreenCaptureAdapter, ScreenContextService } from '../screen-context'
 import { SpeechClientManager } from '../speech/SpeechClientManager'
 import { registerReleaseSupportHandlers } from '../system/releaseSupport'
+import { WatchTogetherService } from '../watch-together/WatchTogetherService'
 import { WEB_SEARCH_MANIFEST, type WebSearchPlugin } from '../web-search'
 import { MainWindowManager } from '../windows/MainWindowManager'
 import { OverlayWindowManager } from '../windows/OverlayWindowManager'
@@ -110,17 +114,21 @@ export interface ApplicationDependencies {
 }
 
 export function buildApplicationDependencies(): ApplicationDependencies {
-  const motionRoot =
-    process.env.SHIO_MOTION_ROOT?.trim() ||
-    (app.isPackaged
-      ? join(app.getPath('userData'), 'motionbricks')
-      : join(app.getAppPath(), 'motionbricks'))
-  if (!isAbsolute(motionRoot)) throw new Error('SHIO_MOTION_ROOT must be absolute')
+  const flashSpeech = new FlashMotionSpeech()
+  const motionRoot = app.isPackaged
+    ? join(process.resourcesPath, 'motion-runtime')
+    : app.getAppPath()
+  const localRoot =
+    process.env.SHIO_LOCAL_ROOT ||
+    join(process.env.LOCALAPPDATA || app.getPath('appData'), 'Shio Runtime')
+  const motionAssets = app.isPackaged ? join(localRoot, 'Data', 'FlashMotion') : undefined
+  if (motionAssets && !isAbsolute(motionAssets)) throw new Error('SHIO_LOCAL_ROOT must be absolute')
   const motion = new GeneratedMotionService(
-    motionRoot,
+    join(motionRoot, 'flashmotion'),
     () => getRendererConfig().vrmAssetHandle,
-    process.env.SHIO_MOTION_SOMA_HAND !== '0',
     process.env.SHIO_MOTION_ENABLED !== '0',
+    flashSpeech,
+    motionAssets,
   )
   const environmentConfig = resolveEnvironmentConfig()
   let win: BrowserWindow | null = null
@@ -141,6 +149,7 @@ export function buildApplicationDependencies(): ApplicationDependencies {
   let conversationTurnService: MainConversationTurnService | null = null
   let speechApplicationService: SpeechApplicationService | null = null
   let aliveRuntime: AliveRuntime | null = null
+  let disposeWatch: (() => void) | undefined
   let unsubscribeAliveIpc: (() => void) | null = null
   let unsubscribeAliveCapabilities: (() => void) | null = null
   let unsubscribeLatencyIpc: (() => void) | null = null
@@ -160,11 +169,6 @@ export function buildApplicationDependencies(): ApplicationDependencies {
     join(app.getPath('userData'), 'conversation', 'threads.sqlite'),
   )
   const aliveStore = new AliveStore(join(app.getPath('userData'), 'alive', 'alive.sqlite'))
-  const legacyHabits = aliveStore.legacyHabitRecords()
-  if (semanticMemory.status().operational) {
-    if (legacyHabits.length > 0) semanticMemory.importLegacyHabits(legacyHabits)
-    aliveStore.completeLegacyHabitMigration()
-  }
   const memoryToolBroker = new MemoryToolBroker(semanticMemory)
   let unsubscribePluginCapabilities: (() => void) | null = null
   let unsubscribeProjectCapabilities: (() => void) | null = null
@@ -205,6 +209,7 @@ export function buildApplicationDependencies(): ApplicationDependencies {
       cloudflare: ['CLOUDFLARE_API_TOKEN'],
       openrouter: ['OPENROUTER_API_KEY'],
       mistral: ['MISTRAL_API_KEY'],
+      'codex-cli': [],
     }
     return variables[provider].map((name) => process.env[name]).find(Boolean)
   }
@@ -227,17 +232,22 @@ export function buildApplicationDependencies(): ApplicationDependencies {
     config: () => getConfig().llm,
     credential: (provider) => getLlmCredentialStore().resolve(provider),
   }
-  const resolveRoleSettings = (
-    role: LlmRoleId,
-    selection?: LlmRoleSelection,
-  ): ResolvedLlmRoleSettings => resolveLlmRoleSettings(role, roleSources, selection)
+  const resolveRoleSettings = (role: LlmRoleId): ResolvedLlmRoleSettings =>
+    resolveLlmRoleSettings(role, roleSources)
   const roleFallbacks = (role: LlmRoleId): ResolvedLlmRoleSettings[] =>
     resolveLlmRoleFallbacks(role, roleSources)
-  const gatewaySettings = ({ provider, apiKey, model, accountId }: ResolvedLlmRoleSettings) => ({
+  const gatewaySettings = ({
     provider,
     apiKey,
     model,
     accountId,
+    reasoningEffort,
+  }: ResolvedLlmRoleSettings) => ({
+    provider,
+    apiKey,
+    model,
+    accountId,
+    reasoningEffort,
   })
 
   const buildProjectAwareness = (): ProjectAwarenessPlugin => {
@@ -299,11 +309,11 @@ export function buildApplicationDependencies(): ApplicationDependencies {
           model: () => {
             // DSH runs as the Character role and keeps its own credential handoff.
             const character = resolveRoleSettings('character')
-            const definition = getProviderDefinition(character.provider)
+            const profile = getProviderProfile(character.provider)
             const accountId = character.accountId ?? ''
             return {
               provider: character.provider,
-              providerDisplayName: definition.profile.displayName,
+              providerDisplayName: profile.displayName,
               model: character.model.trim(),
               baseURL: resolveProviderChatBaseUrl(character.provider, { accountId }).replace(
                 /\/$/,
@@ -311,8 +321,9 @@ export function buildApplicationDependencies(): ApplicationDependencies {
               ),
               apiKey: character.apiKey,
               credentialConfigured:
+                profile.requiresApiKey &&
                 character.credential.configured &&
-                (!definition.profile.requiresAccountId || Boolean(accountId)),
+                (!profile.requiresAccountId || Boolean(accountId)),
               lastError: character.credential.lastError,
             }
           },
@@ -360,13 +371,14 @@ export function buildApplicationDependencies(): ApplicationDependencies {
           apiKey,
           model,
           accountId = '',
+          reasoningEffort,
         } = resolveRoleSettings('computerUseVision')
-        return { automatic, provider, apiKey, model, accountId }
+        return { automatic, provider, apiKey, model, accountId, reasoningEffort }
       }
       const visualGateway = new LlmGateway(resolveVisualModel)
       const visualProvider = (): LlmGateway | undefined => {
         const selection = resolveVisualModel()
-        const profile = getProviderDefinition(selection.provider).profile
+        const profile = getProviderProfile(selection.provider)
         if (
           !selection.model ||
           (profile.requiresApiKey && !selection.apiKey.trim()) ||
@@ -515,7 +527,6 @@ export function buildApplicationDependencies(): ApplicationDependencies {
           experience: alive?.lastExperience,
           world: alive?.world,
           relationship: semanticMemory.relationshipContext(),
-          habits: semanticMemory.relevantHabitMotifs(),
         }
       },
       () => pluginCapabilities.get('web-search'),
@@ -569,7 +580,10 @@ export function buildApplicationDependencies(): ApplicationDependencies {
       capabilityCatalog.dispose()
       conversationMemory.dispose()
 
+      disposeWatch?.()
+      disposeWatch = undefined
       const cleanupOwners = [
+        'codex-cli',
         'conversation-turn-service',
         'speech-application-service',
         'action-runtime',
@@ -578,6 +592,7 @@ export function buildApplicationDependencies(): ApplicationDependencies {
         'conversation-threads',
       ] as const
       const cleanupResults = await Promise.allSettled([
+        stopCodexRequests(),
         conversationTurnService?.dispose() ?? Promise.resolve(),
         speechApplicationService?.dispose() ?? Promise.resolve(),
         motion.dispose(),
@@ -690,19 +705,16 @@ export function buildApplicationDependencies(): ApplicationDependencies {
       if (!llmGateway) throw new Error('LLM gateway is unavailable')
       return llmGateway
     }
-    const buildFastBrainGateway = (selection: {
-      providerId?: LlmProviderId
-      model?: string
-    }): LlmGateway =>
-      new LlmGateway(() => gatewaySettings(resolveRoleSettings('fastBrain', selection)))
     conversationTurnService = new MainConversationTurnService(
       resolveOrchestrator,
       resolveLlmGateway,
       screenContextService,
       () => getRendererConfig().llm,
       (turnId, appraisal) => aliveRuntime?.recordTurnAppraisal(turnId, appraisal),
+      (turnId) => watch.takeReply(turnId),
+      (turnId, userText) => watch.takeUserTurn(turnId, userText),
     )
-    speechApplicationService = new SpeechApplicationService(getSpeechClientManager)
+    speechApplicationService = new SpeechApplicationService(getSpeechClientManager, flashSpeech)
     registerIpcHandlers(
       resolveLlmGateway,
       getLlmCredentialStore,
@@ -720,31 +732,8 @@ export function buildApplicationDependencies(): ApplicationDependencies {
       win,
       ipcAuthorization,
     )
-    aliveRuntime = new AliveRuntime(aliveStore, buildFastBrainGateway, {
+    aliveRuntime = new AliveRuntime(aliveStore, {
       experienceContext: () => semanticMemory.relationshipContext(),
-      proceduralMemory: {
-        observeCompletedFact: (fact) => {
-          semanticMemory.observeCompletedFact(fact)
-        },
-        habitSuggestions: () =>
-          semanticMemory.habitSuggestions().map((habit) => ({
-            id: habit.id,
-            key: habit.key,
-            title: habit.summary,
-            evidenceCount: habit.evidenceCount,
-            status:
-              habit.status === 'candidate'
-                ? 'pending'
-                : habit.status === 'disabled'
-                  ? 'rejected'
-                  : habit.status,
-            createdAt: habit.firstObservedAt,
-            updatedAt: habit.lastObservedAt,
-          })),
-        decideHabit: (id, status) => {
-          semanticMemory.decideHabit(id, status)
-        },
-      },
       systemContextAdapter:
         process.platform === 'win32'
           ? new WindowsSystemContextAdapter({
@@ -768,6 +757,28 @@ export function buildApplicationDependencies(): ApplicationDependencies {
     })
     unsubscribeAliveCapabilities = aliveRuntime.onChanged(() => capabilityCatalog.invalidate())
     unsubscribeAliveIpc = registerAliveIpc(aliveRuntime, win, ipcAuthorization)
+    const watchWindow = win
+    const watchAlive = aliveRuntime
+    const watch = new WatchTogetherService({
+      language: () => getRendererConfig().uiLocale ?? 'ru',
+      captureBlock: () => watchBlockReason(aliveStore.settings()),
+      canComment: () => watchAlive.canCommentOnPlayback(),
+      model: resolveLlmGateway,
+      admit: (expiresAt, current) => watchAlive.admitWatchMoment(expiresAt, current),
+      ended: (event) => {
+        if (!watchWindow.isDestroyed() && !watchWindow.webContents.isDestroyed())
+          watchWindow.webContents.send('watch:stopped', event)
+      },
+    })
+    const removeWatch = registerWatchTogetherIpc(watchWindow, watch, ipcAuthorization)
+    const unsubscribeWatch = watchAlive.onChanged(({ settings }) => {
+      const reason = watchBlockReason(settings)
+      if (reason) watch.stop(undefined, reason)
+    })
+    disposeWatch = () => {
+      unsubscribeWatch()
+      removeWatch()
+    }
     aliveRuntime.start()
     unsubscribeLatencyIpc = registerLatencyIpc(win, ipcAuthorization)
     registerReleaseSupportHandlers(
@@ -777,6 +788,10 @@ export function buildApplicationDependencies(): ApplicationDependencies {
         speech: getSpeechClientManager,
         isOverlayVisible: () => overlayWindows.isVisible(),
         avatarRuntimeHealth: () => lastAvatarRuntimeHealth,
+        motionWorker: () => {
+          const { provider, weightsRevision, state, error } = motion.status()
+          return { provider, weightsRevision, state, error }
+        },
         aliveRuntime: () => {
           const snapshot = aliveRuntime?.snapshot()
           if (!snapshot) throw new Error('ALIVE_RUNTIME_NOT_INITIALIZED')

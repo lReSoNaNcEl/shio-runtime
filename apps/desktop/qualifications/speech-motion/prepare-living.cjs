@@ -23,7 +23,7 @@ for (const file of [
 ])
   if (fs.existsSync(path.join(desktop, file)))
     fs.copyFileSync(path.join(desktop, file), path.join(target, file))
-for (const directory of ['motion', 'motionbricks', 'qualifications', 'node_modules'])
+for (const directory of ['motion', 'flashmotion', 'qualifications', 'node_modules'])
   fs.symlinkSync(path.join(desktop, directory), path.join(target, directory), 'junction')
 fs.cpSync(path.join(repository, 'contracts'), path.join(root, 'contracts'), { recursive: true })
 fs.copyFileSync(path.join(repository, 'package.json'), path.join(root, 'package.json'))

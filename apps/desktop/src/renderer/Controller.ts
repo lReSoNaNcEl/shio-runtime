@@ -224,6 +224,7 @@ export class Controller {
   })
   private conversationRuntime = new ConversationRuntime({
     speechOutput: this.speechOutput,
+    watchUserTurn: () => this.prepareWatchUserTurn,
     characterResponse: this.characterResponse,
     characterState: this.shioRuntime.characterState,
     conversationState: this.shioRuntime.characterState.conversation,
@@ -269,7 +270,6 @@ export class Controller {
     saveConfig: (patch) => window.api.config.save(patch),
     arbitrateBacklog: (request) => window.api.llm.arbitrateBacklog(request),
     evaluateAttention: (request) => window.api.alive.evaluateAttention(request),
-    cancelAttention: (utteranceId) => window.api.alive.cancelAttention(utteranceId),
     normalizeMicrophoneFailure: (error) => this.microphoneDeviceService.normalizeFailure(error),
     getMicrophoneAccessFailedMessage: () => this.t('controller.microphoneAccessFailed'),
     createTurnId: (prefix) => `${prefix}-${nextId()}`,
@@ -485,6 +485,54 @@ export class Controller {
     this.store.markLatestAssistantInterrupted()
   }
 
+  onWatchSpeech(listener: (speaking: boolean) => void) {
+    return this.speechInputRuntime.onVoiceActivity(listener)
+  }
+
+  private prepareWatchUserTurn?: (turnId: string, fromMicrophone: boolean) => Promise<void>
+
+  async setWatchMicrophone(
+    enabled: boolean,
+    signal?: AbortSignal,
+    prepare?: (turnId: string, fromMicrophone: boolean) => Promise<void>,
+  ): Promise<void> {
+    if (enabled) {
+      if (signal?.aborted || this.microphoneGate.getState().status !== 'closed')
+        throw new Error('WATCH_MICROPHONE')
+      const cancel = () => this.microphoneGate.cancel()
+      signal?.addEventListener('abort', cancel, { once: true })
+      try {
+        const result = await this.microphoneGate.request(
+          { type: 'start-streaming', modeId: 'default' },
+          'not-configured',
+        )
+        if (result.status !== 'confirmed' || signal?.aborted) throw new Error('WATCH_MICROPHONE')
+        this.speechInputRuntime.setMicrophone(
+          isDefaultMicrophone(result.deviceId) ? '' : result.deviceId,
+          false,
+        )
+      } finally {
+        signal?.removeEventListener('abort', cancel)
+      }
+    }
+    this.prepareWatchUserTurn = enabled ? prepare : undefined
+    this.conversationInput.setWatchVoice(enabled)
+    await this.conversationInput.applyContinuousSettings(
+      { ...this.conversationInput.getSettings(), enabled },
+      false,
+    )
+  }
+
+  watchComment(turnId: string) {
+    return this.conversationInput.admitAutonomousInitiative('Shared viewing', turnId, true)
+  }
+
+  yieldWatchComment(turnId: string): Promise<boolean> {
+    if (this.conversationRuntime.getActiveResponseSnapshot().turnId !== turnId)
+      return Promise.resolve(false)
+    return this.interruptCurrentResponse('voice-barge-in')
+  }
+
   interruptCurrentResponse(
     source: 'manual-stop' | 'voice-barge-in' | 'new-conversation',
   ): Promise<boolean> {
@@ -543,6 +591,9 @@ export class Controller {
       if (remote.avatarState) this.applyRemoteAvatarState(remote.avatarState, false)
       if (remote.mouthWeights) this.applyRemoteMouthWeights(remote.mouthWeights)
       this.avatarRuntime.applyBodyPresentation(remote.bodyPose)
+      this.scene?.setDanceFraming(
+        remote.bodyPose?.profileId === 'dance_in_place' && !remote.bodyPose.outcome,
+      )
       this.startAvatarTickLoop()
       return
     }
@@ -553,6 +604,7 @@ export class Controller {
     const cfg = await window.api.config.get()
     if (this.disposed) return
     this.selectedVoiceLanguage = cfg.ttsLanguage
+    this.player.setSpeechVolumePercent(cfg.speechVolumePercent)
     this.set({ vrmConfigured: isVrmConfigured(resolveVrmSource(cfg.vrmAssetHandle)) })
     this.set({ llmReadiness: await window.api.llm.getReadiness() })
     if (this.disposed) return
@@ -564,7 +616,13 @@ export class Controller {
     const overlay = await window.api.overlay.isVisible()
     if (this.disposed) return
     this.set({ overlayState: overlay.visible ? 'on' : 'off' })
-    this.unsubscribeConfigUpdates = window.api.config.onUpdated((updated) => {
+    let savedVolume = cfg.speechVolumePercent
+    this.unsubscribeConfigUpdates = window.api.config.onUpdated((updated, changedKey) => {
+      if (updated.speechVolumePercent !== savedVolume) {
+        savedVolume = updated.speechVolumePercent
+        this.player.setSpeechVolumePercent(savedVolume)
+      }
+      if (changedKey === 'speechVolumePercent') return
       this.applyOverlayConfigProjection(updated)
       this.applyUiLocale(normalizeUiLocale(updated.uiLocale))
       this.set({ vrmConfigured: isVrmConfigured(resolveVrmSource(updated.vrmAssetHandle)) })
@@ -814,7 +872,10 @@ export class Controller {
 
   subscribeOverlayUpdates(): void {
     this.overlayRuntime.subscribeToRemoteUpdates({
-      bodyPose: (value) => this.avatarRuntime.applyBodyPresentation(value),
+      bodyPose: (value) => {
+        this.avatarRuntime.applyBodyPresentation(value)
+        this.scene?.setDanceFraming(value?.profileId === 'dance_in_place' && !value.outcome)
+      },
       avatarState: (state) => this.applyRemoteAvatarState(state, true),
       mouthWeights: (weights) => this.applyRemoteMouthWeights(weights),
       settings: (cfg) => this.applyOverlaySettings(cfg),
@@ -950,9 +1011,14 @@ export class Controller {
     return this.speechInputRuntime.getMicrophoneId()
   }
 
+  setSpeechVolumePercent(percent: number): void {
+    this.player.setSpeechVolumePercent(percent)
+  }
+
   async playMicrophonePreview(encodedAudio: ArrayBuffer): Promise<void> {
     const prepared = await this.player.prepareEncoded(encodedAudio)
     await this.player.playPrepared(prepared, {
+      purpose: 'microphone-preview',
       turnId: `microphone-preview-${nextId()}`,
       onReady: () => {},
     })
@@ -1180,7 +1246,7 @@ export class Controller {
   previewAvatarVariation(
     id: string,
     seed?: number,
-    bodyAction?: import('../shared/motion').BodyTurnIntent,
+    bodyAction?: import('../shared/motion').BodyActionIntent,
   ): void {
     this.avatarRuntime.previewVariation(id, seed, bodyAction)
     this.updateOverlayMotionHud()
@@ -1352,17 +1418,16 @@ export class Controller {
         return
       }
       if (res.kind === 'auth') {
+        const missingKey = readiness.reason === 'missing-credential'
         this.set({
           llmReadiness: {
             ...(await window.api.llm.getReadiness()),
-            reason: settings?.credential.configured ? 'auth-error' : 'missing-credential',
+            reason: missingKey ? 'missing-credential' : 'auth-error',
           },
         })
         this.setLlmHealth(
-          settings?.credential.configured ? 'error' : 'unknown',
-          settings?.credential.configured
-            ? 'controller.llm.authError'
-            : 'controller.llm.keyMissing',
+          missingKey ? 'unknown' : 'error',
+          missingKey ? 'controller.llm.keyMissing' : 'controller.llm.authError',
         )
         return
       }

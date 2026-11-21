@@ -27,7 +27,7 @@ describe('single source-aware body tracking', () => {
     }
     expect(bone.quaternion.angleTo(rest)).toBeLessThan(0.06)
   })
-  it('allows a large MotionBricks preparation to take physical time without slowing the stroke tracker', () => {
+  it('allows a large generated preparation to take physical time without slowing the stroke tracker', () => {
     const filter = new AdaptiveMotionFilter()
     const bone = new THREE.Object3D()
     const target = new THREE.Quaternion().setFromAxisAngle(axis, 2.4)
@@ -44,7 +44,7 @@ describe('single source-aware body tracking', () => {
     }
     expect(bone.quaternion.angleTo(target)).toBeLessThan(0.03)
   })
-  it('rejects rapid MotionBricks presence noise while retaining a slow sway and unchanged gesture timing', () => {
+  it('rejects rapid generated presence noise while retaining a slow sway and unchanged gesture timing', () => {
     const run = (generatedSource: boolean, motionClass: 'presence' | 'gesture') => {
       const filter = new AdaptiveMotionFilter()
       const bone = new THREE.Object3D()

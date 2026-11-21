@@ -112,7 +112,7 @@ class WhisperASR:
         for segment in segments:
             cleaned = _clean_segment_text(segment.text)
             if cleaned is None:
-                logger.info("Dropped hallucinated ASR segment: %r", segment.text.strip())
+                logger.info("Dropped hallucinated ASR segment")
                 continue
             text_parts.append(cleaned)
             segment_list.append(

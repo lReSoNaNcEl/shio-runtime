@@ -1,17 +1,11 @@
 import type { VRM } from '@pixiv/three-vrm'
 import * as THREE from 'three'
 
+import type { AvatarLookAtMode } from '../../../../shared/motion'
 import { avatarLookAtTuning } from '../../tuning/motionTuning'
 import { SeededRandom } from '../motion/SeededMotion'
 
-export type LookAtMode =
-  | 'idle'
-  | 'speaking'
-  | 'listening'
-  | 'thinking'
-  | 'userFocus'
-  | 'screenFocus'
-  | 'away'
+export type LookAtMode = AvatarLookAtMode
 export type LookAtTargetKind =
   | 'none'
   | 'camera'

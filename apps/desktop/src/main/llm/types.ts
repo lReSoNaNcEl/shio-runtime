@@ -3,7 +3,13 @@ import type { AxiosInstance } from 'axios'
 import type { CharacterStreamDeadlines, CharacterStreamEvent } from '../../shared/character-stream'
 import type { TurnToolEvidenceSummary } from '../../shared/character-tools'
 import type { AssistantTurnKind } from '../../shared/conversation'
-import type { LlmCapabilities, LlmProviderId, ProviderProfile } from '../../shared/llm'
+import type {
+  CodexReasoningEffort,
+  LlmCapabilities,
+  LlmProviderId,
+  ModelReasoningOptions,
+  ProviderProfile,
+} from '../../shared/llm'
 
 export type { LlmCapabilities } from '../../shared/llm'
 
@@ -92,6 +98,7 @@ export interface LLMProvider {
 
 export interface ModelCatalogEntry {
   id: string
+  reasoning?: ModelReasoningOptions
   displayName?: string
   capabilities?: {
     supportsImageGeneration?: boolean
@@ -130,6 +137,7 @@ export interface ProviderDefinition {
 }
 
 export interface LlmGatewaySettings {
+  reasoningEffort?: CodexReasoningEffort
   provider: LlmProviderId
   apiKey: string
   model: string

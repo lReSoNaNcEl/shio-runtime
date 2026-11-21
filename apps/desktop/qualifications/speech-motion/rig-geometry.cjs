@@ -113,6 +113,7 @@ function installGeometryProbe(rig) {
         length(sub(bind[`${side}UpperArm`].p, bind[`${side}LowerArm`].p)) +
         length(sub(bind[`${side}LowerArm`].p, bind[`${side}Hand`].p))
       const hand = {
+        wristSideTorso: (wrist[0] - hip[0]) / torso,
         wristHeightTorso: (wrist[1] - hip[1]) / torso,
         wristToHeadM: length(sub(wrist, joints.head.p)),
         wristToChestM: length(sub(wrist, joints.chest.p)),

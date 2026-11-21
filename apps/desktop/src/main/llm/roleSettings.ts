@@ -8,16 +8,9 @@ export const LLM_ROLE_IDS = [
   'character',
   'backlogSelector',
   'computerUseVision',
-  'fastBrain',
   'sessionSummarizer',
 ] as const
 export type LlmRoleId = (typeof LLM_ROLE_IDS)[number]
-
-/** Non-secret per-call selection of an owner whose choice lives outside LLM config. */
-export interface LlmRoleSelection {
-  providerId?: LlmProviderId | ''
-  model?: string
-}
 
 export interface LlmRoleSources {
   config: () => LlmPersistedConfig
@@ -54,6 +47,8 @@ export function resolveLlmRoleFallbacks(
         provider: candidate.providerId,
         apiKey: credential.apiKey,
         model: candidate.model,
+        reasoningEffort:
+          config.providers[candidate.providerId].codexReasoningByModel?.[candidate.model],
         accountId: accountIdFor(
           candidate.providerId,
           config.providers[candidate.providerId].accountId,
@@ -67,7 +62,6 @@ export function resolveLlmRoleFallbacks(
 export function resolveLlmRoleSettings(
   role: LlmRoleId,
   sources: LlmRoleSources,
-  selection: LlmRoleSelection = {},
 ): ResolvedLlmRoleSettings {
   const config = sources.config()
   const accountIdFor = sources.accountId ?? resolveLlmProviderAccountId
@@ -81,6 +75,7 @@ export function resolveLlmRoleSettings(
       provider,
       apiKey: credential.apiKey,
       model,
+      reasoningEffort: config.providers[provider].codexReasoningByModel?.[model],
       accountId: accountIdFor(provider, config.providers[provider].accountId),
       automatic,
       credential: credential.status,
@@ -106,15 +101,6 @@ export function resolveLlmRoleSettings(
       const automatic = !selector.providerId
       const provider = selector.providerId || config.activeProvider
       return settingsFor(provider, selector.model, automatic)
-    }
-    case 'fastBrain': {
-      const automatic = !selection.providerId
-      const provider = selection.providerId || config.activeProvider
-      return settingsFor(
-        provider,
-        selection.model?.trim() || config.providers[provider].model,
-        automatic,
-      )
     }
   }
 }

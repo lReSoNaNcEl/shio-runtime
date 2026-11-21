@@ -13,6 +13,7 @@ import { style } from '@react-spectrum/s2/style' with { type: 'macro' }
 import { type LlmProviderId } from '../../../../shared/llm'
 import { useTranslation } from '../../../localization/useTranslation'
 import { observeRendererPromise } from '../../../reliability/observePromise'
+import { CodexReasoningPicker } from '../CodexReasoningPicker'
 import { LlmHealthStatus } from '../LlmHealthStatus'
 import { ModelComboBox } from '../ModelComboBox'
 import { type LlmSettingsActions, type LlmSettingsState } from '../state/settingsContracts'
@@ -68,6 +69,7 @@ export function LlmSettingsSection({
             styles={fullWidth}
           />
         )}
+        {state.activeProvider === 'codex-cli' && <Text>{t('settings.llm.codexLogin')}</Text>}
         {activeProfile?.requiresApiKey !== false && (
           <div className="settings-field">
             <span className="settings-label">{credentialLabel}</span>
@@ -146,6 +148,15 @@ export function LlmSettingsSection({
             showVisionFilter
             onSelect={(id) => actions.updateProviderSettings(state.activeProvider, id)}
           />
+          {state.activeProvider === 'codex-cli' && state.modelsState === 'ready' && (
+            <CodexReasoningPicker
+              options={state.models.find((m) => m.id === state.selectedModel)?.reasoning}
+              value={
+                state.providerSettings['codex-cli'].codexReasoningByModel?.[state.selectedModel]
+              }
+              onChange={(effort) => actions.setCodexReasoningEffort(state.selectedModel, effort)}
+            />
+          )}
           <span className="settings-hint">
             {state.modelsState === 'loading' && (
               <>

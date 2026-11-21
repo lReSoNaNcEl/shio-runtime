@@ -13,11 +13,9 @@ import {
   BehaviorRuntime,
   ExperiencePolicy,
   ExperienceRuntime,
-  FastBrainRuntime,
   MoodRuntime,
   ProactiveInitiativeGate,
 } from '../../src/main/alive'
-import type { LlmRequestOptions } from '../../src/main/llm'
 import type {
   AttentionCandidate,
   AutonomySettings,
@@ -45,10 +43,6 @@ const settings: AutonomySettings = {
   mode: 'full',
   globallySuspended: false,
   privacyMode: false,
-  quietHours: { enabled: false, startHour: 22, endHour: 8 },
-  cooldownMs: 60_000,
-  maxDailyInitiatives: 6,
-  fastBrain: { enabled: true, timeoutMs: 1_000, maxTokens: 64 },
 }
 
 async function main(): Promise<void> {
@@ -62,11 +56,8 @@ async function main(): Promise<void> {
       moodWriteCount += 1
       persistMood(mood)
     }
-    const facts: string[] = []
     const behavior = new BehaviorRuntime()
-    const experience = new ExperienceRuntime(store, new MoodRuntime(store), (fact) =>
-      facts.push(fact.eventId),
-    )
+    const experience = new ExperienceRuntime(store, new MoodRuntime(store))
     const success = experience.observe({
       type: 'action-verified',
       actionId: 'a1',
@@ -95,7 +86,6 @@ async function main(): Promise<void> {
       eventId: 'completed-once',
       at: 30,
     })
-    assert.deepEqual(facts, ['success', 'completed-once'])
     assert.equal(moodWriteCount, 3, 'each new Experience should add one Mood write')
     const persistedBeforeSnapshot = store.mood()
     const decayed = experience.moodSnapshot(30 + 4 * 60 * 60_000)
@@ -160,78 +150,26 @@ async function main(): Promise<void> {
 
     testMoodBehaviorModulation()
 
-    let modelCalls = 0
-    let failModel = false
-    let deferModel = false
-    let modelResponse = JSON.stringify({
-      disposition: 'admit',
-      candidateId: 'speech',
-      confidence: 0.8,
-      reason: 'direct address',
-    })
-    let lastModelOptions: LlmRequestOptions | undefined
-    const fastBrain = new FastBrainRuntime(
-      () =>
-        ({
-          chat: async (_messages: unknown, options?: LlmRequestOptions) => {
-            modelCalls += 1
-            lastModelOptions = options
-            if (failModel) throw new Error('FAST_BRAIN_DOWN')
-            if (deferModel) {
-              assert(options?.signal, 'Fast Brain provider call must receive an AbortSignal')
-              return new Promise<string>((_resolve, reject) => {
-                const rejectAborted = (): void =>
-                  reject(options.signal?.reason ?? new DOMException('Cancelled', 'AbortError'))
-                if (options.signal?.aborted) rejectAborted()
-                else options.signal?.addEventListener('abort', rejectAborted, { once: true })
-              })
-            }
-            return modelResponse
-          },
-        }) as never,
-    )
-    const arbiter = new AttentionArbiter(fastBrain)
+    const arbiter = new AttentionArbiter()
     const candidates: AttentionCandidate[] = [
       candidate('speech', 'speech', 0.95, 0.8, 1),
       candidate('experience', 'experience', 0.58, 0.45, 0.5),
       candidate('world', 'world', 0.2, 0.1, 0.1),
     ]
-    const clear = await arbiter.decide(candidates, settings)
+    const clear = arbiter.decide(candidates)
     assert.equal(clear.candidateId, 'speech')
     assert.equal(clear.source, 'deterministic')
-    assert.equal(modelCalls, 0, 'Fast Brain ran despite a deterministic clear winner')
-
-    const ambiguous = [
-      candidate('speech', 'speech', 0.7, 0.4, 0.7),
-      candidate('experience', 'experience', 0.72, 0.42, 0.65),
-    ]
-    assert.equal((await arbiter.decide(ambiguous, settings)).source, 'model')
-    assert.equal(modelCalls, 1)
-    assert(lastModelOptions?.signal)
-    assert.equal(lastModelOptions.timeoutMs, settings.fastBrain.timeoutMs)
-    assert.equal(lastModelOptions.maxTokens, settings.fastBrain.maxTokens)
-
-    modelResponse = JSON.stringify({
-      disposition: 'admit',
-      candidateId: 'speech',
-      confidence: 0.8,
-      reason: 'direct address',
-      unexpected: true,
-    })
-    assert.equal((await arbiter.decide(ambiguous, settings)).source, 'fallback')
-    modelResponse =
-      '```json\n{"disposition":"admit","candidateId":"speech","confidence":0.8,"reason":"fenced"}\n```'
-    assert.equal((await arbiter.decide(ambiguous, settings)).source, 'fallback')
-
-    failModel = true
-    const fallback = await arbiter.decide(ambiguous, settings)
-    assert.equal(fallback.source, 'fallback')
-    assert.ok(fallback.candidateId)
-
-    const gateSettings = {
-      ...settings,
-      fastBrain: { ...settings.fastBrain, enabled: false },
+    const speech = {
+      utteranceId: 'speech-test',
+      directAddress: true,
+      question: true,
+      recentConversation: false,
+      speaking: true,
+      cooldownActive: false,
     }
+    assert.equal(arbiter.evaluateSpeech(speech).shouldAttend, true)
+    assert.equal(arbiter.evaluateSpeech({ ...speech, directAddress: false }).shouldAttend, false)
+    const gateSettings = settings
     let currentSettings = gateSettings
     let currentWorld = world
     let gateNow = Date.now()
@@ -263,7 +201,6 @@ async function main(): Promise<void> {
     assert.equal(deliveries, 0, 'audio-active initiative reached Behavior delivery')
 
     currentWorld = world
-    currentSettings = { ...gateSettings, cooldownMs: 60_000 }
     gateNow = firstAt + 1
     const simultaneous = await Promise.all([
       gate.submit(
@@ -272,8 +209,10 @@ async function main(): Promise<void> {
           entityId: 'first',
           candidates: [firstCandidate],
         },
-        () => {
+        async () => {
+          await Promise.resolve()
           deliveries += 1
+          currentWorld = { ...world, conversationActive: true }
           return true
         },
       ),
@@ -290,11 +229,11 @@ async function main(): Promise<void> {
       ),
     ])
     assert.equal(simultaneous[0].outcome, 'admit')
-    assert.equal(simultaneous[1].outcome, 'defer')
-    assert.equal(deliveries, 1, 'serialized gate admitted more than one initiative in cooldown')
-    assert.equal(store.dailyInitiativeCount(firstAt + 2), 1)
+    assert.equal(simultaneous[1].outcome === 'defer' ? simultaneous[1].reason : '', 'busy')
+    assert.equal(deliveries, 1, 'serialized gate must recheck current conversation activity')
+    currentWorld = world
 
-    currentSettings = { ...gateSettings, mode: 'confirm', cooldownMs: 0 }
+    currentSettings = { ...gateSettings, mode: 'confirm' }
     const previewAt = firstAt + 3
     gateNow = previewAt
     const preview = await gate.submit(
@@ -310,9 +249,12 @@ async function main(): Promise<void> {
       },
     )
     assert.equal(preview.outcome, 'preview')
-    assert.equal(store.dailyInitiativeCount(previewAt), 2)
+    assert.equal(
+      store.recentAudit().find((entry) => entry.entityId === 'preview')?.outcome,
+      'previewed',
+    )
 
-    currentSettings = { ...gateSettings, cooldownMs: 0 }
+    currentSettings = gateSettings
     gateNow = previewAt + 1_000
     const stale = await gate.submit(
       {
@@ -347,53 +289,31 @@ async function main(): Promise<void> {
     assert.equal(afterDispose.outcome, 'ignore')
     assert.equal(deliveries, 2, 'disposed gate delivered an initiative')
 
-    failModel = false
-    deferModel = true
-    const cancelled = new AbortController()
-    const callsBeforeCancel = modelCalls
-    const cancelledDecision = arbiter.decide(ambiguous, settings, {
-      signal: cancelled.signal,
+    gateNow = new Date(2026, 10, 21, 23).getTime()
+    const midnightGate = new ProactiveInitiativeGate({
+      store,
+      envelope: new AutonomyEnvelope(),
+      attention: arbiter,
+      settings: () => currentSettings,
+      world: () => world,
+      now: () => gateNow,
     })
-    await waitUntil(() => modelCalls > callsBeforeCancel)
-    const cancelledProviderSignal = lastModelOptions?.signal
-    cancelled.abort(new DOMException('Turn cancelled', 'AbortError'))
-    await assert.rejects(cancelledDecision, { name: 'AbortError' })
-    assert.equal(cancelledProviderSignal?.aborted, true)
+    for (let index = 0; index < 8; index++) {
+      const id = `night-${index}`
+      const decision = await midnightGate.submit(
+        {
+          origin: index % 2 ? 'watch-together' : 'experience',
+          entityId: id,
+          candidates: [candidate(id, 'experience', 0.9, 0.85, 0.8, gateNow)],
+        },
+        () => true,
+      )
+      assert.equal(decision.outcome, 'admit')
+      gateNow += 1000
+    }
+    midnightGate.dispose()
 
-    const expiring = ambiguous.map((entry) => ({ ...entry, expiresAt: Date.now() + 20 }))
-    const callsBeforeExpiry = modelCalls
-    const expiringDecision = arbiter.decide(expiring, settings)
-    await waitUntil(() => modelCalls > callsBeforeExpiry)
-    await assert.rejects(expiringDecision, { name: 'AbortError' })
-    assert.equal(lastModelOptions?.signal?.aborted, true)
-
-    const lifecycleStore = new AliveStore(join(directory, 'alive-lifecycle.sqlite'))
-    let lifecycleProviderSignal: AbortSignal | undefined
-    const lifecycleRuntime = new AliveFacade(
-      lifecycleStore,
-      () =>
-        ({
-          chat: async (_messages: unknown, options?: LlmRequestOptions) => {
-            const providerSignal = options?.signal
-            assert(providerSignal)
-            lifecycleProviderSignal = providerSignal
-            return new Promise<string>((_resolve, reject) => {
-              const rejectAborted = (): void =>
-                reject(providerSignal.reason ?? new DOMException('Disposed', 'AbortError'))
-              if (providerSignal.aborted) rejectAborted()
-              else providerSignal.addEventListener('abort', rejectAborted, { once: true })
-            })
-          },
-        }) as never,
-    )
-    lifecycleRuntime.updateSettings(settings)
-    const lifecycleDecision = lifecycleRuntime.arbitrateAttention(ambiguous)
-    await waitUntil(() => lifecycleProviderSignal !== undefined)
-    lifecycleRuntime.dispose()
-    await assert.rejects(lifecycleDecision, { name: 'AbortError' })
-    assert.equal(lifecycleProviderSignal?.aborted, true)
-
-    for (const source of ['BehaviorRuntime.ts', 'ExperienceRuntime.ts', 'FastBrainRuntime.ts']) {
+    for (const source of ['BehaviorRuntime.ts', 'ExperienceRuntime.ts', 'AttentionArbiter.ts']) {
       const text = readFileSync(
         join(import.meta.dirname, '../..', 'src/main/alive', source),
         'utf8',
@@ -737,9 +657,7 @@ describe('Mind layer', () => {
     async (mode) => {
       const directory = mkdtempSync(join(tmpdir(), 'shio-initiative-projection-'))
       const store = new AliveStore(join(directory, 'alive.sqlite'))
-      const facade = new AliveFacade(store, () => {
-        throw new Error('A single experience candidate needs no model arbitration')
-      })
+      const facade = new AliveFacade(store)
       const commands: BehaviorCommand[] = []
       facade.onBehavior((command) => commands.push(command))
       try {
@@ -773,9 +691,7 @@ describe('Mind layer', () => {
     (busy) => {
       const directory = mkdtempSync(join(tmpdir(), 'shio-nonverbal-busy-'))
       const store = new AliveStore(join(directory, 'alive.sqlite'))
-      const facade = new AliveFacade(store, () => {
-        throw new Error('Nonverbal selection must not call an LLM')
-      })
+      const facade = new AliveFacade(store)
       const commands: string[] = []
       facade.onBehavior((command) => commands.push(command.intent.kind))
       try {

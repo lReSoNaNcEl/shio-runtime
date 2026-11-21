@@ -34,6 +34,10 @@ export interface AudioPlayOptions {
   onProgress?: (progress: number) => void
 }
 
+interface BufferedAudioPlayOptions extends AudioPlayOptions {
+  purpose?: 'speech' | 'microphone-preview'
+}
+
 export interface PlaybackCompletion {
   playbackId: string
   turnId: string
@@ -74,6 +78,7 @@ export class ParallelPlaybackError extends Error {
 
 export class AudioPlayer {
   private audioCtx: AudioContext
+  private readonly speechGain: GainNode
   analyser: AnalyserNode
   private activePlayback: ActivePlayback | null = null
   private progressTimer: number | null = null
@@ -99,7 +104,19 @@ export class AudioPlayer {
     this.audioCtx = new AudioContext()
     this.analyser = this.audioCtx.createAnalyser()
     this.analyser.fftSize = 256
-    this.analyser.connect(this.audioCtx.destination)
+    this.speechGain = this.audioCtx.createGain()
+    this.analyser.connect(this.speechGain)
+    this.speechGain.connect(this.audioCtx.destination)
+  }
+
+  setSpeechVolumePercent(percent: number): void {
+    if (!Number.isFinite(percent)) return
+    const level = Math.max(0, Math.min(100, percent)) / 100
+    const now = this.audioCtx.currentTime
+    const gain = this.speechGain.gain
+    gain.cancelAndHoldAtTime(now)
+    if (this.isPlaying()) gain.linearRampToValueAtTime(level, now + 0.01)
+    else gain.setValueAtTime(level, now)
   }
 
   async prepare(wavBuffer: ArrayBuffer): Promise<PreparedAudio> {
@@ -145,7 +162,7 @@ export class AudioPlayer {
 
   async playPrepared(
     prepared: PreparedAudio,
-    options: AudioPlayOptions,
+    options: BufferedAudioPlayOptions,
   ): Promise<PlaybackCompletion> {
     const active = this.reserve(options.turnId)
     try {
@@ -421,6 +438,7 @@ export class AudioPlayer {
     this.stop()
     this.clearProgressTimer()
     this.analyser.disconnect()
+    this.speechGain.disconnect()
     if (this.audioCtx.state !== 'closed') await this.audioCtx.close()
   }
 
@@ -490,7 +508,7 @@ export class AudioPlayer {
   private async playReserved(
     active: ActivePlayback,
     prepared: PreparedAudio,
-    options: AudioPlayOptions,
+    options: BufferedAudioPlayOptions,
   ): Promise<PlaybackCompletion> {
     active.normalizationReference = prepared.normalizationReference
     active.durationMs = prepared.durationMs
@@ -498,7 +516,9 @@ export class AudioPlayer {
     const source = this.audioCtx.createBufferSource()
     active.source = source
     source.buffer = prepared.audioBuffer
-    source.connect(this.analyser)
+    source.connect(
+      options.purpose === 'microphone-preview' ? this.audioCtx.destination : this.analyser,
+    )
     this.duration = prepared.audioBuffer.duration
 
     const ended = new Promise<void>((resolve) => {

@@ -37,6 +37,50 @@ async function start(turnId: string) {
 }
 
 describe('speech playback lifecycle', () => {
+  it('applies speech volume downstream of analysis and bypasses it for microphone checks', async () => {
+    const context = environment.contexts[0]
+    const { speechGain } = context
+    expect(context.analyser.target).toBe(speechGain)
+    expect(speechGain.connect).toHaveBeenCalledWith(context.destination)
+    player.setSpeechVolumePercent(30)
+    expect(speechGain.gain.setValueAtTime).toHaveBeenCalledWith(0.3, 0)
+    const playback = await start('speech')
+    expect(playback.source.target).toBe(context.analyser)
+    player.setSpeechVolumePercent(0)
+    expect(speechGain.gain.linearRampToValueAtTime).toHaveBeenCalledWith(0, 0.01)
+    playback.source.end()
+    await playback.completion
+
+    const prepared = await player.prepareEncoded(new ArrayBuffer(16))
+    const started = createDeferred<void>()
+    const preview = player.playPrepared(prepared, {
+      turnId: 'mic',
+      purpose: 'microphone-preview',
+      onReady: () => undefined,
+      onStarted: () => started.resolve(),
+    })
+    await started.promise
+    expect(environment.sources[1].target).toBe(context.destination)
+    environment.sources[1].end()
+    await preview
+  })
+
+  it('keeps consuming PCM when the speech output is muted', async () => {
+    player.setSpeechVolumePercent(0)
+    const playback = await player.startPcmStream(44100, {
+      turnId: 'muted',
+      onReady: () => undefined,
+    })
+    const worklet = environment.worklets[0]
+    expect(worklet.target).toBe(environment.contexts[0].analyser)
+    await playback.append(new Float32Array(128).fill(0.25).buffer)
+    worklet.port.emit({ type: 'position', sampleOffset: 128 })
+    expect(player.getPcmClock()?.sourceSampleOffset).toBe(128)
+    const finished = playback.finish()
+    worklet.port.emit({ type: 'ended' })
+    await finished
+  })
+
   it('finishes normal playback only after its source ends and releases the audio graph', async () => {
     const playback = await start('normal')
     expect(playback.onReady).toHaveBeenCalledOnce()

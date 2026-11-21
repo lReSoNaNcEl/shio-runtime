@@ -3,11 +3,7 @@ import * as THREE from 'three'
 
 import { HAND_BONE_NAMES, MOTION_CATALOG, type MotionProfile } from '../../../../shared/motion'
 
-/** SOMA30 to VRM bone bindings and planted-foot anchors of the generated body.
- * Moved verbatim from GeneratedBodyPlayback; the owner keeps all state. */
-
-// SOMA30 standard T-pose, Y up, metres, world xyzw rotations. No head/neck,
-// facial, jaw, eye or finger source is admitted through this body mapping.
+/** FlashMotion transport slots for normalized VRM body rotation deltas. */
 export const BONES: ReadonlyArray<[number, VRMHumanBoneName]> = [
   [0, 'hips'],
   [1, 'spine'],
@@ -51,7 +47,7 @@ export interface PlantedFoot {
   pole: THREE.Vector3
 }
 
-/** Binds each mapped SOMA30 joint to its normalized VRM bone and standing rest. */
+/** Binds each generated body joint to its normalized VRM bone and standing rest. */
 export function createBindings(
   vrm: VRM,
   axis: THREE.Vector3,

@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
 
-import { EMBODIMENT_GESTURE_HINTS } from '../../../src/shared/character-response'
+import {
+  EMBODIMENT_GAZE_HINTS,
+  EMBODIMENT_GESTURE_HINTS,
+} from '../../../src/shared/character-response'
 import {
   SafeCharacterStreamFilter,
   SpeechTextCommitBuffer,
@@ -15,7 +18,10 @@ function filtered(parts: readonly string[]) {
 
 describe('gesture literal containment without execution authority', () => {
   it('contains canonical gesture tags at every boundary before chat and speech without creating intent', () => {
-    for (const hint of EMBODIMENT_GESTURE_HINTS) {
+    for (const hint of [
+      ...EMBODIMENT_GESTURE_HINTS,
+      ...EMBODIMENT_GAZE_HINTS.map((gaze) => `gazeHint:${gaze}`),
+    ]) {
       const source = `[happy]Смотри![${hint}]`
       for (const parts of [
         [...source],

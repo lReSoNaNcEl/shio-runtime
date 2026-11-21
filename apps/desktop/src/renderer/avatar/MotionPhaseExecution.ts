@@ -1,4 +1,5 @@
 import {
+  type DanceStyle,
   MOTION_CATALOG_REVISION,
   type MotionPhaseId,
   type MotionPlanIdentity,
@@ -26,6 +27,7 @@ export class MotionPhaseExecution {
   constructor(
     readonly id: string,
     readonly profile: MotionProfile,
+    private readonly danceStyle?: DanceStyle,
   ) {}
 
   get budget() {
@@ -59,6 +61,7 @@ export class MotionPhaseExecution {
       clockDomain: this.domain,
       playbackId: this.playbackId,
       continuityAnchor,
+      ...(this.danceStyle ? { danceStyle: this.danceStyle } : {}),
     })
   }
 

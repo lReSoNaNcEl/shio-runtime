@@ -1,31 +1,14 @@
 import type { AutonomySettings } from '../../shared/alive'
 
 /** Authoritative autonomy policy stops, in their established precedence. */
-export type AutonomyPolicyStop = 'suspended' | 'privacy' | 'off' | 'quiet-hours'
+export type AutonomyPolicyStop = 'suspended' | 'privacy' | 'off'
 /** Momentary owners of the character's attention that silence autonomous presence. */
 export type AutonomyBusyStop = 'conversation' | 'audio' | 'screen-focus'
 
-export function insideQuietHours(settings: AutonomySettings, now: number): boolean {
-  if (!settings.quietHours.enabled) return false
-  const hour = new Date(now).getHours()
-  const { startHour, endHour } = settings.quietHours
-  return startHour === endHour
-    ? true
-    : startHour < endHour
-      ? hour >= startHour && hour < endHour
-      : hour >= startHour || hour < endHour
-}
-
-/** Global Suspend, Privacy Mode, Off and (optionally) quiet hours stop every autonomous owner. */
-export function autonomyPolicyStop(
-  settings: AutonomySettings,
-  at: number,
-  options: { quietHours: boolean },
-): AutonomyPolicyStop | null {
+export function autonomyPolicyStop(settings: AutonomySettings): AutonomyPolicyStop | null {
   if (settings.globallySuspended) return 'suspended'
   if (settings.privacyMode) return 'privacy'
   if (settings.mode === 'off') return 'off'
-  if (options.quietHours && insideQuietHours(settings, at)) return 'quiet-hours'
   return null
 }
 

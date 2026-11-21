@@ -1,8 +1,18 @@
-import { Button, Heading, Meter, Picker, PickerItem, StatusLight, Text } from '@react-spectrum/s2'
+import {
+  Button,
+  Heading,
+  Meter,
+  Picker,
+  PickerItem,
+  Slider,
+  StatusLight,
+  Text,
+} from '@react-spectrum/s2'
 import Microphone from '@react-spectrum/s2/icons/Microphone'
 import Play from '@react-spectrum/s2/icons/Play'
 import { style } from '@react-spectrum/s2/style' with { type: 'macro' }
 
+import { DEFAULT_SPEECH_VOLUME_PERCENT } from '../../../../shared/config'
 import { useTranslation } from '../../../localization/useTranslation'
 import { observeRendererPromise } from '../../../reliability/observePromise'
 import { type SpeechSettingsActions, type SpeechSettingsState } from '../state/settingsContracts'
@@ -18,6 +28,7 @@ export function SpeechSettingsSection({
 }) {
   const { t } = useTranslation()
   const isRecording = state.microphoneTestState === 'recording'
+  const activeMic = state.continuousListening.activeMicrophone
   const isPlaying = state.microphoneTestState === 'playing'
   const testDisabled =
     state.continuousListening.microphoneCaptured ||
@@ -46,6 +57,18 @@ export function SpeechSettingsSection({
 
   return (
     <div className="settings-grid">
+      <Slider
+        label={t('settings.speech.volume')}
+        value={state.speechVolumePercent ?? DEFAULT_SPEECH_VOLUME_PERCENT}
+        isDisabled={state.speechVolumePercent === null}
+        minValue={0}
+        maxValue={100}
+        step={1}
+        formatOptions={{ style: 'unit', unit: 'percent', unitDisplay: 'narrow' }}
+        onChange={actions.setSpeechVolumePercent}
+        onChangeEnd={actions.saveSpeechVolumePercent}
+        styles={fullWidth}
+      />
       <Picker
         label={t('settings.speech.ttsLanguage')}
         selectedKey={state.language}
@@ -121,6 +144,16 @@ export function SpeechSettingsSection({
           </PickerItem>
         ))}
       </Picker>
+      {activeMic && (
+        <div aria-live="polite">
+          <StatusLight variant="positive">
+            {t('streaming.activeMicrophone', {
+              name: activeMic.label || t('streaming.unnamedDevice'),
+            })}
+          </StatusLight>
+          {activeMic.changePending && <Text>{t('streaming.microphonePending')}</Text>}
+        </div>
+      )}
       {state.voiceWarmup.state !== 'idle' && (
         <StatusLight
           variant={

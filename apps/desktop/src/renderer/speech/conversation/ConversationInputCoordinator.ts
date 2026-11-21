@@ -1,4 +1,4 @@
-import type { FastBrainAttentionDecision } from '../../../shared/alive'
+import type { SpeechAttentionDecision } from '../../../shared/alive'
 import type {
   CharacterState,
   RuntimeEventCategory,
@@ -61,22 +61,22 @@ type ContinuousAttentionDecision = ReturnType<AttentionEngine['evaluate']>
 
 export function resolveContinuousAttention(
   fallback: ContinuousAttentionDecision,
-  fastBrain: FastBrainAttentionDecision,
+  mainDecision: SpeechAttentionDecision,
 ): ContinuousAttentionDecision {
-  if (fallback.shouldAttend && !fastBrain.shouldAttend) {
+  if (fallback.shouldAttend && !mainDecision.shouldAttend) {
     return {
       ...fallback,
       reasons: [
         ...fallback.reasons,
-        `fast_brain:${fastBrain.source}:${fastBrain.reason}:local_admit_preserved`,
+        `main_attention:${mainDecision.source}:${mainDecision.reason}:local_admit_preserved`,
       ],
     }
   }
   return {
-    shouldAttend: fastBrain.shouldAttend,
-    score: Math.round(fastBrain.confidence * 100),
+    shouldAttend: mainDecision.shouldAttend,
+    score: Math.round(mainDecision.confidence * 100),
     threshold: 50,
-    reasons: [`fast_brain:${fastBrain.source}:${fastBrain.reason}`],
+    reasons: [`main_attention:${mainDecision.source}:${mainDecision.reason}`],
     directAddress: fallback.directAddress,
   }
 }
@@ -106,9 +106,6 @@ export interface ConversationInputCoordinatorDependencies {
   evaluateAttention(
     request: Parameters<Window['api']['alive']['evaluateAttention']>[0],
   ): ReturnType<Window['api']['alive']['evaluateAttention']>
-  cancelAttention(
-    utteranceId: Parameters<Window['api']['alive']['cancelAttention']>[0],
-  ): ReturnType<Window['api']['alive']['cancelAttention']>
   normalizeMicrophoneFailure(
     error: unknown,
   ): ReturnType<MicrophoneDeviceService['normalizeFailure']>
@@ -133,10 +130,10 @@ export class ConversationInputCoordinator {
   private backlogSelector: BacklogSelector
   private conversationAdmission: ConversationAdmissionCoordinator
   private desiredContinuousListening = false
+  private watchVoice = false
   private conversationBoundaryAt = 0
   private conversationSessionResetPending = false
   private attentionGeneration = 0
-  private pendingAttentionUtteranceIds = new Set<string>()
   private continuousCommandGeneration = 0
 
   constructor(private readonly dependencies: ConversationInputCoordinatorDependencies) {
@@ -223,13 +220,16 @@ export class ConversationInputCoordinator {
 
   async admitAutonomousInitiative(
     topic: string,
+    turnId = this.dependencies.createTurnId('initiative'),
+    sharedViewing = false,
   ): Promise<'completed' | 'cancelled' | 'failed' | 'suppressed-busy'> {
     const trimmed = topic.trim().slice(0, 300)
     if (!trimmed) return 'failed'
     const result = await this.conversationAdmission.admitWithResult({
-      turnId: this.dependencies.createTurnId('initiative'),
+      turnId,
       text: trimmed,
       source: 'autonomous_initiative',
+      sharedViewing,
       createdAt: this.nextConversationTimestamp(),
     })
     if (result.outcome === 'ignored_busy') return 'suppressed-busy'
@@ -238,7 +238,7 @@ export class ConversationInputCoordinator {
   }
 
   resetConversationSession(): void {
-    this.cancelPendingAttention()
+    this.invalidatePendingAttention()
     this.conversationBoundaryAt = Date.now()
     this.conversationSessionResetPending = true
     this.chunkBuilder = new UtteranceChunkBuilder()
@@ -264,7 +264,7 @@ export class ConversationInputCoordinator {
       desired: settings.enabled,
     })
     if (!settings.enabled) {
-      this.cancelPendingAttention()
+      this.invalidatePendingAttention()
       this.conversationAdmission.setContinuousEnabled(false)
       this.bargeInPolicy.reset()
       this.bargeInSegments.clear()
@@ -313,7 +313,7 @@ export class ConversationInputCoordinator {
   }
 
   handleStreamingServiceLost(_error: SerializedSpeechError): void {
-    this.cancelPendingAttention()
+    this.invalidatePendingAttention()
     this.continuousSettings.enabled = false
     this.conversationAdmission.setContinuousEnabled(false)
     this.chunkBuilder = new UtteranceChunkBuilder()
@@ -327,6 +327,14 @@ export class ConversationInputCoordinator {
   }
 
   handleContinuousRuntimeProjection(projection: ContinuousListeningRuntimeProjection): void {
+    if (projection.transport === 'reconnecting' && this.streamingSessionId) {
+      this.invalidatePendingAttention()
+      this.conversationAdmission.resetStreamingSession()
+      this.chunkBuilder = new UtteranceChunkBuilder()
+      this.bargeInPolicy.reset()
+      this.bargeInSegments.clear()
+      this.streamingSessionId = null
+    }
     this.patchContinuousProjection({
       ...projection,
       desired: this.desiredContinuousListening,
@@ -350,6 +358,10 @@ export class ConversationInputCoordinator {
     return this.continuousSettings.enabled
   }
 
+  setWatchVoice(active: boolean): void {
+    this.watchVoice = active
+  }
+
   getSettings(): Readonly<ContinuousListeningSettings> {
     return this.continuousSettings
   }
@@ -359,7 +371,7 @@ export class ConversationInputCoordinator {
   }
 
   dispose(): void {
-    this.cancelPendingAttention()
+    this.invalidatePendingAttention()
   }
 
   private async requestStreamingStart(modeId: StreamingModeId): Promise<void> {
@@ -543,7 +555,7 @@ export class ConversationInputCoordinator {
   private ensureStreamingSession(streamingSessionId: string): void {
     if (this.streamingSessionId === streamingSessionId) return
     if (this.streamingSessionId) {
-      this.cancelPendingAttention()
+      this.invalidatePendingAttention()
       this.conversationAdmission.resetStreamingSession()
     }
     this.streamingSessionId = streamingSessionId
@@ -569,11 +581,38 @@ export class ConversationInputCoordinator {
       followUpWindow,
       curiosityChance: this.continuousSettings.curiosityChance,
     })
+    if (this.watchVoice && this.continuousSettings.enabled) {
+      const buffered = this.createBufferedUtterance(
+        chunk,
+        fallbackAttention,
+        conversationBusy,
+        true,
+      )
+      if (buffered.likelySelfEcho || this.handledUtteranceIds.has(chunk.id)) return
+      this.dependencies.recordRuntimeEvent('Watch Voice Accepted', chunk.completionReason)
+      await this.conversationAdmission.admitExplicit({
+        turnId: chunk.id,
+        text: chunk.text,
+        source: 'continuous_listening',
+        watchVoice: true,
+        createdAt: chunk.completedAt,
+        streamingSessionId: chunk.streamingSessionId,
+        utteranceIds: [chunk.id],
+        triggeredBargeIn: Boolean(chunk.triggeredBargeIn),
+        semanticCues: {
+          directAddress: fallbackAttention.directAddress,
+          question: buffered.question,
+          recognitionUncertain:
+            chunk.confidence !== undefined &&
+            chunk.confidence < semanticEarTuning.recognitionUncertainThreshold,
+        },
+      })
+      return
+    }
     let attention = fallbackAttention
     const attentionGeneration = this.attentionGeneration
-    this.pendingAttentionUtteranceIds.add(chunk.id)
     try {
-      const fastBrain = await this.dependencies.evaluateAttention({
+      const mainDecision = await this.dependencies.evaluateAttention({
         utteranceId: chunk.id,
         directAddress: fallbackAttention.directAddress,
         question: QUESTION_PATTERN.test(chunk.text),
@@ -588,15 +627,13 @@ export class ConversationInputCoordinator {
       ) {
         return
       }
-      attention = resolveContinuousAttention(fallbackAttention, fastBrain)
+      attention = resolveContinuousAttention(fallbackAttention, mainDecision)
     } catch (error) {
       if (attentionGeneration !== this.attentionGeneration) return
       this.dependencies.recordRuntimeEvent(
-        'Fast Brain Fallback',
+        'Main Attention Unavailable',
         error instanceof Error ? error.name : 'UNKNOWN',
       )
-    } finally {
-      this.pendingAttentionUtteranceIds.delete(chunk.id)
     }
     this.dependencies.recordRuntimeEvent(
       attention.shouldAttend ? 'Attention Accepted' : 'Attention Rejected',
@@ -651,15 +688,8 @@ export class ConversationInputCoordinator {
     if (admission === 'ignored_busy') this.rememberHandledUtterance(chunk.id)
   }
 
-  private cancelPendingAttention(): void {
+  private invalidatePendingAttention(): void {
     this.attentionGeneration += 1
-    for (const utteranceId of this.pendingAttentionUtteranceIds) {
-      observeRendererPromise(
-        this.dependencies.cancelAttention(utteranceId),
-        'cancel Fast Brain attention request',
-      )
-    }
-    this.pendingAttentionUtteranceIds.clear()
   }
 
   private createBufferedUtterance(

@@ -1,6 +1,7 @@
 import { vi } from 'vitest'
 
 import {
+  FLASH_MOTION_FORMAT,
   MOTION_CATALOG_REVISION,
   type MotionApi,
   type MotionChunk,
@@ -72,7 +73,7 @@ export function createMotionChunk(overrides: Partial<MotionChunk> = {}): MotionC
     reset: true,
     fromFrame: 0,
     profileId: 'presence_poised',
-    skeleton: 'soma30-standard-tpose-v1',
+    skeleton: FLASH_MOTION_FORMAT.skeleton,
     fps: 30,
     startFrame: 0,
     rotations: Array.from({ length: 60 }, () => Array.from({ length: 30 }, () => [0, 0, 0, 1])),

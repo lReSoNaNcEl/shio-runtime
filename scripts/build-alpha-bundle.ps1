@@ -5,7 +5,7 @@ $ErrorActionPreference = "Stop"
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $manifest = Get-Content -Raw -Encoding UTF8 (Join-Path $repoRoot "launcher\release-manifest.json") | ConvertFrom-Json
 $name = "Shio-Runtime-$($manifest.productVersion)-win-x64"
-if ($ExperimentalWorktree) { $name += '-ardy-fish-experiment' }
+if ($ExperimentalWorktree) { $name += '-flashmotion-experiment' }
 $releaseRoot = Join-Path $repoRoot "release"
 $desktopReleaseRoot = Join-Path $repoRoot "apps\desktop\release"
 $stageRoot = Join-Path $releaseRoot ".staging.$PID"
@@ -112,7 +112,6 @@ $docsTarget = Join-Path $bundleRoot "docs"
 New-Item -ItemType Directory -Force -Path $docsTarget | Out-Null
 Copy-Item (Join-Path $repoRoot "docs\ALPHA-INSTALL.md") $docsTarget
 Copy-Item (Join-Path $repoRoot "docs\ALPHA-TROUBLESHOOTING.md") $docsTarget
-Copy-Item (Join-Path $repoRoot "docs\EXPERIMENT-ARDY-FISH.md") $docsTarget
 
 if (Test-Path -LiteralPath $zipPath) { Remove-Item -LiteralPath $zipPath -Force }
 & tar.exe -a -cf $zipPath -C $stageRoot $name

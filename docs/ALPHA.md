@@ -5,19 +5,19 @@ This is the first technical alpha for invited testers. It is an unsigned portabl
 ## Supported platform and hardware
 
 - Windows 11 x64.
-- NVIDIA GPU with CUDA support is the target configuration for local ASR and TTS.
+- NVIDIA Blackwell GPU with compute capability 12.0 and a dedicated Ubuntu WSL2 distribution for FlashMotion. [Setup](ALPHA-INSTALL.md)
 - Python 3.12 x64 and enough free disk space for downloaded dependencies and models are required. Testers do not need Node.js or npm.
 - macOS and Linux are not supported in this alpha.
 
 ## ZIP contents
 
-The release ZIP contains the launcher, portable Electron desktop application, Local Speech Pack source, and documentation. Extract the complete archive to a writable folder and start `Start Shio Runtime.cmd`. Do not run files from inside the ZIP.
+The release ZIP contains the launcher, portable Electron desktop application, FlashMotion worker, Local Speech Pack source, and documentation. Extract the complete archive to a writable folder and start `Start Shio Runtime.cmd`. Do not run files from inside the ZIP.
 
-Python and a compatible NVIDIA driver remain system prerequisites. The launcher installs the versioned Local Speech Pack and downloads models on first run; Python, CUDA toolkit, models, and `.venv` are not embedded in Desktop. The ZIP has no installer, code signing, or automatic updater.
+Python, WSL2 and a compatible NVIDIA driver remain system prerequisites. The launcher installs FlashMotion and the versioned Local Speech Pack on first run; Python, CUDA toolkit, models, and `.venv` are not embedded in Desktop. The ZIP has no installer, code signing, or automatic updater.
 
 ## Install and start
 
-Double-click `Start Shio Runtime.cmd`. The launcher checks the platform, Python and NVIDIA driver, installs or repairs the Local Speech Pack, prefetches revision-pinned models, waits for strict `/health` identity and real-engine readiness, and starts Desktop. When Desktop closes, it stops only a fully revalidated API process it owns. A compatible externally managed API is reused and never stopped.
+Double-click `Start Shio Runtime.cmd` after preparing WSL2. The launcher prepares FlashMotion and the Local Speech Pack, prefetches revision-pinned models, waits for strict `/health` identity and real-engine speech readiness, and starts Desktop. When Desktop closes, it stops only a fully revalidated API process it owns. A compatible externally managed API is reused and never stopped.
 
 ## First run
 
@@ -64,7 +64,7 @@ Do not include API keys, GitHub tokens, private source code, screen captures, or
 ## Known limitations
 
 - Windows 11 x64 only; NVIDIA/CUDA is the target hardware.
-- First start requires internet access and downloads large Speech Pack dependencies and models.
+- First start requires internet access and downloads large FlashMotion and Speech Pack dependencies and models.
 - The executable is unsigned, so SmartScreen can warn.
 - There is no installer, automatic update, telemetry, macOS build, or Linux build.
 - Normal Speech API startup does not download missing large models; use launcher `repair` when the prefetched cache is incomplete.

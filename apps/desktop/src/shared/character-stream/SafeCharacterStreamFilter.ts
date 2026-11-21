@@ -1,5 +1,6 @@
 import {
   EMBODIMENT_ENVELOPE_MAX_CHARACTERS,
+  EMBODIMENT_GAZE_HINTS,
   EMBODIMENT_GESTURE_HINTS,
   parseEarlyEmbodimentEnvelope,
 } from '../character-response/embodiment'
@@ -22,11 +23,14 @@ const VOICE_STYLE_PREFIX = '[voice:'
 const CONTROL_TAG_PREFIXES = [...START_TAGS, ...PROVIDER_TOOL_TAGS, VOICE_STYLE_PREFIX]
 const SUPPRESSED_INTERNAL_SUFFIX_LENGTH = 64
 const SUPPORTED_EMOTIONS = new Set(emotionRegistry.supported())
-const GESTURE_LITERALS: ReadonlySet<string> = new Set(EMBODIMENT_GESTURE_HINTS)
+const EMBODIMENT_LITERALS: ReadonlySet<string> = new Set([
+  ...EMBODIMENT_GESTURE_HINTS,
+  ...EMBODIMENT_GAZE_HINTS.map((hint) => `gazehint:${hint}`),
+])
 
 function isKnownBracketControl(value: string): boolean {
   return (
-    SUPPORTED_EMOTIONS.has(emotionKey(value)) || GESTURE_LITERALS.has(value.toLowerCase().trim())
+    SUPPORTED_EMOTIONS.has(emotionKey(value)) || EMBODIMENT_LITERALS.has(value.toLowerCase().trim())
   )
 }
 
@@ -252,15 +256,15 @@ export class SafeCharacterStreamFilter {
       if (!result || index < result.index)
         result = { kind: 'marker', index, length: match[0].length, marker: null }
     }
-    for (const match of this.pending.matchAll(/\[([a-z_ -]{1,32})\]/giu)) {
+    for (const match of this.pending.matchAll(/\[([a-z_: -]{1,32})\]/giu)) {
       const normalized = emotionKey(match[1] ?? '')
-      const gestureLiteral = GESTURE_LITERALS.has((match[1] ?? '').toLowerCase().trim())
-      if (!SUPPORTED_EMOTIONS.has(normalized) && !gestureLiteral) continue
+      const embodimentLiteral = EMBODIMENT_LITERALS.has((match[1] ?? '').toLowerCase().trim())
+      if (!SUPPORTED_EMOTIONS.has(normalized) && !embodimentLiteral) continue
       const index = match.index ?? 0
       if (voiceIndex >= 0 && index > voiceIndex && (voiceEnd < 0 || index < voiceEnd)) continue
       if (!allowed[index] || !this.isControlToken(index, index + match[0].length, final)) continue
       if (!result || index < result.index) {
-        result = gestureLiteral
+        result = embodimentLiteral
           ? { kind: 'marker', index, length: match[0].length, marker: null }
           : { kind: 'emotion', index, length: match[0].length, emotion: normalized }
       }
@@ -298,7 +302,7 @@ export class SafeCharacterStreamFilter {
       if (this.isBracketControlPrefix(suffix)) hold = Math.max(hold, suffix.length)
     }
     hold = Math.max(hold, this.angleEmotionSuffixLength(allowed, false))
-    const complete = /\[(?:[a-z_ -]{1,32}|voice:[^\]]{0,120})\]$/iu.exec(this.pending)
+    const complete = /\[(?:[a-z_: -]{1,32}|voice:[^\]]{0,120})\]$/iu.exec(this.pending)
     if (
       complete &&
       allowed[complete.index] &&
@@ -387,7 +391,7 @@ export class SafeCharacterStreamFilter {
     if (next !== '[') return true
     const following = this.pending.slice(after)
     if (following.toLowerCase().startsWith(VOICE_STYLE_PREFIX)) return true
-    const complete = /^\[([a-z_ -]{1,32})\]/iu.exec(following)
+    const complete = /^\[([a-z_: -]{1,32})\]/iu.exec(following)
     if (complete) return isKnownBracketControl(complete[1])
     if (!final && following.length <= 128 && !following.includes(']'))
       this.protocolHoldIndex =
@@ -400,7 +404,7 @@ export class SafeCharacterStreamFilter {
     const prefix = emotionKey(suffix.slice(1))
     return (
       [...SUPPORTED_EMOTIONS].some((emotion) => emotion.startsWith(prefix)) ||
-      EMBODIMENT_GESTURE_HINTS.some((gesture) => gesture.startsWith(suffix.slice(1).toLowerCase()))
+      [...EMBODIMENT_LITERALS].some((literal) => literal.startsWith(suffix.slice(1).toLowerCase()))
     )
   }
 }

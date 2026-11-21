@@ -5,6 +5,7 @@ import { defaultSettingsForm } from './settingsDefaults'
 
 export function useVoiceSettings() {
   const [lang, setLang] = useState(defaultSettingsForm.ttsLanguage)
+  const [speechVolumePercent, setSpeechVolumePercent] = useState<number | null>(null)
   const [mics, setMics] = useState<Array<{ deviceId: string; label: string }>>([])
   const [micId, setMicId] = useState(defaultSettingsForm.microphoneId)
   const [microphoneTestState, setMicrophoneTestState] =
@@ -13,6 +14,8 @@ export function useVoiceSettings() {
 
   return {
     lang,
+    speechVolumePercent,
+    setSpeechVolumePercent,
     microphoneLevel,
     microphoneTestState,
     micId,

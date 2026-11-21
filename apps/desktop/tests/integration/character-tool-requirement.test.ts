@@ -33,6 +33,45 @@ const capabilities: LlmCapabilities = {
 }
 
 describe('constrained planning transport', () => {
+  it('uses the same model to validate a new plan when the provider rejects the schema', async () => {
+    const currentRegistry = () => registry(false)
+    let fallbackRequests = 0
+    const result = await new CharacterToolLoop().run({
+      llm: {
+        capabilities: () => ({
+          ...capabilities,
+          supportsToolCalling: false,
+          supportsSchemaOutput: true,
+          supportsReasoning: true,
+        }),
+        complete: async (_messages, request) => {
+          if (!request?.responseSchema) return textCompletion('[calm]Хорошо.')
+          throw new LlmResponseError({ provider: 'openrouter', message: 'Schema rejected' })
+        },
+        chat: async (_messages, request) => {
+          if (request?.maxTokens === undefined) return '[calm]Хорошо.'
+          fallbackRequests += 1
+          assert.equal(request?.maxTokens, 1024)
+          return '{"requirement":{"type":"direct-answer"},"plannedTools":[],"embodiment":null}'
+        },
+      },
+      providerId: 'openrouter',
+      messages: [{ role: 'user', content: 'Поговори со мной.' }],
+      registry: currentRegistry,
+      createDispatcher: () =>
+        ({ registerPlannedTools: () => undefined, dispose: () => undefined }) as never,
+      traceId: 'schema-rejection',
+      requestOptions: {},
+      nativeToolsRejected: false,
+      enforceToolRequirements: true,
+      failureReply: 'FAILURE',
+      limitReply: 'LIMIT',
+    })
+    assert.equal(fallbackRequests, 1)
+    assert.equal(result.assistantTurnKind, 'character')
+    assert.equal(result.replyText, '[calm]Хорошо.')
+  })
+
   it('quotes prior prose and carries attached-image availability without bypassing domain validation', async () => {
     let planningRequests = 0
     const currentRegistry = () => registry(false)
@@ -460,7 +499,7 @@ describe('Character Tool Requirement', () => {
             })
           }
           responsePrompt = prompt
-          return '[calm]Сейчас на переднем плане Visual Studio Code; высокой нагрузки не видно.'
+          return '[calm]Сейчас на переднем плане Visual Studio Code.'
         },
       },
       providerId: 'mistral',
@@ -472,8 +511,6 @@ describe('Character Tool Requirement', () => {
             'Present-state, request-scoped observations only.',
             JSON.stringify({
               foregroundApplication: { processName: 'Code.exe', displayName: 'Visual Studio Code' },
-              runningApplications: [{ processName: 'Code.exe', displayName: 'Visual Studio Code' }],
-              systemLoad: { cpuPercent: 8, memoryPercent: 42 },
             }),
           ].join('\n\n'),
         },

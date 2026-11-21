@@ -72,15 +72,6 @@ const previous = {
       accountId: accountId(provider, config.providers[provider].accountId),
     }
   },
-  fastBrain(config: LlmPersistedConfig, selection: { providerId?: LlmProviderId; model?: string }) {
-    const provider = selection.providerId ?? config.activeProvider
-    return {
-      provider,
-      apiKey: credential(provider).apiKey,
-      model: selection.model?.trim() || config.providers[provider].model,
-      accountId: accountId(provider, config.providers[provider].accountId),
-    }
-  },
 }
 
 describe('LLM role settings', () => {
@@ -90,7 +81,7 @@ describe('LLM role settings', () => {
     accountId,
   })
 
-  it('reproduces the previous Character, DSH, Browser vision and Fast Brain resolution exactly', () => {
+  it('reproduces the previous Character, DSH and Browser vision resolution exactly', () => {
     for (const config of configs()) {
       const character = resolveLlmRoleSettings('character', sources(config))
       expect({
@@ -108,20 +99,6 @@ describe('LLM role settings', () => {
         model: visual.model,
         accountId: visual.accountId,
       }).toEqual(previous.visual(config))
-      for (const selection of [
-        {},
-        { providerId: 'groq' as const },
-        { providerId: 'cloudflare' as const, model: ' fast ' },
-        { model: '' },
-      ]) {
-        const fast = resolveLlmRoleSettings('fastBrain', sources(config), selection)
-        expect({
-          provider: fast.provider,
-          apiKey: fast.apiKey,
-          model: fast.model,
-          accountId: fast.accountId,
-        }).toEqual(previous.fastBrain(config, selection))
-      }
     }
   })
 

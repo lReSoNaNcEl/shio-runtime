@@ -176,8 +176,7 @@ export const headMotionTuning = {
   headShare: 0.66,
   // Share of the resolved orientation carried by spine/chest instead of
   // head/neck, so a head turn reads as the upper body re-orienting.
-  // MotionBricks now turns the spine toward the acting hand itself, so the
-  // procedural share is the smaller remainder of the head orientation.
+  // Keep this procedural share small alongside generated spine movement.
   torsoShare: { yaw: 0.32, pitch: 0.15, roll: 0.3 },
   attentionImpulse: {
     pose: { yaw: 0.018, pitch: -0.022, roll: 0.012 },

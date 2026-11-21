@@ -381,9 +381,11 @@ export class ProceduralTurnPlanner {
       const support = 1 - swing
       if (!state.grounded[support]) continue
       const stanceHeading = this.footHeading(support, state.contacts[support], state.heading)
+      // Use most of the existing stance envelope so the turn needs fewer
+      // corrective steps. The final trajectory still has to pass feasibility.
       const available = Math.max(
         0,
-        this.twistLimit * 0.7 + direction * (stanceHeading - state.heading),
+        this.twistLimit * 0.96 + direction * (stanceHeading - state.heading),
       )
       const progresses =
         remaining < 0.002
@@ -395,7 +397,9 @@ export class ProceduralTurnPlanner {
         const leads =
           remaining <= progress + 0.002
             ? [0]
-            : [0, 0.5, 0.8].map((value) => direction * this.twistLimit * value)
+            : remaining <= progress + this.twistLimit
+              ? [direction * (remaining - progress), 0, direction * this.twistLimit * 0.5]
+              : [0, 0.5, 0.8].map((value) => direction * this.twistLimit * value)
         for (const lead of leads)
           for (const width of remaining < 0.002 ? [1] : [1, 1.12, 1.3]) {
             const target = this.desiredContact(swing, endHeading + lead, width)
@@ -417,12 +421,12 @@ export class ProceduralTurnPlanner {
             const distance = supportPoint.distanceTo(new THREE.Vector2(currentCom.x, currentCom.z))
             const swingTime =
               Math.max(
-                0.48,
+                0.4,
                 Math.sqrt((5.8 * travel) / 2),
                 Math.sqrt((5.8 * turn) / 15),
                 Math.sqrt((5.8 * progress) / 4),
               ) / this.tempo
-            const transferTime = Math.max(0.28, Math.sqrt((5.8 * distance) / 2.5)) / this.tempo
+            const transferTime = Math.max(0.24, Math.sqrt((5.8 * distance) / 2.5)) / this.tempo
             for (const timeScale of [1, 1.35, 1.8, 2.4, 3.2, 4.2]) {
               const transfer = transferTime * timeScale,
                 duration = transfer + swingTime
@@ -444,8 +448,8 @@ export class ProceduralTurnPlanner {
               )
               const preProgress = Math.min(
                 progress,
-                doubleSlack * 0.65,
-                Math.max(progress * 0.4, Math.abs(state.angularVelocity) * transfer * 0.5),
+                doubleSlack * 0.85,
+                Math.max(progress * 0.47, Math.abs(state.angularVelocity) * transfer * 0.5),
               )
               const handoffVelocity =
                 direction *

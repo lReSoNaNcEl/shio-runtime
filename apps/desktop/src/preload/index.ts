@@ -13,8 +13,8 @@ import type {
   AutonomySettings,
   BehaviorCommand,
   ExperienceEvent,
-  FastBrainAttentionInput,
   RendererWorldContextInput,
+  SpeechAttentionInput,
 } from '../shared/alive'
 import type { ShioCapabilitySnapshot } from '../shared/capabilities'
 import type { CharacterReplyStreamEvent } from '../shared/character-stream'
@@ -48,6 +48,27 @@ const api = {
     stop: (lease) => ipcRenderer.invoke('motion:stop', lease),
     status: () => ipcRenderer.invoke('motion:status'),
   },
+  watchTogether: {
+    start: (source) => ipcRenderer.invoke('watch:start', source),
+    stop: (id) => ipcRenderer.invoke('watch:stop', id),
+    yield: (id) => ipcRenderer.invoke('watch:yield', id),
+    prepareTurn: (id, turnId, fromMicrophone, frame, playbackTranscript) =>
+      ipcRenderer.invoke(
+        'watch:prepare-turn',
+        id,
+        turnId,
+        fromMicrophone,
+        frame,
+        playbackTranscript,
+      ),
+    observe: (moment) => ipcRenderer.invoke('watch:observe', moment),
+    onStopped: (callback) => {
+      const handler = (_event: unknown, stopped: Parameters<typeof callback>[0]) =>
+        callback(stopped)
+      ipcRenderer.on('watch:stopped', handler)
+      return () => ipcRenderer.removeListener('watch:stopped', handler)
+    },
+  },
   alive: {
     snapshot: () => ipcRenderer.invoke('alive:snapshot') as Promise<AliveSnapshot>,
     updateSettings: (settings: AutonomySettings) =>
@@ -56,12 +77,8 @@ const api = {
       ipcRenderer.invoke('alive:update-world', input) as Promise<{ ok: true }>,
     reportExperience: (event: ExperienceEvent) =>
       ipcRenderer.invoke('alive:report-experience', event) as Promise<{ ok: true }>,
-    decideHabit: (id: string, status: 'approved' | 'rejected') =>
-      ipcRenderer.invoke('alive:decide-habit', { id, status }) as Promise<AliveSnapshot>,
-    evaluateAttention: (input: FastBrainAttentionInput) =>
+    evaluateAttention: (input: SpeechAttentionInput) =>
       ipcRenderer.invoke('alive:evaluate-attention', input),
-    cancelAttention: (utteranceId: string) =>
-      ipcRenderer.invoke('alive:cancel-attention', utteranceId) as Promise<{ ok: boolean }>,
     onChanged: (callback: (snapshot: AliveSnapshot) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, snapshot: unknown): void =>
         callback(snapshot as AliveSnapshot)
@@ -113,6 +130,8 @@ const api = {
     },
   },
   diagnostics: {
+    getAliveAudit: () => ipcRenderer.invoke('diagnostics:get-alive-audit'),
+    getRunningApplications: () => ipcRenderer.invoke('diagnostics:get-running-applications'),
     getNetworkRequests: () => ipcRenderer.invoke('diagnostics:get-network-requests'),
     getNetworkRequestDetails: (requestId: string) =>
       ipcRenderer.invoke('diagnostics:get-network-request-details', requestId),
@@ -257,8 +276,12 @@ const api = {
   config: {
     get: () => ipcRenderer.invoke('config:get'),
     save: (partial: Partial<AppSettings>) => ipcRenderer.invoke('config:save', partial),
-    onUpdated: (cb: (cfg: AppSettings) => void) => {
-      const listener = (_event: Electron.IpcRendererEvent, cfg: AppSettings): void => cb(cfg)
+    onUpdated: (cb: (cfg: AppSettings, changedKey?: keyof AppSettings) => void) => {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        cfg: AppSettings,
+        changedKey?: keyof AppSettings,
+      ): void => cb(cfg, changedKey)
       ipcRenderer.on('config:updated', listener)
       return () => ipcRenderer.removeListener('config:updated', listener)
     },

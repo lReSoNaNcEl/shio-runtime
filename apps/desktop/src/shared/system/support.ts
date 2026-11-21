@@ -1,5 +1,6 @@
 import type { AliveRuntimeHealth, AutonomyMode } from '../alive'
 import type { LlmProviderId } from '../llm'
+import type { MotionStatus } from '../motion'
 import type { RuntimePluginHealth } from '../plugins'
 import type { AvatarRuntimeHealth } from '../runtime'
 
@@ -75,6 +76,7 @@ export interface RuntimeSupportBundle {
     reportFresh: boolean
     health: AvatarRuntimeHealth | null
   }
+  motionWorker: Pick<MotionStatus, 'provider' | 'weightsRevision' | 'state' | 'error'>
   aliveRuntime: {
     mode: AutonomyMode
     globallySuspended: boolean

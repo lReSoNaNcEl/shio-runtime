@@ -7,6 +7,9 @@ import { z } from 'zod'
 import type { DesktopAuthorityMode } from '../shared/actions'
 import {
   type AppSettings,
+  DEFAULT_OVERLAY_HEIGHT,
+  DEFAULT_OVERLAY_WIDTH,
+  DEFAULT_SPEECH_VOLUME_PERCENT,
   DESKTOP_CONFIG_SCHEMA_VERSION,
   migrateLegacyDesktopSettings,
   normalizeUiTheme,
@@ -21,7 +24,11 @@ import {
   type UiLocale,
 } from '../shared/localization'
 import { vrmAssetRegistry } from './assets/VrmAssetRegistry'
-import { developerModeDefaults, resolveDeveloperModeSettings } from './configDefaults'
+import {
+  developerModeDefaults,
+  resolveDeveloperModeSettings,
+  speechVolumePercentSchema,
+} from './configDefaults'
 import { defaultLlmConfig, type LlmCredentialStore, normalizeLlmConfig } from './llm'
 import { resolveLlmProviderAccountId, toPublicLlmConfig } from './llm/config'
 import { resolveLlmPersistence } from './llm/persistence'
@@ -42,6 +49,7 @@ export interface AppConfig {
   uiTheme: UiTheme
   desktopAuthorityMode: DesktopAuthorityMode
   ttsLanguage: string
+  speechVolumePercent: number
   ttsEngine: string
   vrmPath: string
   micDeviceId: string
@@ -65,7 +73,13 @@ export interface AppConfig {
 // String-valued keys only; `llm` is handled separately because it is an object.
 type StringConfigKey = Exclude<
   keyof AppConfig,
-  'configSchemaVersion' | 'setup' | 'llm' | 'uiLocale' | 'uiTheme' | 'desktopAuthorityMode'
+  | 'configSchemaVersion'
+  | 'setup'
+  | 'llm'
+  | 'uiLocale'
+  | 'uiTheme'
+  | 'desktopAuthorityMode'
+  | 'speechVolumePercent'
 >
 
 function stringDefaults(isPackaged = app.isPackaged): Record<StringConfigKey, string> {
@@ -74,8 +88,8 @@ function stringDefaults(isPackaged = app.isPackaged): Record<StringConfigKey, st
     ttsEngine: 'fish-s2-pro',
     vrmPath: '',
     micDeviceId: '',
-    overlayWidth: process.env.OVERLAY_WIDTH ?? '360',
-    overlayHeight: process.env.OVERLAY_HEIGHT ?? '560',
+    overlayWidth: process.env.OVERLAY_WIDTH ?? String(DEFAULT_OVERLAY_WIDTH),
+    overlayHeight: process.env.OVERLAY_HEIGHT ?? String(DEFAULT_OVERLAY_HEIGHT),
     overlayMargin: process.env.OVERLAY_MARGIN ?? '24',
     overlayOpacity: process.env.OVERLAY_OPACITY ?? '1',
     overlayTransparentBackground: process.env.OVERLAY_TRANSPARENT_BACKGROUND ?? 'true',
@@ -99,6 +113,7 @@ export function freshDefaults(isPackaged = app.isPackaged): AppConfig {
     uiLocale: DEFAULT_UI_LOCALE,
     uiTheme: 'light',
     desktopAuthorityMode: 'confirm',
+    speechVolumePercent: DEFAULT_SPEECH_VOLUME_PERCENT,
     ...stringDefaults(isPackaged),
   }
 }
@@ -223,6 +238,9 @@ export async function loadConfig(llmCredentialStore: LlmCredentialStore): Promis
         configSchemaVersion: CURRENT_CONFIG_SCHEMA_VERSION,
         uiLocale: normalizeUiLocale(saved.uiLocale),
         uiTheme: normalizeUiTheme(saved.uiTheme),
+        speechVolumePercent: speechVolumePercentSchema
+          .catch(DEFAULT_SPEECH_VOLUME_PERCENT)
+          .parse(saved.speechVolumePercent),
         desktopAuthorityMode: normalizeDesktopAuthorityMode(saved.desktopAuthorityMode),
         overlayViewMode: known.overlayViewMode ?? 'bust',
       }
@@ -338,6 +356,7 @@ export function saveConfig(
   const nextConfig: AppConfig = {
     ..._config,
     ...knownStrings,
+    speechVolumePercent: partial.speechVolumePercent ?? _config.speechVolumePercent,
     configSchemaVersion: CURRENT_CONFIG_SCHEMA_VERSION,
     setup: partial.setup ? resolveSetupLifecycle({ setup: partial.setup }) : _config.setup,
     llm: normalizedLlm,

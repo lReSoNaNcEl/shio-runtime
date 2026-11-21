@@ -77,15 +77,6 @@ describe('idle activity policy', () => {
     ['suspended', { settings: { ...DEFAULT_AUTONOMY_SETTINGS, globallySuspended: true } }],
     ['privacy', { settings: { ...DEFAULT_AUTONOMY_SETTINGS, privacyMode: true } }],
     ['off', { settings: { ...DEFAULT_AUTONOMY_SETTINGS, mode: 'off' as const } }],
-    [
-      'quiet hours',
-      {
-        settings: {
-          ...DEFAULT_AUTONOMY_SETTINGS,
-          quietHours: { enabled: true, startHour: 11, endHour: 13 },
-        },
-      },
-    ],
     ['conversation', { conversationActive: true }],
     ['audio', { audioActive: true }],
     ['browser screen focus', { browserComputerUseScreenFocusActive: true }],

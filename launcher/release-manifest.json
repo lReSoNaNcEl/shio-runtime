@@ -24,14 +24,14 @@
     }
   },
   "motionPack": {
-    "sourceRelativePath": "desktop/resources/motion-source",
-    "torchVersion": "2.11.0+cu128",
-    "sourceRevision": "e706e27acc88070918308a10922b8f7174d0825e",
-    "checkpointRevision": "244215084b22fcd29ab743017330e87411fe168a"
+    "provider": "flashmotion",
+    "sourceRelativePath": "desktop/resources/motion-runtime",
+    "distribution": "ShioFlashMotionV1"
   },
   "requirements": {
     "windows": "11",
     "python": "3.12",
-    "nvidiaGpu": true
+    "nvidiaGpu": true,
+    "wsl2": true
   }
 }

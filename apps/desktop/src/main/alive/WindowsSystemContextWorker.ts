@@ -49,18 +49,6 @@ function Get-ShioRunningApplications {
     })
 }
 
-function Get-ShioSystemLoad {
-  $os = Get-CimInstance Win32_OperatingSystem
-  $processor = Get-CimInstance Win32_Processor | Measure-Object -Property LoadPercentage -Average
-  $memoryLoad = if ($os.TotalVisibleMemorySize -gt 0) {
-    [math]::Round((1 - ($os.FreePhysicalMemory / $os.TotalVisibleMemorySize)) * 100, 1)
-  } else { $null }
-  return [ordered]@{
-    cpuLoad = if ($null -ne $processor.Average) { [math]::Round($processor.Average, 1) } else { $null }
-    memoryLoad = $memoryLoad
-  }
-}
-
 while (($line = [Console]::In.ReadLine()) -ne $null) {
   $response = $null
   try {
@@ -69,7 +57,7 @@ while (($line = [Console]::In.ReadLine()) -ne $null) {
     if ($null -eq $request.id) { throw 'INVALID_REQUEST_ID' }
     $sources = @($request.probes)
     foreach ($source in $sources) {
-      if ($source -notin @('foreground-application', 'running-applications', 'system-load')) {
+      if ($source -notin @('foreground-application', 'running-applications')) {
         throw 'INVALID_PROBE'
       }
     }
@@ -79,9 +67,6 @@ while (($line = [Console]::In.ReadLine()) -ne $null) {
     }
     if ($sources -contains 'running-applications') {
       $payload.runningApplications = @(Get-ShioRunningApplications)
-    }
-    if ($sources -contains 'system-load') {
-      $payload.system = Get-ShioSystemLoad
     }
     $response = [ordered]@{ id = [int]$request.id; ok = $true; payload = $payload }
   } catch {

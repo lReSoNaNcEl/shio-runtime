@@ -18,6 +18,11 @@ import {
   type TurnToolEvidenceSummary,
   turnAppraisalSchema,
 } from '../../shared/character-tools'
+import {
+  bodyActionIntentSchema,
+  bodyDanceIntentSchema,
+  bodyTurnIntentSchema,
+} from '../../shared/motion'
 import { INTERRUPTED_TURN_HEADER } from '../character/prompting/CharacterRequestComposer'
 import type { ChatMessage, LlmToolDefinition } from '../llm'
 import type { CharacterToolRegistry } from './CharacterToolRegistry'
@@ -61,14 +66,26 @@ export function constrainedPlanningSchema(
   availability?: EmbodimentAvailability,
 ): Record<string, unknown> {
   const available = registry.definitions().map((tool) => tool.id)
+  const turns = availability?.availableBodyActions?.includes('turn-in-place')
+  const dances = availability?.availableBodyActions?.includes('dance-in-place')
   const visual = characterEmbodimentIntentSchema
-    .omit({ bodyAction: true, gestureHint: true })
+    .omit({ bodyAction: true, gestureHint: true, performance: true })
     .extend({
       ...(availability?.availableSemanticIntents.length
         ? { gestureHint: z.enum(availability.availableSemanticIntents).optional() }
         : {}),
-      ...(availability?.availableBodyActions?.includes('turn-in-place')
-        ? { bodyAction: characterEmbodimentIntentSchema.shape.bodyAction }
+      ...(turns || dances
+        ? {
+            bodyAction: (turns && dances
+              ? bodyActionIntentSchema
+              : turns
+                ? bodyTurnIntentSchema
+                : bodyDanceIntentSchema
+            ).optional(),
+          }
+        : {}),
+      ...(availability?.contextualMotion
+        ? { performance: characterEmbodimentIntentSchema.shape.performance }
         : {}),
     })
   const schema = characterToolPlanningResultSchema.extend({
@@ -121,12 +138,30 @@ function toolRequirementPrompt(
     'Classify the meaning of the current user turn before writing any user-visible response. This typed planning phase is performed by the same Character LLM, not a keyword router.',
     'Ordinary social conversation, feelings, imagined scenarios, explanations and physical gestures normally require direct-answer with no planned tools. Select a source or tool only when the current user goal actually needs its evidence or operation. Prior conversation, available tool names and your own intended reply do not introduce a new requirement. A greeting or wave does not need Memory retrieval.',
     'Return two independent decisions: requirement is the minimum obligation that must reach a typed terminal result before a terminal reply; plannedTools is the bounded set of available tools that may materially help fulfill the original user goal, including later authority-bearing work. Requirement is never the tool allowlist.',
-    'Also return embodiment: null for quiet presence, or one semantic visual intent with intensity and optional gestureHint/gazeHint. Choose a fitting available act when your reply naturally explains, compares, agrees, reassures or reacts; an explicit animation request is not required. Quiet presence remains valid; do not gesture on every turn or infer agreement/disagreement from emotion alone. For a direct gesture request choose an available fitting hint, even if unspecified. This is presentation metadata, never a tool, Action or proof of execution. Listing abilities, evidence and previous replies cannot request a gesture.',
+    'Also return embodiment: null or one visual intention for this reply. This is presentation metadata, never a tool, Action or proof of execution. Listing abilities, evidence and previous replies cannot request a gesture.',
+    ...(embodimentAvailability?.contextualMotion
+      ? [
+          'For an ordinary social, explanatory or emotional reply, choose gazeHint (user, screen, or away) and a performance object from the meaning and rhythm of THIS exchange. Pick lean (-1 back, +1 toward the viewer), lateralLean (-1 left, +1 right), gestureAmount (0 restrained, 1 expressive), and handBias (-1 left, +1 right). Optionally choose pauseGaze for audible pauses and deliberation. Small values suit attentive or difficult moments. Opening up to tell a story can use a wider gesture range. Vary the combination with the actual situation; both sides and gentle asymmetry are available. Use null when undirected default presence fits. Let speech supply gesture timing.',
+          'For a direct request for a recognizable gesture, pick its available gestureHint and omit performance. Waving a hand in frame is greeting even without hello. Select an exact available bodyAction for a requested full-body movement. Do not substitute unrelated gestures. Gaze may accompany an available gesture.',
+        ]
+      : [
+          'Choose a fitting available semantic gestureHint when the reply naturally explains, compares, agrees, reassures or reacts. An explicit request is optional. Quiet presence remains valid. Do not infer agreement or disagreement from emotion alone.',
+        ]),
     `Semantic gesture meanings: ${EMBODIMENT_GESTURE_DEFINITIONS.map(({ id, meaning }) => `${id}=${meaning}`).join('; ')}.`,
-    EMBODIMENT_CONVERSATION_GUIDANCE,
+    ...(!embodimentAvailability?.contextualMotion ? [EMBODIMENT_CONVERSATION_GUIDANCE] : []),
     'Optionally return turnAppraisal: how the current user turn feels to Shio as numbers only — valence -1..1 (praise/kindness positive, teasing/hostility negative), arousal -1..1, socialRelevance 0..1, novelty 0..1 and your confidence 0..1. It only nudges internal mood; never mention it in the reply.',
     'Your initial embodiment decision is authoritative for this turn: later prose or a later visual envelope cannot replace embodiment:null. When the current user explicitly requests a supported physical gesture, represent that request in this decision. Example: a request to greet with a wave selects greeting when available. Do not choose greeting merely because a prior message greeted someone or because your own answer starts with a greeting. Do not promise in prose a gesture you did not request here.',
-    `Current request-scoped Avatar facts: ${embodimentAvailability ? JSON.stringify(embodimentAvailability) : 'unavailable; return embodiment:null'}. Choose gestureHint only from availableSemanticIntents. bodyAction is permitted only from availableBodyActions: for turn-in-place use {action:"turn-in-place",turns:1,direction:"clockwise" or "counterclockwise",tempo:0.75..1.2,finishFacing:"viewer"}. Never return profile IDs, bone transforms, [fox-paw] or shio markers in this JSON plan.`,
+    `Current request-scoped Avatar facts: ${embodimentAvailability ? JSON.stringify(embodimentAvailability) : 'unavailable; return embodiment:null'}. Choose gestureHint only from availableSemanticIntents and bodyAction only from availableBodyActions. Never return profile IDs, bone transforms, [fox-paw] or shio markers in this JSON plan.`,
+    ...(embodimentAvailability?.availableBodyActions?.includes('turn-in-place')
+      ? [
+          'A direct request to turn around or spin in frame requires bodyAction. For example, “Повернись вокруг себя” or “Could you do a spin on camera?” maps to {"requirement":{"type":"direct-answer"},"plannedTools":[],"embodiment":{"intensity":"normal","bodyAction":{"action":"turn-in-place","turns":1,"direction":"clockwise","tempo":1.1,"finishFacing":"viewer"}}}. Direction can also be counterclockwise. Choose tempo 1.1 unless a different pace is requested. Tempo is strictly between 0.75 and 1.2 inclusive. Return neither a hand gesture nor a performance object alongside bodyAction.',
+        ]
+      : []),
+    ...(embodimentAvailability?.availableBodyActions?.includes('dance-in-place')
+      ? [
+          'A direct request to dance in frame is a dance-in-place bodyAction. Example “Потанцуй в кадре”: {"requirement":{"type":"direct-answer"},"plannedTools":[],"embodiment":{"intensity":"normal","bodyAction":{"action":"dance-in-place","style":"playful","tempo":1}}}. Choose smooth, playful or energetic from the mood of this request, with tempo 0.85–1.15. Leave gestureHint and performance out of a dance proposal. Ordinary conversation and questions about dancing need no dance.',
+        ]
+      : []),
     'Return explicit-tool whenever one exact Character tool is semantically required. An explicit request to use a named tool is always part of the user goal even when phrased softly; preserve that exact tool requirement even when it is currently unavailable.',
     'Use required-source web for current public facts, freshness, recent announcements, current pricing, availability, dates, releases, or external sources when no exact tool was named.',
     "Use required-source project when the request asks to inspect, verify, find, or make claims about the connected project's current real source, dependencies, technology stack, configuration, file contents, history, branch, or repository state.",
@@ -149,7 +184,7 @@ function toolRequirementPrompt(
     `Trusted Current World Context projection included in the response request: ${currentWorldContextAvailable ? 'yes' : 'no'}.`,
     `Trusted Screen Context image attached to the current user turn: ${currentScreenContextAvailable ? 'yes' : 'no'}.`,
     'When Screen Context is attached, the image is already the direct visual evidence for requests to describe, analyze, read, or critique that attachment. Return direct-answer with no browser tools unless the original request independently requires inspecting or interacting with the Shio-controlled browser. browser.observe cannot inspect Screen Context or the general desktop.',
-    'When Current World Context is included and its bounded present-state fields can answer what the computer, foreground application, running applications, media, load, or user-idle state is doing now, return direct-answer and use that projection. Do not require shell.execute, browser.use, or browser.useStatus merely to repeat those already supplied facts. Do not infer activity that is absent from the projection.',
+    'When Current World Context is included and its bounded present-state fields can answer a question about the foreground application, media, or user idle state, return direct-answer and use that projection. Do not require shell.execute, browser.use, or browser.useStatus merely to repeat those already supplied facts. Do not infer activity that is absent from the projection.',
     'Classification example: when that projection is included, “What is my system doing now?” or “Что делает моя система на данный момент?” is direct-answer with no planned tool if the bounded fields suffice. A question about the lifecycle of an already running delegated browser session is instead explicit-tool browser.useStatus.',
     'Use explicit-tool shell.execute only when current local-computer facts are not supplied by Current World Context, the user explicitly requests a fresh system inspection, or the requested operating-system action must be executed. Use thread tools for conversation-thread operations, and Memory mutation tools for explicit persistence changes.',
     'A request for the installed version of a command-line utility on the computer requires shell.execute only; the words “on my computer” do not make it browser-state. For “What npx version is installed on my computer?”, return {"requirement":{"type":"explicit-tool","tool":"shell.execute"},"plannedTools":["shell.execute"]}. Do not include any browser tool unless the original request separately asks about a page, tab, or browser session.',

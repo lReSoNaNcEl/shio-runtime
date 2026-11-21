@@ -1,5 +1,19 @@
-import { LLM_PROVIDER_IDS, type LlmProviderId, type ModelInfo } from '../../shared/llm'
+import {
+  type CodexReasoningEffort,
+  isCodexReasoningEffort,
+  LLM_PROVIDER_IDS,
+  type LlmProviderId,
+  type ModelInfo,
+} from '../../shared/llm'
 import { createAiSdkAdapter, createModelCatalogClient } from './AiSdkAdapter'
+import {
+  CODEX_MODEL,
+  codexCapabilities,
+  codexProfile,
+  createCodexCliProvider,
+  fetchCodexModels,
+  isCodexModelId,
+} from './CodexCliProvider'
 import {
   applyCatalogCapabilityHints,
   resolveBaseCapabilities,
@@ -17,7 +31,7 @@ import type {
   ProviderDefinition,
 } from './types'
 
-const PROVIDER_DEFINITIONS: Record<LlmProviderId, ProviderDefinition> = {
+const PROVIDER_DEFINITIONS: Record<Exclude<LlmProviderId, 'codex-cli'>, ProviderDefinition> = {
   groq: groqProvider,
   cloudflare: cloudflareProvider,
   openrouter: openRouterProvider,
@@ -26,7 +40,10 @@ const PROVIDER_DEFINITIONS: Record<LlmProviderId, ProviderDefinition> = {
 
 interface ModelCatalogSnapshot {
   identity: string
-  hints: Map<string, ModelCatalogEntry['capabilities']>
+  hints: Map<
+    string,
+    NonNullable<ModelCatalogEntry['capabilities']> & Pick<ModelCatalogEntry, 'reasoning'>
+  >
 }
 
 // One snapshot per provider. Hints apply only to the exact catalog identity they came from;
@@ -54,26 +71,26 @@ function currentCatalogHints(
     : undefined
 }
 
-export const PROVIDER_PROFILES = Object.values(PROVIDER_DEFINITIONS).map(
-  (definition) => definition.profile,
-)
+export const PROVIDER_PROFILES = LLM_PROVIDER_IDS.map(getProviderProfile)
 
 export function getProviderDefinition(id: LlmProviderId): ProviderDefinition {
+  if (id === 'codex-cli') throw new Error('Codex CLI has no HTTP transport')
   return PROVIDER_DEFINITIONS[id]
 }
 
 export function getProviderProfile(id: LlmProviderId): ProviderDefinition['profile'] {
-  return getProviderDefinition(id).profile
+  return id === 'codex-cli' ? codexProfile : getProviderDefinition(id).profile
 }
 
 export function normalizeProviderModelId(providerId: LlmProviderId, modelId: string): string {
   const normalized = modelId.trim()
+  if (providerId === 'codex-cli') return isCodexModelId(normalized) ? normalized : ''
   return getProviderDefinition(providerId).normalizeModelId?.(normalized) ?? normalized
 }
 
 export function normalizeProviderAccountId(providerId: LlmProviderId, accountId: string): string {
+  if (!getProviderProfile(providerId).requiresAccountId) return ''
   const definition = getProviderDefinition(providerId)
-  if (!definition.profile.requiresAccountId) return ''
   return definition.normalizeAccountId?.(accountId.trim()) ?? accountId.trim()
 }
 
@@ -81,6 +98,7 @@ export function resolveProviderChatBaseUrl(
   providerId: LlmProviderId,
   connection: ProviderConnectionSettings = {},
 ): string {
+  if (providerId === 'codex-cli') return ''
   const definition = getProviderDefinition(providerId)
   return definition.chat.resolveBaseUrl?.(connection) ?? definition.chat.baseUrl
 }
@@ -90,12 +108,32 @@ export function isLlmProviderId(value: string): value is LlmProviderId {
 }
 
 export function createLLMProvider(config: {
+  reasoningEffort?: CodexReasoningEffort
   provider: LlmProviderId
   apiKey: string
   model: string
   accountId?: string
   capabilities?: LlmCapabilities
 }): LLMProvider {
+  if (config.provider === 'codex-cli') {
+    const options = currentCatalogHints(config.provider, {})?.get(
+      modelCapabilityKey(config.model),
+    )?.reasoning
+    const requested = config.reasoningEffort
+    const effort =
+      isCodexReasoningEffort(requested) && (!options || options.levels.includes(requested))
+        ? requested
+        : options
+          ? options.defaultLevel
+          : config.model === CODEX_MODEL
+            ? 'low'
+            : undefined
+    return createCodexCliProvider(
+      config.model,
+      config.capabilities ?? resolveModelCapabilities(config.provider, config.model),
+      effort,
+    )
+  }
   return createAiSdkAdapter({
     definition: getProviderDefinition(config.provider),
     apiKey: config.apiKey,
@@ -111,6 +149,7 @@ export function createModelCatalog(
   id: LlmProviderId,
   connection: ProviderConnectionSettings = {},
 ): ModelCatalogProvider {
+  if (id === 'codex-cli') return { fetchModels: fetchCodexModels }
   return createModelCatalogClient({ definition: getProviderDefinition(id), connection })
 }
 
@@ -119,6 +158,12 @@ export function resolveModelCapabilities(
   modelId: string,
   connection: ProviderConnectionSettings = {},
 ): LlmCapabilities {
+  if (providerId === 'codex-cli')
+    return applyCatalogCapabilityHints(
+      providerId,
+      codexCapabilities(modelId),
+      currentCatalogHints(providerId, connection)?.get(modelCapabilityKey(modelId)),
+    )
   const definition = getProviderDefinition(providerId)
   const normalizedModelId = normalizeProviderModelId(providerId, modelId)
   const base = {
@@ -171,7 +216,7 @@ export function enrichModelCatalog(
       model.capabilities?.supportsStreaming !== undefined ||
       model.capabilities?.supportsToolCalling !== undefined
     ) {
-      hints.set(modelCapabilityKey(id), model.capabilities)
+      hints.set(modelCapabilityKey(id), { ...model.capabilities, reasoning: model.reasoning })
     }
     const capabilities = resolveModelCapabilities(providerId, id, connection)
     return {

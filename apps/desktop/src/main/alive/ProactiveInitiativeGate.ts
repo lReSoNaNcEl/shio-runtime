@@ -8,7 +8,7 @@ import type { AliveStore } from './AliveStore'
 import type { AttentionArbiter } from './AttentionArbiter'
 import type { AutonomyDecision, AutonomyEnvelope } from './AutonomyEnvelope'
 
-export type ProactiveInitiativeOrigin = 'experience' | 'world' | 'behavior'
+export type ProactiveInitiativeOrigin = 'experience' | 'world' | 'behavior' | 'watch-together'
 
 export interface ProactiveInitiativeRequest {
   origin: ProactiveInitiativeOrigin
@@ -18,7 +18,7 @@ export interface ProactiveInitiativeRequest {
 
 export type ProactiveInitiativeApproval = Readonly<{
   outcome: 'admit' | 'preview'
-  authority: 'full-control' | 'suggest-mode' | 'confirmation-required'
+  authority: 'watch-session' | 'full-control' | 'suggest-mode' | 'confirmation-required'
   attention: AttentionDecision
 }>
 
@@ -47,13 +47,9 @@ interface ProactiveInitiativeGateOptions {
 /** Canonical policy and attention boundary for every autonomous conversation initiative. */
 export class ProactiveInitiativeGate {
   private evaluationTail: Promise<void> = Promise.resolve()
-  private lastInitiativeAt: number | null
   private disposed = false
-  private readonly lifecycleController = new AbortController()
 
-  constructor(private readonly options: ProactiveInitiativeGateOptions) {
-    this.lastInitiativeAt = options.store.lastInitiativeAt()
-  }
+  constructor(private readonly options: ProactiveInitiativeGateOptions) {}
 
   submit(
     request: ProactiveInitiativeRequest,
@@ -71,11 +67,27 @@ export class ProactiveInitiativeGate {
     return evaluation
   }
 
+  watchAllowedNow(): boolean {
+    if (this.disposed) return false
+    return this.policy('watch-together').decision.outcome === 'execute'
+  }
+
   dispose(): void {
     this.disposed = true
-    this.lifecycleController.abort(
-      new DOMException('Proactive Initiative Gate disposed', 'AbortError'),
-    )
+  }
+
+  private policy(origin: ProactiveInitiativeOrigin) {
+    const now = this.options.now?.() ?? Date.now()
+    const settings = this.options.settings()
+    const world = this.options.world(settings, now)
+    const confirmedWatchSession = origin === 'watch-together'
+    const decision = this.options.envelope.decide({
+      settings,
+      world,
+      now,
+      confirmedWatchSession,
+    })
+    return { now, world, decision }
   }
 
   private async evaluate(
@@ -83,35 +95,16 @@ export class ProactiveInitiativeGate {
     deliver: (approval: ProactiveInitiativeApproval) => boolean | Promise<boolean>,
   ): Promise<ProactiveInitiativeDecision> {
     if (this.disposed) return { outcome: 'ignore', reason: 'gate-disposed' }
-    const now = this.options.now?.() ?? Date.now()
-    const settings = this.options.settings()
-    const world = this.options.world(settings, now)
-    const policy = this.options.envelope.decide({
-      settings,
-      world,
-      now,
-      dailyInitiatives: this.options.store.dailyInitiativeCount(now),
-      lastInitiativeAt: this.lastInitiativeAt,
-    })
+    const { now, world, decision: policy } = this.policy(request.origin)
     if (policy.outcome === 'defer') {
       this.audit(request, 'deferred', policy.reason)
       return policy
     }
 
-    let attention: AttentionDecision
-    try {
-      attention = await this.options.attention.decide(request.candidates, settings, {
-        busy: world.conversationActive || world.audioActive,
-        now,
-        signal: this.lifecycleController.signal,
-      })
-    } catch (error) {
-      if (this.lifecycleController.signal.aborted) {
-        return { outcome: 'ignore', reason: 'gate-disposed' }
-      }
-      throw error
-    }
-    if (this.disposed) return { outcome: 'ignore', reason: 'gate-disposed', attention }
+    const attention = this.options.attention.decide(request.candidates, {
+      busy: world.conversationActive || world.audioActive,
+      now,
+    })
     if (attention.disposition !== 'admit') {
       this.audit(request, attention.disposition, attention.reason)
       return {
@@ -125,7 +118,9 @@ export class ProactiveInitiativeGate {
       outcome: policy.outcome === 'execute' ? 'admit' : 'preview',
       authority:
         policy.outcome === 'execute'
-          ? 'full-control'
+          ? request.origin === 'watch-together'
+            ? 'watch-session'
+            : 'full-control'
           : policy.reason === 'suggest_mode'
             ? 'suggest-mode'
             : 'confirmation-required',
@@ -138,7 +133,6 @@ export class ProactiveInitiativeGate {
       return { outcome: 'ignore', reason: 'delivery-rejected', attention }
     }
 
-    this.lastInitiativeAt = now
     this.audit(request, approval.outcome === 'admit' ? 'executed' : 'previewed', approval.authority)
     return approval
   }

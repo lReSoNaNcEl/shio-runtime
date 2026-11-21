@@ -432,7 +432,7 @@ export function AvatarPreviewView({ onOpenSettings }: { onOpenSettings: () => vo
               </InlineAlert>
             ) : null}
             <div className="preview-primary-actions">
-              {selected?.physicalAction && (
+              {selected?.physicalAction?.action === 'turn-in-place' && (
                 <Picker
                   label={t('avatarPreview.turn.direction')}
                   value={turnDirection}
@@ -451,7 +451,7 @@ export function AvatarPreviewView({ onOpenSettings }: { onOpenSettings: () => vo
                 variant="accent"
                 isDisabled={!canPlay}
                 onPress={() => {
-                  if (selected?.physicalAction)
+                  if (selected?.physicalAction?.action === 'turn-in-place')
                     controller.previewAvatarVariation(
                       selectedId,
                       Number.isNaN(variationSeed) ? undefined : variationSeed,
@@ -478,7 +478,7 @@ export function AvatarPreviewView({ onOpenSettings }: { onOpenSettings: () => vo
                   controller.previewAvatarVariation(
                     selectedId,
                     Number.isNaN(variationSeed) ? undefined : variationSeed,
-                    selected?.physicalAction
+                    selected?.physicalAction?.action === 'turn-in-place'
                       ? {
                           action: 'turn-in-place',
                           turns: 1,

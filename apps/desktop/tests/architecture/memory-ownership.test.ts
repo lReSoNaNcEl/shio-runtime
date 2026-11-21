@@ -18,12 +18,6 @@ describe('Memory ownership boundaries', () => {
             `${relative(desktopRoot, file)} imports Memory implementation ${specifier}`,
           ).toBe(true)
         }
-        if (node.type === 'Identifier') {
-          expect(node.name, `${relativePath} owns a Memory habit store`).not.toBe('memory_habits')
-          expect(node.name, `${relativePath} observes procedural habits directly`).not.toBe(
-            'observeHabit',
-          )
-        }
         if (node.type === 'CallExpression' && node.callee?.type === 'MemberExpression') {
           expect(
             memberName(node.callee.property),

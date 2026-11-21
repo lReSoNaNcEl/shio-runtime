@@ -25,6 +25,7 @@ class StreamingVADConfig:
     post_roll_ms: int = 200
     max_segment_ms: int = 20_000
     partial_interval_ms: int = 800
+    partial_results: bool = True
 
 
 @dataclass(frozen=True)
@@ -193,7 +194,7 @@ class StreamingASRSession:
             return [], self._finalize("max_duration", trim_silence=False)
         if self._silence_samples >= round(self.config.min_silence_ms * self.sample_rate / 1000):
             return [], self._finalize("vad_silence", trim_silence=True)
-        if voiced and segment_samples >= self._next_partial_samples:
+        if self.config.partial_results and voiced and segment_samples >= self._next_partial_samples:
             while self._next_partial_samples <= segment_samples:
                 self._next_partial_samples += round(
                     self.config.partial_interval_ms * self.sample_rate / 1000

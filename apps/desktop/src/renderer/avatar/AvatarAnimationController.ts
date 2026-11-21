@@ -1,4 +1,4 @@
-import type { BodyTurnIntent } from '../../shared/motion'
+import type { BodyActionIntent } from '../../shared/motion'
 import { type AnimationId, getAnimation } from './animationManifest'
 import type { AvatarBodyMotionLayer } from './embodiment/motion/AvatarMotionLayer'
 import type { GeneratedBodyDebugState, VrmModel } from './rendering/three/VrmModel'
@@ -19,7 +19,7 @@ export interface AnimationControllerDebugState {
 }
 
 export interface PlayManifestOptions {
-  bodyAction?: BodyTurnIntent
+  bodyAction?: BodyActionIntent
   seed?: number
   speechBound?: boolean
   fallbackId?: AnimationId

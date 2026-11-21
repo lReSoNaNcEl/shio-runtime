@@ -4,6 +4,7 @@ import type { AliveSnapshot } from '../../../../shared/alive'
 import type { UiTheme } from '../../../../shared/config'
 import type {
   BacklogSelectorRoleConfig,
+  CodexReasoningEffort,
   LlmProviderId,
   LlmProviderPublicSettings,
   LlmRoleCandidate,
@@ -57,6 +58,7 @@ export interface GeneralSettingsActions {
 
 export interface SpeechSettingsState {
   language: string
+  speechVolumePercent: number | null
   microphones: Array<{ deviceId: string; label: string }>
   microphoneId: string
   voiceWarmup: ControllerState['voiceWarmup']
@@ -72,6 +74,8 @@ export interface SpeechSettingsState {
 }
 
 export interface SpeechSettingsActions {
+  setSpeechVolumePercent: (value: number) => void
+  saveSpeechVolumePercent: (value: number) => void
   setLanguage: (language: string) => void
   setMicrophoneId: (id: string) => void
   recordMicrophoneTest: () => Promise<void>
@@ -95,6 +99,7 @@ export interface LlmSettingsState {
 }
 
 export interface LlmSettingsActions {
+  setCodexReasoningEffort: (model: string, effort: CodexReasoningEffort | undefined) => void
   setActiveProvider: (provider: LlmProviderId) => void
   updateProviderSettings: (id: LlmProviderId, model: string) => void
   updateProviderAccountId: (id: LlmProviderId, accountId: string) => void

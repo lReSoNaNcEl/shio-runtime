@@ -1,25 +1,17 @@
 import type {
   AttentionCandidate,
   AttentionDecision,
-  AutonomySettings,
-  FastBrainAttentionDecision,
-  FastBrainAttentionInput,
+  SpeechAttentionDecision,
+  SpeechAttentionInput,
 } from '../../shared/alive'
-import type { FastBrainRuntime } from './FastBrainRuntime'
-
-const CLEAR_WINNER_MARGIN = 0.18
 
 export class AttentionArbiter {
-  constructor(private readonly fastBrain: FastBrainRuntime) {}
-
-  async decide(
+  decide(
     candidates: readonly AttentionCandidate[],
-    settings: AutonomySettings,
-    options: { busy?: boolean; now?: number; signal?: AbortSignal } = {},
-  ): Promise<AttentionDecision> {
+    options: { busy?: boolean; now?: number } = {},
+  ): AttentionDecision {
     const startedAt = Date.now()
     const now = options.now ?? startedAt
-    options.signal?.throwIfAborted()
     const viable = candidates
       .filter(
         (candidate) =>
@@ -32,41 +24,17 @@ export class AttentionArbiter {
     if (viable.length === 0)
       return decision('ignore', undefined, 0.9, 'no_viable_candidate', startedAt)
     const winner = viable[0]
-    const fallback = decision(
+    return decision(
       disposition(winner.score),
       winner.candidate.id,
       Math.max(0.55, Math.min(0.98, winner.score)),
       'deterministic_score',
       startedAt,
     )
-    if (viable.length === 1) return fallback
-    const margin = winner.score - viable[1].score
-    if (margin >= CLEAR_WINNER_MARGIN || !settings.fastBrain.enabled || settings.privacyMode) {
-      return {
-        ...fallback,
-        reason: margin >= CLEAR_WINNER_MARGIN ? 'clear_winner' : 'model_disabled',
-      }
-    }
-    const ambiguousCandidates = viable.slice(0, 4).map((entry) => entry.candidate)
-    const arbitration = createArbitrationSignal(ambiguousCandidates, options.signal, now)
-    try {
-      return await this.fastBrain.arbitrate(
-        ambiguousCandidates,
-        settings,
-        fallback,
-        arbitration.signal,
-      )
-    } finally {
-      arbitration.dispose()
-    }
   }
 
-  async evaluateLegacy(
-    input: FastBrainAttentionInput,
-    settings: AutonomySettings,
-    options: { signal?: AbortSignal } = {},
-  ): Promise<FastBrainAttentionDecision> {
-    const decision = await this.decide(
+  evaluateSpeech(input: SpeechAttentionInput): SpeechAttentionDecision {
+    const decision = this.decide(
       [
         {
           id: input.utteranceId,
@@ -84,8 +52,7 @@ export class AttentionArbiter {
           createdAt: Date.now(),
         },
       ],
-      settings,
-      { busy: input.speaking || input.cooldownActive, signal: options.signal },
+      { busy: input.speaking || input.cooldownActive },
     )
     return {
       shouldAttend: decision.disposition === 'admit',
@@ -94,42 +61,6 @@ export class AttentionArbiter {
       reason: decision.reason,
       latencyMs: decision.latencyMs,
     }
-  }
-}
-
-function createArbitrationSignal(
-  candidates: readonly AttentionCandidate[],
-  externalSignal: AbortSignal | undefined,
-  now: number,
-): { signal: AbortSignal; dispose(): void } {
-  const controller = new AbortController()
-  const abortFromExternal = (): void => controller.abort(externalSignal?.reason)
-  externalSignal?.addEventListener('abort', abortFromExternal, { once: true })
-  if (externalSignal?.aborted) abortFromExternal()
-
-  const earliestExpiry = candidates.reduce<number | undefined>(
-    (earliest, candidate) =>
-      candidate.expiresAt === undefined
-        ? earliest
-        : earliest === undefined
-          ? candidate.expiresAt
-          : Math.min(earliest, candidate.expiresAt),
-    undefined,
-  )
-  const expiryTimer =
-    earliestExpiry === undefined
-      ? undefined
-      : setTimeout(
-          () => controller.abort(new DOMException('Attention candidates expired', 'AbortError')),
-          Math.max(0, earliestExpiry - now),
-        )
-
-  return {
-    signal: controller.signal,
-    dispose: () => {
-      if (expiryTimer !== undefined) clearTimeout(expiryTimer)
-      externalSignal?.removeEventListener('abort', abortFromExternal)
-    },
   }
 }
 

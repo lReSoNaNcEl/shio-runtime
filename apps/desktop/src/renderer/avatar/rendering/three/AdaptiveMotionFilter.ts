@@ -8,13 +8,14 @@ import {
 } from '../../MotionAttenuation'
 
 export type MotionClass = 'presence' | 'gesture' | 'reaction' | 'full-body'
-export const MOTIONBRICKS_CONVERSATION_MAX_JOINT_SPEED = 1.5
+export const GENERATED_GESTURE_MAX_JOINT_SPEED = 1.5
 export interface MotionFilterContext {
   /** Remaining authored time for preparation or deterministic presence recovery. */
   reachSeconds?: number
   motionClass: MotionClass
-  /** True while an applied MotionBricks chunk drives the body; false for local presence. */
+  /** True while an applied generated chunk drives the body. */
   generatedSource?: boolean
+  flashMotion?: boolean
   phase: MotionPhaseId
   sourceSpeeds?: ReadonlyMap<THREE.Object3D, number>
   onIntegrated?: (bone: THREE.Object3D) => void
@@ -26,11 +27,11 @@ export interface AdaptiveMotionFilterLimits {
   frames: number
   speedLimited: number
   accelerationLimited: number
-  /** Presence speed ceiling (1.6 rad/s scaled by joint kind) bound the step. */
+  /** The presence speed ceiling scaled by joint kind bound the step. */
   presenceCeiling: number
-  /** MOTIONBRICKS_CONVERSATION_MAX_JOINT_SPEED bound an expressive generated step. */
+  /** GENERATED_GESTURE_MAX_JOINT_SPEED bound an expressive generated step. */
   generatedSpeedCap: number
-  /** Frames of generated presence tracked at its calm bandwidth (8 instead of 28). */
+  /** Frames of generated presence tracked at a reduced bandwidth. */
   generatedPresenceBandwidth: number
 }
 const emptyLimits = (): AdaptiveMotionFilterLimits => ({
@@ -115,17 +116,19 @@ export class AdaptiveMotionFilter {
     // geometry changes this bound without assuming one avatar's metre scale.
     const lever = Math.max(0.12, ...bone.children.map((child) => child.position.length()))
     const geometry = THREE.MathUtils.clamp(0.3 / lever, 0.65, 1.4)
+    const flashPresence = presence && context.flashMotion === true
+    const presenceAcceleration = flashPresence ? 5 : 7
+    const presenceCeiling = flashPresence ? 1.2 : 1.6
     const acceleration =
-      (presence ? 7 : reaction ? 65 : 45) *
+      (presence ? presenceAcceleration : reaction ? 65 : 45) *
       (torso ? 0.3 : shoulder ? 0.6 : 1) *
       geometry *
       phaseScale
     const kindCeiling =
-      (presence ? 1.6 : reaction ? 8 : 6) * (torso ? 0.35 : shoulder ? 0.6 : wrist ? 0.75 : 1)
+      (presence ? presenceCeiling : reaction ? 8 : 6) *
+      (torso ? 0.35 : shoulder ? 0.6 : wrist ? 0.75 : 1)
     const generatedCap =
-      context.generatedSource === true && !presence
-        ? MOTIONBRICKS_CONVERSATION_MAX_JOINT_SPEED
-        : Infinity
+      context.generatedSource === true && !presence ? GENERATED_GESTURE_MAX_JOINT_SPEED : Infinity
     const ceiling = Math.min(kindCeiling, generatedCap)
     const sourceSpeed = context.sourceSpeeds?.get(bone) ?? sourceVelocity.length()
     sourceVelocity.clampLength(0, sourceSpeed)
@@ -152,10 +155,9 @@ export class AdaptiveMotionFilter {
     // The analytic step is stable at different render rates, and velocity
     // feed-forward preserves a moving stroke without a second filter or clock.
     const feed = presence ? new THREE.Vector3() : sourceVelocity
-    // Measured MotionBricks standing output contains rapid pose noise even
-    // with held goals. Use the same tracker at a calm presence bandwidth;
-    // expressive phases keep their existing timing and source feed-forward.
-    const frequency = presence ? (context.generatedSource === true ? 8 : 28) : 48
+    // Track generated presence at a lower bandwidth to absorb pose noise.
+    const generatedFrequency = flashPresence ? 6 : 8
+    const frequency = presence ? (context.generatedSource ? generatedFrequency : 28) : 48
     const relativeVelocity = state.velocity.clone().sub(feed)
     const initialError = error.clone().addScaledVector(feed, -dt)
     const decay = Math.exp(-frequency * dt)

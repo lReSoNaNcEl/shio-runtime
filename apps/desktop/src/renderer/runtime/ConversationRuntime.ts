@@ -73,6 +73,7 @@ interface SpeechReplyMetadata {
 
 export interface ConversationRuntimeDeps {
   speechOutput: SpeechOutputPort
+  watchUserTurn?: () => ((turnId: string, fromMicrophone: boolean) => Promise<void>) | undefined
   characterResponse: CharacterResponsePort
   characterState: CharacterStateReader
   conversationState: ConversationStateWriter
@@ -390,8 +391,15 @@ export class ConversationRuntime {
         }
       }
 
-      const draft = await this.runGeneration(turn.turnId, () =>
-        this.deps.characterResponse.createReply(
+      const explicit =
+        !turn.screenContextId &&
+        (turn.source === 'text_chat' || turn.source === 'push_to_talk' || turn.watchVoice)
+      const prepareWatchTurn = explicit ? this.deps.watchUserTurn?.() : undefined
+      const draft = await this.runGeneration(turn.turnId, async () => {
+        await prepareWatchTurn?.(turn.turnId, turn.source !== 'text_chat')
+        if (!this.isCurrentTurn(turn.turnId))
+          throw new ConversationInterruptedError(turn.turnId, 'manual-stop')
+        return this.deps.characterResponse.createReply(
           turn.turnId,
           turn.text,
           turn.screenContextId,
@@ -445,9 +453,15 @@ export class ConversationRuntime {
             }
             commitSpeech(commitBuffer.push(event.delta))
           },
-          turn.source === 'autonomous_initiative' ? 'autonomous' : 'user',
-        ),
-      )
+          turn.source === 'autonomous_initiative'
+            ? turn.sharedViewing
+              ? 'watch-together'
+              : 'autonomous'
+            : prepareWatchTurn || turn.watchVoice
+              ? 'watch-user'
+              : 'user',
+        )
+      })
       attachmentDisposition = 'released'
       if (!this.isCurrentTurn(turn.turnId)) {
         return { status: 'cancelled', turnId: turn.turnId, attachmentDisposition }

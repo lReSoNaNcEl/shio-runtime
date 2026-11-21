@@ -2,7 +2,6 @@ import assert from 'node:assert/strict'
 
 import { resolvePwshPath } from '@deepseek-ai/dsh-pwsh-local'
 
-import { SYSTEM_CONTEXT_PROBES } from '../../src/main/alive/SystemContextAdapter'
 import { WindowsSystemContextAdapter } from '../../src/main/alive/WindowsSystemContextAdapter'
 
 async function qualifyWindowsWorker(): Promise<void> {
@@ -12,12 +11,17 @@ async function qualifyWindowsWorker(): Promise<void> {
     pwshPath: resolvePwshPath(undefined, process.env, process.platform),
   })
   try {
-    const first = await adapter.observe({ probes: SYSTEM_CONTEXT_PROBES })
+    const first = await adapter.observe()
     assert.equal(first.status, 'available', 'persistent PowerShell worker did not start')
-    assert.deepEqual(first.sampledProbes, SYSTEM_CONTEXT_PROBES)
+    assert.deepEqual(first.sampledProbes, ['foreground-application'])
+    assert.equal(first.runningApplications, undefined)
     const second = await adapter.observe({ probes: ['foreground-application'] })
     assert.equal(second.status, 'available', 'persistent PowerShell worker did not accept reuse')
     assert.deepEqual(second.sampledProbes, ['foreground-application'])
+
+    const applications = await adapter.observe({ probes: ['running-applications'] })
+    assert.deepEqual(applications.sampledProbes, ['running-applications'])
+    assert(Array.isArray(applications.runningApplications))
   } finally {
     adapter.dispose()
   }

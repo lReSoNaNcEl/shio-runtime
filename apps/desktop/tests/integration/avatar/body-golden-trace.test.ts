@@ -31,7 +31,7 @@ afterEach(() => {
 const round = (value: number) => Math.round(value * 1e6) / 1e6
 const digest = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex')
 
-/** Deterministic, varied SOMA30 arm source: different frequencies per joint and side. */
+/** Deterministic, varied synthetic arm source: different frequencies per joint and side. */
 type Quaternion = [number, number, number, number]
 
 function sourceRotations(frame: number): Quaternion[] {

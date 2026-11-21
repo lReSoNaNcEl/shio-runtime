@@ -140,9 +140,10 @@ async function qualifyAutonomousPolicy({ application, page, directory, report, p
     result.passed = false
     result.policyEvidence = await page.evaluate(async () => {
       const snapshot = await window.api.alive.snapshot()
+      const audit = await window.api.diagnostics.getAliveAudit()
       return {
         health: snapshot?.health,
-        audit: snapshot?.audit.slice(-12).map(({ category, event, outcome, detail }) => ({
+        audit: audit.slice(0, 12).map(({ category, event, outcome, detail }) => ({
           category,
           event,
           outcome,

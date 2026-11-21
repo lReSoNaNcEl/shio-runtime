@@ -10,10 +10,6 @@ export const DEFAULT_AUTONOMY_SETTINGS: AutonomySettings = Object.freeze({
   mode: 'suggest',
   globallySuspended: false,
   privacyMode: false,
-  quietHours: Object.freeze({ enabled: true, startHour: 22, endHour: 8 }),
-  cooldownMs: 15 * 60_000,
-  maxDailyInitiatives: 6,
-  fastBrain: Object.freeze({ enabled: false, timeoutMs: 1_200, maxTokens: 64 }),
 })
 
 export const DEFAULT_MOOD_STATE: MoodState = Object.freeze({
@@ -26,15 +22,6 @@ export const DEFAULT_MOOD_STATE: MoodState = Object.freeze({
   updatedAt: 0,
 })
 
-export interface LegacyAliveHabitRecord {
-  key: string
-  summary: string
-  evidenceCount: number
-  status: 'pending' | 'approved' | 'rejected'
-  createdAt: number
-  updatedAt: number
-}
-
 export class AliveStore {
   private readonly database: DatabaseSync
 
@@ -43,6 +30,17 @@ export class AliveStore {
     this.database = new DatabaseSync(databasePath)
     this.database.exec('PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;')
     this.migrate()
+    this.database
+      .prepare(
+        `UPDATE alive_settings
+         SET value = json_remove(value, '$.quietHours', '$.cooldownMs', '$.maxDailyInitiatives')
+         WHERE key = 'autonomy' AND CASE WHEN json_valid(value) THEN
+           json_type(value, '$.quietHours') IS NOT NULL
+           OR json_type(value, '$.cooldownMs') IS NOT NULL
+           OR json_type(value, '$.maxDailyInitiatives') IS NOT NULL
+         ELSE 0 END`,
+      )
+      .run()
   }
 
   close(): void {
@@ -61,10 +59,9 @@ export class AliveStore {
     try {
       const parsed = JSON.parse(row.value) as Partial<AutonomySettings>
       return {
-        ...DEFAULT_AUTONOMY_SETTINGS,
-        ...parsed,
-        quietHours: { ...DEFAULT_AUTONOMY_SETTINGS.quietHours, ...parsed.quietHours },
-        fastBrain: { ...DEFAULT_AUTONOMY_SETTINGS.fastBrain, ...parsed.fastBrain },
+        mode: parsed.mode ?? DEFAULT_AUTONOMY_SETTINGS.mode,
+        globallySuspended: parsed.globallySuspended ?? DEFAULT_AUTONOMY_SETTINGS.globallySuspended,
+        privacyMode: parsed.privacyMode ?? DEFAULT_AUTONOMY_SETTINGS.privacyMode,
       }
     } catch {
       return DEFAULT_AUTONOMY_SETTINGS
@@ -113,27 +110,6 @@ export class AliveStore {
       .run(JSON.stringify(mood))
   }
 
-  legacyHabitRecords(): readonly LegacyAliveHabitRecord[] {
-    const exists = this.database
-      .prepare(
-        "SELECT 1 AS found FROM sqlite_master WHERE type = 'table' AND name = 'alive_habits'",
-      )
-      .get() as { found: number } | undefined
-    if (!exists) return Object.freeze([])
-    return Object.freeze(
-      this.database
-        .prepare(
-          `SELECT habit_key AS key, title AS summary, evidence_count AS evidenceCount,
-                  status, created_at AS createdAt, updated_at AS updatedAt FROM alive_habits`,
-        )
-        .all() as unknown as LegacyAliveHabitRecord[],
-    )
-  }
-
-  completeLegacyHabitMigration(): void {
-    this.database.exec('DROP TABLE IF EXISTS alive_habits')
-  }
-
   audit(
     category: AliveAuditEntry['category'],
     event: string,
@@ -158,30 +134,6 @@ export class AliveStore {
         )
         .all(limit) as unknown as AliveAuditEntry[],
     )
-  }
-
-  dailyInitiativeCount(now: number): number {
-    const start = new Date(now)
-    start.setHours(0, 0, 0, 0)
-    const row = this.database
-      .prepare(
-        `SELECT COUNT(*) AS count FROM alive_audit
-         WHERE category = 'autonomy' AND event = 'initiative'
-           AND outcome IN ('executed', 'previewed') AND at >= ?`,
-      )
-      .get(start.getTime()) as { count: number }
-    return Number(row.count)
-  }
-
-  lastInitiativeAt(): number | null {
-    const row = this.database
-      .prepare(
-        `SELECT MAX(at) AS at FROM alive_audit
-         WHERE category = 'autonomy' AND event = 'initiative'
-           AND outcome IN ('executed', 'previewed')`,
-      )
-      .get() as { at: number | null }
-    return row.at === null ? null : Number(row.at)
   }
 
   private migrate(): void {
@@ -216,6 +168,7 @@ export class AliveStore {
         COMMIT;
       `)
     }
+    this.database.exec('DROP TABLE IF EXISTS alive_habits')
   }
 }
 
