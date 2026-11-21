@@ -79,7 +79,7 @@ Architecture and ownership:
   Context resolved for the current turn.
 - Character requests are composed through the bounded Character Request Composer.
   Normal turns receive compact capability availability, one relevant unfinished conversation
-  thread when present, and only a few relevant Mood, Relationship, Habit, and World
+  thread when present, and only a few relevant Mood, Relationship, and World
   projections. Context allocation reserves a bounded minimum for every present section
   before distributing the remainder by priority tier; never restore sequential
   first-come allocation that can starve lower sections. Do not dump complete capability
@@ -95,11 +95,8 @@ Architecture and ownership:
   Browser Context, Screen Context, or raw conversation transcript.
 - Semantic Memory v1 persists only when the user semantically and explicitly asks
   to remember, update, or forget. Implicit durable-fact capture and Smart Memory
-  remain prohibited. Smart Habits may observe only typed runtime-confirmed events,
-  require repeated evidence, and remain a pending suggestion until the user
-  explicitly approves or rejects them; they never silently create Memory records.
-- World Context, Autonomy Envelope, Smart Habits, and
-  latency aggregation are owned by Electron Main. Renderer reports to these owners
+  remain prohibited.
+- World Context, Autonomy Envelope, and latency aggregation are owned by Electron Main. Renderer reports to these owners
   use typed, runtime-validated IPC and may expose only bounded activity metadata,
   never raw screen, DOM, transcript, prompt, reply, tool payload, or credentials.
 - OS-specific foreground and global-idle collection stays behind the Main-owned
@@ -116,16 +113,10 @@ Architecture and ownership:
   Mood never generates text, writes Avatar state, bypasses proactive policy, or grants
   capability authority.
 - Experience Policy remains the deterministic appraisal authority. Contextual
-  modifiers may consume only bounded recent-event, Mood,
-  numeric Relationship, and approved-motif-count projections. They never
-  interpret Relationship or habit text as instructions, and an optional model
-  nuance scorer may not replace base appraisal or expand authority.
-- Fast Brain provider/model selection is bounded non-secret policy. It reuses the
-  Main-owned LLM credential store and may never persist credentials in Alive storage
-  or expose them through World Context, renderer state, or diagnostics. Fast Brain
-  accepts only exact JSON through a strict typed result schema, and every model call
-  receives caller cancellation. Candidate expiry, continuous-listening/session reset,
-  and Alive Runtime shutdown abort actual provider work; a late result is discarded.
+  modifiers may consume bounded recent-event, Mood, and numeric Relationship
+  projections. Model nuance may not replace base appraisal or expand authority.
+- Attention arbitration uses deterministic scoring. Ephemeral speech candidates
+  remain bound to the current listening session, and stale decisions are discarded.
 - Autonomy modes, including Full, never bypass Action Runtime, Permission Guard,
   validation, verification, cancellation, or logging for externally authoritative
   side effects. Global Suspend and Privacy Mode are authoritative policy stops.
@@ -234,26 +225,20 @@ Architecture and ownership:
 - Evidence remains bound to the original turn snapshot; later synchronization may
   not rewrite historical message provenance.
 - Project snapshot staleness is diagnostic freshness, not Runtime failure.
-- Procedural habits belong to Memory Runtime, require deduped completed typed facts,
-  explicit approval, and reuse cooldown. Hybrid retrieval must retain lexical/FTS as
-  the operational fallback when an optional Embedding Adapter is unavailable.
+- Hybrid memory retrieval retains lexical/FTS when an optional Embedding Adapter is unavailable.
 - Streaming speech uses one bounded Fish text-in/audio-out session per admitted
   turn. AudioPlayer owns playback and consumed source-sample position. ACK is
   transport credit, not audible completion. Cancellation invalidates queued PCM
   and cues and stops actual inference; no new turn overlaps unfinished cleanup.
-- The ARDY experiment keeps its independent environment under
-  `apps/desktop/motion`. Electron Main owns the Adapter/processes and validates
-  bounded results; renderer Avatar Runtime owns retargeting and bone composition.
-  Head/neck, eyes, jaw and facial channels are excluded from generated body input.
-  Conversational body and delivery use AudioPlayer's consumed PCM cursor. Overlay
-  consumes that same pose and never starts a second generator. LLM2Vec is ARDY
-  conditioning, not the conversational LLM and cannot be replaced by chat text.
-- ARDY body composition applies procedural contributions once per frame, uses
-  model-oriented anatomical constraints and stable knee poles, and samples
-  procedural fingers from the same body cursor. Overlay consumes the composed
-  body/finger/chest projection with bounded interpolation; it never adds a second
-  independent breathing or upper-body motion layer. Correction diagnostics expose
-  bounded counts only, never raw poses.
+- FlashMotion is the single generated-body Adapter. Electron Main owns its worker,
+  validates bounded results and controls cancellation. Avatar Runtime owns
+  retargeting and the final body and finger pose. Head/neck, eyes, jaw and facial
+  channels are excluded from generated body input. Conversational motion uses
+  AudioPlayer's consumed PCM cursor. Overlay consumes the same pose.
+- Body composition applies procedural contributions once per frame, uses
+  model-oriented anatomical constraints and stable knee poles, and composes
+  native speech finger motion with bounded catalog hand intent under the same
+  owner and cursor. Correction diagnostics expose bounded counts.
 - Facial acting binds are capability-gated and owned by AvatarExpressionMixer.
   Overlay consumes the primary composed acting and bilateral eyelid projection;
   it never starts a second randomized facial actor.
@@ -421,7 +406,7 @@ Voice registry and references:
 - Keep Fish device/compile/session policy server-owned. Remove F5-only settings,
   dependencies and installation rules as part of the explicit migration.
 - The separate speech API test page keeps its lightweight web stack; Spectrum 2
-  is mandatory for Electron UI. The API page owns no ARDY or VRM renderer.
+  is mandatory for Electron UI. The API page owns no motion generator or VRM renderer.
 - Never commit model caches, secrets, generated audio, or the local virtual
   environment.
 

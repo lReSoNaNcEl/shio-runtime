@@ -39,7 +39,7 @@
   - [21D. Responsive Character Pipeline](#21d-responsive-character-pipeline)
   - [21E. World Context, Experience, Attention, and Behavior](#21e-world-context-experience-attention-and-behavior)
   - [21F. Autonomous Initiative](#21f-autonomous-initiative)
-  - [21G. Memory Retrieval, Procedural Habits, and Relationship Context](#21g-memory-retrieval-procedural-habits-and-relationship-context)
+  - [21G. Memory Retrieval and Relationship Context](#21g-memory-retrieval-and-relationship-context)
   - [21H. Latency Observability](#21h-latency-observability)
 - [Part V - External Integration](#part-v---external-integration)
   - [22. External Adapters](#22-external-adapters)
@@ -184,16 +184,16 @@ Architectural Invariants define properties of Shio Runtime that must never chang
 41. **Safe Stream Commit**
     Provider stream bytes are untrusted protocol data. Internal tool, memory, action, embodiment, and emotion-control markers are incrementally contained before any text delta reaches chat, TTS, Memory, or another user-visible projection. A native tool round that begins with a tool call commits no visible or speakable text.
 42. **Conversation Admission Remains Singular**
-    Attention Evaluation, Fast Brain, Experience Runtime, Behavior Runtime, and autonomous initiative may request or enrich a turn, but none may directly start Conversation Runtime. The existing renderer-owned Conversation Admission remains the only grantor of conversational execution.
+    Attention Evaluation, Experience Runtime, Behavior Runtime, and autonomous initiative may request or enrich a turn, but none may directly start Conversation Runtime. The existing renderer-owned Conversation Admission remains the only grantor of conversational execution.
     Autonomous conversation initiatives first pass the Main-owned Proactive Initiative Gate; explicit user input does not.
 43. **Autonomy Does Not Grant Authority**
     Autonomy Envelope may defer, preview, or authorize an already allowlisted internal initiative according to user policy. It never bypasses Action Runtime, Permission Guard, validation, verification, cancellation, or logging for an externally authoritative side effect.
-44. **Habit Suggestions Have Their Own Store**
-    Memory Runtime owns procedural habit suggestions and their approval state. Character State and conversation history have separate owners.
+44. **Semantic Memory Has Its Own Store**
+    Memory Runtime owns explicitly saved facts, preferences, and relationships. Character State and conversation history have separate owners.
 45. **World Context Is Bounded Metadata**
-    World Context contains typed, freshness-aware activity facts needed for decisions. It never stores raw DOM, screen pixels, ambient transcript, conversation text, Browser Observation, or repository content. Privacy Mode prevents optional model classification and autonomous initiatives.
-46. **Habits Require Confirmation**
-    Repeated runtime-confirmed evidence may create a habit suggestion, never a silent durable belief. A suggestion becomes approved or rejected only through an explicit user decision and does not weaken Semantic Memory v1's explicit remember/update/forget policy.
+    World Context contains typed, freshness-aware activity facts needed for decisions. It never stores raw DOM, screen pixels, ambient transcript, conversation text, Browser Observation, or repository content. Privacy Mode prevents autonomous initiatives.
+46. **Semantic Memory Requires Explicit Intent**
+    Semantic Memory v1 applies conversational writes only after an explicit request to remember, update, or forget. Completed runtime events do not write Semantic Memory.
 
 ## Part I - Architectural Philosophy
 
@@ -503,8 +503,8 @@ Decision layers:
    Performs extremely lightweight input-source and admission classification such as conversational candidate, ignored speech, background speech, or explicit system request. It never selects Character capabilities or tools from natural language.
 2. **Rule Gate**  
    Applies deterministic rules such as wake phrases, filler-word rejection, duplicate filtering, confidence thresholds, cooldown timers, and command prefixes.
-3. **Optional Intent LLM**  
-   Resolves admission ambiguity only, such as whether the character was actually addressed or whether a message should be ignored. Its output is intentionally simple, such as `RESPOND`, `IGNORE`, or `SYSTEM_COMMAND`; it never chooses a Character tool.
+3. **Optional Semantic Arbitration**
+   Helps Conversation Admission choose or merge buffered utterances after a busy turn when deterministic backlog selection cannot decide. It never chooses a Character tool.
 4. **Character LLM**  
    Handles personality, dialogue, humor, emotional tone, creativity, reasoning, and tool intentions.
 5. **Action Runtime**  
@@ -523,13 +523,13 @@ Architectural guarantees:
 
 **Recognized Utterance to Admission Decision**
 
-Decision Pipeline owns the transition from a recognized utterance to an admission decision: recognized utterance, semantic evaluation, admission decision. Depending on input source and ambiguity, this transition may involve some or all of the following internal components. These are internal components of the Decision Pipeline, not additional top-level Runtime systems:
+Decision Pipeline owns the transition from a recognized utterance to an admission decision: recognized utterance, attention and rule evaluation, admission decision. Depending on input source and ambiguity, this transition may involve some or all of the following internal components. These are internal components of the Decision Pipeline, not additional top-level Runtime systems:
 
 - **Utterance Assembly:** accepts partial recognition snapshots, assembles a completed utterance, never invokes the Character LLM on a partial snapshot, yields exactly one completed semantic input per speech segment, and guards against duplicate final or completion events.
 - **Attention Evaluation:** evaluates relevance, directness, and context, optionally depending on a configured attention mode. It never generates a response, never triggers an external effect, and never bypasses Conversation Admission.
-- **Rule Evaluation:** applies deterministic rules to accept or reject an utterance. It may consult an external classifier only in explicitly allowed ambiguous cases, and it never invokes Conversation Runtime directly.
+- **Rule Evaluation:** applies deterministic rules to accept or reject an utterance. It never invokes Conversation Runtime directly.
 - **Backlog Selection:** while the current response flow is busy, accumulates candidates into the Bounded Utterance Backlog — storing, deduplicating, expiring, and updating them — without selecting among them. Only after the current flow reaches terminal completion does selection choose, under Conversation Admission ownership, at most one next candidate. Selection does not run in the middle of an active flow unless a future barge-in capability explicitly allows it. See [Chapter 14 - Conversation Admission](#14-conversation-admission).
-- **Optional Arbitration Adapter:** an optional, replaceable semantic classifier consulted only when deterministic selection cannot produce a sufficiently clear result. See [Chapter 14 - Conversation Admission](#14-conversation-admission).
+- **Optional Arbitration Adapter:** an optional, replaceable semantic classifier consulted only when deterministic backlog selection cannot produce a sufficiently clear result. See [Chapter 14 - Conversation Admission](#14-conversation-admission).
 
 The outcome of Decision Pipeline is always an admission decision, never a direct invocation of Conversation Runtime. See [Chapter 14 - Conversation Admission](#14-conversation-admission).
 
@@ -706,8 +706,7 @@ and current Tool Results; then conversation thread, Project evidence, and World 
 then Memory availability, Relationship continuity, and Mood; then compact Capability
 explanation. Expansion is fair among sections in one tier and never changes the fixed
 total cap. Normal turns receive a compact capability projection, at most one relevant
-unfinished conversation thread, and at most a few approved
-relationship or habit motifs. Full stores and inventories are obtained only through
+unfinished conversation thread, and a few relevant saved relationship entries. Full stores and inventories are obtained only through
 their typed tools; they are never dumped into every prompt.
 
 One Character Tool Loop coordinates all tool-capable Character reasoning inside the same turn. It returns each typed Runtime result with its source tool identifier to the same Character Response Generation context and permits sequential cross-capability flows such as Project then Shell or Project then Browser before the final Shio response. The loop is not a Runtime and grants no authority. It validates the Tool Requirement, withholds an unsourced draft while hard required work remains pending, and permits a terminal response only after that requirement is satisfied or Runtime records a typed failed/unavailable outcome. A preferred source may improve an answer but its absence does not force a failure presentation. A hard-source failure never authorizes substituting remembered knowledge for required evidence. The provider receives only available definitions selected by the initial Tool Plan plus the hard or preferred source family; satisfying the terminal requirement does not remove those definitions or end arbitration. This bounds request size without turning Tool Requirement into a turn-wide allowlist. Tool-result continuation context is also bounded: superseded Browser Observations are removed while their typed Action statuses remain, and only the latest Browser Observation is retained for the next decision. The loop has a turn-owned `AbortSignal`, a wall-clock deadline, a maximum of eight tool rounds, and a maximum of sixteen total calls; reaching a bound produces an honest bounded final response instead of another call. A provider failure during continuation is presented as a provider failure and is never masked by presentation of an earlier Action result.
@@ -769,6 +768,8 @@ When `project.search` is actually called and its Project Context Packet particip
 If Character Response Generation proposes an Action after a successful `project.search`, Action Runtime executes through its normal authority boundary. Later tool rounds and post-action Character Response Generation receive the Action Runtime result together with the already rendered original Project Context Packet; repeated project use in that turn reuses the packet and must not silently recompute evidence against a newer snapshot. The final Reply Grounding composes the original Project Reply Provenance and Action Reply Grounding. Action Reply Grounding exposes bounded Runtime-owned outcome, authorization, completion, verification, and error facts plus an integrity digest of any untrusted reported output; it does not duplicate raw terminal output into the renderer.
 
 An explicit text-chat turn may also carry one user-selected, request-scoped Screen Context image. Screen Context is acquired through a read-only System Adapter and a short-lived main-process application service; it is not a Runtime, Tool Action, Character State field, conversational-memory entry, or Project Awareness input. The renderer may hold only a bounded preview and opaque capture identity. The full image remains in the main process under a turn-owned lease while Character Response Generation is in flight. A successful generation completes the lease and releases the image; a recoverable failure or cancellation rolls the lease back for explicit retry, while expiration, explicit release, renderer disposal, or application shutdown permanently removes it. Every failed Screen Context terminal result preserves its typed error independently of provider identity and reports the attachment disposition (`retained`, `released`, or `expired`) together with separate capabilities for retrying the same request and resubmitting the text without the image. Text remains the only durable conversation and memory representation.
+
+In a separate, explicitly started Live Share session on Windows, the user selects a window or display and grants that session access to the selected picture, system playback and microphone. Background computer context has its own privacy setting. Electron Main owns the revocable capture grant, ephemeral media analysis and initiative policy. The main renderer samples the selected stream and monitors the microphone for turn taking. Bounded observations may reach the configured Character model without action tools. A user's voice or text turn may receive one current frame under an exact turn lease from the session. An explicit start authorizes commentary on the selected source, including in suggest/confirm mode. Commentary passes Attention, the Proactive Initiative Gate and Conversation Admission. User speech cancels pending or playing commentary. Off, Stop, source loss, Global Suspend and owner teardown revoke the session. Captured media and ambient transcripts are transient and excluded from diagnostics, conversation history and durable memory.
 
 AI provider selection and OpenAI-compatible transport remain External Adapter concerns behind the Character Response Generation contract. Provider/model credentials and capabilities are resolved for each request, while persona composition, conversation memory, Project Context injection, and optional Screen Context composition remain owned by orchestration. Image support does not create a separate vision Runtime or provider-specific vision client.
 
@@ -899,9 +900,9 @@ The output chain preserves distinct text representations. `replyText` is the ori
 
 Desktop owns technical-text, Markdown, URL, path, version, list, and nonverbal speech normalization because these are speech-domain preparation rules shared by local and future replaceable speech providers. The independent Speech API owns Fish S2 Pro inference and source-reference conditioning. One admitted output turn uses one bounded text-in/audio-out session. Source WAV and transcript references remain immutable; model-specific conditioning is a derived cache bound to their checksums and the exact model revision. ASR remains faster-whisper with Silero VAD.
 
-**ARDY / Fish experiment decision (26 October 2026)**
+**Fish streaming speech deployment**
 
-The experiment deliberately replaces the previous F5 HTTP/WAV output contract. HTTP contract `2.1` and WebSocket `/tts/stream` protocol `2` form one deployment unit with Desktop; an older client or Speech Pack receives an explicit incompatibility result. `/synthesize` is removed. An explicit preparation command downloads pinned assets; ordinary startup is offline. Speech API owns one cancellable Fish inference process, bounded input/output queues, monotonic metadata/binary PCM pairs, cumulative source-sample offsets, transport credit, and honest loading/warming/ready/error state. Cancellation terminates actual inference when the provider cannot abort it. Reload time is reported separately from local output cancellation.
+HTTP contract `2.1` and WebSocket `/tts/stream` protocol `2` form one deployment unit with Desktop; an older client or Speech Pack receives an explicit incompatibility result. `/synthesize` is removed. An explicit preparation command downloads pinned assets; ordinary startup is offline. Speech API owns one cancellable Fish inference process, bounded input/output queues, monotonic metadata/binary PCM pairs, cumulative source-sample offsets, transport credit, and honest loading/warming/ready/error state. Cancellation terminates actual inference when the provider cannot abort it. Reload time is reported separately from local output cancellation.
 
 AudioPlayer remains the sole playback and playback-position owner. The source format is mono Float32 little-endian PCM at 44,100 Hz. Resampling preserves source-sample accounting. A transport ACK frees bounded credit and never means audible playback. Stream completion is separate from final consumption of the last sample. Conversation Admission holds Single-Flight through generation, inference cancellation/settlement, playback, and mandatory cleanup.
 
@@ -989,7 +990,7 @@ Expected extensions include memory-aware reactions, relationship-aware behavior,
 
 **Ambient Micro-Presence**
 
-Behavior owns a deterministic Ambient Presence Policy that consumes only bounded World Context transitions, Mood projection, autonomy settings, and the current Browser Computer Use screen-focus lease. Foreground application changes, return from long idle, entry into long idle, media state changes, and substantial system-load changes may yield a semantic attention/energy/curiosity intent. Most changes yield nothing, selected intents have a bounded cooldown, and this path makes no LLM call. Global Suspend, Privacy Mode, autonomy Off, active conversation/audio, and an active Browser Computer Use gaze lease suppress ambient selection. The result is semantic embodiment only; it contains no bones, morph values, animation filenames, or direct VRM writes. Avatar Runtime remains the concrete embodiment and gaze arbitrator. Ambient presence does not independently grant Conversation Admission or proactive speech authority.
+Behavior owns a deterministic Ambient Presence Policy that consumes only bounded World Context transitions, Mood projection, autonomy settings, and the current Browser Computer Use screen-focus lease. Foreground application changes, return from long idle, entry into long idle, and media state changes may yield a semantic attention/energy/curiosity intent. Most changes yield nothing, selected intents have a bounded cooldown, and this path makes no LLM call. Global Suspend, Privacy Mode, autonomy Off, active conversation/audio, and an active Browser Computer Use gaze lease suppress ambient selection. The result is semantic embodiment only; it contains no bones, morph values, animation filenames, or direct VRM writes. Avatar Runtime remains the concrete embodiment and gaze arbitrator. Ambient presence does not independently grant Conversation Admission or proactive speech authority.
 
 ### 18. Character Personality Model
 
@@ -1278,13 +1279,11 @@ Animation philosophy:
 
 A current implementation may use skeletal clips, morph targets, look-at solvers, and procedural controllers. These are replaceable mechanisms behind stable embodiment contracts.
 
-**Generated Body Adapter — MotionBricks SOMA**
+**Generated Body Adapter — FlashMotion**
 
-MotionBricks is the sole generated-body Adapter in the experimental development configuration. Electron Main composition owns the independent `apps/desktop/motionbricks` environment, pinned source/model identities, one worker process, readiness, warmup, cancellation, deadlines, restart and deterministic cleanup. It remains an internal service behind Avatar Runtime's public contract, never a new Runtime, Tool Action or Speech API component. There is no ARDY provider, LLM2Vec conditioning, cloud motion fallback or second generator.
+FlashMotion is the sole generated-body Adapter in development and the Windows package. Electron Main owns one local worker process, pinned source and model identity, warmup, cancellation, deadlines, restart and deterministic cleanup. The Windows launcher prepares its independent Linux environment in a dedicated Ubuntu WSL2 distribution and verifies pinned motion assets. The worker and its protocol are bundled outside Electron's ASAR. Inference uses the prepared local assets. The launcher's environment preparation does not give Renderer process authority or tie Motion to Speech API's lifecycle.
 
-Pose-conditioned inference uses four native SOMA context poses and bounded geometric target planning. Native SOMA30 at 30 FPS is normalized into the existing bounded 60-frame transport; native segment lengths and source identity are validated honestly. A small versioned standing reference is extracted offline from a traceable VRMA frame and calibrated against the pinned SOMA bind orientations, root height and foot support. Runtime loads this reference without evaluation BVH, VRMA playback, AnimationMixer or a clip queue. Source provenance and usage rights remain separate from technical calibration.
-
-SOMA-X Hand supplies bounded native articulation over the same source timeline; the wrist remains part of body retargeting. Avatar Runtime owns hand retargeting, anatomical safety, contact solving, phase execution and final body/finger composition. Head/neck, eyes, jaw, expressions, visemes, ears and tail are excluded from generated body input. AvatarExpressionMixer remains the sole final facial writer. A source result is accepted only for its exact session, lease, model generation, avatar generation, sequence, skeleton, catalog and phase plan; stale chunks are rejected. Cancellation invalidates the session and terminates owned provider work before another lease can begin.
+Text-to-Motion consumes fixed descriptions for typed Avatar intents. Speech-to-Gesture consumes bounded windows of the admitted outgoing speech and returns sample-aligned body motion and native finger rotations. Source frames are normalized to the versioned transport with explicit skeleton, reference axes, sample rate, rotation representation and revision. Avatar Runtime owns model retargeting, anatomical safety, contact solving, phase execution and final body/finger composition. Head/neck, eyes, jaw, expressions, visemes, ears and tail are excluded from generated body input. AvatarExpressionMixer remains the sole final facial writer. A result is accepted only for its exact session, lease, model generation, avatar generation, sequence, skeleton, catalog and phase plan. Cancellation invalidates the session and terminates owned provider work before another lease can begin.
 
 The primary renderer's Avatar Runtime retains its normalized VRM skeleton and updates body/facial state when Preview is detached. Preview attaches rendering to that existing model; it does not own its lifetime. Overlay consumes the primary renderer's bounded body and mouth presentation, bound to the selected model and live Main-owned motion lease. It never initializes another generator. Runtime Health distinguishes model/motion readiness from presentation attachment and reports bounded PCM-clock and facial activity metadata. Stationary automatic profiles lock horizontal root displacement and use normalized two-bone foot placement; camera framing scales to the loaded model's measured bounds.
 
@@ -1292,13 +1291,13 @@ The primary renderer's Avatar Runtime retains its normalized VRM skeleton and up
 
 **VRM presentation facing correction — implemented 27 October 2026; live qualification ongoing.** The existing Avatar owner provides the loaded model's VRM front convention to the presentation camera: VRM0 faces negative Z and VRM1 positive Z in the unchanged loader basis. Full, bust, face and hand presets use that model front in both Preview and Overlay. This changes only presentation camera placement; it never rotates an executing model, edits its asset, changes anatomical retargeting or resets physical support. Loading or reattaching an existing model refreshes this metadata through the same composition path.
 
-Development startup selects MotionBricks and native SOMA-X Hand by default. Main-owned environment configuration may explicitly disable the engine or hand articulation for diagnosis; it never selects another body provider. The renderer cannot supply process paths, commands, model files or arbitrary generation text. Shared motion catalogs and strict wire validation remain independent of the removed engine. Failure is reported through bounded Runtime Health and execution outcomes, never hidden by a fallback provider.
+Main-owned environment configuration may disable FlashMotion for diagnosis. The renderer cannot supply process paths, commands, model files or arbitrary generation text. Shared motion catalogs and strict wire validation remain independent of model installation. Failure is reported through bounded Runtime Health and execution outcomes.
 
 **Initial preparation deadline correction — implemented 27 October 2026; joint qualification ongoing.** A speech-bound execution's initial `prepare` may wait within the existing Main-owned per-horizon inference deadline. The duration of an eight-frame source horizon is not that producer deadline, and preparation is not an audible expressive accent. Applied phase durations retain their catalog budgets; subsequent speech phase boundaries retain the stricter audible deadline. Audio and LipSync continue independently. Speech end, cancellation, intent expiry and model replacement still invalidate pending preparation before it can replay a late accent.
 
 Renderer Avatar Runtime owns retargeting and final bone application. The transport binds session, model generation, epoch, sequence, skeleton/version, reference frame, axes, units, and horizon to every result. History and generated-but-unconsumed frames are bounded. Model replacement and cancellation invalidate old results. Head/neck, eyes, jaw, expressions and visemes remain outside the body mask. AvatarExpressionMixer remains the sole facial writer, followed by the existing VRM update for secondary motion.
 
-The body composer converts source world rotations through the avatar model basis and resolves local targets before temporal blending. Renderer-owned anatomical constraints bound elbow/knee hinges and keep arm segments outside an avatar-scaled torso proxy. Stationary foot placement uses a stable model-oriented knee pole rather than the generated knee at the straight-leg singularity. SOMA30 supplies no full finger chains: a bounded profile/seed-conditioned hand contribution supplies relaxed motion and explicit finger poses using the same body cursor. It does not claim neural finger generation or acquire facial authority. Safety diagnostics contain only bounded correction counts.
+The body composer converts source world rotations through the avatar model basis and resolves local targets before temporal blending. Renderer-owned anatomical constraints bound elbow/knee hinges and keep arm segments outside an avatar-scaled torso proxy. Stationary foot placement uses a stable model-oriented knee pole rather than the generated knee at the straight-leg singularity. During S2G, validated native finger rotations use the same source timeline as the body. During T2M, a bounded catalog hand contribution supplies relaxed motion and explicit finger poses using that motion cursor. Safety diagnostics contain only bounded correction counts.
 
 **Rig-calibration correction — implemented 26 October 2026; artistic qualification remains pending.** The torso proxy is calibrated from the complete hip-to-neck/shoulder span and bounded bind-pose samples of torso-weighted skin geometry, with a measured-rig fallback when skin data is absent. Distances between inner arm joints alone do not establish the surface of the chest. Arm clearance includes the thickness of the limb, and proximal shoulder attachment is distinguished from a forearm crossing the torso. Calibration remains transient Avatar Runtime data; it does not edit the model, skin weights, Spring Bones or colliders. Preview camera framing cannot clamp or otherwise change an already executing body pose. This deliberately corrects an insufficient implementation of the existing anatomical boundary; it adds no owner or Runtime.
 
@@ -1306,7 +1305,7 @@ For local-clock phase changes, a bounded accepted tail from the preceding genera
 
 **Phase forecasting — implemented 27 October 2026; joint qualification ongoing.** The Body Animation Domain may forecast only the next canonical generated phase (`prepare → stroke → hold`) at a bounded, unconsumed source-frame boundary. Forecasting neither advances physical execution nor changes wrist/finger phase, readiness or outcomes. The single Main-owned generator may prepare these horizons before that boundary, preserving at most 32 queued source frames and the existing bounded history. Initial binding of an unconsumed local plan to AudioPlayer's first consumed PCM may adopt its prepared body horizons; subsequent generation uses the updated clock revision. A phase promotion does not flush a matching forecast or discard its in-flight work. Cancellation, recovery, replacement, expired intent and generation changes invalidate forecasts. A genuinely missed audible boundary still degrades and recovers honestly instead of replaying an old accent. Recovery from an interruptible but unready phase may begin from the last composed pose without waiting for a provider result; it is cancellation/supersession, not evidence that the unready phase completed.
 
-**Spatial hand constraints — implemented 27 October 2026; artistic qualification pending.** The canonical catalog declares bounded anatomical hand workspaces and per-hand phase selections, including optional palm facing and finger direction. Workspaces are dimensionless constraints calibrated from the loaded model's arm lengths, torso, head and measured hand axes; they are not trajectories or stored generated clips. The existing Avatar Runtime body constraint pass projects the live SOMA30 candidate into those admissible regions, then resolves contacts and applies the existing bounded continuous approach. Palm refinement shares that pass and the existing wrist domain, distributing admissible orientation through the arm instead of forcing a wrist beyond its range. Supporting hands retain their own declared workspace. Phase exit requires the actually composed wrist position/orientation and finger target, not only generation readiness or elapsed time. Preparation budgets must permit the declared bounded physical speed. Unreachable or expired targets produce an explicit bounded failure/recovery, never a completed gesture. Actual audible deadline failure can enter local recovery even during a normally protected stroke; protection from ordinary supersession does not authorize replaying a stale accent. Qualification computes transient FK from the production loader and reports bounded distances, angles and outcomes separately from visual acceptance. No new final writer, process, semantic owner or facial authority is introduced.
+**Spatial hand constraints — implemented 27 October 2026; artistic qualification pending.** The canonical catalog declares bounded anatomical hand workspaces and per-hand phase selections, including optional palm facing and finger direction. Workspaces are dimensionless constraints calibrated from the loaded model's arm lengths, torso, head and measured hand axes; they are not trajectories or stored generated clips. The existing Avatar Runtime body constraint pass projects the live motion candidate into those admissible regions, then resolves contacts and applies the existing bounded continuous approach. Palm refinement shares that pass and the existing wrist domain, distributing admissible orientation through the arm instead of forcing a wrist beyond its range. Supporting hands retain their own declared workspace. Phase exit requires the actually composed wrist position/orientation and finger target, not only generation readiness or elapsed time. Preparation budgets must permit the declared bounded physical speed. Unreachable or expired targets produce an explicit bounded failure/recovery, never a completed gesture. Actual audible deadline failure can enter local recovery even during a normally protected stroke; protection from ordinary supersession does not authorize replaying a stale accent. Qualification computes transient FK from the production loader and reports bounded distances, angles and outcomes separately from visual acceptance. No new final writer, process, semantic owner or facial authority is introduced.
 
 **Workspace trajectory fitting — implemented 28 October 2026; overall live qualification remains incomplete.** The existing body retargeter may derive a bounded hand-displacement envelope from the already generated horizon and the loaded rig's arm segments. The phase-local source-relative projection fits that envelope into the unchanged anatomical workspace with the smallest necessary translation and one uniform scale no greater than one. It prefers the previous admissible entry when the source trajectory fits there. This corrects pointwise clipping that admitted preparation at a workspace boundary and then erased the following neural stroke. It never invents an accent, extrapolates beyond generated input or changes source timing. Contact, swept-path, hinge, wrist, orientation and workspace limits remain authoritative, and the existing temporal integrator approaches any changed target. The envelope is transient bounded retargeting data, not a clip cache, clock or new owner. Identical-source and real online qualification must verify preservation and retain failures.
 
@@ -1322,7 +1321,7 @@ Body procedural contributions are composed once before capturing the Overlay pro
 
 **Presentation timing correction — implemented 27 October 2026; qualification ongoing.** the same transient body projection carries the primary composer's monotonic capture time. Overlay uses the bounded interval between matching projections for interpolation even when the generated source cursor is held during local recovery. Coalesced IPC updates must not compress several source render frames into a nominal one-frame recovery step. The timestamp is presentation metadata, not an independent animation clock or authority. Qualification retains raw angular steps and normalizes transport samples by this actual composition interval; raw projection coalescing is not presented as a measured single-render-frame jump.
 
-AudioPlayer's actually consumed source-sample position clocks conversational motion and delivery. Arrival time and render-frame count never advance this cursor. Underrun/pause holds the conversational cursor; late motion is discarded or returns smoothly to a bounded safe pose with explicit degraded diagnostics. Idle uses Avatar Runtime's monotonic local clock. Only unstarted horizons may be corrected from new PCM duration. A safe pose is a startup/transition/failure mechanism, not a replacement for live MotionBricks generation during normal dialogue.
+AudioPlayer's actually consumed source-sample position clocks conversational motion and delivery. Arrival time and render-frame count never advance this cursor. Underrun/pause holds the conversational cursor; late motion is discarded or returns smoothly to a bounded safe pose with explicit degraded diagnostics. Idle uses Avatar Runtime's monotonic local clock. Only unstarted horizons may be corrected from new PCM duration. A safe pose is a startup/transition/failure mechanism, not a replacement for live FlashMotion generation during normal dialogue.
 
 **Consumed-motion resampling — implemented 28 October 2026; real-GPU cadence improvement measured, overall artistic qualification incomplete.** The existing Body Animation Domain may resample the already-consumed PCM interval at its composition cadence, retaining at most 50 ms of presentation lag with a one-source-frame initial reserve. This corrects the stale assumption that worklet message intervals are physical integration timesteps. AudioPlayer remains the sole authoritative consumed-sample owner; the resampler never extrapolates beyond that position, delays audio, or changes delivery/LipSync. Body, wrist, fingers and phase progression share this one resampled body cursor. Buffering, cancellation, end, playback replacement and model detach stop or reset its state. A discontinuity discards elapsed work rather than banking catch-up or replaying an expired accent; raw consumed PCM still decides speech expiry and audible deadlines. Physical constraints and the single acceleration-limited composition pass remain authoritative. Overlay consumes that composed projection without another source clock or generator. Camera policy and generator/checkpoint/conditioning are unchanged. Qualification must compare temporal distortion against the same generated trajectory and record actual online inference, audio and Overlay output; deterministic smoothness alone does not imply artistic acceptance.
 
@@ -1430,9 +1429,14 @@ action with explicit rig, posture, support, root, direction, tempo, completion a
 interruption contracts. This is an extension of the existing body executor, not a new
 Runtime, Action Runtime tool or independent animation catalog. Standing profiles keep
 their anchored double-support policy. The body owner will accumulate continuous
-heading and alternate support acquisition/release, preserving planted world-space foot
-position and orientation with model-calibrated leg IK. A pinned-model capability probe
-must precede choosing generated turning; if its contact/heading accuracy is inadequate,
+heading and alternate support acquisition/release, preserving world-space position
+and orientation for flat planted feet with model-calibrated leg IK. An
+explicitly requested quick turn
+may select a calibrated forefoot pivot. The raised heel and foot orientation may
+move around an acquired stationary forefoot contact. The same body owner verifies
+the actual anchored point, support, joint reach, safe landing and stable facing.
+Flat foot constraints govern ordinary standing profiles. A pinned-model capability
+probe must precede choosing generated turning; if its contact/heading accuracy is inadequate,
 the selected bounded procedural footstep trajectory is reported honestly as procedural.
 Neither an elapsed timer nor scene rotation alone proves a completed physical turn.
 Completion requires actual heading, contacts, reachability and stable recovery; an
@@ -1460,9 +1464,9 @@ One motion execution has an identity and revision bound to the current model gen
 
 Transition planning belongs to this same body owner. It checks the actual current composed pose, hand roles and occupancy, wrist orientation, finger shape, support, rig limits, camera compatibility and intent freshness. It may choose a direct compatible continuation, a bounded bridge, or recovery to standing presence. Incompatible transitions are rejected with a bounded reason. Idle, speaking, reaction and debug preview requests use the same executor and physical constraints; none may bypass them. Queues are bounded, expiring and superseded by semantic family. Selection cooldown reflects actual execution rather than a rejected candidate.
 
-Main retains ownership of the single MotionBricks Adapter, process and validated transport. Phase intent adds no arbitrary renderer prompt, executable, filesystem path, script or process configuration. Requests and results validate execution/phase and plan revision in addition to the existing lease, sequence and skeleton identities. Catalog, calibration and reference-frame compatibility are explicit. Actual temporal blending follows the accepted transition plan and reports its real state. Source history and generated horizons remain bounded and transient; canonical pose/constraint data do not become a cached library of generated clips.
+Main retains ownership of the single FlashMotion Adapter, process and validated transport. Phase intent adds no arbitrary renderer prompt, executable, filesystem path, script or process configuration. Requests and results validate execution/phase and plan revision in addition to the existing lease, sequence and skeleton identities. Catalog, calibration and reference-frame compatibility are explicit. Actual temporal blending follows the accepted transition plan and reports its real state. Source history and generated horizons remain bounded and transient; canonical pose/constraint data do not become a cached library of generated clips.
 
-Every profile includes a hand score for both hands. Shoulder, elbow, forearm, wrist and fingers share the motion execution, phase and selected motion cursor. The hand score describes leading/supporting roles, bounded wrist orientation, per-finger flexion and spread, thumb opposition, preparation of the target shape, hold and coordinated release. Targets are translated through a revision-bound calibration of the loaded rig. SOMA30 supplies the body/wrist candidate; a bounded hand contribution supplies finger chains and constrained wrist refinement within the same body composition owner. There are no competing final wrist writers or independent hand timers.
+Every profile includes a hand score for both hands. Shoulder, elbow, forearm, wrist and fingers share the motion execution, phase and selected motion cursor. The hand score describes leading/supporting roles, bounded wrist orientation, per-finger flexion and spread, thumb opposition, preparation of the target shape, hold and coordinated release. Targets are translated through a revision-bound calibration of the loaded rig. FlashMotion supplies the body/wrist candidate. Native S2G fingers and the catalog hand contribution are composed under the same body owner. There are no competing final wrist writers or independent hand timers.
 
 Hand shape reaches its declared target at the associated gesture accent, remains appropriate during hold, and recovers or bridges continuously from the actually applied pose. A phase change, seed variation, reroll, replan or supersession cannot reset fingers independently of the arm. Missing required hand capabilities make the corresponding profile unavailable; static fingers or an open palm do not constitute successful execution of an unsupported exact finger gesture. Completion includes the exit conditions of both arms, wrists and fingers. Overlay consumes their composed projection and never starts another hand executor.
 
@@ -1484,7 +1488,7 @@ request. Emotion alone must not invent greeting, agreement or disagreement. Miss
 semantic intent takes compatible continuous presence, not a fabricated semantic act.
 
 Conversation qualification must observe the unmodified Character response path in
-ordinary Chat with real LLM, Fish and MotionBricks. It records typed intent, selection, actual
+ordinary Chat with real LLM, Fish and FlashMotion. It records typed intent, selection, actual
 applied profile/layer, execution and prepare/stroke/hold plus final local joint and
 world-space hand displacement. A named profile, advancing cursor or preparation-only
 sample cannot qualify a gesture. Fixed typed fixtures remain executor tests and must
@@ -1790,7 +1794,6 @@ Memory categories:
 - **Episodic Memory:** conversations, completed projects, important events, memorable moments
 - **Semantic Memory:** persistent facts about users, preferences, recurring interests, relationships, and long-term facts
 - **Working Memory:** active conversation, temporary context, unfinished reasoning, pending actions
-- **Procedural Memory:** approved recurring habits, shared motifs, and interaction-style continuity stored separately from Semantic Memory facts
 
 Memory retrieval should be selective rather than indiscriminate. The objective is contextual continuity rather than maximum recall.
 
@@ -1911,7 +1914,7 @@ The bundled Browser Control Plugin is the single owner of Shio browser automatio
 
 Browser Control exposes two closed typed capabilities. `browser-control` provides read-only bounded context plus deterministic operations: observe, exact HTTP(S) open, snapshot-scoped semantic click/fill/select, bounded scroll, history navigation, tab inspection, and known-tab switching. `browser-computer-use` provides one generic bounded delegated session for websites, canvas applications, and keyboard-driven browser experiences. Both capabilities use the same Playwright context, page identities, observation lifecycle, and isolated profile.
 
-Playwright Browser Adapter owns browser technology only. Every semantic observation contains a normalized page identity, URL/title, bounded visible text, and bounded interactive refs. Sensitive inputs are classified structurally; their live values are omitted or redacted before visible text, accessibility augmentation, model evidence, logs, or diagnostics are assembled. Normal semantic and Computer Use observations retain separate exact-observation ref registries, and a ref can resolve only against the observation and page that produced it. Computer Use observations combine a bounded accessibility snapshot and ref map with an optional transient masked JPEG screenshot when the configured `Computer Use Vision` model is vision-capable. This is a separate model role from the Character Brain and Fast Brain. Auto mode reuses the active Character provider/model only when its image support is confirmed; otherwise `browser-computer-use` is `needs-setup` while deterministic `browser-control` remains available. Provider credentials stay in the existing Main-owned credential store. Screenshots, raw DOM, accessibility dumps, credentials, and low-level input payloads are never persisted, copied to Character State or Memory, returned to renderer diagnostics, or appended to conversation history.
+Playwright Browser Adapter owns browser technology only. Every semantic observation contains a normalized page identity, URL/title, bounded visible text, and bounded interactive refs. Sensitive inputs are classified structurally; their live values are omitted or redacted before visible text, accessibility augmentation, model evidence, logs, or diagnostics are assembled. Normal semantic and Computer Use observations retain separate exact-observation ref registries, and a ref can resolve only against the observation and page that produced it. Computer Use observations combine a bounded accessibility snapshot and ref map with an optional transient masked JPEG screenshot when the configured `Computer Use Vision` model is vision-capable. This is a separate model role from the Character Brain. Auto mode reuses the active Character provider/model only when its image support is confirmed; otherwise `browser-computer-use` is `needs-setup` while deterministic `browser-control` remains available. Provider credentials stay in the existing Main-owned credential store. Screenshots, raw DOM, accessibility dumps, credentials, and low-level input payloads are never persisted, copied to Character State or Memory, returned to renderer diagnostics, or appended to conversation history.
 
 Character Response Generation may select only high-level tools: the deterministic browser operations plus `browser.use`, `browser.useStatus`, `browser.usePause`, `browser.useResume`, and `browser.useStop`. Coordinates, pointer down/up, key down/up, drag paths, screenshots, CDP, and arbitrary page JavaScript remain internal to the typed Browser Computer Use provider. The Main-owned Browser Computer Use model Adapter plans bounded visual steps. DSH remains shell-only and has no browser planning, session, frame, mouse, or keyboard ownership.
 
@@ -1997,28 +2000,22 @@ creates a second playback owner or permits stale output to resume.
 ### 21E. World Context, Experience, Attention, and Behavior
 
 World Context Runtime is Main-owned. The authorized main renderer reports only typed
-activity metadata. A Main-owned System Context Adapter adds OS-level global idle,
-foreground application, a bounded running-application list, and bounded system load;
-other owners project the active Shio browser session, current project,
-media state when available, and per-source freshness. OS-specific process or
-window mechanics stay behind the Adapter. Privacy Mode suppresses sensitive optional
-fields. No raw content, screen capture, clipboard history, ambient transcript, browser
+activity metadata. A Main-owned System Context Adapter observes OS-level global idle
+and the foreground application. Other owners project the active Shio browser session,
+current project, media state when available, and per-source freshness. OS-specific
+process and window mechanics stay behind the Adapter. System diagnostics can request a
+bounded running-application list explicitly outside Privacy Mode. Diagnostics also
+reads the bounded autonomy audit on demand. The ordinary World Context and Alive
+snapshots omit the application inventory and audit respectively. Privacy Mode
+suppresses sensitive optional fields. No raw content, screen capture, clipboard history, ambient transcript, browser
 history, or surveillance archive crosses this boundary.
 
 Attention Arbiter remains a pre-admission decision. It accepts expiring typed
 candidates from speech, world, experience, and behavior. Each
 candidate carries salience, novelty, urgency, social relevance, and interruptibility.
-Deterministic policy selects a clear winner first. Fast Brain is an optional bounded
-decision-model role used only when two or more viable candidates remain ambiguous; a
-timeout or provider failure returns to deterministic fallback. Its provider response
-must be exact JSON validated by a strict typed schema for disposition, candidate
-identity, confidence, and bounded reason; prose extraction, unknown fields, invalid
-confidence, and a candidate identity outside the current set are rejected. The
-caller-owned cancellation signal reaches the provider transport. Candidate expiry,
-continuous-listening/session invalidation, and Alive Runtime shutdown abort in-flight
-model work and discard its result, while a provider timeout still follows deterministic
-fallback. Fast Brain is not Character Response Generation, cannot call Character
-tools, and never grants admission itself.
+Deterministic scoring selects the current candidate and disposition. Renderer speech
+admission discards a result whose listening session has changed. The arbiter supplies
+attention evidence to the existing admission owners.
 
 Experience Runtime consumes completed typed facts including conversation completion
 or interruption, verified or failed Actions, permission denial, browser blocking or
@@ -2031,11 +2028,9 @@ silence decision. Experience never executes Actions or writes a Memory Store.
 Experience Policy is the deterministic appraisal authority. It owns stable per-event
 base scores and applies only bounded typed contextual modifiers from a short recent
 experience window, projected current Mood,
-numeric Relationship Context, and the bounded count of approved recurring
-motifs. Repeated failures may become more salient and less novel, while a genuinely
-new event receives a small novelty lift. Modifier code never interprets motif
-text as instructions, and no model-produced nuance may replace the deterministic base
-or expand authority.
+and numeric Relationship Context. Repeated failures may become more salient and less
+novel, while a genuinely new event receives a small novelty lift. A model-produced
+nuance may neither replace the deterministic base nor expand authority.
 
 Mood Runtime owns bounded temporary valence, arousal, confidence, playfulness,
 curiosity, and frustration. Experience appraisals update it, it persists across
@@ -2046,13 +2041,13 @@ semantic embodiment intensity, banter allowance, and cooldown duration. Stable
 Personality remains separately defined.
 
 Behavior Runtime consumes bounded Mood, Experience, World Context, Attention,
-habit, and user-activity projections and selects only a semantic intent: none,
+and user-activity projections and selects only a semantic intent: none,
 embodiment, or conversation candidate. Avatar Runtime translates
 embodiment intent into concrete ears, head, gaze, expression, and gesture behavior;
 Behavior never writes VRM state or calls an Adapter. A conversational Behavior intent
 must return to Conversation Admission. Mood modulation is deterministic for the same
 event and state, bounded around the base Experience appraisal, and cannot invent
-speech content, override quiet/suspend/privacy policy, or expand capability authority.
+speech content, override suspend or privacy policy, or expand capability authority.
 
 ### 21F. Autonomous Initiative
 
@@ -2062,7 +2057,7 @@ or Behavior. It serializes candidate evaluation, applies Autonomy Envelope polic
 passes eligible candidates through Attention, and only then allows Behavior to emit a
 semantic conversation candidate toward renderer-owned Conversation Admission. The
 gate accounts for origin and urgency while enforcing Global Suspend, Privacy Mode,
-quiet hours, conversation or audio activity, cooldown, and the daily initiative cap.
+the selected autonomy mode, and active conversation or playback.
 
 Autonomy Envelope is the gate's policy evaluator for proactive work. Its canonical
 user settings define `off`, `suggest`, `confirm`, and `full` modes. It produces exactly
@@ -2075,29 +2070,19 @@ externally authoritative side effect still becomes a new Action Runtime action a
 passes the normal permission, risk, execution, verification, cancellation, and audit
 boundaries. Autonomy never retries a non-idempotent external mutation.
 
-### 21G. Memory Retrieval, Procedural Habits, and Relationship Context
+### 21G. Memory Retrieval and Relationship Context
 
-Memory Runtime owns both explicit Semantic Memory and a separate procedural habit
-store. Hybrid retrieval composes bounded lexical/FTS candidates with optional
+Memory Runtime owns explicit Semantic Memory. Hybrid retrieval composes bounded lexical/FTS candidates with optional
 semantic candidates from a replaceable Embedding Adapter, then reranks using bounded
 lexical similarity, semantic similarity, recency, importance, and relationship
 relevance. Embeddings are optional: a missing or failed embedding service falls back
 to lexical retrieval without failing Memory or Chat. Only bounded selected records
 reach Character reasoning.
 
-Procedural habits are not Semantic Memory facts. Memory Runtime records only deduped,
-typed, runtime-confirmed completed facts; scheduling or starting work provides no
-completion evidence. Repeated evidence may create one candidate after the threshold,
-and the user must explicitly approve or reject it. Approved habits have `lastUsedAt`
-and a cooldown so the same motif is not injected repeatedly. They never silently
-create a Semantic Memory record.
-
-Memory Runtime derives bounded Relationship Context from stored relationship evidence
-and approved procedural habits: familiarity, warmth, teasing comfort, a few recurring
-motifs, and a few relevant shared-history entries. Character Request Composer may
-select at most a few cooled-down motifs for one request. LLM-authored numeric
-relationship scores are never persisted as authority, and relationship context does
-not grant any tool permission.
+Memory Runtime derives bounded Relationship Context from explicit memory records.
+It includes numeric familiarity and warmth and a few saved relationship entries.
+Model-authored scores are not persisted as authority, and relationship context grants
+no tool permission.
 
 ### 21H. Latency Observability
 
@@ -2135,7 +2120,7 @@ Adapter categories:
 - **Automation Adapters:** replaceable backends that execute only a bounded workflow already authorized by Action Runtime and expose lifecycle, cancellation, and normalized results without owning permission policy.
 - **Browser Automation Adapters:** replaceable browser-control implementations used by the Browser Control capability for typed navigation, bounded observation, semantic interaction, and delegated automation. Browser sessions and profiles remain Plugin-owned implementation resources rather than architectural authority; mutations still require Action Runtime authorization.
 - **Web Search Adapters:** replaceable read-only search-provider transports used by Web Search Runtime for bounded public-source discovery. They own no browser session, permission policy, or action execution.
-- **Screen Capture Adapters:** read-only operating-system integrations that enumerate user-visible windows and monitors and encode a single explicitly selected image. They expose no streaming or background-observation contract and do not persist captures.
+- **Screen Capture Adapters:** read-only operating-system integrations that enumerate user-visible windows and monitors and encode a single explicitly selected image. Single-image attachments have no background-observation contract. The separate Watch Together grant allows bounded sampling of the explicitly selected live source and system playback only during that session. Neither path persists captures.
 - **Presentation/Rendering Adapters:** implementation boundaries used by Avatar Runtime to render the character model. These are distinct from Action Runtime adapters, since presentation is character embodiment, not an externally authoritative side effect. See [Chapter 20 - Avatar Runtime](#20-avatar-runtime).
 
 Adapter responsibilities:
@@ -2182,11 +2167,9 @@ Runtime systems communicate with architectural concepts. Adapters communicate wi
 - **Tool:** a concrete executable capability exposed by Action Runtime.
 - **Action Runtime:** the only Runtime permitted to produce a non-character, externally authoritative side effect.
 - **Shio Capability Catalog:** the main-owned read-only projection of current Core and Plugin capabilities used by the Capabilities UI and Character Capability Context; it is not a Runtime and grants no authority.
-- **Autonomy Envelope:** the Main-owned proactive policy boundary that defers, previews, or authorizes an allowlisted initiative under user mode, suspend, privacy, quiet-hour, cooldown, and daily-cap constraints; it grants no external authority.
+- **Autonomy Envelope:** the Main-owned policy boundary that defers, previews, or authorizes an allowlisted initiative based on autonomy mode, Global Suspend, Privacy Mode, and active conversation or playback. It grants no external authority.
 - **World Context Runtime:** the Main-owned bounded and freshness-aware projection of typed activity metadata used by attention, experience, and autonomy decisions.
-- **Fast Brain:** an optional bounded decision-model role that classifies pre-admission attention from typed cues and always has deterministic fallback.
 - **Behavior Runtime:** the selector of typed character embodiment and initiative-presentation commands; Avatar Runtime remains the only final embodiment owner.
-- **Habit Suggestion:** a durable proposal derived from repeated runtime-confirmed evidence that requires an explicit approve or reject decision and is not an implicit Memory fact.
 - **Latency Telemetry:** the bounded safe milestone and percentile projection for conversation responsiveness; it contains correlation metadata but no user content.
 - **Delegated Automation Workflow:** one bounded action whose scope is validated and authorized by Action Runtime while an Automation Adapter may choose concrete implementation steps only within that scope.
 - **Full Control:** an explicit Permission Guard policy that automatically authorizes eligible actions without bypassing validation, Action Runtime, logging, cancellation, Tool scope, or Adapter boundaries.
@@ -2288,7 +2271,7 @@ Evolution rules:
 
 Behavior Runtime is a current Core system. Possible future Runtime systems include Collaboration Runtime and richer Analytics Runtime. These examples illustrate possible directions rather than commitments.
 
-Future character improvements may include richer emotional continuity, deeper relationships, more capable approved habits, more natural conversations, broader safely authorized initiative, and richer privacy-preserving contextual awareness.
+Future character improvements may include richer emotional continuity, deeper relationships, more natural conversations, broader safely authorized initiative, and richer privacy-preserving contextual awareness.
 
 Planned capabilities for continuous input and admission, not current guarantees:
 
