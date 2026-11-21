@@ -22,6 +22,19 @@ describe('Conversation Thread Runtime', () => {
             .map((message) => message.content)
             .join('\n'),
         )
+        const prompt = requests.at(-1) ?? ''
+        if (prompt.includes('## Character Tool Requirement Planning')) {
+          const user = messages.findLast((message) => message.role === 'user')?.content
+          if (user === 'Where were we?') {
+            expect(prompt).toContain('The keeper had just opened the door.')
+            expect(prompt).toContain('choose direct-answer')
+          }
+          return JSON.stringify({
+            requirement: { type: 'direct-answer' },
+            plannedTools: [],
+            embodiment: null,
+          })
+        }
         return '[calm]Okay.'
       },
     }
@@ -41,6 +54,7 @@ describe('Conversation Thread Runtime', () => {
       undefined,
       undefined,
       threads,
+      { enforceRequirements: true },
     )
     try {
       const thread = threads.open(
@@ -57,6 +71,7 @@ describe('Conversation Thread Runtime', () => {
       threads.resolve(thread.id)
       await character.createReply({ userText: 'Hello.' })
       expect(requests.at(-1)).not.toContain('## Relevant Conversation Thread')
+      expect(requests.at(-2)).not.toContain('## Relevant Conversation Thread')
       await character.createReply({ userText: 'The user returned', origin: 'autonomous' })
       expect(requests.length).toBeGreaterThanOrEqual(3)
       for (const prompt of requests)

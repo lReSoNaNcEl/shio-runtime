@@ -79,7 +79,7 @@ merges the next buffered utterance. Regular text chat uses neither mechanism.
 
 ## Persistence and migration
 
-Electron Main stores autonomy settings, Mood, and audit records in `alive/alive.sqlite` below `userData`. As of schema v6, fresh profiles contain only settings and audit tables. On upgrade, legacy goal and reminder tables are left in place. The application does not read them or schedule their contents. Conversation threads use their own store.
+Electron Main stores autonomy settings, Mood, and audit records in `alive/alive.sqlite` below `userData`. Schema v7 removes the legacy goal and reminder tables, preserving settings, Mood, and audit records. Fresh profiles create only settings and audit tables. Conversation threads use their own store.
 
 Smart Habits count only typed, runtime-confirmed events. A suggestion appears after
 three observations and requires explicit approval or rejection. It never creates a

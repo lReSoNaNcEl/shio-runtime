@@ -254,7 +254,7 @@ async function testPersistenceAndEnvelope(): Promise<void> {
     store.close()
 
     const reopened = new AliveStore(databasePath)
-    assert.equal(reopened.version(), 6)
+    assert.equal(reopened.version(), 7)
     assert.equal(reopened.settings().privacyMode, true)
     reopened.close()
 
@@ -341,7 +341,7 @@ async function testPersistenceAndEnvelope(): Promise<void> {
   }
 }
 
-function testGoalSchemaMigration(): void {
+function testGoalSchemaMigration(version: number): void {
   const directory = mkdtempSync(join(tmpdir(), 'shio-goal-migration-'))
   const databasePath = join(directory, 'alive.sqlite')
   try {
@@ -357,7 +357,19 @@ function testGoalSchemaMigration(): void {
         updated_at INTEGER NOT NULL
       );
       INSERT INTO alive_goals VALUES ('legacy-goal', 'Старая цель', '', 'active', 0, 1, 1);
-      PRAGMA user_version = 1;
+      INSERT INTO alive_settings VALUES ('autonomy', '{"privacyMode":true}');
+      INSERT INTO alive_settings VALUES ('mood', '{"curiosity":0.7}');
+      INSERT INTO alive_audit (id, at, category, event, outcome)
+        VALUES (1, 100, 'behavior', 'initiative', 'selected');
+      CREATE TABLE alive_task_runs (task_id TEXT REFERENCES alive_tasks(id) ON DELETE CASCADE);
+      CREATE TABLE alive_goal_executions (goal_id TEXT REFERENCES alive_goals(id) ON DELETE CASCADE);
+      CREATE TABLE alive_goal_watches (goal_id TEXT REFERENCES alive_goals(id) ON DELETE CASCADE);
+      CREATE TABLE alive_autonomy_scopes (goal_id TEXT REFERENCES alive_goals(id) ON DELETE CASCADE);
+      INSERT INTO alive_task_runs VALUES ('due');
+      INSERT INTO alive_goal_executions VALUES ('legacy-goal');
+      INSERT INTO alive_goal_watches VALUES ('legacy-goal');
+      INSERT INTO alive_autonomy_scopes VALUES ('legacy-goal');
+      PRAGMA user_version = ${version};
     `)
     legacy.close()
     const migrated = new AliveStore(databasePath)
@@ -370,6 +382,9 @@ function testGoalSchemaMigration(): void {
     try {
       const snapshot = runtime.snapshot()
       assert.equal(snapshot.health.operational, true)
+      assert.equal(snapshot.settings.privacyMode, true)
+      assert.equal(migrated.mood().curiosity, 0.7)
+      assert.equal(snapshot.audit[0]?.event, 'initiative')
       assert.doesNotMatch(JSON.stringify(snapshot), /Legacy reminder|Старая цель/u)
       assert.deepEqual(events, [])
     } finally {
@@ -377,9 +392,14 @@ function testGoalSchemaMigration(): void {
     }
     const archived = new DatabaseSync(databasePath)
     try {
-      assert.equal(archived.prepare('SELECT status FROM alive_tasks').get()?.status, 'scheduled')
-      assert.equal(archived.prepare('SELECT title FROM alive_goals').get()?.title, 'Старая цель')
-      assert.equal(archived.prepare('PRAGMA user_version').get()?.user_version, 6)
+      assert.deepEqual(
+        archived
+          .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
+          .all()
+          .map((row) => row.name),
+        ['alive_audit', 'alive_settings'],
+      )
+      assert.equal(archived.prepare('PRAGMA user_version').get()?.user_version, 7)
     } finally {
       archived.close()
     }
@@ -417,6 +437,6 @@ describe('Alive and Autonomy integration', () => {
   it('contains tool-first rounds before user-visible output', testToolRoundContainment)
   it('bounds and orders the streaming speech queue', testStreamingSpeechQueue)
   it('persists autonomy settings and enforces the envelope', testPersistenceAndEnvelope)
-  it('leaves retired records inert when opening a legacy profile', testGoalSchemaMigration)
+  it.each([1, 5, 6])('removes retired tables on upgrade from v%s', testGoalSchemaMigration)
   it('aggregates bounded latency percentiles', testLatencyAggregation)
 })

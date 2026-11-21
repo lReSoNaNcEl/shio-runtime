@@ -4,7 +4,7 @@ import { DatabaseSync } from 'node:sqlite'
 
 import type { AliveAuditEntry, AutonomySettings, MoodState } from '../../shared/alive'
 
-const DATABASE_VERSION = 6
+const DATABASE_VERSION = 7
 
 export const DEFAULT_AUTONOMY_SETTINGS: AutonomySettings = Object.freeze({
   mode: 'suggest',
@@ -203,8 +203,18 @@ export class AliveStore {
       `)
       this.saveSettings(DEFAULT_AUTONOMY_SETTINGS)
     } else if (version < DATABASE_VERSION) {
-      // Older goal and reminder tables are left untouched and never reopened by Alive.
-      this.database.exec(`PRAGMA user_version = ${DATABASE_VERSION}`)
+      this.database.exec(`
+        PRAGMA secure_delete = ON;
+        BEGIN IMMEDIATE;
+        DROP TABLE IF EXISTS alive_task_runs;
+        DROP TABLE IF EXISTS alive_tasks;
+        DROP TABLE IF EXISTS alive_goal_watches;
+        DROP TABLE IF EXISTS alive_goal_executions;
+        DROP TABLE IF EXISTS alive_autonomy_scopes;
+        DROP TABLE IF EXISTS alive_goals;
+        PRAGMA user_version = ${DATABASE_VERSION};
+        COMMIT;
+      `)
     }
   }
 }
