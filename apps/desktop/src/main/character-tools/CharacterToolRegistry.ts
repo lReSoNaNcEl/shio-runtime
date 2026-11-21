@@ -24,9 +24,6 @@ export interface CharacterToolDefinition {
 interface CharacterToolRegistryOptions {
   projectAvailable: boolean
   webAvailable?: boolean
-  goalsAvailable?: boolean
-  goalCreatesAvailable?: boolean
-  goalUpdatesAvailable?: boolean
   conversationThreadsAvailable?: boolean
   capabilityContext: ShioCapabilitySnapshot | null
   browserObservation: BrowserObservation | null
@@ -70,9 +67,6 @@ export class CharacterToolRegistry {
     const context: CharacterToolAvailabilityContext = {
       projectAvailable: options.projectAvailable,
       webAvailable: options.webAvailable ?? false,
-      goalsAvailable: options.goalsAvailable ?? false,
-      goalCreatesAvailable: options.goalCreatesAvailable ?? false,
-      goalUpdatesAvailable: options.goalUpdatesAvailable ?? false,
       conversationThreadsAvailable: options.conversationThreadsAvailable ?? false,
       memoryAvailable: Boolean(memoryStatus?.enabled && memoryStatus.operational),
       actionsAvailable: options.actionsAvailable,

@@ -90,7 +90,6 @@ describe('chat quick actions', () => {
       'project-desktop-packages',
       'screen-understanding',
       'long-term-memory',
-      'alive-autonomy',
       'browser-control',
       'browser-computer-use',
       'computer-control',
@@ -109,9 +108,6 @@ describe('chat quick actions', () => {
     expect(memoryPrompt?.prompt).toContain('memory.list')
     expect(memoryPrompt?.prompt).toContain('{"limit":20}')
     expect(memoryPrompt?.prompt).not.toContain('"kind"')
-    const goalPrompt = localizedActions.tools.find((action) => action.id === 'alive-autonomy')
-    expect(goalPrompt?.prompt).toContain('goal.list')
-    expect(goalPrompt?.prompt).toContain('{"status":"active","limit":20}')
     const projectPackagesPrompt = localizedActions.tools.find(
       (action) => action.id === 'project-desktop-packages',
     )

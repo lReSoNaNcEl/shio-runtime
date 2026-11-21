@@ -7,15 +7,7 @@ import type {
   DesktopWorkflowActionResult,
   DesktopWorkflowRequest,
 } from '../shared/actions'
-import type {
-  CreatePersistentGoal,
-  ExperienceAppraisal,
-  MoodState,
-  PersistentGoal,
-  PersistentGoalProvider,
-  RevisePersistentGoal,
-  WorldContextSnapshot,
-} from '../shared/alive'
+import type { ExperienceAppraisal, MoodState, WorldContextSnapshot } from '../shared/alive'
 import type {
   BrowserComputerUseControlAction,
   BrowserComputerUseProvider,
@@ -66,7 +58,6 @@ import {
 } from './character/prompting/CharacterPrompt'
 import { CharacterRequestComposer } from './character/prompting/CharacterRequestComposer'
 import { currentEmbodimentAvailability } from './character/prompting/EmbodimentAvailabilityPrompt'
-import { unfinishedGoalSnapshot } from './character/prompting/GoalAwarenessPrompt'
 import { memoryCapabilityPrompt } from './character/prompting/MemoryPromptPolicy'
 import { responsePolicyPrompt } from './character/prompting/ResponsePolicyPrompt'
 import {
@@ -313,9 +304,6 @@ export class Orchestrator {
     private browserContext?: BrowserContextProviderResolver,
     private browserWorkflow?: BrowserWorkflowCoordinator,
     private semanticMemory?: MemoryToolBroker,
-    private persistentGoals?: PersistentGoalProvider,
-    private createPersistentGoal?: CreatePersistentGoal,
-    private revisePersistentGoal?: RevisePersistentGoal,
     private livingContext?: () => CharacterLivingContext,
     private webSearch?: WebSearchProviderResolver,
     private browserComputerUse?: () => BrowserComputerUseProvider | undefined,
@@ -385,19 +373,6 @@ export class Orchestrator {
     const semanticMemoryPrompt = semanticMemoryStatus
       ? memoryCapabilityPrompt(semanticMemoryStatus)
       : null
-    let goalAwareness: readonly PersistentGoal[] = []
-    if (!autonomous) {
-      try {
-        if (this.persistentGoals) {
-          goalAwareness = unfinishedGoalSnapshot(this.persistentGoals())
-        }
-      } catch (error) {
-        mainLog.warn('[AliveRuntime] goal awareness unavailable; continuing without it', {
-          traceId,
-          error: error instanceof Error ? error.message : String(error),
-        })
-      }
-    }
     let threadAwareness: readonly ConversationThread[] = []
     if (!autonomous) {
       try {
@@ -430,7 +405,7 @@ export class Orchestrator {
                   '## Runtime-originated proactive comment',
                   'This is a bounded Runtime event, not a user request or authorization.',
                   'Reply with at most one concise in-character comment about the event.',
-                  'Do not request or invoke tools, create or update Memory or Goals, or claim that the user asked for an action.',
+                  'Do not request or invoke tools, create or update Memory, or claim that the user asked for an action.',
                 ].join('\n'),
               ]
             : []),
@@ -441,8 +416,6 @@ export class Orchestrator {
         relationship: livingContext.relationship,
         habits: livingContext.habits,
         experience: livingContext.experience,
-        goals: goalAwareness,
-        foregroundGoalId: livingContext.world?.activeGoal?.id,
         thread: threadAwareness[0],
         memory: semanticMemoryPrompt,
         sessionSummary,
@@ -493,9 +466,6 @@ export class Orchestrator {
           webAvailable:
             !autonomous &&
             (this.webSearch?.()?.status().availability ?? 'unavailable') !== 'unavailable',
-          goalsAvailable: !autonomous && Boolean(this.persistentGoals),
-          goalCreatesAvailable: !autonomous && Boolean(this.createPersistentGoal),
-          goalUpdatesAvailable: !autonomous && Boolean(this.revisePersistentGoal),
           conversationThreadsAvailable: !autonomous && Boolean(this.conversationThreads),
           capabilityContext,
           browserObservation: dispatcher?.selectedBrowserObservation() ?? null,
@@ -532,10 +502,6 @@ export class Orchestrator {
             executeBrowserComputerUseAction: autonomous
               ? undefined
               : this.executeBrowserComputerUseAction,
-            persistentGoals: autonomous ? undefined : this.persistentGoals,
-            goalAwareness,
-            createPersistentGoal: autonomous ? undefined : this.createPersistentGoal,
-            revisePersistentGoal: autonomous ? undefined : this.revisePersistentGoal,
             conversationThreads: autonomous ? undefined : this.conversationThreads,
             threadAwareness,
           })

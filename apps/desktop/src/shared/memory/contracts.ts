@@ -60,7 +60,7 @@ export interface HabitRecord {
 
 export interface CompletedMemoryFact {
   eventId: string
-  kind: 'task-completed' | 'goal-completed' | 'action-verified'
+  kind: 'action-verified'
   entityId: string
   at: number
 }

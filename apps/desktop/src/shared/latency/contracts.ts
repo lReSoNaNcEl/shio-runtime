@@ -37,7 +37,6 @@ export interface LatencyCorrelation {
   llmRound: number
   toolCallId?: string
   ttsSegmentId?: string
-  goalId?: string
 }
 
 export interface LatencyMilestone {
@@ -80,7 +79,6 @@ export interface LatencyMetricSummary {
 export interface LatencyTraceSnapshot {
   turnId: string
   requestId: string
-  goalId?: string
   provider?: string
   model?: string
   status?: LatencyMilestone['status']

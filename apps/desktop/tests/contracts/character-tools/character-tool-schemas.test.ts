@@ -3,7 +3,6 @@ import { describe, expect, it } from 'vitest'
 import { CharacterToolRegistry } from '../../../src/main/character-tools/CharacterToolRegistry'
 import {
   CHARACTER_TOOL_SPECS,
-  goalUpdateInputSchema,
   toLlmToolJsonSchema,
 } from '../../../src/main/character-tools/CharacterToolSpecifications'
 import { CHARACTER_TOOL_IDS } from '../../../src/shared/character-tools'
@@ -11,6 +10,8 @@ import { CHARACTER_TOOL_IDS } from '../../../src/shared/character-tools'
 describe('canonical Character tool schemas', () => {
   it('covers every Character tool exactly once', () => {
     const ids = CHARACTER_TOOL_SPECS.map((tool) => tool.id)
+    expect(ids.some((id) => id.startsWith('goal.'))).toBe(false)
+    expect(ids).toEqual(expect.arrayContaining(['thread.open', 'thread.resolve']))
     expect(new Set(ids).size).toBe(ids.length)
     expect([...ids].sort()).toEqual([...CHARACTER_TOOL_IDS].sort())
   })
@@ -84,27 +85,10 @@ describe('canonical Character tool schemas', () => {
     expect(shellExecute?.description).not.toContain('browser')
   })
 
-  it('keeps runtime-only goal refinements authoritative', () => {
-    const jsonSchema = toLlmToolJsonSchema(goalUpdateInputSchema)
-    expect(jsonSchema).toHaveProperty('properties.progressPercent')
-    expect(() => goalUpdateInputSchema.parse({ id: 'goal-1', progressPercent: 50 })).toThrow()
-    expect(() => goalUpdateInputSchema.parse({ id: 'goal-1' })).toThrow()
-    expect(
-      goalUpdateInputSchema.parse({
-        id: 'goal-1',
-        progressPercent: 50,
-        progressBasis: 'user-report',
-      }),
-    ).toMatchObject({ progressPercent: 50, progressBasis: 'user-report' })
-  })
-
   it('uses the same schemas for native definitions and runtime parsing', () => {
     const registry = new CharacterToolRegistry({
       projectAvailable: true,
       webAvailable: true,
-      goalsAvailable: true,
-      goalCreatesAvailable: true,
-      goalUpdatesAvailable: true,
       conversationThreadsAvailable: true,
       actionsAvailable: true,
       browserComputerUseAvailable: true,

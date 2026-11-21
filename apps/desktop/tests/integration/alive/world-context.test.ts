@@ -60,7 +60,6 @@ async function multiRateWorldProjection(): Promise<void> {
           truncated: false,
         }) as never,
       project: () => ({ name: 'owner/private-project', branch: 'feature/private' }),
-      activeGoal: () => ({ id: 'goal-1', title: 'Finish task', status: 'active' }) as never,
     },
     { now: () => now, pollIntervalMs: 60_000 },
   )
@@ -86,7 +85,7 @@ async function multiRateWorldProjection(): Promise<void> {
   })
   assert.equal(first.activeBrowser?.sessionActive, true)
   assert.equal(first.activeProject?.branch, 'feature/private')
-  assert.equal(first.activeGoal?.id, 'goal-1')
+  assert.equal('activeGoal' in first, false)
 
   now = 1_500
   await world.refresh({ force: false })

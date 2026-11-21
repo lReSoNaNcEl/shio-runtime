@@ -5,7 +5,7 @@ import type { MoodRuntime } from './MoodRuntime'
 
 export interface CompletedExperienceFact {
   eventId: string
-  kind: 'task-completed' | 'goal-completed' | 'action-verified'
+  kind: 'action-verified'
   entityId: string
   at: number
 }
@@ -73,12 +73,6 @@ export class ExperienceRuntime {
 }
 
 function completedFact(event: ExperienceEvent, eventId: string): CompletedExperienceFact | null {
-  if (event.type === 'task-completed' && event.verified !== false) {
-    return { eventId, kind: event.type, entityId: event.taskId, at: event.at }
-  }
-  if (event.type === 'goal-completed') {
-    return { eventId, kind: event.type, entityId: event.goalId, at: event.at }
-  }
   if (event.type === 'action-verified') {
     return { eventId, kind: event.type, entityId: event.actionId, at: event.at }
   }

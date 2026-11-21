@@ -80,9 +80,6 @@ function orchestrator(llm: LLMProvider, memory: InMemoryStore, provider: LivePro
     undefined,
     undefined,
     undefined,
-    undefined,
-    undefined,
-    undefined,
     { enforceRequirements: true },
   )
 }

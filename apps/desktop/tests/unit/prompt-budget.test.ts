@@ -5,7 +5,6 @@ import {
   CHARACTER_CONTEXT_BUDGET,
   CharacterRequestComposer,
 } from '../../src/main/character/prompting/CharacterRequestComposer'
-import type { PersistentGoal } from '../../src/shared/alive'
 import type { ShioCapabilitySnapshot } from '../../src/shared/capabilities'
 
 function main(): void {
@@ -15,19 +14,6 @@ function main(): void {
   }
 
   const now = Date.now()
-  const goals: PersistentGoal[] = Array.from({ length: 20 }, (_, index) => ({
-    id: `goal-${index}`,
-    title: `Goal ${index} ${'x'.repeat(120)}`,
-    description: 'why '.repeat(100),
-    nextStep: 'next '.repeat(100),
-    lastNote: 'note '.repeat(100),
-    owner: 'shared',
-    status: 'active',
-    progress: 0,
-    measurable: false,
-    createdAt: now,
-    updatedAt: now,
-  }))
   const capabilities: ShioCapabilitySnapshot = {
     schemaVersion: 1,
     generatedAt: now,
@@ -63,7 +49,6 @@ function main(): void {
   const messages = new CharacterRequestComposer().compose({
     persona: `## Persona\n${'stable '.repeat(2_000)}`,
     responsePolicy: `## Policy\n${'bounded '.repeat(1_000)}`,
-    goals,
     memory: memories,
     capabilities,
     locale: 'en',
@@ -75,10 +60,9 @@ function main(): void {
     systemText.length <= CHARACTER_CONTEXT_BUDGET.totalCharacters,
   )
   check(
-    'only one foreground goal is projected',
-    systemText.includes('Goal 0') && !systemText.includes('Goal 1 '),
+    'ordinary turns omit goal and reminder instructions',
+    !/Goal Awareness|goal\.(create|list|update)|unfinished intentions/u.test(systemText),
   )
-  check('remaining goal count is projected', systemText.includes('Other unfinished intentions: 5'))
   check('memory dump is bounded', !systemText.includes('memory-99'))
   check(
     'capability projection is compact',
@@ -110,7 +94,17 @@ function main(): void {
         (_, index) => `shared-history-${index}-${'h'.repeat(240)}`,
       ),
     },
-    goals,
+    thread: {
+      id: 'thread-1',
+      topic: 'Interrupted story',
+      summary: 'chapter '.repeat(80),
+      status: 'interrupted',
+      sourceTurnId: 'turn-1',
+      createdAt: now,
+      updatedAt: now,
+      expiresAt: now + 60_000,
+      salience: 0.8,
+    },
     memory: `## Memory Context\nMEMORY_MARKER\n${memories}`,
     sessionSummary: `SESSION_SUMMARY_MARKER ${'earlier turn '.repeat(200)}`,
     capabilities,
@@ -133,7 +127,7 @@ function main(): void {
         displayName: `Fixture ${index} ${'application '.repeat(40)}`,
       })),
       systemAdapter: 'available',
-      freshness: { rendererMs: 0, schedulerMs: 0, systemMs: 0 },
+      freshness: { rendererMs: 0, systemMs: 0 },
     },
     toolResults: `## Current Tool Results\nTOOL_RESULT_MARKER\n${'verified result '.repeat(1_000)}`,
     locale: 'en',
@@ -148,7 +142,7 @@ function main(): void {
       'POLICY_MARKER',
       '## Current Mood',
       '## Relationship Context',
-      '## Goal Awareness Context',
+      '## Relevant Conversation Thread',
       'MEMORY_MARKER',
       '## Current Shio Capabilities',
       'PROJECT_MARKER',
@@ -166,7 +160,7 @@ function main(): void {
     responsePolicy: '## Policy',
     mood: '## Current Mood',
     relationship: '## Relationship Context',
-    goals: '## Goal Awareness Context',
+    threads: '## Relevant Conversation Thread',
     memory: '## Memory Context',
     sessionSummary: '## Earlier In This Session',
     capabilities: '## Current Shio Capabilities',

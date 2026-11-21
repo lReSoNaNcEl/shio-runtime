@@ -25,7 +25,6 @@ import type {
   ExperienceAppraisal,
   ExperienceEvent,
   MoodState,
-  PersistentGoal,
   WorldContextSnapshot,
 } from '../../src/shared/alive'
 
@@ -39,7 +38,7 @@ const world: WorldContextSnapshot = {
   privacyMode: false,
   lastUserActivityAt: 1,
   systemAdapter: 'available',
-  freshness: { rendererMs: 0, schedulerMs: 0, systemMs: 0 },
+  freshness: { rendererMs: 0, systemMs: 0 },
 }
 
 const settings: AutonomySettings = {
@@ -91,8 +90,8 @@ async function main(): Promise<void> {
     assert.equal(failureBehavior.intent.kind, 'conversation-candidate')
     assert.ok(Object.values(failure.mood).every((value) => typeof value === 'number'))
     experience.observe({
-      type: 'task-completed',
-      taskId: crypto.randomUUID(),
+      type: 'action-verified',
+      actionId: crypto.randomUUID(),
       eventId: 'completed-once',
       at: 30,
     })
@@ -103,7 +102,7 @@ async function main(): Promise<void> {
     assert.ok(Math.abs(decayed.valence) < Math.abs(failure.mood.valence))
     assert.equal(moodWriteCount, 3, 'reading a projected Mood snapshot must not persist it')
     assert.deepEqual(store.mood(), persistedBeforeSnapshot)
-    testExperiencePolicy(store)
+    testExperiencePolicy()
 
     const browserProgress = experience.observe(browserUseEvent('progress', 31))
     const browserProgressBehavior = behavior.decide({ ...browserProgress, settings, world, at: 31 })
@@ -194,7 +193,7 @@ async function main(): Promise<void> {
     const arbiter = new AttentionArbiter(fastBrain)
     const candidates: AttentionCandidate[] = [
       candidate('speech', 'speech', 0.95, 0.8, 1),
-      candidate('reminder', 'scheduler', 0.58, 0.45, 0.5),
+      candidate('experience', 'experience', 0.58, 0.45, 0.5),
       candidate('world', 'world', 0.2, 0.1, 0.1),
     ]
     const clear = await arbiter.decide(candidates, settings)
@@ -204,7 +203,7 @@ async function main(): Promise<void> {
 
     const ambiguous = [
       candidate('speech', 'speech', 0.7, 0.4, 0.7),
-      candidate('reminder', 'scheduler', 0.72, 0.42, 0.65),
+      candidate('experience', 'experience', 0.72, 0.42, 0.65),
     ]
     assert.equal((await arbiter.decide(ambiguous, settings)).source, 'model')
     assert.equal(modelCalls, 1)
@@ -280,9 +279,9 @@ async function main(): Promise<void> {
       ),
       gate.submit(
         {
-          origin: 'goal',
+          origin: 'world',
           entityId: 'second',
-          candidates: [candidate('goal:second', 'goal', 0.9, 0.85, 0.8, firstAt + 2)],
+          candidates: [candidate('world:second', 'world', 0.9, 0.85, 0.8, firstAt + 2)],
         },
         () => {
           deliveries += 1
@@ -300,9 +299,9 @@ async function main(): Promise<void> {
     gateNow = previewAt
     const preview = await gate.submit(
       {
-        origin: 'scheduler',
+        origin: 'behavior',
         entityId: 'preview',
-        candidates: [candidate('scheduler:preview', 'scheduler', 0.9, 0.85, 0.8, previewAt)],
+        candidates: [candidate('behavior:preview', 'behavior', 0.9, 0.85, 0.8, previewAt)],
       },
       (approval) => {
         assert.equal(approval.outcome, 'preview')
@@ -412,11 +411,6 @@ async function main(): Promise<void> {
     )
     assert.match(facadeSource, /world\.conversationActive\s*\|\|\s*world\.audioActive/u)
     assert.match(facadeSource, /'initiative-gate'/u)
-    const schedulerSource = readFileSync(
-      join(import.meta.dirname, '../..', 'src/main/alive/ScheduledTaskRuntime.ts'),
-      'utf8',
-    )
-    assert.doesNotMatch(schedulerSource, /AutonomyEnvelope/u)
     console.log('MIND LAYER REPRO PASS: appraisal, mood, attention, behavior ownership')
   } finally {
     store?.close()
@@ -666,7 +660,7 @@ function appraisal(
   }
 }
 
-function testExperiencePolicy(store: AliveStore): void {
+function testExperiencePolicy(): void {
   const baselineMood: MoodState = mood()
   const repeatedPolicy = new ExperiencePolicy()
   const firstFailure = repeatedPolicy.appraise(
@@ -685,41 +679,6 @@ function testExperiencePolicy(store: AliveStore): void {
   assert.ok(secondFailure.novelty < firstFailure.novelty)
   assert.match(secondFailure.conversationalImpulse?.topic ?? '', /repeated attempts/u)
   assert.equal(thirdFailure.emotionHint, 'angry')
-
-  const sharedGoal = store.createGoal({
-    title: 'Shared qualification',
-    owner: 'shared',
-    measurable: true,
-  })
-  store.updateGoal({ id: sharedGoal.id, progress: 0.8 })
-  const isolatedGoalAppraisal = new ExperiencePolicy().appraise(
-    { type: 'goal-completed', goalId: sharedGoal.id, eventId: 'isolated-goal', at: 400 },
-    { currentMood: baselineMood },
-  )
-  const contextualGoalAppraisal = new ExperiencePolicy().appraise(
-    { type: 'goal-completed', goalId: sharedGoal.id, eventId: 'contextual-goal', at: 400 },
-    {
-      currentMood: baselineMood,
-      goal: { ...sharedGoal, progress: 0.8 },
-      relationship: {
-        familiarity: 0.9,
-        warmth: 0.85,
-        teasingComfort: 0.4,
-        recurringMotifs: ['qualification', 'verified follow-through'],
-        relevantSharedHistory: [],
-      },
-    },
-  )
-  assert.ok(contextualGoalAppraisal.salience > isolatedGoalAppraisal.salience)
-  assert.ok(contextualGoalAppraisal.socialRelevance > isolatedGoalAppraisal.socialRelevance)
-  assert.ok(contextualGoalAppraisal.novelty < isolatedGoalAppraisal.novelty)
-
-  const userGoal: PersistentGoal = { ...sharedGoal, owner: 'user' }
-  const userGoalAppraisal = new ExperiencePolicy().appraise(
-    { type: 'goal-completed', goalId: userGoal.id, eventId: 'user-goal', at: 500 },
-    { currentMood: baselineMood, goal: userGoal },
-  )
-  assert.equal(userGoalAppraisal.conversationalImpulse?.topic, "The user's goal was completed")
 
   const deterministicEvent = {
     type: 'browser-blocked' as const,
@@ -774,12 +733,12 @@ function candidate(
 
 describe('Mind layer', () => {
   it.each(['full', 'suggest'] as const)(
-    'projects the actual Main Gate outcome for a scheduled initiative (%s)',
+    'projects the actual Main Gate outcome for an experience initiative (%s)',
     async (mode) => {
       const directory = mkdtempSync(join(tmpdir(), 'shio-initiative-projection-'))
       const store = new AliveStore(join(directory, 'alive.sqlite'))
       const facade = new AliveFacade(store, () => {
-        throw new Error('A single reminder candidate needs no model arbitration')
+        throw new Error('A single experience candidate needs no model arbitration')
       })
       const commands: BehaviorCommand[] = []
       facade.onBehavior((command) => commands.push(command))
@@ -792,8 +751,12 @@ describe('Mind layer', () => {
           audioActive: false,
           observedAt: Date.now(),
         })
-        facade.createTask({ kind: 'reminder', title: 'Approved reminder', dueAt: Date.now() })
         facade.start()
+        facade.reportExperience({
+          type: 'action-failed',
+          actionId: 'failed-action',
+          at: Date.now(),
+        })
         await waitUntil(() =>
           commands.some((command) => command.intent.kind === 'conversation-candidate'),
         )

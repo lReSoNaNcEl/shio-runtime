@@ -508,17 +508,6 @@ export function buildApplicationDependencies(): ApplicationDependencies {
       () => pluginCapabilities.get('browser-control'),
       new BrowserWorkflowCoordinator(browserWorkflowScopes),
       memoryToolBroker,
-      () => aliveRuntime?.snapshot().goals ?? [],
-      (input) => {
-        const runtime = aliveRuntime
-        if (!runtime) throw new Error('ALIVE_RUNTIME_UNAVAILABLE')
-        return runtime.createGoalFromCharacter(input)
-      },
-      (input) => {
-        const runtime = aliveRuntime
-        if (!runtime) throw new Error('ALIVE_RUNTIME_UNAVAILABLE')
-        return runtime.reviseGoalFromCharacter(input)
-      },
       () => {
         const alive = aliveRuntime?.snapshot()
         return {
@@ -777,9 +766,6 @@ export function buildApplicationDependencies(): ApplicationDependencies {
           }
         },
       },
-    })
-    actionRuntime.onEmergencyStop(() => {
-      aliveRuntime?.emergencyStop()
     })
     unsubscribeAliveCapabilities = aliveRuntime.onChanged(() => capabilityCatalog.invalidate())
     unsubscribeAliveIpc = registerAliveIpc(aliveRuntime, win, ipcAuthorization)

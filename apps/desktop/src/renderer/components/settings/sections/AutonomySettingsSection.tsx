@@ -144,7 +144,7 @@ export function AutonomySettingsSection({ snapshot }: { snapshot: AliveSnapshot 
       <section className="autonomy-master-card" aria-labelledby="autonomy-master-title">
         <div className="autonomy-settings-copy">
           <Heading id="autonomy-master-title" level={3}>
-            {t('tasks.autonomy.title')}
+            {t('autonomy.title')}
           </Heading>
           <Text UNSAFE_className="settings-hint">{t('settings.autonomy.masterDescription')}</Text>
         </div>
@@ -167,17 +167,17 @@ export function AutonomySettingsSection({ snapshot }: { snapshot: AliveSnapshot 
         </div>
         <div className="autonomy-settings-fields">
           <Picker
-            label={t('tasks.autonomy.mode')}
+            label={t('autonomy.mode')}
             selectedKey={snapshot.settings.mode}
             isDisabled={busy}
             onSelectionChange={(key) =>
               void run(() => updateSettings({ mode: String(key) as AutonomyMode }))
             }
           >
-            <PickerItem id="off">{t('tasks.mode.off')}</PickerItem>
-            <PickerItem id="suggest">{t('tasks.mode.suggest')}</PickerItem>
-            <PickerItem id="confirm">{t('tasks.mode.confirm')}</PickerItem>
-            <PickerItem id="full">{t('tasks.mode.full')}</PickerItem>
+            <PickerItem id="off">{t('autonomy.mode.off')}</PickerItem>
+            <PickerItem id="suggest">{t('autonomy.mode.suggest')}</PickerItem>
+            <PickerItem id="confirm">{t('autonomy.mode.confirm')}</PickerItem>
+            <PickerItem id="full">{t('autonomy.mode.full')}</PickerItem>
           </Picker>
           <div className="autonomy-setting-row">
             <Switch
@@ -202,7 +202,7 @@ export function AutonomySettingsSection({ snapshot }: { snapshot: AliveSnapshot 
             {t('settings.autonomy.limitsTitle')}
           </Heading>
           <Text UNSAFE_className="settings-hint">
-            {t('tasks.autonomy.limits', {
+            {t('autonomy.limits', {
               count: snapshot.settings.maxDailyInitiatives,
               minutes: Math.round(snapshot.settings.cooldownMs / 60_000),
             })}
@@ -220,7 +220,7 @@ export function AutonomySettingsSection({ snapshot }: { snapshot: AliveSnapshot 
               )
             }
           >
-            {t('tasks.autonomy.quietHours')}
+            {t('autonomy.quietHours')}
           </Switch>
           <Text UNSAFE_className="settings-hint">
             {t('settings.autonomy.quietHoursDescription')}
@@ -229,7 +229,7 @@ export function AutonomySettingsSection({ snapshot }: { snapshot: AliveSnapshot 
         {snapshot.settings.quietHours.enabled && (
           <div className="autonomy-settings-grid">
             <NumberField
-              label={t('tasks.autonomy.quietStart')}
+              label={t('autonomy.quietStart')}
               value={limits.quietStartHour}
               minValue={0}
               maxValue={23}
@@ -247,7 +247,7 @@ export function AutonomySettingsSection({ snapshot }: { snapshot: AliveSnapshot 
               }
             />
             <NumberField
-              label={t('tasks.autonomy.quietEnd')}
+              label={t('autonomy.quietEnd')}
               value={limits.quietEndHour}
               minValue={0}
               maxValue={23}
@@ -268,7 +268,7 @@ export function AutonomySettingsSection({ snapshot }: { snapshot: AliveSnapshot 
         )}
         <div className="autonomy-settings-grid">
           <NumberField
-            label={t('tasks.autonomy.cooldownMinutes')}
+            label={t('autonomy.cooldownMinutes')}
             value={limits.cooldownMinutes}
             minValue={1}
             maxValue={1_440}
@@ -278,7 +278,7 @@ export function AutonomySettingsSection({ snapshot }: { snapshot: AliveSnapshot 
             }
           />
           <NumberField
-            label={t('tasks.autonomy.dailyCap')}
+            label={t('autonomy.dailyCap')}
             value={limits.maxDailyInitiatives}
             minValue={0}
             maxValue={100}
@@ -306,7 +306,7 @@ export function AutonomySettingsSection({ snapshot }: { snapshot: AliveSnapshot 
                   )
                 }
               >
-                {t('tasks.fastBrain')}
+                {t('autonomy.fastBrain')}
               </Switch>
               <Text UNSAFE_className="settings-hint">
                 {t('settings.autonomy.fastBrainDescription')}
@@ -318,7 +318,7 @@ export function AutonomySettingsSection({ snapshot }: { snapshot: AliveSnapshot 
             {snapshot.settings.fastBrain.enabled && !snapshot.settings.privacyMode && (
               <div className="autonomy-settings-grid">
                 <Picker
-                  label={t('tasks.fastBrain.provider')}
+                  label={t('autonomy.fastBrain.provider')}
                   selectedKey={snapshot.settings.fastBrain.providerId ?? 'active'}
                   isDisabled={busy}
                   onSelectionChange={(key) =>
@@ -333,7 +333,7 @@ export function AutonomySettingsSection({ snapshot }: { snapshot: AliveSnapshot 
                     )
                   }
                 >
-                  <PickerItem id="active">{t('tasks.fastBrain.activeProvider')}</PickerItem>
+                  <PickerItem id="active">{t('autonomy.fastBrain.activeProvider')}</PickerItem>
                   {LLM_PROVIDER_IDS.map((providerId) => (
                     <PickerItem id={providerId} key={providerId}>
                       {providerId}
@@ -341,8 +341,8 @@ export function AutonomySettingsSection({ snapshot }: { snapshot: AliveSnapshot 
                   ))}
                 </Picker>
                 <TextField
-                  label={t('tasks.fastBrain.model')}
-                  placeholder={t('tasks.fastBrain.modelPlaceholder')}
+                  label={t('autonomy.fastBrain.model')}
+                  placeholder={t('autonomy.fastBrain.modelPlaceholder')}
                   value={modelDraft}
                   isDisabled={busy}
                   onChange={setModelDraft}
@@ -358,7 +358,7 @@ export function AutonomySettingsSection({ snapshot }: { snapshot: AliveSnapshot 
                   }
                 />
                 <NumberField
-                  label={t('tasks.fastBrain.timeout')}
+                  label={t('autonomy.fastBrain.timeout')}
                   value={snapshot.settings.fastBrain.timeoutMs}
                   minValue={250}
                   maxValue={5_000}
@@ -373,7 +373,7 @@ export function AutonomySettingsSection({ snapshot }: { snapshot: AliveSnapshot 
                   }
                 />
                 <NumberField
-                  label={t('tasks.fastBrain.tokens')}
+                  label={t('autonomy.fastBrain.tokens')}
                   value={snapshot.settings.fastBrain.maxTokens}
                   minValue={16}
                   maxValue={256}

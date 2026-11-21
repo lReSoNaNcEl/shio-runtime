@@ -8,7 +8,7 @@ import type { AliveStore } from './AliveStore'
 import type { AttentionArbiter } from './AttentionArbiter'
 import type { AutonomyDecision, AutonomyEnvelope } from './AutonomyEnvelope'
 
-export type ProactiveInitiativeOrigin = 'experience' | 'scheduler' | 'goal' | 'world' | 'behavior'
+export type ProactiveInitiativeOrigin = 'experience' | 'world' | 'behavior'
 
 export interface ProactiveInitiativeRequest {
   origin: ProactiveInitiativeOrigin

@@ -11,7 +11,6 @@ import {
 import Apps from '@react-spectrum/s2/icons/Apps'
 import Archive from '@react-spectrum/s2/icons/Archive'
 import Bug from '@react-spectrum/s2/icons/Bug'
-import Calendar from '@react-spectrum/s2/icons/Calendar'
 import Chat from '@react-spectrum/s2/icons/Chat'
 import Discover from '@react-spectrum/s2/icons/Discover'
 import More from '@react-spectrum/s2/icons/More'
@@ -29,7 +28,6 @@ export type AppSection =
   | 'chat'
   | 'capabilities'
   | 'memory'
-  | 'tasks'
   | 'avatar'
   | 'plugins'
   | 'debug'
@@ -121,7 +119,6 @@ export function AppShell({
     { id: 'chat', label: t('app.nav.chat'), icon: <Chat /> },
     { id: 'capabilities', label: t('app.nav.capabilities'), icon: <Discover /> },
     { id: 'memory', label: t('app.nav.memory'), icon: <Archive /> },
-    { id: 'tasks', label: t('app.nav.tasks'), icon: <Calendar /> },
     ...(developerModeEnabled
       ? [
           {

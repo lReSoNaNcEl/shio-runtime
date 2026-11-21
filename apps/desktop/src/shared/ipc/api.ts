@@ -3,14 +3,10 @@ import type {
   AliveSnapshot,
   AutonomySettings,
   BehaviorCommand,
-  CreateGoalInput,
-  CreateScheduledTaskInput,
   ExperienceEvent,
   FastBrainAttentionDecision,
   FastBrainAttentionInput,
   RendererWorldContextInput,
-  ScheduledTaskStatus,
-  UpdateGoalInput,
 } from '../alive'
 import type { BrowserControlApi } from '../browser-control'
 import type { ShioCapabilitiesApi } from '../capabilities'
@@ -97,11 +93,6 @@ export interface ShioRuntimeApi {
     updateSettings: (settings: AutonomySettings) => Promise<AliveSnapshot>
     updateWorld: (input: RendererWorldContextInput) => Promise<{ ok: true }>
     reportExperience: (event: ExperienceEvent) => Promise<{ ok: true }>
-    createGoal: (input: CreateGoalInput) => Promise<AliveSnapshot>
-    updateGoal: (input: UpdateGoalInput) => Promise<AliveSnapshot>
-    createTask: (input: CreateScheduledTaskInput) => Promise<AliveSnapshot>
-    setTaskStatus: (id: string, status: ScheduledTaskStatus) => Promise<AliveSnapshot>
-    approveTask: (id: string) => Promise<AliveSnapshot>
     decideHabit: (id: string, status: 'approved' | 'rejected') => Promise<AliveSnapshot>
     evaluateAttention: (input: FastBrainAttentionInput) => Promise<FastBrainAttentionDecision>
     cancelAttention: (utteranceId: string) => Promise<{ ok: boolean }>

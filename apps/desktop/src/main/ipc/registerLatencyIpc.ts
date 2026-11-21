@@ -14,7 +14,6 @@ const milestoneSchema = z.object({
     llmRound: z.number().int().nonnegative(),
     toolCallId: z.string().max(120).optional(),
     ttsSegmentId: z.string().max(120).optional(),
-    goalId: z.string().max(120).optional(),
   }),
   status: z.enum(['started', 'success', 'failure', 'cancelled', 'timeout']).optional(),
   provider: z.string().max(100).optional(),

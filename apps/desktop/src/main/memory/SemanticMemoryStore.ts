@@ -249,7 +249,11 @@ export class SqliteSemanticMemoryStore implements SemanticMemoryStore {
   }
 
   observeCompletedFact(fact: CompletedMemoryFact): HabitRecord | null {
-    const descriptor = habitDescriptor(fact)
+    const descriptor = {
+      key: 'verified-action-follow-through',
+      type: 'interaction-style',
+      summary: 'Проверять результат внешнего действия до сообщения об успехе',
+    }
     this.database.exec('BEGIN IMMEDIATE')
     try {
       const inserted = this.database
@@ -400,33 +404,6 @@ export class SqliteSemanticMemoryStore implements SemanticMemoryStore {
       SELECT r.id, r.text FROM memory_records r
       WHERE r.id NOT IN (SELECT id FROM memory_records_fts);
     `)
-  }
-}
-
-function habitDescriptor(fact: CompletedMemoryFact): {
-  key: string
-  type: HabitType
-  summary: string
-} {
-  switch (fact.kind) {
-    case 'task-completed':
-      return {
-        key: 'task-follow-through',
-        type: 'routine',
-        summary: 'Доводить начатые задачи до проверенного завершения',
-      }
-    case 'goal-completed':
-      return {
-        key: 'goal-follow-through',
-        type: 'routine',
-        summary: 'Доводить выбранные цели до завершения',
-      }
-    case 'action-verified':
-      return {
-        key: 'verified-action-follow-through',
-        type: 'interaction-style',
-        summary: 'Проверять результат внешнего действия до сообщения об успехе',
-      }
   }
 }
 

@@ -3,26 +3,14 @@ import type {
   AliveSnapshot,
   AttentionCandidate,
   AttentionDecision,
-  AutonomyScope,
   AutonomySettings,
   BehaviorCommand,
-  CreateGoalInput,
-  CreateScheduledTaskInput,
   ExperienceAppraisal,
   ExperienceEvent,
   FastBrainAttentionDecision,
   FastBrainAttentionInput,
-  GoalExecutionBudget,
-  GoalExecutionState,
-  GoalStepOutcome,
-  GoalWakeCondition,
-  GoalWakeEvent,
   HabitSuggestion,
-  PersistentGoal,
   RendererWorldContextInput,
-  ReviseGoalInput,
-  ScheduledTask,
-  UpdateGoalInput,
 } from '../../shared/alive'
 import type { TurnAppraisal } from '../../shared/character-tools'
 import type { RelationshipContext } from '../../shared/memory'
@@ -31,26 +19,22 @@ import { observeMainPromise } from '../reliability/observePromise'
 import type { AliveStore } from './AliveStore'
 import { AttentionArbiter } from './AttentionArbiter'
 import { AutonomyEnvelope } from './AutonomyEnvelope'
-import { AutonomyScopeRuntime, type ScopedActionProposal } from './AutonomyScopeRuntime'
 import { BehaviorRuntime, type ConversationCandidateDisposition } from './BehaviorRuntime'
-import { EventWatchService } from './EventWatchService'
 import type { CompletedExperienceFact, ExperienceObservation } from './ExperienceRuntime'
 import { ExperienceRuntime } from './ExperienceRuntime'
 import { FastBrainRuntime } from './FastBrainRuntime'
-import { GoalRuntime } from './GoalRuntime'
 import { MoodRuntime } from './MoodRuntime'
 import {
   type ProactiveInitiativeApproval,
   ProactiveInitiativeGate,
 } from './ProactiveInitiativeGate'
-import { ScheduledTaskRuntime } from './ScheduledTaskRuntime'
 import type { SystemContextAdapter } from './SystemContextAdapter'
 import { TurnAppraisalRegistry } from './TurnAppraisalRegistry'
 import { type WorldContextProviders, WorldContextRuntime } from './WorldContextRuntime'
 
 export interface AliveFacadeOptions {
   systemContextAdapter?: SystemContextAdapter
-  worldContext?: Omit<WorldContextProviders, 'activeGoal'>
+  worldContext?: WorldContextProviders
   onCompletedExperienceFact?: ConstructorParameters<typeof ExperienceRuntime>[2]
   experienceContext?: () => RelationshipContext
   proceduralMemory?: {
@@ -66,16 +50,13 @@ export interface ExperienceReport extends ExperienceObservation {
 
 /** Narrow composition/IPC boundary. Domain decisions remain in the composed runtimes. */
 export class AliveFacade {
+  private started = false
   private readonly world: WorldContextRuntime
   private readonly envelope = new AutonomyEnvelope()
   private readonly behavior = new BehaviorRuntime()
   private readonly experience: ExperienceRuntime
   private readonly attention: AttentionArbiter
   private readonly initiativeGate: ProactiveInitiativeGate
-  private readonly goals: GoalRuntime
-  private readonly watches: EventWatchService
-  private readonly scopes: AutonomyScopeRuntime
-  private readonly scheduler: ScheduledTaskRuntime
   private readonly listeners = new Set<(snapshot: AliveSnapshot) => void>()
   private readonly behaviorListeners = new Set<(command: BehaviorCommand) => void>()
   private readonly lifecycleController = new AbortController()
@@ -92,16 +73,7 @@ export class AliveFacade {
     }) => LlmGateway,
     private readonly options: AliveFacadeOptions = {},
   ) {
-    this.goals = new GoalRuntime(store)
-    this.watches = new EventWatchService(store, this.goals)
-    this.scopes = new AutonomyScopeRuntime(store)
-    this.world = new WorldContextRuntime(options.systemContextAdapter, {
-      ...options.worldContext,
-      activeGoal: () =>
-        this.goals
-          .snapshot()
-          .find((goal) => goal.status !== 'completed' && goal.status !== 'cancelled') ?? null,
-    })
+    this.world = new WorldContextRuntime(options.systemContextAdapter, options.worldContext)
     this.experience = new ExperienceRuntime(
       store,
       new MoodRuntime(store),
@@ -109,11 +81,7 @@ export class AliveFacade {
         options.proceduralMemory?.observeCompletedFact(fact)
         options.onCompletedExperienceFact?.(fact)
       },
-      (event) => ({
-        goal:
-          'goalId' in event
-            ? this.goals.snapshot().find((goal) => goal.id === event.goalId)
-            : undefined,
+      () => ({
         relationship: options.experienceContext?.(),
       }),
     )
@@ -125,23 +93,11 @@ export class AliveFacade {
       settings: () => this.store.settings(),
       world: (settings, now) => this.world.snapshot(settings, now),
     })
-    this.scheduler = new ScheduledTaskRuntime({
-      store,
-      initiativeGate: this.initiativeGate,
-      markSchedulerObserved: (now) => this.world.markSchedulerObserved(now),
-      onBehavior: (command, authority) => this.emitBehavior(command, authority),
-      onChanged: () => this.publish(),
-      onTick: (now) => {
-        const awakened = this.watches.tick(now)
-        if (awakened.length > 0) this.emitGoalAttention(now)
-      },
-    })
   }
 
   start(): void {
-    this.goals.restore(this.store.settings())
     this.world.start()
-    this.scheduler.start()
+    this.started = true
   }
 
   dispose(): void {
@@ -151,8 +107,8 @@ export class AliveFacade {
       controller.abort(this.lifecycleController.signal.reason)
     }
     this.attentionRequests.clear()
+    this.started = false
     this.world.dispose()
-    this.scheduler.dispose()
     this.listeners.clear()
     this.behaviorListeners.clear()
     this.turnAppraisals.clear()
@@ -171,29 +127,20 @@ export class AliveFacade {
 
   snapshot(): AliveSnapshot {
     const settings = this.store.settings()
-    const goals = this.goals.snapshot()
-    const tasks = this.scheduler.snapshot()
     const habits = this.options.proceduralMemory?.habitSuggestions() ?? Object.freeze([])
     return Object.freeze({
       settings,
-      goals,
-      goalExecutions: this.goals.executionSnapshot(),
-      goalWatches: this.watches.snapshot(),
-      tasks,
       habitSuggestions: habits,
       mood: this.experience.moodSnapshot(),
       lastExperience: this.experience.latest(),
       world: this.world.snapshot(settings),
       audit: this.store.recentAudit(),
-      health: this.health(goals, tasks, habits),
+      health: this.health(habits),
     })
   }
 
   updateSettings(settings: AutonomySettings): AliveSnapshot {
     this.store.saveSettings(settings)
-    if (settings.globallySuspended || settings.mode === 'off') {
-      this.goals.pauseAutonomousWork(settings.globallySuspended ? 'global-suspend' : 'mode-off')
-    }
     this.store.audit('autonomy', 'settings_updated', 'success')
     return this.publish()
   }
@@ -315,43 +262,6 @@ export class AliveFacade {
     return report
   }
 
-  createGoal(input: CreateGoalInput): AliveSnapshot {
-    this.goals.create(input)
-    return this.publish()
-  }
-
-  createGoalFromCharacter(input: CreateGoalInput): PersistentGoal {
-    const goal = this.goals.create(input)
-    this.publish()
-    return goal
-  }
-
-  updateGoal(input: UpdateGoalInput): AliveSnapshot {
-    this.goals.update(input)
-    return this.publish()
-  }
-
-  reviseGoalFromCharacter(input: ReviseGoalInput): PersistentGoal {
-    const goal = this.goals.revise(input)
-    this.publish()
-    return goal
-  }
-
-  createTask(input: CreateScheduledTaskInput): AliveSnapshot {
-    this.scheduler.create(input)
-    return this.publish()
-  }
-
-  setTaskStatus(id: string, status: ScheduledTask['status']): AliveSnapshot {
-    this.scheduler.setStatus(id, status)
-    return this.publish()
-  }
-
-  approveTaskRun(id: string): AliveSnapshot {
-    this.scheduler.approve(id, this.store.settings())
-    return this.publish()
-  }
-
   decideHabit(id: string, status: 'approved' | 'rejected'): AliveSnapshot {
     if (!this.options.proceduralMemory) throw new Error('PROCEDURAL_MEMORY_UNAVAILABLE')
     this.options.proceduralMemory.decideHabit(id, status)
@@ -395,80 +305,11 @@ export class AliveFacade {
     })
   }
 
-  planGoal(
-    goalId: string,
-    steps: readonly string[],
-    budget?: Partial<GoalExecutionBudget>,
-  ): GoalExecutionState {
-    const state = this.goals.plan(goalId, steps, { budget })
-    this.publish()
-    return state
-  }
-
-  admitGoalStep(goalId: string): GoalExecutionState {
-    const state = this.goals.admitStep(goalId)
-    this.publish()
-    return state
-  }
-
-  recordGoalActionResult(input: {
-    goalId: string
-    actionId: string
-    verified: boolean
-    outcome?: GoalStepOutcome
-    summary?: string
-  }): GoalExecutionState {
-    const state = this.goals.recordVerifiedResult(input)
-    this.publish()
-    return state
-  }
-
-  waitForGoalEvent(goalId: string, condition: GoalWakeCondition): GoalExecutionState {
-    const state = this.goals.waitForEvent(goalId, condition)
-    this.publish()
-    return state
-  }
-
-  observeGoalEvent(event: GoalWakeEvent): void {
-    if (this.watches.observe(event).length > 0) {
-      this.emitGoalAttention(event.at)
-      this.publish()
-    }
-  }
-
-  approveAutonomyScope(
-    input: Omit<AutonomyScope, 'id' | 'actionsUsed' | 'approvedAt'>,
-  ): AutonomyScope {
-    return this.scopes.approve(input, 'explicit-user-approval')
-  }
-
-  consumeAutonomyScope(goalId: string, proposal: ScopedActionProposal): boolean {
-    return this.scopes.authorizeAndConsume(goalId, proposal)
-  }
-
-  emergencyStop(): AliveSnapshot {
-    this.goals.pauseAutonomousWork('emergency-stop')
-    return this.publish()
-  }
-
-  private health(
-    goals: AliveSnapshot['goals'],
-    tasks: AliveSnapshot['tasks'],
-    habits: AliveSnapshot['habitSuggestions'],
-  ): AliveRuntimeHealth {
-    const lastErrorCode = this.scheduler.errorCode()
+  private health(habits: AliveSnapshot['habitSuggestions']): AliveRuntimeHealth {
     return Object.freeze({
-      operational: !lastErrorCode,
-      schedulerRunning: this.scheduler.isRunning(),
+      operational: this.started,
       databaseVersion: this.store.version(),
-      lastTickAt: this.scheduler.lastTickAt(),
-      pendingConfirmations: tasks.filter((task) => task.status === 'waiting_confirmation').length,
-      activeGoals: goals.filter(
-        (goal) => goal.status !== 'completed' && goal.status !== 'cancelled',
-      ).length,
-      scheduledTasks: tasks.filter((task) => task.status === 'scheduled').length,
       pendingHabitSuggestions: habits.filter((habit) => habit.status === 'pending').length,
-      lastErrorCode,
     })
   }
 
@@ -478,30 +319,17 @@ export class AliveFacade {
     return snapshot
   }
 
-  private emitBehavior(
-    command: BehaviorCommand,
-    authority?: ProactiveInitiativeApproval | 'explicit-user',
-  ): boolean {
+  private emitBehavior(command: BehaviorCommand, authority?: ProactiveInitiativeApproval): boolean {
     if (command.intent.kind === 'none' && !command.embodimentPresence) return false
-    if (['conversation-candidate', 'goal-suggestion'].includes(command.intent.kind) && !authority) {
+    if (command.intent.kind === 'conversation-candidate' && !authority) {
       this.store.audit('behavior', command.intent.kind, 'blocked', command.id, 'initiative-gate')
       return false
     }
-    this.store.audit(
-      'behavior',
-      command.intent.kind,
-      'selected',
-      command.id,
-      authority === 'explicit-user' ? authority : authority?.authority,
-    )
+    this.store.audit('behavior', command.intent.kind, 'selected', command.id, authority?.authority)
     const projection: BehaviorCommand = {
       ...command,
       initiativeDisposition:
-        command.intent.kind === 'conversation-candidate'
-          ? authority === 'explicit-user'
-            ? 'admit'
-            : authority?.outcome
-          : undefined,
+        command.intent.kind === 'conversation-candidate' ? authority?.outcome : undefined,
     }
     for (const listener of this.behaviorListeners) listener(projection)
     return true
@@ -511,36 +339,6 @@ export class AliveFacade {
    * per activity, so the audit table does not grow every few seconds. */
   private emitIdlePresentation(command: BehaviorCommand): void {
     for (const listener of this.behaviorListeners) listener(command)
-  }
-
-  private emitGoalAttention(now: number): void {
-    const candidates = this.goals.attentionCandidates(now)
-    if (candidates.length === 0) return
-    observeMainPromise(
-      this.initiativeGate.submit(
-        {
-          origin: 'goal',
-          entityId: 'awakened-goal',
-          candidates,
-        },
-        (approval) => {
-          if (!approval.attention.candidateId) return false
-          const goalId = approval.attention.candidateId.split(':')[1]
-          const goal = this.goals.snapshot().find((candidate) => candidate.id === goalId)
-          if (!goal) return false
-          return this.emitBehavior(
-            this.behavior.proactiveInitiative(
-              `goal-awakened:${goal.id}:${now}`,
-              goal.nextStep || goal.title,
-              0.78,
-              now,
-            ),
-            approval,
-          )
-        },
-      ),
-      'arbitrate awakened goal attention',
-    )
   }
 
   private trackBrowserComputerUsePresence(

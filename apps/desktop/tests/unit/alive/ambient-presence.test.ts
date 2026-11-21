@@ -28,7 +28,6 @@ function world(overrides: Partial<WorldContextSnapshot> = {}): WorldContextSnaps
     systemAdapter: 'available',
     freshness: {
       rendererMs: 0,
-      schedulerMs: null,
       systemMs: 0,
       systemSources: {
         globalIdleMs: 0,

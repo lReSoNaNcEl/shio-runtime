@@ -144,8 +144,6 @@ export class AliveExperienceRuntime {
       } else {
         this.deps.pushInitiative(command.intent.topic)
       }
-    } else if (command.intent.kind === 'goal-suggestion') {
-      this.deps.pushInitiative(command.intent.objective)
     }
     this.deps.recordEvent(
       'Behavior Command Applied',

@@ -27,9 +27,6 @@ export const CHARACTER_TOOL_IDS = [
   'memory.update',
   'memory.forget',
   'memory.list',
-  'goal.create',
-  'goal.list',
-  'goal.update',
   'thread.open',
   'thread.resolve',
 ] as const

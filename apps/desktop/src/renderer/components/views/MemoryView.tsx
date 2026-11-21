@@ -391,9 +391,9 @@ export function MemoryView({ aliveSnapshot }: { aliveSnapshot: AliveSnapshot | n
             <section className="memory-habits" aria-labelledby="memory-habits-title">
               <div className="memory-habits-heading">
                 <Heading id="memory-habits-title" level={2}>
-                  {t('tasks.habits.title')}
+                  {t('memory.habits.title')}
                 </Heading>
-                <Text>{t('tasks.habits.description')}</Text>
+                <Text>{t('memory.habits.description')}</Text>
               </div>
               {habitError && (
                 <InlineAlert variant="negative" fillStyle="subtleFill">
@@ -404,7 +404,7 @@ export function MemoryView({ aliveSnapshot }: { aliveSnapshot: AliveSnapshot | n
               {(aliveSnapshot?.habitSuggestions.filter((habit) => habit.status === 'pending')
                 .length ?? 0) === 0 ? (
                 <div className="memory-habits-empty">
-                  <Text>{t('tasks.habits.empty')}</Text>
+                  <Text>{t('memory.habits.empty')}</Text>
                 </div>
               ) : (
                 <div className="memory-habit-list">
@@ -415,7 +415,7 @@ export function MemoryView({ aliveSnapshot }: { aliveSnapshot: AliveSnapshot | n
                         <div className="memory-habit-copy">
                           <Text UNSAFE_className="memory-card-text">{habit.title}</Text>
                           <Text UNSAFE_className="memory-card-source">
-                            {t('tasks.habits.evidence', { count: habit.evidenceCount })}
+                            {t('memory.habits.evidence', { count: habit.evidenceCount })}
                           </Text>
                         </div>
                         <ButtonGroup>
@@ -424,14 +424,14 @@ export function MemoryView({ aliveSnapshot }: { aliveSnapshot: AliveSnapshot | n
                             isDisabled={habitBusyId !== null}
                             onPress={() => decideHabit(habit.id, 'rejected')}
                           >
-                            {t('tasks.reject')}
+                            {t('memory.reject')}
                           </Button>
                           <Button
                             variant="primary"
                             isDisabled={habitBusyId !== null}
                             onPress={() => decideHabit(habit.id, 'approved')}
                           >
-                            {t('tasks.approve')}
+                            {t('memory.approve')}
                           </Button>
                         </ButtonGroup>
                       </article>

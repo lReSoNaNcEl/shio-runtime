@@ -12,7 +12,6 @@ const MAX_METRIC_SAMPLES = 128
 interface MutableTrace {
   turnId: string
   requestId: string
-  goalId?: string
   provider?: string
   model?: string
   status?: LatencyMilestone['status']
@@ -35,7 +34,6 @@ export class LatencyTelemetry {
       trace = {
         turnId: milestone.correlation.turnId,
         requestId: milestone.correlation.requestId,
-        goalId: milestone.correlation.goalId,
         provider: milestone.provider,
         model: milestone.model,
         startedAt: milestone.at,
@@ -45,7 +43,6 @@ export class LatencyTelemetry {
       this.evictOldTraces()
     }
     trace.requestId = milestone.correlation.requestId
-    trace.goalId ??= milestone.correlation.goalId
     trace.provider ??= milestone.provider
     trace.model ??= milestone.model
     trace.milestones.push(freezeMilestone(milestone))
@@ -173,7 +170,6 @@ function toSnapshot(trace: MutableTrace): LatencyTraceSnapshot {
   return Object.freeze({
     turnId: trace.turnId,
     requestId: trace.requestId,
-    goalId: trace.goalId,
     provider: trace.provider,
     model: trace.model,
     status: trace.status,

@@ -8,13 +8,6 @@ import {
   desktopWorkflowRequestSchema,
 } from '../../shared/actions'
 import type {
-  CreatePersistentGoal,
-  PersistentGoal,
-  PersistentGoalProvider,
-  ReviseGoalInput,
-  RevisePersistentGoal,
-} from '../../shared/alive'
-import type {
   BrowserComputerUseControlAction,
   BrowserComputerUseProvider,
   BrowserComputerUseSession,
@@ -42,9 +35,6 @@ import { mainLog } from '../logging/safeLogger'
 import type { MemoryToolBroker } from '../memory'
 import type { CharacterToolRegistry } from './CharacterToolRegistry'
 import type {
-  GoalCreateInput,
-  GoalListInput,
-  GoalUpdateInput,
   ProjectSearchInput,
   ShellExecuteInput,
   ThreadOpenInput,
@@ -62,9 +52,6 @@ type BrowserDirectToolId = Exclude<
   | 'shell.execute'
   | 'browser.observe'
   | BrowserComputerUseToolId
-  | 'goal.create'
-  | 'goal.list'
-  | 'goal.update'
   | 'thread.open'
   | 'thread.resolve'
   | MemoryToolName
@@ -77,12 +64,6 @@ const MEMORY_TOOL_IDS: ReadonlySet<CharacterToolId> = new Set([
   'memory.forget',
   'memory.list',
 ])
-const MEMORY_MUTATION_TOOL_IDS: ReadonlySet<CharacterToolId> = new Set([
-  'memory.store',
-  'memory.update',
-  'memory.forget',
-])
-
 const READ_ONLY_TOOL_IDS: ReadonlySet<CharacterToolId> = new Set([
   'project.search',
   'web.search',
@@ -90,7 +71,6 @@ const READ_ONLY_TOOL_IDS: ReadonlySet<CharacterToolId> = new Set([
   'browser.tabs',
   'memory.search',
   'memory.list',
-  'goal.list',
   'browser.useStatus',
 ])
 const BROWSER_COMPUTER_USE_TOOL_IDS: ReadonlySet<CharacterToolId> = new Set([
@@ -121,7 +101,6 @@ function authorityFailureCode(id: CharacterToolId): string {
   if (id === 'shell.execute') return 'EVIDENCE_CANNOT_AUTHORIZE_SHELL'
   if (id.startsWith('memory.')) return 'EVIDENCE_CANNOT_AUTHORIZE_MEMORY_MUTATION'
   if (id.startsWith('browser.')) return 'EVIDENCE_CANNOT_AUTHORIZE_BROWSER_ACTION'
-  if (id.startsWith('goal.')) return 'EVIDENCE_CANNOT_AUTHORIZE_GOAL_MUTATION'
   return 'EVIDENCE_CANNOT_AUTHORIZE_THREAD_MUTATION'
 }
 
@@ -180,17 +159,6 @@ export type CharacterToolVerifiedOutcome =
   | { kind: 'memory.store' }
   | { kind: 'memory.update' }
   | { kind: 'memory.forget' }
-  | {
-      kind: 'goal.create'
-      title: string
-      status: PersistentGoal['status']
-    }
-  | {
-      kind: 'goal.update'
-      title: string
-      status: PersistentGoal['status']
-      progressPercent?: number
-    }
   | { kind: 'thread.open'; topic: string }
   | { kind: 'thread.resolve'; topic: string }
   | {
@@ -228,10 +196,6 @@ interface CharacterToolDispatcherOptions {
   projectContext?: ProjectContextProviderResolver
   webSearch?: WebSearchProviderResolver
   semanticMemory?: MemoryToolBroker
-  persistentGoals?: PersistentGoalProvider
-  goalAwareness?: readonly PersistentGoal[]
-  createPersistentGoal?: CreatePersistentGoal
-  revisePersistentGoal?: RevisePersistentGoal
   conversationThreads?: ConversationThreadRuntimePort
   threadAwareness?: readonly ConversationThread[]
   executeDesktopWorkflow?: (
@@ -297,20 +261,6 @@ function successfulContent(data: unknown): string {
   })
 }
 
-function goalProjection(goal: PersistentGoal): unknown {
-  return {
-    id: goal.id,
-    title: goal.title,
-    description: goal.description || undefined,
-    nextStep: goal.nextStep || undefined,
-    lastNote: goal.lastNote || undefined,
-    owner: goal.owner,
-    status: goal.status,
-    ...(goal.measurable ? { progressPercent: Math.round(goal.progress * 100) } : {}),
-    updatedAt: goal.updatedAt,
-  }
-}
-
 function threadProjection(thread: ConversationThread): unknown {
   return {
     id: thread.id,
@@ -367,21 +317,16 @@ function browserComputerUseOutcomeProjection(
 export class CharacterToolDispatcher {
   private browserAuthorizationScopeId: string | undefined
   private browserSelected = false
-  private actionSelected = false
-  private lastActionVerified = false
   private actionWorkflowClosed = false
   private projectContext: ProjectContextPacket | undefined
   private readonly projectCache = new Map<string, ProjectContextPacket>()
   private readonly projectFingerprintByRequest = new Map<string, string>()
-  private goalDataSelected = false
-  private readonly knownGoalIds = new Set<string>()
   private readonly knownThreadIds = new Set<string>()
   private readonly influence: ToolInfluenceContext
   private browserStaleRecoveryUsed = false
 
   constructor(private readonly options: CharacterToolDispatcherOptions) {
     this.influence = new ToolInfluenceContext(options.userGoal)
-    for (const goal of options.goalAwareness ?? []) this.knownGoalIds.add(goal.id)
     for (const thread of options.threadAwareness ?? []) this.knownThreadIds.add(thread.id)
   }
 
@@ -424,16 +369,10 @@ export class CharacterToolDispatcher {
         })
         return { content: failureContent(code) }
       }
-      if (this.goalDataSelected && MEMORY_MUTATION_TOOL_IDS.has(id)) {
-        return { content: failureContent('GOAL_DATA_CANNOT_AUTHORIZE_MEMORY_MUTATION') }
-      }
       this.influence.select(id)
       const validatedInput = registry.parseInput(id, input)
       if (id === 'project.search') return await this.executeProject(validatedInput)
       if (id === 'web.search') return await this.executeWebSearch(validatedInput)
-      if (id === 'goal.create') return this.executeGoalCreate(validatedInput)
-      if (id === 'goal.list') return this.executeGoalList(validatedInput)
-      if (id === 'goal.update') return this.executeGoalUpdate(validatedInput)
       if (id === 'thread.open') return this.executeThreadOpen(validatedInput)
       if (id === 'thread.resolve') return this.executeThreadResolve(validatedInput)
       if (MEMORY_TOOL_IDS.has(id)) return this.executeMemory(id as MemoryToolName, validatedInput)
@@ -586,82 +525,6 @@ export class CharacterToolDispatcher {
     }
   }
 
-  private executeGoalList(input: Record<string, unknown>): CharacterToolDispatchResult {
-    const request = input as GoalListInput
-    if (!this.options.persistentGoals) {
-      return { content: failureContent('GOALS_UNAVAILABLE') }
-    }
-    const selectedGoals = this.options
-      .persistentGoals()
-      .filter((goal) => !request.status || goal.status === request.status)
-      .slice(0, request.limit ?? 20)
-    this.goalDataSelected = true
-    this.influence.observeEvidence('goal')
-    for (const goal of selectedGoals) this.knownGoalIds.add(goal.id)
-    const goals = selectedGoals.map(goalProjection)
-    return {
-      content: successfulContent({
-        goals,
-        count: goals.length,
-        source: 'persistent-goal-store',
-      }),
-    }
-  }
-
-  private executeGoalCreate(input: Record<string, unknown>): CharacterToolDispatchResult {
-    const request = input as GoalCreateInput
-    if (!this.options.createPersistentGoal) {
-      return { content: failureContent('GOAL_CREATION_UNAVAILABLE') }
-    }
-    const goal = this.options.createPersistentGoal(request)
-    this.knownGoalIds.add(goal.id)
-    this.goalDataSelected = true
-    return {
-      content: successfulContent({
-        goal: goalProjection(goal),
-        source: 'persistent-goal-store',
-      }),
-      verifiedOutcome: { kind: 'goal.create', title: goal.title, status: goal.status },
-    }
-  }
-
-  private executeGoalUpdate(input: Record<string, unknown>): CharacterToolDispatchResult {
-    const request = input as GoalUpdateInput as ReviseGoalInput
-    if (!this.options.revisePersistentGoal) {
-      return { content: failureContent('GOAL_UPDATES_UNAVAILABLE') }
-    }
-    if (!this.knownGoalIds.has(request.id)) {
-      return { content: failureContent('GOAL_NOT_IN_TURN_CONTEXT') }
-    }
-    const claimsCompletedWork =
-      request.progressPercent !== undefined || request.status === 'completed'
-    if (request.progressBasis === 'verified-result' && !this.lastActionVerified) {
-      return { content: failureContent('GOAL_UPDATE_REQUIRES_VERIFIED_ACTION') }
-    }
-    if (
-      claimsCompletedWork &&
-      (this.projectContext || this.browserSelected || this.actionSelected) &&
-      !this.lastActionVerified
-    ) {
-      return { content: failureContent('GOAL_UPDATE_REQUIRES_VERIFIED_ACTION') }
-    }
-    const goal = this.options.revisePersistentGoal(request)
-    this.goalDataSelected = true
-    const progressPercent = goal.measurable ? Math.round(goal.progress * 100) : undefined
-    return {
-      content: successfulContent({
-        goal: goalProjection(goal),
-        source: 'persistent-goal-store',
-      }),
-      verifiedOutcome: {
-        kind: 'goal.update',
-        title: goal.title,
-        progressPercent,
-        status: goal.status,
-      },
-    }
-  }
-
   private executeThreadOpen(input: Record<string, unknown>): CharacterToolDispatchResult {
     if (!this.options.conversationThreads) {
       return { content: failureContent('CONVERSATION_THREADS_UNAVAILABLE') }
@@ -674,7 +537,6 @@ export class CharacterToolDispatcher {
         thread: threadProjection(thread),
         source: 'conversation-thread-store',
         durableMemory: false,
-        persistentGoal: false,
       }),
       verifiedOutcome: { kind: 'thread.open', topic: thread.topic },
     }
@@ -873,7 +735,6 @@ export class CharacterToolDispatcher {
           id === 'browser.usePause' ? 'pause' : id === 'browser.useResume' ? 'resume' : 'stop',
       }
     }
-    this.actionSelected = true
     const result = await this.options.executeBrowserComputerUseAction(action, this.options.signal)
     if (result.outcome === 'cancelled' || result.outcome === 'permission-denied') {
       this.actionWorkflowClosed = true
@@ -917,8 +778,6 @@ export class CharacterToolDispatcher {
     if (!this.options.executeDesktopWorkflow) {
       return { content: failureContent('ACTION_RUNTIME_UNAVAILABLE') }
     }
-    this.actionSelected = true
-    this.lastActionVerified = false
     const browserAction = request.requestedCapabilities.includes('browser')
     if (browserAction) this.browserSelected = true
     if (browserAction && !this.browserAuthorizationScopeId && this.options.browserWorkflow) {
@@ -933,11 +792,6 @@ export class CharacterToolDispatcher {
       this.options.signal,
       browserAction ? this.browserAuthorizationScopeId : undefined,
     )
-    this.lastActionVerified =
-      result.outcome === 'success' &&
-      result.execution?.runtimeCompleted === true &&
-      (result.execution.verification === 'verified' ||
-        result.execution.verification === 'not-required')
     if (result.outcome === 'cancelled' || result.outcome === 'permission-denied') {
       this.actionWorkflowClosed = true
     }

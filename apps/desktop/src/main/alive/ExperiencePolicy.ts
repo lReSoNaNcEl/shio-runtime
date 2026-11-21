@@ -1,9 +1,4 @@
-import type {
-  ExperienceAppraisal,
-  ExperienceEvent,
-  MoodState,
-  PersistentGoal,
-} from '../../shared/alive'
+import type { ExperienceAppraisal, ExperienceEvent, MoodState } from '../../shared/alive'
 import type { TurnAppraisal } from '../../shared/character-tools'
 import type { RelationshipContext } from '../../shared/memory'
 
@@ -12,7 +7,6 @@ const MAX_RECENT_EXPERIENCES = 32
 
 export interface ExperiencePolicyContext {
   currentMood: MoodState
-  goal?: PersistentGoal
   relationship?: RelationshipContext
   /** Optional Character LLM nuance for a completed explicit user turn. */
   turnAppraisal?: TurnAppraisal
@@ -76,11 +70,7 @@ function applyContextualModifiers(
 ): ExperienceAppraisal {
   const curiosity = unit(context.currentMood.curiosity)
   const frustration = unit(context.currentMood.frustration)
-  const goal = isGoalEvent(event) ? context.goal : undefined
-  const importance = goal ? goalImportance(goal) : 0.5
-  const relationshipRelevant =
-    event.type.startsWith('conversation-') || goal?.owner === 'shared' || goal?.owner === 'user'
-  const relationship = relationshipRelevant ? context.relationship : undefined
+  const relationship = event.type.startsWith('conversation-') ? context.relationship : undefined
   const motifCount = Math.min(4, relationship?.recurringMotifs.length ?? 0)
   const noveltyModifier =
     recent.similarCount === 0 ? 0.08 : -Math.min(0.18, recent.similarCount * 0.04)
@@ -89,29 +79,21 @@ function applyContextualModifiers(
   const relationshipSocial = relationship
     ? (unit(relationship.warmth) - 0.35) * 0.12 + unit(relationship.familiarity) * 0.05
     : 0
-  const ownerSocial = goal?.owner === 'shared' ? 0.12 : goal?.owner === 'user' ? 0.06 : 0
   const moodValence =
     base.valence > 0 ? -frustration * 0.06 : base.valence < 0 ? -frustration * 0.03 : 0
   const conversationalImpulse = base.conversationalImpulse
     ? {
-        topic: contextualTopic(base.conversationalImpulse.topic, event, goal, recent),
-        priority:
-          base.conversationalImpulse.priority +
-          failureSalience * 0.5 +
-          (goal ? (importance - 0.5) * 0.08 : 0),
+        topic: contextualTopic(base.conversationalImpulse.topic, event, recent),
+        priority: base.conversationalImpulse.priority + failureSalience * 0.5,
       }
     : undefined
   return {
     ...base,
-    salience:
-      base.salience +
-      failureSalience +
-      frustration * (isFailureEvent(event) ? 0.06 : 0) +
-      (goal ? (importance - 0.5) * 0.2 : 0),
+    salience: base.salience + failureSalience + frustration * (isFailureEvent(event) ? 0.06 : 0),
     valence: base.valence + moodValence,
     arousal: base.arousal + failureArousal + frustration * (isFailureEvent(event) ? 0.04 : 0),
     novelty: base.novelty + noveltyModifier + (curiosity - 0.55) * 0.06 - motifCount * 0.015,
-    socialRelevance: base.socialRelevance + relationshipSocial + ownerSocial + motifCount * 0.01,
+    socialRelevance: base.socialRelevance + relationshipSocial + motifCount * 0.01,
     ...(conversationalImpulse ? { conversationalImpulse } : {}),
     ...(recent.repeatedFailures >= 2 && frustration >= 0.55 ? { emotionHint: 'angry' } : {}),
   }
@@ -120,23 +102,8 @@ function applyContextualModifiers(
 function contextualTopic(
   baseTopic: string,
   event: ExperienceEvent,
-  goal: PersistentGoal | undefined,
   recent: { repeatedFailures: number },
 ): string {
-  if (event.type === 'goal-completed') {
-    if (goal?.owner === 'user') return "The user's goal was completed"
-    if (goal?.owner === 'shio') return "Shio's goal was completed"
-    return 'A shared goal was completed'
-  }
-  if (event.type === 'goal-failed') {
-    const owner =
-      goal?.owner === 'user'
-        ? "The user's goal"
-        : goal?.owner === 'shio'
-          ? "Shio's goal"
-          : 'A shared goal'
-    return `${owner} needs replanning${recent.repeatedFailures > 0 ? ' after repeated failures' : ''}`
-  }
   if (event.type === 'action-failed' && recent.repeatedFailures > 0) {
     return `${baseTopic} after repeated attempts`
   }
@@ -168,17 +135,6 @@ function baseAppraisal(event: ExperienceEvent): ExperienceAppraisal {
         socialRelevance: 0.8,
         emotionHint: 'surprised',
         embodimentHint: { intensity: 'subtle', gazeHint: 'user' },
-        silence: true,
-      }
-    case 'task-completed':
-      return {
-        ...base,
-        salience: 0.35,
-        valence: 0.4,
-        arousal: 0.1,
-        novelty: 0.15,
-        socialRelevance: 0.35,
-        emotionHint: 'happy',
         silence: true,
       }
     case 'silence-threshold':
@@ -253,54 +209,6 @@ function baseAppraisal(event: ExperienceEvent): ExperienceAppraisal {
         socialRelevance: 0.25,
         emotionHint: 'calm',
         silence: true,
-      }
-    case 'goal-progressed':
-      return {
-        ...base,
-        salience: 0.48,
-        valence: 0.4,
-        arousal: 0.2,
-        novelty: 0.25,
-        socialRelevance: 0.45,
-        emotionHint: 'happy',
-        silence: true,
-      }
-    case 'goal-completed':
-      return {
-        ...base,
-        salience: 0.8,
-        valence: 0.8,
-        arousal: 0.6,
-        novelty: 0.55,
-        socialRelevance: 0.65,
-        emotionHint: 'happy',
-        embodimentHint: { intensity: 'normal', gestureHint: 'celebrate', gazeHint: 'user' },
-        conversationalImpulse: { topic: 'A shared goal was completed', priority: 0.8 },
-        memoryCandidate: { kind: 'episodic', summary: 'A shared goal was completed.' },
-        silence: false,
-      }
-    case 'goal-failed':
-      return {
-        ...base,
-        salience: 0.88,
-        valence: -0.7,
-        arousal: 0.6,
-        novelty: 0.65,
-        socialRelevance: 0.65,
-        emotionHint: 'sad',
-        conversationalImpulse: { topic: 'A goal needs replanning', priority: 0.82 },
-        silence: false,
-      }
-    case 'scheduled-event-due':
-      return {
-        ...base,
-        salience: 0.65,
-        valence: 0.1,
-        arousal: 0.35,
-        novelty: 0.2,
-        socialRelevance: 0.55,
-        conversationalImpulse: { topic: 'A scheduled event is due', priority: 0.75 },
-        silence: false,
       }
     case 'user-returned':
       return {
@@ -446,26 +354,9 @@ function bounded(appraisal: ExperienceAppraisal): ExperienceAppraisal {
   })
 }
 
-function goalImportance(goal: PersistentGoal): number {
-  const ownership = goal.owner === 'shared' ? 0.8 : goal.owner === 'user' ? 0.68 : 0.55
-  const progressWeight = goal.measurable ? Math.min(0.1, unit(goal.progress) * 0.1) : 0
-  return unit(ownership + progressWeight)
-}
-
-function isGoalEvent(
-  event: ExperienceEvent,
-): event is Extract<ExperienceEvent, { goalId: string }> {
-  return (
-    event.type === 'goal-progressed' ||
-    event.type === 'goal-completed' ||
-    event.type === 'goal-failed'
-  )
-}
-
 function isFailureEvent(event: ExperienceEvent): boolean {
   return (
     event.type === 'action-failed' ||
-    event.type === 'goal-failed' ||
     event.type === 'browser-blocked' ||
     (event.type === 'browser-computer-use-event' && event.phase === 'failed')
   )
@@ -482,19 +373,15 @@ function eventIdentity(event: ExperienceEvent): string {
 function eventEntity(event: ExperienceEvent): string {
   return 'turnId' in event
     ? event.turnId
-    : 'taskId' in event
-      ? event.taskId
-      : 'actionId' in event
-        ? event.actionId
-        : 'goalId' in event
-          ? event.goalId
-          : 'sessionId' in event
-            ? event.sessionId
-            : 'runtime' in event
-              ? event.runtime
-              : 'change' in event
-                ? event.change
-                : 'world'
+    : 'actionId' in event
+      ? event.actionId
+      : 'sessionId' in event
+        ? event.sessionId
+        : 'runtime' in event
+          ? event.runtime
+          : 'change' in event
+            ? event.change
+            : 'world'
 }
 
 function unit(value: number): number {

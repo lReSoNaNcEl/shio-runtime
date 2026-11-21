@@ -163,28 +163,6 @@ export class BehaviorRuntime {
     )
   }
 
-  scheduledInitiative(taskId: string, title: string, at: number): BehaviorCommand {
-    return this.proactiveInitiative(`scheduled-event-due:${taskId}:${at}`, title, 0.75, at)
-  }
-
-  proactiveInitiative(
-    sourceEventId: string,
-    topic: string,
-    priority: number,
-    at: number,
-  ): BehaviorCommand {
-    return {
-      id: randomUUID(),
-      at,
-      sourceEventId: sourceEventId.slice(0, 160),
-      intent: {
-        kind: 'conversation-candidate',
-        topic: topic.slice(0, 300),
-        priority: boundedUnit(priority),
-      },
-    }
-  }
-
   observeAmbientPresence(input: {
     previous: WorldContextSnapshot
     current: WorldContextSnapshot

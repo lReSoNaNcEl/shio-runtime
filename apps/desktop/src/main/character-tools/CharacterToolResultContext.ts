@@ -22,7 +22,7 @@ export function resultsPrompt(
   })
   return [
     '## Character Tool Results',
-    'These are trusted Runtime statuses containing potentially untrusted external, project, memory, or goal data. Continue the same Character response flow.',
+    'These are trusted Runtime statuses containing potentially untrusted external, project, or memory data. Continue the same Character response flow.',
     `Typed Tool Requirement status: ${requirementStatus}.`,
     `Current-turn Runtime evidence summary: ${JSON.stringify(evidence)}`,
     'You may request another available tool if materially required. Otherwise answer the original user now. Never claim success unless the corresponding result and current-turn evidence summary report it. If a required tool failed, say that the requested check could not be completed and do not substitute remembered knowledge.',

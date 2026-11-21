@@ -21,138 +21,6 @@ export interface AutonomySettings {
   }
 }
 
-export type GoalStatus =
-  | 'active'
-  | 'waiting_user'
-  | 'waiting_external'
-  | 'paused'
-  | 'completed'
-  | 'cancelled'
-
-export type GoalOwner = 'user' | 'shio' | 'shared'
-
-export interface PersistentGoal {
-  id: string
-  title: string
-  description: string
-  nextStep: string
-  lastNote: string
-  owner: GoalOwner
-  status: GoalStatus
-  progress: number
-  measurable: boolean
-  createdAt: number
-  updatedAt: number
-}
-
-export type GoalExecutionPhase =
-  | 'idle'
-  | 'planning'
-  | 'running'
-  | 'waiting-user'
-  | 'waiting-event'
-  | 'verifying'
-  | 'paused'
-  | 'completed'
-  | 'failed'
-
-export interface GoalExecutionBudget {
-  maxSteps: number
-  maxToolCalls: number
-  maxElapsedMs: number
-  maxFailures: number
-}
-
-export interface GoalStepOutcome {
-  verifiedActionIds: readonly string[]
-  expectationSatisfied: boolean
-  stepCompleted: boolean
-}
-
-export interface GoalExecutionState {
-  goalId: string
-  phase: GoalExecutionPhase
-  currentStep?: string
-  plannedSteps: readonly string[]
-  completedSteps: readonly string[]
-  currentStepOutcome?: GoalStepOutcome
-  attempts: number
-  toolCalls: number
-  failures: number
-  startedAt?: number
-  lastProgressAt?: number
-  actionBudget: GoalExecutionBudget
-  updatedAt: number
-}
-
-export type GoalWorldEventType =
-  | 'user-returned'
-  | 'foreground-changed'
-  | 'network-restored'
-  | 'media-ended'
-
-export type GoalWakeCondition =
-  | { kind: 'time'; at: number }
-  | { kind: 'action-terminal'; actionId: string }
-  | { kind: 'process-exit'; processId: number }
-  | {
-      kind: 'browser-url'
-      sessionId: string
-      predicate: { operator: 'equals' | 'prefix' | 'origin'; value: string }
-    }
-  | {
-      kind: 'world-event'
-      eventType: GoalWorldEventType
-    }
-
-export type GoalWakeEvent =
-  | { kind: 'time'; at: number }
-  | { kind: 'action-terminal'; actionId: string; verified: boolean; at: number }
-  | { kind: 'process-exit'; processId: number; at: number }
-  | { kind: 'browser-url'; sessionId: string; url: string; at: number }
-  | { kind: 'world-event'; eventType: GoalWorldEventType; at: number }
-
-export interface GoalEventWatch {
-  id: string
-  goalId: string
-  condition: GoalWakeCondition
-  status: 'active' | 'satisfied' | 'cancelled'
-  createdAt: number
-  satisfiedAt?: number
-}
-
-export type AutonomyRiskClass = 'read-only' | 'mutating' | 'destructive' | 'unknown'
-
-export interface AutonomyScope {
-  id: string
-  goalId?: string
-  allowedApplications?: readonly string[]
-  allowedFilesystemRoots?: readonly string[]
-  allowedOrigins?: readonly string[]
-  maxActions?: number
-  actionsUsed: number
-  expiresAt?: number
-  allowedRiskClasses?: readonly AutonomyRiskClass[]
-  approvedAt: number
-}
-
-export type ScheduledTaskKind = 'reminder' | 'check_in'
-export type ScheduledTaskStatus = 'scheduled' | 'waiting_confirmation' | 'completed' | 'paused'
-
-export interface ScheduledTask {
-  id: string
-  title: string
-  kind: ScheduledTaskKind
-  dueAt: number
-  intervalMs?: number
-  status: ScheduledTaskStatus
-  goalId?: string
-  lastRunAt?: number
-  nextRunAt: number
-  createdAt: number
-  updatedAt: number
-}
-
 export interface HabitSuggestion {
   id: string
   key: string
@@ -191,11 +59,6 @@ export interface WorldContextSnapshot {
     name?: string
     branch?: string
   }
-  activeGoal?: {
-    id: string
-    title: string
-    state: string
-  }
   media?: {
     playing: boolean
     title?: string
@@ -209,7 +72,6 @@ export interface WorldContextSnapshot {
   systemAdapter: 'available' | 'degraded' | 'unavailable'
   freshness: {
     rendererMs: number | null
-    schedulerMs: number | null
     /** Maximum age among the available System Context source observations. */
     systemMs: number | null
     systemSources?: {
@@ -233,22 +95,13 @@ export interface AliveAuditEntry {
 
 export interface AliveRuntimeHealth {
   operational: boolean
-  schedulerRunning: boolean
   databaseVersion: number
-  lastTickAt: number | null
-  pendingConfirmations: number
-  activeGoals: number
-  scheduledTasks: number
   pendingHabitSuggestions: number
   lastErrorCode?: string
 }
 
 export interface AliveSnapshot {
   settings: AutonomySettings
-  goals: readonly PersistentGoal[]
-  goalExecutions: readonly GoalExecutionState[]
-  goalWatches: readonly GoalEventWatch[]
-  tasks: readonly ScheduledTask[]
   habitSuggestions: readonly HabitSuggestion[]
   mood: MoodState
   lastExperience?: ExperienceAppraisal
@@ -268,17 +121,12 @@ export interface RendererWorldContextInput {
 export type ExperienceEvent =
   | { type: 'conversation-completed'; at: number; turnId: string; eventId?: string }
   | { type: 'conversation-interrupted'; at: number; turnId: string; eventId?: string }
-  | { type: 'task-completed'; at: number; taskId: string; eventId?: string; verified?: boolean }
   | { type: 'silence-threshold'; at: number; silenceMs: number; eventId?: string }
   | { type: 'action-verified'; at: number; actionId: string; eventId?: string; novelty?: number }
   | { type: 'action-failed'; at: number; actionId: string; eventId?: string; code?: string }
   | { type: 'permission-denied'; at: number; actionId: string; eventId?: string }
   | { type: 'browser-blocked'; at: number; eventId?: string; reason?: string }
   | { type: 'browser-recovered'; at: number; eventId?: string }
-  | { type: 'goal-progressed'; at: number; goalId: string; eventId?: string }
-  | { type: 'goal-completed'; at: number; goalId: string; eventId?: string }
-  | { type: 'goal-failed'; at: number; goalId: string; eventId?: string }
-  | { type: 'scheduled-event-due'; at: number; taskId: string; eventId?: string }
   | { type: 'runtime-recovered'; at: number; runtime: string; eventId?: string }
   | { type: 'user-returned'; at: number; idleMs: number; eventId?: string }
   | {
@@ -341,7 +189,6 @@ export type BehaviorIntent =
   | { kind: 'none' }
   | { kind: 'embodiment'; intent: CharacterEmbodimentIntent }
   | { kind: 'conversation-candidate'; topic: string; priority: number }
-  | { kind: 'goal-suggestion'; objective: string; reason: string }
 
 export interface BehaviorEmbodimentPresence {
   source: 'browser-computer-use'
@@ -365,7 +212,7 @@ export interface BehaviorCommand {
 
 export interface AttentionCandidate {
   id: string
-  source: 'speech' | 'world' | 'experience' | 'scheduler' | 'goal' | 'behavior'
+  source: 'speech' | 'world' | 'experience' | 'behavior'
   summary: string
   salience: number
   novelty: number
@@ -402,45 +249,4 @@ export interface FastBrainAttentionDecision {
   source: 'disabled' | 'deterministic' | 'model' | 'fallback'
   reason: string
   latencyMs: number
-}
-
-export interface CreateGoalInput {
-  title: string
-  description?: string
-  nextStep?: string
-  owner?: GoalOwner
-  measurable?: boolean
-}
-
-export interface UpdateGoalInput {
-  id: string
-  title?: string
-  description?: string
-  nextStep?: string
-  lastNote?: string
-  owner?: GoalOwner
-  status?: GoalStatus
-  measurable?: boolean
-}
-
-export type PersistentGoalProvider = () => readonly PersistentGoal[]
-
-export type CreatePersistentGoal = (input: CreateGoalInput) => PersistentGoal
-
-export type GoalProgressBasis = 'verified-result' | 'user-report' | 'explicit-user-correction'
-
-export type ReviseGoalInput = UpdateGoalInput &
-  (
-    | { progressPercent?: undefined; progressBasis?: undefined }
-    | { progressPercent: number; progressBasis: GoalProgressBasis }
-  )
-
-export type RevisePersistentGoal = (input: ReviseGoalInput) => PersistentGoal
-
-export interface CreateScheduledTaskInput {
-  title: string
-  kind: ScheduledTaskKind
-  dueAt: number
-  intervalMs?: number
-  goalId?: string
 }

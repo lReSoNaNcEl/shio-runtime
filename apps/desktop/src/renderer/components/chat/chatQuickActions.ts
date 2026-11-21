@@ -76,12 +76,6 @@ const TOOL_ACTIONS: readonly QuickActionSpec[] = [
     promptKey: 'chat.quick.tool.memoryPrompt',
   },
   {
-    id: 'alive-autonomy',
-    capabilityId: 'alive-autonomy',
-    labelKey: 'chat.quick.tool.goals',
-    promptKey: 'chat.quick.tool.goalsPrompt',
-  },
-  {
     id: 'browser-control',
     capabilityId: 'browser-control',
     labelKey: 'chat.quick.tool.browser',

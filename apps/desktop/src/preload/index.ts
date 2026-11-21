@@ -12,13 +12,9 @@ import type {
   AliveSnapshot,
   AutonomySettings,
   BehaviorCommand,
-  CreateGoalInput,
-  CreateScheduledTaskInput,
   ExperienceEvent,
   FastBrainAttentionInput,
   RendererWorldContextInput,
-  ScheduledTaskStatus,
-  UpdateGoalInput,
 } from '../shared/alive'
 import type { ShioCapabilitySnapshot } from '../shared/capabilities'
 import type { CharacterReplyStreamEvent } from '../shared/character-stream'
@@ -60,16 +56,6 @@ const api = {
       ipcRenderer.invoke('alive:update-world', input) as Promise<{ ok: true }>,
     reportExperience: (event: ExperienceEvent) =>
       ipcRenderer.invoke('alive:report-experience', event) as Promise<{ ok: true }>,
-    createGoal: (input: CreateGoalInput) =>
-      ipcRenderer.invoke('alive:create-goal', input) as Promise<AliveSnapshot>,
-    updateGoal: (input: UpdateGoalInput) =>
-      ipcRenderer.invoke('alive:update-goal', input) as Promise<AliveSnapshot>,
-    createTask: (input: CreateScheduledTaskInput) =>
-      ipcRenderer.invoke('alive:create-task', input) as Promise<AliveSnapshot>,
-    setTaskStatus: (id: string, status: ScheduledTaskStatus) =>
-      ipcRenderer.invoke('alive:set-task-status', { id, status }) as Promise<AliveSnapshot>,
-    approveTask: (id: string) =>
-      ipcRenderer.invoke('alive:approve-task', id) as Promise<AliveSnapshot>,
     decideHabit: (id: string, status: 'approved' | 'rejected') =>
       ipcRenderer.invoke('alive:decide-habit', { id, status }) as Promise<AliveSnapshot>,
     evaluateAttention: (input: FastBrainAttentionInput) =>

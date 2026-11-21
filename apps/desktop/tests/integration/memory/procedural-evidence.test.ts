@@ -7,9 +7,6 @@ import { AliveRuntime, AliveStore } from '../../../src/main/alive'
 import { createSemanticMemoryRuntime } from '../../../src/main/memory'
 import { createTempDirectory } from '../../support'
 
-const wait = (milliseconds: number): Promise<void> =>
-  new Promise((resolve) => setTimeout(resolve, milliseconds))
-
 describe('Procedural Memory evidence integration', () => {
   it('observes only deduplicated runtime-confirmed completion', async () => {
     const directory = await createTempDirectory('shio-procedural-evidence-')
@@ -25,45 +22,36 @@ describe('Procedural Memory evidence integration', () => {
     })
     let database: DatabaseSync | undefined
     try {
-      store.saveSettings({
-        ...store.settings(),
-        mode: 'full',
-        cooldownMs: 0,
-        maxDailyInitiatives: 10,
-      })
-      const task = store.createTask({
-        title: 'Observe completion',
-        kind: 'check_in',
-        dueAt: Date.now() - 1,
-      })
       runtime.start()
-      await wait(30)
       database = new DatabaseSync(memoryPath)
       const countEvidence = (): number =>
         Number(
           (
             database
               ?.prepare(
-                "SELECT evidence_count FROM memory_habits WHERE habit_key = 'task-follow-through'",
+                "SELECT evidence_count FROM memory_habits WHERE habit_key = 'verified-action-follow-through'",
               )
               .get() as { evidence_count?: number } | undefined
           )?.evidence_count ?? 0,
         )
+      runtime.reportExperience({
+        type: 'conversation-completed',
+        turnId: 'conversation',
+        at: Date.now(),
+      })
       expect(countEvidence()).toBe(0)
       runtime.reportExperience({
-        type: 'task-completed',
+        type: 'action-verified',
         at: Date.now(),
-        taskId: task.id,
-        eventId: 'verified-task-completion-1',
-        verified: true,
+        actionId: 'action-1',
+        eventId: 'verified-action-1',
       })
       expect(countEvidence()).toBe(1)
       runtime.reportExperience({
-        type: 'task-completed',
+        type: 'action-verified',
         at: Date.now(),
-        taskId: task.id,
-        eventId: 'verified-task-completion-1',
-        verified: true,
+        actionId: 'action-1',
+        eventId: 'verified-action-1',
       })
       expect(countEvidence()).toBe(1)
     } finally {

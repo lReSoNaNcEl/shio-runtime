@@ -57,19 +57,19 @@ describe('Procedural Memory habits', () => {
     try {
       runtime.observeCompletedFact({
         eventId: 'event-1',
-        kind: 'task-completed',
+        kind: 'action-verified',
         entityId: 't1',
         at: 10,
       })
       runtime.observeCompletedFact({
         eventId: 'event-1',
-        kind: 'task-completed',
+        kind: 'action-verified',
         entityId: 't1',
         at: 10,
       })
       runtime.observeCompletedFact({
         eventId: 'event-2',
-        kind: 'task-completed',
+        kind: 'action-verified',
         entityId: 't2',
         at: 20,
       })
@@ -77,7 +77,7 @@ describe('Procedural Memory habits', () => {
 
       runtime.observeCompletedFact({
         eventId: 'event-3',
-        kind: 'task-completed',
+        kind: 'action-verified',
         entityId: 't3',
         at: 30,
       })

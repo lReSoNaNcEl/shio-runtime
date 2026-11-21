@@ -1,6 +1,5 @@
 import type {
   AutonomySettings,
-  PersistentGoal,
   RendererWorldContextInput,
   WorldContextSnapshot,
 } from '../../shared/alive'
@@ -29,7 +28,6 @@ interface SystemSourceObservedAt {
 export interface WorldContextProviders {
   browser?(): BrowserObservation | null
   project?(): { name?: string; branch?: string } | null
-  activeGoal?(): PersistentGoal | null
 }
 
 export interface WorldContextRuntimeOptions {
@@ -47,7 +45,6 @@ export class WorldContextRuntime {
     runningApplications: null,
     systemLoad: null,
   }
-  private schedulerObservedAt: number | null = null
   private timer: ReturnType<typeof setTimeout> | null = null
   private running = false
   private disposed = false
@@ -86,15 +83,10 @@ export class WorldContextRuntime {
     this.renderer = { ...input }
   }
 
-  markSchedulerObserved(at = this.now()): void {
-    this.schedulerObservedAt = at
-  }
-
   snapshot(settings: AutonomySettings, now = this.now()): WorldContextSnapshot {
     const globalUserIdleMs = this.system?.globalUserIdleMs ?? this.renderer?.userIdleMs ?? 0
     const browser = this.providers.browser?.() ?? null
     const project = this.providers.project?.() ?? null
-    const activeGoal = this.providers.activeGoal?.() ?? null
     const privacy = settings.privacyMode
     const systemSources = Object.freeze({
       globalIdleMs: age(this.systemObservedAt.globalIdle, now),
@@ -132,22 +124,11 @@ export class WorldContextRuntime {
           }
         : {}),
       ...(!privacy && project ? { activeProject: project } : {}),
-      ...(activeGoal
-        ? {
-            activeGoal: {
-              id: activeGoal.id,
-              title: activeGoal.title.slice(0, 160),
-              state: activeGoal.status,
-            },
-          }
-        : {}),
       ...(!privacy && this.system?.media ? { media: this.system.media } : {}),
       ...(this.system?.system ? { system: this.system.system } : {}),
       systemAdapter: this.system?.status ?? 'unavailable',
       freshness: Object.freeze({
         rendererMs: this.renderer ? Math.max(0, now - this.renderer.observedAt) : null,
-        schedulerMs:
-          this.schedulerObservedAt === null ? null : Math.max(0, now - this.schedulerObservedAt),
         systemMs: maximumAge(systemSources),
         systemSources,
       }),

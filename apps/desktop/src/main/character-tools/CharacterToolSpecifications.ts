@@ -18,9 +18,6 @@ import { PortableToolSchemaProjector } from './PortableToolSchemaProjector'
 export interface CharacterToolAvailabilityContext {
   projectAvailable: boolean
   webAvailable: boolean
-  goalsAvailable: boolean
-  goalCreatesAvailable: boolean
-  goalUpdatesAvailable: boolean
   conversationThreadsAvailable: boolean
   memoryAvailable: boolean
   actionsAvailable: boolean
@@ -73,55 +70,6 @@ export const shellExecuteInputSchema = z
   })
   .strict()
 
-export const goalListInputSchema = z
-  .object({
-    status: z
-      .enum(['active', 'waiting_user', 'waiting_external', 'paused', 'completed', 'cancelled'])
-      .optional(),
-    limit: z.number().int().min(1).max(20).optional(),
-  })
-  .strict()
-
-export const goalCreateInputSchema = z
-  .object({
-    title: z.string().trim().min(1).max(160),
-    description: z.string().trim().max(2_000).optional(),
-    nextStep: z.string().trim().max(1_000).optional(),
-    owner: z.enum(['user', 'shio', 'shared']).optional(),
-    measurable: z.boolean().optional(),
-  })
-  .strict()
-
-export const goalUpdateInputSchema = z
-  .object({
-    id: z.string().trim().min(1).max(100),
-    title: z.string().trim().min(1).max(160).optional(),
-    description: z.string().trim().max(2_000).optional(),
-    nextStep: z.string().trim().max(1_000).optional(),
-    lastNote: z.string().trim().max(1_000).optional(),
-    owner: z.enum(['user', 'shio', 'shared']).optional(),
-    status: z
-      .enum(['active', 'waiting_user', 'waiting_external', 'paused', 'completed', 'cancelled'])
-      .optional(),
-    measurable: z.boolean().optional(),
-    progressPercent: z.number().int().min(0).max(100).optional(),
-    progressBasis: z
-      .enum(['verified-result', 'user-report', 'explicit-user-correction'])
-      .optional(),
-  })
-  .strict()
-  .superRefine((input, context) => {
-    if ((input.progressPercent === undefined) !== (input.progressBasis === undefined)) {
-      context.addIssue({
-        code: 'custom',
-        message: 'progressPercent and progressBasis must be supplied together',
-      })
-    }
-  })
-  .refine((input) => Object.keys(input).some((key) => key !== 'id'), {
-    message: 'At least one goal field must be revised',
-  })
-
 export const threadOpenInputSchema = z
   .object({
     topic: z.string().trim().min(1).max(160),
@@ -165,12 +113,6 @@ const browserInputSchemas = Object.freeze({
 const projectAvailable = (context: CharacterToolAvailabilityContext): boolean =>
   context.projectAvailable
 const webAvailable = (context: CharacterToolAvailabilityContext): boolean => context.webAvailable
-const goalsAvailable = (context: CharacterToolAvailabilityContext): boolean =>
-  context.goalsAvailable
-const goalCreatesAvailable = (context: CharacterToolAvailabilityContext): boolean =>
-  context.goalsAvailable && context.goalCreatesAvailable
-const goalUpdatesAvailable = (context: CharacterToolAvailabilityContext): boolean =>
-  context.goalsAvailable && context.goalUpdatesAvailable
 const threadsAvailable = (context: CharacterToolAvailabilityContext): boolean =>
   context.conversationThreadsAvailable
 const memoryAvailable = (context: CharacterToolAvailabilityContext): boolean =>
@@ -202,34 +144,10 @@ export const CHARACTER_TOOL_SPECS = Object.freeze([
     availability: webAvailable,
   }),
   defineCharacterTool({
-    id: 'goal.create',
-    nativeName: 'goal_create',
-    description:
-      'Create one durable intention only when the user explicitly asks for it or explicitly confirms a conversational proposal. Never persist a vague wish or an unconfirmed Shio suggestion. Goals are not Semantic Memory.',
-    inputSchema: goalCreateInputSchema,
-    availability: goalCreatesAvailable,
-  }),
-  defineCharacterTool({
-    id: 'goal.list',
-    nativeName: 'goal_list',
-    description:
-      "List Shio's persistent goals from the Goal Store. Use this whenever the user asks about Shio's current goals, objectives, or goal progress, even if they casually call those goals memory. Persistent goals are not Semantic Memory records.",
-    inputSchema: goalListInputSchema,
-    availability: goalsAvailable,
-  }),
-  defineCharacterTool({
-    id: 'goal.update',
-    nativeName: 'goal_update',
-    description:
-      'Revise one exact durable intention from the current Goal Awareness Context, goal.list, or a same-turn goal.create result. Use this for explicit conversational changes to its meaning, owner, next step, note, or state. Numeric progress requires progressBasis: verified-result after a verified same-turn Action, user-report for monotonic user-reported progress, or explicit-user-correction when the user explicitly corrects an earlier number and it may move backward. Numeric progress is only for genuinely measurable intentions. Never copy goals into Semantic Memory.',
-    inputSchema: goalUpdateInputSchema,
-    availability: goalUpdatesAvailable,
-  }),
-  defineCharacterTool({
     id: 'thread.open',
     nativeName: 'thread_open',
     description:
-      'Open one short-lived conversation thread only for a typed unfinished conversational fact: a substantive interruption, an explicit request to return later, waiting for user information, or a temporary branch away from an unfinished topic. It is not a Goal or Long-Term Memory record.',
+      'Open one short-lived conversation thread only for a typed unfinished conversational fact: a substantive interruption, an explicit request to return later, waiting for user information, or a temporary branch away from an unfinished topic. It is not a Long-Term Memory record.',
     inputSchema: threadOpenInputSchema,
     availability: threadsAvailable,
   }),
@@ -237,7 +155,7 @@ export const CHARACTER_TOOL_SPECS = Object.freeze([
     id: 'thread.resolve',
     nativeName: 'thread_resolve',
     description:
-      'Resolve the exact short-lived conversation thread supplied in current Thread Awareness or opened in this turn. Never convert it to a Goal or Memory record automatically.',
+      'Resolve the exact short-lived conversation thread supplied in current Thread Awareness or opened in this turn. Never convert it to a Memory record automatically.',
     inputSchema: threadResolveInputSchema,
     availability: threadsAvailable,
   }),
@@ -415,8 +333,5 @@ export function toLlmToolJsonSchema(
 
 export type ProjectSearchInput = z.infer<typeof projectSearchInputSchema>
 export type ShellExecuteInput = z.infer<typeof shellExecuteInputSchema>
-export type GoalListInput = z.infer<typeof goalListInputSchema>
-export type GoalCreateInput = z.infer<typeof goalCreateInputSchema>
-export type GoalUpdateInput = z.infer<typeof goalUpdateInputSchema>
 export type ThreadOpenInput = z.infer<typeof threadOpenInputSchema>
 export type ThreadResolveInput = z.infer<typeof threadResolveInputSchema>

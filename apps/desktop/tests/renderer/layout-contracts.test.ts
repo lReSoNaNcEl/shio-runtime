@@ -67,10 +67,4 @@ describe('responsive presentation contracts', () => {
       expect(properties).toEqual(expect.arrayContaining(['--panel', '--text']))
     }
   })
-
-  it('does not invent unsupported Spectrum tokens in Tasks styles', () => {
-    stylesheet('tasks').walkDecls((declaration) => {
-      expect(declaration.value).not.toMatch(/--s2-(?:space|corner-radius)-/)
-    })
-  })
 })

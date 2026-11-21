@@ -10,16 +10,9 @@ import { AliveRuntime } from '../../../src/main/alive/AliveRuntime'
 import { AliveStore } from '../../../src/main/alive/AliveStore'
 import { AutonomyEnvelope } from '../../../src/main/alive/AutonomyEnvelope'
 import {
-  goalAwarenessPrompt,
-  unfinishedGoalSnapshot,
-} from '../../../src/main/character/prompting/GoalAwarenessPrompt'
-import { CharacterToolDispatcher } from '../../../src/main/character-tools/CharacterToolDispatcher'
-import {
   CharacterToolLoop,
   type CharacterToolLoopStreamEvent,
 } from '../../../src/main/character-tools/CharacterToolLoop'
-import { CharacterToolRegistry } from '../../../src/main/character-tools/CharacterToolRegistry'
-import { createSemanticMemoryRuntime, MemoryToolBroker } from '../../../src/main/memory'
 import {
   type CharacterStreamEvent,
   SafeCharacterStreamFilter,
@@ -256,16 +249,13 @@ async function testPersistenceAndEnvelope(): Promise<void> {
   const databasePath = join(directory, 'alive.sqlite')
   try {
     const store = new AliveStore(databasePath)
-    const goal = store.createGoal({ title: 'Ship' })
-    const task = store.createTask({ title: 'Check', kind: 'check_in', dueAt: 100 })
-    assert.equal(store.claimTaskRun(task, `${task.id}:100`, 200), true)
-    assert.equal(store.claimTaskRun(task, `${task.id}:100`, 200), false)
+    store.saveSettings({ ...store.settings(), privacyMode: true })
     assert.deepEqual(store.legacyHabitRecords(), [])
     store.close()
 
     const reopened = new AliveStore(databasePath)
-    assert.equal(reopened.goals()[0]?.id, goal.id)
-    assert.equal(reopened.version(), 5)
+    assert.equal(reopened.version(), 6)
+    assert.equal(reopened.settings().privacyMode, true)
     reopened.close()
 
     const envelope = new AutonomyEnvelope()
@@ -288,10 +278,9 @@ async function testPersistenceAndEnvelope(): Promise<void> {
       privacyMode: false,
       lastUserActivityAt: 1,
       systemAdapter: 'available' as const,
-      freshness: { rendererMs: 0, schedulerMs: 0, systemMs: 0 },
+      freshness: { rendererMs: 0, systemMs: 0 },
     }
     const baseInput = {
-      task,
       settings,
       world,
       now: 1_000,
@@ -352,229 +341,16 @@ async function testPersistenceAndEnvelope(): Promise<void> {
   }
 }
 
-async function testPersistentGoalTool(): Promise<void> {
-  const directory = mkdtempSync(join(tmpdir(), 'shio-goal-tool-'))
-  try {
-    const store = new AliveStore(join(directory, 'alive.sqlite'))
-    const active = store.createGoal({ title: 'Найти фотки с котиками в браузере' })
-    store.createGoal({ title: 'Paused goal' })
-    const paused = store.goals().find((goal) => goal.title === 'Paused goal')
-    assert.ok(paused)
-    store.updateGoal({ id: paused.id, status: 'paused' })
-    const runtime = new AliveRuntime(store, () => {
-      throw new Error('Fast Brain is not used by this repro')
-    })
-    const awareness = goalAwarenessPrompt(runtime.snapshot().goals)
-    assert.match(awareness, /Найти фотки с котиками в браузере/u)
-    assert.doesNotMatch(awareness, /Paused goal/u)
-    assert.match(awareness, /Other unfinished intentions: 1/u)
-    assert.match(awareness, /Goal Awareness Context/u)
-    assert.doesNotMatch(awareness, /progressPercent/u)
-    const memoryRuntime = createSemanticMemoryRuntime(join(directory, 'memory.sqlite'))
-    memoryRuntime.setEnabled(true)
-    const memoryBroker = new MemoryToolBroker(memoryRuntime)
-
-    const registry = new CharacterToolRegistry({
-      projectAvailable: false,
-      goalsAvailable: true,
-      goalCreatesAvailable: true,
-      goalUpdatesAvailable: true,
-      capabilityContext: null,
-      browserObservation: null,
-      memory: memoryBroker,
-      actionsAvailable: false,
-    })
-    assert.ok(registry.get('goal.create'))
-    assert.ok(registry.get('goal.list'))
-    assert.ok(registry.get('goal.update'))
-
-    const dispatcher = new CharacterToolDispatcher({
-      registry: () => registry,
-      traceId: 'goal-tool-repro',
-      userGoal: 'Какие у тебя сейчас цели?',
-      signal: new AbortController().signal,
-      semanticMemory: memoryBroker,
-      persistentGoals: () => runtime.snapshot().goals,
-      goalAwareness: unfinishedGoalSnapshot(runtime.snapshot().goals),
-      createPersistentGoal: (input) => runtime.createGoalFromCharacter(input),
-      revisePersistentGoal: (input) => runtime.reviseGoalFromCharacter(input),
-    })
-    const rejected = await dispatcher.execute('goal.update', {
-      id: 'unknown-goal',
-      status: 'paused',
-    })
-    assert.match(rejected.content, /GOAL_NOT_IN_TURN_CONTEXT/u)
-    const userReported = await dispatcher.execute('goal.update', {
-      id: active.id,
-      status: 'waiting_user',
-      lastNote: 'Пользователь выберет подходящий запрос',
-      progressPercent: 25,
-      progressBasis: 'user-report',
-    })
-    assert.equal(userReported.verifiedOutcome?.kind, 'goal.update')
-    const revised = runtime.snapshot().goals.find((goal) => goal.id === active.id)
-    assert.equal(revised?.progress, 0.25)
-    assert.equal(revised?.measurable, true)
-    assert.equal(revised?.status, 'waiting_user')
-    const missingBasis = await dispatcher.execute('goal.update', {
-      id: active.id,
-      progressPercent: 30,
-    })
-    assert.match(missingBasis.content, /INVALID_REQUEST/u)
-    const unverifiedBasis = await dispatcher.execute('goal.update', {
-      id: active.id,
-      progressPercent: 30,
-      progressBasis: 'verified-result',
-    })
-    assert.match(unverifiedBasis.content, /GOAL_UPDATE_REQUIRES_VERIFIED_ACTION/u)
-    assert.equal(runtime.snapshot().goals.find((goal) => goal.id === active.id)?.progress, 0.25)
-    const correctedResult = await dispatcher.execute('goal.update', {
-      id: active.id,
-      progressPercent: 10,
-      progressBasis: 'explicit-user-correction',
-    })
-    assert.equal(correctedResult.verifiedOutcome?.kind, 'goal.update')
-    assert.equal(runtime.snapshot().goals.find((goal) => goal.id === active.id)?.progress, 0.1)
-    const result = await dispatcher.execute('goal.list', { status: 'waiting_user' })
-    const payload = JSON.parse(result.content) as {
-      ok: boolean
-      data: { source: string; count: number; goals: Array<{ id: string; title: string }> }
-    }
-    assert.equal(payload.ok, true)
-    assert.equal(payload.data.source, 'persistent-goal-store')
-    assert.equal(payload.data.count, 1)
-    assert.equal(payload.data.goals[0]?.id, active.id)
-    assert.equal(payload.data.goals[0]?.title, 'Найти фотки с котиками в браузере')
-    assert.doesNotMatch(result.content, /Paused goal/u)
-    const rejectedMemory = await dispatcher.execute('memory.store', {
-      memories: [{ kind: 'fact', text: 'Goal is complete' }],
-    })
-    assert.match(rejectedMemory.content, /EVIDENCE_CANNOT_AUTHORIZE_MEMORY_MUTATION/u)
-    assert.equal(memoryRuntime.status().recordCount, 0)
-    const createdResult = await dispatcher.execute('goal.create', {
-      title: 'Вместе подготовить релиз',
-      description: 'Хотим выпустить спокойную и понятную версию',
-      nextStep: 'Обсудить критерии готовности',
-      owner: 'shared',
-    })
-    assert.equal(createdResult.verifiedOutcome?.kind, 'goal.create')
-    assert.ok(runtime.snapshot().goals.some((goal) => goal.title === 'Вместе подготовить релиз'))
-    dispatcher.dispose()
-
-    const actionRegistry = new CharacterToolRegistry({
-      projectAvailable: false,
-      goalsAvailable: true,
-      goalUpdatesAvailable: true,
-      capabilityContext: {
-        schemaVersion: 1,
-        generatedAt: 0,
-        capabilities: [
-          {
-            id: 'browser-control',
-            category: 'action',
-            source: { kind: 'plugin', pluginId: 'desktop-control' },
-            titleKey: 'capabilities.browser.title',
-            descriptionKey: 'capabilities.browser.description',
-            availability: 'available',
-          },
-        ],
-      },
-      browserObservation: null,
-      actionsAvailable: true,
-    })
-    const actionDispatcher = new CharacterToolDispatcher({
-      registry: () => actionRegistry,
-      traceId: 'goal-action-tool-repro',
-      userGoal: 'Начни выполнять цель сейчас',
-      signal: new AbortController().signal,
-      persistentGoals: () => runtime.snapshot().goals,
-      goalAwareness: unfinishedGoalSnapshot(runtime.snapshot().goals),
-      revisePersistentGoal: (input) => runtime.reviseGoalFromCharacter(input),
-      executeDesktopWorkflow: async () => ({
-        actionId: 'action-1-00000000-0000-4000-8000-000000000000',
-        tool: 'desktop.workflow',
-        outcome: 'success',
-        authorization: 'full',
-        execution: { runtimeCompleted: true, verification: 'verified' },
-      }),
-    })
-    actionDispatcher.registerPlannedTools(['browser.open', 'goal.update'])
-    const action = await actionDispatcher.execute('browser.open', {
-      url: 'https://www.bing.com/images/search?q=cats',
-      goal: 'Найти фотки с котиками в браузере',
-    })
-    assert.match(action.content, /"ok":true/u)
-    const updated = await actionDispatcher.execute('goal.update', {
-      id: active.id,
-      status: 'completed',
-      lastNote: 'Проверенный поиск завершён',
-      progressPercent: 100,
-      progressBasis: 'verified-result',
-    })
-    assert.equal(updated.verifiedOutcome?.kind, 'goal.update')
-    assert.match(updated.content, /"status":"completed"/u)
-    assert.equal(runtime.snapshot().goals.find((goal) => goal.id === active.id)?.progress, 1)
-    assert.equal(
-      runtime.snapshot().goals.find((goal) => goal.id === active.id)?.status,
-      'completed',
-    )
-    actionDispatcher.dispose()
-
-    const unverifiedGoal = runtime
-      .createGoal({ title: 'Goal with unverified work' })
-      .goals.find((goal) => goal.title === 'Goal with unverified work')
-    assert.ok(unverifiedGoal)
-    const unverifiedDispatcher = new CharacterToolDispatcher({
-      registry: () => actionRegistry,
-      traceId: 'goal-unverified-action-repro',
-      userGoal: 'Выполни цель',
-      signal: new AbortController().signal,
-      persistentGoals: () => runtime.snapshot().goals,
-      goalAwareness: unfinishedGoalSnapshot(runtime.snapshot().goals),
-      revisePersistentGoal: (input) => runtime.reviseGoalFromCharacter(input),
-      executeDesktopWorkflow: async () => ({
-        actionId: 'action-2-00000000-0000-4000-8000-000000000000',
-        tool: 'desktop.workflow',
-        outcome: 'success',
-        authorization: 'full',
-        execution: { runtimeCompleted: true, verification: 'unverified' },
-      }),
-    })
-    unverifiedDispatcher.registerPlannedTools(['browser.open', 'goal.update'])
-    await unverifiedDispatcher.execute('browser.open', {
-      url: 'https://example.com',
-      goal: unverifiedGoal.title,
-    })
-    const unverifiedUpdate = await unverifiedDispatcher.execute('goal.update', {
-      id: unverifiedGoal.id,
-      status: 'completed',
-    })
-    assert.match(unverifiedUpdate.content, /GOAL_UPDATE_REQUIRES_VERIFIED_ACTION/u)
-    assert.equal(
-      runtime.snapshot().goals.find((goal) => goal.id === unverifiedGoal.id)?.status,
-      'active',
-    )
-    unverifiedDispatcher.dispose()
-    memoryRuntime.close()
-    runtime.dispose()
-    assert.throws(() => store.settings(), /database is not open|closed/iu)
-  } finally {
-    try {
-      rmSync(directory, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
-    } catch (error) {
-      console.warn('Alive repro temporary cleanup failed', {
-        code: error && typeof error === 'object' && 'code' in error ? error.code : 'UNKNOWN',
-      })
-    }
-  }
-}
-
 function testGoalSchemaMigration(): void {
   const directory = mkdtempSync(join(tmpdir(), 'shio-goal-migration-'))
   const databasePath = join(directory, 'alive.sqlite')
   try {
     const legacy = new DatabaseSync(databasePath)
     legacy.exec(`
+      CREATE TABLE alive_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+      CREATE TABLE alive_audit (id INTEGER PRIMARY KEY, at INTEGER, category TEXT, event TEXT, entity_id TEXT, outcome TEXT, detail TEXT);
+      CREATE TABLE alive_tasks (id TEXT PRIMARY KEY, title TEXT, next_run_at INTEGER, status TEXT);
+      INSERT INTO alive_tasks VALUES ('due','Legacy reminder',0,'scheduled');
       CREATE TABLE alive_goals (
         id TEXT PRIMARY KEY, title TEXT NOT NULL, description TEXT NOT NULL,
         status TEXT NOT NULL, progress REAL NOT NULL, created_at INTEGER NOT NULL,
@@ -585,13 +361,28 @@ function testGoalSchemaMigration(): void {
     `)
     legacy.close()
     const migrated = new AliveStore(databasePath)
-    const goal = migrated.goals()[0]
-    assert.equal(migrated.version(), 5)
-    assert.equal(goal?.owner, 'shared')
-    assert.equal(goal?.nextStep, '')
-    assert.equal(goal?.lastNote, '')
-    assert.equal(goal?.measurable, false)
-    migrated.close()
+    const runtime = new AliveRuntime(migrated, () => {
+      throw new Error('Unexpected arbitration')
+    })
+    const events: unknown[] = []
+    runtime.onBehavior((event) => events.push(event))
+    runtime.start()
+    try {
+      const snapshot = runtime.snapshot()
+      assert.equal(snapshot.health.operational, true)
+      assert.doesNotMatch(JSON.stringify(snapshot), /Legacy reminder|Старая цель/u)
+      assert.deepEqual(events, [])
+    } finally {
+      runtime.dispose()
+    }
+    const archived = new DatabaseSync(databasePath)
+    try {
+      assert.equal(archived.prepare('SELECT status FROM alive_tasks').get()?.status, 'scheduled')
+      assert.equal(archived.prepare('SELECT title FROM alive_goals').get()?.title, 'Старая цель')
+      assert.equal(archived.prepare('PRAGMA user_version').get()?.user_version, 6)
+    } finally {
+      archived.close()
+    }
   } finally {
     rmSync(directory, { recursive: true, force: true })
   }
@@ -626,7 +417,6 @@ describe('Alive and Autonomy integration', () => {
   it('contains tool-first rounds before user-visible output', testToolRoundContainment)
   it('bounds and orders the streaming speech queue', testStreamingSpeechQueue)
   it('persists autonomy settings and enforces the envelope', testPersistenceAndEnvelope)
-  it('migrates legacy goal schemas', testGoalSchemaMigration)
-  it('validates and executes domain-limited persistent goal tools', testPersistentGoalTool)
+  it('leaves retired records inert when opening a legacy profile', testGoalSchemaMigration)
   it('aggregates bounded latency percentiles', testLatencyAggregation)
 })

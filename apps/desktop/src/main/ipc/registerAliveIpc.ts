@@ -49,13 +49,6 @@ const experienceSchema = z.discriminatedUnion('type', [
     eventId,
   }),
   z.object({
-    type: z.literal('task-completed'),
-    at: eventAt,
-    taskId: z.string().uuid(),
-    eventId,
-    verified: z.boolean().optional(),
-  }),
-  z.object({
     type: z.literal('silence-threshold'),
     at: eventAt,
     silenceMs: z.number().nonnegative(),
@@ -88,30 +81,6 @@ const experienceSchema = z.discriminatedUnion('type', [
     reason: z.string().trim().max(300).optional(),
   }),
   z.object({ type: z.literal('browser-recovered'), at: eventAt, eventId }),
-  z.object({
-    type: z.literal('goal-progressed'),
-    at: eventAt,
-    goalId: z.string().uuid(),
-    eventId,
-  }),
-  z.object({
-    type: z.literal('goal-completed'),
-    at: eventAt,
-    goalId: z.string().uuid(),
-    eventId,
-  }),
-  z.object({
-    type: z.literal('goal-failed'),
-    at: eventAt,
-    goalId: z.string().uuid(),
-    eventId,
-  }),
-  z.object({
-    type: z.literal('scheduled-event-due'),
-    at: eventAt,
-    taskId: z.string().uuid(),
-    eventId,
-  }),
   z.object({
     type: z.literal('runtime-recovered'),
     at: eventAt,
@@ -160,84 +129,6 @@ export function registerAliveIpc(
       runtime.reportExperience(experienceSchema.parse(input))
       return { ok: true }
     }),
-  )
-  ipcMain.handle(
-    'alive:create-goal',
-    authorization.handlePayload('alive:create-goal', IPC_ONE_PAYLOAD, (_event, input) =>
-      runtime.createGoal(
-        z
-          .object({
-            title: z.string().trim().min(1).max(160),
-            description: z.string().trim().max(2_000).optional(),
-            nextStep: z.string().trim().max(1_000).optional(),
-            owner: z.enum(['user', 'shio', 'shared']).optional(),
-            measurable: z.boolean().optional(),
-          })
-          .parse(input),
-      ),
-    ),
-  )
-  ipcMain.handle(
-    'alive:update-goal',
-    authorization.handlePayload('alive:update-goal', IPC_ONE_PAYLOAD, (_event, input) =>
-      runtime.updateGoal(
-        z
-          .object({
-            id: z.string().uuid(),
-            title: z.string().trim().min(1).max(160).optional(),
-            description: z.string().trim().max(2_000).optional(),
-            nextStep: z.string().trim().max(1_000).optional(),
-            lastNote: z.string().trim().max(1_000).optional(),
-            owner: z.enum(['user', 'shio', 'shared']).optional(),
-            status: z
-              .enum([
-                'active',
-                'waiting_user',
-                'waiting_external',
-                'paused',
-                'completed',
-                'cancelled',
-              ])
-              .optional(),
-            measurable: z.boolean().optional(),
-          })
-          .parse(input),
-      ),
-    ),
-  )
-  ipcMain.handle(
-    'alive:create-task',
-    authorization.handlePayload('alive:create-task', IPC_ONE_PAYLOAD, (_event, input) =>
-      runtime.createTask(
-        z
-          .object({
-            title: z.string().trim().min(1).max(160),
-            kind: z.enum(['reminder', 'check_in']),
-            dueAt: z.number().int().positive(),
-            intervalMs: z.number().int().min(60_000).max(31_536_000_000).optional(),
-            goalId: z.string().uuid().optional(),
-          })
-          .parse(input),
-      ),
-    ),
-  )
-  ipcMain.handle(
-    'alive:set-task-status',
-    authorization.handlePayload('alive:set-task-status', IPC_ONE_PAYLOAD, (_event, input) => {
-      const parsed = z
-        .object({
-          id: z.string().uuid(),
-          status: z.enum(['scheduled', 'waiting_confirmation', 'completed', 'paused']),
-        })
-        .parse(input)
-      return runtime.setTaskStatus(parsed.id, parsed.status)
-    }),
-  )
-  ipcMain.handle(
-    'alive:approve-task',
-    authorization.handlePayload('alive:approve-task', IPC_ONE_PAYLOAD, (_event, input) =>
-      runtime.approveTaskRun(z.string().uuid().parse(input)),
-    ),
   )
   ipcMain.handle(
     'alive:decide-habit',

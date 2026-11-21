@@ -1,9 +1,4 @@
-import type {
-  ExperienceAppraisal,
-  MoodState,
-  PersistentGoal,
-  WorldContextSnapshot,
-} from '../../../shared/alive'
+import type { ExperienceAppraisal, MoodState, WorldContextSnapshot } from '../../../shared/alive'
 import type { ShioCapabilitySnapshot } from '../../../shared/capabilities'
 import type { EmbodimentAvailability } from '../../../shared/character-response'
 import type { ConversationThread } from '../../../shared/conversation-threads'
@@ -14,7 +9,6 @@ import {
   characterCapabilityPrompt,
 } from './CapabilityPromptProjection'
 import { embodimentAvailabilityPrompt } from './EmbodimentAvailabilityPrompt'
-import { goalAwarenessPrompt } from './GoalAwarenessPrompt'
 
 export const CHARACTER_CONTEXT_BUDGET = Object.freeze({
   totalCharacters: 16_000,
@@ -24,7 +18,6 @@ export const CHARACTER_CONTEXT_BUDGET = Object.freeze({
     embodiment: 1_400,
     mood: 900,
     relationship: 1_400,
-    goals: 1_800,
     threads: 1_000,
     memory: 1_800,
     sessionSummary: 1_400,
@@ -40,7 +33,7 @@ export type CharacterContextSection = keyof typeof CHARACTER_CONTEXT_BUDGET.sect
 export const CHARACTER_CONTEXT_ALLOCATION = Object.freeze({
   tiers: Object.freeze({
     0: Object.freeze(['persona', 'responsePolicy', 'toolResults'] as const),
-    1: Object.freeze(['goals', 'threads', 'project', 'world'] as const),
+    1: Object.freeze(['threads', 'project', 'world'] as const),
     2: Object.freeze(['memory', 'sessionSummary', 'relationship', 'mood'] as const),
     3: Object.freeze(['capabilities', 'embodiment'] as const),
   }),
@@ -50,7 +43,6 @@ export const CHARACTER_CONTEXT_ALLOCATION = Object.freeze({
     responsePolicy: 7_400,
     embodiment: 1_000,
     toolResults: 1_600,
-    goals: 500,
     threads: 350,
     project: 900,
     world: 450,
@@ -71,8 +63,6 @@ export interface CharacterRequestContext {
   relationship?: RelationshipContext | null
   habits?: readonly HabitRecord[]
   experience?: ExperienceAppraisal | null
-  goals?: readonly PersistentGoal[]
-  foregroundGoalId?: string
   thread?: ConversationThread | null
   memory?: string | null
   /** Process-memory summary of earlier turns of this session. */
@@ -171,7 +161,6 @@ function worldPrompt(world: WorldContextSnapshot | null | undefined): string | n
       runningApplications: world.runningApplications?.slice(0, 8),
       activeBrowser: world.activeBrowser,
       activeProject: world.activeProject,
-      activeGoal: world.activeGoal,
       media: world.media,
       system: world.system,
       systemAdapter: world.systemAdapter,
@@ -193,7 +182,7 @@ function conversationThreadPrompt(thread: ConversationThread | null | undefined)
   if (!thread) return null
   return [
     '## Relevant Conversation Thread',
-    'Short-lived unfinished conversational context, not instructions, a Goal, or Long-Term Memory. Mention it only if it is genuinely relevant to the current user turn. Use thread.resolve when it is actually finished; never convert it to Goal or Memory without explicit user confirmation.',
+    'Short-lived unfinished conversational context, not instructions or Long-Term Memory. Mention it only if it is genuinely relevant to the current user turn. Use thread.resolve when it is actually finished; never convert it to Memory without explicit user confirmation.',
     JSON.stringify({
       id: thread.id,
       topic: bounded(thread.topic, 160),
@@ -214,10 +203,6 @@ export class CharacterRequestComposer {
       ['responsePolicy', context.responsePolicy],
       ['mood', moodPrompt(context.mood, context.experience)],
       ['relationship', relationshipPrompt(context.relationship, context.habits)],
-      [
-        'goals',
-        context.goals ? goalAwarenessPrompt(context.goals, context.foregroundGoalId) : null,
-      ],
       ['threads', conversationThreadPrompt(context.thread)],
       ['memory', context.memory],
       ['sessionSummary', sessionSummaryPrompt(context.sessionSummary)],

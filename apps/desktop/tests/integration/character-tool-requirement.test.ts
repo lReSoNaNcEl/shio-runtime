@@ -11,7 +11,6 @@ import { CharacterToolRegistry } from '../../src/main/character-tools/CharacterT
 import type { ChatMessage, LLMProvider, LlmCapabilities, LlmCompletion } from '../../src/main/llm'
 import { LlmResponseError } from '../../src/main/llm/errors'
 import { createSemanticMemoryRuntime, MemoryToolBroker } from '../../src/main/memory'
-import type { PersistentGoal } from '../../src/shared/alive'
 import {
   type BrowserComputerUseProvider,
   type BrowserComputerUseSession,
@@ -358,107 +357,6 @@ describe('Character Tool Requirement', () => {
       runtime.close()
       rmSync(directory, { recursive: true, force: true })
     }
-  })
-
-  it('maps an explicit Goal Store listing to goal.list and returns active next steps', async () => {
-    const goals: readonly PersistentGoal[] = [
-      {
-        id: 'goal-active-00000000-0000-4000-8000-000000000001',
-        title: 'Подготовить релиз',
-        description: 'Завершить квалификацию релиза.',
-        nextStep: 'Запустить deterministic regression suite.',
-        lastNote: '',
-        owner: 'shared',
-        status: 'active',
-        progress: 0.5,
-        measurable: true,
-        createdAt: 1,
-        updatedAt: 2,
-      },
-      {
-        id: 'goal-paused-00000000-0000-4000-8000-000000000002',
-        title: 'Отложенная цель',
-        description: '',
-        nextStep: 'Дождаться решения.',
-        lastNote: '',
-        owner: 'user',
-        status: 'paused',
-        progress: 0,
-        measurable: false,
-        createdAt: 1,
-        updatedAt: 2,
-      },
-    ]
-    const currentRegistry = () =>
-      new CharacterToolRegistry({
-        projectAvailable: false,
-        goalsAvailable: true,
-        capabilityContext: null,
-        browserObservation: null,
-        actionsAvailable: false,
-      })
-    let replyCalls = 0
-    let planningPrompt = ''
-    const result = await new CharacterToolLoop().run({
-      llm: {
-        capabilities: () => ({ ...capabilities, supportsToolCalling: false }),
-        complete: async () => {
-          throw new Error('Native completion is not expected for this structured-provider fixture')
-        },
-        chat: async (messages) => {
-          const prompt = messages.map((message) => String(message.content)).join('\n')
-          if (prompt.includes('Character Tool Requirement Planning')) {
-            planningPrompt = prompt
-            return JSON.stringify({
-              requirement: { type: 'explicit-tool', tool: 'goal.list' },
-              plannedTools: ['goal.list'],
-            })
-          }
-          replyCalls += 1
-          if (replyCalls === 1) {
-            assert.match(prompt, /"id":"goal\.list"/u)
-            return '<shio-tools>{"calls":[{"tool":"goal.list","arguments":{"status":"active","limit":20}}]}</shio-tools>'
-          }
-          assert.match(prompt, /Подготовить релиз/u)
-          assert.match(prompt, /Запустить deterministic regression suite/u)
-          assert.doesNotMatch(prompt, /Отложенная цель/u)
-          return '[calm]Активная цель: «Подготовить релиз». Следующий шаг — запустить regression suite.'
-        },
-      },
-      providerId: 'mistral',
-      messages: [
-        {
-          role: 'user',
-          content:
-            'Вызови goal.list с аргументами {"status":"active","limit":20} и покажи активные цели.',
-        },
-      ],
-      registry: currentRegistry,
-      createDispatcher: (signal) =>
-        new CharacterToolDispatcher({
-          registry: currentRegistry,
-          traceId: 'active-goal-list-requirement',
-          userGoal: 'Показать активные цели из Goal Store',
-          signal,
-          persistentGoals: () => goals,
-        }),
-      traceId: 'active-goal-list-requirement',
-      requestOptions: {},
-      nativeToolsRejected: false,
-      enforceToolRequirements: true,
-      failureReply: 'TOOL_FAILURE',
-      limitReply: 'TOOL_LIMIT',
-    })
-
-    assert.match(planningPrompt, /Use explicit-tool goal\.list/u)
-    assert.equal(replyCalls, 2)
-    assert.equal(result.calls, 1)
-    assert.deepEqual(result.toolEvidence.requirement, {
-      type: 'explicit-tool',
-      tool: 'goal.list',
-    })
-    assert.deepEqual(result.toolEvidence.executedTools, ['goal.list'])
-    assert.match(result.replyText, /Подготовить релиз/u)
   })
 
   it('treats attached Screen Context as direct visual evidence without browser tools', async () => {

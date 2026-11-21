@@ -1,8 +1,8 @@
 import type { CharacterToolId } from '../../shared/character-tools'
 
-export type ToolCapability = 'project' | 'browser' | 'shell' | 'memory' | 'goal' | 'thread' | 'web'
+export type ToolCapability = 'project' | 'browser' | 'shell' | 'memory' | 'thread' | 'web'
 export type ToolAuthorityOrigin = 'explicit-user-turn' | 'approved-workflow' | 'autonomous-scope'
-export type ToolEvidenceOrigin = 'project' | 'browser' | 'memory' | 'goal' | 'web-search'
+export type ToolEvidenceOrigin = 'project' | 'browser' | 'memory' | 'web-search'
 
 export interface ToolAuthorityProvenance {
   origin: ToolAuthorityOrigin
@@ -28,7 +28,6 @@ function capabilityFor(id: CharacterToolId): ToolCapability {
   if (id === 'web.search') return 'web'
   if (id.startsWith('browser.')) return 'browser'
   if (id.startsWith('memory.')) return 'memory'
-  if (id.startsWith('goal.')) return 'goal'
   if (id.startsWith('thread.')) return 'thread'
   if (id === 'project.search') return 'project'
   return 'shell'

@@ -29,7 +29,6 @@ import { AvatarPreviewView } from './views/AvatarPreviewView'
 import { CapabilitiesView } from './views/CapabilitiesView'
 import { DiagnosticsView } from './views/DiagnosticsView'
 import { MemoryView } from './views/MemoryView'
-import { TasksView } from './views/TasksView'
 
 export function App() {
   const { intlLocale, t } = useTranslation()
@@ -165,10 +164,6 @@ export function App() {
       title: t('app.section.memory.title'),
       subtitle: t('app.section.memory.subtitle'),
     },
-    tasks: {
-      title: t('app.section.tasks.title'),
-      subtitle: t('app.section.tasks.subtitle'),
-    },
     avatar: {
       title: t('app.section.avatar.title'),
       subtitle: t('app.section.avatar.subtitle'),
@@ -221,7 +216,7 @@ export function App() {
 
   const navigateToCapabilityTarget = (target: CapabilityNavigationTarget): void => {
     if (target.kind === 'settings') {
-      if (['general', 'speech', 'llm', 'avatar', 'advanced'].includes(target.id)) {
+      if (['general', 'speech', 'llm', 'avatar', 'autonomy', 'advanced'].includes(target.id)) {
         setSettingsInitialSection(target.id as SettingsSection)
       }
       setSection('settings')
@@ -233,7 +228,7 @@ export function App() {
       setSection('plugins')
       return
     }
-    const views: AppSection[] = ['chat', 'capabilities', 'memory', 'tasks', 'plugins']
+    const views: AppSection[] = ['chat', 'capabilities', 'memory', 'plugins']
     if (views.includes(target.id as AppSection)) setSection(target.id as AppSection)
   }
 
@@ -403,16 +398,6 @@ export function App() {
           />
         )}
         {section === 'memory' && <MemoryView aliveSnapshot={state.alive} />}
-        {section === 'tasks' && (
-          <TasksView
-            snapshot={state.alive}
-            onOpenChat={() => setSection('chat')}
-            onOpenAutonomySettings={() => {
-              setSettingsInitialSection('autonomy')
-              setSection('settings')
-            }}
-          />
-        )}
         {section === 'plugins' && (
           <PluginsView
             detailPluginId={pluginDetails}
