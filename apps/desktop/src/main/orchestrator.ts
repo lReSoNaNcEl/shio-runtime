@@ -56,7 +56,10 @@ import {
   emotionContractPrompt,
   SYSTEM_PROMPT,
 } from './character/prompting/CharacterPrompt'
-import { CharacterRequestComposer } from './character/prompting/CharacterRequestComposer'
+import {
+  CharacterRequestComposer,
+  type InterruptedConversationTurn,
+} from './character/prompting/CharacterRequestComposer'
 import { currentEmbodimentAvailability } from './character/prompting/EmbodimentAvailabilityPrompt'
 import { memoryCapabilityPrompt } from './character/prompting/MemoryPromptPolicy'
 import { responsePolicyPrompt } from './character/prompting/ResponsePolicyPrompt'
@@ -93,6 +96,7 @@ const SESSION_ID = 'default'
 export interface CharacterReplyInput {
   userText: string
   origin?: CharacterReplyOrigin
+  interruptedTurn?: InterruptedConversationTurn
   screenContext?: {
     mimeType: ScreenContextImageMimeType
     bytes: Uint8Array
@@ -417,6 +421,7 @@ export class Orchestrator {
         habits: livingContext.habits,
         experience: livingContext.experience,
         thread: threadAwareness[0],
+        interruptedTurn: autonomous ? undefined : input.interruptedTurn,
         memory: semanticMemoryPrompt,
         sessionSummary,
         capabilities: capabilityContext,

@@ -143,7 +143,7 @@ export interface ShioRuntimeApi {
       errorCode?: 'LLM_CREDENTIAL_MISSING' | 'LLM_MODEL_MISSING'
       failure?: ConversationTurnFailure
     }>
-    cancelReply: (turnId: string) => Promise<{ ok: boolean }>
+    cancelReply: (turnId: string, visibleReplyCharacters?: number) => Promise<{ ok: boolean }>
     onReplyStreamEvent: (callback: (event: CharacterReplyStreamEvent) => void) => () => void
     getActiveCapabilities: () => Promise<LlmCapabilities>
     arbitrateBacklog: (payload: {

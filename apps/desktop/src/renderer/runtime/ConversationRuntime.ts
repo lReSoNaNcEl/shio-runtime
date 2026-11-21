@@ -120,6 +120,7 @@ export class ConversationRuntime {
   private interruption: {
     turnId: string
     promise: Promise<never>
+    visibleReplyCharacters?: number
     reject: (error: Error) => void
   } | null = null
 
@@ -224,7 +225,15 @@ export class ConversationRuntime {
     // Backend cancellation must be dispatched before any presentation/state
     // work. A failed Character State transition must never strand the model
     // generator or its inference lock.
-    this.observeAdapterCancellation('LLM', () => window.api.llm.cancelReply(turnId), turnId)
+    this.observeAdapterCancellation(
+      'LLM',
+      () =>
+        window.api.llm.cancelReply(
+          turnId,
+          source === 'manual-stop' ? interruption.visibleReplyCharacters : undefined,
+        ),
+      turnId,
+    )
     this.observeAdapterCancellation('Speech', () => window.api.tts.cancelSynthesis(turnId), turnId)
     let listening = false
     try {
@@ -430,6 +439,10 @@ export class ConversationRuntime {
             } else if (streamedMessageId) {
               this.deps.updateMessage(streamedMessageId, streamedDisplayText, undefined, true)
             }
+            if (streamedMessageId && this.interruption?.turnId === turn.turnId) {
+              // The chat flushes coalesced updates when it marks the reply stopped.
+              this.interruption.visibleReplyCharacters = streamedDisplayText.length
+            }
             commitSpeech(commitBuffer.push(event.delta))
           },
           turn.source === 'autonomous_initiative' ? 'autonomous' : 'user',
@@ -465,6 +478,9 @@ export class ConversationRuntime {
             commitSpeech(commitBuffer.push(delta))
           }
         }
+      }
+      if (this.interruption?.turnId === turn.turnId) {
+        this.interruption.visibleReplyCharacters = undefined
       }
       streamedMessageFinalized = true
       commitSpeech(commitBuffer.flush())

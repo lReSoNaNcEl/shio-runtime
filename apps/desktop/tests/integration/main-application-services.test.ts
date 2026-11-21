@@ -5,7 +5,11 @@ import { describe, it } from 'vitest'
 import { MainConversationTurnService } from '../../src/main/app/MainConversationTurnService'
 import { SpeechApplicationService } from '../../src/main/app/SpeechApplicationService'
 import type { LlmGateway } from '../../src/main/llm'
-import type { CharacterReplyInput, Orchestrator } from '../../src/main/orchestrator'
+import type {
+  CharacterReplyInput,
+  CharacterReplyOptions,
+  Orchestrator,
+} from '../../src/main/orchestrator'
 import type { ScreenContextService } from '../../src/main/screen-context'
 import type { SpeechClientManager } from '../../src/main/speech/SpeechClientManager'
 import type { SpeechStreamConnection } from '../../src/main/speech/speechClient'
@@ -96,6 +100,66 @@ async function conversationTurnLifecycle(): Promise<void> {
   assert.equal((cancelledSignal as AbortSignal | null)?.aborted, true)
 }
 
+async function stoppedReplyContinuity(): Promise<void> {
+  const inputs: CharacterReplyInput[] = []
+  const visible = 'Ариадна открыла коробку.'
+  let aborted = false
+  const orchestrator = {
+    async createReply(input: CharacterReplyInput, options: CharacterReplyOptions) {
+      inputs.push(input)
+      if (input.userText.startsWith('Расскажи')) {
+        options.onStreamEvent?.({
+          type: 'text-delta',
+          at: Date.now(),
+          llmRound: 0,
+          delta: { text: `${visible} Этот текст ещё не виден.`, emotion: 'calm' },
+        })
+        return new Promise<never>((_resolve, reject) => {
+          options.signal?.addEventListener(
+            'abort',
+            () => {
+              aborted = true
+              reject({ code: 'CANCELLED', recoverable: true })
+            },
+            { once: true },
+          )
+        })
+      }
+      return {
+        replyText: '[calm]Она заглянула внутрь.',
+        emotionKey: 'calm',
+        assistantTurnKind: 'character',
+      }
+    },
+    async clearHistory() {},
+  } as unknown as Orchestrator
+  const service = new MainConversationTurnService(
+    () => orchestrator,
+    () => ({}) as LlmGateway,
+    {} as ScreenContextService,
+    configuredLlmSettings,
+  )
+  const userText = 'Расскажи об Ариадне.'
+  const stopped = service.createReply(1, { turnId: 'story', userText }, () => undefined)
+  await service.cancelReply('story', 2, visible.length)
+  assert.equal(aborted, false)
+  await service.cancelReply('story', 1, visible.length)
+  assert.equal((await stopped).failure?.code, 'CANCELLED')
+  await service.createReply(1, { turnId: 'initiative', userText: 'Событие', origin: 'autonomous' })
+  assert.equal(inputs.at(-1)?.interruptedTurn, undefined)
+  await service.createReply(1, { turnId: 'continue', userText: 'Продолжи.' })
+  assert.deepEqual(inputs.at(-1)?.interruptedTurn, { userText, visibleReply: visible })
+  await service.createReply(1, { turnId: 'following', userText: 'Следующий вопрос.' })
+  assert.equal(inputs.at(-1)?.interruptedTurn, undefined)
+
+  const stoppedAgain = service.createReply(1, { turnId: 'other-story', userText }, () => undefined)
+  await service.cancelReply('other-story', 1, visible.length)
+  await stoppedAgain
+  await service.clearHistory()
+  await service.createReply(1, { turnId: 'new-chat', userText: 'Привет.' })
+  assert.equal(inputs.at(-1)?.interruptedTurn, undefined)
+}
+
 async function speechServiceLifecycle(): Promise<void> {
   const streamMessages: Array<SpeechStreamInput> = []
   const cancellations: string[] = []
@@ -148,6 +212,8 @@ async function main(): Promise<void> {
 }
 
 describe('main application services', () => {
+  it('passes only the stopped reply prefix to the next user turn', stoppedReplyContinuity)
+
   it('owns conversation and speech application lifecycles', async () => {
     await main()
   })

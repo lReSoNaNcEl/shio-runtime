@@ -574,6 +574,58 @@ async function run(): Promise<void> {
 }
 
 describe('failed LLM turn recovery', () => {
+  it('uses the stopped exchange in planning and reply without committing it to history', async () => {
+    const provider = new FakeProvider()
+    provider.enqueue(
+      JSON.stringify({
+        requirement: { type: 'direct-answer' },
+        plannedTools: [],
+        embodiment: null,
+      }),
+      '[calm]Внутри показался компас.',
+    )
+    const memory = new InMemoryStore()
+    const orchestrator = new Orchestrator(
+      provider,
+      memory,
+      undefined,
+      () => ({ uiLocale: 'ru' }) as AppSettings,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      { enforceRequirements: true },
+    )
+    const result = await orchestrator.createReply({
+      userText: 'Продолжи.',
+      interruptedTurn: {
+        userText: 'Расскажи про Ариадну.',
+        visibleReply: 'Ариадна открыла коробку.',
+      },
+    })
+    assert.match(result.replyText, /компас/u)
+    assert.equal(provider.requests.length, 2)
+    for (const request of provider.requests) {
+      const system = request
+        .filter((message) => message.role === 'system')
+        .map((message) => message.content)
+        .join('\n')
+      assert.match(system, /Расскажи про Ариадну/u)
+      assert.match(system, /Ариадна открыла коробку/u)
+    }
+    const history = await memory.getHistory('default')
+    assert.equal(history.length, 2)
+    assert.equal(history[0]?.content, 'Продолжи.')
+    assert.doesNotMatch(JSON.stringify(history), /Ариадн/u)
+  })
+
   it('releases transactional state and screen leases', async () => {
     await run()
   })

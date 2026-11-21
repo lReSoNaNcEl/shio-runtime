@@ -18,7 +18,6 @@ import {
   resolveLlmRoleSettings,
 } from '../llm'
 import type { MemoryRuntime } from '../memory'
-import type { Orchestrator } from '../orchestrator'
 import type { PluginRuntime } from '../plugins'
 import type { ProjectAwarenessPlugin } from '../project-awareness'
 import type { ScreenContextService } from '../screen-context'
@@ -39,7 +38,6 @@ import { registerSpeechIpc } from './registerSpeechIpc'
 import { registerSystemIpc } from './registerSystemIpc'
 
 export function registerIpcHandlers(
-  orchestrator: () => Orchestrator,
   llm: () => LlmGateway,
   llmCredentialStore: () => LlmCredentialStore,
   plugins: () => PluginRuntime,
@@ -101,14 +99,20 @@ export function registerIpcHandlers(
       })
     }),
   )
+  const cancelReplySchema = z
+    .object({
+      turnId: z.string().trim().min(1).max(100),
+      visibleReplyCharacters: z.number().int().positive().optional(),
+    })
+    .strict()
   ipcMain.handle(
     'llm:cancel-reply',
     authorization.handlePayload(
       'llm:cancel-reply',
       IPC_ONE_PAYLOAD,
-      async (_event, payload: unknown) => {
-        const turnId = z.string().trim().min(1).max(100).parse(payload)
-        await conversationTurns.cancelReply(turnId)
+      async (event, payload: unknown) => {
+        const { turnId, visibleReplyCharacters } = cancelReplySchema.parse(payload)
+        await conversationTurns.cancelReply(turnId, event.sender.id, visibleReplyCharacters)
         return { ok: true }
       },
     ),
@@ -257,7 +261,7 @@ export function registerIpcHandlers(
   ipcMain.handle(
     'memory:clear',
     authorization.handle('memory:clear', async () => {
-      await orchestrator().clearHistory()
+      await conversationTurns.clearHistory()
       return { ok: true }
     }),
   )

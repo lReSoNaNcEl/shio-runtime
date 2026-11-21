@@ -141,7 +141,8 @@ const api = {
       screenContextId?: string,
       origin?: CharacterReplyOrigin,
     ) => ipcRenderer.invoke('llm:reply', { turnId, userText, screenContextId, origin }),
-    cancelReply: (turnId: string) => ipcRenderer.invoke('llm:cancel-reply', turnId),
+    cancelReply: (turnId: string, visibleReplyCharacters?: number) =>
+      ipcRenderer.invoke('llm:cancel-reply', { turnId, visibleReplyCharacters }),
     onReplyStreamEvent: (callback: (event: CharacterReplyStreamEvent) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, streamEvent: unknown): void =>
         callback(streamEvent as CharacterReplyStreamEvent)

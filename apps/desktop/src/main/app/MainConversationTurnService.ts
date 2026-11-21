@@ -36,6 +36,8 @@ const TURN_ERROR_CODES = new Set<LlmTurnErrorCode>([
   'UNKNOWN',
 ])
 const TRANSIENT_INCIDENT_TTL_MS = 120_000
+const MAX_STOPPED_REPLY_BUFFER = 16_000
+const MAX_STOPPED_TEXT = 2_400
 
 function isRuntimeIncidentCode(code: LlmTurnErrorCode): code is RuntimeIncidentCode {
   return code === 'RATE_LIMITED' || code === 'TIMEOUT' || code === 'NETWORK_ERROR'
@@ -73,6 +75,16 @@ function screenContextFailureDisposition(code: string): AttachmentDisposition {
 
 export class MainConversationTurnService {
   private activeTurnId: string | null = null
+  private activeReply: {
+    rendererId: number
+    userText?: string
+    streamedText: string
+    streamedCharacters: number
+  } | null = null
+  private stoppedTurn: {
+    rendererId: number
+    context: NonNullable<CharacterReplyInput['interruptedTurn']>
+  } | null = null
   private readonly abortControllers = new Map<string, AbortController>()
   private readonly settlements = new Map<string, Promise<void>>()
   private readonly visionTurns = new Set<string>()
@@ -183,7 +195,16 @@ export class MainConversationTurnService {
       }
     }
 
+    const interruptedTurn =
+      origin === 'user' && this.stoppedTurn?.rendererId === rendererId ? this.stoppedTurn : null
+    const activeReply = {
+      rendererId,
+      userText: origin === 'user' ? userText : undefined,
+      streamedText: '',
+      streamedCharacters: 0,
+    }
     const abortController = new AbortController()
+    this.activeReply = activeReply
     this.activeTurnId = turnId
     this.abortControllers.set(turnId, abortController)
     let settle!: () => void
@@ -225,6 +246,7 @@ export class MainConversationTurnService {
       const input: CharacterReplyInput = {
         userText,
         origin,
+        interruptedTurn: interruptedTurn?.context,
         screenContext: pendingCapture
           ? {
               mimeType: pendingCapture.mimeType,
@@ -237,6 +259,13 @@ export class MainConversationTurnService {
         signal: abortController.signal,
         traceId: turnId,
         onStreamEvent: (event) => {
+          if (abortController.signal.aborted) return
+          if (event.type === 'text-delta' && activeReply.userText && emitStreamEvent) {
+            activeReply.streamedCharacters += event.delta.text.length
+            activeReply.streamedText = (activeReply.streamedText + event.delta.text).slice(
+              -MAX_STOPPED_REPLY_BUFFER,
+            )
+          }
           if (event.type === 'embodiment-intent') {
             emitStreamEvent?.({ ...event, turnId, requestId: characterRequestId(turnId) })
             return
@@ -271,6 +300,9 @@ export class MainConversationTurnService {
         this.recordLlmIncident(llmConfig.activeProvider, result.providerIncidentCode)
       } else if (result.assistantTurnKind === 'character') {
         this.recentLlmIncident = null
+      }
+      if (result.assistantTurnKind === 'character' && this.stoppedTurn === interruptedTurn) {
+        this.stoppedTurn = null
       }
       terminalResult = 'success'
       terminalCode = 'OK'
@@ -345,21 +377,57 @@ export class MainConversationTurnService {
       })
       this.abortControllers.delete(turnId)
       this.visionTurns.delete(turnId)
-      if (this.activeTurnId === turnId) this.activeTurnId = null
+      if (this.activeTurnId === turnId) {
+        this.activeReply = null
+        this.activeTurnId = null
+      }
       settle()
       this.settlements.delete(turnId)
     }
   }
 
-  async cancelReply(turnId: string): Promise<void> {
+  async cancelReply(
+    turnId: string,
+    rendererId?: number,
+    visibleReplyCharacters?: number,
+  ): Promise<void> {
     const abortController = this.abortControllers.get(turnId)
-    if (!abortController) return
+    const activeReply = this.activeReply
+    if (!abortController || this.activeTurnId !== turnId || !activeReply) return
+    if (rendererId !== undefined && rendererId !== activeReply.rendererId) return
+    if (
+      !abortController.signal.aborted &&
+      visibleReplyCharacters !== undefined &&
+      activeReply.userText
+    ) {
+      const offset = activeReply.streamedCharacters - activeReply.streamedText.length
+      const end = visibleReplyCharacters - offset
+      if (end > 0 && end <= activeReply.streamedText.length) {
+        const start = Math.max(0, end - MAX_STOPPED_TEXT)
+        const reply = activeReply.streamedText.slice(start, end)
+        if (reply.trim()) {
+          this.stoppedTurn = {
+            rendererId: activeReply.rendererId,
+            context: {
+              userText: activeReply.userText.slice(0, MAX_STOPPED_TEXT),
+              visibleReply: offset + start > 0 ? `…${reply}` : reply,
+            },
+          }
+        }
+      }
+    }
     abortController.abort()
     if (this.visionTurns.has(turnId)) mainLog.info('Vision Request Cancelled', { turnId })
     await this.settlements.get(turnId)
   }
 
+  async clearHistory(): Promise<void> {
+    this.stoppedTurn = null
+    await this.orchestrator().clearHistory()
+  }
+
   async dispose(): Promise<void> {
+    this.stoppedTurn = null
     const activeTurnId = this.activeTurnId
     if (activeTurnId) await this.cancelReply(activeTurnId)
   }

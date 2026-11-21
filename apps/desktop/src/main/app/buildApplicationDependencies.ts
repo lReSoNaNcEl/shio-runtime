@@ -704,7 +704,6 @@ export function buildApplicationDependencies(): ApplicationDependencies {
     )
     speechApplicationService = new SpeechApplicationService(getSpeechClientManager)
     registerIpcHandlers(
-      resolveOrchestrator,
       resolveLlmGateway,
       getLlmCredentialStore,
       getPluginRuntime,
