@@ -38,7 +38,7 @@
   - [21C. Shio Capability Catalog](#21c-shio-capability-catalog)
   - [21D. Responsive Character Pipeline](#21d-responsive-character-pipeline)
   - [21E. World Context, Experience, Attention, and Behavior](#21e-world-context-experience-attention-and-behavior)
-  - [21F. Autonomy, Scheduler, and Persistent Goals](#21f-autonomy-scheduler-and-persistent-goals)
+  - [21F. Autonomous Initiative](#21f-autonomous-initiative)
   - [21G. Memory Retrieval, Procedural Habits, and Relationship Context](#21g-memory-retrieval-procedural-habits-and-relationship-context)
   - [21H. Latency Observability](#21h-latency-observability)
 - [Part V - External Integration](#part-v---external-integration)
@@ -184,12 +184,12 @@ Architectural Invariants define properties of Shio Runtime that must never chang
 41. **Safe Stream Commit**
     Provider stream bytes are untrusted protocol data. Internal tool, memory, action, embodiment, and emotion-control markers are incrementally contained before any text delta reaches chat, TTS, Memory, or another user-visible projection. A native tool round that begins with a tool call commits no visible or speakable text.
 42. **Conversation Admission Remains Singular**
-    Attention Evaluation, Fast Brain, Experience Runtime, Scheduler Runtime, Behavior Runtime, and autonomous initiative may request or enrich a turn, but none may directly start Conversation Runtime. The existing renderer-owned Conversation Admission remains the only grantor of conversational execution.
+    Attention Evaluation, Fast Brain, Experience Runtime, Behavior Runtime, and autonomous initiative may request or enrich a turn, but none may directly start Conversation Runtime. The existing renderer-owned Conversation Admission remains the only grantor of conversational execution.
     Autonomous conversation initiatives first pass the Main-owned Proactive Initiative Gate; explicit user input does not.
 43. **Autonomy Does Not Grant Authority**
     Autonomy Envelope may defer, preview, or authorize an already allowlisted internal initiative according to user policy. It never bypasses Action Runtime, Permission Guard, validation, verification, cancellation, or logging for an externally authoritative side effect.
-44. **Future Intent Is Not Present State**
-    Persistent Goals, Scheduled Tasks, pending confirmations, habits, and checkpoints are durable future-oriented records owned by their Main-process Runtime and Store. They are not Character State, conversation history, or semantic Memory records.
+44. **Habit Suggestions Have Their Own Store**
+    Memory Runtime owns procedural habit suggestions and their approval state. Character State and conversation history have separate owners.
 45. **World Context Is Bounded Metadata**
     World Context contains typed, freshness-aware activity facts needed for decisions. It never stores raw DOM, screen pixels, ambient transcript, conversation text, Browser Observation, or repository content. Privacy Mode prevents optional model classification and autonomous initiatives.
 46. **Habits Require Confirmation**
@@ -440,7 +440,7 @@ Lifecycle phases:
 Execution includes both:
 
 - **Interaction Loop:** external input moves through the decision architecture and updates Character State.
-- **Passive Runtime Loop:** continuous behaviors such as blinking, breathing, idle movement, animation blending, memory maintenance, and scheduler timers.
+- **Passive Runtime Loop:** continuous behaviors such as blinking, breathing, idle movement, animation blending, and memory maintenance.
 
 Future versions may support suspension and resumption of selected Runtime systems without reinitialization.
 
@@ -697,16 +697,16 @@ For each admitted turn, orchestration resolves the current Runtime Capability Co
 
 Character Request Composer is a bounded orchestration component, not a Runtime. It
 assembles optional, request-scoped sections for stable Persona, Response Policy,
-current Mood, Relationship Context, foreground Goal, Memory availability,
+current Mood, Relationship Context, unfinished conversation thread, Memory availability,
 Capabilities, Project, World Context, and Tool Results. Every section and the total
 request have explicit character budgets. Allocation is not first-come-first-served:
 before any section expands, every present section receives a bounded minimum reservation.
 The remaining budget is distributed in priority tiers: stable Persona, Response Policy,
-and current Tool Results; then foreground Goal, Project evidence, and World evidence;
+and current Tool Results; then conversation thread, Project evidence, and World evidence;
 then Memory availability, Relationship continuity, and Mood; then compact Capability
 explanation. Expansion is fair among sections in one tier and never changes the fixed
-total cap. Normal turns receive a compact capability projection, one foreground
-unfinished goal plus the count of other unfinished goals, and at most a few approved
+total cap. Normal turns receive a compact capability projection, at most one relevant
+unfinished conversation thread, and at most a few approved
 relationship or habit motifs. Full stores and inventories are obtained only through
 their typed tools; they are never dumped into every prompt.
 
@@ -720,7 +720,7 @@ The turn-local Tool Influence Context records the immutable original user goal a
 keeps Authority Provenance separate from Evidence Provenance. Authority identifies
 an `explicit-user-turn`, `approved-workflow`, or `autonomous-scope` and the bounded
 capabilities established from that source before external evidence is consumed.
-Evidence records Project, Browser, Web Search, Memory, or Goal origins together with
+Evidence records Project, Browser, Web Search, or Memory origins together with
 the capability state at observation time. Evidence may supply typed values, including
 an exact Browser Control session, page, observation, or semantic-target identity, but
 it never supplies permission. Using evidence therefore does not itself prohibit a later
@@ -1844,7 +1844,7 @@ Future improvements may include more sophisticated consolidation and stronger co
 
 Conversation Thread Runtime is a Main-owned short-lived continuity store for typed unfinished conversational topics. A thread contains a bounded topic, summary, lifecycle status, source turn, salience, timestamps, and expiration. It stores at most eight unfinished threads, returns at most one bounded awareness item to an ordinary Character request, deletes resolved or expired items, and keeps its own SQLite file under application `userData`.
 
-Threads are neither Semantic Memory nor Persistent Goals. They may be opened or resolved only through typed `thread.open` / `thread.resolve` operations selected by Character reasoning for a substantive interruption, explicit later-return request, waiting-user state, or temporary branch. There is no phrase, keyword, or regex router and no implicit capture from every sentence. Thread Runtime imports neither Memory nor Goal ownership; expiry and resolution do not create durable records. Promotion to a Persistent Goal or Semantic Memory fact requires a separate explicit user-authorized operation through that domain's existing policy. Thread context is untrusted bounded conversational fact, never instruction or capability authority.
+They may be opened or resolved only through typed `thread.open` / `thread.resolve` operations selected by Character reasoning for a substantive interruption, explicit later-return request, waiting-user state, or temporary branch. There is no phrase, keyword, or regex router and no implicit capture from every sentence. Expiry and resolution close conversational continuity. Persisting a Semantic Memory fact requires a separate explicit request through Memory Policy. Thread context is untrusted bounded conversational fact, never instruction or capability authority.
 
 ### 21B. Project Awareness Runtime
 
@@ -1999,14 +1999,14 @@ creates a second playback owner or permits stale output to resume.
 World Context Runtime is Main-owned. The authorized main renderer reports only typed
 activity metadata. A Main-owned System Context Adapter adds OS-level global idle,
 foreground application, a bounded running-application list, and bounded system load;
-other owners project the active Shio browser session, current project, foreground
-goal, media state when available, and per-source freshness. OS-specific process or
+other owners project the active Shio browser session, current project,
+media state when available, and per-source freshness. OS-specific process or
 window mechanics stay behind the Adapter. Privacy Mode suppresses sensitive optional
 fields. No raw content, screen capture, clipboard history, ambient transcript, browser
 history, or surveillance archive crosses this boundary.
 
 Attention Arbiter remains a pre-admission decision. It accepts expiring typed
-candidates from speech, world, experience, scheduler, goals, and behavior. Each
+candidates from speech, world, experience, and behavior. Each
 candidate carries salience, novelty, urgency, social relevance, and interruptibility.
 Deterministic policy selects a clear winner first. Fast Brain is an optional bounded
 decision-model role used only when two or more viable candidates remain ambiguous; a
@@ -2022,7 +2022,7 @@ tools, and never grants admission itself.
 
 Experience Runtime consumes completed typed facts including conversation completion
 or interruption, verified or failed Actions, permission denial, browser blocking or
-recovery, goal progress or failure, scheduled events, Runtime recovery, user return,
+recovery, Runtime recovery, user return,
 and meaningful World Context change. It produces a bounded appraisal containing
 salience, valence, arousal, novelty, social relevance, optional emotion or embodiment
 cues, optional conversational impulse, optional Memory candidate, and a first-class
@@ -2030,10 +2030,10 @@ silence decision. Experience never executes Actions or writes a Memory Store.
 
 Experience Policy is the deterministic appraisal authority. It owns stable per-event
 base scores and applies only bounded typed contextual modifiers from a short recent
-experience window, projected current Mood, exact Goal ownership and derived
-importance, numeric Relationship Context, and the bounded count of approved recurring
+experience window, projected current Mood,
+numeric Relationship Context, and the bounded count of approved recurring
 motifs. Repeated failures may become more salient and less novel, while a genuinely
-new event receives a small novelty lift. Modifier code never interprets Goal or motif
+new event receives a small novelty lift. Modifier code never interprets motif
 text as instructions, and no model-produced nuance may replace the deterministic base
 or expand authority.
 
@@ -2045,19 +2045,19 @@ reaction thresholds, deterministic initiative versus nonverbal selection probabi
 semantic embodiment intensity, banter allowance, and cooldown duration. Stable
 Personality remains separately defined.
 
-Behavior Runtime consumes bounded Mood, Experience, World Context, Attention, Goal,
+Behavior Runtime consumes bounded Mood, Experience, World Context, Attention,
 habit, and user-activity projections and selects only a semantic intent: none,
-embodiment, conversation candidate, or goal suggestion. Avatar Runtime translates
+embodiment, or conversation candidate. Avatar Runtime translates
 embodiment intent into concrete ears, head, gaze, expression, and gesture behavior;
 Behavior never writes VRM state or calls an Adapter. A conversational Behavior intent
 must return to Conversation Admission. Mood modulation is deterministic for the same
 event and state, bounded around the base Experience appraisal, and cannot invent
 speech content, override quiet/suspend/privacy policy, or expand capability authority.
 
-### 21F. Autonomy, Scheduler, and Persistent Goals
+### 21F. Autonomous Initiative
 
 Proactive Initiative Gate is the single Main-owned admission path for autonomous
-conversation initiatives originating from Experience, Scheduler, Goal wake, World,
+conversation initiatives originating from Experience, World,
 or Behavior. It serializes candidate evaluation, applies Autonomy Envelope policy,
 passes eligible candidates through Attention, and only then allows Behavior to emit a
 semantic conversation candidate toward renderer-owned Conversation Admission. The
@@ -2073,89 +2073,7 @@ not pass through this proactive gate and retains priority in Conversation Admiss
 `full` mode changes only this proactive policy. Any initiative that requests an
 externally authoritative side effect still becomes a new Action Runtime action and
 passes the normal permission, risk, execution, verification, cancellation, and audit
-boundaries. Scheduler and Autonomy never retry a non-idempotent external mutation.
-
-Optional Autonomy Scopes are explicit user-approved, goal-bound policy records. They
-may bound applications, filesystem roots, origins, action count, expiration, and risk
-classes. Behavior, Goal Runtime, Character LLM, Browser/Web evidence, and Memory can
-consume but never expand a scope. Emergency Stop and Global Suspend pause autonomous
-goal execution regardless of scope.
-
-Scheduler Runtime is Main-owned, durable, restart-safe, and timer-driven. Version 1
-supports only typed reminder and progress-check tasks with one-shot or bounded
-interval schedules; there is no arbitrary cron expression or JavaScript execution.
-Every due occurrence has a stable idempotency key persisted transactionally with its
-run checkpoint. Startup processes an overdue occurrence at most once. Quiet hours,
-busy World Context, Global Suspend, Privacy Mode, cooldown, and daily caps defer the
-occurrence without losing it.
-
-Scheduler ticks are single-flight: the next tick cannot overlap an unfinished tick.
-Event Watch Service extends waiting without executable predicates. A Goal may wait on
-an exact time, Action terminal event, process exit, bounded browser URL predicate, or
-typed World event. Satisfaction creates an Attention candidate and advances the Goal
-checkpoint; it does not execute a tool or admit a conversation directly.
-
-Persistent Goals are Main-owned durable future intent and shared continuity. A goal
-may belong primarily to the user, to Shio, or to both of them. Its durable record may
-contain why it matters, the next natural step, a semantic state such as active,
-waiting for the user, waiting for an external event, paused, completed, or cancelled,
-and optional numeric progress only when the goal is genuinely measurable. Goal and
-Task Store uses an application-owned SQLite schema with explicit migration versioning,
-foreign keys, WAL journaling, audit records, and transactional run claims. Goals and
-tasks are not Character State, Semantic Memory, or Action logs. The authorized
-renderer manages them only through validated typed IPC and renders a read-only Runtime
-snapshot plus explicit mutations.
-
-Goal Runtime is the durable execution-lifecycle owner for each goal. It stores a
-phase, current and planned steps, completed steps, attempts, tool calls, failures,
-timestamps, and bounded step/tool/time/failure budgets. It plans and checkpoints but
-never calls Shell, Browser, Action Runtime, or a concrete Adapter. A ready step becomes
-an Attention candidate, then must pass Conversation Admission and the Character Tool
-Loop. Only a verified Action Runtime result advances externally claimed work. Active
-checkpoints survive restart; restoration resumes only when current Autonomy policy
-allows it, otherwise the goal remains paused or waiting.
-
-Every Character Response Generation turn may receive one bounded, request-scoped Goal
-Awareness Context built from the exact current Goal and Task Store snapshot. It contains
-only the foreground unfinished goal and the count of other unfinished goals. Broader
-or archived listings require `goal.list`. The foreground projection may include its
-stable identity, ownership, semantic state, why/next-step context, and optional
-measurable progress. It is trusted
-Runtime context but its user- or model-authored field values remain data, never
-instructions or authority. The context is resolved again for the next turn, is not
-Character State, does not copy goals into Semantic Memory or conversation history, and
-grants no mutation authority. Character Response Generation may still select the
-read-only `goal.list` tool when it needs archived goals or a broader/current listing.
-
-The domain-limited `goal.create` tool may persist a goal only when the current user turn
-explicitly requests it or explicitly confirms Shio's conversational proposal. A vague
-wish or Shio's unconfirmed suggestion remains dialogue and is not durable state. The
-domain-limited `goal.update` tool may revise an exact goal identity supplied by the
-current Goal Awareness Context, by `goal.list`, or by a successful `goal.create` result
-in the same turn. Bounded revisions may update title, why, next step, ownership,
-semantic state, and optional measurable progress. Goal and Task Store remains the
-mutation owner: it validates and persists the change transactionally, audits the
-mutation, and publishes the new Runtime snapshot. Character Tool Dispatcher grants no
-generic Store access.
-
-Every numeric progress revision carries a typed basis. Verified Action progress and
-ordinary user-reported progress are monotonic. An `explicit-user-correction` may move
-backward when the user corrects an earlier number; a backward correction invalidates
-the autonomous execution plan so stale completed-step checkpoints cannot restore the
-superseded progress. Goal Runtime advances a logical planned step only from a durable
-`GoalStepOutcome` that identifies its verified Action results, states whether the step
-expectation is satisfied, and explicitly marks the whole step complete. A successful
-Action result alone may remain a partial checkpoint and never implies completion of
-the logical step.
-
-If the turn has selected an external Action or untrusted Browser observation, a goal
-revision that claims work progress or completion is rejected unless the same turn
-contains a successful Action Runtime result whose execution is complete and whose
-verification is `verified` or `not-required`. Direct user-authored changes such as
-renaming, pausing, cancelling, or reporting their own progress remain internal goal
-mutations. Project evidence, Browser content, assistant narration, and Adapter success
-alone never authorize a claim of completed work. Goal mutations remain internal Core
-state and do not pass through Action Runtime or Semantic Memory.
+boundaries. Autonomy never retries a non-idempotent external mutation.
 
 ### 21G. Memory Retrieval, Procedural Habits, and Relationship Context
 
@@ -2185,7 +2103,7 @@ not grant any tool permission.
 
 Latency Telemetry is a bounded Main-owned diagnostic projection. Main and the
 authorized renderer publish named milestones with `turnId`, `requestId`, LLM round,
-optional tool/segment/goal correlation, provider/model identity, timestamp, and safe
+optional tool/segment correlation, provider/model identity, timestamp, and safe
 terminal status. The projection never contains prompt text, reply text, tool payload,
 credentials, audio, or screen content.
 
@@ -2265,9 +2183,7 @@ Runtime systems communicate with architectural concepts. Adapters communicate wi
 - **Action Runtime:** the only Runtime permitted to produce a non-character, externally authoritative side effect.
 - **Shio Capability Catalog:** the main-owned read-only projection of current Core and Plugin capabilities used by the Capabilities UI and Character Capability Context; it is not a Runtime and grants no authority.
 - **Autonomy Envelope:** the Main-owned proactive policy boundary that defers, previews, or authorizes an allowlisted initiative under user mode, suspend, privacy, quiet-hour, cooldown, and daily-cap constraints; it grants no external authority.
-- **Scheduler Runtime:** the Main-owned durable owner of typed reminder and progress-check schedules, idempotent occurrence claims, startup recovery, and checkpoints.
-- **Persistent Goal:** a durable future-oriented intention belonging primarily to the user, to Shio, or to both and owned by Goal and Task Store; it is neither Character State nor Semantic Memory.
-- **World Context Runtime:** the Main-owned bounded and freshness-aware projection of typed activity metadata used by attention, experience, autonomy, and scheduling decisions.
+- **World Context Runtime:** the Main-owned bounded and freshness-aware projection of typed activity metadata used by attention, experience, and autonomy decisions.
 - **Fast Brain:** an optional bounded decision-model role that classifies pre-admission attention from typed cues and always has deterministic fallback.
 - **Behavior Runtime:** the selector of typed character embodiment and initiative-presentation commands; Avatar Runtime remains the only final embodiment owner.
 - **Habit Suggestion:** a durable proposal derived from repeated runtime-confirmed evidence that requires an explicit approve or reject decision and is not an implicit Memory fact.
@@ -2370,7 +2286,7 @@ Evolution rules:
 - new external platforms should integrate through Adapters, optional new Tools, and Action Runtime configuration
 - backward compatibility should be preserved while migration is in progress
 
-Scheduler Runtime and Behavior Runtime are current Core systems. Possible future Runtime systems include Collaboration Runtime and richer Analytics Runtime. These examples illustrate possible directions rather than commitments.
+Behavior Runtime is a current Core system. Possible future Runtime systems include Collaboration Runtime and richer Analytics Runtime. These examples illustrate possible directions rather than commitments.
 
 Future character improvements may include richer emotional continuity, deeper relationships, more capable approved habits, more natural conversations, broader safely authorized initiative, and richer privacy-preserving contextual awareness.
 

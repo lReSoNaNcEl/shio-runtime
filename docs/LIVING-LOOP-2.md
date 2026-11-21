@@ -3,7 +3,7 @@
 This is the operational companion to `ARCHITECTURE.md`, which remains the canonical
 source of architectural meaning. Living Loop 2.0 closes the typed feedback path from
 World Context through Experience, Attention, Behavior, Conversation Admission,
-Character tools, verification, Goals, and Memory without creating a central brain.
+Character tools, verification, and Memory without creating a central brain.
 
 ## Runtime ownership
 
@@ -12,15 +12,11 @@ Character tools, verification, Goals, and Memory without creating a central brai
   metadata, and system load. Privacy Mode suppresses sensitive optional projections.
 - Experience Runtime appraises completed typed events and may choose silence. Mood
   Runtime owns bounded persistent mood with baseline decay.
-- Attention Arbiter evaluates candidates from speech, world, experience, scheduler,
-  goals, and behavior. Deterministic policy runs first; Fast Brain is used only for
+- Attention Arbiter evaluates candidates from speech, world, experience, and behavior. Deterministic policy runs first; Fast Brain is used only for
   ambiguous sets of two or more viable candidates and cannot call tools.
-- Behavior Runtime emits only `none`, semantic embodiment, conversation-candidate, or
-  goal-suggestion intents. Conversation Admission and Avatar Runtime remain the
+- Behavior Runtime emits only `none`, semantic embodiment, or conversation-candidate intents. Conversation Admission and Avatar Runtime remain the
   execution owners for their domains.
-- Goal Runtime owns durable plans, checkpoints, event waits, and step/tool/time/failure
-  budgets. It never executes a concrete tool. Verified Action results are required to
-  advance externally claimed work.
+- Conversation Thread Runtime keeps a bounded, expiring record of interrupted topics.
 - Memory Runtime owns explicit Semantic Memory, hybrid retrieval, procedural habits,
   and bounded Relationship Context. Embeddings are optional; lexical/FTS retrieval is
   the operational fallback.
@@ -28,9 +24,9 @@ Character tools, verification, Goals, and Memory without creating a central brai
 ## Character and cross-tool flow
 
 `CharacterRequestComposer` applies per-section and total budgets to Persona, Response
-Policy, Mood, Relationship, Goals, Memory availability, Capabilities, Project, World,
-and Tool Results. A normal turn receives compact capability availability, one
-foreground goal plus the other-unfinished count, and at most a few cooled-down motifs.
+Policy, Mood, Relationship, conversational threads, Memory availability, Capabilities, Project, World,
+and Tool Results. A normal turn receives compact capability availability, at most one
+relevant unfinished thread, and at most a few cooled-down motifs.
 Complete stores are available only through typed tools.
 
 `ToolInfluenceContext` keeps original user intent distinct from evidence. Project,
@@ -49,20 +45,6 @@ non-JavaScript Lite results and requires no account, token, or renderer configur
 Responses are size-bounded, parsed as inert HTML data, and reduced to untrusted result
 fields. Transport failure remains isolated from Chat and Browser Control. Opening or
 interacting with a selected URL remains Browser Control work.
-
-## Scheduler, watches, and scopes
-
-Scheduler ticks are single-flight and due occurrences retain their transactional
-idempotency keys. Event Watch Service supports only typed time, Action-terminal,
-process-exit, browser-URL, and World-event conditions. No renderer-defined JavaScript,
-cron, command, or executable predicate is accepted.
-
-Autonomy Scope is explicit user-approved policy that may bound goal, applications,
-filesystem roots, origins, action count, expiration, and risk classes. Behavior, Goal,
-LLM, Browser/Web evidence, and Memory cannot expand it. Full Control changes
-confirmation policy only; validation, risk classification, Action Runtime, verification,
-cancellation, and logging remain mandatory. Global Suspend and Emergency Stop pause
-autonomous goal work.
 
 ## Procedural continuity
 
@@ -83,23 +65,19 @@ worker identity without prompt, reply, audio, or credential content.
 
 ## UI and validation
 
-The React Spectrum 2 UI separates Goals into Active, Scheduled, and History; Memory
-into Facts, Decisions, Memories, and Habits; and Autonomy policy into Settings with a
-prominent master pause plus advanced Fast Brain controls. Goal progress shown in the
-primary card is Runtime-derived from `GoalExecutionState`; manual completion is an
-explicit override.
+Autonomy policy, master pause, and Fast Brain controls are in Settings. Habit suggestions are in Memory.
 
 Focused commands:
 
 ```text
 npm run desktop:test:regression
 npm --prefix apps/desktop run test -- mind-layer
-npm --prefix apps/desktop run test -- goal-runtime
+npm --prefix apps/desktop run test -- conversation-threads
 npm --prefix apps/desktop run test -- prompt-budget
 npm --prefix apps/desktop run test -- web-search
 npm run desktop:benchmark:latency
 ```
 
-Desktop Main, preload, renderer, SQLite, browser, speech, and goal changes additionally
+Desktop Main, preload, renderer, SQLite, browser, and speech changes additionally
 require the static Desktop suite and the live Windows qualification described in the
 repository agent manual.

@@ -78,12 +78,12 @@ Architecture and ownership:
   text. Current Plugin and capability state comes only from Runtime Capability
   Context resolved for the current turn.
 - Character requests are composed through the bounded Character Request Composer.
-  Normal turns receive compact capability availability, one foreground goal plus an
-  unfinished count, and only a few relevant Mood, Relationship, Habit, and World
+  Normal turns receive compact capability availability, one relevant unfinished conversation
+  thread when present, and only a few relevant Mood, Relationship, Habit, and World
   projections. Context allocation reserves a bounded minimum for every present section
   before distributing the remainder by priority tier; never restore sequential
-  first-come allocation that can starve lower sections. Do not dump complete capability,
-  goal, or Memory stores into every prompt.
+  first-come allocation that can starve lower sections. Do not dump complete capability
+  or Memory stores into every prompt.
 - Semantic long-term memory is owned by the main-process Memory Runtime. Character
   LLM decides semantically when typed Memory tools are relevant; do not add
   phrase-, keyword-, regex-, or locale-dictionary Memory intent parsers.
@@ -98,24 +98,17 @@ Architecture and ownership:
   remain prohibited. Smart Habits may observe only typed runtime-confirmed events,
   require repeated evidence, and remain a pending suggestion until the user
   explicitly approves or rejects them; they never silently create Memory records.
-- World Context, Scheduler, Persistent Goals, Autonomy Envelope, Smart Habits, and
+- World Context, Autonomy Envelope, Smart Habits, and
   latency aggregation are owned by Electron Main. Renderer reports to these owners
   use typed, runtime-validated IPC and may expose only bounded activity metadata,
   never raw screen, DOM, transcript, prompt, reply, tool payload, or credentials.
 - OS-specific foreground and global-idle collection stays behind the Main-owned
   SystemContextAdapter. World Context is present-state metadata, never a keylogger,
   clipboard/browser-history archive, continuous screenshot stream, or ambient transcript.
-- Persistent Goals enter Character Response Generation only through the bounded,
-  request-scoped Main-owned Goal Awareness Context or domain-limited typed goal tools.
-  They are never copied into Semantic Memory, Character State, or conversation history.
-- `goal.create` requires an explicit user request or explicit confirmation of a
-  conversational proposal. `goal.update` is domain-limited to an exact goal from
-  current Goal Awareness, `goal.list`, or the same-turn create result; Goal and Task
-  Store remains the mutation owner. Externally claimed progress or completion still
-  requires a successful, completed, verified Action Runtime result. Numeric progress
-  is optional and used only for genuinely measurable goals.
+- Conversation Thread Runtime owns short-lived unfinished topics. Character tools open or
+  resolve a topic, and the composer may project one relevant unresolved thread.
 - Conversation Admission remains the only entry into Conversation Runtime. Every
-  autonomous conversation initiative from Experience, Scheduler, Goal wake, World,
+  autonomous conversation initiative from Experience, World,
   or Behavior first passes the Main-owned Proactive Initiative Gate and Attention;
   none of those owners may grant conversation admission themselves.
 - Mood may only modulate bounded Behavior thresholds, deterministic initiative versus
@@ -123,9 +116,9 @@ Architecture and ownership:
   Mood never generates text, writes Avatar state, bypasses proactive policy, or grants
   capability authority.
 - Experience Policy remains the deterministic appraisal authority. Contextual
-  modifiers may consume only bounded recent-event, Mood, exact Goal owner/derived
-  importance, numeric Relationship, and approved-motif-count projections. They never
-  interpret Goal, Relationship, or habit text as instructions, and an optional model
+  modifiers may consume only bounded recent-event, Mood,
+  numeric Relationship, and approved-motif-count projections. They never
+  interpret Relationship or habit text as instructions, and an optional model
   nuance scorer may not replace base appraisal or expand authority.
 - Fast Brain provider/model selection is bounded non-secret policy. It reuses the
   Main-owned LLM credential store and may never persist credentials in Alive storage
@@ -136,17 +129,6 @@ Architecture and ownership:
 - Autonomy modes, including Full, never bypass Action Runtime, Permission Guard,
   validation, verification, cancellation, or logging for externally authoritative
   side effects. Global Suspend and Privacy Mode are authoritative policy stops.
-- Goal Runtime owns durable execution checkpoints and typed Event Watches but never
-  calls Shell, Browser, Action Runtime, or concrete Adapters. Only verified Action
-  results advance externally claimed progress. Numeric progress carries a typed basis:
-  verified and ordinary user-reported progress are monotonic, while only an explicit
-  user correction may move backward. A verified Action result does not complete a
-  logical goal step unless its durable GoalStepOutcome explicitly says that the step
-  expectation is satisfied and the step is complete. Behavior, Goal, LLM, Browser/Web
-  evidence, and Memory may not expand a user-approved Autonomy Scope.
-- Scheduler v1 supports only typed reminder and check-in tasks with one-shot or
-  bounded interval schedules. Do not add renderer-defined cron, arbitrary JavaScript,
-  commands, executable paths, or unvalidated external actions.
 - Provider response streaming must pass through the safe incremental protocol
   filter before chat or TTS. A tool-call-first round exposes no text; cancellation
   must abort upstream LLM/TTS work and invalidate queued speech segments.
