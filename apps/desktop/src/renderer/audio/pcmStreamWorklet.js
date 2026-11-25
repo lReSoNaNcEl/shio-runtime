@@ -2,6 +2,7 @@ class ShioPcmStreamPlayer extends AudioWorkletProcessor {
   constructor(options) {
     super()
     this.sourceSampleRate = Number(options.processorOptions?.sourceSampleRate || sampleRate)
+    this.startBefore = options.processorOptions?.startBefore
     this.maximumQueuedSamples = Math.ceil(this.sourceSampleRate * 1.5)
     this.receivedSamples = 0
     this.retiredSamples = 0
@@ -51,6 +52,12 @@ class ShioPcmStreamPlayer extends AudioWorkletProcessor {
     if (!output) return true
     output.fill(0)
     if (this.ended) return false
+    if (!this.started && this.startBefore !== undefined && Date.now() >= this.startBefore) {
+      this.buffers.length = 0
+      this.ended = true
+      this.port.postMessage({ type: 'expired' })
+      return false
+    }
     if (!this.started && !this.finished && this.queuedSamples < this.initialBufferSamples)
       return true
     const ratio = this.sourceSampleRate / sampleRate

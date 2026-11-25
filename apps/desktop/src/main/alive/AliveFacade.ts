@@ -217,16 +217,19 @@ export class AliveFacade {
           })
     const report = { ...observation, conversationCandidate }
     if (!impulse) {
-      this.emitBehavior(
-        this.behavior.decide({
-          ...observation,
-          settings,
-          world,
-          at: event.at,
-          conversationAllowed: false,
-          embodimentAllowed: !world.conversationActive && !world.audioActive,
-        }),
-      )
+      const command = this.behavior.decide({
+        ...observation,
+        settings,
+        world,
+        at: event.at,
+        conversationAllowed: false,
+        embodimentAllowed: !world.conversationActive && !world.audioActive,
+      })
+      if (event.type === 'watch-screen-moment') {
+        command.watchReaction = { sessionId: event.sessionId, expiresAt: event.expiresAt }
+        command.holdMs = 1500
+      }
+      this.emitBehavior(command)
       this.publish()
       return report
     }

@@ -4,7 +4,10 @@ import { runInNewContext } from 'node:vm'
 
 import { describe, it } from 'vitest'
 
-function render(parts: Float32Array[]): { audio: number[]; consumed: number } {
+function render(
+  parts: Float32Array[],
+  startBefore?: number,
+): { audio: number[]; consumed: number; expired: boolean } {
   type WorkletPlayer = new (
     options: unknown,
   ) => {
@@ -13,6 +16,7 @@ function render(parts: Float32Array[]): { audio: number[]; consumed: number } {
   }
   let Player: WorkletPlayer | undefined
   let consumed = 0
+  let expired = false
   const sandbox = {
     Float32Array,
     ArrayBuffer,
@@ -22,6 +26,7 @@ function render(parts: Float32Array[]): { audio: number[]; consumed: number } {
         onmessage: () => undefined,
         postMessage: (message: { type: string; samples: number }) => {
           if (message.type === 'consumed') consumed += message.samples
+          if (message.type === 'expired') expired = true
         },
       }
     },
@@ -31,7 +36,7 @@ function render(parts: Float32Array[]): { audio: number[]; consumed: number } {
   }
   runInNewContext(readFileSync('src/renderer/audio/pcmStreamWorklet.js', 'utf8'), sandbox)
   assert(Player, 'Worklet was not registered')
-  const player = new Player({ processorOptions: { sourceSampleRate: 44100 } })
+  const player = new Player({ processorOptions: { sourceSampleRate: 44100, startBefore } })
   for (const part of parts) player.port.onmessage({ data: { type: 'push', pcm: part.buffer } })
   player.port.onmessage({ data: { type: 'finish' } })
   const audio: number[] = []
@@ -40,10 +45,17 @@ function render(parts: Float32Array[]): { audio: number[]; consumed: number } {
     player.process([], [[output]])
     audio.push(...output)
   }
-  return { audio, consumed }
+  return { audio, consumed, expired }
 }
 
 describe('PCM worklet resampling', () => {
+  it('drops expired audio before it can produce its first sample', () => {
+    const result = render([new Float32Array(2400).fill(0.5)], 0)
+    assert.equal(result.expired, true)
+    assert.equal(result.consumed, 0)
+    assert(result.audio.every((sample) => sample === 0))
+  })
+
   it('preserves sample position and interpolation across packet boundaries', () => {
     const source = Float32Array.from({ length: 2400 }, (_, index) => Math.sin(index / 20) * 0.4)
     const whole = render([source.slice()])

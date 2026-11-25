@@ -2,12 +2,20 @@ import sharp from 'sharp'
 import { describe, expect, it, vi } from 'vitest'
 
 import { PERSONA_PROMPT_SECTIONS } from '../../src/main/character/prompting/persona.generated'
+import { LlmResponseError } from '../../src/main/llm/errors'
 import type { LLMProvider } from '../../src/main/llm/types'
 import { InMemoryStore } from '../../src/main/memory/InMemoryStore'
 import { Orchestrator } from '../../src/main/orchestrator'
 import { WatchTogetherService } from '../../src/main/watch-together/WatchTogetherService'
 import type { AppSettings } from '../../src/shared/config'
-import type { WatchBlockReason } from '../../src/shared/watchTogether'
+import {
+  WATCH_FRAME_HEIGHT,
+  WATCH_FRAME_WIDTH,
+  type WatchBlockReason,
+} from '../../src/shared/watchTogether'
+
+const moment = (observation: string, reaction = 'quiet', line = '', evidenceIds = ['screen-1']) =>
+  JSON.stringify({ observation, reaction, line, evidenceIds })
 
 function dependencies(chat: LLMProvider['chat']) {
   return {
@@ -16,6 +24,7 @@ function dependencies(chat: LLMProvider['chat']) {
     canComment: vi.fn(() => true),
     model: () => ({ chat }),
     admit: vi.fn(async (_at: number, current: () => boolean) => current()),
+    react: vi.fn(),
     ended: vi.fn(),
   }
 }
@@ -26,7 +35,14 @@ async function fixture(chat: LLMProvider['chat']) {
   const result = watch.start('window:1:0')
   if (result.kind !== 'started') throw new Error('Expected a watch session')
   const { id } = result
-  const jpeg = await sharp({ create: { width: 960, height: 270, channels: 3, background: 'blue' } })
+  const jpeg = await sharp({
+    create: {
+      width: WATCH_FRAME_WIDTH * 2,
+      height: WATCH_FRAME_HEIGHT,
+      channels: 3,
+      background: 'blue',
+    },
+  })
     .jpeg()
     .toBuffer()
   const input = {
@@ -40,7 +56,7 @@ async function fixture(chat: LLMProvider['chat']) {
 }
 describe('Watch Together', () => {
   it('binds source speech to the user turn during cooldown and remembers their take within this session', async () => {
-    const chat = vi.fn<LLMProvider['chat']>(async () => '{"observation":"bridge fell","line":""}')
+    const chat = vi.fn<LLMProvider['chat']>(async () => moment('bridge fell'))
     const { watch, deps, id, input } = await fixture(chat)
     watch.takeGrant()
     deps.canComment.mockReturnValue(false)
@@ -94,7 +110,7 @@ describe('Watch Together', () => {
     expect((await history.getHistory('default'))[0].content).toBe(userText)
   })
 
-  it.each(['suspended', 'off'] as const)(
+  it.each(['suspended', 'off', 'private'] as const)(
     'reports the %s block without creating a capture grant',
     (reason) => {
       const chat = vi.fn()
@@ -139,9 +155,7 @@ describe('Watch Together', () => {
 
   it('requires a one-use capture grant and policy approval before sampling, then admits a model-selected moment', async () => {
     const line = 'Ебать, мост сложился.'
-    const chat = vi.fn<LLMProvider['chat']>(async () =>
-      JSON.stringify({ observation: 'bridge fell', line }),
-    )
+    const chat = vi.fn<LLMProvider['chat']>(async () => moment('bridge fell', 'comment', line))
     const { watch, input, id, deps } = await fixture(chat)
     expect(await watch.observe(input)).toEqual({ kind: 'stopped' })
     expect(watch.takeGrant()).toEqual({ id, sourceId: 'window:1:0' })
@@ -163,9 +177,7 @@ describe('Watch Together', () => {
     expect(await watch.observe(input)).toEqual({ kind: 'stopped' })
   })
   it('lets the model stay silent and discards expired packets before inference', async () => {
-    const { watch, deps, input } = await fixture(
-      async () => '{"observation":"same shot","line":""}',
-    )
+    const { watch, deps, input } = await fixture(async () => moment('same shot'))
     watch.takeGrant()
     expect(await watch.observe({ ...input, endedAt: Date.now() - 40000 })).toEqual({
       kind: 'quiet',
@@ -194,9 +206,79 @@ describe('Watch Together', () => {
       await ready
       watch[action](id)
       expect(signal?.aborted).toBe(true)
-      finish('{"observation":"late","comment":true}')
+      finish(moment('late event', 'comment', 'Too late'))
       expect(await result).toEqual({ kind: 'quiet' })
       expect(deps.admit).not.toHaveBeenCalled()
     },
   )
+
+  it('connects screen observations to a recent aside without requiring playback audio', async () => {
+    const chat = vi
+      .fn<LLMProvider['chat']>()
+      .mockResolvedValueOnce(moment('Build failed'))
+      .mockResolvedValueOnce(JSON.stringify({ disposition: 'aside', summary: 'One more try' }))
+      .mockResolvedValueOnce(
+        moment('Build passed', 'comment', 'It was all planned.', ['screen-1', 'screen-2']),
+      )
+    const { watch, input, id, deps } = await fixture(chat)
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(input.endedAt)
+    const silent = { ...input, pcm: new ArrayBuffer(0), playbackTranscript: '' }
+    try {
+      watch.takeGrant()
+      expect(await watch.observe(silent)).toEqual({ kind: 'quiet' })
+      expect(await watch.classifySpeech(id, 'Ну, ещё разок', false)).toBe('aside')
+      clock.mockReturnValue(input.endedAt + 30_000)
+      const result = await watch.observe({ ...silent, endedAt: Date.now() })
+      expect(result.kind).toBe('comment')
+      const request = JSON.stringify(chat.mock.calls[2][0])
+      expect(request).toContain('Build failed')
+      expect(request).toContain('One more try')
+      expect(request).not.toContain('Ну, ещё разок')
+      expect(deps.admit).toHaveBeenCalledOnce()
+    } finally {
+      watch.stop(id)
+      clock.mockRestore()
+    }
+  })
+
+  it('only offers one nonverbal reaction for a grounded moment', async () => {
+    const chat = vi
+      .fn<LLMProvider['chat']>()
+      .mockResolvedValueOnce(moment('A result appeared', 'glance'))
+      .mockResolvedValueOnce(moment('A result appeared', 'surprise', '', ['screen-2']))
+      .mockResolvedValueOnce(moment('Different result', 'surprise', '', ['unknown', 'screen-3']))
+    const { watch, input, id, deps } = await fixture(chat)
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(input.endedAt)
+    try {
+      watch.takeGrant()
+      await watch.observe(input)
+      for (const offset of [4_000, 8_000]) {
+        clock.mockReturnValue(input.endedAt + offset)
+        await watch.observe({ ...input, endedAt: Date.now() })
+      }
+      expect(deps.react).toHaveBeenCalledExactlyOnceWith(id, 'glance', input.endedAt + 8_000)
+      expect(deps.admit).not.toHaveBeenCalled()
+    } finally {
+      watch.stop(id)
+      clock.mockRestore()
+    }
+  })
+
+  it('backs off from the same rate-limited model for both screen and microphone', async () => {
+    const chat = vi.fn<LLMProvider['chat']>().mockRejectedValue(
+      new LlmResponseError({
+        provider: 'groq',
+        code: 'RATE_LIMITED',
+        recoverable: true,
+        message: 'rate limited',
+      }),
+    )
+    const { watch, input, id } = await fixture(chat)
+    watch.takeGrant()
+    expect(await watch.observe(input)).toEqual({ kind: 'unavailable', reason: 'rateLimited' })
+    expect(await watch.classifySpeech(id, 'More speech', false)).toBeUndefined()
+    expect(await watch.observe(input)).toEqual({ kind: 'unavailable', reason: 'rateLimited' })
+    expect(chat).toHaveBeenCalledOnce()
+    watch.stop(id)
+  })
 })

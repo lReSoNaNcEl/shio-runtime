@@ -29,9 +29,16 @@ export interface PcmPlaybackClock {
 
 export interface AudioPlayOptions {
   turnId: string
+  startBefore?: number
   onReady: (session: PlaybackSession) => void | Promise<void>
   onStarted?: () => void
   onProgress?: (progress: number) => void
+}
+
+export class PlaybackStartExpiredError extends Error {
+  constructor() {
+    super('PCM playback start deadline expired')
+  }
 }
 
 interface BufferedAudioPlayOptions extends AudioPlayOptions {
@@ -184,7 +191,7 @@ export class AudioPlayer {
         numberOfInputs: 0,
         numberOfOutputs: 1,
         outputChannelCount: [1],
-        processorOptions: { sourceSampleRate: sampleRate },
+        processorOptions: { sourceSampleRate: sampleRate, startBefore: options.startBefore },
       })
       active.streamNode = node
       this.pcmEnergy = new PcmEnergyTimeline(sampleRate)
@@ -306,6 +313,8 @@ export class AudioPlayer {
               active.settle?.()
             })
             .catch(failPlayback)
+        } else if (message.type === 'expired') {
+          failPlayback(new PlaybackStartExpiredError())
         } else if (message.type === 'error') {
           failPlayback(new Error('PCM processor rejected audio input'))
         }

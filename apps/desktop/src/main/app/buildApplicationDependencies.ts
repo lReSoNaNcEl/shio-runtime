@@ -765,6 +765,14 @@ export function buildApplicationDependencies(): ApplicationDependencies {
       canComment: () => watchAlive.canCommentOnPlayback(),
       model: resolveLlmGateway,
       admit: (expiresAt, current) => watchAlive.admitWatchMoment(expiresAt, current),
+      react: (sessionId, reaction, expiresAt) =>
+        watchAlive.reportExperience({
+          type: 'watch-screen-moment',
+          at: Date.now(),
+          sessionId,
+          reaction,
+          expiresAt,
+        }),
       ended: (event) => {
         if (!watchWindow.isDestroyed() && !watchWindow.webContents.isDestroyed())
           watchWindow.webContents.send('watch:stopped', event)

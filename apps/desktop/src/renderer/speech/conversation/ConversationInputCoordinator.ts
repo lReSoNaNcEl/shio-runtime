@@ -130,7 +130,7 @@ export class ConversationInputCoordinator {
   private backlogSelector: BacklogSelector
   private conversationAdmission: ConversationAdmissionCoordinator
   private desiredContinuousListening = false
-  private watchVoice = false
+  private watchVoice?: string
   private conversationBoundaryAt = 0
   private conversationSessionResetPending = false
   private attentionGeneration = 0
@@ -222,6 +222,7 @@ export class ConversationInputCoordinator {
     topic: string,
     turnId = this.dependencies.createTurnId('initiative'),
     sharedViewing = false,
+    watchExpiresAt?: number,
   ): Promise<'completed' | 'cancelled' | 'failed' | 'suppressed-busy'> {
     const trimmed = topic.trim().slice(0, 300)
     if (!trimmed) return 'failed'
@@ -230,6 +231,7 @@ export class ConversationInputCoordinator {
       text: trimmed,
       source: 'autonomous_initiative',
       sharedViewing,
+      watchExpiresAt,
       createdAt: this.nextConversationTimestamp(),
     })
     if (result.outcome === 'ignored_busy') return 'suppressed-busy'
@@ -358,8 +360,8 @@ export class ConversationInputCoordinator {
     return this.continuousSettings.enabled
   }
 
-  setWatchVoice(active: boolean): void {
-    this.watchVoice = active
+  setWatchVoice(sessionId: string | undefined): void {
+    this.watchVoice = sessionId
   }
 
   getSettings(): Readonly<ContinuousListeningSettings> {
@@ -581,7 +583,8 @@ export class ConversationInputCoordinator {
       followUpWindow,
       curiosityChance: this.continuousSettings.curiosityChance,
     })
-    if (this.watchVoice && this.continuousSettings.enabled) {
+    const watchSession = this.watchVoice
+    if (watchSession && this.continuousSettings.enabled) {
       const buffered = this.createBufferedUtterance(
         chunk,
         fallbackAttention,
@@ -589,6 +592,19 @@ export class ConversationInputCoordinator {
         true,
       )
       if (buffered.likelySelfEcho || this.handledUtteranceIds.has(chunk.id)) return
+      const disposition = await window.api.watchTogether.classifySpeech(
+        watchSession,
+        chunk.text.trim().slice(0, 800),
+        followUpWindow,
+      )
+      if (
+        this.watchVoice !== watchSession ||
+        this.streamingSessionId !== chunk.streamingSessionId ||
+        this.conversationSessionResetPending ||
+        (disposition !== 'addressed' &&
+          !(disposition === undefined && fallbackAttention.directAddress))
+      )
+        return
       this.dependencies.recordRuntimeEvent('Watch Voice Accepted', chunk.completionReason)
       await this.conversationAdmission.admitExplicit({
         turnId: chunk.id,

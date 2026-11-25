@@ -52,6 +52,10 @@ const api = {
     start: (source) => ipcRenderer.invoke('watch:start', source),
     stop: (id) => ipcRenderer.invoke('watch:stop', id),
     yield: (id) => ipcRenderer.invoke('watch:yield', id),
+    classifySpeech: (id, text, recentAddress) =>
+      ipcRenderer.invoke('watch:classify-speech', id, text, recentAddress),
+    finishComment: (id, turnId, played) =>
+      ipcRenderer.invoke('watch:finish-comment', id, turnId, played),
     prepareTurn: (id, turnId, fromMicrophone, frame, playbackTranscript) =>
       ipcRenderer.invoke(
         'watch:prepare-turn',

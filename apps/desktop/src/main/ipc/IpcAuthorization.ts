@@ -19,6 +19,8 @@ export const IPC_CHANNEL_CAPABILITIES = {
   'actions:snapshot': mainOnly,
   'watch:start': mainOnly,
   'watch:observe': mainOnly,
+  'watch:classify-speech': mainOnly,
+  'watch:finish-comment': mainOnly,
   'watch:prepare-turn': mainOnly,
   'watch:stop': mainOnly,
   'watch:yield': mainOnly,

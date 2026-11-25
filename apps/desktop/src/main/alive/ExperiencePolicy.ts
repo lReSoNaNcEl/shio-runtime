@@ -113,6 +113,21 @@ function baseAppraisal(event: ExperienceEvent): ExperienceAppraisal {
   const eventId = event.eventId?.slice(0, 160) || eventIdentity(event)
   const base = { eventId, memoryCandidate: undefined }
   switch (event.type) {
+    case 'watch-screen-moment':
+      return {
+        ...base,
+        salience: 0.78,
+        valence: 0.08,
+        arousal: 0.2,
+        novelty: 0.65,
+        socialRelevance: 0.25,
+        embodimentHint: {
+          intensity: 'subtle',
+          gazeHint: 'screen',
+          ...(event.reaction === 'surprise' ? { gestureHint: 'surprise' } : {}),
+        },
+        silence: true,
+      }
     case 'conversation-completed':
       return {
         ...base,

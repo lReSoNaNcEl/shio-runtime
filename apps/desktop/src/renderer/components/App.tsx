@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { type CapabilityNavigationTarget } from '../../shared/capabilities'
 import { normalizeUiTheme, type UiTheme } from '../../shared/config'
 import { type PluginId } from '../../shared/plugins'
-import { watchBlockReason } from '../../shared/watchTogether'
+import { type WatchModelIssue, watchBlockReason } from '../../shared/watchTogether'
 import { controller } from '../Controller'
 import { useCapabilities } from '../hooks/useCapabilities'
 import { useControllerState } from '../hooks/useControllerState'
@@ -44,6 +44,7 @@ export function App() {
   const [preview, setPreview] = useState<{ sourceName: string; session: WatchTogetherCapture }>()
   const [playbackGaps, setPlaybackGaps] = useState(0)
   const [watchError, setWatchError] = useState<WatchFailure>()
+  const [watchModelIssue, setWatchModelIssue] = useState<WatchModelIssue>()
   const watchBlocked = watchError?.startsWith('watch.blocked.')
   useEffect(
     () => () => {
@@ -59,10 +60,14 @@ export function App() {
         watch.current = null
         setWatching(false)
         setPreview(undefined)
+        setWatchModelIssue(undefined)
         setWatchError(error)
       },
       () => {
         if (watch.current === session) setPlaybackGaps((count) => count + 1)
+      },
+      (issue) => {
+        if (watch.current === session) setWatchModelIssue(issue)
       },
     )
     watch.current = session
@@ -411,6 +416,7 @@ export function App() {
               <ChatOverlay
                 ref={chatOverlayRef}
                 playbackGaps={watching ? playbackGaps : 0}
+                watchModelIssue={watchModelIssue}
                 state={state}
                 capabilitySnapshot={capabilities.snapshot}
                 gateOpen={state.microphoneGate.status !== 'closed'}

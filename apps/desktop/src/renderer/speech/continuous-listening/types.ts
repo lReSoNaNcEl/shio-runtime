@@ -18,6 +18,7 @@ export interface ConversationInput {
   turnId: string
   text: string
   sharedViewing?: boolean
+  watchExpiresAt?: number
   watchVoice?: boolean
   source: ConversationInputSource
   /** Allowed only for text_chat; all speech, backlog, and debug paths omit it. */

@@ -490,41 +490,77 @@ export class Controller {
   }
 
   private prepareWatchUserTurn?: (turnId: string, fromMicrophone: boolean) => Promise<void>
+  private watchMicrophone?: { id: string; previousDevice: string; device?: string }
+
+  clearWatchReaction(id: string): void {
+    this.aliveExperience.cancelWatchReaction(id)
+  }
 
   async setWatchMicrophone(
+    id: string,
     enabled: boolean,
     signal?: AbortSignal,
     prepare?: (turnId: string, fromMicrophone: boolean) => Promise<void>,
   ): Promise<void> {
-    if (enabled) {
-      if (signal?.aborted || this.microphoneGate.getState().status !== 'closed')
-        throw new Error('WATCH_MICROPHONE')
-      const cancel = () => this.microphoneGate.cancel()
-      signal?.addEventListener('abort', cancel, { once: true })
-      try {
-        const result = await this.microphoneGate.request(
-          { type: 'start-streaming', modeId: 'default' },
-          'not-configured',
-        )
-        if (result.status !== 'confirmed' || signal?.aborted) throw new Error('WATCH_MICROPHONE')
-        this.speechInputRuntime.setMicrophone(
-          isDefaultMicrophone(result.deviceId) ? '' : result.deviceId,
-          false,
-        )
-      } finally {
-        signal?.removeEventListener('abort', cancel)
-      }
+    if (!enabled) {
+      const lease = this.watchMicrophone
+      if (lease?.id !== id) return
+      this.watchMicrophone = undefined
+      this.prepareWatchUserTurn = undefined
+      this.conversationInput.setWatchVoice(undefined)
+      this.aliveExperience.setWatchSession(id, false)
+      if (lease.device === undefined) return
+      if (this.speechInputRuntime.getMicrophoneId() === lease.device)
+        this.speechInputRuntime.setMicrophone(lease.previousDevice, false)
+      await this.conversationInput.applyContinuousSettings(
+        { ...this.conversationInput.getSettings(), enabled: false },
+        false,
+      )
+      return
     }
-    this.prepareWatchUserTurn = enabled ? prepare : undefined
-    this.conversationInput.setWatchVoice(enabled)
+    if (
+      signal?.aborted ||
+      this.watchMicrophone ||
+      this.microphoneGate.getState().status !== 'closed'
+    )
+      throw new Error('WATCH_MICROPHONE')
+    const lease = {
+      id,
+      previousDevice: this.speechInputRuntime.getMicrophoneId(),
+      device: undefined as string | undefined,
+    }
+    this.watchMicrophone = lease
+    this.prepareWatchUserTurn = prepare
+    this.conversationInput.setWatchVoice(id)
+    this.aliveExperience.setWatchSession(id, true)
+    if (this.state.continuousListening.microphoneCaptured) return
+    const cancel = () => this.microphoneGate.cancel()
+    signal?.addEventListener('abort', cancel, { once: true })
+    try {
+      const result = await this.microphoneGate.request(
+        { type: 'start-streaming', modeId: 'default' },
+        'not-configured',
+      )
+      if (result.status !== 'confirmed' || signal?.aborted || this.watchMicrophone !== lease)
+        throw new Error('WATCH_MICROPHONE')
+      lease.device = isDefaultMicrophone(result.deviceId) ? '' : result.deviceId
+      this.speechInputRuntime.setMicrophone(lease.device, false)
+    } finally {
+      signal?.removeEventListener('abort', cancel)
+    }
     await this.conversationInput.applyContinuousSettings(
-      { ...this.conversationInput.getSettings(), enabled },
+      { ...this.conversationInput.getSettings(), enabled: true },
       false,
     )
   }
 
-  watchComment(turnId: string) {
-    return this.conversationInput.admitAutonomousInitiative('Shared viewing', turnId, true)
+  watchComment(turnId: string, expiresAt: number) {
+    return this.conversationInput.admitAutonomousInitiative(
+      'Shared viewing',
+      turnId,
+      true,
+      expiresAt,
+    )
   }
 
   yieldWatchComment(turnId: string): Promise<boolean> {

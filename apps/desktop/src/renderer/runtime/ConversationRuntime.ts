@@ -19,6 +19,7 @@ import type {
   RuntimeEventType,
 } from '../../shared/runtime'
 import type { SerializedSpeechError } from '../../shared/speech'
+import { PlaybackStartExpiredError } from '../audio/audioPlayer'
 import { resolveEmotionEmbodimentProfile } from '../avatar/EmotionEmbodimentProfile'
 import type { ChatMsg } from '../Controller'
 import type {
@@ -309,6 +310,10 @@ export class ConversationRuntime {
     const commitBuffer = new SpeechTextCommitBuffer(turn.turnId)
 
     try {
+      if (turn.watchExpiresAt !== undefined && Date.now() >= turn.watchExpiresAt) {
+        await this.recoverToIdle(turn.turnId)
+        return { status: 'cancelled', turnId: turn.turnId, attachmentDisposition }
+      }
       this.setEmbodimentIntent(
         turn.screenContextId ? { intensity: 'subtle', gazeHint: 'screen' } : undefined,
       )
@@ -335,6 +340,7 @@ export class ConversationRuntime {
           deliveryIntent(commit.emotion, commit.voiceStyle),
           {
             turnId: turn.turnId,
+            startBefore: turn.watchExpiresAt,
             onFirstPcm: () => {
               this.recordLatency(turn.turnId, 'first_audio_ready', 'success')
               this.recordLatency(turn.turnId, 'tts_segment_ready', 'success', {
@@ -365,6 +371,8 @@ export class ConversationRuntime {
             },
             onStarted: () => {
               playbackStarted = true
+              if (turn.watchExpiresAt !== undefined && !streamedMessageId)
+                streamedMessageId = this.deps.pushMessage('assistant', streamedDisplayText)
               this.recordLatency(turn.turnId, 'playback_started', 'success', {
                 ttsSegmentId: turn.turnId,
               })
@@ -485,7 +493,9 @@ export class ConversationRuntime {
       if (streamedMessageId) {
         this.deps.updateMessage(streamedMessageId, draft.displayText, draft.grounding, false, true)
       } else {
-        streamedMessageId = this.deps.pushMessage('assistant', draft.displayText, draft.grounding)
+        if (turn.watchExpiresAt === undefined)
+          streamedMessageId = this.deps.pushMessage('assistant', draft.displayText, draft.grounding)
+        else streamedDisplayText = draft.displayText
         if (this.deps.speechOutput.hasSpeakableContent(draft.speechText)) {
           const filter = new SafeCharacterStreamFilter()
           for (const delta of [...filter.push(draft.replyText), ...filter.flush()]) {
@@ -536,6 +546,10 @@ export class ConversationRuntime {
       if (this.activeSpeechStream === failedSpeechStream) this.activeSpeechStream = null
       if (this.playbackTurnId === turn.turnId) this.playbackTurnId = null
       const message = error instanceof Error ? error.message : String(error)
+      if (error instanceof PlaybackStartExpiredError) {
+        await this.recoverToIdle(turn.turnId)
+        return { status: 'cancelled', turnId: turn.turnId, attachmentDisposition }
+      }
       if (
         (error instanceof ConversationInterruptedError && error.turnId === turn.turnId) ||
         !this.isCurrentTurn(turn.turnId)

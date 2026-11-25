@@ -18,7 +18,9 @@ export function registerWatchTogetherIpc(
         sessionId: z.string().uuid(),
         endedAt: z.number().int().positive(),
         frames: bytes(100, 300000),
-        pcm: bytes(3200, 192000).refine((b) => b.byteLength % 2 === 0),
+        pcm: bytes(0, 192000).refine(
+          (b) => b.byteLength === 0 || (b.byteLength >= 512 && b.byteLength % 2 === 0),
+        ),
         playbackTranscript: z.string().max(1000),
       })
       .strict(),
@@ -75,6 +77,23 @@ export function registerWatchTogetherIpc(
     auth.handlePayload('watch:observe', moment, (_event, input) => watch.observe(input)),
   )
   ipcMain.handle(
+    'watch:classify-speech',
+    auth.handlePayload(
+      'watch:classify-speech',
+      z.tuple([z.string().uuid(), z.string().trim().min(1).max(800), z.boolean()]),
+      (_event, sessionId, text, recentAddress) =>
+        watch.classifySpeech(sessionId, text, recentAddress),
+    ),
+  )
+  ipcMain.handle(
+    'watch:finish-comment',
+    auth.handlePayload(
+      'watch:finish-comment',
+      z.tuple([z.string().uuid(), z.string().min(1).max(100), z.boolean()]),
+      (_event, sessionId, turnId, played) => watch.finishComment(sessionId, turnId, played),
+    ),
+  )
+  ipcMain.handle(
     'watch:prepare-turn',
     auth.handlePayload(
       'watch:prepare-turn',
@@ -105,6 +124,8 @@ export function registerWatchTogetherIpc(
     for (const channel of [
       'watch:start',
       'watch:observe',
+      'watch:classify-speech',
+      'watch:finish-comment',
       'watch:prepare-turn',
       'watch:stop',
       'watch:yield',

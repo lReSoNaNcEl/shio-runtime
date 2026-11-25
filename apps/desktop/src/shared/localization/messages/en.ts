@@ -26,8 +26,14 @@ export const enMessages: Record<TranslationKey, string> = {
   'watch.openAutonomy': 'Open autonomy settings',
   'watch.startError': 'The session could not start. Try selecting a source again.',
   'watch.blocked.suspended': 'Autonomy is paused. Resume it in autonomy settings.',
+  'watch.blocked.private':
+    'Privacy Mode is on. Turn it off in autonomy settings to share your screen.',
   'watch.blocked.off': 'Autonomy is off. Select “Suggestions only” to start sharing.',
   'watch.modelError': 'Viewing stopped. Check the speech service and the vision model.',
+  'watch.modelIssue.rateLimited':
+    'The provider is rate-limiting requests. Shio is skipping comments for now.',
+  'watch.modelIssue.unavailable':
+    'The model is unavailable. Screen comments require a vision model.',
   'watch.hearing': 'Live share · hearing speech',
   'watch.recognizing': 'Live share · transcribing speech',
   'avatarPreview.turn.direction': 'Turn direction',

@@ -6,12 +6,13 @@ import {
   type SpeechStreamOutput,
   TTS_STREAM_PROTOCOL_VERSION,
 } from '../../shared/speech'
-import type {
-  AudioPlayer,
-  AudioPlayOptions,
-  PcmStreamPlayback,
-  PlaybackCompletion,
-  PlaybackSession,
+import {
+  type AudioPlayer,
+  type AudioPlayOptions,
+  type PcmStreamPlayback,
+  type PlaybackCompletion,
+  type PlaybackSession,
+  PlaybackStartExpiredError,
 } from '../audio/audioPlayer'
 import type { SpeechRuntime } from './SpeechRuntime'
 
@@ -90,7 +91,9 @@ export class RuntimeSpeechOutputPort implements SpeechOutputPort {
     // Conversation Runtime reaches its await. Keep the original rejection for that
     // consumer while observing terminal failures from the moment the stream opens.
     void completion.catch((error: unknown) => {
-      if (!(error instanceof SpeechStreamCancelledError))
+      if (
+        !(error instanceof SpeechStreamCancelledError || error instanceof PlaybackStartExpiredError)
+      )
         console.error('[SpeechOutput] stream failed', error)
     })
     let audioChain = Promise.resolve()

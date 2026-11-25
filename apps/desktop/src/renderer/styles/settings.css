@@ -647,6 +647,11 @@
   }
 }
 
+.speech-volume-control {
+  min-width: 0;
+  padding-inline: 16px;
+}
+
 .microphone-test-card {
   display: grid;
   gap: 16px;

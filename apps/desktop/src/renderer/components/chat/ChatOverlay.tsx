@@ -10,6 +10,7 @@ import {
 } from 'react'
 
 import { type ShioCapabilitySnapshot } from '../../../shared/capabilities'
+import { type WatchModelIssue } from '../../../shared/watchTogether'
 import { type ControllerState, controller } from '../../Controller'
 import { shouldBlockChatSubmission } from '../../controller/firstRunState'
 import { useTranslation } from '../../localization/useTranslation'
@@ -34,6 +35,7 @@ import { useScreenContextAttachment } from './useScreenContextAttachment'
 
 interface Props {
   playbackGaps?: number
+  watchModelIssue?: WatchModelIssue
   state: ControllerState
   capabilitySnapshot: ShioCapabilitySnapshot | null
   gateOpen?: boolean
@@ -51,6 +53,7 @@ export const ChatOverlay = forwardRef<ChatOverlayHandle, Props>(function ChatOve
     state,
     capabilitySnapshot,
     playbackGaps = 0,
+    watchModelIssue,
     gateOpen = false,
     onOpenSpeechSettings,
     onOpenLlmSettings,
@@ -318,6 +321,9 @@ export const ChatOverlay = forwardRef<ChatOverlayHandle, Props>(function ChatOve
               <StatusLight variant="notice">
                 {t('watch.playbackGaps', { count: playbackGaps })}
               </StatusLight>
+            )}
+            {watchModelIssue && (
+              <StatusLight variant="notice">{t(`watch.modelIssue.${watchModelIssue}`)}</StatusLight>
             )}
           </div>
         )}

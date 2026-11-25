@@ -57,18 +57,20 @@ export function SpeechSettingsSection({
 
   return (
     <div className="settings-grid">
-      <Slider
-        label={t('settings.speech.volume')}
-        value={state.speechVolumePercent ?? DEFAULT_SPEECH_VOLUME_PERCENT}
-        isDisabled={state.speechVolumePercent === null}
-        minValue={0}
-        maxValue={100}
-        step={1}
-        formatOptions={{ style: 'unit', unit: 'percent', unitDisplay: 'narrow' }}
-        onChange={actions.setSpeechVolumePercent}
-        onChangeEnd={actions.saveSpeechVolumePercent}
-        styles={fullWidth}
-      />
+      <div className="speech-volume-control">
+        <Slider
+          label={t('settings.speech.volume')}
+          value={state.speechVolumePercent ?? DEFAULT_SPEECH_VOLUME_PERCENT}
+          isDisabled={state.speechVolumePercent === null}
+          minValue={0}
+          maxValue={100}
+          step={1}
+          formatOptions={{ style: 'unit', unit: 'percent', unitDisplay: 'narrow' }}
+          onChange={actions.setSpeechVolumePercent}
+          onChangeEnd={actions.saveSpeechVolumePercent}
+          styles={fullWidth}
+        />
+      </div>
       <Picker
         label={t('settings.speech.ttsLanguage')}
         selectedKey={state.language}

@@ -147,7 +147,7 @@ function presentRecoverableProviderFailure(error: LlmResponseError, locale: UiLo
     if (error.code === 'PROVIDER_REJECTED')
       return '[calm]Провайдер модели отклонил продолжение ответа. Попробуй ещё раз или выбери другую модель.'
     if (error.code === 'RATE_LIMITED')
-      return '[calm]Я тебя слышу. Провайдер модели сейчас ограничил запросы — попробуй ещё раз через минуту.'
+      return '[calm]Провайдер модели ограничил запросы. Попробуй позже или выбери другую модель.'
     if (error.code === 'TIMEOUT')
       return '[calm]Я тебя слышу, но ответ модели не успел прийти вовремя. Попробуй ещё раз.'
     if (error.code === 'NETWORK_ERROR')
@@ -157,7 +157,7 @@ function presentRecoverableProviderFailure(error: LlmResponseError, locale: UiLo
   if (error.code === 'PROVIDER_REJECTED')
     return '[calm]The model provider rejected the continuation. Try again or select another model.'
   if (error.code === 'RATE_LIMITED')
-    return '[calm]I hear you. The model provider is rate-limiting requests right now—try again in a minute.'
+    return '[calm]The model provider is rate-limiting requests. Try again later or select another model.'
   if (error.code === 'TIMEOUT')
     return '[calm]I hear you, but the model reply did not arrive in time. Please try again.'
   if (error.code === 'NETWORK_ERROR')

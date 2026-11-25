@@ -1,4 +1,9 @@
-import type { WatchBlockReason } from '../../shared/watchTogether'
+import {
+  WATCH_FRAME_HEIGHT,
+  WATCH_FRAME_WIDTH,
+  type WatchBlockReason,
+  type WatchModelIssue,
+} from '../../shared/watchTogether'
 import { StreamingPcmCapture } from '../audio/StreamingPcmCapture'
 import type { ControllerState } from '../Controller'
 import { controller } from '../Controller'
@@ -8,10 +13,8 @@ import { WatchPlaybackSpeech } from './WatchPlaybackSpeech'
 export type WatchFailure =
   | 'watch.sourceError'
   | 'watch.micError'
-  | 'watch.playbackSpeechError'
   | 'watch.startError'
   | `watch.blocked.${WatchBlockReason}`
-  | 'watch.modelError'
 
 /** One user-selected playback stream. Microphone/ASR and audible output keep their existing owners. */
 export class WatchTogetherCapture {
@@ -29,7 +32,7 @@ export class WatchTogetherCapture {
         observeRendererPromise(window.api.watchTogether.yield(this.id), 'wait for playback speech')
       }
     },
-    () => this.stop('watch.playbackSpeechError'),
+    () => this.releasePlayback(),
     () => this.onPlaybackGap(),
   )
   private timer?: ReturnType<typeof setInterval>
@@ -45,17 +48,20 @@ export class WatchTogetherCapture {
   private lastSampleAt = 0
   private lastTranscript = ''
   private pending = false
+  private pendingEpoch?: number
   private holdUntil = 0
   private epoch = 0
   private speaking = false
+  private playbackEnabled = false
   private occupied = false
   private turnId?: string
   constructor(
     private readonly onEnd: (error?: WatchFailure) => void,
     private readonly onPlaybackGap: () => void,
+    private readonly onModelIssue: (issue?: WatchModelIssue) => void,
   ) {
-    this.thumbnail.width = 24
-    this.thumbnail.height = 14
+    this.thumbnail.width = 48
+    this.thumbnail.height = 27
   }
 
   // Borrow the granted video-only stream. Closing the preview must not pause analysis.
@@ -91,31 +97,21 @@ export class WatchTogetherCapture {
         return
       }
       this.stream = stream
-      if (!stream.getAudioTracks().length || !stream.getVideoTracks().length)
-        throw new Error('WATCH_CAPTURE')
-      for (const track of stream.getTracks())
+      if (!stream.getVideoTracks().length) throw new Error('WATCH_CAPTURE')
+      for (const track of stream.getVideoTracks())
         track.addEventListener('ended', this.lost, { once: true })
+      for (const track of stream.getAudioTracks())
+        track.addEventListener('ended', this.releasePlayback, { once: true })
       this.video.muted = true
       this.video.srcObject = new MediaStream(stream.getVideoTracks())
       await this.video.play()
       if (this.ended) return
-      failure = 'watch.playbackSpeechError'
-      await this.playbackSpeech.start(this.lifetime.signal)
-      if (this.ended) return
-      failure = 'watch.sourceError'
-      await this.playback.startStream(
-        new MediaStream(stream.getAudioTracks()),
-        this.addAudio,
-        this.lost,
-      )
-      if (this.ended) {
-        await this.playback.stop()
-        return
-      }
+      if (stream.getAudioTracks().length)
+        observeRendererPromise(this.startPlayback(stream), 'start optional playback capture')
       failure = 'watch.micError'
       this.unsubscribeVoice = controller.onWatchSpeech(this.voiceActivity)
       this.microphone = true
-      await controller.setWatchMicrophone(true, this.lifetime.signal, this.prepareUserTurn)
+      await controller.setWatchMicrophone(id, true, this.lifetime.signal, this.prepareUserTurn)
       if (this.ended) return
       if (!controller.getState().continuousListening.microphoneCaptured)
         throw new Error('WATCH_MICROPHONE')
@@ -134,6 +130,34 @@ export class WatchTogetherCapture {
     }
   }
 
+  private async startPlayback(stream: MediaStream): Promise<void> {
+    this.playbackEnabled = true
+    try {
+      await this.playbackSpeech.start(this.lifetime.signal)
+      if (this.ended || !this.playbackEnabled) return
+      await this.playback.startStream(
+        new MediaStream(stream.getAudioTracks()),
+        this.addAudio,
+        this.releasePlayback,
+      )
+      if (this.ended || !this.playbackEnabled) await this.playback.stop()
+    } catch {
+      this.releasePlayback()
+    }
+  }
+
+  private releasePlayback = (): void => {
+    if (!this.playbackEnabled) return
+    this.playbackEnabled = false
+    this.pcm = []
+    this.samples = 0
+    this.lastTranscript = ''
+    for (const track of this.stream?.getAudioTracks() ?? []) track.stop()
+    observeRendererPromise(this.playback.stop(), 'release playback capture')
+    observeRendererPromise(this.playbackSpeech.stop(), 'release playback ASR')
+    this.onPlaybackGap()
+  }
+
   private lost = () => this.stop('watch.sourceError')
   private activity = (state: ControllerState) => {
     if (!state.continuousListening.microphoneCaptured) {
@@ -142,6 +166,7 @@ export class WatchTogetherCapture {
     }
     const occupied = state.status !== 'idle'
     if (occupied && !this.occupied) {
+      if (this.id) controller.clearWatchReaction(this.id)
       if (!this.turnId && this.id) {
         this.epoch++
         observeRendererPromise(
@@ -157,8 +182,10 @@ export class WatchTogetherCapture {
     if (talking && !this.speaking) {
       this.epoch++
       this.holdUntil = Date.now() + 3200
-      if (this.id)
+      if (this.id) {
+        controller.clearWatchReaction(this.id)
         observeRendererPromise(window.api.watchTogether.yield(this.id), 'yield shared viewing')
+      }
       if (this.turnId)
         observeRendererPromise(
           controller.yieldWatchComment(this.turnId),
@@ -186,7 +213,7 @@ export class WatchTogetherCapture {
     this.lastTranscript = ''
   }
   private addAudio = (buffer: ArrayBuffer) => {
-    if (this.ended) return
+    if (this.ended || !this.playbackEnabled) return
     this.playbackSpeech.push(buffer, controller.getState().status === 'speaking')
     const pcm = new Int16Array(buffer)
     this.pcm.push(pcm)
@@ -229,15 +256,17 @@ export class WatchTogetherCapture {
   }
 
   private async tick(): Promise<void> {
-    if (!this.id || this.ended || this.video.readyState < 2) return
-    const now = this.drawFrame(480, 270)
+    const id = this.id
+    if (!id || this.ended || this.video.readyState < 2) return
+    const now = this.drawFrame(WATCH_FRAME_WIDTH, WATCH_FRAME_HEIGHT)
     if (!now) return
     const prev = this.frame
     this.frame = now
     const tc = this.thumbnail.getContext('2d', { willReadFrequently: true })
     if (!tc) return
-    tc.drawImage(now, 0, 0, 24, 14)
-    const signature = tc.getImageData(0, 0, 24, 14).data
+    const { width, height } = this.thumbnail
+    tc.drawImage(now, 0, 0, width, height)
+    const signature = tc.getImageData(0, 0, width, height).data
     const old = this.previousSignature
     this.previousSignature = signature
     const time = Date.now()
@@ -252,20 +281,30 @@ export class WatchTogetherCapture {
         )
           score++
       }
-      if (score > (this.sceneChange?.score ?? 0)) this.sceneChange = { frame: now, at: time, score }
+      if (score >= 4 && score > (this.sceneChange?.score ?? 0))
+        this.sceneChange = { frame: now, at: time, score }
+      if (score > width * height * 0.55 && this.pendingEpoch === this.epoch && !this.turnId) {
+        this.epoch++
+        controller.clearWatchReaction(id)
+        observeRendererPromise(window.api.watchTogether.yield(id), 'discard replaced scene')
+      } else if (
+        score > width * height * 0.55 &&
+        this.turnId &&
+        controller.getState().status !== 'speaking'
+      ) {
+        observeRendererPromise(controller.yieldWatchComment(this.turnId), 'discard replaced scene')
+      }
     }
     if (
-      !prev ||
       this.blocked() ||
-      this.playbackSpeech.speaking ||
+      (this.playbackEnabled && this.playbackSpeech.speaking) ||
       this.pending ||
-      time - this.lastSampleAt < 4000 ||
-      this.samples < 16000 * 3.5
+      time - this.lastSampleAt < 4000
     )
       return
-    const pcm = new Int16Array(this.samples)
+    const pcm = new Int16Array(this.samples >= 256 ? this.samples : 0)
     let offset = 0
-    for (const chunk of this.pcm) {
+    for (const chunk of pcm.length ? this.pcm : []) {
       pcm.set(chunk, offset)
       offset += chunk.length
     }
@@ -279,43 +318,55 @@ export class WatchTogetherCapture {
       !pcm.some((s) => Math.abs(s) > 170)
     )
       return
-    const earlier = this.sceneChange?.frame === now ? prev : (this.sceneChange?.frame ?? prev)
+    const earlier =
+      this.sceneChange?.frame === now ? (prev ?? now) : (this.sceneChange?.frame ?? prev ?? now)
     this.sceneChange = undefined
     this.lastTranscript = transcript
     this.lastSampleAt = time
     const sheet = document.createElement('canvas')
-    sheet.width = 960
-    sheet.height = 270
+    sheet.width = WATCH_FRAME_WIDTH * 2
+    sheet.height = WATCH_FRAME_HEIGHT
     const canvas = sheet.getContext('2d')
     if (!canvas) return
     canvas.drawImage(earlier, 0, 0)
-    canvas.drawImage(now, 480, 0)
+    canvas.drawImage(now, WATCH_FRAME_WIDTH, 0)
     this.pending = true
     const epoch = this.epoch,
       endedAt = Date.now()
+    this.pendingEpoch = epoch
+    let commentId: string | undefined
+    let played = false
     try {
       const blob = await new Promise<Blob | null>((resolve) =>
         sheet.toBlob(resolve, 'image/jpeg', 0.72),
       )
       if (!blob || epoch !== this.epoch || this.blocked()) return
       const result = await window.api.watchTogether.observe({
-        sessionId: this.id,
+        sessionId: id,
         endedAt,
         frames: await blob.arrayBuffer(),
         pcm: pcm.buffer,
         playbackTranscript: transcript,
       })
+      if (result.kind === 'comment') commentId = result.turnId
       if (this.ended || epoch !== this.epoch) return
-      if (result.kind === 'stopped' || result.kind === 'unavailable') {
-        this.stop(result.kind === 'unavailable' ? 'watch.modelError' : undefined)
+      if (result.kind === 'stopped') {
+        this.stop()
         return
       }
+      this.onModelIssue(result.kind === 'unavailable' ? result.reason : undefined)
       if (result.kind !== 'comment' || Date.now() > result.expiresAt || this.blocked()) return
       this.turnId = result.turnId
-      await controller.watchComment(this.turnId)
+      played = (await controller.watchComment(this.turnId, result.expiresAt)) === 'completed'
     } finally {
       this.turnId = undefined
       this.pending = false
+      this.pendingEpoch = undefined
+      if (commentId)
+        observeRendererPromise(
+          window.api.watchTogether.finishComment(id, commentId, played),
+          'settle screen comment',
+        )
     }
   }
 
@@ -330,6 +381,7 @@ export class WatchTogetherCapture {
     this.unsubscribeVoice?.()
     for (const track of this.stream?.getTracks() ?? []) {
       track.removeEventListener('ended', this.lost)
+      track.removeEventListener('ended', this.releasePlayback)
       track.stop()
     }
     this.video.pause()
@@ -345,9 +397,9 @@ export class WatchTogetherCapture {
     observeRendererPromise(this.playbackSpeech.stop(), 'release playback recognition')
     if (this.id)
       observeRendererPromise(window.api.watchTogether.stop(this.id), 'release shared viewing grant')
-    if (this.microphone)
+    if (this.microphone && this.id)
       observeRendererPromise(
-        controller.setWatchMicrophone(false),
+        controller.setWatchMicrophone(this.id, false),
         'release shared viewing microphone',
       )
     this.onEnd(error)
