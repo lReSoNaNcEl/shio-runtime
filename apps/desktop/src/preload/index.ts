@@ -51,7 +51,7 @@ const api = {
   watchTogether: {
     start: (source) => ipcRenderer.invoke('watch:start', source),
     stop: (id) => ipcRenderer.invoke('watch:stop', id),
-    yield: (id) => ipcRenderer.invoke('watch:yield', id),
+    yield: (id, reason) => ipcRenderer.invoke('watch:yield', id, reason),
     classifySpeech: (id, text, recentAddress) =>
       ipcRenderer.invoke('watch:classify-speech', id, text, recentAddress),
     finishComment: (id, turnId, played) =>

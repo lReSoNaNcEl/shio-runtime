@@ -25,6 +25,7 @@ export interface SpeculativeReplyObserver {
  */
 export class SpeculativeDirectReply {
   private readonly controller = new AbortController()
+  readonly signal: AbortSignal
   private readonly startedAt: number
   private buffered: CharacterToolLoopStreamEvent[] = []
   private bufferedCharacters = 0
@@ -44,18 +45,20 @@ export class SpeculativeDirectReply {
     private readonly observer: SpeculativeReplyObserver = {},
   ) {
     this.startedAt = now()
-    const abort = () => this.discard('cancelled')
-    if (parentSignal.aborted) abort()
-    else parentSignal.addEventListener('abort', abort, { once: true })
-    this.completion = start((event) => this.accept(event), this.controller.signal)
+    this.signal = AbortSignal.any([parentSignal, this.controller.signal])
+    this.completion = start((event) => this.accept(event), this.signal).then((completion) => {
+      if (
+        this.settled === 'pending' &&
+        completion.content.length > SPECULATIVE_REPLY_MAX_CHARACTERS
+      )
+        this.discard('buffer-overflow')
+      this.signal.throwIfAborted()
+      return completion
+    })
     // The owner awaits the completion only after a release; never leave it unobserved.
     this.completion.catch(() => {
       this.failed = true
     })
-  }
-
-  get signal(): AbortSignal {
-    return this.controller.signal
   }
 
   /** Whether any visible text reached the real stream after release. */
@@ -65,7 +68,7 @@ export class SpeculativeDirectReply {
 
   /** Releases the held events in order through `sink`; live events follow. */
   release(sink: (event: CharacterToolLoopStreamEvent) => void): Promise<LlmCompletion> | null {
-    if (this.settled !== 'pending') return null
+    if (this.settled !== 'pending' || this.signal.aborted) return null
     if (this.failed) {
       // A request that already failed must not flush partial text before its error.
       this.discard('failed')
@@ -91,14 +94,18 @@ export class SpeculativeDirectReply {
 
   discard(reason: SpeculativeReplyDiscardReason): void {
     if (this.settled !== 'pending') return
+    const discardReason = this.signal.aborted ? 'cancelled' : reason
     this.settled = 'discarded'
     this.buffered = []
-    this.controller.abort(new DOMException(`Speculative reply ${reason}`, 'AbortError'))
-    this.observer.onDiscarded?.({ reason, bufferedCharacters: this.bufferedCharacters })
+    this.controller.abort(new DOMException(`Speculative reply ${discardReason}`, 'AbortError'))
+    this.observer.onDiscarded?.({
+      reason: discardReason,
+      bufferedCharacters: this.bufferedCharacters,
+    })
   }
 
   private accept(event: CharacterToolLoopStreamEvent): void {
-    if (this.settled === 'discarded') return
+    if (this.signal.aborted) return
     if (this.sink) {
       this.forward(event)
       return
@@ -109,6 +116,7 @@ export class SpeculativeDirectReply {
   }
 
   private forward(event: CharacterToolLoopStreamEvent): void {
+    if (this.signal.aborted) return
     if (event.type === 'text-delta' && /\S/u.test(event.delta.text)) this.forwardedText = true
     this.sink?.(event)
   }

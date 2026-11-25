@@ -225,7 +225,15 @@ describe('Watch Together', () => {
     const silent = { ...input, pcm: new ArrayBuffer(0), playbackTranscript: '' }
     try {
       watch.takeGrant()
-      expect(await watch.observe(silent)).toEqual({ kind: 'quiet' })
+      expect(await watch.observe({ ...silent, pcm: new Int16Array(32000).buffer })).toEqual({
+        kind: 'quiet',
+      })
+      expect(chat.mock.calls[0][0][0].content).not.toContain('playback spectrogram')
+      expect(chat.mock.calls[0][0][1].content).toEqual(
+        expect.arrayContaining([
+          { type: 'image', mimeType: 'image/jpeg', bytes: Buffer.from(silent.frames) },
+        ]),
+      )
       expect(await watch.classifySpeech(id, 'Ну, ещё разок', false)).toBe('aside')
       clock.mockReturnValue(input.endedAt + 30_000)
       const result = await watch.observe({ ...silent, endedAt: Date.now() })
@@ -280,5 +288,28 @@ describe('Watch Together', () => {
     expect(await watch.observe(input)).toEqual({ kind: 'unavailable', reason: 'rateLimited' })
     expect(chat).toHaveBeenCalledOnce()
     watch.stop(id)
+  })
+
+  it('replaces a scene as soon as the original sampling interval expires', async () => {
+    const chat = vi
+      .fn<LLMProvider['chat']>()
+      .mockResolvedValueOnce(moment('Previous scene'))
+      .mockResolvedValueOnce(moment('Current scene'))
+    const { watch, input, id } = await fixture(chat)
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(input.endedAt)
+    try {
+      watch.takeGrant()
+      await watch.observe(input)
+      clock.mockReturnValue(input.endedAt + 3_800)
+      watch.yield(id, 'scene')
+      await watch.observe({ ...input, endedAt: Date.now() })
+      expect(chat).toHaveBeenCalledOnce()
+      clock.mockReturnValue(input.endedAt + 4_100)
+      await watch.observe({ ...input, endedAt: Date.now() })
+      expect(chat).toHaveBeenCalledTimes(2)
+    } finally {
+      watch.stop(id)
+      clock.mockRestore()
+    }
   })
 })

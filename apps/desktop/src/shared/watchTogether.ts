@@ -41,7 +41,7 @@ export type WatchModelIssue = 'rateLimited' | 'unavailable'
 export interface WatchTogetherApi {
   start(sourceId: string): Promise<WatchStartResult>
   stop(sessionId: string): Promise<void>
-  yield(sessionId: string): Promise<void>
+  yield(sessionId: string, reason?: 'scene'): Promise<void>
   classifySpeech(
     sessionId: string,
     text: string,

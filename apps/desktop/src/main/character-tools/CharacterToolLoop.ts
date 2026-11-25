@@ -402,9 +402,8 @@ function visualProposalMessage(embodiment: CharacterEmbodimentIntent | null): Ch
 const DIRECT_ANSWER: CharacterToolRequirement = { type: 'direct-answer' }
 const NO_PLANNED_TOOLS: InitialCharacterToolPlan = { plannedTools: [] }
 
-/** Which request serves a turn without planned tools: the plain direct stream when no
- * tool is registered, the native tool round otherwise, or none for the structured path. */
-type DirectReplyRoute = 'direct' | 'native'
+/** Which request serves a turn without planned tools. */
+type DirectReplyRoute = 'direct' | 'native' | 'structured'
 
 function nativeToolRoute(options: CharacterToolLoopOptions, nativeToolsRejected: boolean): boolean {
   const capabilities = options.llm.capabilities?.()
@@ -422,9 +421,9 @@ function directReplyRoute(
   options: CharacterToolLoopOptions,
   registry: CharacterToolRegistry,
   nativeToolsRejected: boolean,
-): DirectReplyRoute | null {
+): DirectReplyRoute {
   if (registry.definitions().length === 0) return 'direct'
-  return nativeToolRoute(options, nativeToolsRejected) ? 'native' : null
+  return nativeToolRoute(options, nativeToolsRejected) ? 'native' : 'structured'
 }
 
 /** The one builder of a direct-answer request with no planned tools and a null visual
@@ -443,10 +442,10 @@ function directAnswerRequest(
       DIRECT_ANSWER,
       NO_PLANNED_TOOLS,
     ),
-    requestOptions:
-      route === 'native'
-        ? { ...toolRequestOptions(options, signal), toolChoice: 'none' }
-        : forwardedRequestOptions(options, signal),
+    requestOptions: {
+      ...forwardedRequestOptions(options, signal),
+      ...(route === 'native' ? { toolChoice: 'none' as const } : {}),
+    },
   }
 }
 
@@ -454,7 +453,7 @@ function directAnswerRequest(
 function speculationMatches(
   state: LoopState,
   startedRoute: DirectReplyRoute,
-  route: DirectReplyRoute | null,
+  route: DirectReplyRoute,
 ): boolean {
   return (
     state.requirement.type === 'direct-answer' &&
@@ -468,20 +467,20 @@ function speculationMatches(
 function startSpeculation(
   options: CharacterToolLoopOptions,
   turnSignal: AbortSignal,
-  route: DirectReplyRoute | null,
+  route: DirectReplyRoute,
 ): { reply: SpeculativeDirectReply; route: DirectReplyRoute } | null {
-  if (
-    !options.speculativeDirectReply ||
-    !options.enforceToolRequirements ||
-    !route ||
-    !streamingAvailable(options)
-  )
+  if (!options.speculativeDirectReply || !options.enforceToolRequirements || turnSignal.aborted)
     return null
   const registry = options.registry()
   const reply = new SpeculativeDirectReply(
     turnSignal,
-    (onEvent, signal) => {
+    async (onEvent, signal) => {
       const { messages, requestOptions } = directAnswerRequest(options, registry, route, signal)
+      if (!streamingAvailable(options)) {
+        if (route === 'native' && options.llm.complete)
+          return options.llm.complete(messages, requestOptions)
+        return textCompletion(await options.llm.chat(messages, requestOptions))
+      }
       return streamedCompletionWithSafeRetry(
         { ...options, onStreamEvent: onEvent },
         'character-speculative-reply',
@@ -489,7 +488,7 @@ function startSpeculation(
         signal,
         0,
         requestOptions,
-        true,
+        false,
       )
     },
     Date.now,
@@ -509,6 +508,10 @@ function startSpeculation(
   return { reply, route }
 }
 
+function textCompletion(content: string): LlmCompletion {
+  return { content, toolCalls: [], finishReason: 'stop' }
+}
+
 /** Serves a released speculation; a failure before visible text falls back to a fresh request. */
 async function consumeSpeculation(
   reply: SpeculativeDirectReply,
@@ -516,10 +519,13 @@ async function consumeSpeculation(
   signal: AbortSignal,
   fallback: () => Promise<LlmCompletion>,
 ): Promise<LlmCompletion> {
+  if (signal.aborted) throw new LlmTurnCancelledError()
   const pending = reply.release((event) => sink?.(event))
   if (!pending) return fallback()
   try {
-    return await pending
+    const completion = await pending
+    if (signal.aborted) throw new LlmTurnCancelledError()
+    return completion
   } catch (error) {
     if (reply.hasForwardedText() || signal.aborted) throw error
     return fallback()
@@ -1241,44 +1247,38 @@ export class CharacterToolLoop {
               state.initialPlan,
             )
           : forwardOptions.messages
-        if (streamingAvailable(options)) {
-          const request = () =>
-            streamedCompletionWithSafeRetry(
-              forwardOptions,
-              'character-reply-stream',
-              directMessages,
-              controller.signal,
-              0,
-              forwardedRequestOptions(options, controller.signal),
-              true,
-            )
-          const prefetched = releasable()
-          const completion = prefetched
-            ? await consumeSpeculation(
-                prefetched,
-                forwardOptions.onStreamEvent,
+        const request = async (): Promise<LlmCompletion> =>
+          streamingAvailable(options)
+            ? streamedCompletionWithSafeRetry(
+                forwardOptions,
+                'character-reply-stream',
+                directMessages,
                 controller.signal,
-                request,
+                0,
+                forwardedRequestOptions(options, controller.signal),
+                true,
               )
-            : await request()
-          return withToolEvidence(
-            {
-              replyText: completion.content,
-              nativeToolsRejected,
-              rounds: 0,
-              calls: 0,
-            },
-            state,
-          )
-        }
-        const replyText = await requestWithRetry(
-          options,
-          'character-reply',
-          controller.signal,
-          () =>
-            options.llm.chat(directMessages, forwardedRequestOptions(options, controller.signal)),
+            : textCompletion(
+                await requestWithRetry(options, 'character-reply', controller.signal, () =>
+                  options.llm.chat(
+                    directMessages,
+                    forwardedRequestOptions(options, controller.signal),
+                  ),
+                ),
+              )
+        const prefetched = releasable()
+        const completion = prefetched
+          ? await consumeSpeculation(
+              prefetched,
+              forwardOptions.onStreamEvent,
+              controller.signal,
+              request,
+            )
+          : await request()
+        return withToolEvidence(
+          { replyText: completion.content, nativeToolsRejected, rounds: 0, calls: 0 },
+          state,
         )
-        return withToolEvidence({ replyText, nativeToolsRejected, rounds: 0, calls: 0 }, state)
       }
 
       const native = nativeToolRoute(options, nativeToolsRejected)
@@ -1310,7 +1310,13 @@ export class CharacterToolLoop {
         }
       }
       return withToolEvidence(
-        await this.runStructured(resolvedOptions, state, controller.signal, nativeToolsRejected),
+        await this.runStructured(
+          resolvedOptions,
+          state,
+          controller.signal,
+          nativeToolsRejected,
+          releasable(),
+        ),
         state,
       )
     } catch (error) {
@@ -1444,18 +1450,20 @@ export class CharacterToolLoop {
           !continuation,
           statusBeforeRound === 'pending',
         )
-      const speculative = state.rounds === 0 ? prefetched : undefined
-      const completion = speculative
-        ? await consumeSpeculation(speculative, options.onStreamEvent, signal, streamRound)
-        : streamingAvailable(options)
-          ? await streamRound()
-          : await requestWithRetry(
+      const request = () =>
+        streamingAvailable(options)
+          ? streamRound()
+          : requestWithRetry(
               options,
               'character-tools-native',
               signal,
               () => complete(working, nativeRequestOptions),
               !continuation,
             )
+      const speculative = state.rounds === 0 ? prefetched : undefined
+      const completion = speculative
+        ? await consumeSpeculation(speculative, options.onStreamEvent, signal, request)
+        : await request()
       if (completion.toolCalls.length === 0) {
         if (statusBeforeRound === 'pending') {
           if (requirementCorrections >= CHARACTER_TOOL_REQUIREMENT_MAX_CORRECTIONS) {
@@ -1546,6 +1554,7 @@ export class CharacterToolLoop {
     state: LoopState,
     signal: AbortSignal,
     nativeToolsRejected: boolean,
+    prefetched?: SpeculativeDirectReply,
   ): Promise<CharacterToolLoopExecutionResult> {
     const working = [...options.messages]
     const transientContextStart = working.length
@@ -1569,27 +1578,32 @@ export class CharacterToolLoop {
         state.requirement,
         state.initialPlan,
       )
-      const response =
+      const request = async (): Promise<LlmCompletion> =>
         streamingAvailable(options) && statusBeforeRound !== 'pending'
-          ? (
-              await streamedCompletionWithSafeRetry(
-                options,
-                'character-tools-structured-stream',
-                requestMessages,
-                signal,
-                state.rounds,
-                requestOptions,
-                !continuation,
-                allowStructuredCalls,
-              )
-            ).content
-          : await requestWithRetry(
+          ? streamedCompletionWithSafeRetry(
               options,
-              'character-tools-structured',
+              'character-tools-structured-stream',
+              requestMessages,
               signal,
-              () => options.llm.chat(requestMessages, requestOptions),
+              state.rounds,
+              requestOptions,
               !continuation,
+              allowStructuredCalls,
             )
+          : textCompletion(
+              await requestWithRetry(
+                options,
+                'character-tools-structured',
+                signal,
+                () => options.llm.chat(requestMessages, requestOptions),
+                !continuation,
+              ),
+            )
+      const speculative = state.rounds === 0 ? prefetched : undefined
+      const completion = speculative
+        ? await consumeSpeculation(speculative, options.onStreamEvent, signal, request)
+        : await request()
+      const response = completion.content
       let parsed = parseStructuredCalls(response)
       let responseForContext = response
       if (!parsed) {

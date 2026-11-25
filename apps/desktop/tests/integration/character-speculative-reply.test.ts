@@ -13,6 +13,7 @@ import type {
   ChatMessage,
   LlmCapabilities,
   LlmCompletion,
+  LlmRequestOptions,
   LlmStreamOptions,
 } from '../../src/main/llm'
 import { LlmResponseError } from '../../src/main/llm/errors'
@@ -35,6 +36,14 @@ const emptyRegistry = () =>
   new CharacterToolRegistry({
     projectAvailable: false,
     webAvailable: false,
+    capabilityContext: null,
+    browserObservation: null,
+    actionsAvailable: false,
+  })
+
+const projectRegistry = () =>
+  new CharacterToolRegistry({
+    projectAvailable: true,
     capabilityContext: null,
     browserObservation: null,
     actionsAvailable: false,
@@ -118,7 +127,93 @@ const texts = (events: readonly CharacterToolLoopStreamEvent[]) =>
 
 const DIRECT = { requirement: { type: 'direct-answer' }, plannedTools: [], embodiment: null }
 
+function textOnlyHarness(registry: () => CharacterToolRegistry) {
+  const calls: {
+    messages: readonly ChatMessage[]
+    options: LlmRequestOptions
+    content: Deferred<string>
+  }[] = []
+  const run = (speculative: boolean) =>
+    new CharacterToolLoop().run({
+      llm: {
+        capabilities: () => ({
+          ...capabilities,
+          supportsStreaming: false,
+          supportsSchemaOutput: false,
+        }),
+        chat: (messages, options = {}) => {
+          const content = createDeferred<string>()
+          calls.push({ messages, options, content })
+          return content.promise
+        },
+      },
+      providerId: 'codex-cli',
+      messages: [{ role: 'user', content: 'Как дела?' }],
+      registry,
+      createDispatcher: () =>
+        ({ registerPlannedTools: () => undefined, dispose: () => undefined }) as never,
+      traceId: 'text-only-speculation',
+      requestOptions: { maxTokens: 1000 },
+      nativeToolsRejected: false,
+      enforceToolRequirements: true,
+      speculativeDirectReply: speculative,
+      failureReply: 'FAILURE',
+      limitReply: 'LIMIT',
+    })
+  return { calls, run }
+}
+
 describe('speculative direct reply', () => {
+  it.each([
+    { path: 'direct', registry: emptyRegistry },
+    { path: 'structured', registry: projectRegistry },
+  ])(
+    'runs the exact non-streaming $path answer while the plan is pending',
+    async ({ registry }) => {
+      const speculative = textOnlyHarness(registry)
+      const turn = speculative.run(true)
+      let finished = false
+      const completion = turn.then((result) => {
+        finished = true
+        return result
+      })
+      expect(speculative.calls).toHaveLength(2)
+      const [draft, planner] = speculative.calls
+      draft.content.resolve('[calm]Хорошо.')
+      await flush()
+      expect(finished).toBe(false)
+      planner.content.resolve(JSON.stringify(DIRECT))
+      expect((await completion).replyText).toBe('[calm]Хорошо.')
+      expect(speculative.calls).toHaveLength(2)
+
+      const sequential = textOnlyHarness(registry)
+      const sequentialTurn = sequential.run(false)
+      expect(sequential.calls).toHaveLength(1)
+      sequential.calls[0].content.resolve(JSON.stringify(DIRECT))
+      await flush()
+      expect(sequential.calls).toHaveLength(2)
+      const actual = sequential.calls[1]
+      const { signal: _draftSignal, ...draftOptions } = draft.options
+      const { signal: _actualSignal, ...actualOptions } = actual.options
+      expect(draft.messages).toEqual(actual.messages)
+      expect(draftOptions).toEqual(actualOptions)
+      actual.content.resolve('[calm]Хорошо.')
+      expect((await sequentialTurn).replyText).toBe('[calm]Хорошо.')
+    },
+  )
+
+  it('discards a non-streaming draft when the plan permits a tool', async () => {
+    const { calls, run } = textOnlyHarness(projectRegistry)
+    const turn = run(true)
+    calls[0].content.resolve('[calm]Неподходящий черновик.')
+    calls[1].content.resolve(JSON.stringify({ ...DIRECT, plannedTools: ['project.search'] }))
+    await flush()
+    expect(calls[0].options.signal?.aborted).toBe(true)
+    expect(calls).toHaveLength(3)
+    calls[2].content.resolve('[calm]Отвечаю по плану.')
+    expect((await turn).replyText).toBe('[calm]Отвечаю по плану.')
+  })
+
   it('starts the reply before the plan and releases it in order on a direct plan', async () => {
     const { streams, seen, run, resolvePlan } = harness(DIRECT)
     const turn = run(true)
@@ -219,6 +314,35 @@ describe('speculative direct reply', () => {
 })
 
 describe('speculative reply buffer', () => {
+  it('does not keep an oversized completed draft while planning is still pending', async () => {
+    const reply = new SpeculativeDirectReply(new AbortController().signal, async () => ({
+      content: 'x'.repeat(SPECULATIVE_REPLY_MAX_CHARACTERS + 1),
+      toolCalls: [],
+      finishReason: 'stop',
+    }))
+    await expect(reply.completion).rejects.toThrow('buffer-overflow')
+    expect(reply.signal.aborted).toBe(true)
+    expect(reply.release(() => undefined)).toBeNull()
+  })
+
+  it('cancels upstream after a draft has been released', async () => {
+    const parent = new AbortController()
+    const seen: CharacterToolLoopStreamEvent[] = []
+    let emit!: (value: CharacterToolLoopStreamEvent) => void
+    const reply = new SpeculativeDirectReply(parent.signal, (onEvent, signal) => {
+      emit = onEvent
+      return new Promise((_, reject) =>
+        signal.addEventListener('abort', () => reject(signal.reason), { once: true }),
+      )
+    })
+    const completion = reply.release((value) => seen.push(value))
+    emit(event('before'))
+    parent.abort(new Error('cancelled after release'))
+    emit(event('late'))
+    await expect(completion).rejects.toThrow('cancelled after release')
+    expect(texts(seen)).toEqual(['before'])
+  })
+
   const event = (text: string): CharacterToolLoopStreamEvent => ({
     type: 'text-delta',
     at: 1,

@@ -286,7 +286,10 @@ export class WatchTogetherCapture {
       if (score > width * height * 0.55 && this.pendingEpoch === this.epoch && !this.turnId) {
         this.epoch++
         controller.clearWatchReaction(id)
-        observeRendererPromise(window.api.watchTogether.yield(id), 'discard replaced scene')
+        observeRendererPromise(
+          window.api.watchTogether.yield(id, 'scene'),
+          'discard replaced scene',
+        )
       } else if (
         score > width * height * 0.55 &&
         this.turnId &&

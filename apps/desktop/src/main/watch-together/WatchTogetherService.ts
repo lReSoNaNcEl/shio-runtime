@@ -191,12 +191,13 @@ export class WatchTogetherService {
     }
   }
 
-  yield(id: string): void {
+  yield(id: string, reason?: 'scene'): void {
     const s = this.session
     if (s?.id !== id) return
     s.prepared = undefined
-    s.nextAt = Date.now() + 3200
     s.pending?.abort()
+    if (reason === 'scene') return
+    s.nextAt = Math.max(s.nextAt, Date.now() + 3200)
     s.speechPending?.abort()
   }
 
@@ -297,14 +298,15 @@ export class WatchTogetherService {
         return quiet
       const samples = new Int16Array(input.pcm)
       const levels = playbackLevels(samples)
+      const hasPlaybackSignal = levels.some((level) => level > -56)
       const transcript = input.playbackTranscript
       if (!valid()) return quiet
       mainLog.info('[WatchTogether] sampled', {
-        audio: levels.some((v) => v > -56),
+        audio: hasPlaybackSignal,
         speech: Boolean(transcript),
         samples: samples.length,
       })
-      const evidence = samples.length ? await playbackEvidence(frame, samples) : frame
+      const evidence = hasPlaybackSignal ? await playbackEvidence(frame, samples) : frame
       if (!valid()) return quiet
       const model = this.deps.model()
       const observationId = `screen-${++s.observationSequence}`
@@ -323,7 +325,7 @@ export class WatchTogetherService {
             'Only chime in for a specific new moment worth sharing; the mere appearance of an object is not such a moment.',
             'Notice when a repeated attempt pays off, fails in a new way, or ends unexpectedly. Connect the outcome to earlier evidence and thoughts spoken out loud when relevant. Do not narrate the screen.',
             'Write the observation briefly. Speak in the requested reply language.',
-            ...(samples.length
+            ...(hasPlaybackSignal
               ? [
                   'The strip below is a playback spectrogram. Use it with the playback transcript without guessing the source of a sound.',
                 ]
@@ -352,7 +354,7 @@ export class WatchTogetherService {
                     : undefined,
                 lastComment: s.lastComment,
                 playbackTranscript: transcript,
-                playbackDbPerHalfSecond: levels,
+                playbackDbPerHalfSecond: hasPlaybackSignal ? levels : undefined,
                 frames: 'Left earlier, right now.',
               }),
             },

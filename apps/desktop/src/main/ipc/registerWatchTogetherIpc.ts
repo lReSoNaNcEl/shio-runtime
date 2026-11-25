@@ -70,7 +70,11 @@ export function registerWatchTogetherIpc(
   )
   ipcMain.handle(
     'watch:yield',
-    auth.handlePayload('watch:yield', id, (_event, id) => watch.yield(id)),
+    auth.handlePayload(
+      'watch:yield',
+      z.tuple([z.string().uuid(), z.literal('scene').optional()]),
+      (_event, sessionId, reason) => watch.yield(sessionId, reason),
+    ),
   )
   ipcMain.handle(
     'watch:observe',
