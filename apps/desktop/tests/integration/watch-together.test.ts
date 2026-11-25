@@ -1,6 +1,7 @@
 import sharp from 'sharp'
 import { describe, expect, it, vi } from 'vitest'
 
+import { PERSONA_PROMPT_SECTIONS } from '../../src/main/character/prompting/persona.generated'
 import type { LLMProvider } from '../../src/main/llm/types'
 import { InMemoryStore } from '../../src/main/memory/InMemoryStore'
 import { Orchestrator } from '../../src/main/orchestrator'
@@ -137,8 +138,9 @@ describe('Watch Together', () => {
   })
 
   it('requires a one-use capture grant and policy approval before sampling, then admits a model-selected moment', async () => {
-    const chat = vi.fn(
-      async () => '{"observation":"blue ball falls","line":"Down goes the bridge!"}',
+    const line = 'Ебать, мост сложился.'
+    const chat = vi.fn<LLMProvider['chat']>(async () =>
+      JSON.stringify({ observation: 'bridge fell', line }),
     )
     const { watch, input, id, deps } = await fixture(chat)
     expect(await watch.observe(input)).toEqual({ kind: 'stopped' })
@@ -148,10 +150,13 @@ describe('Watch Together', () => {
     expect(await watch.observe(input)).toEqual({ kind: 'quiet' })
     expect(chat).not.toHaveBeenCalled()
     const choice = await watch.observe(input)
+    expect(chat.mock.calls[0][0][0].content).toContain(
+      PERSONA_PROMPT_SECTIONS.personality.join('\n'),
+    )
     expect(choice.kind).toBe('comment')
     if (choice.kind !== 'comment') throw new Error('Expected admitted commentary')
     expect(watch.takeReply('another-turn')).toBeUndefined()
-    expect(watch.takeReply(choice.turnId)).toBe('Down goes the bridge!')
+    expect(watch.takeReply(choice.turnId)).toBe(line)
     expect(watch.takeReply(choice.turnId)).toBeUndefined()
     expect(deps.admit).toHaveBeenCalledOnce()
     watch.stop(id)

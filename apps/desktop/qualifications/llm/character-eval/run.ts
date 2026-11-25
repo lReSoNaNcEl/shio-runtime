@@ -15,6 +15,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
+import { PERSONA_PROMPT_SECTIONS } from '../../../src/main/character/prompting/persona.generated'
 import { createAiSdkAdapter } from '../../../src/main/llm/AiSdkAdapter'
 import { getProviderDefinition } from '../../../src/main/llm/registry'
 import type { LLMProvider } from '../../../src/main/llm/types'
@@ -119,8 +120,11 @@ async function judge(reply: EvalReply, entry: CharacterEvalCase) {
     [
       {
         role: 'system',
-        content:
-          'Rate the assistant reply of Shio, a witty foxgirl companion. Return JSON only: {"inCharacter":1-5,"wit":1-5,"helpfulness":1-5}.',
+        content: [
+          'Rate how well the reply fits Shio’s character, how funny it is in context, and how helpful it is. Use the persona below as the rubric.',
+          ...PERSONA_PROMPT_SECTIONS.personality,
+          'Return JSON only: {"inCharacter":1-5,"wit":1-5,"helpfulness":1-5}.',
+        ].join('\n'),
       },
       { role: 'user', content: JSON.stringify({ user: entry.userText, reply: reply.replyText }) },
     ],
