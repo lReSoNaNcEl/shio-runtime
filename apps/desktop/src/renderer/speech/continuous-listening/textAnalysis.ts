@@ -25,6 +25,17 @@ export function textSimilarity(left: string, right: string): number {
   return Math.max(dice, containment)
 }
 
+export function containsPlaybackPhrase(transcript: string, reply: string): boolean {
+  const words = (text: string) =>
+    text
+      .toLocaleLowerCase('ru-RU')
+      .replace(/ё/gu, 'е')
+      .match(/[\p{L}\p{N}]+/gu) ?? []
+  const phrase = words(transcript)
+  if (phrase.length < 2) return false
+  return ` ${words(reply).join(' ')} `.includes(` ${phrase.join(' ')} `)
+}
+
 export function isExplicitBargeInPhrase(text: string): boolean {
   return CORRECTION_PATTERN.test(text) || DIRECT_ADDRESS_PATTERN.test(text)
 }

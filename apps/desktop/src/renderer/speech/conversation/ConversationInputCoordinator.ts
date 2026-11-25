@@ -31,6 +31,7 @@ import type {
 import { BargeInPolicy } from '../continuous-listening/BargeInPolicy'
 import {
   CORRECTION_PATTERN,
+  containsPlaybackPhrase,
   isExplicitBargeInPhrase,
   textSimilarity,
 } from '../continuous-listening/textAnalysis'
@@ -499,7 +500,9 @@ export class ConversationInputCoordinator {
       [...this.dependencies.getControllerState().messages]
         .reverse()
         .find((message) => message.role === 'assistant')?.text ?? ''
-    const similarity = textSimilarity(partial.text, currentReply)
+    const similarity = this.watchVoice
+      ? Number(containsPlaybackPhrase(partial.text, currentReply))
+      : textSimilarity(partial.text, currentReply)
     const likelySelfEcho =
       partial.capturedDuringPlayback &&
       !isExplicitBargeInPhrase(partial.text) &&
@@ -591,7 +594,11 @@ export class ConversationInputCoordinator {
         conversationBusy,
         true,
       )
-      if (buffered.likelySelfEcho || this.handledUtteranceIds.has(chunk.id)) return
+      if (buffered.likelySelfEcho) {
+        this.dependencies.recordRuntimeEvent('Watch Voice Echo Suppressed', chunk.id)
+        return
+      }
+      if (this.handledUtteranceIds.has(chunk.id)) return
       const disposition = await window.api.watchTogether.classifySpeech(
         watchSession,
         chunk.text.trim().slice(0, 800),
@@ -729,7 +736,9 @@ export class ConversationInputCoordinator {
       !chunk.triggeredBargeIn &&
         chunk.capturedDuringPlayback &&
         !correctionHint &&
-        textSimilarity(text, currentReply) >= bargeInTuning.selfEchoSimilarityThreshold,
+        (this.watchVoice
+          ? containsPlaybackPhrase(text, currentReply)
+          : textSimilarity(text, currentReply) >= bargeInTuning.selfEchoSimilarityThreshold),
     )
     const priorityClass: BufferedUtterance['priorityClass'] = chunk.triggeredBargeIn
       ? 'P0'

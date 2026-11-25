@@ -7,6 +7,11 @@ import type { LLMProvider } from '../../src/main/llm/types'
 import { InMemoryStore } from '../../src/main/memory/InMemoryStore'
 import { Orchestrator } from '../../src/main/orchestrator'
 import { WatchTogetherService } from '../../src/main/watch-together/WatchTogetherService'
+import {
+  containsPlaybackPhrase,
+  textSimilarity,
+} from '../../src/renderer/speech/continuous-listening/textAnalysis'
+import { bargeInTuning } from '../../src/renderer/speech/continuous-listening/tuning'
 import type { AppSettings } from '../../src/shared/config'
 import {
   WATCH_FRAME_HEIGHT,
@@ -55,6 +60,17 @@ async function fixture(chat: LLMProvider['chat']) {
   return { watch, id, deps, input }
 }
 describe('Watch Together', () => {
+  it('recognizes spoken echo without suppressing follow-ups that reuse words from the reply', () => {
+    const reply = 'У тебя открыта страница Spaces. Это каталог, где видно, что ещё можно открыть.'
+    const followUp = 'Что это за страница у меня открыта?'
+    expect(textSimilarity(followUp, reply)).toBeGreaterThanOrEqual(
+      bargeInTuning.selfEchoSimilarityThreshold,
+    )
+    expect(containsPlaybackPhrase(followUp, reply)).toBe(false)
+    expect(containsPlaybackPhrase('Это каталог где видно что еще можно открыть', reply)).toBe(true)
+    expect(containsPlaybackPhrase('каталог где', 'Это каталоги, где много приложений.')).toBe(false)
+  })
+
   it('binds source speech to the user turn during cooldown and remembers their take within this session', async () => {
     const chat = vi.fn<LLMProvider['chat']>(async () => moment('bridge fell'))
     const { watch, deps, id, input } = await fixture(chat)
