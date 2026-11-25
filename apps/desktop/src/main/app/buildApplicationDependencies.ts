@@ -179,7 +179,6 @@ export function buildApplicationDependencies(): ApplicationDependencies {
   let lastAvatarMouth: unknown = null
   let lastAvatarBody: BodyPresentationProjection | null = null
   let lastAvatarRuntimeHealth: AvatarRuntimeHealth | null = null
-  const screenContextService = new ScreenContextService(new ScreenCaptureAdapter())
   const pluginCapabilities = new PluginCapabilityRegistry()
   const browserWorkflowScopes = new BrowserWorkflowScopeRegistry()
 
@@ -194,6 +193,9 @@ export function buildApplicationDependencies(): ApplicationDependencies {
     }
   }
   const overlayWindows = new OverlayWindowManager((target) => loadRenderer(target, true))
+  const screenContextService = new ScreenContextService(
+    new ScreenCaptureAdapter((sourceId) => !overlayWindows.isCaptureSource(sourceId)),
+  )
   const mainWindows = new MainWindowManager(
     (target) => loadRenderer(target),
     () => !quitting,
@@ -774,11 +776,17 @@ export function buildApplicationDependencies(): ApplicationDependencies {
           expiresAt,
         }),
       ended: (event) => {
+        overlayWindows.setCaptureExcluded(false)
         if (!watchWindow.isDestroyed() && !watchWindow.webContents.isDestroyed())
           watchWindow.webContents.send('watch:stopped', event)
       },
     })
-    const removeWatch = registerWatchTogetherIpc(watchWindow, watch, ipcAuthorization)
+    const removeWatch = registerWatchTogetherIpc(
+      watchWindow,
+      watch,
+      ipcAuthorization,
+      overlayWindows,
+    )
     const unsubscribeWatch = watchAlive.onChanged(({ settings }) => {
       const reason = watchBlockReason(settings)
       if (reason) watch.stop(undefined, reason)

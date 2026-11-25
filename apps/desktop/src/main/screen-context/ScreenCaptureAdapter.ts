@@ -52,10 +52,12 @@ async function getSources(
 }
 
 export class ScreenCaptureAdapter {
+  constructor(private readonly isSelectable: (sourceId: string) => boolean = () => true) {}
+
   async listSources(): Promise<ScreenContextSource[]> {
     const sources = await getSources(PREVIEW_SIZE, true)
     const result = sources.flatMap((source): ScreenContextSource[] => {
-      if (source.thumbnail.isEmpty()) return []
+      if (source.thumbnail.isEmpty() || !this.isSelectable(source.id)) return []
       const kind = sourceKind(source)
       return [
         {

@@ -249,6 +249,64 @@ describe('Watch Together', () => {
     }
   })
 
+  it('keeps the first spoken request while yielding, deduplicates repeats and processes the latest distinct request', async () => {
+    const first = Promise.withResolvers<string>()
+    const addressed = JSON.stringify({ disposition: 'addressed', summary: '' })
+    const chat = vi.fn<LLMProvider['chat']>().mockReturnValueOnce(first.promise)
+    chat.mockResolvedValueOnce(addressed)
+    const { watch, id } = await fixture(chat)
+    watch.takeGrant()
+    const request = watch.classifySpeech(id, 'Расскажи, что сейчас на экране.', false)
+    const queued = watch.classifySpeech(id, 'А что там открыто?', false)
+    watch.yield(id)
+    watch.yield(id, 'scene')
+    expect(await watch.classifySpeech(id, 'Расскажи, что сейчас на экране?', false)).toBe('ignore')
+    const latest = watch.classifySpeech(id, 'Что это за страница?', false)
+    expect(await queued).toBe('ignore')
+    expect(chat).toHaveBeenCalledOnce()
+    expect(chat.mock.calls[0][1]?.timeoutMs).toBeGreaterThan(5_000)
+    expect(chat.mock.calls[0][1]?.signal?.aborted).toBe(false)
+    first.resolve(addressed)
+    expect(await Promise.all([request, queued, latest])).toEqual([
+      'addressed',
+      'ignore',
+      'addressed',
+    ])
+    expect(chat).toHaveBeenCalledTimes(2)
+    expect(chat.mock.calls[1][0][1].content).toContain('Что это за страница?')
+    watch.stop(id)
+  })
+
+  it('lets the caller distinguish a provider timeout from a stopped session', async () => {
+    const deadline = new AbortController()
+    const timeout = vi.spyOn(AbortSignal, 'timeout').mockReturnValue(deadline.signal)
+    const first = Promise.withResolvers<string>()
+    const second = Promise.withResolvers<string>()
+    const addressed = JSON.stringify({ disposition: 'addressed', summary: '' })
+    const chat = vi.fn<LLMProvider['chat']>().mockReturnValueOnce(first.promise)
+    chat.mockReturnValueOnce(second.promise)
+    const { watch, id } = await fixture(chat)
+    try {
+      watch.takeGrant()
+      const request = watch.classifySpeech(id, 'Что на экране?', false)
+      deadline.abort()
+      first.resolve(addressed)
+      expect(await request).toBeUndefined()
+      timeout.mockRestore()
+      const next = watch.classifySpeech(id, 'Что я открыл?', false)
+      const queued = watch.classifySpeech(id, 'Расскажи подробнее', true)
+      watch.stop(id)
+      expect(chat.mock.calls[1][1]?.signal?.aborted).toBe(true)
+      expect(await queued).toBe('ignore')
+      second.resolve(addressed)
+      expect(await Promise.all([next, queued])).toEqual(['ignore', 'ignore'])
+      expect(chat).toHaveBeenCalledTimes(2)
+    } finally {
+      timeout.mockRestore()
+      watch.stop(id)
+    }
+  })
+
   it('only offers one nonverbal reaction for a grounded moment', async () => {
     const chat = vi
       .fn<LLMProvider['chat']>()

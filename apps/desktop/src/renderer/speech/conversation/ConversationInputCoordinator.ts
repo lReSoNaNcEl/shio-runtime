@@ -597,12 +597,16 @@ export class ConversationInputCoordinator {
         chunk.text.trim().slice(0, 800),
         followUpWindow,
       )
+      const fallbackAddressed =
+        disposition === undefined &&
+        (fallbackAttention.directAddress ||
+          chunk.triggeredBargeIn ||
+          (followUpWindow && buffered.question))
       if (
         this.watchVoice !== watchSession ||
         this.streamingSessionId !== chunk.streamingSessionId ||
         this.conversationSessionResetPending ||
-        (disposition !== 'addressed' &&
-          !(disposition === undefined && fallbackAttention.directAddress))
+        (disposition !== 'addressed' && !fallbackAddressed)
       )
         return
       this.dependencies.recordRuntimeEvent('Watch Voice Accepted', chunk.completionReason)

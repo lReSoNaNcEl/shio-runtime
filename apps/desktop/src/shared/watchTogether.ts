@@ -2,6 +2,7 @@ import type { AutonomySettings } from './alive'
 
 export const WATCH_FRAME_WIDTH = 768
 export const WATCH_FRAME_HEIGHT = 432
+export const WATCH_MAX_FRAME_BYTES = 300_000
 
 export type WatchBlockReason = 'suspended' | 'off' | 'private'
 

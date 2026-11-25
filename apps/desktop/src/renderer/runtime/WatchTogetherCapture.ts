@@ -1,6 +1,7 @@
 import {
   WATCH_FRAME_HEIGHT,
   WATCH_FRAME_WIDTH,
+  WATCH_MAX_FRAME_BYTES,
   type WatchBlockReason,
   type WatchModelIssue,
 } from '../../shared/watchTogether'
@@ -15,6 +16,16 @@ export type WatchFailure =
   | 'watch.micError'
   | 'watch.startError'
   | `watch.blocked.${WatchBlockReason}`
+
+async function encodeFrame(canvas: HTMLCanvasElement): Promise<ArrayBuffer | undefined> {
+  for (const quality of [0.72, 0.45]) {
+    const image = await new Promise<Blob | null>((resolve) =>
+      canvas.toBlob(resolve, 'image/jpeg', quality),
+    )
+    if (image && image.size >= 100 && image.size <= WATCH_MAX_FRAME_BYTES)
+      return image.arrayBuffer()
+  }
+}
 
 /** One user-selected playback stream. Microphone/ASR and audible output keep their existing owners. */
 export class WatchTogetherCapture {
@@ -98,6 +109,10 @@ export class WatchTogetherCapture {
       }
       this.stream = stream
       if (!stream.getVideoTracks().length) throw new Error('WATCH_CAPTURE')
+      observeRendererPromise(
+        controller.refreshOverlayVisibility(),
+        'refresh watch overlay visibility',
+      )
       for (const track of stream.getVideoTracks())
         track.addEventListener('ended', this.lost, { once: true })
       for (const track of stream.getAudioTracks())
@@ -241,16 +256,14 @@ export class WatchTogetherCapture {
 
   private prepareUserTurn = async (turnId: string, fromMicrophone: boolean): Promise<void> => {
     if (!this.id || this.ended) return
-    const frame = this.drawFrame(768, 432)
-    const image = frame
-      ? await new Promise<Blob | null>((resolve) => frame.toBlob(resolve, 'image/jpeg', 0.72))
-      : undefined
+    const frame = this.drawFrame(WATCH_FRAME_WIDTH, WATCH_FRAME_HEIGHT)
+    const image = frame ? await encodeFrame(frame) : undefined
     if (!this.ended)
       await window.api.watchTogether.prepareTurn(
         this.id,
         turnId,
         fromMicrophone,
-        await image?.arrayBuffer(),
+        image,
         this.playbackSpeech.transcript(),
       )
   }
@@ -340,14 +353,12 @@ export class WatchTogetherCapture {
     let commentId: string | undefined
     let played = false
     try {
-      const blob = await new Promise<Blob | null>((resolve) =>
-        sheet.toBlob(resolve, 'image/jpeg', 0.72),
-      )
-      if (!blob || epoch !== this.epoch || this.blocked()) return
+      const frames = await encodeFrame(sheet)
+      if (!frames || epoch !== this.epoch || this.blocked()) return
       const result = await window.api.watchTogether.observe({
         sessionId: id,
         endedAt,
-        frames: await blob.arrayBuffer(),
+        frames,
         pcm: pcm.buffer,
         playbackTranscript: transcript,
       })

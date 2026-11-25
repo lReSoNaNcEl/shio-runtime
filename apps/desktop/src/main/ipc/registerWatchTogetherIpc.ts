@@ -1,13 +1,16 @@
 import { type BrowserWindow, desktopCapturer, ipcMain } from 'electron'
 import { z } from 'zod'
 
+import { WATCH_MAX_FRAME_BYTES } from '../../shared/watchTogether'
 import type { WatchTogetherService } from '../watch-together/WatchTogetherService'
+import type { OverlayWindowManager } from '../windows/OverlayWindowManager'
 import type { IpcAuthorization } from './IpcAuthorization'
 
 export function registerWatchTogetherIpc(
   win: BrowserWindow,
   watch: WatchTogetherService,
   auth: IpcAuthorization,
+  overlay: OverlayWindowManager,
 ): () => void {
   const id = z.tuple([z.string().uuid()])
   const bytes = (min: number, max: number) =>
@@ -17,7 +20,7 @@ export function registerWatchTogetherIpc(
       .object({
         sessionId: z.string().uuid(),
         endedAt: z.number().int().positive(),
-        frames: bytes(100, 300000),
+        frames: bytes(100, WATCH_MAX_FRAME_BYTES),
         pcm: bytes(0, 192000).refine(
           (b) => b.byteLength === 0 || (b.byteLength >= 512 && b.byteLength % 2 === 0),
         ),
@@ -45,10 +48,19 @@ export function registerWatchTogetherIpc(
         thumbnailSize: { width: 0, height: 0 },
       })
       const video = sources.find((s) => s.id === grant.sourceId)
-      if (!video || wc.isDestroyed() || request.frame !== wc.mainFrame || !watch.current(grant.id))
+      if (
+        !video ||
+        overlay.isCaptureSource(grant.sourceId) ||
+        wc.isDestroyed() ||
+        request.frame !== wc.mainFrame ||
+        !watch.current(grant.id)
+      )
         return cb({})
+      overlay.setCaptureExcluded(true)
+      overlay.ensure()
       cb({ video, audio: 'loopback' })
     } catch {
+      if (watch.current(grant.id)) overlay.setCaptureExcluded(false)
       cb({})
     }
   })
@@ -105,7 +117,7 @@ export function registerWatchTogetherIpc(
         z.string().uuid(),
         z.string().min(1).max(100),
         z.boolean(),
-        bytes(100, 300000).optional(),
+        bytes(100, WATCH_MAX_FRAME_BYTES).optional(),
         z.string().max(1000).optional(),
       ]),
       (_event, sessionId, turnId, fromMicrophone, frame, transcript) =>

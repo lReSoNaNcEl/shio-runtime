@@ -14,6 +14,7 @@ export class OverlayWindowManager {
   private window: BrowserWindow | null = null
   private creating = false
   private quitting = false
+  private excludedFromCapture = false
   private readonly health = new RendererProcessHealthTracker()
   private loadAttempt = 0
 
@@ -29,6 +30,18 @@ export class OverlayWindowManager {
 
   webContentsId(): number | null {
     return this.window && !this.window.isDestroyed() ? this.window.webContents.id : null
+  }
+
+  isCaptureSource(sourceId: string): boolean {
+    return Boolean(
+      this.window && !this.window.isDestroyed() && this.window.getMediaSourceId() === sourceId,
+    )
+  }
+
+  setCaptureExcluded(excluded: boolean): void {
+    if (this.excludedFromCapture === excluded) return
+    if (this.window && !this.window.isDestroyed()) this.window.setContentProtection(excluded)
+    this.excludedFromCapture = excluded
   }
 
   getHealth(): RendererProcessHealth {
@@ -90,6 +103,7 @@ export class OverlayWindowManager {
       const created = new BrowserWindow({
         ...bounds,
         title: 'Shio - Оверлей',
+        show: false,
         frame: false,
         transparent: true,
         resizable: false,
@@ -105,6 +119,7 @@ export class OverlayWindowManager {
           webSecurity: true,
         },
       })
+      if (this.excludedFromCapture) created.setContentProtection(true)
       this.health.reset()
       this.loadAttempt = 0
       installRendererNavigationGuards(created)
@@ -115,6 +130,7 @@ export class OverlayWindowManager {
         if (this.window === created) this.window = null
       })
       this.load(created)
+      created.showInactive()
       return created
     } finally {
       this.creating = false
