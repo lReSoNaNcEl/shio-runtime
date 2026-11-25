@@ -49,7 +49,7 @@ const api = {
     status: () => ipcRenderer.invoke('motion:status'),
   },
   watchTogether: {
-    start: (source) => ipcRenderer.invoke('watch:start', source),
+    start: (source, reference) => ipcRenderer.invoke('watch:start', source, reference),
     stop: (id) => ipcRenderer.invoke('watch:stop', id),
     yield: (id, reason) => ipcRenderer.invoke('watch:yield', id, reason),
     classifySpeech: (id, text, recentAddress) =>

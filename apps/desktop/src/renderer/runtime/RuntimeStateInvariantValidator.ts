@@ -15,6 +15,8 @@
  * validator never emits a false violation.
  */
 
+import type { ExpressionSource } from '../avatar/embodiment/facial/FacialDebugTypes'
+
 export type InvariantId =
   | 'INV-01-speaking-lipsync'
   | 'INV-02-noplayback-not-speaking'
@@ -102,7 +104,14 @@ export interface RuntimeHealth {
   subsystems: Record<string, string>
 }
 
-const KNOWN_FACIAL_SOURCES = new Set(['emotion', 'lipSync', 'autoBlink', 'lookAt'])
+const KNOWN_FACIAL_SOURCES = {
+  emotion: true,
+  lipSync: true,
+  autoBlink: true,
+  lookAt: true,
+  speakingEye: true,
+  facialActing: true,
+} satisfies Record<ExpressionSource, true>
 
 /** How long a failing condition must persist before it is reported (ms). */
 const HOLD_MS = 450
@@ -259,7 +268,7 @@ export class RuntimeStateInvariantValidator {
       suspectedOwner: 'AvatarExpressionMixer',
       evaluate: (i) => {
         const foreign = [...new Set([...i.facialActiveSources, ...i.facialEntrySources])].filter(
-          (s) => !KNOWN_FACIAL_SOURCES.has(s),
+          (s) => !Object.hasOwn(KNOWN_FACIAL_SOURCES, s),
         )
         return {
           ok: foreign.length === 0,

@@ -227,7 +227,7 @@ export class AliveFacade {
       })
       if (event.type === 'watch-screen-moment') {
         command.watchReaction = { sessionId: event.sessionId, expiresAt: event.expiresAt }
-        command.holdMs = 1500
+        command.holdMs = event.reaction === 'surprise' ? 1400 : 850
       }
       this.emitBehavior(command)
       this.publish()

@@ -25,6 +25,7 @@ export const DESKTOP_CONTROL_MANIFEST: PluginManifest = {
 
 export interface DesktopControlPluginDependencies {
   adapter: DshHarnessAdapter
+  characterModel(): DesktopControlStatus['model']
   authorityMode(): DesktopAuthorityMode
 }
 
@@ -82,7 +83,6 @@ export class DesktopControlPlugin implements BundledPlugin {
     }
     await this.refreshAvailability()
     const runtime = this.dependencies.adapter.snapshot()
-    const model = this.dependencies.adapter.modelSnapshot()
     if (!this.packagedRuntimeAvailable) {
       return {
         state: 'needs-setup',
@@ -93,12 +93,10 @@ export class DesktopControlPlugin implements BundledPlugin {
     if (runtime.state === 'error') {
       return { state: 'error', detail: runtime.lastError, checkedAt: Date.now() }
     }
-    if (this.active && (!model.configured || !this.shellAvailability.executableAvailable)) {
+    if (this.active && !this.shellAvailability.executableAvailable) {
       return {
         state: 'needs-setup',
-        detailKey: model.configured
-          ? 'plugins.desktopControl.controlNeedsSetup'
-          : 'plugins.desktopControl.modelNeedsSetup',
+        detailKey: 'plugins.desktopControl.controlNeedsSetup',
         checkedAt: Date.now(),
       }
     }
@@ -110,37 +108,28 @@ export class DesktopControlPlugin implements BundledPlugin {
   }
 
   async getStatus(): Promise<DesktopControlStatus> {
-    this.assertInitialized()
-    await this.refreshAvailability()
-    const runtime = this.dependencies.adapter.snapshot()
-    const model = this.dependencies.adapter.modelSnapshot()
-    const automationEngine =
-      this.active && this.packagedRuntimeAvailable && model.configured ? 'ready' : 'needs-setup'
-    const computerControl =
-      this.active &&
-      this.packagedRuntimeAvailable &&
-      this.shellAvailability.executableAvailable &&
-      model.configured
-        ? 'ready'
-        : 'needs-setup'
+    const capabilities = await this.getCapabilityProjection()
     return {
-      enabled: this.active,
-      runtime: { ...runtime, packagedRuntimeAvailable: this.packagedRuntimeAvailable },
-      automationEngine,
-      computerControl,
+      ...capabilities,
+      runtime: {
+        ...this.dependencies.adapter.snapshot(),
+        packagedRuntimeAvailable: this.packagedRuntimeAvailable,
+      },
       shell: this.shellAvailability,
-      authorityMode: this.dependencies.authorityMode(),
-      model,
+      model: this.dependencies.characterModel(),
     }
   }
 
   async getCapabilityProjection(): Promise<DesktopControlCapabilityProjection> {
-    const status = await this.getStatus()
+    this.assertInitialized()
+    await this.refreshAvailability()
+    const engineReady = this.active && this.packagedRuntimeAvailable
     return {
-      enabled: status.enabled,
-      automationEngine: status.automationEngine,
-      computerControl: status.computerControl,
-      authorityMode: status.authorityMode,
+      enabled: this.active,
+      automationEngine: engineReady ? 'ready' : 'needs-setup',
+      computerControl:
+        engineReady && this.shellAvailability.executableAvailable ? 'ready' : 'needs-setup',
+      authorityMode: this.dependencies.authorityMode(),
     }
   }
 

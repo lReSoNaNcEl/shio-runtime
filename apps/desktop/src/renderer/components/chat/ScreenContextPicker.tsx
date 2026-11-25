@@ -1,6 +1,7 @@
 import {
   Badge,
   Button,
+  Checkbox,
   Content,
   Dialog,
   DialogContainer,
@@ -8,6 +9,7 @@ import {
   Heading,
   ProgressCircle,
   Text,
+  TextField,
   ToggleButton,
 } from '@react-spectrum/s2'
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -17,6 +19,7 @@ import {
   type ScreenContextErrorCode,
   type ScreenContextSource,
 } from '../../../shared/screen-context'
+import { type WatchReference, watchReferenceUrl } from '../../../shared/watchTogether'
 import { useTranslation } from '../../localization/useTranslation'
 import { observeRendererPromise } from '../../reliability/observePromise'
 import { screenContextErrorMessage } from './screenContextErrorMessage'
@@ -33,7 +36,8 @@ interface Props {
   isOpen: boolean
   onDismiss: () => void
   onChangeModel: () => void
-  onWatch?: (sourceId: string, sourceName: string) => void
+  referenceAvailable?: boolean
+  onWatch?: (sourceId: string, sourceName: string, reference?: WatchReference) => void
   onAttach?: (capture: ScreenContextCaptureDescriptor) => void
 }
 
@@ -43,11 +47,15 @@ export function ScreenContextPicker({
   onChangeModel,
   onAttach,
   onWatch,
+  referenceAvailable,
 }: Props) {
   const { t } = useTranslation()
   const [state, setState] = useState<PickerState>('checking-capability')
   const [sources, setSources] = useState<ScreenContextSource[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [reference, setReference] = useState('')
+  const [wikiEnabled, setWikiEnabled] = useState(false)
+  const invalidReference = Boolean(reference.trim() && !watchReferenceUrl(reference.trim()))
   const [errorCode, setErrorCode] = useState<ScreenContextErrorCode | null>(null)
   const operationIdRef = useRef(0)
   const mainOperationIdRef = useRef<string | null>(null)
@@ -96,6 +104,8 @@ export function ScreenContextPicker({
 
   useEffect(() => {
     if (!isOpen) {
+      setReference('')
+      setWikiEnabled(false)
       operationIdRef.current += 1
       const mainOperationId = mainOperationIdRef.current
       mainOperationIdRef.current = null
@@ -130,7 +140,16 @@ export function ScreenContextPicker({
     if (onWatch) {
       const source = sources.find((candidate) => candidate.id === selectedId)
       if (!source) return
-      onWatch(source.id, source.name)
+      if (referenceAvailable && invalidReference) return
+      onWatch(
+        source.id,
+        source.name,
+        referenceAvailable
+          ? wikiEnabled
+            ? { kind: 'wikipedia' }
+            : watchReferenceUrl(reference.trim())
+          : undefined,
+      )
       onDismiss()
       return
     }
@@ -171,10 +190,33 @@ export function ScreenContextPicker({
     <DialogContainer onDismiss={onDismiss}>
       {isOpen && (
         <Dialog size="L" isDismissible>
-          <Heading>{t(onWatch ? 'watch.title' : 'screenContext.picker.title')}</Heading>
+          <Heading slot="title">
+            {t(onWatch ? 'watch.title' : 'screenContext.picker.title')}
+          </Heading>
           <Content>
             <div className="screen-context-picker">
               {onWatch && <Text>{t('watch.description')}</Text>}
+              {onWatch && referenceAvailable && state === 'source-list' && (
+                <>
+                  <TextField
+                    label={t('watch.reference.label')}
+                    description={t('watch.reference.description')}
+                    value={reference}
+                    isDisabled={wikiEnabled}
+                    onChange={setReference}
+                    isInvalid={invalidReference}
+                    errorMessage={t('watch.reference.invalid')}
+                  />
+                  <Checkbox
+                    isSelected={wikiEnabled}
+                    isDisabled={Boolean(reference.trim())}
+                    onChange={setWikiEnabled}
+                  >
+                    {t('watch.reference.wikipedia')}
+                  </Checkbox>
+                  {wikiEnabled && <Text>{t('watch.reference.wikipediaDescription')}</Text>}
+                </>
+              )}
               {busy && (
                 <div className="screen-context-picker-state">
                   <ProgressCircle aria-label={t('common.loading')} isIndeterminate size="L" />
@@ -273,7 +315,9 @@ export function ScreenContextPicker({
               {state === 'source-list' && (
                 <Button
                   variant="accent"
-                  isDisabled={!selectedId}
+                  isDisabled={
+                    !selectedId || Boolean(onWatch && referenceAvailable && invalidReference)
+                  }
                   onPress={() =>
                     observeRendererPromise(attach(), 'attach selected Screen Context source')
                   }

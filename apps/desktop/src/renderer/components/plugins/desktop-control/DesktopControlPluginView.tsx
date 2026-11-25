@@ -241,7 +241,7 @@ export function DesktopControlPluginView({
             isDisabled={
               busy ||
               !plugin.enabled ||
-              !status.model.configured ||
+              !status.shell.executableAvailable ||
               !status.runtime.packagedRuntimeAvailable ||
               ['ready', 'running', 'starting'].includes(status.runtime.state)
             }

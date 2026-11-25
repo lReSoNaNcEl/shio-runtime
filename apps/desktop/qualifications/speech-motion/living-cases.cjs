@@ -1,5 +1,6 @@
 const assert = require('node:assert/strict')
 const path = require('node:path')
+const { selectPreviewCamera } = require('./select-preview-camera.cjs')
 const { recordCanvas } = require('./record-canvas.cjs')
 const { captureWindow } = require('./capture-window.cjs')
 
@@ -8,7 +9,7 @@ async function qualifyLiving({ application, page, directory, report, pause, reco
   await page.waitForFunction(() => !!window.__motionAbController)
   if (!chatView) {
     await page.locator('.app-sidebar').getByRole('button', { name: 'Avatar', exact: true }).click()
-    await page.getByRole('button', { name: 'Full body', exact: true }).click()
+    await selectPreviewCamera(page, 'Full body')
   }
   report.livingPresentation = chatView
     ? 'Chat + Overlay, Avatar Preview never mounted'
@@ -96,10 +97,7 @@ async function qualifyLiving({ application, page, directory, report, pause, reco
     if (fixture.realLlm)
       await page.evaluate(() => window.__motionAbController.startNewConversation())
     const emotionCase = fixture.realLlm || fixture.segments
-    if (!chatView)
-      await page
-        .getByRole('button', { name: emotionCase ? 'Face' : 'Full body', exact: true })
-        .click()
+    if (!chatView) await selectPreviewCamera(page, emotionCase ? 'Face' : 'Full body')
     await overlay.evaluate(() => {
       const state = {
         finalExpressionPeaks: {},

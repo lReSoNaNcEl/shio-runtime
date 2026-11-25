@@ -5,6 +5,14 @@ export const ruMessages = {
   'streaming.microphonePending':
     'Выбранный микрофон включится при следующем запуске прослушивания.',
   'watch.title': 'Трансляция',
+  'watch.connecting': 'Подключение',
+  'watch.live': 'В эфире',
+  'watch.stopShort': 'Остановить',
+  'watch.micListening': 'Микрофон включён',
+  'watch.micHearing': 'Шио слышит речь',
+  'watch.micRecognizing': 'Шио распознаёт речь',
+  'watch.micStarting': 'Подключение микрофона',
+  'watch.micReconnecting': 'Восстанавливается связь с распознаванием',
   'watch.preview': 'Предпросмотр',
   'watch.liveFrame': 'Текущее изображение трансляции',
   'watch.initialSource': 'Источник при запуске — {name}',
@@ -15,6 +23,13 @@ export const ruMessages = {
   'watch.active': 'Трансляция',
   'watch.description':
     'Выбери окно или экран. Шио увидит его, услышит системный звук и будет слушать твой микрофон. Кадры и сведения о звуке отправляются модели персонажа.',
+  'watch.reference.label': 'Страница для сверки (необязательно)',
+  'watch.reference.description':
+    'Шио сможет сама один раз открыть эту ссылку в своём браузере, если страница поможет разобраться в происходящем.',
+  'watch.reference.invalid': 'Введи HTTPS-ссылку без логина и пароля.',
+  'watch.reference.wikipedia': 'Найти статью в Википедии',
+  'watch.reference.wikipediaDescription':
+    'Шио сможет один раз открыть статью о происходящем на экране. Название выбранной темы будет отправлено Википедии.',
   'watch.start': 'Начать трансляцию',
   'watch.stop': 'Остановить трансляцию',
   'watch.sourceError':
@@ -352,20 +367,19 @@ export const ruMessages = {
   'plugins.desktopControl.accessMode.full': 'Без подтверждения',
   'plugins.desktopControl.runtimeTitle': 'Сервис автоматизации',
   'plugins.desktopControl.runtimeDescription':
-    'Локальный сервис планирует задания для браузера и PowerShell. Он запускается по требованию и полностью останавливается при отключении плагина.',
+    'Локальный сервис выполняет команды PowerShell, запускается по требованию и останавливается при отключении плагина.',
   'plugins.desktopControl.startRuntime': 'Запустить сервис',
   'plugins.desktopControl.stopRuntime': 'Остановить сервис',
   'plugins.desktopControl.activeTask': 'Активное задание',
   'plugins.desktopControl.activeTaskDescription': 'Shio выполняет задачу на компьютере…',
-  'plugins.desktopControl.modelTitle': 'Модель для автоматизации',
+  'plugins.desktopControl.modelTitle': 'Модель Шио',
   'plugins.desktopControl.modelDescription':
-    'Desktop Control использует активного OpenAI-совместимого провайдера, модель и API-ключ из общих настроек Shio.',
+    'Шио разбирает запрос в чате с помощью выбранной модели. Для исполнения готовой команды PowerShell отдельный API-ключ не требуется.',
   'plugins.desktopControl.modelProvider': 'Провайдер',
   'plugins.desktopControl.modelReady': 'Модель настроена',
-  'plugins.desktopControl.modelNeedsSetup': 'Нужны модель и API-ключ',
+  'plugins.desktopControl.modelNeedsSetup': 'Проверьте настройки модели Шио',
   'plugins.desktopControl.browserNeedsSetup': 'Нужен установленный Google Chrome',
-  'plugins.desktopControl.controlNeedsSetup':
-    'Для управления нужен Google Chrome или доступный PowerShell',
+  'plugins.desktopControl.controlNeedsSetup': 'Для выполнения команд нужен доступный PowerShell.',
   'plugins.desktopControl.browserSessionError':
     'Текущая сессия браузера завершилась с ошибкой; новая навигация создаст свежую сессию.',
   'plugins.desktopControl.modelSettingsHint':
@@ -536,8 +550,8 @@ export const ruMessages = {
   'app.theme.switch': 'Переключить тему интерфейса',
   'app.theme.dark': 'Тёмная тема',
   'app.theme.light': 'Светлая тема',
-  'app.section.avatar.title': 'Avatar Preview',
-  'app.section.avatar.subtitle': 'Предпросмотр модели и её текущего состояния',
+  'app.section.avatar.title': 'Аватар',
+  'app.section.avatar.subtitle': 'Движения и ракурсы модели',
   'app.section.diagnostics.title': 'Диагностика',
   'app.section.diagnostics.subtitle': 'Снимки Runtime, события и сетевые запросы',
   'app.section.settings.subtitle': 'Конфигурация приложения и персонажа',
@@ -662,24 +676,13 @@ export const ruMessages = {
   'chat.ready': 'Shio готова',
   'chat.jumpToLatest': '↓ К последнему сообщению',
   'chat.synthesizing': 'Генерирую голос…',
-  'chat.quick.greet': 'Поздоровайся',
-  'chat.quick.joke': 'Расскажи шутку',
-  'chat.quick.capabilities': 'Что ты умеешь?',
-  'chat.empty.title': 'С чего начнём?',
-  'chat.empty.description':
-    'Выберите готовый сценарий или проверьте один из доступных инструментов Shio.',
-  'chat.quick.startTitle': 'Быстрый старт',
-  'chat.quick.startDescription': 'Небольшие сценарии для проверки диалога и характера.',
-  'chat.quick.toolsTitle': 'Проверить инструменты',
-  'chat.quick.toolsDescription':
-    'Теги синхронизированы с возможностями, которые доступны прямо сейчас.',
-  'chat.quick.catalogHint': 'Нужен полный список или настройка?',
+  'chat.quick.greet': 'Привет, Шио!',
+  'chat.quick.joke': 'Рассмеши меня',
+  'chat.quick.capabilities': 'Что ты сейчас умеешь?',
+  'chat.quick.greetPrompt': 'Привет, Шио!',
+  'chat.quick.jokePrompt': 'Рассмеши меня',
+  'chat.quick.capabilitiesPrompt': 'Что ты сейчас умеешь?',
   'chat.quick.catalogAction': 'Все возможности',
-  'chat.quick.greetPrompt':
-    'Поздоровайся, коротко представься и предложи три способа, как ты можешь помочь.',
-  'chat.quick.jokePrompt': 'Расскажи короткую шутку и отреагируй на неё в своём стиле.',
-  'chat.quick.capabilitiesPrompt':
-    'Проверь доступные тебе сейчас возможности и инструменты Shio и кратко перечисли их по категориям.',
   'chat.quick.tool.webSearch': 'Веб-поиск',
   'chat.quick.tool.webSearchPrompt':
     'Используй веб-поиск: найди три свежие новости об искусственном интеллекте за последние 24 часа и укажи источники.',
@@ -1204,7 +1207,7 @@ export const ruMessages = {
   'avatarPreview.empty': 'Ничего не найдено.',
   'avatarPreview.resetCamera': 'Вернуть вид спереди',
   'avatarPreview.localOnly': 'Сгенерированная поза тела передаётся в Overlay.',
-  'avatarPreview.workspace': 'Предпросмотр модели',
+  'avatarPreview.workspace': 'Сцена',
   'avatarPreview.playbackControls': 'Исполнение движения',
   'avatarPreview.cameraPresets': 'Ракурсы камеры',
   'avatarPreview.cameraPreset.full': 'В полный рост',
@@ -1405,6 +1408,7 @@ export const ruMessages = {
   'setup.microphone.device': 'Микрофон {number}',
   'alive.initiative': 'Shio хотела вернуться к этому: {title}',
   'avatarPreview.availabilityFilter': 'Доступность для модели',
+  'avatarPreview.filter.anyAvailability': 'Все статусы',
   'avatarPreview.filter.all': 'Все движения',
   'avatarPreview.filter.available': 'Доступные',
   'avatarPreview.filter.unavailable': 'Недоступные',
@@ -1549,12 +1553,22 @@ export const ruMessages = {
   'avatarPreview.inspector.emptyTitle': 'Выберите движение',
   'avatarPreview.inspector.emptyDescription': 'Описание и команды появятся здесь.',
   'avatarPreview.inspector.running': 'Сейчас',
-  'avatarPreview.inspector.noRunning': 'Нет активного профиля',
+  'avatarPreview.inspector.noRunning': 'Движение не запущено',
   'avatarPreview.inspector.preview': 'Проверка движения',
   'avatarPreview.runtime.unavailableTitle': 'Генератор движений недоступен',
   'avatarPreview.runtime.unavailableDescription':
     'Новые движения пока не создаются. Описание и параметры профилей доступны.',
   'avatarPreview.action.retryGeneration': 'Повторить генерацию',
+  'chat.start.shareTitle': 'Давай посмотрим вместе',
+  'chat.start.shareDescription':
+    'Выбери окно или монитор. Я буду видеть экран, слышать тебя и комментировать по ходу дела.',
+  'chat.start.chooseSource': 'Выбрать экран',
+  'chat.start.conversation': 'Просто поболтать',
+  'chat.start.tools': 'Инструменты чата',
+  'avatarPreview.focusStage': 'Только модель',
+  'avatarPreview.showPanels': 'Показать панели',
+  'avatarPreview.clearFilters': 'Сбросить фильтры',
+  'avatarPreview.framing': 'Ракурс',
   'avatarPreview.groupFilter': 'Раздел',
 } as const
 

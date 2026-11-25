@@ -123,6 +123,17 @@ it('executes a Main-selected idle activity as a held glance and one gesture, and
     assert.deepEqual(intents, ['screen'])
     vi.advanceTimersByTime(1)
     assert.deepEqual(intents, ['screen', undefined])
+    runtime.setWatchSession('watch-1', true)
+    behavior({
+      id: 'late-glance',
+      at: Date.now(),
+      watchReaction: { sessionId: 'watch-1', expiresAt: Date.now() + 120 },
+      holdMs: 850,
+      intent: { kind: 'embodiment', intent: { intensity: 'subtle', gazeHint: 'screen' } },
+    })
+    assert.equal(intents.at(-1), 'screen')
+    vi.advanceTimersByTime(120)
+    assert.equal(intents.at(-1), undefined)
     behavior({
       id: 'idle-2',
       at: Date.now(),
@@ -133,7 +144,7 @@ it('executes a Main-selected idle activity as a held glance and one gesture, and
     runtime.dispose()
     runtime.dispose()
     vi.advanceTimersByTime(60_000)
-    assert.deepEqual(intents, ['screen', undefined, 'away'])
+    assert.deepEqual(intents, ['screen', undefined, 'screen', undefined, 'away'])
   } finally {
     runtime.dispose()
     vi.useRealTimers()

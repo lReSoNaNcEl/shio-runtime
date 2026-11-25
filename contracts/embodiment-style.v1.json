@@ -84,10 +84,10 @@
     "chuckle": {
       "openness": 0.65,
       "height": 0.65,
-      "tempo": 0.65,
-      "sharpness": 0.5,
-      "asymmetry": 0.6,
-      "lean": 0.15
+      "tempo": 0.74,
+      "sharpness": 0.57,
+      "asymmetry": 0.7,
+      "lean": 0.18
     },
     "sad": {
       "openness": 0.25,
@@ -172,10 +172,10 @@
     "amused": {
       "openness": 0.65,
       "height": 0.6,
-      "tempo": 0.6,
-      "sharpness": 0.5,
-      "asymmetry": 0.65,
-      "lean": 0.1
+      "tempo": 0.68,
+      "sharpness": 0.58,
+      "asymmetry": 0.79,
+      "lean": 0.24
     },
     "sleepy": {
       "openness": 0.25,
@@ -212,10 +212,10 @@
     "proud": {
       "openness": 0.75,
       "height": 0.7,
-      "tempo": 0.5,
+      "tempo": 0.45,
       "sharpness": 0.6,
-      "asymmetry": 0.45,
-      "lean": 0.1
+      "asymmetry": 0.58,
+      "lean": -0.08
     },
     "pouting": {
       "openness": 0.3,

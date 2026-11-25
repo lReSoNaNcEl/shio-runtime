@@ -1,12 +1,13 @@
 import { VRMExpression, VRMExpressionManager, VRMExpressionMorphTargetBind } from '@pixiv/three-vrm'
 import { BufferGeometry, Float32BufferAttribute, Mesh, MeshBasicMaterial } from 'three'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { AvatarFacialRuntime } from '../../../src/renderer/avatar/embodiment/AvatarFacialRuntime'
 import { AvatarExpressionMixer } from '../../../src/renderer/avatar/embodiment/facial/AvatarExpressionMixer'
 import { BlinkController } from '../../../src/renderer/avatar/embodiment/facial/BlinkController'
 import { FacialActingController } from '../../../src/renderer/avatar/embodiment/facial/FacialActingController'
 import { inspectFacialRig } from '../../../src/renderer/avatar/embodiment/facial/FacialRigCapabilities'
+import { MouthClosureController } from '../../../src/renderer/avatar/embodiment/facial/MouthClosureController'
 import { facialActingPresentationSchema } from '../../../src/shared/facial-acting'
 import { createMinimalVrm } from '../../support/avatar/minimalVrm'
 
@@ -42,6 +43,48 @@ function rig() {
 }
 
 describe('capability-gated facial acting', () => {
+  it('mirrors the composed speaking eyelids through sustained overlay speech', () => {
+    const primary = new AvatarExpressionMixer()
+    primary.attach(rig().vrm)
+    primary.beginFrame(1 / 60)
+    primary.setBilateralBlink(0.7, 0)
+    primary.setSpeakingEye(0.09, 0.08)
+    primary.apply()
+    const eyes = primary.getActingPresentation()
+    expect(eyes.blinkLeft).toBeCloseTo(0.7)
+    expect(eyes.blinkRight).toBeCloseTo(0.08)
+    const secondary = rig()
+    const overlay = new AvatarFacialRuntime()
+    overlay.setPresentationOnly(true)
+    overlay.attach(secondary.vrm)
+    overlay.setProceduralMode('speaking')
+    overlay.applyActingPresentation(eyes)
+    for (let frame = 0; frame < 60; frame++) overlay.update(1 / 60)
+    secondary.manager.update()
+    expect(secondary.mesh.morphTargetInfluences?.[4]).toBeCloseTo(eyes.blinkLeft)
+    expect(secondary.mesh.morphTargetInfluences?.[5]).toBeCloseTo(eyes.blinkRight)
+    overlay.detach()
+    primary.detach()
+  })
+
+  it('keeps sustained vowels open and allows a brief closure on a syllable taper', () => {
+    const closure = new MouthClosureController()
+    const random = vi.spyOn(Math, 'random').mockReturnValue(0.1)
+    try {
+      closure.attach()
+      for (let frame = 0; frame < 120; frame++) {
+        closure.update(1 / 60, true, 0.5, 0.45, false)
+        expect(closure.getStrength()).toBe(0)
+      }
+      closure.update(1 / 60, true, 0.22, 0.3, false)
+      closure.update(1 / 60, true, 0.18, 0.24, false)
+      expect(closure.getStrength()).toBeGreaterThan(0)
+    } finally {
+      closure.detach()
+      random.mockRestore()
+    }
+  })
+
   it('finishes a unilateral wink, respects blink/cooldown and cancels on detach', () => {
     const blink = new BlinkController(undefined, () => 0.5)
     blink.attach()

@@ -1,8 +1,14 @@
+import asyncio
+import json
 import unittest
+from threading import Event
+from unittest.mock import Mock, patch
 
 import numpy as np
+from fastapi import WebSocket
 
 from app.asr.streaming import StreamingASRSession, StreamingVADConfig
+from app.routes import ws
 
 
 class FakeVadModel:
@@ -121,6 +127,84 @@ class StreamingASRSessionTests(unittest.TestCase):
         self.assertEqual(partial["type"], "partial")
         self.assertEqual(final["type"], "final")
         self.assertGreater(final["revision"], partial["revision"])
+
+
+class StreamingWorkerFailureTests(unittest.IsolatedAsyncioTestCase):
+    async def test_disconnect_holds_whisper_lock_until_inference_returns(self):
+        entered, release = Event(), Event()
+        first = Mock(closed=False)
+        second = Mock(closed=False)
+
+        def transcribe(_job):
+            entered.set()
+            if not release.wait(5):
+                raise TimeoutError("test inference was not released")
+            return []
+
+        first.transcribe.side_effect = transcribe
+        second.transcribe.return_value = []
+        with patch.object(ws, "_decode_lock", asyncio.Lock()):
+            old = asyncio.create_task(ws._send_decode(Mock(), asyncio.Lock(), first, object()))
+            try:
+                self.assertTrue(await asyncio.to_thread(entered.wait, 1))
+                old.cancel()
+                with self.assertRaises(asyncio.CancelledError):
+                    await old
+                self.assertTrue(ws._decode_lock.locked())
+                fresh = asyncio.create_task(
+                    ws._send_decode(Mock(), asyncio.Lock(), second, object())
+                )
+                await asyncio.sleep(0)
+                second.transcribe.assert_not_called()
+            finally:
+                release.set()
+            await asyncio.wait_for(fresh, 1)
+            second.transcribe.assert_called_once()
+            self.assertFalse(ws._decode_lock.locked())
+
+    async def test_worker_failure_releases_blocked_input_and_requests_reconnect(self):
+        incoming, outgoing = asyncio.Queue(), asyncio.Queue()
+        socket = WebSocket({"type": "websocket"}, incoming.get, outgoing.put)
+        incoming.put_nowait({"type": "websocket.connect"})
+        incoming.put_nowait(
+            {
+                "type": "websocket.receive",
+                "text": json.dumps(
+                    {
+                        "type": "start",
+                        "protocolVersion": 1,
+                        "sessionId": "failed-worker",
+                        "sampleRate": 16000,
+                        "channels": 1,
+                        "format": "pcm_s16le",
+                    }
+                ),
+            }
+        )
+        for _ in range(ws.settings.ASR_AUDIO_QUEUE_FRAMES + 2):
+            incoming.put_nowait({"type": "websocket.receive", "bytes": bytes(1024)})
+        recognizer = Mock(session_id="failed-worker", closed=False)
+        recognizer.process_pcm.side_effect = RuntimeError("synthetic VAD failure")
+        with (
+            patch.object(ws, "_vad", object()),
+            patch.object(ws, "_whisper", object()),
+            patch.object(ws, "StreamingASRSession", return_value=recognizer),
+        ):
+            await asyncio.wait_for(ws.websocket_recognize(socket), timeout=1)
+        events = []
+        while not outgoing.empty():
+            item = outgoing.get_nowait()
+            if item["type"] == "websocket.send":
+                events.append(json.loads(item["text"]))
+            elif item["type"] == "websocket.close":
+                self.assertEqual(item["code"], 1011)
+        self.assertEqual(socket.application_state.name, "DISCONNECTED")
+        self.assertEqual(events[0]["type"], "ready")
+        self.assertEqual(events[-1]["type"], "error")
+        self.assertEqual(events[-1]["sessionId"], "failed-worker")
+        self.assertEqual(events[-1]["code"], "stream_failure")
+        self.assertIs(events[-1]["recoverable"], True)
+        recognizer.close.assert_called_once()
 
 
 if __name__ == "__main__":

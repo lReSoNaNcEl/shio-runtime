@@ -4,7 +4,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { type CapabilityNavigationTarget } from '../../shared/capabilities'
 import { normalizeUiTheme, type UiTheme } from '../../shared/config'
 import { type PluginId } from '../../shared/plugins'
-import { type WatchModelIssue, watchBlockReason } from '../../shared/watchTogether'
+import {
+  type WatchModelIssue,
+  type WatchReference,
+  watchBlockReason,
+} from '../../shared/watchTogether'
 import { controller } from '../Controller'
 import { useCapabilities } from '../hooks/useCapabilities'
 import { useControllerState } from '../hooks/useControllerState'
@@ -18,9 +22,8 @@ import { ChatOverlay, type ChatOverlayHandle } from './chat/ChatOverlay'
 import { NewConversationButton } from './chat/NewConversationButton'
 import { NewConversationDialog } from './chat/NewConversationDialog'
 import { ScreenContextPicker } from './chat/ScreenContextPicker'
-import { ListeningControl } from './controls/ListeningControl'
+import { ListeningControl, WatchSessionBar } from './controls/ListeningControl'
 import { OverlayCameraControl } from './controls/OverlayCameraControl'
-import { WatchPreviewControl } from './controls/WatchPreviewControl'
 import { pluginIdForNavigationTarget } from './navigation/capabilityNavigation'
 import { MicrophoneGateOverlay } from './overlays/MicrophoneGateOverlay'
 import { MissingVrmDialog } from './overlays/MissingVrmDialog'
@@ -40,8 +43,11 @@ export function App() {
   const state = useControllerState()
   const watch = useRef<WatchTogetherCapture | null>(null)
   const [watchPicker, setWatchPicker] = useState(false)
-  const [watching, setWatching] = useState(false)
-  const [preview, setPreview] = useState<{ sourceName: string; session: WatchTogetherCapture }>()
+  const [sharing, setSharing] = useState<{
+    sourceName: string
+    phase: 'connecting' | 'live'
+    session: WatchTogetherCapture
+  }>()
   const [playbackGaps, setPlaybackGaps] = useState(0)
   const [watchError, setWatchError] = useState<WatchFailure>()
   const [watchModelIssue, setWatchModelIssue] = useState<WatchModelIssue>()
@@ -52,14 +58,19 @@ export function App() {
     },
     [],
   )
-  const startWatch = (sourceId: string, sourceName: string) => {
+  const openWatchPicker = () => {
+    if (watch.current) return
+    const reason = state.alive && watchBlockReason(state.alive.settings)
+    setWatchError(reason ? `watch.blocked.${reason}` : undefined)
+    if (!reason) setWatchPicker(true)
+  }
+  const startWatch = (sourceId: string, sourceName: string, reference?: WatchReference) => {
     if (watch.current) return
     const session = new WatchTogetherCapture(
       (error) => {
         if (watch.current !== session) return
         watch.current = null
-        setWatching(false)
-        setPreview(undefined)
+        setSharing(undefined)
         setWatchModelIssue(undefined)
         setWatchError(error)
       },
@@ -71,12 +82,12 @@ export function App() {
       },
     )
     watch.current = session
-    setWatching(true)
+    setSharing({ sourceName, phase: 'connecting', session })
     setPlaybackGaps(0)
     setWatchError(undefined)
     observeRendererPromise(
-      session.start(sourceId).then(() => {
-        if (watch.current === session) setPreview({ sourceName, session })
+      session.start(sourceId, reference).then(() => {
+        if (watch.current === session) setSharing({ sourceName, phase: 'live', session })
       }),
       'start shared viewing',
     )
@@ -344,6 +355,19 @@ export function App() {
         }}
         developerModeEnabled={developerModeEnabled}
         hideHeader={setupOpen}
+        sessionBar={
+          sharing && (
+            <WatchSessionBar
+              phase={sharing.phase}
+              sourceName={sharing.sourceName}
+              mountPreview={sharing.session.mountPreview}
+              projection={state.continuousListening}
+              modelIssue={watchModelIssue}
+              playbackGaps={playbackGaps}
+              onStop={() => sharing.session.stop()}
+            />
+          )
+        }
         contentClassName={setupOpen ? 'setup-layer' : undefined}
         heading={
           !setupOpen ? <SectionHeading title={copy.title} subtitle={copy.subtitle} /> : undefined
@@ -357,7 +381,7 @@ export function App() {
           ) : undefined
         }
         headerAction={
-          (section === 'chat' || watching) && !setupOpen ? (
+          section === 'chat' && !setupOpen ? (
             <div className="chat-header-controls">
               {showNewConversationAction && (
                 <div className="chat-mobile-new-conversation">
@@ -367,23 +391,11 @@ export function App() {
                   />
                 </div>
               )}
-              <ListeningControl
-                projection={state.continuousListening}
-                watching={watching}
-                onToggle={() => {
-                  if (watch.current) watch.current.stop()
-                  else {
-                    const reason = state.alive && watchBlockReason(state.alive.settings)
-                    setWatchError(reason ? `watch.blocked.${reason}` : undefined)
-                    if (!reason) setWatchPicker(true)
-                  }
-                }}
-              />
-              {preview && (
-                <WatchPreviewControl
-                  sourceName={preview.sourceName}
-                  mountPreview={preview.session.mountPreview}
-                  microphone={state.continuousListening.activeMicrophone}
+              {!sharing && (
+                <ListeningControl
+                  isChoosing={watchPicker}
+                  projection={state.continuousListening}
+                  onChoose={openWatchPicker}
                 />
               )}
               <OverlayCameraControl
@@ -415,8 +427,8 @@ export function App() {
             ) : (
               <ChatOverlay
                 ref={chatOverlayRef}
-                playbackGaps={watching ? playbackGaps : 0}
-                watchModelIssue={watchModelIssue}
+                sharing={Boolean(sharing)}
+                onStartWatch={sharing ? undefined : openWatchPicker}
                 state={state}
                 capabilitySnapshot={capabilities.snapshot}
                 gateOpen={state.microphoneGate.status !== 'closed'}
@@ -492,6 +504,9 @@ export function App() {
       </AppShell>
       <ScreenContextPicker
         isOpen={watchPicker}
+        referenceAvailable={capabilities.snapshot?.capabilities.some(
+          (item) => item.id === 'browser-control' && item.availability === 'available',
+        )}
         onDismiss={() => setWatchPicker(false)}
         onWatch={startWatch}
         onChangeModel={() => {

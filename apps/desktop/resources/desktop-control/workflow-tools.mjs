@@ -23,6 +23,7 @@ async function WorkflowTools(ctx) {
       maxSpillBytes: 1_048_576,
       graceMs: 3_000,
     })
+    if (process.env.SHIO_DSH_EXACT_SHELL === '1') return
     await ctx.plugin(ShellEnv, { dshHome: requiredEnvironment('DSH_HOME') })
     await ctx.plugin(ToolPwsh, { enableRunInBackground: false })
     if (!ctx.tools.get('pwsh')) {
@@ -36,6 +37,6 @@ async function WorkflowTools(ctx) {
   throw new Error(`Unsupported Desktop Control capability: ${capability}`)
 }
 
-WorkflowTools.inject = ['tools']
+WorkflowTools.inject = process.env.SHIO_DSH_EXACT_SHELL === '1' ? [] : ['tools']
 
 export default WorkflowTools

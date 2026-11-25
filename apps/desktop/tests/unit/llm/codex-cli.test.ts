@@ -82,6 +82,12 @@ describe('Codex CLI Character provider', () => {
     })
   })
 
+  it('marks a completed CLI round with no assistant content as recoverable before any tool work', () => {
+    expect(() => parseCodexReply(events(start, end))).toThrow(
+      expect.objectContaining({ code: 'EMPTY_STREAM', recoverable: true }),
+    )
+  })
+
   it('rejects partial, failed and unexpected tool output', () => {
     for (const stream of [
       events(start, message),

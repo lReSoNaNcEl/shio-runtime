@@ -10,7 +10,6 @@ import {
 } from 'react'
 
 import { type ShioCapabilitySnapshot } from '../../../shared/capabilities'
-import { type WatchModelIssue } from '../../../shared/watchTogether'
 import { type ControllerState, controller } from '../../Controller'
 import { shouldBlockChatSubmission } from '../../controller/firstRunState'
 import { useTranslation } from '../../localization/useTranslation'
@@ -34,13 +33,13 @@ import {
 import { useScreenContextAttachment } from './useScreenContextAttachment'
 
 interface Props {
-  playbackGaps?: number
-  watchModelIssue?: WatchModelIssue
+  sharing?: boolean
   state: ControllerState
   capabilitySnapshot: ShioCapabilitySnapshot | null
   gateOpen?: boolean
   onOpenSpeechSettings?: () => void
   onOpenLlmSettings?: () => void
+  onStartWatch?: () => void
   onOpenCapabilities?: () => void
 }
 
@@ -52,11 +51,11 @@ export const ChatOverlay = forwardRef<ChatOverlayHandle, Props>(function ChatOve
   {
     state,
     capabilitySnapshot,
-    playbackGaps = 0,
-    watchModelIssue,
+    sharing = false,
     gateOpen = false,
     onOpenSpeechSettings,
     onOpenLlmSettings,
+    onStartWatch,
     onOpenCapabilities,
   },
   ref,
@@ -267,6 +266,7 @@ export const ChatOverlay = forwardRef<ChatOverlayHandle, Props>(function ChatOve
         status={state.status}
         quickActions={quickActions}
         onQuickAction={handleQuickAction}
+        onStartWatch={onStartWatch}
         onOpenCapabilities={onOpenCapabilities}
         continuousListening={state.continuousListening}
         onRetryContinuousListening={() =>
@@ -301,7 +301,7 @@ export const ChatOverlay = forwardRef<ChatOverlayHandle, Props>(function ChatOve
           />
         )}
         <ChatStatus state={state} />
-        {state.continuousListening.desired && (
+        {!sharing && state.continuousListening.desired && (
           <div aria-live="polite">
             {state.continuousListening.activeMicrophone && (
               <StatusLight variant="positive" size="S">
@@ -316,14 +316,6 @@ export const ChatOverlay = forwardRef<ChatOverlayHandle, Props>(function ChatOve
               <StatusLight variant="notice">
                 {t('watch.microphoneGaps', { count: state.continuousListening.audioGapCount })}
               </StatusLight>
-            )}
-            {playbackGaps > 0 && (
-              <StatusLight variant="notice">
-                {t('watch.playbackGaps', { count: playbackGaps })}
-              </StatusLight>
-            )}
-            {watchModelIssue && (
-              <StatusLight variant="notice">{t(`watch.modelIssue.${watchModelIssue}`)}</StatusLight>
             )}
           </div>
         )}

@@ -295,10 +295,11 @@ export class AvatarExpressionMixer {
   }
 
   getActingPresentation(): FacialActingPresentation {
+    const sharedBlink = this.lastFinal.get('blink')?.value ?? 0
     return {
       acting: { ...this.appliedActing },
-      blinkLeft: this.blinkPair?.[0] ?? this.blinkWeight,
-      blinkRight: this.blinkPair?.[1] ?? this.blinkWeight,
+      blinkLeft: Math.max(sharedBlink, this.lastFinal.get(this.squintLeftName ?? '')?.value ?? 0),
+      blinkRight: Math.max(sharedBlink, this.lastFinal.get(this.squintRightName ?? '')?.value ?? 0),
     }
   }
 

@@ -138,28 +138,29 @@ export class AvatarFacialRuntime {
 
     // Speaking Eye Micro-Expression — small drifting squint layered under Blink.
     const speaking = this.proceduralMode === 'speaking'
-    this.speakingEyeController.update(delta, speaking, this.currentEmotionKey)
-    this.expressionMixer.setSpeakingEye(
-      this.speakingEyeController.getLeft(),
-      this.speakingEyeController.getRight(),
-    )
-    this.expressionMixer.setSpeakingEyeDebug(this.speakingEyeController.getDebugState())
+    if (!this.presentationOnly) {
+      this.speakingEyeController.update(delta, speaking, this.currentEmotionKey)
+      this.expressionMixer.setSpeakingEye(
+        this.speakingEyeController.getLeft(),
+        this.speakingEyeController.getRight(),
+      )
+      this.expressionMixer.setSpeakingEyeDebug(this.speakingEyeController.getDebugState())
+    }
 
     // Mouth Closure Envelope — brief procedural lip closures over LipSync.
-    this.lipSyncVariationController.update(delta)
-    const phrase = this.phraseEnvelopeController.getOutput()
-    const mouthOpenness = Math.max(...Object.values(this.mouthWeights))
-    this.mouthClosureController.update(
-      delta,
-      speaking,
-      this.speechEnergy,
-      mouthOpenness,
-      this.antiStallActive,
-    )
     if (this.externalMouthComposed) {
       this.expressionMixer.setMouth(this.mouthWeights)
       this.expressionMixer.setMouthClosure(0)
     } else {
+      this.lipSyncVariationController.update(delta)
+      const phrase = this.phraseEnvelopeController.getOutput()
+      this.mouthClosureController.update(
+        delta,
+        speaking,
+        this.speechEnergy,
+        Math.max(...Object.values(this.mouthWeights)),
+        this.antiStallActive,
+      )
       const variedMouth = this.lipSyncVariationController.apply(this.mouthWeights)
       const emotionMouth =
         phraseLipSyncTuning.emotionProfiles[this.currentEmbodimentProfile.lipSyncProfile]
@@ -207,6 +208,7 @@ export class AvatarFacialRuntime {
 
   setPresentationOnly(value: boolean): void {
     this.presentationOnly = value
+    if (value) this.expressionMixer.setSpeakingEye(0, 0)
     this.proceduralMotionController.setPresentationOnly(value)
     this.headMotionRuntime.setPresentationOnly(value)
   }
@@ -314,7 +316,8 @@ export class AvatarFacialRuntime {
       this.headMotionRuntime.setSpeechEnergy(0)
       this.proceduralMotionController.setSpeechEnergy(0)
     }
-    if (!wasSpeaking && isSpeaking) this.lipSyncVariationController.startSpeechSegment()
+    if (!this.presentationOnly && !wasSpeaking && isSpeaking)
+      this.lipSyncVariationController.startSpeechSegment()
     else if (wasSpeaking && !isSpeaking) this.lipSyncVariationController.endSpeech()
     this.updateEffectiveBlinkProfile()
     this.proceduralMotionController.setMode(mode)

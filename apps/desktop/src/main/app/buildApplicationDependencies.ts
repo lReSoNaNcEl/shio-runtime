@@ -61,7 +61,6 @@ import {
   resolveLlmReadiness,
   resolveLlmRoleFallbacks,
   resolveLlmRoleSettings,
-  resolveProviderChatBaseUrl,
 } from '../llm'
 import { stopCodexRequests } from '../llm/CodexCliProvider'
 import { mainLog } from '../logging/safeLogger'
@@ -307,28 +306,21 @@ export function buildApplicationDependencies(): ApplicationDependencies {
         ? join(process.resourcesPath, 'app.asar.unpacked', 'desktop-control')
         : join(app.getAppPath(), 'resources', 'desktop-control')
       desktopControl = buildDesktopControlPlugin({
+        characterModel: () => {
+          const character = resolveRoleSettings('character')
+          const profile = getProviderProfile(character.provider)
+          return {
+            provider: character.provider,
+            providerDisplayName: profile.displayName,
+            model: character.model,
+            configured:
+              Boolean(character.model.trim()) &&
+              (!profile.requiresApiKey || character.credential.configured) &&
+              (!profile.requiresAccountId || Boolean(character.accountId?.trim())),
+            lastError: character.credential.lastError,
+          }
+        },
         adapter: new DshHarnessAdapter({
-          model: () => {
-            // DSH runs as the Character role and keeps its own credential handoff.
-            const character = resolveRoleSettings('character')
-            const profile = getProviderProfile(character.provider)
-            const accountId = character.accountId ?? ''
-            return {
-              provider: character.provider,
-              providerDisplayName: profile.displayName,
-              model: character.model.trim(),
-              baseURL: resolveProviderChatBaseUrl(character.provider, { accountId }).replace(
-                /\/$/,
-                '',
-              ),
-              apiKey: character.apiKey,
-              credentialConfigured:
-                profile.requiresApiKey &&
-                character.credential.configured &&
-                (!profile.requiresAccountId || Boolean(accountId)),
-              lastError: character.credential.lastError,
-            }
-          },
           resources: () => ({
             command: process.execPath,
             runtimeScript: join(profileDirectory, 'dsh-runtime.mjs'),
@@ -761,7 +753,57 @@ export function buildApplicationDependencies(): ApplicationDependencies {
     unsubscribeAliveIpc = registerAliveIpc(aliveRuntime, win, ipcAuthorization)
     const watchWindow = win
     const watchAlive = aliveRuntime
+    const referenceAvailable = () => {
+      if (!pluginCapabilities.get('browser-control')) return false
+      const status = browserControl?.getStatus()
+      return (
+        status?.semanticControl === 'ready' &&
+        (!status.session || ['completed', 'failed', 'stopped'].includes(status.session.state))
+      )
+    }
     const watch = new WatchTogetherService({
+      reference: {
+        available: referenceAvailable,
+        open: async (url, signal) => {
+          if (!referenceAvailable()) return
+          const action = await actionComposition.actions.execute<
+            DesktopWorkflowRequest,
+            DesktopWorkflowAdapterResult
+          >({
+            name: 'desktop.workflow',
+            payload: {
+              type: 'desktop.workflow',
+              requestedCapabilities: ['browser'],
+              risk: 'normal',
+              goal:
+                getRendererConfig().uiLocale === 'en'
+                  ? 'Check the reference page for this live share'
+                  : 'Свериться со страницей этой трансляции',
+              browserOperation: { operation: 'open', url },
+            },
+            signal,
+          })
+          const evidence = action.result?.evidence
+          if (
+            action.status === 'success' &&
+            action.verification?.status === 'verified' &&
+            evidence?.kind === 'browser' &&
+            evidence.navigationStatus !== undefined &&
+            evidence.navigationStatus >= 200 &&
+            evidence.navigationStatus < 300 &&
+            evidence.after?.url === url
+          )
+            return evidence.after.observationId
+        },
+        read: (id) => {
+          const observation = pluginCapabilities.get('browser-control')?.currentObservation()
+          if (observation?.observationId === id)
+            return {
+              title: observation.title?.slice(0, 160),
+              excerpt: observation.content.slice(0, 700),
+            }
+        },
+      },
       language: () => getRendererConfig().uiLocale ?? 'ru',
       captureBlock: () => watchBlockReason(aliveStore.settings()),
       canComment: () => watchAlive.canCommentOnPlayback(),

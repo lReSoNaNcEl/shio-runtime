@@ -15,6 +15,7 @@ function successStatus(reason, maxTokensAsSuccess) {
   return reason === 'max-tokens' && maxTokensAsSuccess ? 'ok' : 'error'
 }
 
+const exactShell = process.env.SHIO_DSH_EXACT_SHELL === '1'
 const SHELL_OUTPUT_MAX_BYTES = 64_000
 const SHELL_TIMEOUT_DEFAULT_MS = 60_000
 const SHELL_TIMEOUT_MAX_MS = 120_000
@@ -56,6 +57,7 @@ class ShioSdkJsonRpcServer {
     this.shutdownTask = undefined
     this.shuttingDown = false
 
+    if (exactShell) return
     this.disposers.push(
       ctx.on('session/event', (session, event) => {
         transport.notify('session.event', { sessionId: String(session.id), event })
@@ -101,6 +103,7 @@ class ShioSdkJsonRpcServer {
     this.model = params.model
     this.maxTokens = params.maxTokens
     if (
+      !exactShell &&
       !this.ctx
         .get('llm')
         ?.listProviders()
@@ -193,6 +196,7 @@ class ShioSdkJsonRpcServer {
       case 'initialize':
         return this.initialize(params)
       case 'session/prompt':
+        if (exactShell) throw new Error('Model sessions are disabled for exact shell commands')
         return this.prompt(params)
       case 'shio/shell.execute':
         return this.shellExecute(params)
@@ -263,7 +267,10 @@ function ShioSdkJsonRpcPlugin(ctx, config = {}) {
   }, 'jsonrpc.serve')
 }
 
-ShioSdkJsonRpcPlugin.inject =
-  process.env.SHIO_DSH_ALLOWED_CAPABILITY === 'shell' ? ['agents', 'shell'] : ['agents']
+ShioSdkJsonRpcPlugin.inject = exactShell
+  ? ['shell']
+  : process.env.SHIO_DSH_ALLOWED_CAPABILITY === 'shell'
+    ? ['agents', 'shell']
+    : ['agents']
 
 export default ShioSdkJsonRpcPlugin

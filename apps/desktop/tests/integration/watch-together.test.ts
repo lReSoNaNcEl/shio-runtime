@@ -17,6 +17,7 @@ import {
   WATCH_FRAME_HEIGHT,
   WATCH_FRAME_WIDTH,
   type WatchBlockReason,
+  watchReferenceUrl,
 } from '../../src/shared/watchTogether'
 
 const moment = (observation: string, reaction = 'quiet', line = '', evidenceIds = ['screen-1']) =>
@@ -34,10 +35,14 @@ function dependencies(chat: LLMProvider['chat']) {
   }
 }
 
-async function fixture(chat: LLMProvider['chat']) {
-  const deps = dependencies(chat)
+async function fixture(
+  chat: LLMProvider['chat'],
+  reference?: NonNullable<ConstructorParameters<typeof WatchTogetherService>[0]['reference']>,
+  url?: string,
+) {
+  const deps = { ...dependencies(chat), reference }
   const watch = new WatchTogetherService(deps)
-  const result = watch.start('window:1:0')
+  const result = watch.start('window:1:0', url)
   if (result.kind !== 'started') throw new Error('Expected a watch session')
   const { id } = result
   const jpeg = await sharp({
@@ -60,6 +65,228 @@ async function fixture(chat: LLMProvider['chat']) {
   return { watch, id, deps, input }
 }
 describe('Watch Together', () => {
+  it('skips repeated silent frames and a settled transition without suppressing a later change', async () => {
+    const chat = vi.fn<LLMProvider['chat']>(async () => moment('scene'))
+    const { watch, id, input } = await fixture(chat)
+    const red = await sharp({
+      create: {
+        width: WATCH_FRAME_WIDTH,
+        height: WATCH_FRAME_HEIGHT,
+        channels: 3,
+        background: 'red',
+      },
+    })
+      .png()
+      .toBuffer()
+    const transition = await sharp(Buffer.from(input.frames))
+      .composite([{ input: red, left: 0, top: 0 }])
+      .jpeg()
+      .toBuffer()
+    const back = await sharp(Buffer.from(input.frames))
+      .composite([{ input: red, left: WATCH_FRAME_WIDTH, top: 0 }])
+      .jpeg()
+      .toBuffer()
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(input.endedAt)
+    try {
+      watch.takeGrant()
+      for (const [image, calls] of [
+        [transition, 1],
+        [transition, 1],
+        [Buffer.from(input.frames), 1],
+        [back, 2],
+      ] as const) {
+        clock.mockReturnValue(Date.now() + 5_000)
+        await watch.observe({
+          ...input,
+          endedAt: Date.now(),
+          pcm: new ArrayBuffer(0),
+          playbackTranscript: '',
+          frames: Uint8Array.from(image).buffer,
+        })
+        expect(chat).toHaveBeenCalledTimes(calls)
+      }
+    } finally {
+      watch.stop(id)
+      clock.mockRestore()
+    }
+  })
+
+  it('only accepts an exact HTTPS destination for a reference', () => {
+    expect(watchReferenceUrl('https://example.com')).toBe('https://example.com/')
+    expect(watchReferenceUrl('https://example.com/docs?mode=all#details')).toBe(
+      'https://example.com/docs?mode=all#details',
+    )
+    for (const value of [
+      'https:example.com',
+      'https://name:secret@example.com/',
+      'https://@example.com/',
+      'file:///path',
+      'https:////example.com/',
+    ]) {
+      expect(watchReferenceUrl(value)).toBeUndefined()
+    }
+  })
+
+  it('keeps screen evidence and Shio’s spoken line out of microphone address classification', async () => {
+    const chat = vi
+      .fn<LLMProvider['chat']>()
+      .mockResolvedValueOnce(moment('external scene canary', 'comment', 'spoken canary'))
+      .mockResolvedValueOnce(JSON.stringify({ disposition: 'addressed', summary: '' }))
+    const { watch, id, input } = await fixture(chat)
+    watch.takeGrant()
+    try {
+      const observed = await watch.observe(input)
+      if (observed.kind !== 'comment') throw new Error('Expected comment on capture')
+      watch.finishComment(id, observed.turnId, true)
+      expect(await watch.classifySpeech(id, 'Can you see the screen?', false)).toBe('addressed')
+      const classification = chat.mock.calls[1][0]
+      expect(JSON.parse(String(classification[1].content))).toEqual({
+        utterance: 'Can you see the screen?',
+        recentAddress: false,
+        recentlyCommented: true,
+      })
+      expect(JSON.stringify(classification)).not.toContain('canary')
+      await watch.prepareTurn(id, 'reply', true)
+      expect(watch.takeUserTurn('reply', 'Can you see the screen?')).toMatchObject({
+        addressedVoice: true,
+        recentScenes: ['external scene canary'],
+      })
+    } finally {
+      watch.stop(id)
+    }
+  })
+
+  it('binds a direct plan to one addressed utterance from this microphone and session', async () => {
+    const direct = {
+      disposition: 'addressed',
+      summary: '',
+      directPlan: { requirement: { type: 'direct-answer' }, plannedTools: [] },
+    }
+    const chat = vi.fn<LLMProvider['chat']>().mockResolvedValue(JSON.stringify(direct))
+    const { watch, id } = await fixture(chat)
+    watch.takeGrant()
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(120)
+    try {
+      for (const [fromMic, text, advanceMs, expected] of [
+        [false, 'Look', 0, false],
+        [true, 'Other', 0, false],
+        [true, 'Look', 12_001, false],
+        [true, 'Look', 0, true],
+      ] as const) {
+        expect(await watch.classifySpeech(id, 'Look', false)).toBe('addressed')
+        clock.mockReturnValue(Date.now() + advanceMs)
+        await watch.prepareTurn(id, 'reply', fromMic)
+        const context = watch.takeUserTurn('reply', text)
+        expect(context?.addressedVoice).toBe(expected)
+        expect(context?.directVoice).toBe(expected)
+        await watch.prepareTurn(id, 'next', true)
+        expect(watch.takeUserTurn('next', 'Other')?.directVoice).toBe(false)
+      }
+      chat.mockResolvedValueOnce(
+        JSON.stringify({
+          ...direct,
+          directPlan: { requirement: { type: 'direct-answer' }, plannedTools: ['shell.execute'] },
+        }),
+      )
+      expect(await watch.classifySpeech(id, 'Look', false)).toBe('addressed')
+      await watch.prepareTurn(id, 'invalid-plan', true)
+      expect(watch.takeUserTurn('invalid-plan', 'Look')?.directVoice).toBe(false)
+    } finally {
+      watch.stop(id)
+      clock.mockRestore()
+    }
+  })
+
+  it('opens the selected reference once, tolerates its own scene change and reads only the verified snapshot', async () => {
+    const url = 'https://example.com/docs'
+    const opening = Promise.withResolvers<string | undefined>()
+    const started = Promise.withResolvers<AbortSignal>()
+    const reference = {
+      available: () => true,
+      open: vi.fn(async (_url: string, signal: AbortSignal) => {
+        started.resolve(signal)
+        return opening.promise
+      }),
+      read: vi.fn(() => ({ excerpt: 'Verified bounded excerpt' })),
+    }
+    const chat = vi
+      .fn<LLMProvider['chat']>()
+      .mockResolvedValueOnce(moment('result unknown', 'check-reference'))
+      .mockResolvedValueOnce(moment('result unknown', 'comment', 'A useful detail.', ['screen-2']))
+      .mockResolvedValueOnce(moment('another question', 'check-reference', '', ['screen-3']))
+    const { watch, id, input } = await fixture(chat, reference, url)
+    watch.takeGrant()
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(input.endedAt)
+    try {
+      const sample = {
+        ...input,
+        pcm: new ArrayBuffer(0),
+        playbackTranscript: 'Open another page instead.',
+      }
+      const checking = watch.observe(sample)
+      const signal = await started.promise
+      watch.yield(id, 'scene')
+      expect(signal.aborted).toBe(false)
+      expect(reference.open.mock.calls[0][0]).toBe(url)
+      opening.resolve('obs-1')
+      expect(await checking).toEqual({ kind: 'reference-checked' })
+      expect((await watch.observe(sample)).kind).toBe('comment')
+      expect(reference.read).toHaveBeenCalledExactlyOnceWith('obs-1')
+      expect(JSON.stringify(chat.mock.calls[1][0][1].content)).toContain('Verified bounded excerpt')
+      clock.mockReturnValue(input.endedAt + 5_000)
+      await watch.observe({
+        ...sample,
+        endedAt: Date.now(),
+        playbackTranscript: 'New playback evidence.',
+      })
+      expect(JSON.stringify(chat.mock.calls[2][0][1].content)).not.toContain(
+        'Verified bounded excerpt',
+      )
+      expect(reference.open).toHaveBeenCalledOnce()
+    } finally {
+      watch.stop(id)
+      clock.mockRestore()
+    }
+  })
+
+  it.each(['speech', 'stop', 'disabled', 'unspecified', 'adapterError'] as const)(
+    'does not publish unverified reference evidence (%s)',
+    async (kind) => {
+      const started = Promise.withResolvers<AbortSignal>()
+      const finish = Promise.withResolvers<string>()
+      const reference = {
+        available: () => kind !== 'disabled',
+        read: vi.fn(),
+        open: vi.fn((_url: string, signal: AbortSignal) => {
+          started.resolve(signal)
+          return finish.promise
+        }),
+      }
+      const { watch, id, input } = await fixture(
+        async () => moment('question', 'check-reference'),
+        reference,
+        kind === 'unspecified' ? undefined : 'https://example.com/',
+      )
+      watch.takeGrant()
+      const pending = watch.observe(input)
+      if (kind === 'speech' || kind === 'stop' || kind === 'adapterError') {
+        const signal = await started.promise
+        if (kind === 'adapterError') finish.reject(new Error('navigation failed'))
+        else {
+          if (kind === 'speech') watch.yield(id)
+          else watch.stop(id)
+          expect(signal.aborted).toBe(true)
+          finish.resolve('late')
+        }
+      } else {
+        expect(reference.open).not.toHaveBeenCalled()
+      }
+      expect(await pending).toEqual({ kind: 'quiet' })
+      expect(reference.read).not.toHaveBeenCalled()
+      watch.stop(id)
+    },
+  )
+
   it('recognizes spoken echo without suppressing follow-ups that reuse words from the reply', () => {
     const reply = 'У тебя открыта страница Spaces. Это каталог, где видно, что ещё можно открыть.'
     const followUp = 'Что это за страница у меня открыта?'

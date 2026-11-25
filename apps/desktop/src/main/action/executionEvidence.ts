@@ -21,6 +21,7 @@ export interface BrowserExecutionEvidence {
     | 'switch-tab'
     | 'workflow'
   riskClass?: BrowserSemanticRiskClass
+  navigationStatus?: number
   requestedUrl?: string
   requestedTabId?: string
   targetName?: string

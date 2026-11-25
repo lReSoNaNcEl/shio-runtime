@@ -85,6 +85,52 @@ describe.each(['light', 'dark'] as const)('chat input controls in %s theme', (th
     expect(screen.getByRole('button', { name: t('common.checkingEllipsis') })).toBeDisabled()
   })
 
+  it('starts a share with Wikipedia only after explicit selection', async () => {
+    restoreApi = stubWindowProperty('api', {
+      llm: { getActiveCapabilities: async () => ({ supportsVision: true }) },
+      config: { onUpdated: () => () => undefined },
+      screenContext: {
+        listSources: async () => ({
+          ok: true,
+          value: [
+            {
+              id: 'window:1:0',
+              name: 'Editor',
+              kind: 'window',
+              previewDataUrl: 'data:image/png;base64,iVBORw0KGgo=',
+            },
+          ],
+        }),
+      },
+    })
+    const onWatch = vi.fn()
+    render(
+      <ScreenContextPicker
+        isOpen
+        referenceAvailable
+        onWatch={onWatch}
+        onDismiss={vi.fn()}
+        onChangeModel={vi.fn()}
+      />,
+      { wrapper: localizedWrapper('en', theme) },
+    )
+    const source = await screen.findByRole('button', { name: /Editor/ })
+    const wiki = screen.getByRole('checkbox', { name: t('watch.reference.wikipedia') })
+    const field = screen.getByRole('textbox', { name: t('watch.reference.label') })
+    expect(wiki).not.toBeChecked()
+    fireEvent.change(field, { target: { value: 'https://example.com' } })
+    expect(wiki).toBeDisabled()
+    fireEvent.change(field, { target: { value: '' } })
+    fireEvent.click(wiki)
+    expect(field).toBeDisabled()
+    expect(screen.getByText(t('watch.reference.wikipediaDescription'))).toBeVisible()
+    fireEvent.click(source)
+    fireEvent.click(screen.getByRole('button', { name: t('watch.start') }))
+    await waitFor(() =>
+      expect(onWatch).toHaveBeenCalledWith('window:1:0', 'Editor', { kind: 'wikipedia' }),
+    )
+  })
+
   it('shows named screen sources, enables attachment only after selection, and releases its subscription', async () => {
     const unsubscribe = vi.fn()
     const capture = vi.fn(async () => ({ ok: true, value: { captureId: 'capture-a' } }))

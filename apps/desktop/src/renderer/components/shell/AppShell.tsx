@@ -58,6 +58,7 @@ export function AppShell({
   heading,
   sidebarAction,
   headerAction,
+  sessionBar,
   hideHeader = false,
   contentClassName,
 }: {
@@ -71,6 +72,7 @@ export function AppShell({
   heading?: ReactNode
   sidebarAction?: ReactNode
   headerAction?: ReactNode
+  sessionBar?: ReactNode
   hideHeader?: boolean
   contentClassName?: string
 }) {
@@ -250,20 +252,25 @@ export function AppShell({
           </span>
         </div>
       </nav>
-      <main className={`app-main${hideHeader ? ' app-main-full' : ''}`}>
-        {!hideHeader && (
-          <header className="section-header">
-            <div>{heading}</div>
-            <div className="section-header-actions">
-              <div id="action-runtime-status-slot" className="action-runtime-status-slot" />
-              {headerAction}
-              <RuntimeStatusIndicator
-                health={health}
-                projection={runtimeHealth}
-                actions={systemStatusActions}
-              />
-            </div>
-          </header>
+      <main className={`app-main${hideHeader && !sessionBar ? ' app-main-full' : ''}`}>
+        {(!hideHeader || sessionBar) && (
+          <div className="workspace-header">
+            {!hideHeader && (
+              <header className="section-header">
+                <div>{heading}</div>
+                <div className="section-header-actions">
+                  <div id="action-runtime-status-slot" className="action-runtime-status-slot" />
+                  {headerAction}
+                  <RuntimeStatusIndicator
+                    health={health}
+                    projection={runtimeHealth}
+                    actions={systemStatusActions}
+                  />
+                </div>
+              </header>
+            )}
+            {sessionBar}
+          </div>
         )}
         <div className={`section-content${contentClassName ? ` ${contentClassName}` : ''}`}>
           {children}

@@ -280,7 +280,12 @@ export class SpeechClient implements SpeechStreamingClient {
     const connection: SpeechStreamConnection = {
       send: (message) => {
         if (terminal || cancelling) return
-        if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message))
+        if (message.type === 'cancel') {
+          // Settlement also reports transport errors through onEvent.
+          void connection.cancel(message.reason).catch(() => undefined)
+          return
+        }
+        if (readySeen && socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message))
         else {
           if (queued.length >= 128) throw new Error('TTS input queue exceeded its bound')
           queued.push(message)
@@ -291,14 +296,11 @@ export class SpeechClient implements SpeechStreamingClient {
         cancelling = true
         queued.length = 0
         pendingAudio = null
-        if (!socket) {
-          // No inference was started while waiting; cancellation needs no server round trip.
-          queueMicrotask(() => {
-            if (terminal) return
-            finish()
-            onEvent({ type: 'cancelled', sessionId: input.sessionId })
-          })
-          recoveryWait.abort()
+        if (!readySeen || !socket) {
+          // Until ready only start can have crossed the wire. No inference can be in flight.
+          finish()
+          socket?.close()
+          onEvent({ type: 'cancelled', sessionId: input.sessionId })
           return settlement
         }
         this.recoveryReadinessRequired = true
@@ -316,8 +318,21 @@ export class SpeechClient implements SpeechStreamingClient {
       const activeSocket = new WebSocket(`${this.baseUrl.replace(/^http/u, 'ws')}/tts/stream`)
       let startSent = false
       socket = activeSocket
+      const recoverBeforeReady = (
+        code: string,
+        message: string,
+        explicitNotReady: boolean,
+      ): boolean => {
+        if (readySeen || connectionRetried || cancelling || terminal) return false
+        connectionRetried = true
+        socket = null
+        activeSocket.close()
+        connectAfterRecovery(!explicitNotReady, { code, message })
+        return true
+      }
       const onTransportFailure = (code: string, message: string): void => {
         if (terminal || socket !== activeSocket) return
+        if (startSent && recoverBeforeReady(code, message, false)) return
         if (!startSent && !cancelling && !connectionRetried) {
           // The opening handshake failed before a synthesis request was sent.
           connectionRetried = true
@@ -345,11 +360,6 @@ export class SpeechClient implements SpeechStreamingClient {
         const start: SpeechStreamStartMessage = { type: 'start', ...input }
         startSent = true
         activeSocket.send(JSON.stringify(start))
-        if (cancelling)
-          activeSocket.send(
-            JSON.stringify({ type: 'cancel', reason: 'Cancelled before connection' }),
-          )
-        else for (const message of queued.splice(0)) activeSocket.send(JSON.stringify(message))
       })
       activeSocket.addEventListener('message', (message) => {
         if (terminal || socket !== activeSocket) return
@@ -374,6 +384,11 @@ export class SpeechClient implements SpeechStreamingClient {
               return
             }
             if (event.type === 'error') {
+              if (
+                event.code === 'synthesis_not_ready' &&
+                recoverBeforeReady(event.code, event.message, true)
+              )
+                return
               finish(new Error(event.message))
               onEvent(event)
               activeSocket.close()
@@ -383,6 +398,8 @@ export class SpeechClient implements SpeechStreamingClient {
             if (event.type === 'ready') {
               if (readySeen) throw new Error('Duplicate TTS ready message')
               readySeen = true
+              for (const queuedMessage of queued.splice(0))
+                activeSocket.send(JSON.stringify(queuedMessage))
               onEvent(event)
               return
             }
@@ -420,8 +437,8 @@ export class SpeechClient implements SpeechStreamingClient {
       activeSocket.addEventListener('error', (event) => {
         if (terminal || socket !== activeSocket) return
         const error = 'error' in event && event.error instanceof Error ? event.error : null
-        mainLog.error('[SpeechClient] stream transport failed', {
-          stage: startSent ? 'synthesis-started' : 'connecting',
+        mainLog.warn('[SpeechClient] stream transport interrupted', {
+          stage: readySeen ? 'synthesis-started' : startSent ? 'awaiting-ready' : 'connecting',
           errorName: error?.name.slice(0, 80),
           reason: error?.message.slice(0, 240),
           cause: error?.cause instanceof Error ? error.cause.message.slice(0, 240) : undefined,
@@ -432,12 +449,17 @@ export class SpeechClient implements SpeechStreamingClient {
         onTransportFailure('stream_closed', 'TTS stream closed before inference settlement')
       })
     }
-    if (this.recoveryReadinessRequired) {
-      // Cancellation destroys the real Fish worker. Its acknowledgement precedes
-      // the API-owned reload/warmup; poll readiness before this turn's only stream.
-      void this.waitForSynthesisRecovery(recoveryWait.signal).then(
-        () => {
+    const connectAfterRecovery = (
+      requireLoading: boolean,
+      failure?: { code: string; message: string },
+    ): void => {
+      void this.waitForSynthesisRecovery(recoveryWait.signal, requireLoading).then(
+        (canResume) => {
           if (terminal || cancelling) return
+          if (!canResume && failure) {
+            fail(failure.code, failure.message)
+            return
+          }
           this.recoveryReadinessRequired = false
           try {
             connect()
@@ -456,19 +478,26 @@ export class SpeechClient implements SpeechStreamingClient {
             )
         },
       )
-    } else connect()
+    }
+    if (this.recoveryReadinessRequired) connectAfterRecovery(false)
+    else connect()
     return connection
   }
 
-  private async waitForSynthesisRecovery(signal: AbortSignal): Promise<void> {
+  private async waitForSynthesisRecovery(
+    signal: AbortSignal,
+    requireLoading: boolean,
+  ): Promise<boolean> {
+    let mayResume = !requireLoading
     const request = combineAbortSignals([signal, AbortSignal.timeout(120_000)])
     try {
       while (true) {
         request.signal.throwIfAborted()
         const health = await this.health(request.signal)
-        if (deriveCapabilities(health).synthesis) return
+        if (deriveCapabilities(health).synthesis) return mayResume
         if (!['loading', 'warming'].includes(health.synthesis?.status ?? ''))
           throw new Error('Fish synthesis recovery is unavailable')
+        mayResume = true
         await delay(500, undefined, { signal: request.signal })
       }
     } finally {

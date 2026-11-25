@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto'
 import { access, mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 
@@ -10,7 +9,6 @@ import {
   type DesktopWorkflowCapability,
 } from '../../shared/actions'
 import { type DesktopControlRuntimeState, DSH_RUNTIME_VERSION } from '../../shared/desktop-control'
-import type { LlmProviderId } from '../../shared/llm'
 import type {
   DesktopWorkflowAdapterResult,
   DesktopWorkflowExecutionEvidence,
@@ -39,42 +37,18 @@ export interface DshAdapterSnapshot {
   lastError?: string
 }
 
-export interface DshModelConfiguration {
-  provider: LlmProviderId
-  providerDisplayName: string
-  model: string
-  baseURL: string
-  apiKey: string
-  credentialConfigured: boolean
-  lastError?: string
-}
-
-export interface DshModelSnapshot {
-  provider: LlmProviderId
-  providerDisplayName: string
-  model: string
-  configured: boolean
-  lastError?: string
-}
-
 interface HarnessRuntime {
   start(): Promise<void>
-  run(
-    input: string,
-    options?: { onNotification?: (notification: unknown) => void },
-  ): Promise<{ finalResponse: string; notifications: unknown[] }>
-  executeShell?(command: string, timeoutMs: number): Promise<unknown>
+  executeShell(command: string, timeoutMs: number): Promise<unknown>
   close(): Promise<void>
 }
 
 export interface DshHarnessAdapterOptions {
   resources: () => DshLaunchResources
-  model: () => DshModelConfiguration
   environment?: NodeJS.ProcessEnv
   requestTimeoutMs?: number
   createHarness?: (options: {
     resources: DshLaunchResources
-    model: DshModelConfiguration
     environment: NodeJS.ProcessEnv
     requestTimeoutMs: number
   }) => Promise<HarnessRuntime>
@@ -90,8 +64,7 @@ export class DshAdapterError extends Error {
       | 'DSH_REMOTE_ERROR'
       | 'DSH_CANCELLED'
       | 'DSH_ACTION_LIMIT'
-      | 'DSH_RUNTIME_UNAVAILABLE'
-      | 'DSH_MODEL_NOT_CONFIGURED',
+      | 'DSH_RUNTIME_UNAVAILABLE',
     message: string,
     readonly recoverable = true,
     readonly evidence?: DesktopWorkflowExecutionEvidence,
@@ -140,7 +113,6 @@ export function buildDshChildEnvironment(
     DshLaunchResources,
     'workspaceDirectory' | 'sessionDirectory' | 'homeDirectory' | 'shell'
   >,
-  model: Pick<DshModelConfiguration, 'apiKey' | 'baseURL' | 'model'>,
   capability: DshWorkflowCapability,
 ): NodeJS.ProcessEnv {
   const environment: NodeJS.ProcessEnv = {
@@ -151,14 +123,12 @@ export function buildDshChildEnvironment(
     DSH_SESSION_ROOT: resources.sessionDirectory,
     DSH_HOME: resources.homeDirectory,
     SHIO_DSH_ALLOWED_CAPABILITY: capability,
+    SHIO_DSH_EXACT_SHELL: '1',
   }
   for (const name of SAFE_OS_VARIABLES) {
     const value = hostEnvironment[name]
     if (value) environment[name] = value
   }
-  environment.SHIO_DSH_API_KEY = model.apiKey
-  environment.SHIO_DSH_BASE_URL = model.baseURL
-  environment.SHIO_DSH_MODEL = model.model
   if (capability === 'shell' && resources.shell) {
     environment.SHIO_PWSH_COMMAND = resources.shell.command
   }
@@ -167,17 +137,15 @@ export function buildDshChildEnvironment(
 
 async function defaultCreateHarness({
   resources,
-  model,
   environment,
   requestTimeoutMs,
 }: {
   resources: DshLaunchResources
-  model: DshModelConfiguration
   environment: NodeJS.ProcessEnv
   requestTimeoutMs: number
 }): Promise<HarnessRuntime> {
   const sdk = await import('@deepseek-ai/dsh-sdk-client')
-  const harness = new sdk.DeepSeekHarness({
+  const client = new sdk.HarnessClient({
     dshBin: resources.runtimeScript,
     processCwd: resources.profileDirectory,
     env: environment,
@@ -185,16 +153,15 @@ async function defaultCreateHarness({
     shutdownTimeoutMs: 1_500,
     disposeEofGraceMs: 6_000,
     disposeGraceMs: 3_000,
-    cwd: resources.workspaceDirectory,
-    provider: 'shio-settings',
-    model: model.model,
   })
   return {
-    start: () => harness.start(),
-    run: (input, options) => harness.run(input, options),
+    start: async () => {
+      // The SDK handshake requires both strings, even for a child with no model or agents.
+      await client.initialize({ cwd: resources.workspaceDirectory, provider: '', model: '' })
+    },
     executeShell: (command, timeoutMs) =>
-      harness.client.request('shio/shell.execute', { command, timeoutMs }, timeoutMs + 5_000),
-    close: () => harness.close(),
+      client.request('shio/shell.execute', { command, timeoutMs }, timeoutMs + 5_000),
+    close: () => client.close(),
   }
 }
 
@@ -214,8 +181,6 @@ function publicMessage(code: DshAdapterError['code']): string {
       return 'Desktop Control reached its action limit'
     case 'DSH_RUNTIME_UNAVAILABLE':
       return 'Desktop Control runtime is not installed correctly'
-    case 'DSH_MODEL_NOT_CONFIGURED':
-      return 'Desktop Control requires an active model and API key in Settings'
     case 'DSH_STARTUP_FAILED':
       return 'Desktop Control runtime could not start'
   }
@@ -307,7 +272,6 @@ export class DshHarnessAdapter {
   private state: DesktopControlRuntimeState = 'stopped'
   private startedAt: number | undefined
   private lastError: string | undefined
-  private activeModelSignature = ''
   private startTask: Promise<void> | null = null
   private closeTask: Promise<void> | null = null
   private running = false
@@ -329,25 +293,14 @@ export class DshHarnessAdapter {
     }
   }
 
-  modelSnapshot(): DshModelSnapshot {
-    const model = this.options.model()
-    return {
-      provider: model.provider,
-      providerDisplayName: model.providerDisplayName,
-      model: model.model,
-      configured:
-        model.credentialConfigured && model.apiKey.length > 0 && model.model.trim().length > 0,
-      lastError: model.lastError,
-    }
-  }
-
   async checkAvailability(): Promise<boolean> {
     const resources = this.options.resources()
     try {
       await Promise.all([
         access(resources.command),
         access(resources.runtimeScript),
-        access(join(resources.profileDirectory, 'cordis.yml')),
+        access(join(resources.profileDirectory, 'workflow-tools.mjs')),
+        access(join(resources.profileDirectory, 'sdk-jsonrpc-server.mjs')),
       ])
       return true
     } catch {
@@ -367,31 +320,15 @@ export class DshHarnessAdapter {
   }
 
   start(capability: DshWorkflowCapability = 'shell'): Promise<void> {
-    const model = this.options.model()
-    const modelSignature = this.modelSignature(model, capability)
-    if (this.harness && ['ready', 'running'].includes(this.state)) {
-      if (modelSignature === this.activeModelSignature) return Promise.resolve()
-      return this.close().then(() => this.start(capability))
-    }
-    this.startTask ??= this.performStart(model, modelSignature, capability).finally(() => {
+    if (this.closeTask) return this.closeTask.then(() => this.start(capability))
+    if (this.harness && ['ready', 'running'].includes(this.state)) return Promise.resolve()
+    this.startTask ??= this.performStart(capability).finally(() => {
       this.startTask = null
     })
     return this.startTask
   }
 
-  private async performStart(
-    model: DshModelConfiguration,
-    modelSignature: string,
-    capability: DshWorkflowCapability,
-  ): Promise<void> {
-    if (this.closeTask) await this.closeTask
-    if (!model.credentialConfigured || !model.apiKey || !model.model.trim()) {
-      this.fail('DSH_MODEL_NOT_CONFIGURED')
-      throw new DshAdapterError(
-        'DSH_MODEL_NOT_CONFIGURED',
-        publicMessage('DSH_MODEL_NOT_CONFIGURED'),
-      )
-    }
+  private async performStart(capability: DshWorkflowCapability): Promise<void> {
     const resources = this.options.resources()
     if (!(await this.checkAvailability())) {
       this.fail('DSH_RUNTIME_UNAVAILABLE')
@@ -404,26 +341,22 @@ export class DshHarnessAdapter {
     ])
     this.setState('starting')
     const hostEnvironment = this.options.environment ?? process.env
-    const environment = buildDshChildEnvironment(hostEnvironment, resources, model, capability)
+    const environment = buildDshChildEnvironment(hostEnvironment, resources, capability)
     const createHarness = this.options.createHarness ?? defaultCreateHarness
     let harness: HarnessRuntime | null = null
     try {
       harness = await createHarness({
         resources,
-        model,
         environment,
         requestTimeoutMs: this.options.requestTimeoutMs ?? 15_000,
       })
       this.harness = harness
       await harness.start()
       this.startedAt = Date.now()
-      this.activeModelSignature = modelSignature
       this.lastError = undefined
       this.setState('ready')
       mainLog.info('[DesktopControl] DSH runtime started', {
         version: DSH_RUNTIME_VERSION,
-        provider: model.provider,
-        model: model.model,
         capability,
       })
     } catch (error) {
@@ -441,10 +374,13 @@ export class DshHarnessAdapter {
     capability: DshWorkflowCapability,
     shellCommand?: string,
   ): Promise<DesktopWorkflowAdapterResult> {
+    if (!shellCommand?.trim()) {
+      throw new DshAdapterError('DSH_PROTOCOL_ERROR', publicMessage('DSH_PROTOCOL_ERROR'))
+    }
+    await this.start(capability)
     if (this.running) {
       throw new DshAdapterError('DSH_REMOTE_ERROR', 'Desktop Control is already running a task')
     }
-    await this.start(capability)
     const harness = this.harness
     if (!harness)
       throw new DshAdapterError('DSH_TRANSPORT_CLOSED', publicMessage('DSH_TRANSPORT_CLOSED'))
@@ -461,9 +397,6 @@ export class DshHarnessAdapter {
     }
     signal.addEventListener('abort', abort, { once: true })
     try {
-      if (!shellCommand?.trim() || !harness.executeShell) {
-        throw new DshAdapterError('DSH_PROTOCOL_ERROR', publicMessage('DSH_PROTOCOL_ERROR'))
-      }
       const shellStartedAt = Date.now()
       const parsedResult = shellExecutionResultSchema.safeParse(
         await harness.executeShell(shellCommand.trim(), SHELL_REQUEST_TIMEOUT_MS),
@@ -533,7 +466,6 @@ export class DshHarnessAdapter {
     if (this.startTask) await this.startTask.catch(() => undefined)
     const harness = this.harness
     this.harness = null
-    this.activeModelSignature = ''
     if (!harness) {
       this.startedAt = undefined
       this.setState('stopped')
@@ -578,12 +510,6 @@ export class DshHarnessAdapter {
   private fail(code: DshAdapterError['code']): void {
     this.lastError = publicMessage(code)
     this.setState('error')
-  }
-
-  private modelSignature(model: DshModelConfiguration, capability: DshWorkflowCapability): string {
-    return createHash('sha256')
-      .update(`${model.provider}\0${model.model}\0${model.baseURL}\0${model.apiKey}\0${capability}`)
-      .digest('hex')
   }
 
   private setState(state: DesktopControlRuntimeState): void {

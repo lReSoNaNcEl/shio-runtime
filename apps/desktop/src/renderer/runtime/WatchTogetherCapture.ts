@@ -4,6 +4,7 @@ import {
   WATCH_MAX_FRAME_BYTES,
   type WatchBlockReason,
   type WatchModelIssue,
+  type WatchReference,
 } from '../../shared/watchTogether'
 import { StreamingPcmCapture } from '../audio/StreamingPcmCapture'
 import type { ControllerState } from '../Controller'
@@ -25,6 +26,19 @@ async function encodeFrame(canvas: HTMLCanvasElement): Promise<ArrayBuffer | und
     if (image && image.size >= 100 && image.size <= WATCH_MAX_FRAME_BYTES)
       return image.arrayBuffer()
   }
+}
+
+function changedPixels(before: Uint8ClampedArray, after: Uint8ClampedArray): number {
+  let count = 0
+  for (let i = 0; i < after.length; i += 4) {
+    if (
+      Math.abs(after[i] - before[i]) > 18 ||
+      Math.abs(after[i + 1] - before[i + 1]) > 18 ||
+      Math.abs(after[i + 2] - before[i + 2]) > 18
+    )
+      count++
+  }
+  return count
 }
 
 /** One user-selected playback stream. Microphone/ASR and audible output keep their existing owners. */
@@ -55,7 +69,14 @@ export class WatchTogetherCapture {
   private pcm: Int16Array[] = []
   private samples = 0
   private previousSignature?: Uint8ClampedArray
-  private sceneChange?: { frame: HTMLCanvasElement; at: number; score: number }
+  private submittedSignature?: Uint8ClampedArray
+  private sceneChange?: {
+    before: HTMLCanvasElement
+    after: HTMLCanvasElement
+    signature: Uint8ClampedArray
+    at: number
+    score: number
+  }
   private lastSampleAt = 0
   private lastTranscript = ''
   private pending = false
@@ -84,10 +105,10 @@ export class WatchTogetherCapture {
     }
   }
 
-  async start(sourceId: string): Promise<void> {
+  async start(sourceId: string, reference?: WatchReference): Promise<void> {
     let failure: WatchFailure = 'watch.startError'
     try {
-      const result = await window.api.watchTogether.start(sourceId)
+      const result = await window.api.watchTogether.start(sourceId, reference)
       if (result.kind === 'blocked') {
         this.stop(`watch.blocked.${result.reason}`)
         return
@@ -224,6 +245,7 @@ export class WatchTogetherCapture {
     this.pcm = []
     this.samples = 0
     this.previousSignature = undefined
+    this.submittedSignature = undefined
     this.sceneChange = undefined
     this.lastTranscript = ''
   }
@@ -240,23 +262,27 @@ export class WatchTogetherCapture {
     }
   }
 
-  private drawFrame(width: number, height: number): HTMLCanvasElement | undefined {
-    if (this.video.readyState < 2 || !this.video.videoWidth || !this.video.videoHeight) return
-    const frame = document.createElement('canvas')
-    frame.width = width
-    frame.height = height
-    const ctx = frame.getContext('2d')
-    if (!ctx) return
+  private drawVideo(ctx: CanvasRenderingContext2D): boolean {
+    if (this.video.readyState < 2 || !this.video.videoWidth || !this.video.videoHeight) return false
+    const { width, height } = ctx.canvas
     const scale = Math.min(width / this.video.videoWidth, height / this.video.videoHeight)
     const w = this.video.videoWidth * scale
     const h = this.video.videoHeight * scale
     ctx.drawImage(this.video, (width - w) / 2, (height - h) / 2, w, h)
-    return frame
+    return true
+  }
+
+  private drawFrame(): HTMLCanvasElement | undefined {
+    const frame = document.createElement('canvas')
+    frame.width = WATCH_FRAME_WIDTH
+    frame.height = WATCH_FRAME_HEIGHT
+    const ctx = frame.getContext('2d')
+    if (ctx && this.drawVideo(ctx)) return frame
   }
 
   private prepareUserTurn = async (turnId: string, fromMicrophone: boolean): Promise<void> => {
     if (!this.id || this.ended) return
-    const frame = this.drawFrame(WATCH_FRAME_WIDTH, WATCH_FRAME_HEIGHT)
+    const frame = this.drawFrame()
     const image = frame ? await encodeFrame(frame) : undefined
     if (!this.ended)
       await window.api.watchTogether.prepareTurn(
@@ -271,31 +297,26 @@ export class WatchTogetherCapture {
   private async tick(): Promise<void> {
     const id = this.id
     if (!id || this.ended || this.video.readyState < 2) return
-    const now = this.drawFrame(WATCH_FRAME_WIDTH, WATCH_FRAME_HEIGHT)
-    if (!now) return
-    const prev = this.frame
-    this.frame = now
     const tc = this.thumbnail.getContext('2d', { willReadFrequently: true })
     if (!tc) return
     const { width, height } = this.thumbnail
-    tc.drawImage(now, 0, 0, width, height)
+    tc.clearRect(0, 0, width, height)
+    if (!this.drawVideo(tc)) return
     const signature = tc.getImageData(0, 0, width, height).data
     const old = this.previousSignature
-    this.previousSignature = signature
     const time = Date.now()
     if (this.sceneChange && time - this.sceneChange.at > 5000) this.sceneChange = undefined
-    if (old && prev) {
-      let score = 0
-      for (let i = 0; i < signature.length; i += 4) {
-        if (
-          Math.abs(signature[i] - old[i]) > 18 ||
-          Math.abs(signature[i + 1] - old[i + 1]) > 18 ||
-          Math.abs(signature[i + 2] - old[i + 2]) > 18
-        )
-          score++
+    const score = old ? changedPixels(old, signature) : 0
+    // Compare against the last retained scene so slow, small changes can accumulate.
+    let captured: HTMLCanvasElement | undefined
+    if (!this.frame || score >= 4) {
+      captured = this.drawFrame()
+      if (!captured) return
+      if (this.frame && score > (this.sceneChange?.score ?? 0)) {
+        this.sceneChange = { before: this.frame, after: captured, signature, at: time, score }
       }
-      if (score >= 4 && score > (this.sceneChange?.score ?? 0))
-        this.sceneChange = { frame: now, at: time, score }
+      this.frame = captured
+      this.previousSignature = signature
       if (score > width * height * 0.55 && this.pendingEpoch === this.epoch && !this.turnId) {
         this.epoch++
         controller.clearWatchReaction(id)
@@ -318,25 +339,38 @@ export class WatchTogetherCapture {
       time - this.lastSampleAt < 4000
     )
       return
-    const pcm = new Int16Array(this.samples >= 256 ? this.samples : 0)
-    let offset = 0
-    for (const chunk of pcm.length ? this.pcm : []) {
-      pcm.set(chunk, offset)
-      offset += chunk.length
-    }
+    const chunks = this.pcm
+    const sampleCount = this.samples >= 256 ? this.samples : 0
     this.pcm = []
     this.samples = 0
     const transcript = this.playbackSpeech.transcript()
     if (
       this.lastSampleAt &&
       !this.sceneChange &&
+      this.previousSignature === this.submittedSignature &&
       transcript === this.lastTranscript &&
-      !pcm.some((s) => Math.abs(s) > 170)
+      !(sampleCount && chunks.some((chunk) => chunk.some((s) => Math.abs(s) > 170)))
     )
       return
-    const earlier =
-      this.sceneChange?.frame === now ? (prev ?? now) : (this.sceneChange?.frame ?? prev ?? now)
+    // Audio-driven submissions and user questions must still see the current detailed image.
+    const now = captured ?? this.drawFrame()
+    if (!now) return
+    const change = this.sceneChange
+    let earlier = this.frame
+    if (change) {
+      const currentAtChange =
+        change.after === this.frame || changedPixels(change.signature, signature) < 4
+      earlier = currentAtChange ? change.before : change.after
+    }
+    this.frame = now
+    this.previousSignature = signature
     this.sceneChange = undefined
+    const pcm = new Int16Array(sampleCount)
+    let offset = 0
+    for (const chunk of sampleCount ? chunks : []) {
+      pcm.set(chunk, offset)
+      offset += chunk.length
+    }
     this.lastTranscript = transcript
     this.lastSampleAt = time
     const sheet = document.createElement('canvas')
@@ -355,6 +389,8 @@ export class WatchTogetherCapture {
     try {
       const frames = await encodeFrame(sheet)
       if (!frames || epoch !== this.epoch || this.blocked()) return
+      // The transition pair may expire while busy; only submitting its current scene clears the change.
+      this.submittedSignature = signature
       const result = await window.api.watchTogether.observe({
         sessionId: id,
         endedAt,
@@ -363,7 +399,9 @@ export class WatchTogetherCapture {
         playbackTranscript: transcript,
       })
       if (result.kind === 'comment') commentId = result.turnId
-      if (this.ended || epoch !== this.epoch) return
+      if (this.ended) return
+      if (result.kind === 'reference-checked') this.lastSampleAt = 0
+      if (epoch !== this.epoch) return
       if (result.kind === 'stopped') {
         this.stop()
         return

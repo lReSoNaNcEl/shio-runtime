@@ -97,11 +97,16 @@ export class AliveExperienceRuntime {
         IDLE_HOLD_LIMITS[0],
         Math.min(IDLE_HOLD_LIMITS[1], command.holdMs ?? IDLE_HOLD_LIMITS[0]),
       )
-      this.idleHold = window.setTimeout(() => {
-        this.idleHold = null
-        this.watchHoldId = undefined
-        this.deps.presentation.setBehaviorEmbodimentIntent(undefined)
-      }, hold)
+      this.idleHold = window.setTimeout(
+        () => {
+          this.idleHold = null
+          this.watchHoldId = undefined
+          this.deps.presentation.setBehaviorEmbodimentIntent(undefined)
+        },
+        command.watchReaction
+          ? Math.min(hold, Math.max(0, command.watchReaction.expiresAt - Date.now()))
+          : hold,
+      )
     }
     if (intent.gestureHint) this.deps.presentation.playIdleActivityGesture?.(intent)
   }

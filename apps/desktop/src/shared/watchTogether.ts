@@ -4,6 +4,21 @@ export const WATCH_FRAME_WIDTH = 768
 export const WATCH_FRAME_HEIGHT = 432
 export const WATCH_MAX_FRAME_BYTES = 300_000
 
+/** Exact destination chosen in the share picker for the lifetime of one session. */
+export function watchReferenceUrl(value: string): string | undefined {
+  if (value.length > 2048 || !/^https:\/\//iu.test(value) || /[\\\s\p{Cc}]/u.test(value)) return
+  const authority = value.slice('https://'.length).split(/[/?#]/u, 1)[0]
+  if (!authority || authority.includes('@')) return
+  try {
+    const url = new URL(value)
+    if (url.protocol === 'https:' && !url.username && !url.password && url.href.length <= 2048)
+      return url.href
+  } catch {
+    return undefined
+  }
+}
+
+export type WatchReference = string | { kind: 'wikipedia' }
 export type WatchBlockReason = 'suspended' | 'off' | 'private'
 
 export function watchBlockReason(settings: AutonomySettings): WatchBlockReason | undefined {
@@ -31,7 +46,7 @@ export interface WatchMoment {
 }
 
 export type WatchDecision =
-  | { kind: 'quiet' | 'stopped' }
+  | { kind: 'quiet' | 'stopped' | 'reference-checked' }
   | { kind: 'unavailable'; reason: WatchModelIssue }
   | { kind: 'comment'; turnId: string; expiresAt: number }
 
@@ -40,7 +55,7 @@ export type WatchReaction = 'glance' | 'surprise'
 export type WatchModelIssue = 'rateLimited' | 'unavailable'
 
 export interface WatchTogetherApi {
-  start(sourceId: string): Promise<WatchStartResult>
+  start(sourceId: string, reference?: WatchReference): Promise<WatchStartResult>
   stop(sessionId: string): Promise<void>
   yield(sessionId: string, reason?: 'scene'): Promise<void>
   classifySpeech(

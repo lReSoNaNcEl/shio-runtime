@@ -33,7 +33,7 @@ const HEALTHY: RuntimeInvariantInput = {
   currentBodyAnimation: 'talk_loop',
   currentBehaviorId: 'speaking',
   mouthMax: 0.4,
-  facialActiveSources: ['lipSync', 'emotion', 'autoBlink'],
+  facialActiveSources: ['lipSync', 'emotion', 'autoBlink', 'speakingEye', 'facialActing'],
   facialEntrySources: ['lipSync', 'emotion'],
   facialSupportedVisemes: ['aa', 'ih', 'ou', 'ee', 'oh'],
   facialUnsupportedExpressionRequests: [],

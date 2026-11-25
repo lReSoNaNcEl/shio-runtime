@@ -117,6 +117,8 @@ interface CharacterToolLoopOptions {
   requestOptions: LlmRequestOptions
   nativeToolsRejected: boolean
   providerId: LlmProviderId
+  /** The explicit utterance before transient visual and playback evidence was attached. */
+  watchUserRequest?: string
   enforceToolRequirements?: boolean
   /** Experimental, off by default: start the direct reply in parallel with planning. */
   speculativeDirectReply?: boolean
@@ -1141,8 +1143,28 @@ export class CharacterToolLoop {
 
     try {
       if (options.enforceToolRequirements) {
+        const watchRequest = options.watchUserRequest
+        const currentInput = options.messages.at(-1)?.content
+        const planningOptions =
+          watchRequest === undefined
+            ? options
+            : {
+                ...options,
+                // The planner uses image presence as a capability hint and strips the image itself.
+                messages: [
+                  {
+                    role: 'user' as const,
+                    content: [
+                      { type: 'text' as const, text: watchRequest },
+                      ...(Array.isArray(currentInput)
+                        ? currentInput.filter((part) => part.type === 'image')
+                        : []),
+                    ],
+                  },
+                ],
+              }
         const resolved = await resolveToolRequirement(
-          options,
+          planningOptions,
           controller.signal,
           nativeToolsRejected,
         )
@@ -1203,8 +1225,23 @@ export class CharacterToolLoop {
             intent: state.embodiment,
           })
         }
+        // Tool arguments are formed from the user's words. Page pixels, screen notes and
+        // loopback speech are available only on the direct-answer path with no callable tools.
+        if (
+          watchRequest !== undefined &&
+          definitionsForTurn(options.registry(), state.requirement, state.initialPlan).length > 0
+        ) {
+          forwardOptions.messages = [
+            ...options.messages.filter((message) => message.role === 'system'),
+            { role: 'user', content: watchRequest },
+          ]
+          resolvedOptions.messages = forwardOptions.messages
+        }
         if (state.embodiment !== undefined) {
-          forwardOptions.messages = [...options.messages, visualProposalMessage(state.embodiment)]
+          forwardOptions.messages = [
+            ...forwardOptions.messages,
+            visualProposalMessage(state.embodiment),
+          ]
           resolvedOptions.messages = forwardOptions.messages
         }
         if (speculation && !speculationMatches(state, speculation.route, currentRoute())) {
@@ -1219,10 +1256,16 @@ export class CharacterToolLoop {
         }
       }
       const initialRegistry = options.registry()
-      resolvedOptions.dispatcher.registerPlannedTools?.([
-        ...state.initialPlan.plannedTools,
-        ...(state.requirement.type === 'explicit-tool' ? [state.requirement.tool] : []),
-      ])
+      const watchTools =
+        options.watchUserRequest === undefined
+          ? undefined
+          : definitionsForTurn(initialRegistry, state.requirement, state.initialPlan)
+      resolvedOptions.dispatcher.registerPlannedTools?.(
+        watchTools?.map((tool) => tool.id) ?? [
+          ...state.initialPlan.plannedTools,
+          ...(state.requirement.type === 'explicit-tool' ? [state.requirement.tool] : []),
+        ],
+      )
       if (requirementStatus(state.requirement, state, initialRegistry) === 'unavailable') {
         return withToolEvidence(
           {
@@ -1237,7 +1280,7 @@ export class CharacterToolLoop {
           state,
         )
       }
-      if (initialRegistry.definitions().length === 0) {
+      if (initialRegistry.definitions().length === 0 || watchTools?.length === 0) {
         const directMessages = options.enforceToolRequirements
           ? withToolPrompts(
               forwardOptions.messages,
@@ -1571,13 +1614,41 @@ export class CharacterToolLoop {
       const requestOptions = toolRequestOptions(options, signal, continuation)
       const allowStructuredCalls =
         definitionsForTurn(registry, state.requirement, state.initialPlan).length > 0
-      const requestMessages = withToolPrompts(
-        working,
-        registry,
-        allowStructuredCalls,
-        state.requirement,
-        state.initialPlan,
-      )
+      // On an isolated watch turn the planner may already have selected one exact action.
+      // Ask for its arguments directly. No screen data or terminal narration enters this round.
+      const requiredTool =
+        state.requirement.type === 'explicit-tool' ? state.requirement.tool : undefined
+      const argumentTool =
+        statusBeforeRound === 'pending' &&
+        !continuation &&
+        options.watchUserRequest !== undefined &&
+        (requiredTool === 'browser.open' || requiredTool === 'shell.execute') &&
+        state.initialPlan.plannedTools.every((id) => id === requiredTool)
+          ? registry.get(requiredTool)
+          : undefined
+      const requestMessages: readonly ChatMessage[] = argumentTool
+        ? [
+            {
+              role: 'system',
+              content: [
+                'Generate JSON arguments for the single Shio Runtime operation selected by your plan for the original user request.',
+                'Respond with one JSON object matching the input schema, or null if the request lacks the information or authority for the operation. Copy an exact command or URL when provided. Do not execute anything or narrate a result.',
+                JSON.stringify({
+                  tool: argumentTool.id,
+                  description: argumentTool.description,
+                  inputSchema: argumentTool.llmInputSchema,
+                }),
+              ].join('\n'),
+            },
+            { role: 'user', content: options.watchUserRequest ?? '' },
+          ]
+        : withToolPrompts(
+            working,
+            registry,
+            allowStructuredCalls,
+            state.requirement,
+            state.initialPlan,
+          )
       const request = async (): Promise<LlmCompletion> =>
         streamingAvailable(options) && statusBeforeRound !== 'pending'
           ? streamedCompletionWithSafeRetry(
@@ -1603,7 +1674,15 @@ export class CharacterToolLoop {
       const completion = speculative
         ? await consumeSpeculation(speculative, options.onStreamEvent, signal, request)
         : await request()
-      const response = completion.content
+      let response = completion.content
+      if (argumentTool) {
+        try {
+          const args = registry.parseInput(argumentTool.id, JSON.parse(response.trim()))
+          response = structuredDirectiveForCall({ tool: argumentTool.id, arguments: args })
+        } catch {
+          return requiredWorkExecutionResult(options, state, nativeToolsRejected, 'unfulfilled')
+        }
+      }
       let parsed = parseStructuredCalls(response)
       let responseForContext = response
       if (!parsed) {

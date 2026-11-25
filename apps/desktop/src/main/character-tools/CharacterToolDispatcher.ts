@@ -189,6 +189,7 @@ interface BrowserComputerUseActionResult {
 }
 
 interface CharacterToolDispatcherOptions {
+  plannedOnly?: boolean
   registry: () => CharacterToolRegistry
   traceId: string
   userGoal: string
@@ -316,6 +317,7 @@ function browserComputerUseOutcomeProjection(
 
 export class CharacterToolDispatcher {
   private browserAuthorizationScopeId: string | undefined
+  private readonly watchPlan?: Set<CharacterToolId>
   private browserSelected = false
   private actionWorkflowClosed = false
   private projectContext: ProjectContextPacket | undefined
@@ -326,14 +328,15 @@ export class CharacterToolDispatcher {
   private browserStaleRecoveryUsed = false
 
   constructor(private readonly options: CharacterToolDispatcherOptions) {
+    if (options.plannedOnly) this.watchPlan = new Set()
     this.influence = new ToolInfluenceContext(options.userGoal)
     for (const thread of options.threadAwareness ?? []) this.knownThreadIds.add(thread.id)
   }
 
   registerPlannedTools(ids: readonly CharacterToolId[]): void {
-    this.influence.registerPlannedTools(
-      ids.filter((id) => Boolean(this.options.registry().get(id))),
-    )
+    const available = ids.filter((id) => Boolean(this.options.registry().get(id)))
+    for (const id of available) this.watchPlan?.add(id)
+    this.influence.registerPlannedTools(available)
   }
 
   influenceSnapshot(): ReturnType<ToolInfluenceContext['snapshot']> {
@@ -353,7 +356,7 @@ export class CharacterToolDispatcher {
     input: Record<string, unknown>,
   ): Promise<CharacterToolDispatchResult> {
     const registry = this.options.registry()
-    if (!registry.get(id)) {
+    if ((this.watchPlan && !this.watchPlan.has(id)) || !registry.get(id)) {
       return { content: failureContent('TOOL_UNAVAILABLE') }
     }
     if (this.options.signal.aborted) throw this.options.signal.reason ?? new Error('Turn cancelled')
@@ -405,6 +408,8 @@ export class CharacterToolDispatcher {
   async executeLegacyAction(request: DesktopWorkflowRequest): Promise<CharacterToolDispatchResult> {
     try {
       const validated = desktopWorkflowRequestSchema.parse(request)
+      if (this.watchPlan && validated.requestedCapabilities.length !== 1)
+        return { content: failureContent('TOOL_UNAVAILABLE') }
       const requested = validated.requestedCapabilities[0]
       if (requested === 'browser' && !validated.browserOperation) {
         return { content: failureContent('BROWSER_USE_REQUIRED') }
@@ -418,15 +423,16 @@ export class CharacterToolDispatcher {
       if (!this.influence.canInvoke(legacyId)) {
         return { content: failureContent(authorityFailureCode(legacyId)) }
       }
-      this.influence.select(legacyId)
       const id =
         requested === 'browser'
           ? validated.browserOperation
             ? LEGACY_BROWSER_TOOL_IDS[validated.browserOperation.operation]
             : undefined
           : 'shell.execute'
-      if (!id) return { content: failureContent('TOOL_UNAVAILABLE') }
+      if (!id || (this.watchPlan && !this.watchPlan.has(id)))
+        return { content: failureContent('TOOL_UNAVAILABLE') }
       if (!this.options.registry().get(id)) return { content: failureContent('TOOL_UNAVAILABLE') }
+      this.influence.select(legacyId)
       return await this.executeDesktopAction(validated)
     } catch (error) {
       if (this.options.signal.aborted) throw this.options.signal.reason ?? error

@@ -14,9 +14,12 @@ await ctx.plugin(Loader)
 // both development and packaged runtimes.
 ctx.loader.internal = undefined
 
-await ctx.loader.create({
-  name: '@deepseek-ai/cordis-plugin-include',
-  config: {
-    path: './cordis.yml',
-  },
-})
+if (process.env.SHIO_DSH_EXACT_SHELL === '1') {
+  await ctx.loader.create({ name: './workflow-tools.mjs' })
+  await ctx.loader.create({ name: './sdk-jsonrpc-server.mjs' })
+} else {
+  await ctx.loader.create({
+    name: '@deepseek-ai/cordis-plugin-include',
+    config: { path: './cordis.yml' },
+  })
+}

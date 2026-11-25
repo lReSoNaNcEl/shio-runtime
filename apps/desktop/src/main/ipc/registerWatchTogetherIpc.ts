@@ -1,7 +1,7 @@
 import { type BrowserWindow, desktopCapturer, ipcMain } from 'electron'
 import { z } from 'zod'
 
-import { WATCH_MAX_FRAME_BYTES } from '../../shared/watchTogether'
+import { WATCH_MAX_FRAME_BYTES, watchReferenceUrl } from '../../shared/watchTogether'
 import type { WatchTogetherService } from '../watch-together/WatchTogetherService'
 import type { OverlayWindowManager } from '../windows/OverlayWindowManager'
 import type { IpcAuthorization } from './IpcAuthorization'
@@ -68,11 +68,22 @@ export function registerWatchTogetherIpc(
     'watch:start',
     auth.handlePayload(
       'watch:start',
-      z.tuple([z.string().regex(/^(screen|window):\d+:\d+$/)]),
-      (event, source) => {
+      z.tuple([
+        z.string().regex(/^(screen|window):\d+:\d+$/),
+        z
+          .union([
+            z
+              .string()
+              .max(2048)
+              .refine((value) => Boolean(watchReferenceUrl(value))),
+            z.object({ kind: z.literal('wikipedia') }).strict(),
+          ])
+          .optional(),
+      ]),
+      (event, source, reference) => {
         if (process.platform !== 'win32' || event.senderFrame !== wc.mainFrame)
           throw new Error('WATCH_UNAVAILABLE')
-        return watch.start(source)
+        return watch.start(source, reference)
       },
     ),
   )

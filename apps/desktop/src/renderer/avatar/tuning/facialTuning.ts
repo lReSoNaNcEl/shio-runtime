@@ -205,6 +205,8 @@ export const facialTuning = {
     // Speech energy above which the mouth is considered actively voicing, so
     // closures only fire while there is something to close.
     minEnergyToSpeak: 0.05,
+    energyPeakReleaseMs: 480,
+    taperRatio: 0.8,
     // Soft closure fired when speaking ends (chunk / sentence boundary), so the
     // mouth eases shut between TTS chunks instead of hanging open.
     sentenceBoundaryClosureMs: 140,

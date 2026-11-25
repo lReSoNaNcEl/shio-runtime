@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 
-import type { BrowserContext, chromium, Page } from 'playwright-core'
+import type { BrowserContext, CDPSession, chromium, Page } from 'playwright-core'
 
 import type {
   BrowserComputerUseDecision,
@@ -126,13 +126,22 @@ export class PlaywrightBrowserAdapter {
       const requestedUrl = validHttpUrl(url)
       const before = this.observationSnapshot() ?? undefined
       const page = await this.ensurePage(signal)
+      this.throwIfAborted(signal)
       this.invalidateObservation()
       try {
-        await page.goto(requestedUrl, { waitUntil: 'domcontentloaded', timeout: 30_000 })
+        const response = await page.goto(requestedUrl, {
+          waitUntil: 'domcontentloaded',
+          timeout: 30_000,
+        })
         await this.denyNotifications(page)
         await this.stabilizeAfterNavigation(page, signal)
         const observation = await this.captureSemanticObservation(page, false, signal)
-        return this.result('open', observation, { requestedUrl, before })
+        return this.result('open', observation, {
+          requestedUrl,
+          before,
+          navigationStatus:
+            response?.status() ?? (await this.documentNavigationStatus(page, requestedUrl)),
+        })
       } catch (error) {
         throw this.normalizeError(error, 'NAVIGATION_FAILED')
       }
@@ -444,12 +453,16 @@ export class PlaywrightBrowserAdapter {
   private async ensurePage(signal?: AbortSignal): Promise<Page> {
     this.throwIfAborted(signal)
     const context = await this.ensureContext()
+    this.throwIfAborted(signal)
     let page = this.pages.activePage() ?? context.pages().find((candidate) => !candidate.isClosed())
     if (!page) page = await context.newPage()
+    this.throwIfAborted(signal)
     this.pages.setActive(page)
     this.pages.bind(page)
     await page.bringToFront()
+    this.throwIfAborted(signal)
     await this.denyNotifications(page)
+    this.throwIfAborted(signal)
     return page
   }
 
@@ -657,6 +670,48 @@ export class PlaywrightBrowserAdapter {
       await cdp.detach()
     } catch {
       // The launch-level notification policy remains the fallback for non-Chromium pages.
+    }
+  }
+
+  // Hash-only navigation has no response. Read the current top-level document's network timing
+  // in an isolated world, where page scripts cannot replace the Performance API.
+  private async documentNavigationStatus(
+    page: Page,
+    requestedUrl: string,
+  ): Promise<number | undefined> {
+    if (page.url() !== requestedUrl) return
+    let cdp: CDPSession | undefined
+    try {
+      cdp = await page.context().newCDPSession(page)
+      const { frameTree } = await cdp.send('Page.getFrameTree')
+      const { executionContextId } = await cdp.send('Page.createIsolatedWorld', {
+        frameId: frameTree.frame.id,
+        worldName: 'shio-document-navigation',
+      })
+      const { result } = await cdp.send('Runtime.evaluate', {
+        contextId: executionContextId,
+        expression: `(() => {
+          const entry = performance.getEntriesByType('navigation')[0]
+          return [location.href, entry?.name, entry?.responseStatus]
+        })()`,
+        returnByValue: true,
+      })
+      const value: unknown = result.value
+      if (!Array.isArray(value)) return
+      const [currentUrl, documentUrl, status] = value
+      if (
+        currentUrl === requestedUrl &&
+        typeof documentUrl === 'string' &&
+        documentUrl.split('#')[0] === requestedUrl.split('#')[0] &&
+        Number.isInteger(status) &&
+        status >= 100 &&
+        status <= 599
+      )
+        return status
+    } catch {
+      // The document may have been replaced or closed while reading its timing.
+    } finally {
+      await cdp?.detach().catch(() => undefined)
     }
   }
 

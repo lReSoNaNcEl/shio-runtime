@@ -112,7 +112,7 @@ function failure(code: LlmTurnErrorCode): LlmResponseError {
     provider: 'codex-cli',
     code,
     message: `Codex CLI: ${code}`,
-    recoverable: ['TIMEOUT', 'RATE_LIMITED', 'NETWORK_ERROR'].includes(code),
+    recoverable: ['TIMEOUT', 'RATE_LIMITED', 'NETWORK_ERROR', 'EMPTY_STREAM'].includes(code),
   })
 }
 
