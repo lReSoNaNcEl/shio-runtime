@@ -18,7 +18,6 @@ export function watchReferenceUrl(value: string): string | undefined {
   }
 }
 
-export type WatchReference = string | { kind: 'wikipedia' }
 export type WatchBlockReason = 'suspended' | 'off' | 'private'
 
 export function watchBlockReason(settings: AutonomySettings): WatchBlockReason | undefined {
@@ -55,7 +54,7 @@ export type WatchReaction = 'glance' | 'surprise'
 export type WatchModelIssue = 'rateLimited' | 'unavailable'
 
 export interface WatchTogetherApi {
-  start(sourceId: string, reference?: WatchReference): Promise<WatchStartResult>
+  start(sourceId: string, reference?: string): Promise<WatchStartResult>
   stop(sessionId: string): Promise<void>
   yield(sessionId: string, reason?: 'scene'): Promise<void>
   classifySpeech(

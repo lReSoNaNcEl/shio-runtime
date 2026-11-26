@@ -579,15 +579,29 @@
   font-size: 0.82rem;
 }
 
+.screen-context-picker-dialog .screen-context-picker-content {
+  flex-shrink: 1;
+  min-block-size: 0;
+  overflow-y: auto;
+}
+
 .screen-context-picker {
-  min-height: 280px;
-  max-height: min(64vh, 680px);
-  overflow: auto;
+  display: grid;
+  gap: 16px;
+  min-inline-size: 0;
   padding: 4px;
 }
 
+.screen-context-share-hint {
+  color: var(--text-dim);
+}
+
+.screen-context-reference-url {
+  inline-size: 100%;
+}
+
 .screen-context-picker-state {
-  min-height: 260px;
+  min-height: min(28vh, 220px);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -605,13 +619,19 @@
 .screen-context-picker-actions {
   display: flex;
   justify-content: flex-end;
+  flex-wrap: wrap;
+  align-items: center;
   gap: 8px;
   width: 100%;
 }
 
+.screen-context-picker-refresh {
+  margin-inline-end: auto;
+}
+
 .screen-context-source-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 11rem), 1fr));
   gap: 12px;
 }
 
@@ -659,7 +679,7 @@
   flex: none;
   width: 100%;
   aspect-ratio: 16 / 9;
-  object-fit: cover;
+  object-fit: contain;
   background: var(--surface-code);
 }
 
@@ -690,13 +710,29 @@
 }
 
 .screen-context-source-name {
-  display: block;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
   flex: 1;
   min-width: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
   font-size: 0.8rem;
+}
+
+@media (max-width: 540px) {
+  .screen-context-source-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  .screen-context-source {
+    flex-direction: row;
+  }
+
+  .screen-context-source > img {
+    width: 4.5rem;
+  }
 }
 
 @media (max-width: 720px) {

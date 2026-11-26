@@ -1,17 +1,23 @@
 import {
+  ActionButton,
   Badge,
   Button,
-  Checkbox,
   Content,
   Dialog,
   DialogContainer,
+  Disclosure,
+  DisclosurePanel,
+  DisclosureTitle,
   Footer,
   Heading,
   ProgressCircle,
   Text,
   TextField,
   ToggleButton,
+  Tooltip,
+  TooltipTrigger,
 } from '@react-spectrum/s2'
+import RefreshIcon from '@react-spectrum/s2/icons/Refresh'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import {
@@ -19,7 +25,7 @@ import {
   type ScreenContextErrorCode,
   type ScreenContextSource,
 } from '../../../shared/screen-context'
-import { type WatchReference, watchReferenceUrl } from '../../../shared/watchTogether'
+import { watchReferenceUrl } from '../../../shared/watchTogether'
 import { useTranslation } from '../../localization/useTranslation'
 import { observeRendererPromise } from '../../reliability/observePromise'
 import { screenContextErrorMessage } from './screenContextErrorMessage'
@@ -37,7 +43,7 @@ interface Props {
   onDismiss: () => void
   onChangeModel: () => void
   referenceAvailable?: boolean
-  onWatch?: (sourceId: string, sourceName: string, reference?: WatchReference) => void
+  onWatch?: (sourceId: string, sourceName: string, reference?: string) => void
   onAttach?: (capture: ScreenContextCaptureDescriptor) => void
 }
 
@@ -54,8 +60,8 @@ export function ScreenContextPicker({
   const [sources, setSources] = useState<ScreenContextSource[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [reference, setReference] = useState('')
-  const [wikiEnabled, setWikiEnabled] = useState(false)
-  const invalidReference = Boolean(reference.trim() && !watchReferenceUrl(reference.trim()))
+  const referenceUrl = watchReferenceUrl(reference.trim())
+  const invalidReference = Boolean(reference.trim() && !referenceUrl)
   const [errorCode, setErrorCode] = useState<ScreenContextErrorCode | null>(null)
   const operationIdRef = useRef(0)
   const mainOperationIdRef = useRef<string | null>(null)
@@ -69,6 +75,11 @@ export function ScreenContextPicker({
       const result = await window.api.screenContext.listSources()
       if (operationId !== operationIdRef.current) return
       if (!result.ok) {
+        if (result.error.code === 'NO_SOURCES') {
+          setSources([])
+          setState('source-list')
+          return
+        }
         setErrorCode(result.error.code)
         setState('error')
         return
@@ -105,7 +116,6 @@ export function ScreenContextPicker({
   useEffect(() => {
     if (!isOpen) {
       setReference('')
-      setWikiEnabled(false)
       operationIdRef.current += 1
       const mainOperationId = mainOperationIdRef.current
       mainOperationIdRef.current = null
@@ -141,15 +151,7 @@ export function ScreenContextPicker({
       const source = sources.find((candidate) => candidate.id === selectedId)
       if (!source) return
       if (referenceAvailable && invalidReference) return
-      onWatch(
-        source.id,
-        source.name,
-        referenceAvailable
-          ? wikiEnabled
-            ? { kind: 'wikipedia' }
-            : watchReferenceUrl(reference.trim())
-          : undefined,
-      )
+      onWatch(source.id, source.name, referenceAvailable ? referenceUrl : undefined)
       onDismiss()
       return
     }
@@ -189,33 +191,14 @@ export function ScreenContextPicker({
   return (
     <DialogContainer onDismiss={onDismiss}>
       {isOpen && (
-        <Dialog size="L" isDismissible>
+        <Dialog size="L" isDismissible UNSAFE_className="screen-context-picker-dialog">
           <Heading slot="title">
-            {t(onWatch ? 'watch.title' : 'screenContext.picker.title')}
+            {t(onWatch ? 'watch.picker.title' : 'screenContext.picker.title')}
           </Heading>
-          <Content>
+          <Content UNSAFE_className="screen-context-picker-content">
             <div className="screen-context-picker">
-              {onWatch && <Text>{t('watch.description')}</Text>}
-              {onWatch && referenceAvailable && state === 'source-list' && (
-                <>
-                  <TextField
-                    label={t('watch.reference.label')}
-                    description={t('watch.reference.description')}
-                    value={reference}
-                    isDisabled={wikiEnabled}
-                    onChange={setReference}
-                    isInvalid={invalidReference}
-                    errorMessage={t('watch.reference.invalid')}
-                  />
-                  <Checkbox
-                    isSelected={wikiEnabled}
-                    isDisabled={Boolean(reference.trim())}
-                    onChange={setWikiEnabled}
-                  >
-                    {t('watch.reference.wikipedia')}
-                  </Checkbox>
-                  {wikiEnabled && <Text>{t('watch.reference.wikipediaDescription')}</Text>}
-                </>
+              {onWatch && state === 'source-list' && sources.length > 0 && (
+                <Text UNSAFE_className="screen-context-share-hint">{t('watch.description')}</Text>
               )}
               {busy && (
                 <div className="screen-context-picker-state">
@@ -295,19 +278,52 @@ export function ScreenContextPicker({
                   })}
                 </div>
               )}
+              {state === 'source-list' && sources.length === 0 && (
+                <div role="status">
+                  <Text>{t('screenContext.picker.noSources')}</Text>
+                </div>
+              )}
+              {onWatch && referenceAvailable && state === 'source-list' && sources.length > 0 && (
+                <Disclosure isQuiet>
+                  <DisclosureTitle level={3}>
+                    {invalidReference
+                      ? t('watch.reference.fix')
+                      : referenceUrl
+                        ? t('watch.reference.selected', { host: new URL(referenceUrl).host })
+                        : t('watch.reference.group')}
+                  </DisclosureTitle>
+                  <DisclosurePanel>
+                    <TextField
+                      label={t('watch.reference.label')}
+                      type="url"
+                      value={reference}
+                      onChange={setReference}
+                      description={t('watch.reference.description')}
+                      isInvalid={invalidReference}
+                      errorMessage={t('watch.reference.invalid')}
+                      UNSAFE_className="screen-context-reference-url"
+                    />
+                  </DisclosurePanel>
+                </Disclosure>
+              )}
             </div>
           </Content>
           <Footer>
             <div className="screen-context-picker-actions">
               {state === 'source-list' && (
-                <Button
-                  variant="secondary"
-                  onPress={() =>
-                    observeRendererPromise(loadSources(), 'retry Screen Context sources')
-                  }
-                >
-                  {t('screenContext.picker.refresh')}
-                </Button>
+                <TooltipTrigger delay={200}>
+                  <ActionButton
+                    isQuiet
+                    aria-label={t('screenContext.picker.refresh')}
+                    UNSAFE_className="screen-context-picker-refresh"
+                    onPress={() =>
+                      observeRendererPromise(loadSources(), 'refresh Screen Context sources')
+                    }
+                  >
+                    <RefreshIcon />
+                  </ActionButton>
+                  <Tooltip>{t('screenContext.picker.refresh')}</Tooltip>
+                </TooltipTrigger>
               )}
               <Button variant="secondary" onPress={onDismiss}>
                 {t('common.cancel')}

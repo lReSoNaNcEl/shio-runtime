@@ -132,6 +132,7 @@ export class ConversationInputCoordinator {
   private conversationAdmission: ConversationAdmissionCoordinator
   private desiredContinuousListening = false
   private watchVoice?: string
+  private latestWatchUtterance?: string
   private conversationBoundaryAt = 0
   private conversationSessionResetPending = false
   private attentionGeneration = 0
@@ -241,6 +242,7 @@ export class ConversationInputCoordinator {
   }
 
   resetConversationSession(): void {
+    this.clearWatchVoiceFeedback()
     this.invalidatePendingAttention()
     this.conversationBoundaryAt = Date.now()
     this.conversationSessionResetPending = true
@@ -330,6 +332,8 @@ export class ConversationInputCoordinator {
   }
 
   handleContinuousRuntimeProjection(projection: ContinuousListeningRuntimeProjection): void {
+    if (projection.transport !== 'ready' || projection.activity === 'hearing-speech')
+      this.clearWatchVoiceFeedback()
     if (projection.transport === 'reconnecting' && this.streamingSessionId) {
       this.invalidatePendingAttention()
       this.conversationAdmission.resetStreamingSession()
@@ -362,7 +366,14 @@ export class ConversationInputCoordinator {
   }
 
   setWatchVoice(sessionId: string | undefined): void {
+    if (this.watchVoice !== sessionId) this.clearWatchVoiceFeedback()
     this.watchVoice = sessionId
+  }
+
+  private clearWatchVoiceFeedback(): void {
+    if (this.latestWatchUtterance === undefined) return
+    this.latestWatchUtterance = undefined
+    this.dependencies.patchControllerState({ watchVoiceFeedback: undefined })
   }
 
   getSettings(): Readonly<ContinuousListeningSettings> {
@@ -599,23 +610,35 @@ export class ConversationInputCoordinator {
         return
       }
       if (this.handledUtteranceIds.has(chunk.id)) return
-      const disposition = await window.api.watchTogether.classifySpeech(
-        watchSession,
-        chunk.text.trim().slice(0, 800),
-        followUpWindow,
-      )
+      this.latestWatchUtterance = chunk.id
+      this.dependencies.patchControllerState({ watchVoiceFeedback: 'classifying' })
+      const disposition = await window.api.watchTogether
+        .classifySpeech(watchSession, chunk.text.trim().slice(0, 800), followUpWindow)
+        .catch(() => {
+          this.dependencies.recordRuntimeEvent('Watch Voice Classification Unavailable')
+          return undefined
+        })
       const fallbackAddressed =
         disposition === undefined &&
-        (fallbackAttention.directAddress ||
-          chunk.triggeredBargeIn ||
-          (followUpWindow && buffered.question))
+        (fallbackAttention.directAddress || chunk.triggeredBargeIn || buffered.question)
       if (
         this.watchVoice !== watchSession ||
         this.streamingSessionId !== chunk.streamingSessionId ||
-        this.conversationSessionResetPending ||
-        (disposition !== 'addressed' && !fallbackAddressed)
+        this.conversationSessionResetPending
       )
         return
+      const accepted = disposition === 'addressed' || fallbackAddressed
+      if (this.latestWatchUtterance === chunk.id) {
+        this.dependencies.patchControllerState({
+          watchVoiceFeedback:
+            disposition === 'aside' || disposition === 'ignore'
+              ? disposition
+              : accepted
+                ? undefined
+                : 'unavailable',
+        })
+      }
+      if (!accepted) return
       this.dependencies.recordRuntimeEvent('Watch Voice Accepted', chunk.completionReason)
       await this.conversationAdmission.admitExplicit({
         turnId: chunk.id,

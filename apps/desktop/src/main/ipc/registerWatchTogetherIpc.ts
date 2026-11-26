@@ -71,13 +71,9 @@ export function registerWatchTogetherIpc(
       z.tuple([
         z.string().regex(/^(screen|window):\d+:\d+$/),
         z
-          .union([
-            z
-              .string()
-              .max(2048)
-              .refine((value) => Boolean(watchReferenceUrl(value))),
-            z.object({ kind: z.literal('wikipedia') }).strict(),
-          ])
+          .string()
+          .max(2048)
+          .refine((value) => Boolean(watchReferenceUrl(value)))
           .optional(),
       ]),
       (event, source, reference) => {

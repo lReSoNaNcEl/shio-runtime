@@ -1,3 +1,4 @@
+import type { CapturedPcmTiming } from '../audio/StreamingPcmCapture'
 import {
   type AsrStreamEvent,
   StreamingAsrClient,
@@ -48,12 +49,12 @@ export class WatchPlaybackSpeech {
     await this.client.connect(connection.baseUrl, 'auto', signal)
   }
 
-  push(frame: ArrayBuffer, shioSpeaking: boolean): void {
+  push(frame: ArrayBuffer, shioSpeaking: boolean, timing: CapturedPcmTiming): void {
     // Keep the VAD clock running while excluding Shio's own voice from loopback.
     if (shioSpeaking) new Int16Array(frame).fill(0)
-    if (this.client.sendPcm(frame)) {
+    if (this.client.sendPcm(frame, timing.discontinuous)) {
       this.sentSamples += frame.byteLength / 2
-      this.lastFrameAt = Date.now()
+      this.lastFrameAt = timing.endedAt
     }
   }
 

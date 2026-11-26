@@ -7,7 +7,7 @@ const { _electron } = require('playwright-core')
 
 const desktop = path.resolve(__dirname, '../..')
 const sourceTitle = 'Shio qualification · Spaces'
-const questionPatterns = [/расскажи.*экран/iu, /страниц.*открыта/iu, /пиши.*экран/iu]
+const questionPatterns = [/что видно на экране/iu, /страниц.*открыта/iu, /пиши.*экран/iu]
 const screenEvidence =
   /spaces|hugging\s*face|хаггинг|хаггин|gradio|streamlit|град[иь]о|генераци[ияю]|синтез речи/iu
 
@@ -30,7 +30,7 @@ function synthesizeMicrophone(wav) {
       $format = [System.Speech.AudioFormat.SpeechAudioFormatInfo]::new(48000, 'Sixteen', 'Mono')
       $synth.SetOutputToWaveFile($env:SHIO_QUALIFICATION_WAV, $format)
       $prompt = [System.Speech.Synthesis.PromptBuilder]::new($voice.VoiceInfo.Culture)
-      $phrases = @('Ну, ещё разок.', 'Расскажи, что сейчас на экране.', 'Что это за страница у меня открыта?', 'Опиши экран прямо сейчас.')
+      $phrases = @('Ну, ещё разок.', 'Что видно на экране?', 'Что это за страница у меня открыта?', 'Опиши экран прямо сейчас.')
       $pauses = @(4, 8, 18, 18)
       for ($i = 0; $i -lt $phrases.Length; $i++) {
         $prompt.AppendBreak([TimeSpan]::FromSeconds($pauses[$i]))
@@ -125,6 +125,14 @@ async function checkConversation(application) {
     '#chat-messages .message-assistant:not(.message-loading):not([aria-busy="true"]) .msg-text',
   )
   try {
+    await page.getByRole('button', { name: 'Аватар', exact: true }).click()
+    await page.locator('.animation-library-list').waitFor()
+    const deadline = Date.now() + 95_000
+    while (finals.length < 4 && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 250))
+    }
+    assert.equal(finals.length, 4, 'Expected all microphone finals while Avatar Preview was open')
+    await page.getByRole('button', { name: 'Чат', exact: true }).click()
     await user.nth(2).waitFor({ timeout: 95000 })
     await assistant.nth(2).waitFor({ timeout: 30000 })
     const questions = await user.allTextContents()

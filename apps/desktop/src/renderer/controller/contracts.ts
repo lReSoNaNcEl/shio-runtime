@@ -76,6 +76,7 @@ export interface ControllerState {
   vrmLoaded: boolean
   faceTrackingEnabled: boolean
   continuousListening: ContinuousListeningProjection
+  watchVoiceFeedback?: 'classifying' | 'aside' | 'ignore' | 'unavailable'
   overlayState: 'off' | 'opening' | 'on' | 'closing' | 'error'
   overlayCameraMode: OverlayViewMode
   overlayError: string

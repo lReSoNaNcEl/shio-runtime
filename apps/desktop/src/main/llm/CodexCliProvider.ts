@@ -20,7 +20,13 @@ import {
   ModelFetchError,
 } from './errors'
 import { resolveLlmProxy } from './openai-compatible/proxy'
-import type { ChatMessage, LlmCapabilities, LlmRequestOptions, ModelCatalogEntry } from './types'
+import type {
+  ChatMessage,
+  LlmCapabilities,
+  LlmCompletionOptions,
+  LlmRequestOptions,
+  ModelCatalogEntry,
+} from './types'
 
 export const CODEX_MODEL = 'gpt-6-luna'
 export const isCodexModelId = (id: string) => /^[a-z0-9][a-z0-9._:/-]{0,127}$/iu.test(id)
@@ -300,7 +306,7 @@ async function generate(
   capabilities: LlmCapabilities,
   effort: CodexReasoningEffort | undefined,
   messages: readonly ChatMessage[],
-  options: LlmRequestOptions,
+  options: LlmCompletionOptions,
 ) {
   if (!isCodexModelId(model)) throw failure('PROVIDER_REJECTED')
   const timeout = AbortSignal.timeout(Math.max(1, Math.min(options.timeoutMs ?? 60_000, 120_000)))
@@ -320,9 +326,13 @@ async function generate(
       signal.throwIfAborted()
       pipes.push(await openCodexImagePipe(image))
     }
-    // The file contains constant instructions only. Conversation data goes over stdin.
+    // Both files contain Main-owned protocol definitions. Conversation data goes over stdin.
     const policy = join(cwd, 'instructions.txt')
     await writeFile(policy, instructions, { flag: 'wx' })
+    const schemaPath = join(cwd, 'response-schema.json')
+    if (options.responseSchema) {
+      await writeFile(schemaPath, JSON.stringify(options.responseSchema.schema), { flag: 'wx' })
+    }
     const args = [
       '--no-daemon',
       '-a',
@@ -352,6 +362,7 @@ async function generate(
         'shell_environment_policy.inherit="none"',
       ].flatMap((option) => ['-c', option]),
       '--json',
+      ...(options.responseSchema ? ['--output-schema', schemaPath] : []),
       ...pipes.flatMap(({ path }) => ['--image', path]),
       '--',
       '-',
@@ -362,6 +373,7 @@ async function generate(
       model,
       effort: effort ?? 'default',
       imageCount: images.length,
+      structuredOutput: Boolean(options.responseSchema),
       traceId: options.traceId,
     })
     return reply
@@ -385,5 +397,10 @@ export function createCodexCliProvider(
     capabilities: () => capabilities,
     chat: (messages: readonly ChatMessage[], options: LlmRequestOptions = {}) =>
       track(generate(model, capabilities, effort, messages, options)),
+    complete: async (messages: readonly ChatMessage[], options: LlmCompletionOptions = {}) => ({
+      content: await track(generate(model, capabilities, effort, messages, options)),
+      toolCalls: [],
+      finishReason: 'stop' as const,
+    }),
   }
 }

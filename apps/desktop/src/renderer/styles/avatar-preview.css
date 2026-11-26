@@ -53,7 +53,13 @@
 }
 .animation-library-list {
   min-height: 0;
-  height: clamp(144px, 24dvh, 300px);
+  /* A two-line Spectrum row occupies 52px at the default text size. */
+  height: round(nearest, clamp(9.75rem, 24dvh, 19.5rem), 3.25rem);
+}
+.animation-library-list [role="grid"] {
+  /* The virtualizer rounds its width to CSS pixels. A fractional Windows gutter can
+     otherwise trigger a second scrollbar even when all row text fits. */
+  overflow-x: hidden;
 }
 .preview-library-empty {
   display: grid;

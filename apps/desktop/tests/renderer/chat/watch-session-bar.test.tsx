@@ -47,6 +47,10 @@ describe.each(['light', 'dark'] as const)('live share in %s theme', (theme) => {
     expect(screen.getByText('Test window')).toBeVisible()
     expect(screen.getByText(t('watch.live'))).toBeVisible()
     expect(screen.getByText(t('watch.micHearing'))).toBeVisible()
+    view.rerender(<WatchSessionBar {...props} phase="live" voiceFeedback="classifying" />)
+    expect(screen.getByText(t('watch.voiceFeedback.classifying'))).toBeVisible()
+    view.rerender(<WatchSessionBar {...props} phase="live" voiceFeedback="aside" />)
+    expect(screen.getByText(t('watch.voiceFeedback.aside'))).toBeVisible()
     expect(screen.getByRole('button', { name: t('watch.preview') })).toBeEnabled()
     view.rerender(
       <WatchSessionBar

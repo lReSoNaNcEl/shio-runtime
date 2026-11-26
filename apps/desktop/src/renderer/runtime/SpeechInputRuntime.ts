@@ -256,7 +256,7 @@ export class SpeechInputRuntime {
       }
       await this.streamingCapture.start(
         this.micDeviceId,
-        (frame) => this.streamingClient.sendPcm(frame),
+        (frame, timing) => this.streamingClient.sendPcm(frame, timing.discontinuous),
         () => this.handleContinuousDeviceLost(),
       )
       this.throwIfStartSuperseded(generation, startController.signal)

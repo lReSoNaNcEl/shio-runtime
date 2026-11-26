@@ -158,9 +158,8 @@ describe('Watch Together', () => {
 
   it('binds a direct plan to one addressed utterance from this microphone and session', async () => {
     const direct = {
-      disposition: 'addressed',
+      disposition: 'direct-answer',
       summary: '',
-      directPlan: { requirement: { type: 'direct-answer' }, plannedTools: [] },
     }
     const chat = vi.fn<LLMProvider['chat']>().mockResolvedValue(JSON.stringify(direct))
     const { watch, id } = await fixture(chat)
@@ -188,17 +187,59 @@ describe('Watch Together', () => {
           directPlan: { requirement: { type: 'direct-answer' }, plannedTools: ['shell.execute'] },
         }),
       )
-      expect(await watch.classifySpeech(id, 'Look', false)).toBe('addressed')
+      expect(await watch.classifySpeech(id, 'Look', false)).toBeUndefined()
       await watch.prepareTurn(id, 'invalid-plan', true)
-      expect(watch.takeUserTurn('invalid-plan', 'Look')?.directVoice).toBe(false)
+      expect(watch.takeUserTurn('invalid-plan', 'Look')).toMatchObject({
+        directVoice: false,
+        addressedVoice: false,
+      })
     } finally {
       watch.stop(id)
       clock.mockRestore()
     }
   })
 
+  it('classifies a first screen question with a constrained decision and no wake word', async () => {
+    const text = 'Что видно на экране?'
+    const chat = vi.fn<LLMProvider['chat']>().mockResolvedValue('{"disposition":"direct-answer"}')
+    const complete = vi.fn<NonNullable<LLMProvider['complete']>>().mockResolvedValue({
+      content: '{"disposition":"direct-answer","summary":""}',
+      toolCalls: [],
+      finishReason: 'stop',
+    })
+    const watch = new WatchTogetherService({
+      ...dependencies(chat),
+      model: () => ({ chat, complete }),
+    })
+    const session = watch.start('screen:1:0')
+    if (session.kind !== 'started') throw new Error('Expected watch session')
+    watch.takeGrant()
+    try {
+      expect(await watch.classifySpeech(session.id, text, false)).toBe('addressed')
+      expect(complete.mock.calls[0][1]?.responseSchema?.schema).toMatchObject({
+        required: ['disposition', 'summary'],
+        additionalProperties: false,
+      })
+      expect(chat).not.toHaveBeenCalled()
+      await watch.prepareTurn(session.id, 'first-screen-question', true)
+      expect(watch.takeUserTurn('first-screen-question', text)?.directVoice).toBe(true)
+      complete.mockRejectedValueOnce(
+        new LlmResponseError({
+          provider: 'groq',
+          code: 'PROVIDER_REJECTED',
+          recoverable: false,
+          message: 'Unsupported response format',
+        }),
+      )
+      expect(await watch.classifySpeech(session.id, text, false)).toBe('addressed')
+      expect(chat).toHaveBeenCalledOnce()
+    } finally {
+      watch.stop(session.id)
+    }
+  })
+
   it('opens the selected reference once, tolerates its own scene change and reads only the verified snapshot', async () => {
-    const url = 'https://example.com/docs'
+    const url = 'https://example.com/docs?mode=all#details'
     const opening = Promise.withResolvers<string | undefined>()
     const started = Promise.withResolvers<AbortSignal>()
     const reference = {
@@ -228,6 +269,10 @@ describe('Watch Together', () => {
       watch.yield(id, 'scene')
       expect(signal.aborted).toBe(false)
       expect(reference.open.mock.calls[0][0]).toBe(url)
+      const context = JSON.stringify(chat.mock.calls[0][0][1].content)
+      expect(context).toContain('example.com')
+      expect(context).not.toContain('mode=all')
+      expect(context).not.toContain('#details')
       opening.resolve('obs-1')
       expect(await checking).toEqual({ kind: 'reference-checked' })
       expect((await watch.observe(sample)).kind).toBe('comment')

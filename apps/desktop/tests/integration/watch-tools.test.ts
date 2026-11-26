@@ -125,9 +125,8 @@ describe('explicit live-share tools', () => {
       const question = 'What is on my screen?'
       classify.mockResolvedValueOnce(
         JSON.stringify({
-          disposition: 'addressed',
+          disposition: 'direct-answer',
           summary: '',
-          directPlan: { requirement: { type: 'direct-answer' }, plannedTools: [] },
         }),
       )
       expect(await watch.classifySpeech(session.id, question, false)).toBe('addressed')

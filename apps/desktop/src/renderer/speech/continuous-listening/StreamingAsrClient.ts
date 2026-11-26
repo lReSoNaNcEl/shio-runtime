@@ -174,7 +174,7 @@ export class StreamingAsrClient {
     await this.openSocket(false, generation, signal)
   }
 
-  sendPcm(frame: ArrayBuffer): boolean {
+  sendPcm(frame: ArrayBuffer, discontinuous = false): boolean {
     if (!this.shouldRun || !frame.byteLength) return false
     const socket = this.socket
     if (
@@ -185,9 +185,8 @@ export class StreamingAsrClient {
       this.reportGap()
       return false
     }
-    if (socket.bufferedAmount + frame.byteLength > maxQueuedBytes) {
-      // The WebSocket send queue cannot be drained locally. Retire this ASR
-      // session so a late final cannot join speech from opposite sides of a gap.
+    if (discontinuous || socket.bufferedAmount + frame.byteLength > maxQueuedBytes) {
+      // A late final must not join speech from opposite sides of a capture or transport gap.
       this.socket = null
       this.sessionId = null
       this.clearSocketHandlers(socket)

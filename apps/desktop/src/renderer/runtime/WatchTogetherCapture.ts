@@ -4,9 +4,8 @@ import {
   WATCH_MAX_FRAME_BYTES,
   type WatchBlockReason,
   type WatchModelIssue,
-  type WatchReference,
 } from '../../shared/watchTogether'
-import { StreamingPcmCapture } from '../audio/StreamingPcmCapture'
+import { type CapturedPcmTiming, StreamingPcmCapture } from '../audio/StreamingPcmCapture'
 import type { ControllerState } from '../Controller'
 import { controller } from '../Controller'
 import { observeRendererPromise } from '../reliability/observePromise'
@@ -105,7 +104,7 @@ export class WatchTogetherCapture {
     }
   }
 
-  async start(sourceId: string, reference?: WatchReference): Promise<void> {
+  async start(sourceId: string, reference?: string): Promise<void> {
     let failure: WatchFailure = 'watch.startError'
     try {
       const result = await window.api.watchTogether.start(sourceId, reference)
@@ -249,9 +248,13 @@ export class WatchTogetherCapture {
     this.sceneChange = undefined
     this.lastTranscript = ''
   }
-  private addAudio = (buffer: ArrayBuffer) => {
+  private addAudio = (buffer: ArrayBuffer, timing: CapturedPcmTiming) => {
     if (this.ended || !this.playbackEnabled) return
-    this.playbackSpeech.push(buffer, controller.getState().status === 'speaking')
+    if (timing.discontinuous) {
+      this.pcm = []
+      this.samples = 0
+    }
+    this.playbackSpeech.push(buffer, controller.getState().status === 'speaking', timing)
     const pcm = new Int16Array(buffer)
     this.pcm.push(pcm)
     this.samples += pcm.length

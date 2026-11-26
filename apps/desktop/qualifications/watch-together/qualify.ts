@@ -20,6 +20,10 @@ async function qualify() {
   let calls = 0
   const model: LLMProvider = {
     ...native,
+    complete: (...args) => {
+      calls++
+      return native.complete(...args)
+    },
     chat: (...args) => {
       calls++
       return native.chat(...args)

@@ -85,7 +85,31 @@ describe.each(['light', 'dark'] as const)('chat input controls in %s theme', (th
     expect(screen.getByRole('button', { name: t('common.checkingEllipsis') })).toBeDisabled()
   })
 
-  it('starts a share with Wikipedia only after explicit selection', async () => {
+  it('refreshes the empty source list after a window becomes available', async () => {
+    const listSources = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: false, error: { code: 'NO_SOURCES' } })
+      .mockResolvedValueOnce({
+        ok: true,
+        value: [{ id: 'window:1:0', name: 'Editor', kind: 'window' }],
+      })
+    restoreApi = stubWindowProperty('api', {
+      llm: { getActiveCapabilities: async () => ({ supportsVision: true }) },
+      config: { onUpdated: () => () => undefined },
+      screenContext: { listSources },
+    })
+    render(
+      <ScreenContextPicker isOpen onDismiss={vi.fn()} onChangeModel={vi.fn()} onWatch={vi.fn()} />,
+      { wrapper: localizedWrapper('en', theme) },
+    )
+    expect(await screen.findByText(t('screenContext.picker.noSources'))).toBeVisible()
+    expect(screen.getByRole('button', { name: t('watch.start') })).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: t('screenContext.picker.refresh') }))
+    expect(await screen.findByRole('button', { name: /Editor/ })).toBeVisible()
+    expect(screen.queryByText(t('screenContext.picker.noSources'))).toBeNull()
+  })
+
+  it('selects a source first and keeps an optional reference scoped to the chosen share', async () => {
     restoreApi = stubWindowProperty('api', {
       llm: { getActiveCapabilities: async () => ({ supportsVision: true }) },
       config: { onUpdated: () => () => undefined },
@@ -115,20 +139,23 @@ describe.each(['light', 'dark'] as const)('chat input controls in %s theme', (th
       { wrapper: localizedWrapper('en', theme) },
     )
     const source = await screen.findByRole('button', { name: /Editor/ })
-    const wiki = screen.getByRole('checkbox', { name: t('watch.reference.wikipedia') })
-    const field = screen.getByRole('textbox', { name: t('watch.reference.label') })
-    expect(wiki).not.toBeChecked()
-    fireEvent.change(field, { target: { value: 'https://example.com' } })
-    expect(wiki).toBeDisabled()
-    fireEvent.change(field, { target: { value: '' } })
-    fireEvent.click(wiki)
-    expect(field).toBeDisabled()
-    expect(screen.getByText(t('watch.reference.wikipediaDescription'))).toBeVisible()
+    const start = screen.getByRole('button', { name: t('watch.start') })
+    expect(start).toBeDisabled()
+    expect(screen.queryByRole('textbox')).toBeNull()
     fireEvent.click(source)
-    fireEvent.click(screen.getByRole('button', { name: t('watch.start') }))
-    await waitFor(() =>
-      expect(onWatch).toHaveBeenCalledWith('window:1:0', 'Editor', { kind: 'wikipedia' }),
-    )
+    expect(start).toBeEnabled()
+    fireEvent.click(screen.getByRole('button', { name: t('watch.reference.group') }))
+    const field = screen.getByRole('textbox', { name: t('watch.reference.label') })
+    fireEvent.change(field, { target: { value: 'http://example.com/' } })
+    expect(start).toBeDisabled()
+    const url = 'https://example.com/ref?q=1#notes'
+    fireEvent.change(field, { target: { value: url } })
+    const disclosure = screen.getByRole('button', { name: /Reference link · example.com/ })
+    fireEvent.click(disclosure)
+    expect(disclosure).toHaveAttribute('aria-expanded', 'false')
+    expect(start).toBeEnabled()
+    fireEvent.click(start)
+    await waitFor(() => expect(onWatch).toHaveBeenCalledWith('window:1:0', 'Editor', url))
   })
 
   it('shows named screen sources, enables attachment only after selection, and releases its subscription', async () => {

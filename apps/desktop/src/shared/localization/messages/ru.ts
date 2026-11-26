@@ -5,6 +5,10 @@ export const ruMessages = {
   'streaming.microphonePending':
     'Выбранный микрофон включится при следующем запуске прослушивания.',
   'watch.title': 'Трансляция',
+  'watch.voiceFeedback.classifying': 'Шио услышала фразу и решает, ответить ли',
+  'watch.voiceFeedback.aside': 'Шио услышала последнюю фразу как мысль вслух',
+  'watch.voiceFeedback.ignore': 'Шио услышала последнюю фразу как фоновую речь',
+  'watch.voiceFeedback.unavailable': 'Фраза распознана, но Шио не смогла понять обращение',
   'watch.connecting': 'Подключение',
   'watch.live': 'В эфире',
   'watch.stopShort': 'Остановить',
@@ -21,15 +25,16 @@ export const ruMessages = {
   'watch.playbackGaps':
     'Пропуски системного звука — {count}. Shio могла пропустить часть речи из трансляции.',
   'watch.active': 'Трансляция',
+  'watch.picker.title': 'Выбери окно или экран',
   'watch.description':
-    'Выбери окно или экран. Шио увидит его, услышит системный звук и будет слушать твой микрофон. Кадры и сведения о звуке отправляются модели персонажа.',
-  'watch.reference.label': 'Страница для сверки (необязательно)',
+    'Микрофон включится. Модель получит кадры, распознанную речь и сведения о звуке компьютера.',
+  'watch.reference.group': 'Добавить ссылку для сверки',
+  'watch.reference.fix': 'Исправить ссылку для сверки',
+  'watch.reference.selected': 'Ссылка для сверки · {host}',
+  'watch.reference.label': 'HTTPS-ссылка',
   'watch.reference.description':
-    'Шио сможет сама один раз открыть эту ссылку в своём браузере, если страница поможет разобраться в происходящем.',
+    'Шио сможет один раз открыть эту страницу в своём браузере во время трансляции.',
   'watch.reference.invalid': 'Введи HTTPS-ссылку без логина и пароля.',
-  'watch.reference.wikipedia': 'Найти статью в Википедии',
-  'watch.reference.wikipediaDescription':
-    'Шио сможет один раз открыть статью о происходящем на экране. Название выбранной темы будет отправлено Википедии.',
   'watch.start': 'Начать трансляцию',
   'watch.stop': 'Остановить трансляцию',
   'watch.sourceError':
@@ -760,6 +765,7 @@ export const ruMessages = {
   'screenContext.picker.checking': 'Проверяю поддержку изображений…',
   'screenContext.picker.loading': 'Ищу доступные окна и мониторы…',
   'screenContext.picker.capturing': 'Подготавливаю снимок…',
+  'screenContext.picker.noSources': 'Нет доступных окон или экранов. Обнови список.',
   'screenContext.picker.refresh': 'Обновить',
   'screenContext.picker.attach': 'Прикрепить',
   'screenContext.unsupported.title': 'Изображения не поддерживаются',

@@ -6,6 +6,7 @@ import MicrophoneOff from '@react-spectrum/s2/icons/MicrophoneOff'
 import { type RefCallback } from 'react'
 
 import { type WatchModelIssue } from '../../../shared/watchTogether'
+import { type ControllerState } from '../../controller/contracts'
 import { useTranslation } from '../../localization/useTranslation'
 import { type ContinuousListeningProjection } from '../../speech/continuous-listening/types'
 import { WatchPreviewControl } from './WatchPreviewControl'
@@ -60,6 +61,7 @@ export function WatchSessionBar({
   mountPreview,
   projection,
   playbackGaps,
+  voiceFeedback,
   modelIssue,
   onStop,
 }: {
@@ -68,6 +70,7 @@ export function WatchSessionBar({
   mountPreview: RefCallback<HTMLVideoElement>
   projection: ContinuousListeningProjection
   playbackGaps: number
+  voiceFeedback?: ControllerState['watchVoiceFeedback']
   modelIssue?: WatchModelIssue
   onStop: () => void
 }) {
@@ -102,7 +105,15 @@ export function WatchSessionBar({
           {live && (
             <div className="watch-session-mic" data-warning={micIssue || undefined} role="status">
               <MicIcon aria-hidden="true" />
-              <Text>{t(microphoneLabel(projection))}</Text>
+              <Text>
+                {t(
+                  voiceFeedback &&
+                    projection.transport === 'ready' &&
+                    projection.activity === 'idle'
+                    ? `watch.voiceFeedback.${voiceFeedback}`
+                    : microphoneLabel(projection),
+                )}
+              </Text>
             </div>
           )}
         </div>

@@ -4,11 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { type CapabilityNavigationTarget } from '../../shared/capabilities'
 import { normalizeUiTheme, type UiTheme } from '../../shared/config'
 import { type PluginId } from '../../shared/plugins'
-import {
-  type WatchModelIssue,
-  type WatchReference,
-  watchBlockReason,
-} from '../../shared/watchTogether'
+import { type WatchModelIssue, watchBlockReason } from '../../shared/watchTogether'
 import { controller } from '../Controller'
 import { useCapabilities } from '../hooks/useCapabilities'
 import { useControllerState } from '../hooks/useControllerState'
@@ -64,7 +60,7 @@ export function App() {
     setWatchError(reason ? `watch.blocked.${reason}` : undefined)
     if (!reason) setWatchPicker(true)
   }
-  const startWatch = (sourceId: string, sourceName: string, reference?: WatchReference) => {
+  const startWatch = (sourceId: string, sourceName: string, reference?: string) => {
     if (watch.current) return
     const session = new WatchTogetherCapture(
       (error) => {
@@ -363,6 +359,7 @@ export function App() {
               mountPreview={sharing.session.mountPreview}
               projection={state.continuousListening}
               modelIssue={watchModelIssue}
+              voiceFeedback={state.watchVoiceFeedback}
               playbackGaps={playbackGaps}
               onStop={() => sharing.session.stop()}
             />
