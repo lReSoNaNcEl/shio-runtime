@@ -77,7 +77,7 @@ async function installSource(application) {
   }, sourceTitle)
 }
 
-async function checkConversation(application) {
+async function preparePage(application) {
   const page = await application.firstWindow()
   await page.getByRole('button', { name: 'Трансляция', exact: true }).waitFor()
   const inference = await page.evaluate(async () => {
@@ -92,7 +92,6 @@ async function checkConversation(application) {
     effort: 'low',
     speechVolumePercent: 0,
   })
-  await installSource(application)
   // Exercise the real video grant; system playback is outside this microphone fixture.
   await page.evaluate(() => {
     const capture = navigator.mediaDevices.getDisplayMedia.bind(navigator.mediaDevices)
@@ -105,6 +104,17 @@ async function checkConversation(application) {
       return stream
     }
   })
+  return page
+}
+
+async function startWatch(page, title) {
+  await page.getByRole('button', { name: 'Трансляция', exact: true }).click()
+  await page.getByRole('button', { name: title }).click()
+  await page.getByRole('button', { name: 'Начать трансляцию', exact: true }).click()
+}
+
+async function checkConversation(application, page) {
+  await installSource(application)
   const transport = await page.context().newCDPSession(page)
   const sockets = new Set()
   const finals = []
@@ -117,9 +127,7 @@ async function checkConversation(application) {
     const event = JSON.parse(response.payloadData)
     if (event.type === 'final') finals.push(event.text)
   })
-  await page.getByRole('button', { name: 'Трансляция', exact: true }).click()
-  await page.getByRole('button', { name: new RegExp(sourceTitle) }).click()
-  await page.getByRole('button', { name: 'Начать трансляцию', exact: true }).click()
+  await startWatch(page, sourceTitle)
   const user = page.locator('#chat-messages .message-user .msg-text')
   const assistant = page.locator(
     '#chat-messages .message-assistant:not(.message-loading):not([aria-busy="true"]) .msg-text',
@@ -158,11 +166,13 @@ async function checkConversation(application) {
 
 async function qualify() {
   assert.equal(process.platform, 'win32', 'This qualification requires Windows window capture')
+  const readText = process.argv.includes('--read-text') ? require('./read-text.cjs') : undefined
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'shio-watch-voice-'))
   let application
   try {
     const wav = path.join(directory, 'voice.wav')
-    synthesizeMicrophone(wav)
+    if (readText) await readText.writeSilentMicrophone(wav)
+    else synthesizeMicrophone(wav)
     const profile = path.join(directory, 'profile')
     await fs.mkdir(profile)
     const role = { providerId: 'codex-cli', model: 'gpt-6-luna' }
@@ -198,7 +208,9 @@ async function qualify() {
       ],
       env,
     })
-    await checkConversation(application)
+    const page = await preparePage(application)
+    if (readText) await readText.checkReadText(application, page, directory, startWatch)
+    else await checkConversation(application, page)
   } finally {
     try {
       await application?.close()

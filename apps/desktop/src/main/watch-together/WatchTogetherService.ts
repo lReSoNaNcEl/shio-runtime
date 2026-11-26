@@ -24,6 +24,7 @@ import { LlmResponseError } from '../llm/errors'
 import type { ChatMessage, LLMProvider } from '../llm/types'
 import { mainLog } from '../logging/safeLogger'
 import { playbackEvidence } from './playbackSpectrum'
+import { prepareWatchTurnImage, type WatchTurnImage } from './watchTurnImage'
 
 interface Dependencies {
   language(): string
@@ -101,10 +102,12 @@ interface WatchSession {
   nextCommentAt: number
   remarks: { text: string; at: number }[]
   modelFailure?: { reason: WatchModelIssue; retryAt: number }
+  preparingUserTurn?: symbol
   userTurn?: {
     turnId: string
     fromMicrophone: boolean
     frame?: Uint8Array
+    frameTiles?: WatchTurnImage['frameTiles']
     transcript?: string
     expiresAt: number
   }
@@ -189,18 +192,21 @@ export class WatchTogetherService {
   ): Promise<void> {
     const s = this.session
     if (!s?.capturing || !this.current(id)) return
-    let image: Uint8Array | undefined
+    const preparation = Symbol()
+    s.preparingUserTurn = preparation
+    s.userTurn = undefined
+    const current = () => s.preparingUserTurn === preparation && this.current(id)
+    let image: WatchTurnImage | undefined
     if (frame) {
-      const bytes = Buffer.from(frame)
       try {
-        const meta = await sharp(bytes, { limitInputPixels: 960 * 540 }).metadata()
-        if (meta.format === 'jpeg' && meta.width === 768 && meta.height === 432) image = bytes
+        image = await prepareWatchTurnImage(frame, current)
       } catch {
         // The user can still speak to Shio when a frame is unavailable.
       }
     }
-    if (this.session !== s || !this.current(id)) return
-    s.userTurn = { turnId, fromMicrophone, frame: image, transcript, expiresAt: Date.now() + 5000 }
+    if (!current()) return
+    s.preparingUserTurn = undefined
+    s.userTurn = { turnId, fromMicrophone, ...image, transcript, expiresAt: Date.now() + 5000 }
   }
 
   takeUserTurn(turnId: string, userText?: string) {
@@ -218,6 +224,7 @@ export class WatchTogetherService {
       addressedVoice: Boolean(addressedVoice),
       directVoice: addressedVoice?.direct ?? false,
       frame: prepared.frame,
+      frameTiles: prepared.frameTiles,
       fromMicrophone: prepared.fromMicrophone,
       transcript: prepared.transcript || undefined,
       recentScenes: s.recent

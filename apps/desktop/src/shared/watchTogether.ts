@@ -3,6 +3,9 @@ import type { AutonomySettings } from './alive'
 export const WATCH_FRAME_WIDTH = 768
 export const WATCH_FRAME_HEIGHT = 432
 export const WATCH_MAX_FRAME_BYTES = 300_000
+export const WATCH_TURN_MAX_SIDE = 3840
+export const WATCH_TURN_MAX_PIXELS = 3840 * 2160
+export const WATCH_TURN_MAX_BYTES = 3 * 1024 * 1024
 
 /** Exact destination chosen in the share picker for the lifetime of one session. */
 export function watchReferenceUrl(value: string): string | undefined {

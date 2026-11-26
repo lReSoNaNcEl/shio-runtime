@@ -4,7 +4,12 @@ import { afterEach, expect, it, vi } from 'vitest'
 
 import { controller } from '../../src/renderer/Controller'
 import { WatchTogetherCapture } from '../../src/renderer/runtime/WatchTogetherCapture'
-import { WATCH_FRAME_WIDTH, type WatchMoment } from '../../src/shared/watchTogether'
+import {
+  WATCH_FRAME_WIDTH,
+  WATCH_TURN_MAX_BYTES,
+  WATCH_TURN_MAX_SIDE,
+  type WatchMoment,
+} from '../../src/shared/watchTogether'
 
 vi.mock('../../src/renderer/Controller', () => ({
   controller: {
@@ -27,11 +32,12 @@ afterEach(() => {
   vi.clearAllMocks()
 })
 
-async function share() {
+async function share(width = 1920, height = 1080) {
   vi.useFakeTimers()
   vi.setSystemTime(new Date('2026-01-01T00:00:00Z'))
   const scene = { value: 10, changedPixels: 48 * 27 }
   const detail: number[] = []
+  const draws: { value: number; size: number[]; destination: number[]; video: boolean }[] = []
   const thumbnails: number[] = []
   const sheets: number[][] = []
   const frames = new WeakMap<HTMLCanvasElement, number>()
@@ -42,14 +48,20 @@ async function share() {
     return {
       canvas,
       clearRect: () => undefined,
-      drawImage(source: HTMLVideoElement | HTMLCanvasElement, x: number) {
+      drawImage(source: HTMLVideoElement | HTMLCanvasElement, ...destination: number[]) {
         const value = source instanceof HTMLVideoElement ? scene.value : frames.get(source)
         if (value === undefined) throw new Error('Empty frame')
+        draws.push({
+          value,
+          size: [canvas.width, canvas.height],
+          destination,
+          video: source instanceof HTMLVideoElement,
+        })
         frames.set(canvas, value)
         if (canvas.width === 48) thumbnails.push(value)
         if (canvas.width === WATCH_FRAME_WIDTH) detail.push(value)
         if (canvas.width === WATCH_FRAME_WIDTH * 2) {
-          if (x === 0) sheets.push([value])
+          if (destination[0] === 0) sheets.push([value])
           else sheets.at(-1)?.push(value)
         }
       },
@@ -66,8 +78,8 @@ async function share() {
   vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue()
   vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => undefined)
   vi.spyOn(HTMLMediaElement.prototype, 'readyState', 'get').mockReturnValue(4)
-  vi.spyOn(HTMLVideoElement.prototype, 'videoWidth', 'get').mockReturnValue(1920)
-  vi.spyOn(HTMLVideoElement.prototype, 'videoHeight', 'get').mockReturnValue(1080)
+  vi.spyOn(HTMLVideoElement.prototype, 'videoWidth', 'get').mockReturnValue(width)
+  vi.spyOn(HTMLVideoElement.prototype, 'videoHeight', 'get').mockReturnValue(height)
   const track = Object.assign(new EventTarget(), { stop: vi.fn() })
   const stream = {
     getTracks: () => [track],
@@ -75,7 +87,8 @@ async function share() {
     getAudioTracks: () => [],
   }
   vi.stubGlobal('MediaStream', class {})
-  vi.stubGlobal('navigator', { mediaDevices: { getDisplayMedia: async () => stream } })
+  const getDisplayMedia = vi.fn(async () => stream)
+  vi.stubGlobal('navigator', { mediaDevices: { getDisplayMedia } })
   const observe = vi.fn(async (_moment: WatchMoment) => ({ kind: 'quiet' }))
   const prepareTurn = vi.fn(async () => undefined)
   vi.stubGlobal('api', {
@@ -91,7 +104,19 @@ async function share() {
   capture = new WatchTogetherCapture(ended, vi.fn(), vi.fn())
   await capture.start('test-window')
   expect(ended).not.toHaveBeenCalled()
-  return { scene, thumbnails, detail, sheets, observe, prepareTurn }
+  const prepare = vi.mocked(controller.setWatchMicrophone).mock.calls[0][3]
+  if (!prepare) throw new Error('Missing capture callback')
+  return {
+    scene,
+    thumbnails,
+    detail,
+    sheets,
+    draws,
+    observe,
+    prepareTurn,
+    prepare,
+    getDisplayMedia,
+  }
 }
 
 it('samples every 400 ms for a static minute with a single detailed frame and observation', async () => {
@@ -143,13 +168,63 @@ it.each([
 )
 
 it('captures a fresh detailed frame for a microphone question even for a subthreshold change', async () => {
-  const { scene, detail, prepareTurn } = await share()
+  const { scene, detail, draws, prepareTurn, prepare } = await share()
   await vi.advanceTimersByTimeAsync(400)
   scene.value = 11
   await vi.advanceTimersByTimeAsync(400)
-  const prepare = vi.mocked(controller.setWatchMicrophone).mock.calls[0][3]
-  expect(prepare).toBeTypeOf('function')
-  await prepare?.('question', true)
-  expect(detail).toEqual([10, 11])
+  await prepare('question', true)
+  expect(detail).toEqual([10])
+  expect(draws.at(-1)).toEqual({
+    value: 11,
+    size: [1920, 1080],
+    destination: [0, 0, 1920, 1080],
+    video: true,
+  })
   expect(prepareTurn).toHaveBeenCalledWith('test', 'question', true, expect.any(ArrayBuffer), '')
 })
+
+it.each([
+  [3840, 2160, 3840, 2160],
+  [2160, 3840, 2160, 3840],
+  [288, 640, 288, 640],
+  [7680, 2160, 3840, 1080],
+  [4096, 4096, 2880, 2880],
+])('fits a %i×%i source without padding or enlargement', async (w, h, outW, outH) => {
+  const { prepare, draws, getDisplayMedia } = await share(w, h)
+  await prepare('typed-question', false)
+  expect(draws).toEqual([
+    { value: 10, size: [outW, outH], destination: [0, 0, outW, outH], video: true },
+  ])
+  expect(getDisplayMedia).toHaveBeenCalledWith({
+    video: {
+      width: { ideal: WATCH_TURN_MAX_SIDE, max: WATCH_TURN_MAX_SIDE },
+      height: { ideal: WATCH_TURN_MAX_SIDE, max: WATCH_TURN_MAX_SIDE },
+    },
+    audio: true,
+  })
+})
+
+it.each([true, false])(
+  'shrinks the same captured image within four encodes (fits: %s)',
+  async (fits) => {
+    const { scene, draws, prepare, prepareTurn } = await share(3840, 2160)
+    const bytes = new ArrayBuffer(256)
+    const attempts: number[] = []
+    vi.mocked(HTMLCanvasElement.prototype.toBlob).mockImplementation((done, mime, quality) => {
+      expect(mime).toBe('image/jpeg')
+      attempts.push(Number(quality))
+      scene.value++
+      done({
+        size: fits && attempts.length === 4 ? bytes.byteLength : WATCH_TURN_MAX_BYTES + 1,
+        arrayBuffer: async () => bytes,
+      } as Blob)
+    })
+    await prepare('question', true)
+    expect(attempts).toHaveLength(4)
+    expect(draws).toEqual([
+      { value: 10, size: [3840, 2160], destination: [0, 0, 3840, 2160], video: true },
+      { value: 10, size: [2496, 1404], destination: [0, 0, 2496, 1404], video: false },
+    ])
+    expect(prepareTurn).toHaveBeenCalledWith('test', 'question', true, fits ? bytes : undefined, '')
+  },
+)

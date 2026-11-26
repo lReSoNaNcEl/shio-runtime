@@ -1,7 +1,11 @@
 import { type BrowserWindow, desktopCapturer, ipcMain } from 'electron'
 import { z } from 'zod'
 
-import { WATCH_MAX_FRAME_BYTES, watchReferenceUrl } from '../../shared/watchTogether'
+import {
+  WATCH_MAX_FRAME_BYTES,
+  WATCH_TURN_MAX_BYTES,
+  watchReferenceUrl,
+} from '../../shared/watchTogether'
 import type { WatchTogetherService } from '../watch-together/WatchTogetherService'
 import type { OverlayWindowManager } from '../windows/OverlayWindowManager'
 import type { IpcAuthorization } from './IpcAuthorization'
@@ -124,7 +128,7 @@ export function registerWatchTogetherIpc(
         z.string().uuid(),
         z.string().min(1).max(100),
         z.boolean(),
-        bytes(100, WATCH_MAX_FRAME_BYTES).optional(),
+        bytes(100, WATCH_TURN_MAX_BYTES).optional(),
         z.string().max(1000).optional(),
       ]),
       (_event, sessionId, turnId, fromMicrophone, frame, transcript) =>

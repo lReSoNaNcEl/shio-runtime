@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto'
+
 import sharp from 'sharp'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -16,6 +18,7 @@ import type { AppSettings } from '../../src/shared/config'
 import {
   WATCH_FRAME_HEIGHT,
   WATCH_FRAME_WIDTH,
+  WATCH_TURN_MAX_BYTES,
   type WatchBlockReason,
   watchReferenceUrl,
 } from '../../src/shared/watchTogether'
@@ -370,6 +373,7 @@ describe('Watch Together', () => {
 
   it('grounds the user reply in the shared frame without consulting browser tools', async () => {
     const frame = new Uint8Array([1, 2, 3])
+    const frameTiles = { columns: 2, images: [new Uint8Array([4]), new Uint8Array([5])] }
     const history = new InMemoryStore()
     const chat = vi.fn<LLMProvider['chat']>(async () => 'Вижу мост и синий шар.')
     const browser = vi.fn()
@@ -387,13 +391,21 @@ describe('Watch Together', () => {
     const result = await orchestrator.createReply({
       userText,
       origin: 'watch-user',
-      watchContext: { frame, fromMicrophone: true },
+      watchContext: { frame, frameTiles, fromMicrophone: true },
     })
     expect(result.replyText).toBe('Вижу мост и синий шар.')
     expect(browser).not.toHaveBeenCalled()
     expect(chat.mock.calls[0][0].at(-1)?.content).toEqual([
-      { type: 'text', text: JSON.stringify({ userRequest: userText, inputFromMicrophone: true }) },
+      {
+        type: 'text',
+        text: JSON.stringify({
+          userRequest: userText,
+          inputFromMicrophone: true,
+          frameTileColumns: 2,
+        }),
+      },
       { type: 'image', mimeType: 'image/jpeg', bytes: frame },
+      ...frameTiles.images.map((bytes) => ({ type: 'image', mimeType: 'image/jpeg', bytes })),
     ])
     expect((await history.getHistory('default'))[0].content).toBe(userText)
   })
@@ -424,7 +436,7 @@ describe('Watch Together', () => {
   it('leases a valid current frame to one exact user turn and revokes it on stop', async () => {
     const { watch, id } = await fixture(vi.fn())
     const frame = await sharp({
-      create: { width: 768, height: 432, channels: 3, background: 'blue' },
+      create: { width: 3440, height: 1440, channels: 3, background: 'blue' },
     })
       .jpeg()
       .toBuffer()
@@ -434,11 +446,146 @@ describe('Watch Together', () => {
     await watch.prepareTurn(id, 'user-1', true, Uint8Array.from(frame).buffer)
     expect(watch.takeUserTurn('user-2')).toBeUndefined()
     const context = watch.takeUserTurn('user-1')
-    expect(context?.frame).toEqual(frame)
+    expect(await sharp(context?.frame).metadata()).toMatchObject({
+      format: 'jpeg',
+      width: 960,
+      height: 402,
+    })
+    expect(context?.frameTiles?.columns).toBe(3)
+    expect(context?.frameTiles?.images).toHaveLength(3)
     expect(context?.fromMicrophone).toBe(true)
     expect(watch.takeUserTurn('user-1')).toBeUndefined()
     watch.stop(id)
     expect(context?.signal.aborted).toBe(true)
+  })
+
+  it.each([
+    [3414, 1292, 3, 1],
+    [1440, 3200, 1, 3],
+    [3200, 2160, 3, 2],
+  ])(
+    'preserves one-pixel details at the edges and seams of a %i×%i desktop',
+    async (width, height, columns, rows) => {
+      const { watch, id } = await fixture(vi.fn())
+      watch.takeGrant()
+      // Each original edge and shared seam gets a small 1px alternating black/white pattern.
+      const markers = (length: number, parts: number) => [
+        2,
+        ...Array.from({ length: parts - 1 }, (_, i) => Math.floor(((i + 1) * length) / parts) - 2),
+        length - 10,
+      ]
+      const xs = markers(width, columns)
+      const ys = markers(height, rows)
+      const raw = Buffer.alloc(width * height, 220)
+      for (const [j, y] of ys.entries()) {
+        for (const [i, x] of xs.entries()) {
+          for (let dy = 0; dy < 8; dy++) {
+            for (let dx = 0; dx < 8; dx++)
+              raw[(y + dy) * width + x + dx] = (dx + dy + i + j) % 2 ? 255 : 0
+          }
+        }
+      }
+      try {
+        const source = await sharp(raw, { raw: { width, height, channels: 1 } })
+          .jpeg({ quality: 97 })
+          .toBuffer()
+        await watch.prepareTurn(id, 'edge-detail', true, Uint8Array.from(source).buffer)
+        const ctx = watch.takeUserTurn('edge-detail')
+        if (!ctx?.frame || !ctx.frameTiles) throw new Error('Missing detailed frame')
+        const overview = await sharp(ctx.frame).metadata()
+        expect(Math.max(overview.width, overview.height)).toBe(960)
+        expect(ctx.frameTiles.columns).toBe(columns)
+        expect(ctx.frameTiles.images).toHaveLength(columns * rows)
+        expect(
+          ctx.frame.byteLength + ctx.frameTiles.images.reduce((n, tile) => n + tile.byteLength, 0),
+        ).toBeLessThanOrEqual(4 * 1024 * 1024)
+        for (const [i, tile] of ctx.frameTiles.images.entries()) {
+          const col = i % columns,
+            row = Math.floor(i / columns)
+          const left = col === 0 ? 0 : Math.floor((col * width) / columns) - 32
+          const top = row === 0 ? 0 : Math.floor((row * height) / rows) - 32
+          const right = col + 1 === columns ? width : Math.floor(((col + 1) * width) / columns) + 32
+          const bottom = row + 1 === rows ? height : Math.floor(((row + 1) * height) / rows) + 32
+          const { data, info } = await sharp(tile)
+            .greyscale()
+            .raw()
+            .toBuffer({ resolveWithObject: true })
+          expect([info.width, info.height]).toEqual([right - left, bottom - top])
+          for (const y of ys.slice(row, row + 2)) {
+            for (const x of xs.slice(col, col + 2)) {
+              for (let dx = 0; dx < 8; dx++) {
+                const actual = data[(y - top) * info.width + x - left + dx]
+                expect(Math.abs(actual - raw[y * width + x + dx])).toBeLessThan(42)
+              }
+            }
+          }
+        }
+      } finally {
+        watch.stop(id)
+      }
+    },
+  )
+
+  it('passes through a small desktop, falls back to one source JPEG over budget, and drops superseded work', async () => {
+    const { watch, id } = await fixture(vi.fn())
+    watch.takeGrant()
+    try {
+      const small = await sharp({
+        create: { width: 1920, height: 1080, channels: 3, background: 'white' },
+      })
+        .jpeg()
+        .toBuffer()
+      await watch.prepareTurn(id, 'small', false, Uint8Array.from(small).buffer)
+      const smallContext = watch.takeUserTurn('small')
+      expect(smallContext?.frameTiles).toBeUndefined()
+      expect(smallContext?.frame && small.equals(smallContext.frame)).toBe(true)
+      const width = 3840,
+        height = 2160
+      const noise = createHash('shake256', { outputLength: width * height * 3 })
+        .update('bounded noise')
+        .digest()
+      const jpeg = await sharp(noise, { raw: { width, height, channels: 3 } })
+        .jpeg({ quality: 34 })
+        .toBuffer()
+      expect(jpeg.byteLength).toBeLessThan(WATCH_TURN_MAX_BYTES)
+      const input = Uint8Array.from(jpeg).buffer
+      await watch.prepareTurn(id, 'over-budget', false, input)
+      const original = watch.takeUserTurn('over-budget')
+      expect(original?.frameTiles).toBeUndefined()
+      expect(original?.frame && jpeg.equals(original.frame)).toBe(true)
+      const superseded = watch.prepareTurn(id, 'old', true, input)
+      await watch.prepareTurn(id, 'new', true)
+      await superseded
+      expect(watch.takeUserTurn('old')).toBeUndefined()
+      expect(watch.takeUserTurn('new')?.fromMicrophone).toBe(true)
+      const draining = watch.prepareTurn(id, 'stopped', true, input)
+      watch.stop(id)
+      await draining
+      expect(watch.takeUserTurn('stopped')).toBeUndefined()
+    } finally {
+      watch.stop(id)
+    }
+  })
+
+  it('rejects invalid explicit frames while keeping the spoken turn usable', async () => {
+    const { watch, id } = await fixture(vi.fn())
+    watch.takeGrant()
+    for (const [width, height, format] of [
+      [3841, 200, 'jpeg'],
+      [3000, 3000, 'jpeg'],
+      [900, 1600, 'png'],
+    ] as const) {
+      const bytes = await sharp({ create: { width, height, channels: 3, background: 'blue' } })
+        .toFormat(format)
+        .toBuffer()
+      await watch.prepareTurn(id, 'invalid', true, Uint8Array.from(bytes).buffer)
+      expect(watch.takeUserTurn('invalid')).toMatchObject({
+        fromMicrophone: true,
+        frame: undefined,
+      })
+    }
+    await watch.prepareTurn(id, 'oversize', false, new ArrayBuffer(WATCH_TURN_MAX_BYTES + 1))
+    expect(watch.takeUserTurn('oversize')?.frame).toBeUndefined()
   })
 
   it('requires a one-use capture grant and policy approval before sampling, then admits a model-selected moment', async () => {

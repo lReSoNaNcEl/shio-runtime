@@ -2,6 +2,9 @@ import {
   WATCH_FRAME_HEIGHT,
   WATCH_FRAME_WIDTH,
   WATCH_MAX_FRAME_BYTES,
+  WATCH_TURN_MAX_BYTES,
+  WATCH_TURN_MAX_PIXELS,
+  WATCH_TURN_MAX_SIDE,
   type WatchBlockReason,
   type WatchModelIssue,
 } from '../../shared/watchTogether'
@@ -17,13 +20,16 @@ export type WatchFailure =
   | 'watch.startError'
   | `watch.blocked.${WatchBlockReason}`
 
-async function encodeFrame(canvas: HTMLCanvasElement): Promise<ArrayBuffer | undefined> {
-  for (const quality of [0.72, 0.45]) {
+async function encodeFrame(
+  canvas: HTMLCanvasElement,
+  qualities: readonly number[],
+  maxBytes: number,
+): Promise<ArrayBuffer | undefined> {
+  for (const quality of qualities) {
     const image = await new Promise<Blob | null>((resolve) =>
       canvas.toBlob(resolve, 'image/jpeg', quality),
     )
-    if (image && image.size >= 100 && image.size <= WATCH_MAX_FRAME_BYTES)
-      return image.arrayBuffer()
+    if (image && image.size >= 100 && image.size <= maxBytes) return image.arrayBuffer()
   }
 }
 
@@ -122,7 +128,13 @@ export class WatchTogetherCapture {
         if (event.id === id) this.stop(event.reason && `watch.blocked.${event.reason}`)
       })
       failure = 'watch.sourceError'
-      const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true })
+      const stream = await navigator.mediaDevices.getDisplayMedia({
+        video: {
+          width: { ideal: WATCH_TURN_MAX_SIDE, max: WATCH_TURN_MAX_SIDE },
+          height: { ideal: WATCH_TURN_MAX_SIDE, max: WATCH_TURN_MAX_SIDE },
+        },
+        audio: true,
+      })
       if (this.ended) {
         for (const track of stream.getTracks()) track.stop()
         return
@@ -283,10 +295,36 @@ export class WatchTogetherCapture {
     if (ctx && this.drawVideo(ctx)) return frame
   }
 
+  private async captureTurnFrame(): Promise<ArrayBuffer | undefined> {
+    const { videoWidth: width, videoHeight: height, readyState } = this.video
+    if (readyState < 2 || !width || !height) return
+    const scale = Math.min(
+      1,
+      WATCH_TURN_MAX_SIDE / Math.max(width, height),
+      Math.sqrt(WATCH_TURN_MAX_PIXELS / (width * height)),
+    )
+    const frame = document.createElement('canvas')
+    frame.width = Math.max(1, Math.floor(width * scale))
+    frame.height = Math.max(1, Math.floor(height * scale))
+    const ctx = frame.getContext('2d')
+    if (!ctx) return
+    ctx.drawImage(this.video, 0, 0, frame.width, frame.height)
+    const bytes = await encodeFrame(frame, [0.92, 0.8], WATCH_TURN_MAX_BYTES)
+    if (bytes || this.ended) return bytes
+
+    // Keep the moment of the question if a high-entropy desktop exceeds the byte limit.
+    const smaller = document.createElement('canvas')
+    smaller.width = Math.max(1, Math.floor(frame.width * 0.65))
+    smaller.height = Math.max(1, Math.floor(frame.height * 0.65))
+    const fallback = smaller.getContext('2d')
+    if (!fallback) return
+    fallback.drawImage(frame, 0, 0, smaller.width, smaller.height)
+    return encodeFrame(smaller, [0.84, 0.68], WATCH_TURN_MAX_BYTES)
+  }
+
   private prepareUserTurn = async (turnId: string, fromMicrophone: boolean): Promise<void> => {
     if (!this.id || this.ended) return
-    const frame = this.drawFrame()
-    const image = frame ? await encodeFrame(frame) : undefined
+    const image = await this.captureTurnFrame()
     if (!this.ended)
       await window.api.watchTogether.prepareTurn(
         this.id,
@@ -355,7 +393,7 @@ export class WatchTogetherCapture {
       !(sampleCount && chunks.some((chunk) => chunk.some((s) => Math.abs(s) > 170)))
     )
       return
-    // Audio-driven submissions and user questions must still see the current detailed image.
+    // Audio-driven submissions still need the current frame.
     const now = captured ?? this.drawFrame()
     if (!now) return
     const change = this.sceneChange
@@ -390,7 +428,7 @@ export class WatchTogetherCapture {
     let commentId: string | undefined
     let played = false
     try {
-      const frames = await encodeFrame(sheet)
+      const frames = await encodeFrame(sheet, [0.72, 0.45], WATCH_MAX_FRAME_BYTES)
       if (!frames || epoch !== this.epoch || this.blocked()) return
       // The transition pair may expire while busy; only submitting its current scene clears the change.
       this.submittedSignature = signature
