@@ -8,7 +8,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 
 from app.asr import SileroVAD, StreamingASRSession, WhisperASR
-from app.asr.streaming import StreamingVADConfig
+from app.asr.streaming import DecodeJob, StreamingVADConfig
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -16,7 +16,9 @@ router = APIRouter(tags=["asr"])
 
 _whisper: WhisperASR | None = None
 _vad: SileroVAD | None = None
-_decode_lock = asyncio.Lock()
+# A released slot is immediately reserved for an existing waiter. Optional jobs
+# may enter only when no other session is running or waiting for inference.
+_decode_slot = asyncio.BoundedSemaphore(1)
 
 
 class AsrStreamProtocolInfo(BaseModel):
@@ -119,30 +121,40 @@ async def _send_json(websocket: WebSocket, send_lock: asyncio.Lock, payload: dic
 
 
 async def _send_decode(
-    websocket: WebSocket, send_lock: asyncio.Lock, session: StreamingASRSession, job
+    websocket: WebSocket, send_lock: asyncio.Lock, session: StreamingASRSession, job: DecodeJob
 ) -> None:
-    decode_lock = _decode_lock
-    await decode_lock.acquire()
+    decode_slot = _decode_slot
+    events = session.finish_prepared(job) if job.kind == "final" else None
+    if events is None:
+        if job.kind == "endpoint" and decode_slot.locked():
+            return
+        events = await _decode(decode_slot, session, job)
+    if session.closed:
+        return
+    for event in events:
+        await _send_json(websocket, send_lock, event)
+
+
+async def _decode(
+    decode_slot: asyncio.BoundedSemaphore, session: StreamingASRSession, job: DecodeJob
+) -> list[dict]:
+    await decode_slot.acquire()
     try:
         inference = asyncio.get_running_loop().run_in_executor(
             None, copy_context().run, session.transcribe, job
         )
     except BaseException:
-        decode_lock.release()
+        decode_slot.release()
         raise
 
     def finish_decode(result: asyncio.Future) -> None:
         # A disconnect can cancel this waiter while native Whisper is still using the model.
-        decode_lock.release()
+        decode_slot.release()
         if not result.cancelled():
             result.exception()  # Observe failures even after the socket has closed.
 
     inference.add_done_callback(finish_decode)
-    events = await asyncio.shield(inference)
-    if session.closed:
-        return
-    for event in events:
-        await _send_json(websocket, send_lock, event)
+    return await asyncio.shield(inference)
 
 
 async def _audio_worker(
@@ -161,6 +173,8 @@ async def _audio_worker(
             # This worker is the only decode producer for the session: partials
             # and finals can never overlap or build an inference-task backlog.
             for job in jobs:
+                if job.kind == "endpoint" and not audio_queue.empty():
+                    continue
                 await _send_decode(websocket, send_lock, session, job)
         finally:
             audio_queue.task_done()

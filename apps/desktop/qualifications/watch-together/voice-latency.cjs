@@ -168,7 +168,56 @@ function summarize(row, fixture, index) {
   }
 }
 
-async function verifyDetailedReply(page, row, directory, endpoint, replyText) {
+// Bind Main's clock to the same AudioContext used by the two worklets.
+async function stageTimings(page, row, directory) {
+  const final = row.asr.find((e) => e.type === 'final')
+  const turnId = `${final.sessionId}:${final.segmentId}`
+  const wallTime = (frame) => row.clockTime + ((frame - row.clockFrame) * 1000) / row.rate
+  const end = wallTime(row.end)
+  const pcm = wallTime(row.playbacks[0].firstFrame)
+  const log = await fs.readFile(path.join(directory, 'profile/logs/main.log'), 'utf8')
+  const completed = [
+    ...log.matchAll(
+      /\[([\d-]+ [\d:.]+)\] \[info\]\s+\[(CodexCLI|ConversationTrace)\] (reply_completed|provider_request_terminal) \{([^}]+)\}/gu,
+    ),
+  ].filter((match) => match[4].includes(`traceId: '${turnId}'`))
+  const at = (event) => (event ? Date.parse(event[1].replace(' ', 'T')) : NaN)
+  const codex = completed.filter((e) => e[2] === 'CodexCLI')
+  const firstVisual = codex.find((e) => /imageCount: [1-9]/u.test(e[4]))
+  const terminal = completed.findLast((e) => e[2] === 'ConversationTrace')
+  const turnFinal = at(terminal)
+  const stage = await page.evaluate(async (id) => {
+    const snapshot = await window.api.latency.snapshot()
+    const trace = snapshot.recentTraces.find((t) => t.turnId === id)
+    const at = (name) => trace?.milestones.find((m) => m.name === name)?.at
+    return {
+      admitted: at('turn_admitted'),
+      sentence: at('llm_first_sentence'),
+      tts: at('tts_segment_requested'),
+      audio: at('first_audio_ready'),
+    }
+  }, turnId)
+  const sinceEnd = (at) => (Number.isFinite(at) ? Math.round(at - end) : null)
+  return {
+    mainProviderTerminalMinusFirstNonzeroMs: Number.isFinite(turnFinal)
+      ? Math.round(turnFinal - pcm)
+      : null,
+    admittedMinusEndMs: sinceEnd(stage.admitted),
+    firstVisualCompletionMinusEndMs: sinceEnd(at(firstVisual)),
+    sentenceCommitMinusEndMs: sinceEnd(stage.sentence),
+    ttsRequestMinusEndMs: sinceEnd(stage.tts),
+    audioReadyMinusEndMs: sinceEnd(stage.audio),
+    firstNonzeroMinusSentenceMs: Number.isFinite(stage.sentence)
+      ? Math.round(pcm - stage.sentence)
+      : null,
+    codexCompletionsForThisTurn: codex.length,
+    lastCodexCompletionMinusFirstNonzeroMs: codex.length
+      ? Math.round(at(codex.at(-1)) - pcm)
+      : null,
+  }
+}
+
+async function verifyDetailedReply(page, row, endpoint, replyText) {
   assert.match(replyText, /spaces|hugging|хагги|хагин/iu)
   assert.match(replyText, /gradio|град[иь]о/iu)
   assert.match(replyText, /streamlit|стримлит/iu)
@@ -212,21 +261,6 @@ async function verifyDetailedReply(page, row, directory, endpoint, replyText) {
     Number.isInteger(row.chatFinalFrame) && row.chatFinalCharacters === replyText.length,
     'Missing final detailed reply update in the chat observer',
   )
-  const pcmAt = row.clockTime + ((session.firstFrame - row.clockFrame) * 1000) / row.rate
-  const final = row.asr.find((e) => e.type === 'final')
-  const traceId = `${final.sessionId}:${final.segmentId}`
-  const log = await fs.readFile(path.join(directory, 'profile/logs/main.log'), 'utf8')
-  const completed = [
-    ...log.matchAll(
-      /\[([\d-]+ [\d:.]+)\] \[info\]\s+\[(CodexCLI|ConversationTrace)\] (reply_completed|provider_request_terminal) \{([^}]+)\}/gu,
-    ),
-  ].filter((match) => match[4].includes(traceId))
-  const last = (family) => {
-    const event = completed.findLast((m) => m[2] === family)
-    return event ? Date.parse(event[1].replace(' ', 'T')) : undefined
-  }
-  const lastCodex = last('CodexCLI')
-  const turnFinal = last('ConversationTrace')
   return {
     detailChatCharacters: replyText.length,
     tailRecognized: true,
@@ -234,11 +268,6 @@ async function verifyDetailedReply(page, row, directory, endpoint, replyText) {
     chatFinalMinusFirstNonzeroMs: Math.round(
       ((row.chatFinalFrame - session.firstFrame) * 1000) / row.rate,
     ),
-    codexCompletionsForThisTurn: completed.filter((m) => m[2] === 'CodexCLI').length,
-    lastCodexCompletionMinusFirstNonzeroMs:
-      lastCodex === undefined ? null : Math.round(lastCodex - pcmAt),
-    mainProviderTerminalMinusFirstNonzeroMs:
-      turnFinal === undefined ? null : Math.round(turnFinal - pcmAt),
   }
 }
 
@@ -308,12 +337,10 @@ async function run(application, page, directory, installSource, startWatch, sour
         })
       const row = await page.evaluate(() => window.__watchVoiceLatency.active)
       const result = summarize(row, fixture, index)
+      if (!fixture.aside) Object.assign(result, await stageTimings(page, row, directory))
       if (fixture.detailed) {
         result.kind = 'detailed'
-        Object.assign(
-          result,
-          await verifyDetailedReply(page, row, directory, healthEndpoint, replyText),
-        )
+        Object.assign(result, await verifyDetailedReply(page, row, healthEndpoint, replyText))
       }
       results.push(result)
       console.log(`WATCH_VOICE_SAMPLE ${JSON.stringify({ label, ...result })}`)
