@@ -67,8 +67,11 @@ export class SpeculativeDirectReply {
   }
 
   /** Releases the held events in order through `sink`; live events follow. */
-  release(sink: (event: CharacterToolLoopStreamEvent) => void): Promise<LlmCompletion> | null {
-    if (this.settled !== 'pending' || this.signal.aborted) return null
+  release(
+    sink: (event: CharacterToolLoopStreamEvent) => void,
+    turnSignal?: AbortSignal,
+  ): Promise<LlmCompletion> | null {
+    if (this.settled !== 'pending' || this.signal.aborted || turnSignal?.aborted) return null
     if (this.failed) {
       // A request that already failed must not flush partial text before its error.
       this.discard('failed')
@@ -79,6 +82,14 @@ export class SpeculativeDirectReply {
       return null
     }
     this.settled = 'released'
+    if (turnSignal) {
+      // A watch preparation starts under its capture lease. After admission the
+      // turn's cancellation and deadline must also stop the actual provider.
+      const abort = () => this.controller.abort(turnSignal.reason)
+      turnSignal.addEventListener('abort', abort, { once: true })
+      const detach = () => turnSignal.removeEventListener('abort', abort)
+      void this.completion.then(detach, detach)
+    }
     this.observer.onReleased?.({
       bufferedCharacters: this.bufferedCharacters,
       waitedMs: this.now() - this.startedAt,

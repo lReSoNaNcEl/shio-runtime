@@ -78,12 +78,22 @@ import {
   LlmResponseError,
   LlmTurnCancelledError,
 } from './llm'
+import { codexWatchOpeningEnabled } from './llm/CodexWatchVoiceReply'
 import { mainLog } from './logging/safeLogger'
 import type { MemoryStore, MemoryToolBroker } from './memory'
+import {
+  PreparedWatchVoiceReply,
+  type WatchVoiceReplyInput,
+  watchReplyModelKey,
+} from './watch-together/PreparedWatchVoiceReply'
 
+export type {
+  PreparedWatchVoiceReply,
+  WatchVoiceReplyInput,
+} from './watch-together/PreparedWatchVoiceReply'
 export { presentActionResult as actionResultFallback }
 
-interface CharacterLivingContext {
+export interface CharacterLivingContext {
   mood?: MoodState
   experience?: ExperienceAppraisal
   world?: WorldContextSnapshot
@@ -96,12 +106,15 @@ export interface CharacterReplyInput {
   userText: string
   approvedWatchReply?: string
   watchContext?: {
+    sessionId?: string
+    utteranceId?: string
+    preparedReply?: PreparedWatchVoiceReply
     addressedVoice?: boolean
     directVoice?: boolean
     frame?: Uint8Array
     frameTiles?: { columns: number; images: readonly Uint8Array[] }
     transcript?: string
-    recentScenes?: string[]
+    recentScenes?: readonly string[]
     fromMicrophone: boolean
   }
   origin?: CharacterReplyOrigin
@@ -335,44 +348,29 @@ export class Orchestrator {
     private avatarRuntimeHealth?: () => AvatarRuntimeHealth | null,
   ) {}
 
-  async createReply(
+  private getLivingContext(traceId: string): CharacterLivingContext {
+    let livingContext: CharacterLivingContext = {}
+    try {
+      livingContext = this.livingContext?.() ?? {}
+    } catch (error) {
+      mainLog.warn('[CharacterRequestComposer] living context unavailable', {
+        traceId,
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
+    return livingContext
+  }
+
+  private async composeRequest(
     input: CharacterReplyInput,
-    options: CharacterReplyOptions = {},
-  ): Promise<{
-    replyText: string
-    emotionKey: string
-    embodimentIntent?: CharacterEmbodimentIntent
-    grounding?: ReplyGrounding
-    assistantTurnKind: AssistantTurnKind
-    /** Main-only nuance for Experience; the IPC reply never carries it. */
-    turnAppraisal?: CharacterToolLoopResult['turnAppraisal']
-    providerIncidentCode?: CharacterToolLoopResult['providerIncidentCode']
-  }> {
+    toolsAvailable: boolean,
+    traceId: string,
+    livingContext: CharacterLivingContext,
+  ) {
     const { userText, screenContext, origin = 'user' } = input
-    const autonomous = origin !== 'user' && origin !== 'watch-user'
     const watching = origin === 'watch-user'
+    const autonomous = origin !== 'user' && !watching
     const watch = input.watchContext
-    const typedOrConfirmed =
-      watch?.fromMicrophone === false ||
-      (watch?.fromMicrophone === true && watch.addressedVoice === true)
-    const conversationOnly =
-      watching &&
-      (!typedOrConfirmed || (watch?.fromMicrophone === true && watch.directVoice === true))
-    const toolsAvailable =
-      !autonomous &&
-      (!watching || (this.toolPolicy.enforceRequirements === true && !conversationOnly))
-    if (autonomous && screenContext) {
-      throw new Error('Autonomous replies cannot attach screen context')
-    }
-    if (origin === 'watch-together') {
-      if (!input.approvedWatchReply || options.signal?.aborted) throw new LlmTurnCancelledError()
-      return {
-        replyText: input.approvedWatchReply,
-        emotionKey: parseLeadingEmotionTag(input.approvedWatchReply),
-        assistantTurnKind: 'character',
-      }
-    }
-    const traceId = safeTraceId(options.traceId)
     const history = await this.memory.getHistory(SESSION_ID)
     const sessionSummary = (await this.memory.getSessionSummary?.(SESSION_ID)) ?? null
 
@@ -415,15 +413,6 @@ export class Orchestrator {
           error: error instanceof Error ? error.message : String(error),
         })
       }
-    }
-    let livingContext: CharacterLivingContext = {}
-    try {
-      livingContext = this.livingContext?.() ?? {}
-    } catch (error) {
-      mainLog.warn('[CharacterRequestComposer] living context unavailable', {
-        traceId,
-        error: error instanceof Error ? error.message : String(error),
-      })
     }
     const embodimentAvailability = currentEmbodimentAvailability(this.avatarRuntimeHealth?.())
     const messages: ChatMessage[] = [
@@ -522,6 +511,122 @@ export class Orchestrator {
       },
     ]
 
+    return {
+      messages,
+      embodimentAvailability,
+      threadAwareness,
+      projectAvailable,
+      capabilityContext,
+      locale,
+    }
+  }
+
+  prepareWatchVoiceReply(
+    input: WatchVoiceReplyInput,
+    signal: AbortSignal,
+  ): PreparedWatchVoiceReply {
+    const traceId = safeTraceId(input.utteranceId)
+    const living = this.getLivingContext(traceId)
+    return new PreparedWatchVoiceReply(
+      input,
+      signal,
+      living,
+      () => watchReplyModelKey(this.settings()),
+      async () => {
+        const request = await this.composeRequest(
+          {
+            origin: 'watch-user',
+            userText: input.userText,
+            watchContext: {
+              ...input,
+              addressedVoice: true,
+              directVoice: true,
+              fromMicrophone: true,
+            },
+          },
+          false,
+          traceId,
+          living,
+        )
+        return request.messages
+      },
+      this.llm,
+      this.settings().llm?.activeProvider ?? 'groq',
+      codexWatchOpeningEnabled(this.settings()),
+    )
+  }
+
+  async createReply(
+    input: CharacterReplyInput,
+    options: CharacterReplyOptions = {},
+  ): Promise<{
+    replyText: string
+    emotionKey: string
+    embodimentIntent?: CharacterEmbodimentIntent
+    grounding?: ReplyGrounding
+    assistantTurnKind: AssistantTurnKind
+    /** Main-only nuance for Experience; the IPC reply never carries it. */
+    turnAppraisal?: CharacterToolLoopResult['turnAppraisal']
+    providerIncidentCode?: CharacterToolLoopResult['providerIncidentCode']
+  }> {
+    const { userText, screenContext, origin = 'user' } = input
+    const autonomous = origin !== 'user' && origin !== 'watch-user'
+    const watching = origin === 'watch-user'
+    const watch = input.watchContext
+    const typedOrConfirmed =
+      watch?.fromMicrophone === false ||
+      (watch?.fromMicrophone === true && watch.addressedVoice === true)
+    const conversationOnly =
+      watching &&
+      (!typedOrConfirmed || (watch?.fromMicrophone === true && watch.directVoice === true))
+    const toolsAvailable =
+      !autonomous &&
+      (!watching || (this.toolPolicy.enforceRequirements === true && !conversationOnly))
+    if (autonomous && screenContext) {
+      throw new Error('Autonomous replies cannot attach screen context')
+    }
+    if (origin === 'watch-together') {
+      if (!input.approvedWatchReply || options.signal?.aborted) throw new LlmTurnCancelledError()
+      return {
+        replyText: input.approvedWatchReply,
+        emotionKey: parseLeadingEmotionTag(input.approvedWatchReply),
+        assistantTurnKind: 'character',
+      }
+    }
+    const traceId = safeTraceId(options.traceId)
+    const candidate = watch?.preparedReply
+    const held =
+      watching &&
+      conversationOnly &&
+      watch?.addressedVoice &&
+      watch.directVoice &&
+      watch.fromMicrophone &&
+      options.traceId === watch.utteranceId &&
+      !input.interruptedTurn &&
+      candidate?.matches(
+        watch.sessionId,
+        watch.utteranceId,
+        userText,
+        watch,
+        watchReplyModelKey(this.settings()),
+      )
+        ? candidate
+        : undefined
+    if (candidate && !held) candidate.discard()
+    const {
+      messages,
+      embodimentAvailability,
+      threadAwareness,
+      projectAvailable,
+      capabilityContext,
+      locale,
+    } = await this.composeRequest(
+      input,
+      toolsAvailable,
+      traceId,
+      held?.livingSnapshot ?? this.getLivingContext(traceId),
+    )
+
     const promptSize = messageSize(messages)
     const providerStartedAt = Date.now()
     mainLog.info('[ConversationTrace] provider_request_started', {
@@ -597,6 +702,14 @@ export class Orchestrator {
         watchUserRequest: watching && toolsAvailable ? userText : undefined,
         enforceToolRequirements:
           !autonomous && !conversationOnly && this.toolPolicy.enforceRequirements,
+        preparedWatchReply: held?.claim(messages, options),
+        shortCodexWatchOpening:
+          watching &&
+          conversationOnly &&
+          watch?.fromMicrophone &&
+          watch.addressedVoice &&
+          watch.directVoice &&
+          codexWatchOpeningEnabled(this.settings()),
         speculativeDirectReply:
           !autonomous && !watching && this.settings().llm?.speculativeDirectReply === true,
         requirementFailureReply: (requirement, reason) =>

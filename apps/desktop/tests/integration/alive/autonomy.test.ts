@@ -46,7 +46,7 @@ async function testSentenceSegmentation(): Promise<void> {
   ]
   assert.deepEqual(
     segments.map((segment) => segment.text),
-    ['Первое предложение. Ссылка [пример] готова.', 'Финал.'],
+    ['Первое предложение.', 'Ссылка [пример] готова.', 'Финал.'],
   )
   assert.ok(segments.every((segment, index) => segment.sequence === index))
 }

@@ -53,17 +53,23 @@ export type WatchDecision =
   | { kind: 'comment'; turnId: string; expiresAt: number }
 
 export type WatchSpeechDisposition = 'addressed' | 'aside' | 'ignore'
+export interface WatchVoiceSample {
+  utteranceId: string
+  frame?: ArrayBuffer
+  playbackTranscript: string
+}
 export type WatchReaction = 'glance' | 'surprise'
 export type WatchModelIssue = 'rateLimited' | 'unavailable'
 
 export interface WatchTogetherApi {
   start(sourceId: string, reference?: string): Promise<WatchStartResult>
   stop(sessionId: string): Promise<void>
-  yield(sessionId: string, reason?: 'scene'): Promise<void>
+  yield(sessionId: string, reason?: 'scene' | 'speech'): Promise<void>
   classifySpeech(
     sessionId: string,
     text: string,
     recentAddress: boolean,
+    sample?: WatchVoiceSample,
   ): Promise<WatchSpeechDisposition | undefined>
   finishComment(sessionId: string, turnId: string, played: boolean): Promise<void>
   prepareTurn(

@@ -95,7 +95,7 @@ export function registerWatchTogetherIpc(
     'watch:yield',
     auth.handlePayload(
       'watch:yield',
-      z.tuple([z.string().uuid(), z.literal('scene').optional()]),
+      z.tuple([z.string().uuid(), z.enum(['scene', 'speech']).optional()]),
       (_event, sessionId, reason) => watch.yield(sessionId, reason),
     ),
   )
@@ -107,9 +107,21 @@ export function registerWatchTogetherIpc(
     'watch:classify-speech',
     auth.handlePayload(
       'watch:classify-speech',
-      z.tuple([z.string().uuid(), z.string().trim().min(1).max(800), z.boolean()]),
-      (_event, sessionId, text, recentAddress) =>
-        watch.classifySpeech(sessionId, text, recentAddress),
+      z.tuple([
+        z.string().uuid(),
+        z.string().trim().min(1).max(800),
+        z.boolean(),
+        z
+          .object({
+            utteranceId: z.string().min(1).max(100),
+            frame: bytes(100, WATCH_TURN_MAX_BYTES).optional(),
+            playbackTranscript: z.string().max(1000),
+          })
+          .strict()
+          .optional(),
+      ]),
+      (_event, sessionId, text, recentAddress, sample) =>
+        watch.classifySpeech(sessionId, text, recentAddress, sample),
     ),
   )
   ipcMain.handle(

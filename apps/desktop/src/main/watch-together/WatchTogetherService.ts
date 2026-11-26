@@ -15,6 +15,7 @@ import {
   type WatchSpeechDisposition,
   type WatchStartResult,
   type WatchStopped,
+  type WatchVoiceSample,
   watchReferenceUrl,
 } from '../../shared/watchTogether'
 import type { AliveFacade } from '../alive'
@@ -23,6 +24,7 @@ import { PERSONA_PROMPT_SECTIONS } from '../character/prompting/persona.generate
 import { LlmResponseError } from '../llm/errors'
 import type { ChatMessage, LLMProvider } from '../llm/types'
 import { mainLog } from '../logging/safeLogger'
+import type { PreparedWatchVoiceReply, WatchVoiceReplyInput } from './PreparedWatchVoiceReply'
 import { playbackEvidence } from './playbackSpectrum'
 import { prepareWatchTurnImage, type WatchTurnImage } from './watchTurnImage'
 
@@ -31,6 +33,7 @@ interface Dependencies {
   captureBlock(): WatchBlockReason | undefined
   canComment(): boolean
   model(): LLMProvider
+  prepareVoiceReply?(input: WatchVoiceReplyInput, signal: AbortSignal): PreparedWatchVoiceReply
   admit: AliveFacade['admitWatchMoment']
   react: (id: string, reaction: WatchReaction, expiresAt: number) => void
   ended(event: WatchStopped): void
@@ -84,7 +87,13 @@ interface WatchSession {
   reference?: string
   referenceOpening?: boolean
   referenceObservation?: { id: string; at: number }
-  addressedVoice?: { text: string; at: number; direct: boolean }
+  addressedVoice?: { text: string; at: number; direct: boolean; utteranceId?: string }
+  candidate?: {
+    utteranceId: string
+    abort: AbortController
+    expiry: ReturnType<typeof setTimeout>
+    reply?: PreparedWatchVoiceReply
+  }
   id: string
   sourceId: string
   grantUntil: number
@@ -95,7 +104,7 @@ interface WatchSession {
   lastComment: string
   lastCommentAt?: number
   pending?: AbortController
-  speechPending?: string
+  speechPending?: { key: string; signal?: AbortSignal }
   speechQueued?: { key: string; resume: (current: boolean) => void }
   prepared?: { turnId: string; text: string; expiresAt: number }
   commentId?: string
@@ -109,6 +118,7 @@ interface WatchSession {
     frame?: Uint8Array
     frameTiles?: WatchTurnImage['frameTiles']
     transcript?: string
+    recentScenes?: string[]
     expiresAt: number
   }
   lastUserRemark?: { text: string; at: number }
@@ -158,6 +168,7 @@ export class WatchTogetherService {
     const s = this.session
     if (!s || (id && s.id !== id)) return
     this.session = undefined
+    this.discardVoiceCandidate(s)
     s.lifetime.abort()
     s.pending?.abort()
     s.speechQueued?.resume(false)
@@ -192,6 +203,7 @@ export class WatchTogetherService {
   ): Promise<void> {
     const s = this.session
     if (!s?.capturing || !this.current(id)) return
+    this.discardVoiceCandidate(s)
     const preparation = Symbol()
     s.preparingUserTurn = preparation
     s.userTurn = undefined
@@ -214,29 +226,63 @@ export class WatchTogetherService {
     if (!s?.capturing || !this.current(s.id) || s.userTurn?.turnId !== turnId) return
     const prepared = s.userTurn
     s.userTurn = undefined
-    if (prepared.expiresAt <= Date.now()) return
+    if (prepared.expiresAt <= Date.now()) {
+      this.discardVoiceCandidate(s)
+      return
+    }
     if (userText) s.lastUserRemark = { text: userText.slice(0, 400), at: Date.now() }
     const grant = prepared.fromMicrophone ? s.addressedVoice : undefined
     const addressedVoice =
-      grant && grant.text === userText?.trim() && Date.now() - grant.at < 12_000 ? grant : undefined
+      grant &&
+      (!grant.utteranceId || grant.utteranceId === turnId) &&
+      grant.text === userText?.trim() &&
+      Date.now() - grant.at < 12_000
+        ? grant
+        : undefined
     if (prepared.fromMicrophone) s.addressedVoice = undefined
+    const candidate = s.candidate
+    const preparedReply =
+      addressedVoice?.direct && candidate?.utteranceId === turnId ? candidate.reply : undefined
+    if (preparedReply && candidate) {
+      clearTimeout(candidate.expiry)
+      s.candidate = undefined
+    } else this.discardVoiceCandidate(s)
     return {
+      sessionId: s.id,
+      utteranceId: turnId,
+      preparedReply,
       addressedVoice: Boolean(addressedVoice),
       directVoice: addressedVoice?.direct ?? false,
       frame: prepared.frame,
       frameTiles: prepared.frameTiles,
       fromMicrophone: prepared.fromMicrophone,
       transcript: prepared.transcript || undefined,
-      recentScenes: s.recent
-        .filter((entry) => Date.now() - entry.at < observationLifetime)
-        .map((entry) => entry.observation),
+      recentScenes: prepared.recentScenes ?? this.recentScenes(s),
       signal: s.lifetime.signal,
     }
   }
 
-  yield(id: string, reason?: 'scene'): void {
+  private recentScenes(s: WatchSession): string[] {
+    return s.recent
+      .filter((entry) => Date.now() - entry.at < observationLifetime)
+      .map((entry) => entry.observation)
+  }
+
+  private discardVoiceCandidate(s: WatchSession): void {
+    const candidate = s.candidate
+    if (!candidate) return
+    s.candidate = undefined
+    clearTimeout(candidate.expiry)
+    candidate.abort.abort()
+    candidate.reply?.discard()
+    if (s.userTurn?.turnId === candidate.utteranceId) s.userTurn = undefined
+    if (s.addressedVoice?.utteranceId === candidate.utteranceId) s.addressedVoice = undefined
+  }
+
+  yield(id: string, reason?: 'scene' | 'speech'): void {
     const s = this.session
     if (s?.id !== id) return
+    if (reason === 'speech') this.discardVoiceCandidate(s)
     s.prepared = undefined
     if (reason === 'scene' && s.referenceOpening) return
     s.pending?.abort()
@@ -248,9 +294,90 @@ export class WatchTogetherService {
     id: string,
     text: string,
     recentAddress: boolean,
+    sample?: WatchVoiceSample,
   ): Promise<WatchSpeechDisposition | undefined> {
     const s = this.session
     if (!s?.capturing || !this.current(id)) return 'ignore'
+    if (!sample) return this.classifyUtterance(s, text, recentAddress)
+    this.discardVoiceCandidate(s)
+    s.userTurn = undefined
+    s.preparingUserTurn = undefined
+    const abort = new AbortController()
+    const candidate: NonNullable<WatchSession['candidate']> = {
+      utteranceId: sample.utteranceId,
+      abort,
+      expiry: setTimeout(() => this.discardVoiceCandidate(s), speechTimeout + 5_000),
+    }
+    s.candidate = candidate
+    const current = () => s.candidate === candidate && this.current(id) && !abort.signal.aborted
+    const signal = AbortSignal.any([abort.signal, s.lifetime.signal])
+    const recentScenes = this.recentScenes(s)
+    let mayPrepare = !s.modelFailure || Date.now() >= s.modelFailure.retryAt
+    const classify = this.classifyUtterance(
+      s,
+      text,
+      recentAddress,
+      signal,
+      sample.utteranceId,
+    ).then((disposition) => {
+      if (
+        current() &&
+        (!s.addressedVoice?.direct || s.addressedVoice.utteranceId !== sample.utteranceId)
+      ) {
+        mayPrepare = false
+        candidate.reply?.discard()
+        candidate.reply = undefined
+      }
+      return disposition
+    })
+    const image = sample.frame
+      ? await prepareWatchTurnImage(sample.frame, current).catch(() => undefined)
+      : undefined
+    if (current() && mayPrepare && this.deps.prepareVoiceReply) {
+      try {
+        candidate.reply = this.deps.prepareVoiceReply(
+          {
+            sessionId: id,
+            utteranceId: sample.utteranceId,
+            userText: text,
+            ...image,
+            transcript: sample.playbackTranscript || undefined,
+            recentScenes,
+          },
+          signal,
+        )
+      } catch {
+        mainLog.warn('[WatchTogether] voice draft unavailable')
+      }
+    }
+    const disposition = await classify
+    if (!current()) return 'ignore'
+    if (disposition === 'aside' || disposition === 'ignore') {
+      this.discardVoiceCandidate(s)
+      return disposition
+    }
+    // Keep the frame and any addressed tool grant together until the admitted turn claims them.
+    clearTimeout(candidate.expiry)
+    candidate.expiry = setTimeout(() => this.discardVoiceCandidate(s), 5_000)
+    s.userTurn = {
+      turnId: sample.utteranceId,
+      fromMicrophone: true,
+      ...image,
+      recentScenes,
+      transcript: sample.playbackTranscript,
+      expiresAt: Date.now() + 5000,
+    }
+    return disposition
+  }
+
+  private async classifyUtterance(
+    s: WatchSession,
+    text: string,
+    recentAddress: boolean,
+    signal?: AbortSignal,
+    utteranceId?: string,
+  ): Promise<WatchSpeechDisposition | undefined> {
+    const id = s.id
     // A previous decision for identical words cannot authorize a new fallback utterance.
     if (s.addressedVoice?.text === text.trim()) s.addressedVoice = undefined
     const key = text
@@ -258,17 +385,21 @@ export class WatchTogetherService {
       .replace(/[.!?…]+$/u, '')
       .toLowerCase()
     if (s.speechPending !== undefined) {
-      if (s.speechPending === key || s.speechQueued?.key === key) return 'ignore'
+      if (
+        (s.speechPending.key === key && !s.speechPending.signal?.aborted) ||
+        s.speechQueued?.key === key
+      )
+        return 'ignore'
       const queued = Promise.withResolvers<boolean>()
       s.speechQueued?.resume(false)
       s.speechQueued = { key, resume: queued.resolve }
-      if (!(await queued.promise) || !this.current(id)) return 'ignore'
+      if (!(await queued.promise) || !this.current(id) || signal?.aborted) return 'ignore'
     }
     if (s.modelFailure && Date.now() < s.modelFailure.retryAt) return undefined
     s.pending?.abort()
-    s.speechPending = key
+    s.speechPending = { key, signal }
     try {
-      return await this.evaluateSpeech(s, text, recentAddress)
+      return await this.evaluateSpeech(s, text, recentAddress, signal, utteranceId)
     } finally {
       s.speechPending = undefined
       const queued = s.speechQueued
@@ -281,9 +412,15 @@ export class WatchTogetherService {
     s: WatchSession,
     text: string,
     recentAddress: boolean,
+    candidateSignal?: AbortSignal,
+    utteranceId?: string,
   ): Promise<WatchSpeechDisposition | undefined> {
     const timeout = AbortSignal.timeout(speechTimeout)
-    const signal = AbortSignal.any([s.lifetime.signal, timeout])
+    const signal = AbortSignal.any([
+      s.lifetime.signal,
+      timeout,
+      ...(candidateSignal ? [candidateSignal] : []),
+    ])
     const now = Date.now()
     try {
       const messages: ChatMessage[] = [
@@ -325,7 +462,7 @@ export class WatchTogetherService {
         }
       } else answer = await model.chat(messages, options)
       if (!this.current(s.id)) return 'ignore'
-      timeout.throwIfAborted()
+      signal.throwIfAborted()
       const result = speechSchema.parse(parseJson(answer))
       const disposition = result.disposition === 'direct-answer' ? 'addressed' : result.disposition
       if (disposition === 'addressed')
@@ -333,6 +470,7 @@ export class WatchTogetherService {
           text: text.trim(),
           at: Date.now(),
           direct: result.disposition === 'direct-answer',
+          utteranceId,
         }
       if (result.disposition === 'aside' && result.summary) {
         const at = Date.now()

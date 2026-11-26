@@ -5,6 +5,7 @@ import type {
   RuntimeEventType,
 } from '../../../shared/runtime'
 import type { SerializedSpeechError } from '../../../shared/speech'
+import type { WatchSpeechDisposition, WatchVoiceSample } from '../../../shared/watchTogether'
 import type { MicrophoneDeviceService } from '../../audio/MicrophoneDeviceService'
 import type { MicrophoneGateController } from '../../audio/MicrophoneGateController'
 import { isDefaultMicrophone, type StreamingModeId } from '../../audio/microphoneGateTypes'
@@ -132,6 +133,7 @@ export class ConversationInputCoordinator {
   private conversationAdmission: ConversationAdmissionCoordinator
   private desiredContinuousListening = false
   private watchVoice?: string
+  private captureWatchVoiceSample?: (utteranceId: string) => Promise<WatchVoiceSample>
   private latestWatchUtterance?: string
   private conversationBoundaryAt = 0
   private conversationSessionResetPending = false
@@ -165,6 +167,7 @@ export class ConversationInputCoordinator {
   async admitText(text: string, screenContextId?: string): Promise<ChatSubmissionResult> {
     const trimmed = text.trim()
     if (!trimmed) return { status: 'cancelled' }
+    if (this.latestWatchUtterance) this.invalidatePendingAttention()
     const result = await this.conversationAdmission.admitExplicit({
       turnId: this.dependencies.createTurnId('text'),
       text: trimmed,
@@ -242,7 +245,6 @@ export class ConversationInputCoordinator {
   }
 
   resetConversationSession(): void {
-    this.clearWatchVoiceFeedback()
     this.invalidatePendingAttention()
     this.conversationBoundaryAt = Date.now()
     this.conversationSessionResetPending = true
@@ -332,8 +334,6 @@ export class ConversationInputCoordinator {
   }
 
   handleContinuousRuntimeProjection(projection: ContinuousListeningRuntimeProjection): void {
-    if (projection.transport !== 'ready' || projection.activity === 'hearing-speech')
-      this.clearWatchVoiceFeedback()
     if (projection.transport === 'reconnecting' && this.streamingSessionId) {
       this.invalidatePendingAttention()
       this.conversationAdmission.resetStreamingSession()
@@ -342,6 +342,8 @@ export class ConversationInputCoordinator {
       this.bargeInSegments.clear()
       this.streamingSessionId = null
     }
+    if (projection.transport !== 'ready' || projection.activity === 'hearing-speech')
+      this.clearWatchVoiceFeedback()
     this.patchContinuousProjection({
       ...projection,
       desired: this.desiredContinuousListening,
@@ -365,9 +367,13 @@ export class ConversationInputCoordinator {
     return this.continuousSettings.enabled
   }
 
-  setWatchVoice(sessionId: string | undefined): void {
-    if (this.watchVoice !== sessionId) this.clearWatchVoiceFeedback()
+  setWatchVoice(
+    sessionId: string | undefined,
+    capture?: (utteranceId: string) => Promise<WatchVoiceSample>,
+  ): void {
+    if (this.watchVoice !== sessionId) this.invalidatePendingAttention()
     this.watchVoice = sessionId
+    this.captureWatchVoiceSample = capture
   }
 
   private clearWatchVoiceFeedback(): void {
@@ -612,35 +618,7 @@ export class ConversationInputCoordinator {
       if (this.handledUtteranceIds.has(chunk.id)) return
       this.latestWatchUtterance = chunk.id
       this.dependencies.patchControllerState({ watchVoiceFeedback: 'classifying' })
-      const disposition = await window.api.watchTogether
-        .classifySpeech(watchSession, chunk.text.trim().slice(0, 800), followUpWindow)
-        .catch(() => {
-          this.dependencies.recordRuntimeEvent('Watch Voice Classification Unavailable')
-          return undefined
-        })
-      const fallbackAddressed =
-        disposition === undefined &&
-        (fallbackAttention.directAddress || chunk.triggeredBargeIn || buffered.question)
-      if (
-        this.watchVoice !== watchSession ||
-        this.streamingSessionId !== chunk.streamingSessionId ||
-        this.conversationSessionResetPending
-      )
-        return
-      const accepted = disposition === 'addressed' || fallbackAddressed
-      if (this.latestWatchUtterance === chunk.id) {
-        this.dependencies.patchControllerState({
-          watchVoiceFeedback:
-            disposition === 'aside' || disposition === 'ignore'
-              ? disposition
-              : accepted
-                ? undefined
-                : 'unavailable',
-        })
-      }
-      if (!accepted) return
-      this.dependencies.recordRuntimeEvent('Watch Voice Accepted', chunk.completionReason)
-      await this.conversationAdmission.admitExplicit({
+      const input: ConversationInput = {
         turnId: chunk.id,
         text: chunk.text,
         source: 'continuous_listening',
@@ -656,7 +634,11 @@ export class ConversationInputCoordinator {
             chunk.confidence !== undefined &&
             chunk.confidence < semanticEarTuning.recognitionUncertainThreshold,
         },
-      })
+      }
+      if (!conversationBusy && this.captureWatchVoiceSample && chunk.text.length <= 800) {
+        input.watchCandidate = { sessionId: watchSession, recentAddress: followUpWindow }
+      } else if (!(await this.checkWatchAddress(input, watchSession, followUpWindow))) return
+      await this.conversationAdmission.admitExplicit(input)
       return
     }
     let attention = fallbackAttention
@@ -740,6 +722,60 @@ export class ConversationInputCoordinator {
 
   private invalidatePendingAttention(): void {
     this.attentionGeneration += 1
+    if (this.watchVoice && this.latestWatchUtterance) {
+      observeRendererPromise(
+        window.api.watchTogether.yield(this.watchVoice, 'speech'),
+        'cancel watch voice check',
+      )
+      this.clearWatchVoiceFeedback()
+    }
+  }
+
+  private async checkWatchAddress(
+    turn: ConversationInput,
+    sessionId: string,
+    recentAddress: boolean,
+    capture?: (utteranceId: string) => Promise<WatchVoiceSample>,
+  ): Promise<boolean> {
+    const generation = this.attentionGeneration
+    const current = () =>
+      this.watchVoice === sessionId &&
+      this.streamingSessionId === turn.streamingSessionId &&
+      generation === this.attentionGeneration &&
+      !this.conversationSessionResetPending
+    let sample: WatchVoiceSample | undefined
+    let disposition: WatchSpeechDisposition | undefined
+    try {
+      sample = await capture?.(turn.turnId)
+      if (!current() || (sample && this.latestWatchUtterance !== turn.turnId)) return false
+      disposition = await window.api.watchTogether.classifySpeech(
+        sessionId,
+        turn.text.trim().slice(0, 800),
+        recentAddress,
+        sample,
+      )
+      turn.watchFramePrepared = Boolean(sample)
+    } catch {
+      this.dependencies.recordRuntimeEvent('Watch Voice Classification Unavailable')
+    }
+    if (!current() || (sample && this.latestWatchUtterance !== turn.turnId)) return false
+    const accepted =
+      disposition === 'addressed' ||
+      (disposition === undefined &&
+        Boolean(
+          turn.semanticCues?.directAddress || turn.triggeredBargeIn || turn.semanticCues?.question,
+        ))
+    if (this.latestWatchUtterance === turn.turnId)
+      this.dependencies.patchControllerState({
+        watchVoiceFeedback:
+          disposition === 'aside' || disposition === 'ignore'
+            ? disposition
+            : accepted
+              ? undefined
+              : 'unavailable',
+      })
+    if (accepted) this.dependencies.recordRuntimeEvent('Watch Voice Accepted', turn.turnId)
+    return accepted
   }
 
   private createBufferedUtterance(
@@ -825,6 +861,20 @@ export class ConversationInputCoordinator {
         return { status: 'cancelled', turnId: attempt.turnId }
       }
       this.rememberHandledUtterance(attempt.turnId)
+    }
+    if (attempt.watchCandidate) {
+      const { sessionId, recentAddress } = attempt.watchCandidate
+      if (
+        this.watchVoice !== sessionId ||
+        !(await this.checkWatchAddress(
+          attempt,
+          sessionId,
+          recentAddress,
+          this.captureWatchVoiceSample,
+        ))
+      ) {
+        return { status: 'cancelled', turnId: attempt.turnId }
+      }
     }
     this.dependencies.recordRuntimeEvent('Conversation Admitted', attempt.turnId)
     for (const [impulse, enabled] of [

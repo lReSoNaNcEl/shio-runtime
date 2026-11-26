@@ -30,6 +30,7 @@ import {
   type LlmToolDefinition,
   LlmTurnCancelledError,
 } from '../llm'
+import { codexWatchVoiceSegments } from '../llm/CodexWatchVoiceReply'
 import { mainLog } from '../logging/safeLogger'
 import { SpeculativeDirectReply } from './CharacterSpeculativeReply'
 import type {
@@ -122,6 +123,9 @@ interface CharacterToolLoopOptions {
   enforceToolRequirements?: boolean
   /** Experimental, off by default: start the direct reply in parallel with planning. */
   speculativeDirectReply?: boolean
+  /** Single-use preparation already matched to this admitted direct voice request. */
+  preparedWatchReply?: SpeculativeDirectReply
+  shortCodexWatchOpening?: boolean
   embodimentAvailability?: EmbodimentAvailability
   requirementFailureReply?: (
     requirement: CharacterToolRequirement | undefined,
@@ -522,7 +526,7 @@ async function consumeSpeculation(
   fallback: () => Promise<LlmCompletion>,
 ): Promise<LlmCompletion> {
   if (signal.aborted) throw new LlmTurnCancelledError()
-  const pending = reply.release((event) => sink?.(event))
+  const pending = reply.release((event) => sink?.(event), signal)
   if (!pending) return fallback()
   try {
     const completion = await pending
@@ -686,7 +690,7 @@ function transientProviderIncidentCode(
 }
 
 async function streamCompletion(
-  options: CharacterToolLoopOptions,
+  options: Pick<CharacterToolLoopOptions, 'llm' | 'providerId' | 'onStreamEvent'>,
   messages: readonly ChatMessage[],
   signal: AbortSignal,
   llmRound: number,
@@ -783,6 +787,55 @@ async function streamCompletion(
     options.onStreamEvent?.({ type: 'tool-round-completed', at: Date.now(), llmRound })
   }
   return { content: rawContent, toolCalls: Object.freeze(toolCalls), finishReason }
+}
+
+// No registry, dispatcher, planning, history mutation or stream sink for the UI.
+export async function generatePreparedWatchReply(
+  llm: LLMProvider,
+  providerId: LlmProviderId,
+  messages: readonly ChatMessage[],
+  signal: AbortSignal,
+  traceId: string,
+  onEvent: (event: CharacterToolLoopStreamEvent) => void,
+  shortCodexOpening = false,
+  admitted?: Promise<boolean>,
+): Promise<LlmCompletion> {
+  const request = { signal, traceId }
+  if (llm.stream && llm.capabilities?.().supportsStreaming) {
+    const completion = await streamCompletion(
+      { llm, providerId, onStreamEvent: onEvent },
+      messages,
+      signal,
+      0,
+      request,
+      { committedText: false },
+    )
+    if (completion.toolCalls.length || containsToolProtocol(completion.content))
+      throw new Error('Invalid direct watch reply')
+    return completion
+  }
+  const filter = new SafeCharacterStreamFilter()
+  const publish = (deltas: readonly SafeCharacterTextDelta[]) => {
+    const at = Date.now()
+    for (const intent of filter.takeEmbodimentIntents())
+      onEvent({ type: 'embodiment-intent', at, llmRound: 0, ...intent })
+    for (const delta of deltas) onEvent({ type: 'text-delta', at, llmRound: 0, delta })
+  }
+  let text = ''
+  if (shortCodexOpening && providerId === 'codex-cli' && llm.complete) {
+    for await (const segment of codexWatchVoiceSegments(llm, messages, request, admitted)) {
+      text += segment
+      publish(filter.push(segment))
+    }
+  } else {
+    text = await llm.chat(messages, request)
+    signal.throwIfAborted()
+    if (containsToolProtocol(text)) throw new Error('Invalid direct watch reply')
+    publish(filter.push(text))
+  }
+  signal.throwIfAborted()
+  publish(filter.flush())
+  return textCompletion(text)
 }
 
 async function streamedCompletionWithSafeRetry(
@@ -1309,7 +1362,22 @@ export class CharacterToolLoop {
                   ),
                 ),
               )
-        const prefetched = releasable()
+        const prefetched =
+          options.preparedWatchReply ??
+          releasable() ??
+          (options.shortCodexWatchOpening && options.onStreamEvent && options.llm.complete
+            ? new SpeculativeDirectReply(controller.signal, (publish, signal) =>
+                generatePreparedWatchReply(
+                  options.llm,
+                  options.providerId,
+                  directMessages,
+                  signal,
+                  options.traceId,
+                  publish,
+                  true,
+                ),
+              )
+            : undefined)
         const completion = prefetched
           ? await consumeSpeculation(
               prefetched,

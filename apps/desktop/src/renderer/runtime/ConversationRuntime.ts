@@ -404,7 +404,8 @@ export class ConversationRuntime {
         (turn.source === 'text_chat' || turn.source === 'push_to_talk' || turn.watchVoice)
       const prepareWatchTurn = explicit ? this.deps.watchUserTurn?.() : undefined
       const draft = await this.runGeneration(turn.turnId, async () => {
-        await prepareWatchTurn?.(turn.turnId, turn.source !== 'text_chat')
+        if (!turn.watchFramePrepared)
+          await prepareWatchTurn?.(turn.turnId, turn.source !== 'text_chat')
         if (!this.isCurrentTurn(turn.turnId))
           throw new ConversationInterruptedError(turn.turnId, 'manual-stop')
         return this.deps.characterResponse.createReply(

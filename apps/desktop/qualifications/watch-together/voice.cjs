@@ -167,11 +167,16 @@ async function checkConversation(application, page) {
 async function qualify() {
   assert.equal(process.platform, 'win32', 'This qualification requires Windows window capture')
   const readText = process.argv.includes('--read-text') ? require('./read-text.cjs') : undefined
+  const latency = process.argv.includes('--latency') ? require('./voice-latency.cjs') : undefined
+  assert(!(readText && latency), 'Choose one qualification mode')
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'shio-watch-voice-'))
   let application
   try {
     const wav = path.join(directory, 'voice.wav')
-    if (readText) await readText.writeSilentMicrophone(wav)
+    if (latency) {
+      latency.preparePhrases(directory)
+      await require('./read-text.cjs').writeSilentMicrophone(wav)
+    } else if (readText) await readText.writeSilentMicrophone(wav)
     else synthesizeMicrophone(wav)
     const profile = path.join(directory, 'profile')
     await fs.mkdir(profile)
@@ -202,14 +207,17 @@ async function qualify() {
       executablePath: require('electron'),
       cwd: desktop,
       args: [
-        desktop,
+        (latency && process.env.SHIO_QA_DESKTOP_BUNDLE) || desktop,
         '--use-fake-device-for-media-stream',
         `--use-file-for-fake-audio-capture=${wav}`,
       ],
       env,
     })
+    if (latency) await latency.install(application)
     const page = await preparePage(application)
     if (readText) await readText.checkReadText(application, page, directory, startWatch)
+    else if (latency)
+      await latency.run(application, page, directory, installSource, startWatch, sourceTitle)
     else await checkConversation(application, page)
   } finally {
     try {

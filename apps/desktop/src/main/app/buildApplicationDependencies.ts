@@ -808,6 +808,8 @@ export function buildApplicationDependencies(): ApplicationDependencies {
       captureBlock: () => watchBlockReason(aliveStore.settings()),
       canComment: () => watchAlive.canCommentOnPlayback(),
       model: resolveLlmGateway,
+      prepareVoiceReply: (input, signal) =>
+        resolveOrchestrator().prepareWatchVoiceReply(input, signal),
       admit: (expiresAt, current) => watchAlive.admitWatchMoment(expiresAt, current),
       react: (sessionId, reaction, expiresAt) =>
         watchAlive.reportExperience({

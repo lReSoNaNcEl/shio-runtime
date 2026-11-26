@@ -20,6 +20,8 @@ export interface ConversationInput {
   sharedViewing?: boolean
   watchExpiresAt?: number
   watchVoice?: boolean
+  watchCandidate?: { sessionId: string; recentAddress: boolean }
+  watchFramePrepared?: boolean
   source: ConversationInputSource
   /** Allowed only for text_chat; all speech, backlog, and debug paths omit it. */
   screenContextId?: string

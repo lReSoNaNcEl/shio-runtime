@@ -158,7 +158,17 @@ export class WatchTogetherCapture {
       failure = 'watch.micError'
       this.unsubscribeVoice = controller.onWatchSpeech(this.voiceActivity)
       this.microphone = true
-      await controller.setWatchMicrophone(id, true, this.lifetime.signal, this.prepareUserTurn)
+      await controller.setWatchMicrophone(
+        id,
+        true,
+        this.lifetime.signal,
+        this.prepareUserTurn,
+        async (utteranceId) => ({
+          utteranceId,
+          frame: await this.captureTurnFrame(),
+          playbackTranscript: this.playbackSpeech.transcript(),
+        }),
+      )
       if (this.ended) return
       if (!controller.getState().continuousListening.microphoneCaptured)
         throw new Error('WATCH_MICROPHONE')
@@ -231,7 +241,10 @@ export class WatchTogetherCapture {
       this.holdUntil = Date.now() + 3200
       if (this.id) {
         controller.clearWatchReaction(this.id)
-        observeRendererPromise(window.api.watchTogether.yield(this.id), 'yield shared viewing')
+        observeRendererPromise(
+          window.api.watchTogether.yield(this.id, 'speech'),
+          'yield shared viewing',
+        )
       }
       if (this.turnId)
         observeRendererPromise(

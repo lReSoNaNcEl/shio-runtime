@@ -15,6 +15,7 @@ import type {
   RuntimeEventType,
 } from '../shared/runtime'
 import type { SerializedSpeechError } from '../shared/speech'
+import type { WatchVoiceSample } from '../shared/watchTogether'
 import { AudioPlayer } from './audio/audioPlayer'
 import { MicrophoneDeviceService } from './audio/MicrophoneDeviceService'
 import { MicrophoneGateController } from './audio/MicrophoneGateController'
@@ -501,6 +502,7 @@ export class Controller {
     enabled: boolean,
     signal?: AbortSignal,
     prepare?: (turnId: string, fromMicrophone: boolean) => Promise<void>,
+    captureVoiceSample?: (utteranceId: string) => Promise<WatchVoiceSample>,
   ): Promise<void> {
     if (!enabled) {
       const lease = this.watchMicrophone
@@ -531,7 +533,7 @@ export class Controller {
     }
     this.watchMicrophone = lease
     this.prepareWatchUserTurn = prepare
-    this.conversationInput.setWatchVoice(id)
+    this.conversationInput.setWatchVoice(id, captureVoiceSample)
     this.aliveExperience.setWatchSession(id, true)
     if (this.state.continuousListening.microphoneCaptured) return
     const cancel = () => this.microphoneGate.cancel()

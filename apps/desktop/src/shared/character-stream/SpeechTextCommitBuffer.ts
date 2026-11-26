@@ -109,8 +109,9 @@ export class SpeechTextCommitBuffer {
     this.previousSourceCharacter = character
     const trimmed = this.buffer.trimEnd()
     const sentenceBoundary =
-      trimmed.length >= SPEECH_COMMIT_MIN_CHARACTERS &&
-      /(?:[.!?]["')\]]?|…)[\s\n]$/u.test(this.buffer) &&
+      /[.!?…][»”’"')\]]?\s$/u.test(this.buffer) &&
+      (trimmed.length >= SPEECH_COMMIT_MIN_CHARACTERS ||
+        (this.sequence === 0 && /[\p{L}\p{N}]/u.test(trimmed))) &&
       safeSentenceBoundary(trimmed)
     const paragraphBoundary =
       trimmed.length >= SPEECH_COMMIT_MIN_CHARACTERS && /\n\s*\n$/u.test(this.buffer)
@@ -168,5 +169,13 @@ export class SpeechTextCommitBuffer {
 }
 
 function safeSentenceBoundary(text: string): boolean {
-  return !/(?:\b(?:e\.g|i\.e|mr|mrs|dr|т\.д|т\.п|г|ул)\.|\b\d+[.,]\d+\.)$/iu.test(text)
+  const end = text.replace(/[»”’"')\]]$/u, '')
+  if (!end.endsWith('.')) return true
+  // A token boundary alone does not complete initials, abbreviations or an ordered-list marker.
+  // JavaScript \b uses ASCII word characters and therefore misses Cyrillic abbreviations.
+  return (
+    !/(?:^|[^\p{L}\p{N}])(?:\p{L}|e\.\s?g|i\.\s?e|mr|mrs|ms|dr|prof|etc|vs|т\.\s?[дпек]|гг|ул|им|напр|рис|см|стр|руб)\.$/iu.test(
+      end,
+    ) && !/(?:\d+[.,]\d+\.|^\s*\d+\.)$/u.test(end)
+  )
 }
