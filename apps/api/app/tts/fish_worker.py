@@ -7,7 +7,9 @@ import sys
 from pathlib import Path
 
 
-def run_worker(source: str, model: str, device: str, compile: bool, requests, responses) -> None:
+def run_worker(
+    source: str, model: str, device: str, compile: bool, requests, responses, request_cancelled
+) -> None:
     allowed = {
         "PATH",
         "Path",
@@ -74,7 +76,11 @@ def run_worker(source: str, model: str, device: str, compile: bool, requests, re
             install_speech_context,
             release_unused_codec_masks,
         )
-        from app.tts.fish_streaming import install_streaming_decode
+        from app.tts.fish_streaming import (
+            FishSynthesisCancelled,
+            install_generation_cancellation,
+            install_streaming_decode,
+        )
 
         logger.remove()
         Conversation.visualize = lambda *args, **kwargs: None
@@ -105,11 +111,22 @@ def run_worker(source: str, model: str, device: str, compile: bool, requests, re
             if os.environ.get("FISH_VALIDATE_STREAM") == "1"
             else None
         )
+
+        def check_cancelled():
+            if request_cancelled.is_set():
+                raise FishSynthesisCancelled()
+
+        def synchronize():
+            if device.startswith("cuda"):
+                torch.cuda.synchronize(device)
+
+        install_generation_cancellation(inference, check_cancelled, synchronize)
         install_streaming_decode(
             inference,
             decoder,
             lambda pcm: responses.put(("audio", np.asarray(pcm, dtype="<f4"))),
             validate=validation,
+            check_cancelled=check_cancelled,
         )
         llama_queue = inference.launch_thread_safe_queue(
             checkpoint_path=model,
@@ -129,6 +146,9 @@ def run_worker(source: str, model: str, device: str, compile: bool, requests, re
             request = requests.get()
             if request is None:
                 return
+            if request_cancelled.is_set():
+                responses.put(("done", None))
+                continue
             text, reference, transcript = request
             try:
                 query = ServeTTSRequest(
