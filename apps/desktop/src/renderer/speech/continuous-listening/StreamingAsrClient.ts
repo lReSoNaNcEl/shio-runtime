@@ -144,7 +144,6 @@ export class StreamingAsrClient {
   private state: StreamingAsrState = 'idle'
   private shouldRun = false
   private wsBase = ''
-  private language = 'ru'
   private reconnectAttempt = 0
   private reconnectTimer: number | null = null
   private generation = 0
@@ -158,12 +157,11 @@ export class StreamingAsrClient {
     private readonly partialResults = true,
   ) {}
 
-  async connect(baseUrl: string, language = 'ru', signal?: AbortSignal): Promise<void> {
+  async connect(baseUrl: string, signal?: AbortSignal): Promise<void> {
     await this.stop()
     if (signal?.aborted) throw signal.reason ?? new DOMException('ASR start aborted', 'AbortError')
     const generation = ++this.generation
     this.shouldRun = true
-    this.language = language
     this.wsBase = baseUrl
       .replace('://localhost', '://127.0.0.1')
       .replace(/^http:/, 'ws:')
@@ -282,7 +280,7 @@ export class StreamingAsrClient {
               sampleRate,
               channels: 1,
               format: 'pcm_s16le',
-              language: this.language,
+              language: 'auto',
               ...(!this.partialResults && { partialResults: false }),
             }),
           )

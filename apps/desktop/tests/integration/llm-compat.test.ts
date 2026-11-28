@@ -16,7 +16,6 @@ import { describe, expect, it, vi } from 'vitest'
 
 import type { ChatMessage, LlmProviderId } from '../../src/main/llm'
 import { createAiSdkAdapter, createModelCatalogClient } from '../../src/main/llm/AiSdkAdapter'
-import { normalizeLlmConfig } from '../../src/main/llm/config'
 import {
   classifyHttpFailure,
   LlmResponseError,
@@ -149,13 +148,6 @@ const PROVIDERS: ProviderCase[] = [
     expectedPlainBudget: 1024,
     expectedReasoningBudget: 4096,
   },
-  {
-    id: 'mistral',
-    reasoningModel: 'magistral-medium-2509',
-    plainModel: 'mistral-small-latest',
-    expectedPlainBudget: 1024,
-    expectedReasoningBudget: 4096,
-  },
 ]
 
 const SYSTEM_PROMPT = 'You are Shio, a witty anime foxgirl. Max 3 sentences.'
@@ -203,8 +195,8 @@ async function runProviderBattery(pc: ProviderCase): Promise<void> {
     check('emotion tag preserved', out.startsWith('[happy]'))
   }
 
-  // 2. Dynamic token budget + temperature from capabilities (non-reasoning).
-  if (pc.id === 'mistral') {
+  // Explicit null tool_calls is valid in an OpenAI-compatible response.
+  {
     const { http } = fakeHttp(() => ({
       choices: [
         {
@@ -224,6 +216,7 @@ async function runProviderBattery(pc: ProviderCase): Promise<void> {
     check('explicit null tool_calls is treated as no tool calls', out === '[calm] Привет.')
   }
 
+  // 2. Dynamic token budget + temperature from capabilities (non-reasoning).
   {
     const { http, lastBody } = fakeHttp(() => okResponse('[neutral] ok'))
     const caps = resolveCapabilities(pc.id, pc.plainModel)
@@ -433,82 +426,7 @@ async function runProviderBattery(pc: ProviderCase): Promise<void> {
   }
 }
 
-/** Mistral models API: fake `http.get` to exercise success/error/malformed paths. */
-async function withMockedMistralGet<T>(
-  handler: (path: string) => unknown,
-  fn: (p: ReturnType<typeof createModelCatalogClient>) => Promise<T>,
-): Promise<T> {
-  const provider = createModelCatalogClient({
-    definition: getProviderDefinition('mistral'),
-    http: {
-      get: async (path: string) => {
-        const result = handler(path)
-        if (result instanceof Error) throw result
-        return { data: result }
-      },
-    } as AxiosInstance,
-  })
-  return fn(provider)
-}
-
-async function testMistralModelsApi(): Promise<void> {
-  console.log('\n=== mistral models API ===')
-
-  // Successful models list.
-  {
-    const rawModels = await withMockedMistralGet(
-      () => ({
-        object: 'list',
-        data: [
-          {
-            id: 'mistral-medium-3.5',
-            name: 'Mistral Medium 3.5',
-            capabilities: { vision: true, tool_calling: true },
-          },
-          {
-            id: 'mistral-medium-3-5',
-            name: 'Mistral Medium 3.5 Chat',
-            capabilities: { vision: true, tool_calling: true },
-          },
-          { id: 'mistral-large-latest' },
-        ],
-      }),
-      (p) => p.fetchModels('test-key'),
-    )
-    const models = enrichModelCatalog('mistral', rawModels)
-    check(
-      'models API canonicalizes and deduplicates Mistral Medium 3.5 chat id',
-      models.length === 2 && models[0].id === 'mistral-medium-3-5',
-    )
-    check(
-      'models API preserves optional displayName',
-      models[0].displayName === 'Mistral Medium 3.5 Chat',
-    )
-    check(
-      'models API preserves authoritative Vision metadata',
-      models[0].capabilities?.supportsVision === true,
-    )
-  }
-
-  {
-    const { http, lastBody } = fakeHttp(() => okResponse('[calm]ok'))
-    const provider = createAiSdkAdapter({
-      definition: getProviderDefinition('mistral'),
-      apiKey: 'test-key',
-      model: 'mistral-medium-3.5',
-      fetch: async (_input, init) =>
-        new Response(
-          JSON.stringify(await http.chat.completions.create(JSON.parse(String(init?.body)))),
-          { headers: { 'Content-Type': 'application/json' } },
-        ),
-    })
-    await provider.chat(baseMessages('hi'))
-    check(
-      'chat request canonicalizes persisted dotted Mistral Medium 3.5 id',
-      lastBody().model === 'mistral-medium-3-5',
-    )
-  }
-
+async function testNemotronPlanning(): Promise<void> {
   {
     const { http, lastBody } = fakeHttp(() => okResponse('{"ready":true}'))
     const provider = createAiSdkAdapter({
@@ -543,108 +461,6 @@ async function testMistralModelsApi(): Promise<void> {
     )
     await provider.chat(baseMessages('hi'))
     check('Nemotron prose leaves provider reasoning at its default', !lastBody().reasoning)
-  }
-
-  // Auth failure.
-  {
-    let err: unknown
-    try {
-      await withMockedMistralGet(
-        () => axiosErr(401),
-        (p) => p.fetchModels('bad-key'),
-      )
-    } catch (e) {
-      err = e
-    }
-    check(
-      'models API 401 -> ModelFetchError(auth)',
-      err instanceof ModelFetchError && err.kind === 'auth',
-    )
-  }
-
-  // Access denied by provider policy or account permissions.
-  {
-    let err: unknown
-    try {
-      await withMockedMistralGet(
-        () => axiosErr(403),
-        (p) => p.fetchModels('valid-key'),
-      )
-    } catch (e) {
-      err = e
-    }
-    check(
-      'models API 403 -> ModelFetchError(access)',
-      err instanceof ModelFetchError && err.kind === 'access',
-    )
-  }
-
-  // Invalid request.
-  {
-    let err: unknown
-    try {
-      await withMockedMistralGet(
-        () => axiosErr(400),
-        (p) => p.fetchModels('test-key'),
-      )
-    } catch (e) {
-      err = e
-    }
-    check(
-      'models API 400 -> ModelFetchError(invalid_response)',
-      err instanceof ModelFetchError && err.kind === 'invalid_response',
-    )
-  }
-
-  // Rate limited.
-  {
-    let err: unknown
-    try {
-      await withMockedMistralGet(
-        () => axiosErr(429),
-        (p) => p.fetchModels('test-key'),
-      )
-    } catch (e) {
-      err = e
-    }
-    check(
-      'models API 429 -> ModelFetchError(invalid_response)',
-      err instanceof ModelFetchError && err.kind === 'invalid_response',
-    )
-  }
-
-  // Malformed response (fails Zod shape validation).
-  {
-    let err: unknown
-    try {
-      await withMockedMistralGet(
-        () => ({ data: [{ notAnId: true }] }),
-        (p) => p.fetchModels('test-key'),
-      )
-    } catch (e) {
-      err = e
-    }
-    check(
-      'malformed models response -> ModelFetchError(invalid_response)',
-      err instanceof ModelFetchError && err.kind === 'invalid_response',
-    )
-  }
-
-  // Missing key never reaches the network.
-  {
-    let err: unknown
-    try {
-      await withMockedMistralGet(
-        () => ({ data: [] }),
-        (p) => p.fetchModels(''),
-      )
-    } catch (e) {
-      err = e
-    }
-    check(
-      'missing key -> ModelFetchError(auth) without request',
-      err instanceof ModelFetchError && err.kind === 'auth',
-    )
   }
 }
 
@@ -737,11 +553,11 @@ async function testProviderModelAccessErrors(): Promise<void> {
 async function testRequestDeadline(): Promise<void> {
   console.log('\n=== request deadline ===')
   const config = {
-    provider: 'mistral' as const,
-    displayName: 'Mistral',
+    provider: 'openrouter' as const,
+    displayName: 'OpenRouter',
     client: hangingHttp(),
-    model: 'mistral-small-latest',
-    capabilities: resolveCapabilities('mistral', 'mistral-small-latest'),
+    model: 'meta-llama/llama-3.3-70b-instruct:free',
+    capabilities: resolveCapabilities('openrouter', 'meta-llama/llama-3.3-70b-instruct:free'),
     messages: baseMessages('Project context question'),
   }
 
@@ -828,22 +644,25 @@ async function testCatalogCapabilityMetadata(): Promise<void> {
   const [openRouter] = await fetch('openrouter', {
     data: [
       {
-        id: 'publisher/openrouter-opaque:free',
-        name: 'OpenRouter Opaque',
+        id: 'mistralai/mistral-catalog-fixture:free',
+        name: 'OpenRouter catalog model',
         architecture: {
           input_modalities: ['text', 'image'],
           output_modalities: ['text', 'image'],
         },
-        supported_parameters: ['reasoning'],
+        supported_parameters: ['reasoning', 'tools'],
         pricing: { prompt: '0', completion: '0' },
       },
     ],
   })
+  const [openRouterModel] = enrichModelCatalog('openrouter', [openRouter])
   check(
-    'OpenRouter architecture metadata maps image generation, Vision, and Reasoning',
-    openRouter.capabilities?.supportsImageGeneration === true &&
-      openRouter.capabilities.supportsVision === true &&
-      openRouter.capabilities.supportsReasoning === true,
+    'OpenRouter retains the catalog model ID and maps image generation, Vision, Reasoning and tools',
+    openRouterModel.id === 'mistralai/mistral-catalog-fixture:free' &&
+      openRouterModel.capabilities.supportsImageGeneration &&
+      openRouterModel.capabilities.supportsVision &&
+      openRouterModel.capabilities.supportsReasoning &&
+      openRouterModel.capabilities.supportsToolCalling,
   )
 
   const cloudflareModels = await getProviderDefinition('cloudflare').fetchModels(
@@ -935,10 +754,10 @@ async function testCatalogCapabilityMetadata(): Promise<void> {
 
 function testEnrichedModelCatalog(): void {
   console.log('\n=== enriched model catalog ===')
-  const models = enrichModelCatalog('mistral', [
-    { id: 'mistral-small-2506', displayName: 'Mistral Small 3.1' },
-    { id: 'magistral-small', displayName: 'Magistral Small' },
-    { id: 'open-mistral-nemo', displayName: 'Mistral Nemo' },
+  const models = enrichModelCatalog('openrouter', [
+    { id: 'google/gemini-2.5-flash', displayName: 'Gemini 2.5 Flash' },
+    { id: 'deepseek/deepseek-r1:free', displayName: 'DeepSeek R1' },
+    { id: 'meta-llama/llama-3.3-70b-instruct:free', displayName: 'Llama 3.3' },
   ])
 
   check(
@@ -953,32 +772,7 @@ function testEnrichedModelCatalog(): void {
     'unconfirmed capabilities stay false',
     !models[2].capabilities.supportsVision && !models[2].capabilities.supportsReasoning,
   )
-  check('catalog preserves display name', models[0].displayName === 'Mistral Small 3.1')
-
-  const [canonicalMedium] = enrichModelCatalog('mistral', [
-    {
-      id: 'mistral-medium-3.5',
-      capabilities: { supportsToolCalling: true, supportsVision: true },
-    },
-  ])
-  check(
-    'catalog and persisted alias share canonical Mistral capabilities',
-    canonicalMedium.id === 'mistral-medium-3-5' &&
-      resolveCapabilities('mistral', 'mistral-medium-3.5').supportsToolCalling,
-  )
-  const normalizedConfig = normalizeLlmConfig({
-    activeProvider: 'mistral',
-    providers: { mistral: { model: 'mistral-medium-3.5' } },
-  })
-  check(
-    'persisted Mistral Medium 3.5 alias is canonicalized on config load',
-    normalizedConfig.providers.mistral.model === 'mistral-medium-3-5',
-  )
-
-  check(
-    'Mistral Medium 2508 fallback is Vision-capable',
-    resolveCapabilities('mistral', 'mistral-medium-2508').supportsVision,
-  )
+  check('catalog preserves display name', models[0].displayName === 'Gemini 2.5 Flash')
   check(
     'Groq Qwen 3.6 fallback is Vision-capable',
     resolveCapabilities('groq', 'qwen/qwen3.6-27b').supportsVision,
@@ -1006,7 +800,7 @@ async function main(): Promise<void> {
     await runProviderBattery(pc)
   }
   await testRequestDeadline()
-  await testMistralModelsApi()
+  await testNemotronPlanning()
   await testProxyResolution()
   await testProviderModelAccessErrors()
   await testCatalogCapabilityMetadata()
@@ -1022,6 +816,39 @@ async function main(): Promise<void> {
 }
 
 describe('LLM provider compatibility', () => {
+  it.each([
+    ['groq', 'https://api.groq.com/openai/v1/models'],
+    ['openrouter', 'https://openrouter.ai/api/v1/models'],
+  ] as const)('loads the %s catalog from its provider API', async (provider, expectedUrl) => {
+    const create = axios.create.bind(axios)
+    const requests: string[] = []
+    const transport = vi.spyOn(axios, 'create').mockImplementation((config) => {
+      const client = create({
+        ...config,
+        adapter: async (request) => {
+          requests.push(client.getUri(request))
+          return {
+            config: request,
+            data: { data: [{ id: 'test-model:free' }] },
+            headers: {},
+            status: 200,
+            statusText: 'OK',
+          }
+        },
+      })
+      return client
+    })
+    try {
+      const catalog = createModelCatalogClient({ definition: getProviderDefinition(provider) })
+      await expect(catalog.fetchModels('test-key')).resolves.toMatchObject([
+        { id: 'test-model:free' },
+      ])
+      expect(requests).toEqual([expectedUrl])
+    } finally {
+      transport.mockRestore()
+    }
+  })
+
   it('passes the offline provider matrix', async () => {
     await main()
   })

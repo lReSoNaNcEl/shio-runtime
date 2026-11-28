@@ -20,6 +20,7 @@ export interface ChatComposerProps {
   listening: boolean
   canInterrupt: boolean
   interruptionPending: boolean
+  sharing?: boolean
   onTextChange: (text: string) => void
   onSubmit: () => void
   onAttachScreen: () => void
@@ -36,6 +37,7 @@ export function ChatComposer({
   listening,
   canInterrupt,
   interruptionPending,
+  sharing = false,
   onTextChange,
   onSubmit,
   onAttachScreen,
@@ -54,23 +56,25 @@ export function ChatComposer({
 
   return (
     <div id="controls-input">
-      <TooltipTrigger>
-        <ActionButton
-          isQuiet
-          aria-label={t('screenContext.attach.action')}
-          isDisabled={gateOpen || busy}
-          onPress={onAttachScreen}
-        >
-          <ImageAdd />
-        </ActionButton>
-        <Tooltip>{t('screenContext.attach.action')}</Tooltip>
-      </TooltipTrigger>
+      {!sharing && (
+        <TooltipTrigger>
+          <ActionButton
+            isQuiet
+            aria-label={t('screenContext.attach.action')}
+            isDisabled={gateOpen || busy}
+            onPress={onAttachScreen}
+          >
+            <ImageAdd />
+          </ActionButton>
+          <Tooltip>{t('screenContext.attach.action')}</Tooltip>
+        </TooltipTrigger>
+      )}
       <TextField
         aria-label={t('chat.message')}
         size="XL"
         value={text}
         onChange={onTextChange}
-        placeholder={t('chat.placeholder')}
+        placeholder={t(sharing ? 'chat.sharePlaceholder' : 'chat.placeholder')}
         onKeyDown={(event) => {
           if (event.key === 'Enter' && !event.shiftKey) {
             event.preventDefault()
@@ -96,21 +100,23 @@ export function ChatComposer({
           <Tooltip>{t('chat.stopResponse')}</Tooltip>
         </TooltipTrigger>
       ) : (
-        <TooltipTrigger>
-          <ActionButton
-            isQuiet
-            aria-label={microphoneLabel}
-            aria-pressed={listening}
-            isDisabled={!microphoneUnavailable && microphoneDisabled}
-            onPress={onToggleMicrophone}
-            UNSAFE_className={
-              microphoneUnavailable ? 'mic-unavailable' : listening ? 'mic-recording' : undefined
-            }
-          >
-            {listening ? <Stop /> : <Microphone />}
-          </ActionButton>
-          <Tooltip>{microphoneLabel}</Tooltip>
-        </TooltipTrigger>
+        (!sharing || listening) && (
+          <TooltipTrigger>
+            <ActionButton
+              isQuiet
+              aria-label={microphoneLabel}
+              aria-pressed={listening}
+              isDisabled={!microphoneUnavailable && microphoneDisabled}
+              onPress={onToggleMicrophone}
+              UNSAFE_className={
+                microphoneUnavailable ? 'mic-unavailable' : listening ? 'mic-recording' : undefined
+              }
+            >
+              {listening ? <Stop /> : <Microphone />}
+            </ActionButton>
+            <Tooltip>{microphoneLabel}</Tooltip>
+          </TooltipTrigger>
+        )
       )}
       <TooltipTrigger>
         <Button

@@ -122,12 +122,14 @@ export interface ProviderDefinition {
   chat: {
     baseUrl: string
     supportsStreaming: boolean
+    localOnly?: boolean
+    requestTimeoutMs?: number
     headers?: Record<string, string>
     singleLeadingSystemMessage?: boolean
     resolveBaseUrl?(connection: ProviderConnectionSettings): string
+    requestOptions?(model: string): Record<string, unknown>
   }
   normalizeAccountId?(accountId: string): string
-  normalizeModelId?(modelId: string): string
   fetchModels(
     http: AxiosInstance,
     apiKey: string,

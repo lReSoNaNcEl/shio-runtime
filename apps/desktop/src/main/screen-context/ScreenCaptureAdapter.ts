@@ -57,14 +57,16 @@ export class ScreenCaptureAdapter {
   async listSources(): Promise<ScreenContextSource[]> {
     const sources = await getSources(PREVIEW_SIZE, true)
     const result = sources.flatMap((source): ScreenContextSource[] => {
-      if (source.thumbnail.isEmpty() || !this.isSelectable(source.id)) return []
+      if (!this.isSelectable(source.id)) return []
       const kind = sourceKind(source)
       return [
         {
           id: source.id,
           name: source.name,
           kind,
-          previewDataUrl: jpegDataUrl(source.thumbnail, 72),
+          previewDataUrl: source.thumbnail.isEmpty()
+            ? undefined
+            : jpegDataUrl(source.thumbnail, 72),
           appIconDataUrl:
             kind === 'window' && source.appIcon && !source.appIcon.isEmpty()
               ? source.appIcon.toDataURL()
@@ -76,6 +78,12 @@ export class ScreenCaptureAdapter {
     return result
   }
 
+  async checkSource(sourceId: string): Promise<void> {
+    const sources = await getSources({ width: 0, height: 0 }, false)
+    if (!this.isSelectable(sourceId) || !sources.some((source) => source.id === sourceId))
+      throw new ScreenCaptureError('SOURCE_NOT_FOUND')
+  }
+
   async captureSource(sourceId: string): Promise<{
     image: NativeImage
     sourceName: string
@@ -83,7 +91,7 @@ export class ScreenCaptureAdapter {
   }> {
     const sources = await getSources(CAPTURE_SIZE, false)
     const source = sources.find((candidate) => candidate.id === sourceId)
-    if (!source) throw new ScreenCaptureError('SOURCE_NOT_FOUND')
+    if (!source || !this.isSelectable(sourceId)) throw new ScreenCaptureError('SOURCE_NOT_FOUND')
     if (source.thumbnail.isEmpty()) throw new ScreenCaptureError('CAPTURE_EMPTY')
 
     return {

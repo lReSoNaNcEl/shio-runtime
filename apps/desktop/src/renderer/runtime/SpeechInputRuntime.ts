@@ -151,6 +151,7 @@ export class SpeechInputRuntime {
       suppressed: deps.listeningReactionsSuppressed ?? (() => false),
     })
     this.micCapture.setLevelListener((rms, at) => this.userSpeech.observeLevel(rms, at))
+    this.streamingCapture.setLevelListener((rms, at) => this.userSpeech.observeLevel(rms, at))
   }
 
   /** Register the owner's handler for irrecoverable streaming-transport loss. */
@@ -199,6 +200,7 @@ export class SpeechInputRuntime {
     if (!enabled) {
       const wasActive = this.continuousEnabled || this.continuousProjection.transport !== 'off'
       this.continuousEnabled = false
+      this.userSpeech.end(performance.now())
       this.streamingGeneration += 1
       this.clearReconnectWatchdog()
       this.playbackCapturedSegments.clear()
@@ -233,16 +235,9 @@ export class SpeechInputRuntime {
     })
     let connected = false
     try {
-      const [config, connection] = await Promise.all([
-        window.api.config.get(),
-        window.api.asr.getStreamingConnection(),
-      ])
+      const connection = await window.api.asr.getStreamingConnection()
       this.throwIfStartSuperseded(generation, startController.signal)
-      await this.streamingClient.connect(
-        connection.baseUrl,
-        config.ttsLanguage || 'ru',
-        startController.signal,
-      )
+      await this.streamingClient.connect(connection.baseUrl, startController.signal)
       connected = true
       // A fresh working session: invalidate any watchdog from a previous session.
       this.streamingGeneration += 1
@@ -254,6 +249,7 @@ export class SpeechInputRuntime {
         await this.streamingClient.stop()
         return
       }
+      this.userSpeech.begin()
       await this.streamingCapture.start(
         this.micDeviceId,
         (frame, timing) => this.streamingClient.sendPcm(frame, timing.discontinuous),
@@ -273,6 +269,7 @@ export class SpeechInputRuntime {
         startController.signal.aborted ||
         isAbortFailure(error)
       this.continuousEnabled = false
+      this.userSpeech.end(performance.now())
       this.clearReconnectWatchdog()
       await Promise.all([this.streamingCapture.stop(), this.streamingClient.stop()])
       if (superseded || generation !== this.lifecycleGeneration) return
@@ -395,6 +392,7 @@ export class SpeechInputRuntime {
     if (!this.continuousEnabled) return
     this.streamingGeneration += 1
     this.continuousEnabled = false
+    this.userSpeech.end(performance.now())
     this.updateContinuousProjection({
       transport: 'failed',
       activity: 'idle',
@@ -444,12 +442,17 @@ export class SpeechInputRuntime {
     this.voiceActivityListeners.clear()
     this.speechReactions.dispose()
     this.micCapture.setLevelListener(null)
+    this.streamingCapture.setLevelListener(null)
     observeRendererPromise(this.streamingCapture.stop(), 'dispose streaming capture')
     observeRendererPromise(this.streamingClient.stop(), 'dispose streaming client')
   }
 
   isContinuousCaptureAlive(): boolean {
     return this.continuousEnabled && this.streamingCapture.isAlive()
+  }
+
+  readContinuousMicrophoneLevel(): number {
+    return this.streamingCapture.readLevel()
   }
 
   /**
@@ -459,6 +462,7 @@ export class SpeechInputRuntime {
    */
   private handleContinuousDeviceLost(): void {
     if (!this.continuousEnabled) return
+    this.userSpeech.end(performance.now())
     this.updateContinuousProjection({
       transport: 'failed',
       activity: 'idle',

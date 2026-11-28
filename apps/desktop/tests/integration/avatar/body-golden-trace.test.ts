@@ -19,7 +19,9 @@ import {
  * decomposition of GeneratedBodyPlayback/GeneratedBodySafety must keep these
  * hashes exactly; an intentional behaviour change updates them in its own commit.
  */
-const PLAYBACK_GOLDEN_SHA256 = '29f559bdc21b63ab561feeb6061ff5a3c556225cd20494a3f0a15aac0bce178f'
+// Intentional handoff change: quintic blend replaces linear entry (30 October).
+// The independent safety trace below remains pinned to its original hash.
+const PLAYBACK_GOLDEN_SHA256 = '7acd849e0633d5dda9ed9ae2962cf3132739752f6124e78a07dad2f791f76426'
 const SAFETY_GOLDEN_SHA256 = 'a2ae21284103d5658d7e38765aaecb69265d6150a1e1d319826b3178d2fcddfd'
 
 const rigs: VRM[] = []

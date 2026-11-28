@@ -5,15 +5,13 @@
  * neither side should redefine these.
  */
 
-export const LLM_PROVIDER_IDS = [
-  'groq',
-  'cloudflare',
-  'openrouter',
-  'mistral',
-  'codex-cli',
-] as const
+export const LLM_PROVIDER_IDS = ['groq', 'cloudflare', 'openrouter', 'codex-cli', 'ollama'] as const
 
 export type LlmProviderId = (typeof LLM_PROVIDER_IDS)[number]
+
+export function isLlmProviderId(value: unknown): value is LlmProviderId {
+  return LLM_PROVIDER_IDS.some((providerId) => providerId === value)
+}
 
 export const CODEX_REASONING_EFFORTS = [
   'none',
@@ -128,14 +126,6 @@ export function withCodexReasoningEffort(
   return { ...settings, codexReasoningByModel }
 }
 
-export interface BacklogSelectorRoleConfig {
-  enabled: boolean
-  providerId: LlmProviderId | ''
-  model: string
-  timeoutMs: number
-  minimumConfidence: number
-}
-
 export interface ComputerUseVisionRoleConfig {
   /** Empty means: use the active Character provider/model when it supports vision. */
   providerId: LlmProviderId | ''
@@ -164,7 +154,6 @@ export interface LlmPersistedConfig {
   /** Experimental: start a direct reply in parallel with planning (off by default). */
   speculativeDirectReply: boolean
   roles: {
-    backlogSelector: BacklogSelectorRoleConfig
     computerUseVision: ComputerUseVisionRoleConfig
     characterFallbacks: LlmRoleCandidate[]
   }
@@ -175,7 +164,6 @@ export interface LlmPublicConfig {
   providers: Record<LlmProviderId, LlmProviderPublicSettings>
   speculativeDirectReply: boolean
   roles: {
-    backlogSelector: BacklogSelectorRoleConfig
     computerUseVision: ComputerUseVisionRoleConfig
     characterFallbacks: LlmRoleCandidate[]
   }

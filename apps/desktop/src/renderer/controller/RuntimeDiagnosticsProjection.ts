@@ -71,7 +71,7 @@ export class RuntimeDiagnosticsProjection {
     return {
       appStatus: state.status,
       continuousListening: state.continuousListening,
-      backlogArbitration: this.dependencies.getBacklogDiagnostics(),
+      backlogSelection: this.dependencies.getBacklogDiagnostics(),
       avatarRuntimeHealth: this.dependencies.getAvatarRuntimeHealth(),
       characterState: this.dependencies.getCharacterState(),
       eventHistory: this.dependencies.getEventHistory(),

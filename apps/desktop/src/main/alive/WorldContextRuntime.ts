@@ -94,7 +94,6 @@ export class WorldContextRuntime {
       capturedAt: now,
       appFocused: this.renderer?.appFocused ?? false,
       globalUserIdleMs,
-      userIdleMs: globalUserIdleMs,
       conversationActive: this.renderer?.conversationActive ?? false,
       audioActive: this.renderer?.audioActive ?? false,
       privacyMode: privacy,

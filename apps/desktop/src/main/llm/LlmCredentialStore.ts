@@ -1,7 +1,12 @@
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 
-import { LLM_PROVIDER_IDS, type LlmCredentialStatus, type LlmProviderId } from '../../shared/llm'
+import {
+  isLlmProviderId,
+  LLM_PROVIDER_IDS,
+  type LlmCredentialStatus,
+  type LlmProviderId,
+} from '../../shared/llm'
 
 export type LlmCredentialMap = Partial<Record<LlmProviderId, string>>
 
@@ -29,13 +34,17 @@ export class LlmCredentialStore {
   ) {}
 
   async load(): Promise<void> {
-    this.secureStorageAvailable = await this.protector.isAvailable()
+    this.secureStorageAvailable = false
     this.credentials = {}
     this.lastErrors = {}
     this.loadFailed = false
-    if (!this.secureStorageAvailable) return
 
     try {
+      this.secureStorageAvailable = await this.protector.isAvailable()
+      if (!this.secureStorageAvailable) {
+        this.loadFailed = true
+        return
+      }
       const encrypted = await readFile(this.filePath)
       const decrypted = await this.protector.decrypt(encrypted)
       const parsed = parseCredentialMap(decrypted.result)
@@ -182,7 +191,7 @@ function parseCredentialMap(value: string): {
   const record = parsed as Record<string, unknown>
   const credentials: LlmCredentialMap = {}
   const hadUnknownProviderCredential = Object.keys(record).some(
-    (provider) => !LLM_PROVIDER_IDS.includes(provider as LlmProviderId),
+    (provider) => !isLlmProviderId(provider),
   )
   for (const provider of LLM_PROVIDER_IDS) {
     if (typeof record[provider] === 'string') {

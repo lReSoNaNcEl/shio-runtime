@@ -71,6 +71,21 @@ interface ActivePlayback extends PlaybackSession {
   cancelStream: (() => void) | null
 }
 
+const boostStart = 0.7
+const maxSpeechGain = 10 ** (2.5 / 20)
+
+function speechPeakCurve(): Float32Array<ArrayBuffer> {
+  const curve = new Float32Array(2049)
+  const knee = 0.84
+  for (let i = 0; i < curve.length; i++) {
+    const sample = (2 * i) / (curve.length - 1) - 1
+    const excess = Math.max(0, Math.abs(sample) - knee)
+    // The curve reaches zero slope at the edge of WaveShaperNode's input range.
+    curve[i] = sample - (Math.sign(sample) * excess ** 2) / (2 * (1 - knee))
+  }
+  return curve
+}
+
 export class ParallelPlaybackError extends Error {
   constructor(
     readonly activeTurnId: string,
@@ -86,6 +101,7 @@ export class ParallelPlaybackError extends Error {
 export class AudioPlayer {
   private audioCtx: AudioContext
   private readonly speechGain: GainNode
+  private readonly speechPeakShaper: WaveShaperNode
   analyser: AnalyserNode
   private activePlayback: ActivePlayback | null = null
   private progressTimer: number | null = null
@@ -112,18 +128,23 @@ export class AudioPlayer {
     this.analyser = this.audioCtx.createAnalyser()
     this.analyser.fftSize = 256
     this.speechGain = this.audioCtx.createGain()
+    this.speechPeakShaper = this.audioCtx.createWaveShaper()
+    this.speechPeakShaper.curve = speechPeakCurve()
     this.analyser.connect(this.speechGain)
-    this.speechGain.connect(this.audioCtx.destination)
+    this.speechGain.connect(this.speechPeakShaper)
+    this.speechPeakShaper.connect(this.audioCtx.destination)
   }
 
   setSpeechVolumePercent(percent: number): void {
     if (!Number.isFinite(percent)) return
     const level = Math.max(0, Math.min(100, percent)) / 100
+    const boost = Math.max(0, (level - boostStart) / (1 - boostStart))
+    const output = level * (1 + boost * (maxSpeechGain - 1))
     const now = this.audioCtx.currentTime
     const gain = this.speechGain.gain
     gain.cancelAndHoldAtTime(now)
-    if (this.isPlaying()) gain.linearRampToValueAtTime(level, now + 0.01)
-    else gain.setValueAtTime(level, now)
+    if (this.isPlaying()) gain.linearRampToValueAtTime(output, now + 0.01)
+    else gain.setValueAtTime(output, now)
   }
 
   async prepare(wavBuffer: ArrayBuffer): Promise<PreparedAudio> {
@@ -448,6 +469,7 @@ export class AudioPlayer {
     this.clearProgressTimer()
     this.analyser.disconnect()
     this.speechGain.disconnect()
+    this.speechPeakShaper.disconnect()
     if (this.audioCtx.state !== 'closed') await this.audioCtx.close()
   }
 

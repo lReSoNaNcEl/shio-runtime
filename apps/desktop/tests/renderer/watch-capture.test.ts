@@ -3,11 +3,12 @@
 import { afterEach, expect, it, vi } from 'vitest'
 
 import { controller } from '../../src/renderer/Controller'
+import { WatchPlaybackSpeech } from '../../src/renderer/runtime/WatchPlaybackSpeech'
 import { WatchTogetherCapture } from '../../src/renderer/runtime/WatchTogetherCapture'
+import { watchDetailRegions } from '../../src/renderer/runtime/watchDetailRegions'
 import {
   WATCH_FRAME_WIDTH,
   WATCH_TURN_MAX_BYTES,
-  WATCH_TURN_MAX_SIDE,
   type WatchMoment,
 } from '../../src/shared/watchTogether'
 
@@ -17,6 +18,7 @@ vi.mock('../../src/renderer/Controller', () => ({
     onWatchSpeech: () => () => undefined,
     subscribe: () => () => undefined,
     refreshOverlayVisibility: async () => undefined,
+    setWatchViewing: vi.fn(),
     setWatchMicrophone: vi.fn(async () => undefined),
   },
 }))
@@ -68,7 +70,7 @@ async function share(width = 1920, height = 1080) {
       getImageData() {
         const data = new Uint8ClampedArray(canvas.width * canvas.height * 4).fill(10)
         data.fill(scene.value, 0, scene.changedPixels * 4)
-        return { data }
+        return { data, width: canvas.width, height: canvas.height }
       },
     } as unknown as CanvasRenderingContext2D
   })
@@ -101,10 +103,11 @@ async function share(width = 1920, height = 1080) {
     },
   })
   const ended = vi.fn()
-  capture = new WatchTogetherCapture(ended, vi.fn(), vi.fn())
+  const onMicrophoneStatus = vi.fn()
+  capture = new WatchTogetherCapture(ended, vi.fn(), vi.fn(), undefined, onMicrophoneStatus)
   await capture.start('test-window')
   expect(ended).not.toHaveBeenCalled()
-  const prepare = vi.mocked(controller.setWatchMicrophone).mock.calls[0][3]
+  const prepare = vi.mocked(controller.setWatchViewing).mock.calls[0][1]
   if (!prepare) throw new Error('Missing capture callback')
   return {
     scene,
@@ -116,8 +119,60 @@ async function share(width = 1920, height = 1080) {
     prepareTurn,
     prepare,
     getDisplayMedia,
+    capture,
+    track,
+    onMicrophoneStatus,
   }
 }
+
+it('toggles the watch microphone without stopping or reacquiring the selected video', async () => {
+  const { capture, getDisplayMedia, track, onMicrophoneStatus } = await share()
+  await capture.setMicrophone(true)
+  expect(onMicrophoneStatus.mock.calls.flat()).toEqual(['starting', 'on'])
+  await capture.setMicrophone(false)
+  expect(onMicrophoneStatus.mock.calls.flat()).toEqual(['starting', 'on', 'stopping', 'off'])
+  expect(controller.setWatchMicrophone).toHaveBeenLastCalledWith('test', false)
+  expect(controller.setWatchViewing).toHaveBeenCalledOnce()
+  expect(getDisplayMedia).toHaveBeenCalledOnce()
+  expect(track.stop).not.toHaveBeenCalled()
+  await capture.setMicrophone(true)
+  capture.stop()
+  expect(controller.setWatchMicrophone).toHaveBeenLastCalledWith('test', false)
+  expect(track.stop).toHaveBeenCalledOnce()
+})
+
+it('cancels a pending watch microphone start and ignores its late result', async () => {
+  const { capture, onMicrophoneStatus } = await share()
+  const delayed = Promise.withResolvers<undefined>()
+  const request = vi.mocked(controller.setWatchMicrophone)
+  request.mockReturnValueOnce(delayed.promise)
+  const start = capture.setMicrophone(true)
+  const signal = request.mock.calls[0][2]
+  const stop = capture.setMicrophone(false)
+  expect(signal?.aborted).toBe(true)
+  expect(request).toHaveBeenLastCalledWith('test', false)
+  await capture.setMicrophone(true)
+  expect(request).toHaveBeenCalledTimes(2)
+  delayed.resolve(undefined)
+  await Promise.all([start, stop])
+  expect(onMicrophoneStatus.mock.calls.flat()).toEqual(['starting', 'stopping', 'off'])
+  await capture.setMicrophone(true)
+  expect(onMicrophoneStatus).toHaveBeenLastCalledWith('on')
+})
+
+it('rolls back a cancelled or failed microphone start and leaves the live share available', async () => {
+  const { capture, track, onMicrophoneStatus } = await share()
+  const request = vi.mocked(controller.setWatchMicrophone)
+  request.mockResolvedValueOnce('cancelled')
+  await capture.setMicrophone(true)
+  expect(onMicrophoneStatus).toHaveBeenLastCalledWith('off')
+  request.mockRejectedValueOnce(new Error('Speech service unavailable'))
+  await capture.setMicrophone(true)
+  expect(onMicrophoneStatus).toHaveBeenLastCalledWith('failed')
+  expect(track.stop).not.toHaveBeenCalled()
+  await capture.setMicrophone(true)
+  expect(onMicrophoneStatus).toHaveBeenLastCalledWith('on')
+})
 
 it('samples every 400 ms for a static minute with a single detailed frame and observation', async () => {
   const { thumbnails, detail, sheets, observe } = await share()
@@ -126,6 +181,38 @@ it('samples every 400 ms for a static minute with a single detailed frame and ob
   expect(detail).toEqual([10])
   expect(sheets).toEqual([[10, 10]])
   expect(observe).toHaveBeenCalledOnce()
+  expect(observe.mock.calls[0][0].details).toHaveLength(2)
+  expect(controller.setWatchMicrophone).not.toHaveBeenCalled()
+})
+
+it('sends current detail crops when only the playback transcript changes', async () => {
+  const { observe, sheets } = await share()
+  await vi.advanceTimersByTimeAsync(400)
+  vi.spyOn(WatchPlaybackSpeech.prototype, 'observations').mockReturnValue([
+    { startMs: -600, endMs: -100, text: 'Смотри на подпись.', final: true },
+  ])
+  await vi.advanceTimersByTimeAsync(4000)
+  expect(sheets).toEqual([
+    [10, 10],
+    [10, 10],
+  ])
+  expect(observe.mock.calls.map(([moment]) => moment.details?.length)).toEqual([2, 2])
+})
+
+it('prioritizes thin high-contrast strokes in a native crop and keeps a separate region', () => {
+  const width = 240,
+    height = 135
+  const data = new Uint8ClampedArray(width * height * 4).fill(255)
+  for (let y = 8; y < 16; y++) {
+    for (let x = 215; x < 232; x += 2) {
+      data.fill(0, (y * width + x) * 4, (y * width + x) * 4 + 3)
+    }
+  }
+  const [best, next] = watchDetailRegions({ width, height, data, colorSpace: 'srgb' }, 1920, 1080)
+  expect(best).toMatchObject({ width: 960, height: 640 })
+  expect(best.x).toBeGreaterThan(1920 / 3)
+  expect(best.y).toBeLessThan(100)
+  expect(next.x).not.toBe(best.x)
 })
 
 it('submits the current settled frame once when a slow observation outlives a small transition', async () => {
@@ -144,6 +231,7 @@ it('submits the current settled frame once when a slow observation outlives a sm
     [90, 90],
   ])
   expect(observe.mock.lastCall?.[0].endedAt).toBe(Date.now())
+  expect(observe.mock.lastCall?.[0].details).toHaveLength(2)
   await vi.advanceTimersByTimeAsync(30_000)
   expect(observe).toHaveBeenCalledTimes(2)
 })
@@ -151,7 +239,7 @@ it('submits the current settled frame once when a slow observation outlives a sm
 it.each([
   { sequence: [90], expected: [10, 90] },
   { sequence: [90, 10], expected: [90, 10] },
-  { sequence: [90, 120, 90], expected: [10, 90] },
+  { sequence: [90, 120, 90], expected: [120, 90] },
   { sequence: [15, 20, 25, 30], expected: [10, 30] },
 ])(
   'keeps the transition and the current frame across cooldown for $sequence',
@@ -196,11 +284,8 @@ it.each([
     { value: 10, size: [outW, outH], destination: [0, 0, outW, outH], video: true },
   ])
   expect(getDisplayMedia).toHaveBeenCalledWith({
-    video: {
-      width: { ideal: WATCH_TURN_MAX_SIDE, max: WATCH_TURN_MAX_SIDE },
-      height: { ideal: WATCH_TURN_MAX_SIDE, max: WATCH_TURN_MAX_SIDE },
-    },
-    audio: true,
+    video: { resizeMode: 'none' },
+    audio: { restrictOwnAudio: true },
   })
 })
 

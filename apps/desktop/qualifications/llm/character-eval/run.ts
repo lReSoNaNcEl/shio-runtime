@@ -6,7 +6,7 @@
  * Run explicitly (never in CI):
  *   npm run desktop:qualify:character
  * Environment:
- *   CHARACTER_EVAL_PROVIDERS=groq,mistral   limit providers (default: every keyed one)
+ *   CHARACTER_EVAL_PROVIDERS=groq,openrouter   limit providers (default: every keyed one)
  *   CHARACTER_EVAL_MODEL_<PROVIDER>=...     model override (default: LLM_LIVE_MODEL_* / built-in)
  *   CHARACTER_EVAL_JUDGE_PROVIDER / _MODEL  optional LLM judge (rubric 1-5)
  *   CHARACTER_EVAL_BASELINE=<scorecard.json> fail when protocol score drops by more than 5%
@@ -68,7 +68,6 @@ function orchestrator(llm: LLMProvider, memory: InMemoryStore, provider: LivePro
   return new Orchestrator(
     llm,
     memory,
-    undefined,
     settings,
     undefined,
     undefined,

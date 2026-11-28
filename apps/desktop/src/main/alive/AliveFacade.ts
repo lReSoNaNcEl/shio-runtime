@@ -14,6 +14,7 @@ import type {
 } from '../../shared/alive'
 import type { TurnAppraisal } from '../../shared/character-tools'
 import type { RelationshipContext } from '../../shared/memory'
+import { type WatchBlockReason, watchBlockReason } from '../../shared/watchTogether'
 import { observeMainPromise } from '../reliability/observePromise'
 import type { AliveStore } from './AliveStore'
 import { AttentionArbiter } from './AttentionArbiter'
@@ -156,6 +157,24 @@ export class AliveFacade {
     this.store.saveSettings(settings)
     this.store.audit('autonomy', 'settings_updated', 'success')
     return this.publish()
+  }
+
+  resolveSharingBlock(confirmed: WatchBlockReason): WatchBlockReason | null {
+    const settings = { ...this.store.settings() }
+    const current = watchBlockReason(settings)
+    if (current !== confirmed) return current ?? null
+    switch (confirmed) {
+      case 'suspended':
+        settings.globallySuspended = false
+        break
+      case 'off':
+        settings.mode = 'suggest'
+        break
+      case 'private':
+        settings.privacyMode = false
+        break
+    }
+    return watchBlockReason(this.updateSettings(settings).settings) ?? null
   }
 
   updateWorld(input: RendererWorldContextInput): void {

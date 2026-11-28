@@ -1,9 +1,7 @@
 import type { Dispatch, SetStateAction } from 'react'
 
-import type { AliveSnapshot } from '../../../../shared/alive'
 import type { UiTheme } from '../../../../shared/config'
 import type {
-  BacklogSelectorRoleConfig,
   CodexReasoningEffort,
   LlmProviderId,
   LlmProviderPublicSettings,
@@ -12,17 +10,19 @@ import type {
   ProviderProfile,
 } from '../../../../shared/llm'
 import type { UiLocale } from '../../../../shared/localization'
+import type { MicrophoneFailureReason } from '../../../audio/microphoneGateTypes'
 import type { OverlayViewMode } from '../../../avatar/tuning/cameraTuning'
 import type { ControllerState } from '../../../Controller'
 
-export type SettingsSection = 'general' | 'speech' | 'llm' | 'autonomy' | 'avatar' | 'advanced'
+export const settingsSections = ['general', 'llm', 'speech', 'avatar', 'advanced'] as const
+export type SettingsSection = (typeof settingsSections)[number]
 
 export interface SettingsDialogProps {
   isOpen: boolean
   initialSection?: SettingsSection
-  aliveSnapshot: AliveSnapshot | null
   uiTheme: UiTheme
   onThemeChange: (theme: UiTheme) => void
+  flashMotionEnabled?: boolean
   vrmLoaded: boolean
   faceTrackingEnabled: boolean
   onToggleFaceTracking: () => void
@@ -57,7 +57,6 @@ export interface GeneralSettingsActions {
 }
 
 export interface SpeechSettingsState {
-  language: string
   speechVolumePercent: number | null
   microphones: Array<{ deviceId: string; label: string }>
   microphoneId: string
@@ -71,12 +70,12 @@ export interface SpeechSettingsState {
     | 'capture-error'
     | 'playback-error'
   microphoneLevel: number
+  microphoneTestFailure: MicrophoneFailureReason | null
 }
 
 export interface SpeechSettingsActions {
   setSpeechVolumePercent: (value: number) => void
   saveSpeechVolumePercent: (value: number) => void
-  setLanguage: (language: string) => void
   setMicrophoneId: (id: string) => void
   recordMicrophoneTest: () => Promise<void>
   playMicrophoneTest: () => Promise<void>
@@ -90,8 +89,6 @@ export interface LlmSettingsState {
   modelsState: ModelsState
   editingKey: boolean
   keyInput: string
-  backlogRole: BacklogSelectorRoleConfig
-  backlogModels: ModelInfo[]
   selectedModel: string
   health: ControllerState['llmHealth']
   characterFallbacks: LlmRoleCandidate[]
@@ -108,12 +105,12 @@ export interface LlmSettingsActions {
   saveCredential: () => Promise<void>
   forgetCredential: () => Promise<void>
   loadModels: (providerId: LlmProviderId) => Promise<void>
-  setBacklogRole: Dispatch<SetStateAction<BacklogSelectorRoleConfig>>
   setCharacterFallbacks: Dispatch<SetStateAction<LlmRoleCandidate[]>>
   setSpeculativeDirectReply: (enabled: boolean) => void
 }
 
 export interface AvatarSettingsState {
+  flashMotionEnabled: boolean
   vrmName: string
   overlayVisible: boolean
   overlayViewMode: OverlayViewMode
@@ -128,6 +125,7 @@ export interface AvatarSettingsState {
 }
 
 export interface AvatarSettingsActions {
+  setFlashMotionEnabled: (enabled: boolean) => Promise<void>
   pickVrm: () => Promise<void>
   toggleOverlay: (visible: boolean) => Promise<void>
   setOverlayViewMode: (mode: OverlayViewMode) => void
@@ -145,16 +143,11 @@ export interface AvatarSettingsActions {
 export interface AdvancedSettingsState {
   developerModeEnabled: boolean
   developerOverlayAnimationHudEnabled: boolean
-  backlogRole: BacklogSelectorRoleConfig
-  providers: ProviderProfile[]
-  providerSettings: Record<LlmProviderId, LlmProviderPublicSettings>
-  backlogModels: ModelInfo[]
 }
 
 export interface AdvancedSettingsActions {
   setDeveloperModeEnabled: (enabled: boolean) => Promise<void>
   setDeveloperOverlayAnimationHudEnabled: (enabled: boolean) => Promise<void>
-  setBacklogRole: Dispatch<SetStateAction<BacklogSelectorRoleConfig>>
 }
 
 export interface SettingsDialogViewModel {

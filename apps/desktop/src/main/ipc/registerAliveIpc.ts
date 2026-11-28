@@ -1,7 +1,8 @@
 import { type BrowserWindow, ipcMain } from 'electron'
 import { z } from 'zod'
 
-import type { AliveRuntime } from '../alive'
+import { WATCH_BLOCK_REASONS } from '../../shared/watchTogether'
+import type { AliveFacade } from '../alive'
 import { IPC_ONE_PAYLOAD, type IpcAuthorization } from './IpcAuthorization'
 
 const autonomySettingsSchema = z.object({
@@ -9,6 +10,7 @@ const autonomySettingsSchema = z.object({
   globallySuspended: z.boolean(),
   privacyMode: z.boolean(),
 })
+const watchBlockReasonSchema = z.enum(WATCH_BLOCK_REASONS)
 
 const worldSchema = z.object({
   appFocused: z.boolean(),
@@ -88,7 +90,7 @@ const experienceSchema = z.discriminatedUnion('type', [
 ])
 
 export function registerAliveIpc(
-  runtime: AliveRuntime,
+  runtime: AliveFacade,
   window: BrowserWindow,
   authorization: IpcAuthorization,
 ): () => void {
@@ -110,6 +112,12 @@ export function registerAliveIpc(
     'alive:update-settings',
     authorization.handlePayload('alive:update-settings', IPC_ONE_PAYLOAD, (_event, input) =>
       runtime.updateSettings(autonomySettingsSchema.parse(input)),
+    ),
+  )
+  ipcMain.handle(
+    'alive:resolve-sharing-block',
+    authorization.handlePayload('alive:resolve-sharing-block', IPC_ONE_PAYLOAD, (_event, input) =>
+      runtime.resolveSharingBlock(watchBlockReasonSchema.parse(input)),
     ),
   )
   ipcMain.handle(
@@ -150,6 +158,7 @@ export function registerAliveIpc(
     if (!window.isDestroyed()) window.webContents.send('alive:behavior', command)
   })
   return () => {
+    ipcMain.removeHandler('alive:resolve-sharing-block')
     ipcMain.removeHandler('diagnostics:get-alive-audit')
     ipcMain.removeHandler('diagnostics:get-running-applications')
     unsubscribeChanged()

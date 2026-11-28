@@ -33,11 +33,12 @@ export class AliveStore {
     this.database
       .prepare(
         `UPDATE alive_settings
-         SET value = json_remove(value, '$.quietHours', '$.cooldownMs', '$.maxDailyInitiatives')
+         SET value = json_remove(value, '$.quietHours', '$.cooldownMs', '$.maxDailyInitiatives', '$.fastBrain')
          WHERE key = 'autonomy' AND CASE WHEN json_valid(value) THEN
            json_type(value, '$.quietHours') IS NOT NULL
            OR json_type(value, '$.cooldownMs') IS NOT NULL
            OR json_type(value, '$.maxDailyInitiatives') IS NOT NULL
+           OR json_type(value, '$.fastBrain') IS NOT NULL
          ELSE 0 END`,
       )
       .run()

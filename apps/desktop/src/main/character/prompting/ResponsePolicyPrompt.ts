@@ -13,6 +13,7 @@ const RESPONSE_DEPTH_POLICY: Readonly<Record<ResponseDepth, string>> = Object.fr
 export function responsePolicyPrompt(): string {
   return [
     '## Adaptive Response Depth',
+    'Give the requested fact first, including each part of a comparison.',
     'Choose the response depth semantically from the whole request:',
     ...RESPONSE_DEPTHS.map((depth) => `- ${depth}: ${RESPONSE_DEPTH_POLICY[depth]}`),
     'Prefer brief for ordinary conversation, but never omit required reasoning, instructions, caveats, code, or evidence merely to keep the response short.',

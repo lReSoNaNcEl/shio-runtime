@@ -209,7 +209,6 @@ export const shellActionExecutionSchema = z
     truncated: z.boolean(),
   })
   .strict()
-export type ShellActionExecution = z.infer<typeof shellActionExecutionSchema>
 
 export interface ActionReplyGrounding {
   actionId: string

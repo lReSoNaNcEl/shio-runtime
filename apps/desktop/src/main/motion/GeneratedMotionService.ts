@@ -54,6 +54,7 @@ export class GeneratedMotionService {
   private startup: Promise<void> | null = null
   private stopping: Promise<void> | null = null
   private closed = false
+  private settingEnabled = true
   private startingAvatar: number | null = null
 
   private assetHandle = ''
@@ -84,7 +85,7 @@ export class GeneratedMotionService {
   }
 
   warmup(): Promise<void> {
-    if (!this.enabled) {
+    if (!this.enabled || !this.settingEnabled) {
       this.error = 'MOTION_DISABLED'
       return Promise.reject(new Error(this.error))
     }
@@ -96,10 +97,23 @@ export class GeneratedMotionService {
     return this.startup
   }
 
+  async setEnabled(enabled: boolean): Promise<void> {
+    this.settingEnabled = enabled
+    if (!enabled) {
+      if (this.process || this.startup || this.owner !== null || this.stopping)
+        await this.stopProcess('MOTION_DISABLED')
+      else if (!this.closed) this.error = 'MOTION_DISABLED'
+      return
+    }
+    if (this.stopping) await this.stopping
+    if (this.error === 'MOTION_DISABLED') this.error = null
+  }
+
   private async initialize(): Promise<void> {
     if (this.closed) throw new Error('MOTION_CLOSED')
     if (this.stopping) await this.stopping
     if (this.closed) throw new Error('MOTION_CLOSED')
+    if (!this.settingEnabled) throw new Error('MOTION_DISABLED')
     const interpreter = '/opt/shio-flashmotion/bin/python'
     const python =
       process.platform === 'win32'

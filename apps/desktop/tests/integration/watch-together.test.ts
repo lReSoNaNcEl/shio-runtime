@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { join } from 'node:path'
 
 import sharp from 'sharp'
 import { describe, expect, it, vi } from 'vitest'
@@ -6,6 +7,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { PERSONA_PROMPT_SECTIONS } from '../../src/main/character/prompting/persona.generated'
 import { LlmResponseError } from '../../src/main/llm/errors'
 import type { LLMProvider } from '../../src/main/llm/types'
+import { createSemanticMemoryRuntime, MemoryToolBroker } from '../../src/main/memory'
 import { InMemoryStore } from '../../src/main/memory/InMemoryStore'
 import { Orchestrator } from '../../src/main/orchestrator'
 import { WatchTogetherService } from '../../src/main/watch-together/WatchTogetherService'
@@ -14,7 +16,12 @@ import {
   textSimilarity,
 } from '../../src/renderer/speech/continuous-listening/textAnalysis'
 import { bargeInTuning } from '../../src/renderer/speech/continuous-listening/tuning'
+import {
+  SafeCharacterStreamFilter,
+  SpeechTextCommitBuffer,
+} from '../../src/shared/character-stream'
 import type { AppSettings } from '../../src/shared/config'
+import { parseEmotionalReply } from '../../src/shared/emotion'
 import {
   WATCH_FRAME_HEIGHT,
   WATCH_FRAME_WIDTH,
@@ -22,9 +29,16 @@ import {
   type WatchBlockReason,
   watchReferenceUrl,
 } from '../../src/shared/watchTogether'
+import { createTempDirectory } from '../support/createTempDirectory'
 
-const moment = (observation: string, reaction = 'quiet', line = '', evidenceIds = ['screen-1']) =>
-  JSON.stringify({ observation, reaction, line, evidenceIds })
+const moment = (
+  observation: string,
+  reaction = 'quiet',
+  line = '',
+  evidenceIds = ['screen-1'],
+  focus = 'source-content',
+  alternateLine = '',
+) => JSON.stringify({ observation, focus, reaction, line, alternateLine, evidenceIds })
 
 function dependencies(chat: LLMProvider['chat']) {
   return {
@@ -68,6 +82,111 @@ async function fixture(
   return { watch, id, deps, input }
 }
 describe('Watch Together', () => {
+  it('keeps playback interruptions out of commentary and the next observation context', async () => {
+    const chat = vi
+      .fn<LLMProvider['chat']>()
+      .mockResolvedValueOnce(
+        moment(
+          'player stopped buffering',
+          'comment',
+          'Опять плеер сдох.',
+          ['screen-1'],
+          'playback-status',
+        ),
+      )
+      .mockResolvedValueOnce(
+        moment('new scene in the video', 'comment', 'Да у кота лицензия на хаос!', ['screen-2']),
+      )
+    const { watch, id, deps, input } = await fixture(chat)
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(input.endedAt)
+    try {
+      watch.takeGrant()
+      expect(await watch.observe(input)).toEqual({ kind: 'quiet' })
+      expect(deps.admit).not.toHaveBeenCalled()
+      expect(deps.react).not.toHaveBeenCalled()
+      clock.mockReturnValue(input.endedAt + 4000)
+      expect(await watch.observe({ ...input, endedAt: Date.now() })).toMatchObject({
+        kind: 'comment',
+      })
+      const content = chat.mock.lastCall?.[0].at(-1)?.content
+      if (!Array.isArray(content) || content[0]?.type !== 'text')
+        throw new Error('Expected observation context')
+      expect(JSON.parse(content[0].text).recent).toEqual([])
+    } finally {
+      clock.mockRestore()
+      watch.stop(id)
+    }
+  })
+
+  it.each([
+    { firstLine: 'Ну всё, занавес.', repeat: 'Ну все! Вот это прыжок.' },
+    { firstLine: 'Ебать, какой занавес.', repeat: 'ЕБАТЬ вот это прыжок.' },
+  ])(
+    'uses a distinct alternate after "$firstLine" and remembers completed playback',
+    async ({ firstLine, repeat }) => {
+      const chat = vi
+        .fn<LLMProvider['chat']>()
+        .mockResolvedValueOnce(moment('first scene', 'comment', firstLine))
+        .mockResolvedValueOnce(
+          moment(
+            'second scene',
+            'comment',
+            repeat,
+            ['screen-2'],
+            'source-content',
+            'Кот, блядь, сам себе трамплин нашёл.',
+          ),
+        )
+        .mockResolvedValueOnce(
+          moment(
+            'third scene',
+            'comment',
+            'Кот, ещё один поворот.',
+            ['screen-3'],
+            'source-content',
+            firstLine,
+          ),
+        )
+        .mockResolvedValueOnce(
+          moment(
+            'fourth scene',
+            'comment',
+            firstLine,
+            ['screen-4'],
+            'source-content',
+            'Кот, снова в деле.',
+          ),
+        )
+      const { watch, id, deps, input } = await fixture(chat)
+      const clock = vi.spyOn(Date, 'now').mockReturnValue(input.endedAt)
+      const observe = () => watch.observe({ ...input, endedAt: Date.now() })
+      try {
+        watch.takeGrant()
+        const first = await observe()
+        if (first.kind !== 'comment') throw new Error('Expected first comment')
+        expect(watch.takeReply(first.turnId)).toBe(firstLine)
+        watch.finishComment(id, first.turnId, true)
+        clock.mockReturnValue(input.endedAt + 10_000)
+        const second = await observe()
+        if (second.kind !== 'comment') throw new Error('Expected alternate comment')
+        expect(watch.takeReply(second.turnId)).toBe('Кот, блядь, сам себе трамплин нашёл.')
+        watch.finishComment(id, second.turnId, false)
+        clock.mockReturnValue(input.endedAt + 15_000)
+        const third = await observe()
+        if (third.kind !== 'comment')
+          throw new Error('Expected unchanged opening after cancellation')
+        expect(watch.takeReply(third.turnId)).toBe('Кот, ещё один поворот.')
+        watch.finishComment(id, third.turnId, true)
+        clock.mockReturnValue(input.endedAt + 25_000)
+        expect(await observe()).toEqual({ kind: 'quiet' })
+        expect(deps.admit).toHaveBeenCalledTimes(3)
+      } finally {
+        clock.mockRestore()
+        watch.stop(id)
+      }
+    },
+  )
+
   it('skips repeated silent frames and a settled transition without suppressing a later change', async () => {
     const chat = vi.fn<LLMProvider['chat']>(async () => moment('scene'))
     const { watch, id, input } = await fixture(chat)
@@ -105,12 +224,97 @@ describe('Watch Together', () => {
           pcm: new ArrayBuffer(0),
           playbackTranscript: '',
           frames: Uint8Array.from(image).buffer,
+          details: [Uint8Array.from(red).buffer],
         })
         expect(chat).toHaveBeenCalledTimes(calls)
       }
     } finally {
       watch.stop(id)
       clock.mockRestore()
+    }
+  })
+
+  it('varies a repeated trailing filler while retaining profanity that carries the joke', async () => {
+    const chat = vi
+      .fn<LLMProvider['chat']>()
+      .mockResolvedValueOnce(moment('first detail', 'comment', 'Вот это разнос, блядь.'))
+      .mockResolvedValueOnce(
+        moment(
+          'second detail',
+          'comment',
+          'Коробка играет против нас, блять.',
+          ['screen-2'],
+          'source-content',
+          'Эта коробка знает, кто здесь лох.',
+        ),
+      )
+      .mockResolvedValueOnce(
+        moment('third detail', 'comment', 'Какой ёбаный квест, бля!', ['screen-3']),
+      )
+    const { watch, id, input } = await fixture(chat)
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(input.endedAt)
+    try {
+      watch.takeGrant()
+      for (const [index, line] of [
+        'Вот это разнос, блядь.',
+        'Эта коробка знает, кто здесь лох.',
+        'Какой ёбаный квест!',
+      ].entries()) {
+        clock.mockReturnValue(input.endedAt + index * 10_000)
+        const result = await watch.observe({ ...input, endedAt: Date.now() })
+        if (result.kind !== 'comment') throw new Error('Expected an admitted comment')
+        expect(watch.takeReply(result.turnId)).toBe(line)
+        watch.finishComment(id, result.turnId, true)
+      }
+    } finally {
+      clock.mockRestore()
+      watch.stop(id)
+    }
+  })
+
+  it('chooses a plain alternate and stays quiet when autonomous drafts recycle familiar slang', async () => {
+    const opening = 'Кожаный, у этой сцены странный вайб.'
+    const alternate = 'Тесты наконец прошли.'
+    const chat = vi
+      .fn<LLMProvider['chat']>()
+      .mockResolvedValueOnce(moment('first detail', 'comment', opening))
+      .mockResolvedValueOnce(
+        moment(
+          'second detail',
+          'comment',
+          'У сборки теперь совсем другой ВАЙБ.',
+          ['screen-2'],
+          'source-content',
+          alternate,
+        ),
+      )
+      .mockResolvedValueOnce(
+        moment(
+          'third detail',
+          'comment',
+          'Смотрите, Кожаные, сколько окон открыто.',
+          ['screen-3'],
+          'source-content',
+          'Кринж, очередной кринж.',
+        ),
+      )
+    const { watch, id, input, deps } = await fixture(chat)
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(input.endedAt)
+    try {
+      watch.takeGrant()
+      for (const [index, line] of [opening, alternate].entries()) {
+        clock.mockReturnValue(input.endedAt + index * 10_000)
+        const result = await watch.observe({ ...input, endedAt: Date.now() })
+        if (result.kind !== 'comment') throw new Error('Expected an admitted comment')
+        expect(watch.takeReply(result.turnId)).toBe(line)
+        watch.finishComment(id, result.turnId, true)
+      }
+      clock.mockReturnValue(input.endedAt + 20_000)
+      expect(await watch.observe({ ...input, endedAt: Date.now() })).toEqual({ kind: 'quiet' })
+      expect(deps.admit).toHaveBeenCalledTimes(2)
+    } finally {
+      clock.mockRestore()
+      watch.stop(id)
     }
   })
 
@@ -145,6 +349,7 @@ describe('Watch Together', () => {
       const classification = chat.mock.calls[1][0]
       expect(JSON.parse(String(classification[1].content))).toEqual({
         utterance: 'Can you see the screen?',
+        hasFrame: false,
         recentAddress: false,
         recentlyCommented: true,
       })
@@ -236,6 +441,68 @@ describe('Watch Together', () => {
       )
       expect(await watch.classifySpeech(session.id, text, false)).toBe('addressed')
       expect(chat).toHaveBeenCalledOnce()
+    } finally {
+      watch.stop(session.id)
+    }
+  })
+
+  it('keeps a confirmed score question grounded when its captured JPEG fails to decode', async () => {
+    const text = 'Кто лидирует и на сколько очков?'
+    const classify = vi
+      .fn<LLMProvider['chat']>()
+      .mockResolvedValue('{"disposition":"score-readout","summary":""}')
+    const watch = new WatchTogetherService(dependencies(classify))
+    const session = watch.start('screen:1:0')
+    if (session.kind !== 'started') throw new Error('Expected watch session')
+    watch.takeGrant()
+    try {
+      const sample = {
+        utteranceId: 'damaged-score-frame',
+        frame: new ArrayBuffer(300),
+        playbackTranscript: '',
+      }
+      expect(await watch.classifySpeech(session.id, text, false, sample)).toBe('addressed')
+      const context = watch.takeUserTurn(sample.utteranceId, text)
+      expect(context).toMatchObject({ addressedVoice: true, directVoice: true, scoreReadout: true })
+      expect(context?.frame).toBeUndefined()
+      const chat = vi.fn<LLMProvider['chat']>().mockResolvedValue('Выигрывают Соколы.')
+      const character = new Orchestrator(
+        { chat },
+        new InMemoryStore(),
+        () => ({ uiLocale: 'ru' }) as AppSettings,
+      )
+      const answer = await character.createReply({
+        origin: 'watch-user',
+        userText: text,
+        watchContext: context,
+      })
+      expect(answer.replyText).toBe('Не могу уверенно прочитать оба счёта.')
+      expect(chat).not.toHaveBeenCalled()
+    } finally {
+      watch.stop(session.id)
+    }
+  })
+
+  it('does not repeat speech classification without a schema after a service outage', async () => {
+    const chat = vi.fn<LLMProvider['chat']>()
+    const error = new LlmResponseError({
+      provider: 'groq',
+      code: 'PROVIDER_REJECTED',
+      recoverable: true,
+      message: 'HTTP 503',
+    })
+    const complete = vi.fn<NonNullable<LLMProvider['complete']>>().mockRejectedValue(error)
+    const watch = new WatchTogetherService({
+      ...dependencies(chat),
+      model: () => ({ chat, complete }),
+    })
+    const session = watch.start('screen:1:0')
+    if (session.kind !== 'started') throw new Error('Expected watch session')
+    watch.takeGrant()
+    try {
+      expect(await watch.classifySpeech(session.id, 'Кто впереди?', false)).toBeUndefined()
+      expect(complete).toHaveBeenCalledOnce()
+      expect(chat).not.toHaveBeenCalled()
     } finally {
       watch.stop(session.id)
     }
@@ -380,7 +647,6 @@ describe('Watch Together', () => {
     const orchestrator = new Orchestrator(
       { chat },
       history,
-      undefined,
       () => ({ uiLocale: 'ru' }) as AppSettings,
       undefined,
       undefined,
@@ -593,7 +859,11 @@ describe('Watch Together', () => {
     const chat = vi.fn<LLMProvider['chat']>(async () => moment('bridge fell', 'comment', line))
     const { watch, input, id, deps } = await fixture(chat)
     expect(await watch.observe(input)).toEqual({ kind: 'stopped' })
-    expect(watch.takeGrant()).toEqual({ id, sourceId: 'window:1:0' })
+    expect(watch.takeGrant()).toMatchObject({
+      id,
+      sourceId: 'window:1:0',
+      signal: expect.any(AbortSignal),
+    })
     expect(watch.takeGrant()).toBeUndefined()
     deps.canComment.mockReturnValueOnce(false)
     expect(await watch.observe(input)).toEqual({ kind: 'quiet' })
@@ -611,6 +881,65 @@ describe('Watch Together', () => {
     watch.stop(id)
     expect(await watch.observe(input)).toEqual({ kind: 'stopped' })
   })
+  it.each([
+    ['ru', 'chuckle', 'Хе-хе.'],
+    ['ru', 'sigh', 'Ах…'],
+    ['en', 'chuckle', 'Heh.'],
+    ['en', 'sigh', 'Ah…'],
+  ] as const)(
+    'ends a %s %s with one Fish commit and a look at the user',
+    async (uiLocale, vocal, sound) => {
+      const chat = vi.fn<LLMProvider['chat']>(async () =>
+        moment('bridge fell', vocal, 'Unwanted explanation.'),
+      )
+      const { watch, input, id, deps } = await fixture(chat)
+      watch.takeGrant()
+      try {
+        const decision = await watch.observe(input)
+        if (decision.kind !== 'comment') throw new Error('Expected admitted vocal reaction')
+        expect(deps.admit).toHaveBeenCalledOnce()
+        const orchestrator = new Orchestrator(
+          { chat },
+          new InMemoryStore(),
+          () => ({ uiLocale }) as AppSettings,
+        )
+        const { replyText, embodimentIntent, emotionKey } = await orchestrator.createReply({
+          origin: 'watch-together',
+          userText: '',
+          approvedWatchReply: watch.takeReply(decision.turnId),
+        })
+        expect(watch.takeReply(decision.turnId)).toBeUndefined()
+        expect(chat).toHaveBeenCalledOnce()
+        expect(embodimentIntent).toEqual({ intensity: 'subtle', gazeHint: 'user' })
+        expect(emotionKey).toBe(vocal)
+        expect(parseEmotionalReply(replyText).visibleText).toBe(sound)
+        const filter = new SafeCharacterStreamFilter()
+        const buffer = new SpeechTextCommitBuffer(decision.turnId)
+        const commits = [...filter.push(replyText), ...filter.flush()].flatMap((delta) =>
+          buffer.push(delta),
+        )
+        expect([...commits, ...buffer.flush()]).toEqual([
+          expect.objectContaining({ text: sound, emotion: vocal, voiceStyle: 'soft and brief' }),
+        ])
+      } finally {
+        watch.stop(id)
+      }
+    },
+  )
+
+  it('yields a pending vocal reaction when the user speaks', async () => {
+    const { watch, input, id } = await fixture(async () => moment('bridge fell', 'sigh'))
+    watch.takeGrant()
+    try {
+      const decision = await watch.observe(input)
+      if (decision.kind !== 'comment') throw new Error('Expected admitted vocal reaction')
+      watch.yield(id, 'speech')
+      expect(watch.takeReply(decision.turnId)).toBeUndefined()
+    } finally {
+      watch.stop(id)
+    }
+  })
+
   it('lets the model stay silent and discards expired packets before inference', async () => {
     const { watch, deps, input } = await fixture(async () => moment('same shot'))
     watch.takeGrant()
@@ -621,6 +950,60 @@ describe('Watch Together', () => {
     expect(await watch.observe(input)).toEqual({ kind: 'quiet' })
     expect(deps.admit).not.toHaveBeenCalled()
   })
+  it('analyzes timed speech and image detail during a comment without admitting a second one', async () => {
+    const chat = vi
+      .fn<LLMProvider['chat']>()
+      .mockResolvedValueOnce(moment('first reversal', 'comment', 'Вот и развязка.'))
+      .mockResolvedValueOnce(moment('next reversal', 'comment', 'И сразу вторая.', ['screen-2']))
+    const { watch, deps, id, input } = await fixture(chat)
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(input.endedAt)
+    try {
+      watch.takeGrant()
+      const first = await watch.observe(input)
+      if (first.kind !== 'comment') throw new Error('Expected admitted commentary')
+      expect(watch.takeReply(first.turnId)).toBe('Вот и развязка.')
+      deps.canComment.mockReturnValue(false)
+      clock.mockReturnValue(input.endedAt + 4000)
+      const peak = await sharp(Buffer.from(input.frames))
+        .extract({ top: 0, left: 0, width: WATCH_FRAME_WIDTH, height: WATCH_FRAME_HEIGHT })
+        .jpeg()
+        .toBuffer()
+      const detail = await sharp({
+        create: { width: 960, height: 760, channels: 3, background: 'red' },
+      })
+        .png()
+        .toBuffer()
+      const phrases = [{ startMs: -2200, endMs: -600, text: 'Он меня видит.', final: false }]
+      const timing = { earlierMs: -2000, peakMs: -800, currentMs: 0 }
+      expect(
+        await watch.observe({
+          ...input,
+          endedAt: Date.now(),
+          timing,
+          peak: Uint8Array.from(peak).buffer,
+          details: [Uint8Array.from(detail).buffer],
+          phrases,
+        }),
+      ).toEqual({ kind: 'quiet' })
+      const parts = chat.mock.lastCall?.[0].at(-1)?.content
+      if (!Array.isArray(parts)) throw new Error('Expected multimodal evidence')
+      const [note] = parts
+      if (note?.type !== 'text') throw new Error('Expected a timed observation')
+      expect(JSON.parse(note.text)).toMatchObject({
+        speechAllowed: false,
+        playbackPhrases: phrases,
+        frames: { times: timing },
+      })
+      expect(parts.filter((part) => part.type === 'image')).toHaveLength(3)
+      expect(parts.at(-1)).toMatchObject({ type: 'image', mimeType: 'image/png' })
+      expect(deps.admit).toHaveBeenCalledOnce()
+      watch.finishComment(id, first.turnId, true)
+    } finally {
+      clock.mockRestore()
+      watch.stop(id)
+    }
+  })
+
   it.each(['yield', 'stop'] as const)(
     'aborts in-flight inference and drops even an uncancellable late result on %s',
     async (action) => {
@@ -803,6 +1186,158 @@ describe('Watch Together', () => {
     } finally {
       watch.stop(id)
       clock.mockRestore()
+    }
+  })
+})
+
+describe('recording episode continuity', () => {
+  it('keeps one sourced episode through twenty minutes and stores only an explicitly selected anecdote', async () => {
+    const directory = await createTempDirectory('shio-recording-episode-')
+    const db = join(directory.path, 'moments.sqlite')
+    const memory = createSemanticMemoryRuntime(db)
+    let closed = false
+    const line = 'Продашь ботинок ради варда?'
+    const chat = vi.fn<LLMProvider['chat']>().mockResolvedValueOnce(
+      JSON.stringify({
+        ...JSON.parse(moment('Саппорт решает, продавать ли ботинок.', 'comment', line)),
+        episodeUpdate: 'open',
+      }),
+    )
+    const { watch, id, input } = await fixture(chat)
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(input.endedAt)
+    try {
+      watch.takeGrant()
+      watch.describeGrant(id, 'Запись матча')
+      const first = await watch.observe(input)
+      if (first.kind !== 'comment') throw Error('Expected grounded comment')
+      expect(watch.takeReply(first.turnId)).toBe(line)
+      watch.finishComment(id, first.turnId, true)
+      clock.mockReturnValue(input.endedAt + 20 * 60_000)
+      chat.mockResolvedValueOnce(
+        JSON.stringify({
+          ...JSON.parse(
+            moment('Саппорт отдал золото на вард.', 'quiet', '', ['screen-1', 'screen-2']),
+          ),
+          episodeUpdate: 'resolve',
+        }),
+      )
+      await watch.observe({ ...input, endedAt: Date.now() })
+      const content = chat.mock.lastCall?.[0][1].content
+      if (!Array.isArray(content) || content[0].type !== 'text')
+        throw Error('Missing episode evidence')
+      expect(JSON.parse(content[0].text)).toMatchObject({
+        recent: [],
+        unfinishedRecordingEpisode: {
+          sourceLabel: 'Запись матча',
+          observationId: 'screen-1',
+          spokenLine: line,
+        },
+      })
+      expect(memory.listForUi({}).items).toHaveLength(0)
+      const request = 'Сохрани этот момент из записи на следующую встречу.'
+      await watch.prepareTurn(id, 'save', false, undefined, 'private capture canary')
+      const context = watch.takeUserTurn('save', request)
+      expect(context?.episode?.outcome?.observationId).toBe('screen-2')
+      if (!context?.episode) throw Error('No current recording moment')
+      const resultText =
+        'На записи «Запись матча» Шио предложила саппорту продать ботинок ради варда.'
+      const model = vi
+        .fn<LLMProvider['chat']>()
+        .mockResolvedValueOnce(
+          JSON.stringify({
+            requirement: { type: 'explicit-tool', tool: 'memory.store' },
+            plannedTools: ['memory.store'],
+            embodiment: null,
+          }),
+        )
+        .mockImplementationOnce(async (messages) => {
+          const serialized = JSON.stringify(messages)
+          expect(serialized).toContain(context.episode?.sourceLabel)
+          expect(serialized).toContain(line)
+          expect(serialized).not.toContain('private capture canary')
+          return (
+            '<shio-tools>' +
+            JSON.stringify({
+              calls: [
+                {
+                  tool: 'memory.store',
+                  arguments: { memories: [{ kind: 'fact', text: resultText }] },
+                },
+              ],
+            }) +
+            '</shio-tools>'
+          )
+        })
+        .mockResolvedValue('[warm]Запомнила.')
+      const character = new Orchestrator(
+        { chat: model },
+        new InMemoryStore(),
+        () => ({ uiLocale: 'ru' }) as AppSettings,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        new MemoryToolBroker(memory),
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        { enforceRequirements: true },
+      )
+      await character.createReply(
+        { userText: request, origin: 'watch-user', watchContext: context },
+        { traceId: 'save-recording' },
+      )
+      expect(JSON.stringify(model.mock.calls[0][0])).not.toContain(line)
+      expect(memory.listForUi({}).items.map((x) => x.text)).toEqual([resultText])
+      watch.stop(id)
+      expect(watch.takeUserTurn('save', request)).toBeUndefined()
+      memory.close()
+      closed = true
+      const reopened = createSemanticMemoryRuntime(db)
+      try {
+        const recall = vi
+          .fn<LLMProvider['chat']>()
+          .mockResolvedValueOnce(
+            '<shio-tools>' +
+              JSON.stringify({
+                calls: [{ tool: 'memory.search', arguments: { query: 'саппорт ботинок' } }],
+              }) +
+              '</shio-tools>',
+          )
+          .mockImplementationOnce(async (messages) => {
+            expect(JSON.stringify(messages)).toContain(resultText)
+            return `[warm]${resultText}`
+          })
+        const nextMeeting = new Orchestrator(
+          { chat: recall },
+          new InMemoryStore(),
+          () => ({ uiLocale: 'ru' }) as AppSettings,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          new MemoryToolBroker(reopened),
+        )
+        expect(
+          (
+            await nextMeeting.createReply(
+              { userText: 'Что за история про саппорта и ботинок?' },
+              { traceId: 'next-meeting' },
+            )
+          ).replyText,
+        ).toContain(resultText)
+      } finally {
+        reopened.close()
+      }
+    } finally {
+      watch.stop(id)
+      clock.mockRestore()
+      if (!closed) memory.close()
+      await directory.cleanup()
     }
   })
 })

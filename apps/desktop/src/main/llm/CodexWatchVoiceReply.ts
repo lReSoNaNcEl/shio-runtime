@@ -2,6 +2,7 @@ import { z } from 'zod'
 
 import type { AppSettings } from '../../shared/config'
 import { containsCharacterProtocol } from '../character/compatibility/LegacyDirectiveContainment'
+import { CODEX_DEFAULT_REASONING_EFFORT, CODEX_MODEL } from './CodexCliProvider'
 import type { ChatMessage, LLMProvider, LlmRequestOptions } from './types'
 
 const openingSchema = z
@@ -14,10 +15,11 @@ const openingSchema = z
 export function codexWatchOpeningEnabled(settings: AppSettings): boolean {
   const config = settings.llm
   const model = config?.providers?.['codex-cli']
+  const effort = model?.codexReasoningByModel?.[model.model] ?? CODEX_DEFAULT_REASONING_EFFORT
   return (
     config?.activeProvider === 'codex-cli' &&
-    model?.model === 'gpt-6-luna' &&
-    (model.codexReasoningByModel?.[model.model] ?? 'low') === 'low' &&
+    model?.model === CODEX_MODEL &&
+    (effort === CODEX_DEFAULT_REASONING_EFFORT || effort === 'low') &&
     !config.roles?.characterFallbacks?.length
   )
 }
@@ -37,8 +39,8 @@ export async function* codexWatchVoiceSegments(
       {
         role: 'system',
         content: [
-          'Return exactly one concrete, punctuated spoken sentence in opening, normally under 100 characters. Start with the requested fact. Preserve exact names, digits and codes even when quoting them takes more space. No introduction or promise to look.',
-          'Set more=false when that sentence answers the whole request. If the user also asked for an explanation, a list, several sentences, or further detail beyond this first fact, set more=true and leave those remaining parts for the next response. Do not pack the explanation into opening.',
+          'Return one punctuated spoken sentence in opening, normally under 100 characters. For banter or a casual take, sound like yourself in voice chat and lead with your reaction or opinion. Honor the requested register, including uncensored profanity for a roast when explicitly requested. For a factual request, lead with the requested fact and preserve exact names, digits and codes even when quoting them takes more space. No introduction or promise to look.',
+          'Set more=false when that sentence answers the whole request. If the user also asked for an explanation, a list, several sentences, or further detail, set more=true and leave those remaining parts for the next response. Do not pack the explanation into opening.',
         ].join(' '),
       },
     ],

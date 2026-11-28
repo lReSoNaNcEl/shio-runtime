@@ -245,175 +245,129 @@
   }
 }
 
-.overlay-settings-row {
+.avatar-settings {
   display: grid;
-  grid-template-columns: repeat(4, minmax(84px, 1fr));
-  gap: 8px;
-  align-items: end;
+  gap: 12px;
+  min-width: 0;
+  padding-block: 14px 2px;
+  container: avatar-settings / inline-size;
 }
 
-.overlay-placement-row {
-  display: grid;
-  grid-template-columns: minmax(180px, 1fr) minmax(180px, 1fr) minmax(110px, 150px);
-  gap: 8px;
-  align-items: end;
+.avatar-settings-card {
+  min-width: 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  background: var(--surface-subtle);
 }
 
-.overlay-toggle-card {
+.avatar-settings-card > * + * {
+  border-top: 1px solid var(--border-faint);
+}
+
+.avatar-settings-header {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 18px;
   align-items: center;
+  gap: 12px 16px;
   padding: 14px 16px;
-  border: 1px solid var(--border-subtle);
-  border-radius: 10px;
-  background: var(--surface-subtle);
 }
 
-.overlay-toggle-card.active {
-  border-color: rgba(52, 211, 153, 0.36);
-  background: rgba(16, 185, 129, 0.08);
-}
-
-.overlay-toggle-copy,
-.overlay-toggle-control {
+.avatar-settings-identity {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.overlay-toggle-title {
-  color: var(--text);
-  font-size: 0.94em;
-  font-weight: 700;
-}
-
-.overlay-toggle-hint,
-.overlay-toggle-status {
-  color: var(--text-dim);
-  font-size: 0.8em;
-}
-
-.overlay-toggle-control {
-  align-items: flex-end;
-}
-
-.overlay-panel {
-  width: min(540px, 100%);
-  min-width: min(420px, 100%);
-  max-height: none;
-  overflow-y: visible;
-  overflow-x: hidden;
-  padding-right: 0;
-}
-
-.overlay-panel * {
-  min-width: 0;
-}
-
-.overlay-section-title {
-  margin: 0;
-  color: var(--text);
-  font-size: 0.9rem;
-  font-weight: 700;
-  letter-spacing: 0;
-}
-
-.overlay-disabled-content {
-  opacity: 0.62;
-}
-
-.overlay-disabled-note {
-  color: var(--accent2);
-}
-
-.avatar-panel {
-  width: min(840px, 100%);
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
-}
-
-.avatar-panel * {
-  min-width: 0;
-}
-
-.avatar-section {
-  display: grid;
+  align-items: flex-start;
   gap: 10px;
-}
-
-.overlay-hero {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 24px;
-  padding: 18px;
-  border: 1px solid var(--border-subtle);
-  border-radius: 14px;
-  background: var(--surface-subtle);
-}
-
-.overlay-hero-copy,
-.overlay-card-heading {
-  display: grid;
-  gap: 6px;
   min-width: 0;
 }
 
-.overlay-settings-grid {
+.avatar-settings-identity > svg {
+  flex: none;
+}
+
+.avatar-settings-copy {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.avatar-settings-header h3,
+.avatar-settings-group > h4 {
+  margin: 0;
+  line-height: 1.35;
+}
+
+.avatar-settings-header h3 {
+  font-size: 1rem;
+}
+
+.avatar-settings-group > h4 {
+  font-size: 0.9rem;
+}
+
+.avatar-settings-help {
+  color: var(--text-dim);
+  font-size: 0.84rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.avatar-settings-group {
+  display: grid;
+  gap: 12px;
+  padding: 14px 16px;
+}
+
+.avatar-settings-fields,
+.avatar-settings-dimensions {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
+  align-items: start;
+  gap: 12px 16px;
 }
 
-.overlay-card {
-  display: grid;
-  align-content: start;
-  gap: 14px;
-  padding: 16px;
-  border: 1px solid var(--border-subtle);
-  border-radius: 14px;
-  background: var(--surface-subtle);
+.avatar-settings-dimensions {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
-.overlay-card-wide {
-  grid-column: 1 / -1;
-}
-
-.overlay-number-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(120px, 1fr));
-  gap: 10px;
-  align-items: end;
-}
-
-.overlay-switch-list {
+.avatar-settings-field {
   display: grid;
   gap: 6px;
+  min-width: 0;
 }
 
-.overlay-actions-row {
-  justify-content: flex-start;
+.avatar-settings-label {
+  color: var(--text-dim);
+  font-size: 0.84rem;
+  line-height: 1.4;
 }
 
-@media (max-width: 720px) {
-  .overlay-panel {
-    min-width: min(420px, 86vw);
+.avatar-settings-advanced {
+  padding: 6px 12px;
+}
+
+.avatar-settings-group.avatar-settings-window {
+  padding: 4px 4px 10px;
+}
+
+.avatar-settings-footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  padding: 12px 16px;
+}
+
+@container avatar-settings (width < 520px) {
+  .avatar-settings-header,
+  .avatar-settings-fields,
+  .avatar-settings-dimensions {
+    grid-template-columns: minmax(0, 1fr);
   }
 
-  .overlay-settings-grid,
-  .overlay-number-grid {
-    grid-template-columns: 1fr;
+  .avatar-settings-header {
+    justify-items: start;
   }
 
-  .overlay-hero {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .overlay-card-wide {
-    grid-column: auto;
+  .avatar-settings-footer {
+    justify-content: flex-start;
   }
 }
 
@@ -535,9 +489,6 @@
 }
 .settings-content .settings-general-grid {
   padding-top: 14px;
-}
-.settings-content .overlay-panel {
-  min-width: 0;
 }
 @media (max-width: 760px) {
   .settings-view {
@@ -761,73 +712,4 @@
      default max-height so long option lists scroll instead of overflowing the dialog. */
   max-height: 320px !important;
   overflow-y: auto;
-}
-
-.autonomy-settings-stack,
-.autonomy-settings-fields,
-.autonomy-setting-row,
-.autonomy-settings-copy {
-  display: grid;
-  gap: 10px;
-  min-width: 0;
-}
-
-.autonomy-settings-stack {
-  gap: 16px;
-  max-width: 760px;
-}
-
-.autonomy-master-card,
-.autonomy-settings-panel {
-  padding: 18px;
-  border: 1px solid var(--setup-border);
-  border-radius: 12px;
-  background: var(--setup-surface);
-}
-
-.autonomy-master-card {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 20px;
-}
-
-.autonomy-master-action {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 10px;
-}
-
-.autonomy-settings-panel {
-  display: grid;
-  gap: 18px;
-}
-
-.autonomy-settings-copy {
-  gap: 4px;
-}
-
-.autonomy-settings-copy h3,
-.autonomy-settings-copy .settings-hint,
-.autonomy-setting-row .settings-hint {
-  margin: 0;
-}
-
-.autonomy-settings-loading {
-  display: grid;
-  min-height: 240px;
-  place-items: center;
-}
-
-@media (max-width: 620px) {
-  .autonomy-master-card {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .autonomy-master-action {
-    justify-content: flex-start;
-  }
 }

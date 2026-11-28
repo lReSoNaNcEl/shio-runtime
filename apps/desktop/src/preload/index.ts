@@ -49,6 +49,7 @@ const api = {
     status: () => ipcRenderer.invoke('motion:status'),
   },
   watchTogether: {
+    prepareModel: () => ipcRenderer.invoke('watch:prepare-model'),
     start: (source, reference) => ipcRenderer.invoke('watch:start', source, reference),
     stop: (id) => ipcRenderer.invoke('watch:stop', id),
     yield: (id, reason) => ipcRenderer.invoke('watch:yield', id, reason),
@@ -75,6 +76,8 @@ const api = {
   },
   alive: {
     snapshot: () => ipcRenderer.invoke('alive:snapshot') as Promise<AliveSnapshot>,
+    resolveSharingBlock: (confirmed) =>
+      ipcRenderer.invoke('alive:resolve-sharing-block', confirmed),
     updateSettings: (settings: AutonomySettings) =>
       ipcRenderer.invoke('alive:update-settings', settings) as Promise<AliveSnapshot>,
     updateWorld: (input: RendererWorldContextInput) =>
@@ -173,7 +176,6 @@ const api = {
       return () => ipcRenderer.removeListener('llm:reply-stream-event', listener)
     },
     getActiveCapabilities: () => ipcRenderer.invoke('llm:get-active-capabilities'),
-    arbitrateBacklog: (payload: unknown) => ipcRenderer.invoke('llm:arbitrate-backlog', payload),
     providers: () => ipcRenderer.invoke('llm:providers'),
     getReadiness: () => ipcRenderer.invoke('llm:get-readiness'),
     fetchModels: (provider: LlmProviderId, accountId?: string) =>
@@ -207,6 +209,7 @@ const api = {
   },
   screenContext: {
     listSources: () => ipcRenderer.invoke('screen-context:list-sources'),
+    checkSource: (sourceId: string) => ipcRenderer.invoke('screen-context:check-source', sourceId),
     capture: (request: ScreenContextCaptureRequest) =>
       ipcRenderer.invoke('screen-context:capture', request),
     importImage: (request: ScreenContextImportRequest) =>
@@ -279,7 +282,7 @@ const api = {
   },
   config: {
     get: () => ipcRenderer.invoke('config:get'),
-    save: (partial: Partial<AppSettings>) => ipcRenderer.invoke('config:save', partial),
+    save: (partial) => ipcRenderer.invoke('config:save', partial),
     onUpdated: (cb: (cfg: AppSettings, changedKey?: keyof AppSettings) => void) => {
       const listener = (
         _event: Electron.IpcRendererEvent,

@@ -34,7 +34,6 @@ export const PLUGIN_CAPABILITY_KINDS = [
 ] as const
 
 export type PluginCapabilityKind = (typeof PLUGIN_CAPABILITY_KINDS)[number]
-export type PluginCapability = PluginCapabilityKind
 
 export interface PluginManifest {
   id: PluginId

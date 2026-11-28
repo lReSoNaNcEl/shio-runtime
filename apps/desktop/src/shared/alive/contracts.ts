@@ -15,8 +15,6 @@ export interface WorldContextSnapshot {
   capturedAt: number
   appFocused: boolean
   globalUserIdleMs: number
-  /** @deprecated Renderer-local compatibility projection. */
-  userIdleMs: number
   conversationActive: boolean
   audioActive: boolean
   privacyMode: boolean

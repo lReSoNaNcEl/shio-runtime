@@ -745,10 +745,10 @@ async function main(): Promise<void> {
     validate: (payload) => String(payload),
     execute: async () => {
       throw new LlmResponseError({
-        provider: 'mistral',
+        provider: 'openrouter',
         code: 'NETWORK_ERROR',
         recoverable: true,
-        message: 'Mistral network reset',
+        message: 'OpenRouter network reset',
       })
     },
   })
@@ -759,9 +759,9 @@ async function main(): Promise<void> {
   assert.equal(llmTransportFailure.status, 'failure')
   assert.equal(llmTransportFailure.errorCode, 'NETWORK_ERROR')
   assert.equal(llmTransportFailure.execution?.recoverable, true)
-  assert.equal(llmTransportFailure.execution?.providerId, 'mistral')
+  assert.equal(llmTransportFailure.execution?.providerId, 'openrouter')
   assert.equal(llmTransportFailure.recoverable, true)
-  assert.equal(llmTransportFailure.providerId, 'mistral')
+  assert.equal(llmTransportFailure.providerId, 'openrouter')
 
   const audit = recoveryRuntime.snapshot().recentActions
   assert(audit.some((entry) => entry.lifecycle.includes('verification-started')))

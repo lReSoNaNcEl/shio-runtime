@@ -5,6 +5,7 @@
 
 import { resolve } from 'node:path'
 
+import { Context } from '@deepseek-ai/cordis'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { carrierKeyOf } from '@deepseek-ai/dsh-scope'
 import { JsonRpcLineTransport } from '@deepseek-ai/dsh-sdk-protocol'
@@ -196,8 +197,11 @@ class ShioSdkJsonRpcServer {
       case 'initialize':
         return this.initialize(params)
       case 'session/prompt':
+      case 'session/query': {
         if (exactShell) throw new Error('Model sessions are disabled for exact shell commands')
-        return this.prompt(params)
+        const result = await this.prompt(params)
+        return method === 'session/query' ? { kind: 'prompt', ...result } : result
+      }
       case 'shio/shell.execute':
         return this.shellExecute(params)
       case 'shutdown':
@@ -241,7 +245,7 @@ function ShioSdkJsonRpcPlugin(ctx, config = {}) {
   const server = new ShioSdkJsonRpcServer(ctx, transport, {
     maxTokensAsSuccess: config.maxTokensAsSuccess === true,
   })
-  const rootFiber = ctx.root.fiber
+  const rootFiber = ctx[Context.root].fiber
   let exitTask
   const disposeAndExit = () => {
     exitTask ??= (async () => {

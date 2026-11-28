@@ -7,6 +7,7 @@ import {
 } from '../../shared/llm'
 import { createAiSdkAdapter, createModelCatalogClient } from './AiSdkAdapter'
 import {
+  CODEX_DEFAULT_REASONING_EFFORT,
   CODEX_MODEL,
   codexCapabilities,
   codexProfile,
@@ -20,7 +21,7 @@ import {
 } from './openai-compatible/capabilities'
 import { cloudflareProvider } from './providers/cloudflare'
 import { groqProvider } from './providers/groq'
-import { mistralProvider } from './providers/mistral'
+import { ollamaProvider } from './providers/ollama'
 import { openRouterProvider } from './providers/openRouter'
 import type {
   LLMProvider,
@@ -35,7 +36,7 @@ const PROVIDER_DEFINITIONS: Record<Exclude<LlmProviderId, 'codex-cli'>, Provider
   groq: groqProvider,
   cloudflare: cloudflareProvider,
   openrouter: openRouterProvider,
-  mistral: mistralProvider,
+  ollama: ollamaProvider,
 }
 
 interface ModelCatalogSnapshot {
@@ -85,7 +86,7 @@ export function getProviderProfile(id: LlmProviderId): ProviderDefinition['profi
 export function normalizeProviderModelId(providerId: LlmProviderId, modelId: string): string {
   const normalized = modelId.trim()
   if (providerId === 'codex-cli') return isCodexModelId(normalized) ? normalized : ''
-  return getProviderDefinition(providerId).normalizeModelId?.(normalized) ?? normalized
+  return normalized
 }
 
 export function normalizeProviderAccountId(providerId: LlmProviderId, accountId: string): string {
@@ -101,10 +102,6 @@ export function resolveProviderChatBaseUrl(
   if (providerId === 'codex-cli') return ''
   const definition = getProviderDefinition(providerId)
   return definition.chat.resolveBaseUrl?.(connection) ?? definition.chat.baseUrl
-}
-
-export function isLlmProviderId(value: string): value is LlmProviderId {
-  return LLM_PROVIDER_IDS.some((providerId) => providerId === value)
 }
 
 export function createLLMProvider(config: {
@@ -123,11 +120,9 @@ export function createLLMProvider(config: {
     const effort =
       isCodexReasoningEffort(requested) && (!options || options.levels.includes(requested))
         ? requested
-        : options
-          ? options.defaultLevel
-          : config.model === CODEX_MODEL
-            ? 'low'
-            : undefined
+        : config.model === CODEX_MODEL
+          ? CODEX_DEFAULT_REASONING_EFFORT
+          : options?.defaultLevel
     return createCodexCliProvider(
       config.model,
       config.capabilities ?? resolveModelCapabilities(config.provider, config.model),

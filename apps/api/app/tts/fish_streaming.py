@@ -38,6 +38,7 @@ def install_streaming_decode(
     holdback: int = 2,
     validate=None,
     check_cancelled=lambda: None,
+    stream_pcm=lambda: True,
 ):
     import torch
 
@@ -54,7 +55,8 @@ def install_streaming_decode(
         model = bound.arguments["model"]
         end_id = model.tokenizer.get_token_id(inference.IM_END_TOKEN)
         first = bound.arguments["cur_token"][0]
-        frames = [] if int(first[0, -1]) == end_id else [first[1:].clone()]
+        audible = stream_pcm()
+        frames = [first[1:].clone()] if audible and int(first[0, -1]) != end_id else []
         emitted = 0
         delivered = [] if validate else None
         delegate = bound.arguments["decode_one_token"]
@@ -91,7 +93,7 @@ def install_streaming_decode(
         def observe_token(**decode_kwargs):
             check_cancelled()
             token = delegate(**decode_kwargs)
-            if int(token[0, -1]) != end_id:
+            if audible and int(token[0, -1]) != end_id:
                 frames.append(token[1:].clone())
                 if len(frames) % stride == 0:
                     deliver()

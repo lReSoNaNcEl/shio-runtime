@@ -15,6 +15,25 @@ export interface MicrophoneFailure {
   constraint: string | null
 }
 
+export function classifyMicrophoneFailure(error: unknown): MicrophoneFailureReason {
+  switch (error instanceof Error ? error.name : null) {
+    case 'NotAllowedError':
+    case 'SecurityError':
+      return 'permission-denied'
+    case 'NotFoundError':
+    case 'DevicesNotFoundError':
+      return 'device-missing'
+    case 'NotReadableError':
+    case 'TrackStartError':
+      return 'device-busy'
+    case 'OverconstrainedError':
+    case 'ConstraintNotSatisfiedError':
+      return 'constraints-invalid'
+    default:
+      return 'unknown'
+  }
+}
+
 /**
  * Stateless helper that owns all direct interaction with `enumerateDevices()`
  * and the *probe* `getUserMedia()` used to validate a device before a
@@ -95,28 +114,6 @@ export class MicrophoneDeviceService {
         ? String((error as { constraint?: unknown }).constraint ?? '') || null
         : null
 
-    let reason: MicrophoneFailureReason
-    switch (name) {
-      case 'NotAllowedError':
-      case 'SecurityError':
-        reason = 'permission-denied'
-        break
-      case 'NotFoundError':
-      case 'DevicesNotFoundError':
-        reason = 'device-missing'
-        break
-      case 'NotReadableError':
-      case 'TrackStartError':
-        reason = 'device-busy'
-        break
-      case 'OverconstrainedError':
-      case 'ConstraintNotSatisfiedError':
-        reason = 'constraints-invalid'
-        break
-      default:
-        reason = 'unknown'
-    }
-
     // Technical detail is preserved in logs / Debug UI only, never surfaced to
     // the product UI.
     console.error('[MicrophoneGate] Failed to validate microphone', {
@@ -125,7 +122,7 @@ export class MicrophoneDeviceService {
       constraint,
     })
 
-    return { reason, nativeName: name, constraint }
+    return { reason: classifyMicrophoneFailure(error), nativeName: name, constraint }
   }
 }
 

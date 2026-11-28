@@ -70,10 +70,6 @@ export class UtteranceChunkBuilder {
     )
   }
 
-  speechEnded(): UtteranceChunk | null {
-    return this.complete('vad_pause')
-  }
-
   poll(): UtteranceChunk | null {
     if (!this.partial || this.lastUpdatedAt === null || this.startedAt === null) return null
     const now = this.now()

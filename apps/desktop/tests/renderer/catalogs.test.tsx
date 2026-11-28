@@ -43,7 +43,7 @@ afterEach(() => {
 const t = (key: Parameters<typeof translate>[1]) => translate('en', key)
 
 describe.each(['light', 'dark'] as const)('catalog behavior in %s theme', (theme) => {
-  it('filters canonical capability availability, hides avatar presence and preserves read-only authority', () => {
+  it('groups capabilities by category and filters visible entries that need attention', () => {
     const titles = [
       'app.nav.chat',
       'app.nav.plugins',
@@ -60,13 +60,17 @@ describe.each(['light', 'dark'] as const)('catalog behavior in %s theme', (theme
     ] as const
     const capabilities: ShioCapabilityDescriptor[] = availability.map((state, index) => ({
       id: `fixture-${index}`,
-      category: 'communication',
+      category: state === 'disabled' ? 'knowledge' : 'communication',
       source: { kind: 'core' },
       titleKey: titles[index],
-      descriptionKey: 'capabilities.catalog.description',
+      descriptionKey: 'capabilities.textChat.description',
       availability: state,
       authority: 'read-only',
-      navigationTarget: { kind: 'settings', id: 'llm' },
+      reasonKey: state === 'disabled' ? 'capabilities.reason.pluginDisabled' : undefined,
+      navigationTarget:
+        state === 'disabled'
+          ? { kind: 'plugin', id: 'project-awareness' }
+          : { kind: 'settings', id: state === 'degraded' ? 'autonomy' : 'llm' },
     }))
     const snapshot: ShioCapabilitySnapshot = {
       schemaVersion: 1,
@@ -74,36 +78,98 @@ describe.each(['light', 'dark'] as const)('catalog behavior in %s theme', (theme
       capabilities: [
         ...capabilities,
         { ...capabilities[0], id: 'avatar-presence', titleKey: 'app.nav.avatar' },
+        {
+          ...capabilities[2],
+          id: 'alive-autonomy',
+          titleKey: 'capabilities.alive.title',
+          authority: 'full',
+        },
       ],
     }
     const onNavigate = vi.fn()
+    const onRefresh = vi.fn()
+    const view = (value: ShioCapabilitySnapshot) => (
+      <CapabilitiesView
+        snapshot={value}
+        error={null}
+        onRefresh={onRefresh}
+        onNavigate={onNavigate}
+      />
+    )
+    const { rerender } = render(view(snapshot), { wrapper: localizedWrapper('en', theme) })
+    const visibleTitles = () =>
+      screen.getAllByRole('article').map((row) => within(row).getByRole('heading').textContent)
+    expect(visibleTitles()).toEqual([0, 2, 3, 4, 1].map((index) => t(titles[index])))
+    expect(screen.queryByRole('heading', { name: t('app.nav.avatar') })).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('heading', { name: t('capabilities.alive.title') }),
+    ).not.toBeInTheDocument()
+    expect(screen.queryByText(t('capabilities.authority.full'))).not.toBeInTheDocument()
+    expect(screen.getAllByText(t('capabilities.authority.readOnly'))).toHaveLength(5)
+    expect(screen.getByRole('radio', { name: 'All · 5' })).toBeChecked()
+
+    const chat = screen.getAllByRole('article')[0]
+    expect(within(chat).getByText(t('capabilities.availability.available'))).toBeInTheDocument()
+    fireEvent.click(within(chat).getByRole('button', { name: 'Settings · AI — Chat' }))
+    expect(onNavigate).toHaveBeenCalledWith({ kind: 'settings', id: 'llm' })
+
+    fireEvent.click(screen.getByRole('radio', { name: 'Needs attention · 4' }))
+    expect(visibleTitles()).toEqual([2, 3, 4, 1].map((index) => t(titles[index])))
+    expect(within(screen.getAllByRole('article')[1]).queryByRole('button')).not.toBeInTheDocument()
+    const knowledge = within(screen.getByRole('region', { name: 'Knowledge' }))
+    expect(knowledge.getByText(t('capabilities.availability.disabled'))).toBeInTheDocument()
+    expect(knowledge.getByText(t('capabilities.reason.pluginDisabled'))).toBeInTheDocument()
+    fireEvent.click(knowledge.getByRole('button', { name: 'Open plugin — Plugins' }))
+    expect(onNavigate).toHaveBeenCalledWith({ kind: 'plugin', id: 'project-awareness' })
+
+    rerender(view({ ...snapshot, capabilities: [capabilities[0]] }))
+    expect(screen.getByRole('radio', { name: 'Needs attention · 0' })).toBeChecked()
+    expect(screen.getByRole('status')).toHaveTextContent(t('capabilities.filter.emptyAttention'))
+    expect(screen.queryByRole('article')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('radio', { name: 'All · 1' }))
+    expect(visibleTitles()).toEqual([t(titles[0])])
+  })
+
+  it('distinguishes direct and visual browser control in the same catalog', () => {
+    const browser: ShioCapabilityDescriptor = {
+      id: 'browser-control',
+      category: 'action',
+      source: { kind: 'plugin', pluginId: 'browser-control' },
+      titleKey: 'capabilities.browser.title',
+      descriptionKey: 'capabilities.browser.description',
+      availability: 'available',
+      navigationTarget: { kind: 'plugin', id: 'browser-control' },
+    }
+    const visual: ShioCapabilityDescriptor = {
+      ...browser,
+      id: 'browser-computer-use',
+      titleKey: 'plugins.browserControl.name',
+      descriptionKey: 'plugins.browserControl.description',
+      details: {
+        kind: 'browser-computer-use',
+        semanticControl: 'ready',
+        visualControl: 'ready',
+        isolatedProfile: true,
+      },
+    }
+    const navigate = vi.fn()
     render(
       <CapabilitiesView
-        snapshot={snapshot}
+        snapshot={{ schemaVersion: 1, generatedAt: 1, capabilities: [browser, visual] }}
         error={null}
         onRefresh={vi.fn()}
-        onNavigate={onNavigate}
+        onNavigate={navigate}
       />,
-      { wrapper: localizedWrapper('en', theme) },
+      { wrapper: localizedWrapper('ru', theme) },
     )
-    expect(screen.getAllByRole('article')).toHaveLength(5)
-    expect(screen.queryByRole('heading', { name: t('app.nav.avatar') })).not.toBeInTheDocument()
-    expect(screen.getAllByText(t('capabilities.authority.readOnly'))).toHaveLength(5)
-    for (const [key, expected] of [
-      ['available', [0]],
-      ['setup', [1, 2]],
-      ['problems', [3, 4]],
-    ] as const) {
-      fireEvent.click(
-        screen.getByRole('button', { name: new RegExp(t(`capabilities.filter.${key}`)) }),
-      )
-      const cards = screen.getAllByRole('article')
-      expect(cards).toHaveLength(expected.length)
-      for (const index of expected)
-        expect(screen.getByRole('heading', { name: t(titles[index]) })).toBeInTheDocument()
-    }
-    fireEvent.click(within(screen.getAllByRole('article')[0]).getByRole('button'))
-    expect(onNavigate).toHaveBeenCalledWith({ kind: 'settings', id: 'llm' })
+    expect(screen.getByRole('heading', { name: 'Управление браузером' })).toBeInTheDocument()
+    expect(
+      screen.getByRole('heading', { name: 'Визуальное управление браузером' }),
+    ).toBeInTheDocument()
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Открыть плагин — Визуальное управление браузером' }),
+    )
+    expect(navigate).toHaveBeenCalledWith({ kind: 'plugin', id: 'browser-control' })
   })
 
   it('shows disabled independently of health and delegates enable/disable to Main', async () => {

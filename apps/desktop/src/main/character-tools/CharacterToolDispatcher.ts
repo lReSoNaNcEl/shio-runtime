@@ -339,10 +339,6 @@ export class CharacterToolDispatcher {
     this.influence.registerPlannedTools(available)
   }
 
-  influenceSnapshot(): ReturnType<ToolInfluenceContext['snapshot']> {
-    return this.influence.snapshot()
-  }
-
   currentBrowserObservation(): BrowserObservation | null {
     return this.options.browserContext?.()?.currentObservation() ?? null
   }
@@ -368,7 +364,7 @@ export class CharacterToolDispatcher {
           tool: id,
           code,
           authorityOrigin: influence.authority.origin,
-          evidenceOrigins: influence.evidenceOrigins,
+          evidenceOrigins: influence.evidence.map((entry) => entry.origin),
         })
         return { content: failureContent(code) }
       }

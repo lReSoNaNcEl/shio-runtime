@@ -19,8 +19,6 @@ export interface ToolInfluenceSnapshot {
   authority: ToolAuthorityProvenance
   evidence: readonly ToolEvidenceProvenance[]
   selectedCapabilities: readonly ToolCapability[]
-  /** @deprecated Read `evidence` when provenance ordering matters. */
-  evidenceOrigins: readonly ToolEvidenceOrigin[]
   authorizationScopes: readonly string[]
 }
 
@@ -93,7 +91,6 @@ export class ToolInfluenceContext {
       }),
       evidence: Object.freeze([...this.evidenceEntries]),
       selectedCapabilities: Object.freeze([...this.selected]),
-      evidenceOrigins: Object.freeze(this.evidenceEntries.map((entry) => entry.origin)),
       authorizationScopes: Object.freeze([...this.scopes]),
     })
   }

@@ -5,9 +5,11 @@ from threading import Event
 from unittest.mock import AsyncMock, Mock, patch
 
 import numpy as np
+import torch
 from fastapi import WebSocket
 
 from app.asr.streaming import StreamingASRSession, StreamingVADConfig
+from app.asr.vad import SileroVAD
 from app.routes import ws
 
 
@@ -46,6 +48,15 @@ class FakeWhisper:
 
 
 class StreamingASRSessionTests(unittest.TestCase):
+    def test_silero_recurrent_state_does_not_keep_an_autograd_graph(self):
+        session = StreamingASRSession(FakeWhisper(), SileroVAD(), session_id="silero")
+        self.addCleanup(session.close)
+
+        with torch.enable_grad():
+            session.process_pcm(np.zeros(8 * session.vad_frame_samples, dtype=np.float32))
+
+        self.assertIsNone(session._vad_model._state.grad_fn)
+
     def test_playback_sentence_crosses_visual_samples_and_decodes_once_at_the_pause(self):
         whisper = FakeWhisper()
         voiced_frames = 235  # about 7.5 seconds, across two visual sampling windows

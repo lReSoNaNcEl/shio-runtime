@@ -120,18 +120,19 @@ async function qualify() {
       pcm: new ArrayBuffer(0),
       playbackTranscript: '',
     })
-    let line: string | undefined
+    let reply: ReturnType<WatchTogetherService['takeReply']>
     if (decision.kind === 'comment') {
-      line = watch.takeReply(decision.turnId)
-      assert(line, 'Expired or empty comment')
+      reply = watch.takeReply(decision.turnId)
+      assert(reply, 'Expired or empty comment')
       watch.finishComment(id, decision.turnId, true)
     }
     const result = {
       step,
-      presented: reactions[reactionsBefore] ?? decision.kind,
+      presented:
+        typeof reply === 'object' ? reply.vocal : (reactions[reactionsBefore] ?? decision.kind),
       elapsedMs: Date.now() - priorStart,
       modelReported: outputs.slice(imagesBefore),
-      line,
+      line: typeof reply === 'string' ? reply : undefined,
     }
     console.log(JSON.stringify(result))
     return result

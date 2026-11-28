@@ -31,6 +31,7 @@ export function WatchPreviewControl({
       <Popover placement="bottom end" size="M">
         <div className="watch-preview-content">
           <Heading level={2}>{t('watch.preview')}</Heading>
+          <Text>{t('watch.initialSource', { name: sourceName })}</Text>
           <video
             className="watch-preview-frame"
             aria-label={t('watch.liveFrame')}
@@ -39,7 +40,6 @@ export function WatchPreviewControl({
             muted
             playsInline
           />
-          <Text>{t('watch.initialSource', { name: sourceName })}</Text>
           {microphone && (
             <StatusLight variant="positive">
               {t('streaming.activeMicrophone', {

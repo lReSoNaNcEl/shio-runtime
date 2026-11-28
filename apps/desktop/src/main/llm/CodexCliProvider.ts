@@ -29,6 +29,9 @@ import type {
 } from './types'
 
 export const CODEX_MODEL = 'gpt-6-luna'
+export const CODEX_DEFAULT_REASONING_EFFORT = 'none'
+const CODEX_BACKEND_URL = 'https://chatgpt.com/backend-api/codex'
+const CODEX_HTTPS_PROVIDER = 'shio_https'
 export const isCodexModelId = (id: string) => /^[a-z0-9][a-z0-9._:/-]{0,127}$/iu.test(id)
 export const codexProfile: ProviderProfile = {
   id: 'codex-cli',
@@ -140,7 +143,7 @@ function environment(): NodeJS.ProcessEnv {
 
 async function providerEnvironment() {
   const env = environment()
-  const proxy = await resolveLlmProxy('https://chatgpt.com/backend-api/codex/responses')
+  const proxy = await resolveLlmProxy(`${CODEX_BACKEND_URL}/responses`)
   if (proxy) {
     const url = new URL(`${proxy.protocol}://${proxy.host}:${proxy.port}`)
     if (proxy.auth) {
@@ -225,15 +228,18 @@ export function parseCodexCatalog(stdout: string): ModelCatalogEntry[] {
   return models
     .filter((model) => model.visibility === 'list' && isCodexModelId(model.slug))
     .map((model) => {
+      const advertised =
+        model.supported_reasoning_levels
+          ?.map(({ effort }) => effort)
+          .filter(isCodexReasoningEffort) ?? []
+      // Luna accepts none via Codex CLI even when the model catalog omits it.
+      const luna = model.slug === CODEX_MODEL
       const levels = [
-        ...new Set(
-          model.supported_reasoning_levels
-            ?.map(({ effort }) => effort)
-            .filter(isCodexReasoningEffort),
+        ...new Set<CodexReasoningEffort>(
+          luna ? [CODEX_DEFAULT_REASONING_EFFORT, ...advertised] : advertised,
         ),
       ]
-      const preferred =
-        model.slug === CODEX_MODEL && levels.includes('low') ? 'low' : model.default_reasoning_level
+      const preferred = luna ? CODEX_DEFAULT_REASONING_EFFORT : model.default_reasoning_level
       return {
         id: model.slug,
         displayName: model.display_name,
@@ -290,9 +296,9 @@ export function parseCodexReply(stdout: string): string {
     const event = JSON.parse(line)
     if (terminal || event.type === 'turn.failed') throw failure('PROVIDER_REJECTED')
     if (event.type === 'item.completed') {
-      if (event.item?.type === 'agent_message' && typeof event.item.text === 'string')
-        reply = event.item.text
-      else if (!['reasoning', 'error'].includes(event.item?.type))
+      if (event.item?.type === 'agent_message' && typeof event.item.text === 'string') {
+        if (event.item.text.trim()) reply = event.item.text
+      } else if (!['reasoning', 'error'].includes(event.item?.type))
         throw failure('PROVIDER_REJECTED')
     }
     if (event.type === 'turn.completed') terminal = true
@@ -352,7 +358,8 @@ async function generate(
       ...[
         ...(effort ? [`model_reasoning_effort="${effort}"`] : []),
         'forced_login_method="chatgpt"',
-        'model_provider="openai"',
+        `model_provider="${CODEX_HTTPS_PROVIDER}"`,
+        `model_providers.${CODEX_HTTPS_PROVIDER}={name="OpenAI HTTPS",base_url="${CODEX_BACKEND_URL}",wire_api="responses",requires_openai_auth=true,supports_websockets=false}`,
         `model_instructions_file=${JSON.stringify(policy)}`,
         'history.persistence="none"',
         'web_search="disabled"',

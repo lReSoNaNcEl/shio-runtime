@@ -86,6 +86,7 @@ import {
   type WatchVoiceReplyInput,
   watchReplyModelKey,
 } from './watch-together/PreparedWatchVoiceReply'
+import type { ApprovedWatchReply, RecordingEpisode } from './watch-together/WatchTogetherService'
 
 export type {
   PreparedWatchVoiceReply,
@@ -104,13 +105,15 @@ const SESSION_ID = 'default'
 
 export interface CharacterReplyInput {
   userText: string
-  approvedWatchReply?: string
+  approvedWatchReply?: ApprovedWatchReply
   watchContext?: {
     sessionId?: string
     utteranceId?: string
     preparedReply?: PreparedWatchVoiceReply
+    episode?: RecordingEpisode
     addressedVoice?: boolean
     directVoice?: boolean
+    scoreReadout?: boolean
     frame?: Uint8Array
     frameTiles?: { columns: number; images: readonly Uint8Array[] }
     transcript?: string
@@ -318,7 +321,6 @@ export class Orchestrator {
   constructor(
     private llm: LLMProvider,
     private memory: MemoryStore,
-    _speechRuntimeCompatibility: unknown,
     private settings: () => AppSettings,
     private projectContext?: ProjectContextProviderResolver,
     private capabilityContext?: ShioCapabilityProvider,
@@ -422,7 +424,7 @@ export class Orchestrator {
           responsePolicyPrompt(),
           ...(watching
             ? [
-                'You are sharing a desktop with the user while they browse, work, watch or play. Answer questions directly. When they make a remark, respond to their take like a partner, drawing on the shared moment. Keep it brief unless they ask for detail.',
+                'When reading or comparing the shared screen, make the requested value or name the opening words. If asked who leads and by how much, start with the actual team and the computed difference in one short clause, then stop. For a tie, say that it is tied. Omit introductory remarks about looking at the screen. If a single word is requested, say that word. For a casual opinion or joke, give a natural reaction and at most one telling detail from the shared moment.',
                 watch?.frame
                   ? 'You see the visible part of the shared window or screen. Read visible text and addresses as displayed. If a browser hides the scheme or truncates a path, quote the visible part. Say when a requested detail is offscreen or unclear.'
                   : 'There is no current frame for this turn. If the question needs it, say that the current view is unavailable.',
@@ -587,6 +589,19 @@ export class Orchestrator {
     }
     if (origin === 'watch-together') {
       if (!input.approvedWatchReply || options.signal?.aborted) throw new LlmTurnCancelledError()
+      if (typeof input.approvedWatchReply !== 'string') {
+        const { vocal } = input.approvedWatchReply
+        const syllables =
+          normalizeUiLocale(this.settings().uiLocale) === 'ru'
+            ? { chuckle: 'Хе-хе.', sigh: 'Ах…' }
+            : { chuckle: 'Heh.', sigh: 'Ah…' }
+        return {
+          replyText: `[${vocal}][voice:soft and brief]${syllables[vocal]}`,
+          emotionKey: vocal,
+          embodimentIntent: { intensity: 'subtle', gazeHint: 'user' },
+          assistantTurnKind: 'character',
+        }
+      }
       return {
         replyText: input.approvedWatchReply,
         emotionKey: parseLeadingEmotionTag(input.approvedWatchReply),
@@ -699,10 +714,12 @@ export class Orchestrator {
         signal: options.signal,
         requestOptions: options,
         nativeToolsRejected: this.nativeCharacterToolsRejected,
+        watchEpisode: watching && toolsAvailable ? watch?.episode : undefined,
         watchUserRequest: watching && toolsAvailable ? userText : undefined,
         enforceToolRequirements:
           !autonomous && !conversationOnly && this.toolPolicy.enforceRequirements,
         preparedWatchReply: held?.claim(messages, options),
+        watchScoreLocale: conversationOnly && watch?.scoreReadout ? locale : undefined,
         shortCodexWatchOpening:
           watching &&
           conversationOnly &&

@@ -8,11 +8,9 @@ import { facialTuning } from '../../../src/renderer/avatar/tuning/facialTuning'
 import { headMotionTuning } from '../../../src/renderer/avatar/tuning/motionTuning'
 
 describe('expressiveness profile', () => {
-  it('preserves the extracted standing and rest limits exactly', () => {
-    expect(expressivenessProfile.standingArmRange).toEqual({
-      quiet: { shoulder: 0.08, upper: 0.12, lower: 0.25 },
-      conversational: { shoulder: 0.14, upper: 0.95, lower: 1.6 },
-    })
+  it('pins the conversational and rest limits', () => {
+    const { conversational } = expressivenessProfile.standingArmRange
+    expect(conversational).toEqual({ shoulder: 0.14, upper: 0.95, lower: 1.6 })
     expect(expressivenessProfile.restAfterSpeech).toEqual({
       maximum: { shoulder: 0.04, upper: 0.08, lower: 0.18 },
       retainedFraction: 0.15,

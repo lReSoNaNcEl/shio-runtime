@@ -12,6 +12,7 @@ import {
   TRANSITION_RECORDING_MAX_FRAME_BYTES,
   TRANSITION_RECORDING_MAX_FRAMES,
 } from '../../shared/diagnostics'
+import { CODEX_REASONING_EFFORTS, LLM_PROVIDER_IDS } from '../../shared/llm'
 import { bodyTurnIntentSchema, generatedMotionHealthSchema } from '../../shared/motion'
 import { speechVolumePercentSchema } from '../configDefaults'
 
@@ -26,6 +27,51 @@ function serializedSizeAtMost(value: unknown, maximumBytes: number): boolean {
 const boundedObject = z
   .record(z.string().max(100), z.unknown())
   .refine((value) => serializedSizeAtMost(value, 200_000), 'Payload is too large')
+
+const llmProviderIdSchema = z.enum(LLM_PROVIDER_IDS)
+const llmRoleProviderIdSchema = z.union([llmProviderIdSchema, z.literal('')]).optional()
+const llmConfigSchema = boundedObject.pipe(
+  z
+    .object({
+      activeProvider: llmProviderIdSchema.optional(),
+      providers: z
+        .partialRecord(
+          llmProviderIdSchema,
+          z.object({
+            model: z.string().optional(),
+            accountId: z.string().optional(),
+            codexReasoningByModel: z.record(z.string(), z.enum(CODEX_REASONING_EFFORTS)).optional(),
+          }),
+        )
+        .optional(),
+      speculativeDirectReply: z.boolean().optional(),
+      roles: z
+        .object({
+          computerUseVision: z
+            .object({
+              providerId: llmRoleProviderIdSchema,
+              model: z.string().optional(),
+              timeoutMs: z.number().optional(),
+              maxSteps: z.number().optional(),
+            })
+            .strict()
+            .optional(),
+          characterFallbacks: z
+            .array(
+              z
+                .object({
+                  providerId: llmProviderIdSchema,
+                  model: z.string(),
+                })
+                .strict(),
+            )
+            .optional(),
+        })
+        .strict()
+        .optional(),
+    })
+    .strict(),
+)
 
 const rendererDiagnosticName = z
   .string()
@@ -52,10 +98,10 @@ export const configSaveSchema = z
       })
       .strict()
       .optional(),
-    llm: boundedObject.optional(),
+    llm: llmConfigSchema.optional(),
     uiLocale: z.enum(['ru', 'en']).optional(),
     uiTheme: z.enum(['dark', 'light']).optional(),
-    ttsLanguage: z.string().min(1).max(20).optional(),
+    flashMotionEnabled: z.boolean().optional(),
     speechVolumePercent: speechVolumePercentSchema.optional(),
     ttsEngine: z.string().min(1).max(100).optional(),
     micDeviceId: z.string().max(1_000).optional(),

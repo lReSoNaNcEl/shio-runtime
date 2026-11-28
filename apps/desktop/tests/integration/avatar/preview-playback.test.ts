@@ -1,10 +1,17 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import { AvatarAnimationController } from '../../../src/renderer/avatar/AvatarAnimationController'
-import type { AvatarBehaviorResolution } from '../../../src/renderer/avatar/AvatarBehaviorResolver'
+import {
+  type AvatarBehaviorResolution,
+  AvatarBehaviorResolver,
+} from '../../../src/renderer/avatar/AvatarBehaviorResolver'
 import { AvatarController } from '../../../src/renderer/avatar/AvatarController'
 import { AvatarPlaybackCoordinator } from '../../../src/renderer/avatar/AvatarPlaybackCoordinator'
-import type { AvatarMode, AvatarStateEffect } from '../../../src/renderer/avatar/AvatarStateMachine'
+import {
+  type AvatarMode,
+  type AvatarStateEffect,
+  AvatarStateMachine,
+} from '../../../src/renderer/avatar/AvatarStateMachine'
 import type { VrmModel } from '../../../src/renderer/avatar/rendering/three/VrmModel'
 
 function fixture() {
@@ -275,28 +282,127 @@ describe('generated preview startup lifecycle', () => {
 })
 
 describe('generated fallback request context', () => {
-  it.each(['MOTION_SPEECH_WINDOW_MISSED', 'MOTION_SPEECH_ENDED', 'MOTION_superseded'])(
-    'does not blacklist a valid gesture or start a failure fallback for %s',
-    async (reason) => {
-      const requestGeneratedMotion = vi.fn(async () => {
-        throw new Error(reason)
+  it.each([
+    'MOTION_SPEECH_WINDOW_MISSED',
+    'MOTION_SPEECH_ENDED',
+    'MOTION_superseded',
+    'MOTION_STALE_INTENT',
+  ])('does not blacklist a valid gesture or start a failure fallback for %s', async (reason) => {
+    const requestGeneratedMotion = vi.fn(async () => {
+      throw new Error(reason)
+    })
+    const model = {
+      isLoaded: () => true,
+      isAnimationPlaying: () => false,
+      getBodyMotionDebugState: () => ({}),
+      requestGeneratedMotion,
+    } as unknown as VrmModel
+    const animations = new AvatarAnimationController(model)
+    await animations.playManifest('greet_wave_soft', false, {
+      speechBound: true,
+      fallbackId: 'presence_speaking',
+    })
+    expect(animations.getDebugState().failedAnimationIds).toEqual([])
+    expect(animations.getDebugState().playbackStatus).toBe('idle')
+    expect(requestGeneratedMotion).toHaveBeenCalledTimes(1)
+  })
+
+  it.each(['listening', 'thinking'] as const)(
+    'restores the current %s presence after its request expires behind protected recovery',
+    async (mode) => {
+      let active = true
+      let profile = 'curious_lean'
+      let reject!: (error: Error) => void
+      const pending = new Promise<void>((_resolve, failed) => {
+        reject = failed
       })
+      const requestGeneratedMotion = vi
+        .fn(async (id: string) => {
+          profile = id
+          active = true
+        })
+        .mockImplementationOnce(() => pending)
       const model = {
         isLoaded: () => true,
-        isAnimationPlaying: () => false,
-        getBodyMotionDebugState: () => ({}),
+        isAnimationPlaying: () => active,
+        setBodyMotionLayer: vi.fn(),
         requestGeneratedMotion,
+        getBodyMotionDebugState: () => ({
+          transitionRemaining: 0,
+          motionExecution: {
+            executionId: `execution-${profile}`,
+            profileId: profile,
+            outcome: active ? null : 'superseded',
+          },
+        }),
       } as unknown as VrmModel
       const animations = new AvatarAnimationController(model)
-      await animations.playManifest('greet_wave_soft', false, {
-        speechBound: true,
-        fallbackId: 'presence_speaking',
+      const owner = new AvatarPlaybackCoordinator(animations, model)
+      const effect = new AvatarStateMachine().setMode(mode)
+      const resolved = new AvatarBehaviorResolver().resolve(effect)
+      owner.requestResolvedBehavior({
+        effect,
+        resolved,
+        source: 'character-state',
+        reason: 'user starts listening after an idle gesture',
+        frame: 1,
+        interruptible: true,
       })
-      expect(animations.getDebugState().failedAnimationIds).toEqual([])
-      expect(animations.getDebugState().playbackStatus).toBe('idle')
+      reject(new Error('MOTION_STALE_INTENT'))
+      await animations.waitForLatestPlaybackRequest(100)
+      owner.advanceQueue(2)
+      // Never interrupt the previous body's still-active physical recovery.
       expect(requestGeneratedMotion).toHaveBeenCalledTimes(1)
+      active = false
+      owner.advanceQueue(3)
+      await animations.waitForLatestPlaybackRequest(100)
+      expect(requestGeneratedMotion.mock.calls.map(([id]) => id)).toEqual([
+        `presence_${mode}`,
+        `presence_${mode}`,
+      ])
+      expect(animations.getDebugState().failedAnimationIds).toEqual([])
+      expect(animations.getDebugState().playbackStatus).toBe('playing')
+      expect(owner.getCurrentContext()?.mode).toBe(mode)
+      owner.advanceQueue(4)
+      expect(requestGeneratedMotion).toHaveBeenCalledTimes(2)
     },
   )
+
+  it('discards an expired old listening request after the user mode has changed', async () => {
+    let reject!: (error: Error) => void
+    const pending = new Promise<void>((_resolve, failed) => {
+      reject = failed
+    })
+    const requestGeneratedMotion = vi
+      .fn(async (): Promise<void> => undefined)
+      .mockImplementationOnce(() => pending)
+    const model = {
+      isLoaded: () => true,
+      isAnimationPlaying: () => true,
+      setBodyMotionLayer: vi.fn(),
+      requestGeneratedMotion,
+      getBodyMotionDebugState: () => ({}),
+    } as unknown as VrmModel
+    const animations = new AvatarAnimationController(model)
+    const owner = new AvatarPlaybackCoordinator(animations, model)
+    for (const mode of ['listening', 'thinking'] as const) {
+      const effect = new AvatarStateMachine().setMode(mode)
+      owner.requestResolvedBehavior({
+        effect,
+        resolved: new AvatarBehaviorResolver().resolve(effect),
+        source: 'character-state',
+        reason: 'mode change',
+        frame: 1,
+        interruptible: true,
+      })
+    }
+    reject(new Error('MOTION_STALE_INTENT'))
+    await animations.waitForLatestPlaybackRequest(100)
+    owner.advanceQueue(2)
+    expect(owner.getCurrentContext()?.mode).toBe('thinking')
+    expect(animations.getDebugState().failedAnimationIds).toEqual([])
+    expect(requestGeneratedMotion).toHaveBeenCalledTimes(2)
+  })
 
   it.each(['agree_soft', 'missing-profile'])(
     'preserves speech binding and provenance when %s falls back',

@@ -430,7 +430,6 @@ async function main() {
   report.vrmSha256 = createHash('sha256').update(fs.readFileSync(config.vrmPath)).digest('hex')
   config.setup = { ...config.setup, completed: true }
   config.uiLocale = 'en'
-  config.ttsLanguage = 'ru'
   config.developerModeEnabled = 'true'
   const llmProvider = process.env.SHIO_QUALIFICATION_LLM_PROVIDER || config.llm.activeProvider
   assert(config.llm.providers[llmProvider], 'Unsupported qualification LLM provider')

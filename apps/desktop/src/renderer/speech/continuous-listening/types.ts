@@ -1,8 +1,4 @@
-export type {
-  BacklogPriorityClass,
-  BacklogSelectionResult,
-  BufferedUtterance,
-} from '../../../shared/conversation'
+export type { BacklogPriorityClass, BufferedUtterance } from '../../../shared/conversation'
 
 import type { AttachmentDisposition, ConversationTurnFailure } from '../../../shared/conversation'
 

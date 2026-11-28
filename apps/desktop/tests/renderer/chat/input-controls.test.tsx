@@ -11,6 +11,7 @@ import { ChatComposer } from '../../../src/renderer/components/chat/ChatComposer
 import { ScreenContextPicker } from '../../../src/renderer/components/chat/ScreenContextPicker'
 import { MicrophoneGateOverlay } from '../../../src/renderer/components/overlays/MicrophoneGateOverlay'
 import { translate } from '../../../src/shared/localization'
+import { createDeferred } from '../../support/Deferred'
 import { localizedWrapper, stubWindowProperty } from '../../support/rendering'
 
 let restoreApi: () => void = () => undefined
@@ -46,6 +47,21 @@ describe.each(['light', 'dark'] as const)('chat input controls in %s theme', (th
     fireEvent.click(stop)
     expect(props.onToggleMicrophone).toHaveBeenCalledOnce()
     expect(props.onInterrupt).not.toHaveBeenCalled()
+
+    view.rerender(<ChatComposer {...props} sharing text="What is on screen?" />)
+    expect(screen.getByPlaceholderText(t('chat.sharePlaceholder'))).toBeVisible()
+    expect(screen.queryByRole('button', { name: t('screenContext.attach.action') })).toBeNull()
+    expect(screen.queryByRole('button', { name: t('chat.voiceInput') })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: t('chat.send') }))
+    expect(props.onSubmit).toHaveBeenCalledOnce()
+    view.rerender(<ChatComposer {...props} sharing canInterrupt />)
+    fireEvent.click(screen.getByRole('button', { name: t('chat.stopResponse') }))
+    expect(props.onInterrupt).toHaveBeenCalledOnce()
+    view.rerender(<ChatComposer {...props} sharing listening />)
+    expect(screen.getByRole('button', { name: t('chat.stopRecording') })).toBeEnabled()
+    view.rerender(<ChatComposer {...props} />)
+    expect(screen.getByRole('button', { name: t('screenContext.attach.action') })).toBeEnabled()
+    expect(screen.getByRole('button', { name: t('chat.voiceInput') })).toBeEnabled()
   })
 
   it('selects one microphone and announces validation without enabling Continue', async () => {
@@ -95,6 +111,7 @@ describe.each(['light', 'dark'] as const)('chat input controls in %s theme', (th
       })
     restoreApi = stubWindowProperty('api', {
       llm: { getActiveCapabilities: async () => ({ supportsVision: true }) },
+      watchTogether: { prepareModel: async () => true },
       config: { onUpdated: () => () => undefined },
       screenContext: { listSources },
     })
@@ -112,8 +129,10 @@ describe.each(['light', 'dark'] as const)('chat input controls in %s theme', (th
   it('selects a source first and keeps an optional reference scoped to the chosen share', async () => {
     restoreApi = stubWindowProperty('api', {
       llm: { getActiveCapabilities: async () => ({ supportsVision: true }) },
+      watchTogether: { prepareModel: async () => true },
       config: { onUpdated: () => () => undefined },
       screenContext: {
+        checkSource: async () => ({ ok: true, value: true }),
         listSources: async () => ({
           ok: true,
           value: [
@@ -140,10 +159,12 @@ describe.each(['light', 'dark'] as const)('chat input controls in %s theme', (th
     )
     const source = await screen.findByRole('button', { name: /Editor/ })
     const start = screen.getByRole('button', { name: t('watch.start') })
+    expect(screen.queryByRole('checkbox')).toBeNull()
     expect(start).toBeDisabled()
     expect(screen.queryByRole('textbox')).toBeNull()
     fireEvent.click(source)
-    expect(start).toBeEnabled()
+    expect(start).toBeDisabled()
+    await waitFor(() => expect(start).toBeEnabled())
     fireEvent.click(screen.getByRole('button', { name: t('watch.reference.group') }))
     const field = screen.getByRole('textbox', { name: t('watch.reference.label') })
     fireEvent.change(field, { target: { value: 'http://example.com/' } })
@@ -168,6 +189,7 @@ describe.each(['light', 'dark'] as const)('chat input controls in %s theme', (th
       llm: { getActiveCapabilities: async () => ({ supportsVision: true }) },
       config: { onUpdated: () => unsubscribe },
       screenContext: {
+        checkSource: async () => ({ ok: true, value: true }),
         listSources: async () => ({
           ok: true,
           value: [
@@ -198,12 +220,46 @@ describe.each(['light', 'dark'] as const)('chat input controls in %s theme', (th
     expect(source.querySelectorAll('img')).toHaveLength(2)
     fireEvent.click(source)
     expect(source).toHaveAttribute('aria-pressed', 'true')
-    expect(attach).toBeEnabled()
+    await waitFor(() => expect(attach).toBeEnabled())
     fireEvent.click(attach)
     await waitFor(() => expect(onAttach).toHaveBeenCalledWith({ captureId: 'capture-a' }))
     expect(capture).toHaveBeenCalledWith({ sourceId: 'screen-a', operationId: expect.any(String) })
     expect(onDismiss).toHaveBeenCalledOnce()
     view.unmount()
     expect(unsubscribe).toHaveBeenCalledOnce()
+  })
+
+  it('offers a window without a thumbnail and keeps the picker open when that window closes', async () => {
+    const check = createDeferred<{ ok: false; error: { code: 'SOURCE_NOT_FOUND' } }>()
+    const checkSource = vi.fn(() => check.promise)
+    const icon = 'data:image/png;base64,iVBORw0KGgo='
+    restoreApi = stubWindowProperty('api', {
+      llm: { getActiveCapabilities: async () => ({ supportsVision: true }) },
+      watchTogether: { prepareModel: async () => true },
+      config: { onUpdated: () => () => undefined },
+      screenContext: {
+        checkSource,
+        listSources: async () => ({
+          ok: true,
+          value: [{ id: 'window:1:0', name: 'Editor', kind: 'window', appIconDataUrl: icon }],
+        }),
+      },
+    })
+    const onWatch = vi.fn()
+    render(
+      <ScreenContextPicker isOpen onWatch={onWatch} onDismiss={vi.fn()} onChangeModel={vi.fn()} />,
+      { wrapper: localizedWrapper('en', theme) },
+    )
+    const source = await screen.findByRole('button', { name: /Editor/ })
+    expect(source.querySelector('img')).toHaveAttribute('src', icon)
+    fireEvent.click(source)
+    expect(checkSource).toHaveBeenCalledWith('window:1:0')
+    expect(screen.getByText(t('screenContext.picker.checkingSource'))).toBeVisible()
+    expect(screen.getByRole('button', { name: t('watch.start') })).toBeDisabled()
+    check.resolve({ ok: false, error: { code: 'SOURCE_NOT_FOUND' } })
+    expect(await screen.findByText(t('screenContext.error.sourceNotFound'))).toBeVisible()
+    expect(screen.queryByRole('button', { name: /Editor/ })).toBeNull()
+    expect(screen.getByRole('button', { name: t('screenContext.picker.refresh') })).toBeEnabled()
+    expect(onWatch).not.toHaveBeenCalled()
   })
 })

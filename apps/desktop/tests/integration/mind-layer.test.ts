@@ -30,7 +30,6 @@ const world: WorldContextSnapshot = {
   capturedAt: 1,
   appFocused: true,
   globalUserIdleMs: 0,
-  userIdleMs: 0,
   conversationActive: false,
   audioActive: false,
   privacyMode: false,

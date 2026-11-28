@@ -53,6 +53,7 @@ it.each(['capture', 'transport'] as const)(
   'rejects late finals and resumes with fresh audio after a %s gap',
   async (gap) => {
     const { client, socket, sessionId, handlers } = await connectedClient()
+    expect(JSON.parse(socket.send.mock.calls[0][0]).language).toBe('auto')
     const oldMessage = socket.onmessage
     const frame = new ArrayBuffer(640)
     socket.bufferedAmount = 16_000 - frame.byteLength
@@ -80,6 +81,7 @@ it.each(['capture', 'transport'] as const)(
     await vi.advanceTimersByTimeAsync(500)
     const next = Socket.instances[1]
     const nextSession = next.ready()
+    expect(JSON.parse(next.send.mock.calls[0][0]).language).toBe('auto')
     expect(nextSession).not.toBe(sessionId)
     expect(next.send).toHaveBeenCalledTimes(1)
     const fresh = new ArrayBuffer(320)

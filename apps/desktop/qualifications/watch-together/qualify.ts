@@ -52,7 +52,6 @@ async function qualify() {
     const orchestrator = new Orchestrator(
       model,
       new InMemoryStore(),
-      undefined,
       () => settings,
       undefined,
       undefined,

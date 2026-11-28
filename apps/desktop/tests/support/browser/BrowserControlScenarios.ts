@@ -684,6 +684,9 @@ async function removeProfile(path: string): Promise<void> {
   await rm(path, { recursive: true, force: true })
 }
 
+const launchHeadlessContext: typeof chromium.launchPersistentContext = (directory, options) =>
+  chromium.launchPersistentContext(directory, { ...options, headless: true })
+
 async function deterministicRepro(
   executablePath: string,
   profileDirectory: string,
@@ -699,7 +702,7 @@ async function deterministicRepro(
     launchPersistentContext: async (directory, options) => {
       launchStarted.resolve()
       await releaseLaunch.promise
-      const context = await chromium.launchPersistentContext(directory, options)
+      const context = await launchHeadlessContext(directory, options)
       context.on('request', (request) => {
         if (request.url() === cancelledUrl) cancelledVisits++
       })
@@ -1269,7 +1272,11 @@ async function deterministicRepro(
     )
 
     await browser.close()
-    reopened = new PlaywrightBrowserAdapter({ executablePath, profileDirectory })
+    reopened = new PlaywrightBrowserAdapter({
+      executablePath,
+      profileDirectory,
+      launchPersistentContext: launchHeadlessContext,
+    })
     const persisted = (await reopened.open(origin)).observation
     assert(persisted?.content.includes('Persisted player: Ada'))
     await reopened.close()
@@ -1341,7 +1348,11 @@ async function continuousRepro(
   profileDirectory: string,
   origin: string,
 ): Promise<void> {
-  const browser = new PlaywrightBrowserAdapter({ executablePath, profileDirectory })
+  const browser = new PlaywrightBrowserAdapter({
+    executablePath,
+    profileDirectory,
+    launchPersistentContext: launchHeadlessContext,
+  })
   const events: string[] = []
   try {
     await browser.open(`${origin}/continuous`)

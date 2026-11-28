@@ -67,7 +67,6 @@
     "motion:catalog:check": "node scripts/sync-motion.mjs --check && node scripts/sync-emotions.mjs --check",
     "experiment:qualify": "npm --prefix apps/desktop run qualify:speech-motion --",
     "experiment:pack": "powershell -ExecutionPolicy Bypass -File scripts/build-alpha-bundle.ps1 -ExperimentalWorktree",
-    "experiment:verify-package": "powershell -ExecutionPolicy Bypass -File scripts/verify-alpha-bundle.ps1 -ExperimentalWorktree",
-    "experiment:legacy-check": "node scripts/check-generated-motion-legacy.mjs"
+    "experiment:verify-package": "powershell -ExecutionPolicy Bypass -File scripts/verify-alpha-bundle.ps1 -ExperimentalWorktree"
   }
 }

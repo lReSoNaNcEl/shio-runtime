@@ -25,6 +25,7 @@ import { ScreenContextDropOverlay } from './ScreenContextDropOverlay'
 import { type ChatTurnFailure, ScreenContextInputFeedback } from './ScreenContextInputFeedback'
 import { ScreenContextPicker } from './ScreenContextPicker'
 import { SpeechUnavailableBanner } from './SpeechUnavailableBanner'
+import { StreamSourcePreview } from './StreamSourcePreview'
 import {
   clipboardImageFiles,
   droppedImageFiles,
@@ -268,7 +269,7 @@ export const ChatOverlay = forwardRef<ChatOverlayHandle, Props>(function ChatOve
         onQuickAction={handleQuickAction}
         onStartWatch={onStartWatch}
         onOpenCapabilities={onOpenCapabilities}
-        continuousListening={state.continuousListening}
+        continuousListening={sharing ? undefined : state.continuousListening}
         onRetryContinuousListening={() =>
           observeRendererPromise(
             controller.retryContinuousListening(),
@@ -302,7 +303,7 @@ export const ChatOverlay = forwardRef<ChatOverlayHandle, Props>(function ChatOve
         )}
         <ChatStatus state={state} />
         {!sharing && state.continuousListening.desired && (
-          <div aria-live="polite">
+          <div className="stream-input-status" aria-live="polite">
             {state.continuousListening.activeMicrophone && (
               <StatusLight variant="positive" size="S">
                 {t('streaming.activeMicrophone', {
@@ -312,9 +313,11 @@ export const ChatOverlay = forwardRef<ChatOverlayHandle, Props>(function ChatOve
                 })}
               </StatusLight>
             )}
+            {state.continuousListening.microphoneCaptured &&
+              state.alive?.settings.privacyMode === false && <StreamSourcePreview />}
             {!!state.continuousListening.audioGapCount && (
               <StatusLight variant="notice">
-                {t('watch.microphoneGaps', { count: state.continuousListening.audioGapCount })}
+                {t('streaming.audioGap', { count: state.continuousListening.audioGapCount })}
               </StatusLight>
             )}
           </div>
@@ -350,6 +353,7 @@ export const ChatOverlay = forwardRef<ChatOverlayHandle, Props>(function ChatOve
           busy={busy}
           gateOpen={gateOpen}
           listening={listening}
+          sharing={sharing}
           canInterrupt={canInterrupt}
           interruptionPending={interrupting || state.responseInterruptionPending}
           microphoneUnavailable={recognitionUnavailable}

@@ -130,7 +130,7 @@ def test_delivery_transition_and_tag_injection_containment():
     ]
     with patch(
         "app.tts.fish.condition_reference",
-        return_value=("reference.wav", "reference text", None, True),
+        return_value=("reference.wav", "reference text", Mock(language="en"), True),
     ):
         output = list(
             engine.stream(
@@ -146,6 +146,35 @@ def test_delivery_transition_and_tag_injection_containment():
     assert "[sad]" in engine._input.calls[1][0]
     assert "[slow pace]" in engine._input.calls[1][0]
     assert not engine._inference_lock.locked()
+
+
+@pytest.mark.parametrize("reference_language", ["en", "ru", "unknown"])
+def test_conditioning_follows_spoken_chunk_and_reference_language(reference_language):
+    engine = engine_fixture()
+    chunks = ["На экране снег белый.", "The snow on your screen is white.", "Снег is white."]
+    with patch(
+        "app.tts.fish.condition_reference",
+        return_value=("reference.wav", "transcript", Mock(language=reference_language), True),
+    ):
+        list(
+            engine.stream(
+                chunks,
+                language="en",
+                voice="voice",
+                intent=SpeechDeliveryIntent(style="тихо"),
+                cancelled=threading.Event(),
+            )
+        )
+    assert [request[3] for request in engine._input.calls] == [
+        reference_language == "en",
+        False,
+        reference_language == "en",
+    ]
+    assert ["[speaking Russian]" in request[0] for request in engine._input.calls] == [
+        reference_language == "en",
+        False,
+        False,
+    ]
 
 
 def test_cancel_drains_old_audio_and_reuses_worker_for_next_request():
@@ -172,7 +201,7 @@ def test_cancel_drains_old_audio_and_reuses_worker_for_next_request():
 
     with patch(
         "app.tts.fish.condition_reference",
-        return_value=("reference.wav", "reference text", None, True),
+        return_value=("reference.wav", "reference text", Mock(language="en"), True),
     ):
         stream = engine.stream(
             ["first", "second"],
@@ -211,7 +240,7 @@ def test_cancel_restarts_worker_only_if_request_does_not_settle(monkeypatch):
     monkeypatch.setattr("app.tts.fish.CANCELLATION_ACK_TIMEOUT_SECONDS", 0.01)
     with patch(
         "app.tts.fish.condition_reference",
-        return_value=("reference.wav", "reference text", None, True),
+        return_value=("reference.wav", "reference text", Mock(language="en"), True),
     ):
         stream = engine.stream(
             ["first"],
@@ -244,7 +273,7 @@ def test_cancel_between_requests_keeps_worker_warm(completed_chunks):
 
     with patch(
         "app.tts.fish.condition_reference",
-        return_value=("reference.wav", "reference text", None, True),
+        return_value=("reference.wav", "reference text", Mock(language="en"), True),
     ):
         output = list(
             engine.stream(

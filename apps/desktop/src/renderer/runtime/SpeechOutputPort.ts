@@ -51,7 +51,7 @@ export class RuntimeSpeechOutputPort implements SpeechOutputPort {
   constructor(
     private readonly speech: SpeechRuntime,
     private readonly player: AudioPlayer,
-    private readonly getLanguage: () => 'ru' | 'en' = () => 'ru',
+    private readonly getFallbackLanguage: () => 'ru' | 'en' = () => 'ru',
   ) {}
 
   hasSpeakableContent(text: string): boolean {
@@ -67,7 +67,7 @@ export class RuntimeSpeechOutputPort implements SpeechOutputPort {
       protocolVersion: TTS_STREAM_PROTOCOL_VERSION,
       sessionId: `speech:${turnId}`,
       turnId,
-      language: this.getLanguage(),
+      language: this.getFallbackLanguage(),
       delivery: intent,
     })
     let expectedAudioSequence = 0

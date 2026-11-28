@@ -2,11 +2,14 @@ import { type BrowserWindow, desktopCapturer, ipcMain } from 'electron'
 import { z } from 'zod'
 
 import {
+  WATCH_DETAIL_MAX_BYTES,
+  WATCH_DETAIL_MAX_REGIONS,
   WATCH_MAX_FRAME_BYTES,
   WATCH_TURN_MAX_BYTES,
   watchReferenceUrl,
 } from '../../shared/watchTogether'
 import type { WatchTogetherService } from '../watch-together/WatchTogetherService'
+import { windowsWatchAudio } from '../watch-together/windowsWatchAudio'
 import type { OverlayWindowManager } from '../windows/OverlayWindowManager'
 import type { IpcAuthorization } from './IpcAuthorization'
 
@@ -19,6 +22,7 @@ export function registerWatchTogetherIpc(
   const id = z.tuple([z.string().uuid()])
   const bytes = (min: number, max: number) =>
     z.instanceof(ArrayBuffer).refine((b) => b.byteLength >= min && b.byteLength <= max)
+  const relativeTime = z.number().int().min(-45_000).max(0)
   const moment = z.tuple([
     z
       .object({
@@ -29,8 +33,43 @@ export function registerWatchTogetherIpc(
           (b) => b.byteLength === 0 || (b.byteLength >= 512 && b.byteLength % 2 === 0),
         ),
         playbackTranscript: z.string().max(1000),
+        timing: z
+          .object({
+            earlierMs: relativeTime,
+            currentMs: relativeTime,
+            peakMs: relativeTime.optional(),
+          })
+          .strict()
+          .optional(),
+        peak: bytes(100, WATCH_MAX_FRAME_BYTES).optional(),
+        details: z
+          .array(bytes(100, WATCH_DETAIL_MAX_BYTES))
+          .max(WATCH_DETAIL_MAX_REGIONS)
+          .optional(),
+        phrases: z
+          .array(
+            z
+              .object({
+                startMs: relativeTime,
+                endMs: relativeTime,
+                text: z.string().min(1).max(600),
+                final: z.boolean(),
+              })
+              .strict()
+              .refine((p) => p.startMs <= p.endMs),
+          )
+          .max(4)
+          .optional(),
       })
-      .strict(),
+      .strict()
+      .refine(({ timing, peak }) => {
+        if (!timing) return !peak
+        const { earlierMs, currentMs, peakMs } = timing
+        return (
+          earlierMs <= currentMs &&
+          (peakMs === undefined ? !peak : !!peak && earlierMs <= peakMs && peakMs <= currentMs)
+        )
+      }),
   ])
   const wc = win.webContents
   const session = wc.session
@@ -60,14 +99,23 @@ export function registerWatchTogetherIpc(
         !watch.current(grant.id)
       )
         return cb({})
+      const audio = await windowsWatchAudio(video.id, grant.signal)
+      if (wc.isDestroyed() || request.frame !== wc.mainFrame || !watch.current(grant.id))
+        return cb({})
+      watch.describeGrant(grant.id, video.name)
       overlay.setCaptureExcluded(true)
       overlay.ensure()
-      cb({ video, audio: 'loopback' })
+      // Electron 45 forwards string IDs unchanged to Chromium's Windows loopback adapter.
+      cb(audio ? { video, audio: audio as 'loopback' } : { video })
     } catch {
       if (watch.current(grant.id)) overlay.setCaptureExcluded(false)
       cb({})
     }
   })
+  ipcMain.handle(
+    'watch:prepare-model',
+    auth.handlePayload('watch:prepare-model', z.tuple([]), () => watch.prepareModel()),
+  )
   ipcMain.handle(
     'watch:start',
     auth.handlePayload(
@@ -163,6 +211,7 @@ export function registerWatchTogetherIpc(
     for (const channel of [
       'watch:start',
       'watch:observe',
+      'watch:prepare-model',
       'watch:classify-speech',
       'watch:finish-comment',
       'watch:prepare-turn',

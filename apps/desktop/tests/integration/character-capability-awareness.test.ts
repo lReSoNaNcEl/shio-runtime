@@ -19,9 +19,8 @@ import {
   PluginRuntime,
 } from '../../src/main/plugins'
 import { PROJECT_AWARENESS_MANIFEST } from '../../src/main/project-awareness'
-import type { SpeechClient } from '../../src/main/speech/speechClient'
 import { WEB_SEARCH_MANIFEST, WebSearchPlugin } from '../../src/main/web-search'
-import type { BrowserObservation } from '../../src/shared/browser-control'
+import { type BrowserObservation, PLAYWRIGHT_CORE_VERSION } from '../../src/shared/browser-control'
 import type { ShioCapabilitySnapshot } from '../../src/shared/capabilities'
 import type { AppSettings } from '../../src/shared/config'
 import type { DesktopControlCapabilityProjection } from '../../src/shared/desktop-control'
@@ -187,7 +186,7 @@ async function main(): Promise<void> {
       enabled: false,
       browserName: 'Google Chrome',
       backend: 'playwright',
-      backendVersion: '1.62.1',
+      backendVersion: PLAYWRIGHT_CORE_VERSION,
       executableAvailable: true,
       isolatedProfile: true,
       semanticControl: 'ready',
@@ -282,7 +281,7 @@ async function main(): Promise<void> {
         enabled: true,
         browserName: 'Google Chrome',
         backend: 'playwright',
-        backendVersion: '1.62.1',
+        backendVersion: PLAYWRIGHT_CORE_VERSION,
         executableAvailable: true,
         isolatedProfile: true,
         semanticControl: 'ready',
@@ -326,6 +325,7 @@ async function main(): Promise<void> {
     assert.equal(aliveStarting?.availability, 'degraded')
     assert.deepEqual(aliveStarting?.source, { kind: 'core' })
     assert.equal(aliveStarting?.authority, 'read-only')
+    assert.equal(aliveStarting?.navigationTarget, undefined)
     assert.equal(
       disabled.capabilities.find((capability) => capability.id === 'project-awareness')
         ?.availability,
@@ -420,14 +420,9 @@ async function main(): Promise<void> {
       },
       clear: async () => undefined,
     }
-    const orchestrator = new Orchestrator(
-      llm,
-      memory,
-      {} as SpeechClient,
-      () => settings,
-      undefined,
-      { snapshot: async () => disabledNextTurn },
-    )
+    const orchestrator = new Orchestrator(llm, memory, () => settings, undefined, {
+      snapshot: async () => disabledNextTurn,
+    })
     await orchestrator.createReply({ userText: 'Что ты умеешь прямо сейчас?' })
     const prompt = captured.find(
       (message) =>
@@ -480,7 +475,6 @@ async function main(): Promise<void> {
         },
         clear: async () => undefined,
       },
-      {} as SpeechClient,
       () => settings,
       () => ({
         search: async () => {
@@ -553,7 +547,6 @@ async function main(): Promise<void> {
         appendTurn: async () => undefined,
         clear: async () => undefined,
       },
-      {} as SpeechClient,
       () => settings,
       undefined,
       { snapshot: async () => actionCapabilities },
@@ -642,7 +635,6 @@ async function main(): Promise<void> {
         appendTurn: async () => undefined,
         clear: async () => undefined,
       },
-      {} as SpeechClient,
       () => settings,
       undefined,
       { snapshot: async () => deterministicBrowserCapabilities },
@@ -742,7 +734,6 @@ async function main(): Promise<void> {
         appendTurn: async () => undefined,
         clear: async () => undefined,
       },
-      {} as SpeechClient,
       () => settings,
       undefined,
       { snapshot: async () => deterministicBrowserCapabilities },

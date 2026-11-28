@@ -70,6 +70,7 @@ export function LlmSettingsSection({
           />
         )}
         {state.activeProvider === 'codex-cli' && <Text>{t('settings.llm.codexLogin')}</Text>}
+        {state.activeProvider === 'ollama' && <Text>{t('settings.llm.ollamaSetup')}</Text>}
         {activeProfile?.requiresApiKey !== false && (
           <div className="settings-field">
             <span className="settings-label">{credentialLabel}</span>

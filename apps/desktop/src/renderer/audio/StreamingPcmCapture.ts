@@ -21,6 +21,13 @@ export class StreamingPcmCapture {
   private onDeviceLost: (() => void) | null = null
   private deviceLostNotified = false
   private startTask: Promise<void> | null = null
+  private levelListener: ((rms: number, at: number) => void) | null = null
+  private level?: { rms: number; at: number }
+
+  /** Levels from the existing capture only; no audio is retained for reactions. */
+  setLevelListener(listener: ((rms: number, at: number) => void) | null): void {
+    this.levelListener = listener
+  }
 
   /**
    * @param onDeviceLost Invoked once if the working input track ends on its own
@@ -138,6 +145,7 @@ export class StreamingPcmCapture {
   async stop(): Promise<void> {
     this.onFrame = null
     this.onDeviceLost = null
+    this.level = undefined
     if (this.worklet) {
       this.worklet.port.onmessage = null
       this.worklet.port.close()
@@ -169,6 +177,11 @@ export class StreamingPcmCapture {
     )
   }
 
+  readLevel(): number {
+    const level = this.level
+    return this.isAlive() && level && performance.now() - level.at < 300 ? level.rms : 0
+  }
+
   activeMicrophone(
     selectedDeviceId: string,
   ): { label: string; changePending: boolean } | undefined {
@@ -188,6 +201,15 @@ export class StreamingPcmCapture {
     if (timing.discontinuous) {
       this.resampleBuffer = new Float32Array(0)
       this.resamplePosition = 0
+    }
+    if (frame.length > 0) {
+      let energy = 0
+      for (const sample of frame) energy += sample * sample
+      const rms = Math.sqrt(energy / frame.length)
+      const at = performance.now()
+      const previous = timing.discontinuous ? 0 : (this.level?.rms ?? 0)
+      this.level = { rms: Math.max(rms, previous * 0.82), at }
+      this.levelListener?.(rms, at)
     }
     const combined = new Float32Array(this.resampleBuffer.length + frame.length)
     combined.set(this.resampleBuffer)

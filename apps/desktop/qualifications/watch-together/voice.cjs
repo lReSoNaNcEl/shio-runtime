@@ -4,6 +4,7 @@ const fs = require('node:fs/promises')
 const os = require('node:os')
 const path = require('node:path')
 const { _electron } = require('playwright-core')
+const { writeWatchProfile } = require('./profile.cjs')
 
 const desktop = path.resolve(__dirname, '../..')
 const sourceTitle = 'Shio qualification · Spaces'
@@ -111,6 +112,10 @@ async function startWatch(page, title) {
   await page.getByRole('button', { name: 'Трансляция', exact: true }).click()
   await page.getByRole('button', { name: title }).click()
   await page.getByRole('button', { name: 'Начать трансляцию', exact: true }).click()
+  const microphone = page.getByRole('switch', { name: 'Микрофон трансляции' })
+  await microphone.press('Space')
+  await page.getByText('Подключение микрофона', { exact: true }).waitFor({ state: 'hidden' })
+  assert.equal(await microphone.isChecked(), true)
 }
 
 async function checkConversation(application, page) {
@@ -180,28 +185,17 @@ async function qualify() {
     else synthesizeMicrophone(wav)
     const profile = path.join(directory, 'profile')
     await fs.mkdir(profile)
-    const role = { providerId: 'codex-cli', model: 'gpt-6-luna' }
-    await fs.writeFile(
-      path.join(profile, 'config.json'),
-      JSON.stringify({
-        setup: { completed: true },
-        uiLocale: 'ru',
-        uiTheme: 'light',
-        micDeviceId: 'default',
-        speechVolumePercent: 0,
-        llm: {
-          activeProvider: role.providerId,
-          providers: {
-            [role.providerId]: {
-              model: role.model,
-              codexReasoningByModel: { [role.model]: 'low' },
-            },
-          },
-          roles: { characterFallbacks: [], backlogSelector: role, computerUseVision: role },
-        },
-      }),
-    )
-    const env = { ...process.env, SHIO_DESKTOP_USER_DATA_ROOT: profile, SHIO_MOTION_ENABLED: '0' }
+    await writeWatchProfile(profile, {
+      uiTheme: 'light',
+      micDeviceId: 'default',
+      speechVolumePercent: 0,
+    })
+    const env = {
+      ...process.env,
+      SHIO_DESKTOP_USER_DATA_ROOT: profile,
+      SHIO_MOTION_ENABLED: '0',
+      SHIO_SILENT_QA: '1',
+    }
     delete env.ELECTRON_RUN_AS_NODE
     application = await _electron.launch({
       executablePath: require('electron'),

@@ -179,7 +179,7 @@ function transientIncidentSemantics(): void {
           id: 'llm:rate_limited',
           owner: 'llm',
           code: 'RATE_LIMITED',
-          provider: 'mistral',
+          provider: 'openrouter',
           occurredAt: 90,
           expiresAt: 200,
         },

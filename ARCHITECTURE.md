@@ -133,12 +133,12 @@ Architectural Invariants define properties of Shio Runtime that must never chang
     Ambient backlog is bounded, temporary, and non-FIFO by design. See [Chapter 14 - Conversation Admission](#14-conversation-admission).
 16. **At-Most-One Selection**  
     One admission cycle selects at most one next backlog turn.
-17. **Arbitration Optionality**  
-    Semantic arbitration is optional and never required for normal text chat.
-18. **Deterministic Degradation**  
-    Failure of an optional decision model degrades to deterministic behavior, never to an unhandled admission.
+17. **Deterministic Backlog Selection**
+    Conversation Admission selects pending ambient utterances using local deterministic rules without a model call.
+18. **Explicit Input Priority**
+    Pending explicit input takes precedence over ambient backlog selection.
 19. **Role Isolation**  
-    Character generation and decision arbitration are distinct roles, even when implemented by the same provider or the same underlying model.
+    Character response generation and upstream classification are distinct roles, even when they use the same provider or model.
 20. **Technology Independence**  
     Speech and decision contracts must remain stable when their concrete engines, processes, transports, or providers change.
 21. **Avatar Ownership**  
@@ -383,7 +383,7 @@ These projections carry identity and status information only. Character State ne
 
 Character State stores the final result. For example, the LLM may suggest an emotion, Experience Layer may modify it, and Avatar Runtime renders it, but Character State remains the canonical observable record.
 
-These read-only projections mirror facts owned elsewhere. Shared Character State does not own the Utterance Backlog, does not perform selection, does not perform arbitration, and does not control Conversation Runtime. It remains a read-only projection of those facts, not an orchestration engine. See [Chapter 14 - Conversation Admission](#14-conversation-admission).
+These read-only projections mirror facts owned elsewhere. Shared Character State does not own the Utterance Backlog, select pending utterances, or control Conversation Runtime. It remains a read-only projection of those facts, not an orchestration engine. See [Chapter 14 - Conversation Admission](#14-conversation-admission).
 
 The embodiment projections above follow the same rule. Shared Character State does not own avatar controllers, does not apply model values, does not compose facial contributions, does not select animation, and does not resolve gaze conflicts. It mirrors the outcome that Avatar Runtime owns; it does not become an embodiment orchestration engine. See [Chapter 20 - Avatar Runtime](#20-avatar-runtime).
 
@@ -503,8 +503,8 @@ Decision layers:
    Performs extremely lightweight input-source and admission classification such as conversational candidate, ignored speech, background speech, or explicit system request. It never selects Character capabilities or tools from natural language.
 2. **Rule Gate**  
    Applies deterministic rules such as wake phrases, filler-word rejection, duplicate filtering, confidence thresholds, cooldown timers, and command prefixes.
-3. **Optional Semantic Arbitration**
-   Helps Conversation Admission choose or merge buffered utterances after a busy turn when deterministic backlog selection cannot decide. It never chooses a Character tool.
+3. **Backlog Selection**
+   Conversation Admission ranks and may merge buffered utterances using local rules after the current turn reaches terminal completion.
 4. **Character LLM**  
    Handles personality, dialogue, humor, emotional tone, creativity, reasoning, and tool intentions.
 5. **Action Runtime**  
@@ -529,7 +529,6 @@ Decision Pipeline owns the transition from a recognized utterance to an admissio
 - **Attention Evaluation:** evaluates relevance, directness, and context, optionally depending on a configured attention mode. It never generates a response, never triggers an external effect, and never bypasses Conversation Admission.
 - **Rule Evaluation:** applies deterministic rules to accept or reject an utterance. It never invokes Conversation Runtime directly.
 - **Backlog Selection:** while the current response flow is busy, accumulates candidates into the Bounded Utterance Backlog — storing, deduplicating, expiring, and updating them — without selecting among them. Only after the current flow reaches terminal completion does selection choose, under Conversation Admission ownership, at most one next candidate. Selection does not run in the middle of an active flow unless a future barge-in capability explicitly allows it. See [Chapter 14 - Conversation Admission](#14-conversation-admission).
-- **Optional Arbitration Adapter:** an optional, replaceable semantic classifier consulted only when deterministic backlog selection cannot produce a sufficiently clear result. See [Chapter 14 - Conversation Admission](#14-conversation-admission).
 
 The outcome of Decision Pipeline is always an admission decision, never a direct invocation of Conversation Runtime. See [Chapter 14 - Conversation Admission](#14-conversation-admission).
 
@@ -549,7 +548,7 @@ Conversation Admission owns:
 
 **Single Admission Owner**
 
-Conversation Admission is the only architectural entry point into Conversation Runtime. No other component may directly start a new conversation flow, including: the speech recognition event handler, Utterance Assembly, Attention Evaluation, Rule Evaluation, the Bounded Utterance Backlog, an Arbitration Adapter, a speech playback completion callback, a UI lifecycle callback, or an Event Bus subscriber. Any of these may request admission; none may grant it to themselves.
+Conversation Admission is the only architectural entry point into Conversation Runtime. No other component may directly start a new conversation flow, including the speech recognition event handler, Utterance Assembly, Attention Evaluation, Rule Evaluation, the Bounded Utterance Backlog, a speech playback completion callback, a UI lifecycle callback, or an Event Bus subscriber. Any of these may request admission. Only Conversation Admission grants it.
 
 **Admission vs Execution**
 
@@ -561,7 +560,7 @@ Conversation Admission enforces the Single-Flight invariant: at most one admitte
 
 **Busy Input Policy**
 
-When Conversation Runtime is busy with an active flow, a newly completed ambient utterance is not discarded outright and is not force-queued in arrival order. It becomes a candidate for the Bounded Utterance Backlog, described below. Explicit input follows its own admission path and is not required to pass through ambient backlog arbitration. See [Chapter 16 - Speech Runtime](#16-speech-runtime) for the distinction between explicit and ambient input.
+When Conversation Runtime is busy with an active flow, a newly completed ambient utterance may become a candidate for the Bounded Utterance Backlog. Explicit input follows its own admission path and takes precedence over backlog selection. See [Chapter 16 - Speech Runtime](#16-speech-runtime) for the distinction between explicit and ambient input.
 
 **Bounded Utterance Backlog**
 
@@ -577,29 +576,9 @@ Selection semantics:
 - Several related utterances may be merged into one semantic turn when this preserves the user's intent.
 - Stale, duplicate, low-value, and likely self-echo utterances may be discarded. See [Self-Echo](#23-glossary) in the Glossary.
 
-**Optional Semantic Arbitration Adapter**
+**Deterministic Backlog Selection**
 
-When deterministic backlog selection cannot produce a sufficiently clear result, Conversation Admission may consult an Optional Semantic Arbitration Adapter. This is a replaceable classifier role, not a named provider or model.
-
-It may help: choose between ambiguous backlog candidates, determine whether utterances are related, merge related utterances, classify a correction or follow-up, and return a structured decision.
-
-It must never: respond to the user, play the role of Shio, use the Character persona, change Character State directly, invoke Tools, invoke Conversation Runtime, produce external effects, or replace deterministic policy as the default path.
-
-Activation and failure semantics:
-
-- Arbitration is optional and is invoked only when deterministic selection cannot produce a sufficiently clear result.
-- Ordinary text chat does not use ambient backlog arbitration.
-- When continuous listening is disabled, the arbitration adapter is inactive.
-- Arbitration failure — including timeout, unavailable provider, invalid structured result, low confidence, staleness, or cancellation — must degrade to deterministic selection or safe discard. It must never leave an utterance unresolved.
-
-**LLM Role Separation**
-
-The Character LLM and any decision or arbitration model are separate architectural roles, even when implemented by the same provider or the same underlying model:
-
-- **Character LLM** owns character response generation, persona, dialogue style, and reply content.
-- **Decision or Arbitration Model** may own narrow structured classification, selection, ranking, or merge decisions only.
-
-Each role keeps: separate prompts, separate contracts, separate output schemas, independent configuration, and no persona in the decision model.
+Conversation Admission selects locally using priority, attention score, and recency. Near-ties use the same ordering and a stable tie-breaker. Local merge rules join eligible utterances from the same listening session and preserve their wording. Disabling continuous listening or resetting the listening session clears the backlog.
 
 **Self-Echo**
 
@@ -609,12 +588,12 @@ Continuous input may capture the character's own speech output. Decision Pipelin
 
 - Conversation Runtime has exactly one entry point.
 - Busy-time ambient input does not bypass admission and does not silently accumulate without bound.
-- Selection remains deterministic by default; semantic arbitration is an optional refinement, not a requirement.
+- Backlog ranking and merging complete without a provider call.
 - Text chat is unaffected by ambient backlog policy.
 
 **Future Evolution**
 
-The optional arbitration contract described above — the adapter boundary, structured decision, role isolation, deterministic fallback, and stale-result rejection — is part of the current architecture. More capable semantic arbitration strategies, such as richer semantic ranking, advanced merge quality, or speaker-aware arbitration, remain future evolution. Barge-in and interruptible speech output are also described in [Chapter 24 - Future Evolution](#24-future-evolution) as planned capabilities, not current guarantees.
+Barge-in and interruptible speech output are described in [Chapter 24 - Future Evolution](#24-future-evolution).
 
 ## Part IV - Runtime Systems
 
@@ -691,7 +670,7 @@ The Conversation Runtime completion contract resolves only after the entire admi
 
 Conversation Runtime obtains reply content through a replaceable Character Response Generation contract, a responsibility within the execution of a conversational turn rather than a separate top-level Runtime. Behind this contract may be a Character LLM, a local model, a remote provider, a deterministic reply generator, or a future composite system.
 
-The Character LLM owns: reply content, personality expression, dialogue style, reasoning, emotional tone, and action intentions. It does not own: admission, playback, Character State lifecycle, Avatar Runtime, or Action Runtime execution. This mirrors the LLM Role Separation described in [Chapter 14 - Conversation Admission](#14-conversation-admission): Character Response Generation and any decision or arbitration model remain separate roles even when backed by the same provider.
+The Character LLM owns: reply content, personality expression, dialogue style, reasoning, emotional tone, and action intentions. It does not own: admission, playback, Character State lifecycle, Avatar Runtime, or Action Runtime execution. Upstream classifiers have their own bounded contracts and remain separate from Character Response Generation. See [Chapter 14 - Conversation Admission](#14-conversation-admission).
 
 For each admitted turn, orchestration resolves the current Runtime Capability Context and builds a Character Tool Registry containing only tools that are actually available for that request. The Registry is a read-only catalog, not a Runtime or authority owner. Before an explicit user turn produces user-visible text, the same Character LLM performs a strict typed planning phase and returns two independent decisions: one Tool Requirement (`direct-answer`, `source-preferred`, `required-source`, or `explicit-tool`) describing the minimum obligation before a terminal reply, and one bounded initial Tool Plan describing tools that may materially help complete the original user goal. An explicitly requested tool remains a hard requirement even when it is unavailable. Current public facts and claims about current repository or browser state use hard required sources; generic self-knowledge, brainstorming, or background sources may be preferred rather than mandatory. Natural-language requirement and capability selection belong exclusively to the Character LLM and may not be inferred by phrase, keyword, regular-expression, filename, technical-symbol, or locale-alias rules in application code. This planning phase is part of Character Response Generation, not a separate router model or Runtime.
 
@@ -846,7 +825,7 @@ The following semantics apply regardless of implementation:
 
 **Explicit Non-Responsibilities**
 
-Speech Runtime does not own Intent Router, Attention Evaluation, Rule Gate, backlog arbitration, or Conversation Admission. It does not decide: whether Shio should respond, whether an utterance was addressed to Shio, how interesting an utterance is, when to invoke Character Response Generation, which attention policy applies, or whether an utterance belongs in a backlog. It does not own Character Response Generation or the Character LLM, and it does not own the complete conversation flow. These decisions and responsibilities belong to Decision Pipeline, Conversation Admission, and Conversation Runtime. See [Chapter 13 - Decision Pipeline](#13-decision-pipeline), [Chapter 14 - Conversation Admission](#14-conversation-admission), and [Chapter 15 - Conversation Runtime](#15-conversation-runtime).
+Speech Runtime does not own Intent Router, Attention Evaluation, Rule Gate, backlog selection, or Conversation Admission. It does not decide: whether Shio should respond, whether an utterance was addressed to Shio, how interesting an utterance is, when to invoke Character Response Generation, which attention policy applies, or whether an utterance belongs in a backlog. It does not own Character Response Generation or the Character LLM, and it does not own the complete conversation flow. These decisions and responsibilities belong to Decision Pipeline, Conversation Admission, and Conversation Runtime. See [Chapter 13 - Decision Pipeline](#13-decision-pipeline), [Chapter 14 - Conversation Admission](#14-conversation-admission), and [Chapter 15 - Conversation Runtime](#15-conversation-runtime).
 
 **Input Source Distinction**
 
@@ -855,7 +834,7 @@ Speech Runtime, together with other input surfaces, distinguishes two categories
 - **Explicit Input:** text chat, explicit push-to-talk, direct command.
 - **Ambient Input:** continuous microphone listening, passive observation source.
 
-Ordinary text chat is explicit input and does not automatically pass through ambient-input arbitration. Backlog arbitration is an optional policy for completed ambient utterances; it is not part of the normal text-chat path. Disabling continuous listening disables ambient backlog arbitration, but does not affect ordinary text conversation. See [Chapter 14 - Conversation Admission](#14-conversation-admission).
+Ordinary text chat follows the explicit input path. Conversation Admission applies backlog selection only to completed ambient utterances captured through continuous listening. See [Chapter 14 - Conversation Admission](#14-conversation-admission).
 
 **Non-Responsibilities**
 
@@ -2111,7 +2090,7 @@ Character Response Generation remains provider-independent. Desktop uses the off
 
 Adapter categories:
 
-- **AI Adapters:** language model providers such as Groq, OpenAI, local inference servers, and future providers, used by Character Response Generation and by decision or arbitration roles through their own stable contracts. AI Adapters are not owned by Speech Runtime.
+- **AI Adapters:** language model providers such as Groq, OpenAI, local inference servers, and future providers, used by Character Response Generation and by other components through their own stable contracts. AI Adapters are not owned by Speech Runtime.
 - **Speech Adapters:** speech-related services such as ASR and TTS providers, used by Speech Runtime for recognition, synthesis, and related speech-domain operations.
 - **Platform Adapters:** external platforms such as YouTube, Twitch, Discord, OBS, and future streaming services
 - **Storage Adapters:** persistence providers such as SQLite, PostgreSQL, cloud storage, and vector databases
@@ -2229,8 +2208,6 @@ Runtime systems communicate with architectural concepts. Adapters communicate wi
 - **Partial Transcript:** a mutable intermediate recognition snapshot that does not constitute a conversation turn.
 - **Final Transcript:** the authoritative completed result of a speech recognition segment.
 - **Utterance Backlog:** a bounded, short-lived store of completed ambient utterances awaiting selection.
-- **Arbitration Adapter:** an optional, replaceable semantic classifier used for ambiguous backlog selection.
-- **Decision Model:** a model or classifier that returns a narrow structured decision rather than a character reply.
 - **Single-Flight:** the guarantee that at most one conversation response flow, and therefore at most one active Conversation Runtime instance, executes at a time.
 - **Self-Echo:** the character's own recognized speech output mistakenly captured by the input channel.
 - **Embodiment:** the complete set of visual proofs of the character's presence, including body, face, gaze, speech-driven motion, and secondary motion.
@@ -2277,7 +2254,6 @@ Planned capabilities for continuous input and admission, not current guarantees:
 
 - **True barge-in and interruptible speech output.** Barge-in may later allow selected user input to interrupt active speech output. Until then, backlog selection occurs only after the current response flow completes, in accordance with the Single-Flight invariant.
 - **Speaker-aware input.** Distinguishing between speakers may refine self-echo rejection and attention evaluation without changing the Conversation Admission boundary.
-- **Semantic backlog arbitration.** A more capable Optional Semantic Arbitration Adapter may improve selection quality; it remains optional and degrades to deterministic selection on failure.
 - **Native streaming recognition adapters.** Recognition engines may be replaced by native streaming implementations without changing the speech event contract.
 - **Multi-source ambient input.** Multiple simultaneous ambient sources may feed the same Bounded Utterance Backlog under the same admission boundary.
 
@@ -2455,12 +2431,11 @@ Use this checklist before implementing significant features, Runtime modificatio
 - Can more than one Conversation Runtime flow start concurrently?
 - Can more than one speech playback run concurrently?
 - Can partial recognition reach the Character LLM?
-- Does text chat accidentally enter ambient backlog arbitration?
-- Can disabling continuous input leave pending arbitration active?
+- Does text chat use the explicit input path?
+- Does disabling continuous input clear the ambient backlog?
 - Is the backlog bounded and expiring?
-- Can an arbitration result become stale?
-- Does an optional decision model have a deterministic fallback?
-- Are Character LLM and Decision Model roles isolated?
+- Does backlog selection remain deterministic without a provider call?
+- Are upstream classification and Character Response Generation isolated?
 - Does an Event Bus subscriber assume ownership it does not have?
 
 **Embodiment**

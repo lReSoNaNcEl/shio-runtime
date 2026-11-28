@@ -44,7 +44,6 @@ export const bargeInTuning = {
 export const backlogTuning = {
   maxItems: 10,
   ttlMs: { correction: 30_000, direct: 25_000, followUp: 18_000, nonDirect: 8_000 },
-  maxSelectedTurnsPerDrain: 1,
   mergeWindowMs: 6_000,
   maxMergedCharacters: 600,
   recentIdLimit: 128,

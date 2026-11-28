@@ -1,20 +1,27 @@
 import {
+  ActionButton,
   Badge,
   Button,
   Content,
   Heading,
   InlineAlert,
   ProgressCircle,
-  StatusLight,
   Text,
   ToggleButton,
+  ToggleButtonGroup,
 } from '@react-spectrum/s2'
+import AlertDiamond from '@react-spectrum/s2/icons/AlertDiamond'
+import AlertTriangle from '@react-spectrum/s2/icons/AlertTriangle'
 import Chat from '@react-spectrum/s2/icons/Chat'
+import Checkmark from '@react-spectrum/s2/icons/Checkmark'
+import ChevronRight from '@react-spectrum/s2/icons/ChevronRight'
 import DeviceDesktop from '@react-spectrum/s2/icons/DeviceDesktop'
+import Plugin from '@react-spectrum/s2/icons/Plugin'
 import Project from '@react-spectrum/s2/icons/Project'
+import RemoveCircle from '@react-spectrum/s2/icons/RemoveCircle'
 import RocketQuickActions from '@react-spectrum/s2/icons/RocketQuickActions'
 import UserAvatar from '@react-spectrum/s2/icons/UserAvatar'
-import { type ReactNode, useMemo, useState } from 'react'
+import { type ReactNode, useId, useRef, useState } from 'react'
 
 import {
   type CapabilityAvailability,
@@ -26,24 +33,51 @@ import {
 import { type TranslationKey } from '../../../shared/localization'
 import { useTranslation } from '../../localization/useTranslation'
 import { observeRendererPromise } from '../../reliability/observePromise'
+import { settingsSections } from '../settings/state/settingsContracts'
 
-type StatusTone = 'positive' | 'neutral' | 'notice' | 'negative'
-type AvailabilityFilter = 'all' | 'available' | 'setup' | 'problems'
+type StatusTone = 'neutral' | 'positive' | 'notice' | 'negative'
+type AvailabilityFilter = 'all' | 'attention'
 
-const STATUS: Record<CapabilityAvailability, { label: TranslationKey; tone: StatusTone }> = {
-  available: { label: 'capabilities.availability.available', tone: 'positive' },
-  disabled: { label: 'capabilities.availability.disabled', tone: 'neutral' },
-  'needs-setup': { label: 'capabilities.availability.needsSetup', tone: 'notice' },
-  degraded: { label: 'capabilities.availability.degraded', tone: 'notice' },
-  unavailable: { label: 'capabilities.availability.unavailable', tone: 'negative' },
+const STATUS: Record<
+  CapabilityAvailability,
+  { label: TranslationKey; tone: StatusTone; icon: ReactNode }
+> = {
+  available: {
+    label: 'capabilities.availability.available',
+    tone: 'positive',
+    icon: <Checkmark />,
+  },
+  disabled: {
+    label: 'capabilities.availability.disabled',
+    tone: 'neutral',
+    icon: <RemoveCircle />,
+  },
+  'needs-setup': {
+    label: 'capabilities.availability.needsSetup',
+    tone: 'notice',
+    icon: <AlertTriangle />,
+  },
+  degraded: {
+    label: 'capabilities.availability.degraded',
+    tone: 'notice',
+    icon: <AlertTriangle />,
+  },
+  unavailable: {
+    label: 'capabilities.availability.unavailable',
+    tone: 'negative',
+    icon: <AlertDiamond />,
+  },
 }
 
 const FILTERS: Array<{ id: AvailabilityFilter; label: TranslationKey }> = [
   { id: 'all', label: 'capabilities.filter.all' },
-  { id: 'available', label: 'capabilities.filter.available' },
-  { id: 'setup', label: 'capabilities.filter.setup' },
-  { id: 'problems', label: 'capabilities.filter.problems' },
+  { id: 'attention', label: 'capabilities.attention.title' },
 ]
+
+const EMPTY_MESSAGE: Record<AvailabilityFilter, TranslationKey> = {
+  all: 'capabilities.filter.empty',
+  attention: 'capabilities.filter.emptyAttention',
+}
 
 const CATEGORIES: Array<{ id: CapabilityCategory; label: TranslationKey; icon: ReactNode }> = [
   { id: 'communication', label: 'capabilities.category.communication', icon: <Chat /> },
@@ -53,24 +87,12 @@ const CATEGORIES: Array<{ id: CapabilityCategory; label: TranslationKey; icon: R
   { id: 'presence', label: 'capabilities.category.presence', icon: <UserAvatar /> },
 ]
 
-function matchesFilter(capability: ShioCapabilityDescriptor, filter: AvailabilityFilter): boolean {
-  if (filter === 'all') return true
-  if (filter === 'available') return capability.availability === 'available'
-  if (filter === 'setup') {
-    return capability.availability === 'disabled' || capability.availability === 'needs-setup'
-  }
-  return capability.availability === 'degraded' || capability.availability === 'unavailable'
-}
-
-function actionLabel(
-  target: CapabilityNavigationTarget,
-  availability: CapabilityAvailability,
-): TranslationKey {
+function actionLabel(target: CapabilityNavigationTarget): TranslationKey | undefined {
   switch (target.kind) {
-    case 'settings':
-      return availability === 'available'
-        ? 'capabilities.action.openSettings'
-        : 'capabilities.action.configure'
+    case 'settings': {
+      const section = settingsSections.find((id) => id === target.id)
+      return section ? `settings.section.${section}` : undefined
+    }
     case 'plugin':
       return 'capabilities.action.openPlugin'
     case 'view':
@@ -85,7 +107,7 @@ function authorityLabel(capability: ShioCapabilityDescriptor): TranslationKey | 
   return null
 }
 
-function CapabilityCard({
+function CapabilityEntry({
   capability,
   onNavigate,
 }: {
@@ -95,41 +117,89 @@ function CapabilityCard({
   const { t } = useTranslation()
   const status = STATUS[capability.availability]
   const navigationTarget = capability.navigationTarget
+  const opensPlugin = navigationTarget?.kind === 'plugin'
   const authority = authorityLabel(capability)
+  const isVisualBrowserControl = capability.details?.kind === 'browser-computer-use'
+  const title = t(isVisualBrowserControl ? 'capabilities.browserVisual.title' : capability.titleKey)
+  const description = t(
+    isVisualBrowserControl ? 'capabilities.browserVisual.description' : capability.descriptionKey,
+  )
+  const label = navigationTarget && actionLabel(navigationTarget)
+  const action =
+    label &&
+    (navigationTarget?.kind === 'settings'
+      ? t('capabilities.action.openSettingsSection', { section: t(label) })
+      : t(label))
   return (
-    <article className={`capability-card capability-card-${capability.availability}`}>
-      <div className="capability-card-heading">
-        <Heading level={3}>{t(capability.titleKey)}</Heading>
-        <StatusLight variant={status.tone} size="S">
-          {t(status.label)}
-        </StatusLight>
+    <article className="capability-entry">
+      <div className="capability-entry-copy">
+        <div className="capability-entry-heading">
+          <Heading level={3}>{title}</Heading>
+          <div className="capability-entry-tags">
+            <Badge size="S" variant={status.tone} fillStyle="subtle">
+              {status.icon}
+              <Text>{t(status.label)}</Text>
+            </Badge>
+            {authority && (
+              <Badge size="S" variant="neutral" fillStyle="outline">
+                {t(authority)}
+              </Badge>
+            )}
+          </div>
+        </div>
+        <Text UNSAFE_className="capability-description">{description}</Text>
+        {capability.reasonKey && (
+          <Text UNSAFE_className="capability-reason">{t(capability.reasonKey)}</Text>
+        )}
       </div>
-      <Text UNSAFE_className="capability-description">{t(capability.descriptionKey)}</Text>
-      {authority && (
-        <Badge
-          size="S"
-          variant="gray"
-          UNSAFE_className={`capability-authority capability-authority-${capability.authority}`}
-        >
-          {t(authority)}
-        </Badge>
-      )}
-      {capability.reasonKey && (
-        <Text UNSAFE_className="capability-reason">{t(capability.reasonKey)}</Text>
-      )}
-      {navigationTarget && (
-        <Button
-          size="S"
-          variant={capability.availability === 'available' ? 'secondary' : 'accent'}
-          onPress={() => onNavigate(navigationTarget)}
-          UNSAFE_className={`capability-action${
-            capability.availability === 'available' ? '' : ' shio-accent-button'
-          }`}
-        >
-          {t(actionLabel(navigationTarget, capability.availability))}
-        </Button>
+      {navigationTarget && action && (
+        <div className="capability-entry-action">
+          <ActionButton
+            isQuiet={!opensPlugin && capability.availability === 'available'}
+            aria-label={t('capabilities.action.forCapability', { action, capability: title })}
+            onPress={() => onNavigate(navigationTarget)}
+          >
+            {opensPlugin ? <Plugin /> : <ChevronRight />}
+            <Text>{action}</Text>
+          </ActionButton>
+        </div>
       )}
     </article>
+  )
+}
+
+function CapabilityGroup({
+  title,
+  icon,
+  capabilities,
+  onNavigate,
+}: {
+  title: string
+  icon: ReactNode
+  capabilities: readonly ShioCapabilityDescriptor[]
+  onNavigate: (target: CapabilityNavigationTarget) => void
+}) {
+  const headingId = useId()
+  if (capabilities.length === 0) return null
+
+  return (
+    <section className="capability-group" aria-labelledby={headingId}>
+      <div className="capability-group-heading">
+        <span className="capability-group-icon" aria-hidden="true">
+          {icon}
+        </span>
+        <Heading level={2} id={headingId}>
+          {title}
+        </Heading>
+      </div>
+      <ul className="capability-list">
+        {capabilities.map((capability) => (
+          <li key={capability.id}>
+            <CapabilityEntry capability={capability} onNavigate={onNavigate} />
+          </li>
+        ))}
+      </ul>
+    </section>
   )
 }
 
@@ -146,23 +216,18 @@ export function CapabilitiesView({
 }) {
   const { t } = useTranslation()
   const [filter, setFilter] = useState<AvailabilityFilter>('all')
-  const presentedCapabilities = useMemo(
-    () => snapshot?.capabilities.filter((capability) => capability.id !== 'avatar-presence') ?? [],
-    [snapshot],
-  )
-  const counts = useMemo(() => {
-    return Object.fromEntries(
-      FILTERS.map(({ id }) => [
-        id,
-        presentedCapabilities.filter((item) => matchesFilter(item, id)).length,
-      ]),
-    ) as Record<AvailabilityFilter, number>
-  }, [presentedCapabilities])
-  const visibleCapabilities = useMemo(
-    () => presentedCapabilities.filter((capability) => matchesFilter(capability, filter)),
-    [filter, presentedCapabilities],
-  )
-  const attentionCount = counts.setup + counts.problems
+  const catalogRef = useRef<HTMLElement>(null)
+  // Avatar has a dedicated view and autonomous reactions describe internal behavior.
+  const capabilities =
+    snapshot?.capabilities.filter(
+      ({ id }) => id !== 'avatar-presence' && id !== 'alive-autonomy',
+    ) ?? []
+  const attention = capabilities.filter(({ availability }) => availability !== 'available')
+  const visible = filter === 'attention' ? attention : capabilities
+  const counts = {
+    all: capabilities.length,
+    attention: attention.length,
+  }
 
   if (!snapshot && !error) {
     return (
@@ -173,8 +238,11 @@ export function CapabilitiesView({
   }
 
   return (
-    <section className="capabilities-view page-container" aria-label={t('app.nav.capabilities')}>
-      <Text>{t('capabilities.catalog.description')}</Text>
+    <section
+      className="capabilities-view page-container"
+      aria-label={t('app.nav.capabilities')}
+      ref={catalogRef}
+    >
       {error && (
         <InlineAlert variant="negative" fillStyle="subtleFill">
           <Heading>{t('common.error')}</Heading>
@@ -187,64 +255,45 @@ export function CapabilitiesView({
           </Button>
         </InlineAlert>
       )}
-      {snapshot && attentionCount > 0 && filter === 'all' && (
-        <InlineAlert variant="notice" fillStyle="subtleFill">
-          <Heading>{t('capabilities.attention.title')}</Heading>
-          <Content>{t('capabilities.attention.description', { count: attentionCount })}</Content>
-        </InlineAlert>
-      )}
       {snapshot && (
         <>
-          <fieldset className="capabilities-summary">
-            <legend className="visually-hidden">{t('capabilities.filter.label')}</legend>
-            {FILTERS.map((item) => (
-              <ToggleButton
-                key={item.id}
-                size="S"
-                isSelected={filter === item.id}
-                isEmphasized={filter === item.id}
-                onChange={(selected) => {
-                  if (selected) setFilter(item.id)
-                }}
-                UNSAFE_className="capabilities-filter"
-              >
-                {`${t(item.label)} · ${counts[item.id]}`}
-              </ToggleButton>
-            ))}
-          </fieldset>
-          {visibleCapabilities.length === 0 && (
-            <div className="capabilities-empty">
-              <Text>{t('capabilities.filter.empty')}</Text>
+          <div className="capabilities-toolbar">
+            <ToggleButtonGroup
+              aria-label={t('capabilities.filter.label')}
+              selectionMode="single"
+              disallowEmptySelection
+              selectedKeys={[filter]}
+              onSelectionChange={(keys) => {
+                setFilter(keys.has('attention') ? 'attention' : 'all')
+                catalogRef.current?.scrollIntoView?.({ block: 'start' })
+              }}
+              UNSAFE_className="capabilities-filters"
+            >
+              {FILTERS.map(({ id, label }) => (
+                <ToggleButton id={id} key={id}>
+                  {`${t(label)} · ${counts[id]}`}
+                </ToggleButton>
+              ))}
+            </ToggleButtonGroup>
+          </div>
+          {counts[filter] === 0 && (
+            <div className="capabilities-empty" role="status">
+              <Text>{t(EMPTY_MESSAGE[filter])}</Text>
             </div>
           )}
-          {CATEGORIES.map((category) => {
-            const capabilities = visibleCapabilities.filter(
-              (capability) => capability.category === category.id,
-            )
-            if (capabilities.length === 0) return null
-            return (
-              <section className="capability-group" key={category.id}>
-                <div className="capability-group-heading">
-                  <span className="capability-group-icon" aria-hidden="true">
-                    {category.icon}
-                  </span>
-                  <Heading level={2}>{t(category.label)}</Heading>
-                  <Badge size="S" variant="gray">
-                    {capabilities.length}
-                  </Badge>
-                </div>
-                <div className="capability-grid">
-                  {capabilities.map((capability) => (
-                    <CapabilityCard
-                      capability={capability}
-                      key={capability.id}
-                      onNavigate={onNavigate}
-                    />
-                  ))}
-                </div>
-              </section>
-            )
-          })}
+          {visible.length > 0 && (
+            <div className="capabilities-overview">
+              {CATEGORIES.map(({ id, label, icon }) => (
+                <CapabilityGroup
+                  key={id}
+                  title={t(label)}
+                  icon={icon}
+                  capabilities={visible.filter(({ category }) => category === id)}
+                  onNavigate={onNavigate}
+                />
+              ))}
+            </div>
+          )}
         </>
       )}
     </section>

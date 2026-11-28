@@ -4,7 +4,7 @@ import type {
   MemoryToolRequest,
   MemoryToolResult,
 } from '../../shared/memory'
-import { MEMORY_TOOL_NAMES, memoryToolRequestSchema } from '../../shared/memory'
+import { memoryToolRequestSchema } from '../../shared/memory'
 import {
   CHARACTER_TOOL_SPECS,
   toLlmToolJsonSchema,
@@ -82,9 +82,5 @@ export class MemoryToolBroker {
     context: MemoryToolExecutionContext,
   ): MemoryToolResult {
     return this.runtime.execute(memoryToolRequestSchema.parse(request), context)
-  }
-
-  isCanonicalToolName(value: string): value is MemoryToolName {
-    return MEMORY_TOOL_NAMES.some((name) => name === value)
   }
 }

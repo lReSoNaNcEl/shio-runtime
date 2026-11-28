@@ -39,15 +39,15 @@ Character LLM предлагает ограниченные данные для 
 
 ```powershell
 npm run build
-$env:SHIO_QUALIFICATION_LLM_PROVIDER = 'mistral'
-$env:SHIO_QUALIFICATION_LLM_MODEL = 'ministral-14b-2512'
 node apps/desktop/qualifications/flashmotion/live-chat.cjs --context=reflection
 node apps/desktop/qualifications/flashmotion/live-chat.cjs --context=celebration
 ```
 
-Стенд использует настроенную VRM и изолированную копию профиля. Он
-сохраняет измерения, подтверждённые значения параметров и видео Overlay
-в `tmp/flashmotion/chat-*`.
+Стенд использует настроенную VRM и активного Character-провайдера из
+изолированной копии профиля. Другого настроенного провайдера и его модель
+можно выбрать через `SHIO_QUALIFICATION_LLM_PROVIDER` и
+`SHIO_QUALIFICATION_LLM_MODEL`. Стенд сохраняет измерения, подтверждённые
+значения параметров и видео Overlay в `tmp/flashmotion/chat-*`.
 
 ## Результаты
 

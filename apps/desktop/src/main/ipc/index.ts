@@ -2,21 +2,13 @@ import { type BrowserWindow, ipcMain } from 'electron'
 import { z } from 'zod'
 
 import { characterReplyOriginSchema } from '../../shared/conversation'
-import { translate } from '../../shared/localization'
 import type { ActionConfirmationBroker, ActionRuntime } from '../action'
 import type { MainConversationTurnService } from '../app/MainConversationTurnService'
 import type { SpeechApplicationService } from '../app/SpeechApplicationService'
 import type { BrowserControlPlugin } from '../browser-control'
 import type { CapabilityCatalog } from '../capabilities'
-import { getConfig } from '../config'
 import type { DesktopControlPlugin } from '../desktop-control'
-import {
-  getProviderProfile,
-  isLlmProviderId,
-  type LlmCredentialStore,
-  LlmGateway,
-  resolveLlmRoleSettings,
-} from '../llm'
+import type { LlmCredentialStore, LlmGateway } from '../llm'
 import type { MemoryRuntime } from '../memory'
 import type { PluginRuntime } from '../plugins'
 import type { ProjectAwarenessPlugin } from '../project-awareness'
@@ -53,9 +45,8 @@ export function registerIpcHandlers(
   confirmations: ActionConfirmationBroker,
   win: BrowserWindow,
   authorization: IpcAuthorization,
+  onFlashMotionChanged?: () => Promise<void>,
 ): void {
-  let backlogArbitrationInFlight = false
-
   registerSpeechIpc({
     service: speechService,
     onCapabilitiesProbe: (probe) => capabilityCatalog.reportSpeechCapabilities(probe),
@@ -118,147 +109,6 @@ export function registerIpcHandlers(
     ),
   )
 
-  const backlogResultSchema = z
-    .object({
-      action: z.enum(['select', 'merge', 'discard_all']),
-      selectedIds: z.array(z.string()).max(10),
-      text: z.string().max(600).optional(),
-      reason: z.string().max(200),
-      confidence: z.number().min(0).max(1),
-      backlogVersion: z.number().int().nonnegative(),
-    })
-    .superRefine((value, context) => {
-      if (
-        value.action !== 'discard_all' &&
-        (!value.text?.trim() || value.selectedIds.length === 0)
-      ) {
-        context.addIssue({ code: 'custom', message: 'Selection requires text and selectedIds' })
-      }
-    })
-
-  ipcMain.handle(
-    'llm:arbitrate-backlog',
-    authorization.handlePayload(
-      'llm:arbitrate-backlog',
-      IPC_ONE_PAYLOAD,
-      async (_event, rawPayload: unknown) => {
-        const payloadSchema = z
-          .object({
-            items: z
-              .array(
-                z
-                  .object({
-                    id: z.string().min(1).max(100),
-                    text: z.string().min(1).max(2_000),
-                    priorityClass: z.string().min(1).max(50),
-                    attentionScore: z.number().finite(),
-                    createdAt: z.number().finite(),
-                  })
-                  .strict(),
-              )
-              .max(10),
-            backlogVersion: z.number().int().nonnegative(),
-            providerId: z.string().refine(isLlmProviderId),
-            model: z.string().trim().min(1).max(500),
-          })
-          .strict()
-        const parsed = payloadSchema.safeParse(rawPayload)
-        if (!parsed.success) {
-          return { ok: false, error: translate(getConfig().uiLocale, 'main.error.invalidBacklog') }
-        }
-        const payload = parsed.data
-        const config = getConfig()
-        const role = config.llm.roles.backlogSelector
-        if (
-          !role.enabled ||
-          role.providerId !== payload.providerId ||
-          role.model !== payload.model
-        ) {
-          return {
-            ok: false,
-            error: translate(getConfig().uiLocale, 'main.error.selectorDisabled'),
-          }
-        }
-        if (!role.providerId)
-          return {
-            ok: false,
-            error: translate(getConfig().uiLocale, 'main.error.selectorProviderMissing'),
-          }
-        const selector = resolveLlmRoleSettings('backlogSelector', {
-          config: () => config.llm,
-          credential: (provider) => llmCredentialStore().resolve(provider),
-        })
-        if (
-          !selector.apiKey ||
-          (getProviderProfile(selector.provider).requiresAccountId && !selector.accountId)
-        )
-          return {
-            ok: false,
-            error: translate(getConfig().uiLocale, 'main.error.selectorKeyMissing'),
-          }
-        if (backlogArbitrationInFlight)
-          return {
-            ok: false,
-            error: translate(getConfig().uiLocale, 'main.error.arbitrationActive'),
-          }
-        const prompt = [
-          'You are a conversation backlog arbitration classifier.',
-          'You inspect completed user utterances captured through continuous microphone listening while the assistant was busy.',
-          'Do not answer the user, roleplay, or invent wording. Select, merge, or discard only.',
-          'Prefer direct corrections, direct questions, direct follow-ups, then recent relevant continuation.',
-          'Reject self-echo, duplicates, stale utterances, filler, and unrelated background speech.',
-          'Return valid JSON only with action, selectedIds, optional text, reason, confidence, backlogVersion.',
-          'Select at most one next user turn. When merging, preserve the user wording and meaning.',
-        ].join(' ')
-        try {
-          backlogArbitrationInFlight = true
-          const arbitrationController = new AbortController()
-          const arbitrationTimeout = setTimeout(
-            () => arbitrationController.abort(new Error('Backlog arbitration deadline exceeded')),
-            role.timeoutMs,
-          )
-          const provider = new LlmGateway(() => ({
-            provider: selector.provider,
-            apiKey: selector.apiKey,
-            model: selector.model,
-            reasoningEffort: selector.reasoningEffort,
-            accountId: selector.accountId,
-          }))
-          try {
-            const raw = await provider.chat(
-              [
-                { role: 'system', content: prompt },
-                {
-                  role: 'user',
-                  content: JSON.stringify({
-                    backlogVersion: payload.backlogVersion,
-                    items: payload.items,
-                  }),
-                },
-              ],
-              {
-                signal: arbitrationController.signal,
-                timeoutMs: role.timeoutMs,
-                maxTokens: 300,
-                traceId: `backlog:${payload.backlogVersion}`,
-              },
-            )
-            const json = JSON.parse(
-              raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, ''),
-            ) as unknown
-            return { ok: true, result: backlogResultSchema.parse(json) }
-          } finally {
-            clearTimeout(arbitrationTimeout)
-          }
-        } catch (error) {
-          return { ok: false, error: error instanceof Error ? error.message : String(error) }
-        } finally {
-          backlogArbitrationInFlight = false
-        }
-      },
-    ),
-  )
-
   ipcMain.handle(
     'memory:clear',
     authorization.handle('memory:clear', async () => {
@@ -286,7 +136,7 @@ export function registerIpcHandlers(
     authorization,
   })
 
-  registerConfigIpc(win, authorization, () => capabilityCatalog.invalidate())
+  registerConfigIpc(win, authorization, () => capabilityCatalog.invalidate(), onFlashMotionChanged)
   registerAvatarIpc(win, authorization)
 
   registerSystemIpc(authorization)

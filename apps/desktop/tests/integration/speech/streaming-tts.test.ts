@@ -342,6 +342,47 @@ async function sessionOverlapAndCancellationAreBounded(): Promise<void> {
 }
 
 describe('streaming TTS integration', () => {
+  it('uses the spoken prose and keeps ambiguous technical text local to its turn', () => {
+    const state: FakeStreamState = { starts: [], messages: [], cancellations: [] }
+    const service = new SpeechApplicationService(() => fakeManager(state))
+    function synthesize(turnId: string, lines: string[], language: 'ru' | 'en') {
+      const offset = state.messages.length
+      const stream = service.openStream({ ...start(turnId), language }, () => {})
+      for (const [sequence, text] of lines.entries()) stream.send({ type: 'text', sequence, text })
+      stream.send({ type: 'finish-input' })
+      state.emit?.({ type: 'complete', sequence: lines.length, sessionId: `speech:${turnId}` })
+      return state.messages
+        .slice(offset)
+        .flatMap((message) => (message.type === 'text' ? [message.text] : []))
+    }
+    assert.deepEqual(
+      synthesize(
+        'mixed',
+        [
+          'GPT-5',
+          'Открой TypeScript и GitHub.',
+          'GPT-5',
+          'I use TypeScript.',
+          'GPT-5',
+          'Теперь выбери GitHub. Then open TypeScript.',
+        ],
+        'en',
+      ),
+      [
+        'GPT-5',
+        'Открой тайпскрипт и гитхаб.',
+        'джи-пи-ти пять',
+        'I use TypeScript.',
+        'GPT-5',
+        'Теперь выбери гитхаб. Then open TypeScript.',
+      ],
+    )
+    assert.deepEqual(synthesize('fresh', ['GPT-5', 'Check the GitHub link.'], 'ru'), [
+      'джи-пи-ти пять',
+      'Check the GitHub link.',
+    ])
+    assert.equal(state.starts.length, 2)
+  })
   it('sends a short first sentence as soon as its boundary is known', () => {
     const buffer = new SpeechTextCommitBuffer('short-opening')
     const push = (text: string) =>

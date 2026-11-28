@@ -1,4 +1,5 @@
-import { type VRM, VRMExpression, VRMExpressionMorphTargetBind } from '@pixiv/three-vrm'
+import type { VRM } from '@pixiv/three-vrm'
+import { VRMExpression, VRMExpressionMorphTargetBind } from '@pixiv/three-vrm-core'
 
 import type { FacialActingPresentation, FacialActingValues } from '../../../../shared/facial-acting'
 import { type MotionAttenuationProbe, NOOP_MOTION_ATTENUATION_PROBE } from '../../MotionAttenuation'

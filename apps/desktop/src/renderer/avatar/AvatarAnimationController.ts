@@ -152,9 +152,13 @@ export class AvatarAnimationController {
       if (requestId !== this.requestId) return
       if (
         e instanceof Error &&
-        ['MOTION_SPEECH_WINDOW_MISSED', 'MOTION_SPEECH_ENDED', 'MOTION_superseded'].includes(
-          e.message,
-        )
+        [
+          'MOTION_DISABLED',
+          'MOTION_SPEECH_WINDOW_MISSED',
+          'MOTION_SPEECH_ENDED',
+          'MOTION_superseded',
+          'MOTION_STALE_INTENT',
+        ].includes(e.message)
       ) {
         // Timing expiry is an ordinary skipped intent, not a defective profile.
         // The queue owner resumes presence after the body's recovery settles.

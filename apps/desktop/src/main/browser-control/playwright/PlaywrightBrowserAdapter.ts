@@ -104,17 +104,6 @@ export class PlaywrightBrowserAdapter {
       : null
   }
 
-  computerUseObservationSnapshot(): BrowserComputerUseObservation | null {
-    return this.computerUseObservation
-      ? {
-          ...this.computerUseObservation,
-          visual: this.computerUseObservation.visual
-            ? { ...this.computerUseObservation.visual }
-            : undefined,
-        }
-      : null
-  }
-
   prepareForDelegation(signal?: AbortSignal): Promise<void> {
     return this.enqueue(async () => {
       await this.ensurePage(signal)

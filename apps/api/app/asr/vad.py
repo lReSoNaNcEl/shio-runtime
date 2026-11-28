@@ -105,12 +105,3 @@ class SileroVAD:
             segments.append((segment_audio, ts["start"], ts["end"]))
 
         return segments
-
-    def collect_chunks(
-        self, audio: np.ndarray, min_silence_duration_ms: int = 100
-    ) -> list[tuple[np.ndarray, float, float]]:
-        """
-        Collect continuous chunks of speech.
-        Similar to segment_audio but with finer control.
-        """
-        return self.segment_audio(audio, self.sample_rate, min_silence_duration_ms)

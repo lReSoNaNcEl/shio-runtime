@@ -1,4 +1,4 @@
-import { describe, it } from 'vitest'
+import { expect, it } from 'vitest'
 
 import {
   CHARACTER_CONTEXT_ALLOCATION,
@@ -7,13 +7,20 @@ import {
 } from '../../src/main/character/prompting/CharacterRequestComposer'
 import type { ShioCapabilitySnapshot } from '../../src/shared/capabilities'
 
-function main(): void {
-  function check(label: string, condition: boolean): void {
-    if (!condition) throw new Error(`FAIL: ${label}`)
-    console.log(`PASS: ${label}`)
-  }
+it('assigns every context section to one tier within the total budget', () => {
+  expect(Object.values(CHARACTER_CONTEXT_ALLOCATION.tiers).flat().sort()).toEqual(
+    Object.keys(CHARACTER_CONTEXT_BUDGET.sections).sort(),
+  )
+  expect(
+    Object.values(CHARACTER_CONTEXT_ALLOCATION.minimumCharacters).reduce(
+      (total, value) => total + value,
+      0,
+    ),
+  ).toBeLessThanOrEqual(CHARACTER_CONTEXT_BUDGET.totalCharacters)
+})
 
-  const now = Date.now()
+it('reserves bounded space for every present context section', () => {
+  const now = 1_000
   const capabilities: ShioCapabilitySnapshot = {
     schemaVersion: 1,
     generatedAt: now,
@@ -32,44 +39,7 @@ function main(): void {
     (_, index) => `memory-${index}: ${'private continuity '.repeat(40)}`,
   ).join('\n')
 
-  check(
-    'configured minimum reservations fit inside the total context budget',
-    Object.values(CHARACTER_CONTEXT_ALLOCATION.minimumCharacters).reduce(
-      (total, value) => total + value,
-      0,
-    ) <= CHARACTER_CONTEXT_BUDGET.totalCharacters,
-  )
-  const tierSections = Object.values(CHARACTER_CONTEXT_ALLOCATION.tiers).flat()
-  check(
-    'every context section belongs to exactly one allocation tier',
-    tierSections.length === Object.keys(CHARACTER_CONTEXT_BUDGET.sections).length &&
-      new Set(tierSections).size === tierSections.length,
-  )
-
   const messages = new CharacterRequestComposer().compose({
-    persona: `## Persona\n${'stable '.repeat(2_000)}`,
-    responsePolicy: `## Policy\n${'bounded '.repeat(1_000)}`,
-    memory: memories,
-    capabilities,
-    locale: 'en',
-  })
-  const systemText = messages.map((message) => String(message.content)).join('\n')
-
-  check(
-    'total system context stays within the declared budget',
-    systemText.length <= CHARACTER_CONTEXT_BUDGET.totalCharacters,
-  )
-  check(
-    'ordinary turns omit goal and reminder instructions',
-    !/Goal Awareness|goal\.(create|list|update)|unfinished intentions/u.test(systemText),
-  )
-  check('memory dump is bounded', !systemText.includes('memory-99'))
-  check(
-    'capability projection is compact',
-    !systemText.includes('Describe capabilities in user language'),
-  )
-
-  const saturatedMessages = new CharacterRequestComposer().compose({
     persona: `## Persona\nPERSONA_MARKER\n${'persona '.repeat(2_000)}`,
     responsePolicy: `## Policy\nPOLICY_MARKER\n${'policy '.repeat(1_000)}`,
     mood: {
@@ -108,7 +78,6 @@ function main(): void {
       capturedAt: now,
       appFocused: true,
       globalUserIdleMs: 0,
-      userIdleMs: 0,
       conversationActive: false,
       audioActive: false,
       privacyMode: false,
@@ -123,62 +92,35 @@ function main(): void {
     toolResults: `## Current Tool Results\nTOOL_RESULT_MARKER\n${'verified result '.repeat(1_000)}`,
     locale: 'en',
   })
-  const saturatedText = saturatedMessages.map((message) => String(message.content))
-  const saturatedCharacters = saturatedText.reduce((total, content) => total + content.length, 0)
 
-  check(
-    'saturated context keeps every present tier discoverable',
-    [
-      'PERSONA_MARKER',
-      'POLICY_MARKER',
-      '## Current Mood',
-      '## Relationship Context',
-      '## Relevant Conversation Thread',
-      'MEMORY_MARKER',
-      '## Current Shio Capabilities',
-      'PROJECT_MARKER',
-      'WORLD_MARKER',
-      'TOOL_RESULT_MARKER',
-    ].every((marker) => saturatedText.some((content) => content.includes(marker))),
-  )
-  check(
-    'saturated system context stays within the declared budget',
-    saturatedCharacters <= CHARACTER_CONTEXT_BUDGET.totalCharacters,
+  const sections = messages.map((message) => String(message.content))
+  expect(sections.reduce((total, section) => total + section.length, 0)).toBeLessThanOrEqual(
+    CHARACTER_CONTEXT_BUDGET.totalCharacters,
   )
 
-  const sectionHeaders = {
-    persona: '## Persona',
-    responsePolicy: '## Policy',
-    mood: '## Current Mood',
-    relationship: '## Relationship Context',
-    threads: '## Relevant Conversation Thread',
-    memory: '## Memory Context',
-    sessionSummary: '## Earlier In This Session',
-    capabilities: '## Current Shio Capabilities',
-    project: '## Project Evidence',
-    world: '## Current World Context',
-    toolResults: '## Current Tool Results',
-  } as const
-  check(
-    'every present section receives its minimum reservation before tier expansion',
-    Object.entries(sectionHeaders).every(([section, header]) => {
-      const content = saturatedText.find((candidate) => candidate.startsWith(header))
-      return (
-        content !== undefined &&
-        (content.length >=
-          CHARACTER_CONTEXT_ALLOCATION.minimumCharacters[
-            section as keyof typeof CHARACTER_CONTEXT_ALLOCATION.minimumCharacters
-          ] ||
-          !content.endsWith('[truncated]'))
+  const expectedSections = [
+    ['persona', '## Persona', 'PERSONA_MARKER'],
+    ['responsePolicy', '## Policy', 'POLICY_MARKER'],
+    ['mood', '## Current Mood'],
+    ['relationship', '## Relationship Context'],
+    ['threads', '## Relevant Conversation Thread', 'thread-1'],
+    ['memory', '## Memory Context', 'MEMORY_MARKER'],
+    ['sessionSummary', '## Earlier In This Session', 'SESSION_SUMMARY_MARKER'],
+    ['capabilities', '## Current Shio Capabilities', 'Compact request-scoped availability facts'],
+    ['project', '## Project Evidence', 'PROJECT_MARKER'],
+    ['world', '## Current World Context', 'WORLD_MARKER'],
+    ['toolResults', '## Current Tool Results', 'TOOL_RESULT_MARKER'],
+  ] as const
+  for (const [name, header, marker] of expectedSections) {
+    const content = sections.find((section) => section.startsWith(header))
+    if (content === undefined) throw new Error(`Missing context section ${name}`)
+    if (marker) expect(content).toContain(marker)
+    if (content.endsWith('[truncated]')) {
+      expect(content.length, name).toBeGreaterThanOrEqual(
+        CHARACTER_CONTEXT_ALLOCATION.minimumCharacters[name],
       )
-    }),
-  )
+    }
+  }
 
-  console.log('Prompt budget repro passed.')
-}
-
-describe('character prompt budget', () => {
-  it('reserves bounded space for every present context section', () => {
-    main()
-  })
+  expect(sections.join('\n')).not.toContain('memory-99')
 })

@@ -18,7 +18,7 @@ import {
   type DesktopWorkflowAdapterResult,
   toDesktopWorkflowActionResult,
 } from '../action'
-import { AliveRuntime, AliveStore, WindowsSystemContextAdapter } from '../alive'
+import { AliveFacade, AliveStore, WindowsSystemContextAdapter } from '../alive'
 import {
   BROWSER_CONTROL_MANIFEST,
   BrowserComputerUseRuntime,
@@ -63,6 +63,8 @@ import {
   resolveLlmRoleSettings,
 } from '../llm'
 import { stopCodexRequests } from '../llm/CodexCliProvider'
+import { OllamaStreamWarmup } from '../llm/OllamaStreamWarmup'
+import { isLocalGemmaModel } from '../llm/providers/ollama'
 import { mainLog } from '../logging/safeLogger'
 import {
   createLlmSessionSummarizer,
@@ -122,13 +124,23 @@ export function buildApplicationDependencies(): ApplicationDependencies {
     join(process.env.LOCALAPPDATA || app.getPath('appData'), 'Shio Runtime')
   const motionAssets = app.isPackaged ? join(localRoot, 'Data', 'FlashMotion') : undefined
   if (motionAssets && !isAbsolute(motionAssets)) throw new Error('SHIO_LOCAL_ROOT must be absolute')
+  const motionEnabled =
+    process.env.SHIO_MOTION_ENABLED !== '0' && process.env.SHIO_SILENT_QA !== '1'
   const motion = new GeneratedMotionService(
     join(motionRoot, 'flashmotion'),
     () => getRendererConfig().vrmAssetHandle,
-    process.env.SHIO_MOTION_ENABLED !== '0',
+    motionEnabled,
     flashSpeech,
     motionAssets,
   )
+
+  const applyFlashMotionSetting = async (): Promise<void> => {
+    const enabled = motionEnabled && getConfig().flashMotionEnabled !== false
+    flashSpeech.setEnabled(enabled)
+    await motion.setEnabled(enabled)
+    if (enabled && getConfig().flashMotionEnabled !== false)
+      observeMainPromise(motion.warmup(), 'warm up generated motion')
+  }
   const environmentConfig = resolveEnvironmentConfig()
   let win: BrowserWindow | null = null
   let quitting = false
@@ -147,7 +159,7 @@ export function buildApplicationDependencies(): ApplicationDependencies {
   let actionRuntime: ActionRuntime | null = null
   let conversationTurnService: MainConversationTurnService | null = null
   let speechApplicationService: SpeechApplicationService | null = null
-  let aliveRuntime: AliveRuntime | null = null
+  let aliveRuntime: AliveFacade | null = null
   let disposeWatch: (() => void) | undefined
   let unsubscribeAliveIpc: (() => void) | null = null
   let unsubscribeAliveCapabilities: (() => void) | null = null
@@ -209,8 +221,8 @@ export function buildApplicationDependencies(): ApplicationDependencies {
       groq: ['GROQ_API_KEY'],
       cloudflare: ['CLOUDFLARE_API_TOKEN'],
       openrouter: ['OPENROUTER_API_KEY'],
-      mistral: ['MISTRAL_API_KEY'],
       'codex-cli': [],
+      ollama: [],
     }
     return variables[provider].map((name) => process.env[name]).find(Boolean)
   }
@@ -496,7 +508,6 @@ export function buildApplicationDependencies(): ApplicationDependencies {
     return new Orchestrator(
       llmGateway,
       conversationMemory,
-      speech,
       getRendererConfig,
       () => pluginCapabilities.get('project-context'),
       capabilityCatalog,
@@ -580,6 +591,7 @@ export function buildApplicationDependencies(): ApplicationDependencies {
         'codex-cli',
         'conversation-turn-service',
         'speech-application-service',
+        'generated-motion',
         'action-runtime',
         'plugin-runtime',
         'alive-runtime',
@@ -630,6 +642,7 @@ export function buildApplicationDependencies(): ApplicationDependencies {
 
   const createWindow = async (): Promise<void> => {
     await loadConfig(getLlmCredentialStore())
+    await applyFlashMotionSetting()
     unsubscribeMemoryCapabilities ??= semanticMemory.onChanged(() => capabilityCatalog.invalidate())
     Menu.setApplicationMenu(null)
 
@@ -725,8 +738,9 @@ export function buildApplicationDependencies(): ApplicationDependencies {
       actionComposition.confirmations,
       win,
       ipcAuthorization,
+      applyFlashMotionSetting,
     )
-    aliveRuntime = new AliveRuntime(aliveStore, {
+    aliveRuntime = new AliveFacade(aliveStore, {
       experienceContext: () => semanticMemory.relationshipContext(),
       systemContextAdapter:
         process.platform === 'win32'
@@ -761,7 +775,15 @@ export function buildApplicationDependencies(): ApplicationDependencies {
         (!status.session || ['completed', 'failed', 'stopped'].includes(status.session.state))
       )
     }
+    const warmup = new OllamaStreamWarmup(() => {
+      const config = getConfig().llm
+      const model = config?.providers.ollama.model
+      return config?.activeProvider === 'ollama' && model && isLocalGemmaModel(model)
+        ? model
+        : undefined
+    })
     const watch = new WatchTogetherService({
+      warmup,
       reference: {
         available: referenceAvailable,
         open: async (url, signal) => {
@@ -836,6 +858,7 @@ export function buildApplicationDependencies(): ApplicationDependencies {
       if (reason) watch.stop(undefined, reason)
     })
     disposeWatch = () => {
+      warmup.dispose()
       unsubscribeWatch()
       removeWatch()
     }
@@ -881,8 +904,6 @@ export function buildApplicationDependencies(): ApplicationDependencies {
 
   const initialize = async (): Promise<void> => {
     registerMotionIpc(motion, ipcAuthorization)
-    if (process.env.SHIO_MOTION_ENABLED !== '0')
-      observeMainPromise(motion.warmup(), 'warm up generated motion')
     registerRuntimeHealthIpc((health) => {
       lastAvatarRuntimeHealth = health
       capabilityCatalog.invalidate()

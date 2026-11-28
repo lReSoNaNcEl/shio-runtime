@@ -98,13 +98,9 @@ export interface ConversationInputCoordinatorDependencies {
   recordRuntimeEvent(label: string, detail?: string): void
   publishRuntimeEvent(type: RuntimeEventType, category: RuntimeEventCategory, detail?: string): void
 
-  getConfig(): ReturnType<Window['api']['config']['get']>
   saveConfig(
     patch: Parameters<Window['api']['config']['save']>[0],
   ): ReturnType<Window['api']['config']['save']>
-  arbitrateBacklog(
-    request: Parameters<Window['api']['llm']['arbitrateBacklog']>[0],
-  ): ReturnType<Window['api']['llm']['arbitrateBacklog']>
   evaluateAttention(
     request: Parameters<Window['api']['alive']['evaluateAttention']>[0],
   ): ReturnType<Window['api']['alive']['evaluateAttention']>
@@ -129,7 +125,7 @@ export class ConversationInputCoordinator {
   private lastContinuousReplyAt: number | null = null
   private streamingSessionId: string | null = null
   private utteranceBacklog = new UtteranceBacklog()
-  private backlogSelector: BacklogSelector
+  private backlogSelector = new BacklogSelector()
   private conversationAdmission: ConversationAdmissionCoordinator
   private desiredContinuousListening = false
   private watchVoice?: string
@@ -141,17 +137,6 @@ export class ConversationInputCoordinator {
   private continuousCommandGeneration = 0
 
   constructor(private readonly dependencies: ConversationInputCoordinatorDependencies) {
-    this.backlogSelector = new BacklogSelector(async (items, backlogVersion, config) => {
-      const response = await this.dependencies.arbitrateBacklog({
-        items,
-        backlogVersion,
-        providerId: config.providerId,
-        model: config.model,
-      })
-      if (!response.ok || !response.result)
-        throw new Error(response.error ?? 'Backlog arbitration failed')
-      return response.result
-    })
     this.conversationAdmission = new ConversationAdmissionCoordinator(
       (attempt, reportPhase) => this.runConversationAttempt(attempt, reportPhase),
       this.utteranceBacklog,
@@ -282,9 +267,6 @@ export class ConversationInputCoordinator {
       return
     }
     this.conversationAdmission.setContinuousEnabled(false)
-    const config = await this.dependencies.getConfig()
-    if (generation !== this.continuousCommandGeneration) return
-    this.conversationAdmission.configureSelector(config.llm.roles.backlogSelector)
     try {
       await this.dependencies.speechInputRuntime.setContinuousListening(
         settings.enabled,
@@ -361,10 +343,6 @@ export class ConversationInputCoordinator {
       return
     }
     await this.startStreaming('default')
-  }
-
-  isContinuousEnabled(): boolean {
-    return this.continuousSettings.enabled
   }
 
   setWatchVoice(
@@ -457,6 +435,8 @@ export class ConversationInputCoordinator {
       microphoneCaptured: false,
       failure: failure ?? { domain: 'microphone', code: 'DEVICE_LOST' },
     })
+    // A watch microphone is re-enabled only through the live session control.
+    if (this.watchVoice) return
     const result = await this.dependencies.microphoneGate.request(
       { type: 'start-streaming', modeId },
       'active-device-lost',

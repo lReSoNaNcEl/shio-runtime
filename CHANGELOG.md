@@ -4,6 +4,7 @@
 
 ### Removed
 
+- Removed the direct Mistral LLM integration. Existing profiles drop the Mistral configuration and fall back to Groq when Mistral was the active provider.
 - Removed the retired GitHub Models LLM provider; GitHub repository access for Project Awareness remains available as a separate integration.
 
 ## [0.1.0-alpha.6] - 2026-07-26

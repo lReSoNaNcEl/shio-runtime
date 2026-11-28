@@ -674,13 +674,29 @@
   background: var(--surface-selected);
 }
 
-.screen-context-source > img {
+.screen-context-source-thumbnail {
   display: block;
   flex: none;
   width: 100%;
   aspect-ratio: 16 / 9;
-  object-fit: contain;
   background: var(--surface-code);
+}
+
+.screen-context-source-thumbnail > img,
+.screen-context-source-fallback-icon > img,
+.screen-context-source-app-icon > img {
+  object-fit: contain;
+}
+
+.screen-context-source-placeholder {
+  display: grid;
+  place-items: center;
+  color: var(--text-dim);
+}
+
+.screen-context-source-fallback-icon {
+  width: 26px;
+  height: 26px;
 }
 
 .screen-context-source-info {
@@ -705,7 +721,6 @@
   flex: none;
   width: 18px;
   height: 18px;
-  object-fit: contain;
   border-radius: 4px;
 }
 
@@ -730,7 +745,7 @@
     flex-direction: row;
   }
 
-  .screen-context-source > img {
+  .screen-context-source-thumbnail {
     width: 4.5rem;
   }
 }
@@ -848,87 +863,126 @@
   min-width: 0;
 }
 .watch-session {
-  padding: 10px max(24px, calc((100% - 1100px) / 2));
-  border-bottom: 1px solid var(--border-subtle);
+  padding: 8px max(24px, calc((100% - 1100px) / 2));
+  background: var(--panel);
+}
+.watch-session-card {
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
   background: var(--panel-2);
 }
-.watch-session[data-phase="live"] {
-  background: color-mix(in srgb, var(--positive-text) 6%, var(--panel-2));
-}
-.watch-session-row,
-.watch-session-summary,
+.watch-session-header,
 .watch-session-source,
 .watch-session-actions,
-.watch-session-mic {
+.watch-session-phase,
+.watch-session-channel-header,
+.watch-session-channel-reading {
   display: flex;
   align-items: center;
   min-width: 0;
 }
-.watch-session-row {
-  justify-content: space-between;
-  gap: 16px;
-}
-.watch-session-summary {
-  gap: 18px;
+.watch-session-header {
+  flex-wrap: wrap;
+  gap: 6px 16px;
 }
 .watch-session-source {
+  flex: 1 1 12rem;
   gap: 8px;
 }
-.watch-session-phase {
+.watch-session-source > svg,
+.watch-session-channel-header > svg {
   flex: none;
-  white-space: nowrap;
+  color: var(--text-dim);
 }
 .watch-source-name {
+  min-width: 0;
   overflow: hidden;
   color: var(--text);
+  font-size: 1rem;
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.watch-session-mic {
+.watch-session-phase {
   flex: none;
-  gap: 5px;
+  gap: 6px;
   color: var(--text-dim);
-  font-size: 0.81rem;
-}
-.watch-session-mic svg {
-  width: 16px;
-  height: 16px;
-}
-.watch-session-mic[data-warning] {
-  color: var(--warning-text);
+  font-size: 0.8125rem;
+  white-space: nowrap;
 }
 .watch-session-actions {
-  flex: none;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-inline-start: auto;
+}
+.watch-session-signals {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
 }
-.watch-session-issues {
+.watch-session-channel {
   display: grid;
-  gap: 4px;
-  margin-top: 6px;
+  grid-template-rows: auto 1fr;
+  align-items: center;
+  min-width: 0;
+  min-height: 3.25rem;
+  padding: 4px 10px 6px;
+  border-radius: 8px;
+  background: var(--surface-inset);
+}
+.watch-session-channel-header {
+  gap: 6px;
+  min-height: 1.625rem;
+  color: var(--text);
+  font-size: 0.8125rem;
+  font-weight: 500;
+}
+.watch-session-mic-switch {
+  flex: none;
+  margin-inline-start: auto;
+}
+.watch-session-channel-reading {
+  gap: 8px;
+}
+.watch-session-meter {
+  flex: 1 1 5rem;
+  min-width: 3rem;
+}
+.watch-session-input-status,
+.watch-session-input-issue {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 0.75rem;
+  line-height: 1.125rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.watch-session-input-status {
+  color: var(--text-dim);
+}
+.watch-session-input-issue {
+  color: var(--warning-text);
+}
+.watch-session-warning-details {
+  display: grid;
+  gap: 8px;
   overflow-wrap: anywhere;
 }
 @container workspace-header (max-width: 48rem) {
   .watch-session {
-    padding: 8px 16px;
-  }
-  .watch-session-summary {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 4px;
-  }
-  .watch-session-source {
-    max-width: 100%;
+    padding-inline: 16px;
   }
 }
-@container workspace-header (max-width: 30rem) {
-  .watch-session-row {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 8px;
+@container workspace-header (max-width: 27rem) {
+  .watch-session {
+    padding-inline: 10px;
   }
-  .watch-session-mic {
-    flex-shrink: 1;
+  .watch-session-signals {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 .watch-preview-content {
@@ -939,8 +993,32 @@
 .watch-preview-frame {
   display: block;
   width: 100%;
-  max-height: 40vh;
+  max-height: min(40vh, 22rem);
+  aspect-ratio: 16 / 9;
+  border-radius: 8px;
+  background: var(--surface-inset);
   object-fit: contain;
+}
+
+.stream-input-status,
+.stream-source-preview {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  min-width: 0;
+}
+.stream-source-frame {
+  width: min(160px, 100%);
+  height: 90px;
+  object-fit: contain;
+}
+.stream-source-caption {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  max-width: 32ch;
+  overflow-wrap: anywhere;
 }
 /* Align the chat header content (title + controls) to the same centered 1100px
    column as the messages/composer, so their left/right edges line up. */
@@ -1383,19 +1461,6 @@
   flex-wrap: wrap;
   align-items: center;
 }
-.speech-banner-close {
-  background: transparent;
-  border: none;
-  color: var(--text-dim);
-  cursor: pointer;
-  padding: 2px;
-  display: inline-flex;
-  align-items: center;
-}
-.speech-banner-close:hover {
-  color: var(--text);
-}
-
 @container composer-controls (max-width: 680px) {
   .speech-banner {
     display: grid;

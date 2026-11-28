@@ -36,7 +36,6 @@ function harness(provider?: LLMProvider) {
   const runtime = new Orchestrator(
     provider ?? { chat },
     memory,
-    undefined,
     () => settings,
     sideEffect,
     { snapshot: sideEffect },

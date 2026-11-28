@@ -9,9 +9,13 @@ import { installLlmProxyResolver } from './proxy'
  * The official SDK owns Chat Completions and SSE semantics. This Fetch bridge
  * keeps Shio's existing Electron/environment proxy resolution in one place.
  */
-export function createOpenAISdkFetch(): typeof fetch {
-  const http = axios.create({ timeout: 0, validateStatus: () => true })
-  installLlmProxyResolver(http)
+export function createOpenAISdkFetch(localOnly = false): typeof fetch {
+  const http = axios.create({
+    timeout: 0,
+    validateStatus: () => true,
+    ...(localOnly ? { proxy: false, maxRedirects: 0 } : {}),
+  })
+  if (!localOnly) installLlmProxyResolver(http)
 
   const proxyAwareFetch: typeof fetch = async (input, init) => {
     const request = input instanceof Request ? input : undefined

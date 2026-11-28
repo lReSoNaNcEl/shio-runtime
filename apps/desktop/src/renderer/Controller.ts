@@ -36,7 +36,6 @@ import type {
   AppStatus,
   ChatMsg,
   ControllerState,
-  HealthState,
   RuntimeDebugSnapshot,
 } from './controller/contracts'
 import { isVrmConfigured } from './controller/firstRunState'
@@ -76,11 +75,9 @@ export type {
   AppStatus,
   ChatMsg,
   ControllerState,
-  HealthState,
   RuntimeDebugSnapshot,
   RuntimeTimelineEvent,
 } from './controller/contracts'
-export { STATUS_LABELS } from './controller/contracts'
 
 type SpeechReply = Parameters<RuntimeDiagnosticsProjection['rememberSpeechMetadata']>[0]
 
@@ -91,15 +88,14 @@ export class Controller {
   private uiLocale: UiLocale = DEFAULT_UI_LOCALE
   private shioRuntime = new ShioRuntime()
   private scene: SceneManager | null = null
-  private readonly avatarScene = new THREE.Scene()
+  private avatarScene?: THREE.Scene
   private avatarLoadTask: Promise<void> = Promise.resolve()
   private avatarModelVersion = 0
   // Monotonic token for the local Avatar Preview scene. Bumped on every attach and
   // detach so async VRM loads can detect that the scene they started with was torn
   // down or replaced, and silently abort instead of touching a disposed SceneManager.
   private previewSceneVersion = 0
-  private selectedVoiceLanguage = ''
-  private voiceWarmupKey = ''
+  private speechFallbackLanguage?: UiLocale
   private overlayRuntime = new OverlayRuntime()
   private avatarRuntime = new AvatarRuntime(this.shioRuntime.events, {
     overlayMode: this.overlayRuntime.isOverlayWindow(),
@@ -113,8 +109,10 @@ export class Controller {
   })
   private player = new AudioPlayer()
   private speechRuntime = new SpeechRuntime()
-  private speechOutput = new RuntimeSpeechOutputPort(this.speechRuntime, this.player, () =>
-    this.selectedVoiceLanguage === 'en' ? 'en' : 'ru',
+  private speechOutput = new RuntimeSpeechOutputPort(
+    this.speechRuntime,
+    this.player,
+    () => this.speechFallbackLanguage ?? this.uiLocale,
   )
   private characterResponse = new MainCharacterResponsePort()
   private unsubscribeCharacterState = this.shioRuntime.characterState.subscribe(
@@ -164,7 +162,6 @@ export class Controller {
     responseInterruptionPending: false,
     messages: [],
     chatDraft: '',
-    health: { state: 'checking', text: translate(DEFAULT_UI_LOCALE, 'common.checkingEllipsis') },
     speechCapabilities: INITIAL_SPEECH_CAPABILITIES,
     voiceWarmup: { state: 'idle', voiceId: '', language: '' },
     llmHealth: { state: 'unknown', detail: translate(DEFAULT_UI_LOCALE, 'common.notChecked') },
@@ -175,6 +172,7 @@ export class Controller {
     },
     vrmConfigured: false,
     vrmLoaded: false,
+    flashMotionEnabled: true,
     faceTrackingEnabled: false,
     continuousListening: {
       desired: false,
@@ -225,7 +223,7 @@ export class Controller {
   })
   private conversationRuntime = new ConversationRuntime({
     speechOutput: this.speechOutput,
-    watchUserTurn: () => this.prepareWatchUserTurn,
+    watchUserTurn: () => this.watchViewing?.prepare,
     characterResponse: this.characterResponse,
     characterState: this.shioRuntime.characterState,
     conversationState: this.shioRuntime.characterState.conversation,
@@ -267,9 +265,7 @@ export class Controller {
     recordRuntimeEvent: (label, detail) => this.recordRuntimeEvent(label, detail),
     publishRuntimeEvent: (type, category, detail) =>
       this.publishControllerRuntimeEvent(type, category, detail),
-    getConfig: () => window.api.config.get(),
     saveConfig: (patch) => window.api.config.save(patch),
-    arbitrateBacklog: (request) => window.api.llm.arbitrateBacklog(request),
     evaluateAttention: (request) => window.api.alive.evaluateAttention(request),
     normalizeMicrophoneFailure: (error) => this.microphoneDeviceService.normalizeFailure(error),
     getMicrophoneAccessFailedMessage: () => this.t('controller.microphoneAccessFailed'),
@@ -287,6 +283,7 @@ export class Controller {
   private bootstrapped = false
   private bootstrapTask: Promise<void> | null = null
   private disposed = false
+  private avatarRenderingDisabled = false
   private avatarTickTimerId: number | null = null
   private avatarTickLastTime = 0
   private llmHealthDetailKey: TranslationKey | null = 'common.notChecked'
@@ -336,9 +333,7 @@ export class Controller {
 
   private applyUiLocale(locale: UiLocale): void {
     this.uiLocale = locale
-    const patch: Partial<ControllerState> = {
-      health: this.toLegacyHealth(this.state.speechCapabilities),
-    }
+    const patch: Partial<ControllerState> = {}
     if (this.llmHealthDetailKey) {
       patch.llmHealth = {
         ...this.state.llmHealth,
@@ -379,29 +374,28 @@ export class Controller {
   }
 
   private handleSpeechCapabilitiesChange(capabilities: SpeechCapabilitiesState): void {
-    this.set({ speechCapabilities: capabilities, health: this.toLegacyHealth(capabilities) })
+    this.set({ speechCapabilities: capabilities })
     if (capabilities.service === 'available') {
       observeRendererPromise(this.warmSelectedVoice(), 'warm selected voice')
     }
   }
 
   private async warmSelectedVoice(): Promise<void> {
-    if (!this.selectedVoiceLanguage) return
-    const key = `fish-s2-pro:${this.selectedVoiceLanguage}`
-    if (this.voiceWarmupKey === key && this.state.voiceWarmup.state !== 'failed') return
-    this.voiceWarmupKey = key
+    const language = this.speechFallbackLanguage
+    const { state } = this.state.voiceWarmup
+    if (!language || state === 'warming' || state === 'ready') return
     this.set({
       voiceWarmup: {
         state: 'warming',
         voiceId: '',
-        language: this.selectedVoiceLanguage,
+        language,
       },
     })
     try {
       const result = await window.api.tts.warmup({
-        language: this.selectedVoiceLanguage,
+        language,
       })
-      if (key !== this.voiceWarmupKey) return
+      if (this.disposed) return
       this.set({
         voiceWarmup: {
           state: result.state === 'ready' ? 'ready' : 'failed',
@@ -410,36 +404,20 @@ export class Controller {
         },
       })
     } catch {
-      if (key !== this.voiceWarmupKey) return
+      if (this.disposed) return
       this.set({
         voiceWarmup: {
           state: 'failed',
           voiceId: '',
-          language: this.selectedVoiceLanguage,
+          language,
         },
       })
     }
   }
 
-  private toLegacyHealth(capabilities: SpeechCapabilitiesState): {
-    state: HealthState
-    text: string
-  } {
-    switch (capabilities.service) {
-      case 'available':
-        return { state: 'ok', text: 'ASR / TTS OK' }
-      case 'degraded':
-        return { state: 'warn', text: this.t('controller.health.degraded') }
-      case 'unavailable':
-        return { state: 'err', text: this.t('controller.health.unavailable') }
-      default:
-        return { state: 'checking', text: this.t('common.checkingEllipsis') }
-    }
-  }
-
   /** Manual recheck ("Повторить подключение" / "Проверить снова"). */
-  recheckSpeechService(): void {
-    this.speechCapabilitiesRuntime.recheck()
+  recheckSpeechService(): Promise<void> {
+    return this.speechCapabilitiesRuntime.recheck()
   }
 
   /**
@@ -490,8 +468,24 @@ export class Controller {
     return this.speechInputRuntime.onVoiceActivity(listener)
   }
 
-  private prepareWatchUserTurn?: (turnId: string, fromMicrophone: boolean) => Promise<void>
+  readWatchMicrophoneLevel(id: string): number {
+    if (this.watchMicrophone?.id !== id || !this.state.continuousListening.microphoneCaptured)
+      return 0
+    return this.speechInputRuntime.readContinuousMicrophoneLevel()
+  }
+
+  private watchViewing?: {
+    id: string
+    prepare: (turnId: string, fromMicrophone: boolean) => Promise<void>
+  }
   private watchMicrophone?: { id: string; previousDevice: string; device?: string }
+
+  setWatchViewing(id: string, prepare?: NonNullable<Controller['watchViewing']>['prepare']): void {
+    if (prepare) this.watchViewing = { id, prepare }
+    else if (this.watchViewing?.id === id) this.watchViewing = undefined
+    else return
+    this.aliveExperience.setWatchSession(id, Boolean(prepare))
+  }
 
   clearWatchReaction(id: string): void {
     this.aliveExperience.cancelWatchReaction(id)
@@ -501,16 +495,13 @@ export class Controller {
     id: string,
     enabled: boolean,
     signal?: AbortSignal,
-    prepare?: (turnId: string, fromMicrophone: boolean) => Promise<void>,
     captureVoiceSample?: (utteranceId: string) => Promise<WatchVoiceSample>,
-  ): Promise<void> {
+  ): Promise<undefined | 'cancelled'> {
     if (!enabled) {
       const lease = this.watchMicrophone
       if (lease?.id !== id) return
       this.watchMicrophone = undefined
-      this.prepareWatchUserTurn = undefined
       this.conversationInput.setWatchVoice(undefined)
-      this.aliveExperience.setWatchSession(id, false)
       if (lease.device === undefined) return
       if (this.speechInputRuntime.getMicrophoneId() === lease.device)
         this.speechInputRuntime.setMicrophone(lease.previousDevice, false)
@@ -522,6 +513,7 @@ export class Controller {
     }
     if (
       signal?.aborted ||
+      this.watchViewing?.id !== id ||
       this.watchMicrophone ||
       this.microphoneGate.getState().status !== 'closed'
     )
@@ -532,9 +524,7 @@ export class Controller {
       device: undefined as string | undefined,
     }
     this.watchMicrophone = lease
-    this.prepareWatchUserTurn = prepare
     this.conversationInput.setWatchVoice(id, captureVoiceSample)
-    this.aliveExperience.setWatchSession(id, true)
     if (this.state.continuousListening.microphoneCaptured) return
     const cancel = () => this.microphoneGate.cancel()
     signal?.addEventListener('abort', cancel, { once: true })
@@ -543,8 +533,8 @@ export class Controller {
         { type: 'start-streaming', modeId: 'default' },
         'not-configured',
       )
-      if (result.status !== 'confirmed' || signal?.aborted || this.watchMicrophone !== lease)
-        throw new Error('WATCH_MICROPHONE')
+      if (result.status === 'cancelled' || signal?.aborted || this.watchMicrophone !== lease)
+        return 'cancelled'
       lease.device = isDefaultMicrophone(result.deviceId) ? '' : result.deviceId
       this.speechInputRuntime.setMicrophone(lease.device, false)
     } finally {
@@ -620,6 +610,7 @@ export class Controller {
     // application runtime. Its bootstrap must use only the minimal Overlay bridge.
     if (this.overlayRuntime.isOverlayWindow()) {
       const cfg = await window.overlayApi.config.get()
+      this.avatarRenderingDisabled = cfg.avatarRenderingDisabled === true
       if (this.disposed) return
       this.applyOverlaySettings(cfg)
       this.set({ vrmConfigured: isVrmConfigured(resolveVrmSource(cfg.vrmAssetHandle)) })
@@ -640,8 +631,10 @@ export class Controller {
     this.aliveExperience.start()
     this.avatarRuntime.reportHealth()
     const cfg = await window.api.config.get()
+    this.avatarRenderingDisabled = cfg.avatarRenderingDisabled === true
     if (this.disposed) return
-    this.selectedVoiceLanguage = cfg.ttsLanguage
+    this.applyFlashMotionSetting(cfg.flashMotionEnabled !== false)
+    this.speechFallbackLanguage = cfg.speechFallbackLanguage
     this.player.setSpeechVolumePercent(cfg.speechVolumePercent)
     this.set({ vrmConfigured: isVrmConfigured(resolveVrmSource(cfg.vrmAssetHandle)) })
     this.set({ llmReadiness: await window.api.llm.getReadiness() })
@@ -656,6 +649,7 @@ export class Controller {
     this.set({ overlayState: overlay.visible ? 'on' : 'off' })
     let savedVolume = cfg.speechVolumePercent
     this.unsubscribeConfigUpdates = window.api.config.onUpdated((updated, changedKey) => {
+      this.applyFlashMotionSetting(updated.flashMotionEnabled !== false)
       if (updated.speechVolumePercent !== savedVolume) {
         savedVolume = updated.speechVolumePercent
         this.player.setSpeechVolumePercent(savedVolume)
@@ -669,12 +663,7 @@ export class Controller {
         'refresh LLM readiness after config update',
       )
       observeRendererPromise(this.checkLlmHealth(), 'check LLM health after config update')
-      const voiceChanged = updated.ttsLanguage !== this.selectedVoiceLanguage
-      this.selectedVoiceLanguage = updated.ttsLanguage
-      if (voiceChanged) {
-        this.voiceWarmupKey = ''
-        observeRendererPromise(this.warmSelectedVoice(), 'warm updated voice')
-      }
+      this.speechFallbackLanguage = updated.speechFallbackLanguage
     })
     this.speechInputRuntime.setMicrophone(cfg.micDeviceId ?? '', false)
     // Camera-follow gaze is the normal embodiment default; the persisted key is
@@ -806,7 +795,7 @@ export class Controller {
   ): Promise<void> {
     await this.bootstrap()
     if (this.disposed) return
-    if (this.scene) return
+    if (this.scene || this.avatarRenderingDisabled) return
     const scene = new SceneManager(canvas)
     ++this.previewSceneVersion
     this.scene = scene
@@ -839,7 +828,7 @@ export class Controller {
     if (!this.scene) return
     // Invalidate any in-flight preview load so its post-await steps abort.
     ++this.previewSceneVersion
-    this.avatarRuntime.attachScene(this.avatarScene)
+    if (this.avatarScene) this.avatarRuntime.attachScene(this.avatarScene)
     this.avatarRuntime.setLookAtTarget(null)
     this.scene.dispose()
     this.scene = null
@@ -863,6 +852,7 @@ export class Controller {
   // while audio keeps playing, so this application Runtime uses its own fixed clock.
   private startAvatarTickLoop(): void {
     if (this.avatarTickTimerId !== null) return
+    if (this.avatarRenderingDisabled) return
     this.avatarTickLastTime = performance.now()
     const tick = (): void => {
       const now = performance.now()
@@ -909,6 +899,7 @@ export class Controller {
   }
 
   subscribeOverlayUpdates(): void {
+    if (this.disposed) return
     this.overlayRuntime.subscribeToRemoteUpdates({
       bodyPose: (value) => {
         this.avatarRuntime.applyBodyPresentation(value)
@@ -952,10 +943,6 @@ export class Controller {
     if (allowReaction && avatarState.earImpulse)
       this.avatarRuntime.triggerEarImpulse(avatarState.earImpulse, avatarState.earImpulseId)
     this.updateOverlayMotionHud()
-  }
-
-  private publishAvatarState(state: SyncedAvatarState): void {
-    this.overlayRuntime.publishAvatarState(state)
   }
 
   private updateOverlayMotionHud(): void {
@@ -1166,7 +1153,20 @@ export class Controller {
   }
 
   // ---- VRM / animation -----------------------------------------------------
+  async setFlashMotionEnabled(enabled: boolean): Promise<void> {
+    const saved = await window.api.config.save({ flashMotionEnabled: enabled })
+    if (!saved.ok) throw new Error(saved.error ?? 'FlashMotion preference could not be saved')
+    this.applyFlashMotionSetting(enabled)
+  }
+
+  private applyFlashMotionSetting(enabled: boolean): void {
+    if (enabled === this.state.flashMotionEnabled) return
+    this.avatarRuntime.setFlashMotionEnabled(enabled)
+    this.set({ flashMotionEnabled: enabled })
+  }
+
   loadVrmFromPath(filePath: string): Promise<void> {
+    if (this.avatarRenderingDisabled) return Promise.resolve()
     const version = ++this.avatarModelVersion
     this.avatarLoadTask = this.avatarLoadTask
       .catch(() => undefined)
@@ -1181,7 +1181,8 @@ export class Controller {
       const res = await readResolvedVrmSource(filePath)
       if (!res.ok || !res.buffer) throw new Error(res.error ?? this.t('controller.fileReadFailed'))
       if (!isCurrent()) return
-      await this.avatarRuntime.loadVrm(this.avatarScene, res.buffer)
+      this.avatarScene ??= new THREE.Scene()
+      await this.avatarRuntime.loadVrm(this.avatarScene, res.buffer, isCurrent)
       if (!isCurrent()) return
       const scene = this.scene
       if (scene) {
@@ -1416,11 +1417,9 @@ export class Controller {
     }
   }
 
-  // Health probing is owned exclusively by the Speech capabilities health
-  // component (single owner, no parallel probes). This delegates and lets the
-  // onChange projection update both `speechCapabilities` and the legacy status dot.
+  // SpeechCapabilitiesRuntime owns probing and publishes the current capability state.
   async checkHealth(): Promise<void> {
-    this.speechCapabilitiesRuntime.recheck()
+    observeRendererPromise(this.recheckSpeechService(), 'recheck Speech capabilities')
   }
 
   // Side-effect-free LLM probe: verifies the active provider is reachable and the

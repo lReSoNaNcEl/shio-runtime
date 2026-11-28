@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import multiprocessing as mp
 import queue
+import re
 import threading
 import time
 import unicodedata
@@ -223,7 +224,7 @@ class FishS2ProEngine:
         resolved = condition_reference(voice or default_voice_id(), self.model_revision)
         if resolved is None:
             raise RuntimeError("Selected voice reference is unavailable")
-        audio_path, transcript, _entry, _cache_hit = resolved
+        audio_path, transcript, entry, _cache_hit = resolved
         while not cancelled.is_set():
             if self._inference_lock.acquire(timeout=0.05):
                 break
@@ -240,12 +241,16 @@ class FishS2ProEngine:
                 chunk = raw if isinstance(raw, SpeechTextChunk) else SpeechTextChunk(raw)
                 tags = self.render_instruction(chunk.intent or intent, language) or ""
                 text = chunk.text.replace("[", "(").replace("]", ")")
+                # Choose from the spoken text before adding any delivery/style tags.
+                russian_context = entry.language == "en" and bool(re.search("[А-Яа-яЁё]", text))
+                if russian_context and not re.search("[A-Za-z]", text):
+                    tags += "[speaking Russian]"
                 if cancelled.is_set():
                     break
                 # A submitted request stays in flight until the worker confirms completion.
                 self._request_cancelled.clear()
                 request_in_flight = True
-                self._input.put((tags + text, audio_path, transcript), timeout=1)
+                self._input.put((tags + text, audio_path, transcript, russian_context), timeout=1)
                 deadline = time.monotonic() + (600 if self.compile else 120)
                 while not cancelled.is_set() and request_in_flight:
                     try:
@@ -353,8 +358,8 @@ class FishS2ProEngine:
         self._state = "warming"
         self._ensure_worker()
         for _chunk in self.stream(
-            ["Hello."],
-            language="en",
+            ["Привет."],
+            language="ru",
             voice=default_voice_id(),
             intent=SpeechDeliveryIntent(),
             cancelled=threading.Event(),

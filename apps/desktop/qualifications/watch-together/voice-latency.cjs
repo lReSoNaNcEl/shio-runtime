@@ -314,7 +314,7 @@ async function run(application, page, directory, installSource, startWatch, sour
       )
       if (fixture.aside) {
         await page
-          .locator('.watch-session-mic')
+          .locator('.watch-session')
           .getByText(/мысль вслух/u)
           .waitFor({ timeout: 25000 })
         assert.equal(await users.count(), beforeUsers)

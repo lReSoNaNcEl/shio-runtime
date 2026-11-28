@@ -7,7 +7,7 @@ import type { ChatMessage } from '../../../src/main/llm'
 import { InMemoryStore } from '../../../src/main/memory/InMemoryStore'
 import { Orchestrator } from '../../../src/main/orchestrator'
 import type { AppSettings } from '../../../src/shared/config'
-import { createTempDirectory } from '../../support'
+import { createTempDirectory } from '../../support/createTempDirectory'
 
 describe('Conversation Thread Runtime', () => {
   it('supplies an interrupted topic on the next explicit turn and retires it after resolution', async () => {
@@ -41,7 +41,6 @@ describe('Conversation Thread Runtime', () => {
     const character = new Orchestrator(
       provider,
       new InMemoryStore(),
-      undefined,
       () => ({ uiLocale: 'en' }) as AppSettings,
       undefined,
       undefined,

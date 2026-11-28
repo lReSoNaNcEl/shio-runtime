@@ -71,7 +71,6 @@ describe('explicit live-share tools', () => {
       const orchestrator = new Orchestrator(
         { chat },
         history,
-        undefined,
         () => settings,
         undefined,
         capabilities,
@@ -179,7 +178,6 @@ describe('explicit live-share tools', () => {
       const orchestrator = new Orchestrator(
         { chat },
         new InMemoryStore(),
-        undefined,
         () => settings,
         undefined,
         { snapshot: async () => snapshot },

@@ -115,6 +115,46 @@ it('preserves inference failure separately from a malformed worker protocol', as
 })
 
 describe('Main-owned generated motion lifecycle', () => {
+  it('blocks FlashMotion while disabled and waits for the enabled worker to exit', async () => {
+    const first = workerChild(false)
+    const second = workerChild()
+    mocks.spawn
+      .mockImplementationOnce(() => {
+        queueMicrotask(first.ready)
+        return first.child
+      })
+      .mockImplementationOnce(() => {
+        queueMicrotask(second.ready)
+        return second.child
+      })
+    const service = new GeneratedMotionService('D:/fixture/motion')
+    await service.setEnabled(false)
+    await expect(service.warmup()).rejects.toThrow('MOTION_DISABLED')
+    await expect(service.start(1, 1)).rejects.toThrow('MOTION_DISABLED')
+    expect(mocks.spawn).not.toHaveBeenCalled()
+    await service.setEnabled(true)
+    const lease = await service.start(10, 2, 17)
+    const pending = service.next(10, lease, 'presence_poised', undefined, plan)
+    const rejected = expect(pending).rejects.toThrow('MOTION_DISABLED')
+    const stopping = service.setEnabled(false)
+    expect(first.child.stdin.end).toHaveBeenCalledOnce()
+    expect(service.status()).toMatchObject({ state: 'stopping', session: null })
+    expect(service.owns(10, lease)).toBe(false)
+    await expect(service.warmup()).rejects.toThrow('MOTION_DISABLED')
+    expect(mocks.spawn).toHaveBeenCalledTimes(1)
+    await rejected
+
+    const reenable = service.setEnabled(true)
+    expect(mocks.spawn).toHaveBeenCalledTimes(1)
+    first.exit()
+    await stopping
+    await reenable
+    const nextLease = await service.start(10, 2, 17)
+    expect(nextLease.modelGeneration).toBe(lease.modelGeneration + 1)
+    expect(service.owns(10, lease)).toBe(false)
+    await service.dispose()
+    expect(second.child.stdin.end).toHaveBeenCalledOnce()
+  })
   it('accepts the pinned FlashMotion identity', async () => {
     const { service } = fixture(true)
     expect((await service.start(10, 2, 17)).seed).toBe(17)

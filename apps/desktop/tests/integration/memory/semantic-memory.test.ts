@@ -28,7 +28,7 @@ import {
   type MemoryRecord,
   type MemoryToolRequest,
 } from '../../../src/shared/memory'
-import { createTempDirectory } from '../../support'
+import { createTempDirectory } from '../../support/createTempDirectory'
 import { parseChatCompletion, runChatCompletionDetailed } from '../../support/llm/wireFixture'
 
 const TOOL_CAPABILITIES: LlmCapabilities = {
@@ -47,13 +47,11 @@ const FALLBACK_CAPABILITIES: LlmCapabilities = {
 }
 
 const settings = (): AppSettings => ({ uiLocale: 'ru' }) as AppSettings
-const speech = {}
 
 function createOrchestrator(provider: LLMProvider, broker: MemoryToolBroker): Orchestrator {
   return new Orchestrator(
     provider,
     createMemoryStore(),
-    speech,
     settings,
     undefined,
     undefined,
@@ -171,10 +169,10 @@ class NativeRejectingFallbackProvider implements LLMProvider {
   async complete(): Promise<LlmCompletion> {
     this.completeCalls += 1
     throw new LlmResponseError({
-      provider: 'mistral',
+      provider: 'openrouter',
       code: 'PROVIDER_REJECTED',
       recoverable: false,
-      message: 'Mistral rejected the tool-enabled request.',
+      message: 'OpenRouter rejected the tool-enabled request.',
     })
   }
 
@@ -229,7 +227,7 @@ class RecoverableNativeProvider implements LLMProvider {
     this.calls += 1
     if (this.calls === 1) {
       throw new LlmResponseError({
-        provider: 'mistral',
+        provider: 'openrouter',
         code: 'NETWORK_ERROR',
         recoverable: true,
         message: 'Connection reset by peer.',
@@ -252,7 +250,7 @@ class RecoverableFallbackProvider implements LLMProvider {
     this.calls += 1
     if (this.calls <= this.failuresBeforeSuccess) {
       throw new LlmResponseError({
-        provider: 'mistral',
+        provider: 'openrouter',
         code: 'NETWORK_ERROR',
         recoverable: true,
         message: 'Connection reset by peer.',
@@ -760,7 +758,7 @@ async function committedForgetSurvivesNarrationFailure(root: string): Promise<vo
         return `<shio-tools>{"calls":[{"tool":"memory.forget","arguments":{"ids":["${memoryId}"]}}]}</shio-tools>`
       }
       throw new LlmResponseError({
-        provider: 'mistral',
+        provider: 'openrouter',
         code: 'NETWORK_ERROR',
         recoverable: true,
         message: 'Connection reset after the committed memory mutation.',

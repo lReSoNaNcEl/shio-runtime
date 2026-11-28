@@ -25,7 +25,9 @@ export interface AppSettings {
   uiLocale: UiLocale
   uiTheme: UiTheme
   desktopAuthorityMode: DesktopAuthorityMode
-  ttsLanguage: string
+  readonly speechFallbackLanguage: UiLocale
+  flashMotionEnabled?: boolean
+  readonly avatarRenderingDisabled?: true
   speechVolumePercent: number
   ttsEngine: string
   vrmAssetHandle: string

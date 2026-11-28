@@ -30,20 +30,12 @@ export class PluginCapabilityRegistry {
     return this.providers.get(capability)?.provider as PluginProviderMap[Capability] | undefined
   }
 
-  hasProvider(owner: PluginId, capability: PluginProviderCapability): boolean {
-    return this.providers.get(capability)?.owner === owner
-  }
-
   registerOwnedCapability(owner: PluginId, capability: PluginCapabilityKind): void {
     this.claim(owner, capability)
   }
 
   hasCapability(capability: PluginCapabilityKind): boolean {
     return this.owners.has(capability)
-  }
-
-  ownerOf(capability: PluginCapabilityKind): PluginId | undefined {
-    return this.owners.get(capability)
   }
 
   unregisterOwner(owner: PluginId): void {

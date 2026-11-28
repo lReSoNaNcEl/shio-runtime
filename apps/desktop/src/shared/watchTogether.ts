@@ -3,6 +3,9 @@ import type { AutonomySettings } from './alive'
 export const WATCH_FRAME_WIDTH = 768
 export const WATCH_FRAME_HEIGHT = 432
 export const WATCH_MAX_FRAME_BYTES = 300_000
+export const WATCH_DETAIL_MAX_BYTES = 300_000
+export const WATCH_DETAIL_MAX_SIDE = 960
+export const WATCH_DETAIL_MAX_REGIONS = 2
 export const WATCH_TURN_MAX_SIDE = 3840
 export const WATCH_TURN_MAX_PIXELS = 3840 * 2160
 export const WATCH_TURN_MAX_BYTES = 3 * 1024 * 1024
@@ -21,7 +24,8 @@ export function watchReferenceUrl(value: string): string | undefined {
   }
 }
 
-export type WatchBlockReason = 'suspended' | 'off' | 'private'
+export const WATCH_BLOCK_REASONS = ['suspended', 'off', 'private'] as const
+export type WatchBlockReason = (typeof WATCH_BLOCK_REASONS)[number]
 
 export function watchBlockReason(settings: AutonomySettings): WatchBlockReason | undefined {
   if (settings.globallySuspended) return 'suspended'
@@ -45,7 +49,21 @@ export interface WatchMoment {
   frames: ArrayBuffer
   pcm: ArrayBuffer
   playbackTranscript: string
+  timing?: { earlierMs: number; currentMs: number; peakMs?: number }
+  peak?: ArrayBuffer
+  details?: ArrayBuffer[]
+  phrases?: WatchPlaybackPhrase[]
 }
+
+/** Milliseconds relative to the observation's capture time. */
+export interface WatchPlaybackPhrase {
+  startMs: number
+  endMs: number
+  text: string
+  final: boolean
+}
+
+export type WatchAudioStatus = 'application' | 'system' | 'unavailable'
 
 export type WatchDecision =
   | { kind: 'quiet' | 'stopped' | 'reference-checked' }
@@ -62,6 +80,7 @@ export type WatchReaction = 'glance' | 'surprise'
 export type WatchModelIssue = 'rateLimited' | 'unavailable'
 
 export interface WatchTogetherApi {
+  prepareModel(): Promise<boolean>
   start(sourceId: string, reference?: string): Promise<WatchStartResult>
   stop(sessionId: string): Promise<void>
   yield(sessionId: string, reason?: 'scene' | 'speech'): Promise<void>

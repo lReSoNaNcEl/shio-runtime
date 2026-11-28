@@ -71,10 +71,6 @@ export class ActionRuntime {
     this.verification.registerVerifier(verifier)
   }
 
-  listTools(): string[] {
-    return [...this.tools.keys()]
-  }
-
   onEmergencyStop(handler: () => Promise<void> | void): () => void {
     this.emergencyStopHandlers.add(handler)
     return () => this.emergencyStopHandlers.delete(handler)

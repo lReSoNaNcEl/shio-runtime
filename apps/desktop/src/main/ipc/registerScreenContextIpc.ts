@@ -36,6 +36,28 @@ export function registerScreenContextIpc(
     }),
   )
 
+  const sourceIdSchema = z
+    .string()
+    .max(100)
+    .regex(/^(screen|window):\d+:\d+$/u)
+  ipcMain.handle(
+    'screen-context:check-source',
+    authorization.handlePayload(
+      'screen-context:check-source',
+      IPC_ONE_PAYLOAD,
+      async (_event, payload: unknown) => {
+        const parsed = sourceIdSchema.safeParse(payload)
+        if (!parsed.success) return failure('SOURCE_NOT_FOUND')
+        try {
+          await screenContext.checkSource(parsed.data)
+          return { ok: true, value: true } satisfies ScreenContextResult<true>
+        } catch (error) {
+          return failure(errorCode(error))
+        }
+      },
+    ),
+  )
+
   const captureSchema = z.object({
     operationId: operationIdSchema,
     sourceId: z.string().trim().min(1).max(500),

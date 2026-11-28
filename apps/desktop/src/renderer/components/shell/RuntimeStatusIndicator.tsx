@@ -10,6 +10,7 @@ import {
 } from '@react-spectrum/s2'
 import { useState } from 'react'
 
+import { type LlmProviderId } from '../../../shared/llm'
 import { PLUGIN_IDS, type PluginId } from '../../../shared/plugins'
 import { useTranslation } from '../../localization/useTranslation'
 import { observeRendererPromise } from '../../reliability/observePromise'
@@ -28,11 +29,11 @@ const VARIANT: Record<ApplicationHealth, 'positive' | 'notice' | 'negative'> = {
 
 const PROVIDER_NAME = {
   groq: 'Groq',
-  mistral: 'Mistral',
   'codex-cli': 'Codex CLI',
   openrouter: 'OpenRouter',
   cloudflare: 'Cloudflare',
-} as const
+  ollama: 'Ollama',
+} satisfies Record<LlmProviderId, string>
 
 const SUMMARY_ITEMS = [
   { id: 'llm', label: 'systemStatus.summary.llm' },

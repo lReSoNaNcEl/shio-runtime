@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 
-import { beforeEach, describe, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { ChatMessage, LLMProvider } from '../../src/main/llm'
 import { LlmResponseError } from '../../src/main/llm'
@@ -20,6 +20,7 @@ import {
 import type { CharacterReplyStreamEvent } from '../../src/shared/character-stream'
 import type { AppSettings } from '../../src/shared/config'
 import { deriveTurnRecoveryCapabilities } from '../../src/shared/conversation'
+import { createDeferred } from '../support/Deferred'
 import { WireHttpError as APIError, runChatCompletionDetailed } from '../support/llm/wireFixture'
 
 beforeEach(() => {
@@ -56,7 +57,7 @@ class FakeProvider implements LLMProvider {
 
 const networkFailure = () =>
   new LlmResponseError({
-    provider: 'mistral',
+    provider: 'openrouter',
     code: 'NETWORK_ERROR',
     recoverable: true,
     message: 'network',
@@ -65,12 +66,7 @@ const networkFailure = () =>
 async function testTransactionalMemory(): Promise<void> {
   const provider = new FakeProvider()
   const memory = new InMemoryStore()
-  const orchestrator = new Orchestrator(
-    provider,
-    memory,
-    {} as ConstructorParameters<typeof Orchestrator>[2],
-    (() => ({})) as () => AppSettings,
-  )
+  const orchestrator = new Orchestrator(provider, memory, (() => ({})) as () => AppSettings)
 
   provider.enqueue(networkFailure(), networkFailure(), networkFailure(), networkFailure())
   const failedOne = await orchestrator.createReply({ userText: 'failed-one' })
@@ -108,7 +104,7 @@ async function testTransactionalMemory(): Promise<void> {
 
   provider.enqueue(
     new LlmResponseError({
-      provider: 'mistral',
+      provider: 'openrouter',
       code: 'REQUEST_TOO_LARGE',
       recoverable: false,
       message: 'too large',
@@ -130,12 +126,7 @@ async function testTransactionalMemory(): Promise<void> {
 async function testProviderReasoningContainment(): Promise<void> {
   const provider = new FakeProvider()
   const memory = new InMemoryStore()
-  const orchestrator = new Orchestrator(
-    provider,
-    memory,
-    {} as ConstructorParameters<typeof Orchestrator>[2],
-    (() => ({})) as () => AppSettings,
-  )
+  const orchestrator = new Orchestrator(provider, memory, (() => ({})) as () => AppSettings)
   provider.enqueue('\\<think>private plan\\</think>[warm]Привет!')
 
   const reply = await orchestrator.createReply({ userText: 'Поздоровайся' })
@@ -146,83 +137,22 @@ async function testProviderReasoningContainment(): Promise<void> {
   assert.doesNotMatch(JSON.stringify({ reply, history }), /private plan|think/u)
 }
 
-async function testConversationAlwaysLeavesThinking(): Promise<void> {
-  for (const code of ['TIMEOUT', 'CANCELLED', 'NETWORK_ERROR'] as const) {
-    const statuses: string[] = []
-    const events: string[] = []
-    const runtime = new ConversationRuntime({
-      speechOutput: { stopCurrent: () => undefined },
-      characterResponse: {
-        createReply: async () => {
-          throw new ConversationTurnFailureError({
-            domain: 'llm',
-            code,
-            providerId: 'mistral',
-            attachmentDisposition: 'released',
-            retrySameRequest: code !== 'CANCELLED',
-            canResubmitWithoutImage: false,
-          })
-        },
-      },
-      characterState: { get: () => ({}) },
-      conversationState: {
-        transition: () => ({}),
-        setPresence: () => ({}),
-      },
-      conversationPresence: { update: (patch: object) => patch },
-      presentation: {
-        applyCharacterState: () => undefined,
-        setEmbodimentIntent: () => undefined,
-        interruptLipSync: () => undefined,
-        stopLipSync: () => undefined,
-        triggerEarImpulse: () => false,
-        triggerReactionGesture: () => undefined,
-        triggerUserInterruption: () => undefined,
-        publishAvatarState: () => undefined,
-      },
-      events: { publish: () => undefined },
-      setStatus: (status: string) => statuses.push(status),
-      pushMessage: () => undefined,
-      formatUserError: (message: string) => message,
-      markAssistantMessageInterrupted: () => undefined,
-      setResponseInterruptionPending: () => undefined,
-      recordRuntimeEvent: (label: string) => events.push(label),
-      reportSpeechServiceError: () => undefined,
-      rememberSpeechMetadata: () => undefined,
-      updateSpeechPlaybackProgress: () => undefined,
-      isContinuousCaptureAlive: () => false,
-      handleLlmSetupRequired: () => undefined,
-    } as unknown as ConversationRuntimeDeps)
-    const result = await runtime.execute(
-      {
-        turnId: `turn-${code.toLowerCase()}`,
-        text: 'safe diagnostic query',
-        source: 'text_chat',
-        createdAt: Date.now(),
-        admissionCycleId: `cycle-${code.toLowerCase()}`,
-      },
-      () => undefined,
-    )
-    assert.equal(result.status, 'failed')
-    assert.equal(statuses.includes('thinking'), true)
-    assert.equal(statuses.at(-1), 'idle')
-    assert.equal(events.includes('Conversation Terminal'), true)
+type ConversationOverrides = Omit<
+  Partial<ConversationRuntimeDeps>,
+  'presentation' | 'speechOutput' | 'characterResponse'
+> &
+  Pick<ConversationRuntimeDeps, 'characterResponse'> & {
+    setEmbodimentIntent?: ConversationRuntimeDeps['presentation']['setEmbodimentIntent']
+    speechOutput?: Partial<ConversationRuntimeDeps['speechOutput']>
   }
-}
 
-async function testPostGenerationFailureReleasesScreenAttachment(): Promise<void> {
-  let embodimentUpdates = 0
-  const runtime = new ConversationRuntime({
-    speechOutput: { stopCurrent: () => undefined },
-    characterResponse: {
-      createReply: async () => ({
-        replyText: '[calm]screen answer',
-        displayText: 'screen answer',
-        speechText: '',
-        emotionKey: 'calm',
-        segments: [],
-      }),
-    },
+function createConversationRuntime({
+  setEmbodimentIntent = () => undefined,
+  speechOutput,
+  ...overrides
+}: ConversationOverrides): ConversationRuntime {
+  return new ConversationRuntime({
+    speechOutput: { stopCurrent: () => undefined, ...speechOutput },
     characterState: { get: () => ({}) },
     conversationState: {
       transition: () => ({}),
@@ -231,10 +161,7 @@ async function testPostGenerationFailureReleasesScreenAttachment(): Promise<void
     conversationPresence: { update: (patch: object) => patch },
     presentation: {
       applyCharacterState: () => undefined,
-      setEmbodimentIntent: () => {
-        embodimentUpdates += 1
-        if (embodimentUpdates === 2) throw new Error('post-generation renderer failure')
-      },
+      setEmbodimentIntent,
       interruptLipSync: () => undefined,
       stopLipSync: () => undefined,
       triggerEarImpulse: () => false,
@@ -254,7 +181,64 @@ async function testPostGenerationFailureReleasesScreenAttachment(): Promise<void
     updateSpeechPlaybackProgress: () => undefined,
     isContinuousCaptureAlive: () => false,
     handleLlmSetupRequired: () => undefined,
+    ...overrides,
   } as unknown as ConversationRuntimeDeps)
+}
+
+const recoveryCodes = ['TIMEOUT', 'CANCELLED', 'NETWORK_ERROR'] as const
+
+async function testConversationAlwaysLeavesThinking(code: (typeof recoveryCodes)[number]) {
+  const statuses: string[] = []
+  const events: string[] = []
+  const runtime = createConversationRuntime({
+    characterResponse: {
+      createReply: async () => {
+        throw new ConversationTurnFailureError({
+          domain: 'llm',
+          code,
+          providerId: 'openrouter',
+          attachmentDisposition: 'released',
+          retrySameRequest: code !== 'CANCELLED',
+          canResubmitWithoutImage: false,
+        })
+      },
+    },
+    setStatus: (status: string) => statuses.push(status),
+    recordRuntimeEvent: (label: string) => events.push(label),
+  })
+  const result = await runtime.execute(
+    {
+      turnId: `turn-${code.toLowerCase()}`,
+      text: 'safe diagnostic query',
+      source: 'text_chat',
+      createdAt: Date.now(),
+      admissionCycleId: `cycle-${code.toLowerCase()}`,
+    },
+    () => undefined,
+  )
+  assert.equal(result.status, 'failed')
+  assert.equal(statuses.includes('thinking'), true)
+  assert.equal(statuses.at(-1), 'idle')
+  assert.equal(events.includes('Conversation Terminal'), true)
+}
+
+async function testPostGenerationFailureReleasesScreenAttachment(): Promise<void> {
+  let embodimentUpdates = 0
+  const runtime = createConversationRuntime({
+    characterResponse: {
+      createReply: async () => ({
+        replyText: '[calm]screen answer',
+        displayText: 'screen answer',
+        speechText: '',
+        emotionKey: 'calm',
+        segments: [],
+      }),
+    },
+    setEmbodimentIntent: () => {
+      embodimentUpdates += 1
+      if (embodimentUpdates === 2) throw new Error('post-generation renderer failure')
+    },
+  })
 
   const result = await runtime.execute(
     {
@@ -278,7 +262,7 @@ async function testPostGenerationCancellationReleasesScreenAttachment(): Promise
   const synthesisStarted = new Promise<void>((resolve) => {
     markSynthesisStarted = resolve
   })
-  const runtime = new ConversationRuntime({
+  const runtime = createConversationRuntime({
     speechOutput: {
       hasSpeakableContent: () => true,
       openStream: () => ({
@@ -287,7 +271,6 @@ async function testPostGenerationCancellationReleasesScreenAttachment(): Promise
         finish: () => undefined,
         cancel: () => undefined,
       }),
-      stopCurrent: () => undefined,
     },
     characterResponse: {
       createReply: async () => ({
@@ -307,35 +290,7 @@ async function testPostGenerationCancellationReleasesScreenAttachment(): Promise
         ],
       }),
     },
-    characterState: { get: () => ({}) },
-    conversationState: {
-      transition: () => ({}),
-      setPresence: () => ({}),
-    },
-    conversationPresence: { update: (patch: object) => patch },
-    presentation: {
-      applyCharacterState: () => undefined,
-      setEmbodimentIntent: () => undefined,
-      interruptLipSync: () => undefined,
-      stopLipSync: () => undefined,
-      triggerEarImpulse: () => false,
-      triggerReactionGesture: () => undefined,
-      triggerUserInterruption: () => undefined,
-      publishAvatarState: () => undefined,
-    },
-    events: { publish: () => undefined },
-    setStatus: () => undefined,
-    pushMessage: () => undefined,
-    formatUserError: (message: string) => message,
-    markAssistantMessageInterrupted: () => undefined,
-    setResponseInterruptionPending: () => undefined,
-    recordRuntimeEvent: () => undefined,
-    reportSpeechServiceError: () => undefined,
-    rememberSpeechMetadata: () => undefined,
-    updateSpeechPlaybackProgress: () => undefined,
-    isContinuousCaptureAlive: () => false,
-    handleLlmSetupRequired: () => undefined,
-  } as unknown as ConversationRuntimeDeps)
+  })
 
   const execution = runtime.execute(
     {
@@ -365,7 +320,7 @@ async function testSpeechCancellationPreservesFinalStreamedText(): Promise<void>
     markFinalShown = resolve
   })
   const messageTexts: string[] = []
-  const runtime = new ConversationRuntime({
+  const runtime = createConversationRuntime({
     speechOutput: {
       hasSpeakableContent: () => true,
       openStream: () => ({
@@ -374,7 +329,6 @@ async function testSpeechCancellationPreservesFinalStreamedText(): Promise<void>
         finish: () => undefined,
         cancel: () => undefined,
       }),
-      stopCurrent: () => undefined,
     },
     characterResponse: {
       createReply: async (
@@ -409,24 +363,6 @@ async function testSpeechCancellationPreservesFinalStreamedText(): Promise<void>
         }
       },
     },
-    characterState: { get: () => ({}) },
-    conversationState: {
-      transition: () => ({}),
-      setPresence: () => ({}),
-    },
-    conversationPresence: { update: (patch: object) => patch },
-    presentation: {
-      applyCharacterState: () => undefined,
-      setEmbodimentIntent: () => undefined,
-      interruptLipSync: () => undefined,
-      stopLipSync: () => undefined,
-      triggerEarImpulse: () => false,
-      triggerReactionGesture: () => undefined,
-      triggerUserInterruption: () => undefined,
-      publishAvatarState: () => undefined,
-    },
-    events: { publish: () => undefined },
-    setStatus: () => undefined,
     pushMessage: (_role: string, text: string) => {
       messageTexts.push(text)
       return 'assistant-stream'
@@ -441,16 +377,7 @@ async function testSpeechCancellationPreservesFinalStreamedText(): Promise<void>
       messageTexts.push(text)
       if (immediate && text === finalText) markFinalShown()
     },
-    formatUserError: (message: string) => message,
-    markAssistantMessageInterrupted: () => undefined,
-    setResponseInterruptionPending: () => undefined,
-    recordRuntimeEvent: () => undefined,
-    reportSpeechServiceError: () => undefined,
-    rememberSpeechMetadata: () => undefined,
-    updateSpeechPlaybackProgress: () => undefined,
-    isContinuousCaptureAlive: () => false,
-    handleLlmSetupRequired: () => undefined,
-  } as unknown as ConversationRuntimeDeps)
+  })
 
   const execution = runtime.execute(
     {
@@ -526,8 +453,8 @@ async function testHttp413Classification(): Promise<void> {
   }
   await assert.rejects(
     runChatCompletionDetailed({
-      provider: 'mistral',
-      displayName: 'Mistral',
+      provider: 'openrouter',
+      displayName: 'OpenRouter',
       client: client as never,
       model: 'test',
       capabilities: {
@@ -561,19 +488,67 @@ async function testHttp413Classification(): Promise<void> {
   )
 }
 
-async function run(): Promise<void> {
-  await testTransactionalMemory()
-  await testProviderReasoningContainment()
-  await testConversationAlwaysLeavesThinking()
-  await testPostGenerationFailureReleasesScreenAttachment()
-  await testPostGenerationCancellationReleasesScreenAttachment()
-  await testSpeechCancellationPreservesFinalStreamedText()
-  await testScreenContextLease()
-  await testHttp413Classification()
-  console.log('Failed LLM turn recovery repro passed')
-}
-
 describe('failed LLM turn recovery', () => {
+  it.each(['generation', 'synthesis'] as const)(
+    'settles local interruption before adapter abort during %s',
+    async (phase) => {
+      const pending = createDeferred<never>()
+      const started = createDeferred<void>()
+      const cancel = vi.fn(async () => {
+        pending.reject(new DOMException('Aborted', 'AbortError'))
+        return { ok: true as const }
+      })
+      const pushMessage = vi.fn()
+      const markInterrupted = vi.fn()
+      const interruptionPending = vi.fn()
+      const runtime = createConversationRuntime({
+        characterResponse: {
+          createReply: () => {
+            started.resolve()
+            return pending.promise
+          },
+        },
+        speechOutput: {
+          openStream: () => {
+            started.resolve()
+            return {
+              completion: pending.promise,
+              commit: () => undefined,
+              finish: () => undefined,
+              cancel: () => undefined,
+            }
+          },
+        },
+        pushMessage,
+        markAssistantMessageInterrupted: markInterrupted,
+        setResponseInterruptionPending: interruptionPending,
+        isContinuousCaptureAlive: () => true,
+      })
+      window.api.llm.cancelReply = cancel
+      window.api.tts.cancelSynthesis = cancel
+      const execution = runtime.execute(
+        {
+          turnId: 'interrupted',
+          text: 'happy',
+          createdAt: Date.now(),
+          admissionCycleId: 'cycle',
+          source: phase === 'generation' ? 'continuous_listening' : 'debug',
+        },
+        () => undefined,
+      )
+      await started.promise
+      expect(runtime.getActiveResponseSnapshot().phase).toBe(
+        phase === 'generation' ? 'generating' : 'synthesizing',
+      )
+      expect(await runtime.interruptCurrentResponse('voice-barge-in')).toBe(true)
+      expect(await execution).toMatchObject({ status: 'cancelled' })
+      expect(cancel).toHaveBeenCalledTimes(2)
+      expect(pushMessage).not.toHaveBeenCalled()
+      expect(markInterrupted).toHaveBeenCalledOnce()
+      expect(interruptionPending.mock.calls).toEqual([[true], [false]])
+    },
+  )
+
   it('uses the stopped exchange in planning and reply without committing it to history', async () => {
     const provider = new FakeProvider()
     provider.enqueue(
@@ -588,7 +563,6 @@ describe('failed LLM turn recovery', () => {
     const orchestrator = new Orchestrator(
       provider,
       memory,
-      undefined,
       () => ({ uiLocale: 'ru' }) as AppSettings,
       undefined,
       undefined,
@@ -626,7 +600,24 @@ describe('failed LLM turn recovery', () => {
     assert.doesNotMatch(JSON.stringify(history), /Ариадн/u)
   })
 
-  it('releases transactional state and screen leases', async () => {
-    await run()
-  })
+  it(
+    'keeps turn history consistent across provider failures and cancellation',
+    testTransactionalMemory,
+  )
+  it('keeps provider reasoning out of replies and history', testProviderReasoningContainment)
+  it.each(recoveryCodes)('leaves thinking after %s', testConversationAlwaysLeavesThinking)
+  it(
+    'releases the screen attachment after a renderer failure',
+    testPostGenerationFailureReleasesScreenAttachment,
+  )
+  it(
+    'releases the screen attachment after speech cancellation',
+    testPostGenerationCancellationReleasesScreenAttachment,
+  )
+  it(
+    'preserves final streamed text when speech is cancelled',
+    testSpeechCancellationPreservesFinalStreamedText,
+  )
+  it('releases the screen context lease', testScreenContextLease)
+  it('classifies HTTP 413 for turn recovery', testHttp413Classification)
 })

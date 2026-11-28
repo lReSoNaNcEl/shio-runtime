@@ -38,8 +38,8 @@ npm --prefix apps/desktop run test -- speech
 
 `desktop:test:fast` covers unit, contract, and architecture tests. The complete
 credential-free deterministic suite is `desktop:test:regression`; it is a single Vitest
-run. Browser Control's local fixture uses the Shio-managed Chrome context and belongs to
-this regression tier. The public-site Browser qualification remains opt-in.
+run. Browser Control's local fixtures exercise the Shio-managed Chrome context in headless
+mode with temporary profiles. The public-site Browser qualification remains opt-in.
 
 ## Qualifications and benchmarks
 
@@ -55,10 +55,10 @@ the issue, root cause, owner, expected failure, creation date, and migration tar
 the fix, move the durable regression case into the owner's deterministic suite and remove
 the temporary reproducer.
 
-The former permanent `apps/desktop/scripts/*-repro` suites have been migrated into Vitest.
-Continuous Listening is the sole temporary exception: its feature is not ready, its legacy
-harness stays outside `test:regression`, and it must not be migrated or treated as current
-coverage until the feature work resumes.
+The former permanent `apps/desktop/scripts/*-repro` suites, including Continuous Listening,
+have been migrated into Vitest. Listening input policy lives in `tests/unit/speech`;
+admission, backlog selection and capture lifecycle live in `tests/integration/speech`. Cancellation
+races use the Conversation Runtime fixture in `tests/integration/failed-llm-turn.test.ts`.
 
 ## CI tiers
 
@@ -101,17 +101,17 @@ npm run desktop:test:regression -- --maxWorkers=2
 npm run build
 ```
 
-Vitest uses synthetic provider/process fixtures. Its local Browser Control cases may
-start an isolated Chrome fixture; they never launch Fish or MotionBricks
-inference. Bundling and typechecking do not launch Electron. Do not run
-`qualify:*`, `experiment:qualify`, `api:dev` during a CPU-only check.
+Vitest uses synthetic provider and process fixtures. Local Browser Control cases may
+start an isolated Chrome fixture. The suite runs without Fish or FlashMotion
+inference. Bundling and typechecking do not launch Electron. Use the commands
+above for a CPU-only check.
 
-MotionBricks' `test_targets.py`, `test_hand_prior.py`, and `test_standing_pose.py`
-use NumPy/SciPy and synthetic priors. Run them with the prepared MotionBricks Python
-environment; they do not initialize its inference backend. Shared wire validation
-remains in `apps/desktop/motion/tests/test_worker.py`.
+`npm run motion:catalog:check` verifies the generated motion and emotion catalogs.
+The Desktop build verifies the emitted PCM AudioWorklet.
 
-The source layout and current tests are the inventory. Historical per-file audit
-tables and dated test totals have been removed; current migration results and open
-live checks are recorded in the single
-[migration report](SHIO-MOTIONBRICKS-AI-SDK-MIGRATION-2026-10-29.md).
+The shared motion protocol tests live in
+`apps/desktop/motion/tests/test_worker.py`. See the
+[FlashMotion qualification guide](FLASHMOTION-LIVING-V1-STAGE-2.md) for live
+motion checks and the
+[MotionBricks migration report](SHIO-MOTIONBRICKS-AI-SDK-MIGRATION-2026-10-29.md)
+for the historical results.

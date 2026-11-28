@@ -7,89 +7,29 @@ import type {
 import type { BodyPresentation } from '../../shared/motion'
 import type {
   AvatarRuntimeHealth,
-  CharacterAvatarState,
   CharacterState,
   EventBus,
   RuntimeEventCategory,
   RuntimeEventType,
 } from '../../shared/runtime'
 import type { PcmPlaybackClock } from '../audio/audioPlayer'
-import type { AnimationPlaybackStatus } from '../avatar/AvatarAnimationController'
-import type { AnimationCooldownState } from '../avatar/AvatarAnimationCooldownManager'
-import type { AvatarAnimationQueueDebugState } from '../avatar/AvatarAnimationQueue'
-import type { AvatarBehaviorEngineDecision } from '../avatar/AvatarBehaviorEngine'
-import type { AvatarBehaviorCandidate } from '../avatar/AvatarBehaviorResolver'
 import type { AvatarMode } from '../avatar/AvatarController'
-import {
-  type AvatarBehaviorTransitionLogEntry,
-  AvatarController,
-  type ReactionGestureTrigger,
-} from '../avatar/AvatarController'
-import type { IdleOrchestratorDebugState } from '../avatar/AvatarIdleOrchestrator'
-import type { AvatarPlaybackRequestDebugState } from '../avatar/AvatarPlaybackRequestLog'
-import type { SpeakingGestureSchedulerDebugState } from '../avatar/AvatarSpeakingGestureScheduler'
+import { AvatarController, type ReactionGestureTrigger } from '../avatar/AvatarController'
 import type { DebugAvatarMode } from '../avatar/avatarAnimations'
 import { resolveEmotionEmbodimentProfile } from '../avatar/EmotionEmbodimentProfile'
-import type { FacialDebugState } from '../avatar/embodiment/facial/AvatarExpressionMixer'
-import type { HeadMotionDebugState } from '../avatar/embodiment/gaze/HeadMotionRuntime'
-import type { LookAtDebugState } from '../avatar/embodiment/gaze/LookAtRuntime'
 import type {
   EarAxisOverride,
-  EarBehaviorDebugState,
   EarImpulse,
 } from '../avatar/embodiment/secondary-motion/EarBehaviorRuntime'
-import type { TailBehaviorDebugState } from '../avatar/embodiment/secondary-motion/TailBehaviorRuntime'
 import type { LipSyncStartRequest, MouthWeights } from '../avatar/embodiment/speech/LipSync'
 import type { ConversationViewConfig } from '../avatar/rendering/three/ConversationFraming'
-import type {
-  GeneratedBodyDebugState,
-  VrmPerformanceDebugState,
-} from '../avatar/rendering/three/VrmModel'
 import type { OverlayViewMode } from '../avatar/tuning/cameraTuning'
 import { AvatarRuntimeHealthTracker } from './AvatarRuntimeHealthTracker'
 import type { AvatarCharacterStateProjection } from './CharacterStateStore'
 
 export type { AvatarMode }
 
-export interface AvatarRuntimeDebugState {
-  mode: AvatarMode
-  emotionKey: string
-  currentBodyAnimation: string
-  requestedMotionContinuous: boolean
-  motionRequestStatus: AnimationPlaybackStatus
-  bodyMotion: GeneratedBodyDebugState
-  previousBodyAnimation: string
-  activeTransitionPolicy: string
-  activeBlendDuration: number
-  animationQueue: AvatarAnimationQueueDebugState
-  speakingGestureScheduler: SpeakingGestureSchedulerDebugState
-  behaviorEngine: AvatarBehaviorEngineDecision | null
-  currentBehaviorId: string
-  currentBehaviorCandidates: AvatarBehaviorCandidate[]
-  behaviorSelectionReason: string
-  activeAnimationCooldowns: AnimationCooldownState[]
-  selectedBehaviorAnimation: string
-  currentGesture: string
-  scheduledAnimationKey: string
-  idleBehavior: string
-  nextIdleBehaviorIn: number
-  idleOrchestrator: IdleOrchestratorDebugState
-  ambientIdleBehavior: boolean
-  lipsyncWeights: MouthWeights
-  facial: FacialDebugState
-  lookAt: LookAtDebugState
-  headMotion: HeadMotionDebugState
-  earBehavior: EarBehaviorDebugState
-  tailBehavior: TailBehaviorDebugState
-  performance: VrmPerformanceDebugState
-  playbackRequests: AvatarPlaybackRequestDebugState
-  behaviorTimeline: AvatarBehaviorTransitionLogEntry[]
-  animationFailures: string[]
-}
-
-export type AvatarRuntimeMirrorState = Partial<
-  Omit<CharacterAvatarState, 'mode' | 'expression' | 'vrmExpression'>
->
+export type AvatarRuntimeDebugState = ReturnType<AvatarController['getDebugState']>
 
 export class AvatarRuntime {
   private controller: AvatarController
@@ -177,13 +117,15 @@ export class AvatarRuntime {
     this.controller.applyBodyPresentation(value)
   }
 
-  async loadVrm(scene: THREE.Scene, buffer: ArrayBuffer): Promise<void> {
+  async loadVrm(scene: THREE.Scene, buffer: ArrayBuffer, current = () => true): Promise<void> {
     this.health.markLoading()
     try {
-      await this.controller.loadVrm(scene, buffer)
+      await this.controller.loadVrm(scene, buffer, current)
+      if (!current()) return
       this.health.markReady(this.controller.isLoaded())
       this.publishAvatarEvent('RuntimeInitialized', 'VRM Loaded')
     } catch (error) {
+      if (!current()) return
       this.health.markFailed(error, this.controller.isLoaded())
       throw error
     }
@@ -220,6 +162,10 @@ export class AvatarRuntime {
   }
   recoverMotion(): void {
     this.controller.recoverMotion()
+  }
+
+  setFlashMotionEnabled(enabled: boolean): void {
+    this.controller.setFlashMotionEnabled(enabled)
   }
   getHandBounds(side: 'left' | 'right'): THREE.Sphere | null {
     return this.controller.getHandBounds(side)
@@ -306,13 +252,6 @@ export class AvatarRuntime {
 
   isBrowserScreenGazeActive(): boolean {
     return this.controller.isBrowserScreenGazeActive()
-  }
-
-  getMirrorState(): AvatarRuntimeMirrorState {
-    return {
-      loaded: this.controller.isLoaded(),
-      lipsync: this.controller.getMouthWeights(),
-    }
   }
 
   getCharacterStateProjection(state: CharacterState): AvatarCharacterStateProjection {

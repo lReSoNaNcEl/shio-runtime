@@ -1,31 +1,20 @@
 import { ActionButton, Text } from '@react-spectrum/s2'
 import CodeIcon from '@react-spectrum/s2/icons/Code'
 import DataIcon from '@react-spectrum/s2/icons/Data'
-import HeartIcon from '@react-spectrum/s2/icons/Heart'
 import MicrophoneIcon from '@react-spectrum/s2/icons/Microphone'
 import SettingsIcon from '@react-spectrum/s2/icons/Settings'
 import UserAvatarIcon from '@react-spectrum/s2/icons/UserAvatar'
 import { type ReactElement } from 'react'
 
-import { type SettingsSection } from './state/settingsContracts'
+import { type SettingsSection, settingsSections } from './state/settingsContracts'
 
 const icons: Record<SettingsSection, ReactElement> = {
   general: <SettingsIcon />,
   speech: <MicrophoneIcon />,
   llm: <DataIcon />,
-  autonomy: <HeartIcon />,
   avatar: <UserAvatarIcon />,
   advanced: <CodeIcon />,
 }
-
-const sections: readonly SettingsSection[] = [
-  'general',
-  'llm',
-  'autonomy',
-  'speech',
-  'avatar',
-  'advanced',
-]
 
 export function SettingsNavigation({
   activeSection,
@@ -40,7 +29,7 @@ export function SettingsNavigation({
 }) {
   return (
     <aside className="settings-nav" aria-label={ariaLabel}>
-      {sections.map((section) => (
+      {settingsSections.map((section) => (
         <ActionButton
           key={section}
           isQuiet

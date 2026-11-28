@@ -32,7 +32,9 @@ describe('responsive presentation contracts', () => {
     expect(narrowCard.get('flex-direction')).toBe('row')
     expect(card.get('height')).toBe('auto')
     expect(card.get('block-size')).toBe('auto')
-    expect(declarations('chat', '.screen-context-source > img').get('aspect-ratio')).toBe('16 / 9')
+    expect(declarations('chat', '.screen-context-source-thumbnail').get('aspect-ratio')).toBe(
+      '16 / 9',
+    )
   })
 
   it('reflows quick actions relative to their message container', () => {

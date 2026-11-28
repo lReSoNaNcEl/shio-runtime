@@ -4,7 +4,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { describe, expect, it } from 'vitest'
 
 import { createSemanticMemoryRuntime } from '../../../src/main/memory'
-import { createTempDirectory } from '../../support'
+import { createTempDirectory } from '../../support/createTempDirectory'
 
 describe('Memory retrieval', () => {
   it('combines semantic and lexical evidence when embeddings are available', async () => {

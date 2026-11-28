@@ -190,6 +190,7 @@ export function SetupCenter({
     await controller.checkLlmHealth()
   }
 
+  const avatarConfigured = state.vrmConfigured
   const pickAvatar = async (): Promise<void> => {
     setAvatarAction('busy')
     const result = await window.api.vrm.pick()
@@ -301,6 +302,8 @@ export function SetupCenter({
           )}
           {provider === 'codex-cli' ? (
             <Text>{t('settings.llm.codexLogin')}</Text>
+          ) : provider === 'ollama' ? (
+            <Text>{t('settings.llm.ollamaSetup')}</Text>
           ) : credentialConfigured && !replaceCredential ? (
             <div className="setup-inline-row">
               <StatusLight variant="positive" size="S">
@@ -424,9 +427,13 @@ export function SetupCenter({
                 variant="secondary"
                 UNSAFE_className="setup-row-action"
                 isPending={avatarAction === 'busy'}
-                onPress={() => void pickAvatar()}
+                onPress={() =>
+                  observeRendererPromise(pickAvatar(), 'select setup avatar', () =>
+                    setAvatarAction('error'),
+                  )
+                }
               >
-                {state.vrmConfigured ? t('setup.change') : t('settings.avatar.chooseFile')}
+                {avatarConfigured ? t('setup.change') : t('settings.avatar.chooseFile')}
               </Button>
             </div>
             <div className="setup-detail-row">
@@ -438,7 +445,7 @@ export function SetupCenter({
                 variant="secondary"
                 UNSAFE_className="setup-row-action"
                 aria-pressed={state.overlayState === 'on'}
-                isDisabled={state.overlayState !== 'on' && !state.vrmConfigured}
+                isDisabled={state.overlayState !== 'on' && !avatarConfigured}
                 isPending={state.overlayState === 'opening' || state.overlayState === 'closing'}
                 onPress={() => void toggleOverlay()}
               >

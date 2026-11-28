@@ -60,6 +60,8 @@ export type ReactionGestureTrigger =
   | 'surprise'
   | 'user-interruption'
 
+const THINKING_PRESENTATION_DELAY_MS = 400
+
 export class AvatarController {
   private vrmModel = new VrmModel()
   private animations = new AvatarAnimationController(this.vrmModel)
@@ -87,6 +89,8 @@ export class AvatarController {
   private activeConversationPerformance: ConversationPerformance | undefined
   private pauseGaze: EmbodimentGazeHint | undefined
   private lastCharacterState: CharacterState | undefined
+  /** Visual hysteresis only; the authoritative Character State changes immediately. */
+  private thinkingPresentationDue: number | null = null
   private speechDeliveryEmotion: string | null = null
   private deliveryMood: DeliveryMood | null = null
   private pcmClock: PcmPlaybackClock | null = null
@@ -114,13 +118,23 @@ export class AvatarController {
 
   update(delta: number, state?: CharacterState): void {
     if (state) this.lastCharacterState = state
+    if (
+      this.thinkingPresentationDue !== null &&
+      performance.now() >= this.thinkingPresentationDue &&
+      this.lastCharacterState
+    )
+      this.applyCharacterState(this.lastCharacterState)
     this.frame += 1
     if (this.preparedGesture && !this.hasPreparedGesture()) this.releasePreparedGesture()
     const mode = this.stateMachine.getMode()
     this.idleBehaviors.update(delta, mode)
     this.advanceAnimationQueue()
     this.updateSpeakingGestureSession(state)
-    if (!this.hasPreparedGesture() && this.idleOrchestrator.update(delta, mode)) {
+    if (
+      this.thinkingPresentationDue === null &&
+      !this.hasPreparedGesture() &&
+      this.idleOrchestrator.update(delta, mode)
+    ) {
       const effect = this.stateMachine.getIdleEffect()
       const behaviorDecision = this.behaviorEngine.decide(effect)
       this.lastBehaviorEngineDecision = behaviorDecision
@@ -151,7 +165,9 @@ export class AvatarController {
     // the main avatar and the independent Mirror Overlay, without depending on
     // discrete applyCharacterState events. Ear-only — facial profiles stay
     // event-driven.
-    const earMode = toProceduralMode(state?.mode ?? mode)
+    const earMode = toProceduralMode(
+      this.thinkingPresentationDue !== null ? mode : (state?.mode ?? mode),
+    )
     const earEmotion = state
       ? state.emotion || state.avatar.expression || 'neutral'
       : this.stateMachine.getEmotion()
@@ -176,13 +192,15 @@ export class AvatarController {
     this.advancePreviewSequence()
   }
 
-  async loadVrm(scene: THREE.Scene, buffer: ArrayBuffer): Promise<void> {
+  async loadVrm(scene: THREE.Scene, buffer: ArrayBuffer, current = () => true): Promise<void> {
     // A replacement model must not inherit the previous skeleton's queue or
     // active-animation identity; otherwise the initial idle may be rejected as
     // a duplicate even though the new skeleton has no body action yet.
     this.stopAnimation()
     await this.vrmModel.settleMotionCancellation()
-    await this.vrmModel.load(scene, buffer)
+    if (!current()) return
+    await this.vrmModel.load(scene, buffer, current)
+    if (!current()) return
     this.lipSync.restorePresentation()
     this.vrmModel.setSceneVisible(false)
     try {
@@ -211,6 +229,7 @@ export class AvatarController {
   }
 
   stopAnimation(): void {
+    this.thinkingPresentationDue = null
     this.preparedGesture = undefined
     this.conversationEmbodimentIntent = undefined
     this.activeConversationPerformance = undefined
@@ -247,6 +266,25 @@ export class AvatarController {
   ): void {
     this.lastCharacterState = state
     const mode = toAvatarMode(state.mode)
+    const thinking = mode === 'thinking' || mode === 'awaitingSpeech'
+    if (!thinking) this.thinkingPresentationDue = null
+    else if (
+      this.stateMachine.getMode() === 'idle' ||
+      this.stateMachine.getMode() === 'listening'
+    ) {
+      if (this.thinkingPresentationDue === null) {
+        this.thinkingPresentationDue = performance.now() + THINKING_PRESENTATION_DELAY_MS
+        // Returning to the previous mode must still release early preparation.
+        this.lastCharacterStateKey = null
+        // Preparation may overlap the visual delay; never delay an audible gesture.
+        this.prepareConversationGesture()
+      }
+      if (performance.now() < this.thinkingPresentationDue) {
+        if (options.stopLipSyncTurnId) this.lipSync.detach(options.stopLipSyncTurnId)
+        return
+      }
+    }
+    this.thinkingPresentationDue = null
     const emotionKey = state.emotion || state.avatar.expression || 'neutral'
     const vrmEmotion = state.avatar.vrmExpression
     const semanticKey = `${mode}|${emotionKey}|${vrmEmotion ?? ''}|${JSON.stringify(this.effectiveEmbodimentIntent()) ?? ''}|browser=${this.gaze.browserScreenGazeActive()}|${options.lipSyncStart?.session.playbackId ?? ''}`
@@ -717,6 +755,19 @@ export class AvatarController {
     this.previewPlan = []
     this.vrmModel.recoverMotion()
   }
+
+  setFlashMotionEnabled(enabled: boolean): void {
+    this.vrmModel.setFlashMotionEnabled(enabled)
+    if (!enabled) {
+      this.preparedGesture = undefined
+      this.previewPlan = []
+      this.previewExecutionId = null
+      this.processedIntentKey = this.conversationIntentKey()
+      this.playback.reset()
+    } else if (this.vrmModel.isLoaded() && this.lastEffect) {
+      this.playResolvedBehavior(this.lastEffect, 'external', 'FlashMotion enabled', true)
+    }
+  }
   getHandBounds(side: 'left' | 'right'): THREE.Sphere | null {
     return previewHandBounds(this.vrmModel.vrm, side)
   }
@@ -932,6 +983,7 @@ export class AvatarController {
     stopLipSyncTurnId?: string,
     continuingSpeech = false,
   ): void {
+    this.thinkingPresentationDue = null
     this.updateConversationPerformance(effect.mode)
     this.stateEffects.apply({
       effect,

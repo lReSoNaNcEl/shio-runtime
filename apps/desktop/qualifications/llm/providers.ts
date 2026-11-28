@@ -50,16 +50,6 @@ export const PROVIDERS: LiveProvider[] = [
     reasoningModel: 'qwen/qwen3-next-80b-a3b-instruct:free',
     reasoningModelEnv: 'LLM_LIVE_REASONING_OPENROUTER',
   },
-  {
-    id: 'mistral',
-    displayName: 'Mistral',
-    envKeys: ['MISTRAL_API_KEY'],
-    chatModel: 'mistral-small-latest',
-    chatModelEnv: 'LLM_LIVE_MODEL_MISTRAL',
-    reasoningModel: 'magistral-medium-2509',
-    reasoningModelEnv: 'LLM_LIVE_REASONING_MISTRAL',
-    optional: true,
-  },
 ]
 
 export function readApiKey(lp: LiveProvider): string | null {

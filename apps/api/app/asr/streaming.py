@@ -192,7 +192,9 @@ class StreamingASRSession:
         ]
 
     def _process_vad_frame(self, frame: np.ndarray) -> tuple[list[dict], DecodeJob | None]:
-        probability = float(self._vad_model(torch.from_numpy(frame), self.sample_rate).item())
+        # Silero carries recurrent state across frames, which would retain the autograd graph.
+        with torch.inference_mode():
+            probability = float(self._vad_model(torch.from_numpy(frame), self.sample_rate).item())
         self._total_samples += frame.size
         threshold = self.config.negative_threshold if self.speech_active else self.config.threshold
         voiced = probability >= threshold
@@ -252,11 +254,7 @@ class StreamingASRSession:
                 self._next_partial_samples += round(
                     self.config.partial_interval_ms * self.sample_rate / 1000
                 )
-            start_sample = self._segment_start_sample or 0
-            audio = np.concatenate(self._speech_frames)
-            return [], DecodeJob(
-                "partial", audio, self._segment_id, None, start_sample, start_sample + audio.size
-            )
+            return [], self._snapshot("partial", None, trim_silence=False)
         return [], None
 
     def _snapshot(self, kind: str, reason: str | None, trim_silence: bool) -> DecodeJob:

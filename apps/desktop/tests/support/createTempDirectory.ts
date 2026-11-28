@@ -2,14 +2,12 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-export interface TestTempDirectory {
+interface TestTempDirectory {
   readonly path: string
   cleanup(): Promise<void>
 }
 
-export async function createTempDirectory(
-  prefix = 'shio-desktop-test-',
-): Promise<TestTempDirectory> {
+export async function createTempDirectory(prefix: string): Promise<TestTempDirectory> {
   const path = await mkdtemp(join(tmpdir(), prefix))
   let cleaned = false
   return {

@@ -1,6 +1,5 @@
 import { type BrowserWindow, ipcMain } from 'electron'
 
-import type { AppSettings } from '../../shared/config'
 import { getRendererConfig, saveConfig } from '../config'
 import { IPC_ONE_PAYLOAD, type IpcAuthorization } from './IpcAuthorization'
 import { configSaveSchema } from './payloadSchemas'
@@ -9,6 +8,7 @@ export function registerConfigIpc(
   window: BrowserWindow,
   authorization: IpcAuthorization,
   onConfigChanged?: () => void,
+  onFlashMotionChanged?: () => Promise<void>,
 ): void {
   ipcMain.handle(
     'config:get',
@@ -16,14 +16,23 @@ export function registerConfigIpc(
   )
   ipcMain.handle(
     'config:save',
-    authorization.handlePayload('config:save', IPC_ONE_PAYLOAD, (_event, payload: unknown) => {
-      const partial = configSaveSchema.parse(payload) as Partial<AppSettings>
-      saveConfig(partial)
-      const keys = Object.keys(partial)
-      const changedKey = keys.length === 1 ? keys[0] : undefined
-      window.webContents.send('config:updated', getRendererConfig(), changedKey)
-      if (changedKey !== 'speechVolumePercent') onConfigChanged?.()
-      return { ok: true }
-    }),
+    authorization.handlePayload(
+      'config:save',
+      IPC_ONE_PAYLOAD,
+      async (_event, payload: unknown) => {
+        const partial = configSaveSchema.parse(payload)
+        saveConfig(partial)
+        const keys = Object.keys(partial)
+        const changedKey = keys.length === 1 ? keys[0] : undefined
+        try {
+          if (partial.flashMotionEnabled !== undefined) await onFlashMotionChanged?.()
+        } finally {
+          if (!window.isDestroyed())
+            window.webContents.send('config:updated', getRendererConfig(), changedKey)
+          if (changedKey !== 'speechVolumePercent') onConfigChanged?.()
+        }
+        return { ok: true }
+      },
+    ),
   )
 }

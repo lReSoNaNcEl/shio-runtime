@@ -20,7 +20,6 @@ import {
   defaultProjectAwarenessPluginConfig,
   PROJECT_AWARENESS_MANIFEST,
 } from '../../../src/main/project-awareness'
-import type { SpeechClient } from '../../../src/main/speech/speechClient'
 import type { AppSettings } from '../../../src/shared/config'
 import { migrateLegacyDesktopSettings } from '../../../src/shared/config'
 import type {
@@ -31,7 +30,7 @@ import type {
   ProjectContextProvider,
 } from '../../../src/shared/plugins'
 import { PROJECT_AWARENESS_PLUGIN_ID } from '../../../src/shared/plugins'
-import { createTempDirectory } from '../../support'
+import { createTempDirectory } from '../../support/createTempDirectory'
 
 class FakePlugin implements BundledPlugin {
   readonly provider: ProjectContextProvider = {
@@ -324,7 +323,6 @@ async function conversationCapabilityContract(): Promise<void> {
   const orchestrator = new Orchestrator(
     llm,
     memory,
-    {} as SpeechClient,
     () => ({}) as AppSettings,
     () => provider,
   )

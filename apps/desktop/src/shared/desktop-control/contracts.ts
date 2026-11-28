@@ -1,9 +1,9 @@
 import { z } from 'zod'
 
-import type { DesktopAuthorityMode, DesktopWorkflowExecution } from '../actions'
+import type { DesktopAuthorityMode } from '../actions'
 import { LLM_PROVIDER_IDS } from '../llm'
 
-export const DSH_RUNTIME_VERSION = '0.2.2-alpha.2' as const
+export const DSH_RUNTIME_VERSION = '0.2.3-alpha.2' as const
 
 export const desktopControlRuntimeStateSchema = z.enum([
   'stopped',
@@ -51,11 +51,6 @@ export interface DesktopControlApi {
   getStatus(): Promise<DesktopControlStatus>
   startRuntime(): Promise<DesktopControlStatus>
   stopRuntime(): Promise<DesktopControlStatus>
-}
-
-export interface DesktopAutomationAdapter {
-  execute(goal: string, options: { signal: AbortSignal }): Promise<DesktopWorkflowExecution>
-  close(): Promise<void>
 }
 
 export interface DesktopControlCapabilityProjection {

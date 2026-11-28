@@ -24,7 +24,7 @@ export interface ChatMessageListProps {
   onQuickAction: (action: ChatQuickAction) => void
   onStartWatch?: () => void
   onOpenCapabilities?: () => void
-  continuousListening: ControllerState['continuousListening']
+  continuousListening?: ControllerState['continuousListening']
   onRetryContinuousListening?: () => void
   onDisableContinuousListening?: () => void
 }
@@ -86,7 +86,7 @@ export function ChatMessageList({
   return (
     <div className="chat-message-list">
       <div id="chat-messages" ref={listRef} onScroll={updateFollowState}>
-        {continuousListening.desired && continuousListening.transport === 'failed' && (
+        {continuousListening?.desired && continuousListening.transport === 'failed' && (
           <div className="input-error" role="alert">
             <span>
               {t(

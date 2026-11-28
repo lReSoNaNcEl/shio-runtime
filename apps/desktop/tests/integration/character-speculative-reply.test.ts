@@ -57,7 +57,11 @@ interface StreamCall {
 }
 
 /** Fake provider: planning and each stream complete only when the test says so. */
-function harness(plan: Record<string, unknown>, availability?: EmbodimentAvailability) {
+function harness(
+  plan: Record<string, unknown>,
+  availability?: EmbodimentAvailability,
+  registry = emptyRegistry,
+) {
   const planning = createDeferred<LlmCompletion>()
   const streams: StreamCall[] = []
   const seen: CharacterToolLoopStreamEvent[] = []
@@ -82,7 +86,7 @@ function harness(plan: Record<string, unknown>, availability?: EmbodimentAvailab
         for (const event of events) {
           if (options.signal?.aborted)
             throw new LlmResponseError({
-              provider: 'mistral',
+              provider: 'openrouter',
               code: 'CANCELLED',
               message: 'aborted',
             })
@@ -95,9 +99,9 @@ function harness(plan: Record<string, unknown>, availability?: EmbodimentAvailab
   const run = (speculative: boolean) =>
     new CharacterToolLoop().run({
       llm,
-      providerId: 'mistral',
+      providerId: 'openrouter',
       messages: [{ role: 'user', content: 'Привет!' }],
-      registry: emptyRegistry,
+      registry,
       createDispatcher: () =>
         ({ registerPlannedTools: () => undefined, dispose: () => undefined }) as never,
       traceId: 'speculative',
@@ -248,6 +252,51 @@ describe('speculative direct reply', () => {
     expect(speculativeOptions).toEqual(plainOptions)
   })
 
+  it('overlaps planning with the exact direct request on the structured tool route', async () => {
+    expect(projectRegistry().get('project.search')).toBeDefined()
+
+    const speculative = harness(DIRECT, undefined, projectRegistry)
+    const first = speculative.run(true)
+    expect(speculative.streams).toHaveLength(1)
+    speculative.streams[0].events.resolve(reply('[calm]Привет!'))
+    await flush()
+    expect(texts(speculative.seen)).toEqual([])
+    speculative.resolvePlan()
+    await first
+    expect(speculative.streams).toHaveLength(1)
+    expect(texts(speculative.seen).join('')).toBe('Привет!')
+
+    const plain = harness(DIRECT, undefined, projectRegistry)
+    const second = plain.run(false)
+    plain.resolvePlan()
+    await flush()
+    plain.streams[0].events.resolve(reply('[calm]Привет!'))
+    await second
+    expect(speculative.streams[0].messages).toEqual(plain.streams[0].messages)
+    const { signal: _a, ...speculativeOptions } = speculative.streams[0].options
+    const { signal: _b, ...plainOptions } = plain.streams[0].options
+    expect(speculativeOptions).toEqual(plainOptions)
+  })
+
+  it('drops the structured speculation when a direct-answer plan still allows a tool', async () => {
+    const { streams, seen, run, resolvePlan } = harness(
+      { ...DIRECT, plannedTools: ['project.search'] },
+      undefined,
+      projectRegistry,
+    )
+    const turn = run(true)
+    streams[0].events.resolve(reply('[calm]ЧЕРНОВИК'))
+    await flush()
+    resolvePlan()
+    await flush()
+    expect(streams[0].options.signal?.aborted).toBe(true)
+    expect(texts(seen)).toEqual([])
+    expect(streams).toHaveLength(2)
+    streams[1].events.resolve(reply('[calm]Реплика после плана.'))
+    await turn
+    expect(texts(seen).join('')).toBe('Реплика после плана.')
+  })
+
   it('aborts the speculation without showing it when the plan wants a gesture or tools', async () => {
     const { streams, seen, run, resolvePlan } = harness(
       { ...DIRECT, embodiment: { intensity: 'normal', gestureHint: 'greeting' } },
@@ -279,7 +328,7 @@ describe('speculative direct reply', () => {
     const turn = run(true)
     await flush()
     streams[0].events.reject(
-      new LlmResponseError({ provider: 'mistral', code: 'PROVIDER_REJECTED', message: 'bad' }),
+      new LlmResponseError({ provider: 'openrouter', code: 'PROVIDER_REJECTED', message: 'bad' }),
     )
     await flush()
     resolvePlan()
@@ -367,6 +416,25 @@ describe('speculative reply buffer', () => {
     expect(await pending).toMatchObject({ content: 'ab' })
     expect(seen).toEqual(['a', 'b'])
     expect(reply.hasForwardedText()).toBe(true)
+  })
+
+  it('aborts provider work and drops late text when the parent cancels after release', async () => {
+    const parent = new AbortController()
+    const seen: CharacterToolLoopStreamEvent[] = []
+    let emit!: (event: CharacterToolLoopStreamEvent) => void
+    const reply = new SpeculativeDirectReply(parent.signal, (onEvent, signal) => {
+      emit = onEvent
+      return new Promise((_, reject) =>
+        signal.addEventListener('abort', () => reject(signal.reason), { once: true }),
+      )
+    })
+    const pending = reply.release((value) => seen.push(value))
+    emit(event('before'))
+    parent.abort(new Error('cancelled after release'))
+    expect(reply.signal.aborted).toBe(true)
+    emit(event('late'))
+    await expect(pending).rejects.toThrow('cancelled after release')
+    expect(texts(seen)).toEqual(['before'])
   })
 
   it('discards on overflow, expiry and parent abort, and never releases afterwards', () => {

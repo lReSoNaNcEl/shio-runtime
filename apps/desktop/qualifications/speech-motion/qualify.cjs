@@ -152,7 +152,6 @@ config.uiLocale = 'en'
 config.uiTheme = 'dark'
 config.developerModeEnabled = 'true'
 config.ttsEngine = 'fish-s2-pro'
-config.ttsLanguage = 'ru'
 if (process.argv.includes('--bundled-model')) config.vrmPath = ''
 const fixtureArgument = process.argv.find((value) => value.startsWith('--vrm-fixture='))
 if (fixtureArgument) {
@@ -178,9 +177,7 @@ if (codexLunaLow) {
     codexReasoningByModel: { [model]: 'low' },
   }
   config.llm.roles = {
-    ...config.llm.roles,
     characterFallbacks: [],
-    backlogSelector: { ...config.llm.roles?.backlogSelector, providerId, model },
     computerUseVision: { ...config.llm.roles?.computerUseVision, providerId, model },
   }
 }

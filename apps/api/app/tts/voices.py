@@ -26,10 +26,6 @@ def list_presets() -> list:
     ]
 
 
-def resolve_reference(voice_id: str | None):
-    return voice_registry.resolve_reference(voice_id)
-
-
 def condition_reference(voice_id: str | None, model_revision: str):
     return voice_registry.condition_reference(
         voice_id,
