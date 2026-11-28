@@ -15,7 +15,7 @@ import DiscoverIcon from '@react-spectrum/s2/icons/Discover'
 import ProjectIcon from '@react-spectrum/s2/icons/Project'
 import { type ReactNode, useEffect, useState } from 'react'
 
-import { type BrowserControlStatus } from '../../../shared/browser-control'
+import { type BrowserControlStatus, PLAYWRIGHT_CORE_VERSION } from '../../../shared/browser-control'
 import { type DesktopControlStatus, DSH_RUNTIME_VERSION } from '../../../shared/desktop-control'
 import {
   BROWSER_CONTROL_PLUGIN_ID,
@@ -61,7 +61,7 @@ const EMPTY_BROWSER_STATUS: BrowserControlStatus = {
   enabled: false,
   browserName: 'Google Chrome',
   backend: 'playwright',
-  backendVersion: '1.62.1',
+  backendVersion: PLAYWRIGHT_CORE_VERSION,
   executableAvailable: false,
   isolatedProfile: true,
   semanticControl: 'unavailable',

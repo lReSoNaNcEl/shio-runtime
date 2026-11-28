@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
-import { dirname, relative, resolve, sep } from 'node:path'
+import { readdirSync, readFileSync } from 'node:fs'
+import { basename, dirname, relative, resolve, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 /** Check the emitted renderer, not a source-file substitute for the worklet. */
@@ -28,6 +28,11 @@ export function verifySpeechAssets(rendererRoot) {
   assert(workletPath.startsWith(root + sep), 'PCM worklet escapes its output directory')
   const worklet = readFileSync(workletPath, 'utf8')
   assert.match(worklet, /registerProcessor\(["']shio-pcm-stream-player["']/u)
+  assert.deepEqual(
+    readdirSync(dirname(workletPath)).filter((name) => /^pcmStreamWorklet-.*\.js$/u.test(name)),
+    [basename(workletPath)],
+    'Build must emit exactly one PCM worklet',
+  )
   assert.match(html, /script-src\s+'self'(?=[\s;"'])/u)
   return {
     entryPath,

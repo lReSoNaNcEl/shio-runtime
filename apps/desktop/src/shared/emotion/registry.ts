@@ -59,18 +59,6 @@ export class EmotionRegistry {
     return this.entries.get(this.normalize(emotion))?.avatar?.behavior ?? this.defaultEmotion
   }
 
-  avatarBodyIntent(emotion: string): string {
-    return this.entries.get(this.normalize(emotion))?.avatar?.bodyIntent ?? 'explain'
-  }
-
-  avatarExpression(emotion: string): string {
-    return this.entries.get(this.normalize(emotion))?.avatar?.expression ?? this.defaultEmotion
-  }
-
-  avatarExpressionWeights(emotion: string): Record<string, number> {
-    return { ...(this.entries.get(this.normalize(emotion))?.avatar?.expressionWeights ?? {}) }
-  }
-
   promptList(): string {
     return this.supported()
       .map((emotion) => `[${emotion}]`)

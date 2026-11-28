@@ -45,7 +45,6 @@ export const EMBODIMENT_GESTURE_HINTS = Object.freeze(
   EMBODIMENT_GESTURE_DEFINITIONS.map(({ id }) => id),
 ) as readonly [EmbodimentGestureHint, ...EmbodimentGestureHint[]]
 export const EMBODIMENT_GAZE_HINTS = ['user', 'screen', 'away'] as const
-export type EmbodimentIntensity = (typeof EMBODIMENT_INTENSITIES)[number]
 export type EmbodimentGazeHint = (typeof EMBODIMENT_GAZE_HINTS)[number]
 
 export const conversationPerformanceSchema = z
@@ -75,11 +74,6 @@ export interface EmbodimentIntentContext {
   eligibility: 'opening' | 'future-only'
   turnId: string
 }
-export interface CharacterResponseIntent {
-  emotion: string
-  embodiment?: CharacterEmbodimentIntent
-}
-
 export const EMBODIMENT_UNAVAILABLE_REASONS = [
   'model-unavailable',
   'motion-unavailable',

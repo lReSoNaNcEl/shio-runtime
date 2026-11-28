@@ -1,27 +1,75 @@
 import { type BrowserWindow, desktopCapturer, ipcMain } from 'electron'
 import { z } from 'zod'
 
+import {
+  WATCH_DETAIL_MAX_BYTES,
+  WATCH_DETAIL_MAX_REGIONS,
+  WATCH_MAX_FRAME_BYTES,
+  WATCH_TURN_MAX_BYTES,
+  watchReferenceUrl,
+} from '../../shared/watchTogether'
 import type { WatchTogetherService } from '../watch-together/WatchTogetherService'
+import { windowsWatchAudio } from '../watch-together/windowsWatchAudio'
+import type { OverlayWindowManager } from '../windows/OverlayWindowManager'
 import type { IpcAuthorization } from './IpcAuthorization'
 
 export function registerWatchTogetherIpc(
   win: BrowserWindow,
   watch: WatchTogetherService,
   auth: IpcAuthorization,
+  overlay: OverlayWindowManager,
 ): () => void {
   const id = z.tuple([z.string().uuid()])
   const bytes = (min: number, max: number) =>
     z.instanceof(ArrayBuffer).refine((b) => b.byteLength >= min && b.byteLength <= max)
+  const relativeTime = z.number().int().min(-45_000).max(0)
   const moment = z.tuple([
     z
       .object({
         sessionId: z.string().uuid(),
         endedAt: z.number().int().positive(),
-        frames: bytes(100, 300000),
-        pcm: bytes(3200, 192000).refine((b) => b.byteLength % 2 === 0),
+        frames: bytes(100, WATCH_MAX_FRAME_BYTES),
+        pcm: bytes(0, 192000).refine(
+          (b) => b.byteLength === 0 || (b.byteLength >= 512 && b.byteLength % 2 === 0),
+        ),
         playbackTranscript: z.string().max(1000),
+        timing: z
+          .object({
+            earlierMs: relativeTime,
+            currentMs: relativeTime,
+            peakMs: relativeTime.optional(),
+          })
+          .strict()
+          .optional(),
+        peak: bytes(100, WATCH_MAX_FRAME_BYTES).optional(),
+        details: z
+          .array(bytes(100, WATCH_DETAIL_MAX_BYTES))
+          .max(WATCH_DETAIL_MAX_REGIONS)
+          .optional(),
+        phrases: z
+          .array(
+            z
+              .object({
+                startMs: relativeTime,
+                endMs: relativeTime,
+                text: z.string().min(1).max(600),
+                final: z.boolean(),
+              })
+              .strict()
+              .refine((p) => p.startMs <= p.endMs),
+          )
+          .max(4)
+          .optional(),
       })
-      .strict(),
+      .strict()
+      .refine(({ timing, peak }) => {
+        if (!timing) return !peak
+        const { earlierMs, currentMs, peakMs } = timing
+        return (
+          earlierMs <= currentMs &&
+          (peakMs === undefined ? !peak : !!peak && earlierMs <= peakMs && peakMs <= currentMs)
+        )
+      }),
   ])
   const wc = win.webContents
   const session = wc.session
@@ -43,22 +91,47 @@ export function registerWatchTogetherIpc(
         thumbnailSize: { width: 0, height: 0 },
       })
       const video = sources.find((s) => s.id === grant.sourceId)
-      if (!video || wc.isDestroyed() || request.frame !== wc.mainFrame || !watch.current(grant.id))
+      if (
+        !video ||
+        overlay.isCaptureSource(grant.sourceId) ||
+        wc.isDestroyed() ||
+        request.frame !== wc.mainFrame ||
+        !watch.current(grant.id)
+      )
         return cb({})
-      cb({ video, audio: 'loopback' })
+      const audio = await windowsWatchAudio(video.id, grant.signal)
+      if (wc.isDestroyed() || request.frame !== wc.mainFrame || !watch.current(grant.id))
+        return cb({})
+      watch.describeGrant(grant.id, video.name)
+      overlay.setCaptureExcluded(true)
+      overlay.ensure()
+      // Electron 45 forwards string IDs unchanged to Chromium's Windows loopback adapter.
+      cb(audio ? { video, audio: audio as 'loopback' } : { video })
     } catch {
+      if (watch.current(grant.id)) overlay.setCaptureExcluded(false)
       cb({})
     }
   })
   ipcMain.handle(
+    'watch:prepare-model',
+    auth.handlePayload('watch:prepare-model', z.tuple([]), () => watch.prepareModel()),
+  )
+  ipcMain.handle(
     'watch:start',
     auth.handlePayload(
       'watch:start',
-      z.tuple([z.string().regex(/^(screen|window):\d+:\d+$/)]),
-      (event, source) => {
+      z.tuple([
+        z.string().regex(/^(screen|window):\d+:\d+$/),
+        z
+          .string()
+          .max(2048)
+          .refine((value) => Boolean(watchReferenceUrl(value)))
+          .optional(),
+      ]),
+      (event, source, reference) => {
         if (process.platform !== 'win32' || event.senderFrame !== wc.mainFrame)
           throw new Error('WATCH_UNAVAILABLE')
-        return watch.start(source)
+        return watch.start(source, reference)
       },
     ),
   )
@@ -68,11 +141,44 @@ export function registerWatchTogetherIpc(
   )
   ipcMain.handle(
     'watch:yield',
-    auth.handlePayload('watch:yield', id, (_event, id) => watch.yield(id)),
+    auth.handlePayload(
+      'watch:yield',
+      z.tuple([z.string().uuid(), z.enum(['scene', 'speech']).optional()]),
+      (_event, sessionId, reason) => watch.yield(sessionId, reason),
+    ),
   )
   ipcMain.handle(
     'watch:observe',
     auth.handlePayload('watch:observe', moment, (_event, input) => watch.observe(input)),
+  )
+  ipcMain.handle(
+    'watch:classify-speech',
+    auth.handlePayload(
+      'watch:classify-speech',
+      z.tuple([
+        z.string().uuid(),
+        z.string().trim().min(1).max(800),
+        z.boolean(),
+        z
+          .object({
+            utteranceId: z.string().min(1).max(100),
+            frame: bytes(100, WATCH_TURN_MAX_BYTES).optional(),
+            playbackTranscript: z.string().max(1000),
+          })
+          .strict()
+          .optional(),
+      ]),
+      (_event, sessionId, text, recentAddress, sample) =>
+        watch.classifySpeech(sessionId, text, recentAddress, sample),
+    ),
+  )
+  ipcMain.handle(
+    'watch:finish-comment',
+    auth.handlePayload(
+      'watch:finish-comment',
+      z.tuple([z.string().uuid(), z.string().min(1).max(100), z.boolean()]),
+      (_event, sessionId, turnId, played) => watch.finishComment(sessionId, turnId, played),
+    ),
   )
   ipcMain.handle(
     'watch:prepare-turn',
@@ -82,7 +188,7 @@ export function registerWatchTogetherIpc(
         z.string().uuid(),
         z.string().min(1).max(100),
         z.boolean(),
-        bytes(100, 300000).optional(),
+        bytes(100, WATCH_TURN_MAX_BYTES).optional(),
         z.string().max(1000).optional(),
       ]),
       (_event, sessionId, turnId, fromMicrophone, frame, transcript) =>
@@ -105,6 +211,9 @@ export function registerWatchTogetherIpc(
     for (const channel of [
       'watch:start',
       'watch:observe',
+      'watch:prepare-model',
+      'watch:classify-speech',
+      'watch:finish-comment',
       'watch:prepare-turn',
       'watch:stop',
       'watch:yield',

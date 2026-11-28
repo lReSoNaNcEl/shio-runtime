@@ -3,7 +3,6 @@ import {
   Disclosure,
   DisclosurePanel,
   DisclosureTitle,
-  Divider,
   Heading,
   NumberField,
   Picker,
@@ -11,12 +10,16 @@ import {
   SegmentedControl,
   SegmentedControlItem,
   Slider,
+  StatusLight,
   Switch,
   Text,
 } from '@react-spectrum/s2'
+import DeviceDesktop from '@react-spectrum/s2/icons/DeviceDesktop'
+import FolderOpen from '@react-spectrum/s2/icons/FolderOpen'
+import UserAvatar from '@react-spectrum/s2/icons/UserAvatar'
 import { style } from '@react-spectrum/s2/style' with { type: 'macro' }
+import { useId, useState } from 'react'
 
-import { overlayCameraPresets } from '../../../avatar/tuning/cameraTuning'
 import { useTranslation } from '../../../localization/useTranslation'
 import { observeRendererPromise } from '../../../reliability/observePromise'
 import { type AvatarSettingsActions, type AvatarSettingsState } from '../state/settingsContracts'
@@ -24,6 +27,7 @@ import { overlayViewModes } from '../state/settingsDefaults'
 import { parseOverlayViewMode } from '../state/settingsParsers'
 
 const fullWidth = style({ width: 'full' })
+const percentageFormat = { style: 'unit', unit: 'percent', unitDisplay: 'narrow' } as const
 
 export function AvatarSettingsSection({
   state,
@@ -33,198 +37,228 @@ export function AvatarSettingsSection({
   actions: AvatarSettingsActions
 }) {
   const { t } = useTranslation()
+  const id = useId()
+  const [pending, setPending] = useState(false)
+  const [error, setError] = useState(false)
+
+  async function updateFlashMotion(enabled: boolean) {
+    setPending(true)
+    setError(false)
+    try {
+      await actions.setFlashMotionEnabled(enabled)
+    } catch {
+      setError(true)
+    } finally {
+      setPending(false)
+    }
+  }
+
   return (
-    <div className="settings-grid avatar-panel">
-      <section className="avatar-section" aria-labelledby="avatar-model-title">
-        <Heading level={3} id="avatar-model-title" UNSAFE_className="overlay-section-title">
-          {t('settings.avatar.modelSection')}
-        </Heading>
-        <div className="settings-field">
-          <Text UNSAFE_className="settings-label">{t('settings.avatar.model')}</Text>
-          <div className="settings-row">
-            <Button
-              variant="secondary"
-              onPress={() => observeRendererPromise(actions.pickVrm(), 'select VRM asset')}
-            >
-              {t('settings.avatar.chooseFile')}
-            </Button>
-            <Text UNSAFE_className="settings-hint">
-              {state.vrmName || t('settings.avatar.notSelected')}
-            </Text>
+    <div className="avatar-settings">
+      <section className="avatar-settings-card" aria-labelledby={`${id}-model`}>
+        <div className="avatar-settings-header">
+          <div className="avatar-settings-identity">
+            <UserAvatar />
+            <div className="avatar-settings-copy">
+              <Heading level={3} id={`${id}-model`}>
+                {t('settings.avatar.model')}
+              </Heading>
+              <Text UNSAFE_className="avatar-settings-help">
+                {state.vrmName || t('settings.avatar.notSelected')}
+              </Text>
+            </div>
           </div>
-        </div>
-      </section>
-      <Divider />
-      <section className="overlay-hero" aria-labelledby="avatar-overlay-title">
-        <div className="overlay-hero-copy">
-          <Heading level={3} id="avatar-overlay-title" UNSAFE_className="overlay-section-title">
-            {t('settings.avatar.overlaySection')}
-          </Heading>
-          <Text UNSAFE_className="settings-hint">{t('settings.avatar.overlayEnabledHint')}</Text>
-          {!state.overlayVisible && (
-            <Text UNSAFE_className="settings-hint overlay-disabled-note">
-              {t('settings.avatar.overlayDisabled')}
+          <Button
+            variant="secondary"
+            isDisabled={pending}
+            onPress={() => observeRendererPromise(actions.pickVrm(), 'select avatar model')}
+          >
+            <FolderOpen />
+            <Text>
+              {t(state.vrmName ? 'settings.avatar.changeModel' : 'settings.avatar.chooseFile')}
             </Text>
-          )}
+          </Button>
         </div>
-        <Switch
-          size="L"
-          isEmphasized
-          isSelected={state.overlayVisible}
-          onChange={(visible) =>
-            observeRendererPromise(actions.toggleOverlay(visible), 'toggle Overlay from Settings')
-          }
-        >
-          {t('settings.avatar.overlayEnabled')}
-        </Switch>
-      </section>
-      <div
-        className={`overlay-settings-grid${state.overlayVisible ? '' : ' overlay-disabled-content'}`}
-      >
-        <section className="overlay-card" aria-labelledby="overlay-camera-title">
-          <div className="overlay-card-heading">
-            <Heading level={3} id="overlay-camera-title" UNSAFE_className="overlay-section-title">
-              {t('settings.avatar.cameraSection')}
+        <div className="avatar-settings-header">
+          <div className="avatar-settings-copy">
+            <Heading level={4} id={`${id}-flashmotion`}>
+              {t('settings.avatar.flashMotion')}
             </Heading>
-            <Text UNSAFE_className="settings-hint">{t('settings.avatar.cameraDescription')}</Text>
+            <Text id={`${id}-flashmotion-detail`} UNSAFE_className="avatar-settings-help">
+              {t('settings.avatar.flashMotionDetail')}
+            </Text>
           </div>
-          <SegmentedControl
-            aria-label={t('settings.avatar.cameraSection')}
-            selectedKey={state.overlayViewMode}
-            onSelectionChange={(key) =>
-              actions.setOverlayViewMode(parseOverlayViewMode(String(key)))
+          <Switch
+            aria-labelledby={`${id}-flashmotion`}
+            aria-describedby={`${id}-flashmotion-detail`}
+            isSelected={state.flashMotionEnabled}
+            isDisabled={pending}
+            onChange={(enabled) =>
+              observeRendererPromise(updateFlashMotion(enabled), 'configure FlashMotion')
             }
-            isDisabled={!state.overlayVisible}
-            isJustified
-            styles={fullWidth}
+          />
+        </div>
+        {error && (
+          <StatusLight variant="negative">{t('settings.avatar.flashMotionSaveFailed')}</StatusLight>
+        )}
+      </section>
+
+      <section className="avatar-settings-card" aria-labelledby={`${id}-overlay`}>
+        <div className="avatar-settings-header">
+          <div className="avatar-settings-identity">
+            <DeviceDesktop />
+            <div className="avatar-settings-copy">
+              <Heading level={3} id={`${id}-overlay`}>
+                {t('settings.avatar.overlaySection')}
+              </Heading>
+              <Text UNSAFE_className="avatar-settings-help">
+                {t('settings.avatar.overlaySettingsHint')}
+              </Text>
+            </div>
+          </div>
+          <Switch
+            isEmphasized
+            isSelected={state.overlayVisible}
+            onChange={(visible) =>
+              observeRendererPromise(actions.toggleOverlay(visible), 'toggle Overlay from Settings')
+            }
           >
-            {overlayViewModes.map((mode) => (
-              <SegmentedControlItem key={mode} id={mode}>
-                {overlayCameraPresets[mode].label}
-              </SegmentedControlItem>
-            ))}
-          </SegmentedControl>
-        </section>
-        <section className="overlay-card" aria-labelledby="overlay-display-sub-title">
-          <Heading
-            level={3}
-            id="overlay-display-sub-title"
-            UNSAFE_className="overlay-section-title"
-          >
+            {t('settings.avatar.overlayEnabled')}
+          </Switch>
+        </div>
+
+        <section className="avatar-settings-group" aria-labelledby={`${id}-display`}>
+          <Heading level={4} id={`${id}-display`}>
             {t('settings.avatar.displaySection')}
           </Heading>
-          <Slider
-            label={t('settings.avatar.opacity')}
-            value={state.overlayOpacityPercent}
-            minValue={0}
-            maxValue={100}
-            step={1}
-            formatOptions={{ style: 'unit', unit: 'percent', unitDisplay: 'narrow' }}
-            onChange={actions.setOverlayOpacityPercent}
-            isDisabled={!state.overlayVisible}
-            styles={fullWidth}
-          />
-          <Slider
-            label={t('settings.avatar.scale')}
-            value={state.overlayScalePercent}
-            minValue={50}
-            maxValue={200}
-            step={5}
-            formatOptions={{ style: 'unit', unit: 'percent', unitDisplay: 'narrow' }}
-            onChange={actions.setOverlayScalePercent}
-            isDisabled={!state.overlayVisible}
-            styles={fullWidth}
-          />
-          <Picker
-            label={t('settings.avatar.position')}
-            selectedKey={state.overlayCorner}
-            onSelectionChange={(key) => actions.setOverlayCorner(String(key))}
-            isDisabled={!state.overlayVisible}
-            styles={fullWidth}
-          >
-            <PickerItem id="top-left">{t('settings.avatar.topLeft')}</PickerItem>
-            <PickerItem id="top-right">{t('settings.avatar.topRight')}</PickerItem>
-            <PickerItem id="bottom-left">{t('settings.avatar.bottomLeft')}</PickerItem>
-            <PickerItem id="bottom-right">{t('settings.avatar.bottomRight')}</PickerItem>
-          </Picker>
+          <div className="avatar-settings-fields">
+            <div className="avatar-settings-field">
+              <Text id={`${id}-framing`} UNSAFE_className="avatar-settings-label">
+                {t('settings.avatar.cameraSection')}
+              </Text>
+              <SegmentedControl
+                aria-labelledby={`${id}-framing`}
+                selectedKey={state.overlayViewMode}
+                onSelectionChange={(key) =>
+                  actions.setOverlayViewMode(parseOverlayViewMode(String(key)))
+                }
+                isJustified
+                styles={fullWidth}
+              >
+                {overlayViewModes.map((mode) => (
+                  <SegmentedControlItem id={mode} key={mode}>
+                    {t(`settings.avatar.cameraMode.${mode}`)}
+                  </SegmentedControlItem>
+                ))}
+              </SegmentedControl>
+            </div>
+            <Picker
+              label={t('settings.avatar.position')}
+              selectedKey={state.overlayCorner}
+              onSelectionChange={(key) => actions.setOverlayCorner(String(key))}
+              styles={fullWidth}
+            >
+              <PickerItem id="top-left">{t('settings.avatar.topLeft')}</PickerItem>
+              <PickerItem id="top-right">{t('settings.avatar.topRight')}</PickerItem>
+              <PickerItem id="bottom-left">{t('settings.avatar.bottomLeft')}</PickerItem>
+              <PickerItem id="bottom-right">{t('settings.avatar.bottomRight')}</PickerItem>
+            </Picker>
+            <Slider
+              label={t('settings.avatar.scale')}
+              value={state.overlayScalePercent}
+              minValue={50}
+              maxValue={200}
+              step={5}
+              formatOptions={percentageFormat}
+              onChange={actions.setOverlayScalePercent}
+              styles={fullWidth}
+            />
+            <Slider
+              label={t('settings.avatar.opacity')}
+              value={state.overlayOpacityPercent}
+              minValue={0}
+              maxValue={100}
+              step={1}
+              formatOptions={percentageFormat}
+              onChange={actions.setOverlayOpacityPercent}
+              styles={fullWidth}
+            />
+          </div>
         </section>
-        <section className="overlay-card" aria-labelledby="overlay-interaction-title">
-          <Heading
-            level={3}
-            id="overlay-interaction-title"
-            UNSAFE_className="overlay-section-title"
-          >
+
+        <section className="avatar-settings-group" aria-labelledby={`${id}-interaction`}>
+          <Heading level={4} id={`${id}-interaction`}>
             {t('settings.avatar.interactionSection')}
           </Heading>
-          <div className="overlay-switch-list">
+          <div className="avatar-settings-fields">
             <Switch
               isSelected={state.overlayClickThrough}
               onChange={actions.setOverlayClickThrough}
-              isDisabled={!state.overlayVisible}
+              description={t('settings.avatar.clickThroughDescription')}
+              styles={fullWidth}
             >
               {t('settings.avatar.clickThrough')}
             </Switch>
-            <Text UNSAFE_className="settings-hint">
-              {t('settings.avatar.clickThroughDescription')}
-            </Text>
-          </div>
-          <div className="overlay-switch-list">
             <Switch
               isSelected={state.overlayTransparentBackground}
               onChange={actions.setOverlayTransparentBackground}
-              isDisabled={!state.overlayVisible}
+              description={t('settings.avatar.transparentDescription')}
+              styles={fullWidth}
             >
               {t('settings.avatar.transparent')}
             </Switch>
-            <Text UNSAFE_className="settings-hint">
-              {t('settings.avatar.transparentDescription')}
-            </Text>
           </div>
         </section>
-        <Disclosure isQuiet UNSAFE_className="overlay-card overlay-card-wide overlay-advanced">
-          <DisclosureTitle level={3}>{t('settings.avatar.advancedWindow')}</DisclosureTitle>
+
+        <Disclosure isQuiet UNSAFE_className="avatar-settings-advanced">
+          <DisclosureTitle level={4}>{t('settings.avatar.advancedWindow')}</DisclosureTitle>
           <DisclosurePanel>
-            <Text UNSAFE_className="settings-hint">{t('settings.avatar.windowDescription')}</Text>
-            <div className="overlay-number-grid">
-              <NumberField
-                label={t('settings.avatar.width')}
-                value={state.overlayWidth}
-                minValue={250}
-                maxValue={2000}
-                step={10}
-                onChange={actions.setOverlayWidth}
-                isDisabled={!state.overlayVisible}
-                hideStepper
-              />
-              <NumberField
-                label={t('settings.avatar.height')}
-                value={state.overlayHeight}
-                minValue={250}
-                maxValue={2000}
-                step={10}
-                onChange={actions.setOverlayHeight}
-                isDisabled={!state.overlayVisible}
-                hideStepper
-              />
-              <NumberField
-                label={t('settings.avatar.margin')}
-                value={state.overlayMargin}
-                minValue={0}
-                maxValue={500}
-                step={10}
-                onChange={actions.setOverlayMargin}
-                isDisabled={!state.overlayVisible}
-                hideStepper
-              />
+            <div className="avatar-settings-group avatar-settings-window">
+              <Text UNSAFE_className="avatar-settings-help">
+                {t('settings.avatar.windowDescription')}
+              </Text>
+              <div className="avatar-settings-dimensions">
+                <NumberField
+                  label={t('settings.avatar.width')}
+                  value={state.overlayWidth}
+                  minValue={250}
+                  maxValue={2000}
+                  step={10}
+                  onChange={actions.setOverlayWidth}
+                  hideStepper
+                  styles={fullWidth}
+                />
+                <NumberField
+                  label={t('settings.avatar.height')}
+                  value={state.overlayHeight}
+                  minValue={250}
+                  maxValue={2000}
+                  step={10}
+                  onChange={actions.setOverlayHeight}
+                  hideStepper
+                  styles={fullWidth}
+                />
+                <NumberField
+                  label={t('settings.avatar.margin')}
+                  value={state.overlayMargin}
+                  minValue={0}
+                  maxValue={500}
+                  step={10}
+                  onChange={actions.setOverlayMargin}
+                  hideStepper
+                  styles={fullWidth}
+                />
+              </div>
             </div>
           </DisclosurePanel>
         </Disclosure>
-      </div>
-      <div className="settings-row overlay-actions-row">
-        <Button variant="secondary" onPress={actions.resetOverlaySettings}>
-          {t('settings.avatar.reset')}
-        </Button>
-      </div>
+
+        <div className="avatar-settings-footer">
+          <Button variant="secondary" fillStyle="outline" onPress={actions.resetOverlaySettings}>
+            {t('settings.avatar.reset')}
+          </Button>
+        </div>
+      </section>
     </div>
   )
 }

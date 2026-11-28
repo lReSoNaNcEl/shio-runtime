@@ -1,5 +1,6 @@
 import {
   isCodexReasoningEffort,
+  isLlmProviderId,
   LLM_PROVIDER_IDS,
   type LlmCredentialStatus,
   type LlmPersistedConfig,
@@ -10,32 +11,23 @@ import {
   MAX_CHARACTER_FALLBACKS,
 } from '../../shared/llm'
 import { CODEX_MODEL, isCodexModelId } from './CodexCliProvider'
+import { OLLAMA_DEFAULT_MODEL } from './providers/ollama'
 import { normalizeProviderAccountId, normalizeProviderModelId } from './registry'
 
-export function emptyProviderSettings(): LlmProviderPersistedSettings {
-  return { model: '', accountId: '' }
-}
-
-function isKnownProviderId(value: string): value is LlmProviderId {
-  return LLM_PROVIDER_IDS.some((providerId) => providerId === value)
+function defaultProviderSettings(providerId: LlmProviderId): LlmProviderPersistedSettings {
+  const model =
+    providerId === 'codex-cli' ? CODEX_MODEL : providerId === 'ollama' ? OLLAMA_DEFAULT_MODEL : ''
+  return { model, accountId: '' }
 }
 
 export function defaultLlmConfig(): LlmPersistedConfig {
   const providers = {} as Record<LlmProviderId, LlmProviderPersistedSettings>
-  for (const id of LLM_PROVIDER_IDS) providers[id] = emptyProviderSettings()
-  providers['codex-cli'].model = CODEX_MODEL
+  for (const id of LLM_PROVIDER_IDS) providers[id] = defaultProviderSettings(id)
   return {
     activeProvider: 'groq',
     providers,
     speculativeDirectReply: false,
     roles: {
-      backlogSelector: {
-        enabled: false,
-        providerId: '',
-        model: '',
-        timeoutMs: 2_000,
-        minimumConfidence: 0.72,
-      },
       computerUseVision: {
         providerId: '',
         model: '',
@@ -54,7 +46,7 @@ function toCharacterFallbacks(value: unknown): LlmRoleCandidate[] {
   for (const entry of value) {
     if (!entry || typeof entry !== 'object') continue
     const record = entry as Record<string, unknown>
-    if (typeof record.providerId !== 'string' || !isKnownProviderId(record.providerId)) continue
+    if (!isLlmProviderId(record.providerId)) continue
     if (typeof record.model !== 'string') continue
     const model = normalizeProviderModelId(record.providerId, record.model.trim())
     if (!model || model.length > 500) continue
@@ -70,8 +62,7 @@ function toProviderSettings(
   providerId: LlmProviderId,
   value: unknown,
 ): LlmProviderPersistedSettings {
-  const base = emptyProviderSettings()
-  if (providerId === 'codex-cli') base.model = CODEX_MODEL
+  const base = defaultProviderSettings(providerId)
   if (value && typeof value === 'object') {
     const record = value as Record<string, unknown>
     const efforts = record.codexReasoningByModel
@@ -103,10 +94,7 @@ export function normalizeLlmConfig(value: unknown): LlmPersistedConfig {
   const record = value as Record<string, unknown>
   if (record.activeProvider === 'cerebras') {
     result.activeProvider = 'cloudflare'
-  } else if (
-    typeof record.activeProvider === 'string' &&
-    isKnownProviderId(record.activeProvider)
-  ) {
+  } else if (isLlmProviderId(record.activeProvider)) {
     result.activeProvider = record.activeProvider
   }
   result.speculativeDirectReply = record.speculativeDirectReply === true
@@ -120,46 +108,11 @@ export function normalizeLlmConfig(value: unknown): LlmPersistedConfig {
   const roles = record.roles
   if (roles && typeof roles === 'object') {
     const roleRecord = roles as Record<string, unknown>
-    const selector = roleRecord.backlogSelector
-    if (selector && typeof selector === 'object') {
-      const selectorValue = selector as Record<string, unknown>
-      result.roles.backlogSelector.enabled = selectorValue.enabled === true
-      if (
-        typeof selectorValue.providerId === 'string' &&
-        isKnownProviderId(selectorValue.providerId)
-      ) {
-        result.roles.backlogSelector.providerId = selectorValue.providerId
-      }
-      const legacyCerebrasSelector = selectorValue.providerId === 'cerebras'
-      if (legacyCerebrasSelector) {
-        result.roles.backlogSelector.enabled = false
-        result.roles.backlogSelector.providerId = ''
-        result.roles.backlogSelector.model = ''
-      }
-      if (!legacyCerebrasSelector && typeof selectorValue.model === 'string') {
-        result.roles.backlogSelector.model = selectorValue.model
-      }
-      if (typeof selectorValue.timeoutMs === 'number' && Number.isFinite(selectorValue.timeoutMs)) {
-        result.roles.backlogSelector.timeoutMs = Math.max(
-          250,
-          Math.min(10_000, selectorValue.timeoutMs),
-        )
-      }
-      if (
-        typeof selectorValue.minimumConfidence === 'number' &&
-        Number.isFinite(selectorValue.minimumConfidence)
-      ) {
-        result.roles.backlogSelector.minimumConfidence = Math.max(
-          0,
-          Math.min(1, selectorValue.minimumConfidence),
-        )
-      }
-    }
     result.roles.characterFallbacks = toCharacterFallbacks(roleRecord.characterFallbacks)
     const computerUseVision = roleRecord.computerUseVision
     if (computerUseVision && typeof computerUseVision === 'object') {
       const visualValue = computerUseVision as Record<string, unknown>
-      if (typeof visualValue.providerId === 'string' && isKnownProviderId(visualValue.providerId)) {
+      if (isLlmProviderId(visualValue.providerId)) {
         result.roles.computerUseVision.providerId = visualValue.providerId
       }
       if (typeof visualValue.model === 'string') {

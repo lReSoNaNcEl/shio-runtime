@@ -6,6 +6,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { monitorEventLoopDelay } from 'node:perf_hooks'
 
+import { chromium } from 'playwright-core'
+
 import {
   BrowserAutomationError,
   type BrowserComputerUseDecisionContext,
@@ -569,7 +571,7 @@ async function startFixture(): Promise<{ server: Server; origin: string }> {
     const send = (): void => {
       const address = server.address()
       assert(address && typeof address === 'object')
-      response.writeHead(200, {
+      response.writeHead(url.pathname === '/missing' ? 404 : 200, {
         'content-type': 'text/html; charset=utf-8',
         'cache-control': 'no-store',
       })
@@ -682,15 +684,51 @@ async function removeProfile(path: string): Promise<void> {
   await rm(path, { recursive: true, force: true })
 }
 
+const launchHeadlessContext: typeof chromium.launchPersistentContext = (directory, options) =>
+  chromium.launchPersistentContext(directory, { ...options, headless: true })
+
 async function deterministicRepro(
   executablePath: string,
   profileDirectory: string,
   origin: string,
 ): Promise<void> {
-  const browser = new PlaywrightBrowserAdapter({ executablePath, profileDirectory })
+  const launchStarted = Promise.withResolvers<void>()
+  const releaseLaunch = Promise.withResolvers<void>()
+  const cancelledUrl = `${origin}/cancelled-before-navigation`
+  let cancelledVisits = 0
+  const browser = new PlaywrightBrowserAdapter({
+    executablePath,
+    profileDirectory,
+    launchPersistentContext: async (directory, options) => {
+      launchStarted.resolve()
+      await releaseLaunch.promise
+      const context = await launchHeadlessContext(directory, options)
+      context.on('request', (request) => {
+        if (request.url() === cancelledUrl) cancelledVisits++
+      })
+      return context
+    },
+  })
   let reopened: PlaywrightBrowserAdapter | undefined
   try {
-    const initial = (await browser.open(origin)).observation
+    const cancellation = new AbortController()
+    const stopped = new Error('share stopped while Chrome was launching')
+    const attempt = browser.open(cancelledUrl, cancellation.signal)
+    await launchStarted.promise
+    cancellation.abort(stopped)
+    releaseLaunch.resolve()
+    await assert.rejects(attempt, (error: unknown) => error === stopped)
+    assert.equal(cancelledVisits, 0)
+    const missing = await browser.open(`${origin}/missing`)
+    assert.equal(missing.evidence.navigationStatus, 404)
+    const missingAnchor = await browser.open(`${origin}/missing#details`)
+    assert.equal(missingAnchor.evidence.navigationStatus, 404)
+    const document = await browser.open(origin)
+    assert.equal(document.evidence.navigationStatus, 200)
+    const opened = await browser.open(`${origin}/#details`)
+    assert.equal(opened.observation?.url, `${origin}/#details`)
+    assert.equal(opened.evidence.navigationStatus, 200)
+    const initial = opened.observation
     assert(initial)
     assert.equal(initial.title, 'Browser Control Fixture')
     assert(initial.interactiveElements.some((element) => element.name === 'Canvas target'))
@@ -1234,7 +1272,11 @@ async function deterministicRepro(
     )
 
     await browser.close()
-    reopened = new PlaywrightBrowserAdapter({ executablePath, profileDirectory })
+    reopened = new PlaywrightBrowserAdapter({
+      executablePath,
+      profileDirectory,
+      launchPersistentContext: launchHeadlessContext,
+    })
     const persisted = (await reopened.open(origin)).observation
     assert(persisted?.content.includes('Persisted player: Ada'))
     await reopened.close()
@@ -1248,7 +1290,9 @@ async function liveQualification(executablePath: string, profileDirectory: strin
   const browser = new PlaywrightBrowserAdapter({ executablePath, profileDirectory })
   try {
     const publicPage = (await browser.open('https://example.com/')).observation
-    assert(publicPage?.content.includes('Example Domain'))
+    assert.equal(publicPage?.url, 'https://example.com/')
+    assert.equal(publicPage.title, 'Example Domain')
+    assert(publicPage.content.includes('documentation examples'))
     await browser.open('https://play2048.co/')
     const startedAt = Date.now()
     let lastProgress = startedAt
@@ -1304,7 +1348,11 @@ async function continuousRepro(
   profileDirectory: string,
   origin: string,
 ): Promise<void> {
-  const browser = new PlaywrightBrowserAdapter({ executablePath, profileDirectory })
+  const browser = new PlaywrightBrowserAdapter({
+    executablePath,
+    profileDirectory,
+    launchPersistentContext: launchHeadlessContext,
+  })
   const events: string[] = []
   try {
     await browser.open(`${origin}/continuous`)

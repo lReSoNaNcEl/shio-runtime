@@ -1,40 +1,39 @@
 import assert from 'node:assert/strict'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 import { describe, it } from 'vitest'
 
-const desktopRoot = resolve(import.meta.dirname, '../..')
+import { isBelow } from '../support/architecture/sourceAst'
+import { desktopRoot, sourceFiles, sourceRoot } from './context'
+
+const rendererRoot = resolve(sourceRoot, 'renderer')
 const source = (name: string) => readFileSync(resolve(desktopRoot, name), 'utf8')
 
 describe('generated-motion migration boundary', () => {
   it('keeps clip loaders, root-track policies and file/cache projections removed', () => {
     for (const name of [
-      'VrmBodyPlayback',
-      'AvatarAnimationLoader',
-      'RootMotionController',
-      'AnimationDebugTypes',
-      'VrmAnimationTypes',
+      'avatar/rendering/three/VrmBodyPlayback.ts',
+      'avatar/rendering/three/AvatarAnimationLoader.ts',
+      'avatar/rendering/three/RootMotionController.ts',
+      'avatar/rendering/three/AnimationDebugTypes.ts',
+      'avatar/rendering/three/VrmAnimationTypes.ts',
+      'avatar/OverlayAnimationPolicy.ts',
+      'runtime/StreamingSpeechPipeline.ts',
     ])
-      assert.equal(
-        existsSync(resolve(desktopRoot, `src/renderer/avatar/rendering/three/${name}.ts`)),
-        false,
-      )
-    assert.equal(
-      existsSync(resolve(desktopRoot, 'src/renderer/avatar/OverlayAnimationPolicy.ts')),
-      false,
+      assert(!existsSync(resolve(rendererRoot, name)), `Removed module returned: ${name}`)
+
+    assert.deepEqual(
+      readdirSync(rendererRoot, { recursive: true, encoding: 'utf8' }).filter((name) =>
+        /\.vrma$/iu.test(name),
+      ),
+      [],
     )
-    for (const name of [
-      'avatar/AvatarAnimationController.ts',
-      'avatar/animationManifest.ts',
-      'avatar/rendering/three/GeneratedMotionTypes.ts',
-      'avatar/rendering/three/GeneratedBodyPlayback.ts',
-      'runtime/TransitionRecorder.ts',
-      'controller/RuntimeDiagnosticsProjection.ts',
-    ])
+    for (const file of sourceFiles.filter((name) => isBelow(name, rendererRoot)))
       assert.doesNotMatch(
-        source(`src/renderer/${name}`),
-        /rootMotionPolicy|legacyBlendDuration|activeFileName|clipCache|lastLoadFile|currentClip|ownershipGapCount/,
+        readFileSync(file, 'utf8'),
+        /rootMotionPolicy|legacyBlendDuration|activeFileName|currentBodyAnimationFile|animationAssetCache|clipCache|lastLoadFile|currentClip|ownershipGapCount|OverlayAnimationPolicy|import\.meta\.glob[^\n]*vrma|pickVrma|loadExternalAnimation/iu,
+        file,
       )
     for (const name of ['package.json', 'package-lock.json'])
       assert.doesNotMatch(source(name), /three-vrm-animation/)

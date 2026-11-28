@@ -6,24 +6,15 @@ import { join } from 'node:path'
 
 import { resolvePwshPath } from '@deepseek-ai/dsh-pwsh-local'
 import { DeepSeekHarness } from '@deepseek-ai/dsh-sdk-client'
-import { describe, it } from 'vitest'
+import { describe, it, vi } from 'vitest'
 
+import { DesktopControlPlugin } from '../../src/main/desktop-control/DesktopControlPlugin'
 import {
   buildDshChildEnvironment,
   DshAdapterError,
   DshHarnessAdapter,
   type DshLaunchResources,
-  type DshModelConfiguration,
 } from '../../src/main/desktop-control/DshHarnessAdapter'
-
-const model: DshModelConfiguration = {
-  provider: 'groq',
-  providerDisplayName: 'Groq',
-  model: 'fixture-model',
-  baseURL: 'https://api.example.test/openai/v1',
-  apiKey: 'fixture-secret',
-  credentialConfigured: true,
-}
 
 async function main(): Promise<void> {
   const temporaryRoot = await mkdtemp(join(tmpdir(), 'shio-dsh-repro-'))
@@ -39,22 +30,26 @@ async function main(): Promise<void> {
     shell: { command: resolvePwshPath(undefined, process.env, process.platform) },
   }
   try {
-    const environment = buildDshChildEnvironment(process.env, resources, model, 'shell')
+    const environment = buildDshChildEnvironment(
+      { ...process.env, SHIO_DSH_API_KEY: 'must-not-inherit', CODEX_API_KEY: 'must-not-inherit' },
+      resources,
+      'shell',
+    )
     assert.equal(environment.SHIO_DSH_ALLOWED_CAPABILITY, 'shell')
     assert.equal(environment.SHIO_PWSH_COMMAND, resources.shell?.command)
-    assert.equal(environment.SHIO_DSH_API_KEY, model.apiKey)
-    assert.equal(environment.SHIO_DSH_MODEL, model.model)
-    assert.equal(environment.SHIO_DSH_BASE_URL, model.baseURL)
+    assert.equal(environment.SHIO_DSH_EXACT_SHELL, '1')
+    assert.equal(environment.SHIO_DSH_API_KEY, undefined)
+    assert.equal(environment.CODEX_API_KEY, undefined)
+    assert.equal(environment.SHIO_DSH_MODEL, undefined)
+    assert.equal(environment.SHIO_DSH_BASE_URL, undefined)
     let starts = 0
     let closes = 0
     const adapter = new DshHarnessAdapter({
       resources: () => resources,
-      model: () => model,
       createHarness: async () => ({
         start: async () => {
           starts += 1
         },
-        run: async () => ({ finalResponse: '', notifications: [] }),
         executeShell: async (command, timeoutMs) => ({
           exitCode: command === 'exit 7' ? 7 : 0,
           signal: null,
@@ -111,22 +106,36 @@ async function main(): Promise<void> {
     await adapter.close()
     assert.equal(closes, 1)
 
-    const unconfigured = new DshHarnessAdapter({
-      resources: () => resources,
-      model: () => ({ ...model, apiKey: '', credentialConfigured: false }),
+    const characterModel = vi.fn(() => ({
+      provider: 'codex-cli' as const,
+      providerDisplayName: 'Codex CLI',
+      model: 'gpt-6-luna',
+      configured: false,
+    }))
+    const plugin = new DesktopControlPlugin({
+      adapter,
+      authorityMode: () => 'confirm',
+      characterModel,
     })
-    await assert.rejects(
-      () => unconfigured.start('shell'),
-      (error) => error instanceof DshAdapterError && error.code === 'DSH_MODEL_NOT_CONFIGURED',
-    )
-    console.log('DSH shell planner seam repro: PASS')
+    try {
+      await plugin.initialize({ pluginId: plugin.manifest.id })
+      await plugin.start()
+      assert.equal((await plugin.getHealth()).state, 'healthy')
+      assert.equal((await plugin.getCapabilityProjection()).computerControl, 'ready')
+      assert.equal(characterModel.mock.calls.length, 0)
+      const status = await plugin.startRuntime()
+      assert.equal(status.runtime.state, 'ready')
+      assert.equal(status.model.configured, false)
+    } finally {
+      await plugin.dispose()
+    }
   } finally {
     await rm(temporaryRoot, { recursive: true, force: true })
   }
 }
 
 describe('DSH adapter', () => {
-  it('preserves the shell planner seam', async () => {
+  it('runs exact commands with a credential-minimal child environment', async () => {
     await main()
   })
 })
@@ -144,17 +153,17 @@ it('runs the installed DSH PowerShell backend and tears down active work', async
     homeDirectory: join(temporaryRoot, 'home'),
     shell: { command: resolvePwshPath(undefined, process.env, process.platform) },
   }
-  const adapter = new DshHarnessAdapter({ resources: () => resources, model: () => model })
+  const adapter = new DshHarnessAdapter({ resources: () => resources })
   try {
     const result = await adapter.execute(
-      'Return a deterministic marker',
+      'Read the local year',
       new AbortController().signal,
       'shell',
-      "[Console]::Write('dsh-runtime-ok')",
+      'Get-Date -Format yyyy',
     )
     assert.equal(result.runtimeCompleted, true)
     assert.equal(result.evidence.kind, 'shell')
-    assert.equal(result.reportedOutcome, 'dsh-runtime-ok')
+    assert.equal(result.reportedOutcome, String(new Date().getFullYear()))
     await assert.rejects(
       adapter.execute('Fail deterministically', new AbortController().signal, 'shell', 'exit 7'),
       (error) => error instanceof DshAdapterError && error.code === 'DSH_REMOTE_ERROR',
@@ -259,19 +268,21 @@ it('keeps the alpha model loop restricted to PowerShell and enforces shell deadl
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
   const address = server.address()
   assert.ok(address && typeof address === 'object')
-  const environment = buildDshChildEnvironment(
-    process.env,
-    resources,
-    { ...model, baseURL: `http://127.0.0.1:${address.port}/v1` },
-    'shell',
-  )
+  // The legacy model-loop fixture explicitly opts in to its own local mock provider.
+  const environment = {
+    ...buildDshChildEnvironment(process.env, resources, 'shell'),
+    SHIO_DSH_EXACT_SHELL: '0',
+    SHIO_DSH_API_KEY: 'fixture-only',
+    SHIO_DSH_BASE_URL: `http://127.0.0.1:${address.port}/v1`,
+    SHIO_DSH_MODEL: 'fixture-model',
+  }
   const harness = new DeepSeekHarness({
     dshBin: resources.runtimeScript,
     processCwd: profileDirectory,
     env: environment,
     cwd: temporaryRoot,
     provider: 'shio-settings',
-    model: model.model,
+    model: environment.SHIO_DSH_MODEL,
     requestTimeoutMs: 10_000,
   })
   try {

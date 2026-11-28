@@ -49,46 +49,51 @@ async function connectedClient() {
   return { client, socket, sessionId, handlers }
 }
 
-it('bounds unsent PCM including the new frame, rejects late finals and resumes with fresh audio', async () => {
-  const { client, socket, sessionId, handlers } = await connectedClient()
-  const oldMessage = socket.onmessage
-  const frame = new ArrayBuffer(640)
-  socket.bufferedAmount = 16_000 - frame.byteLength
-  client.sendPcm(frame)
-  expect(socket.send).toHaveBeenLastCalledWith(frame)
-  socket.bufferedAmount += 2
-  client.sendPcm(frame)
-  client.sendPcm(frame)
-  expect(socket.send).toHaveBeenCalledTimes(2)
-  expect(socket.close).toHaveBeenCalledOnce()
-  expect(handlers.onAudioGap).toHaveBeenCalledOnce()
-  expect(handlers.onState).toHaveBeenLastCalledWith('reconnecting')
-  const final = {
-    type: 'final',
-    sessionId,
-    segmentId: 'old',
-    revision: 1,
-    text: 'old',
-    startMs: 0,
-    endMs: 100,
-    reason: 'disconnect',
-  }
-  oldMessage?.({ data: JSON.stringify(final) })
-  expect(handlers.onEvent).not.toHaveBeenCalled()
-  await vi.advanceTimersByTimeAsync(500)
-  const next = Socket.instances[1]
-  const nextSession = next.ready()
-  expect(nextSession).not.toBe(sessionId)
-  expect(next.send).toHaveBeenCalledTimes(1)
-  const fresh = new ArrayBuffer(320)
-  client.sendPcm(fresh)
-  expect(next.send).toHaveBeenLastCalledWith(fresh)
-  next.onmessage?.({ data: JSON.stringify({ ...final, sessionId: nextSession, text: 'fresh' }) })
-  expect(handlers.onEvent).toHaveBeenCalledExactlyOnceWith(
-    expect.objectContaining({ text: 'fresh' }),
-  )
-  await client.stop()
-})
+it.each(['capture', 'transport'] as const)(
+  'rejects late finals and resumes with fresh audio after a %s gap',
+  async (gap) => {
+    const { client, socket, sessionId, handlers } = await connectedClient()
+    expect(JSON.parse(socket.send.mock.calls[0][0]).language).toBe('auto')
+    const oldMessage = socket.onmessage
+    const frame = new ArrayBuffer(640)
+    socket.bufferedAmount = 16_000 - frame.byteLength
+    client.sendPcm(frame)
+    expect(socket.send).toHaveBeenLastCalledWith(frame)
+    socket.bufferedAmount = gap === 'capture' ? 0 : socket.bufferedAmount + 2
+    expect(client.sendPcm(frame, gap === 'capture')).toBe(false)
+    client.sendPcm(frame)
+    expect(socket.send).toHaveBeenCalledTimes(2)
+    expect(socket.close).toHaveBeenCalledOnce()
+    expect(handlers.onAudioGap).toHaveBeenCalledOnce()
+    expect(handlers.onState).toHaveBeenLastCalledWith('reconnecting')
+    const final = {
+      type: 'final',
+      sessionId,
+      segmentId: 'old',
+      revision: 1,
+      text: 'old',
+      startMs: 0,
+      endMs: 100,
+      reason: 'disconnect',
+    }
+    oldMessage?.({ data: JSON.stringify(final) })
+    expect(handlers.onEvent).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(500)
+    const next = Socket.instances[1]
+    const nextSession = next.ready()
+    expect(JSON.parse(next.send.mock.calls[0][0]).language).toBe('auto')
+    expect(nextSession).not.toBe(sessionId)
+    expect(next.send).toHaveBeenCalledTimes(1)
+    const fresh = new ArrayBuffer(320)
+    client.sendPcm(fresh)
+    expect(next.send).toHaveBeenLastCalledWith(fresh)
+    next.onmessage?.({ data: JSON.stringify({ ...final, sessionId: nextSession, text: 'fresh' }) })
+    expect(handlers.onEvent).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ text: 'fresh' }),
+    )
+    await client.stop()
+  },
+)
 
 it('stopping after overflow cancels reconnection and ignores later capture frames', async () => {
   const { client, handlers } = await connectedClient()

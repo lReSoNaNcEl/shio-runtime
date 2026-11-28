@@ -1,15 +1,22 @@
 import {
-  Badge,
+  ActionButton,
   Button,
   Content,
   Dialog,
   DialogContainer,
+  Disclosure,
+  DisclosurePanel,
+  DisclosureTitle,
   Footer,
   Heading,
   ProgressCircle,
+  StatusLight,
   Text,
-  ToggleButton,
+  TextField,
+  Tooltip,
+  TooltipTrigger,
 } from '@react-spectrum/s2'
+import RefreshIcon from '@react-spectrum/s2/icons/Refresh'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import {
@@ -17,8 +24,10 @@ import {
   type ScreenContextErrorCode,
   type ScreenContextSource,
 } from '../../../shared/screen-context'
+import { watchReferenceUrl } from '../../../shared/watchTogether'
 import { useTranslation } from '../../localization/useTranslation'
 import { observeRendererPromise } from '../../reliability/observePromise'
+import { ScreenSourceGrid } from './ScreenSourceGrid'
 import { screenContextErrorMessage } from './screenContextErrorMessage'
 
 type PickerState =
@@ -33,7 +42,8 @@ interface Props {
   isOpen: boolean
   onDismiss: () => void
   onChangeModel: () => void
-  onWatch?: (sourceId: string, sourceName: string) => void
+  referenceAvailable?: boolean
+  onWatch?: (sourceId: string, sourceName: string, reference?: string) => void
   onAttach?: (capture: ScreenContextCaptureDescriptor) => void
 }
 
@@ -43,11 +53,18 @@ export function ScreenContextPicker({
   onChangeModel,
   onAttach,
   onWatch,
+  referenceAvailable,
 }: Props) {
   const { t } = useTranslation()
   const [state, setState] = useState<PickerState>('checking-capability')
   const [sources, setSources] = useState<ScreenContextSource[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [checkingSource, setCheckingSource] = useState(false)
+  const [warmup, setWarmup] = useState<'pending' | 'ready' | 'failed'>('ready')
+  const isWatchPicker = Boolean(onWatch)
+  const [reference, setReference] = useState('')
+  const referenceUrl = watchReferenceUrl(reference.trim())
+  const invalidReference = Boolean(reference.trim() && !referenceUrl)
   const [errorCode, setErrorCode] = useState<ScreenContextErrorCode | null>(null)
   const operationIdRef = useRef(0)
   const mainOperationIdRef = useRef<string | null>(null)
@@ -57,10 +74,16 @@ export function ScreenContextPicker({
     setState('loading-sources')
     setErrorCode(null)
     setSelectedId(null)
+    setCheckingSource(false)
     try {
       const result = await window.api.screenContext.listSources()
       if (operationId !== operationIdRef.current) return
       if (!result.ok) {
+        if (result.error.code === 'NO_SOURCES') {
+          setSources([])
+          setState('source-list')
+          return
+        }
         setErrorCode(result.error.code)
         setState('error')
         return
@@ -79,6 +102,7 @@ export function ScreenContextPicker({
     setState('checking-capability')
     setErrorCode(null)
     setSelectedId(null)
+    setCheckingSource(false)
     try {
       const capabilities = await window.api.llm.getActiveCapabilities()
       if (operationId !== operationIdRef.current) return
@@ -96,6 +120,7 @@ export function ScreenContextPicker({
 
   useEffect(() => {
     if (!isOpen) {
+      setReference('')
       operationIdRef.current += 1
       const mainOperationId = mainOperationIdRef.current
       mainOperationIdRef.current = null
@@ -107,11 +132,28 @@ export function ScreenContextPicker({
       }
       return
     }
+    let revision = 0
+    const prepare = () => {
+      if (!isWatchPicker) return
+      const current = ++revision
+      setWarmup('pending')
+      void window.api.watchTogether.prepareModel().then(
+        (ready) => {
+          if (revision === current) setWarmup(ready ? 'ready' : 'failed')
+        },
+        () => {
+          if (revision === current) setWarmup('failed')
+        },
+      )
+    }
+    prepare()
     observeRendererPromise(refreshCapabilities(), 'load Screen Context capabilities')
-    const unsubscribe = window.api.config.onUpdated(() => {
+    const unsubscribe = window.api.config.onUpdated((_config, key) => {
+      if (key === 'llm' || key === undefined) prepare()
       observeRendererPromise(refreshCapabilities(), 'refresh Screen Context capabilities')
     })
     return () => {
+      ++revision
       operationIdRef.current += 1
       const mainOperationId = mainOperationIdRef.current
       mainOperationIdRef.current = null
@@ -123,14 +165,41 @@ export function ScreenContextPicker({
       }
       unsubscribe()
     }
-  }, [isOpen, refreshCapabilities])
+  }, [isOpen, isWatchPicker, refreshCapabilities])
+
+  const selectSource = async (source: ScreenContextSource | null): Promise<void> => {
+    const operationId = ++operationIdRef.current
+    setErrorCode(null)
+    setSelectedId(source?.id ?? null)
+    setCheckingSource(Boolean(source))
+    if (!source) return
+    try {
+      const result = await window.api.screenContext.checkSource(source.id)
+      if (operationId !== operationIdRef.current || result.ok) return
+      setSelectedId(null)
+      setErrorCode(result.error.code)
+      if (result.error.code === 'SOURCE_NOT_FOUND')
+        setSources((current) => current.filter((candidate) => candidate.id !== source.id))
+    } catch {
+      if (operationId !== operationIdRef.current) return
+      setSelectedId(null)
+      setErrorCode('UNKNOWN')
+    } finally {
+      if (operationId === operationIdRef.current) setCheckingSource(false)
+    }
+  }
 
   const attach = async (): Promise<void> => {
-    if (!selectedId) return
+    if (!selectedId || checkingSource) return
     if (onWatch) {
       const source = sources.find((candidate) => candidate.id === selectedId)
       if (!source) return
-      onWatch(source.id, source.name)
+      if (referenceAvailable && invalidReference) return
+      const onlyScreen =
+        source.kind === 'screen' &&
+        !sources.some((candidate) => candidate.kind === 'screen' && candidate.id !== source.id)
+      const name = onlyScreen ? t('watch.source.entireScreen') : source.name
+      onWatch(source.id, name, referenceAvailable ? referenceUrl : undefined)
       onDismiss()
       return
     }
@@ -170,11 +239,20 @@ export function ScreenContextPicker({
   return (
     <DialogContainer onDismiss={onDismiss}>
       {isOpen && (
-        <Dialog size="L" isDismissible>
-          <Heading>{t(onWatch ? 'watch.title' : 'screenContext.picker.title')}</Heading>
-          <Content>
+        <Dialog size="L" isDismissible UNSAFE_className="screen-context-picker-dialog">
+          <Heading slot="title">
+            {t(onWatch ? 'watch.picker.title' : 'screenContext.picker.title')}
+          </Heading>
+          <Content UNSAFE_className="screen-context-picker-content">
             <div className="screen-context-picker">
-              {onWatch && <Text>{t('watch.description')}</Text>}
+              {onWatch && warmup !== 'ready' && (
+                <StatusLight variant={warmup === 'pending' ? 'informative' : 'notice'}>
+                  {t(warmup === 'pending' ? 'watch.model.warming' : 'watch.model.failed')}
+                </StatusLight>
+              )}
+              {onWatch && state === 'source-list' && sources.length > 0 && (
+                <Text UNSAFE_className="screen-context-share-hint">{t('watch.description')}</Text>
+              )}
               {busy && (
                 <div className="screen-context-picker-state">
                   <ProgressCircle aria-label={t('common.loading')} isIndeterminate size="L" />
@@ -215,57 +293,75 @@ export function ScreenContextPicker({
                 </div>
               )}
               {state === 'source-list' && (
-                <div className="screen-context-source-grid">
-                  {sources.map((source) => {
-                    const selected = source.id === selectedId
-                    return (
-                      <ToggleButton
-                        key={source.id}
-                        isSelected={selected}
-                        UNSAFE_className="screen-context-source"
-                        onChange={(isSelected) => setSelectedId(isSelected ? source.id : null)}
-                      >
-                        <img src={source.previewDataUrl} alt="" />
-                        <span className="screen-context-source-info">
-                          <span className="screen-context-source-identity">
-                            {source.appIconDataUrl && (
-                              <img
-                                className="screen-context-source-app-icon"
-                                src={source.appIconDataUrl}
-                                alt=""
-                              />
-                            )}
-                            <span className="screen-context-source-name" title={source.name}>
-                              {source.name}
-                            </span>
-                          </span>
-                          <Badge
-                            size="S"
-                            variant={source.kind === 'screen' ? 'informative' : 'gray'}
-                          >
-                            {source.kind === 'screen'
-                              ? t('screenContext.source.screen')
-                              : t('screenContext.source.window')}
-                          </Badge>
-                        </span>
-                      </ToggleButton>
+                <ScreenSourceGrid
+                  sources={sources}
+                  selectedId={selectedId}
+                  onSelect={(source) =>
+                    observeRendererPromise(
+                      selectSource(source),
+                      'check selected Screen Context source',
                     )
-                  })}
+                  }
+                />
+              )}
+              {state === 'source-list' && checkingSource && (
+                <StatusLight size="S" variant="neutral" role="status">
+                  {t('screenContext.picker.checkingSource')}
+                </StatusLight>
+              )}
+              {state === 'source-list' && errorCode && (
+                <StatusLight size="S" variant="notice" role="status">
+                  {errorCode === 'UNKNOWN'
+                    ? t('screenContext.picker.checkSourceFailed')
+                    : screenContextErrorMessage(errorCode, t)}
+                </StatusLight>
+              )}
+              {state === 'source-list' && sources.length === 0 && (
+                <div role="status">
+                  <Text>{t('screenContext.picker.noSources')}</Text>
                 </div>
+              )}
+              {onWatch && referenceAvailable && state === 'source-list' && sources.length > 0 && (
+                <Disclosure isQuiet>
+                  <DisclosureTitle level={3}>
+                    {invalidReference
+                      ? t('watch.reference.fix')
+                      : referenceUrl
+                        ? t('watch.reference.selected', { host: new URL(referenceUrl).host })
+                        : t('watch.reference.group')}
+                  </DisclosureTitle>
+                  <DisclosurePanel>
+                    <TextField
+                      label={t('watch.reference.label')}
+                      type="url"
+                      value={reference}
+                      onChange={setReference}
+                      description={t('watch.reference.description')}
+                      isInvalid={invalidReference}
+                      errorMessage={t('watch.reference.invalid')}
+                      UNSAFE_className="screen-context-reference-url"
+                    />
+                  </DisclosurePanel>
+                </Disclosure>
               )}
             </div>
           </Content>
           <Footer>
             <div className="screen-context-picker-actions">
               {state === 'source-list' && (
-                <Button
-                  variant="secondary"
-                  onPress={() =>
-                    observeRendererPromise(loadSources(), 'retry Screen Context sources')
-                  }
-                >
-                  {t('screenContext.picker.refresh')}
-                </Button>
+                <TooltipTrigger delay={200}>
+                  <ActionButton
+                    isQuiet
+                    aria-label={t('screenContext.picker.refresh')}
+                    UNSAFE_className="screen-context-picker-refresh"
+                    onPress={() =>
+                      observeRendererPromise(loadSources(), 'refresh Screen Context sources')
+                    }
+                  >
+                    <RefreshIcon />
+                  </ActionButton>
+                  <Tooltip>{t('screenContext.picker.refresh')}</Tooltip>
+                </TooltipTrigger>
               )}
               <Button variant="secondary" onPress={onDismiss}>
                 {t('common.cancel')}
@@ -273,7 +369,12 @@ export function ScreenContextPicker({
               {state === 'source-list' && (
                 <Button
                   variant="accent"
-                  isDisabled={!selectedId}
+                  isDisabled={
+                    !selectedId ||
+                    (isWatchPicker && warmup === 'pending') ||
+                    checkingSource ||
+                    Boolean(onWatch && referenceAvailable && invalidReference)
+                  }
                   onPress={() =>
                     observeRendererPromise(attach(), 'attach selected Screen Context source')
                   }

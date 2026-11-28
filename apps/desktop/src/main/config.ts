@@ -14,7 +14,6 @@ import {
   migrateLegacyDesktopSettings,
   normalizeUiTheme,
   type SetupLifecycleConfig,
-  type UiTheme,
 } from '../shared/config'
 import type { LlmPersistedConfig } from '../shared/llm'
 import {
@@ -41,33 +40,14 @@ const appConfigDocumentSchema = z.record(z.string(), z.unknown())
 const appConfigStore = new ValidatedElectronStore(CONFIG_PATH, appConfigDocumentSchema)
 export const CURRENT_CONFIG_SCHEMA_VERSION = DESKTOP_CONFIG_SCHEMA_VERSION
 
-export interface AppConfig {
-  configSchemaVersion: number
-  setup: SetupLifecycleConfig
+export interface AppConfig
+  extends Omit<
+    AppSettings,
+    'llm' | 'vrmAssetHandle' | 'vrmAssetName' | 'speechFallbackLanguage' | 'avatarRenderingDisabled'
+  > {
   llm: LlmPersistedConfig
-  uiLocale: UiLocale
-  uiTheme: UiTheme
-  desktopAuthorityMode: DesktopAuthorityMode
-  ttsLanguage: string
-  speechVolumePercent: number
-  ttsEngine: string
   vrmPath: string
-  micDeviceId: string
-  overlayWidth: string
-  overlayHeight: string
-  overlayMargin: string
-  overlayOpacity: string
-  overlayTransparentBackground: string
-  overlayClickThrough: string
-  overlayCorner: string
-  overlayScale: string
-  overlayViewMode: string
-  developerOverlayAnimationHudEnabled: string
-  developerModeEnabled: string
-  lookAtEnabled: string
-  continuousListeningReplyCooldownMs: string
-  continuousListeningFollowUpWindowMs: string
-  continuousListeningCuriosityChance: string
+  legacySpeechLanguage?: UiLocale
 }
 
 // String-valued keys only; `llm` is handled separately because it is an object.
@@ -78,13 +58,14 @@ type StringConfigKey = Exclude<
   | 'llm'
   | 'uiLocale'
   | 'uiTheme'
+  | 'flashMotionEnabled'
   | 'desktopAuthorityMode'
   | 'speechVolumePercent'
+  | 'legacySpeechLanguage'
 >
 
 function stringDefaults(isPackaged = app.isPackaged): Record<StringConfigKey, string> {
   return {
-    ttsLanguage: process.env.TTS_LANGUAGE ?? 'ru',
     ttsEngine: 'fish-s2-pro',
     vrmPath: '',
     micDeviceId: '',
@@ -112,6 +93,7 @@ export function freshDefaults(isPackaged = app.isPackaged): AppConfig {
     llm: defaultLlmConfig(),
     uiLocale: DEFAULT_UI_LOCALE,
     uiTheme: 'light',
+    flashMotionEnabled: true,
     desktopAuthorityMode: 'confirm',
     speechVolumePercent: DEFAULT_SPEECH_VOLUME_PERCENT,
     ...stringDefaults(isPackaged),
@@ -124,7 +106,10 @@ let _configStorageHealth: ConfigStorageHealth = { state: 'ready' }
 
 export type ConfigStorageHealth =
   | { state: 'ready' }
-  | { state: 'degraded'; code: 'CONFIG_STORAGE_RUNTIME_FAILURE' }
+  | {
+      state: 'degraded'
+      code: 'CONFIG_STORAGE_RUNTIME_FAILURE' | 'CONFIG_LLM_CREDENTIAL_MIGRATION_PENDING'
+    }
 
 export function getConfigStorageHealth(): ConfigStorageHealth {
   return _configStorageHealth
@@ -160,7 +145,7 @@ function resolveSetupLifecycle(saved: Record<string, unknown>): SetupLifecycleCo
 
 function persistConfig(config: AppConfig): void {
   if (_configStorageHealth.state === 'degraded') {
-    throw new Error('CONFIG_STORAGE_RUNTIME_FAILURE')
+    throw new Error(_configStorageHealth.code)
   }
   appConfigStore.write(config as unknown as Record<string, unknown>)
 }
@@ -223,6 +208,7 @@ export async function loadConfig(llmCredentialStore: LlmCredentialStore): Promis
         rawSaved.continuousListeningEnabled !== undefined ||
         rawSaved.passiveCompanionEnabled !== undefined ||
         rawSaved.ttsVoice !== undefined ||
+        rawSaved.ttsLanguage !== undefined ||
         rawSaved.pythonSpeechUrl !== undefined ||
         rawSaved.overlayViewMode === 'front' ||
         (rawSaved.uiTheme !== 'dark' && rawSaved.uiTheme !== 'light') ||
@@ -237,7 +223,11 @@ export async function loadConfig(llmCredentialStore: LlmCredentialStore): Promis
         setup,
         configSchemaVersion: CURRENT_CONFIG_SCHEMA_VERSION,
         uiLocale: normalizeUiLocale(saved.uiLocale),
+        ...(isUiLocale(saved.legacySpeechLanguage) && {
+          legacySpeechLanguage: saved.legacySpeechLanguage,
+        }),
         uiTheme: normalizeUiTheme(saved.uiTheme),
+        flashMotionEnabled: saved.flashMotionEnabled !== false,
         speechVolumePercent: speechVolumePercentSchema
           .catch(DEFAULT_SPEECH_VOLUME_PERCENT)
           .parse(saved.speechVolumePercent),
@@ -245,12 +235,15 @@ export async function loadConfig(llmCredentialStore: LlmCredentialStore): Promis
         overlayViewMode: known.overlayViewMode ?? 'bust',
       }
 
-      let llmMigrationCompleted = !migrated
       if (migrated) {
         try {
           await llmCredentialStore.importMissing(plaintextCredentials)
-          llmMigrationCompleted = true
         } catch {
+          // A later settings save must also leave the legacy file available for retry.
+          _configStorageHealth = {
+            state: 'degraded',
+            code: 'CONFIG_LLM_CREDENTIAL_MIGRATION_PENDING',
+          }
           llmCredentialStore.recordMigrationError(
             plaintextProviders,
             'Plaintext LLM credential migration failed',
@@ -258,8 +251,9 @@ export async function loadConfig(llmCredentialStore: LlmCredentialStore): Promis
         }
       }
       if (
+        _configStorageHealth.state === 'ready' &&
         projectMigrationCompleted &&
-        ((migrated && llmMigrationCompleted) || configNeedsMigration)
+        (migrated || configNeedsMigration)
       ) {
         persistConfig(_config)
       }
@@ -310,10 +304,12 @@ export function getRendererConfig(): AppSettings {
           },
     (provider, accountId) => resolveLlmProviderAccountId(provider, accountId),
   )
-  const { vrmPath, ...publicConfig } = _config
+  const { vrmPath, legacySpeechLanguage, ...publicConfig } = _config
   const vrmAsset = vrmAssetRegistry.describeConfiguredAsset(vrmPath)
   return {
     ...publicConfig,
+    ...(process.env.SHIO_SILENT_QA === '1' ? { avatarRenderingDisabled: true as const } : {}),
+    speechFallbackLanguage: legacySpeechLanguage ?? publicConfig.uiLocale,
     llm,
     vrmAssetHandle: vrmAsset.assetHandle,
     vrmAssetName: vrmAsset.displayName,
@@ -322,6 +318,7 @@ export function getRendererConfig(): AppSettings {
 
 export function getOverlayPresentationConfig(): Pick<
   AppSettings,
+  | 'avatarRenderingDisabled'
   | 'uiLocale'
   | 'uiTheme'
   | 'vrmAssetHandle'
@@ -335,6 +332,7 @@ export function getOverlayPresentationConfig(): Pick<
   return {
     uiLocale: config.uiLocale,
     uiTheme: config.uiTheme,
+    ...(config.avatarRenderingDisabled ? { avatarRenderingDisabled: true as const } : {}),
     vrmAssetHandle: config.vrmAssetHandle,
     overlayTransparentBackground: config.overlayTransparentBackground,
     overlayScale: config.overlayScale,
@@ -345,7 +343,7 @@ export function getOverlayPresentationConfig(): Pick<
 }
 
 export function saveConfig(
-  partial: Partial<Omit<AppConfig, 'llm' | 'setup'>> & {
+  partial: Partial<Omit<AppConfig, 'llm' | 'setup' | 'legacySpeechLanguage'>> & {
     llm?: unknown
     setup?: SetupLifecycleConfig
   },
@@ -356,6 +354,7 @@ export function saveConfig(
   const nextConfig: AppConfig = {
     ..._config,
     ...knownStrings,
+    flashMotionEnabled: partial.flashMotionEnabled ?? _config.flashMotionEnabled,
     speechVolumePercent: partial.speechVolumePercent ?? _config.speechVolumePercent,
     configSchemaVersion: CURRENT_CONFIG_SCHEMA_VERSION,
     setup: partial.setup ? resolveSetupLifecycle({ setup: partial.setup }) : _config.setup,

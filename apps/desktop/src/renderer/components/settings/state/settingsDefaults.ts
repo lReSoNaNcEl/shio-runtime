@@ -1,5 +1,5 @@
 import { DEFAULT_OVERLAY_HEIGHT, DEFAULT_OVERLAY_WIDTH } from '../../../../shared/config'
-import type { BacklogSelectorRoleConfig, ComputerUseVisionRoleConfig } from '../../../../shared/llm'
+import type { ComputerUseVisionRoleConfig } from '../../../../shared/llm'
 import type { OverlayViewMode } from '../../../avatar/tuning/cameraTuning'
 
 export const overlayViewModes: readonly OverlayViewMode[] = ['bust', 'face', 'portrait']
@@ -16,14 +16,6 @@ export const overlayDefaults = {
   viewMode: 'bust' as OverlayViewMode,
 }
 
-export const defaultBacklogSelectorRole: BacklogSelectorRoleConfig = {
-  enabled: false,
-  providerId: '',
-  model: '',
-  timeoutMs: 2_000,
-  minimumConfidence: 0.72,
-}
-
 export const defaultComputerUseVisionRole: ComputerUseVisionRoleConfig = {
   providerId: '',
   model: '',
@@ -32,6 +24,5 @@ export const defaultComputerUseVisionRole: ComputerUseVisionRoleConfig = {
 }
 
 export const defaultSettingsForm = {
-  ttsLanguage: 'ru',
   microphoneId: 'default',
 }

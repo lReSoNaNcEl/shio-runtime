@@ -15,7 +15,6 @@ import type { ShioCapabilitiesApi } from '../capabilities'
 import type { CharacterEmbodimentIntent } from '../character-response'
 import type { CharacterReplyStreamEvent } from '../character-stream'
 import type { AppSettings } from '../config/appSettings'
-import type { BacklogSelectionResult, BufferedUtterance } from '../conversation/backlog'
 import type { ReplyGrounding } from '../conversation/grounding'
 import type { CharacterReplyOrigin } from '../conversation/replyOrigin'
 import type { ConversationTurnFailure } from '../conversation/turnFailure'
@@ -46,6 +45,7 @@ import type {
 import type { SpeechStreamRendererPort, SpeechStreamStart } from '../speech'
 import type { SpeechServiceErrorCode } from '../speech/errors'
 import type { ReleaseInfo, RendererFailureReport, RuntimeSupportBundle } from '../system'
+import type { WatchBlockReason } from '../watchTogether'
 
 export interface SpeechHealthCapabilities {
   serviceReachable: boolean
@@ -55,6 +55,7 @@ export interface SpeechHealthCapabilities {
 }
 
 export interface OverlayPresentationConfig {
+  readonly avatarRenderingDisabled?: true
   uiLocale: AppSettings['uiLocale']
   uiTheme: AppSettings['uiTheme']
   vrmAssetHandle: string
@@ -93,6 +94,7 @@ export interface ShioRuntimeApi {
   motion: MotionApi
   alive: {
     snapshot: () => Promise<AliveSnapshot>
+    resolveSharingBlock: (confirmed: WatchBlockReason) => Promise<WatchBlockReason | null>
     updateSettings: (settings: AutonomySettings) => Promise<AliveSnapshot>
     updateWorld: (input: RendererWorldContextInput) => Promise<{ ok: true }>
     reportExperience: (event: ExperienceEvent) => Promise<{ ok: true }>
@@ -149,12 +151,6 @@ export interface ShioRuntimeApi {
     cancelReply: (turnId: string, visibleReplyCharacters?: number) => Promise<{ ok: boolean }>
     onReplyStreamEvent: (callback: (event: CharacterReplyStreamEvent) => void) => () => void
     getActiveCapabilities: () => Promise<LlmCapabilities>
-    arbitrateBacklog: (payload: {
-      items: readonly BufferedUtterance[]
-      backlogVersion: number
-      providerId: string
-      model: string
-    }) => Promise<{ ok: boolean; result?: BacklogSelectionResult; error?: string }>
     providers: () => Promise<ProviderProfile[]>
     getReadiness: () => Promise<LlmReadiness>
     fetchModels: (provider: LlmProviderId, accountId?: string) => Promise<FetchModelsResult>
@@ -174,6 +170,7 @@ export interface ShioRuntimeApi {
   }
   screenContext: {
     listSources: () => Promise<ScreenContextResult<ScreenContextSource[]>>
+    checkSource: (sourceId: string) => Promise<ScreenContextResult<true>>
     capture: (
       request: ScreenContextCaptureRequest,
     ) => Promise<ScreenContextResult<ScreenContextCaptureDescriptor>>
@@ -204,7 +201,9 @@ export interface ShioRuntimeApi {
   projectAwareness: ProjectAwarenessApi
   config: {
     get: () => Promise<AppSettings>
-    save: (settings: Partial<AppSettings>) => Promise<{ ok: boolean; error?: string }>
+    save: (
+      settings: Partial<Omit<AppSettings, 'speechFallbackLanguage'>>,
+    ) => Promise<{ ok: boolean; error?: string }>
     onUpdated: (
       callback: (settings: AppSettings, changedKey?: keyof AppSettings) => void,
     ) => () => void

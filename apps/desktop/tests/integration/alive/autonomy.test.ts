@@ -6,7 +6,7 @@ import { DatabaseSync } from 'node:sqlite'
 
 import { describe, it, vi } from 'vitest'
 
-import { AliveRuntime } from '../../../src/main/alive/AliveRuntime'
+import { AliveFacade } from '../../../src/main/alive/AliveFacade'
 import { AliveStore } from '../../../src/main/alive/AliveStore'
 import { AutonomyEnvelope } from '../../../src/main/alive/AutonomyEnvelope'
 import {
@@ -46,7 +46,7 @@ async function testSentenceSegmentation(): Promise<void> {
   ]
   assert.deepEqual(
     segments.map((segment) => segment.text),
-    ['Первое предложение. Ссылка [пример] готова.', 'Финал.'],
+    ['Первое предложение.', 'Ссылка [пример] готова.', 'Финал.'],
   )
   assert.ok(segments.every((segment, index) => segment.sequence === index))
 }
@@ -289,7 +289,6 @@ async function testPersistenceAndEnvelope(): Promise<void> {
       capturedAt: 1,
       appFocused: true,
       globalUserIdleMs: 0,
-      userIdleMs: 0,
       conversationActive: false,
       audioActive: false,
       privacyMode: false,
@@ -376,7 +375,7 @@ function testGoalSchemaMigration(version: number): void {
     `)
     legacy.close()
     const migrated = new AliveStore(databasePath)
-    const runtime = new AliveRuntime(migrated)
+    const runtime = new AliveFacade(migrated)
     const events: unknown[] = []
     runtime.onBehavior((event) => events.push(event))
     runtime.start()
@@ -406,6 +405,10 @@ function testGoalSchemaMigration(version: number): void {
         ['alive_audit', 'alive_settings'],
       )
       assert.equal(archived.prepare('PRAGMA user_version').get()?.user_version, 7)
+      const autonomy = archived
+        .prepare("SELECT value FROM alive_settings WHERE key = 'autonomy'")
+        .get()
+      assert.doesNotMatch(String(autonomy?.value), /fastBrain/u)
     } finally {
       archived.close()
     }
@@ -443,6 +446,35 @@ describe('Alive and Autonomy integration', () => {
   it('contains tool-first rounds before user-visible output', testToolRoundContainment)
   it('bounds and orders the streaming speech queue', testStreamingSpeechQueue)
   it('persists autonomy settings and enforces the envelope', testPersistenceAndEnvelope)
+  it('only lifts the sharing restriction that is still active and was confirmed', () => {
+    const store = new AliveStore(':memory:')
+    try {
+      const alive = new AliveFacade(store)
+      const original = { mode: 'off', globallySuspended: true, privacyMode: true } as const
+      store.saveSettings(original)
+      assert.equal(alive.resolveSharingBlock('private'), 'suspended')
+      assert.deepEqual(store.settings(), original)
+      assert.equal(alive.resolveSharingBlock('suspended'), 'off')
+      assert.deepEqual(store.settings(), { ...original, globallySuspended: false })
+      assert.equal(alive.resolveSharingBlock('off'), 'private')
+      assert.deepEqual(store.settings(), {
+        mode: 'suggest',
+        globallySuspended: false,
+        privacyMode: true,
+      })
+      store.saveSettings({ ...store.settings(), mode: 'full' })
+      assert.equal(alive.resolveSharingBlock('private'), null)
+      assert.deepEqual(store.settings(), {
+        mode: 'full',
+        globallySuspended: false,
+        privacyMode: false,
+      })
+      assert.equal(alive.resolveSharingBlock('off'), null)
+      assert.equal(store.settings().mode, 'full')
+    } finally {
+      store.close()
+    }
+  })
   it.each([1, 5, 6])('removes retired tables on upgrade from v%s', testGoalSchemaMigration)
   it('drops the retired habit table from a current Alive database', () => {
     const directory = mkdtempSync(join(tmpdir(), 'shio-alive-legacy-habits-'))

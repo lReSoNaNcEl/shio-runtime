@@ -135,22 +135,6 @@ class WhisperASR:
             "language_probability": info.language_probability,
         }
 
-    def detect_language(self, audio: np.ndarray, sr: int = 16000) -> dict:
-        """Detect language of audio."""
-        if len(audio.shape) > 1:
-            audio = np.mean(audio, axis=1)
-
-        audio = audio.astype(np.float32)
-
-        # Use first 30 seconds for language detection
-        sr_eff = 16000
-        num_samples = int(30 * sr_eff)
-        audio_chunk = audio[:num_samples]
-
-        _, info = self.model.transcribe(audio_chunk, language=None)
-
-        return {"language": info.language, "probability": float(info.language_probability)}
-
     def warmup(self):
         """Warmup model with dummy audio."""
         logger.info("Warming up Whisper model...")

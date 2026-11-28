@@ -6,6 +6,7 @@ import {
   type LlmProviderId,
   withCodexReasoningEffort,
 } from '../../../../shared/llm'
+import { classifyMicrophoneFailure } from '../../../audio/MicrophoneDeviceService'
 import type { OverlayViewMode } from '../../../avatar/tuning/cameraTuning'
 import { controller } from '../../../Controller'
 import { observeRendererPromise } from '../../../reliability/observePromise'
@@ -15,7 +16,6 @@ import type {
   SettingsSection,
 } from './settingsContracts'
 import {
-  defaultBacklogSelectorRole,
   defaultComputerUseVisionRole,
   defaultSettingsForm,
   overlayDefaults,
@@ -36,6 +36,7 @@ import { useVoiceSettings } from './useVoiceSettings'
 interface SettingsDialogStateOptions {
   isOpen: boolean
   initialSection: SettingsSection
+  flashMotionEnabled?: boolean
   overlayVisible: boolean
   overlayViewModeProjection: OverlayViewMode
   llmHealth: SettingsDialogViewModel['llm']['state']['health']
@@ -52,6 +53,7 @@ function validAccountId(accountId: string): boolean {
 export function useSettingsDialogState({
   isOpen,
   initialSection,
+  flashMotionEnabled = true,
   overlayVisible,
   overlayViewModeProjection,
   llmHealth,
@@ -77,16 +79,16 @@ export function useSettingsDialogState({
     setDeveloperOverlayAnimationHudEnabledState,
   } = useDeveloperSettings()
   const {
-    lang,
     speechVolumePercent,
     setSpeechVolumePercent,
     microphoneLevel,
     microphoneTestState,
+    microphoneTestFailure,
     micId,
     mics,
-    setLang,
     setMicrophoneLevel,
     setMicrophoneTestState,
+    setMicrophoneTestFailure,
     setMicId,
     setMics,
   } = useVoiceSettings()
@@ -114,8 +116,6 @@ export function useSettingsDialogState({
   } = useAvatarSettings()
   const {
     activeProvider,
-    backlogModels,
-    backlogRole,
     characterFallbacks,
     computerUseVisionRole,
     editingKey,
@@ -125,8 +125,6 @@ export function useSettingsDialogState({
     providers,
     providerSettings,
     setActiveProvider,
-    setBacklogModels,
-    setBacklogRole,
     setCharacterFallbacks,
     setComputerUseVisionRole,
     setEditingKey,
@@ -175,7 +173,6 @@ export function useSettingsDialogState({
         const cfg = await window.api.config.get()
         if (!active) return
         setActiveSection(initialSection)
-        setLang(cfg.ttsLanguage ?? defaultSettingsForm.ttsLanguage)
         setSpeechVolumePercent(cfg.speechVolumePercent)
         controller.setSpeechVolumePercent(cfg.speechVolumePercent)
         setUiLocale(cfg.uiLocale)
@@ -187,7 +184,6 @@ export function useSettingsDialogState({
         setKeyInput('')
         setActiveProvider(cfg.llm?.activeProvider ?? 'groq')
         setProviderSettings(cfg.llm.providers)
-        setBacklogRole(cfg.llm?.roles?.backlogSelector ?? defaultBacklogSelectorRole)
         setComputerUseVisionRole(cfg.llm?.roles?.computerUseVision ?? defaultComputerUseVisionRole)
         setCharacterFallbacks(cfg.llm?.roles?.characterFallbacks ?? [])
         setSpeculativeDirectReply(cfg.llm?.speculativeDirectReply === true)
@@ -221,10 +217,6 @@ export function useSettingsDialogState({
   const activeAccountId = providerSettings[activeProvider]?.accountId ?? ''
   const activeCredentialConfigured =
     providerSettings[activeProvider]?.credential.configured ?? false
-  const backlogCredentialConfigured = backlogRole.providerId
-    ? (providerSettings[backlogRole.providerId]?.credential.configured ?? false)
-    : false
-
   const updateProviderSettings = (id: LlmProviderId, model: string): void => {
     setProviderSettings((previous) => {
       const base = previous[id]
@@ -328,48 +320,6 @@ export function useSettingsDialogState({
     }
   }, [isOpen, activeProvider, activeAccountId, activeCredentialConfigured, providers])
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: AI domain setters are stable React state setters.
-  useEffect(() => {
-    if (!isOpen || !backlogRole.enabled || !backlogRole.providerId) {
-      setBacklogModels([])
-      return
-    }
-    const profile = providers.find((provider) => provider.id === backlogRole.providerId)
-    const backlogAccountId = providerSettings[backlogRole.providerId]?.accountId ?? ''
-    if (profile?.requiresAccountId && !validAccountId(backlogAccountId)) {
-      setBacklogModels([])
-      return
-    }
-    if (profile?.modelsRequireApiKey && !backlogCredentialConfigured) {
-      setBacklogModels([])
-      return
-    }
-    let current = true
-    const timer = window.setTimeout(() => {
-      observeRendererPromise(
-        window.api.llm
-          .fetchModels(backlogRole.providerId as LlmProviderId, backlogAccountId)
-          .then((result) => {
-            if (current) {
-              setBacklogModels(result.ok ? deduplicateModelsById(result.models ?? []) : [])
-            }
-          }),
-        'load backlog-selector models',
-      )
-    }, 400)
-    return () => {
-      current = false
-      window.clearTimeout(timer)
-    }
-  }, [
-    isOpen,
-    backlogRole.enabled,
-    backlogRole.providerId,
-    backlogCredentialConfigured,
-    providerSettings,
-    providers,
-  ])
-
   const pickVrm = async (): Promise<void> => {
     const result = await window.api.vrm.pick()
     if (result.ok && result.assetHandle) {
@@ -406,6 +356,7 @@ export function useSettingsDialogState({
   const recordMicrophoneTest = async (): Promise<void> => {
     const sequence = ++microphoneTestSequence.current
     setMicrophoneTestState('recording')
+    setMicrophoneTestFailure(null)
     setMicrophoneLevel(0)
     microphoneTestRecording.current = null
     let stream: MediaStream | null = null
@@ -430,14 +381,18 @@ export function useSettingsDialogState({
     }
     microphoneTestCleanup.current = cleanup
     try {
+      context = new AudioContext()
+      if (context.state === 'suspended') {
+        observeRendererPromise(context.resume(), 'resume microphone test AudioContext')
+      }
       stream = await navigator.mediaDevices.getUserMedia({
         audio:
           micId && micId !== defaultSettingsForm.microphoneId
             ? { deviceId: { exact: micId } }
             : true,
+        video: false,
       })
       if (sequence !== microphoneTestSequence.current) return
-      context = new AudioContext()
       const analyser = context.createAnalyser()
       analyser.fftSize = 256
       context.createMediaStreamSource(stream).connect(analyser)
@@ -446,36 +401,46 @@ export function useSettingsDialogState({
       recorder.addEventListener('dataavailable', (event) => {
         if (event.data.size > 0) chunks.push(event.data)
       })
-      const stopped = new Promise<void>((resolve, reject) => {
-        recorder?.addEventListener('stop', () => resolve(), { once: true })
+      const stopped = new Promise<Error | null>((resolve) => {
+        recorder?.addEventListener('stop', () => resolve(null), { once: true })
         recorder?.addEventListener(
           'error',
-          () => reject(new Error('Microphone recording failed')),
-          { once: true },
+          () => resolve(new Error('Microphone recording failed')),
+          {
+            once: true,
+          },
         )
       })
       recorder.start()
       const samples = new Uint8Array(analyser.fftSize)
       const deadline = performance.now() + 3000
-      while (performance.now() < deadline && sequence === microphoneTestSequence.current) {
+      while (
+        recorder.state === 'recording' &&
+        performance.now() < deadline &&
+        sequence === microphoneTestSequence.current
+      ) {
         analyser.getByteTimeDomainData(samples)
         const peak = samples.reduce((value, sample) => Math.max(value, Math.abs(sample - 128)), 0)
         setMicrophoneLevel(Math.min(100, Math.round((peak / 128) * 100)))
         await new Promise((resolve) => window.setTimeout(resolve, 80))
       }
       if (sequence !== microphoneTestSequence.current) return
-      recorder.stop()
-      await stopped
+      if (recorder.state === 'recording') recorder.stop()
+      const failure = await stopped
+      if (failure) throw failure
       const recording = await new Blob(chunks, { type: recorder.mimeType }).arrayBuffer()
       if (recording.byteLength === 0) throw new Error('Microphone recording is empty')
       if (sequence !== microphoneTestSequence.current) return
       microphoneTestRecording.current = recording
       setMicrophoneTestState('ready')
-    } catch {
-      if (sequence === microphoneTestSequence.current) setMicrophoneTestState('capture-error')
+    } catch (error) {
+      if (sequence === microphoneTestSequence.current) {
+        setMicrophoneTestFailure(classifyMicrophoneFailure(error))
+        setMicrophoneTestState('capture-error')
+      }
     } finally {
       cleanup()
-      setMicrophoneLevel(0)
+      if (sequence === microphoneTestSequence.current) setMicrophoneLevel(0)
     }
   }
 
@@ -526,23 +491,11 @@ export function useSettingsDialogState({
     if (!hydrated.current || !isOpen) return
     const timer = window.setTimeout(() => {
       void persistPatch({
-        ttsLanguage: lang,
-        ttsEngine: 'fish-s2-pro',
-      }).catch(() => setSaveState('error'))
-    }, 650)
-    return () => window.clearTimeout(timer)
-  }, [lang, isOpen, persistPatch])
-
-  useEffect(() => {
-    if (!hydrated.current || !isOpen) return
-    const timer = window.setTimeout(() => {
-      void persistPatch({
         llm: {
           activeProvider,
           providers: providerSettings,
           speculativeDirectReply,
           roles: {
-            backlogSelector: backlogRole,
             computerUseVision: computerUseVisionRole,
             characterFallbacks,
           },
@@ -553,7 +506,6 @@ export function useSettingsDialogState({
   }, [
     activeProvider,
     providerSettings,
-    backlogRole,
     computerUseVisionRole,
     characterFallbacks,
     speculativeDirectReply,
@@ -649,17 +601,16 @@ export function useSettingsDialogState({
     },
     speech: {
       state: {
-        language: lang,
         speechVolumePercent,
         microphones: mics,
         microphoneId: micId,
         voiceWarmup,
         continuousListening,
         microphoneTestState,
+        microphoneTestFailure,
         microphoneLevel,
       },
       actions: {
-        setLanguage: setLang,
         setSpeechVolumePercent: (value) => {
           setSpeechVolumePercent(value)
           controller.setSpeechVolumePercent(value)
@@ -684,8 +635,6 @@ export function useSettingsDialogState({
         modelsState,
         editingKey,
         keyInput,
-        backlogRole,
-        backlogModels,
         selectedModel,
         health: llmHealth,
         characterFallbacks,
@@ -701,13 +650,13 @@ export function useSettingsDialogState({
         saveCredential: saveLlmCredential,
         forgetCredential: forgetLlmCredential,
         loadModels,
-        setBacklogRole,
         setCharacterFallbacks,
         setSpeculativeDirectReply,
       },
     },
     avatar: {
       state: {
+        flashMotionEnabled,
         vrmName,
         overlayVisible,
         overlayViewMode,
@@ -721,6 +670,7 @@ export function useSettingsDialogState({
         overlayScalePercent,
       },
       actions: {
+        setFlashMotionEnabled: (enabled) => controller.setFlashMotionEnabled(enabled),
         pickVrm,
         toggleOverlay,
         setOverlayViewMode,
@@ -739,15 +689,10 @@ export function useSettingsDialogState({
       state: {
         developerModeEnabled,
         developerOverlayAnimationHudEnabled,
-        backlogRole,
-        providers,
-        providerSettings,
-        backlogModels,
       },
       actions: {
         setDeveloperModeEnabled: applyDeveloperModeEnabled,
         setDeveloperOverlayAnimationHudEnabled,
-        setBacklogRole,
       },
     },
   }

@@ -46,8 +46,10 @@ export class LookTargetResolver {
   private saccadeElapsedMs = 0
   private saccadeYaw = 0
   private saccadePitch = 0
-  private saccadeBaseYaw = 0
-  private saccadeBasePitch = 0
+  private saccadeFromYaw = 0
+  private saccadeFromPitch = 0
+  private saccadeTargetYaw = 0
+  private saccadeTargetPitch = 0
   private glanceAwayMs = 0
   private focusHoldMs = 0
   private overshootElapsedMs = 0
@@ -200,8 +202,6 @@ export class LookTargetResolver {
     this.saccadeDurationMs = 0
     this.saccadeYaw = 0
     this.saccadePitch = 0
-    this.saccadeBaseYaw = 0
-    this.saccadeBasePitch = 0
     this.focusHoldMs = 0
     this.overshootElapsedMs = 0
     this.overshootYaw = 0
@@ -213,26 +213,21 @@ export class LookTargetResolver {
     if (this.saccadeDurationMs > 0) {
       this.saccadeElapsedMs += deltaMs
       const progress = Math.min(1, this.saccadeElapsedMs / this.saccadeDurationMs)
-      const envelope = Math.sin(Math.PI * progress)
-      this.saccadeYaw = this.saccadeBaseYaw * envelope
-      this.saccadePitch = this.saccadeBasePitch * envelope
-      if (progress >= 1) {
-        this.saccadeDurationMs = 0
-        this.saccadeYaw = 0
-        this.saccadePitch = 0
-        this.saccadeBaseYaw = 0
-        this.saccadeBasePitch = 0
-      }
+      const blend = this.easeInOut(progress)
+      this.saccadeYaw = this.saccadeFromYaw + (this.saccadeTargetYaw - this.saccadeFromYaw) * blend
+      this.saccadePitch =
+        this.saccadeFromPitch + (this.saccadeTargetPitch - this.saccadeFromPitch) * blend
+      if (progress >= 1) this.saccadeDurationMs = 0
       return
     }
 
     if (this.nextSaccadeMs > 0) return
     this.saccadeDurationMs = avatarLookAtTuning.saccadeDurationMs
     this.saccadeElapsedMs = 0
-    this.saccadeBaseYaw = this.randomSigned(modeTuning.saccadeAmplitude.yaw)
-    this.saccadeBasePitch = this.randomSigned(modeTuning.saccadeAmplitude.pitch)
-    this.saccadeYaw = this.saccadeBaseYaw
-    this.saccadePitch = this.saccadeBasePitch
+    this.saccadeFromYaw = this.saccadeYaw
+    this.saccadeFromPitch = this.saccadePitch
+    this.saccadeTargetYaw = this.randomSigned(modeTuning.saccadeAmplitude.yaw)
+    this.saccadeTargetPitch = this.randomSigned(modeTuning.saccadeAmplitude.pitch)
     this.nextSaccadeMs = this.randomRange(
       modeTuning.saccadeIntervalMs.min,
       modeTuning.saccadeIntervalMs.max,

@@ -118,9 +118,6 @@ class VoiceRegistry:
         self._voices = voices
         logger.info("Loaded %s voices from %s", len(self._voices), self.manifest_path)
 
-    def default_voice(self) -> VoiceEntry:
-        return self.get(self.default_voice_id)
-
     def get(self, voice_id: str | None) -> VoiceEntry:
         key = voice_id or self.default_voice_id
         entry = self._voices.get(key)

@@ -329,7 +329,6 @@ export class CapabilityCatalog {
             : alive?.settings.mode === 'confirm'
               ? 'confirm'
               : 'read-only',
-        navigationTarget: { kind: 'settings', id: 'autonomy' },
         reasonKey: !alive
           ? 'capabilities.reason.aliveStarting'
           : !alive.health.operational

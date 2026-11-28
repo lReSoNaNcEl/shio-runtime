@@ -9,6 +9,12 @@ type Audio = Extract<SpeechStreamOutput, { type: 'audio' }>
 
 /** A bounded copy of the validated Fish stream for the current motion request. */
 export class FlashMotionSpeech {
+  private enabled = true
+
+  setEnabled(enabled: boolean): void {
+    this.enabled = enabled
+    if (!enabled) this.clear()
+  }
   private turn: SpeechStreamStart | null = null
   private audio: Audio[] = []
   private text = new Map<number, string>()
@@ -16,6 +22,7 @@ export class FlashMotionSpeech {
 
   start(turn: SpeechStreamStart): void {
     this.clear()
+    if (!this.enabled) return
     this.turn = turn
   }
 

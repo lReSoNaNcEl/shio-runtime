@@ -49,7 +49,6 @@ const FORBIDDEN_IDENTITY = [
   /\bcloudflare\b/i,
   /\bgithub\b/i,
   /\bopenrouter\b/i,
-  /\bmistral\b/i,
   /языковая модель/i,
   /нейросет/i,
 ]

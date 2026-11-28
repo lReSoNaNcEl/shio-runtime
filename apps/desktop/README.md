@@ -66,8 +66,8 @@ and model in Settings.
 
 Development requires the locked Desktop dependencies installed with `npm install`
 in this directory (or `npm run desktop:install` at the repository root). The Windows
-package bundles DSH `0.2.2-alpha.2` and `playwright-core`. DSH uses a Shio-owned
-minimal Cordis composition; only PowerShell is model-facing. The alpha SDK launches
+package bundles DSH `0.2.3-alpha.2` and `playwright-core`. DSH uses a Shio-owned
+minimal Cordis composition; only PowerShell is model-facing. The SDK launches
 the owned runtime entry point through `dshBin` with an explicit child environment.
 Both environments
 still require:

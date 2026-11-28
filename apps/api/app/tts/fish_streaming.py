@@ -10,8 +10,35 @@ from __future__ import annotations
 import inspect
 
 
+class FishSynthesisCancelled(Exception):
+    """The current request reached a safe cancellation checkpoint."""
+
+
+def install_generation_cancellation(inference, check_cancelled, synchronize) -> None:
+    original = inference.generate_long
+
+    def generate_long(**kwargs):
+        try:
+            check_cancelled()
+            yield from original(**kwargs)
+        except FishSynthesisCancelled:
+            # Let the pinned queue finish normally once outstanding GPU work settles.
+            synchronize()
+            yield inference.GenerateResponse(action="next")
+
+    inference.generate_long = generate_long
+
+
 def install_streaming_decode(
-    inference, decoder, emit_pcm, *, stride: int = 8, holdback: int = 2, validate=None
+    inference,
+    decoder,
+    emit_pcm,
+    *,
+    stride: int = 8,
+    holdback: int = 2,
+    validate=None,
+    check_cancelled=lambda: None,
+    stream_pcm=lambda: True,
 ):
     import torch
 
@@ -22,18 +49,21 @@ def install_streaming_decode(
         raise RuntimeError("Pinned Fish token decoder contract changed")
 
     def streaming_decode(*args, **kwargs):
+        check_cancelled()
         bound = signature.bind(*args, **kwargs)
         bound.apply_defaults()
         model = bound.arguments["model"]
         end_id = model.tokenizer.get_token_id(inference.IM_END_TOKEN)
         first = bound.arguments["cur_token"][0]
-        frames = [] if int(first[0, -1]) == end_id else [first[1:].clone()]
+        audible = stream_pcm()
+        frames = [first[1:].clone()] if audible and int(first[0, -1]) != end_id else []
         emitted = 0
         delivered = [] if validate else None
         delegate = bound.arguments["decode_one_token"]
 
         def deliver(final=False):
             nonlocal emitted
+            check_cancelled()
             if not frames:
                 return
             codes = torch.cat(frames, dim=1)
@@ -42,6 +72,7 @@ def install_streaming_decode(
             stop = audio.numel() if final else max(0, audio.numel() - holdback * samples_per_frame)
             if stop > emitted:
                 pcm = audio[emitted:stop].cpu().numpy().copy()
+                check_cancelled()
                 if delivered is not None:
                     delivered.append(pcm)
                 emit_pcm(pcm)
@@ -60,8 +91,9 @@ def install_streaming_decode(
                 )
 
         def observe_token(**decode_kwargs):
+            check_cancelled()
             token = delegate(**decode_kwargs)
-            if int(token[0, -1]) != end_id:
+            if audible and int(token[0, -1]) != end_id:
                 frames.append(token[1:].clone())
                 if len(frames) % stride == 0:
                     deliver()

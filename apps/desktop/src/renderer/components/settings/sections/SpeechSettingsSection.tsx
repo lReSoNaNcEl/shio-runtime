@@ -13,11 +13,21 @@ import Play from '@react-spectrum/s2/icons/Play'
 import { style } from '@react-spectrum/s2/style' with { type: 'macro' }
 
 import { DEFAULT_SPEECH_VOLUME_PERCENT } from '../../../../shared/config'
+import { type TranslationKey } from '../../../../shared/localization'
+import { type MicrophoneFailureReason } from '../../../audio/microphoneGateTypes'
 import { useTranslation } from '../../../localization/useTranslation'
 import { observeRendererPromise } from '../../../reliability/observePromise'
 import { type SpeechSettingsActions, type SpeechSettingsState } from '../state/settingsContracts'
 
 const fullWidth = style({ width: 'full' })
+const sectionSpacing = style({ paddingTop: 12 })
+const captureErrors: Record<MicrophoneFailureReason, TranslationKey> = {
+  'permission-denied': 'microphone.gate.permissionDenied',
+  'device-missing': 'microphone.gate.deviceMissing',
+  'device-busy': 'microphone.gate.deviceBusy',
+  'constraints-invalid': 'microphone.gate.constraintsInvalid',
+  unknown: 'settings.speech.test.captureError',
+}
 
 export function SpeechSettingsSection({
   state,
@@ -39,7 +49,10 @@ export function SpeechSettingsSection({
     isPlaying
   const microphoneStatus =
     state.microphoneTestState === 'capture-error'
-      ? { variant: 'negative' as const, text: t('settings.speech.test.captureError') }
+      ? {
+          variant: 'negative' as const,
+          text: t(captureErrors[state.microphoneTestFailure ?? 'unknown']),
+        }
       : state.microphoneTestState === 'playback-error'
         ? { variant: 'negative' as const, text: t('settings.speech.test.playbackError') }
         : state.microphoneTestState === 'ready'
@@ -56,28 +69,21 @@ export function SpeechSettingsSection({
                 : null
 
   return (
-    <div className="settings-grid">
-      <Slider
-        label={t('settings.speech.volume')}
-        value={state.speechVolumePercent ?? DEFAULT_SPEECH_VOLUME_PERCENT}
-        isDisabled={state.speechVolumePercent === null}
-        minValue={0}
-        maxValue={100}
-        step={1}
-        formatOptions={{ style: 'unit', unit: 'percent', unitDisplay: 'narrow' }}
-        onChange={actions.setSpeechVolumePercent}
-        onChangeEnd={actions.saveSpeechVolumePercent}
-        styles={fullWidth}
-      />
-      <Picker
-        label={t('settings.speech.ttsLanguage')}
-        selectedKey={state.language}
-        onSelectionChange={(key) => actions.setLanguage(String(key))}
-        styles={fullWidth}
-      >
-        <PickerItem id="ru">{t('settings.language.ru')}</PickerItem>
-        <PickerItem id="en">{t('settings.language.en')}</PickerItem>
-      </Picker>
+    <div className={`settings-grid ${sectionSpacing}`}>
+      <div className="speech-volume-control">
+        <Slider
+          label={t('settings.speech.volume')}
+          value={state.speechVolumePercent ?? DEFAULT_SPEECH_VOLUME_PERCENT}
+          isDisabled={state.speechVolumePercent === null}
+          minValue={0}
+          maxValue={100}
+          step={1}
+          formatOptions={{ style: 'unit', unit: 'percent', unitDisplay: 'narrow' }}
+          onChange={actions.setSpeechVolumePercent}
+          onChangeEnd={actions.saveSpeechVolumePercent}
+          styles={fullWidth}
+        />
+      </div>
       <section className="microphone-test-card" aria-labelledby="microphone-test-title">
         <div className="microphone-test-header">
           <div className="microphone-test-copy">

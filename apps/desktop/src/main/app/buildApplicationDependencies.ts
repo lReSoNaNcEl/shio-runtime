@@ -18,7 +18,7 @@ import {
   type DesktopWorkflowAdapterResult,
   toDesktopWorkflowActionResult,
 } from '../action'
-import { AliveRuntime, AliveStore, WindowsSystemContextAdapter } from '../alive'
+import { AliveFacade, AliveStore, WindowsSystemContextAdapter } from '../alive'
 import {
   BROWSER_CONTROL_MANIFEST,
   BrowserComputerUseRuntime,
@@ -61,9 +61,10 @@ import {
   resolveLlmReadiness,
   resolveLlmRoleFallbacks,
   resolveLlmRoleSettings,
-  resolveProviderChatBaseUrl,
 } from '../llm'
 import { stopCodexRequests } from '../llm/CodexCliProvider'
+import { OllamaStreamWarmup } from '../llm/OllamaStreamWarmup'
+import { isLocalGemmaModel } from '../llm/providers/ollama'
 import { mainLog } from '../logging/safeLogger'
 import {
   createLlmSessionSummarizer,
@@ -123,13 +124,23 @@ export function buildApplicationDependencies(): ApplicationDependencies {
     join(process.env.LOCALAPPDATA || app.getPath('appData'), 'Shio Runtime')
   const motionAssets = app.isPackaged ? join(localRoot, 'Data', 'FlashMotion') : undefined
   if (motionAssets && !isAbsolute(motionAssets)) throw new Error('SHIO_LOCAL_ROOT must be absolute')
+  const motionEnabled =
+    process.env.SHIO_MOTION_ENABLED !== '0' && process.env.SHIO_SILENT_QA !== '1'
   const motion = new GeneratedMotionService(
     join(motionRoot, 'flashmotion'),
     () => getRendererConfig().vrmAssetHandle,
-    process.env.SHIO_MOTION_ENABLED !== '0',
+    motionEnabled,
     flashSpeech,
     motionAssets,
   )
+
+  const applyFlashMotionSetting = async (): Promise<void> => {
+    const enabled = motionEnabled && getConfig().flashMotionEnabled !== false
+    flashSpeech.setEnabled(enabled)
+    await motion.setEnabled(enabled)
+    if (enabled && getConfig().flashMotionEnabled !== false)
+      observeMainPromise(motion.warmup(), 'warm up generated motion')
+  }
   const environmentConfig = resolveEnvironmentConfig()
   let win: BrowserWindow | null = null
   let quitting = false
@@ -148,7 +159,7 @@ export function buildApplicationDependencies(): ApplicationDependencies {
   let actionRuntime: ActionRuntime | null = null
   let conversationTurnService: MainConversationTurnService | null = null
   let speechApplicationService: SpeechApplicationService | null = null
-  let aliveRuntime: AliveRuntime | null = null
+  let aliveRuntime: AliveFacade | null = null
   let disposeWatch: (() => void) | undefined
   let unsubscribeAliveIpc: (() => void) | null = null
   let unsubscribeAliveCapabilities: (() => void) | null = null
@@ -179,7 +190,6 @@ export function buildApplicationDependencies(): ApplicationDependencies {
   let lastAvatarMouth: unknown = null
   let lastAvatarBody: BodyPresentationProjection | null = null
   let lastAvatarRuntimeHealth: AvatarRuntimeHealth | null = null
-  const screenContextService = new ScreenContextService(new ScreenCaptureAdapter())
   const pluginCapabilities = new PluginCapabilityRegistry()
   const browserWorkflowScopes = new BrowserWorkflowScopeRegistry()
 
@@ -194,6 +204,9 @@ export function buildApplicationDependencies(): ApplicationDependencies {
     }
   }
   const overlayWindows = new OverlayWindowManager((target) => loadRenderer(target, true))
+  const screenContextService = new ScreenContextService(
+    new ScreenCaptureAdapter((sourceId) => !overlayWindows.isCaptureSource(sourceId)),
+  )
   const mainWindows = new MainWindowManager(
     (target) => loadRenderer(target),
     () => !quitting,
@@ -208,8 +221,8 @@ export function buildApplicationDependencies(): ApplicationDependencies {
       groq: ['GROQ_API_KEY'],
       cloudflare: ['CLOUDFLARE_API_TOKEN'],
       openrouter: ['OPENROUTER_API_KEY'],
-      mistral: ['MISTRAL_API_KEY'],
       'codex-cli': [],
+      ollama: [],
     }
     return variables[provider].map((name) => process.env[name]).find(Boolean)
   }
@@ -305,28 +318,21 @@ export function buildApplicationDependencies(): ApplicationDependencies {
         ? join(process.resourcesPath, 'app.asar.unpacked', 'desktop-control')
         : join(app.getAppPath(), 'resources', 'desktop-control')
       desktopControl = buildDesktopControlPlugin({
+        characterModel: () => {
+          const character = resolveRoleSettings('character')
+          const profile = getProviderProfile(character.provider)
+          return {
+            provider: character.provider,
+            providerDisplayName: profile.displayName,
+            model: character.model,
+            configured:
+              Boolean(character.model.trim()) &&
+              (!profile.requiresApiKey || character.credential.configured) &&
+              (!profile.requiresAccountId || Boolean(character.accountId?.trim())),
+            lastError: character.credential.lastError,
+          }
+        },
         adapter: new DshHarnessAdapter({
-          model: () => {
-            // DSH runs as the Character role and keeps its own credential handoff.
-            const character = resolveRoleSettings('character')
-            const profile = getProviderProfile(character.provider)
-            const accountId = character.accountId ?? ''
-            return {
-              provider: character.provider,
-              providerDisplayName: profile.displayName,
-              model: character.model.trim(),
-              baseURL: resolveProviderChatBaseUrl(character.provider, { accountId }).replace(
-                /\/$/,
-                '',
-              ),
-              apiKey: character.apiKey,
-              credentialConfigured:
-                profile.requiresApiKey &&
-                character.credential.configured &&
-                (!profile.requiresAccountId || Boolean(accountId)),
-              lastError: character.credential.lastError,
-            }
-          },
           resources: () => ({
             command: process.execPath,
             runtimeScript: join(profileDirectory, 'dsh-runtime.mjs'),
@@ -502,7 +508,6 @@ export function buildApplicationDependencies(): ApplicationDependencies {
     return new Orchestrator(
       llmGateway,
       conversationMemory,
-      speech,
       getRendererConfig,
       () => pluginCapabilities.get('project-context'),
       capabilityCatalog,
@@ -586,6 +591,7 @@ export function buildApplicationDependencies(): ApplicationDependencies {
         'codex-cli',
         'conversation-turn-service',
         'speech-application-service',
+        'generated-motion',
         'action-runtime',
         'plugin-runtime',
         'alive-runtime',
@@ -636,6 +642,7 @@ export function buildApplicationDependencies(): ApplicationDependencies {
 
   const createWindow = async (): Promise<void> => {
     await loadConfig(getLlmCredentialStore())
+    await applyFlashMotionSetting()
     unsubscribeMemoryCapabilities ??= semanticMemory.onChanged(() => capabilityCatalog.invalidate())
     Menu.setApplicationMenu(null)
 
@@ -731,8 +738,9 @@ export function buildApplicationDependencies(): ApplicationDependencies {
       actionComposition.confirmations,
       win,
       ipcAuthorization,
+      applyFlashMotionSetting,
     )
-    aliveRuntime = new AliveRuntime(aliveStore, {
+    aliveRuntime = new AliveFacade(aliveStore, {
       experienceContext: () => semanticMemory.relationshipContext(),
       systemContextAdapter:
         process.platform === 'win32'
@@ -759,23 +767,98 @@ export function buildApplicationDependencies(): ApplicationDependencies {
     unsubscribeAliveIpc = registerAliveIpc(aliveRuntime, win, ipcAuthorization)
     const watchWindow = win
     const watchAlive = aliveRuntime
+    const referenceAvailable = () => {
+      if (!pluginCapabilities.get('browser-control')) return false
+      const status = browserControl?.getStatus()
+      return (
+        status?.semanticControl === 'ready' &&
+        (!status.session || ['completed', 'failed', 'stopped'].includes(status.session.state))
+      )
+    }
+    const warmup = new OllamaStreamWarmup(() => {
+      const config = getConfig().llm
+      const model = config?.providers.ollama.model
+      return config?.activeProvider === 'ollama' && model && isLocalGemmaModel(model)
+        ? model
+        : undefined
+    })
     const watch = new WatchTogetherService({
+      warmup,
+      reference: {
+        available: referenceAvailable,
+        open: async (url, signal) => {
+          if (!referenceAvailable()) return
+          const action = await actionComposition.actions.execute<
+            DesktopWorkflowRequest,
+            DesktopWorkflowAdapterResult
+          >({
+            name: 'desktop.workflow',
+            payload: {
+              type: 'desktop.workflow',
+              requestedCapabilities: ['browser'],
+              risk: 'normal',
+              goal:
+                getRendererConfig().uiLocale === 'en'
+                  ? 'Check the reference page for this live share'
+                  : 'Свериться со страницей этой трансляции',
+              browserOperation: { operation: 'open', url },
+            },
+            signal,
+          })
+          const evidence = action.result?.evidence
+          if (
+            action.status === 'success' &&
+            action.verification?.status === 'verified' &&
+            evidence?.kind === 'browser' &&
+            evidence.navigationStatus !== undefined &&
+            evidence.navigationStatus >= 200 &&
+            evidence.navigationStatus < 300 &&
+            evidence.after?.url === url
+          )
+            return evidence.after.observationId
+        },
+        read: (id) => {
+          const observation = pluginCapabilities.get('browser-control')?.currentObservation()
+          if (observation?.observationId === id)
+            return {
+              title: observation.title?.slice(0, 160),
+              excerpt: observation.content.slice(0, 700),
+            }
+        },
+      },
       language: () => getRendererConfig().uiLocale ?? 'ru',
       captureBlock: () => watchBlockReason(aliveStore.settings()),
       canComment: () => watchAlive.canCommentOnPlayback(),
       model: resolveLlmGateway,
+      prepareVoiceReply: (input, signal) =>
+        resolveOrchestrator().prepareWatchVoiceReply(input, signal),
       admit: (expiresAt, current) => watchAlive.admitWatchMoment(expiresAt, current),
+      react: (sessionId, reaction, expiresAt) =>
+        watchAlive.reportExperience({
+          type: 'watch-screen-moment',
+          at: Date.now(),
+          sessionId,
+          reaction,
+          expiresAt,
+        }),
       ended: (event) => {
+        overlayWindows.setCaptureExcluded(false)
         if (!watchWindow.isDestroyed() && !watchWindow.webContents.isDestroyed())
           watchWindow.webContents.send('watch:stopped', event)
       },
     })
-    const removeWatch = registerWatchTogetherIpc(watchWindow, watch, ipcAuthorization)
+    const removeWatch = registerWatchTogetherIpc(
+      watchWindow,
+      watch,
+      ipcAuthorization,
+      overlayWindows,
+    )
     const unsubscribeWatch = watchAlive.onChanged(({ settings }) => {
       const reason = watchBlockReason(settings)
       if (reason) watch.stop(undefined, reason)
     })
     disposeWatch = () => {
+      warmup.dispose()
       unsubscribeWatch()
       removeWatch()
     }
@@ -821,8 +904,6 @@ export function buildApplicationDependencies(): ApplicationDependencies {
 
   const initialize = async (): Promise<void> => {
     registerMotionIpc(motion, ipcAuthorization)
-    if (process.env.SHIO_MOTION_ENABLED !== '0')
-      observeMainPromise(motion.warmup(), 'warm up generated motion')
     registerRuntimeHealthIpc((health) => {
       lastAvatarRuntimeHealth = health
       capabilityCatalog.invalidate()

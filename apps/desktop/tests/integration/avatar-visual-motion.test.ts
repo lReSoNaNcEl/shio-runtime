@@ -261,6 +261,27 @@ describe('avatar visual motion', () => {
     assert.ok(Math.abs(tail.getDebugState().yawOffset) <= tail.getDebugState().limit)
   })
 
+  it('moves smoothly between screen fixations and holds the landing point', () => {
+    const gaze = new LookTargetResolver(99)
+    const input = {
+      mode: 'screenFocus' as const,
+      modeTuning: avatarLookAtTuning.modes.screenFocus,
+      baseTarget: new THREE.Object3D(),
+      target: new THREE.Object3D(),
+    }
+    const sample = (deltaMs: number) => {
+      gaze.resolve({ ...input, deltaMs })
+      return gaze.getMicroSaccade()
+    }
+    assert.deepEqual(sample(400), { yaw: 0, pitch: 0 })
+    const middle = sample(avatarLookAtTuning.saccadeDurationMs / 2)
+    const landed = sample(avatarLookAtTuning.saccadeDurationMs / 2)
+    assert.ok(Math.abs(middle.yaw) > 0 && Math.abs(middle.yaw) < Math.abs(landed.yaw))
+    assert.ok(Math.abs(landed.yaw) <= input.modeTuning.saccadeAmplitude.yaw)
+    assert.deepEqual(sample(16), landed)
+    assert.deepEqual(sample(input.modeTuning.saccadeIntervalMs.max), landed)
+  })
+
   it('releases screen-aware gaze', () => {
     const gazeTarget = new THREE.Object3D()
     const gazeBase = new THREE.Object3D()

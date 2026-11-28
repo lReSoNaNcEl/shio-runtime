@@ -41,7 +41,11 @@ describe('speech playback lifecycle', () => {
     const context = environment.contexts[0]
     const { speechGain } = context
     expect(context.analyser.target).toBe(speechGain)
-    expect(speechGain.connect).toHaveBeenCalledWith(context.destination)
+    expect(speechGain.connect).toHaveBeenCalledWith(context.peakShaper)
+    expect(context.peakShaper.connect).toHaveBeenCalledWith(context.destination)
+    player.setSpeechVolumePercent(100)
+    expect(speechGain.gain.setValueAtTime).toHaveBeenCalledWith(10 ** (2.5 / 20), 0)
+    expect(context.peakShaper.curve?.at(-1)).toBeCloseTo(0.92, 4)
     player.setSpeechVolumePercent(30)
     expect(speechGain.gain.setValueAtTime).toHaveBeenCalledWith(0.3, 0)
     const playback = await start('speech')
@@ -87,6 +91,9 @@ describe('speech playback lifecycle', () => {
     expect(playback.onProgress.mock.calls).toEqual([[0]])
     expect(player.isPlaying()).toBe(true)
     expect(environment.intervals.size).toBe(1)
+    await expect(
+      player.play(new ArrayBuffer(44), { turnId: 'overlap', onReady: () => undefined }),
+    ).rejects.toThrow('activeTurnId=normal requestedTurnId=overlap')
     playback.source.end()
     await expect(playback.completion).resolves.toMatchObject({ turnId: 'normal' })
     expect(playback.onProgress.mock.calls).toEqual([[0], [1]])
@@ -145,11 +152,12 @@ describe('speech playback lifecycle', () => {
     const onReady = vi.fn()
     const completion = player.play(new ArrayBuffer(44), { turnId: 'decode', onReady })
     const rejected = expect(completion).rejects.toThrow('Playback ownership lost')
-    player.stop()
+    player.stopCurrent('decode', 'conversation-interrupted')
     decode.resolve(createAudioBuffer())
     await rejected
     expect(onReady).not.toHaveBeenCalled()
     expect(environment.sources).toHaveLength(0)
+    expect(player.isBusy()).toBe(false)
   })
 
   it('does not start a connected source after cancellation during readiness', async () => {

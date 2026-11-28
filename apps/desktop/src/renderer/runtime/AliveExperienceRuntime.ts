@@ -25,6 +25,8 @@ export class AliveExperienceRuntime {
   private unsubscribeBehavior: (() => void) | null = null
   private started = false
   private idleHold: number | null = null
+  private activeWatchId?: string
+  private watchHoldId?: string
 
   constructor(private readonly deps: AliveExperienceRuntimeDeps) {}
 
@@ -62,12 +64,26 @@ export class AliveExperienceRuntime {
     this.unsubscribeBehavior?.()
     this.unsubscribeBehavior = null
     this.clearIdleHold()
+    this.activeWatchId = undefined
     this.removeActivityListeners()
   }
 
   private clearIdleHold(): void {
     if (this.idleHold !== null) window.clearTimeout(this.idleHold)
     this.idleHold = null
+    this.watchHoldId = undefined
+  }
+
+  setWatchSession(id: string, active: boolean): void {
+    if (this.activeWatchId && (active || this.activeWatchId === id))
+      this.cancelWatchReaction(this.activeWatchId)
+    if (active || this.activeWatchId === id) this.activeWatchId = active ? id : undefined
+  }
+
+  cancelWatchReaction(id: string): void {
+    if (this.watchHoldId !== id) return
+    this.clearIdleHold()
+    this.deps.presentation.setBehaviorEmbodimentIntent(undefined)
   }
 
   /** Executes a Main-selected idle activity: a held glance and/or one catalog gesture. */
@@ -81,10 +97,16 @@ export class AliveExperienceRuntime {
         IDLE_HOLD_LIMITS[0],
         Math.min(IDLE_HOLD_LIMITS[1], command.holdMs ?? IDLE_HOLD_LIMITS[0]),
       )
-      this.idleHold = window.setTimeout(() => {
-        this.idleHold = null
-        this.deps.presentation.setBehaviorEmbodimentIntent(undefined)
-      }, hold)
+      this.idleHold = window.setTimeout(
+        () => {
+          this.idleHold = null
+          this.watchHoldId = undefined
+          this.deps.presentation.setBehaviorEmbodimentIntent(undefined)
+        },
+        command.watchReaction
+          ? Math.min(hold, Math.max(0, command.watchReaction.expiresAt - Date.now()))
+          : hold,
+      )
     }
     if (intent.gestureHint) this.deps.presentation.playIdleActivityGesture?.(intent)
   }
@@ -119,6 +141,19 @@ export class AliveExperienceRuntime {
   }
 
   private applyBehavior(command: BehaviorCommand): void {
+    if (command.watchReaction) {
+      const { sessionId, expiresAt } = command.watchReaction
+      if (
+        sessionId === this.activeWatchId &&
+        expiresAt > Date.now() &&
+        this.deps.getControllerState().status === 'idle' &&
+        command.intent.kind === 'embodiment'
+      ) {
+        this.applyIdleActivity(command)
+        this.watchHoldId = sessionId
+      }
+      return
+    }
     if (command.embodimentPresence?.source === 'browser-computer-use') {
       this.deps.presentation.setBehaviorEmbodimentIntent(
         command.intent.kind === 'embodiment' ? command.intent.intent : undefined,

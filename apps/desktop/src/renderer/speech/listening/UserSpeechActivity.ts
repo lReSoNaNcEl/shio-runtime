@@ -30,6 +30,7 @@ export class UserSpeechActivityMonitor implements UserSpeechActivitySource {
 
   begin(): void {
     this.active = true
+    this.noiseFloor = 0.004
     this.lastVoicedAt = null
     this.lastOnsetAt = null
   }
@@ -57,9 +58,9 @@ export class UserSpeechActivityMonitor implements UserSpeechActivitySource {
     this.emit({ type: 'sample', at, voiced })
   }
 
-  /** An ASR VAD speech start (continuous listening) is an onset of its own. */
+  /** Deduplicated fallback when ASR VAD arrives before a local voiced block. */
   observeExternalOnset(at: number): void {
-    if (Number.isFinite(at)) this.onset(at)
+    if (this.active && Number.isFinite(at)) this.onset(at)
   }
 
   private onset(at: number): void {

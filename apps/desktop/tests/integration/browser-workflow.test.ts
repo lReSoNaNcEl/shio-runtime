@@ -9,7 +9,6 @@ import {
 import { type ChatMessage, type LLMProvider, LlmResponseError } from '../../src/main/llm'
 import type { MemoryStore } from '../../src/main/memory'
 import { Orchestrator } from '../../src/main/orchestrator'
-import type { SpeechClient } from '../../src/main/speech/speechClient'
 import type { DesktopWorkflowActionResult, DesktopWorkflowRequest } from '../../src/shared/actions'
 import type {
   BrowserContextProvider,
@@ -162,7 +161,6 @@ async function scenario(options: ScenarioOptions): Promise<{
   const orchestrator = new Orchestrator(
     llm,
     memory,
-    {} as SpeechClient,
     () => ({ uiLocale: 'ru' }) as AppSettings,
     undefined,
     { snapshot: async () => capabilities },
@@ -272,7 +270,7 @@ async function main(): Promise<void> {
         url: 'https://www.blender.org/download/',
       }),
       new LlmResponseError({
-        provider: 'mistral',
+        provider: 'openrouter',
         code: 'NETWORK_ERROR',
         recoverable: true,
         message: 'Controlled transient provider failure',
@@ -316,7 +314,7 @@ async function main(): Promise<void> {
     replies: [
       '<shio-tools>{"plannedTools":["browser.observe"],"calls":[{"tool":"browser.observe","arguments":{}}]}</shio-tools>',
       new LlmResponseError({
-        provider: 'mistral',
+        provider: 'openrouter',
         code: 'PROVIDER_REJECTED',
         recoverable: false,
         message: 'Controlled rejected continuation',
@@ -514,7 +512,6 @@ async function main(): Promise<void> {
   const staleOrchestrator = new Orchestrator(
     staleLlm,
     staleMemory,
-    {} as SpeechClient,
     () => ({ uiLocale: 'ru' }) as AppSettings,
     undefined,
     { snapshot: async () => capabilities },

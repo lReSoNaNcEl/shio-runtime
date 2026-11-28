@@ -144,7 +144,6 @@ export class StreamingAsrClient {
   private state: StreamingAsrState = 'idle'
   private shouldRun = false
   private wsBase = ''
-  private language = 'ru'
   private reconnectAttempt = 0
   private reconnectTimer: number | null = null
   private generation = 0
@@ -158,12 +157,11 @@ export class StreamingAsrClient {
     private readonly partialResults = true,
   ) {}
 
-  async connect(baseUrl: string, language = 'ru', signal?: AbortSignal): Promise<void> {
+  async connect(baseUrl: string, signal?: AbortSignal): Promise<void> {
     await this.stop()
     if (signal?.aborted) throw signal.reason ?? new DOMException('ASR start aborted', 'AbortError')
     const generation = ++this.generation
     this.shouldRun = true
-    this.language = language
     this.wsBase = baseUrl
       .replace('://localhost', '://127.0.0.1')
       .replace(/^http:/, 'ws:')
@@ -174,7 +172,7 @@ export class StreamingAsrClient {
     await this.openSocket(false, generation, signal)
   }
 
-  sendPcm(frame: ArrayBuffer): boolean {
+  sendPcm(frame: ArrayBuffer, discontinuous = false): boolean {
     if (!this.shouldRun || !frame.byteLength) return false
     const socket = this.socket
     if (
@@ -185,9 +183,8 @@ export class StreamingAsrClient {
       this.reportGap()
       return false
     }
-    if (socket.bufferedAmount + frame.byteLength > maxQueuedBytes) {
-      // The WebSocket send queue cannot be drained locally. Retire this ASR
-      // session so a late final cannot join speech from opposite sides of a gap.
+    if (discontinuous || socket.bufferedAmount + frame.byteLength > maxQueuedBytes) {
+      // A late final must not join speech from opposite sides of a capture or transport gap.
       this.socket = null
       this.sessionId = null
       this.clearSocketHandlers(socket)
@@ -283,7 +280,7 @@ export class StreamingAsrClient {
               sampleRate,
               channels: 1,
               format: 'pcm_s16le',
-              language: this.language,
+              language: 'auto',
               ...(!this.partialResults && { partialResults: false }),
             }),
           )

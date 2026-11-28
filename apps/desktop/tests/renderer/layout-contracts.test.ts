@@ -9,9 +9,13 @@ import { sourceRoot } from '../architecture/context'
 function stylesheet(name: string) {
   return postcss.parse(readFileSync(join(sourceRoot, `renderer/styles/${name}.css`), 'utf8'))
 }
-function declarations(name: string, selector: string) {
+function declarations(name: string, selector: string, media?: string) {
   const declarations = new Map<string, string>()
   stylesheet(name).walkRules(selector, (rule) => {
+    const parent = rule.parent
+    const mediaQuery =
+      parent?.type === 'atrule' && parent.name === 'media' ? parent.params : undefined
+    if (mediaQuery !== media) return
     rule.walkDecls((declaration) => {
       declarations.set(declaration.prop, declaration.value)
     })
@@ -24,9 +28,13 @@ describe('responsive presentation contracts', () => {
   it('allows source cards to grow with accessible labels while preserving thumbnail proportions', () => {
     const card = declarations('chat', '.screen-context-source')
     expect(card.get('flex-direction')).toBe('column')
+    const narrowCard = declarations('chat', '.screen-context-source', '(max-width: 540px)')
+    expect(narrowCard.get('flex-direction')).toBe('row')
     expect(card.get('height')).toBe('auto')
     expect(card.get('block-size')).toBe('auto')
-    expect(declarations('chat', '.screen-context-source > img').get('aspect-ratio')).toBe('16 / 9')
+    expect(declarations('chat', '.screen-context-source-thumbnail').get('aspect-ratio')).toBe(
+      '16 / 9',
+    )
   })
 
   it('reflows quick actions relative to their message container', () => {

@@ -74,10 +74,6 @@ export class WebSearchPlugin implements BundledPlugin {
     }
   }
 
-  getWebSearchProvider(): WebSearchProvider {
-    return this.provider
-  }
-
   getCapabilityProviders(): PluginCapabilityProviders {
     return { 'web-search': this.provider }
   }

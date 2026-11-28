@@ -2,10 +2,11 @@
 .avatar-preview-view {
   height: 100%;
   min-height: 0;
+  container: preview / inline-size;
 }
 .avatar-preview-workspace {
   display: grid;
-  grid-template-columns: minmax(240px, 280px) minmax(340px, 1fr) 300px;
+  grid-template-columns: minmax(0, 1fr) clamp(300px, 33%, 460px);
   gap: 20px;
   height: 100%;
   min-height: 0;
@@ -15,18 +16,23 @@
   height: 0;
   overflow: hidden;
 }
+.avatar-preview-workspace[data-focus] {
+  grid-template-columns: minmax(0, 1fr);
+}
+.preview-control-rail {
+  min-width: 0;
+  overflow: auto;
+  scrollbar-gutter: stable;
+  padding-inline-end: 4px;
+}
 .animation-library {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
-  gap: 16px;
   min-width: 0;
-  min-height: 0;
-  padding-right: 16px;
-  border-right: 1px solid var(--border-faint);
+  gap: 12px;
 }
 .animation-library-header {
   display: grid;
-  gap: 12px;
+  gap: 10px;
 }
 .preview-section-heading {
   display: flex;
@@ -42,18 +48,28 @@
 }
 .animation-library-filters {
   display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
 }
 .animation-library-list {
   min-height: 0;
-  height: 100%;
+  /* A two-line Spectrum row occupies 52px at the default text size. */
+  height: round(nearest, clamp(9.75rem, 24dvh, 19.5rem), 3.25rem);
+}
+.animation-library-list [role="grid"] {
+  /* The virtualizer rounds its width to CSS pixels. A fractional Windows gutter can
+     otherwise trigger a second scrollbar even when all row text fits. */
+  overflow-x: hidden;
 }
 .preview-library-empty {
-  padding-block: 24px;
+  display: grid;
+  justify-items: start;
+  gap: 8px;
+  padding: 8px;
 }
 .preview-viewport {
   display: grid;
-  grid-template-rows: auto minmax(500px, 1fr) auto;
+  grid-template-rows: auto minmax(160px, 1fr) auto;
   gap: 12px;
   min-width: 0;
   min-height: 0;
@@ -69,11 +85,15 @@
 }
 .avatar-preview-stage {
   position: relative;
-  min-height: 500px;
+  min-height: 0;
   overflow: hidden;
   border: 1px solid var(--border-faint);
   border-radius: 16px;
-  background: var(--surface-subtle);
+  background: radial-gradient(
+    ellipse at 50% 40%,
+    color-mix(in srgb, var(--accent) 10%, var(--surface)),
+    var(--surface-inset) 78%
+  );
 }
 .avatar-preview-stage.collapsed {
   min-height: 0;
@@ -91,7 +111,10 @@
   opacity: 1;
 }
 .preview-stage-footer {
-  display: grid;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
   gap: 12px;
 }
 .preview-camera-toolbar {
@@ -110,12 +133,11 @@
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 20px;
+  gap: 14px;
   min-width: 0;
-  min-height: 0;
-  overflow-y: auto;
-  padding: 4px 0 4px 20px;
-  border-left: 1px solid var(--border-faint);
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-subtle);
 }
 .preview-inspector-intro {
   display: grid;
@@ -130,17 +152,14 @@
   gap: 8px;
 }
 .preview-primary-actions {
-  display: grid;
+  display: flex;
+  flex-wrap: wrap;
   gap: 8px;
 }
 .preview-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-}
-.preview-transport-actions {
-  padding-bottom: 20px;
-  border-bottom: 1px solid var(--border-faint);
 }
 .preview-inspector-advanced {
   display: grid;
@@ -183,62 +202,22 @@
   padding: 32px;
   text-align: center;
 }
-@media (max-width: 1280px) {
+@container preview (max-width: 700px) {
   .avatar-preview-workspace {
-    grid-template-columns: 240px minmax(320px, 1fr);
+    grid-template-columns: minmax(0, 1fr);
     height: auto;
   }
-  .animation-library {
-    grid-row: 1 / 3;
-    max-height: calc(100dvh - 140px);
-    position: sticky;
-    top: 0;
-  }
-  .preview-inspector {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(180px, 240px);
-    grid-column: 2;
-    overflow: visible;
-    padding: 20px 0 0;
-    border-left: 0;
-    border-top: 1px solid var(--border-faint);
-  }
-  .preview-primary-actions {
-    align-content: start;
-  }
-  .preview-inspector-advanced,
-  .preview-inspector-footer {
-    grid-column: 1 / -1;
-  }
-  .preview-transport-actions {
-    border: 0;
-    padding: 0;
-  }
-}
-@media (max-width: 760px) {
-  .avatar-preview-workspace {
-    grid-template-columns: 1fr;
-    gap: 20px;
-  }
-  .animation-library {
-    position: static;
-    grid-row: auto;
-    height: 320px;
-    padding: 0 0 16px;
-    border-right: 0;
-    border-bottom: 1px solid var(--border-faint);
-  }
-  .animation-library-filters {
-    grid-template-columns: 1fr 1fr;
-  }
-  .preview-inspector {
-    display: flex;
-    grid-column: 1;
-  }
   .preview-viewport {
-    grid-template-rows: auto minmax(440px, 1fr) auto;
+    height: clamp(300px, 57dvh, 560px);
   }
-  .avatar-preview-stage {
-    min-height: 440px;
+  .avatar-preview-workspace[data-focus] .preview-viewport {
+    height: max(320px, 100%);
+  }
+  .avatar-preview-workspace[data-focus] {
+    height: 100%;
+  }
+  .preview-control-rail {
+    overflow: visible;
+    padding: 0;
   }
 }

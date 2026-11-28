@@ -42,8 +42,7 @@ class StreamingASRSession:
     """Per-WebSocket continuous PCM/VAD state.
 
     Silero's recurrent state is mutable, so every socket gets a private model
-    copy. Whisper remains the shared read-only adapter and is invoked only when
-    a segment is finalized.
+    copy. The WebSocket worker serializes Whisper jobs for this session.
     """
 
     sample_rate = 16_000
@@ -78,6 +77,8 @@ class StreamingASRSession:
         self._revision = 0
         self._next_partial_samples = round(config.partial_interval_ms * self.sample_rate / 1000)
         self._last_partial_text = ""
+        self._endpoint_attempts = 0
+        self._endpoint_text: tuple[str, int, str] | None = None
         self.closed = False
 
     @property
@@ -111,12 +112,48 @@ class StreamingASRSession:
         self._pending = np.empty(0, dtype=np.float32)
         self._pre_roll.clear()
         self._speech_frames.clear()
+        self._endpoint_text = None
         self._segment_id = None
         self._vad_model.reset_states()
 
+    def finish_prepared(self, job: DecodeJob) -> list[dict] | None:
+        if job.kind != "final":
+            return None
+        cached, self._endpoint_text = self._endpoint_text, None
+        if (
+            cached
+            and job.reason == "vad_silence"
+            and cached[:2] == (job.segment_id, job.end_sample)
+        ):
+            return self._events(job, cached[2])
+        return None
+
     def transcribe(self, job: DecodeJob) -> list[dict]:
-        result = self.whisper.transcribe(job.audio, sr=self.sample_rate, language=self.language)
-        text = result["text"]
+        if job.kind == "endpoint":
+            post_roll = round(self.config.post_roll_ms * self.sample_rate / 1000)
+            if (
+                self.closed
+                or self._segment_id != job.segment_id
+                or not self._silence_samples
+                or self._total_samples - self._silence_samples + post_roll != job.end_sample
+            ):
+                return []
+            try:
+                text = self.whisper.transcribe(
+                    job.audio, sr=self.sample_rate, language=self.language
+                )["text"]
+            except Exception:
+                logger.warning("Early ASR decode unavailable; waiting for confirmed silence")
+                return []
+            if not self.closed:
+                self._endpoint_text = (job.segment_id, job.end_sample, text)
+            return []
+        text = self.whisper.transcribe(job.audio, sr=self.sample_rate, language=self.language)[
+            "text"
+        ]
+        return self._events(job, text)
+
+    def _events(self, job: DecodeJob, text: str) -> list[dict]:
         if job.kind == "partial":
             if not text or text == self._last_partial_text:
                 return []
@@ -155,7 +192,9 @@ class StreamingASRSession:
         ]
 
     def _process_vad_frame(self, frame: np.ndarray) -> tuple[list[dict], DecodeJob | None]:
-        probability = float(self._vad_model(torch.from_numpy(frame), self.sample_rate).item())
+        # Silero carries recurrent state across frames, which would retain the autograd graph.
+        with torch.inference_mode():
+            probability = float(self._vad_model(torch.from_numpy(frame), self.sample_rate).item())
         self._total_samples += frame.size
         threshold = self.config.negative_threshold if self.speech_active else self.config.threshold
         voiced = probability >= threshold
@@ -178,6 +217,7 @@ class StreamingASRSession:
                 self.config.partial_interval_ms * self.sample_rate / 1000
             )
             self._last_partial_text = ""
+            self._endpoint_attempts = 0
             return [
                 {
                     "type": "speech_started",
@@ -188,25 +228,36 @@ class StreamingASRSession:
             ], None
 
         self._speech_frames.append(frame.copy())
+        previous_silence = self._silence_samples
         self._silence_samples = 0 if voiced else self._silence_samples + frame.size
+        if voiced:
+            self._endpoint_text = None
         segment_samples = sum(len(value) for value in self._speech_frames)
         if segment_samples >= round(self.config.max_segment_ms * self.sample_rate / 1000):
             return [], self._finalize("max_duration", trim_silence=False)
-        if self._silence_samples >= round(self.config.min_silence_ms * self.sample_rate / 1000):
+        min_silence = round(self.config.min_silence_ms * self.sample_rate / 1000)
+        if self._silence_samples >= min_silence:
             return [], self._finalize("vad_silence", trim_silence=True)
+        # Once the post-roll is known, Whisper can decode the exact eventual final
+        # while Silero continues to require the full uninterrupted silence interval.
+        post_roll = round(self.config.post_roll_ms * self.sample_rate / 1000)
+        prepare_after = max(post_roll, min_silence // 2)
+        if (
+            self.config.partial_results
+            and self._endpoint_attempts < 2
+            and previous_silence < prepare_after <= self._silence_samples
+        ):
+            self._endpoint_attempts += 1
+            return [], self._snapshot("endpoint", None, trim_silence=True)
         if self.config.partial_results and voiced and segment_samples >= self._next_partial_samples:
             while self._next_partial_samples <= segment_samples:
                 self._next_partial_samples += round(
                     self.config.partial_interval_ms * self.sample_rate / 1000
                 )
-            start_sample = self._segment_start_sample or 0
-            audio = np.concatenate(self._speech_frames)
-            return [], DecodeJob(
-                "partial", audio, self._segment_id, None, start_sample, start_sample + audio.size
-            )
+            return [], self._snapshot("partial", None, trim_silence=False)
         return [], None
 
-    def _finalize(self, reason: str, trim_silence: bool) -> DecodeJob:
+    def _snapshot(self, kind: str, reason: str | None, trim_silence: bool) -> DecodeJob:
         assert self._segment_id is not None
         start_sample = self._segment_start_sample or 0
         audio = (
@@ -220,7 +271,10 @@ class StreamingASRSession:
             if trim_samples:
                 audio = audio[:-trim_samples]
         end_sample = start_sample + audio.size
-        job = DecodeJob("final", audio, self._segment_id, reason, start_sample, end_sample)
+        return DecodeJob(kind, audio, self._segment_id, reason, start_sample, end_sample)
+
+    def _finalize(self, reason: str, trim_silence: bool) -> DecodeJob:
+        job = self._snapshot("final", reason, trim_silence)
         self._speech_frames = []
         self._segment_id = None
         self._segment_start_sample = None

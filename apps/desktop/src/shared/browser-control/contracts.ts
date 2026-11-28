@@ -5,7 +5,7 @@ import {
   browserVisualControlStateSchema,
 } from '../browser-computer-use'
 
-export const PLAYWRIGHT_CORE_VERSION = '1.62.1' as const
+export const PLAYWRIGHT_CORE_VERSION = '1.65.1' as const
 
 export const browserControlStatusSchema = z
   .object({

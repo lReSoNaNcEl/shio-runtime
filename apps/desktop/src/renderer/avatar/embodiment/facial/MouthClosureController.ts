@@ -37,6 +37,7 @@ export class MouthClosureController {
   private currentMinIntervalMs = 0
   private boundary = false
   private wasSpeaking = false
+  private recentPeakEnergy = 0
   private graceRemainingMs = 0
   private recoveryCooldownMs = 0
   private suppressedFrames = 0
@@ -59,6 +60,7 @@ export class MouthClosureController {
     this.currentMinIntervalMs = this.randomInterval()
     this.boundary = false
     this.wasSpeaking = false
+    this.recentPeakEnergy = 0
     this.graceRemainingMs = 0
     this.recoveryCooldownMs = 0
     this.suppressedFrames = 0
@@ -87,6 +89,7 @@ export class MouthClosureController {
       this.sinceLastClosureMs = 0
       this.currentMinIntervalMs = this.randomInterval()
       this.graceRemainingMs = tuning.startupGraceMs
+      this.recentPeakEnergy = speechEnergy
     }
 
     if (!tuning.enabled) {
@@ -104,6 +107,11 @@ export class MouthClosureController {
     const inGrace = this.graceRemainingMs > 0
 
     const voicing = speaking && speechEnergy >= tuning.minEnergyToSpeak
+    this.recentPeakEnergy = Math.max(
+      speechEnergy,
+      this.recentPeakEnergy * Math.exp(-dtMs / tuning.energyPeakReleaseMs),
+    )
+    const syllableTaper = speechEnergy <= this.recentPeakEnergy * tuning.taperRatio
 
     // Boundary closure only on speaking end (true → false), never on the onset
     // and never during a (very short) segment's startup grace.
@@ -128,6 +136,7 @@ export class MouthClosureController {
       this.recoveryCooldownMs <= 0 &&
       mouthOpenness >= tuning.minVisibleOpenness &&
       voicing &&
+      syllableTaper &&
       this.sinceLastClosureMs >= this.currentMinIntervalMs
     ) {
       // Opportunity window elapsed: roll for a closure, then re-space regardless

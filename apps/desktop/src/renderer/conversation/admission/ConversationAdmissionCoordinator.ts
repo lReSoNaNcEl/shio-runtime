@@ -1,4 +1,3 @@
-import { backlogTuning } from '../../speech/continuous-listening/tuning'
 import type {
   ActiveConversationExecution,
   AdmittedConversationTurn,
@@ -8,7 +7,7 @@ import type {
   ConversationInput,
 } from '../../speech/continuous-listening/types'
 import type { UtteranceBacklog } from '../../speech/continuous-listening/UtteranceBacklog'
-import type { BacklogSelector, BacklogSelectorLlmConfig } from './BacklogSelector'
+import type { BacklogSelector } from './BacklogSelector'
 
 export type ConversationAdmissionOutcome =
   | 'started'
@@ -27,20 +26,11 @@ const createCycleId = (): string => `admission-${Date.now()}-${++admissionCycleS
 export class ConversationAdmissionCoordinator {
   private activeExecution: ActiveConversationExecution | undefined
   private drainPromise: Promise<unknown> | undefined
-  private arbitrationPromise: Promise<unknown> | undefined
-  private activeCycleId: string | undefined
   private continuousEnabled = false
   private pendingExplicit: {
     input: ConversationInput
     settle?: (result: ConversationCompletionResult) => void
   } | null = null
-  private llmConfig: BacklogSelectorLlmConfig = {
-    enabled: false,
-    providerId: '',
-    model: '',
-    timeoutMs: 2_000,
-    minimumConfidence: 0.72,
-  }
 
   constructor(
     private readonly runConversation: (
@@ -59,22 +49,12 @@ export class ConversationAdmissionCoordinator {
     return this.activeExecution ? { ...this.activeExecution } : undefined
   }
 
-  configureSelector(config: BacklogSelectorLlmConfig): void {
-    const changed = JSON.stringify(config) !== JSON.stringify(this.llmConfig)
-    this.llmConfig = { ...config }
-    if (changed) this.selector.cancel()
-  }
-
   setContinuousEnabled(enabled: boolean): void {
     this.continuousEnabled = enabled
-    if (!enabled) {
-      this.selector.cancel()
-      this.backlog.clear()
-    }
+    if (!enabled) this.backlog.clear()
   }
 
   resetStreamingSession(): void {
-    this.selector.cancel()
     this.backlog.clear()
   }
 
@@ -104,7 +84,6 @@ export class ConversationAdmissionCoordinator {
 
     const cycleId = createCycleId()
     const initialTurn: AdmittedConversationTurn = { ...input, admissionCycleId: cycleId }
-    this.activeCycleId = cycleId
     const currentPromise = this.executeCycle(initialTurn, cycleId)
     this.drainPromise = currentPromise
     console.debug(
@@ -116,7 +95,6 @@ export class ConversationAdmissionCoordinator {
     } finally {
       if (this.drainPromise === currentPromise) {
         this.drainPromise = undefined
-        if (this.activeCycleId === cycleId) this.activeCycleId = undefined
       }
     }
   }
@@ -129,7 +107,6 @@ export class ConversationAdmissionCoordinator {
     }
     const cycleId = createCycleId()
     const initialTurn: AdmittedConversationTurn = { ...input, admissionCycleId: cycleId }
-    this.activeCycleId = cycleId
     let settleInitial!: (result: ConversationCompletionResult) => void
     const initialResult = new Promise<ConversationCompletionResult>((resolve) => {
       settleInitial = resolve
@@ -139,7 +116,6 @@ export class ConversationAdmissionCoordinator {
     const settleCycle = (): void => {
       if (this.drainPromise === currentPromise) {
         this.drainPromise = undefined
-        if (this.activeCycleId === cycleId) this.activeCycleId = undefined
       }
     }
     void currentPromise.then(settleCycle, (error) => {
@@ -156,7 +132,6 @@ export class ConversationAdmissionCoordinator {
   ): ConversationAdmissionOutcome {
     if (input.source === 'continuous_listening' && buffered) return this.enqueueStreaming(buffered)
     if (input.source === 'text_chat' || input.source === 'push_to_talk' || input.watchVoice) {
-      this.selector.cancel()
       if (input.source === 'text_chat') this.backlog.discardWeak()
       this.pendingExplicit?.settle?.({
         status: 'cancelled',
@@ -240,33 +215,18 @@ export class ConversationAdmissionCoordinator {
   }
 
   private async drainOneStreamingTurn(cycleId: string): Promise<void> {
-    for (let budget = 0; budget < backlogTuning.maxSelectedTurnsPerDrain; budget += 1) {
-      const selectionPromise = this.selector.select(this.backlog, {
-        continuousEnabled: this.continuousEnabled,
-        llm: this.llmConfig,
-      })
-      this.arbitrationPromise = selectionPromise
-      const selection = await selectionPromise.finally(() => {
-        if (this.arbitrationPromise === selectionPromise) this.arbitrationPromise = undefined
-      })
-      if (
-        this.activeCycleId !== cycleId ||
-        this.pendingExplicit ||
-        !this.continuousEnabled ||
-        selection.action === 'discard_all' ||
-        !selection.text
-      )
-        return
-      if (!this.backlog.consume(selection.selectedIds, selection.backlogVersion)) return
-      await this.executeTurn({
-        turnId: `backlog-${Date.now()}-${selection.selectedIds.join('-')}`,
-        text: selection.text,
-        source: 'backlog_selected',
-        createdAt: Date.now(),
-        utteranceIds: selection.selectedIds,
-        admissionCycleId: cycleId,
-      })
-    }
+    if (this.pendingExplicit || !this.continuousEnabled) return
+    const selection = this.selector.select(this.backlog)
+    if (!selection?.text) return
+    if (!this.backlog.consume(selection.selectedIds, selection.backlogVersion)) return
+    await this.executeTurn({
+      turnId: `backlog-${Date.now()}-${selection.selectedIds.join('-')}`,
+      text: selection.text,
+      source: 'backlog_selected',
+      createdAt: Date.now(),
+      utteranceIds: selection.selectedIds,
+      admissionCycleId: cycleId,
+    })
   }
 
   private async drainPendingExplicit(cycleId: string): Promise<void> {

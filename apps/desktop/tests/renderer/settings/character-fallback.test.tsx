@@ -135,7 +135,7 @@ describe('Character fallback catalog', () => {
     })
     view.rerender(
       <CharacterFallbackSettings
-        state={{ ...state, characterFallbacks: [{ providerId: 'mistral', model: '' }] }}
+        state={{ ...state, characterFallbacks: [{ providerId: 'openrouter', model: '' }] }}
         actions={actions}
       />,
     )

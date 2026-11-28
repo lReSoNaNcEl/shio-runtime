@@ -1,10 +1,14 @@
-import { AlertDialog, DialogContainer, Provider, Text } from '@react-spectrum/s2'
+import { Provider, Text } from '@react-spectrum/s2'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { type CapabilityNavigationTarget } from '../../shared/capabilities'
 import { normalizeUiTheme, type UiTheme } from '../../shared/config'
 import { type PluginId } from '../../shared/plugins'
-import { watchBlockReason } from '../../shared/watchTogether'
+import {
+  type WatchAudioStatus,
+  type WatchModelIssue,
+  watchBlockReason,
+} from '../../shared/watchTogether'
 import { controller } from '../Controller'
 import { useCapabilities } from '../hooks/useCapabilities'
 import { useControllerState } from '../hooks/useControllerState'
@@ -12,21 +16,25 @@ import { useRuntimeSupportBundle } from '../hooks/useRuntimeSupportBundle'
 import { useTranslation } from '../localization/useTranslation'
 import { observeRendererPromise } from '../reliability/observePromise'
 import { buildRuntimeHealthProjection } from '../runtime/runtimeHealth'
-import { type WatchFailure, WatchTogetherCapture } from '../runtime/WatchTogetherCapture'
+import {
+  type WatchFailure,
+  type WatchMicrophoneStatus,
+  WatchTogetherCapture,
+} from '../runtime/WatchTogetherCapture'
 import { ActionRuntimeHost } from './actions/ActionRuntimeHost'
 import { ChatOverlay, type ChatOverlayHandle } from './chat/ChatOverlay'
 import { NewConversationButton } from './chat/NewConversationButton'
 import { NewConversationDialog } from './chat/NewConversationDialog'
 import { ScreenContextPicker } from './chat/ScreenContextPicker'
-import { ListeningControl } from './controls/ListeningControl'
+import { WatchFailureDialog } from './chat/WatchFailureDialog'
+import { ListeningControl, WatchSessionBar } from './controls/ListeningControl'
 import { OverlayCameraControl } from './controls/OverlayCameraControl'
-import { WatchPreviewControl } from './controls/WatchPreviewControl'
 import { pluginIdForNavigationTarget } from './navigation/capabilityNavigation'
 import { MicrophoneGateOverlay } from './overlays/MicrophoneGateOverlay'
 import { MissingVrmDialog } from './overlays/MissingVrmDialog'
 import { PluginsView } from './plugins/PluginsView'
 import { SettingsDialog } from './settings/SettingsDialog'
-import { type SettingsSection } from './settings/state/settingsContracts'
+import { type SettingsSection, settingsSections } from './settings/state/settingsContracts'
 import { SetupCenter } from './setup/SetupCenter'
 import { type AppSection, AppShell, SectionHeading } from './shell/AppShell'
 import { AvatarPreviewView } from './views/AvatarPreviewView'
@@ -38,40 +46,65 @@ export function App() {
   const { intlLocale, t } = useTranslation()
   const overlayCanvasRef = useRef<HTMLCanvasElement>(null)
   const state = useControllerState()
+  const modelConfigured = state.vrmConfigured
   const watch = useRef<WatchTogetherCapture | null>(null)
   const [watchPicker, setWatchPicker] = useState(false)
-  const [watching, setWatching] = useState(false)
-  const [preview, setPreview] = useState<{ sourceName: string; session: WatchTogetherCapture }>()
+  const [sharing, setSharing] = useState<{
+    sourceName: string
+    phase: 'connecting' | 'live'
+    session: WatchTogetherCapture
+    microphone: WatchMicrophoneStatus
+  }>()
   const [playbackGaps, setPlaybackGaps] = useState(0)
+  const [watchAudio, setWatchAudio] = useState<WatchAudioStatus>('unavailable')
   const [watchError, setWatchError] = useState<WatchFailure>()
-  const watchBlocked = watchError?.startsWith('watch.blocked.')
+  const [watchModelIssue, setWatchModelIssue] = useState<WatchModelIssue>()
   useEffect(
     () => () => {
       watch.current?.stop()
     },
     [],
   )
-  const startWatch = (sourceId: string, sourceName: string) => {
+  const openWatchPicker = () => {
+    if (watch.current) return
+    const reason = state.alive && watchBlockReason(state.alive.settings)
+    setWatchError(reason ? `watch.blocked.${reason}` : undefined)
+    if (!reason) setWatchPicker(true)
+  }
+  const startWatch = (sourceId: string, sourceName: string, reference?: string) => {
     if (watch.current) return
     const session = new WatchTogetherCapture(
       (error) => {
         if (watch.current !== session) return
         watch.current = null
-        setWatching(false)
-        setPreview(undefined)
+        setSharing(undefined)
+        setWatchModelIssue(undefined)
         setWatchError(error)
       },
       () => {
         if (watch.current === session) setPlaybackGaps((count) => count + 1)
       },
+      (issue) => {
+        if (watch.current === session) setWatchModelIssue(issue)
+      },
+      (status) => {
+        if (watch.current === session) setWatchAudio(status)
+      },
+      (microphone) => {
+        setSharing((current) =>
+          current?.session === session ? { ...current, microphone } : current,
+        )
+      },
     )
     watch.current = session
-    setWatching(true)
+    setSharing({ sourceName, phase: 'connecting', session, microphone: 'off' })
     setPlaybackGaps(0)
+    setWatchAudio('unavailable')
     setWatchError(undefined)
     observeRendererPromise(
-      session.start(sourceId).then(() => {
-        if (watch.current === session) setPreview({ sourceName, session })
+      session.start(sourceId, reference).then(() => {
+        if (watch.current === session)
+          setSharing({ sourceName, phase: 'live', session, microphone: 'off' })
       }),
       'start shared viewing',
     )
@@ -198,10 +231,7 @@ export function App() {
 
   const sectionCopy: Record<AppSection, { title: string; subtitle?: string }> = {
     chat: { title: t('app.nav.chat') },
-    capabilities: {
-      title: t('app.nav.capabilities'),
-      subtitle: t('app.section.capabilities.subtitle'),
-    },
+    capabilities: { title: t('app.nav.capabilities') },
     memory: {
       title: t('app.section.memory.title'),
       subtitle: t('app.section.memory.subtitle'),
@@ -258,9 +288,9 @@ export function App() {
 
   const navigateToCapabilityTarget = (target: CapabilityNavigationTarget): void => {
     if (target.kind === 'settings') {
-      if (['general', 'speech', 'llm', 'avatar', 'autonomy', 'advanced'].includes(target.id)) {
-        setSettingsInitialSection(target.id as SettingsSection)
-      }
+      const section = settingsSections.find((id) => id === target.id)
+      if (!section) return
+      setSettingsInitialSection(section)
       setSection('settings')
       return
     }
@@ -275,7 +305,7 @@ export function App() {
   }
 
   const setOverlayVisible = async (visible: boolean): Promise<void> => {
-    if (visible && !state.vrmConfigured) {
+    if (visible && !modelConfigured) {
       setMissingVrmDialogOpen(true)
       return
     }
@@ -339,6 +369,30 @@ export function App() {
         }}
         developerModeEnabled={developerModeEnabled}
         hideHeader={setupOpen}
+        sessionBar={
+          sharing && (
+            <WatchSessionBar
+              phase={sharing.phase}
+              sourceName={sharing.sourceName}
+              mountPreview={sharing.session.mountPreview}
+              projection={state.continuousListening}
+              modelIssue={watchModelIssue}
+              voiceFeedback={state.watchVoiceFeedback}
+              playbackGaps={playbackGaps}
+              playbackAudio={watchAudio}
+              microphone={sharing.microphone}
+              readPlaybackLevel={sharing.session.readPlaybackLevel}
+              readMicrophoneLevel={sharing.session.readMicrophoneLevel}
+              onMicrophoneChange={(enabled) =>
+                observeRendererPromise(
+                  sharing.session.setMicrophone(enabled),
+                  'toggle watch microphone',
+                )
+              }
+              onStop={() => sharing.session.stop()}
+            />
+          )
+        }
         contentClassName={setupOpen ? 'setup-layer' : undefined}
         heading={
           !setupOpen ? <SectionHeading title={copy.title} subtitle={copy.subtitle} /> : undefined
@@ -352,7 +406,7 @@ export function App() {
           ) : undefined
         }
         headerAction={
-          (section === 'chat' || watching) && !setupOpen ? (
+          section === 'chat' && !setupOpen ? (
             <div className="chat-header-controls">
               {showNewConversationAction && (
                 <div className="chat-mobile-new-conversation">
@@ -362,29 +416,17 @@ export function App() {
                   />
                 </div>
               )}
-              <ListeningControl
-                projection={state.continuousListening}
-                watching={watching}
-                onToggle={() => {
-                  if (watch.current) watch.current.stop()
-                  else {
-                    const reason = state.alive && watchBlockReason(state.alive.settings)
-                    setWatchError(reason ? `watch.blocked.${reason}` : undefined)
-                    if (!reason) setWatchPicker(true)
-                  }
-                }}
-              />
-              {preview && (
-                <WatchPreviewControl
-                  sourceName={preview.sourceName}
-                  mountPreview={preview.session.mountPreview}
-                  microphone={state.continuousListening.activeMicrophone}
+              {!sharing && (
+                <ListeningControl
+                  isChoosing={watchPicker}
+                  projection={state.continuousListening}
+                  onChoose={openWatchPicker}
                 />
               )}
               <OverlayCameraControl
                 overlayState={state.overlayState}
                 cameraMode={state.overlayCameraMode}
-                vrmConfigured={state.vrmConfigured}
+                vrmConfigured={modelConfigured}
                 onToggle={() => setOverlayVisible(state.overlayState !== 'on')}
                 onCameraModeChange={(mode) => controller.setOverlayViewMode(mode)}
               />
@@ -392,47 +434,47 @@ export function App() {
           ) : undefined
         }
       >
-        {section === 'chat' && (
-          <>
-            {setupOpen ? (
-              <SetupCenter
-                state={state}
-                onClose={() => setSetupOpen(false)}
-                onComplete={() => setSetupOpen(false)}
-                onOpenPlugins={() => {
-                  setSetupOpen(false)
-                  setSection('plugins')
-                }}
-                onToggleOverlay={async (visible) => {
-                  await setOverlayVisible(visible)
-                }}
-              />
-            ) : (
-              <ChatOverlay
-                ref={chatOverlayRef}
-                playbackGaps={watching ? playbackGaps : 0}
-                state={state}
-                capabilitySnapshot={capabilities.snapshot}
-                gateOpen={state.microphoneGate.status !== 'closed'}
-                onOpenCapabilities={() => setSection('capabilities')}
-                onOpenSpeechSettings={() => {
-                  setSettingsInitialSection('speech')
-                  setSection('settings')
-                }}
-                onOpenLlmSettings={() => {
-                  setSettingsInitialSection('llm')
-                  setSection('settings')
-                }}
-              />
-            )}
-            <MicrophoneGateOverlay
-              state={state.microphoneGate}
-              onDeviceSelect={(id) => controller.selectMicrophoneGateDevice(id)}
-              onRefresh={() => controller.refreshMicrophoneGateDevices()}
-              onContinue={() => controller.continueMicrophoneGate()}
-              onCancel={() => controller.cancelMicrophoneGate()}
+        {section === 'chat' &&
+          (setupOpen ? (
+            <SetupCenter
+              state={state}
+              onClose={() => setSetupOpen(false)}
+              onComplete={() => setSetupOpen(false)}
+              onOpenPlugins={() => {
+                setSetupOpen(false)
+                setSection('plugins')
+              }}
+              onToggleOverlay={async (visible) => {
+                await setOverlayVisible(visible)
+              }}
             />
-          </>
+          ) : (
+            <ChatOverlay
+              ref={chatOverlayRef}
+              sharing={Boolean(sharing)}
+              onStartWatch={sharing ? undefined : openWatchPicker}
+              state={state}
+              capabilitySnapshot={capabilities.snapshot}
+              gateOpen={state.microphoneGate.status !== 'closed'}
+              onOpenCapabilities={() => setSection('capabilities')}
+              onOpenSpeechSettings={() => {
+                setSettingsInitialSection('speech')
+                setSection('settings')
+              }}
+              onOpenLlmSettings={() => {
+                setSettingsInitialSection('llm')
+                setSection('settings')
+              }}
+            />
+          ))}
+        {(section === 'chat' || sharing) && (
+          <MicrophoneGateOverlay
+            state={state.microphoneGate}
+            onDeviceSelect={(id) => controller.selectMicrophoneGateDevice(id)}
+            onRefresh={() => controller.refreshMicrophoneGateDevices()}
+            onContinue={() => controller.continueMicrophoneGate()}
+            onCancel={() => controller.cancelMicrophoneGate()}
+          />
         )}
         {section === 'avatar' && (
           <AvatarPreviewView
@@ -467,9 +509,9 @@ export function App() {
           <SettingsDialog
             isOpen
             initialSection={settingsInitialSection}
-            aliveSnapshot={state.alive}
             uiTheme={uiTheme}
             onThemeChange={changeUiTheme}
+            flashMotionEnabled={state.flashMotionEnabled}
             vrmLoaded={state.vrmLoaded}
             faceTrackingEnabled={state.faceTrackingEnabled}
             onToggleFaceTracking={() => controller.toggleFaceTracking()}
@@ -486,6 +528,9 @@ export function App() {
       </AppShell>
       <ScreenContextPicker
         isOpen={watchPicker}
+        referenceAvailable={capabilities.snapshot?.capabilities.some(
+          (item) => item.id === 'browser-control' && item.availability === 'available',
+        )}
         onDismiss={() => setWatchPicker(false)}
         onWatch={startWatch}
         onChangeModel={() => {
@@ -494,26 +539,11 @@ export function App() {
           setSection('settings')
         }}
       />
-      <DialogContainer onDismiss={() => setWatchError(undefined)}>
-        {watchError && (
-          <AlertDialog
-            variant="error"
-            title={t('watch.unavailableTitle')}
-            primaryActionLabel={t(watchBlocked ? 'watch.openAutonomy' : 'common.close')}
-            cancelLabel={watchBlocked ? t('common.close') : undefined}
-            autoFocusButton={watchBlocked ? 'cancel' : 'primary'}
-            onPrimaryAction={() => {
-              setWatchError(undefined)
-              if (watchBlocked) {
-                setSettingsInitialSection('autonomy')
-                setSection('settings')
-              }
-            }}
-          >
-            {t(watchError)}
-          </AlertDialog>
-        )}
-      </DialogContainer>
+      <WatchFailureDialog
+        failure={watchError}
+        onChange={setWatchError}
+        onChooseSource={() => setWatchPicker(true)}
+      />
       {speechToast && (
         <div className="speech-toast" role="status" aria-live="polite">
           {speechToast}

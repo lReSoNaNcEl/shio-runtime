@@ -37,15 +37,17 @@ export interface ModelCatalogClientConfig {
 /** Catalog listing only: no SDK provider or chat model is constructed for it. */
 export function createModelCatalogClient(config: ModelCatalogClientConfig): ModelCatalogProvider {
   const connection = config.connection ?? {}
+  const { chat } = config.definition
   const http =
     config.http ??
     axios.create({
-      baseURL:
-        config.definition.chat.resolveBaseUrl?.(connection) ?? config.definition.chat.baseUrl,
-      timeout: 60_000,
+      baseURL: chat.resolveBaseUrl?.(connection) ?? chat.baseUrl,
+      ...(chat.localOnly
+        ? { proxy: false, maxRedirects: 0, maxContentLength: 1_048_576, timeout: 5_000 }
+        : { timeout: 60_000 }),
     })
   if (!config.http) {
-    installLlmProxyResolver(http)
+    if (!chat.localOnly) installLlmProxyResolver(http)
     observeAxiosNetwork(http, 'llm')
   }
   return {
@@ -57,20 +59,21 @@ export function createModelCatalogClient(config: ModelCatalogClientConfig): Mode
 export function createAiSdkAdapter(config: AiSdkAdapterConfig) {
   const { definition } = config
   const connection = config.connection ?? {}
-  const model = definition.normalizeModelId?.(config.model.trim()) ?? config.model.trim()
+  const model = config.model.trim()
   const base = resolveBaseCapabilities(definition.profile.id, model)
   const capabilities = config.capabilities ?? definition.resolveCapabilities?.(model, base) ?? base
   const provider = createOpenAICompatible({
     name: definition.profile.id,
     baseURL: definition.chat.resolveBaseUrl?.(connection) ?? definition.chat.baseUrl,
-    apiKey: config.apiKey || undefined,
+    apiKey: definition.profile.requiresApiKey ? config.apiKey || undefined : undefined,
     headers: definition.chat.headers,
-    fetch: config.fetch ?? createOpenAISdkFetch(),
+    fetch: config.fetch ?? createOpenAISdkFetch(definition.chat.localOnly),
     includeUsage: true,
     supportsStructuredOutputs: capabilities.supportsSchemaOutput === true,
     transformRequestBody: (body) => ({
       ...body,
       ...(body.tools ? { parallel_tool_calls: false } : {}),
+      ...definition.chat.requestOptions?.(model),
     }),
   })
   const client = provider.chatModel(model)
@@ -84,6 +87,7 @@ export function createAiSdkAdapter(config: AiSdkAdapterConfig) {
       model,
       capabilities,
       messages,
+      requestTimeoutMs: definition.chat.requestTimeoutMs,
       singleLeadingSystemMessage: definition.chat.singleLeadingSystemMessage,
     }
   }

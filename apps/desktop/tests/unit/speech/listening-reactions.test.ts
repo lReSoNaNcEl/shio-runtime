@@ -125,9 +125,13 @@ describe('user speech activity monitor', () => {
     monitor.subscribe((event) => {
       if (event.type === 'onset') onsets.push(event.at)
     })
+    monitor.begin()
     monitor.observeExternalOnset(100)
     monitor.observeExternalOnset(300)
     monitor.observeExternalOnset(1_500)
+    expect(onsets).toEqual([100, 1_500])
+    monitor.end(1_600)
+    monitor.observeExternalOnset(3_000)
     expect(onsets).toEqual([100, 1_500])
   })
 

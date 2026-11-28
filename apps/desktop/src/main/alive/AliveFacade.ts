@@ -14,6 +14,7 @@ import type {
 } from '../../shared/alive'
 import type { TurnAppraisal } from '../../shared/character-tools'
 import type { RelationshipContext } from '../../shared/memory'
+import { type WatchBlockReason, watchBlockReason } from '../../shared/watchTogether'
 import { observeMainPromise } from '../reliability/observePromise'
 import type { AliveStore } from './AliveStore'
 import { AttentionArbiter } from './AttentionArbiter'
@@ -158,6 +159,24 @@ export class AliveFacade {
     return this.publish()
   }
 
+  resolveSharingBlock(confirmed: WatchBlockReason): WatchBlockReason | null {
+    const settings = { ...this.store.settings() }
+    const current = watchBlockReason(settings)
+    if (current !== confirmed) return current ?? null
+    switch (confirmed) {
+      case 'suspended':
+        settings.globallySuspended = false
+        break
+      case 'off':
+        settings.mode = 'suggest'
+        break
+      case 'private':
+        settings.privacyMode = false
+        break
+    }
+    return watchBlockReason(this.updateSettings(settings).settings) ?? null
+  }
+
   updateWorld(input: RendererWorldContextInput): void {
     this.world.updateRenderer(input)
     const settings = this.store.settings()
@@ -217,16 +236,19 @@ export class AliveFacade {
           })
     const report = { ...observation, conversationCandidate }
     if (!impulse) {
-      this.emitBehavior(
-        this.behavior.decide({
-          ...observation,
-          settings,
-          world,
-          at: event.at,
-          conversationAllowed: false,
-          embodimentAllowed: !world.conversationActive && !world.audioActive,
-        }),
-      )
+      const command = this.behavior.decide({
+        ...observation,
+        settings,
+        world,
+        at: event.at,
+        conversationAllowed: false,
+        embodimentAllowed: !world.conversationActive && !world.audioActive,
+      })
+      if (event.type === 'watch-screen-moment') {
+        command.watchReaction = { sessionId: event.sessionId, expiresAt: event.expiresAt }
+        command.holdMs = event.reaction === 'surprise' ? 1400 : 850
+      }
+      this.emitBehavior(command)
       this.publish()
       return report
     }

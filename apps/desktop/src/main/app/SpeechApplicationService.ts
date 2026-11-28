@@ -3,7 +3,7 @@ import { hasSpeakableContent } from '../../shared/speech'
 import type { FlashMotionSpeech } from '../motion/FlashMotionSpeech'
 import type { SpeechClientManager } from '../speech/SpeechClientManager'
 import { DEFAULT_TTS_VOICE_ID, type SpeechStreamConnection } from '../speech/speechClient'
-import { normalizeSpeechText } from '../speech/text-normalization'
+import { normalizeSpeechCommit } from '../speech/text-normalization/normalizeSpeechCommit'
 
 export interface ApplicationSpeechStream {
   send(message: SpeechStreamInput): void
@@ -67,11 +67,13 @@ export class SpeechApplicationService {
     this.activeByTurn.set(input.turnId, connection)
     this.motionSpeech?.start(input)
     let backendSequence = 0
+    let speechLanguage = input.language
     return {
       send: (message) => {
         if (message.type === 'text') {
-          const normalized = normalizeSpeechText({ text: message.text, language: input.language })
+          const normalized = normalizeSpeechCommit(message.text, speechLanguage)
           if (!hasSpeakableContent(normalized.text)) return
+          speechLanguage = normalized.language
           const characters = Array.from(normalized.text)
           while (characters.length) {
             const text = characters.splice(0, 220).join('')

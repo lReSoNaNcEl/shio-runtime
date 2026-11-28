@@ -1,6 +1,7 @@
 import type { ComputerUseNotableObservation } from '../browser-computer-use'
 import type { CharacterEmbodimentIntent } from '../character-response'
 import type { EmotionKey } from '../emotion'
+import type { WatchReaction } from '../watchTogether'
 
 export type AutonomyMode = 'off' | 'suggest' | 'confirm' | 'full'
 
@@ -14,8 +15,6 @@ export interface WorldContextSnapshot {
   capturedAt: number
   appFocused: boolean
   globalUserIdleMs: number
-  /** @deprecated Renderer-local compatibility projection. */
-  userIdleMs: number
   conversationActive: boolean
   audioActive: boolean
   privacyMode: boolean
@@ -104,6 +103,14 @@ export type ExperienceEvent =
   | { type: 'runtime-recovered'; at: number; runtime: string; eventId?: string }
   | { type: 'user-returned'; at: number; idleMs: number; eventId?: string }
   | {
+      type: 'watch-screen-moment'
+      at: number
+      sessionId: string
+      reaction: WatchReaction
+      expiresAt: number
+      eventId?: string
+    }
+  | {
       type: 'browser-computer-use-event'
       at: number
       sessionId: string
@@ -179,6 +186,7 @@ export interface BehaviorCommand {
   embodimentPresence?: BehaviorEmbodimentPresence
   /** Main-selected idle activity; the renderer only executes it. */
   idleActivityId?: string
+  watchReaction?: { sessionId: string; expiresAt: number }
   /** Transient idle presentation: the renderer releases the intent after this hold. */
   holdMs?: number
   intent: BehaviorIntent

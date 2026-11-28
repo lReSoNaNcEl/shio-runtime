@@ -35,9 +35,6 @@ The Russian-to-English word translation uses Marian `opus-mt-ru-en` at
 `fbd6dc73284f95536648512cc21d57f19191961a` under CC BY 4.0.
 [Model card](https://huggingface.co/Helsinki-NLP/opus-mt-ru-en)
 
-MotionBricks and SOMA-X Hand licensing is recorded in the
-[historical experiment report](docs/EXPERIMENT-MOTIONBRICKS-SOMAX-LICENSING-2026-10-28.md).
-
 The following ARDY/LLM2Vec rows document the removed historical experiment. Its
 copied notices remain accessible in Git at `7fd6a1490589e03d7b4790ec16667c955bb1c253`
 under `apps/desktop/motion/licenses/`; they are no longer active dependencies.

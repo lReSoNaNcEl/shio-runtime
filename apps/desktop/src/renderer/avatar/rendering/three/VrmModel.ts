@@ -39,7 +39,7 @@ import {
   keyposeFromRig,
   sampleKeyposeRig,
 } from './KeyposeAuthoring'
-import { VrmModelLoader } from './VrmModelLoader'
+import type { VrmModelLoader } from './VrmModelLoader'
 
 export type {
   GeneratedBodyDebugState,
@@ -51,16 +51,23 @@ export class VrmModel {
   vrm: VRM | null = null
   private scene: THREE.Scene | null = null
   private readonly facialRuntime = new AvatarFacialRuntime()
-  private readonly modelLoader = new VrmModelLoader()
+  private modelLoader?: VrmModelLoader
   private readonly performanceMonitor = new AvatarPerformanceMonitor()
   private readonly bodyPlayback = new GeneratedBodyPlayback((count) =>
     this.facialRuntime.notifyBodyFacialChannelsRejected(count),
   )
 
-  async load(scene: THREE.Scene, buffer: ArrayBuffer): Promise<void> {
+  async load(scene: THREE.Scene, buffer: ArrayBuffer, current = () => true): Promise<void> {
     this.dispose()
-
-    const vrm = await this.modelLoader.load(scene, buffer)
+    const { VrmModelLoader } = await import('./VrmModelLoader')
+    if (!current()) return
+    this.modelLoader ??= new VrmModelLoader()
+    const loader = this.modelLoader
+    const vrm = await loader.load(scene, buffer)
+    if (!current()) {
+      loader.dispose(scene, vrm)
+      return
+    }
     this.scene = scene
     this.vrm = vrm
     this.bodyPlayback.attach(vrm)
@@ -155,6 +162,11 @@ export class VrmModel {
     this.bodyPlayback.recover()
   }
 
+  setFlashMotionEnabled(enabled: boolean): void {
+    if (!enabled) this.facialRuntime.removeProceduralMotion()
+    this.bodyPlayback.setFlashMotionEnabled(enabled)
+  }
+
   releaseSpeechPreparation(profileId: string): void {
     this.bodyPlayback.releaseSpeechPreparation(profileId)
   }
@@ -218,7 +230,7 @@ export class VrmModel {
   dispose(): void {
     this.facialRuntime.detach()
     this.bodyPlayback.detach()
-    if (this.vrm && this.scene) this.modelLoader.dispose(this.scene, this.vrm)
+    if (this.vrm && this.scene) this.modelLoader?.dispose(this.scene, this.vrm)
     this.vrm = null
     this.scene = null
   }

@@ -5,6 +5,7 @@ import type {
   RuntimeEventType,
 } from '../../../shared/runtime'
 import type { SerializedSpeechError } from '../../../shared/speech'
+import type { WatchSpeechDisposition, WatchVoiceSample } from '../../../shared/watchTogether'
 import type { MicrophoneDeviceService } from '../../audio/MicrophoneDeviceService'
 import type { MicrophoneGateController } from '../../audio/MicrophoneGateController'
 import { isDefaultMicrophone, type StreamingModeId } from '../../audio/microphoneGateTypes'
@@ -31,6 +32,7 @@ import type {
 import { BargeInPolicy } from '../continuous-listening/BargeInPolicy'
 import {
   CORRECTION_PATTERN,
+  containsPlaybackPhrase,
   isExplicitBargeInPhrase,
   textSimilarity,
 } from '../continuous-listening/textAnalysis'
@@ -96,13 +98,9 @@ export interface ConversationInputCoordinatorDependencies {
   recordRuntimeEvent(label: string, detail?: string): void
   publishRuntimeEvent(type: RuntimeEventType, category: RuntimeEventCategory, detail?: string): void
 
-  getConfig(): ReturnType<Window['api']['config']['get']>
   saveConfig(
     patch: Parameters<Window['api']['config']['save']>[0],
   ): ReturnType<Window['api']['config']['save']>
-  arbitrateBacklog(
-    request: Parameters<Window['api']['llm']['arbitrateBacklog']>[0],
-  ): ReturnType<Window['api']['llm']['arbitrateBacklog']>
   evaluateAttention(
     request: Parameters<Window['api']['alive']['evaluateAttention']>[0],
   ): ReturnType<Window['api']['alive']['evaluateAttention']>
@@ -127,27 +125,18 @@ export class ConversationInputCoordinator {
   private lastContinuousReplyAt: number | null = null
   private streamingSessionId: string | null = null
   private utteranceBacklog = new UtteranceBacklog()
-  private backlogSelector: BacklogSelector
+  private backlogSelector = new BacklogSelector()
   private conversationAdmission: ConversationAdmissionCoordinator
   private desiredContinuousListening = false
-  private watchVoice = false
+  private watchVoice?: string
+  private captureWatchVoiceSample?: (utteranceId: string) => Promise<WatchVoiceSample>
+  private latestWatchUtterance?: string
   private conversationBoundaryAt = 0
   private conversationSessionResetPending = false
   private attentionGeneration = 0
   private continuousCommandGeneration = 0
 
   constructor(private readonly dependencies: ConversationInputCoordinatorDependencies) {
-    this.backlogSelector = new BacklogSelector(async (items, backlogVersion, config) => {
-      const response = await this.dependencies.arbitrateBacklog({
-        items,
-        backlogVersion,
-        providerId: config.providerId,
-        model: config.model,
-      })
-      if (!response.ok || !response.result)
-        throw new Error(response.error ?? 'Backlog arbitration failed')
-      return response.result
-    })
     this.conversationAdmission = new ConversationAdmissionCoordinator(
       (attempt, reportPhase) => this.runConversationAttempt(attempt, reportPhase),
       this.utteranceBacklog,
@@ -163,6 +152,7 @@ export class ConversationInputCoordinator {
   async admitText(text: string, screenContextId?: string): Promise<ChatSubmissionResult> {
     const trimmed = text.trim()
     if (!trimmed) return { status: 'cancelled' }
+    if (this.latestWatchUtterance) this.invalidatePendingAttention()
     const result = await this.conversationAdmission.admitExplicit({
       turnId: this.dependencies.createTurnId('text'),
       text: trimmed,
@@ -222,6 +212,7 @@ export class ConversationInputCoordinator {
     topic: string,
     turnId = this.dependencies.createTurnId('initiative'),
     sharedViewing = false,
+    watchExpiresAt?: number,
   ): Promise<'completed' | 'cancelled' | 'failed' | 'suppressed-busy'> {
     const trimmed = topic.trim().slice(0, 300)
     if (!trimmed) return 'failed'
@@ -230,6 +221,7 @@ export class ConversationInputCoordinator {
       text: trimmed,
       source: 'autonomous_initiative',
       sharedViewing,
+      watchExpiresAt,
       createdAt: this.nextConversationTimestamp(),
     })
     if (result.outcome === 'ignored_busy') return 'suppressed-busy'
@@ -275,9 +267,6 @@ export class ConversationInputCoordinator {
       return
     }
     this.conversationAdmission.setContinuousEnabled(false)
-    const config = await this.dependencies.getConfig()
-    if (generation !== this.continuousCommandGeneration) return
-    this.conversationAdmission.configureSelector(config.llm.roles.backlogSelector)
     try {
       await this.dependencies.speechInputRuntime.setContinuousListening(
         settings.enabled,
@@ -335,6 +324,8 @@ export class ConversationInputCoordinator {
       this.bargeInSegments.clear()
       this.streamingSessionId = null
     }
+    if (projection.transport !== 'ready' || projection.activity === 'hearing-speech')
+      this.clearWatchVoiceFeedback()
     this.patchContinuousProjection({
       ...projection,
       desired: this.desiredContinuousListening,
@@ -354,12 +345,19 @@ export class ConversationInputCoordinator {
     await this.startStreaming('default')
   }
 
-  isContinuousEnabled(): boolean {
-    return this.continuousSettings.enabled
+  setWatchVoice(
+    sessionId: string | undefined,
+    capture?: (utteranceId: string) => Promise<WatchVoiceSample>,
+  ): void {
+    if (this.watchVoice !== sessionId) this.invalidatePendingAttention()
+    this.watchVoice = sessionId
+    this.captureWatchVoiceSample = capture
   }
 
-  setWatchVoice(active: boolean): void {
-    this.watchVoice = active
+  private clearWatchVoiceFeedback(): void {
+    if (this.latestWatchUtterance === undefined) return
+    this.latestWatchUtterance = undefined
+    this.dependencies.patchControllerState({ watchVoiceFeedback: undefined })
   }
 
   getSettings(): Readonly<ContinuousListeningSettings> {
@@ -437,6 +435,8 @@ export class ConversationInputCoordinator {
       microphoneCaptured: false,
       failure: failure ?? { domain: 'microphone', code: 'DEVICE_LOST' },
     })
+    // A watch microphone is re-enabled only through the live session control.
+    if (this.watchVoice) return
     const result = await this.dependencies.microphoneGate.request(
       { type: 'start-streaming', modeId },
       'active-device-lost',
@@ -497,7 +497,9 @@ export class ConversationInputCoordinator {
       [...this.dependencies.getControllerState().messages]
         .reverse()
         .find((message) => message.role === 'assistant')?.text ?? ''
-    const similarity = textSimilarity(partial.text, currentReply)
+    const similarity = this.watchVoice
+      ? Number(containsPlaybackPhrase(partial.text, currentReply))
+      : textSimilarity(partial.text, currentReply)
     const likelySelfEcho =
       partial.capturedDuringPlayback &&
       !isExplicitBargeInPhrase(partial.text) &&
@@ -581,16 +583,22 @@ export class ConversationInputCoordinator {
       followUpWindow,
       curiosityChance: this.continuousSettings.curiosityChance,
     })
-    if (this.watchVoice && this.continuousSettings.enabled) {
+    const watchSession = this.watchVoice
+    if (watchSession && this.continuousSettings.enabled) {
       const buffered = this.createBufferedUtterance(
         chunk,
         fallbackAttention,
         conversationBusy,
         true,
       )
-      if (buffered.likelySelfEcho || this.handledUtteranceIds.has(chunk.id)) return
-      this.dependencies.recordRuntimeEvent('Watch Voice Accepted', chunk.completionReason)
-      await this.conversationAdmission.admitExplicit({
+      if (buffered.likelySelfEcho) {
+        this.dependencies.recordRuntimeEvent('Watch Voice Echo Suppressed', chunk.id)
+        return
+      }
+      if (this.handledUtteranceIds.has(chunk.id)) return
+      this.latestWatchUtterance = chunk.id
+      this.dependencies.patchControllerState({ watchVoiceFeedback: 'classifying' })
+      const input: ConversationInput = {
         turnId: chunk.id,
         text: chunk.text,
         source: 'continuous_listening',
@@ -606,7 +614,11 @@ export class ConversationInputCoordinator {
             chunk.confidence !== undefined &&
             chunk.confidence < semanticEarTuning.recognitionUncertainThreshold,
         },
-      })
+      }
+      if (!conversationBusy && this.captureWatchVoiceSample && chunk.text.length <= 800) {
+        input.watchCandidate = { sessionId: watchSession, recentAddress: followUpWindow }
+      } else if (!(await this.checkWatchAddress(input, watchSession, followUpWindow))) return
+      await this.conversationAdmission.admitExplicit(input)
       return
     }
     let attention = fallbackAttention
@@ -690,6 +702,60 @@ export class ConversationInputCoordinator {
 
   private invalidatePendingAttention(): void {
     this.attentionGeneration += 1
+    if (this.watchVoice && this.latestWatchUtterance) {
+      observeRendererPromise(
+        window.api.watchTogether.yield(this.watchVoice, 'speech'),
+        'cancel watch voice check',
+      )
+      this.clearWatchVoiceFeedback()
+    }
+  }
+
+  private async checkWatchAddress(
+    turn: ConversationInput,
+    sessionId: string,
+    recentAddress: boolean,
+    capture?: (utteranceId: string) => Promise<WatchVoiceSample>,
+  ): Promise<boolean> {
+    const generation = this.attentionGeneration
+    const current = () =>
+      this.watchVoice === sessionId &&
+      this.streamingSessionId === turn.streamingSessionId &&
+      generation === this.attentionGeneration &&
+      !this.conversationSessionResetPending
+    let sample: WatchVoiceSample | undefined
+    let disposition: WatchSpeechDisposition | undefined
+    try {
+      sample = await capture?.(turn.turnId)
+      if (!current() || (sample && this.latestWatchUtterance !== turn.turnId)) return false
+      disposition = await window.api.watchTogether.classifySpeech(
+        sessionId,
+        turn.text.trim().slice(0, 800),
+        recentAddress,
+        sample,
+      )
+      turn.watchFramePrepared = Boolean(sample)
+    } catch {
+      this.dependencies.recordRuntimeEvent('Watch Voice Classification Unavailable')
+    }
+    if (!current() || (sample && this.latestWatchUtterance !== turn.turnId)) return false
+    const accepted =
+      disposition === 'addressed' ||
+      (disposition === undefined &&
+        Boolean(
+          turn.semanticCues?.directAddress || turn.triggeredBargeIn || turn.semanticCues?.question,
+        ))
+    if (this.latestWatchUtterance === turn.turnId)
+      this.dependencies.patchControllerState({
+        watchVoiceFeedback:
+          disposition === 'aside' || disposition === 'ignore'
+            ? disposition
+            : accepted
+              ? undefined
+              : 'unavailable',
+      })
+    if (accepted) this.dependencies.recordRuntimeEvent('Watch Voice Accepted', turn.turnId)
+    return accepted
   }
 
   private createBufferedUtterance(
@@ -709,7 +775,9 @@ export class ConversationInputCoordinator {
       !chunk.triggeredBargeIn &&
         chunk.capturedDuringPlayback &&
         !correctionHint &&
-        textSimilarity(text, currentReply) >= bargeInTuning.selfEchoSimilarityThreshold,
+        (this.watchVoice
+          ? containsPlaybackPhrase(text, currentReply)
+          : textSimilarity(text, currentReply) >= bargeInTuning.selfEchoSimilarityThreshold),
     )
     const priorityClass: BufferedUtterance['priorityClass'] = chunk.triggeredBargeIn
       ? 'P0'
@@ -773,6 +841,20 @@ export class ConversationInputCoordinator {
         return { status: 'cancelled', turnId: attempt.turnId }
       }
       this.rememberHandledUtterance(attempt.turnId)
+    }
+    if (attempt.watchCandidate) {
+      const { sessionId, recentAddress } = attempt.watchCandidate
+      if (
+        this.watchVoice !== sessionId ||
+        !(await this.checkWatchAddress(
+          attempt,
+          sessionId,
+          recentAddress,
+          this.captureWatchVoiceSample,
+        ))
+      ) {
+        return { status: 'cancelled', turnId: attempt.turnId }
+      }
     }
     this.dependencies.recordRuntimeEvent('Conversation Admitted', attempt.turnId)
     for (const [impulse, enabled] of [

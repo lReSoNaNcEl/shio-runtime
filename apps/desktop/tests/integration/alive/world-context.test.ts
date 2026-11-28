@@ -15,7 +15,7 @@ import { WindowsSystemContextAdapter } from '../../../src/main/alive/WindowsSyst
 import type { WindowsSystemContextWorkerClient } from '../../../src/main/alive/WindowsSystemContextWorker'
 import { WorldContextRuntime } from '../../../src/main/alive/WorldContextRuntime'
 import type { AutonomySettings } from '../../../src/shared/alive'
-import { createTempDirectory } from '../../support'
+import { createTempDirectory } from '../../support/createTempDirectory'
 
 async function multiRateWorldProjection(): Promise<void> {
   let now = 1_000

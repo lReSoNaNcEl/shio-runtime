@@ -1,5 +1,4 @@
 export type {
-  BacklogSelectorRoleConfig,
   LlmCredentialStatus,
   LlmPersistedConfig,
   LlmProviderId,
@@ -10,7 +9,7 @@ export type {
   ModelInfo,
   ProviderProfile,
 } from '../../shared/llm'
-export { LLM_PROVIDER_IDS } from '../../shared/llm'
+export { isLlmProviderId, LLM_PROVIDER_IDS } from '../../shared/llm'
 export {
   defaultLlmConfig,
   normalizeLlmConfig,
@@ -45,7 +44,6 @@ export {
   getProviderProfile,
   hasLoadedModelCatalog,
   invalidateModelCatalog,
-  isLlmProviderId,
   normalizeProviderAccountId,
   PROVIDER_PROFILES,
   resolveModelCapabilities,

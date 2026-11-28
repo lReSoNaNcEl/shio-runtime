@@ -124,10 +124,6 @@ export class SceneManager {
     window.addEventListener('resize', this.onResize)
   }
 
-  setOverlayCameraView(scale = 1): void {
-    this.setOverlayCameraPreset('bust', scale)
-  }
-
   /**
    * Restores the front-facing view. If a model has been framed via
    * {@link frameLoadedModel}, reuses that computed front framing; otherwise falls

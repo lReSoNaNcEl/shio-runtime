@@ -2,8 +2,7 @@
 
 Независимый FastAPI-сервис, порт 8000. ASR использует faster-whisper и Silero VAD;
 TTS — локальный `fishaudio/s2-pro` с зафиксированными source/model revisions.
-Установка, аппаратные требования, лицензия и измерения:
-[эксперимент ARDY/Fish](../../docs/EXPERIMENT-ARDY-FISH-S2-PRO-TZ.md).
+Протокол потоковой речи описан в разделе [Speech Runtime](../../ARCHITECTURE.md#16-speech-runtime).
 
 ```powershell
 # Из корня монорепозитория

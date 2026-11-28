@@ -11,6 +11,7 @@ import { observeMainPromise } from './reliability/observePromise'
 
 initializeSafeLogging(app.getPath('logs'), process.env.NODE_ENV === 'development')
 dotenv.config()
+if (process.env.SHIO_SILENT_QA === '1') app.commandLine.appendSwitch('mute-audio')
 
 const dependencies = buildApplicationDependencies()
 

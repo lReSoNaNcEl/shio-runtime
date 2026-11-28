@@ -1,5 +1,7 @@
 import sharp from 'sharp'
 
+import { WATCH_FRAME_HEIGHT, WATCH_FRAME_WIDTH } from '../../shared/watchTogether'
+
 /** Log-frequency spectrogram for vision models, synchronized with the sampled frames. */
 export async function playbackEvidence(frames: Buffer, pcm: Int16Array): Promise<Buffer> {
   const columns = 96,
@@ -25,12 +27,12 @@ export async function playbackEvidence(frames: Buffer, pcm: Int16Array): Promise
     }
   }
   const spectrum = await sharp(pixels, { raw: { width: columns, height: bands, channels: 1 } })
-    .resize(960, 72, { fit: 'fill' })
+    .resize(WATCH_FRAME_WIDTH * 2, 72, { fit: 'fill' })
     .png()
     .toBuffer()
-  return sharp(frames, { limitInputPixels: 960 * 270 })
+  return sharp(frames, { limitInputPixels: WATCH_FRAME_WIDTH * 2 * WATCH_FRAME_HEIGHT })
     .extend({ bottom: 72, background: 'black' })
-    .composite([{ input: spectrum, left: 0, top: 270 }])
+    .composite([{ input: spectrum, left: 0, top: WATCH_FRAME_HEIGHT }])
     .jpeg({ quality: 78 })
     .toBuffer()
 }

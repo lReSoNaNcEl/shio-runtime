@@ -40,7 +40,6 @@ function snapshot(state: SoakState, at: number): WorldContextSnapshot {
     capturedAt: at,
     appFocused: state.processName === 'shio.exe',
     globalUserIdleMs: state.globalUserIdleMs,
-    userIdleMs: state.globalUserIdleMs,
     conversationActive: state.conversationActive,
     audioActive: state.audioActive,
     privacyMode: false,

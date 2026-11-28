@@ -105,10 +105,6 @@ export class AvatarIdleOrchestrator {
     if (!paused && this.nextTransitionIn <= 0) this.nextTransitionIn = this.randomDwell()
   }
 
-  isPaused(): boolean {
-    return this.paused
-  }
-
   reset(): void {
     this.currentIdleState = 'none'
     this.idleStage = 'normal-idle'

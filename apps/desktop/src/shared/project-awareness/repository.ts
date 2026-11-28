@@ -32,14 +32,6 @@ export interface ProjectSourceFile {
   content?: string
 }
 
-export interface ProjectConnectorStatus {
-  state: 'disconnected' | 'connecting' | 'ready' | 'error'
-  repository?: ProjectRepositoryIdentity
-  branch?: string
-  headSha?: string
-  lastError?: string
-}
-
 export function isValidProjectRepository(value: string): boolean {
   return /^([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)$/.test(value.trim())
 }

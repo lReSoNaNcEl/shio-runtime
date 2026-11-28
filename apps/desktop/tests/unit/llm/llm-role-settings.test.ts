@@ -10,10 +10,10 @@ import {
 } from '../../../src/shared/llm'
 
 const credential = (provider: LlmProviderId): ResolvedLlmCredential => ({
-  apiKey: provider === 'mistral' ? '' : `key-${provider}`,
+  apiKey: provider === 'groq' ? '' : `key-${provider}`,
   status: {
-    configured: provider !== 'mistral',
-    source: provider === 'mistral' ? 'none' : 'secure_store',
+    configured: provider !== 'groq',
+    source: provider === 'groq' ? 'none' : 'secure_store',
   } as ResolvedLlmCredential['status'],
 })
 const accountId = (provider: LlmProviderId, persisted: string | undefined) =>
@@ -35,18 +35,12 @@ function configs(): LlmPersistedConfig[] {
         providerId: visualProvider,
         model: visualProvider ? ' vision-model ' : '',
       }
-      config.roles.backlogSelector = {
-        ...config.roles.backlogSelector,
-        enabled: true,
-        providerId: visualProvider,
-        model: 'selector-model',
-      }
       result.push(config)
     }
   return result
 }
 
-// The four resolutions that buildApplicationDependencies previously spelled out by hand.
+// The resolutions that buildApplicationDependencies previously spelled out by hand.
 const previous = {
   character(config: LlmPersistedConfig) {
     const provider = config.activeProvider
@@ -104,23 +98,9 @@ describe('LLM role settings', () => {
 
   it('reports credential status without exposing it through another path', () => {
     const config = configs()[0]
-    config.activeProvider = 'mistral'
+    config.activeProvider = 'groq'
     const character = resolveLlmRoleSettings('character', sources(config))
     expect(character.credential.configured).toBe(false)
     expect(character.apiKey).toBe('')
-  })
-
-  it('resolves an explicit backlog selector and never reads another provider key', () => {
-    const config = configs().find(
-      (entry) => entry.roles.backlogSelector.providerId === 'openrouter',
-    )
-    if (!config) throw new Error('missing fixture')
-    const selector = resolveLlmRoleSettings('backlogSelector', sources(config))
-    expect(selector).toMatchObject({
-      provider: 'openrouter',
-      apiKey: 'key-openrouter',
-      model: 'selector-model',
-      automatic: false,
-    })
   })
 })

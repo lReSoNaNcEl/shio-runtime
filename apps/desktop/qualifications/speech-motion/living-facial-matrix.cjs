@@ -1,4 +1,5 @@
 const path = require('node:path')
+const { selectPreviewCamera } = require('./select-preview-camera.cjs')
 const { recordCanvas } = require('./record-canvas.cjs')
 
 // Component qualification only. These explicit semantic inputs are not LLM
@@ -12,7 +13,7 @@ async function qualifyLivingFacialMatrix({ page, directory, report, pause }) {
   }
   report.livingFacialMatrix = result
   await page.locator('.app-sidebar').getByRole('button', { name: 'Avatar', exact: true }).click()
-  await page.getByRole('button', { name: 'Face', exact: true }).click()
+  await selectPreviewCamera(page, 'Face')
   await page.waitForFunction(() => document.querySelector('canvas'))
   const stopVideo = await recordCanvas(page, path.join(directory, 'facial-matrix-raw.webm'), {
     captureFps: 90,

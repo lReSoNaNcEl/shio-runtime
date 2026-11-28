@@ -55,3 +55,8 @@ def test_startup_failure_has_bounded_diagnostic_and_keeps_health_available(monke
         assert state["asr"]["status"] == "failed"
         assert state["asr"]["error"] == "RuntimeError"
         assert "provider payload" not in str(state)
+
+
+def test_removed_synthesis_endpoint_returns_not_found():
+    response = TestClient(main.app).post("/synthesize", json={"text": "test"})
+    assert response.status_code == 404

@@ -204,7 +204,7 @@ describe('Character fallback config', () => {
     const once = normalizeLlmConfig(raw)
     expect(once.roles.characterFallbacks).toEqual([
       { providerId: 'openrouter', model: 'a/b' },
-      { providerId: 'mistral', model: 'mistral-small' },
+      { providerId: 'groq', model: 'third' },
     ])
     expect(normalizeLlmConfig(once)).toEqual(once)
     expect(normalizeLlmConfig({}).roles.characterFallbacks).toEqual([])

@@ -5,6 +5,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 const { _electron } = require('playwright-core')
 const { installGeometryProbe, loadRigGeometry } = require('./rig-geometry.cjs')
+const { selectPreviewCamera } = require('./select-preview-camera.cjs')
 const { recordCanvas } = require('./record-canvas.cjs')
 const { captureWindow } = require('./capture-window.cjs')
 const { qualifyLiving } = require('./living-cases.cjs')
@@ -119,6 +120,7 @@ const fingerProfileIds = new Set(
 const responseSpacing = option('response-spacing-seconds', 0)
 assert(Number.isFinite(responseSpacing) && responseSpacing >= 0 && responseSpacing <= 180)
 const modelOnly = process.argv.includes('--model-only')
+const codexLunaLow = process.argv.includes('--codex-luna-low')
 const focused = process.argv.includes('--focused') || modelOnly || componentSmoke
 assert(Number.isInteger(duration) && duration >= 20 && duration <= 7200)
 assert(Number.isInteger(responseCount) && responseCount >= 1 && responseCount <= 50)
@@ -150,7 +152,6 @@ config.uiLocale = 'en'
 config.uiTheme = 'dark'
 config.developerModeEnabled = 'true'
 config.ttsEngine = 'fish-s2-pro'
-config.ttsLanguage = 'ru'
 if (process.argv.includes('--bundled-model')) config.vrmPath = ''
 const fixtureArgument = process.argv.find((value) => value.startsWith('--vrm-fixture='))
 if (fixtureArgument) {
@@ -166,6 +167,20 @@ if (process.env.SHIO_QUALIFICATION_LLM_MODEL) {
 }
 if (process.env.SHIO_QUALIFICATION_LLM_PROVIDER)
   config.llm.activeProvider = process.env.SHIO_QUALIFICATION_LLM_PROVIDER
+if (codexLunaLow) {
+  const providerId = 'codex-cli'
+  const model = 'gpt-6-luna'
+  config.llm.activeProvider = providerId
+  config.llm.providers[providerId] = {
+    ...config.llm.providers[providerId],
+    model,
+    codexReasoningByModel: { [model]: 'low' },
+  }
+  config.llm.roles = {
+    characterFallbacks: [],
+    computerUseVision: { ...config.llm.roles?.computerUseVision, providerId, model },
+  }
+}
 fs.writeFileSync(path.join(profile, 'config.json'), JSON.stringify(config))
 for (const relative of ['Local State', 'credentials/llm-credentials.bin']) {
   const source = path.join(original, relative)
@@ -215,6 +230,9 @@ const report = {
   durationRequestedSeconds: duration,
   responseSpacingSeconds: responseSpacing,
   warmResponsesRequested: responseCount,
+  ...(codexLunaLow
+    ? { inferenceRequested: { provider: 'codex-cli', model: 'gpt-6-luna', reasoning: 'low' } }
+    : {}),
   profileIdsRequested: profileIds,
   standingQualification: createStandingQualificationPlan(motionCatalog, profileIds),
   build: {},
@@ -700,20 +718,30 @@ async function response(index, cancellation, semanticCase) {
       .innerText()
     result.visibleControlSyntaxLeaked = visibleControlSyntax.test(visibleReply)
     assert(!result.visibleControlSyntaxLeaked, 'Internal control syntax leaked into visible reply')
-    if (componentSmoke) {
+    const connected = trace.milestones.some((milestone) => milestone.name === 'llm_connected')
+    let codexReplyVerified = false
+    if (codexLunaLow) {
+      // This adapter returns a completed CLI reply without a streaming connection event.
+      const log = fs.readFileSync(path.join(profile, 'logs/main.log'), 'utf8')
+      const completions = log.match(/\[CodexCLI\] reply_completed \{[^}]*\}/gu) ?? []
+      codexReplyVerified = completions.some(
+        (entry) =>
+          entry.includes(`traceId: '${trace.turnId}'`) &&
+          entry.includes("model: 'gpt-6-luna'") &&
+          entry.includes("effort: 'low'"),
+      )
+      assert(codexReplyVerified, 'No current-turn Luna Low provider completion')
+    }
+    if (componentSmoke || codexLunaLow) {
       assert(
         trace.milestones.some((milestone) => milestone.name === 'llm_completed'),
-        'No completed provider request for component speech',
+        'No completed provider request for speech',
       )
     } else {
-      assert(
-        trace.milestones.some((milestone) => milestone.name === 'llm_connected'),
-        'No real Character provider stream',
-      )
+      assert(connected, 'No real Character provider stream')
     }
     const providerIncident = latest.incidents?.some((incident) => incident.occurredAt >= submitted)
-    result.characterProviderVerified =
-      !providerIncident && trace.milestones.some((milestone) => milestone.name === 'llm_connected')
+    result.characterProviderVerified = !providerIncident && (connected || codexReplyVerified)
     if (componentSmoke && providerIncident) {
       report.failures.push(
         'Provider failure cannot qualify as Character speech; component checks use the actual runtime failure presentation',
@@ -992,11 +1020,11 @@ async function prepareFingerViewport() {
 async function focusedPresentation() {
   report.presentation = []
   await page.locator('.app-sidebar').getByRole('button', { name: 'Avatar', exact: true }).click()
-  await page.getByRole('button', { name: 'Full body', exact: true }).waitFor()
+  await page.getByRole('button', { name: 'Camera angle', exact: true }).waitFor()
   for (const theme of ['light', 'dark']) {
     await page.evaluate((theme) => window.api.config.save({ uiTheme: theme }), theme)
     for (const camera of ['Full body', 'Bust', 'Face', 'Left hand', 'Right hand']) {
-      await page.getByRole('button', { name: camera, exact: true }).click()
+      await selectPreviewCamera(page, camera)
       await pause(1500)
       await page.screenshot({
         path: path.join(directory, `${theme}-${camera.replaceAll(' ', '-')}.png`),
@@ -1004,7 +1032,7 @@ async function focusedPresentation() {
       report.presentation.push({ theme, camera, health: (await sleepSample()).avatar.health })
     }
   }
-  await page.getByRole('button', { name: 'Full body', exact: true }).click()
+  await selectPreviewCamera(page, 'Full body')
   const profiles = process.argv.includes('--skip-profiles') ? [] : selectedProfiles
   const seedField = page.getByRole('textbox', { name: 'Fixed variation seed', exact: true })
   if (!(await seedField.isVisible()))
@@ -1018,7 +1046,7 @@ async function focusedPresentation() {
       await library.getByRole('searchbox').fill(profile.labels.en)
       await library.getByText(profile.labels.en, { exact: true }).click()
       for (const seed of FIXED_SEEDS.slice(0, seedCount)) {
-        await page.getByRole('button', { name: 'Full body', exact: true }).click()
+        await selectPreviewCamera(page, 'Full body')
         await seedField.fill(String(seed))
         await seedField.press('Tab')
         const requestedAt = Date.now()
@@ -1041,7 +1069,7 @@ async function focusedPresentation() {
           views: [],
         }
         for (const camera of accentCameras) {
-          await page.getByRole('button', { name: camera, exact: true }).click()
+          await selectPreviewCamera(page, camera)
           await pause(50)
           const snapshot = await overlayProjection()
           if (snapshot?.profileId !== profile.id || !sameProjectionLease(applied.first, snapshot)) {
@@ -1161,7 +1189,7 @@ async function focusedPresentation() {
 async function qualifyTurns() {
   await page.waitForFunction(() => !!window.__motionAbController)
   await page.locator('.app-sidebar').getByRole('button', { name: 'Avatar', exact: true }).click()
-  await page.getByRole('button', { name: 'Full body', exact: true }).click()
+  await selectPreviewCamera(page, 'Full body')
   const turnLibrary = page.locator('.animation-library')
   await turnLibrary.getByRole('searchbox').fill('Full body turn')
   await turnLibrary.getByText('Full body turn', { exact: true }).click()
@@ -1429,7 +1457,7 @@ async function bodyStability() {
   )
   report.modelFixture.vrmVersion = geometry.vrmVersion
   await page.locator('.app-sidebar').getByRole('button', { name: 'Avatar', exact: true }).click()
-  await page.getByRole('button', { name: 'Full body', exact: true }).click()
+  await selectPreviewCamera(page, 'Full body')
   const seed = page.getByRole('textbox', { name: 'Fixed variation seed', exact: true })
   if (!(await seed.isVisible()))
     await page.getByRole('button', { name: 'Developer details', exact: true }).click()
@@ -1674,7 +1702,7 @@ async function bodyStability() {
         ) {
           if (capture === 0 && !stopFingerRecording) {
             for (const camera of accentCameras) {
-              await page.getByRole('button', { name: camera, exact: true }).click()
+              await selectPreviewCamera(page, camera)
               await pause(50)
               const projection = await overlayProjection()
               const matching =
@@ -1688,7 +1716,7 @@ async function bodyStability() {
                 ...(matching ? { file, sourceFrame: projection.sourceFrame } : {}),
               })
             }
-            await page.getByRole('button', { name: 'Full body', exact: true }).click()
+            await selectPreviewCamera(page, 'Full body')
           }
           await page.screenshot({
             path: path.join(

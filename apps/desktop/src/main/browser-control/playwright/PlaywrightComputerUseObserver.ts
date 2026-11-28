@@ -1,7 +1,6 @@
 import type { Page } from 'playwright-core'
 
 import type { BrowserComputerUseObservation } from '../../../shared/browser-computer-use'
-import type { BrowserObservation } from '../../../shared/browser-control'
 import { detectPlaywrightBlocker } from './PlaywrightBlockerPolicy'
 import type { PlaywrightRefBinding } from './PlaywrightRefRegistry'
 import {
@@ -91,8 +90,3 @@ export async function captureFingerprintImage(page: Page): Promise<Uint8Array> {
     }),
   )
 }
-
-export type ComputerUseSemanticObservation = Pick<
-  BrowserObservation,
-  'url' | 'title' | 'interactiveElements'
->

@@ -27,7 +27,7 @@ const MODEL = '@cf/fixture/catalog-only-model'
 
 afterEach(() => {
   invalidateModelCatalog('cloudflare')
-  invalidateModelCatalog('mistral')
+  invalidateModelCatalog('openrouter')
   mocks.fetchModels.mockReset()
   mocks.adapterCapabilities.mockReset()
 })
@@ -48,28 +48,34 @@ describe('LLM model catalog capability identity', () => {
   })
 
   it('drops hints of models removed from a refreshed catalog', () => {
-    enrichModelCatalog('mistral', [
+    enrichModelCatalog('openrouter', [
       { id: 'fixture-removed', capabilities: { supportsVision: true } },
       { id: 'fixture-kept', capabilities: { supportsVision: true } },
     ])
-    enrichModelCatalog('mistral', [{ id: 'fixture-kept', capabilities: { supportsVision: true } }])
-    expect(resolveModelCapabilities('mistral', 'fixture-removed').supportsVision).toBe(false)
-    expect(resolveModelCapabilities('mistral', 'fixture-kept').supportsVision).toBe(true)
+    enrichModelCatalog('openrouter', [
+      { id: 'fixture-kept', capabilities: { supportsVision: true } },
+    ])
+    expect(resolveModelCapabilities('openrouter', 'fixture-removed').supportsVision).toBe(false)
+    expect(resolveModelCapabilities('openrouter', 'fixture-kept').supportsVision).toBe(true)
   })
 
   it('updates capabilities when a refreshed catalog changes a model hint', () => {
-    enrichModelCatalog('mistral', [{ id: 'fixture-model', capabilities: { supportsVision: true } }])
-    enrichModelCatalog('mistral', [
+    enrichModelCatalog('openrouter', [
+      { id: 'fixture-model', capabilities: { supportsVision: true } },
+    ])
+    enrichModelCatalog('openrouter', [
       { id: 'fixture-model', capabilities: { supportsVision: false } },
     ])
-    expect(resolveModelCapabilities('mistral', 'fixture-model').supportsVision).toBe(false)
+    expect(resolveModelCapabilities('openrouter', 'fixture-model').supportsVision).toBe(false)
   })
 
   it('forgets catalog hints after a credential change', () => {
-    enrichModelCatalog('mistral', [{ id: 'fixture-model', capabilities: { supportsVision: true } }])
-    invalidateModelCatalog('mistral')
-    expect(hasLoadedModelCatalog('mistral')).toBe(false)
-    expect(resolveModelCapabilities('mistral', 'fixture-model').supportsVision).toBe(false)
+    enrichModelCatalog('openrouter', [
+      { id: 'fixture-model', capabilities: { supportsVision: true } },
+    ])
+    invalidateModelCatalog('openrouter')
+    expect(hasLoadedModelCatalog('openrouter')).toBe(false)
+    expect(resolveModelCapabilities('openrouter', 'fixture-model').supportsVision).toBe(false)
   })
 
   it('reloads the active catalog when the configured account changes', async () => {
@@ -98,12 +104,12 @@ describe('LLM model catalog capability identity', () => {
   it('reloads the active catalog after credentials are invalidated', async () => {
     mocks.fetchModels.mockResolvedValue([])
     const gateway = new LlmGateway(() => ({
-      provider: 'mistral',
+      provider: 'openrouter',
       apiKey: 'test-key',
       model: 'fixture-model',
     }))
     await gateway.refreshActiveCapabilities()
-    invalidateModelCatalog('mistral')
+    invalidateModelCatalog('openrouter')
     await gateway.refreshActiveCapabilities()
     expect(mocks.fetchModels).toHaveBeenCalledTimes(2)
   })
@@ -116,7 +122,7 @@ describe('LLM gateway request admission', () => {
   }
 
   it('rejects missing credentials before capability checks or adapter creation', async () => {
-    const gateway = new LlmGateway(() => ({ provider: 'mistral', apiKey: ' ', model: 'm' }))
+    const gateway = new LlmGateway(() => ({ provider: 'openrouter', apiKey: ' ', model: 'm' }))
     await expect(gateway.chat([image])).rejects.toBeInstanceOf(LlmCredentialMissingError)
     await expect(gateway.complete([image])).rejects.toBeInstanceOf(LlmCredentialMissingError)
     expect(() => gateway.stream([image])).toThrow(LlmCredentialMissingError)
@@ -126,11 +132,11 @@ describe('LLM gateway request admission', () => {
   })
 
   it('rejects unsupported streaming before unsupported vision', () => {
-    enrichModelCatalog('mistral', [
+    enrichModelCatalog('openrouter', [
       { id: 'fixture-model', capabilities: { supportsStreaming: false, supportsVision: false } },
     ])
     const gateway = new LlmGateway(() => ({
-      provider: 'mistral',
+      provider: 'openrouter',
       apiKey: 'k',
       model: 'fixture-model',
     }))

@@ -1,11 +1,16 @@
+import { isUiLocale } from '../localization/locale'
 import { DEFAULT_OVERLAY_HEIGHT, DEFAULT_OVERLAY_WIDTH } from './appSettings'
 
-export const DESKTOP_CONFIG_SCHEMA_VERSION = 9
+export const DESKTOP_CONFIG_SCHEMA_VERSION = 10
 
 export function migrateLegacyDesktopSettings(
   input: Record<string, unknown>,
 ): Record<string, unknown> {
   const migrated = { ...input }
+  const savedLanguage = migrated.legacySpeechLanguage ?? migrated.ttsLanguage
+  if (isUiLocale(savedLanguage)) migrated.legacySpeechLanguage = savedLanguage
+  else delete migrated.legacySpeechLanguage
+  delete migrated.ttsLanguage
   delete migrated.continuousListeningMode
   delete migrated.continuousListeningEnabled
   delete migrated.passiveCompanionEnabled

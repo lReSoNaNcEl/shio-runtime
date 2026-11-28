@@ -1,4 +1,5 @@
-import { type VRM, VRMExpression, VRMExpressionMorphTargetBind } from '@pixiv/three-vrm'
+import type { VRM } from '@pixiv/three-vrm'
+import { VRMExpression, VRMExpressionMorphTargetBind } from '@pixiv/three-vrm-core'
 
 import type { FacialActingPresentation, FacialActingValues } from '../../../../shared/facial-acting'
 import { type MotionAttenuationProbe, NOOP_MOTION_ATTENUATION_PROBE } from '../../MotionAttenuation'
@@ -295,10 +296,11 @@ export class AvatarExpressionMixer {
   }
 
   getActingPresentation(): FacialActingPresentation {
+    const sharedBlink = this.lastFinal.get('blink')?.value ?? 0
     return {
       acting: { ...this.appliedActing },
-      blinkLeft: this.blinkPair?.[0] ?? this.blinkWeight,
-      blinkRight: this.blinkPair?.[1] ?? this.blinkWeight,
+      blinkLeft: Math.max(sharedBlink, this.lastFinal.get(this.squintLeftName ?? '')?.value ?? 0),
+      blinkRight: Math.max(sharedBlink, this.lastFinal.get(this.squintRightName ?? '')?.value ?? 0),
     }
   }
 

@@ -23,6 +23,25 @@ class Socket extends EventTarget {
     this.dispatchEvent(new Event('open'))
   }
 
+  reply(payload: object): void {
+    this.dispatchEvent(new MessageEvent('message', { data: JSON.stringify(payload) }))
+  }
+
+  ready(): void {
+    this.reply({
+      type: 'ready',
+      protocolVersion: 2,
+      sessionId: input.sessionId,
+      engine: 'fish-s2-pro',
+      sampleRate: 44100,
+      channels: 1,
+      sampleFormat: 'float32-le',
+      modelId: 'fish-s2-pro',
+      modelRevision: 'model',
+      sourceRevision: 'source',
+    })
+  }
+
   send(value: string): void {
     const message = JSON.parse(value)
     this.sent.push(message)
@@ -73,6 +92,8 @@ afterEach(() => {
 async function cancelStartedStream(): Promise<void> {
   const connection = client.openStream(input, () => undefined)
   Socket.instances[0].open()
+  Socket.instances[0].ready()
+  connection.send({ type: 'text', sequence: 0, text: 'Interrupt me.' })
   await connection.cancel('interrupted')
 }
 
@@ -85,11 +106,16 @@ describe('WebSocket handshake recovery', () => {
     await vi.waitUntil(() => Socket.instances.length === 2)
     assert.deepEqual(Socket.instances[0].sent, [])
     Socket.instances[1].open()
+    assert.deepEqual(Socket.instances[1].sent, [{ type: 'start', ...input }])
+    Socket.instances[1].ready()
     assert.deepEqual(Socket.instances[1].sent, [
       { type: 'start', ...input },
       { type: 'text', sequence: 0, text: 'Один раз.' },
     ])
-    assert.deepEqual(events, [])
+    assert.deepEqual(
+      events.map((event) => event.type),
+      ['ready'],
+    )
   })
 
   it('stops a pending reconnect on cancellation without opening another socket', async () => {
@@ -102,13 +128,88 @@ describe('WebSocket handshake recovery', () => {
     assert.deepEqual(events, [{ type: 'cancelled', sessionId: input.sessionId }])
   })
 
-  it('reports a failure after start without replaying inference', async () => {
+  it.each(['transport', 'synthesis_not_ready'])(
+    'resumes one pending turn during an external Fish reload (%s)',
+    async (mode) => {
+      const probe = vi
+        .spyOn(client, 'health')
+        .mockResolvedValueOnce(health('warming'))
+        .mockResolvedValue(health('ready'))
+      const events: SpeechStreamOutput[] = []
+      const connection = client.openStream(input, (event) => events.push(event))
+      const text = { type: 'text', sequence: 0, text: 'After reload.' } as const
+      Socket.instances[0].open()
+      connection.send(text)
+      if (mode === 'transport') Socket.instances[0].dispatchEvent(new Event('error'))
+      else
+        Socket.instances[0].reply({
+          type: 'error',
+          code: 'synthesis_not_ready',
+          message: 'loading',
+        })
+      connection.send({ type: 'finish-input' })
+      await vi.waitUntil(() => Socket.instances.length === 2, { timeout: 2000 })
+      assert.equal(probe.mock.calls.length, 2)
+      assert.deepEqual(Socket.instances[0].sent, [{ type: 'start', ...input }])
+      Socket.instances[1].open()
+      Socket.instances[1].ready()
+      assert.deepEqual(Socket.instances[1].sent, [
+        { type: 'start', ...input },
+        text,
+        { type: 'finish-input' },
+      ])
+      assert.deepEqual(
+        events.map((event) => event.type),
+        ['ready'],
+      )
+    },
+  )
+
+  it('keeps a busy response terminal and does not reconnect on an unexplained close with a healthy engine', async () => {
+    const probe = vi.spyOn(client, 'health').mockResolvedValue(health('ready'))
     const events: SpeechStreamOutput[] = []
     client.openStream(input, (event) => events.push(event))
     Socket.instances[0].open()
+    Socket.instances[0].reply({ type: 'error', code: 'synthesis_busy', message: 'occupied' })
+    assert.equal(probe.mock.calls.length, 0)
+    client.openStream(input, (event) => events.push(event))
+    Socket.instances[1].open()
+    Socket.instances[1].close()
+    await vi.waitUntil(() => events.length === 2)
+    assert.deepEqual(
+      events.map((event) => (event.type === 'error' ? event.code : event.type)),
+      ['synthesis_busy', 'stream_closed'],
+    )
+    assert.equal(Socket.instances.length, 2)
+  })
+
+  it('discards queued input immediately when cancelled before ready and ignores late socket events', async () => {
+    const probe = vi.spyOn(client, 'health')
+    const events: SpeechStreamOutput[] = []
+    const connection = client.openStream(input, (event) => events.push(event))
+    Socket.instances[0].open()
+    connection.send({ type: 'text', sequence: 0, text: 'Do not say this.' })
+    connection.send({ type: 'finish-input' })
+    connection.send({ type: 'cancel', reason: 'interrupted' })
+    await connection.cancel('idempotent')
+    Socket.instances[0].ready()
+    assert.deepEqual(
+      events.map((event) => event.type),
+      ['cancelled'],
+    )
+    assert.deepEqual(Socket.instances[0].sent, [{ type: 'start', ...input }])
+    assert.equal(probe.mock.calls.length, 0)
+  })
+
+  it('reports a failure after ready without replaying inference', async () => {
+    const events: SpeechStreamOutput[] = []
+    const connection = client.openStream(input, (event) => events.push(event))
+    Socket.instances[0].open()
+    Socket.instances[0].ready()
+    connection.send({ type: 'text', sequence: 0, text: 'Do not replay.' })
     Socket.instances[0].dispatchEvent(new Event('error'))
-    assert.equal(events.length, 1)
-    assert(events[0].type === 'error' && events[0].code === 'stream_transport_error')
+    assert.equal(events.length, 2)
+    assert(events[1].type === 'error' && events[1].code === 'stream_transport_error')
     await new Promise((resolve) => setTimeout(resolve, 325))
     assert.equal(Socket.instances.length, 1)
   })
@@ -130,6 +231,8 @@ describe('Fish recovery readiness after actual inference cancellation', () => {
     await vi.waitUntil(() => Socket.instances.length === 2, { timeout: 3000 })
     assert.equal(Socket.instances.length, 2)
     Socket.instances[1].open()
+    assert.deepEqual(Socket.instances[1].sent, [{ type: 'start', ...input }])
+    Socket.instances[1].ready()
     assert.deepEqual(Socket.instances[1].sent, [
       { type: 'start', ...input },
       { type: 'text', sequence: 0, text: 'Новая реплика.' },

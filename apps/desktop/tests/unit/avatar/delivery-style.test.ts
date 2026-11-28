@@ -3,6 +3,7 @@ import { join } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
+import { resolveEmotionEmbodimentProfile } from '../../../src/renderer/avatar/EmotionEmbodimentProfile'
 import {
   DELIVERY_STYLE_AXES,
   EMBODIMENT_STYLE_CONTRACT,
@@ -16,6 +17,17 @@ import { desktopRoot } from '../../architecture/context'
 const neutralMood = { valence: 0, arousal: 0, playfulness: 0.5, curiosity: 0.55, frustration: 0 }
 
 describe('delivery style', () => {
+  it('distinguishes playful forward delivery from a held proud pose across face and body', () => {
+    const quip = resolveDeliveryStyle('amused')
+    const proud = resolveDeliveryStyle('proud')
+    expect(quip.lean).toBeGreaterThan(0)
+    expect(proud.lean).toBeLessThan(0)
+    expect(quip.tempo).toBeGreaterThan(proud.tempo)
+    expect(quip.asymmetry).toBeGreaterThan(proud.asymmetry)
+    for (const emotion of ['amused', 'excited', 'proud'])
+      expect(resolveEmotionEmbodimentProfile(emotion).lipSyncProfile).toBe('happy')
+  })
+
   it('resolves every canonical emotion to bounded axes', () => {
     for (const emotion of SPEECH_EMOTIONS) {
       const style = resolveDeliveryStyle(emotion)

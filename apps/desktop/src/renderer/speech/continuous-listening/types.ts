@@ -1,8 +1,4 @@
-export type {
-  BacklogPriorityClass,
-  BacklogSelectionResult,
-  BufferedUtterance,
-} from '../../../shared/conversation'
+export type { BacklogPriorityClass, BufferedUtterance } from '../../../shared/conversation'
 
 import type { AttachmentDisposition, ConversationTurnFailure } from '../../../shared/conversation'
 
@@ -18,7 +14,10 @@ export interface ConversationInput {
   turnId: string
   text: string
   sharedViewing?: boolean
+  watchExpiresAt?: number
   watchVoice?: boolean
+  watchCandidate?: { sessionId: string; recentAddress: boolean }
+  watchFramePrepared?: boolean
   source: ConversationInputSource
   /** Allowed only for text_chat; all speech, backlog, and debug paths omit it. */
   screenContextId?: string

@@ -4,25 +4,26 @@ import type { SettingsDialogViewModel } from './settingsContracts'
 import { defaultSettingsForm } from './settingsDefaults'
 
 export function useVoiceSettings() {
-  const [lang, setLang] = useState(defaultSettingsForm.ttsLanguage)
   const [speechVolumePercent, setSpeechVolumePercent] = useState<number | null>(null)
   const [mics, setMics] = useState<Array<{ deviceId: string; label: string }>>([])
   const [micId, setMicId] = useState(defaultSettingsForm.microphoneId)
   const [microphoneTestState, setMicrophoneTestState] =
     useState<SettingsDialogViewModel['speech']['state']['microphoneTestState']>('idle')
   const [microphoneLevel, setMicrophoneLevel] = useState(0)
+  const [microphoneTestFailure, setMicrophoneTestFailure] =
+    useState<SettingsDialogViewModel['speech']['state']['microphoneTestFailure']>(null)
 
   return {
-    lang,
     speechVolumePercent,
     setSpeechVolumePercent,
     microphoneLevel,
     microphoneTestState,
+    microphoneTestFailure,
     micId,
     mics,
-    setLang,
     setMicrophoneLevel,
     setMicrophoneTestState,
+    setMicrophoneTestFailure,
     setMicId,
     setMics,
   }

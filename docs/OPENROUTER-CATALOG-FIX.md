@@ -28,5 +28,5 @@ Browser Control. После исправления запросы к `/api/v1/mo
 модель получила статус «Доступно». При запуске Browser Control предупреждение
 об обновлении каталога больше не появилось.
 
-[До исправления](../tmp/openrouter-catalog/1795244671350/report.json) ·
-[После исправления](../tmp/openrouter-catalog/1795244780106/report.json)
+Локальные отчёты до и после исправления —
+`tmp/openrouter-catalog/1795244671350/report.json` и `tmp/openrouter-catalog/1795244780106/report.json`.

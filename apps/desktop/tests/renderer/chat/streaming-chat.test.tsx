@@ -43,7 +43,8 @@ function Wrapper({ children }: { children: ReactNode }) {
 }
 
 describe('streaming assistant chat bubble', () => {
-  it('renders tool shortcuts separately and forwards the full prepared action', () => {
+  it('invites sharing and reveals available tool shortcuts on demand', async () => {
+    const onStartWatch = vi.fn()
     const onQuickAction = vi.fn()
     const onOpenCapabilities = vi.fn()
     const toolAction = {
@@ -64,18 +65,18 @@ describe('streaming assistant chat bubble', () => {
         quickActions={{ starter: [starterAction], tools: [toolAction] }}
         onQuickAction={onQuickAction}
         onOpenCapabilities={onOpenCapabilities}
+        onStartWatch={onStartWatch}
       />,
       { wrapper: Wrapper },
     )
 
-    expect(view.getByRole('group', { name: 'Быстрый старт' })).toHaveClass(
-      'chat-starter-action-grid',
-    )
-    expect(view.getByRole('group', { name: 'Проверить инструменты' })).toHaveClass(
-      'chat-tool-action-grid',
-    )
-    expect(view.getByRole('button', { name: 'Поздоровайся' })).toHaveClass('shio-accent-button')
-    fireEvent.click(view.getByRole('button', { name: 'Веб-поиск' }))
+    fireEvent.click(view.getByRole('button', { name: 'Выбрать экран' }))
+    expect(onStartWatch).toHaveBeenCalledOnce()
+    fireEvent.click(view.getByRole('button', { name: 'Поздоровайся' }))
+    expect(onQuickAction).toHaveBeenCalledWith(starterAction)
+    expect(view.queryByRole('button', { name: 'Веб-поиск' })).toBeNull()
+    fireEvent.click(view.getByRole('button', { name: 'Инструменты чата' }))
+    fireEvent.click(await view.findByRole('button', { name: 'Веб-поиск' }))
     expect(onQuickAction).toHaveBeenCalledWith(toolAction)
 
     fireEvent.click(view.getByRole('button', { name: 'Все возможности' }))

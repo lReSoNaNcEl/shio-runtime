@@ -2,9 +2,10 @@ import json
 import queue
 import threading
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import numpy as np
+import pytest
 
 from app.config import settings
 from app.tts.emotion import EmotionRegistry
@@ -113,8 +114,9 @@ def engine_fixture():
     engine._inference_lock = threading.Lock()
     engine._output = queue.Queue()
     engine._input = Input(engine._output)
+    engine._request_cancelled = threading.Event()
     engine._ensure_worker = lambda: None
-    engine._closed = True
+    engine._closed = False
     engine._prepared_references = set()
     engine._stop_worker = lambda: None
     return engine
@@ -128,7 +130,7 @@ def test_delivery_transition_and_tag_injection_containment():
     ]
     with patch(
         "app.tts.fish.condition_reference",
-        return_value=("reference.wav", "reference text", None, True),
+        return_value=("reference.wav", "reference text", Mock(language="en"), True),
     ):
         output = list(
             engine.stream(
@@ -146,12 +148,60 @@ def test_delivery_transition_and_tag_injection_containment():
     assert not engine._inference_lock.locked()
 
 
-def test_cancel_does_not_submit_more_gpu_work():
+@pytest.mark.parametrize("reference_language", ["en", "ru", "unknown"])
+def test_conditioning_follows_spoken_chunk_and_reference_language(reference_language):
     engine = engine_fixture()
-    cancelled = threading.Event()
+    chunks = ["На экране снег белый.", "The snow on your screen is white.", "Снег is white."]
     with patch(
         "app.tts.fish.condition_reference",
-        return_value=("reference.wav", "reference text", None, True),
+        return_value=("reference.wav", "transcript", Mock(language=reference_language), True),
+    ):
+        list(
+            engine.stream(
+                chunks,
+                language="en",
+                voice="voice",
+                intent=SpeechDeliveryIntent(style="тихо"),
+                cancelled=threading.Event(),
+            )
+        )
+    assert [request[3] for request in engine._input.calls] == [
+        reference_language == "en",
+        False,
+        reference_language == "en",
+    ]
+    assert ["[speaking Russian]" in request[0] for request in engine._input.calls] == [
+        reference_language == "en",
+        False,
+        False,
+    ]
+
+
+def test_cancel_drains_old_audio_and_reuses_worker_for_next_request():
+    engine = engine_fixture()
+    engine._stop_worker = Mock()
+    cancelled = threading.Event()
+
+    def put_request(item, **_kwargs):
+        engine._input.calls.append(item)
+        if len(engine._input.calls) == 1:
+            engine._output.put(("audio", np.array([0.25], dtype=np.float32)))
+        else:
+            assert not engine._request_cancelled.is_set()
+            engine._output.put(("audio", np.array([0.75], dtype=np.float32)))
+            engine._output.put(("done", None))
+
+    engine._input.put = put_request
+
+    def finish_cancelled_request():
+        if engine._request_cancelled.wait(2):
+            assert engine._inference_lock.locked()
+            engine._output.put(("audio", np.array([0.5], dtype=np.float32)))
+            engine._output.put(("done", None))
+
+    with patch(
+        "app.tts.fish.condition_reference",
+        return_value=("reference.wav", "reference text", Mock(language="en"), True),
     ):
         stream = engine.stream(
             ["first", "second"],
@@ -161,9 +211,82 @@ def test_cancel_does_not_submit_more_gpu_work():
             cancelled=cancelled,
         )
         next(stream)
+        worker = threading.Thread(target=finish_cancelled_request)
+        worker.start()
         cancelled.set()
         assert list(stream) == []
-    assert len(engine._input.calls) == 1
+        worker.join(timeout=2)
+        assert not worker.is_alive()
+        assert len(engine._input.calls) == 1
+        next_reply = list(
+            engine.stream(
+                ["follow-up"],
+                language="en",
+                voice="voice",
+                intent=SpeechDeliveryIntent(),
+                cancelled=threading.Event(),
+            )
+        )
+    np.testing.assert_array_equal(np.concatenate(next_reply), [0.75])
+    engine._stop_worker.assert_not_called()
+    assert not engine._inference_lock.locked()
+
+
+def test_cancel_restarts_worker_only_if_request_does_not_settle(monkeypatch):
+    engine = engine_fixture()
+    engine._stop_worker = Mock()
+    engine.warmup = Mock()
+    cancelled = threading.Event()
+    monkeypatch.setattr("app.tts.fish.CANCELLATION_ACK_TIMEOUT_SECONDS", 0.01)
+    with patch(
+        "app.tts.fish.condition_reference",
+        return_value=("reference.wav", "reference text", Mock(language="en"), True),
+    ):
+        stream = engine.stream(
+            ["first"],
+            language="en",
+            voice="voice",
+            intent=SpeechDeliveryIntent(),
+            cancelled=cancelled,
+        )
+        next(stream)
+        assert engine._output.get_nowait() == ("done", None)
+        cancelled.set()
+        assert list(stream) == []
+    assert engine._request_cancelled.is_set()
+    engine._stop_worker.assert_called_once_with()
+    engine._reload_thread.join(timeout=1)
+    engine.warmup.assert_called_once_with()
+    assert not engine._inference_lock.locked()
+
+
+@pytest.mark.parametrize("completed_chunks", [0, 1])
+def test_cancel_between_requests_keeps_worker_warm(completed_chunks):
+    engine = engine_fixture()
+    engine._stop_worker = Mock()
+    cancelled = threading.Event()
+
+    def chunks():
+        for _ in range(completed_chunks):
+            yield "first"
+        cancelled.set()
+
+    with patch(
+        "app.tts.fish.condition_reference",
+        return_value=("reference.wav", "reference text", Mock(language="en"), True),
+    ):
+        output = list(
+            engine.stream(
+                chunks(),
+                language="en",
+                voice="voice",
+                intent=SpeechDeliveryIntent(),
+                cancelled=cancelled,
+            )
+        )
+
+    assert len(output) == completed_chunks
+    engine._stop_worker.assert_not_called()
     assert not engine._inference_lock.locked()
 
 

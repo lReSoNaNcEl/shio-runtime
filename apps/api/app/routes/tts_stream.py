@@ -7,6 +7,7 @@ import logging
 import queue
 import threading
 from collections.abc import Callable, Iterator
+from contextlib import closing
 from enum import Enum
 from typing import Literal
 
@@ -239,21 +240,23 @@ async def tts_stream(websocket: WebSocket) -> None:
                         continue
 
             try:
-                for samples in engine.stream(
+                stream = engine.stream(
                     text_chunks(),
                     language=start.language,
                     voice=voice_id,
                     intent=intent,
                     cancelled=cancelled,
-                ):
-                    if not put_audio(
-                        (
-                            samples.astype("<f4", copy=False).tobytes(),
-                            active_emotion,
-                            active_text_sequence,
-                        )
-                    ):
-                        return
+                )
+                with closing(stream):
+                    for samples in stream:
+                        if not put_audio(
+                            (
+                                samples.astype("<f4", copy=False).tobytes(),
+                                active_emotion,
+                                active_text_sequence,
+                            )
+                        ):
+                            return
             except Exception as exc:  # propagated through the bounded stream queue
                 put_audio(exc)
             finally:
@@ -419,7 +422,7 @@ async def tts_stream(websocket: WebSocket) -> None:
                 sender.cancel()
                 await asyncio.gather(sender, return_exceptions=True)
                 # Cancelling asyncio.to_thread does not stop its thread or GPU.
-                # Retain ownership until Fish stream's finally terminates inference.
+                # Retain ownership until Fish confirms settlement or the worker has been stopped.
                 await asyncio.shield(producer)
                 if cancel_requested and websocket.client_state == WebSocketState.CONNECTED:
                     await websocket.send_json({"type": "cancelled", "sessionId": session_id})

@@ -3,7 +3,6 @@ import { Content, Divider, Heading, ProgressCircle, StatusLight, Text } from '@r
 import { useTranslation } from '../../localization/useTranslation'
 import { SettingsNavigation } from './SettingsNavigation'
 import { AdvancedSettingsSection } from './sections/AdvancedSettingsSection'
-import { AutonomySettingsSection } from './sections/AutonomySettingsSection'
 import { AvatarSettingsSection } from './sections/AvatarSettingsSection'
 import { GeneralSettingsSection } from './sections/GeneralSettingsSection'
 import { LlmSettingsSection } from './sections/LlmSettingsSection'
@@ -14,9 +13,9 @@ import { useSettingsDialogState } from './state/useSettingsDialogState'
 export function SettingsDialog({
   isOpen,
   initialSection = 'general',
-  aliveSnapshot,
   uiTheme,
   onThemeChange,
+  flashMotionEnabled,
   overlayVisible,
   overlayViewModeProjection,
   llmHealth,
@@ -29,6 +28,7 @@ export function SettingsDialog({
   const viewModel = useSettingsDialogState({
     isOpen,
     initialSection,
+    flashMotionEnabled,
     overlayVisible,
     overlayViewModeProjection,
     llmHealth,
@@ -41,7 +41,6 @@ export function SettingsDialog({
     general: t('settings.section.general'),
     speech: t('settings.section.speech'),
     llm: t('settings.section.llm'),
-    autonomy: t('settings.section.autonomy'),
     avatar: t('settings.section.avatar'),
     advanced: t('settings.section.advanced'),
   }
@@ -59,8 +58,6 @@ export function SettingsDialog({
       <SpeechSettingsSection {...viewModel.speech} />
     ) : viewModel.activeSection === 'llm' ? (
       <LlmSettingsSection {...viewModel.llm} />
-    ) : viewModel.activeSection === 'autonomy' ? (
-      <AutonomySettingsSection snapshot={aliveSnapshot} />
     ) : viewModel.activeSection === 'avatar' ? (
       <AvatarSettingsSection {...viewModel.avatar} />
     ) : (
@@ -79,21 +76,17 @@ export function SettingsDialog({
         <div className="settings-section-heading">
           <Heading>{labels[viewModel.activeSection]}</Heading>
           <span className="settings-save-indicator" role="status" aria-live="polite">
-            {viewModel.activeSection !== 'autonomy' && (
+            {viewModel.saveState === 'saving' && (
               <>
-                {viewModel.saveState === 'saving' && (
-                  <>
-                    <ProgressCircle aria-label={t('common.saving')} isIndeterminate size="S" />
-                    <span>{t('common.saving')}</span>
-                  </>
-                )}
-                {viewModel.saveState === 'saved' && (
-                  <StatusLight variant="positive">{t('common.saved')}</StatusLight>
-                )}
-                {viewModel.saveState === 'error' && (
-                  <StatusLight variant="negative">{t('settings.saveFailed')}</StatusLight>
-                )}
+                <ProgressCircle aria-label={t('common.saving')} isIndeterminate size="S" />
+                <span>{t('common.saving')}</span>
               </>
+            )}
+            {viewModel.saveState === 'saved' && (
+              <StatusLight variant="positive">{t('common.saved')}</StatusLight>
+            )}
+            {viewModel.saveState === 'error' && (
+              <StatusLight variant="negative">{t('settings.saveFailed')}</StatusLight>
             )}
           </span>
         </div>

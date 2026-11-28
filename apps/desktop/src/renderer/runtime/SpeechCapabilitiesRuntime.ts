@@ -30,7 +30,7 @@ const RETRY_STEADY_MS = 30_000
 export class SpeechCapabilitiesRuntime {
   private state: SpeechCapabilitiesState = INITIAL_SPEECH_CAPABILITIES
   private probeToken = 0
-  private probing = false
+  private pendingProbe: Promise<void> | null = null
   private timer: ReturnType<typeof setTimeout> | null = null
   private attempt = 0
   private disposed = false
@@ -53,18 +53,10 @@ export class SpeechCapabilitiesRuntime {
   }
 
   /** Manual "Проверить снова" / "Повторить подключение": probe now, no extra timer. */
-  recheck(): void {
-    if (this.disposed) return
+  recheck(): Promise<void> {
     this.clearTimer()
     this.attempt = 0
-    observeRendererPromise(this.probe(), 'recheck Speech capabilities')
-  }
-
-  /** Delegated Controller health check. Probe now if not already running. */
-  checkNow(): void {
-    if (this.disposed) return
-    if (this.probing) return
-    observeRendererPromise(this.probe(), 'check Speech capabilities')
+    return this.probe()
   }
 
   dispose(): void {
@@ -75,7 +67,7 @@ export class SpeechCapabilitiesRuntime {
   // ---- internals -----------------------------------------------------------
 
   private startScheduler(): void {
-    if (this.disposed || this.timer !== null || this.probing) return
+    if (this.disposed || this.timer !== null || this.pendingProbe) return
     this.attempt = 0
     this.scheduleNext(true)
   }
@@ -91,9 +83,15 @@ export class SpeechCapabilitiesRuntime {
     }, delay)
   }
 
-  private async probe(): Promise<void> {
-    if (this.disposed || this.probing) return
-    this.probing = true
+  private probe(): Promise<void> {
+    if (this.disposed) return Promise.resolve()
+    this.pendingProbe ??= this.runProbe().finally(() => {
+      this.pendingProbe = null
+    })
+    return this.pendingProbe
+  }
+
+  private async runProbe(): Promise<void> {
     const token = ++this.probeToken
     const attemptForLog = this.attempt
     try {
@@ -120,7 +118,6 @@ export class SpeechCapabilitiesRuntime {
         ),
       )
     } finally {
-      this.probing = false
       if (!this.disposed && token === this.probeToken) this.afterProbe(attemptForLog)
     }
   }

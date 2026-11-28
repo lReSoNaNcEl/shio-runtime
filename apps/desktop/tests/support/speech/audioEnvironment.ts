@@ -89,6 +89,7 @@ export function installAudioEnvironment() {
       connect: vi.fn(),
       disconnect: vi.fn(),
     }
+    peakShaper = { curve: null as Float32Array | null, connect: vi.fn(), disconnect: vi.fn() }
     audioWorklet = { addModule: vi.fn(async () => undefined) }
     decodeAudioData = vi.fn(async (_buffer: ArrayBuffer) => createAudioBuffer())
     close = vi.fn(async () => {
@@ -102,6 +103,9 @@ export function installAudioEnvironment() {
     }
     createGain(): GainNode {
       return this.speechGain as unknown as GainNode
+    }
+    createWaveShaper(): WaveShaperNode {
+      return this.peakShaper as unknown as WaveShaperNode
     }
     createBufferSource(): AudioBufferSourceNode {
       const source = new FakeBufferSource()

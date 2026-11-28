@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
@@ -14,23 +13,16 @@ import {
   walk,
 } from '../support/architecture/sourceAst'
 
-// SHA-256 of SYSTEM_PROMPT before the persona moved into contracts/persona.v1.json.
-const PREVIOUS_SYSTEM_PROMPT_SHA256 =
-  'b73abe5c3ed42f8cd3bab597b7a4586d829fce27a8af7cd984c83774742e00e3'
-
 describe('persona contract', () => {
-  it('generates a SYSTEM_PROMPT byte-identical to the previous inline persona', () => {
-    expect(createHash('sha256').update(SYSTEM_PROMPT).digest('hex')).toBe(
-      PREVIOUS_SYSTEM_PROMPT_SHA256,
-    )
-  })
-
-  it('keeps the generated sections equal to the contract', () => {
+  it('generates the system prompt from the canonical persona sections in order', () => {
     const contract = JSON.parse(
       readFileSync(join(desktopRoot, '..', '..', 'contracts', 'persona.v1.json'), 'utf8'),
     ) as { sections: Array<{ id: string; title: string; lines: string[] }> }
     expect(PERSONA_PROMPT_SECTIONS).toEqual(
       Object.fromEntries(contract.sections.map(({ id, title, lines }) => [id, [title, ...lines]])),
+    )
+    expect(SYSTEM_PROMPT).toBe(
+      contract.sections.map(({ title, lines }) => `## ${title}\n${lines.join('\n')}`).join('\n\n'),
     )
   })
 

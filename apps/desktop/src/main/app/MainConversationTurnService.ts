@@ -98,13 +98,9 @@ export class MainConversationTurnService {
     private readonly llmSettings: () => AppSettings['llm'],
     /** Hands an explicit user turn's appraisal to Alive Experience inside Main. */
     private readonly onTurnAppraisal?: (turnId: string, appraisal: TurnAppraisal) => void,
-    private readonly takeWatchReply?: (turnId: string) => string | undefined,
+    private readonly takeWatchReply?: WatchTogetherService['takeReply'],
     private readonly takeWatchUserTurn?: WatchTogetherService['takeUserTurn'],
   ) {}
-
-  isIdle(): boolean {
-    return this.activeTurnId === null
-  }
 
   recentIncidents(now = Date.now()): readonly RecentRuntimeIncident[] {
     if (this.recentLlmIncident && this.recentLlmIncident.expiresAt <= now) {

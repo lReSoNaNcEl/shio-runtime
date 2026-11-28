@@ -30,7 +30,7 @@ async function main(): Promise<void> {
     const store = new LlmCredentialStore(filePath, protector, () => undefined)
     await store.load()
     await store.save('groq', 'secure-groq-key')
-    await store.save('mistral', 'secure-mistral-key')
+    await store.save('openrouter', 'secure-openrouter-key')
 
     const encrypted = await readFile(filePath)
     assert.equal(encrypted.includes(Buffer.from('secure-groq-key')), false)
@@ -42,7 +42,7 @@ async function main(): Promise<void> {
 
     await restarted.forget('groq')
     assert.equal(restarted.resolve('groq').apiKey, '')
-    assert.equal(restarted.resolve('mistral').apiKey, 'secure-mistral-key')
+    assert.equal(restarted.resolve('openrouter').apiKey, 'secure-openrouter-key')
 
     const legacyCredentialPath = join(directory, 'legacy-cerebras.bin')
     await writeFile(
@@ -76,10 +76,12 @@ async function main(): Promise<void> {
     })
     assert.deepEqual(nested.plaintextCredentials, {
       groq: 'legacy-groq-key',
-      mistral: 'legacy-mistral-key',
     })
+    assert.equal(nested.llm.activeProvider, 'groq')
+    assert.equal('mistral' in nested.llm.providers, false)
+    assert.equal(nested.migrated, true)
     await restarted.importMissing(nested.plaintextCredentials)
-    assert.equal(restarted.resolve('mistral').apiKey, 'secure-mistral-key')
+    assert.equal(restarted.resolve('openrouter').apiKey, 'secure-openrouter-key')
     assert.equal(restarted.resolve('groq').apiKey, 'legacy-groq-key')
 
     const flat = resolveLlmPersistence({
@@ -118,7 +120,6 @@ async function main(): Promise<void> {
         },
       },
       roles: {
-        backlogSelector: {},
         computerUseVision: {
           providerId: 'openrouter',
           model: 'google/gemini-2.5-flash',
@@ -163,19 +164,9 @@ async function main(): Promise<void> {
     const cloudflareMigrated = normalizeLlmConfig({
       activeProvider: 'cerebras',
       providers: { cerebras: { model: 'legacy-cerebras-model' } },
-      roles: {
-        backlogSelector: {
-          enabled: true,
-          providerId: 'cerebras',
-          model: 'legacy-cerebras-model',
-        },
-      },
     })
     assert.equal(cloudflareMigrated.activeProvider, 'cloudflare')
     assert.equal(cloudflareMigrated.providers.cloudflare.model, '')
-    assert.equal(cloudflareMigrated.roles.backlogSelector.enabled, false)
-    assert.equal(cloudflareMigrated.roles.backlogSelector.providerId, '')
-    assert.equal(cloudflareMigrated.roles.backlogSelector.model, '')
     const nestedCerebrasMigration = resolveLlmPersistence({
       llm: {
         activeProvider: 'cerebras',
@@ -214,4 +205,42 @@ describe('LLM credentials', () => {
   it('stores and projects credentials without exposing plaintext', async () => {
     await main()
   })
+
+  it.each([{ groq: 'kept-key' }, {}])(
+    'removes a retired encrypted key after storage becomes available (%j)',
+    async (kept) => {
+      const directory = await mkdtemp(join(tmpdir(), 'shio-llm-credential-'))
+      const filePath = join(directory, 'credentials.bin')
+      try {
+        const payload = await protector.encrypt(JSON.stringify({ ...kept, mistral: 'retired-key' }))
+        await writeFile(filePath, payload)
+        let encryptionAvailable = false
+        const unavailable = new LlmCredentialStore(
+          filePath,
+          { ...protector, isAvailable: async () => encryptionAvailable },
+          () => undefined,
+        )
+        await unavailable.load()
+        await assert.rejects(unavailable.forget('groq'), /could not be read/u)
+        encryptionAvailable = true
+        await assert.rejects(
+          unavailable.save('groq', 'unread-map-must-not-be-replaced'),
+          /could not be read/u,
+        )
+        assert.deepEqual(await readFile(filePath), payload)
+
+        const restarted = new LlmCredentialStore(filePath, protector, () => undefined)
+        await restarted.load()
+        if (kept.groq) {
+          const migrated = await protector.decrypt(await readFile(filePath))
+          assert.deepEqual(JSON.parse(migrated.result), kept)
+          assert.equal(restarted.resolve('groq').apiKey, kept.groq)
+        } else {
+          await assert.rejects(readFile(filePath), { code: 'ENOENT' })
+        }
+      } finally {
+        await rm(directory, { recursive: true, force: true })
+      }
+    },
+  )
 })

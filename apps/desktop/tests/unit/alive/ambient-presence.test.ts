@@ -19,7 +19,6 @@ function world(overrides: Partial<WorldContextSnapshot> = {}): WorldContextSnaps
     capturedAt: 1_000,
     appFocused: true,
     globalUserIdleMs: 0,
-    userIdleMs: 0,
     conversationActive: false,
     audioActive: false,
     privacyMode: false,

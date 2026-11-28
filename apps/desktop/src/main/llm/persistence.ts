@@ -1,7 +1,6 @@
-import { LLM_PROVIDER_IDS, type LlmProviderId } from '../../shared/llm'
+import { isLlmProviderId, LLM_PROVIDER_IDS, type LlmProviderId } from '../../shared/llm'
 import { defaultLlmConfig, normalizeLlmConfig } from './config'
 import type { LlmCredentialMap } from './LlmCredentialStore'
-import { isLlmProviderId } from './registry'
 
 export interface LegacyPersistedLlmConfig {
   provider?: string
@@ -19,6 +18,8 @@ export function resolveLlmPersistence(saved: Record<string, unknown> & LegacyPer
 } {
   const plaintextCredentials: LlmCredentialMap = {}
   const plaintextProviders = new Set<LlmProviderId>()
+  const flatProvider = saved.provider
+  const hasRemovedFlatProvider = Boolean(flatProvider) && !isLlmProviderId(flatProvider)
   if (saved.llm && typeof saved.llm === 'object') {
     const llmRecord = saved.llm as Record<string, unknown>
     const providers =
@@ -26,6 +27,7 @@ export function resolveLlmPersistence(saved: Record<string, unknown> & LegacyPer
         ? (llmRecord.providers as Record<string, unknown>)
         : {}
     const removedProviderFound =
+      hasRemovedFlatProvider ||
       (typeof llmRecord.activeProvider === 'string' &&
         !isLlmProviderId(llmRecord.activeProvider)) ||
       Object.keys(providers).some((provider) => !isLlmProviderId(provider))
@@ -51,21 +53,18 @@ export function resolveLlmPersistence(saved: Record<string, unknown> & LegacyPer
   }
 
   const llm = defaultLlmConfig()
-  let migrated = false
-  const legacyCerebrasProvider = saved.provider === 'cerebras'
-  if (legacyCerebrasProvider) {
+  let migrated = Boolean(flatProvider)
+  if (flatProvider === 'cerebras') {
     llm.activeProvider = 'cloudflare'
-    migrated = true
-  } else if (typeof saved.provider === 'string' && isLlmProviderId(saved.provider)) {
-    llm.activeProvider = saved.provider
-    migrated = true
+  } else if (isLlmProviderId(flatProvider)) {
+    llm.activeProvider = flatProvider
   }
-  if (!legacyCerebrasProvider && typeof saved.apiKey === 'string' && saved.apiKey) {
+  if (!hasRemovedFlatProvider && typeof saved.apiKey === 'string' && saved.apiKey) {
     plaintextCredentials[llm.activeProvider] = saved.apiKey
     plaintextProviders.add(llm.activeProvider)
     migrated = true
   }
-  if (!legacyCerebrasProvider && typeof saved.model === 'string' && saved.model) {
+  if (!hasRemovedFlatProvider && typeof saved.model === 'string' && saved.model) {
     llm.providers[llm.activeProvider].model = saved.model
     migrated = true
   }

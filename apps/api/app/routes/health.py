@@ -86,8 +86,3 @@ def set_engine_ready(engine: str, ready: bool, mode: str = "real", error: str | 
         health_state.fish_ready = ready
         health_state.fish_mode = mode
         health_state.fish_error = error
-
-
-def get_health_state() -> HealthState:
-    """Get current health state."""
-    return health_state

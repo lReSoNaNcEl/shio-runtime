@@ -6,6 +6,7 @@ import { getConfig, getRendererConfig } from '../config'
 import {
   createModelCatalog,
   enrichModelCatalog,
+  getProviderProfile,
   invalidateModelCatalog,
   isLlmProviderId,
   type LlmCredentialStore,
@@ -115,7 +116,7 @@ export function registerLlmIpc({
 
   const credentialSchema = z
     .object({
-      provider: providerSchema.refine((provider) => provider !== 'codex-cli'),
+      provider: providerSchema.refine((provider) => getProviderProfile(provider).requiresApiKey),
       accountId: accountIdSchema,
       apiKey: z
         .string()

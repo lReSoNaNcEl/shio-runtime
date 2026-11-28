@@ -18,12 +18,3 @@ export interface BufferedUtterance {
   triggeredBargeIn: boolean
   priorityClass: BacklogPriorityClass
 }
-
-export interface BacklogSelectionResult {
-  action: 'select' | 'merge' | 'discard_all'
-  selectedIds: string[]
-  text?: string
-  reason: string
-  confidence: number
-  backlogVersion: number
-}

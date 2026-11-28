@@ -423,7 +423,16 @@ export class AvatarBehaviorResolver {
     mode: string,
     excludedAnimationIds = new Set<string>(),
   ): AnimationId {
-    const preferred = mode === 'speaking' ? SPEAKING_FALLBACK_ANIMATION_ID : FALLBACK_ANIMATION_ID
+    // A fresh base request after expired preparation must represent the current
+    // conversational mode, rather than strand listening/thinking in idle.
+    const preferred =
+      mode === 'listening'
+        ? 'presence_listening'
+        : mode === 'thinking'
+          ? 'presence_thinking'
+          : mode === 'speaking'
+            ? SPEAKING_FALLBACK_ANIMATION_ID
+            : FALLBACK_ANIMATION_ID
     const allowed = (id: AnimationId): boolean => {
       const entry = getAnimation(id)
       return (

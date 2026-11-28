@@ -101,6 +101,12 @@ const TERMS: readonly TechnicalPronunciation[] = [
   { id: 'term.npm', input: 'npm', spokenRu: 'эн-пи-эм', category: 'abbreviation' },
 ] as const
 
+const termNames = new Set(TERMS.map((term) => term.input.toLowerCase()))
+
+export function isTechnicalTerm(word: string): boolean {
+  return termNames.has(word.toLowerCase())
+}
+
 const EXACT_SEGMENTS: Readonly<Record<string, string>> = {
   apps: 'эппс',
   api: 'эй-пи-ай',

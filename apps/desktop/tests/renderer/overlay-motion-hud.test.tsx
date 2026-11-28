@@ -29,6 +29,8 @@ vi.mock('../../src/renderer/Controller', () => ({
       store.listeners.add(listener)
       return () => store.listeners.delete(listener)
     },
+    bootstrap: vi.fn(async () => undefined),
+    detachCanvas: vi.fn(),
     attachCanvas: store.attachCanvas,
     subscribeOverlayUpdates: store.subscribeOverlayUpdates,
     dispose: store.dispose,

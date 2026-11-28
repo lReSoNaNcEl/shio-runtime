@@ -5,7 +5,10 @@ import { dirname, join, resolve } from 'node:path'
 
 import { describe, it } from 'vitest'
 
-function verifyFixture(reference: string, includeWorklet = true) {
+function verifyFixture(
+  reference: string,
+  { includeWorklet = true, duplicateWorklet = false } = {},
+) {
   const desktopRoot = resolve(import.meta.dirname, '../../..')
   const output = join(desktopRoot, 'out')
   mkdirSync(output, { recursive: true })
@@ -25,6 +28,7 @@ function verifyFixture(reference: string, includeWorklet = true) {
         join(root, 'assets/pcmStreamWorklet-test.js'),
         "registerProcessor('shio-pcm-stream-player', Player)",
       )
+    if (duplicateWorklet) writeFileSync(join(root, 'assets/pcmStreamWorklet-duplicate.js'), '')
     return spawnSync(
       process.execPath,
       [join(desktopRoot, 'scripts/verify-speech-assets.mjs'), root],
@@ -54,8 +58,14 @@ describe('production speech assets', () => {
   })
 
   it('rejects a missing worklet instead of substituting its source', () => {
-    const result = verifyFixture('./pcmStreamWorklet-test.js', false)
+    const result = verifyFixture('./pcmStreamWorklet-test.js', { includeWorklet: false })
     assert.notEqual(result.status, 0)
     assert.match(result.stderr, /ENOENT/u)
+  })
+
+  it('rejects a second emitted PCM worklet', () => {
+    const result = verifyFixture('./pcmStreamWorklet-test.js', { duplicateWorklet: true })
+    assert.notEqual(result.status, 0)
+    assert.match(result.stderr, /Build must emit exactly one PCM worklet/u)
   })
 })

@@ -18,6 +18,6 @@
     "qualifications/**/*",
     "src/renderer/api.d.ts",
     "tests/**/*",
-    "vitest.config.ts"
+    "vitest.config.mts"
   ]
 }

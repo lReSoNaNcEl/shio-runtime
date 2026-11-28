@@ -6,7 +6,7 @@
  * Run explicitly (never in CI):
  *   npm run desktop:qualify:character
  * Environment:
- *   CHARACTER_EVAL_PROVIDERS=groq,mistral   limit providers (default: every keyed one)
+ *   CHARACTER_EVAL_PROVIDERS=groq,openrouter   limit providers (default: every keyed one)
  *   CHARACTER_EVAL_MODEL_<PROVIDER>=...     model override (default: LLM_LIVE_MODEL_* / built-in)
  *   CHARACTER_EVAL_JUDGE_PROVIDER / _MODEL  optional LLM judge (rubric 1-5)
  *   CHARACTER_EVAL_BASELINE=<scorecard.json> fail when protocol score drops by more than 5%
@@ -15,6 +15,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
+import { PERSONA_PROMPT_SECTIONS } from '../../../src/main/character/prompting/persona.generated'
 import { createAiSdkAdapter } from '../../../src/main/llm/AiSdkAdapter'
 import { getProviderDefinition } from '../../../src/main/llm/registry'
 import type { LLMProvider } from '../../../src/main/llm/types'
@@ -67,7 +68,6 @@ function orchestrator(llm: LLMProvider, memory: InMemoryStore, provider: LivePro
   return new Orchestrator(
     llm,
     memory,
-    undefined,
     settings,
     undefined,
     undefined,
@@ -119,8 +119,11 @@ async function judge(reply: EvalReply, entry: CharacterEvalCase) {
     [
       {
         role: 'system',
-        content:
-          'Rate the assistant reply of Shio, a witty foxgirl companion. Return JSON only: {"inCharacter":1-5,"wit":1-5,"helpfulness":1-5}.',
+        content: [
+          'Rate how well the reply fits Shio’s character, how funny it is in context, and how helpful it is. Use the persona below as the rubric.',
+          ...PERSONA_PROMPT_SECTIONS.personality,
+          'Return JSON only: {"inCharacter":1-5,"wit":1-5,"helpfulness":1-5}.',
+        ].join('\n'),
       },
       { role: 'user', content: JSON.stringify({ user: entry.userText, reply: reply.replyText }) },
     ],

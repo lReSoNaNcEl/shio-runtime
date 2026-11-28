@@ -10,7 +10,7 @@ export interface ScreenContextSource {
   id: string
   name: string
   kind: ScreenContextDesktopSourceKind
-  previewDataUrl: string
+  previewDataUrl?: string
   appIconDataUrl?: string
 }
 

@@ -11,7 +11,6 @@ import type {
 } from '../../src/main/llm'
 import type { MemoryStore } from '../../src/main/memory'
 import { Orchestrator } from '../../src/main/orchestrator'
-import type { SpeechClient } from '../../src/main/speech/speechClient'
 import type { DesktopWorkflowActionResult } from '../../src/shared/actions'
 import type { ShioCapabilitySnapshot } from '../../src/shared/capabilities'
 import type { AppSettings } from '../../src/shared/config'
@@ -159,7 +158,6 @@ async function runScenario(input: ScenarioInput): Promise<{
   const orchestrator = new Orchestrator(
     llm,
     memory,
-    {} as SpeechClient,
     () => ({ uiLocale: 'ru' }) as AppSettings,
     () => provider,
     { snapshot: async () => actionCapabilities },

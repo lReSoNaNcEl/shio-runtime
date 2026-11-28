@@ -157,10 +157,6 @@ export class BrowserControlPlugin implements BundledPlugin {
     return this.browserContextProvider
   }
 
-  getBrowserComputerUseProvider(): BrowserComputerUseProvider {
-    return this.computerUseProvider
-  }
-
   validateWorkflowRequest(
     request: EffectiveDesktopWorkflowRequest,
   ): EffectiveDesktopWorkflowRequest {

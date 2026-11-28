@@ -1,4 +1,12 @@
 const TARGET_SAMPLE_RATE = 16_000
+const maxQueuedAudioMs = 1500
+
+export interface CapturedPcmTiming {
+  endedAt: number
+  discontinuous: boolean
+}
+
+type CaptureFrame = (pcm: ArrayBuffer, timing: CapturedPcmTiming) => void
 
 export class StreamingPcmCapture {
   private stream: MediaStream | null = null
@@ -9,10 +17,17 @@ export class StreamingPcmCapture {
   private silentGain: GainNode | null = null
   private resampleBuffer = new Float32Array(0)
   private resamplePosition = 0
-  private onFrame: ((frame: ArrayBuffer) => void) | null = null
+  private onFrame: CaptureFrame | null = null
   private onDeviceLost: (() => void) | null = null
   private deviceLostNotified = false
   private startTask: Promise<void> | null = null
+  private levelListener: ((rms: number, at: number) => void) | null = null
+  private level?: { rms: number; at: number }
+
+  /** Levels from the existing capture only; no audio is retained for reactions. */
+  setLevelListener(listener: ((rms: number, at: number) => void) | null): void {
+    this.levelListener = listener
+  }
 
   /**
    * @param onDeviceLost Invoked once if the working input track ends on its own
@@ -21,7 +36,7 @@ export class StreamingPcmCapture {
    */
   async start(
     deviceId: string | undefined,
-    onFrame: (frame: ArrayBuffer) => void,
+    onFrame: CaptureFrame,
     onDeviceLost?: () => void,
   ): Promise<void> {
     if (this.audioContext) return
@@ -36,7 +51,7 @@ export class StreamingPcmCapture {
 
   private async startInternal(
     deviceId: string | undefined,
-    onFrame: (frame: ArrayBuffer) => void,
+    onFrame: CaptureFrame,
     onDeviceLost?: () => void,
   ): Promise<void> {
     const deviceConstraint =
@@ -58,7 +73,7 @@ export class StreamingPcmCapture {
   /** Takes ownership of an already granted audio source. */
   async startStream(
     stream: MediaStream,
-    onFrame: (frame: ArrayBuffer) => void,
+    onFrame: CaptureFrame,
     onDeviceLost?: () => void,
   ): Promise<void> {
     const audioContext = new AudioContext()
@@ -66,7 +81,11 @@ export class StreamingPcmCapture {
       if (audioContext.state === 'suspended') await audioContext.resume()
       await audioContext.audioWorklet.addModule('./pcmCaptureWorklet.js')
       const source = audioContext.createMediaStreamSource(stream)
-      const worklet = new AudioWorkletNode(audioContext, 'pcm-capture-processor')
+      const worklet = new AudioWorkletNode(audioContext, 'pcm-capture-processor', {
+        processorOptions: {
+          maxQueuedFrames: Math.ceil((audioContext.sampleRate * maxQueuedAudioMs) / 1000),
+        },
+      })
       const silentGain = audioContext.createGain()
       silentGain.gain.value = 0
       this.stream = stream
@@ -82,8 +101,29 @@ export class StreamingPcmCapture {
       stream.getAudioTracks().forEach((track) => {
         track.addEventListener('ended', this.handleTrackEnded)
       })
-      worklet.port.onmessage = (event: MessageEvent<Float32Array>) =>
-        this.handleNativeFrame(event.data)
+      let expectedFrame: number | undefined
+      let skipped = false
+      worklet.port.onmessage = (
+        event: MessageEvent<{ startFrame: number; samples: Float32Array }>,
+      ) => {
+        if (worklet !== this.worklet) return
+        const { startFrame, samples } = event.data
+        const endFrame = startFrame + samples.length
+        const lagMs = Math.max(
+          0,
+          (audioContext.currentTime - endFrame / audioContext.sampleRate) * 1000,
+        )
+        const discontinuous =
+          skipped || (expectedFrame !== undefined && startFrame !== expectedFrame)
+        expectedFrame = endFrame
+        skipped = lagMs > maxQueuedAudioMs
+        try {
+          if (!skipped)
+            this.handleNativeFrame(samples, { endedAt: Date.now() - lagMs, discontinuous })
+        } finally {
+          worklet.port.postMessage(null)
+        }
+      }
       source.connect(worklet)
       worklet.connect(silentGain)
       silentGain.connect(audioContext.destination)
@@ -105,8 +145,10 @@ export class StreamingPcmCapture {
   async stop(): Promise<void> {
     this.onFrame = null
     this.onDeviceLost = null
+    this.level = undefined
     if (this.worklet) {
       this.worklet.port.onmessage = null
+      this.worklet.port.close()
       this.worklet.disconnect()
       this.worklet = null
     }
@@ -135,6 +177,11 @@ export class StreamingPcmCapture {
     )
   }
 
+  readLevel(): number {
+    const level = this.level
+    return this.isAlive() && level && performance.now() - level.at < 300 ? level.rms : 0
+  }
+
   activeMicrophone(
     selectedDeviceId: string,
   ): { label: string; changePending: boolean } | undefined {
@@ -148,9 +195,22 @@ export class StreamingPcmCapture {
     }
   }
 
-  private handleNativeFrame(frame: Float32Array): void {
+  private handleNativeFrame(frame: Float32Array, timing: CapturedPcmTiming): void {
     const context = this.audioContext
     if (!context || !this.onFrame) return
+    if (timing.discontinuous) {
+      this.resampleBuffer = new Float32Array(0)
+      this.resamplePosition = 0
+    }
+    if (frame.length > 0) {
+      let energy = 0
+      for (const sample of frame) energy += sample * sample
+      const rms = Math.sqrt(energy / frame.length)
+      const at = performance.now()
+      const previous = timing.discontinuous ? 0 : (this.level?.rms ?? 0)
+      this.level = { rms: Math.max(rms, previous * 0.82), at }
+      this.levelListener?.(rms, at)
+    }
     const combined = new Float32Array(this.resampleBuffer.length + frame.length)
     combined.set(this.resampleBuffer)
     combined.set(frame, this.resampleBuffer.length)
@@ -173,6 +233,6 @@ export class StreamingPcmCapture {
       const sample = Math.max(-1, Math.min(1, output[index]))
       pcm[index] = Math.round(sample < 0 ? sample * 0x8000 : sample * 0x7fff)
     }
-    this.onFrame(pcm.buffer)
+    this.onFrame(pcm.buffer, timing)
   }
 }

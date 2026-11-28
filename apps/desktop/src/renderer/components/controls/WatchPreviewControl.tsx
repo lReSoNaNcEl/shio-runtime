@@ -6,7 +6,7 @@ import {
   StatusLight,
   Text,
 } from '@react-spectrum/s2'
-import DeviceDesktop from '@react-spectrum/s2/icons/DeviceDesktop'
+import Visibility from '@react-spectrum/s2/icons/Visibility'
 import { type RefCallback } from 'react'
 
 import { useTranslation } from '../../localization/useTranslation'
@@ -24,13 +24,14 @@ export function WatchPreviewControl({
   const { t } = useTranslation()
   return (
     <DialogTrigger>
-      <ActionButton aria-label={t('watch.preview')}>
-        <DeviceDesktop />
+      <ActionButton size="S" aria-label={t('watch.preview')}>
+        <Visibility />
         <Text>{t('watch.preview')}</Text>
       </ActionButton>
       <Popover placement="bottom end" size="M">
         <div className="watch-preview-content">
           <Heading level={2}>{t('watch.preview')}</Heading>
+          <Text>{t('watch.initialSource', { name: sourceName })}</Text>
           <video
             className="watch-preview-frame"
             aria-label={t('watch.liveFrame')}
@@ -39,13 +40,15 @@ export function WatchPreviewControl({
             muted
             playsInline
           />
-          <Text>{t('watch.initialSource', { name: sourceName })}</Text>
           {microphone && (
             <StatusLight variant="positive">
               {t('streaming.activeMicrophone', {
                 name: microphone.label || t('streaming.unnamedDevice'),
               })}
             </StatusLight>
+          )}
+          {microphone?.changePending && (
+            <StatusLight variant="notice">{t('streaming.microphonePending')}</StatusLight>
           )}
         </div>
       </Popover>

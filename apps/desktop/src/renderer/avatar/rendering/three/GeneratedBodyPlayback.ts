@@ -60,6 +60,7 @@ import { GeneratedBodySafety } from './GeneratedBodySafety'
 import { calibrateFingerSpreadSigns, GeneratedHandPose } from './GeneratedHandPose'
 import type { GeneratedBodyDebugState, GeneratedMotionRequestContext } from './GeneratedMotionTypes'
 import type { MotionDynamicsObserver, MotionDynamicsStage } from './MotionDynamicsObserver'
+import { motionTransitionWeight } from './MotionTransition'
 import { plantLeg } from './plantLeg'
 import { sourceHandDisplacements } from './SourceHandDisplacements'
 import {
@@ -129,6 +130,7 @@ export class GeneratedBodyPlayback {
   private started = false
   private profileId: MotionProfileId = 'presence_poised'
   private playing = false
+  private flashMotionEnabled = true
   private execution: MotionPhaseExecution | null = null
   private executionSeq = 0
   private phaseAppliedFrame: number | null = null
@@ -539,6 +541,7 @@ export class GeneratedBodyPlayback {
 
   playProfile(id: string, context: GeneratedMotionRequestContext): Promise<void> {
     if (this.presentationOnly) return Promise.resolve()
+    if (!this.flashMotionEnabled) return Promise.reject(new Error('MOTION_DISABLED'))
     const profile = getMotionProfile(id)
     if (!profile) return Promise.reject(new Error('MOTION_INVALID_PROFILE'))
     if (
@@ -844,6 +847,16 @@ export class GeneratedBodyPlayback {
     this.execution?.requestRecovery()
   }
 
+  setFlashMotionEnabled(enabled: boolean): void {
+    if (this.flashMotionEnabled === enabled) return
+    this.flashMotionEnabled = enabled
+    if (enabled) return
+    // Main has already revoked the lease and owns worker teardown.
+    this.stopAnimation('MOTION_DISABLED', false)
+    this.physicalMotion = null
+    this.restoreSafePose()
+  }
+
   releaseSpeechPreparation(profileId: string): void {
     this.pendingProfiles = this.pendingProfiles.filter((pending) => {
       if (pending.id !== profileId || !pending.context.speechBound) return true
@@ -861,6 +874,7 @@ export class GeneratedBodyPlayback {
     repeat = false,
     conversational = false,
   ): { available: boolean; reason: string | null } {
+    if (!this.flashMotionEnabled) return { available: false, reason: 'disabled' }
     const profile = getMotionProfile(id)
     const vrm = this.vrm
     if (!vrm) return { available: false, reason: 'model-not-ready' }
@@ -1157,7 +1171,7 @@ export class GeneratedBodyPlayback {
     }
   }
 
-  stopAnimation(reason = 'MOTION_CANCELLED'): void {
+  stopAnimation(reason = 'MOTION_CANCELLED', stopWorker = true): void {
     if (this.physicalMotion && reason === 'MOTION_CANCELLED') {
       this.physicalMotion.requestStop('cancelled')
       for (const pending of this.pendingProfiles) pending.reject(new Error(reason))
@@ -1194,7 +1208,7 @@ export class GeneratedBodyPlayback {
     this.lease = null
     const pendingStartup = this.startup
     const stop =
-      lease || this.booting
+      stopWorker && (lease || this.booting)
         ? window.api.motion
             .stop(lease ?? { avatarGeneration: this.avatarGeneration })
             .then((result) => {
@@ -1789,6 +1803,9 @@ export class GeneratedBodyPlayback {
       }
     }
     this.transitionElapsed = Math.min(this.transitionDuration, this.transitionElapsed + elapsed)
+    const transitionWeight = motionTransitionWeight(
+      this.transitionElapsed / this.transitionDuration,
+    )
     this.lastPoseFrame = this.cursor
     this.appliedProfileId = chunk.profileId
     this.appliedLease = this.lease
@@ -1963,7 +1980,7 @@ export class GeneratedBodyPlayback {
         const from = this.transitionPose.get(binding.bone)
         if (from) {
           const generated = target.clone()
-          target.copy(from).slerp(generated, this.transitionElapsed / this.transitionDuration)
+          target.copy(from).slerp(generated, transitionWeight)
         }
       }
       binding.bone.quaternion.copy(target).normalize()
@@ -2056,9 +2073,7 @@ export class GeneratedBodyPlayback {
           chunk.flashMotion && this.transitionElapsed < this.transitionDuration
             ? this.transitionHands.get(bone)
             : undefined
-        const target = from
-          ? from.clone().slerp(rotation, this.transitionElapsed / this.transitionDuration)
-          : rotation
+        const target = from ? from.clone().slerp(rotation, transitionWeight) : rotation
         if (chunk.flashMotion && index >= 0)
           this.applyFlashFinger(bone, target, renderDelta, profile?.kind === 'presence')
         else bone.quaternion.copy(target)
@@ -2385,6 +2400,7 @@ export class GeneratedBodyPlayback {
 
   private pump(): void {
     if (
+      !this.flashMotionEnabled ||
       !this.vrm ||
       !this.playing ||
       this.localRecovery ||

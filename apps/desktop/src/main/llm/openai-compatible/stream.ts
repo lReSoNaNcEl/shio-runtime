@@ -41,10 +41,11 @@ export async function* runChatCompletionStream(
   const totalTimer = setTimeout(expire, total)
   const arm = (stage: keyof CharacterStreamDeadlines) => {
     clearTimeout(stageTimer)
-    stageTimer = setTimeout(
-      expire,
-      Math.min(total, positive(options.deadlines?.[stage], DEFAULT_STREAM_DEADLINES[stage])),
-    )
+    const fallback =
+      stage === 'connectionMs' || stage === 'firstByteMs'
+        ? (config.requestTimeoutMs ?? DEFAULT_STREAM_DEADLINES[stage])
+        : DEFAULT_STREAM_DEADLINES[stage]
+    stageTimer = setTimeout(expire, Math.min(total, positive(options.deadlines?.[stage], fallback)))
   }
   const tools = new Map<string, { index: number; name: string }>()
   let nextToolIndex = 0

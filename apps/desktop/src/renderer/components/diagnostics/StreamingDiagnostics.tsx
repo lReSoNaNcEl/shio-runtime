@@ -15,7 +15,7 @@ export function StreamingDiagnostics({ snapshot }: { snapshot: RuntimeDebugSnaps
       </pre>
       <Heading level={2}>{t('diagnostics.streaming.backlog')}</Heading>
       <dl className="diagnostics-streaming-counters">
-        {Object.entries(snapshot.backlogArbitration).map(([key, value]) => (
+        {Object.entries(snapshot.backlogSelection).map(([key, value]) => (
           <div key={key}>
             <dt>{key}</dt>
             <dd>{value}</dd>

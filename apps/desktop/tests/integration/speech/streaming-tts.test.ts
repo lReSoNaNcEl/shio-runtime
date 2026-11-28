@@ -14,6 +14,7 @@ import {
 import type { SpeechOutputPort } from '../../../src/renderer/runtime/SpeechOutputPort'
 import {
   type CharacterReplyStreamEvent,
+  SafeCharacterStreamFilter,
   type SafeCharacterTextDelta,
   SpeechTextCommitBuffer,
 } from '../../../src/shared/character-stream'
@@ -253,7 +254,7 @@ async function conversationStartsSpeechBeforeGenerationCompletes(): Promise<void
           llmRound: 0,
           delta: {
             emotion: 'warm',
-            text: 'Это достаточно длинное первое предложение. ',
+            text: 'Вижу. ',
           },
         })
         return generation
@@ -313,9 +314,9 @@ async function conversationStartsSpeechBeforeGenerationCompletes(): Promise<void
   assert.equal(playbackStarted, true)
 
   resolveGeneration({
-    replyText: '[warm]Это достаточно длинное первое предложение.',
-    displayText: 'Это достаточно длинное первое предложение.',
-    speechText: 'Это достаточно длинное первое предложение.',
+    replyText: '[warm]Вижу.',
+    displayText: 'Вижу.',
+    speechText: 'Вижу.',
     emotionKey: 'warm',
     segments: [],
   })
@@ -341,6 +342,95 @@ async function sessionOverlapAndCancellationAreBounded(): Promise<void> {
 }
 
 describe('streaming TTS integration', () => {
+  it('uses the spoken prose and keeps ambiguous technical text local to its turn', () => {
+    const state: FakeStreamState = { starts: [], messages: [], cancellations: [] }
+    const service = new SpeechApplicationService(() => fakeManager(state))
+    function synthesize(turnId: string, lines: string[], language: 'ru' | 'en') {
+      const offset = state.messages.length
+      const stream = service.openStream({ ...start(turnId), language }, () => {})
+      for (const [sequence, text] of lines.entries()) stream.send({ type: 'text', sequence, text })
+      stream.send({ type: 'finish-input' })
+      state.emit?.({ type: 'complete', sequence: lines.length, sessionId: `speech:${turnId}` })
+      return state.messages
+        .slice(offset)
+        .flatMap((message) => (message.type === 'text' ? [message.text] : []))
+    }
+    assert.deepEqual(
+      synthesize(
+        'mixed',
+        [
+          'GPT-5',
+          'Открой TypeScript и GitHub.',
+          'GPT-5',
+          'I use TypeScript.',
+          'GPT-5',
+          'Теперь выбери GitHub. Then open TypeScript.',
+        ],
+        'en',
+      ),
+      [
+        'GPT-5',
+        'Открой тайпскрипт и гитхаб.',
+        'джи-пи-ти пять',
+        'I use TypeScript.',
+        'GPT-5',
+        'Теперь выбери гитхаб. Then open TypeScript.',
+      ],
+    )
+    assert.deepEqual(synthesize('fresh', ['GPT-5', 'Check the GitHub link.'], 'ru'), [
+      'джи-пи-ти пять',
+      'Check the GitHub link.',
+    ])
+    assert.equal(state.starts.length, 2)
+  })
+  it('sends a short first sentence as soon as its boundary is known', () => {
+    const buffer = new SpeechTextCommitBuffer('short-opening')
+    const push = (text: string) =>
+      buffer.push({ emotion: 'calm', text }).map((commit) => commit.text)
+    assert.deepEqual(push('«Ви'), [])
+    assert.deepEqual(push('жу.»'), [])
+    assert.deepEqual(push(' '), ['«Вижу.»'])
+    assert.deepEqual(push('Да. '), [])
+    assert.deepEqual(
+      buffer.flush().map((commit) => commit.text),
+      ['Да.'],
+    )
+  })
+
+  it('keeps initials, abbreviations, decimals and words split inside the transport together', () => {
+    for (const [prefix, rest] of [
+      ['ул. ', 'Ленина. '],
+      ['Dr. ', 'Smith is here. '],
+      ['А. ', 'С. Пушкин. '],
+      ['т. е. ', 'уже здесь. '],
+      ['1. ', 'Готово. '],
+      ['Это 3.', '14 секунды. '],
+      ['Открой example.', 'com сейчас. '],
+    ]) {
+      const buffer = new SpeechTextCommitBuffer('split-boundary')
+      const push = (text: string) =>
+        buffer.push({ emotion: 'calm', text }).map((commit) => commit.text)
+      assert.deepEqual(push(prefix), [])
+      assert.deepEqual(push(rest), [(prefix + rest).trim()])
+    }
+  })
+
+  it('keeps protocol, reasoning and code out of the first short spoken sentence', () => {
+    const filter = new SafeCharacterStreamFilter()
+    const buffer = new SpeechTextCommitBuffer('filtered-opening')
+    const source = [
+      '[calm]<thi',
+      'nk>Skipped. </think><shio-tools>{"calls":[]}</shio-tools>',
+      '\u0060secret.\u0060 Вижу. ',
+    ]
+    const commits = source
+      .flatMap((part) => filter.push(part))
+      .flatMap((delta) => buffer.push(delta))
+    assert.deepEqual(
+      commits.map((commit) => commit.text),
+      ['Вижу.'],
+    )
+  })
   it('commits stable prose while filtering non-speech syntax', textCommitBufferFiltersUnsafeSyntax)
   it(
     'uses one logical speech session for multiple text commits',

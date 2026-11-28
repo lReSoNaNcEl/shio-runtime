@@ -1,13 +1,14 @@
 import asyncio
 import json
 import logging
+from contextvars import copy_context
 
 import numpy as np
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 
 from app.asr import SileroVAD, StreamingASRSession, WhisperASR
-from app.asr.streaming import StreamingVADConfig
+from app.asr.streaming import DecodeJob, StreamingVADConfig
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -15,7 +16,9 @@ router = APIRouter(tags=["asr"])
 
 _whisper: WhisperASR | None = None
 _vad: SileroVAD | None = None
-_decode_lock = asyncio.Lock()
+# A released slot is immediately reserved for an existing waiter. Optional jobs
+# may enter only when no other session is running or waiting for inference.
+_decode_slot = asyncio.BoundedSemaphore(1)
 
 
 class AsrStreamProtocolInfo(BaseModel):
@@ -118,14 +121,40 @@ async def _send_json(websocket: WebSocket, send_lock: asyncio.Lock, payload: dic
 
 
 async def _send_decode(
-    websocket: WebSocket, send_lock: asyncio.Lock, session: StreamingASRSession, job
+    websocket: WebSocket, send_lock: asyncio.Lock, session: StreamingASRSession, job: DecodeJob
 ) -> None:
-    async with _decode_lock:
-        events = await asyncio.to_thread(session.transcribe, job)
+    decode_slot = _decode_slot
+    events = session.finish_prepared(job) if job.kind == "final" else None
+    if events is None:
+        if job.kind == "endpoint" and decode_slot.locked():
+            return
+        events = await _decode(decode_slot, session, job)
     if session.closed:
         return
     for event in events:
         await _send_json(websocket, send_lock, event)
+
+
+async def _decode(
+    decode_slot: asyncio.BoundedSemaphore, session: StreamingASRSession, job: DecodeJob
+) -> list[dict]:
+    await decode_slot.acquire()
+    try:
+        inference = asyncio.get_running_loop().run_in_executor(
+            None, copy_context().run, session.transcribe, job
+        )
+    except BaseException:
+        decode_slot.release()
+        raise
+
+    def finish_decode(result: asyncio.Future) -> None:
+        # A disconnect can cancel this waiter while native Whisper is still using the model.
+        decode_slot.release()
+        if not result.cancelled():
+            result.exception()  # Observe failures even after the socket has closed.
+
+    inference.add_done_callback(finish_decode)
+    return await asyncio.shield(inference)
 
 
 async def _audio_worker(
@@ -144,6 +173,8 @@ async def _audio_worker(
             # This worker is the only decode producer for the session: partials
             # and finals can never overlap or build an inference-task backlog.
             for job in jobs:
+                if job.kind == "endpoint" and not audio_queue.empty():
+                    continue
                 await _send_decode(websocket, send_lock, session, job)
         finally:
             audio_queue.task_done()
@@ -167,11 +198,13 @@ async def websocket_recognize(websocket: WebSocket):
         return
 
     session: StreamingASRSession | None = None
-    audio_queue: asyncio.Queue[bytes] | None = None
     worker_task: asyncio.Task | None = None
     send_lock = asyncio.Lock()
-    queue_warning_sent = False
-    try:
+
+    async def receive_messages(workers: asyncio.TaskGroup) -> None:
+        nonlocal session, worker_task
+        audio_queue: asyncio.Queue[bytes] | None = None
+        queue_warning_sent = False
         while True:
             message = await websocket.receive()
             if message.get("type") == "websocket.disconnect":
@@ -242,7 +275,7 @@ async def websocket_recognize(websocket: WebSocket):
                         ),
                     )
                     audio_queue = asyncio.Queue(maxsize=settings.ASR_AUDIO_QUEUE_FRAMES)
-                    worker_task = asyncio.create_task(
+                    worker_task = workers.create_task(
                         _audio_worker(websocket, send_lock, session, audio_queue)
                     )
                     await websocket.send_json(
@@ -307,26 +340,38 @@ async def websocket_recognize(websocket: WebSocket):
                 await audio_queue.put(audio_bytes)
                 if audio_queue.qsize() < audio_queue.maxsize // 2:
                     queue_warning_sent = False
-    except WebSocketDisconnect:
+
+    try:
+        async with asyncio.TaskGroup() as workers:
+            try:
+                await receive_messages(workers)
+            finally:
+                # The input stream ended or the worker failed while input awaited queue capacity.
+                if worker_task is not None:
+                    worker_task.cancel()
+    except* WebSocketDisconnect:
         logger.info("ASR stream disconnected session=%s", session.session_id if session else None)
-    except Exception as error:
+    except* Exception:
         logger.exception("ASR WebSocket failure")
         if session is not None and not session.closed:
+            worker_failed = (
+                worker_task is not None
+                and not worker_task.cancelled()
+                and worker_task.exception() is not None
+            )
             try:
                 await websocket.send_json(
                     {
                         "type": "error",
                         "sessionId": session.session_id,
                         "code": "stream_failure",
-                        "message": str(error),
-                        "recoverable": False,
+                        "message": "Speech recognition session failed",
+                        "recoverable": worker_failed,
                     }
                 )
-            except Exception:
+                await websocket.close(code=1011)
+            except (WebSocketDisconnect, RuntimeError, OSError):
                 pass
     finally:
         if session is not None:
             session.close()
-        if worker_task is not None:
-            worker_task.cancel()
-            await asyncio.gather(worker_task, return_exceptions=True)

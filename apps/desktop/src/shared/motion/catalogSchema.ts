@@ -89,7 +89,6 @@ export const motionHandTargetSchema = z
         : target.fingerDirection === 'up'),
     'Palm normal and finger direction must be perpendicular',
   )
-export type MotionHandTarget = z.infer<typeof motionHandTargetSchema>
 const handPair = z.object({ left: motionHandTargetSchema, right: motionHandTargetSchema }).strict()
 const phase = z
   .object({

@@ -10,6 +10,9 @@ import {
   InlineAlert,
   ListView,
   ListViewItem,
+  Menu,
+  MenuItem,
+  MenuTrigger,
   NumberField,
   Picker,
   PickerItem,
@@ -17,9 +20,12 @@ import {
   SearchField,
   StatusLight,
   Text,
+  ToggleButton,
   Tooltip,
   TooltipTrigger,
 } from '@react-spectrum/s2'
+import Camera from '@react-spectrum/s2/icons/Camera'
+import FullScreen from '@react-spectrum/s2/icons/FullScreen'
 import RotateCCW from '@react-spectrum/s2/icons/RotateCCW'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
@@ -90,7 +96,8 @@ export function AvatarPreviewView({ onOpenSettings }: { onOpenSettings: () => vo
   const mountedRef = useRef(true)
   const [phase, setPhase] = useState<Phase>('loading')
   const [hasModel, setHasModel] = useState<boolean | null>(null)
-  const [selectedId, setSelectedId] = useState('presence_poised')
+  const [preferredId, setPreferredId] = useState('presence_poised')
+  const [focusStage, setFocusStage] = useState(false)
   const [groupFilter, setGroupFilter] = useState<GroupFilter>('all')
   const [query, setQuery] = useState('')
   const [variationSeed, setVariationSeed] = useState(Number.NaN)
@@ -111,9 +118,7 @@ export function AvatarPreviewView({ onOpenSettings }: { onOpenSettings: () => vo
     return () => window.clearInterval(timer)
   }, [])
 
-  const selected = MOTION_PROFILES.find((profile) => profile.id === selectedId)
   const running = MOTION_PROFILES.find((profile) => profile.id === library?.runningProfileId)
-  const selectedAvailability = selected ? library?.profiles[selected.id] : undefined
   const reasonText = (reason: string | null | undefined) =>
     t(AVAILABILITY_REASONS[reason ?? 'model-not-ready'] ?? 'avatarPreview.reason.transition')
   const profileTitle = (id: string) =>
@@ -129,28 +134,25 @@ export function AvatarPreviewView({ onOpenSettings }: { onOpenSettings: () => vo
           ? t(ROUTE_LABELS[value])
           : profileTitle(value)
 
-  const groups = useMemo(() => {
+  const visibleProfiles = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase(locale)
-    return LIBRARY_GROUPS.map((group) => ({
-      id: group,
-      profiles: MOTION_PROFILES.filter((profile) => {
-        if (
-          profile.libraryGroup !== group ||
-          (groupFilter !== 'all' && profile.libraryGroup !== groupFilter)
+    return MOTION_PROFILES.filter((profile) => {
+      if (groupFilter !== 'all' && profile.libraryGroup !== groupFilter) return false
+      const available = library?.profiles[profile.id]?.available ?? false
+      if (availabilityFilter === 'available' && !available) return false
+      if (availabilityFilter === 'unavailable' && available) return false
+      return (
+        !needle ||
+        [profile.labels[locale], profile.descriptions[locale], profile.id].some((value) =>
+          value.toLocaleLowerCase(locale).includes(needle),
         )
-          return false
-        const available = library?.profiles[profile.id]?.available ?? false
-        if (availabilityFilter === 'available' && !available) return false
-        if (availabilityFilter === 'unavailable' && available) return false
-        return (
-          !needle ||
-          [profile.labels[locale], profile.descriptions[locale], profile.id].some((value) =>
-            value.toLocaleLowerCase(locale).includes(needle),
-          )
-        )
-      }),
-    })).filter((group) => group.profiles.length > 0)
+      )
+    })
   }, [query, locale, availabilityFilter, library, groupFilter])
+  const selected =
+    visibleProfiles.find((profile) => profile.id === preferredId) ?? visibleProfiles[0]
+  const selectedId = selected?.id ?? ''
+  const selectedAvailability = selected ? library?.profiles[selected.id] : undefined
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: bootstrap once per mounted Preview; open depends on its canvas lifecycle.
   useEffect(() => {
@@ -202,7 +204,6 @@ export function AvatarPreviewView({ onOpenSettings }: { onOpenSettings: () => vo
     ready &&
     Boolean(selected) &&
     (selectedAvailability?.available === true || selectionReason === 'generator-unavailable')
-  const visibleProfiles = groups.flatMap((group) => group.profiles)
   const profileProblem =
     !generatorUnavailable && selected && !selectedAvailability?.available
       ? reasonText(selectedAvailability?.reason)
@@ -253,104 +254,22 @@ export function AvatarPreviewView({ onOpenSettings }: { onOpenSettings: () => vo
         </div>
       )}
 
-      <div className={ready ? 'avatar-preview-workspace' : 'avatar-preview-workspace collapsed'}>
-        {ready && (
-          <aside className="animation-library" aria-label={t('avatarPreview.library')}>
-            <header className="animation-library-header">
-              <div className="preview-section-heading">
-                <Heading level={2}>{t('avatarPreview.library')}</Heading>
-                <span className="preview-library-count">
-                  <Badge size="S" variant="neutral">
-                    {String(visibleProfiles.length)}
-                  </Badge>
-                </span>
-              </div>
-              <SearchField
-                aria-label={t('avatarPreview.search')}
-                value={query}
-                onChange={setQuery}
-                placeholder={t('avatarPreview.searchPlaceholder')}
-              />
-              <div className="animation-library-filters">
-                <Picker
-                  aria-label={t('avatarPreview.groupFilter')}
-                  selectedKey={groupFilter}
-                  onSelectionChange={(key) => setGroupFilter(String(key) as GroupFilter)}
-                >
-                  <PickerItem id="all">{t('avatarPreview.filter.all')}</PickerItem>
-                  {LIBRARY_GROUPS.map((group) => (
-                    <PickerItem key={group} id={group}>
-                      {t(`avatarPreview.group.${group}` as TranslationKey)}
-                    </PickerItem>
-                  ))}
-                </Picker>
-                <Picker
-                  aria-label={t('avatarPreview.availabilityFilter')}
-                  selectedKey={availabilityFilter}
-                  onSelectionChange={(key) =>
-                    setAvailabilityFilter(String(key) as AvailabilityFilter)
-                  }
-                >
-                  <PickerItem id="all">{t('avatarPreview.availabilityFilter')}</PickerItem>
-                  <PickerItem id="available">{t('avatarPreview.filter.available')}</PickerItem>
-                  <PickerItem id="unavailable">{t('avatarPreview.filter.unavailable')}</PickerItem>
-                </Picker>
-              </div>
-            </header>
-            {visibleProfiles.length ? (
-              <ListView
-                aria-label={t('avatarPreview.library')}
-                items={visibleProfiles}
-                selectionMode="single"
-                selectionStyle="highlight"
-                isQuiet
-                selectedKeys={new Set([selectedId])}
-                onSelectionChange={(keys) => {
-                  if (keys === 'all') return
-                  const id = keys.values().next().value
-                  if (typeof id === 'string') setSelectedId(id)
-                }}
-                UNSAFE_className="animation-library-list"
-              >
-                {(profile) => (
-                  <ListViewItem
-                    id={profile.id}
-                    aria-label={profile.labels[locale]}
-                    textValue={profile.labels[locale]}
-                  >
-                    <Text slot="label">{profile.labels[locale]}</Text>
-                    <Text slot="description">
-                      {t(`avatarPreview.group.${profile.libraryGroup}` as TranslationKey)} ·{' '}
-                      {library?.profiles[profile.id]?.available
-                        ? t('avatarPreview.available')
-                        : t('avatarPreview.unavailable')}
-                    </Text>
-                  </ListViewItem>
-                )}
-              </ListView>
-            ) : (
-              <div className="preview-library-empty">
-                <Text>{t('avatarPreview.empty')}</Text>
-              </div>
-            )}
-          </aside>
-        )}
-
+      <div
+        className={ready ? 'avatar-preview-workspace' : 'avatar-preview-workspace collapsed'}
+        data-focus={focusStage || undefined}
+      >
         <section className="preview-viewport" aria-labelledby="avatar-preview-workspace-title">
           {ready && (
             <header className="preview-viewport-header">
               <Heading level={2} id="avatar-preview-workspace-title">
                 {t('avatarPreview.workspace')}
               </Heading>
-              <TooltipTrigger delay={200}>
-                <ActionButton
-                  aria-label={t('avatarPreview.resetCamera')}
-                  onPress={() => controller.resetPreviewCamera()}
-                >
-                  <RotateCCW />
-                </ActionButton>
-                <Tooltip>{t('avatarPreview.resetCamera')}</Tooltip>
-              </TooltipTrigger>
+              <ToggleButton isSelected={focusStage} onChange={setFocusStage}>
+                <FullScreen />
+                <Text>
+                  {t(focusStage ? 'avatarPreview.showPanels' : 'avatarPreview.focusStage')}
+                </Text>
+              </ToggleButton>
             </header>
           )}
           <div className={ready ? 'avatar-preview-stage' : 'avatar-preview-stage collapsed'}>
@@ -365,33 +284,55 @@ export function AvatarPreviewView({ onOpenSettings }: { onOpenSettings: () => vo
           </div>
           {ready && (
             <footer className="preview-stage-footer">
-              <fieldset className="preview-camera-toolbar">
-                <legend className="visually-hidden">{t('avatarPreview.cameraPresets')}</legend>
-                {(['full', 'bust', 'face'] as const).map((preset) => (
-                  <Button
-                    key={preset}
-                    variant="secondary"
-                    onPress={() => controller.previewCameraPreset(preset)}
+              <div className="preview-camera-toolbar">
+                <MenuTrigger direction="top">
+                  <ActionButton>
+                    <Camera />
+                    <Text>{t('avatarPreview.framing')}</Text>
+                  </ActionButton>
+                  <Menu
+                    aria-label={t('avatarPreview.cameraPresets')}
+                    onAction={(key) => {
+                      if (key === 'full' || key === 'face' || key === 'bust')
+                        controller.previewCameraPreset(key)
+                      if (key === 'leftHand' || key === 'rightHand')
+                        controller.previewHandCamera(key === 'leftHand' ? 'left' : 'right')
+                    }}
                   >
-                    {t(`avatarPreview.cameraPreset.${preset}` as TranslationKey)}
+                    {(['full', 'bust', 'face', 'leftHand', 'rightHand'] as const).map((preset) => (
+                      <MenuItem key={preset} id={preset}>
+                        {t(`avatarPreview.cameraPreset.${preset}`)}
+                      </MenuItem>
+                    ))}
+                  </Menu>
+                </MenuTrigger>
+                <TooltipTrigger delay={200}>
+                  <ActionButton
+                    aria-label={t('avatarPreview.resetCamera')}
+                    onPress={() => controller.resetPreviewCamera()}
+                  >
+                    <RotateCCW />
+                  </ActionButton>
+                  <Tooltip>{t('avatarPreview.resetCamera')}</Tooltip>
+                </TooltipTrigger>
+              </div>
+              {running && (
+                <div className="preview-actions preview-transport-actions">
+                  <Button variant="secondary" onPress={() => controller.stopAnimation()}>
+                    {t('avatarPreview.stop')}
                   </Button>
-                ))}
-                <Button variant="secondary" onPress={() => controller.previewHandCamera('left')}>
-                  {t('avatarPreview.cameraPreset.leftHand')}
-                </Button>
-                <Button variant="secondary" onPress={() => controller.previewHandCamera('right')}>
-                  {t('avatarPreview.cameraPreset.rightHand')}
-                </Button>
-              </fieldset>
+                  <Button variant="secondary" onPress={() => controller.recoverAvatarMotion()}>
+                    {t('avatarPreview.returnIdle')}
+                  </Button>
+                </div>
+              )}
               <div
                 className="preview-running-status"
-                data-motion-phase={library?.phase ?? 'none'}
+                data-motion-phase={(running && library?.phase) ?? 'none'}
                 aria-live="polite"
               >
                 <StatusLight size="S" variant={running ? 'positive' : 'neutral'}>
-                  {running
-                    ? `${t('avatarPreview.inspector.running')}: ${running.labels[locale]} · ${phaseText(library?.phase)}`
-                    : t('avatarPreview.inspector.noRunning')}
+                  {running ? running.labels[locale] : t('avatarPreview.inspector.noRunning')}
                 </StatusLight>
               </div>
             </footer>
@@ -399,376 +340,454 @@ export function AvatarPreviewView({ onOpenSettings }: { onOpenSettings: () => vo
         </section>
 
         {ready && (
-          <aside className="preview-inspector" aria-labelledby="avatar-preview-inspector-title">
-            <div className="preview-inspector-intro">
-              <Text>{t('avatarPreview.inspector.title')}</Text>
-              <Heading level={2} id="avatar-preview-inspector-title">
-                {selected?.labels[locale] ?? t('avatarPreview.inspector.emptyTitle')}
-              </Heading>
-              <Text>
-                {selected?.descriptions[locale] ?? t('avatarPreview.inspector.emptyDescription')}
-              </Text>
-              {selected && (
-                <div className="preview-profile-tags">
-                  <Badge variant="neutral" size="S">
-                    {t(`avatarPreview.group.${selected.libraryGroup}` as TranslationKey)}
-                  </Badge>
-                  <Badge variant="neutral" size="S">
-                    {t(
-                      `avatarPreview.qualification.${selected.qualification.state}` as TranslationKey,
-                    )}
-                  </Badge>
+          <div className="preview-control-rail" hidden={focusStage}>
+            <aside className="animation-library" aria-label={t('avatarPreview.library')}>
+              <header className="animation-library-header">
+                <div className="preview-section-heading">
+                  <Heading level={2}>{t('avatarPreview.library')}</Heading>
+                  <span className="preview-library-count">
+                    <Badge size="S" variant="neutral">
+                      {String(visibleProfiles.length)}
+                    </Badge>
+                  </span>
+                </div>
+                <SearchField
+                  aria-label={t('avatarPreview.search')}
+                  value={query}
+                  onChange={setQuery}
+                  placeholder={t('avatarPreview.searchPlaceholder')}
+                />
+                <div className="animation-library-filters">
+                  <Picker
+                    aria-label={t('avatarPreview.groupFilter')}
+                    selectedKey={groupFilter}
+                    onSelectionChange={(key) => setGroupFilter(String(key) as GroupFilter)}
+                  >
+                    <PickerItem id="all">{t('avatarPreview.filter.all')}</PickerItem>
+                    {LIBRARY_GROUPS.map((group) => (
+                      <PickerItem key={group} id={group}>
+                        {t(`avatarPreview.group.${group}` as TranslationKey)}
+                      </PickerItem>
+                    ))}
+                  </Picker>
+                  <Picker
+                    aria-label={t('avatarPreview.availabilityFilter')}
+                    selectedKey={availabilityFilter}
+                    onSelectionChange={(key) =>
+                      setAvailabilityFilter(String(key) as AvailabilityFilter)
+                    }
+                  >
+                    <PickerItem id="all">{t('avatarPreview.filter.anyAvailability')}</PickerItem>
+                    <PickerItem id="available">{t('avatarPreview.filter.available')}</PickerItem>
+                    <PickerItem id="unavailable">
+                      {t('avatarPreview.filter.unavailable')}
+                    </PickerItem>
+                  </Picker>
+                </div>
+              </header>
+              {visibleProfiles.length ? (
+                <ListView
+                  aria-label={t('avatarPreview.library')}
+                  items={visibleProfiles}
+                  selectionMode="single"
+                  selectionStyle="highlight"
+                  isQuiet
+                  selectedKeys={new Set([selectedId])}
+                  onSelectionChange={(keys) => {
+                    if (keys === 'all') return
+                    const id = keys.values().next().value
+                    if (typeof id === 'string') setPreferredId(id)
+                  }}
+                  UNSAFE_className="animation-library-list"
+                >
+                  {(profile) => (
+                    <ListViewItem
+                      id={profile.id}
+                      aria-label={profile.labels[locale]}
+                      textValue={profile.labels[locale]}
+                    >
+                      <Text slot="label">{profile.labels[locale]}</Text>
+                      <Text slot="description">
+                        {t(`avatarPreview.group.${profile.libraryGroup}` as TranslationKey)} ·{' '}
+                        {library?.profiles[profile.id]?.available
+                          ? t('avatarPreview.available')
+                          : t('avatarPreview.unavailable')}
+                      </Text>
+                    </ListViewItem>
+                  )}
+                </ListView>
+              ) : (
+                <div className="preview-library-empty">
+                  <Text>{t('avatarPreview.empty')}</Text>
+                  <Button
+                    size="S"
+                    variant="secondary"
+                    onPress={() => {
+                      setQuery('')
+                      setGroupFilter('all')
+                      setAvailabilityFilter('all')
+                    }}
+                  >
+                    {t('avatarPreview.clearFilters')}
+                  </Button>
                 </div>
               )}
-            </div>
-            {generatorUnavailable ? (
-              <InlineAlert variant="notice" fillStyle="subtleFill">
-                <Heading>{t('avatarPreview.runtime.unavailableTitle')}</Heading>
-                <Content>{t('avatarPreview.runtime.unavailableDescription')}</Content>
-              </InlineAlert>
-            ) : profileProblem ? (
-              <InlineAlert variant="notice" fillStyle="subtleFill">
-                <Content>{profileProblem}</Content>
-              </InlineAlert>
-            ) : null}
-            <div className="preview-primary-actions">
-              {selected?.physicalAction?.action === 'turn-in-place' && (
-                <Picker
-                  label={t('avatarPreview.turn.direction')}
-                  value={turnDirection}
-                  onChange={(value) => {
-                    if (value === 'clockwise' || value === 'counterclockwise')
-                      setTurnDirection(value)
-                  }}
-                >
-                  <PickerItem id="clockwise">{t('avatarPreview.turn.clockwise')}</PickerItem>
-                  <PickerItem id="counterclockwise">
-                    {t('avatarPreview.turn.counterclockwise')}
-                  </PickerItem>
-                </Picker>
-              )}
-              <Button
-                variant="accent"
-                isDisabled={!canPlay}
-                onPress={() => {
-                  if (selected?.physicalAction?.action === 'turn-in-place')
-                    controller.previewAvatarVariation(
-                      selectedId,
-                      Number.isNaN(variationSeed) ? undefined : variationSeed,
-                      {
-                        action: 'turn-in-place',
-                        turns: 1,
-                        direction: turnDirection,
-                        tempo: 1,
-                        finishFacing: 'viewer',
-                      },
-                    )
-                  else if (generatorUnavailable) controller.previewAvatarVariation(selectedId)
-                  else controller.previewAvatarAnimation(selectedId)
-                }}
-              >
-                {generatorUnavailable
-                  ? t('avatarPreview.action.retryGeneration')
-                  : t('avatarPreview.play')}
-              </Button>
-              <Button
-                variant="secondary"
-                isDisabled={!canPlay || !validSeed || generatorUnavailable}
-                onPress={() =>
-                  controller.previewAvatarVariation(
-                    selectedId,
-                    Number.isNaN(variationSeed) ? undefined : variationSeed,
-                    selected?.physicalAction?.action === 'turn-in-place'
-                      ? {
+            </aside>
+
+            <aside className="preview-inspector" aria-labelledby="avatar-preview-inspector-title">
+              <div className="preview-inspector-intro">
+                <Heading level={2} id="avatar-preview-inspector-title">
+                  {selected?.labels[locale] ?? t('avatarPreview.inspector.emptyTitle')}
+                </Heading>
+                <Text>
+                  {selected?.descriptions[locale] ?? t('avatarPreview.inspector.emptyDescription')}
+                </Text>
+                {selected && (
+                  <div className="preview-profile-tags">
+                    <Badge variant="neutral" size="S">
+                      {t(`avatarPreview.group.${selected.libraryGroup}` as TranslationKey)}
+                    </Badge>
+                    <Badge variant="neutral" size="S">
+                      {t(
+                        `avatarPreview.qualification.${selected.qualification.state}` as TranslationKey,
+                      )}
+                    </Badge>
+                  </div>
+                )}
+              </div>
+              {generatorUnavailable ? (
+                <InlineAlert variant="notice" fillStyle="subtleFill">
+                  <Heading>{t('avatarPreview.runtime.unavailableTitle')}</Heading>
+                  <Content>{t('avatarPreview.runtime.unavailableDescription')}</Content>
+                </InlineAlert>
+              ) : profileProblem ? (
+                <InlineAlert variant="notice" fillStyle="subtleFill">
+                  <Content>{profileProblem}</Content>
+                </InlineAlert>
+              ) : null}
+              <div className="preview-primary-actions">
+                {selected?.physicalAction?.action === 'turn-in-place' && (
+                  <Picker
+                    label={t('avatarPreview.turn.direction')}
+                    value={turnDirection}
+                    onChange={(value) => {
+                      if (value === 'clockwise' || value === 'counterclockwise')
+                        setTurnDirection(value)
+                    }}
+                  >
+                    <PickerItem id="clockwise">{t('avatarPreview.turn.clockwise')}</PickerItem>
+                    <PickerItem id="counterclockwise">
+                      {t('avatarPreview.turn.counterclockwise')}
+                    </PickerItem>
+                  </Picker>
+                )}
+                <Button
+                  variant="accent"
+                  isDisabled={!canPlay}
+                  onPress={() => {
+                    if (selected?.physicalAction?.action === 'turn-in-place')
+                      controller.previewAvatarVariation(
+                        selectedId,
+                        Number.isNaN(variationSeed) ? undefined : variationSeed,
+                        {
                           action: 'turn-in-place',
                           turns: 1,
                           direction: turnDirection,
                           tempo: 1,
                           finishFacing: 'viewer',
+                        },
+                      )
+                    else if (generatorUnavailable) controller.previewAvatarVariation(selectedId)
+                    else controller.previewAvatarAnimation(selectedId)
+                  }}
+                >
+                  {generatorUnavailable
+                    ? t('avatarPreview.action.retryGeneration')
+                    : t('avatarPreview.play')}
+                </Button>
+                <Button
+                  variant="secondary"
+                  isDisabled={!canPlay || !validSeed || generatorUnavailable}
+                  onPress={() =>
+                    controller.previewAvatarVariation(
+                      selectedId,
+                      Number.isNaN(variationSeed) ? undefined : variationSeed,
+                      selected?.physicalAction?.action === 'turn-in-place'
+                        ? {
+                            action: 'turn-in-place',
+                            turns: 1,
+                            direction: turnDirection,
+                            tempo: 1,
+                            finishFacing: 'viewer',
+                          }
+                        : undefined,
+                    )
+                  }
+                >
+                  {t('avatarPreview.replay')}
+                </Button>
+              </div>
+              <div className="preview-inspector-advanced">
+                <Disclosure isQuiet>
+                  <DisclosureTitle level={4}>{t('avatarPreview.sequence.title')}</DisclosureTitle>
+                  <DisclosurePanel>
+                    <Text>{t('avatarPreview.sequence.description')}</Text>
+                    <ol className="preview-motion-sequence">
+                      {sequence.map((entry) => (
+                        <li key={entry.id}>
+                          <Text>{profileTitle(entry.profileId)}</Text>
+                        </li>
+                      ))}
+                    </ol>
+                    <div className="preview-actions">
+                      <Button
+                        variant="secondary"
+                        isDisabled={!selected || sequence.length >= 5}
+                        onPress={() => {
+                          const entry = { id: nextSequenceId.current++, profileId: selectedId }
+                          setSequence((current) => [...current, entry])
+                        }}
+                      >
+                        {t('avatarPreview.sequence.add')}
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        isDisabled={sequence.length === 0}
+                        onPress={() => setSequence((current) => current.slice(0, -1))}
+                      >
+                        {t('avatarPreview.sequence.remove')}
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        isDisabled={!canPlaySequence}
+                        onPress={() =>
+                          controller.previewAvatarSequence(sequence.map((entry) => entry.profileId))
                         }
-                      : undefined,
-                  )
-                }
-              >
-                {t('avatarPreview.replay')}
-              </Button>
-            </div>
-            <div className="preview-actions preview-transport-actions">
-              <Button
-                variant="secondary"
-                isDisabled={!running}
-                onPress={() => controller.stopAnimation()}
-              >
-                {t('avatarPreview.stop')}
-              </Button>
-              <Button
-                variant="secondary"
-                isDisabled={!running}
-                onPress={() => controller.recoverAvatarMotion()}
-              >
-                {t('avatarPreview.returnIdle')}
-              </Button>
-            </div>
-            <div className="preview-inspector-advanced">
-              <Disclosure isQuiet>
-                <DisclosureTitle level={4}>{t('avatarPreview.sequence.title')}</DisclosureTitle>
-                <DisclosurePanel>
-                  <Text>{t('avatarPreview.sequence.description')}</Text>
-                  <ol className="preview-motion-sequence">
-                    {sequence.map((entry) => (
-                      <li key={entry.id}>
-                        <Text>{profileTitle(entry.profileId)}</Text>
-                      </li>
-                    ))}
-                  </ol>
-                  <div className="preview-actions">
-                    <Button
-                      variant="secondary"
-                      isDisabled={!selected || sequence.length >= 5}
-                      onPress={() => {
-                        const entry = { id: nextSequenceId.current++, profileId: selectedId }
-                        setSequence((current) => [...current, entry])
-                      }}
-                    >
-                      {t('avatarPreview.sequence.add')}
-                    </Button>
-                    <Button
-                      variant="secondary"
-                      isDisabled={sequence.length === 0}
-                      onPress={() => setSequence((current) => current.slice(0, -1))}
-                    >
-                      {t('avatarPreview.sequence.remove')}
-                    </Button>
-                    <Button
-                      variant="secondary"
-                      isDisabled={!canPlaySequence}
-                      onPress={() =>
-                        controller.previewAvatarSequence(sequence.map((entry) => entry.profileId))
-                      }
-                    >
-                      {t('avatarPreview.sequence.play')}
-                    </Button>
-                  </div>
-                </DisclosurePanel>
-              </Disclosure>
-              <MotionAttenuationPanel />
-              <KeyposeAuthoringPanel />
-              <Disclosure isQuiet UNSAFE_className="preview-animation-details">
-                <DisclosureTitle level={4}>{t('avatarPreview.details')}</DisclosureTitle>
-                <DisclosurePanel>
-                  <div className="preview-actions">
-                    <NumberField
-                      label={t('avatarPreview.seed.input')}
-                      description={t('avatarPreview.seed.help')}
-                      value={variationSeed}
-                      onChange={setVariationSeed}
-                      minValue={0}
-                      maxValue={2_147_483_647}
-                      step={1}
-                      isInvalid={!validSeed}
-                    />
-                    <Button
-                      variant="secondary"
-                      isDisabled={Number.isNaN(variationSeed)}
-                      onPress={() => setVariationSeed(Number.NaN)}
-                    >
-                      {t('avatarPreview.seed.random')}
-                    </Button>
-                  </div>
-                  {!validSeed && <Text>{t('avatarPreview.seed.invalid')}</Text>}
-                  <dl className="preview-animation-meta">
-                    <div>
-                      <dt>
-                        <Text>{t('avatarPreview.bodyPhase')}</Text>
-                      </dt>
-                      <dd>
-                        <Text>{running ? phaseText(library?.phase) : phaseText(null)}</Text>
-                      </dd>
+                      >
+                        {t('avatarPreview.sequence.play')}
+                      </Button>
                     </div>
-                    <div>
-                      <dt>
-                        <Text>{t('avatarPreview.handPhase')}</Text>
-                      </dt>
-                      <dd>
-                        <Text>{running ? phaseText(library?.handPhase) : phaseText(null)}</Text>
-                      </dd>
+                  </DisclosurePanel>
+                </Disclosure>
+                <MotionAttenuationPanel />
+                <KeyposeAuthoringPanel />
+                <Disclosure isQuiet UNSAFE_className="preview-animation-details">
+                  <DisclosureTitle level={4}>{t('avatarPreview.details')}</DisclosureTitle>
+                  <DisclosurePanel>
+                    <div className="preview-actions">
+                      <NumberField
+                        label={t('avatarPreview.seed.input')}
+                        description={t('avatarPreview.seed.help')}
+                        value={variationSeed}
+                        onChange={setVariationSeed}
+                        minValue={0}
+                        maxValue={2_147_483_647}
+                        step={1}
+                        isInvalid={!validSeed}
+                      />
+                      <Button
+                        variant="secondary"
+                        isDisabled={Number.isNaN(variationSeed)}
+                        onPress={() => setVariationSeed(Number.NaN)}
+                      >
+                        {t('avatarPreview.seed.random')}
+                      </Button>
                     </div>
-                    <div>
-                      <dt>
-                        <Text>{t('avatarPreview.posture')}</Text>
-                      </dt>
-                      <dd>
-                        <Text>{t('avatarPreview.posture.standing')}</Text>
-                      </dd>
-                    </div>
-                    <div>
-                      <dt>
-                        <Text>{t('avatarPreview.transitionRoute')}</Text>
-                      </dt>
-                      <dd>
-                        <Text>
-                          {library?.transitionRoute.length
-                            ? library.transitionRoute.map(routeText).join(' → ')
-                            : phaseText(null)}
-                        </Text>
-                      </dd>
-                    </div>
-                    {library?.rejectedReason && (
+                    {!validSeed && <Text>{t('avatarPreview.seed.invalid')}</Text>}
+                    <dl className="preview-animation-meta">
                       <div>
                         <dt>
-                          <Text>{t('avatarPreview.failure')}</Text>
+                          <Text>{t('avatarPreview.bodyPhase')}</Text>
                         </dt>
                         <dd>
-                          <Text>{reasonText(library.rejectedReason)}</Text>
+                          <Text>{running ? phaseText(library?.phase) : phaseText(null)}</Text>
                         </dd>
                       </div>
-                    )}
-                    {library?.outcome && (
                       <div>
                         <dt>
-                          <Text>{t('avatarPreview.playbackControls')}</Text>
+                          <Text>{t('avatarPreview.handPhase')}</Text>
                         </dt>
                         <dd>
-                          <Text>{t(OUTCOME_LABELS[library.outcome])}</Text>
+                          <Text>{running ? phaseText(library?.handPhase) : phaseText(null)}</Text>
                         </dd>
                       </div>
-                    )}
+                      <div>
+                        <dt>
+                          <Text>{t('avatarPreview.posture')}</Text>
+                        </dt>
+                        <dd>
+                          <Text>{t('avatarPreview.posture.standing')}</Text>
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>
+                          <Text>{t('avatarPreview.transitionRoute')}</Text>
+                        </dt>
+                        <dd>
+                          <Text>
+                            {library?.transitionRoute.length
+                              ? library.transitionRoute.map(routeText).join(' → ')
+                              : phaseText(null)}
+                          </Text>
+                        </dd>
+                      </div>
+                      {library?.rejectedReason && (
+                        <div>
+                          <dt>
+                            <Text>{t('avatarPreview.failure')}</Text>
+                          </dt>
+                          <dd>
+                            <Text>{reasonText(library.rejectedReason)}</Text>
+                          </dd>
+                        </div>
+                      )}
+                      {library?.outcome && (
+                        <div>
+                          <dt>
+                            <Text>{t('avatarPreview.playbackControls')}</Text>
+                          </dt>
+                          <dd>
+                            <Text>{t(OUTCOME_LABELS[library.outcome])}</Text>
+                          </dd>
+                        </div>
+                      )}
 
-                    {selected && (
-                      <>
-                        <div>
-                          <dt>
-                            <Text>{t('avatarPreview.id')}</Text>
-                          </dt>
-                          <dd>
-                            <Text>{selected.id}</Text>
-                          </dd>
-                        </div>
-                        <div>
-                          <dt>
-                            <Text>{t('avatarPreview.qualification')}</Text>
-                          </dt>
-                          <dd>
-                            <Text>
-                              {t(
-                                `avatarPreview.qualification.${selected.qualification.state}` as TranslationKey,
-                              )}
-                            </Text>
-                          </dd>
-                        </div>
-                        <div>
-                          <dt>
-                            <Text>{t('avatarPreview.handScore')}</Text>
-                          </dt>
-                          <dd>
-                            <Text>{selected.handScore.revision}</Text>
-                          </dd>
-                        </div>
-                      </>
-                    )}
-                    <div>
-                      <dt>
-                        <Text>{t('avatarPreview.generatedStatus')}</Text>
-                      </dt>
-                      <dd>
-                        <Text>{t(STATE_LABELS[motion?.state ?? 'unavailable'])}</Text>
-                      </dd>
-                    </div>
-                    <div>
-                      <dt>
-                        <Text>{t('avatarPreview.seed')}</Text>
-                      </dt>
-                      <dd>
-                        <Text>{motion?.seed ?? '—'}</Text>
-                      </dd>
-                    </div>
-                    <div>
-                      <dt>
-                        <Text>{t('avatarPreview.queue')}</Text>
-                      </dt>
-                      <dd>
-                        <Text>{motion?.queueFrames ?? 0}/32</Text>
-                      </dd>
-                    </div>
-                    <div>
-                      <dt>
-                        <Text>{t('avatarPreview.inference')}</Text>
-                      </dt>
-                      <dd>
-                        <Text>
-                          {Math.round(motion?.inferenceMs ?? 0)} {t('avatarPreview.milliseconds')}
-                        </Text>
-                      </dd>
-                    </div>
-                    <div>
-                      <dt>
-                        <Text>{t('avatarPreview.blend')}</Text>
-                      </dt>
-                      <dd>
-                        <Text>
-                          {Math.round((library?.blendRemaining ?? 0) * 1000)}{' '}
-                          {t('avatarPreview.milliseconds')}
-                        </Text>
-                      </dd>
-                    </div>
-                    <div>
-                      <dt>
-                        <Text>{t('avatarPreview.underruns')}</Text>
-                      </dt>
-                      <dd>
-                        <Text>{library?.underruns ?? 0}</Text>
-                      </dd>
-                    </div>
-                    <div>
-                      <dt>
-                        <Text>{t('avatarPreview.corrections')}</Text>
-                      </dt>
-                      <dd>
-                        <Text>
-                          {motion?.safety?.jointCorrections ?? 0} /{' '}
-                          {motion?.safety?.armCorrections ?? 0}
-                        </Text>
-                      </dd>
-                    </div>
-                    <div>
-                      <dt>
-                        <Text>{t('avatarPreview.execution')}</Text>
-                      </dt>
-                      <dd>
-                        <Text>{library?.executionId ?? '—'}</Text>
-                      </dd>
-                    </div>
-                    <div>
-                      <dt>
-                        <Text>{t('avatarPreview.lease')}</Text>
-                      </dt>
-                      <dd>
-                        <Text>{motion?.epoch ?? '—'}</Text>
-                      </dd>
-                    </div>
-                    {motion?.error && (
+                      {selected && (
+                        <>
+                          <div>
+                            <dt>
+                              <Text>{t('avatarPreview.id')}</Text>
+                            </dt>
+                            <dd>
+                              <Text>{selected.id}</Text>
+                            </dd>
+                          </div>
+                          <div>
+                            <dt>
+                              <Text>{t('avatarPreview.qualification')}</Text>
+                            </dt>
+                            <dd>
+                              <Text>
+                                {t(
+                                  `avatarPreview.qualification.${selected.qualification.state}` as TranslationKey,
+                                )}
+                              </Text>
+                            </dd>
+                          </div>
+                          <div>
+                            <dt>
+                              <Text>{t('avatarPreview.handScore')}</Text>
+                            </dt>
+                            <dd>
+                              <Text>{selected.handScore.revision}</Text>
+                            </dd>
+                          </div>
+                        </>
+                      )}
                       <div>
                         <dt>
-                          <Text>{t('avatarPreview.failure')}</Text>
+                          <Text>{t('avatarPreview.generatedStatus')}</Text>
                         </dt>
                         <dd>
-                          <Text>{motion.error}</Text>
+                          <Text>{t(STATE_LABELS[motion?.state ?? 'unavailable'])}</Text>
                         </dd>
                       </div>
-                    )}
-                  </dl>
-                </DisclosurePanel>
-              </Disclosure>
-            </div>
-            <div className="preview-inspector-footer">
-              <Button
-                variant="secondary"
-                onPress={() => observeRendererPromise(reload(), 'reload Avatar Preview')}
-              >
-                {t('avatarPreview.reloadModel')}
-              </Button>
-            </div>
-          </aside>
+                      <div>
+                        <dt>
+                          <Text>{t('avatarPreview.seed')}</Text>
+                        </dt>
+                        <dd>
+                          <Text>{motion?.seed ?? '—'}</Text>
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>
+                          <Text>{t('avatarPreview.queue')}</Text>
+                        </dt>
+                        <dd>
+                          <Text>{motion?.queueFrames ?? 0}/32</Text>
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>
+                          <Text>{t('avatarPreview.inference')}</Text>
+                        </dt>
+                        <dd>
+                          <Text>
+                            {Math.round(motion?.inferenceMs ?? 0)} {t('avatarPreview.milliseconds')}
+                          </Text>
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>
+                          <Text>{t('avatarPreview.blend')}</Text>
+                        </dt>
+                        <dd>
+                          <Text>
+                            {Math.round((library?.blendRemaining ?? 0) * 1000)}{' '}
+                            {t('avatarPreview.milliseconds')}
+                          </Text>
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>
+                          <Text>{t('avatarPreview.underruns')}</Text>
+                        </dt>
+                        <dd>
+                          <Text>{library?.underruns ?? 0}</Text>
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>
+                          <Text>{t('avatarPreview.corrections')}</Text>
+                        </dt>
+                        <dd>
+                          <Text>
+                            {motion?.safety?.jointCorrections ?? 0} /{' '}
+                            {motion?.safety?.armCorrections ?? 0}
+                          </Text>
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>
+                          <Text>{t('avatarPreview.execution')}</Text>
+                        </dt>
+                        <dd>
+                          <Text>{library?.executionId ?? '—'}</Text>
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>
+                          <Text>{t('avatarPreview.lease')}</Text>
+                        </dt>
+                        <dd>
+                          <Text>{motion?.epoch ?? '—'}</Text>
+                        </dd>
+                      </div>
+                      {motion?.error && (
+                        <div>
+                          <dt>
+                            <Text>{t('avatarPreview.failure')}</Text>
+                          </dt>
+                          <dd>
+                            <Text>{motion.error}</Text>
+                          </dd>
+                        </div>
+                      )}
+                    </dl>
+                  </DisclosurePanel>
+                </Disclosure>
+              </div>
+              <div className="preview-inspector-footer">
+                <Button
+                  variant="secondary"
+                  onPress={() => observeRendererPromise(reload(), 'reload Avatar Preview')}
+                >
+                  {t('avatarPreview.reloadModel')}
+                </Button>
+              </div>
+            </aside>
+          </div>
         )}
       </div>
     </section>

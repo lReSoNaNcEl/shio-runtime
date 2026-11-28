@@ -5,6 +5,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 const { setTimeout: pause } = require('node:timers/promises')
 const { _electron } = require('playwright-core')
+const { selectPreviewCamera } = require('../speech-motion/select-preview-camera.cjs')
 const { recordCanvas } = require('../speech-motion/record-canvas.cjs')
 const { installGeometryProbe, loadRigGeometry } = require('../speech-motion/rig-geometry.cjs')
 
@@ -79,7 +80,7 @@ function handProfileReached(id, right) {
 
 async function inspectHandProfiles(page, overlay) {
   await page.locator('.app-sidebar').getByRole('button', { name: 'Avatar', exact: true }).click()
-  await page.getByRole('button', { name: 'Full body', exact: true }).click()
+  await selectPreviewCamera(page, 'Full body')
   const library = page.locator('.animation-library')
   const seedField = page.getByRole('textbox', { name: 'Fixed variation seed', exact: true })
   if (!(await seedField.isVisible()))
@@ -215,7 +216,7 @@ async function inspectAction(page, overlay, action) {
   const physicalAction = preview || action === 'turn' || isDance
   if (preview) {
     await page.locator('.app-sidebar').getByRole('button', { name: 'Avatar', exact: true }).click()
-    await page.getByRole('button', { name: 'Full body', exact: true }).click()
+    await selectPreviewCamera(page, 'Full body')
     const library = page.locator('.animation-library')
     const label = isDance ? 'Dance in place' : 'Full body turn'
     await library.getByRole('searchbox').fill(label)
@@ -429,7 +430,6 @@ async function main() {
   report.vrmSha256 = createHash('sha256').update(fs.readFileSync(config.vrmPath)).digest('hex')
   config.setup = { ...config.setup, completed: true }
   config.uiLocale = 'en'
-  config.ttsLanguage = 'ru'
   config.developerModeEnabled = 'true'
   const llmProvider = process.env.SHIO_QUALIFICATION_LLM_PROVIDER || config.llm.activeProvider
   assert(config.llm.providers[llmProvider], 'Unsupported qualification LLM provider')

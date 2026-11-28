@@ -59,7 +59,6 @@ export const browserComputerUseStateSchema = z.enum([
   'failed',
   'stopped',
 ])
-export type BrowserComputerUseState = z.infer<typeof browserComputerUseStateSchema>
 
 export const browserVisualControlStateSchema = z.enum([
   'ready',
@@ -385,7 +384,6 @@ export const browserReactiveAnchorSchema = z
       .strict(),
   })
   .strict()
-export type BrowserReactiveAnchor = z.infer<typeof browserReactiveAnchorSchema>
 
 const directionalKeySchema = z.enum([
   'ArrowUp',
@@ -445,7 +443,6 @@ export const browserReactiveControlPrimitiveSchema = z.discriminatedUnion('type'
     })
     .strict(),
 ])
-export type BrowserReactiveControlPrimitive = z.infer<typeof browserReactiveControlPrimitiveSchema>
 
 export const browserReactiveControlPlanSchema = z
   .object({

@@ -70,6 +70,14 @@ export class ScreenContextService {
     }
   }
 
+  async checkSource(sourceId: string): Promise<void> {
+    try {
+      await this.adapter.checkSource(sourceId)
+    } catch (error) {
+      throw this.normalizeError(error)
+    }
+  }
+
   async capture(
     rendererId: number,
     operationId: string,

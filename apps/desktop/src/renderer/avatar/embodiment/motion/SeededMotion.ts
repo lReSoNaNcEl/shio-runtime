@@ -73,10 +73,6 @@ export class BoundedRandomMotionChannel {
     return this.value
   }
 
-  getLimit(): number {
-    return Math.max(0, this.options.amplitude)
-  }
-
   private step(delta: number): void {
     this.secondsUntilTarget -= delta
     if (this.secondsUntilTarget <= 0) {

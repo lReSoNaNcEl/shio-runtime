@@ -1,6 +1,7 @@
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
+const { selectPreviewCamera } = require('./select-preview-camera.cjs')
 const { recordCanvas } = require('./record-canvas.cjs')
 
 async function replayDynamics({ page, desktop, directory, report, pause }) {
@@ -13,7 +14,7 @@ async function replayDynamics({ page, desktop, directory, report, pause }) {
   const result = JSON.parse(fs.readFileSync(path.join(root, 'final/samples.json')))
   await page.waitForFunction(() => !!window.__motionAbController)
   await page.locator('.app-sidebar').getByRole('button', { name: 'Avatar', exact: true }).click()
-  await page.getByRole('button', { name: 'Full body', exact: true }).click()
+  await selectPreviewCamera(page, 'Full body')
   report.dynamicsReplay = {
     sourceSha256: before.sourceSha256,
     videos: [],

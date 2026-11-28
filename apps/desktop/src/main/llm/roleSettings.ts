@@ -4,12 +4,7 @@ import type { ResolvedLlmCredential } from './LlmCredentialStore'
 import type { LlmGatewaySettings } from './types'
 
 /** Every Main-owned LLM consumer selects its provider/model through one named role. */
-export const LLM_ROLE_IDS = [
-  'character',
-  'backlogSelector',
-  'computerUseVision',
-  'sessionSummarizer',
-] as const
+export const LLM_ROLE_IDS = ['character', 'computerUseVision', 'sessionSummarizer'] as const
 export type LlmRoleId = (typeof LLM_ROLE_IDS)[number]
 
 export interface LlmRoleSources {
@@ -95,12 +90,6 @@ export function resolveLlmRoleSettings(
         automatic ? config.providers[provider].model.trim() : visual.model.trim(),
         automatic,
       )
-    }
-    case 'backlogSelector': {
-      const selector = config.roles.backlogSelector
-      const automatic = !selector.providerId
-      const provider = selector.providerId || config.activeProvider
-      return settingsFor(provider, selector.model, automatic)
     }
   }
 }

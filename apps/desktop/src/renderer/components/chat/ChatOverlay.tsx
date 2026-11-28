@@ -25,6 +25,7 @@ import { ScreenContextDropOverlay } from './ScreenContextDropOverlay'
 import { type ChatTurnFailure, ScreenContextInputFeedback } from './ScreenContextInputFeedback'
 import { ScreenContextPicker } from './ScreenContextPicker'
 import { SpeechUnavailableBanner } from './SpeechUnavailableBanner'
+import { StreamSourcePreview } from './StreamSourcePreview'
 import {
   clipboardImageFiles,
   droppedImageFiles,
@@ -33,12 +34,13 @@ import {
 import { useScreenContextAttachment } from './useScreenContextAttachment'
 
 interface Props {
-  playbackGaps?: number
+  sharing?: boolean
   state: ControllerState
   capabilitySnapshot: ShioCapabilitySnapshot | null
   gateOpen?: boolean
   onOpenSpeechSettings?: () => void
   onOpenLlmSettings?: () => void
+  onStartWatch?: () => void
   onOpenCapabilities?: () => void
 }
 
@@ -50,10 +52,11 @@ export const ChatOverlay = forwardRef<ChatOverlayHandle, Props>(function ChatOve
   {
     state,
     capabilitySnapshot,
-    playbackGaps = 0,
+    sharing = false,
     gateOpen = false,
     onOpenSpeechSettings,
     onOpenLlmSettings,
+    onStartWatch,
     onOpenCapabilities,
   },
   ref,
@@ -264,8 +267,9 @@ export const ChatOverlay = forwardRef<ChatOverlayHandle, Props>(function ChatOve
         status={state.status}
         quickActions={quickActions}
         onQuickAction={handleQuickAction}
+        onStartWatch={onStartWatch}
         onOpenCapabilities={onOpenCapabilities}
-        continuousListening={state.continuousListening}
+        continuousListening={sharing ? undefined : state.continuousListening}
         onRetryContinuousListening={() =>
           observeRendererPromise(
             controller.retryContinuousListening(),
@@ -298,8 +302,8 @@ export const ChatOverlay = forwardRef<ChatOverlayHandle, Props>(function ChatOve
           />
         )}
         <ChatStatus state={state} />
-        {state.continuousListening.desired && (
-          <div aria-live="polite">
+        {!sharing && state.continuousListening.desired && (
+          <div className="stream-input-status" aria-live="polite">
             {state.continuousListening.activeMicrophone && (
               <StatusLight variant="positive" size="S">
                 {t('streaming.activeMicrophone', {
@@ -309,14 +313,11 @@ export const ChatOverlay = forwardRef<ChatOverlayHandle, Props>(function ChatOve
                 })}
               </StatusLight>
             )}
+            {state.continuousListening.microphoneCaptured &&
+              state.alive?.settings.privacyMode === false && <StreamSourcePreview />}
             {!!state.continuousListening.audioGapCount && (
               <StatusLight variant="notice">
-                {t('watch.microphoneGaps', { count: state.continuousListening.audioGapCount })}
-              </StatusLight>
-            )}
-            {playbackGaps > 0 && (
-              <StatusLight variant="notice">
-                {t('watch.playbackGaps', { count: playbackGaps })}
+                {t('streaming.audioGap', { count: state.continuousListening.audioGapCount })}
               </StatusLight>
             )}
           </div>
@@ -352,6 +353,7 @@ export const ChatOverlay = forwardRef<ChatOverlayHandle, Props>(function ChatOve
           busy={busy}
           gateOpen={gateOpen}
           listening={listening}
+          sharing={sharing}
           canInterrupt={canInterrupt}
           interruptionPending={interrupting || state.responseInterruptionPending}
           microphoneUnavailable={recognitionUnavailable}

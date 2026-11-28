@@ -1,7 +1,9 @@
-import { ActionButton, Button } from '@react-spectrum/s2'
+import { ActionButton, Button, Text } from '@react-spectrum/s2'
 import Close from '@react-spectrum/s2/icons/Close'
+import { useState } from 'react'
 
 import { useTranslation } from '../../localization/useTranslation'
+import { observeRendererPromise } from '../../reliability/observePromise'
 import { bannerCopy, type SpeechCapabilitiesState } from '../../runtime/speechCapabilities'
 
 /**
@@ -18,26 +20,41 @@ export function SpeechUnavailableBanner({
 }: {
   capabilities: SpeechCapabilitiesState
   highlight: boolean
-  onRetry: () => void
+  onRetry: () => Promise<void>
   onOpenSpeechSettings: () => void
   onDismiss: () => void
 }) {
   const { locale, t } = useTranslation()
+  const [retryState, setRetryState] = useState<'idle' | 'checking' | 'checked'>('idle')
   const copy = bannerCopy(capabilities, locale)
   if (!copy) return null
 
+  const retry = async () => {
+    setRetryState('checking')
+    try {
+      await onRetry()
+      setRetryState('checked')
+    } catch (error) {
+      setRetryState('idle')
+      throw error
+    }
+  }
+
   return (
-    <div
-      className={`speech-banner${highlight ? ' speech-banner-highlight' : ''}`}
-      role="status"
-      aria-live="polite"
-    >
-      <div className="speech-banner-body">
-        <span className="speech-banner-title">{copy.title}</span>
-        <span className="speech-banner-desc">{copy.description}</span>
+    <div className={`speech-banner${highlight ? ' speech-banner-highlight' : ''}`}>
+      <div className="speech-banner-body" role="status">
+        <Text UNSAFE_className="speech-banner-title">{copy.title}</Text>
+        <Text UNSAFE_className="speech-banner-desc">{copy.description}</Text>
+        {retryState === 'checked' && (
+          <Text UNSAFE_className="speech-banner-desc">{t('speech.banner.retryChecked')}</Text>
+        )}
       </div>
       <div className="speech-banner-actions">
-        <Button variant="secondary" onPress={onRetry}>
+        <Button
+          variant="secondary"
+          isPending={retryState === 'checking'}
+          onPress={() => observeRendererPromise(retry(), 'retry Speech connection')}
+        >
           {t('speech.banner.retryConnection')}
         </Button>
         <Button variant="secondary" onPress={onOpenSpeechSettings}>

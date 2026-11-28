@@ -1,4 +1,8 @@
-import { describe, expect, it } from 'vitest'
+import { type ChildProcess, execFile } from 'node:child_process'
+import { resolve } from 'node:path'
+import { PassThrough } from 'node:stream'
+
+import { describe, expect, it, vi } from 'vitest'
 
 import {
   CODEX_MODEL,
@@ -6,14 +10,20 @@ import {
   parseCodexReply,
 } from '../../../src/main/llm/CodexCliProvider'
 import { prepareCodexInput } from '../../../src/main/llm/CodexImageInput'
+import { codexWatchOpeningEnabled } from '../../../src/main/llm/CodexWatchVoiceReply'
 import { normalizeLlmConfig } from '../../../src/main/llm/config'
 import { LlmGateway } from '../../../src/main/llm/LlmGateway'
 import {
+  createLLMProvider,
   enrichModelCatalog,
   getProviderProfile,
   invalidateModelCatalog,
   resolveModelCapabilities,
 } from '../../../src/main/llm/registry'
+import type { AppSettings } from '../../../src/shared/config'
+import type { CodexReasoningEffort } from '../../../src/shared/llm'
+
+vi.mock(import('node:child_process'), { spy: true })
 
 const start = { type: 'turn.started' }
 const end = { type: 'turn.completed' }
@@ -23,11 +33,11 @@ const events = (...records: unknown[]) => records.map((record) => JSON.stringify
 describe('Codex CLI Character provider', () => {
   it('adds the Luna preset to an existing profile without changing its active provider', () => {
     const config = normalizeLlmConfig({
-      activeProvider: 'mistral',
-      providers: { mistral: { model: 'selected-model' } },
+      activeProvider: 'openrouter',
+      providers: { openrouter: { model: 'selected-model' } },
     })
-    expect(config.activeProvider).toBe('mistral')
-    expect(config.providers.mistral.model).toBe('selected-model')
+    expect(config.activeProvider).toBe('openrouter')
+    expect(config.providers.openrouter.model).toBe('selected-model')
     expect(config.providers['codex-cli'].model).toBe(CODEX_MODEL)
     expect(getProviderProfile('codex-cli').requiresApiKey).toBe(false)
   })
@@ -62,7 +72,7 @@ describe('Codex CLI Character provider', () => {
         ],
       }),
     )
-    expect(luna.reasoning).toEqual({ levels: ['low', 'medium'], defaultLevel: 'low' })
+    expect(luna.reasoning).toEqual({ levels: ['none', 'low', 'medium'], defaultLevel: 'none' })
     const config = normalizeLlmConfig({
       providers: {
         'codex-cli': {
@@ -82,6 +92,93 @@ describe('Codex CLI Character provider', () => {
     })
   })
 
+  it.skipIf(process.platform !== 'win32')(
+    'starts Luna on HTTPS with none by default and honors a saved reasoning level',
+    async () => {
+      const exec = vi.mocked(execFile)
+      vi.stubEnv('APPDATA', resolve('test-appdata'))
+      exec.mockImplementation((_file, _args, _options, callback) => {
+        queueMicrotask(() => callback?.(null, events(start, message, end), ''))
+        return { stdin: new PassThrough(), kill: vi.fn() } as unknown as ChildProcess
+      })
+
+      const chat = (reasoningEffort?: CodexReasoningEffort) =>
+        createLLMProvider({
+          provider: 'codex-cli',
+          model: CODEX_MODEL,
+          apiKey: '',
+          reasoningEffort,
+        }).chat([{ role: 'user', content: 'Hello' }])
+
+      try {
+        invalidateModelCatalog('codex-cli')
+        await expect(chat()).resolves.toBe('Привет!')
+        enrichModelCatalog(
+          'codex-cli',
+          parseCodexCatalog(
+            JSON.stringify({
+              models: [
+                {
+                  slug: CODEX_MODEL,
+                  visibility: 'list',
+                  default_reasoning_level: 'low',
+                  supported_reasoning_levels: [{ effort: 'low' }],
+                },
+              ],
+            }),
+          ),
+        )
+        await expect(chat()).resolves.toBe('Привет!')
+        await expect(chat('low')).resolves.toBe('Привет!')
+        await expect(chat('none')).resolves.toBe('Привет!')
+
+        expect(exec).toHaveBeenCalledTimes(4)
+        expect(
+          exec.mock.calls.map(([, args]) =>
+            args?.find((arg) => arg.startsWith('model_reasoning_effort=')),
+          ),
+        ).toEqual([
+          'model_reasoning_effort="none"',
+          'model_reasoning_effort="none"',
+          'model_reasoning_effort="low"',
+          'model_reasoning_effort="none"',
+        ])
+        for (const [, args] of exec.mock.calls) {
+          expect(args).toEqual(
+            expect.arrayContaining([
+              'model_provider="shio_https"',
+              expect.stringMatching(
+                /^model_providers\.shio_https=.*base_url="https:\/\/chatgpt\.com\/backend-api\/codex".*requires_openai_auth=true.*supports_websockets=false/u,
+              ),
+            ]),
+          )
+        }
+      } finally {
+        invalidateModelCatalog('codex-cli')
+        vi.unstubAllEnvs()
+        exec.mockRestore()
+      }
+    },
+  )
+
+  it('keeps the short Watch Together opening available with the Luna default', () => {
+    const llm = normalizeLlmConfig({ activeProvider: 'codex-cli' })
+    const settings = { llm } as AppSettings
+    const provider = llm.providers['codex-cli']
+
+    expect(codexWatchOpeningEnabled(settings)).toBe(true)
+    provider.codexReasoningByModel = { [CODEX_MODEL]: 'low' }
+    expect(codexWatchOpeningEnabled(settings)).toBe(true)
+    provider.codexReasoningByModel = { [CODEX_MODEL]: 'medium' }
+    expect(codexWatchOpeningEnabled(settings)).toBe(false)
+  })
+
+  it('marks a completed CLI round with no assistant content as recoverable before any tool work', () => {
+    expect(() => parseCodexReply(events(start, end))).toThrow(
+      expect.objectContaining({ code: 'EMPTY_STREAM', recoverable: true }),
+    )
+  })
+
   it('rejects partial, failed and unexpected tool output', () => {
     for (const stream of [
       events(start, message),
@@ -90,6 +187,17 @@ describe('Codex CLI Character provider', () => {
       events(start, message, end, message),
     ])
       expect(() => parseCodexReply(stream)).toThrow()
+  })
+
+  it('retains a completed tool directive followed by an empty assistant item', () => {
+    const directive =
+      '<shio-tools>{"calls":[{"tool":"shell.execute","arguments":{"command":"node --version"}}]}</shio-tools>'
+    const item = (text: string) => ({
+      type: 'item.completed',
+      item: { type: 'agent_message', text },
+    })
+
+    expect(parseCodexReply(events(start, message, item(directive), item(''), end))).toBe(directive)
   })
 
   it('uses the visible Codex catalog, honors model-specific vision, and restores a saved selection', () => {

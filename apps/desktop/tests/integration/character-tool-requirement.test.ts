@@ -105,7 +105,7 @@ describe('constrained planning transport', () => {
           )
         },
       },
-      providerId: 'mistral',
+      providerId: 'openrouter',
       messages: [
         { role: 'assistant', content: 'Продолжай историю!' },
         {
@@ -157,7 +157,7 @@ describe('turn appraisal forwarding', () => {
               )
             : textCompletion('[pouting]Эй, не дразнись!'),
       },
-      providerId: 'mistral',
+      providerId: 'openrouter',
       messages: [{ role: 'user', content: 'Ты медленная, как черепаха!' }],
       registry: () => registry(false),
       createDispatcher: () =>
@@ -234,7 +234,7 @@ async function runWebRequirement(options: {
         return options.complete?.(messages, requestOptions) as Promise<LlmCompletion>
       },
     },
-    providerId: 'mistral',
+    providerId: 'openrouter',
     messages: [
       {
         role: 'user',
@@ -275,7 +275,7 @@ describe('Character Tool Requirement', () => {
             ),
           )
           throw new LlmResponseError({
-            provider: 'mistral',
+            provider: 'openrouter',
             code: 'INCOMPLETE_TOOL_CALL',
             message: 'Required call missing',
           })
@@ -289,7 +289,7 @@ describe('Character Tool Requirement', () => {
               })
             : '[calm]Продолжение истории.',
       },
-      providerId: 'mistral',
+      providerId: 'openrouter',
       messages: [{ role: 'user', content: 'Продолжи нашу вымышленную историю.' }],
       registry: currentRegistry,
       createDispatcher: (signal) =>
@@ -357,7 +357,7 @@ describe('Character Tool Requirement', () => {
             return '[warm]Я помню, что ты предпочитаешь тёмную тему.'
           },
         },
-        providerId: 'mistral',
+        providerId: 'openrouter',
         messages: [
           {
             role: 'user',
@@ -444,7 +444,7 @@ describe('Character Tool Requirement', () => {
           return '[calm]На приложенном снимке виден интерфейс приложения.'
         },
       },
-      providerId: 'mistral',
+      providerId: 'openrouter',
       messages: [
         {
           role: 'user',
@@ -502,7 +502,7 @@ describe('Character Tool Requirement', () => {
           return '[calm]Сейчас на переднем плане Visual Studio Code.'
         },
       },
-      providerId: 'mistral',
+      providerId: 'openrouter',
       messages: [
         {
           role: 'system',
@@ -677,7 +677,7 @@ describe('Character Tool Requirement', () => {
             return textCompletion('[calm]Управление браузером запущено и продолжится в фоне.')
           },
         },
-        providerId: 'mistral',
+        providerId: 'openrouter',
         messages: [{ role: 'user', content: request }],
         registry: currentRegistry,
         createDispatcher: (signal) =>
@@ -853,7 +853,7 @@ describe('Character Tool Requirement', () => {
           return textCompletion('[calm]Сессия сейчас на паузе.')
         },
       },
-      providerId: 'mistral',
+      providerId: 'openrouter',
       messages: [
         { role: 'user', content: 'Играй, пока я не остановлю.' },
         { role: 'assistant', content: 'Управление запущено.', toolEvidence: prior },
@@ -1002,7 +1002,7 @@ describe('Character Tool Requirement', () => {
             tool: 'web.search',
           } satisfies CharacterToolRequirement),
       },
-      providerId: 'mistral',
+      providerId: 'openrouter',
       messages: [{ role: 'user', content: 'Проверь это через web.search.' }],
       registry: emptyRegistry,
       createDispatcher: (signal) =>
@@ -1045,7 +1045,7 @@ describe('Character Tool Requirement', () => {
             : '[calm]Shio Runtime объединяет Desktop и отдельный Speech API. Текущий репозиторий я не проверяла.'
         },
       },
-      providerId: 'mistral',
+      providerId: 'openrouter',
       messages: [{ role: 'user', content: 'Что ты знаешь о своём проекте?' }],
       registry: emptyRegistry,
       createDispatcher: (signal) =>
@@ -1084,7 +1084,7 @@ describe('Character Tool Requirement', () => {
           })
         },
       },
-      providerId: 'mistral',
+      providerId: 'openrouter',
       messages: [
         { role: 'user', content: 'Проверь текущий код CharacterToolLoop и предложи исправления.' },
       ],
@@ -1129,7 +1129,7 @@ describe('Character Tool Requirement', () => {
           })
         },
       },
-      providerId: 'mistral',
+      providerId: 'openrouter',
       messages: [
         {
           role: 'user',
@@ -1207,7 +1207,7 @@ describe('Character Tool Requirement', () => {
           return '[calm]Проект использует Electron, React и TypeScript.'
         },
       },
-      providerId: 'mistral',
+      providerId: 'openrouter',
       messages: [{ role: 'user', content: 'На каких технологиях написан текущий проект?' }],
       registry: currentRegistry,
       createDispatcher: (signal) =>
@@ -1295,7 +1295,7 @@ describe('Character Tool Requirement', () => {
           return '[calm]@deepseek-ai/agent — 1.2.3'
         },
       },
-      providerId: 'mistral',
+      providerId: 'openrouter',
       messages: [
         {
           role: 'user',
@@ -1394,7 +1394,7 @@ describe('Character Tool Requirement', () => {
           return '[calm]Проверила файл: среди зависимостей есть React Spectrum 2 и React.'
         },
       },
-      providerId: 'mistral',
+      providerId: 'openrouter',
       messages: [
         {
           role: 'user',
@@ -1479,7 +1479,7 @@ describe('Character Tool Requirement', () => {
           return '[calm]Ответ дополнен опциональным поиском.'
         },
       },
-      providerId: 'mistral',
+      providerId: 'openrouter',
       messages: [{ role: 'user', content: 'Предложи идею; можешь проверить фон в сети.' }],
       registry: currentRegistry,
       createDispatcher: (signal) =>
@@ -1555,7 +1555,7 @@ describe('Character Tool Requirement', () => {
             : textCompletion('[calm]Native-поиск завершён, отвечаю.')
         },
       },
-      providerId: 'mistral',
+      providerId: 'openrouter',
       messages: [{ role: 'user', content: 'Ответь и при необходимости используй веб-поиск.' }],
       registry: currentRegistry,
       createDispatcher: (signal) =>
@@ -1624,7 +1624,7 @@ describe('Character Tool Requirement', () => {
           return '[calm]Проверила два источника.'
         },
       },
-      providerId: 'mistral',
+      providerId: 'openrouter',
       messages: [
         { role: 'user', content: 'Проверь актуальные данные по двум независимым источникам.' },
       ],
@@ -1671,7 +1671,7 @@ describe('Character Tool Requirement', () => {
           return '[calm]Новый независимый ответ.'
         },
       },
-      providerId: 'mistral',
+      providerId: 'openrouter',
       messages: [
         { role: 'user', content: 'Первый вопрос.' },
         {
@@ -1727,7 +1727,7 @@ describe('Character Tool Requirement', () => {
           return '[calm]Поиск по проекту не был выполнен из-за сбоя внутреннего вызова.'
         },
       },
-      providerId: 'mistral',
+      providerId: 'openrouter',
       messages: [
         { role: 'user', content: 'На каких технологиях написан проект?' },
         {
@@ -1805,7 +1805,7 @@ describe('Character Tool Requirement', () => {
     }
     const result = await new CharacterToolLoop().run({
       llm,
-      providerId: 'mistral',
+      providerId: 'openrouter',
       messages: [
         { role: 'user', content: 'Проверь дату.' },
         { role: 'assistant', content: 'Проверила.', toolEvidence: prior },
@@ -1925,7 +1925,7 @@ describe('Character Tool Requirement', () => {
     }
     const result = await new CharacterToolLoop().run({
       llm,
-      providerId: 'mistral',
+      providerId: 'openrouter',
       messages: [
         {
           role: 'user',
@@ -1977,7 +1977,7 @@ describe('Character Tool Requirement', () => {
           yield { type: 'completed' as const, at: 4, finishReason: 'stop' as const }
         },
       },
-      providerId: 'mistral',
+      providerId: 'openrouter',
       messages: [{ role: 'user', content: 'Ответь на вопрос.' }],
       registry: () => registry(true),
       createDispatcher: () => ({ dispose: () => undefined }) as never,
@@ -2024,7 +2024,7 @@ describe('Character Tool Requirement', () => {
           yield { type: 'completed' as const, at: 4, finishReason: 'stop' as const }
         },
       },
-      providerId: 'mistral',
+      providerId: 'openrouter',
       messages: [{ role: 'user', content: 'Ответь прямо.' }],
       registry: () => registry(true),
       createDispatcher: () => ({ dispose: () => undefined }) as never,
@@ -2101,7 +2101,7 @@ describe('Character Tool Requirement', () => {
           yield { type: 'completed' as const, at: 3, finishReason: 'stop' as const }
         },
       },
-      providerId: 'mistral',
+      providerId: 'openrouter',
       messages: [{ role: 'user', content: 'Открой страницу.' }],
       registry: currentRegistry,
       createDispatcher: (signal) =>
@@ -2232,7 +2232,7 @@ describe('Character Tool Requirement', () => {
           yield { type: 'completed' as const, at: 7, finishReason: 'stop' as const }
         },
       },
-      providerId: 'mistral',
+      providerId: 'openrouter',
       messages: [{ role: 'user', content: 'Закрой видимый куки-баннер.' }],
       registry: currentRegistry,
       createDispatcher: () =>

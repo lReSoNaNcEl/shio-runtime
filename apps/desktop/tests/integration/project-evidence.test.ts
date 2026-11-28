@@ -7,7 +7,6 @@ import { describe, it } from 'vitest'
 import type { ChatMessage, LLMProvider, LlmCapabilities, LlmCompletion } from '../../src/main/llm'
 import type { MemoryStore } from '../../src/main/memory'
 import { Orchestrator, projectReplyProvenance } from '../../src/main/orchestrator'
-import type { SpeechClient } from '../../src/main/speech/speechClient'
 import { groupProjectEvidence } from '../../src/renderer/components/chat/projectEvidence'
 import { ControllerStore } from '../../src/renderer/controller/ControllerStore'
 import type { AppSettings } from '../../src/shared/config'
@@ -143,7 +142,6 @@ async function main(): Promise<void> {
   const orchestrator = new Orchestrator(
     llm,
     memory,
-    {} as SpeechClient,
     () => ({ uiLocale: 'ru' }) as AppSettings,
     () => provider,
   )

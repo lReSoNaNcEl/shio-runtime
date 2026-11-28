@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 import multiprocessing as mp
 import queue
+import re
 import threading
 import time
 import unicodedata
-from collections.abc import Iterable, Iterator
+from collections.abc import Generator, Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -15,6 +17,9 @@ from typing import Literal
 import numpy as np
 
 from app.tts.voices import condition_reference, default_voice_id
+
+logger = logging.getLogger(__name__)
+CANCELLATION_ACK_TIMEOUT_SECONDS = 1.0
 
 
 @dataclass(frozen=True)
@@ -75,12 +80,7 @@ class FishS2ProDeliveryAdapter:
 
 
 class FishS2ProEngine:
-    """One persistent owned process; cancellation terminates actual GPU work.
-
-    Upstream's inference queue has no cancellation contract. Process isolation
-    makes cancellation and shutdown deterministic. The next session reloads the
-    worker after cancellation, never overlaps old inference.
-    """
+    """One persistent process with token-level cancellation and a termination fallback."""
 
     def __init__(
         self,
@@ -116,6 +116,7 @@ class FishS2ProEngine:
         self._process = None
         self._input = None
         self._output = None
+        self._request_cancelled = None
         self._closed = False
         self._ready = False
         self._warmed = False
@@ -162,6 +163,7 @@ class FishS2ProEngine:
             context = mp.get_context("spawn")
             self._input = context.Queue(maxsize=1)
             self._output = context.Queue(maxsize=4)
+            self._request_cancelled = context.Event()
             from app.tts.fish_worker import run_worker
 
             self._process = context.Process(
@@ -173,6 +175,7 @@ class FishS2ProEngine:
                     self.compile,
                     self._input,
                     self._output,
+                    self._request_cancelled,
                 ),
                 daemon=True,
                 name="shio-fish-s2-pro",
@@ -215,17 +218,22 @@ class FishS2ProEngine:
         voice: str | None,
         intent: SpeechDeliveryIntent,
         cancelled: threading.Event,
-    ) -> Iterator[np.ndarray]:
+    ) -> Generator[np.ndarray, None, None]:
+        if cancelled.is_set():
+            return
         resolved = condition_reference(voice or default_voice_id(), self.model_revision)
         if resolved is None:
             raise RuntimeError("Selected voice reference is unavailable")
-        audio_path, transcript, _entry, _cache_hit = resolved
+        audio_path, transcript, entry, _cache_hit = resolved
         while not cancelled.is_set():
             if self._inference_lock.acquire(timeout=0.05):
                 break
         else:
             return
+        request_in_flight = False
         try:
+            if cancelled.is_set():
+                return
             self._ensure_worker()
             for raw in text_chunks:
                 if cancelled.is_set():
@@ -233,17 +241,24 @@ class FishS2ProEngine:
                 chunk = raw if isinstance(raw, SpeechTextChunk) else SpeechTextChunk(raw)
                 tags = self.render_instruction(chunk.intent or intent, language) or ""
                 text = chunk.text.replace("[", "(").replace("]", ")")
-                self._input.put((tags + text, audio_path, transcript), timeout=1)
-                finished = False
+                # Choose from the spoken text before adding any delivery/style tags.
+                russian_context = entry.language == "en" and bool(re.search("[А-Яа-яЁё]", text))
+                if russian_context and not re.search("[A-Za-z]", text):
+                    tags += "[speaking Russian]"
+                if cancelled.is_set():
+                    break
+                # A submitted request stays in flight until the worker confirms completion.
+                self._request_cancelled.clear()
+                request_in_flight = True
+                self._input.put((tags + text, audio_path, transcript, russian_context), timeout=1)
                 deadline = time.monotonic() + (600 if self.compile else 120)
-                while not cancelled.is_set() and not finished:
+                while not cancelled.is_set() and request_in_flight:
                     try:
                         message = self._output.get(timeout=0.05)
                     except queue.Empty:
                         if self._closed:
                             return
                         if not self._process.is_alive() or time.monotonic() > deadline:
-                            self._stop_worker()
                             raise RuntimeError(
                                 "Fish S2 Pro inference worker stopped or timed out"
                             ) from None
@@ -253,18 +268,26 @@ class FishS2ProEngine:
                             return
                         raise RuntimeError("Fish S2 Pro worker channel closed") from None
                     if message[0] == "audio":
+                        if cancelled.is_set():
+                            break
                         self._prepared_references.add((audio_path, transcript))
                         yield message[1]
                     elif message[0] == "done":
                         self._warmed = True
-                        finished = True
+                        request_in_flight = False
                     else:
+                        request_in_flight = False
                         raise RuntimeError(f"Fish S2 Pro synthesis failed: {message[1]}")
         finally:
-            if cancelled.is_set():
-                self._stop_worker()
-            self._inference_lock.release()
-            if cancelled.is_set() and not self._closed:
+            restart_worker = False
+            try:
+                if request_in_flight and not self._closed and not self._settle_cancellation():
+                    logger.warning("Fish worker did not settle the cancelled request; reloading")
+                    self._stop_worker()
+                    restart_worker = True
+            finally:
+                self._inference_lock.release()
+            if restart_worker and not self._closed:
 
                 def reload_worker() -> None:
                     try:
@@ -279,6 +302,32 @@ class FishS2ProEngine:
                     target=reload_worker, daemon=True, name="shio-fish-reload"
                 )
                 self._reload_thread.start()
+
+    def _settle_cancellation(self) -> bool:
+        """Drain only this request's PCM until the worker confirms it is done."""
+        started_at = time.monotonic()
+        deadline = started_at + CANCELLATION_ACK_TIMEOUT_SECONDS
+        cancellation, output = self._request_cancelled, self._output
+        if cancellation is None or output is None:
+            return False
+        cancellation.set()
+        while not self._closed:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return False
+            try:
+                message = output.get(timeout=remaining)
+            except (queue.Empty, EOFError, OSError, ValueError):
+                return self._closed
+            if message[0] == "done":
+                logger.info(
+                    "Fish cancelled with warm worker in %.0f ms",
+                    (time.monotonic() - started_at) * 1000,
+                )
+                return True
+            if message[0] != "audio":
+                return False
+        return True
 
     def _stop_worker(self) -> None:
         with self._lifecycle_lock:
@@ -303,14 +352,14 @@ class FishS2ProEngine:
                 if channel is not None:
                     channel.cancel_join_thread()
                     channel.close()
-            self._input = self._output = None
+            self._input = self._output = self._request_cancelled = None
 
     def warmup(self) -> None:
         self._state = "warming"
         self._ensure_worker()
         for _chunk in self.stream(
-            ["Hello."],
-            language="en",
+            ["Привет."],
+            language="ru",
             voice=default_voice_id(),
             intent=SpeechDeliveryIntent(),
             cancelled=threading.Event(),
